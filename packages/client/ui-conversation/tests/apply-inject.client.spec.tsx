@@ -399,6 +399,39 @@ describe('Conversation inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('cites shell-named files and folders as @ references and refuses folders without the shell bridge', async () => {
+    const browser = await bench()
+    const folder = new File([], 'project')
+    expect(browser.composerApi(ROOT).addFiles?.([folder], new Set([folder])))
+      .toBe('只有桌面端支持添加文件夹，浏览器里请添加单个文件')
+    expect(browser.inputApi(ROOT).state.getSnapshot().attachmentIds).toEqual([])
+    await browser.runtime.dispose()
+
+    const paths = new Map([['project', '/Users/me/my project'], ['notes.md', '/Users/me/notes.md'], ['shot.png', '/Users/me/shot.png']])
+    vi.stubGlobal('__DSH_HOST_PATHS__', { pathFor: (file: File) => paths.get(file.name) ?? '' })
+    try {
+      const desktop = await bench()
+      const composer = desktop.composerApi(ROOT)
+      const { state } = desktop.inputApi(ROOT)
+      const note = new File([Uint8Array.of(1)], 'notes.md', { type: 'text/markdown' })
+      const shot = new File([Uint8Array.of(2)], 'shot.png', { type: 'image/png' })
+      const pasted = new File([Uint8Array.of(3)], 'pasted.bin', { type: 'application/octet-stream' })
+      expect(composer.addFiles?.([folder, note, shot, pasted], new Set([folder]))).toBeNull()
+      // The folder and the file became references in the draft; the image and the pathless bytes stayed drafts.
+      expect(state.getSnapshot().draft).toBe('@"/Users/me/my project/ @/Users/me/notes.md ')
+      const drafts = composer.resolveDraftAttachments?.(state.getSnapshot().attachmentIds) ?? []
+      expect(drafts.map(draft => draft.kind)).toEqual(['image', 'file'])
+      await vi.waitFor(() => { expect(desktop.rootUpload).toHaveBeenCalledOnce() })
+      // A directory the shell cannot name is refused even with the bridge present.
+      const nameless = new File([], 'nameless')
+      expect(composer.addFiles?.([nameless], new Set([nameless])))
+        .toBe('只有桌面端支持添加文件夹，浏览器里请添加单个文件')
+      await desktop.runtime.dispose()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('fails loud for an unknown binding or an unloaded scoped service', async () => {
     const b = await bench()
     const entry = b.entryOf('conversation.composer.bar')

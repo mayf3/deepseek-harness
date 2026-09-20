@@ -19,7 +19,9 @@ import type {
 } from './contract/slots.ts'
 import type { InputNotice } from './contract/input.ts'
 import { createConversationStore, readConversationViewPreference } from './stores.ts'
-import { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'
+import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
+import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
+import { ConversationController, UnsupportedImageMediaTypeError, isImageMediaType } from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
 import type { ComposerBlock } from './contract/composer-blocks.ts'
@@ -85,6 +87,21 @@ const EMPTY_FILE_UPLOADS: DraftFileUploads = {}
 const ABSENT_FILE_UPLOADS = {
   getSnapshot: () => EMPTY_FILE_UPLOADS,
   subscribe: () => () => {},
+}
+
+/**
+ * Browser-shell bridge reporting the harness-host path of a picked file. The
+ * Desktop preload exposes it on the application document; a served Web page
+ * has none, so every non-image file uploads there.
+ */
+interface HostPathBridge {
+  /** Absolute harness-host path of one picked file, or empty when the shell has none for it. */
+  pathFor(file: File): string
+}
+
+/** The shell-installed bridge, when this document runs inside the Desktop application. */
+function hostPathBridge(): HostPathBridge | undefined {
+  return (globalThis as { __DSH_HOST_PATHS__?: HostPathBridge }).__DSH_HOST_PATHS__
 }
 
 interface WorkspaceNavigation {
@@ -392,12 +409,41 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       const conversation = concreteConversation(ctx)
       const shell = inputHub.shell(sessionId)
       const inputTriggers = inputHub.inputTriggers(sessionId)
+      const bridge = hostPathBridge()
+      // A folder or non-image file the shell can name is cited as the same
+      // `@path` reference the user could have typed: the model reads it with
+      // its file tools, nothing uploads, and the draft keeps the chip. A
+      // directory the shell cannot name has nothing to upload or cite.
+      const cite = (file: File, directory: boolean): boolean | string => {
+        if (bridge === undefined) return directory ? t('attachment.directoryDesktopOnly') : false
+        const path = bridge.pathFor(file)
+        if (path === '') return directory ? t('attachment.directoryDesktopOnly') : false
+        if (!directory && isImageMediaType(file.type)) return false
+        const mention = formatFileMention({ path, kind: directory ? 'directory' : 'file' }, false)
+        if (mention === undefined) return t('attachment.pathUnsupported')
+        const label = workspaceTitleOf(path) || file.name
+        const selection = shell.caretSpan()
+        shell.insertReference({
+          source: 'reference',
+          ref: mention,
+          label: directory ? `${label}/` : label,
+          appearance: directory ? 'folder' : 'file',
+          clipboardText: mention,
+        }, { ...selection, draftRev: shell.snapshot.draftRev })
+        return true
+      }
       return {
         keyboard: shell,
-        addFiles: (files) => {
+        addFiles: (files, directories = new Set()) => {
           if (sessions.binding(sessionId) === undefined) return t('file.sessionUnavailable')
+          const uploads: File[] = []
+          for (const file of files) {
+            const cited = cite(file, directories.has(file))
+            if (typeof cited === 'string') return cited
+            if (!cited) uploads.push(file)
+          }
           try {
-            const drafts = conversation.createDrafts(sessionId, files)
+            const drafts = conversation.createDrafts(sessionId, uploads)
             if (!shell.addAttachments(drafts.map(draft => draft.id))) {
               conversation.releaseDraftAttachments(drafts)
             }
