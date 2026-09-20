@@ -42,7 +42,7 @@ const READY: AgentPresetSectionState = {
  */
 function renderSection(
   state: Partial<AgentPresetSectionState> = {},
-  options: { creator?: boolean } = {},
+  options: { creator?: boolean; developerTools?: boolean } = {},
 ) {
   const store = createSnapshotStore<AgentPresetSectionState>({ ...READY, ...state })
   const actions = {
@@ -66,6 +66,7 @@ function renderSection(
   const props = {
     ...actions,
     useAgentPresetSection: bindSnapshotSelector(store),
+    useDeveloperTools: bindSnapshotSelector(createSnapshotStore(options.developerTools ?? true)),
     t: (key: keyof typeof en) => en[key],
   } as unknown as AgentPresetSectionProps
   render(<AgentPresetSection {...props} />)
@@ -82,6 +83,13 @@ function rowFor(id: string): HTMLElement {
 }
 
 describe('the preset list', () => {
+  it('hides the complete picker-policy row while developer tools are off', () => {
+    renderSection({}, { developerTools: false })
+    expect(screen.queryByRole('switch', { name: en.showPicker })).toBeNull()
+    expect(screen.queryByText(en.showPickerDescription)).toBeNull()
+    expect(screen.queryByText(en.showPickerBeta)).toBeNull()
+  })
+
   it('reads the roster once when it first renders', async () => {
     const actions = renderSection()
 
@@ -349,6 +357,7 @@ describe('the preset list', () => {
 
   it('renders nothing when the deployment composes no presets', () => {
     const { container } = render(<AgentPresetSection {...({
+      useDeveloperTools: bindSnapshotSelector(createSnapshotStore(true)),
       useAgentPresetSection: bindSnapshotSelector(
         createSnapshotStore<AgentPresetSectionState>({ ...READY, status: 'unavailable', rows: [] })),
       t: (key: keyof typeof en) => en[key],

@@ -3,6 +3,9 @@ import type { ViewTab } from './contract/views.ts'
 /** Chat remains available when developer tools are disabled. */
 export const DEFAULT_VIEW_ID = 'chat'
 
+/** The one View the Developer tools preference gates; other Views stay registered by their owners. */
+export const DEVELOPER_TOOLS_VIEW_ID = 'trajectory'
+
 /**
  * Resolve a preferred registered View, then Chat, without choosing another View.
  * @param tabs - currently registered Views.

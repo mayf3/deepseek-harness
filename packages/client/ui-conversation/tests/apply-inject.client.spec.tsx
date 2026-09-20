@@ -201,20 +201,20 @@ describe('Conversation inject API', () => {
     const unsubscribe = source.subscribe(changed)
     expect(source.getSnapshot()).toBeUndefined()
     const removeDefinition = b.runtime.ctx.uiConversation.views.register({
-      target: 'custom-inspector',
+      target: 'trajectory',
       toolCallFocus: callId => `tool:${callId}`,
       create: () => ({ empty: null, replace: () => null, apply: () => null }),
     })
     expect(source.getSnapshot()).toBeUndefined()
     const removeView = b.slots.register(
-      { name: 'conversation.view', id: 'custom-inspector' }, (() => null) as never,
+      { name: 'conversation.view', id: 'trajectory' }, (() => null) as never,
     )
     await b.runtime.flush()
     const inspect = source.getSnapshot()!
     expect(inspect).toBeTypeOf('function')
     expect(source.getSnapshot()).toBe(inspect)
     inspect('call-1')
-    expect(body.instance.store.getSnapshot().viewRequest).toEqual({ view: 'custom-inspector', focus: 'tool:call-1' })
+    expect(body.instance.store.getSnapshot().viewRequest).toEqual({ view: 'trajectory', focus: 'tool:call-1' })
     await b.runtime.ctx.settingsScope.developerTools.setEnabled(false)
     expect(source.getSnapshot()).toBeUndefined()
     await b.runtime.ctx.settingsScope.developerTools.setEnabled(true)
