@@ -33,11 +33,11 @@ Mount this plugin alongside `ui-conversation` and the commands package; the comp
 
 ### Model and effort
 
-Models stay grouped by provider. The composer menu shows model and effort names only, with DeepSeek Account first; other providers retain their catalog order. The `/model` popup shows provider names and catalog descriptions; it localizes the two built-in DeepSeek descriptions and leaves external provider descriptions verbatim. The popup applies the selected model's default effort; the composer can then choose any advertised effort. An adapter without reasoning metadata leaves the Effort row absent; there is no arbitrary effort input.
+Models stay grouped by provider. The composer menu shows model and effort names only, with DeepSeek Account first and DeepSeek second; third-party providers retain their catalog order. The `/model` popup shows provider names and catalog descriptions; it localizes the two built-in DeepSeek descriptions and leaves external provider descriptions verbatim. The popup applies the selected model's default effort; the composer can then choose any advertised effort. An adapter without reasoning metadata leaves the Effort row absent; there is no arbitrary effort input.
 
 ### Unroutable sessions
 
-The composer blocks sending while the exact provider/model pair is absent from the available catalog or availability is loading or unknown. It keeps the normal input placeholder and an enabled model picker. Sign-out, credential removal, and provider or model removal refresh availability without replacing the saved choice with another model. Existing session logs remain unchanged.
+The composer blocks sending while the exact provider/model pair is absent from the available catalog or availability is loading or unknown. It keeps the normal input placeholder and an enabled model picker. Refreshes and refresh failures retain the last displayed selection and groups while sending remains blocked; retry revalidates availability. A Host reset clears that display. The account provider name follows the active locale in both selectors. Sign-out, credential removal, and provider or model removal refresh availability without replacing the saved choice with another model. Existing session logs remain unchanged.
 
 Only the current Client binding's directory can publish its composer block. Cleanup from an older binding preserves a replacement directory's block; without a replacement directory, cleanup removes the obsolete block.
 

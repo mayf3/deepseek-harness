@@ -360,7 +360,9 @@ describe('Web session model selection', () => {
     await ctx.agentDefaultModel.saveSelection({ provider: 'removed', model: 'removed' })
     await controller.initializeDefaultModel('deepseek-official')
     expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'removed', model: 'removed' })
-    await expect(controller.initializeDefaultModel('empty')).rejects.toThrow('no available models')
+    await expect(controller.initializeDefaultModel('empty')).rejects.toMatchObject({
+      code: 'session/provider-models-unavailable', details: { provider: 'empty' },
+    })
     await ctx.fiber.dispose()
   })
 
@@ -610,6 +612,48 @@ describe('Web session model selection', () => {
     expect(currentSelection(ctx, sessionId))
       .toEqual({ provider: 'deepseek-official', model: 'deepseek-chat', reasoningEffort: 'high' })
     await ctx.fiber.dispose()
+  })
+
+  it.each([1, 2])('reports catalog errors as model-unavailable at prompt check %s', async (check) => {
+    const { ctx, sessionId, agent } = await harness()
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const remote = createSessionTestRemote(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+    const list = vi.spyOn(ctx.llm, 'listModels')
+    if (check === 2) list.mockResolvedValueOnce([{ provider: 'deepseek-official', id: 'deepseek-chat', name: 'Chat' }])
+    list.mockRejectedValueOnce(new Error('credential storage offline'))
+    try {
+      expect(await remote.prompt(promptRequest({
+        sessionId, mode: 'queue', content: [{ type: 'text', text: 'hello' }],
+      }))).toMatchObject({ ok: false, error: {
+        code: 'session/model-unavailable', message: 'credential storage offline',
+        details: { provider: 'deepseek-official', model: 'deepseek-chat' },
+      } })
+      expect(list).toHaveBeenCalledTimes(check)
+      expect(followup).not.toHaveBeenCalled()
+    } finally {
+      list.mockRestore()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('leaves uncatalogued adapters usable by core callers but unavailable to GUI selection', async () => {
+    const { ctx, sessionId } = await harness()
+    ctx.llm.registerAdapter(['uncatalogued'], new class extends LlmAdapter {
+      override async *stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {}
+    }())
+    try {
+      await expect(ctx.llm.resolveModelInfo('uncatalogued', 'custom-model')).resolves.toMatchObject({ id: 'custom-model' })
+      const remote = createSessionTestRemote(ctx, {
+        defaultModelSelection: () => ({ provider: 'uncatalogued', model: 'custom-model' }), cwd: '/tmp',
+      })
+      expect(await remote.selectModel({ sessionId, provider: 'uncatalogued', model: 'custom-model' }))
+        .toMatchObject({ ok: false, error: { code: 'session/model-unavailable' } })
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('refuses a prompt no adapter can route, and reports it on the directory', async () => {

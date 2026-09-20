@@ -847,6 +847,30 @@ describe('hand-declared providers', () => {
     return { ...scripted, onClose }
   }
 
+  it('closes a saved custom provider when default initialization is refused', async () => {
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const { face, mutate, set, onClose } = mountCard()
+    const initialize = vi.spyOn(ctxWith(face).remote.session, 'initializeDefaultModel')
+      .mockResolvedValue({ ok: false, error: new RemoteError('session/provider-models-unavailable',
+        'empty catalog', { provider: 'acme-gateway' }) })
+    try {
+      fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme-gateway' } })
+      fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://gateway.example/v1' } })
+      fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'test-key' } })
+      fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+      fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'model' } })
+      fireEvent.click(screen.getByText(en.create))
+      await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+      expect(mutate).toHaveBeenCalledOnce()
+      expect(set).toHaveBeenCalledOnce()
+      expect(initialize).toHaveBeenCalledExactlyOnceWith('acme-gateway')
+      expect(screen.queryByText('empty catalog')).toBeNull()
+    } finally {
+      initialize.mockRestore()
+      log.mockRestore()
+    }
+  })
+
   it('writes the whole profile and the key under the derived reference', async () => {
     const { mutate, set, onClose } = mountCard()
 

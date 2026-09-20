@@ -51,14 +51,14 @@ it('starts sign-in and disables cancellation during persistence', async () => {
   expect(screen.queryByRole('button', { name: en.signIn })).toBeNull()
 })
 
-it.each([en, zh].flatMap(copy => [false, true].map(running => ({ copy, running }))))('confirms sidebar sign-out with task impact $running', async ({ copy, running }) => {
+it.each([en, zh].flatMap(copy => ([false, true, 'unknown'] as const).map(running => ({ copy, running }))))('confirms sidebar sign-out with task impact $running', async ({ copy, running }) => {
   const signOut = vi.fn(() => Promise.resolve())
   const openSettings = vi.fn()
   const operations = mount({ status: 'credential-stored', attempt: null }, copy)
   cleanup()
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
   render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} signOut={signOut}
-    hasRunningAccountTasks={async () => running}
+    hasRunningAccountTasks={async () => { if (running === 'unknown') throw new Error('offline'); return running }}
     useAccount={selector => selector(operations.hooks.account.getSnapshot())} wide openOnboarding={() => {}} openSettings={openSettings}
     t={key => key in copy ? copy[key as AccountKey] : key} />)
   fireEvent.click(screen.getByRole('button', { name: copy.menu }))
@@ -73,7 +73,7 @@ it.each([en, zh].flatMap(copy => [false, true].map(running => ({ copy, running }
   fireEvent.click(screen.getByRole('button', { name: copy.menu }))
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: copy.signOut })) })
   expect(signOut).not.toHaveBeenCalled()
-  expect(screen.getByText(running ? copy.signOutRunningDescription : copy.signOutDescription)).toBeTruthy()
+  expect(screen.getByText(running === 'unknown' ? copy.signOutUnknownDescription : running ? copy.signOutRunningDescription : copy.signOutDescription)).toBeTruthy()
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.signOut })) })
   expect(signOut).toHaveBeenCalledOnce()
   expect(screen.queryByRole('menu')).toBeNull()

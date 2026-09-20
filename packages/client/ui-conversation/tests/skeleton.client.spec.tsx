@@ -424,15 +424,14 @@ describe('ConversationRoot resident composer', () => {
     expect(dispatchCount()).toBe(before)
   })
 
-  it('renders the composer inert with the blocker\u2019s own reason', () => {
+  it('keeps the normal placeholder while model availability blocks sending', () => {
     const b = mount(sessionSnapshotOf(), undefined, undefined, {
       composerBlock: { reason: 'select a model first' },
     })
     const box = b.view.getByRole('textbox')
-    // One disabled composer with the blocker's placeholder, never a second
-    // tree: the DOM survives the block being raised and cleared.
+    // Blocking keeps the mounted composer and its normal placeholder.
     expect(box.getAttribute('aria-disabled')).toBe('true')
-    expect(box.getAttribute('data-placeholder')).toBe('select a model first')
+    expect(box.getAttribute('data-placeholder')).toBe(zh['placeholder.default'])
     fireEvent.keyDown(box, { key: 'Enter' })
     expect(b.sink).not.toHaveBeenCalled()
 

@@ -27,12 +27,12 @@ export function AccountMenu({
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
-  const [signOutImpact, setSignOutImpact] = useState<boolean>()
+  const [signOutImpact, setSignOutImpact] = useState<boolean | 'unknown'>()
   const requestSignOut = async () => {
     setBusy(true)
     setFailed(false)
     try { setSignOutImpact(await hasRunningAccountTasks()); setOpen(false) }
-    catch { setFailed(true) }
+    catch (_error) { setSignOutImpact('unknown'); setOpen(false) }
     finally { setBusy(false) }
   }
   return <div className={css.root}>

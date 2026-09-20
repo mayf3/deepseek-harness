@@ -1398,7 +1398,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async listModels(provider: string): Promise<LlmModelInfo[]>',
-        description: 'Discover models advertised by one registered provider. Catalog membership is advisory and never changes routing or request validation.',
+        description: 'Discover models advertised by one registered provider. Catalog membership does not constrain core routing. Catalog-driven entry points may restrict selection and submission to the advertised models.',
         parameters: [{ name: 'provider', description: 'registered provider route to inspect.' }],
         returns: 'detached model metadata in adapter-preferred order.',
       },

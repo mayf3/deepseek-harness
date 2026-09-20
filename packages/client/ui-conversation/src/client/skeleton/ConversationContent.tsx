@@ -150,7 +150,7 @@ export function ConversationContent(props: ConversationContentProps) {
         // `blocked`, not `disabled`: the bar refuses input either way, but a
         // block keeps the model seat live because choosing a model is how the
         // user clears it.
-        ? { blocked: composerBlock, ...(hero ? { placeholder: t('placeholder.hero') } : {}) }
+        ? { blocked: composerBlock, placeholder: t(hero ? 'placeholder.hero' : 'placeholder.default') }
         : hero ? { placeholder: t('placeholder.hero') } : {}),
   })
 

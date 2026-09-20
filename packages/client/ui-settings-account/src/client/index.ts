@@ -72,19 +72,19 @@ export function apply(ctx: Context): void {
     for await (const frame of stream) {
       revision++
       refreshing = undefined
-      let initializationFailed = false
-      if (frame.value.status === 'credential-stored' && frame.value.attempt?.phase === 'succeeded'
-        && snapshot.view?.attempt?.phase !== 'succeeded') {
-        try {
-          const initialized = await ctx.remote.session.initializeDefaultModel('deepseek-account')
-          initializationFailed = !initialized.ok
-        } catch (_error) {
-          initializationFailed = true
-        }
-      }
-      publish({ ...snapshot, view: frame.value, details: undefined, failed: initializationFailed })
+      const initialize = frame.value.status === 'credential-stored' && frame.value.attempt?.phase === 'succeeded'
+        && snapshot.view?.attempt?.phase !== 'succeeded'
+      publish({ ...snapshot, view: frame.value, details: undefined, failed: false })
       browser.update(frame.value)
       frame.accept()
+      if (initialize) void (async () => {
+        try {
+          const initialized = await ctx.remote.session.initializeDefaultModel('deepseek-account')
+          if (!initialized.ok) console.info('[deepseek-account] default model initialization failed', { reason: 'refused' })
+        } catch (_error) {
+          console.info('[deepseek-account] default model initialization failed', { reason: 'disconnected' })
+        }
+      })()
       void refresh()
     }
   })().catch(() => { if (!stream.signal.aborted) publish({ ...snapshot, failed: true }) })

@@ -34,7 +34,7 @@ The sidebar account menu uses the shared Menu surface, backdrop blur, spacing, a
 
 The account card’s More account information link opens `https://platform.deepseek.com` in the system browser on Desktop or a new tab on Web.
 
-Sign out first queries running account-token tasks and opens a confirmation dialog. The warning describes interruption when such tasks exist; otherwise it explains that data is retained and the account can be signed in again. Cancel, close, and Escape dismiss without signing out. Failed queries keep the menu available; failed sign-out keeps the dialog available for retry.
+Sign out first queries running account-token tasks and opens a confirmation dialog. The warning describes interruption when such tasks exist; otherwise it explains that data is retained and the account can be signed in again. Cancel, close, and Escape dismiss without signing out. Failed impact queries still open confirmation with an explicit unknown-task warning; failed sign-out keeps the dialog available for retry.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -74,3 +74,5 @@ No model request prefix changes.
 The [desktop login decision](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.md) records cancellation and storage ownership.
 
 Usage and top-up show a centered 24px loading indicator without visible loading text until the native document loads; the return action remains available. The loading SVG is embedded locally from Figma node 2957:72553.
+
+Default-model initialization runs after publishing and accepting the sign-in frame, without delaying subsequent account frames. Failures are recorded in diagnostics and do not mark the signed-in account as failed.

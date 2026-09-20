@@ -73,16 +73,19 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
   const projections = new Map<SessionId, SnapshotStore<ModelSelectionProjection | undefined>>()
   // Whether the Host advertises available models for the current route.
   let routable = true
+  let catalogFailure = false
+  let groups = GROUPS
   let selectionFailure: RemoteError<'session/writer-held'> | undefined
   const sessionRemote = {
     modelCatalog: () => {
       calls.models += 1
+      if (catalogFailure) return Promise.reject(new Error('catalog offline'))
       return Promise.resolve({
         ok: true as const,
         value: {
           default: defaultSelection,
           routableProviders: routable ? ['deepseek-official'] : [],
-          groups: routable ? GROUPS : [],
+          groups: routable ? groups : [],
           failures: [],
         },
       })
@@ -185,6 +188,8 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
     setHostCurrent: (selection: ModelSelection) => { defaultSelection = selection },
     setProjected: (id: SessionId, value: ModelSelectionProjection) => { projections.get(id)?.set(value) },
     address: (id: SessionId) => { addressed.add(id) },
+    setGroups: (next: typeof GROUPS) => { groups = next },
+    setCatalogFailure: (next: boolean) => { catalogFailure = next },
     setRoutable: (next: boolean) => { routable = next },
     blockOf: (key: string) => blocks.get(sid(key)),
   }
@@ -280,6 +285,19 @@ describe('ui-model-selection dual entry', () => {
     })
   })
 
+  it.each(['en', 'zh'] as const)('localizes account provider details in the %s model popup', async (locale) => {
+    const b = await bench(locale)
+    try {
+      b.setGroups([{ ...GROUPS[0]!, id: 'deepseek-account', name: 'DeepSeek Account' }])
+      b.remote.emit('llm/adapters-updated', [])
+      b.mint('s1')
+      const options = await b.popup().options(projection('s1'), new AbortController().signal)
+      expect(options[0]?.detail).toContain(locale === 'zh' ? 'DeepSeek 账号' : 'DeepSeek Account')
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
+  })
+
   it('both entries share one directory instance per session, isolated across sessions', async () => {
     const b = await bench()
     b.mint('a')
@@ -330,7 +348,9 @@ describe('ui-model-selection dual entry', () => {
       next: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
     })
     expect(face.directory.getSnapshot()).toMatchObject({
-      current: null,
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      groups: GROUPS,
+      routable: null,
       status: 'loading',
     })
 
@@ -340,6 +360,30 @@ describe('ui-model-selection dual entry', () => {
         status: 'ready',
       })
     })
+  })
+
+  it('retains the last catalog on refresh failure, blocks sending, and recovers on retry', async () => {
+    const b = await bench()
+    try {
+      b.mint('s1')
+      const face = b.seat().inject!(sid('s1'))
+      await b.ctx.modelDirectories.directoryFor(sid('s1')).load()
+      b.setCatalogFailure(true)
+      b.remote.emit('credentials/record-updated', ['DEEPSEEK_API_KEY'])
+      await vi.waitFor(() => {
+        expect(face.directory.getSnapshot()).toMatchObject({
+          current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+          groups: GROUPS, routable: null, status: 'error', error: 'catalog offline',
+        })
+      })
+      expect(b.blockOf('s1')).toBeDefined()
+      b.setCatalogFailure(false)
+      await b.ctx.modelDirectories.directoryFor(sid('s1')).load()
+      expect(face.directory.getSnapshot().routable).toBe(true)
+      expect(b.blockOf('s1')).toBeUndefined()
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
   })
 
   it('scope disposal drops the directory; a reborn scope gets a fresh one', async () => {

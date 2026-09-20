@@ -76,7 +76,8 @@ export function ModelSelect(
   const id = useId()
 
   const groups = useMemo(() => state.groups.toSorted((left, right) =>
-    Number(right.id === 'deepseek-account') - Number(left.id === 'deepseek-account')), [state.groups])
+    (left.id === 'deepseek-account' ? 0 : left.id === 'deepseek-official' ? 1 : 2)
+      - (right.id === 'deepseek-account' ? 0 : right.id === 'deepseek-official' ? 1 : 2)), [state.groups])
   const choices = useMemo(() => groups.flatMap(group =>
     group.models.map(model => ({
       group,
@@ -407,7 +408,7 @@ export function ModelSelect(
               )}
               {state.failures.map(failure => (
                 <div className={css.warning} key={failure.id}>
-                  <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
+                  <span>{t('warning.groupLoad', { name: failure.id === 'deepseek-account' ? t('provider.account') : failure.name, message: failure.message })}</span>
                   <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
                 </div>
               ))}
@@ -416,7 +417,7 @@ export function ModelSelect(
                   const headingId = `${id}-${group.id}`
                   return (
                     <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
-                      <div className={css.groupTitle} id={headingId}>{group.name}</div>
+                      <div className={css.groupTitle} id={headingId}>{group.id === 'deepseek-account' ? t('provider.account') : group.name}</div>
                       {group.models.map((model) => {
                         const selected = state.current?.provider === group.id && state.current.model === model.id
                         return (

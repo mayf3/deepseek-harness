@@ -6,7 +6,7 @@ import css from './SignInDialog.module.css'
 
 /** @param props - task impact at opening, localized copy, and account actions. @returns sign-out confirmation. */
 export function SignOutDialog({ running, signOut, close, t }: {
-  running: boolean
+  running: boolean | 'unknown'
   signOut: () => Promise<void>
   close: () => void
   t: (key: AccountKey) => string
@@ -29,7 +29,7 @@ export function SignOutDialog({ running, signOut, close, t }: {
           <IconCloseOutlineRegular size={14} />
         </button>
       </div>
-      <p className={css.description}>{t(running ? 'signOutRunningDescription' : 'signOutDescription')}</p>
+      <p className={css.description}>{t(running === 'unknown' ? 'signOutUnknownDescription' : running ? 'signOutRunningDescription' : 'signOutDescription')}</p>
       {failed && <p className={css.description} role="alert">{t('failed')}</p>}
     </div>
     <div className={css.actions}>

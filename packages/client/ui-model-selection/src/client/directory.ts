@@ -15,7 +15,7 @@ import type { ModelCatalogDirectory } from './catalog.ts'
 
 /** Directory snapshot both entries render from. */
 export interface ModelDirectoryState {
-  /** Available durable selection, or the available default for an unselected Session. */
+  /** Last catalog-confirmed selection, retained for display during same-Host refreshes. */
   current: ModelSelection | null
   /** Saved effort caption retained when the selected model is unavailable. */
   retainedEffort?: string
@@ -145,11 +145,11 @@ export class ModelDirectory {
       : reasoning?.efforts.find(level => level.id === effort)?.name ?? effort
     if (catalog.status !== 'ready' || catalog.value === null || projected === undefined) {
       this.store.set({
-        current: null,
+        current: catalog.value === null ? null : this.store.getSnapshot().current,
         ...retainedEffort === undefined ? {} : { retainedEffort },
         routable: null,
-        groups: [],
-        failures: [],
+        groups: catalog.value?.groups ?? [],
+        failures: catalog.value?.failures ?? [],
         status: catalog.status === 'error' ? 'error' : 'loading',
         error: catalog.error,
       })

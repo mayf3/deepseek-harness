@@ -279,7 +279,8 @@ export class SessionController extends TypertRemoteService {
   async initializeDefaultModel(provider: string): Promise<void> {
     const catalog = await buildModelCatalog(this.ctx)
     const model = catalog.groups.find(group => group.id === provider)?.models[0]
-    if (model === undefined) throw new Error(`provider "${provider}" has no available models`)
+    if (model === undefined) throw new RemoteError('session/provider-models-unavailable',
+      `provider "${provider}" has no available models`, { provider })
     await this.ctx.agentDefaultModel.initializeSelection({ provider, model: model.id,
       ...model.reasoning?.defaultEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(model.reasoning.defaultEffort) },
     })

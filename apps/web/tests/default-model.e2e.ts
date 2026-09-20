@@ -132,10 +132,8 @@ describe('web e2e: the composer model switch is the default for later sessions',
     const box = page.locator('[data-composer-input]').first()
     await expect.poll(async () => box.isEnabled(), { timeout: 10_000 }).toBe(true)
 
-    // What removing the provider on the Models page leaves behind: the saved
-    // default still names the route, and nothing serves it any more.
-    // `replace`, not `update`: a merge patch of `{providers: {}}` leaves every
-    // stored profile in place.
+    // Removing the selected provider preserves the other route and the saved
+    // selection. A merge update would retain the removed profile.
     await scaffold.ctx.settings.replace('llm-pi-ai', { providers: {
       [START_ROUTE]: { displayName: 'Origin Gateway', api: 'openai-completions',
         baseURL: 'https://gateway.origin.example/v1', models: [{ id: START_MODEL, name: 'Origin Large' }] },
