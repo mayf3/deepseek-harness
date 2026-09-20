@@ -173,6 +173,15 @@ class FeedService extends TypertRemoteService {
     for await (const item of this.invocation().uplink<string>()) yield item
   }
 
+  /** Reads the uplink to its end and then again: an ended uplink reports done on every later read. */
+  @Remote({ mode: 'stream' })
+  async *rereads(): RemoteStream<string, string> {
+    const uplink = this.invocation().uplink<string>()
+    for await (const item of uplink) yield item
+    for await (const item of uplink) yield `again:${item}`
+    yield 'done'
+  }
+
   /** Reports the call context; its descriptor declares no uplink codec, so items arrive as `unknown`. */
   @Remote({ mode: 'stream' })
   async *context(label: string): RemoteStream<string> {
@@ -481,6 +490,13 @@ describe('Typert Remote streams', () => {
     const iterator = source[Symbol.asyncIterator]()
     await expect(iterator.next()).resolves.toEqual({ done: false, value: 'ready' })
     await expect(iterator.return?.()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('reports done on every read after the uplink ended', async () => {
+    const { ctx } = await setup(false)
+    await expect(collect(await ctx.typertGateway.stream({
+      namespace: 'feed', method: 'rereads', args: {}, uplink: toAsync(['a', 'b']),
+    }))).resolves.toEqual(['a', 'b', 'done'])
   })
 
   it('releases the uplink when a unary method is opened through the stream carrier', async () => {
@@ -1319,6 +1335,7 @@ function descriptors(): InvocationDescriptor[] {
     withUplink('hold', []),
     withUplink('peek', []),
     withUplink('drain', [], false),
+    withUplink('rereads', [], false),
     stream('context', [label], z.string()),
     { ...stream('follow', [label], z.string()), cancellation: { parameter: 'signal' } },
     stream('sync', [label], z.string()),

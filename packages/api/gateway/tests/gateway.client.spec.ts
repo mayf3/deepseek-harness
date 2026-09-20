@@ -2626,6 +2626,63 @@ describe('Client Typert API', () => {
     })
   })
 
+  it('ignores server frames for a stream it no longer tracks', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const alpha = ctx.remote.probe.attach('alpha')
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(1) })
+        const alphaId = (JSON.parse(socket.sent[0]!) as { streamId: string }).streamId
+        const beta = ctx.remote.probe.attach('beta')
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(2) })
+        const betaId = (JSON.parse(socket.sent[1]!) as { streamId: string }).streamId
+        alpha.dispose()
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(3) })
+        // The Host's end for alpha crosses the cancel on the wire, so no stream owns that id any more; a
+        // never-opened id is just as unknown. Neither frame disturbs beta or the socket.
+        socket.receive({ type: 'end', streamId: alphaId })
+        socket.receive({ type: 'item', streamId: 'never-opened', value: 'stray' })
+        socket.receive({ type: 'item', streamId: betaId, value: 'beta:1' })
+        socket.receive({ type: 'end', streamId: betaId })
+        await expect(drainStream(beta)).resolves.toEqual(['beta:1'])
+        expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'open', 'cancel'])
+        expect(socket.closedWith).toEqual([])
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
+
+  it('swallows a carrier iterator whose return() rejects on dispose', async () => {
+    // One item, then silence: dispose reaches the carrier's return() while the stream is suspended at that item.
+    const next = vi.fn<() => Promise<IteratorResult<unknown>>>()
+      .mockResolvedValueOnce({ value: 'alpha:1', done: false })
+      .mockReturnValue(new Promise<IteratorResult<unknown>>(() => {}))
+    const returned = vi.fn<() => Promise<IteratorResult<unknown>>>()
+      .mockRejectedValueOnce(new Error('carrier return failed'))
+      .mockResolvedValue({ value: undefined, done: true })
+    const open: NonNullable<ConnectionHandle['rpc']['open']> = () => ({
+      [Symbol.asyncIterator]: () => ({ next, return: returned }),
+    })
+    const { ctx, client } = await benchFiber(vi.fn<ConnectionHandle['rpc']['call']>(), 'in-process', open)
+    const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+    try {
+      const handle = ctx.remote.probe.attach('alpha')
+      const iterator = handle[Symbol.asyncIterator]()
+      await expect(iterator.next()).resolves.toEqual({ done: false, value: 'alpha:1' })
+      handle.dispose()
+      await vi.waitFor(() => { expect(returned).toHaveBeenCalledOnce() })
+      // The rejection is swallowed (an unhandled rejection would fail this test) and the iteration ends quietly.
+      await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
+    } finally {
+      await dispose()
+      await client.dispose()
+    }
+  })
+
   it('refuses an uplink item that is not a lossless JSON value', async () => {
     const mock = RemoteMock.create().stream('probe/attach', async (args, stream) => {
       const [{ topic }] = args as [{ readonly topic: string }]
@@ -2635,9 +2692,10 @@ describe('Client Typert API', () => {
     const { ctx, client } = await benchFiber(vi.fn<ConnectionHandle['rpc']['call']>(), 'in-process', mock.rpc.open)
     const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
     try {
-      const handle = ctx.remote.probe.attach('alpha')
-      expect(() => { handle.send(1n as unknown as string) }).toThrow('client api: probe/attach uplink item is not a lossless JSON value')
-      expect(() => { handle.send(Number.NaN as unknown as string) }).toThrow('is not a lossless JSON value')
+      // Widened to the loosest caller `send` accepts: the check is on the value, not on the generated type.
+      const handle: RemoteStreamHandle<string, unknown> = ctx.remote.probe.attach('alpha')
+      expect(() => { handle.send(1n) }).toThrow('client api: probe/attach uplink item is not a lossless JSON value')
+      expect(() => { handle.send(Number.NaN) }).toThrow('is not a lossless JSON value')
       handle.send('ok')
       handle.end()
       await expect(drainStream(handle)).resolves.toEqual(['alpha:ok'])

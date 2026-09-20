@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { RemoteMock, ok, openStream, type MockClientStream } from '../src/index.ts'
 
 const idle = (): AbortSignal => new AbortController().signal
+const drain = async (source: AsyncIterable<unknown>): Promise<unknown[]> => {
+  const items: unknown[] = []
+  for await (const item of source) items.push(item)
+  return items
+}
 
 describe('RemoteMock.rpc', () => {
   it('calls and opens by endpoint, taking the proxies\' positional args or the Gateway\'s single object', async () => {
@@ -23,11 +28,6 @@ describe('RemoteMock.rpc', () => {
       for await (const item of stream.uplink) stream.push(`${String(args[0])}:${String(item)}`)
       stream.end()
     })
-    const drain = async (source: AsyncIterable<unknown>): Promise<unknown[]> => {
-      const items: unknown[] = []
-      for await (const item of source) items.push(item)
-      return items
-    }
     const uplink = (values: readonly string[]): AsyncIterable<string> => (async function *() { yield* values })()
 
     await expect(drain(mock.rpc.open!('/api', 'job/attach', { args: ['job-1'] }, idle(), uplink(['a', 'b']))))
@@ -48,6 +48,22 @@ describe('RemoteMock.rpc', () => {
     const carried = mock.open('job/attach', ['job-5'], idle(), uplink([])) as MockClientStream
     expect(() => { carried.send('x') }).toThrow('remote-mock: job/attach uplink belongs to the carrier that opened the stream')
     await expect(drain(carried)).resolves.toEqual([])
+  })
+
+  it('queues items sent before the script reads and drops the rest once it stops reading', async () => {
+    const mock = RemoteMock.create().stream('job/attach', async (args, stream) => {
+      await Promise.resolve()
+      for await (const item of stream.uplink) {
+        stream.push(`${String(args[0])}:${String(item)}`)
+        break
+      }
+      stream.end()
+    })
+    const direct = mock.open('job/attach', ['job-6'], idle()) as MockClientStream
+    direct.send('first')
+    direct.send('second')
+    await expect(drain(direct)).resolves.toEqual(['job-6:first'])
+    expect(() => { direct.send('late') }).toThrow('remote-mock: uplink was ended')
   })
 
   it('rejects malformed payloads and unmatched endpoints, logging the miss', async () => {
