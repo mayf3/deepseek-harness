@@ -53,7 +53,7 @@ $root.DeleteSubKeyTree('Software\\Classes\\Applications\\${appName}', $false)
   await writeFile(path, 'test')
   // A dedicated executable accepts the file directly; no pre-existing Node association can discard fixture-script arguments.
   await runScript(`$ErrorActionPreference = 'Stop'
-Add-Type -ReferencedAssemblies System -OutputAssembly ${literal(executable)} -OutputType ConsoleApplication -TypeDefinition @'
+Add-Type -ReferencedAssemblies System -OutputAssembly (${literal(executable)}) -OutputType ConsoleApplication -TypeDefinition @'
 using System;
 using System.IO;
 using System.Diagnostics;
