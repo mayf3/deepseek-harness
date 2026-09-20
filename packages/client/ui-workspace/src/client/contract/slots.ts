@@ -299,7 +299,7 @@ export interface RenameSessionInjected {
 }
 
 /** A Session rename the rename action asked for; the dialog entry opens on it. */
-export interface SessionRenameRequest {
+export interface SessionRenameTarget {
   /** Session to rename. */
   sessionId: SessionId
   /** Title the dialog seeds its draft from. */
@@ -310,7 +310,7 @@ export interface SessionRenameRequest {
 export interface SessionRenameDialogInjected {
   hooks: {
     /** The rename asked for, until the dialog consumes or cancels it. */
-    renameRequest: HostObservable<SessionRenameRequest | null>
+    renameRequest: HostObservable<SessionRenameTarget | null>
   }
   /** Consume or cancel the pending request. */
   settleSessionRename: () => void

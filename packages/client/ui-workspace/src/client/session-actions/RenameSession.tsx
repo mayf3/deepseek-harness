@@ -7,7 +7,7 @@
 import { useRef, useState } from 'react'
 import { Button, IconEditOutlineRegular, MenuItemButton, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  RenameSessionInjected, SessionMenuItemProps, SessionRenameDialogInjected, SessionRenameDialogProps, SessionRenameRequest,
+  RenameSessionInjected, SessionMenuItemProps, SessionRenameDialogInjected, SessionRenameDialogProps, SessionRenameTarget,
 } from '../contract/slots.ts'
 import css from '../rows/WorkspaceBrowser.module.css'
 
@@ -58,7 +58,7 @@ export function SessionRenameDialog({ useRenameRequest, settleSessionRename, ren
 
 /** One request's dialog: the draft seeds from the request on mount; in-flight and error state die with it. */
 function RenameForm({ request, renameSession, onSettle, t }: {
-  request: SessionRenameRequest
+  request: SessionRenameTarget
   renameSession: SessionRenameDialogInjected['renameSession']
   onSettle: () => void
   t: SessionRenameDialogProps['t']

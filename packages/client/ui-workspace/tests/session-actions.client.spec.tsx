@@ -19,7 +19,7 @@ import type { GlobalStandardProps, PropsLocale, PropsRuntime } from '@deepseek-a
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type {
-  MenuOpenState, RowToast, RowToastState, SessionRenameDialogInjected, SessionRenameRequest,
+  MenuOpenState, RowToast, RowToastState, SessionRenameDialogInjected, SessionRenameTarget,
 } from '../src/client/contract/slots.ts'
 import { ArchiveSessionMenuItem, ArchiveSessionRowButton } from '../src/client/session-actions/ArchiveSession.tsx'
 import { ForkSessionMenuItem } from '../src/client/session-actions/ForkSession.tsx'
@@ -246,7 +246,7 @@ describe('fork and rename rows', () => {
 describe('SessionRenameDialog', () => {
   /** The dialog over a test-owned request source; settling clears the request the way apply does. */
   function renameDialog(renameSession: SessionRenameDialogInjected['renameSession']) {
-    const request = createSnapshotStore<SessionRenameRequest | null>(null)
+    const request = createSnapshotStore<SessionRenameTarget | null>(null)
     const settleSessionRename = vi.fn(() => { request.set(null) })
     render(
       <SessionRenameDialog
