@@ -29,15 +29,13 @@ function bench(over: {
   cwd?: string
   launch?: (appId: string, path: string) => Promise<void>
 } = {}): Bench {
-  const state = {
+  const state: SessionListState = {
     ids: [SESSION],
-    byId: over.cwd === undefined ? {} : { [SESSION]: { cwd: over.cwd } },
-    current: SESSION,
+    byId: over.cwd === undefined ? {} : { [SESSION]: { id: SESSION, displayTitle: 'Workspace', cwd: over.cwd, running: false, retainedBy: {}, blank: false, updatedAt: 0 } },
     phase: 'ready',
     projectionsBySession: {},
     jobsBySession: {},
-    currentAddress: undefined,
-  } as SessionListState
+  }
   const apps = createSnapshotStore<readonly string[] | null>(over.apps ?? null)
   const choice = createSnapshotStore<string>(over.choice ?? '')
   const launch = vi.fn(over.launch ?? (async () => {}))

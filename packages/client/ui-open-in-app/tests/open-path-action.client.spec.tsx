@@ -195,7 +195,7 @@ it('keeps reveal last and makes it the default when the file query fails', async
   expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'reveal', undefined)
 })
 
-it.each([[], [{ id: '/Player.app', name: 'Player', default: false, icon: null }]])('uses reveal as the default after the available applications when none is default', async (apps) => {
+it.each([{ apps: [] }, { apps: [{ id: '/Player.app', name: 'Player', default: false, icon: null }] }])('uses reveal as the default after the available applications when none is default', async ({ apps }) => {
   const b = bench()
   render(<OpenPathAction {...b.props} applications={async () => apps} />)
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.more'] })) })
