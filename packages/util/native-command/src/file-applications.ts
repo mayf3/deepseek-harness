@@ -107,6 +107,7 @@ async function desktopTarget(
   const platform = internals.platform ?? process.platform
   if (platform === 'linux' && nativeFileManager(internals) === 'explorer') {
     const translated = await (internals.run ?? runNativeCommand)('wslpath', ['-w', path], signal)
+    signal.throwIfAborted()
     const windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
     if (windowsPath === '') throw new Error('wslpath returned no Windows path')
     return { platform: 'win32', path: windowsPath }

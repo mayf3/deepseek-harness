@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { desktopApplicationIcon } from '../src/desktop-entry.ts'
 import { nativeFileApplications, openNativeFileApplication } from '../src/file-applications.ts'
 import type { NativeCommandRunner } from '../src/runner.ts'
 
@@ -48,4 +49,16 @@ it('rejects missing content-type metadata instead of fabricating associations', 
   const { facts, run } = await fixture()
   run.mockResolvedValue({ stdout: 'no content type', stderr: '' })
   await expect(nativeFileApplications('/file.mp3', new AbortController().signal, facts)).rejects.toThrow('content type')
+})
+
+
+it('tolerates absent desktop roots and directory-shaped icon paths without a locale override', async () => {
+  const { root, facts } = await fixture()
+  const icon = join(root, 'folder.png')
+  await mkdir(icon)
+  expect(await desktopApplicationIcon(icon, [])).toBeNull()
+  const apps = await nativeFileApplications('/file.mp3', new AbortController().signal, {
+    ...facts, env: { XDG_DATA_HOME: root, XDG_DATA_DIRS: join(root, 'absent') },
+  })
+  expect(apps[0]?.name).toBe('Player')
 })

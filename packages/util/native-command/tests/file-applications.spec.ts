@@ -73,3 +73,15 @@ it('uses the Windows desktop for WSL paths and rejects an empty translation', as
   const empty = async () => ({ stdout: '', stderr: '' })
   await expect(nativeFileApplications('/a', signal, { ...facts, run: empty })).rejects.toThrow('no Windows path')
 })
+
+
+it('uses production environment and runner defaults for Linux and WSL', async () => {
+  const run = vi.spyOn(runner, 'runNativeCommand').mockImplementation(async command => ({
+    stdout: command === 'gio' ? 'standard::content-type: audio/mpeg'
+      : command === 'env' ? 'No applications found'
+        : command === 'wslpath' ? 'C:\\file.mp3\n' : JSON.stringify([application]), stderr: '',
+  }))
+  onTestFinished(() => { run.mockRestore() })
+  expect(await nativeFileApplications('/file.mp3', signal, { platform: 'linux', osRelease: 'linux' })).toEqual([])
+  expect(await nativeFileApplications('/file.mp3', signal, { platform: 'linux', osRelease: 'microsoft', env: {} })).toEqual([application])
+})

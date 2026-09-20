@@ -77,11 +77,11 @@ describe('OpenInAppAction visibility', () => {
 
   it('shows the remembered choice, falling back to the first available app when it is gone', () => {
     render(<OpenInAppAction {...bench({ apps: ['finder', 'cursor'], choice: 'cursor', cwd: '/w' }).props} />)
-    expect(screen.getByRole('button', { name: zh['path.open'] })).toBeDefined()
+    expect(screen.getByRole('button', { name: zh['path.open'] }).querySelector('img')?.getAttribute('src')).toBe('open-in-app/icon/cursor')
     cleanup()
 
     render(<OpenInAppAction {...bench({ apps: ['finder', 'cursor'], choice: 'vscode', cwd: '/w' }).props} />)
-    expect(screen.getByRole('button', { name: zh['path.open'] })).toBeDefined()
+    expect(screen.getByRole('button', { name: zh['path.open'] }).querySelector('img')?.getAttribute('src')).toBe('open-in-app/icon/finder')
   })
 })
 
