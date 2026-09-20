@@ -33,6 +33,8 @@ The main button shows the remembered application's icon — the real application
 
 In the document preview, the header's "Open ▾" split button opens the previewed file in the Host's default application from its main button, and its menu offers that action and "Show file location" (the file manager's reveal). A file the preview cannot render, whether an unsupported suffix such as video or an archive or a file the reader rejected as non-text or oversized, shows an "Open in default app" button in its empty state where Retry would otherwise stand. Both controls hand the Host the absolute path the file's metadata reports, appear only after the Host answered that a desktop is available, disable only while their own gesture settles, and announce a failed gesture once through a transient toast ("Could not open. Try again." or "Could not show the file location. Try again."); nothing stays on the control afterwards.
 
+The document header shows the default application’s icon when available. Its menu lists the file’s OS-registered applications and marks the default. Choosing an application opens this file once; the main button continues to use the system default. Associations refresh when the file or menu visibility changes; cancelled queries cannot replace another file’s results. A failed query displays a menu message while default opening and reveal remain available. Platform coverage follows [native-command](../../util/native-command/README.md).
+
 -----
 
 <a id="understand-the-implementation"></a>

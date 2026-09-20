@@ -49,6 +49,8 @@ const { stdout, stderr } = await runNativeCommand('osascript', ['-e', script], s
 
 `revealNativePath(path, signal)` 在 Finder 或文件资源管理器中选中文件，包含 WSL 路径转换；在桌面 Linux 上通过 `xdg-open` 打开上层目录。`nativeFileManager()` 标识该操作，供 UI 根据 Host 选择文案；桌面是否可用仍由独立的 `canOpenNativePath()` 检查决定。调用方必须先授权绝对文件路径，再执行操作。平台分派由注入运行器的测试覆盖；原生桌面验证由对应平台负责。 Explorer 接收独立参数中的编码文件 URI。退出码 1 按已转交请求处理；取消、找不到可执行文件和其他退出码仍然报错。该确认不能证明桌面窗口已选中文件。
 
+`nativeFileApplications(path, signal)` 从 macOS LaunchServices 查询文件的关联应用、当前默认应用、本地化名称和 PNG 应用图标。`openNativeFileApplication(path, application, signal)` 在启动指定应用前重新核对关联列表。调用方负责验证本地文件路径。Windows 和 Linux 当前返回空列表；默认打开和文件定位仍由路径打开接口提供。
+
 -----
 
 <a id="understand-the-implementation"></a>

@@ -49,6 +49,8 @@ The `NativeCommandRunner` type is the injectable command boundary for host integ
 
 `revealNativePath(path, signal)` selects the file in Finder or Explorer, including WSL path translation, and opens its parent directory through `xdg-open` on desktop Linux. `nativeFileManager()` identifies that action for Host-derived UI labels; desktop availability remains a separate `canOpenNativePath()` check. Callers must authorize the absolute file path before invoking either operation. Platform dispatch is covered by injected-runner tests; native desktop verification belongs to the corresponding platform. Explorer receives an encoded file URI as a separate argument. Its exit code 1 is accepted as a delegated handoff; cancellation, missing executables, and other exit codes still reject. This acknowledgement does not prove that a desktop window selected the file.
 
+`nativeFileApplications(path, signal)` queries macOS LaunchServices for the file’s registered handlers, current default, localized names, and PNG application icons. `openNativeFileApplication(path, application, signal)` rechecks membership before launching the selected handler. Callers authorize the local file path. Windows and Linux currently return no handlers; default opening and reveal remain available through the path openers.
+
 -----
 
 <a id="understand-the-implementation"></a>
