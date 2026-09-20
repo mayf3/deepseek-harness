@@ -1,6 +1,6 @@
 /** Real Windows Shell discovery and invocation with a private extension and a private executable. */
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi, onTestFinished } from 'vitest'
@@ -96,7 +96,8 @@ $key.SetValue('${extension}', ''); $key.Dispose()
     try { opened = (await readFile(marker, 'utf8')).trim().split(/\r?\n/) } catch (_error) { return false }
     return true
   }, { timeout: task.timeout })
-  expect(opened[0]).toBe(path)
+  // Windows Shell can expand an 8.3 input path to its long spelling.
+  expect(await realpath(opened[0]!)).toBe(await realpath(path))
   const pid = Number(opened[1])
   expect(pid).toBeGreaterThan(0)
   phase = 'wait for fixture exit'
