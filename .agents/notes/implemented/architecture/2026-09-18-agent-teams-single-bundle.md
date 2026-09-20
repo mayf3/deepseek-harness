@@ -30,4 +30,4 @@ Existing profiles that select the removed Web bundle have an upgrade compatibili
 
 ## Verification
 
-The plugin-manager browser test observes the Team controls appear after one switch, reads the roster and task board through Remote, and observes their removal after disabling the bundle. The Team-panel browser test covers task creation; the built headless CLI test covers delegation without a Web server. These scenarios do not cover upgrading a profile that still selects the removed Web bundle.
+The plugin-manager browser test observes the Team controls appear after one switch, reads the roster and task board through Remote, and observes their removal after disabling the bundle. The Team-panel browser test covers the read-only task board; the built headless CLI test covers delegation without a Web server. These scenarios do not cover upgrading a profile that still selects the removed Web bundle.

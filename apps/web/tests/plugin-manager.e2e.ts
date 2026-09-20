@@ -276,8 +276,9 @@ describe('web e2e: plugin manager', () => {
         await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
         await action.waitFor({ timeout: 20_000 })
         await action.getByRole('button', { name: /Agent Team/iu }).click()
-        await action.getByText('还没有共享任务').waitFor()
-        await action.getByText('lead', { exact: true }).waitFor()
+        const teamPanel = teamPage.getByRole('dialog', { name: 'Agent Team', exact: true })
+        await teamPanel.getByText('还没有共享任务').waitFor()
+        await teamPanel.getByText('lead', { exact: true }).waitFor()
         const manifest = JSON.parse(await homeFile('profiles', 'scaffold', 'package.json')) as {
           dsh: { profile: { bundles: string[] } }
         }
