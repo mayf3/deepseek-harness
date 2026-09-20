@@ -447,13 +447,19 @@ describe('ModelSelect keyboard walk', () => {
   })
 })
 
-it('shows the unselected model control without a stale model or effort', async () => {
-  const directory = createSnapshotStore<ModelDirectoryState>(state({ current: null, routable: false }))
+it('shows the unselected model control with the inherited effort', async () => {
+  const directory = createSnapshotStore<ModelDirectoryState>(state({ current: null, routable: false, retainedEffort: 'High' }))
   render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
   const trigger = screen.getByRole('button', { name: '请选择模型' })
   expect(trigger.hasAttribute('disabled')).toBe(false)
   await expect(`${trigger.textContent}\n`).toMatchFileSnapshot('./expected/unselected-model.txt')
-  expect(trigger.textContent).not.toContain('High')
+  expect(trigger.textContent).toContain('High')
+  fireEvent.click(trigger)
+  expect(screen.queryByRole('menuitem', { name: /模型/ })).toBeNull()
+  const model = screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' })
+  expect(document.activeElement).toBe(model)
+  fireEvent.keyDown(model, { key: 'Escape' })
+  expect(screen.queryByRole('menu')).toBeNull()
 })
 
 
@@ -464,7 +470,6 @@ it('places account models first while preserving other provider and model order'
   const directory = createSnapshotStore<ModelDirectoryState>(state({ current: null, groups }))
   render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
   fireEvent.click(screen.getByRole('button', { name: '请选择模型' }))
-  fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
   const names = screen.getAllByRole('menuitemradio').map(row => row.textContent)
   expect(names).toEqual([
     'deepseek-account-1', 'deepseek-account-2', 'custom-1', 'custom-2',

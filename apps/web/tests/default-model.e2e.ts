@@ -104,6 +104,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
 
     const trigger = page.getByRole('button', { name: /^选择模型/ })
     await trigger.waitFor({ timeout: 15_000 })
+    expect(await trigger.evaluate(element => getComputedStyle(element).fontWeight)).toBe('400')
     await trigger.click()
     await page.getByRole('menuitem', { name: /模型/ }).click()
     await page.getByRole('menuitemradio', { name: 'Acme Large' }).click()
@@ -143,6 +144,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
     await expect.poll(async () => box.isEnabled(), { timeout: 15_000 }).toBe(false)
     const unset = page.getByRole('button', { name: '请选择模型', exact: true })
     await unset.waitFor()
+    expect(await unset.evaluate(element => getComputedStyle(element).fontWeight)).toBe('400')
     expect(await page.getByRole('button', { name: '发送消息', exact: true }).isEnabled()).toBe(false)
     const aria = await captureStableAria(page, '[data-composer-card]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(fileURLToPath(new URL('./expected/default-model/unselected.expected.md', import.meta.url)), aria, webSnapshotMode())
@@ -161,7 +163,6 @@ describe('web e2e: the composer model switch is the default for later sessions',
     const seat = page.getByRole('button', { name: '请选择模型', exact: true })
     expect(await seat.isEnabled()).toBe(true)
     await seat.click()
-    await page.getByRole('menuitem', { name: /模型/ }).click()
     await page.getByRole('menuitemradio').first().click()
     await expect.poll(async () => box.isEnabled(), { timeout: 15_000 }).toBe(true)
     expect(tripwire.pageErrors).toEqual([])

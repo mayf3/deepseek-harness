@@ -27,6 +27,8 @@ The Web GUI lets users switch the model and reasoning effort for an existing ses
 
 DeepSeek account and API-key routes appear as separate provider groups, each exposing the same configured model catalog.
 
+The unselected model label uses the same regular weight as an available model name and retains the saved reasoning effort caption for existing and new sessions; effort editing requires an available model. Clicking the unselected trigger opens the model list directly; Escape closes it.
+
 Mount this plugin alongside `ui-conversation` and the commands package; the composer then shows the model seat next to the pending indicator, and `/model` opens the same directory as a popup. While the seat's menu is open, `↑`/`↓` move focus across the rows of the shown pane, Tab settles the focused row, and Escape and `Shift+Tab` leave a drilled pane first and otherwise close back to the trigger. Drilling lands on the row of the value in use, and going back lands on the cell that opened the pane left. Both surfaces show the host-reported current selection when the exact provider/model pair remains in the advertised groups; a missing catalog row clears the effective selection and the trigger prompts `Select model`, without changing the stored choice.
 
 ### Model and effort

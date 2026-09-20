@@ -414,6 +414,29 @@ describe('ui-model-selection dual entry', () => {
     }
   })
 
+  it('retains saved effort for existing and new sessions after credentials disappear', async () => {
+    const b = await bench()
+    try {
+      b.setHostCurrent({ provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' })
+      b.mint('existing')
+      const existing = b.ctx.modelDirectories.directoryFor(sid('existing'))
+      await existing.load()
+      b.setProjected(sid('existing'), { lastUsed: null,
+        next: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } })
+      b.setRoutable(false)
+      b.remote.emit('settings/document-updated', ['llm-deepseek', 1])
+      expect(existing.store.getSnapshot().retainedEffort).toBe('High')
+      await vi.waitFor(() => {
+        expect(existing.store.getSnapshot()).toMatchObject({ current: null, routable: false, retainedEffort: 'High' })
+      })
+      b.mint('new')
+      const fresh = b.ctx.modelDirectories.directoryFor(sid('new'))
+      expect(fresh.store.getSnapshot()).toMatchObject({ current: null, routable: false, retainedEffort: 'Max' })
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
+  })
+
   it('blocks the composer when current catalog models disappear', async () => {
     const b = await bench()
     b.mint('s1')

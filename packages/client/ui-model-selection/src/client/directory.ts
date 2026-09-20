@@ -17,6 +17,8 @@ import type { ModelCatalogDirectory } from './catalog.ts'
 export interface ModelDirectoryState {
   /** Available durable selection, or the available default for an unselected Session. */
   current: ModelSelection | null
+  /** Saved effort caption retained when the selected model is unavailable. */
+  retainedEffort?: string
   /** Whether the current selection is present in the available catalog; null while unresolved. */
   routable: boolean | null
   /** Successfully loaded provider groups (last good load). */
@@ -136,9 +138,15 @@ export class ModelDirectory {
     if (this.disposed) return
     const catalog = this.catalog.store.getSnapshot()
     const projected = modelSelectionProjection(this.projected.getSnapshot())
+    const intended = projected?.next ?? catalog.value?.default
+    const reasoning = intended === undefined ? undefined : this.catalog.reasoningFor(intended)
+    const effort = intended?.reasoningEffort ?? reasoning?.defaultEffort
+    const retainedEffort = effort === undefined ? undefined
+      : reasoning?.efforts.find(level => level.id === effort)?.name ?? effort
     if (catalog.status !== 'ready' || catalog.value === null || projected === undefined) {
       this.store.set({
         current: null,
+        ...retainedEffort === undefined ? {} : { retainedEffort },
         routable: null,
         groups: [],
         failures: [],
@@ -147,11 +155,12 @@ export class ModelDirectory {
       })
       return
     }
-    const intended = projected.next ?? catalog.value.default
-    const current = catalog.value.groups.some(group => group.id === intended.provider
-      && group.models.some(model => model.id === intended.model)) ? intended : null
+    const selection = projected.next ?? catalog.value.default
+    const current = catalog.value.groups.some(group => group.id === selection.provider
+      && group.models.some(model => model.id === selection.model)) ? selection : null
     this.store.set({
       current,
+      ...retainedEffort === undefined ? {} : { retainedEffort },
       routable: current !== null,
       groups: catalog.value.groups,
       failures: catalog.value.failures,
