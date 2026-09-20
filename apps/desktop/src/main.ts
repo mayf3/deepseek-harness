@@ -608,6 +608,7 @@ async function main(): Promise<void> {
   })
   // A custom application menu replaces Electron's default menu, so macOS needs
   // its standard menus and application hide commands declared explicitly.
+  // Keep app.name stable: Electron derives its default userData directory from it.
   const darwin = process.platform === 'darwin'
   const platformMenus: MenuItemConstructorOptions[] = darwin
     ? [{ role: 'fileMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]
