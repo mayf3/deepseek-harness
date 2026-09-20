@@ -8,29 +8,29 @@ English | [中文](2026-09-19-remote-duplex-stream.zh.md)
 
 ### Current state
 
-`dsh-api-gateway` multiplexes every Typert Remote stream over one WebSocket at the fixed path `/api/remote.mux` (`packages/api/gateway/src/stream-protocol.ts:6`). A Host method decorated with `@Remote({ mode: 'stream' })` that returns an `Iterable` or `AsyncIterable` becomes one Host-to-Client logical stream; the optional final `signal: AbortSignal` is the only reserved parameter, never enters the wire arguments, and is appended by the Gateway after the decoded business parameters (`packages/api/gateway/src/index.ts:613`). The generated method the Client receives returns a bare `AsyncIterable`.
+`dsh-api-gateway` multiplexes every Typert Remote stream over one WebSocket at the fixed path `/api/remote.mux` (`packages/api/gateway/src/stream-protocol.ts`). A Host method decorated with `@Remote({ mode: 'stream' })` that returns an `Iterable` or `AsyncIterable` becomes one Host-to-Client logical stream; the optional final `signal: AbortSignal` is the only reserved parameter, never enters the wire arguments, and is appended by the Gateway after the decoded business parameters (`packages/api/gateway/src/index.ts`). The generated method the Client receives returns a bare `AsyncIterable`.
 
 There are only five wire frames:
 
 | Direction | Frame | Definition |
 | --- | --- | --- |
-| Client to Host | `{ type: 'open', streamId, endpoint, payload }` | `stream-protocol.ts:243-249` |
-| Client to Host | `{ type: 'cancel', streamId }` | `stream-protocol.ts:250` |
-| Host to Client | `{ type: 'item', streamId, value? }` | `stream-protocol.ts:261` |
-| Host to Client | `{ type: 'error', streamId, error: { code, message, details } }` | `stream-protocol.ts:262` |
-| Host to Client | `{ type: 'end', streamId }` | `stream-protocol.ts:263` |
+| Client to Host | `{ type: 'open', streamId, endpoint, payload }` | `stream-protocol.ts` |
+| Client to Host | `{ type: 'cancel', streamId }` | `stream-protocol.ts` |
+| Host to Client | `{ type: 'item', streamId, value? }` | `stream-protocol.ts` |
+| Host to Client | `{ type: 'error', streamId, error: { code, message, details } }` | `stream-protocol.ts` |
+| Host to Client | `{ type: 'end', streamId }` | `stream-protocol.ts` |
 
-The Client can send only open and cancel. The parser `parseRemoteStreamClientMessage` (`stream-protocol.ts:270-284`) throws on any other frame, and a Host connection that receives one closes the whole socket with 1008 (`stream-server.ts:121-125`). In short, the Gateway today supports only "a backend iterable sent to the frontend". Every feature that needs the frontend to send data to the backend continuously takes its own detour.
+The Client can send only open and cancel. The parser `parseRemoteStreamClientMessage` (`stream-protocol.ts`) throws on any other frame, and a Host connection that receives one closes the whole socket with 1008 (`stream-server.ts`). In short, the Gateway today supports only "a backend iterable sent to the frontend". Every feature that needs the frontend to send data to the backend continuously takes its own detour.
 
-A Host method also has no notion of who initiated this call: `InvokeRemoteRequest = { namespace, method, args, signal }` (`packages/api/gateway/src/types.ts:10-19`) has no caller slot, `RemoteStreamOpener` has the signature `(endpoint, payload, signal)` (`stream-server.ts:13-17`), and the WebSocket checks the cookie once, at the handshake.
+A Host method also has no notion of who initiated this call: `InvokeRemoteRequest = { namespace, method, args, signal }` (`packages/api/gateway/src/types.ts`) has no caller slot, `RemoteStreamOpener` has the signature `(endpoint, payload, signal)` (`stream-server.ts`), and the WebSocket checks the cookie once, at the handshake.
 
 ### Three unrelated uplink mechanisms
 
 | Feature | Uplink path | Location | Cost |
 | --- | --- | --- | --- |
-| Web terminal keystrokes | One unary RPC `terminal.write(agent, id, attachmentId, data)` per xterm `onData`; the Client serializes them through a promise chain and caps its own byte budget | `packages/api/terminal-controller/src/client/model.ts:193-205`; Host `src/index.ts:229-233` | One HTTP round trip and one authentication per keystroke; two carriers correlated by hand through `attachmentId`; `inputFull` when the budget is exhausted |
-| File upload | A `Blob` or `ReadableStream` goes to the native `POST /api/session/uploadFileBinary` outside the Remote layer, with `duplex: 'half'` | `packages/client/file-upload/src/client/runtime.ts:198-211`; route `src/index.ts:72-80` | Bypasses Typert descriptors; no type projection |
-| Answers to approvals and questions | The Host sends waterfall frames down the `$events` stream, the Client answers through a separate unary RPC `$events/result`, correlated by `clientId` plus `eventId` | `packages/api/gateway/src/client/remote-events.ts:219-224`; Host `index.ts:357-369` | A second correlation key; `index.ts:527-529` records the race this creates |
+| Web terminal keystrokes | One unary RPC `terminal.write(agent, id, attachmentId, data)` per xterm `onData`; the Client serializes them through a promise chain and caps its own byte budget | `packages/api/terminal-controller/src/client/model.ts`; Host `src/index.ts` | One HTTP round trip and one authentication per keystroke; two carriers correlated by hand through `attachmentId`; `inputFull` when the budget is exhausted |
+| File upload | A `Blob` or `ReadableStream` goes to the native `POST /api/session/uploadFileBinary` outside the Remote layer, with `duplex: 'half'` | `packages/client/file-upload/src/client/runtime.ts`; route `src/index.ts` | Bypasses Typert descriptors; no type projection |
+| Answers to approvals and questions | The Host sends waterfall frames down the `$events` stream, the Client answers through a separate unary RPC `$events/result`, correlated by `clientId` plus `eventId` | `packages/api/gateway/src/client/remote-events.ts`; Host `index.ts` | A second correlation key; `index.ts` records the race this creates |
 
 These three mechanisms solve the same problem: the Client wants to write into a logical stream that is already open.
 
@@ -41,7 +41,7 @@ These three mechanisms solve the same problem: the Client wants to write into a 
 - **Separate authentication and lookup per uplink.** Every `write(agent, id, attachmentId, data)` resolves `agent`, looks up the terminal, and validates the attachment.
 - **No EOF.** The Client cannot express "I am done writing"; a half-close needs yet another RPC.
 - **Cancellation does not cover both halves.** Cancelling the downlink stream does not cancel queued uplink writes, and vice versa.
-- **Backpressure implemented three times.** The downlink pulls the iterator at the pace of the socket write callback (`stream-server.ts:155-199`); the terminal uses a bounded follower that makes a slow consumer fail explicitly (`terminal-controller/src/stream.ts:21-32`); the uplink relies on the Client capping `maxInputBytes` itself.
+- **Backpressure implemented three times.** The downlink pulls the iterator at the pace of the socket write callback (`stream-server.ts`); the terminal uses a bounded follower that makes a slow consumer fail explicitly (`terminal-controller/src/stream.ts`); the uplink relies on the Client capping `maxInputBytes` itself.
 - **The documentation is already stale.** `docs/api-gateway.md:160` still says Remote handles one request and one result, a sentence that lags the stream mode the README records.
 
 ### Relation to background jobs
@@ -60,7 +60,7 @@ The process-shaped duplex stream face of background jobs (archived as a draft PR
 
 ### In one sentence
 
-Every Remote stream accepts a Client uplink. The method's return type `RemoteStream<Out, In = never>` declares the downlink item type and the uplink item type together; the generator derives two codecs from it. A Host method takes the uplink iterator through `this.ctx.invocation.uplink<In>()` and learns the caller through `this.ctx.invocation.peer`. The generated Client method returns a `RemoteStream<Out, In>` handle: `for await` reads the downlink, `send` / `end` write the uplink, `dispose` closes. Reopening after disconnection, cursor resumption, and baseline validation all belong to upper-layer protocols.
+Every Remote stream accepts a Client uplink. The method's return type `RemoteStream<Out, In = never>` declares the downlink item type and the uplink item type together; the generator derives two codecs from it. A Host method takes the uplink iterator through `this.ctx.invocation.uplink<In>()` and learns the caller through `this.ctx.invocation.peer`. The generated Client method returns a `RemoteStreamHandle<Out, In>`: `for await` reads the downlink, `send` / `end` write the uplink, `dispose` closes. Reopening after disconnection, cursor resumption, and baseline validation all belong to upper-layer protocols.
 
 ```
                  Client                                             Host
@@ -73,7 +73,7 @@ Every Remote stream accepts a Client uplink. The method's return type `RemoteStr
         │  s.end()    → end  { streamId }        ───────▶  inbox.end()      │ method(...args, signal)
         │                                        ◀───────  item { streamId, o1 }   │   for await (v of this.ctx.invocation.uplink()) …
         │  for await (o of s) …                  ◀───────  item { streamId, o2 }   │   yield o …
-        │  s.dispose() → cancel { streamId }     ───────▶  control.abort()         │ signal 中止；uplink.return()
+        │  s.dispose() → cancel { streamId }     ───────▶  control.abort()         │ signal aborts; uplink.return()
         │                                        ◀───────  end | error
 ```
 
@@ -96,9 +96,9 @@ Every Remote stream accepts a Client uplink. The method's return type `RemoteStr
 ```text
 // @deepseek-ai/dsh-typert-protocol
 /**
- * 一条 Remote 流。Host 面：方法返回它，运行时就是 AsyncIterable<Out>。
- * Client 面上生成方法返回的是 RemoteStreamHandle<Out, In>；两个名字各自只有一个含义。
- * In 是客户端可上行的项类型；缺省 never 表示该方法不读上行。
+ * One Remote stream. Host face: the method returns it, and at runtime it is AsyncIterable<Out>.
+ * On the Client face the generated method returns RemoteStreamHandle<Out, In>; each name has exactly one meaning.
+ * In is the item type the Client may send uplink; the default never means the method reads no uplink.
  */
 export type RemoteStream<Out, In = never> = AsyncIterable<Out> & { readonly [STREAM_UPLINK]?: In }
 
@@ -110,13 +110,13 @@ async *attach(request: JobAttachRequest, signal: AbortSignal): RemoteStream<JobF
   yield …
 }
 
-// 生成的 Client 签名：参数不变，返回类型不变
-attach(request: JobAttachRequest, signal?: AbortSignal): RemoteStream<JobFollowFrame, JobInputFrame>
+// Generated Client signature: same parameters, returns the handle
+attach(request: JobAttachRequest, signal?: AbortSignal): RemoteStreamHandle<JobFollowFrame, JobInputFrame>
 
-// Client 使用
+// Client usage
 const stream = remote.job.attach(req, signal)
 for await (const frame of stream) …
-stream.send(frame)     // 类型为 JobInputFrame
+stream.send(frame)     // typed as JobInputFrame
 stream.end()
 stream.dispose()
 ```
@@ -126,31 +126,33 @@ stream.dispose()
 ### Host face
 
 ```text
-/** 本次 Remote 调用的上下文。方法通过 this.ctx.invocation 读它。 */
+/** The context of this Remote call. A method reads it through this.ctx.invocation. */
 export interface RemoteInvocation {
   readonly request: {
     readonly namespace: string
     readonly method: string
     readonly args: Readonly<Record<string, unknown>>
   }
-  /** 接收服务的 Cordis service key。 */
+  /** Cordis service key of the receiving service. */
   readonly service: string
-  /** 发起调用的 Peer。进程内载体与未接纳的调用是操作者。 */
+  /** The Peer that initiated the call. In-process carriers and unadmitted calls are the operator. */
   readonly peer: PeerScope
-  /** 载体取消：客户端 cancel、socket 关闭、上行失败。 */
+  /** Carrier cancellation: Client cancel, socket closure, uplink failure. */
   readonly signal: AbortSignal
   /**
-   * 本次调用的上行项。只能取一次，第二次抛错。描述符带 uplink codec 时
-   * 逐项解码为 In；不带时交付 unknown，只做 JSON 安全校验。
-   * 客户端 end 后迭代结束；方法结束下行时网关调用它的 return()，未消费的项丢弃。
-   * 泛型 In 只是调用方的类型断言，运行时按描述符解码，不做交叉校验。
+   * The uplink items of this call. Can be taken once; the second call throws. With an uplink codec
+   * in the descriptor each item is decoded to In; without one, items are delivered as unknown with
+   * only a JSON-safety check.
+   * The iteration ends after the Client's end; when the method ends the downlink, the Gateway calls
+   * its return() and drops unconsumed items.
+   * The generic In is only the caller's type assertion; runtime decodes per the descriptor and does not cross-check.
    */
   uplink<In = unknown>(): AsyncIterable<In>
 }
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** 本 Context 为之派生的 Remote 调用；非 Remote 调用派生的 Context 上为 undefined。 */
+    /** The Remote call this Context was derived for; undefined on a Context not derived from a Remote call. */
     readonly invocation: RemoteInvocation | undefined
   }
 }
@@ -165,7 +167,7 @@ Rules:
 
 #### How the invocation context reaches the method
 
-The mechanism is carried over from the `remote-client-access` branch, and the Cordis source confirms that it holds:
+The mechanism relies on two existing Cordis behaviors:
 
 - `ctx.extend(meta)` is `Object.create(parent)` plus own properties (`vendor/cordis/src/context.ts:99-107`): no registration, no fiber, nothing to release, so deriving one per call costs nothing.
 - `ctx.get(service)` returns the `createTraceable(ctx, service)` proxy (`vendor/cordis/src/reflect.ts:233-234`, `utils.ts:117-125`). Reading the `ctx` property returns the accessing Context directly (`utils.ts:175`); reading a method wraps it in `createShadowMethod`, whose `apply` replaces `this` with a shadow receiver whose `ctx` is `ctx.extend({ [symbols.shadow]: origin })` (`utils.ts:149-163`).
@@ -174,10 +176,10 @@ The mechanism is carried over from the `remote-client-access` branch, and the Co
 ### PeerScope
 
 ```text
-/** 一个 Peer 的不透明身份。 */
+/** The opaque identity of one Peer. */
 export type PeerId = Branded<'PeerId'>
 
-/** 一个 Peer 在本 Host 上的会话：接纳它的一方打开与释放；ctx 拥有连接期注册。 */
+/** One Peer's session on this Host: opened and released by the admitting side; ctx owns connection-lifetime registrations. */
 export interface PeerScope {
   readonly id: PeerId
   readonly ctx: Context
@@ -194,18 +196,18 @@ This Host has exactly one Peer: the operator. `@deepseek-ai/dsh-client-connectio
 
 The Gateway's `handleUpgrade(req, socket, head, peer)` binds an opener with a fixed Peer to that socket and registers socket closure in `peer.ctx.effect`; when the scope is already inactive, it closes the socket directly with 1001 instead. When `InvokeRemoteRequest.peer?` or the `peer` parameter of `RemoteStreamOpener` is absent, the answer is the operator, so existing in-process callers change nothing; in a composition without a Connection, the operator stand-in the Gateway builds for itself is likewise created through `createScope`, with the same `dispose()` contract. Looking up a Peer by id, associating a carrier with a second Peer, and Peer open and close events all wait until the first consumer that needs multiple Peers appears.
 
-Not adopted: `@Access`, `AccessDeclaration`, `AccessLevel`, `AccessTarget`, `vouch` / `vouched`, the `remote/invoke` and `remote/deliver` events, `mayDeliver`, `requireVoucher`, `gateway/access-denied`. Who the Peer is and what it may do are attached by business plugins on their own through `peer.ctx` and are outside this Note.
+The Peer carries no access model: who the Peer is and what it may do are attached by business plugins on their own through `peer.ctx`.
 
 ### Client face
 
 ```text
-/** 生成方法在 Client 面返回的句柄。与 Host 的 RemoteStream 是两个名字，从同一个入口导出。 */
+/** The handle a generated method returns on the Client face. A different name from the Host's RemoteStream, exported from the same entry point. */
 export interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
-  /** 发送一个上行项。非无损 JSON 值、流已终止或已 end 时抛错。 */
+  /** Send one uplink item. Throws on a value that is not lossless JSON, after termination, or after end. */
   send(item: In): void
-  /** 上行半关闭：发 end 帧。幂等。 */
+  /** Half-close the uplink: sends the end frame. Idempotent. */
   end(): void
-  /** 取消整条逻辑流：发 cancel 帧（未收到终止帧时），下行迭代器安静结束。 */
+  /** Cancel the whole logical stream: sends the cancel frame (when no terminal frame has arrived); the downlink iterator ends quietly. */
   dispose(): void
 }
 ```
@@ -221,11 +223,11 @@ export interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
 ```text
 export type RemoteStreamClientMessage =
   | { readonly type: 'open'; readonly streamId: string; readonly endpoint: string; readonly payload: unknown }
-  | { readonly type: 'item'; readonly streamId: string; readonly value?: unknown }   // 新增：上行项
-  | { readonly type: 'end'; readonly streamId: string }                              // 新增：上行半关闭
+  | { readonly type: 'item'; readonly streamId: string; readonly value?: unknown }   // new: uplink item
+  | { readonly type: 'end'; readonly streamId: string }                              // new: uplink half-close
   | { readonly type: 'cancel'; readonly streamId: string }
 
-/** Host 发出的帧不变。 */
+/** Frames sent by the Host are unchanged. */
 export type RemoteStreamServerMessage =
   | { readonly type: 'item'; readonly streamId: string; readonly value?: unknown }
   | { readonly type: 'error'; readonly streamId: string; readonly error: RemoteStreamFailure }
@@ -239,15 +241,15 @@ Parsing rules: `item` has exactly the keys `type` and `streamId` plus an optiona
 #### Host side
 
 ```
-                open 帧
-   (无) ─────────────────────▶ opening ──── opener 解析完成 ────▶ running
+                open frame
+   (none) ───────────────────▶ opening ──── opener resolves ────▶ running
                                   │                                  │
-                                  │ item 帧: inbox.push               │ item 帧: inbox.push
-                                  │ end 帧: inbox.end                 │ end 帧: inbox.end（上行半关闭）
-                                  │                                  │ 方法 yield: 发 item 帧
-                                  │ cancel 帧 / socket 关闭 ────────▶│ cancel 帧 / socket 关闭: control.abort
+                                  │ item frame: inbox.push           │ item frame: inbox.push
+                                  │ end frame: inbox.end             │ end frame: inbox.end (uplink half-close)
+                                  │                                  │ method yield: sends item frame
+                                  │ cancel frame / socket close ────▶│ cancel frame / socket close: control.abort
                                   ▼                                  ▼
-                               aborted ◀───────────────────────── finished（发 end 或 error 帧）
+                               aborted ◀───────────────────────── finished (sends end or error frame)
 ```
 
 `item` frames that arrive during `opening` enter the inbox: `receive()` is synchronous and creates the `ActiveStream` and its inbox while handling the `open` frame, whereas the opener is asynchronous. Items the Client sends immediately after `open` are not lost.
@@ -255,11 +257,11 @@ Parsing rules: `item` has exactly the keys `type` and `streamId` plus an optiona
 #### Client side
 
 ```
-   调用生成方法 ──▶ 等 socket ──▶ 发 open ──▶ 句柄可用
-                                              │ send(v): 发 item；end(): 发 end
-                                              │ 下行：inbox.next() → yield；end → 结束；error → 抛
-                                              │ 下行先终止：send/end 抛错
-                                              │ dispose 或调用方 signal 中止：发 cancel（未收到终止帧时）
+   call generated method ──▶ await socket ──▶ send open ──▶ handle usable
+                                                            │ send(v): sends item; end(): sends end
+                                                            │ downlink: inbox.next() → yield; end → ends; error → throws
+                                                            │ downlink terminates first: send/end throw
+                                                            │ dispose or caller signal abort: sends cancel (when no terminal frame has arrived)
 ```
 
 ### Half-close and termination
@@ -269,7 +271,7 @@ Parsing rules: `item` has exactly the keys `type` and `streamId` plus an optiona
 | Client `end` | Still open | The Host's `uplink()` iteration ends; the method keeps producing. This is the stdin EOF form |
 | Still open | The Host method finishes and sends `end` | The Client handle terminates, and later `send` / `end` throw; the Host calls `return()` on the `uplink` iterator and drops unconsumed items |
 | Still open | The Host method throws and sends `error` | Same as above; the Client downlink fails with `RemoteError` |
-| Client `dispose` or signal abort | Any | Sends `cancel`; the Host runs `control.abort()`, `cancellableStream` calls `return()` on the method iterator and then on `uplink`; no terminal frame is sent |
+| Client `dispose` or signal abort | Any | Sends `cancel`; the Host runs `control.abort()`, `cancellableStream` closes `uplink` first and then calls `return()` on the method iterator; no terminal frame is sent |
 | Socket closes | Any | The Host aborts every stream and awaits `done`; on the Client every stream fails with `RemoteStreamCarrierError` |
 | `item` received after `end` | Any | The stream fails with a `gateway/protocol` error frame and aborts; the socket stays open |
 | `item` / `end` with an unknown `streamId` | Any | Ignored, like `cancel`: after the Host ends a stream and deletes its id, uplink frames still in flight from the Client are normal and must not take down the other streams on the same socket |
@@ -318,13 +320,13 @@ An in-process carrier with no `peer` means the operator.
 export type RemoteStream<Out, In = never> = AsyncIterable<Out> & { readonly [STREAM_UPLINK]?: In }
 export type PeerId = Branded<'PeerId'>
 export interface PeerScope { readonly id: PeerId; readonly ctx: Context; dispose(): Promise<void> }
-export interface RemoteInvocation { … }              // 见 Host 面
+export interface RemoteInvocation { … }              // see Host face
 declare module '@deepseek-ai/cordis' { interface Context { readonly invocation: RemoteInvocation | undefined } }
 
 export interface InvocationDescriptor {
-  // 既有字段不变；mode 仍只有 'stream'
+  // existing fields unchanged; mode still has only 'stream'
   readonly mode?: 'stream'
-  /** 上行项 codec，从返回类型 RemoteStream<Out, In> 的 In 生成；In 为 never 时缺席。 */
+  /** Uplink item codec, generated from In of the return type RemoteStream<Out, In>; absent when In is never. */
   readonly uplink?: { readonly codec: TypertCodec }
   readonly cancellation?: { readonly parameter: 'signal' }
   readonly result: TypertCodec
@@ -336,7 +338,7 @@ The `Remote` decorator, `RemoteMethodOptions`, and `RemoteMethodMarker` recogniz
 ### typert generator (`packages/typert/generator/src`)
 
 - `model.ts`: `InvocationModel.uplink?: { boundary: RemoteBoundaryModel }`.
-- `analyzer.ts` `remoteResultType` (currently `~1402`): for `mode: 'stream'`, the accepted return-type wrappers are `Iterable<Out>`, `AsyncIterable<Out>`, and `RemoteStream<Out, In?>`. `RemoteStream` is recognized the same way as the standard library's `AsyncIterable`: by symbol name plus declaring file (`types.ts` of `@deepseek-ai/dsh-typert-protocol`). The first type argument is the downlink item; when the second is present and is not `never`, an `uplink` boundary is generated under the key `${endpoint}:uplink`.
+- `analyzer.ts` `remoteResultType`: for `mode: 'stream'`, the accepted return-type wrappers are `Iterable<Out>`, `AsyncIterable<Out>`, and `RemoteStream<Out, In?>`. `RemoteStream` is recognized the same way as the standard library's `AsyncIterable`: by symbol name plus declaring file (`types.ts` of `@deepseek-ai/dsh-typert-protocol`). The first type argument is the downlink item; when the second is present and is not `never`, an `uplink` boundary is generated under the key `${endpoint}:uplink`.
 - `emitter.ts`: the descriptor literal emits `uplink: { codec }`; the generated Client signature returns `RemoteStreamHandle<Out, In>`.
 - The parameter loop recognizes no parameter named `uplink`.
 
@@ -352,9 +354,9 @@ export interface InvokeRemoteRequest {
   readonly namespace: string
   readonly method: string
   readonly args: Readonly<Record<string, unknown>>
-  /** 上行项；缺席等价于立即结束的迭代器。 */
+  /** Uplink items; absent is equivalent to an iterator that ends immediately. */
   readonly uplink?: AsyncIterable<unknown>
-  /** 发起调用的 Peer；缺席即操作者。 */
+  /** The Peer that initiated the call; absent means the operator. */
   readonly peer?: PeerScope
   readonly signal?: AbortSignal
 }
@@ -373,8 +375,8 @@ export type RemoteStreamOpener = (
   control: AbortController,
 ) => Promise<AsyncIterable<unknown>>
 
-// index.ts Config 新增
-/** 每条逻辑流的上行 inbox 上限，按帧的 UTF-8 字节计（默认 262144）。 */
+// index.ts Config addition
+/** Uplink inbox limit per logical stream, in UTF-8 bytes of frames (default 262144). */
 readonly streamInboxBytes?: number
 ```
 
@@ -401,23 +403,23 @@ if (descriptor.cancellation !== undefined) args.push(signal)
 ```text
 interface ActiveStream { readonly control: AbortController; readonly inbox: UplinkInbox; done: Promise<void> }
 
-/** 有界上行队列；作为 uplink() 的源被迭代。 */
+/** Bounded uplink queue; iterated as the source of uplink(). */
 class UplinkInbox implements AsyncIterable<unknown>, AsyncIterator<unknown> {
   constructor(maxBytes: number, onOverflow: (error: RemoteError) => void)
-  push(value: unknown, frameBytes: number): void   // ended 后 push 使流以 gateway/protocol 失败；超限调用 onOverflow
-  end(): void                                        // 幂等
-  fail(error: unknown): void                         // 取消或载体关闭时让迭代器以错误结束
-  next() / return()                                  // 手写：next 与失败竞速，return 立即释放
+  push(value: unknown, frameBytes: number): void   // push after ended fails the stream with gateway/protocol; overflow calls onOverflow
+  end(): void                                        // idempotent
+  fail(error: unknown): void                         // ends the iterator with an error on cancel or carrier closure
+  next() / return()                                  // hand-written: next races failure, return releases immediately
 }
 ```
 
 `receive(text)` dispatch:
 
 ```
-open   : 已存在 → 抛错（socket 1008）；否则创建 { control, inbox, done }，启动 pump
-item   : 不存在 → 忽略；否则 inbox.push(value, bytes)
-end    : 不存在 → 忽略；否则 inbox.end()
-cancel : 不存在 → 忽略；否则 control.abort(new Error('Remote stream cancelled'))
+open   : exists → throw (socket 1008); otherwise create { control, inbox, done } and start the pump
+item   : missing → ignore; otherwise inbox.push(value, bytes)
+end    : missing → ignore; otherwise inbox.end()
+cancel : missing → ignore; otherwise control.abort(new Error('Remote stream cancelled'))
 ```
 
 `pump` passes the inbox and the socket's Peer to the opener and calls `inbox.fail(...)` in its `finally`. An abort whose reason is a `RemoteError` is sent by the pump as an `error` frame (a failure raised by the Gateway or the mux); an abort whose reason is a plain `Error` (cancel, socket closure) sends no terminal frame.
@@ -447,40 +449,40 @@ cancel : 不存在 → 忽略；否则 control.abort(new Error('Remote stream ca
 ### Open, uplink, half-close, downlink end
 
 ```
-Client 调用方         mux client             mux server            gateway              Host 方法
-   │ attach(req)        │                       │                     │                    │
-   │───────────────────▶│ open { id, ep, payload } ─────────────────▶│ 创建 inbox           │
-   │ s.send(v1)         │ item { id, v1 } ──────────────────────────▶│ inbox.push(v1)       │
-   │                    │                       │                     │ prepareInvocation   │
-   │                    │                       │                     │ extend({ invocation }) │
-   │                    │                       │                     │───── method(req, signal) ─────────▶│
-   │                    │                       │                     │                    │ uplink() → v1
-   │ s.send(v2)         │ item { id, v2 } ──────────────────────────▶│ inbox.push(v2)       │ → v2
-   │ s.end()            │ end { id } ───────────────────────────────▶│ inbox.end()          │ 迭代结束
-   │◀── yield o1 ───────│◀────────────────────── item { id, o1 } ────│◀── yield o1 ────────│
-   │◀── 结束 ───────────│◀────────────────────── end { id } ─────────│◀── 方法返回 ─────────│ gateway 调 uplink.return()
+Client caller      mux client              mux server              gateway                 Host method
+   │ attach(req)        │                       │                     │                         │
+   │───────────────────▶│ open { id, ep, payload } ──────────────────▶│ create inbox            │
+   │ s.send(v1)         │ item { id, v1 } ───────────────────────────▶│ inbox.push(v1)          │
+   │                    │                       │                     │ prepareInvocation       │
+   │                    │                       │                     │ extend({ invocation })  │
+   │                    │                       │                     │── method(req, signal) ─▶│
+   │                    │                       │                     │                         │ uplink() → v1
+   │ s.send(v2)         │ item { id, v2 } ───────────────────────────▶│ inbox.push(v2)          │ → v2
+   │ s.end()            │ end { id } ────────────────────────────────▶│ inbox.end()             │ iteration ends
+   │◀── yield o1 ───────│◀────────────────────── item { id, o1 } ─────│◀── yield o1 ────────────│
+   │◀── ends ───────────│◀────────────────────── end { id } ──────────│◀── method returns ──────│ gateway calls uplink.return()
 ```
 
 ### Client dispose
 
 ```
-Client 调用方         mux client             mux server            gateway              Host 方法
-   │ s.dispose()        │                       │                     │                    │
-   │───────────────────▶│ 停泵；源 return()（不等待）                    │                    │
-   │◀── 迭代器结束 ─────│ cancel { id } ────────────────────────────▶│ control.abort()      │
-   │                    │                       │                     │ cancellableStream: iterator.return() ──▶│ finally 清理
-   │                    │                       │                     │ uplink.return()     │
-   │                    │                       │ 不发终止帧            │                    │
+Client caller      mux client              mux server              gateway                 Host method
+   │ s.dispose()        │                       │                     │                         │
+   │───────────────────▶│ stop pump; source return() (not awaited)    │                         │
+   │◀── iterator ends ──│ cancel { id } ─────────────────────────────▶│ control.abort()         │
+   │                    │                       │                     │ cancellableStream: invocation.close() closes uplink
+   │                    │                       │                     │ iterator.return() ─────▶│ finally cleanup
+   │                    │                       │ no terminal frame   │                         │
 ```
 
 ### inbox overflow
 
 ```
-Client 调用方         mux client             mux server                        gateway / Host 方法
+Client caller      mux client              mux server                        gateway / Host method
    │ s.send(vN)         │ item { id, vN } ─────▶│ inbox.push: bytes > streamInboxBytes │
    │                    │                       │ onOverflow → control.abort(RemoteError uplink-overflow)
-   │                    │                       │                                    │ uplink() 以该错误结束；方法迭代器 return()
-   │◀── throw ──────────│◀── error { id, uplink-overflow } ─────────│ pump 因 reason 是 RemoteError 发 error 帧
+   │                    │                       │                                      │ uplink() ends with that error; method iterator return()
+   │◀── throw ──────────│◀──────────────────────│ error { id, uplink-overflow }: the pump sends an error frame because the reason is a RemoteError
 ```
 
 ## Boundary matrix
@@ -527,7 +529,7 @@ class EchoService extends TypertRemoteService {
   }
 }
 
-// 客户端
+// Client
 const stream = remote.echo.echo('> ')
 stream.send('a'); stream.send('b'); stream.end()
 const replies: string[] = []
@@ -560,7 +562,7 @@ for await (const reply of stream) replies.push(reply)   // ['> a', '> b']
 
 ## Consequences
 
-- **Bought**: one stream with two directions, so interactive scenarios such as terminal keystrokes, approval answers, and background-job stdin no longer each build their own "one stream plus one unary"; a Host method knows its caller; the uplink and downlink types are declared in one place, the return type, and uplink items are validated per item as strictly as downlink items; the generated output and wire frames of existing `AsyncIterable<Out>` methods and unary methods are completely unchanged.
+- **Bought**: one stream with two directions, so interactive scenarios such as terminal keystrokes, approval answers, and background-job stdin no longer each build their own "one stream plus one unary"; a Host method knows its caller; the uplink and downlink types are declared in one place, the return type; uplink items come from the browser and are validated strictly per item at the Host, while downlink items are Host-produced typed values that pass straight through; the generated output and wire frames of existing `AsyncIterable<Out>` methods and unary methods are completely unchanged.
 - **`this.ctx.invocation` is `undefined` outside a Remote call**, so a method that reads it must handle the optional; a service method invoked only directly in process correctly reads `undefined`.
 - **The inbox limit applies to every stream**: a method that does not read its uplink fails as a whole when it receives many uplink frames. This is a deliberate explicit failure, recorded in the README.
 - **The operator is the only Peer**, and `admit` is the only admission point; the first consumer that needs a second Peer must add opening, association, and events in `dsh-client-connection`.

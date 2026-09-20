@@ -8,29 +8,29 @@ Status: implemented
 
 ### 现状
 
-`dsh-api-gateway` 在一条 WebSocket 上复用全部 Typert Remote 流，路径固定为 `/api/remote.mux`（`packages/api/gateway/src/stream-protocol.ts:6`）。一个 Host 方法用 `@Remote({ mode: 'stream' })` 修饰并返回 `Iterable` 或 `AsyncIterable`，就成为一条 Host 到 Client 的逻辑流；可选的末位 `signal: AbortSignal` 是唯一的保留参数，不进线路参数，由网关在解码后的业务参数之后追加（`packages/api/gateway/src/index.ts:613`）。客户端拿到的生成方法返回一个裸 `AsyncIterable`。
+`dsh-api-gateway` 在一条 WebSocket 上复用全部 Typert Remote 流，路径固定为 `/api/remote.mux`（`packages/api/gateway/src/stream-protocol.ts`）。一个 Host 方法用 `@Remote({ mode: 'stream' })` 修饰并返回 `Iterable` 或 `AsyncIterable`，就成为一条 Host 到 Client 的逻辑流；可选的末位 `signal: AbortSignal` 是唯一的保留参数，不进线路参数，由网关在解码后的业务参数之后追加（`packages/api/gateway/src/index.ts`）。客户端拿到的生成方法返回一个裸 `AsyncIterable`。
 
 线路帧只有五种：
 
 | 方向 | 帧 | 定义 |
 | --- | --- | --- |
-| Client 到 Host | `{ type: 'open', streamId, endpoint, payload }` | `stream-protocol.ts:243-249` |
-| Client 到 Host | `{ type: 'cancel', streamId }` | `stream-protocol.ts:250` |
-| Host 到 Client | `{ type: 'item', streamId, value? }` | `stream-protocol.ts:261` |
-| Host 到 Client | `{ type: 'error', streamId, error: { code, message, details } }` | `stream-protocol.ts:262` |
-| Host 到 Client | `{ type: 'end', streamId }` | `stream-protocol.ts:263` |
+| Client 到 Host | `{ type: 'open', streamId, endpoint, payload }` | `stream-protocol.ts` |
+| Client 到 Host | `{ type: 'cancel', streamId }` | `stream-protocol.ts` |
+| Host 到 Client | `{ type: 'item', streamId, value? }` | `stream-protocol.ts` |
+| Host 到 Client | `{ type: 'error', streamId, error: { code, message, details } }` | `stream-protocol.ts` |
+| Host 到 Client | `{ type: 'end', streamId }` | `stream-protocol.ts` |
 
-客户端能发的只有打开与取消。解析器 `parseRemoteStreamClientMessage`（`stream-protocol.ts:270-284`）对其他任何帧抛错，Host 连接收到后以 1008 关闭整个 socket（`stream-server.ts:121-125`）。结论：网关今天只支持"后端 iterable 发到前端"。需要前端向后端持续发数据的功能，各自绕路。
+客户端能发的只有打开与取消。解析器 `parseRemoteStreamClientMessage`（`stream-protocol.ts`）对其他任何帧抛错，Host 连接收到后以 1008 关闭整个 socket（`stream-server.ts`）。结论：网关今天只支持"后端 iterable 发到前端"。需要前端向后端持续发数据的功能，各自绕路。
 
-Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteRequest = { namespace, method, args, signal }`（`packages/api/gateway/src/types.ts:10-19`）没有调用者槽位，`RemoteStreamOpener` 的签名是 `(endpoint, payload, signal)`（`stream-server.ts:13-17`），WebSocket 只在握手时校一次 cookie。
+Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteRequest = { namespace, method, args, signal }`（`packages/api/gateway/src/types.ts`）没有调用者槽位，`RemoteStreamOpener` 的签名是 `(endpoint, payload, signal)`（`stream-server.ts`），WebSocket 只在握手时校一次 cookie。
 
 ### 三套各自为政的上行机制
 
 | 功能 | 上行方式 | 位置 | 代价 |
 | --- | --- | --- | --- |
-| Web 终端按键 | 每次 xterm `onData` 一个 unary RPC `terminal.write(agent, id, attachmentId, data)`，客户端用 promise 链串行化并自限字节预算 | `packages/api/terminal-controller/src/client/model.ts:193-205`；Host `src/index.ts:229-233` | 一次按键一次 HTTP 往返与鉴权；两条载体靠 `attachmentId` 手工关联；满了报 `inputFull` |
-| 文件上传 | `Blob` 或 `ReadableStream` 走 Remote 层之外的原生 `POST /api/session/uploadFileBinary`，`duplex: 'half'` | `packages/client/file-upload/src/client/runtime.ts:198-211`；路由 `src/index.ts:72-80` | 不经 Typert 描述符，没有类型投影 |
-| 审批与提问的回答 | Host 在 `$events` 流上下发 waterfall 帧，Client 用一个独立的 unary RPC `$events/result` 回答，靠 `clientId` 加 `eventId` 关联 | `packages/api/gateway/src/client/remote-events.ts:219-224`；Host `index.ts:357-369` | 第二套关联键；`index.ts:527-529` 记录了由此产生的竞态 |
+| Web 终端按键 | 每次 xterm `onData` 一个 unary RPC `terminal.write(agent, id, attachmentId, data)`，客户端用 promise 链串行化并自限字节预算 | `packages/api/terminal-controller/src/client/model.ts`；Host `src/index.ts` | 一次按键一次 HTTP 往返与鉴权；两条载体靠 `attachmentId` 手工关联；满了报 `inputFull` |
+| 文件上传 | `Blob` 或 `ReadableStream` 走 Remote 层之外的原生 `POST /api/session/uploadFileBinary`，`duplex: 'half'` | `packages/client/file-upload/src/client/runtime.ts`；路由 `src/index.ts` | 不经 Typert 描述符，没有类型投影 |
+| 审批与提问的回答 | Host 在 `$events` 流上下发 waterfall 帧，Client 用一个独立的 unary RPC `$events/result` 回答，靠 `clientId` 加 `eventId` 关联 | `packages/api/gateway/src/client/remote-events.ts`；Host `index.ts` | 第二套关联键；`index.ts` 记录了由此产生的竞态 |
 
 这三套机制解决的是同一个问题：一条已经打开的逻辑流，客户端想往里写。
 
@@ -41,7 +41,7 @@ Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteReq
 - **每次上行单独鉴权与查找**。`write(agent, id, attachmentId, data)` 每次解析 `agent`、查终端、校验 attachment。
 - **没有 EOF**。客户端无法表达"我这边写完了"，半关闭要再加一个 RPC。
 - **取消不覆盖两半**。取消下行流不会取消排队中的上行写；反之亦然。
-- **背压各写一套**。下行按 socket 写回调节拍拉迭代器（`stream-server.ts:155-199`）；终端用有界 follower 让慢消费者显式失败（`terminal-controller/src/stream.ts:21-32`）；上行靠客户端自限 `maxInputBytes`。
+- **背压各写一套**。下行按 socket 写回调节拍拉迭代器（`stream-server.ts`）；终端用有界 follower 让慢消费者显式失败（`terminal-controller/src/stream.ts`）；上行靠客户端自限 `maxInputBytes`。
 - **文档已经过时**。`docs/api-gateway.md:160` 仍写着 Remote 只处理一请求一结果，这一句已经落后于 README 记录的 stream 模式。
 
 ### 与后台 job 的关系
@@ -60,7 +60,7 @@ Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteReq
 
 ### 一句话
 
-所有 Remote 流都允许客户端上行。方法的返回类型 `RemoteStream<Out, In = never>` 同时声明下行项与上行项的类型；生成器从中生成两个 codec。Host 方法通过 `this.ctx.invocation.uplink<In>()` 取上行迭代器，通过 `this.ctx.invocation.peer` 知道调用者。客户端生成方法返回 `RemoteStream<Out, In>` 句柄：`for await` 读下行，`send` / `end` 写上行，`dispose` 关。断线重开、游标续传、基线校验都是上层协议的事。
+所有 Remote 流都允许客户端上行。方法的返回类型 `RemoteStream<Out, In = never>` 同时声明下行项与上行项的类型；生成器从中生成两个 codec。Host 方法通过 `this.ctx.invocation.uplink<In>()` 取上行迭代器，通过 `this.ctx.invocation.peer` 知道调用者。客户端生成方法返回 `RemoteStreamHandle<Out, In>`：`for await` 读下行，`send` / `end` 写上行，`dispose` 关。断线重开、游标续传、基线校验都是上层协议的事。
 
 ```
                  Client                                             Host
@@ -73,7 +73,7 @@ Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteReq
         │  s.end()    → end  { streamId }        ───────▶  inbox.end()      │ method(...args, signal)
         │                                        ◀───────  item { streamId, o1 }   │   for await (v of this.ctx.invocation.uplink()) …
         │  for await (o of s) …                  ◀───────  item { streamId, o2 }   │   yield o …
-        │  s.dispose() → cancel { streamId }     ───────▶  control.abort()         │ signal 中止；uplink.return()
+        │  s.dispose() → cancel { streamId }     ───────▶  control.abort()         │ signal aborts; uplink.return()
         │                                        ◀───────  end | error
 ```
 
@@ -96,9 +96,9 @@ Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteReq
 ```text
 // @deepseek-ai/dsh-typert-protocol
 /**
- * 一条 Remote 流。Host 面：方法返回它，运行时就是 AsyncIterable<Out>。
- * Client 面上生成方法返回的是 RemoteStreamHandle<Out, In>；两个名字各自只有一个含义。
- * In 是客户端可上行的项类型；缺省 never 表示该方法不读上行。
+ * One Remote stream. Host face: the method returns it, and at runtime it is AsyncIterable<Out>.
+ * On the Client face the generated method returns RemoteStreamHandle<Out, In>; each name has exactly one meaning.
+ * In is the item type the Client may send uplink; the default never means the method reads no uplink.
  */
 export type RemoteStream<Out, In = never> = AsyncIterable<Out> & { readonly [STREAM_UPLINK]?: In }
 
@@ -110,13 +110,13 @@ async *attach(request: JobAttachRequest, signal: AbortSignal): RemoteStream<JobF
   yield …
 }
 
-// 生成的 Client 签名：参数不变，返回类型不变
-attach(request: JobAttachRequest, signal?: AbortSignal): RemoteStream<JobFollowFrame, JobInputFrame>
+// Generated Client signature: same parameters, returns the handle
+attach(request: JobAttachRequest, signal?: AbortSignal): RemoteStreamHandle<JobFollowFrame, JobInputFrame>
 
-// Client 使用
+// Client usage
 const stream = remote.job.attach(req, signal)
 for await (const frame of stream) …
-stream.send(frame)     // 类型为 JobInputFrame
+stream.send(frame)     // typed as JobInputFrame
 stream.end()
 stream.dispose()
 ```
@@ -126,31 +126,33 @@ stream.dispose()
 ### Host 面
 
 ```text
-/** 本次 Remote 调用的上下文。方法通过 this.ctx.invocation 读它。 */
+/** The context of this Remote call. A method reads it through this.ctx.invocation. */
 export interface RemoteInvocation {
   readonly request: {
     readonly namespace: string
     readonly method: string
     readonly args: Readonly<Record<string, unknown>>
   }
-  /** 接收服务的 Cordis service key。 */
+  /** Cordis service key of the receiving service. */
   readonly service: string
-  /** 发起调用的 Peer。进程内载体与未接纳的调用是操作者。 */
+  /** The Peer that initiated the call. In-process carriers and unadmitted calls are the operator. */
   readonly peer: PeerScope
-  /** 载体取消：客户端 cancel、socket 关闭、上行失败。 */
+  /** Carrier cancellation: Client cancel, socket closure, uplink failure. */
   readonly signal: AbortSignal
   /**
-   * 本次调用的上行项。只能取一次，第二次抛错。描述符带 uplink codec 时
-   * 逐项解码为 In；不带时交付 unknown，只做 JSON 安全校验。
-   * 客户端 end 后迭代结束；方法结束下行时网关调用它的 return()，未消费的项丢弃。
-   * 泛型 In 只是调用方的类型断言，运行时按描述符解码，不做交叉校验。
+   * The uplink items of this call. Can be taken once; the second call throws. With an uplink codec
+   * in the descriptor each item is decoded to In; without one, items are delivered as unknown with
+   * only a JSON-safety check.
+   * The iteration ends after the Client's end; when the method ends the downlink, the Gateway calls
+   * its return() and drops unconsumed items.
+   * The generic In is only the caller's type assertion; runtime decodes per the descriptor and does not cross-check.
    */
   uplink<In = unknown>(): AsyncIterable<In>
 }
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** 本 Context 为之派生的 Remote 调用；非 Remote 调用派生的 Context 上为 undefined。 */
+    /** The Remote call this Context was derived for; undefined on a Context not derived from a Remote call. */
     readonly invocation: RemoteInvocation | undefined
   }
 }
@@ -165,7 +167,7 @@ declare module '@deepseek-ai/cordis' {
 
 #### 调用上下文如何到达方法
 
-沿用 `remote-client-access` 分支的机制，Cordis 源码确认成立：
+机制依赖 Cordis 的两条既有行为：
 
 - `ctx.extend(meta)` 是 `Object.create(parent)` 加自有属性（`vendor/cordis/src/context.ts:99-107`），无注册、无 fiber、不需释放，每次调用派生一个是零成本的。
 - `ctx.get(service)` 返回 `createTraceable(ctx, service)` 代理（`vendor/cordis/src/reflect.ts:233-234`，`utils.ts:117-125`）。读 `ctx` 属性直接返回访问方的 Context（`utils.ts:175`）；读方法时用 `createShadowMethod` 包一层，`apply` 时把 `this` 换成 shadow receiver，shadow 上的 `ctx` 是 `ctx.extend({ [symbols.shadow]: origin })`（`utils.ts:149-163`）。
@@ -174,10 +176,10 @@ declare module '@deepseek-ai/cordis' {
 ### PeerScope
 
 ```text
-/** 一个 Peer 的不透明身份。 */
+/** The opaque identity of one Peer. */
 export type PeerId = Branded<'PeerId'>
 
-/** 一个 Peer 在本 Host 上的会话：接纳它的一方打开与释放；ctx 拥有连接期注册。 */
+/** One Peer's session on this Host: opened and released by the admitting side; ctx owns connection-lifetime registrations. */
 export interface PeerScope {
   readonly id: PeerId
   readonly ctx: Context
@@ -194,18 +196,18 @@ export interface PeerScope {
 
 网关 `handleUpgrade(req, socket, head, peer)` 为该 socket 绑一个固定 Peer 的 opener，并在 `peer.ctx.effect` 里登记 socket 关闭；scope 已失效时改为直接以 1001 关闭 socket。`InvokeRemoteRequest.peer?` 与 `RemoteStreamOpener` 的 `peer` 形参缺席时按操作者作答，现有进程内调用方零改动；没有 connection 的组合里网关自建的操作者替身同样经 `createScope` 建立，`dispose()` 契约一致。按 id 查 Peer、把载体关联到第二个 Peer、Peer 的开关事件，都等第一个需要多 Peer 的消费者出现时再加。
 
-不采用的部分：`@Access`、`AccessDeclaration`、`AccessLevel`、`AccessTarget`、`vouch` / `vouched`、`remote/invoke` 与 `remote/deliver` 事件、`mayDeliver`、`requireVoucher`、`gateway/access-denied`。Peer 是谁、能做什么，由业务插件通过 `peer.ctx` 自行附加，与本 Note 无关。
+Peer 不携带访问模型：Peer 是谁、能做什么，由业务插件通过 `peer.ctx` 自行附加。
 
 ### Client 面
 
 ```text
-/** 生成方法在 Client 面返回的句柄。与 Host 的 RemoteStream 是两个名字，从同一个入口导出。 */
+/** The handle a generated method returns on the Client face. A different name from the Host's RemoteStream, exported from the same entry point. */
 export interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
-  /** 发送一个上行项。非无损 JSON 值、流已终止或已 end 时抛错。 */
+  /** Send one uplink item. Throws on a value that is not lossless JSON, after termination, or after end. */
   send(item: In): void
-  /** 上行半关闭：发 end 帧。幂等。 */
+  /** Half-close the uplink: sends the end frame. Idempotent. */
   end(): void
-  /** 取消整条逻辑流：发 cancel 帧（未收到终止帧时），下行迭代器安静结束。 */
+  /** Cancel the whole logical stream: sends the cancel frame (when no terminal frame has arrived); the downlink iterator ends quietly. */
   dispose(): void
 }
 ```
@@ -221,11 +223,11 @@ export interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
 ```text
 export type RemoteStreamClientMessage =
   | { readonly type: 'open'; readonly streamId: string; readonly endpoint: string; readonly payload: unknown }
-  | { readonly type: 'item'; readonly streamId: string; readonly value?: unknown }   // 新增：上行项
-  | { readonly type: 'end'; readonly streamId: string }                              // 新增：上行半关闭
+  | { readonly type: 'item'; readonly streamId: string; readonly value?: unknown }   // new: uplink item
+  | { readonly type: 'end'; readonly streamId: string }                              // new: uplink half-close
   | { readonly type: 'cancel'; readonly streamId: string }
 
-/** Host 发出的帧不变。 */
+/** Frames sent by the Host are unchanged. */
 export type RemoteStreamServerMessage =
   | { readonly type: 'item'; readonly streamId: string; readonly value?: unknown }
   | { readonly type: 'error'; readonly streamId: string; readonly error: RemoteStreamFailure }
@@ -239,15 +241,15 @@ export type RemoteStreamServerMessage =
 #### Host 侧
 
 ```
-                open 帧
-   (无) ─────────────────────▶ opening ──── opener 解析完成 ────▶ running
+                open frame
+   (none) ───────────────────▶ opening ──── opener resolves ────▶ running
                                   │                                  │
-                                  │ item 帧: inbox.push               │ item 帧: inbox.push
-                                  │ end 帧: inbox.end                 │ end 帧: inbox.end（上行半关闭）
-                                  │                                  │ 方法 yield: 发 item 帧
-                                  │ cancel 帧 / socket 关闭 ────────▶│ cancel 帧 / socket 关闭: control.abort
+                                  │ item frame: inbox.push           │ item frame: inbox.push
+                                  │ end frame: inbox.end             │ end frame: inbox.end (uplink half-close)
+                                  │                                  │ method yield: sends item frame
+                                  │ cancel frame / socket close ────▶│ cancel frame / socket close: control.abort
                                   ▼                                  ▼
-                               aborted ◀───────────────────────── finished（发 end 或 error 帧）
+                               aborted ◀───────────────────────── finished (sends end or error frame)
 ```
 
 `opening` 期间到达的 `item` 帧进入 inbox：`receive()` 是同步的，`open` 帧处理时就创建 `ActiveStream` 与 inbox，而 opener 是异步的。客户端在 `open` 之后立刻发的项不会丢。
@@ -255,11 +257,11 @@ export type RemoteStreamServerMessage =
 #### Client 侧
 
 ```
-   调用生成方法 ──▶ 等 socket ──▶ 发 open ──▶ 句柄可用
-                                              │ send(v): 发 item；end(): 发 end
-                                              │ 下行：inbox.next() → yield；end → 结束；error → 抛
-                                              │ 下行先终止：send/end 抛错
-                                              │ dispose 或调用方 signal 中止：发 cancel（未收到终止帧时）
+   call generated method ──▶ await socket ──▶ send open ──▶ handle usable
+                                                            │ send(v): sends item; end(): sends end
+                                                            │ downlink: inbox.next() → yield; end → ends; error → throws
+                                                            │ downlink terminates first: send/end throw
+                                                            │ dispose or caller signal abort: sends cancel (when no terminal frame has arrived)
 ```
 
 ### 半关闭与结束语义
@@ -269,7 +271,7 @@ export type RemoteStreamServerMessage =
 | 客户端 `end` | 仍开放 | Host 的 `uplink()` 迭代结束；方法继续产出。这是 stdin EOF 的形状 |
 | 仍开放 | Host 方法结束，发 `end` | 客户端句柄终止，之后 `send` / `end` 抛错；Host 调用 `uplink` 迭代器的 `return()`，未消费项丢弃 |
 | 仍开放 | Host 方法抛错，发 `error` | 同上；客户端下行以 `RemoteError` 失败 |
-| 客户端 `dispose` 或 signal 中止 | 任意 | 发 `cancel`；Host `control.abort()`，`cancellableStream` 调方法迭代器的 `return()`，再调 `uplink` 的 `return()`；不发终止帧 |
+| 客户端 `dispose` 或 signal 中止 | 任意 | 发 `cancel`；Host `control.abort()`，`cancellableStream` 先关 `uplink`，再调方法迭代器的 `return()`；不发终止帧 |
 | socket 关闭 | 任意 | Host 中止全部流并等待 `done`；客户端每条流以 `RemoteStreamCarrierError` 失败 |
 | `end` 之后又收到 `item` | 任意 | 该流以 `gateway/protocol` 错误帧失败并中止；socket 不关闭 |
 | 未知 `streamId` 的 `item` / `end` | 任意 | 忽略，与 `cancel` 相同：Host 结束流并删除 id 后，客户端在途的上行帧属正常现象，不能连累同一 socket 上的其他流 |
@@ -318,13 +320,13 @@ credit 帧留待需要持续大流量上行的消费者出现时再加；inbox �
 export type RemoteStream<Out, In = never> = AsyncIterable<Out> & { readonly [STREAM_UPLINK]?: In }
 export type PeerId = Branded<'PeerId'>
 export interface PeerScope { readonly id: PeerId; readonly ctx: Context; dispose(): Promise<void> }
-export interface RemoteInvocation { … }              // 见 Host 面
+export interface RemoteInvocation { … }              // see Host face
 declare module '@deepseek-ai/cordis' { interface Context { readonly invocation: RemoteInvocation | undefined } }
 
 export interface InvocationDescriptor {
-  // 既有字段不变；mode 仍只有 'stream'
+  // existing fields unchanged; mode still has only 'stream'
   readonly mode?: 'stream'
-  /** 上行项 codec，从返回类型 RemoteStream<Out, In> 的 In 生成；In 为 never 时缺席。 */
+  /** Uplink item codec, generated from In of the return type RemoteStream<Out, In>; absent when In is never. */
   readonly uplink?: { readonly codec: TypertCodec }
   readonly cancellation?: { readonly parameter: 'signal' }
   readonly result: TypertCodec
@@ -336,7 +338,7 @@ export interface InvocationDescriptor {
 ### typert generator（`packages/typert/generator/src`）
 
 - `model.ts`：`InvocationModel.uplink?: { boundary: RemoteBoundaryModel }`。
-- `analyzer.ts` `remoteResultType`（现 `~1402`）：对 `mode: 'stream'`，接受的返回类型包装器为 `Iterable<Out>`、`AsyncIterable<Out>`、`RemoteStream<Out, In?>`。识别 `RemoteStream` 的方式与识别标准库 `AsyncIterable` 相同：符号名加声明所在文件（`@deepseek-ai/dsh-typert-protocol` 的 `types.ts`）。第一个类型参数是下行项，第二个存在且不是 `never` 时生成 `uplink` boundary，键名 `${endpoint}:uplink`。
+- `analyzer.ts` `remoteResultType`：对 `mode: 'stream'`，接受的返回类型包装器为 `Iterable<Out>`、`AsyncIterable<Out>`、`RemoteStream<Out, In?>`。识别 `RemoteStream` 的方式与识别标准库 `AsyncIterable` 相同：符号名加声明所在文件（`@deepseek-ai/dsh-typert-protocol` 的 `types.ts`）。第一个类型参数是下行项，第二个存在且不是 `never` 时生成 `uplink` boundary，键名 `${endpoint}:uplink`。
 - `emitter.ts`：描述符字面量输出 `uplink: { codec }`；生成的 Client 签名返回 `RemoteStreamHandle<Out, In>`。
 - 参数循环不再识别任何名为 `uplink` 的参数。
 
@@ -352,9 +354,9 @@ export interface InvokeRemoteRequest {
   readonly namespace: string
   readonly method: string
   readonly args: Readonly<Record<string, unknown>>
-  /** 上行项；缺席等价于立即结束的迭代器。 */
+  /** Uplink items; absent is equivalent to an iterator that ends immediately. */
   readonly uplink?: AsyncIterable<unknown>
-  /** 发起调用的 Peer；缺席即操作者。 */
+  /** The Peer that initiated the call; absent means the operator. */
   readonly peer?: PeerScope
   readonly signal?: AbortSignal
 }
@@ -373,8 +375,8 @@ export type RemoteStreamOpener = (
   control: AbortController,
 ) => Promise<AsyncIterable<unknown>>
 
-// index.ts Config 新增
-/** 每条逻辑流的上行 inbox 上限，按帧的 UTF-8 字节计（默认 262144）。 */
+// index.ts Config addition
+/** Uplink inbox limit per logical stream, in UTF-8 bytes of frames (default 262144). */
 readonly streamInboxBytes?: number
 ```
 
@@ -401,23 +403,23 @@ if (descriptor.cancellation !== undefined) args.push(signal)
 ```text
 interface ActiveStream { readonly control: AbortController; readonly inbox: UplinkInbox; done: Promise<void> }
 
-/** 有界上行队列；作为 uplink() 的源被迭代。 */
+/** Bounded uplink queue; iterated as the source of uplink(). */
 class UplinkInbox implements AsyncIterable<unknown>, AsyncIterator<unknown> {
   constructor(maxBytes: number, onOverflow: (error: RemoteError) => void)
-  push(value: unknown, frameBytes: number): void   // ended 后 push 使流以 gateway/protocol 失败；超限调用 onOverflow
-  end(): void                                        // 幂等
-  fail(error: unknown): void                         // 取消或载体关闭时让迭代器以错误结束
-  next() / return()                                  // 手写：next 与失败竞速，return 立即释放
+  push(value: unknown, frameBytes: number): void   // push after ended fails the stream with gateway/protocol; overflow calls onOverflow
+  end(): void                                        // idempotent
+  fail(error: unknown): void                         // ends the iterator with an error on cancel or carrier closure
+  next() / return()                                  // hand-written: next races failure, return releases immediately
 }
 ```
 
 `receive(text)` 分派：
 
 ```
-open   : 已存在 → 抛错（socket 1008）；否则创建 { control, inbox, done }，启动 pump
-item   : 不存在 → 忽略；否则 inbox.push(value, bytes)
-end    : 不存在 → 忽略；否则 inbox.end()
-cancel : 不存在 → 忽略；否则 control.abort(new Error('Remote stream cancelled'))
+open   : exists → throw (socket 1008); otherwise create { control, inbox, done } and start the pump
+item   : missing → ignore; otherwise inbox.push(value, bytes)
+end    : missing → ignore; otherwise inbox.end()
+cancel : missing → ignore; otherwise control.abort(new Error('Remote stream cancelled'))
 ```
 
 `pump` 把 inbox 与该 socket 的 Peer 传给 opener；`finally` 里 `inbox.fail(...)`。以 `RemoteError` 为 reason 的中止由 pump 作为 `error` 帧发出（网关或 mux 发起的失败）；以普通 `Error` 为 reason 的中止（cancel、socket 关闭）不发终止帧。
@@ -447,40 +449,40 @@ cancel : 不存在 → 忽略；否则 control.abort(new Error('Remote stream ca
 ### 打开、上行、半关闭、下行结束
 
 ```
-Client 调用方         mux client             mux server            gateway              Host 方法
-   │ attach(req)        │                       │                     │                    │
-   │───────────────────▶│ open { id, ep, payload } ─────────────────▶│ 创建 inbox           │
-   │ s.send(v1)         │ item { id, v1 } ──────────────────────────▶│ inbox.push(v1)       │
-   │                    │                       │                     │ prepareInvocation   │
-   │                    │                       │                     │ extend({ invocation }) │
-   │                    │                       │                     │───── method(req, signal) ─────────▶│
-   │                    │                       │                     │                    │ uplink() → v1
-   │ s.send(v2)         │ item { id, v2 } ──────────────────────────▶│ inbox.push(v2)       │ → v2
-   │ s.end()            │ end { id } ───────────────────────────────▶│ inbox.end()          │ 迭代结束
-   │◀── yield o1 ───────│◀────────────────────── item { id, o1 } ────│◀── yield o1 ────────│
-   │◀── 结束 ───────────│◀────────────────────── end { id } ─────────│◀── 方法返回 ─────────│ gateway 调 uplink.return()
+Client caller      mux client              mux server              gateway                 Host method
+   │ attach(req)        │                       │                     │                         │
+   │───────────────────▶│ open { id, ep, payload } ──────────────────▶│ create inbox            │
+   │ s.send(v1)         │ item { id, v1 } ───────────────────────────▶│ inbox.push(v1)          │
+   │                    │                       │                     │ prepareInvocation       │
+   │                    │                       │                     │ extend({ invocation })  │
+   │                    │                       │                     │── method(req, signal) ─▶│
+   │                    │                       │                     │                         │ uplink() → v1
+   │ s.send(v2)         │ item { id, v2 } ───────────────────────────▶│ inbox.push(v2)          │ → v2
+   │ s.end()            │ end { id } ────────────────────────────────▶│ inbox.end()             │ iteration ends
+   │◀── yield o1 ───────│◀────────────────────── item { id, o1 } ─────│◀── yield o1 ────────────│
+   │◀── ends ───────────│◀────────────────────── end { id } ──────────│◀── method returns ──────│ gateway calls uplink.return()
 ```
 
 ### 客户端 dispose
 
 ```
-Client 调用方         mux client             mux server            gateway              Host 方法
-   │ s.dispose()        │                       │                     │                    │
-   │───────────────────▶│ 停泵；源 return()（不等待）                    │                    │
-   │◀── 迭代器结束 ─────│ cancel { id } ────────────────────────────▶│ control.abort()      │
-   │                    │                       │                     │ cancellableStream: iterator.return() ──▶│ finally 清理
-   │                    │                       │                     │ uplink.return()     │
-   │                    │                       │ 不发终止帧            │                    │
+Client caller      mux client              mux server              gateway                 Host method
+   │ s.dispose()        │                       │                     │                         │
+   │───────────────────▶│ stop pump; source return() (not awaited)    │                         │
+   │◀── iterator ends ──│ cancel { id } ─────────────────────────────▶│ control.abort()         │
+   │                    │                       │                     │ cancellableStream: invocation.close() closes uplink
+   │                    │                       │                     │ iterator.return() ─────▶│ finally cleanup
+   │                    │                       │ no terminal frame   │                         │
 ```
 
 ### inbox 超限
 
 ```
-Client 调用方         mux client             mux server                        gateway / Host 方法
+Client caller      mux client              mux server                        gateway / Host method
    │ s.send(vN)         │ item { id, vN } ─────▶│ inbox.push: bytes > streamInboxBytes │
    │                    │                       │ onOverflow → control.abort(RemoteError uplink-overflow)
-   │                    │                       │                                    │ uplink() 以该错误结束；方法迭代器 return()
-   │◀── throw ──────────│◀── error { id, uplink-overflow } ─────────│ pump 因 reason 是 RemoteError 发 error 帧
+   │                    │                       │                                      │ uplink() ends with that error; method iterator return()
+   │◀── throw ──────────│◀──────────────────────│ error { id, uplink-overflow }: the pump sends an error frame because the reason is a RemoteError
 ```
 
 ## 边界矩阵
@@ -527,7 +529,7 @@ class EchoService extends TypertRemoteService {
   }
 }
 
-// 客户端
+// Client
 const stream = remote.echo.echo('> ')
 stream.send('a'); stream.send('b'); stream.end()
 const replies: string[] = []
@@ -560,7 +562,7 @@ for await (const reply of stream) replies.push(reply)   // ['> a', '> b']
 
 ## 后果
 
-- **买到的**：一条流两个方向，终端按键、审批回答、后台任务 stdin 这类交互式场景不再各造一套"一条流加一个 unary"；Host 方法知道调用者；上行类型与下行类型在返回类型里一处声明，上行项与下行项同样逐项严格校验；既有 `AsyncIterable<Out>` 方法与 unary 方法的生成物与线路帧完全不变。
+- **买到的**：一条流两个方向，终端按键、审批回答、后台任务 stdin 这类交互式场景不再各造一套"一条流加一个 unary"；Host 方法知道调用者；上行类型与下行类型在返回类型里一处声明，上行项来自浏览器，在 Host 逐项严格校验，下行项是 Host 自产的类型值，直接透传；既有 `AsyncIterable<Out>` 方法与 unary 方法的生成物与线路帧完全不变。
 - **`this.ctx.invocation` 在非 Remote 调用下是 `undefined`**，方法读它要处理可选；一个只被进程内直接调用的服务方法读到 `undefined` 是正确行为。
 - **inbox 上限对所有流生效**：一个不读上行的方法收到大量上行帧会整流失败。这是刻意的显式失败，README 记明。
 - **Peer 只有操作者一个**，`admit` 是唯一的接纳点；第一个需要第二个 Peer 的消费者要在 `dsh-client-connection` 加上打开、关联与事件。
