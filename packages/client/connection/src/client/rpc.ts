@@ -98,7 +98,7 @@ async function parseBinaryResponse(response: Response): Promise<ReturnType<typeo
     throw new TypeError('connection: invalid binary response result')
   }
   const root = { value: full.result.value }
-  for (const attachment of envelope.attachments as unknown[]) {
+  for (const attachment of envelope.attachments) {
     if (!isRecord(attachment) || attachment.codec !== 'bytes' || typeof attachment.part !== 'string'
       || !Array.isArray(attachment.path)) {
       throw new TypeError('connection: invalid binary response attachment')
@@ -110,15 +110,19 @@ async function parseBinaryResponse(response: Response): Promise<ReturnType<typeo
     }
     let parent: object = root
     let key: string | number = 'value'
-    for (const segment of attachment.path as unknown[]) {
-      const value = Reflect.get(parent, key) as unknown
-      if (typeof value !== 'object' || value === null
-        || (Array.isArray(value)
-          ? typeof segment !== 'number' || !Number.isSafeInteger(segment) || segment < 0 || segment >= value.length
-          : typeof segment !== 'string')
-        || !Object.hasOwn(value, segment as string | number)) {
+    for (const segment of attachment.path) {
+      const value: unknown = Reflect.get(parent, key)
+      if (typeof value !== 'object' || value === null) {
         throw new TypeError('connection: invalid binary response path')
       }
+      if (Array.isArray(value)) {
+        if (typeof segment !== 'number' || !Number.isSafeInteger(segment) || segment < 0 || segment >= value.length) {
+          throw new TypeError('connection: invalid binary response path')
+        }
+      } else if (typeof segment !== 'string') {
+        throw new TypeError('connection: invalid binary response path')
+      }
+      if (!Object.hasOwn(value, segment)) throw new TypeError('connection: invalid binary response path')
       parent = value
       key = segment as string | number
     }

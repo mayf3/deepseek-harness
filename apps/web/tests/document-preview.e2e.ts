@@ -580,7 +580,9 @@ else process.exit(1);
     const metadata = transferredBody.get('metadata')
     if (typeof metadata !== 'string') throw new Error('missing PNG metadata')
     const { attachments } = JSON.parse(metadata) as { attachments: { path: string[]; codec: string; part: string }[] }
-    expect(attachments).toEqual([{ path: ['data'], codec: 'bytes', part: expect.any(String) as unknown }])
+    expect(attachments).toHaveLength(1)
+    expect(attachments[0]).toMatchObject({ path: ['data'], codec: 'bytes' })
+    expect(attachments[0]!.part).toEqual(expect.any(String))
     const transferredFile = transferredBody.get(attachments[0]!.part)
     if (transferredFile === null || typeof transferredFile === 'string') throw new Error('missing PNG payload')
     expect(Buffer.from(await transferredFile.arrayBuffer())).toEqual(TINY_PNG)

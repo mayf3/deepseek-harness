@@ -3,7 +3,7 @@
  * web carrier; the fetch-shaped handler itself is transport-agnostic).
  */
 
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { IncomingMessage } from 'node:http'
 import { Readable } from 'node:stream'
 import type { ConnectionFetchHandler } from './rpc.ts'
 
@@ -12,6 +12,17 @@ import type { ConnectionFetchHandler } from './rpc.ts'
  * headroom (~267.7 MiB required), rounded up for slack. The bridge buffers
  * each body in memory, so this cap is also the per-request resident bound. */
 export const DEFAULT_MAX_REQUEST_BODY_BYTES = 300 * 1024 * 1024
+
+interface BridgeServerResponse {
+  readonly destroyed: boolean
+  readonly writableEnded: boolean
+  on(event: 'close', listener: () => void): this
+  off(event: 'close' | 'drain', listener: () => void): this
+  once(event: 'close' | 'drain', listener: () => void): this
+  writeHead(statusCode: number, headers?: Record<string, string>): unknown
+  write(chunk: Uint8Array): boolean
+  end(): unknown
+}
 
 /**
  * Bridge one node:http request to the fetch-shaped handler (client close
@@ -23,7 +34,7 @@ export const DEFAULT_MAX_REQUEST_BODY_BYTES = 300 * 1024 * 1024
  */
 export async function bridge(
   req: IncomingMessage,
-  res: ServerResponse,
+  res: BridgeServerResponse,
   apiHandler: ConnectionFetchHandler,
   maxRequestBodyBytes = DEFAULT_MAX_REQUEST_BODY_BYTES,
 ): Promise<void> {

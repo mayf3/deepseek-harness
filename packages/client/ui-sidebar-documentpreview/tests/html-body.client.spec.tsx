@@ -161,7 +161,7 @@ describe('HtmlBody', () => {
     const preference = new DeveloperToolsPreference(host.scope)
     const readRelated = vi.fn<HtmlBodyProps['readRelated']>().mockResolvedValue({ ok: true, value: {
       absolutePath: '/workspace/asset.js', version: 'asset-v1', offset: 0, eof: true,
-      data: btoa('window.loaded = true'),
+      data: utf8('window.loaded = true'),
     } })
     const scripted: HtmlBodyProps = {
       ...props('<p>Preview</p><script src="./asset.js"></script>'),

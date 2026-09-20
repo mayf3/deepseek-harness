@@ -76,7 +76,7 @@ describe('HTTP bridge abort', () => {
   })
 
   it.each(['write', 'backpressure'])('finishes a multipart response without further writes when the client closes during %s', async (phase) => {
-    const request = Readable.from([]) as unknown as IncomingMessage
+    const request = Readable.from([]) as IncomingMessage
     Object.assign(request, { url: '/api/workspaceFiles/readBytes', method: 'GET', headers: {} })
     const body = new FormData()
     body.set('metadata', '{}')
@@ -84,6 +84,7 @@ describe('HTTP bridge abort', () => {
     let writes = 0
     let cleaningUp = false
     const response = Object.assign(new EventEmitter(), {
+      destroyed: false,
       writableEnded: false,
       writeHead() { return this },
       write() {
@@ -96,7 +97,7 @@ describe('HTTP bridge abort', () => {
         return cleaningUp
       },
       end() { this.writableEnded = true; return this },
-    }) as unknown as ServerResponse
+    })
     let settled = false
     const pending = bridge(request, response, {
       requestBodyMode: () => 'buffered',
@@ -115,14 +116,15 @@ describe('HTTP bridge abort', () => {
   })
 
   it('discards bytes returned after the client disconnects', async () => {
-    const request = Readable.from([]) as unknown as IncomingMessage
+    const request = Readable.from([]) as IncomingMessage
     Object.assign(request, { url: '/api/workspaceFiles/readBytes', method: 'GET', headers: {} })
     const response = Object.assign(new EventEmitter(), {
+      destroyed: false,
       writableEnded: false,
       writeHead() { return this },
       write() { throw new Error('a disconnected response must not receive bytes') },
       end() { this.writableEnded = true; return this },
-    }) as unknown as ServerResponse
+    })
     const started = Promise.withResolvers<undefined>()
     let controller!: ReadableStreamDefaultController<Uint8Array>
     const body = new ReadableStream<Uint8Array>({

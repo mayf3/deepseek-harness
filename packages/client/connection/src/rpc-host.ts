@@ -310,8 +310,8 @@ function fullResponse(rpcId: RpcIdType, result: Awaited<ReturnType<ConnectionRpc
     // Capture accessors and toJSON once, before materializing the JSON metadata.
     let value = input
     if (input !== null && typeof input === 'object' && !(input instanceof Uint8Array)) {
-      const toJSON = Reflect.get(input, 'toJSON') as unknown
-      if (typeof toJSON === 'function') value = Reflect.apply(toJSON, input, [key]) as unknown
+      const toJSON: unknown = Reflect.get(input, 'toJSON')
+      if (typeof toJSON === 'function') value = Reflect.apply(toJSON, input, [key])
     }
     if (value instanceof Uint8Array) return writeBytes(value, path)
     if (typeof value !== 'object' || value === null) return value
@@ -327,7 +327,7 @@ function fullResponse(rpcId: RpcIdType, result: Awaited<ReturnType<ConnectionRpc
     } else {
       const fields: Record<string, unknown> = {}
       for (const key of Object.keys(value)) {
-        const item = Reflect.get(value, key) as unknown
+        const item: unknown = Reflect.get(value, key)
         // A toJSON method on the projected object must not run a second time.
         if (key === 'toJSON' && typeof item === 'function') continue
         const extracted = child(item, key)
