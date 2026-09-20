@@ -2,5 +2,4 @@
 - button "Line wrap" [pressed]
 - button "Read the file again"
 - button "Show file location"
-- button "More ways to open"
 - text: alpha

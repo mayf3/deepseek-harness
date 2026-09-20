@@ -36,13 +36,11 @@
   - text: — no retries, no extra files.
 - paragraph: PRESENT_DONE
 - button "Preview report.txt in sidebar"
-- text: report.txt
-- status: Opened in default app
+- text: report.txt delivered report
 - button "Open in Test Editor"
 - button "More ways to open"
 - button "Preview 说明.txt in sidebar"
-- text: 说明.txt
-- status: Opened in default app
+- text: 说明.txt delivered note
 - button "Open in Test Editor"
 - button "More ways to open"
 - button "Copy"

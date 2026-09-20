@@ -222,3 +222,20 @@ it('cancels success expiry when its controller is disposed', async () => {
   await vi.advanceTimersByTimeAsync(6000)
   expect(controller.state.getSnapshot()).toBe(state)
 })
+
+
+it('owns the expiry before notifying subscribers that can dispose the controller', async () => {
+  vi.useFakeTimers()
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
+  const controller = new PresentedOpenController()
+  let disposal: Promise<void> | undefined
+  const release = controller.state.subscribe(() => {
+    if (controller.state.getSnapshot()[url] === 'opened') disposal = controller.dispose()
+  })
+  await controller.open(id, 2, 1)
+  await disposal
+  const state = controller.state.getSnapshot()
+  await vi.advanceTimersByTimeAsync(6000)
+  expect(controller.state.getSnapshot()).toBe(state)
+  release()
+})

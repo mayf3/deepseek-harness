@@ -139,13 +139,13 @@ export class PresentedOpenController {
       phase = failure
     }
     if (!this.lifetime.signal.aborted) {
-      this.state.update((state) => { state[url] = phase })
       if (phase === 'opened' || phase === 'revealed') {
         this.expiry.set(url, setTimeout(() => {
           this.expiry.delete(url)
           this.state.update((state) => { Reflect.deleteProperty(state, url) })
         }, PRESENTED_SUCCESS_HOLD_MS + PRESENTED_SUCCESS_FADE_MS))
       }
+      this.state.update((state) => { state[url] = phase })
     }
     return phase === 'opened' || phase === 'revealed' ? null : action === 'reveal' ? 'revealError' : 'openError'
   }
