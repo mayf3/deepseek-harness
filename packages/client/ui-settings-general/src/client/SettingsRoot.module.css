@@ -79,7 +79,7 @@
    One height for every section, taken from the viewport rather than the
    content: sections differ by hundreds of pixels (a settings list against the
    composition editor), and a content-sized panel would resize under the
-   pointer on every nav click. Whatever does not fit scrolls in `.options`.
+   pointer on every nav click. The navigation and options scroll independently.
    24px of air above and below, widened to the frame's published top clearance
    (the macOS window strip, where clicks drag the window) on both sides so the
    panel sits centered and clear of the strip. */
@@ -129,6 +129,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow-y: auto;
 }
 
 /* Nav cell (figma .Setting-nav-cell 501:29962): 164x40, r12, pad
