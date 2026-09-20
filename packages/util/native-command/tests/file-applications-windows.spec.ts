@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi, onTestFinished } from 'vitest'
 import { nativeFileApplications, openNativeFileApplication } from '../src/file-applications.ts'
-import { runNativeCommand } from '../src/runner.ts'
+import { runNativeCommand, type NativeCommandRunner } from '../src/runner.ts'
 
 /** Encode fixture data without placing its quotes or Unicode in executable PowerShell text. */
 function literal(value: string): string {
@@ -21,11 +21,19 @@ it.skipIf(process.platform !== 'win32')('queries and invokes a registered Window
   const marker = join(root, 'opened.json')
   const script = join(root, 'handler.cjs')
   const lifetime = new AbortController()
+  const active = new Set<Promise<Awaited<ReturnType<NativeCommandRunner>>>>()
+  const run: NativeCommandRunner = (command, args, signal) => {
+    const task = runNativeCommand(command, args, signal)
+    active.add(task)
+    void task.then(() => active.delete(task), () => active.delete(task))
+    return task
+  }
   const runScript = async (source: string): Promise<void> => {
-    await runNativeCommand('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')], lifetime.signal)
+    await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')], lifetime.signal)
   }
   onTestFinished(async () => {
     lifetime.abort()
+    await Promise.allSettled([...active])
     try {
       await runNativeCommand('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(`
 $root = [Microsoft.Win32.Registry]::CurrentUser
@@ -45,10 +53,10 @@ $key.SetValue('${progId}', ''); $key.Dispose()
 $key = $root.CreateSubKey('Software\\Classes\\${progId}\\shell\\open\\command')
 $key.SetValue('', ${literal(`"${process.execPath}" "${script}" "%1"`)}); $key.Dispose()
 `)
-  const applications = await nativeFileApplications(path, lifetime.signal)
+  const applications = await nativeFileApplications(path, lifetime.signal, { run })
   const expected = applications.find(app => app.id.toLowerCase() === process.execPath.toLowerCase())
   expect(expected).toMatchObject({ default: true, name: expect.any(String) })
-  await openNativeFileApplication(path, expected!.id, lifetime.signal)
+  await openNativeFileApplication(path, expected!.id, lifetime.signal, { run })
   let opened: { path: string; pid: number } | undefined
   await vi.waitFor(async () => {
     opened = JSON.parse(await readFile(marker, 'utf8')) as { path: string; pid: number }
