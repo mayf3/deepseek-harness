@@ -25,7 +25,7 @@ const CHILD = 'child' as SessionId
 const GRANDCHILD = 'grandchild' as SessionId
 const t: SubagentHeaderLineageProps['t'] = makeTranslate(zh)
 
-type CatalogFixture = { entries: readonly SubagentCatalogRow[]; parentAvailable: boolean; state: 'loading' | 'ready' | 'error'; error: SessionListState['projectionsBySession'][SessionId]['error'] }
+type CatalogFixture = { entries: readonly (SubagentCatalogRow | { id: SessionId; mode: 'unknown'; label?: string; activity: 'inactive' })[]; parentAvailable: boolean; state: 'loading' | 'ready' | 'error'; error: SessionListState['projectionsBySession'][SessionId]['error'] }
 
 function catalog(over: Partial<CatalogFixture> = {}): CatalogFixture {
   return {
@@ -400,6 +400,16 @@ describe('SubagentHeaderLineage', () => {
       parentSessionId: PARENT,
       childSessionId: unlabeled, mode: 'one-shot',
     })
+  })
+
+  it('keeps unknown catalog children clickable by their durable parent address', () => {
+    const input = props(catalog({ entries: [{ id: CHILD, mode: 'unknown', activity: 'inactive' }] }))
+    render(<SubagentHeaderLineage {...input} />)
+    hoverCatalog(screen.getByRole('button', { name: /子代理/ }))
+    const row = screen.getByRole('treeitem', { name: new RegExp(CHILD) })
+    expect(row.textContent).toContain('模式未知')
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(input.openChild).toHaveBeenCalledWith({ parentSessionId: PARENT, childSessionId: CHILD, mode: 'unknown' })
   })
 
   it('shows durable completion and token totals, ticks active duration, and freezes inactive rows', async () => {
@@ -924,6 +934,11 @@ describe('SubagentReadOnlyComposer', () => {
   it('explains the exact missing-parent recovery path', () => {
     render(<SubagentReadOnlyComposer matched={{ reason: 'parent-unavailable' }} t={t} />)
     expect(screen.getByRole('status').textContent).toContain('父会话当前不在线')
+  })
+
+  it('keeps an unknown child read-only until its descriptor is available', () => {
+    render(<SubagentReadOnlyComposer matched={{ reason: 'unknown' }} t={t} />)
+    expect(screen.getByRole('status').textContent).toContain('读取子会话后才能确定是否可继续')
   })
 
   it('explains that one-shot histories never accept follow-ups', () => {
