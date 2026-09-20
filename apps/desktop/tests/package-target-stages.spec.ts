@@ -1,9 +1,16 @@
 import { writeFileSync } from 'node:fs'
 import { afterEach, expect, it, vi } from 'vitest'
 import { packageTarget, parseDesktopPackageInvocation } from '../scripts/package-target.ts'
+import { withMacOSNotarizationProxy } from '../scripts/macos-notarization-proxy.ts'
 import { packageMacOSArtifacts } from '../scripts/package-macos.ts'
 import { withWindowsSigningStage } from '../scripts/windows-signing-stage.mjs'
 import { prepareWindowsSignatureCacheDirectory } from '../scripts/windows-signature-cache-directory.mjs'
+
+vi.mock('../scripts/macos-notarization-proxy.ts', () => ({
+  withMacOSNotarizationProxy: vi.fn(async (_proxy: string | undefined, action: () => Promise<void>) => action()),
+}))
+vi.mock('../scripts/notarize-macos.mjs', () => ({ notarizeMacOS: vi.fn(async () => {}) }))
+vi.mock('../scripts/package-macos.ts', () => ({ packageMacOSArtifacts: vi.fn(async () => {}) }))
 
 vi.mock('../scripts/windows-signing-stage.mjs', () => ({
   withWindowsSigningStage: vi.fn(async (_options: object, operation: () => Promise<void>) => operation()),
@@ -12,8 +19,6 @@ vi.mock('../scripts/windows-signature-cache-directory.mjs', () => ({
   prepareWindowsSignatureCacheDirectory: vi.fn(async () => {}),
   resolveWindowsSignatureCacheDirectory: vi.fn(() => 'C:\\fixture-cache'),
 }))
-
-vi.mock('../scripts/package-macos.ts', () => ({ packageMacOSArtifacts: vi.fn() }))
 
 // Keep the real orchestration and manifest reads; this suite owns no release directories or subprocesses.
 vi.mock('node:fs', async importOriginal => ({
@@ -101,18 +106,58 @@ it('checks the assembled macOS runtime before notarizing and recording the relea
   expect(writeFileSync).toHaveBeenCalledOnce()
 })
 
-it('refuses macOS notarization and release records after an assembled-runtime failure', async () => {
+it.each([false, true])('refuses macOS notarization and release records after an assembled-runtime failure (directory=%s)', async (directory) => {
   const { run } = supervisor('exec tsx scripts/smoke-packaged-runtime.ts')
-  await expect(packageTarget(parseDesktopPackageInvocation(['mac-arm64'], 'darwin', 'arm64'), environment, run))
+  await expect(packageTarget(parseDesktopPackageInvocation(['mac-arm64', ...(directory ? ['--dir'] : [])], 'darwin', 'arm64'), environment, run))
     .rejects.toThrow('stage refused')
+  expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
   expect(packageMacOSArtifacts).not.toHaveBeenCalled()
   expect(writeFileSync).not.toHaveBeenCalled()
 })
 
 it('checks macOS directory packages without writing a release record', async () => {
   const { run, stages } = supervisor()
-  await packageTarget(parseDesktopPackageInvocation(['mac-arm64', '--dir'], 'darwin', 'arm64'), environment, run)
+  await packageTarget(parseDesktopPackageInvocation(['mac-arm64', '--dir'], 'darwin', 'arm64'), { ...environment, APPLE_KEYCHAIN_PROFILE: 'fixture' }, run)
   expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts')
   expect(packageMacOSArtifacts).not.toHaveBeenCalled()
+  expect(writeFileSync).not.toHaveBeenCalled()
+})
+
+it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace packing and download routing only to download stages', async (concurrency) => {
+  const { run } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation(['mac-arm64', '--prepare-only'], 'darwin', 'arm64'), {
+    ...environment, DSH_DESKTOP_MACOS_PACK_CONCURRENCY: concurrency,
+    DSH_DESKTOP_MACOS_DOWNLOAD_PROXY: 'http://downloads.example:8080',
+    DSH_DESKTOP_MACOS_NOTARIZATION_PROXY: 'http://apple.example:8081',
+  }, run)
+  const calls = run.run.mock.calls
+  const packs = calls.filter(call => call[0].startsWith('run release:pack'))
+  expect(packs).toHaveLength(2)
+  for (const call of packs) expect(call[2].slice(-2)).toEqual(['--concurrency', concurrency ?? '4'])
+  for (const call of calls) {
+    expect(call[3].env.HTTP_PROXY).toBe(/^run prepare:(?:runtime|dsh)$/u.test(call[0]) ? 'http://downloads.example:8080' : undefined)
+  }
+  expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
+})
+
+it.each([false, true])('scopes the Apple proxy around notarization (directory=%s)', async (directory) => {
+  const { run } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation(['mac-arm64', ...(directory ? ['--dir'] : [])], 'darwin', 'arm64'), {
+    ...environment, APPLE_KEYCHAIN_PROFILE: 'fixture', DSH_DESKTOP_MACOS_NOTARIZATION_PROXY: 'http://apple.example:8081',
+  }, run)
+  expect(withMacOSNotarizationProxy).toHaveBeenCalledExactlyOnceWith('http://apple.example:8081', expect.any(Function), undefined, undefined, expect.any(Function))
+  expect(packageMacOSArtifacts).toHaveBeenCalledTimes(directory ? 0 : 1)
+  if (!directory) {
+    const signing = run.run.mock.calls.findIndex(call => call[0].includes('--config.mac.notarize=false'))
+    expect(signing).toBeGreaterThan(-1)
+    expect(run.run.mock.invocationCallOrder[signing]).toBeLessThan(vi.mocked(withMacOSNotarizationProxy).mock.invocationCallOrder[0]!)
+  }
+})
+
+it('does not write a release completion record when Apple proxy cleanup fails', async () => {
+  const { run } = supervisor()
+  vi.mocked(withMacOSNotarizationProxy).mockRejectedValueOnce(new Error('proxy restoration failed'))
+  await expect(packageTarget(parseDesktopPackageInvocation(['mac-arm64'], 'darwin', 'arm64'), environment, run))
+    .rejects.toThrow('proxy restoration failed')
   expect(writeFileSync).not.toHaveBeenCalled()
 })

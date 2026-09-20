@@ -1,4 +1,5 @@
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
 
 /** Stable Loader-tree identity of one configured plugin entry. */
 export type PluginEntryId = Branded<'PluginEntryId'>
@@ -17,6 +18,8 @@ export interface PluginInventoryEntry {
   readonly entryId: PluginEntryId
   /** Exact module specifier imported by the Loader entry. */
   readonly moduleName: string
+  /** Local package display metadata, independent of whether the entry is enabled. */
+  readonly meta?: PluginLocalizedMeta
   /** Effective Loader enablement, including disabled ancestor groups. */
   readonly enabled: boolean
   readonly fiberPhase: PluginFiberPhase
@@ -31,6 +34,8 @@ export interface AgentPresetPluginRow {
   readonly entryId: string | null
   /** Module specifier the row names. */
   readonly moduleName: string
+  /** Local package display metadata, independent of whether the preset is mounted. */
+  readonly meta?: PluginLocalizedMeta
   /**
    * Effective enablement, including disabled ancestor groups. `'conditional'`
    * marks a `!!js` disabled expression on a composition no session has

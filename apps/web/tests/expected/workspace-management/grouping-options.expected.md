@@ -7,3 +7,7 @@
   - text: Order by
   - menuitem "Manual"
   - menuitem "Last updated"
+  - separator
+  - text: Filter sessions
+  - menuitem "Show archived"
+  - menuitem "Archived only"

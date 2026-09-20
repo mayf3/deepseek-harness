@@ -1,7 +1,7 @@
 /** Map system snapshots and conversation turns to Messages using the configured route capability. */
 
 import { LlmError, requestImageHandleText } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message, RequestMessage } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { DeepSeekConnectionOptions as Connection } from '../../common/types.ts'
 import type { DeepSeekFileId } from '../../common/file-id.ts'
@@ -51,7 +51,7 @@ function assistant(message: Message, model: string, onReplayDegrade?: (reason: s
  * @returns the Messages API JSON body.
  */
 export function serialize(
-  options: GenerateOptions, connection: Connection, history: readonly Message[],
+  options: GenerateOptions, connection: Connection, history: readonly RequestMessage[],
   images: ReadonlyMap<ImageAttachmentRef['attachmentId'], RequestImageAttachment>, access: ImageAttachmentAccessResolver,
   onReplayDegrade?: (reason: string) => void,
   fileIds?: ReadonlyMap<ImageAttachmentRef['attachmentId'], DeepSeekFileId>,
@@ -83,7 +83,14 @@ export function serialize(
     if (messages.at(-1)?.role !== 'user') return unsupported('system update without a preceding user or tool-result turn')
     messages.push(...systemUpdates.splice(0))
   }
+  // Deferred definitions are persisted for V4; provider loading is intentionally deferred.
+  if (options.tools?.some(tool => tool.deferLoading === true)) return unsupported('deferred tool loading')
   for (const message of history) {
+    // Developer history is persisted for V4; provider serialization is intentionally deferred.
+    if (message.role === 'developer') return unsupported('developer message')
+    if (message.content.some(block => block.type === 'tool-addition' || block.type === 'tool-removal')) {
+      return unsupported('tool-change blocks outside developer messages')
+    }
     if (message.role === 'system') {
       const texts = message.content.filter(block => block.type === 'text')
       if (texts.length !== message.content.length) return unsupported('non-text system message')
@@ -97,14 +104,16 @@ export function serialize(
       continue
     }
     if (message.role === 'assistant') flushSystemUpdates()
-    const content: WireBlock[] = message.role === 'assistant' ? assistant(message, options.model, onReplayDegrade) : message.content.flatMap((block): WireBlock[] => {
-      if (block.type !== 'tool-result') return input([block])
-      return [{ type: 'tool_result', tool_use_id: block.toolCallId, content: input(block.content), ...block.isError === undefined ? {} : { is_error: block.isError } }]
-    })
+    const content: WireBlock[] = message.role === 'assistant'
+      ? assistant(message, options.model, onReplayDegrade)
+      : message.role === 'tool'
+        ? [{ type: 'tool_result', tool_use_id: message.toolCallId, content: input(message.content), ...message.isError === undefined ? {} : { is_error: message.isError } }]
+        : message.content.flatMap((block): WireBlock[] => input([block]))
     if (message.role === 'user' && content.length === 0) continue
+    const wireRole = message.role === 'tool' ? 'user' : message.role
     const previous = messages.at(-1)
-    if (previous?.role === message.role) previous.content.push(...content)
-    else messages.push({ role: message.role, content })
+    if (previous?.role === wireRole) previous.content.push(...content)
+    else messages.push({ role: wireRole, content })
   }
   flushSystemUpdates()
   let pending = new Set<string>()

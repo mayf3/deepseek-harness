@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-13-macos-hidden-titlebar-vibrancy.md
-2026-09-13-macos-hidden-titlebar-vibrancy.md: 99ac240698fb229f9a0d66a8000251058b52491e
-2026-09-13-macos-hidden-titlebar-vibrancy.zh.md: 26bbb616485e49de2f70a3d142ea84dfd5bd7cb9
+2026-09-13-macos-hidden-titlebar-vibrancy.md: 807c79d06c468e01b8b9df3f18a32e5fbaba1e90
+2026-09-13-macos-hidden-titlebar-vibrancy.zh.md: a521aff7624b1f9dbab18e7d0f02f61af0bdc24a

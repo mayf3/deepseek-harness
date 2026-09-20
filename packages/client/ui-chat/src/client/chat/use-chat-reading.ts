@@ -118,13 +118,14 @@ export class ChatReading {
   }
 
   /**
-   * Handle pinned layout movement immediately and defer genuine reader sampling.
-   * @param scroll - attributed scroll delivery; reader movement remains pending until sampled.
+   * Handle pinned layout movement and reader arrivals at the floor immediately.
+   * @param scroll - attributed scroll delivery; other reader movement remains pending until sampled.
    */
   readonly onScroll = (scroll: ViewportScroll): void => {
-    if (this.state.followingTail && !scroll.movedByReader) {
+    if ((!scroll.movedByReader && this.state.followingTail)
+      || (scroll.movedByReader && scroll.metrics.top >= scroll.metrics.floor)) {
       this.followTail()
-      this.sampled?.({ position: null, movedByReader: false, followingTail: true })
+      this.sampled?.({ position: null, movedByReader: scroll.movedByReader, followingTail: true })
       return
     }
     this.sampleTimer ??= window.setTimeout(this.flushSample, SCROLL_SAMPLE_INTERVAL_MS)

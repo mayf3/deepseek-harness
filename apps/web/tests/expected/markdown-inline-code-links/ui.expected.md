@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Inline code links" [disabled]
+  - navigation "Session hierarchy": Inline code links
   - button "More actions"
   - tablist:
     - tab "Chat" [selected]

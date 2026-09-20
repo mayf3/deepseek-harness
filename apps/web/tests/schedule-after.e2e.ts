@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { ToolCallId, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   ScheduleId,
@@ -34,6 +34,12 @@ import {
   conversationContextKey,
   saveFailureShot,
 } from './support.ts'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'schedule-web-e2e': { kind: 'schedule-web-e2e' } & ContextFormed
+  }
+}
 
 const MODE = webSnapshotMode()
 const OVERLAY = fileURLToPath(new URL('../../cli/config/examples/schedule/cordis.yml', import.meta.url))
@@ -190,7 +196,7 @@ function requestText(options: GenerateOptions): string {
 /** Require one assembled request to preserve the reminder-content trust boundary. */
 function expectReminderFraming(options: GenerateOptions): void {
   const reminder = options.messages.find(message => (
-    message.source.kind === 'plugin' && message.source.plugin === 'schedule'
+    message.role === 'user' && message.source?.kind === 'schedule'
   ))
   expect(reminder?.role).toBe('user')
   const text = reminder?.content.find(block => block.type === 'text')?.text
@@ -243,8 +249,9 @@ async function openSession(page: Page, title: string): Promise<void> {
   const row = page.getByRole('treeitem', { name: new RegExp(title) })
   await row.waitFor({ timeout: 15_000 })
   await row.click()
+  // The current crumb renders as plain text, not a button.
   await page.getByRole('navigation', { name: 'Session hierarchy' })
-    .getByRole('button', { name: title, exact: true })
+    .getByText(title, { exact: true })
     .waitFor({ timeout: 15_000 })
 }
 
@@ -388,7 +395,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     })
     atHandle.agent.followup(createUserMessage({
       content: [{ type: 'text', text: 'Prepare the reminder test session.' }],
-      source: { kind: 'plugin', plugin: 'schedule-web-e2e' },
+      source: { kind: 'schedule-web-e2e' },
     }))
     await atHandle.agent.whenIdle()
     expect(atAdapter.requests).toHaveLength(1)
@@ -472,8 +479,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
 
     const batch = everyHandle.agent.session.snapshotEvents().find(event => (
       event.type === 'user/message'
-      && event.data.source.kind === 'plugin'
-      && event.data.source.plugin === 'schedule'
+      && event.data.source.kind === 'schedule'
       && event.data.content.some(block => block.type === 'text'
         && block.text.startsWith('[SCHEDULE REMINDER BATCH]'))
     ))
@@ -681,7 +687,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     expect(await catalogRow.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count()).toBe(1)
 
     await page.getByRole('button', { name: 'Search sessions' }).click()
-    const search = page.getByPlaceholder('Search sessions', { exact: false })
+    const search = page.getByPlaceholder('Search session names', { exact: false })
     await search.fill(CATALOG_TITLE)
     const result = page.getByRole('tree', { name: 'Search results' })
       .getByRole('treeitem', { name: new RegExp(CATALOG_TITLE) })

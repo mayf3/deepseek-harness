@@ -111,8 +111,8 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
-    height: 840,
-    minWidth: 880,
+    height: 820,
+    minWidth: 520,
     minHeight: 600,
     show,
     ...(process.platform === 'win32' && primary ? {
@@ -143,6 +143,18 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     if (['http:', 'https:'].includes(new URL(url).protocol)) void shell.openExternal(url)
     return { action: 'deny' }
   })
+  if (process.platform === 'darwin') {
+    // macOS hides the traffic lights in fullscreen; the page drops its
+    // clearance for them off the html[data-fullscreen] flag this feeds.
+    const sendFullscreen = (): void => {
+      if (!window.isDestroyed()) window.webContents.send(DESKTOP_IPC.windowFullscreen, window.isFullScreen())
+    }
+    window.on('enter-full-screen', sendFullscreen)
+    window.on('leave-full-screen', sendFullscreen)
+    // Reloads and navigations re-register the preload listener; resend the
+    // current state so a fullscreen reload does not fall back to windowed CSS.
+    window.webContents.on('did-finish-load', sendFullscreen)
+  }
   window.webContents.on('context-menu', (_event, { isEditable, selectionText, editFlags }) => {
     const items: MenuItemConstructorOptions[] = []
     if (isEditable) {
@@ -251,7 +263,7 @@ async function main(): Promise<void> {
       hostInspectPort, process.env, onFailure,
       development ? join(app.getAppPath(), '.desktop-build', 'targets', `${process.platform === 'darwin' ? 'mac' : 'win'}-${process.arch}`, 'runtime', 'primary-runtime')
         : join(process.resourcesPath, 'runtime', 'primary-runtime'),
-      development ? 'link' : 'runtime', resources)
+      resources)
     return {
       start: async () => {
         const ready = await host.start()
@@ -326,7 +338,7 @@ async function main(): Promise<void> {
     startup ??= (async () => {
       await navigateMain(applicationUrl)
       await backend.start(async () => {
-        await manager.applyRelease(app.isPackaged)
+        await manager.applyRelease()
       })
       if (backend.host !== undefined) updateJournal?.action('workspace-ready')
       // The existing Web document resumes through the boot IPC response.
@@ -735,7 +747,8 @@ async function main(): Promise<void> {
   const policyConfig = resolveDesktopPolicyConfig(policyInput, !app.isPackaged)
   if (policyConfig !== undefined) {
     if (policyConfig.authentication === 'feishu-test') {
-      policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, locale, () => mandatoryUI?.confirmationWindow ?? mainWindow,
+      policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, policyConfig.allowedAuthOrigins, locale,
+        () => mandatoryUI?.confirmationWindow ?? mainWindow,
         (event) => { console.info(`desktop policy authentication: ${event}`); updateJournal?.action(`policy-login-${event}`) })
     }
     const bundleId = app.isPackaged

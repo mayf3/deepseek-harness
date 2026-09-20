@@ -40,6 +40,8 @@ Desktop Host 为保留 profile 提供共享 Web 插件管理器，并通过启�
 
 渲染进程使用 `nodeIntegration: false`、`contextIsolation: true` 和 `sandbox: true`。Preload 提供启动就绪与失败报告、原生目录选择、主题同步，以及 Windows 菜单和外观适配。它不暴露原始 `ipcRenderer`、文件系统访问、shell 命令或 pnpm 参数。Electron 菜单与原生对话框使用类型化中英文文案，并以英文回退；Windows 跟随主文档语言。共享 Web 插件管理器负责自身客户端文案。
 
+更新确认使用 shell 静态 origin，因为 Web Host 尚未就绪时也必须可用。其打包文档和资源保留与其他本地静态资源相同的方法和路径限制。
+
 ## 文件系统布局
 
 ```text

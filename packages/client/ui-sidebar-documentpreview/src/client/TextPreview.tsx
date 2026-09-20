@@ -3,9 +3,8 @@
  *
  * Two sources meet here. The standard `useResource` hook gives the file's
  * metadata — its version — and this type's
- * own store holds the content it read through its face. A Host-reported change is
- * announced, not applied: reloading under a reader would lose their place, so
- * the bar waits for a click. A failed metadata frame — the file gone, its
+ * own store holds the content it read through its face. Metadata changes reload
+ * the current preview while automatic refresh is enabled. A failed metadata frame — the file gone, its
  * workspace unknown — takes the same bar's place over the pages already loaded,
  * with the same reload. The type's controls, viewer choice, wrap and reload, sit at the end of
  * the path row; the Sidebar's strip carries none of them.
@@ -15,11 +14,13 @@ import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { FileTypeIcon, IconRefreshOutlineRegular, Menu, Tooltip, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  FileTypeIcon, IconNowrapFillRegular, IconPauseOutlineRegular, IconPlayOutlineRegular,
+  IconRefreshOutlineRegular, IconWrapFillRegular, Menu, Tooltip, classifyFileType,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { TextInjected } from './face.ts'
 import { emptyFailureRecourse, failureLine } from './failure-line.ts'
-import { IconNowrapFill16, IconWrapFill16 } from './icons.tsx'
 import { LoadingIndicator } from './LoadingIndicator.tsx'
 import { hostFileOf } from './rpc.ts'
 import type { TextStore } from './store.ts'
@@ -95,6 +96,7 @@ export type TextPreviewProps =
 export function TextPreview({
   useTabInfo, useResource, useStore, actions, loadPage, reloadPages,
   loadAll, reloadAll, prepareRenderer, useDocumentPreviews, renderSlot, t,
+  addResource, setResources,
 }: TextPreviewProps): ReactNode {
   const { tab } = useTabInfo()
   const { navigation, signal } = tab
@@ -115,6 +117,15 @@ export function TextPreview({
   const mode = selected?.loading
   const contentRendererId = mode === 'renderer' ? selected?.id : undefined
   const current = (state?.mode ?? 'text-pages') === mode && state?.contentRendererId === contentRendererId ? state : undefined
+  const add = useCallback((address: string) => {
+    addResource(tab.id, address, signal)
+  }, [addResource, tab.id, signal])
+  const set = useCallback((addresses: readonly string[]) => {
+    setResources(tab.id, [tab.contentId, ...addresses], signal)
+  }, [setResources, tab.id, tab.contentId, signal])
+  useEffect(() => {
+    set([])
+  }, [set, selected?.id])
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const scrollportRef = useRef<HTMLElement | null>(null)
   const storedScrollTopRef = useRef(0)
@@ -194,11 +205,25 @@ export function TextPreview({
   const rendererReload = useCallback((): void => {
     if (canRead && selected !== undefined) prepareRenderer(tab.id, signal, selected.id, meta.value?.version, true)
   }, [canRead, prepareRenderer, tab.id, signal, selected?.id, meta.value?.version])
+  const observedVersion = meta.value?.version
+  const changed = (current?.version !== undefined && observedVersion !== undefined
+    && observedVersion !== current.version && observedVersion !== current.observedVersion)
+    || state?.resourcesDirty === true
+  const reload = useCallback((): void => {
+    if (!canRead) return
+    if (mode === 'text-pages') reloadPages(tab.id, file, signal, observedVersion)
+    else if (mode === 'bytes-complete') reloadAll(tab.id, file, signal, observedVersion)
+    else rendererReload()
+  }, [canRead, mode, reloadPages, reloadAll, rendererReload, tab.id, file, signal, observedVersion])
+  useEffect(() => {
+    if (state?.autoRefresh && changed && current !== undefined && !current.loading && meta.status === 'live') reload()
+  }, [state?.autoRefresh, changed, current?.loading, meta.status, reload])
   const content = useMemo((): DocumentContent | undefined => {
     if (mode === 'renderer') {
       if (current === undefined) return undefined
       const revision = current.loadRevision
       return { kind: 'renderer', revision, reload: rendererReload,
+        failed: () => { actions.rendererFailed(tab.id, revision) },
         loaded: (version) => { actions.rendered(tab.id, revision, version) } }
     }
     if (mode === 'bytes-complete') {
@@ -242,18 +267,9 @@ export function TextPreview({
   }
   const next = loadedThrough + 1
   const { name } = pathPartsOf(displayPath)
-  const observedVersion = meta.value?.version
-  const changed = current?.version !== undefined && observedVersion !== undefined
-    && observedVersion !== current.version && observedVersion !== current.observedVersion
   const loadNext = (): void => {
     if (!canRead || current?.loading || current?.eof) return
     loadPage(tab.id, file, next, signal, meta.value?.version)
-  }
-  const reload = (): void => {
-    if (!canRead) return
-    if (mode === 'text-pages') reloadPages(tab.id, file, signal, meta.value?.version)
-    else if (mode === 'bytes-complete') reloadAll(tab.id, file, signal, meta.value?.version)
-    else rendererReload()
   }
   return (
     <div className={css.preview} data-textpreview-state="text" data-textpreview-url={tab.contentId} data-document-preview={selected.id}>
@@ -320,11 +336,20 @@ export function TextPreview({
               data-textpreview-tool="wrap"
               onClick={() => { actions.toggledWrap(tab.id) }}
             >
-              {state.wrap ? <IconNowrapFill16 /> : <IconWrapFill16 />}
+              {state.wrap ? <IconNowrapFillRegular /> : <IconWrapFillRegular />}
             </button>
           </Tooltip>
         )}
         {content !== undefined && renderSlot('sidebar.right.tab.document.action', { content }, { entryKey: selected.id, hookContext: useTabInfo })}
+        <span hidden>
+          <Tooltip label={t(state.autoRefresh ? 'autoRefresh.disable' : 'autoRefresh.enable')} side="bottom" delayMs={500}>
+            <button type="button" className={css.tool} aria-label={t('autoRefresh')}
+              aria-pressed={state.autoRefresh} data-textpreview-tool="auto-refresh"
+              onClick={() => { actions.toggledAutoRefresh(tab.id) }}>
+              {state.autoRefresh ? <IconPauseOutlineRegular /> : <IconPlayOutlineRegular />}
+            </button>
+          </Tooltip>
+        </span>
         <Tooltip label={t('reload')} side="bottom" delayMs={500}>
           <button
             type="button"
@@ -358,6 +383,7 @@ export function TextPreview({
         )}
         {content !== undefined && renderSlot('sidebar.right.tab.document', {
           resourceAddress: tab.contentId, content, wrap: state.wrap, scrollportRef: bindScrollport,
+          addResource: add, setResources: set,
         }, {
           entryKey: selected.id, hookContext: useTabInfo,
           fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,

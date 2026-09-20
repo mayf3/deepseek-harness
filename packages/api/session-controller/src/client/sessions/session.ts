@@ -63,7 +63,7 @@ interface PendingHistory {
 export interface SessionOptions {
   /** Catalog-discovered address selecting non-activating subagent transport. */
   address?: SubagentAddress
-  /** Whether the exact direct parent Agent was live at the latest catalog read; absent before that read. */
+  /** Whether the exact direct parent Agent is available in Host summaries; absent until known. */
   parentAvailable?: boolean
   /**
    * First ACCEPTED prompt on a blank session (fires at most once, on the
@@ -137,8 +137,9 @@ export class Session implements SessionFace {
    * Per-session projection value store (push model; see the session-projection
    * subsystem page, docs/subsystems/session-projection.md): finished whole
    * values computed on the Host, seeded by the tail page's
-   * projections block and updated by Session Controller control frames under the
-   * one higher-seq-wins rule. Keys are read via `projections.faceOf(key)`
+   * projections block and updated by Session Controller control frames;
+   * Host-sequenced writes merge under higher-seq-wins and cached list blocks
+   * yield to them (projection-store.ts). Keys are read via `projections.faceOf(key)`
    * (the useProjection resolution face); the conversation snapshot never
    * carries projection values, and no client-side domain folding exists.
    * Manager-owned when constructed through SessionManager (frames route and
