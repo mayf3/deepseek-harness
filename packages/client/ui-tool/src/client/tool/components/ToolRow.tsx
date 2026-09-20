@@ -2,7 +2,7 @@ import { useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode 
 import clsx from 'clsx'
 import {
   CodeBlock, DiffBlock, DisclosureRow, IconInspectOutlineRegular, ReadBlock, SearchBlock,
-  TerminalBlock, WebBlock,
+  TerminalBlock, TextShimmer, WebBlock,
   diffTotals,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -156,6 +156,7 @@ export function ToolRow({
     [card, inputRaw, open, variant],
   )
   const status = stateStatus(state, t)
+  const running = state === 'running'
   const normalSummary = terminalBody?.description ?? (open ? detailsBody?.expandedSummary ?? summary : summary)
   // A failure keeps its first result line when available and otherwise turns
   // the ordinary summary red. An interruption turns the tool-owned summary
@@ -202,6 +203,7 @@ export function ToolRow({
         chevronClassName={css.chevron}
         icon={icon}
         title={title}
+        running={running}
         open={open}
         expandable={expandable}
         expandOnRowClick
@@ -219,7 +221,7 @@ export function ToolRow({
                 onClick={openFile}
                 onKeyDown={fileLinkKeyDown}
               >
-                {summaryText}
+                <TextShimmer active={running}>{summaryText}</TextShimmer>
               </button>
             ) : (
               <span
@@ -229,11 +231,11 @@ export function ToolRow({
                   state === 'stopped' && css.stoppedSummary,
                 )}
               >
-                {summaryText}
+                <TextShimmer active={running}>{summaryText}</TextShimmer>
               </span>
             )}
             {suffix !== null && (
-              <span className={clsx(css.summarySuffix, suffix === diffStat && css.diffStat)}>{suffix}</span>
+              <TextShimmer className={clsx(css.summarySuffix, suffix === diffStat && css.diffStat)} active={running}>{suffix}</TextShimmer>
             )}
           </>
         )}

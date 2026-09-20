@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import clsx from 'clsx'
 import {
   IconApiOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconInspectOutlineRegular,
-  TerminalBlock,
+  TerminalBlock, TextShimmer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -63,6 +63,7 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
   const settlementLine = state === 'error'
     ? model.errorSummary ?? normalSummary
     : state === 'stopped' ? t('bash.stopped') : null
+  const running = state === 'running'
   const toggleExpand = () => {
     setExpanded(v => !v)
   }
@@ -98,14 +99,14 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
       >
         <span className={css.leading}>{leading}</span>
         {status !== null && <span className={css.visuallyHidden}>{status}</span>}
-        <span className={css.title}>{t(model.titleKey)}</span>
+        <TextShimmer className={css.title} active={running}>{t(model.titleKey)}</TextShimmer>
         <span className={css.sep} aria-hidden />
         <span className={clsx(
           css.summary,
           state === 'error' && css.errorSummary,
           state === 'stopped' && css.stoppedSummary,
         )}>
-          {settlementLine ?? normalSummary}
+          <TextShimmer active={running}>{settlementLine ?? normalSummary}</TextShimmer>
         </span>
       </div>
       {open && (
