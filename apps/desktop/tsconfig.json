@@ -7,6 +7,7 @@
   "include": ["src"],
   "references": [
     { "path": "../../packages/boot/app-boot" },
+    { "path": "../../packages/client/ui-sidebar-browser" },
     { "path": "../../packages/util/home-paths" }
   ]
 }

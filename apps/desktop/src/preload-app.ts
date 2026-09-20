@@ -6,9 +6,11 @@ import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.t
 import { syncNativeTheme } from './preload-theme.ts'
 import { syncWindowsAppearance } from './preload-windows.ts'
 import { installMandatoryUpdateOverlay } from './preload-mandatory-overlay.ts'
+import { createDesktopBrowserBridge } from './preload-browser.ts'
 
 const product: DshDesktopProductApi = {
   protocolVersion: 1,
+  browser: createDesktopBrowserBridge(),
   updates: {
     status: () => ipcRenderer.invoke(DESKTOP_IPC.updatesStatus) as Promise<DesktopUpdatePresentation>,
     open: () => ipcRenderer.invoke(DESKTOP_IPC.updatesOpen) as Promise<void>,
