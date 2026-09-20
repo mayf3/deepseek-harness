@@ -16,6 +16,8 @@ import type {
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
+import type { WorkspaceViewStoreActions } from './stores.ts'
 
 interface MainSelection {
   readonly sessionId?: SessionId
@@ -76,6 +78,19 @@ export interface UiWorkspace {
    */
   unarchiveSession(sessionId: SessionId): Promise<void>
   /**
+   * Pin a Session on the Host, then lead it in its accounts' saved orders
+   * (its Workspace group or Ungrouped, and the flat list). The order write
+   * reads the memberships current at completion, so reorders that landed
+   * while the Host call was pending keep their positions.
+   * @param sessionId - Session to pin.
+   */
+  pinSession(sessionId: SessionId): Promise<void>
+  /**
+   * Unpin a Session on the Host; saved positions stay as they are.
+   * @param sessionId - Session to unpin.
+   */
+  unpinSession(sessionId: SessionId): Promise<void>
+  /**
    * Open the Host-native directory picker.
    * @returns the selected directory, or null when cancelled.
    */
@@ -127,12 +142,14 @@ class UiWorkspaceService extends Service implements UiWorkspace {
    * @param directoryPicker - the directory-picking Remote namespace.
    * @param workspaces - pure Workspace Controller.
    * @param sessions - pure Session Controller.
+   * @param view - the browser's viewing-store write set (one instance shared with its registration).
    */
   constructor(
     ctx: Context,
     private readonly directoryPicker: ClientRemote['directoryPicker'],
     private readonly workspaces: IWorkspaces,
     private readonly sessions: ISessions,
+    private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>,
   ) {
     super(ctx, 'uiWorkspace')
     ctx.effect(() => {
@@ -246,6 +263,20 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async unarchiveSession(sessionId: SessionId): Promise<void> {
     await this.workspaces.unarchiveSession(sessionId)
+  }
+
+  async pinSession(sessionId: SessionId): Promise<void> {
+    await this.workspaces.pinSession(sessionId)
+    const { items, pinnedSessionIds, archivedSessionIds } = this.workspaces.list.getSnapshot()
+    this.view.pinSessionOrder(
+      sessionId,
+      pinOrderAccounts(items, sessionId),
+      pinOrderSource(items, this.sessions.list.getSnapshot(), { pinnedSessionIds, archivedSessionIds }),
+    )
+  }
+
+  async unpinSession(sessionId: SessionId): Promise<void> {
+    await this.workspaces.unpinSession(sessionId)
   }
 
   async pickDirectory(): Promise<string | null> {

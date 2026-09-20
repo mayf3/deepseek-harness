@@ -2,7 +2,8 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+import { parseSessionLog, prepareSessionSnapshotFixtureForComparison } from '@deepseek-ai/dsh-llm-replay'
+import { scrubSessionSnapshot } from '@deepseek-ai/dsh-session-snapshot'
 import {
   canonicalSessionFixture,
   inspectSessionFixtureLayouts,
@@ -59,6 +60,24 @@ function decodedBody(content: string): SessionEvent[] {
 }
 
 describe('canonicalSessionFixture', () => {
+  it.each([
+    { sources: [0, 1, 2] },
+    { sources: [0, 2] },
+    { sources: [2, 0, 1] },
+  ])('writes canonical snapshots preserving source reference order: $sources', ({ sources }) => {
+    const event = {
+      type: 'user/message', seq: 3, time: 15,
+      data: { id: 'fixture-user', role: 'user', source: { kind: 'user' }, content: [] },
+      sourceEventSeqs: sources, surfaceOp: 'append',
+    }
+    const raw = [HEADER, ...[...fixtureEvents(), event].map(value => JSON.stringify(value)), ''].join('\n')
+    const written = scrubSessionSnapshot(prepareSessionSnapshotFixtureForComparison(raw))
+
+    expect(canonicalSessionFixture(written)).toBe(written)
+    expect(decodedBody(written).at(-1)?.sourceEventSeqs).toEqual(sources)
+    expect(scrubSessionSnapshot(written)).toBe(written)
+  })
+
   it('preserves the header line and nested compact stream losslessly', () => {
     const canonical = canonicalSessionFixture(unpackedFixture(), 'fixture.jsonl')
     expect(canonical).toBeDefined()
