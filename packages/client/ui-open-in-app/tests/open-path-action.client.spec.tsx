@@ -43,7 +43,7 @@ function bench(over: { desktop?: boolean | null; openPath?: Bench['openPath'] } 
     applications: vi.fn(async () => []),
     openPath,
     t,
-  } as unknown as Bench['props']
+  } as Bench['props']
   return { props, desktop, loadDesktop, openPath }
 }
 
