@@ -691,7 +691,10 @@ describe('session.list projections column', () => {
       const response = await gateway.list(request({}))
       if (!response.ok) throw new Error('unreachable')
       const row = response.value.items.find(item => item.sessionId === id)
-      expect(row).toMatchObject({ blank: false, updatedAt: promptTime })
+      // Cold recency is the later of the header's creation time and the cached
+      // last prompt; the fork's creation time is wall-clock and may trail the
+      // inherited prompt by a tick.
+      expect(row).toMatchObject({ blank: false, updatedAt: Math.max(header.createdAt, promptTime) })
       expect(row?.projections).toMatchObject({
         kind: 'cached',
         asOfSeq: lastSeq,
