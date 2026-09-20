@@ -416,6 +416,7 @@ describe('ConversationRoot resident composer', () => {
     })
     const box = b.view.getByRole('textbox')
     expect(box.getAttribute('aria-disabled')).toBe('true')
+    expect(box.getAttribute('aria-label')).toBe('正在准备工作区…')
     expect(box.getAttribute('aria-haspopup')).toBeNull()
     fireEvent.keyDown(box, { key: 'Enter' })
     expect(b.sink).not.toHaveBeenCalled()

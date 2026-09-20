@@ -3,9 +3,9 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
-  captureStableAria, compareOrRefreshGolden, fixtureUserPrompts, launchWebScaffold,
+  assertFinalWorkspaceSnapshot, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts, launchWebScaffold,
   selectedSessionFixture, watchConsole, webSnapshotMode,
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
@@ -13,6 +13,7 @@ import { newEnglishPage, saveFailureShot } from './support.ts'
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/session.v3.jsonl', import.meta.url))
 const EXPECTED = fileURLToPath(new URL('../../../snapshots/web/default-workspace/ui.expected.md', import.meta.url))
 const FAILURE_EXPECTED = fileURLToPath(new URL('./expected/default-workspace/failure.expected.md', import.meta.url))
+const PREPARING_EXPECTED = fileURLToPath(new URL('./expected/default-workspace/preparing.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 
 describe.skipIf(MODE === 'record')('web e2e: default Workspace', () => {
@@ -38,7 +39,19 @@ describe.skipIf(MODE === 'record')('web e2e: default Workspace', () => {
           expect(scaffold.ctx.workspaceRegistry.list()).toEqual([])
           expect(scaffold.ctx.sessions.list()).toEqual([])
           const settled = scaffold.whenTurnSettled()
-          await input.press('Enter')
+          const preparing = Promise.withResolvers<undefined>()
+          const initialize = scaffold.ctx.workspaceRegistry.initializeDefault.bind(scaffold.ctx.workspaceRegistry)
+          vi.spyOn(scaffold.ctx.workspaceRegistry, 'initializeDefault').mockImplementationOnce(async (resolve) => {
+            await preparing.promise
+            return initialize(resolve)
+          })
+          try {
+            await input.press('Enter')
+            await page.getByRole('textbox', { name: 'Preparing workspace…', exact: true }).waitFor()
+            await compareOrRefreshGolden(PREPARING_EXPECTED, await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd), MODE)
+          } finally {
+            preparing.resolve(undefined)
+          }
           const sessionId = await settled
           const workspace = scaffold.ctx.workspaceRegistry.list()[0]!
           expect(workspace.title).toBe('Default workspace')
@@ -46,6 +59,7 @@ describe.skipIf(MODE === 'record')('web e2e: default Workspace', () => {
           expect((await stat(workspace.path)).isDirectory()).toBe(true)
           expect(workspace.sessionIds).toContain(sessionId)
           expect(scaffold.ctx.sessions.get(sessionId)?.header.cwd).toBe(workspace.path)
+          await assertFinalWorkspaceSnapshot(fileURLToPath(new URL('../../../snapshots/web/default-workspace', import.meta.url)), workspace.path)
           await page.getByText('DONE', { exact: true }).waitFor()
           await compareOrRefreshGolden(EXPECTED, await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd), MODE)
           await page.reload()

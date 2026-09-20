@@ -122,7 +122,7 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
   await pathInput.fill(join(root, name))
   await pathInput.press('Enter')
   await dialog.getByRole('button', { name: 'Open', exact: true }).click()
-  await page.getByRole('treeitem', { name: 'New Session', exact: true }).waitFor({ timeout: 15_000 })
+  await page.locator('[data-slot="conversation.session.header"]').waitFor({ state: 'attached', timeout: 15_000 })
   await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build, / commands, @ files or sessions"]')
     .waitFor({ timeout: 15_000 })
 }
@@ -146,7 +146,7 @@ export async function connectFreshWorkspaceZh(page: Page, root: string, name = '
   await pathInput.fill(join(root, name))
   await pathInput.press('Enter')
   await dialog.getByRole('button', { name: '打开', exact: true }).click()
-  await page.getByRole('treeitem', { name: '新会话', exact: true }).waitFor({ timeout: 15_000 })
+  await page.locator('[data-slot="conversation.session.header"]').waitFor({ state: 'attached', timeout: 15_000 })
   await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="描述你想要构建的内容, / 调用指令, @ 文件或对话"]')
     .waitFor({ timeout: 15_000 })
 }

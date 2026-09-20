@@ -3,6 +3,8 @@ scenario: default-workspace
 profile: web
 composition: web-default
 recording: authored
+workspace:
+  final: true
 header:
   class: web-default
 session:

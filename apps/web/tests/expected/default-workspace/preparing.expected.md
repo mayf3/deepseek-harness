@@ -1,0 +1,7 @@
+- banner
+- text: Into the Unknown Preview
+- button "Choose workspace"
+- button "Standard mode"
+- textbox "Preparing workspace…" [disabled]
+- button "Add files or run commands" [disabled]
+- button "Send message" [disabled]

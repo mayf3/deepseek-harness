@@ -143,7 +143,7 @@ export function ConversationContent(props: ConversationContentProps) {
     ...(inert
       ? {
         disabled: true,
-        placeholder: t('placeholder.workspace'),
+        placeholder: t(firstDraft.busy ? 'placeholder.preparing' : 'placeholder.workspace'),
         workspacePickerOpen: pickerOpen,
         ...(needsWorkspace ? { onRequestWorkspace: () => { setPickerOpen(true) } } : {}),
       }
