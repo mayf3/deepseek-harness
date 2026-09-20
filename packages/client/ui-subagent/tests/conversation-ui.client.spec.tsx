@@ -89,7 +89,7 @@ function props(
     } as SessionSnapshot),
     openChild: vi.fn(),
     openChildAside: vi.fn(),
-    refresh: vi.fn(),
+    refreshProjection: vi.fn(),
     lineageSessionId: PARENT,
     displayTitle: 'Parent title',
     t,
@@ -208,7 +208,7 @@ describe('SubagentHeaderLineage', () => {
     const trigger = screen.getByRole('button', { name: /1 个子代理，正在运行/ })
     hoverCatalog(trigger)
 
-    expect(input.refreshProjection).toHaveBeenCalledWith(PARENT)
+    expect(input.refreshProjection).not.toHaveBeenCalled()
     expect(screen.getAllByRole('treeitem')).toHaveLength(2)
     expect(screen.getByText('正在扫描项目文件 · 可继续 · 正在运行')).toBeTruthy()
     expect(screen.getByText('一次性 · 当前未运行')).toBeTruthy()
@@ -710,8 +710,7 @@ describe('SubagentHeaderLineage', () => {
   })
 
   it('hides a bare loading catalog and keeps the error fallback without focusable rows', async () => {
-    // Selecting any session schedules a catalog refresh; a loading snapshot
-    // with no other evidence of children must not flash the action in.
+    // A loading snapshot without evidence of children must not flash the action in.
     const loading = props(catalog({ entries: [], state: 'loading' }))
     const view = render(<SubagentHeaderLineage {...loading} />)
     expect(screen.queryByRole('button')).toBeNull()
@@ -795,7 +794,7 @@ describe('SubagentHeaderLineage', () => {
     expect(switcherIcon?.getAttribute('height')).toBe('16')
 
     hoverCatalog(switcher)
-    expect(input.refreshProjection).toHaveBeenCalledWith(PARENT)
+    expect(input.refreshProjection).not.toHaveBeenCalled()
     const current = screen.getByRole('treeitem', { name: /worker/ })
     expect(current.getAttribute('aria-current')).toBe('true')
     expect(within(current).getByText('worker').className).toContain('currentLabel')
