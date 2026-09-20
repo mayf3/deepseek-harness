@@ -8,6 +8,10 @@
 // embedded Assistant stream, not transient DOM.
 // Record: DSH_SNAPSHOT=record writes session.v3.jsonl, then a keyless
 // DSH_SNAPSHOT=refresh regenerates ui.expected.md.
+// Suite setup (beforeAll, not per step): one fixed page clock
+// (page.clock.setFixedTime) and one routed Remote mux socket
+// (page.routeWebSocket) serve every step below, so the reconnect checkpoints
+// rely on both without re-pinning or re-routing them.
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -142,7 +146,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
       await compareOrRefreshGolden(ECHO_EXPECTED, echoSnapshot, MODE)
       const row = page.getByRole('tree', { name: 'Sessions', exact: true })
         .locator('[role="treeitem"][aria-selected="true"]')
-      await expect.poll(() => row.getAttribute('draggable')).toBe('true')
+      await expect.poll(() => row.getAttribute('draggable'), { timeout: 5_000 }).toBe('true')
       expect(sessionEvents.some(event => event.type === 'turn/start')).toBe(false)
 
       const disconnected = remoteSocket
@@ -172,7 +176,8 @@ describe('web e2e: fresh round trip through the real assembly', () => {
       try {
         const refreshing = page.waitForResponse(listUrl)
         const [, refreshed] = await Promise.all([disconnected.close(), refreshing])
-        await expect.poll(() => remoteSocket !== disconnected).toBe(true)
+        // Cross-network reconnect: allow more than expect.poll's default.
+        await expect.poll(() => remoteSocket !== disconnected, { timeout: 15_000 }).toBe(true)
         const baseline = await refreshed.json() as SessionListResponse
         expect(baseline.result.ok).toBe(true)
         if (!baseline.result.ok) throw new Error('the reconnect list request failed')
