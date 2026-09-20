@@ -55,7 +55,7 @@ $key.SetValue('', ${literal(`"${process.execPath}" "${script}" "%1"`)}); $key.Di
 `)
   const applications = await nativeFileApplications(path, lifetime.signal, { run })
   const expected = applications.find(app => app.id.toLowerCase() === process.execPath.toLowerCase())
-  expect(expected).toMatchObject({ default: true, name: expect.any(String) })
+  expect(expected).toMatchObject({ default: true, name: expect.any(String) as string })
   await openNativeFileApplication(path, expected!.id, lifetime.signal, { run })
   let opened: { path: string; pid: number } | undefined
   await vi.waitFor(async () => {

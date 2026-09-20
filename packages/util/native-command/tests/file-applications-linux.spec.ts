@@ -27,7 +27,7 @@ it('deduplicates GIO handlers, resolves nested ids, localizes names, and reuses 
   const signal = new AbortController().signal
   const apps = await nativeFileApplications('/file.mp3', signal, facts)
   expect(apps).toEqual([
-    { id: join(root, 'applications', 'player.desktop'), name: '播放器', default: true, icon: expect.stringMatching(/^data:image\/svg\+xml;base64,/) },
+    { id: join(root, 'applications', 'player.desktop'), name: '播放器', default: true, icon: expect.stringMatching(/^data:image\/svg\+xml;base64,/) as string },
     { id: join(root, 'applications', 'nested', 'other.desktop'), name: 'Other', default: false, icon: null },
   ])
   await openNativeFileApplication('/file.mp3', apps[0]!.id, signal, facts)

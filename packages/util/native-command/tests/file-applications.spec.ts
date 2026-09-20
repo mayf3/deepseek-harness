@@ -53,12 +53,12 @@ it('encodes Windows query and invocation data separately from native adapter sou
   const run = vi.fn<runner.NativeCommandRunner>(async () => ({ stdout: JSON.stringify([application]), stderr: '' }))
   const path = "C:\\测试\\a'; write-host nope.mp3"
   expect(await nativeFileApplications(path, signal, { platform: 'win32', run })).toEqual([application])
-  const query = Buffer.from(run.mock.calls[0]![1]!.at(-1)!, 'base64').toString('utf16le')
+  const query = Buffer.from(run.mock.calls[0]![1].at(-1)!, 'base64').toString('utf16le')
   expect(query).toContain(Buffer.from(path).toString('base64'))
   expect(query).not.toContain(path)
   expect(query).toContain('::List($path)')
   await openNativeFileApplication(path, application.id, signal, { platform: 'win32', run })
-  expect(Buffer.from(run.mock.calls[1]![1]!.at(-1)!, 'base64').toString('utf16le')).toContain('::Open($path, $application)')
+  expect(Buffer.from(run.mock.calls[1]![1].at(-1)!, 'base64').toString('utf16le')).toContain('::Open($path, $application)')
   expect(run.mock.calls[1]![0]).toBe('powershell.exe')
 })
 
