@@ -238,12 +238,13 @@ export type SessionRowActionProps<Injected extends object = object> =
   & PropsLocale<'workspace'>
   & InjectFace<Injected>
 
-/** One transient notice a row action raises; the overlay toast entry renders it. */
+/** One transient Workspace notice rendered by the overlay toast entry. */
 export type RowToast =
   | { kind: 'archived'; sessionId: SessionId }
   | { kind: 'pinFailed' }
   | { kind: 'unpinFailed' }
   | { kind: 'archivedNotOpenable' }
+  | { kind: 'defaultWorkspaceFailed' }
 
 /** The notice on display; `seq` keys remounts so a repeated notice restarts its hold. */
 export type RowToastState = RowToast & { seq: number }
@@ -364,12 +365,6 @@ export type WorkspaceBrowserProps =
  * supplies the implicit index signature required by the registry.
  */
 export type WorkspacePickerInjected = DirectoryPickingInjected & {
-  /** Dismiss the startup failure before choosing a directory manually. */
-  dismissDefaultFailure: () => void
-  hooks: {
-    /** Whether first-use startup failed to prepare a Workspace and Session. */
-    defaultFailure: HostObservable<boolean>
-  }
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
 }

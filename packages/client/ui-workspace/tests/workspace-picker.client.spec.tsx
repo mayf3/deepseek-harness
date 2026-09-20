@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
@@ -89,19 +88,14 @@ function mount(
   items: readonly WorkspaceView[] = [workspace('alpha', 'Alpha')],
   createWorkspace = vi.fn(),
   occupancy = occupancySource(),
-  options: { defaultFailure?: boolean; open?: boolean } = {},
 ) {
-  const failure = createSnapshotStore(options.defaultFailure ?? false)
-  const useDefaultFailure = bindSnapshotSelector(failure)
-  const dismissDefaultFailure = vi.fn(() => { failure.set(false) })
   const onPick = vi.fn()
   const onClose = vi.fn()
   const anchorRef = anchor()
   const { probe, renderSlot } = flowProbe()
   const renderPicker = (nextItems: readonly WorkspaceView[]) => (
     <WorkspacePicker
-      useDefaultFailure={useDefaultFailure} dismissDefaultFailure={dismissDefaultFailure}
-      open={options.open ?? true}
+      open
       anchorRef={anchorRef}
       useSessions={hook(sessions)}
       useSessionStatus={hook(noPendingInteraction)}
@@ -120,7 +114,7 @@ function mount(
     renderPicker(items),
   )
   return {
-    view, onPick, onClose, createWorkspace, probe, occupancy, dismissDefaultFailure,
+    view, onPick, onClose, createWorkspace, probe, occupancy,
     rerenderItems: (nextItems: readonly WorkspaceView[]) => { view.rerender(renderPicker(nextItems)) },
   }
 }
@@ -226,7 +220,6 @@ describe('WorkspacePicker', () => {
     const { renderSlot } = flowProbe()
     render(
       <WorkspacePicker
-        useDefaultFailure={hook(false)} dismissDefaultFailure={vi.fn()}
         open useSessions={hook(sessions)} useWorkspaces={hook(workspaceState([workspace('alpha', 'Alpha')]))}
         useSessionStatus={hook(noPendingInteraction)}
         useSessionRetainInfo={() => undefined}
@@ -245,7 +238,6 @@ describe('WorkspacePicker', () => {
     const { renderSlot } = flowProbe()
     render(
       <WorkspacePicker
-        useDefaultFailure={hook(false)} dismissDefaultFailure={vi.fn()}
         open anchorRef={anchor()} useSessions={hook(sessions)} useWorkspaces={hook(state)}
         useSessionStatus={hook(noPendingInteraction)}
         useSessionRetainInfo={() => undefined}
@@ -327,28 +319,5 @@ describe('WorkspacePicker', () => {
     expect(b.probe.owner!.open).toBe(false)
     expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: 'Alpha' }).disabled).toBe(false)
     expect(screen.queryByRole('menuitem', { name: '添加工作区…' })).toBeNull()
-  })
-})
-
-describe('default Workspace startup recovery', () => {
-  it('dismisses the failure without opening the directory flow', () => {
-    const b = mount([], vi.fn(), occupancySource(), { defaultFailure: true, open: false })
-    expect(screen.getByRole('dialog', { name: '无法创建默认工作区' })).toBeTruthy()
-    expect(b.probe.owner?.open).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: '取消' }))
-    expect(b.dismissDefaultFailure).toHaveBeenCalledOnce()
-    expect(screen.queryByRole('dialog', { name: '无法创建默认工作区' })).toBeNull()
-    expect(b.probe.owner?.open).toBe(false)
-  })
-
-  it('opens the composed directory flow from the startup failure', async () => {
-    const create = vi.fn(async () => workspace('chosen'))
-    const b = mount([], create, occupancySource(), { defaultFailure: true, open: false })
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }))
-    expect(b.dismissDefaultFailure).toHaveBeenCalledOnce()
-    expect(b.probe.owner?.open).toBe(true)
-    await act(async () => { b.probe.owner!.onPicked('/chosen') })
-    expect(create).toHaveBeenCalledExactlyOnceWith({ path: '/chosen' })
-    expect(b.onPick).toHaveBeenCalledExactlyOnceWith(wid('chosen'))
   })
 })

@@ -120,8 +120,6 @@ export class DirectoryBrowseError extends Error {
 
 /** Implements Workspace archive and directory UI operations. */
 class UiWorkspaceService extends Service implements UiWorkspace {
-  /** Startup failure awaiting dismissal or explicit directory selection. */
-  readonly defaultFailure = createSnapshotStore(false)
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   private readonly lifetime = new AbortController()
   private readonly selection = createSnapshotStore<MainSelection>(
@@ -135,6 +133,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
    * @param workspaces - pure Workspace Controller.
    * @param sessions - pure Session Controller.
    * @param view - the browser's viewing-store write set (one instance shared with its registration).
+   * @param notifyDefaultFailure - show the startup creation failure through the Workspace notice channel.
    */
   constructor(
     ctx: Context,
@@ -142,6 +141,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     private readonly workspaces: IWorkspaces,
     private readonly sessions: ISessions,
     private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>,
+    private readonly notifyDefaultFailure: () => void,
   ) {
     super(ctx, 'uiWorkspace')
     ctx.effect(() => {
@@ -324,28 +324,28 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       && !workspaces.archivedSessionIds.includes(summary.id)) {
       sessionId = await this.reuseBlank(workspace.workspaceId, summary.id)
     }
-    const target = workspace?.workspaceId ?? recentWorkspace(workspaces.items, sessions.byId)
-    if (sessionId === undefined && target !== undefined) sessionId = await this.connectWorkspace(target)
+    let target = workspace?.workspaceId ?? recentWorkspace(workspaces.items, sessions.byId)
     if (target === undefined && workspaces.items.length === 0 && sessions.ids.length === 0) {
-      sessionId = await this.initializeDefaultWorkspace(navigation)
+      const prepared = await this.initializeDefaultWorkspace(navigation)
+      if (navigation.aborted) return
+      target = prepared?.workspaceId
     }
+    if (sessionId === undefined && target !== undefined) sessionId = await this.connectWorkspace(target)
     if (sessionId !== undefined && !navigation.aborted) {
       this.replaceMain(sessionId, navigation, 'preserve')
     }
   }
 
-  private async initializeDefaultWorkspace(signal: AbortSignal): Promise<SessionId | undefined> {
+  private async initializeDefaultWorkspace(signal: AbortSignal): Promise<WorkspaceView | undefined> {
     const language = this.ctx.locale.getSnapshot().active.toLowerCase().split('-')[0]
     const title = (language === 'zh' ? zh : en)['defaultWorkspace.title']
     try {
-      const workspace = await this.workspaces.initializeDefault({
+      return await this.workspaces.initializeDefault({
         directoryName: language === 'zh' || language === 'en' ? title : 'default-workspace',
         title,
       }, signal)
-      if (workspace === undefined || signal.aborted) return undefined
-      return await this.connectWorkspace(workspace.workspaceId)
     } catch (_error: unknown) {
-      if (!signal.aborted) this.defaultFailure.set(true)
+      if (!signal.aborted) this.notifyDefaultFailure()
       return undefined
     }
   }

@@ -294,14 +294,16 @@ function bench(options: BenchOptions = {}) {
   options.configureWorkspaces?.(workspaces)
   options.configureSessions?.(sessions)
   const view = createWorkspaceViewStore().create()
+  const notifyDefaultFailure = vi.fn()
   const uiWorkspace = new UiWorkspaceService(
     ctx,
     directoryPicker.remote,
     workspaces,
     sessions,
     view.actions,
+    notifyDefaultFailure,
   )
-  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view }
+  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notifyDefaultFailure }
 }
 
 describe('UiWorkspaceService', () => {
@@ -326,10 +328,10 @@ describe('UiWorkspaceService', () => {
     })
     expect(b.workspaces.initializeDefault).toHaveBeenCalledExactlyOnceWith({ directoryName, title }, expect.any(AbortSignal))
     expect(b.sessions.create).toHaveBeenCalledWith({ workspaceId: wid('default') })
-    expect(b.uiWorkspace.defaultFailure.getSnapshot()).toBe(false)
+    expect(b.notifyDefaultFailure).not.toHaveBeenCalled()
   })
 
-  it('leaves an ineligible empty installation without a Session or failure dialog', async () => {
+  it('leaves an ineligible empty installation without a Session or failure notice', async () => {
     const b = bench({ workspaces: workspaceState(), sessions: sessionState() })
     await setImmediate()
     b.workspaces.list.set(workspaceState())
@@ -337,7 +339,7 @@ describe('UiWorkspaceService', () => {
     await setImmediate()
     expect(b.workspaces.initializeDefault).toHaveBeenCalledOnce()
     expect(b.sessions.create).not.toHaveBeenCalled()
-    expect(b.uiWorkspace.defaultFailure.getSnapshot()).toBe(false)
+    expect(b.notifyDefaultFailure).not.toHaveBeenCalled()
   })
 
   it('requires explicit selection when the startup Session list contains history', async () => {
@@ -351,13 +353,12 @@ describe('UiWorkspaceService', () => {
     const b = bench({ workspaces: workspaceState(), sessions: sessionState(), configureWorkspaces: (workspaces) => {
       workspaces.initializeDefault.mockRejectedValueOnce(new Error('denied'))
     } })
-    await vi.waitFor(() => { expect(b.uiWorkspace.defaultFailure.getSnapshot()).toBe(true) })
-    b.uiWorkspace.defaultFailure.set(false)
+    await vi.waitFor(() => { expect(b.notifyDefaultFailure).toHaveBeenCalledOnce() })
     b.workspaces.list.set(workspaceState())
     await setImmediate()
     expect(b.workspaces.initializeDefault).toHaveBeenCalledOnce()
     expect(b.sessions.create).not.toHaveBeenCalled()
-    expect(b.uiWorkspace.defaultFailure.getSnapshot()).toBe(false)
+    expect(b.notifyDefaultFailure).toHaveBeenCalledOnce()
   })
 
   it.each(['session', 'panel', 'disposal'] as const)('cancels startup directory preparation after %s navigation', async (kind) => {
@@ -373,27 +374,43 @@ describe('UiWorkspaceService', () => {
     await setImmediate()
     expect(b.sessions.create).not.toHaveBeenCalled()
     expect(b.sessions.retain.mock.calls.map(args => args[0])).toEqual(kind === 'session' ? [sid('manual')] : [])
-    expect(b.uiWorkspace.defaultFailure.getSnapshot()).toBe(false)
+    expect(b.notifyDefaultFailure).not.toHaveBeenCalled()
   })
 
-  it('retains a prepared Workspace when its Session fails and suppresses a superseded failure', async () => {
-    for (const superseded of [false, true]) {
-      const created = Promise.withResolvers<SessionId>()
-      const b = bench({ workspaces: workspaceState(), sessions: sessionState(), configureWorkspaces: (workspaces) => {
-        workspaces.initializeDefault.mockImplementationOnce(async () => {
-          const item = workspace('default')
-          workspaces.list.set(workspaceState([item]))
-          return item
-        })
-      }, configureSessions: (sessions) => { sessions.create.mockReturnValueOnce(created.promise) } })
-      await vi.waitFor(() => { expect(b.sessions.create).toHaveBeenCalledOnce() })
-      if (superseded) b.layout.selectPanel('other-panel' as MainPanelId)
-      created.reject(new Error('session failed'))
-      await setImmediate()
-      expect(b.workspaces.list.getSnapshot().items).toEqual([workspace('default')])
-      expect(b.uiWorkspace.defaultFailure.getSnapshot()).toBe(!superseded)
-      expect(b.sessions.retain).not.toHaveBeenCalled()
-    }
+  it.each(['session', 'panel', 'disposal'] as const)('suppresses a startup directory failure after %s navigation', async (kind) => {
+    const pending = Promise.withResolvers<WorkspaceView>()
+    const b = bench({ workspaces: workspaceState(), sessions: sessionState(), configureWorkspaces: (workspaces) => {
+      workspaces.initializeDefault.mockReturnValueOnce(pending.promise)
+    } })
+    if (kind === 'session') b.uiWorkspace.openSession(sid('manual'))
+    else if (kind === 'panel') b.layout.selectPanel('other-panel' as MainPanelId)
+    else await b.ctx.fiber.dispose()
+    pending.reject(new Error('late failure'))
+    await setImmediate()
+    expect(b.sessions.create).not.toHaveBeenCalled()
+    expect(b.notifyDefaultFailure).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('reports Session failure without a directory error and retains the Workspace (superseded: %s)', async (superseded) => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const created = Promise.withResolvers<SessionId>()
+    const b = bench({ workspaces: workspaceState(), sessions: sessionState(), configureWorkspaces: (workspaces) => {
+      workspaces.initializeDefault.mockImplementationOnce(async () => {
+        const item = workspace('default')
+        workspaces.list.set(workspaceState([item]))
+        return item
+      })
+    }, configureSessions: (sessions) => { sessions.create.mockReturnValueOnce(created.promise) } })
+    await vi.waitFor(() => { expect(b.sessions.create).toHaveBeenCalledOnce() })
+    if (superseded) b.layout.selectPanel('other-panel' as MainPanelId)
+    const failure = new Error('session failed')
+    created.reject(failure)
+    await vi.waitFor(() => {
+      expect(warning).toHaveBeenCalledExactlyOnceWith('initial Session restoration failed:', failure)
+    })
+    expect(b.workspaces.list.getSnapshot().items).toEqual([workspace('default')])
+    expect(b.notifyDefaultFailure).not.toHaveBeenCalled()
+    expect(b.sessions.retain).not.toHaveBeenCalled()
   })
 
   it('retains an explicit main target before revealing its Conversation', () => {

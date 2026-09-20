@@ -6,10 +6,8 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'defaultWorkspace.failed': '无法创建默认工作区',
+  'defaultWorkspace.failed': '无法创建默认工作区，请通过“选择工作区”选择文件夹',
   'defaultWorkspace.title': '默认工作区',
-  'defaultWorkspace.retry': '请选择一个文件夹后重试',
-  'defaultWorkspace.choose': '选择文件夹',
   'group.ungrouped': '未分组',
   'session.new': '新会话',
   'section.workspaces': '工作区',
@@ -103,10 +101,8 @@ export type WorkspaceKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'defaultWorkspace.failed': 'Unable to create default workspace',
+  'defaultWorkspace.failed': 'Unable to create default workspace. Use Choose workspace to select a folder.',
   'defaultWorkspace.title': 'Default workspace',
-  'defaultWorkspace.retry': 'Please choose a folder and try again',
-  'defaultWorkspace.choose': 'Choose folder',
   'group.ungrouped': 'Ungrouped',
   'session.new': 'New Session',
   'section.workspaces': 'Workspaces',
