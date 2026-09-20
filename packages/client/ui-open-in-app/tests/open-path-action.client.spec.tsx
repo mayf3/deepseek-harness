@@ -66,10 +66,10 @@ describe('OpenPathAction gestures', () => {
     render(<OpenPathAction {...b.props} />)
     const main = screen.getByRole('button', { name: zh['path.open'] })
     await act(async () => { fireEvent.click(main) })
-    expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open')
+    expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open', undefined)
     fireEvent.click(screen.getByRole('button', { name: zh['path.more'] }))
     await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: zh['path.reveal'] })) })
-    expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'reveal')
+    expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'reveal', undefined)
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
@@ -84,7 +84,7 @@ describe('OpenPathAction gestures', () => {
     expect(b.openPath).not.toHaveBeenCalled()
     fireEvent.click(more)
     await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: zh['path.defaultApp'] })) })
-    expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open')
+    expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open', undefined)
   })
 
   it('disables both halves while its own gesture settles and leaves no failure on the control', async () => {
@@ -113,7 +113,7 @@ describe('OpenPathEmptyAction', () => {
     const b = bench()
     render(<OpenPathEmptyAction {...b.props} />)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.unpreviewable'] })) })
-    expect(b.openPath).toHaveBeenCalledWith(ABSOLUTE_PATH, 'open')
+    expect(b.openPath).toHaveBeenCalledWith(ABSOLUTE_PATH, 'open', undefined)
     expect(screen.queryByRole('alert')).toBeNull()
   })
 

@@ -26,7 +26,11 @@ function run(argv) {
     var url = urls.objectAtIndex(i);
     var path = ObjC.unwrap(url.path);
     var icon = workspace.iconForFile(path);
-    var bitmap = $.NSBitmapImageRep.imageRepWithData(icon.TIFFRepresentation);
+    var thumbnail = $.NSImage.alloc.initWithSize($.NSMakeSize(32, 32));
+    thumbnail.lockFocus;
+    icon.drawInRectFromRectOperationFraction($.NSMakeRect(0, 0, 32, 32), $.NSZeroRect, $.NSCompositingOperationSourceOver, 1);
+    thumbnail.unlockFocus;
+    var bitmap = $.NSBitmapImageRep.imageRepWithData(thumbnail.TIFFRepresentation);
     var png = bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({}));
     apps.push({
       id: path,
