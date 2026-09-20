@@ -18,7 +18,7 @@ Linux PR 的 `node 24 / snapshots and artifacts` 必须运行完整 Web 浏览�
 
 CI 的 `scripts/run-web-snapshots.ts` 单独运行会修改构建产物的 `hmr-live.e2e.ts`。随后由一个六 worker Vitest 池运行其余文件，包括历史 Cordis 卡片渲染。所有子进程继承 stdio，由 `run-gates` 流式转发输出。
 
-对 PR 而言，门禁仅在 Linux 消费方 job 中运行：这些场景面向 POSIX，其他 PR job 不安装这两种引擎。自托管的默认分支 Linux 串行热备也包含该比较，而 macOS 和 Windows 串行 job 仍不使用浏览器（不存在托管的 Linux 串行聚合）。PR 的 `all checks passed` 已依赖消费方 job，因此浏览器比较失败会阻止合并，无需新增 branch-protection check 名称。
+对 PR 而言，门禁仅在 Linux 消费方 job 中运行：这些场景面向 POSIX，其他 PR job 不会同时安装这两种引擎。自托管的默认分支 Linux 串行热备也包含该比较，而 macOS 和 Windows 串行 job 仍不使用浏览器（不存在托管的 Linux 串行聚合）。PR 的 `all checks passed` 已依赖消费方 job，因此浏览器比较失败会阻止合并，无需新增 branch-protection check 名称。
 
 完整本地 replay 中，6-worker 浏览器命令耗时约 65–71 秒。12-worker 对比约为 50 秒，因此把浏览器 worker 预算减半只增加约 15–20 秒，而不是让墙钟时间翻倍。门禁调度器会在 `built-package-invariants` 成功后立即启动浏览器快照，并发运行彼此独立的门禁，因此既不需要专用 job 超时，也不需要手动制定 YAML 顺序规则。
 
