@@ -12,7 +12,7 @@ export type OpenPathEmptyActionProps =
   & InjectFace<OpenPathInjected>
 
 /**
- * Render the same file default action without a dropdown.
+ * Render the shared file opening menu with a larger labeled main button.
  * @param props - unpreviewable file and injected opening capabilities.
  * @returns the shared file opening action.
  */

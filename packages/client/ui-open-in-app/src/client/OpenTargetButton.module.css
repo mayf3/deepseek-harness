@@ -60,29 +60,19 @@
   object-fit: contain;
 }
 
-/* The empty state's capsule, sized like the preview's own Retry
-   (ui-sidebar-documentpreview TextPreview `.retry`) so the two recourses read
-   as one family. */
-.empty {
-  display: inline-flex;
-  flex: none;
+/* The unavailable preview emphasizes the same actions with a labeled button. */
+.split[data-size='large'] {
+  height: 40px;
+  border-radius: 14px;
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.split[data-size='large'] .main {
   gap: 6px;
-  align-items: center;
-  height: 32px;
-  padding: 0 12px 0 14px;
-  color: var(--dsw-alias-label-primary);
-  font-size: var(--dsh-content-font-size-secondary, 13px);
-  font-family: inherit;
-  background: transparent;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 16px;
-  cursor: pointer;
+  padding: 8px 14px;
+  font-size: 14px;
 }
 
-.empty:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.empty:disabled {
-  cursor: default;
+.split[data-size='large'] .chevron {
+  padding: 8px 10px;
 }

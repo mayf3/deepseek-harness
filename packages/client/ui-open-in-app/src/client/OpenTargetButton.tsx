@@ -27,7 +27,7 @@ export interface OpenTargetButtonProps {
   readonly defaultId: string | undefined
   readonly failed: boolean
   readonly loading?: boolean
-  readonly empty?: boolean
+  readonly prominent?: boolean
   readonly t: TranslateNS<typeof NS>
   readonly execute: (operation: OpenTargetOperation) => Promise<OpenInAppPathFailure | null>
   readonly refresh?: () => void
@@ -80,21 +80,13 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
   const { pending, toast, act } = useOpenTargetGesture(props.execute, t)
   const preferred = applications.find(app => app.id === defaultId)
   const disabled = pending || props.loading === true
-  const revealDefault = kind === 'file' && preferred === undefined
+  const revealDefault = kind === 'file' && preferred === undefined && props.loading !== true
   const primaryLabel = preferred === undefined ? t('path.reveal') : t('open.title', { app: preferred.name })
   const run = (operation: OpenTargetOperation): void => { setMenuOpen(false); act(operation) }
   const primary = (): void => { run({ kind: revealDefault ? 'reveal' : 'default' }) }
   const icon = revealDefault
-    ? <IconFolderOpenOutlineRegular size={13} />
-    : <ApplicationIcon key={preferred?.icon} source={preferred?.icon ?? null} size={13} />
-  if (props.empty === true) return (
-    <>
-      <button type="button" className={css.empty} disabled={disabled} data-open-path-unpreviewable onClick={primary}>
-        {t('path.open')}{icon}
-      </button>
-      {toast}
-    </>
-  )
+    ? <IconFolderOpenOutlineRegular size={props.prominent ? 18 : 13} />
+    : <ApplicationIcon key={preferred?.icon} source={preferred?.icon ?? null} size={props.prominent ? 18 : 13} />
   return (
     <>
       <Menu
@@ -119,16 +111,19 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
         ]}
         onSelect={(id) => { run(id === 'reveal' ? { kind: 'reveal' } : { kind: 'application', id: id.slice(4) }) }}
         anchor={(
-          <div className={css.split} data-open-target={kind} data-open-path={kind === 'file' ? '' : undefined} data-state={disabled ? 'busy' : 'idle'}>
+          <div className={css.split} data-open-target={kind} data-size={props.prominent ? 'large' : 'compact'}
+            data-open-path={kind === 'file' && !props.prominent ? '' : undefined} data-state={disabled ? 'busy' : 'idle'}>
             <Tooltip label={revealDefault ? t('path.reveal') : t('open.tooltip')} side="bottom" delayMs={500}>
-              <button type="button" className={css.main} disabled={disabled} aria-label={primaryLabel} data-open-path-open={kind === 'file' ? '' : undefined} onClick={primary}>
-                {icon}
+              <button type="button" className={css.main} disabled={disabled} aria-label={props.prominent ? undefined : primaryLabel}
+                data-open-path-open={kind === 'file' && !props.prominent ? '' : undefined}
+                data-open-path-unpreviewable={props.prominent ? '' : undefined} onClick={primary}>
+                {icon}{props.prominent && (revealDefault ? t('path.reveal') : t('path.open'))}
               </button>
             </Tooltip>
             <button
               type="button" className={css.chevron} disabled={disabled}
               aria-haspopup="menu" aria-expanded={menuOpen && !disabled} aria-label={t('path.more')}
-              data-open-path-more={kind === 'file' ? '' : undefined}
+              data-open-path-more={kind === 'file' && !props.prominent ? '' : undefined}
               onClick={() => {
                 if (!menuOpen) props.refresh?.()
                 setMenuOpen(value => !value)

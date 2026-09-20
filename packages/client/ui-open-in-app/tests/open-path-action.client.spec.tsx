@@ -247,3 +247,23 @@ it('waits for the file association query before allowing a default action', asyn
   await act(async () => { fireEvent.click(main) })
   expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'reveal', undefined)
 })
+
+
+it('uses the same application menu in the prominent empty-state control', async () => {
+  const b = bench()
+  const view = render(<OpenPathEmptyAction {...b.props} />)
+  await act(async () => {})
+  expect(view.container.querySelector('[data-open-target]')?.getAttribute('data-size')).toBe('large')
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.more'] })) })
+  expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Music（默认）', zh['path.reveal']])
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Music（默认）' })) })
+  expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open', '/Music.app')
+})
+
+it('labels the prominent default action as reveal when no default application is discovered', async () => {
+  const b = bench()
+  render(<OpenPathEmptyAction {...b.props} applications={async () => []} />)
+  await act(async () => {})
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.reveal'] })) })
+  expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'reveal', undefined)
+})

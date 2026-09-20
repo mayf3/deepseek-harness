@@ -59,7 +59,7 @@ export function FileOpenTarget(props: FileOpenTargetProps): ReactNode {
     <OpenTargetButton
       key={props.absolutePath} kind="file" applications={apps ?? []} defaultId={apps?.find(app => app.default)?.id}
       loading={association?.path !== props.absolutePath} failed={association?.path === props.absolutePath && apps === null}
-      empty={props.empty === true} t={props.t}
+      prominent={props.empty === true} t={props.t}
       refresh={() => { setRevision(value => value + 1) }}
       execute={operation => props.openPath(props.absolutePath, operation.kind === 'reveal' ? 'reveal' : 'open',
         operation.kind === 'application' ? operation.id : undefined)}

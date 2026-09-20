@@ -743,13 +743,16 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await headerOpen.waitFor({ timeout: 15_000 })
     const emptyOpen = unsupported.locator('[data-textpreview-unsupported] [data-open-path-unpreviewable]')
     await emptyOpen.waitFor({ timeout: 15_000 })
+    const prominent = unsupported.locator('[data-open-target="file"][data-size="large"]')
+    expect((await prominent.boundingBox())?.height).toBe(40)
+    expect((await unsupported.locator('[data-open-path]').boundingBox())?.height).toBe(24)
     await successShot(page, 'unsupported')
     sections.push([
       '## Unviewable binary', '',
       '- State: unsupported',
       `- Line: ${unsupportedLine.trim()}`,
       `- Header control has no text: ${String(await headerOpen.innerText() === '')}`,
-      `- Empty-state control: ${await emptyOpen.innerText()}`,
+      `- Empty-state control has text: ${String((await emptyOpen.innerText()).length > 0)}`,
     ].join('\n'))
     if (STUB_OPENER) {
       // Real Host gestures against the stubbed opener: default application from the empty state, reveal from the header menu.
@@ -766,7 +769,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       expect([clip, cwd]).toContain(gestures[1]?.path)
       if (process.platform === 'darwin') {
         await expect.poll(() => headerOpen.locator('img').count()).toBe(1)
-        await unsupported.locator('[data-open-path-more]').click()
+        await prominent.getByRole('button', { name: 'More ways to open' }).click()
         await page.getByRole('menuitem', { name: 'Test Player (default)', exact: true }).waitFor()
         await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'applications.expected.md'), await page.getByRole('menu').ariaSnapshot(), MODE)
         await page.getByRole('menuitem', { name: 'Other Player', exact: true }).click()

@@ -82,4 +82,4 @@
 - State: unsupported
 - Line: Preview is not available for this file type yet.
 - Header control has no text: true
-- Empty-state control: Open
+- Empty-state control has text: true
