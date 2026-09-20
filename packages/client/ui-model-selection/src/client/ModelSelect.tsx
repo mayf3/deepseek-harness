@@ -297,6 +297,8 @@ export function ModelSelect(
       return
     }
     lastActionRef.current = 'select'
+    // Disabled option rows cannot retain focus while a selection is pending.
+    triggerRef.current?.focus()
     void select(selection).then(settleSelection)
   }
 
@@ -312,6 +314,7 @@ export function ModelSelect(
       ...effort === undefined ? {} : { reasoningEffort: effort },
     }
     lastActionRef.current = 'select'
+    triggerRef.current?.focus()
     void select(selection).then(settleSelection)
   }
 
@@ -373,6 +376,10 @@ export function ModelSelect(
           role="menu"
           aria-label={t('menu.aria')}
           aria-busy={state.status === 'loading' || busy}
+          onMouseDown={(event) => {
+            // WebKit blurs a focused row before click unless the button's mousedown keeps focus.
+            if (event.target instanceof Element && event.target.closest('button') !== null) event.preventDefault()
+          }}
         >
           {pane === 'root' && (
             <>

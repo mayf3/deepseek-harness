@@ -87,6 +87,7 @@ describe('ModelSelect reasoning effort', () => {
         reasoningEffort: 'max',
       })
       expect(trigger.getAttribute('aria-label')).toBe('选择模型，当前 DeepSeek-V4-Flash，推理等级 Max')
+      expect(document.activeElement).toBe(trigger)
     })
   })
 
@@ -196,10 +197,12 @@ describe('ModelSelect reasoning effort', () => {
       t={t}
     />)
 
-    fireEvent.click(screen.getByRole('button', { name: /选择模型|当前/ }))
+    const trigger = screen.getByRole('button', { name: /选择模型|当前/ })
+    fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ }))
     const toast = await screen.findByRole('alert')
+    expect(document.activeElement).toBe(trigger)
     expect(toast.textContent).toBe(sessionInUse
       ? zh['error.sessionInUse']
       : '模型操作失败：session/model-unavailable: session already contains images')
@@ -232,7 +235,7 @@ describe('ModelSelect reasoning effort', () => {
       expect(menu.style.left).toBe('12px')
       expect(menu.style.top).toBe('12px')
       // Interactions inside the trigger subtree or the portaled card stay open.
-      fireEvent.mouseDown(menu)
+      expect(fireEvent.mouseDown(menu)).toBe(true)
       fireEvent.mouseDown(trigger)
       fireEvent.blur(trigger, { relatedTarget: menu })
       expect(screen.getByRole('menu')).toBeTruthy()
@@ -274,6 +277,21 @@ describe('ModelSelect keyboard walk', () => {
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
     return select
   }
+
+  it.each(['model', 'effort'])('keeps focus through a mouse press on a %s row without selecting it', (pane) => {
+    const select = mountOpen()
+    const cell = screen.getByRole('menuitem', { name: pane === 'model' ? /^模型/ : /推理等级/ })
+    expect(fireEvent.mouseDown(cell.firstElementChild!)).toBe(false)
+    fireEvent.click(cell)
+    const rows = screen.getAllByRole('menuitemradio')
+    const focused = document.activeElement
+    expect(fireEvent.mouseDown(rows[0]!.firstElementChild!)).toBe(false)
+    fireEvent.mouseUp(screen.getByRole('menu'))
+    expect(document.activeElement).toBe(focused)
+    expect(select).not.toHaveBeenCalled()
+    fireEvent.keyDown(focused!, { key: 'Escape' })
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: pane === 'model' ? /^模型/ : /推理等级/ }))
+  })
 
   it('↑↓ walk the rows of the shown pane, wrapping, and stay open', () => {
     mountOpen()
