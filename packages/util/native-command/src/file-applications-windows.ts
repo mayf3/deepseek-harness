@@ -94,7 +94,7 @@ public static class DshFileAssociations {
         IHandler handler; uint fetched;
         int result = handlers.Next(1, out handler, out fetched);
         Marshal.ThrowExceptionForHR(result);
-        if (fetched == 0) break;
+        if (result != 0 || fetched == 0) break;
         try { visit(handler); } finally { Marshal.FinalReleaseComObject(handler); }
       }
     } finally { Marshal.FinalReleaseComObject(handlers); }

@@ -1,4 +1,4 @@
-/** Real Windows Shell discovery and invocation with a private file extension and a short-lived fixture application. */
+/** Real Windows Shell discovery and invocation with a private extension and a private executable. */
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -12,24 +12,31 @@ function literal(value: string): string {
   return `[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${Buffer.from(value).toString('base64')}'))`
 }
 
-it.skipIf(process.platform !== 'win32')('queries and invokes a registered Windows handler through the system Shell', async ({ task }) => {
+it.skipIf(process.platform !== 'win32')('queries and invokes a registered Windows handler through the system Shell', async ({ task, signal: testSignal, onTestFailed }) => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-windows-association-'))
   const suffix = randomUUID().replaceAll('-', '')
   const extension = `.dsh${suffix}`
   const progId = `DSH.Test.${suffix}`
-  const path = join(root, `测试 ' audio${extension}`)
-  const marker = join(root, 'opened.json')
-  const script = join(root, 'handler.cjs')
+  const appName = `dsh-handler-${suffix}.exe`
+  const executable = join(root, appName)
+  const path = join(root, `${String.fromCharCode(0x6d4b, 0x8bd5)} ' audio${extension}`)
+  const marker = join(root, 'opened.txt')
   const lifetime = new AbortController()
+  const signal = AbortSignal.any([testSignal, lifetime.signal])
   const active = new Set<Promise<Awaited<ReturnType<NativeCommandRunner>>>>()
-  const run: NativeCommandRunner = (command, args, signal) => {
-    const task = runNativeCommand(command, args, signal)
-    active.add(task)
-    void task.then(() => active.delete(task), () => active.delete(task))
-    return task
+  let phase = 'compile fixture'
+  onTestFailed(async () => {
+    const opened = await readFile(marker, 'utf8').catch(() => '(no handoff marker)')
+    console.error('Windows association fixture:', phase, 'active native commands:', active.size, opened)
+  })
+  const run: NativeCommandRunner = (command, args, operationSignal) => {
+    const pending = runNativeCommand(command, args, operationSignal)
+    active.add(pending)
+    void pending.then(() => active.delete(pending), () => active.delete(pending))
+    return pending
   }
   const runScript = async (source: string): Promise<void> => {
-    await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')], lifetime.signal)
+    await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')], signal)
   }
   onTestFinished(async () => {
     lifetime.abort()
@@ -39,11 +46,26 @@ it.skipIf(process.platform !== 'win32')('queries and invokes a registered Window
 $root = [Microsoft.Win32.Registry]::CurrentUser
 $root.DeleteSubKeyTree('Software\\Classes\\${extension}', $false)
 $root.DeleteSubKeyTree('Software\\Classes\\${progId}', $false)
+$root.DeleteSubKeyTree('Software\\Classes\\Applications\\${appName}', $false)
 `, 'utf16le').toString('base64')], new AbortController().signal)
     } finally { await rm(root, { recursive: true, force: true }) }
   })
   await writeFile(path, 'test')
-  await writeFile(script, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ path: process.argv[2], pid: process.pid }));\n`)
+  // A dedicated executable accepts the file directly; no pre-existing Node association can discard fixture-script arguments.
+  await runScript(`$ErrorActionPreference = 'Stop'
+Add-Type -ReferencedAssemblies System -OutputAssembly ${literal(executable)} -OutputType ConsoleApplication -TypeDefinition @'
+using System;
+using System.IO;
+using System.Diagnostics;
+public static class Handler {
+  public static void Main(string[] args) {
+    File.WriteAllLines(${JSON.stringify(marker)}, new string[] { args[0], Process.GetCurrentProcess().Id.ToString() });
+  }
+}
+'@
+`)
+  phase = 'register association'
+  const command = literal(`"${executable}" "%1"`)
   await runScript(`$ErrorActionPreference = 'Stop'
 $root = [Microsoft.Win32.Registry]::CurrentUser
 $key = $root.CreateSubKey('Software\\Classes\\${extension}')
@@ -51,17 +73,34 @@ $key.SetValue('', '${progId}'); $key.Dispose()
 $key = $root.CreateSubKey('Software\\Classes\\${extension}\\OpenWithProgids')
 $key.SetValue('${progId}', ''); $key.Dispose()
 $key = $root.CreateSubKey('Software\\Classes\\${progId}\\shell\\open\\command')
-$key.SetValue('', ${literal(`"${process.execPath}" "${script}" "%1"`)}); $key.Dispose()
+$key.SetValue('', ${command}); $key.Dispose()
+$key = $root.CreateSubKey('Software\\Classes\\Applications\\${appName}\\shell\\open\\command')
+$key.SetValue('', ${command}); $key.Dispose()
+$key = $root.CreateSubKey('Software\\Classes\\Applications\\${appName}\\SupportedTypes')
+$key.SetValue('${extension}', ''); $key.Dispose()
 `)
-  const applications = await nativeFileApplications(path, lifetime.signal, { run })
-  const expected = applications.find(app => app.id.toLowerCase() === process.execPath.toLowerCase())
+  phase = 'query associations'
+  const applications = await nativeFileApplications(path, signal, { run })
+  const expected = applications.find(app => app.id.toLowerCase() === executable.toLowerCase())
   expect(expected).toMatchObject({ default: true, name: expect.any(String) as string })
-  await openNativeFileApplication(path, expected!.id, lifetime.signal, { run })
-  let opened: { path: string; pid: number } | undefined
-  await vi.waitFor(async () => {
-    opened = JSON.parse(await readFile(marker, 'utf8')) as { path: string; pid: number }
-    expect(opened.path).toBe(path)
+  phase = 'invoke handler'
+  await openNativeFileApplication(path, expected!.id, signal, { run })
+  phase = 'wait for fixture marker'
+  let opened: string[] = []
+  await vi.waitUntil(async () => {
+    signal.throwIfAborted()
+    try { opened = (await readFile(marker, 'utf8')).trim().split(/\r?\n/) } catch (_error) { return false }
+    return true
   }, { timeout: task.timeout })
-  // Shell invocation does not own the application's lifetime; wait for this fixture's process to exit before removing its files.
-  await vi.waitFor(() => { expect(() => process.kill(opened!.pid, 0)).toThrow() }, { timeout: task.timeout })
+  expect(opened[0]).toBe(path)
+  const pid = Number(opened[1])
+  expect(pid).toBeGreaterThan(0)
+  phase = 'wait for fixture exit'
+  await vi.waitUntil(() => {
+    signal.throwIfAborted()
+    try { process.kill(pid, 0); return false } catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ESRCH') return true
+      throw error
+    }
+  }, { timeout: task.timeout })
 })
