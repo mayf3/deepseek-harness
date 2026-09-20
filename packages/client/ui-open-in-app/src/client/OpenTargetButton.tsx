@@ -113,7 +113,7 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
         anchor={(
           <div className={css.split} data-open-target={kind} data-size={props.prominent ? 'large' : 'compact'}
             data-open-path={kind === 'file' && !props.prominent ? '' : undefined} data-state={disabled ? 'busy' : 'idle'}>
-            <Tooltip label={primaryLabel} side="bottom" delayMs={500}>
+            <Tooltip portal label={primaryLabel} side="bottom" delayMs={500}>
               <button type="button" className={css.main} disabled={disabled} aria-label={props.prominent ? undefined : primaryLabel}
                 data-open-path-open={kind === 'file' && !props.prominent ? '' : undefined}
                 data-open-path-unpreviewable={props.prominent ? '' : undefined} onClick={primary}>

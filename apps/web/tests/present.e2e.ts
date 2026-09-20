@@ -132,6 +132,18 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       await row.waitFor()
       await expect.poll(() => row.getByRole('button', { name: 'More ways to open' }).count()).toBe(2)
       expect(await row.getByText('report.txt', { exact: true }).innerText()).toBe('report.txt')
+      const card = row.locator('[data-presented-file]').filter({ hasText: 'report.txt' })
+      await card.getByRole('button', { name: 'Open in Test Editor', exact: true }).hover()
+      await page.getByRole('tooltip', { name: 'Open in Test Editor', exact: true }).waitFor()
+      expect(await page.getByRole('tooltip').evaluate((tooltip) => {
+        const rect = tooltip.getBoundingClientRect()
+        const previous = tooltip.style.pointerEvents
+        tooltip.style.pointerEvents = 'auto'
+        const visible = document.elementFromPoint(rect.left + rect.width / 2, rect.bottom - 1) === tooltip
+        tooltip.style.pointerEvents = previous
+        return tooltip.parentElement === document.body && visible
+      })).toBe(true)
+      await page.mouse.move(0, 0)
       const beforePreview = (await opened()).length
       const column = page.locator('[data-rightbar-col]')
       for (const [name, content] of [['report.txt', 'EDITED_REPORT'], ['说明.txt', 'EDITED_NOTE']] as const) {
