@@ -42,10 +42,10 @@ export abstract class DeepSeekAccount extends Service {
    * Join an active attempt or start browser authorization.
    * @param locale - active UI language for a new attempt; joining retains its original language.
    * @param callbackOrigin - browser-accessible loopback HTTP origin, including any SSH local port.
-   * @param client - initiating UI, used to return from a failed exchange.
+   * @param loginSource - initiating UI, used to return from a failed exchange.
    * @returns the initial snapshot without waiting for browser approval.
    */
-  abstract startSignIn(locale: string, callbackOrigin: string, client: 'web' | 'desktop'): Promise<AccountView>
+  abstract startSignIn(locale: string, callbackOrigin: string, loginSource: 'web' | 'desktop'): Promise<AccountView>
   /**
    * Cancel only the named attempt; committing attempts settle before returning.
    * @param id - attempt identity from this Host.

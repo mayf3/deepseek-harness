@@ -32,11 +32,11 @@ export class AccountController extends TypertRemoteService {
    * Begin browser sign-in.
    * @param locale - active UI language for a new attempt.
    * @param callbackOrigin - browser-accessible loopback HTTP origin.
-   * @param client - initiating UI, used to return from a failed exchange.
+   * @param loginSource - initiating UI, used to return from a failed exchange.
    * @returns a new or already-active login attempt.
    */
   @Remote
-  startSignIn(locale: string, callbackOrigin: string, client: 'web' | 'desktop'): Promise<AccountView> { return this.ctx.deepseekAccount.startSignIn(locale, callbackOrigin, client) }
+  startSignIn(locale: string, callbackOrigin: string, loginSource: 'web' | 'desktop'): Promise<AccountView> { return this.ctx.deepseekAccount.startSignIn(locale, callbackOrigin, loginSource) }
   /**
    * Cancel the named local attempt.
    * @param attemptId - attempt to cancel.

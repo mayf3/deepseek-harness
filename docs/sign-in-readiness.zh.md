@@ -15,7 +15,7 @@
 ## 待办与完成条件
 
 - [x] **Loopback 地址策略（DSH／Platform／后端）**：用户于 2026-09-15 明确后端支持 localhost，保留主机名及浏览器实际访问端口，不转换 IP。DSH、Platform 与 mock 已对齐精确 localhost 校验并拒绝仿冒域名。验收：2026-09-15，DSH 40 项账号测试及 lint 通过；Platform 72 项测试、两个类型检查及 lint 通过，覆盖原 URI 兑换成功、转换 IP 后兑换失败。新版后端协议下，回调校验也接受 [::1] 并要求显式端口；真实 IPv6 监听和转发仍待验收。
-- [ ] **真实授权接口联调（后端／两端）**：在真实后端验证 auth_init 的 client_type 绑定、authorize 业务码、exchange 的 token／authorized_url、auth_cancel 的 verifier 校验和幂等、取消后申请及未兑换 code 失效。验证 desktop 与 web 来源不能在兑换时被覆盖；mock 实现不算后端完成证据。
+- [ ] **真实授权接口联调（后端／两端）**：在真实后端验证 auth_init 的 login_source 绑定、authorize 业务码、exchange 的 token／authorized_url、auth_cancel 的 verifier 校验和幂等、取消后申请及未兑换 code 失效。验证 desktop 与 web 来源不能在兑换时被覆盖；mock 实现不算后端完成证据。
 - [ ] **真实 DSH token 使用与退登（后端／DSH）**：验证 current、余额、推理和文件接口均可使用真实 DSH token；验证推理／文件请求仍仅在允许的 api.deepseek.com 地址附带账号凭证。验证重启恢复、主动退登调用 Platform logout、本地凭证删除与远端撤销结果。使用独立测试账号，避免撤销日常账号的共享 dev token。
 - [ ] **最新 Web 标签页流程联调（两端）**：使用 localhost:8081 跑通新标签页授权、成功自动关闭、exchange 失败关闭、原页失败弹窗和手动重试；覆盖超时、取消、自动关页受限、手动复制链接，以及 SSH 本地／远端端口不同和 IPv4／IPv6 监听配置下的 localhost 访问。确认不再打开第二个 Web UI，Web 完成页不显示桌面按钮。
 - [ ] **原生客户端与安装包验收（DSH）**：在最新产物验证登录前 Host ready、登录后主界面加载、失败／超时恢复和窗口聚焦；在支持的发布平台验证安装包 dsh://open 注册、冷启动及已运行时唤起。既有旧版本手测不能替代最新改动验收。
@@ -40,4 +40,4 @@
 
 2026-09-16：已注册 macOS 开发用 `Harness Dev.app`，并通过 Chrome 中真实 Platform 完成页按钮验证运行中唤起和完全退出后的冷启动，账号展示保持正常。这不替代正式安装包及其他发布平台验收。
 
-- [ ] **完成页上下文（后端／两端）**：提供的后端 auth_init schema 未保存 client_type（desktop/web）或 locale。确认 authorized_url 如何区分桌面打开应用与 Web 关闭标签页及语言。替代方案确定前 DSH 继续发送两字段；发送字段本身不代表后端支持。
+- [ ] **完成页上下文（后端／两端）**：提供的后端 auth_init schema 未保存 login_source（desktop/web）或 locale。确认 authorized_url 如何区分桌面打开应用与 Web 关闭标签页及语言。替代方案确定前 DSH 继续发送两字段；发送字段本身不代表后端支持。

@@ -78,7 +78,7 @@ export function desktopAccountBackend(origin: string, invoke: AccountInvoke, coo
   const call = async (method: string, args: Record<string, unknown> = {}): Promise<AccountView> =>
     accountView(await invoke({ namespace: 'account', method, args }))
   return {
-    state: () => call('getState'), start: locale => call('startSignIn', { locale, callbackOrigin: new URL(origin).origin, client: 'desktop' }),
+    state: () => call('getState'), start: locale => call('startSignIn', { locale, callbackOrigin: new URL(origin).origin, loginSource: 'desktop' }),
     cancel: attemptId => call('cancelSignIn', { attemptId }), signOut: () => call('signOut'),
     watch(listener, failed) {
       let closed = false

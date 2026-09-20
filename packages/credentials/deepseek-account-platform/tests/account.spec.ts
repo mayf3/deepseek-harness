@@ -171,8 +171,9 @@ it('stores a grant before redirecting, restores account presence, and signs out 
   expect((await fetch(f.callback('wrong'))).status).toBe(400)
   const response = await fetch(f.callback(), { redirect: 'manual' })
   expect(response.status).toBe(302)
-  expect(f.init().client_type).toBe('desktop')
-  expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=test&locale=zh_CN&client_type=desktop`)
+  expect(f.init().login_source).toBe('desktop')
+  expect(f.init()).not.toHaveProperty('client_type')
+  expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=test&locale=zh_CN&login_source=desktop`)
   expect((await f.account.getState()).status).toBe('credential-stored')
   expect(await readFile(join(f.home, 'credentials.yaml'), 'utf8')).toContain('dsh_mock_test')
   expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test' })
@@ -230,23 +231,32 @@ it('maps both returned browser pages to the development origin across the login 
   expect((await f.wait('waiting-browser')).attempt?.authorizeUrl).toBe(`${f.origin}/dsh/authorize?authorize_id=test`)
   const response = await fetch(f.callback(), { redirect: 'manual' })
   expect(response.status).toBe(302)
-  expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=a%2Fb&locale=zh_CN&client_type=desktop`)
+  expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=a%2Fb&locale=zh_CN&login_source=desktop`)
   expect((await f.account.getState()).status).toBe('credential-stored')
 })
 
 it.each([
   ['web', ''],
   ['desktop', ''],
-  ['web', '&client_type=desktop&client_type=desktop'],
-  ['desktop', '&client_type=web&client_type=web'],
-] as const)('redirects the %s login completion with its client type when Platform returns %s', async (client, query) => {
+  ['web', '&login_source=desktop&login_source=desktop'],
+  ['desktop', '&login_source=web&login_source=web'],
+] as const)('redirects the %s login completion with its login source when Platform returns %s', async (client, query) => {
   const f = await fixture()
   f.exchangeResponse({ authorized_url: `${f.origin}/dsh/authorized?result=a%2Fb&locale=zh_CN${query}` })
   await f.account.startSignIn('en', f.callbackOrigin, client)
   await f.wait('waiting-browser')
   const response = await fetch(f.callback(), { redirect: 'manual' })
   expect(response.status).toBe(302)
-  expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=a%2Fb&locale=zh_CN&client_type=${client}`)
+  expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=a%2Fb&locale=zh_CN&login_source=${client}`)
+})
+
+it('preserves Platform business client_type in the completion URL', async () => {
+  const f = await fixture()
+  f.exchangeResponse({ authorized_url: `${f.origin}/dsh/authorized?client_type=DSH` })
+  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.wait('waiting-browser')
+  const response = await fetch(f.callback(), { redirect: 'manual' })
+  expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?client_type=DSH&login_source=web`)
 })
 
 it.each([undefined, 'https://other.example/dsh/authorized', '/dsh/authorized'])('rejects an invalid exchange completion URL %s before storing a token', async (authorizedUrl) => {
@@ -454,7 +464,7 @@ it('closes the failed Web authorization tab without redirecting and keeps the sh
   expect(response.headers.get('content-security-policy')).toContain(`script-src 'nonce-${nonce}'`)
   await expect(`${page.match(/<p>(.*?)<\/p>/)![1]}\n`)
     .toMatchFileSnapshot('./expected/web-exchange-failure.txt')
-  expect(f.init().client_type).toBe('web')
+  expect(f.init().login_source).toBe('web')
   expect(await f.wait('failed')).toMatchObject({ status: 'signed-out', attempt: { errorCode: 'protocol' } })
   expect(f.count()).toBe(1)
   expect(await (await fetch(`${f.callbackOrigin}/health`)).text()).toBe('alive')
@@ -462,7 +472,7 @@ it('closes the failed Web authorization tab without redirecting and keeps the sh
   await f.account.startSignIn('en', f.callbackOrigin, 'web')
   await f.wait('waiting-browser')
   const success = await fetch(f.callback(), { redirect: 'manual' })
-  expect(success.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=test&locale=zh_CN&client_type=web`)
+  expect(success.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=test&locale=zh_CN&login_source=web`)
   expect(f.count()).toBe(2)
 })
 
@@ -491,7 +501,7 @@ it('completes login through a local TCP forward using the browser port rather th
   await f.wait('waiting-browser')
   expect(f.init().redirect_uri).toBe(`${forwardedOrigin}/oauth/callback`)
   const response = await fetch(f.callback(), { redirect: 'manual' })
-  expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=test&locale=zh_CN&client_type=web`)
+  expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=test&locale=zh_CN&login_source=web`)
   expect((await f.account.getState()).status).toBe('credential-stored')
 })
 

@@ -69,7 +69,7 @@ interface Attempt {
   done: Promise<void>
   running: Promise<void>
   origin: string
-  client: 'web' | 'desktop'
+  loginSource: 'web' | 'desktop'
   disposeCallback?: () => Promise<void>
   callback?: ServerResponse
   initialProfile?: { token: string; value: AccountDetails['profile'] }
@@ -238,7 +238,7 @@ export class PlatformAccount extends DeepSeekAccount {
     return result.data.token
   }
 
-  override async startSignIn(locale: string, callbackOrigin: string, client: 'web' | 'desktop'): Promise<AccountView> {
+  override async startSignIn(locale: string, callbackOrigin: string, loginSource: 'web' | 'desktop'): Promise<AccountView> {
     if (this.removing !== undefined) await this.removing
     const origin = loginOrigin(callbackOrigin)
     if (this.closed) throw new PlatformAuthError('protocol')
@@ -254,7 +254,7 @@ export class PlatformAccount extends DeepSeekAccount {
       if (this.attempt !== previous) return this.getState()
     }
     const attempt: Attempt = {
-      origin, client,
+      origin, loginSource,
       locale: locale.toLowerCase().split(/[-_]/)[0] === 'zh' ? 'zh_CN' : 'en_US',
       view: { id: randomUUID() as SignInAttemptId, phase: 'initializing' },
       controller: new AbortController(), done: Promise.resolve(), running: Promise.resolve(),
@@ -398,7 +398,7 @@ export class PlatformAccount extends DeepSeekAccount {
       const redirectUri = `${attempt.origin}/oauth/callback`
       const init = initialization.safeParse(await this.request('auth_init', {
         code_challenge: challenge, code_challenge_method: 'S256', state, redirect_uri: redirectUri, locale: attempt.locale,
-        client_type: attempt.client,
+        login_source: attempt.loginSource,
       }, signal), { reportInput: true })
       if (!init.success) {
         console.info('[deepseek-account] payload rejected', {
@@ -437,7 +437,7 @@ export class PlatformAccount extends DeepSeekAccount {
         throw new PlatformAuthError('protocol')
       }
       const completionUrl = new URL(browserUrl(result.data.authorized_url, this.origin, '/dsh/authorized', this.rewriteBrowserOrigin))
-      completionUrl.searchParams.set('client_type', attempt.client)
+      completionUrl.searchParams.set('login_source', attempt.loginSource)
       attempt.completionUrl = completionUrl.href
       signal.throwIfAborted()
       if (result.data.user != null) {
@@ -476,7 +476,7 @@ export class PlatformAccount extends DeepSeekAccount {
   }
 
   private finishFailedCallback(attempt: Attempt): void {
-    if (attempt.client === 'web') {
+    if (attempt.loginSource === 'web') {
       const nonce = randomBytes(16).toString('base64url')
       const message = attempt.locale === 'zh_CN' ? '登录失败，请关闭此标签页并在原页面重试。'
         : 'Sign-in failed. Close this tab and try again in the original tab.'

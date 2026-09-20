@@ -882,9 +882,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'balance outcome, or null if signed out or the grant changed during the query.',
       },
       {
-        signature: 'abstract startSignIn(locale: string, callbackOrigin: string, client: \'web\' | \'desktop\'): Promise<AccountView>',
+        signature: 'abstract startSignIn(locale: string, callbackOrigin: string, loginSource: \'web\' | \'desktop\'): Promise<AccountView>',
         description: 'Join an active attempt or start browser authorization.',
-        parameters: [{ name: 'locale', description: 'active UI language for a new attempt; joining retains its original language.' }, { name: 'callbackOrigin', description: 'browser-accessible loopback HTTP origin, including any SSH local port.' }, { name: 'client', description: 'initiating UI, used to return from a failed exchange.' }],
+        parameters: [{ name: 'locale', description: 'active UI language for a new attempt; joining retains its original language.' }, { name: 'callbackOrigin', description: 'browser-accessible loopback HTTP origin, including any SSH local port.' }, { name: 'loginSource', description: 'initiating UI, used to return from a failed exchange.' }],
         returns: 'the initial snapshot without waiting for browser approval.',
       },
       {
