@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import { makeTranslate, RemoteError, sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
   SessionListState, SessionSummary, SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -80,20 +80,42 @@ function props(
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
   }
+  const snapshot: SessionSnapshot = {
+    ...sessionSnapshot(PARENT),
+    subagent: boundAddress === undefined ? null : { address: boundAddress },
+  }
+  const unused = (): never => { throw new Error('Subagent header fixture does not provide this slot source or action') }
+  const standard = {
+    usePanelInfo: unused,
+    useSessionRetainInfo: unused,
+    useWorkspaces: unused,
+    useResource: unused,
+    useProjection: unused,
+    useConversation: unused,
+    useInput: unused,
+    useChat: unused,
+    useTrajectory: unused,
+    inputActions: {
+      setDraft: unused,
+      addAttachments: unused,
+      removeAttachment: unused,
+      pruneAttachments: unused,
+      submit: unused,
+    },
+  }
   return {
+    ...standard,
     sessionId: PARENT,
     useSessions,
     useSessionStatus: <T,>(select: (snapshot: SessionStatusSnapshot) => T): T => select(statuses),
-    useSession: <T,>(select: (snapshot: SessionSnapshot) => T): T => select({
-      subagent: boundAddress === undefined ? undefined : { address: boundAddress },
-    } as SessionSnapshot),
+    useSession: <T,>(select: (snapshot: SessionSnapshot) => T): T => select(snapshot),
     openChild: vi.fn(),
     openChildAside: vi.fn(),
-    refresh: vi.fn(),
+    refreshProjection: vi.fn(),
     lineageSessionId: PARENT,
     displayTitle: 'Parent title',
     t,
-  } as unknown as SubagentHeaderLineageProps
+  } satisfies SubagentHeaderLineageProps
 }
 
 function summary(id: SessionId, updatedAt: number): SessionSummary {
@@ -208,7 +230,7 @@ describe('SubagentHeaderLineage', () => {
     const trigger = screen.getByRole('button', { name: /1 个子代理，正在运行/ })
     hoverCatalog(trigger)
 
-    expect(input.refresh).toHaveBeenCalledWith(PARENT)
+    expect(input.refreshProjection).not.toHaveBeenCalled()
     expect(screen.getAllByRole('treeitem')).toHaveLength(2)
     expect(screen.getByText('正在扫描项目文件 · 可继续 · 正在运行')).toBeTruthy()
     expect(screen.getByText('一次性 · 当前未运行')).toBeTruthy()
@@ -570,7 +592,7 @@ describe('SubagentHeaderLineage', () => {
     hoverCatalog(screen.getByRole('button', { name: /1 个子代理，正在运行/ }))
 
     fireEvent.click(screen.getByRole('button', { name: '展开 worker 的下级子代理' }))
-    expect(input.refresh).toHaveBeenCalledWith(CHILD)
+    expect(input.refreshProjection).toHaveBeenCalledWith(CHILD)
     const nested = screen.getByRole('treeitem', { name: /indexer/ })
     expect(nested.getAttribute('aria-level')).toBe('2')
 
@@ -598,7 +620,7 @@ describe('SubagentHeaderLineage', () => {
     hoverCatalog(screen.getByRole('button', { name: /1 个子代理，正在运行/ }))
     fireEvent.click(screen.getByRole('button', { name: '展开 worker 的下级子代理' }))
 
-    expect(deferred.refresh).toHaveBeenCalledWith(CHILD)
+    expect(deferred.refreshProjection).toHaveBeenCalledWith(CHILD)
     expect(screen.getByRole('group').getAttribute('aria-busy')).toBe('true')
     expect(screen.getByText('正在加载子代理…')).toBeTruthy()
     expect(screen.queryByRole('treeitem', { name: '正在加载子代理' })).toBeNull()
@@ -687,7 +709,7 @@ describe('SubagentHeaderLineage', () => {
     hoverCatalog(screen.getByRole('button', { name: /0 个子代理/ }))
     expect(screen.getByText('index down')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /重试/ }))
-    expect(failed.refresh).toHaveBeenCalledWith(PARENT)
+    expect(failed.refreshProjection).toHaveBeenCalledWith(PARENT)
   })
 
   it('does not expose summary-only descendants as catalog rows', () => {
@@ -710,8 +732,7 @@ describe('SubagentHeaderLineage', () => {
   })
 
   it('hides a bare loading catalog and keeps the error fallback without focusable rows', async () => {
-    // Selecting any session schedules a catalog refresh; a loading snapshot
-    // with no other evidence of children must not flash the action in.
+    // A loading snapshot without evidence of children must not flash the action in.
     const loading = props(catalog({ entries: [], state: 'loading' }))
     const view = render(<SubagentHeaderLineage {...loading} />)
     expect(screen.queryByRole('button')).toBeNull()
@@ -795,7 +816,7 @@ describe('SubagentHeaderLineage', () => {
     expect(switcherIcon?.getAttribute('height')).toBe('16')
 
     hoverCatalog(switcher)
-    expect(input.refresh).toHaveBeenCalledWith(PARENT)
+    expect(input.refreshProjection).not.toHaveBeenCalled()
     const current = screen.getByRole('treeitem', { name: /worker/ })
     expect(current.getAttribute('aria-current')).toBe('true')
     expect(within(current).getByText('worker').className).toContain('currentLabel')
@@ -896,7 +917,7 @@ describe('SubagentHeaderLineage', () => {
     render(<SubagentHeaderLineage {...input} />)
 
     expect(screen.getByRole('button', { name: '切换子代理：正在扫描项目文件' })).toBeTruthy()
-    expect(input.refresh).not.toHaveBeenCalled()
+    expect(input.refreshProjection).not.toHaveBeenCalled()
   })
 
   it('keeps a nested title switcher scoped to its direct-parent catalog', () => {
@@ -922,7 +943,7 @@ describe('SubagentHeaderLineage', () => {
 
     hoverCatalog(screen.getByRole('button', { name: '切换子代理：indexer' }))
 
-    expect(input.refresh).toHaveBeenCalledWith(CHILD)
+    expect(input.refreshProjection).not.toHaveBeenCalled()
     const current = screen.getByRole('treeitem', { name: /indexer/ })
     expect(current.getAttribute('aria-current')).toBe('true')
     expect(within(current).getByText('indexer').className).toContain('currentLabel')

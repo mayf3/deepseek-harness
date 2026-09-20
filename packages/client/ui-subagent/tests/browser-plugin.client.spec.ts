@@ -119,7 +119,7 @@ describe('apply', () => {
     }
     actions.openChild(address)
     actions.openChildAside(address)
-    actions.refresh(sid('parent'))
+    actions.refreshProjection(sid('parent'))
     expect(face.actionCalls).toEqual([
       { method: 'openSession', args: [address] },
       {
