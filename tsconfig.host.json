@@ -8,7 +8,8 @@
     "rewriteRelativeImportExtensions": false
   },
   "files": [
-    "packages/client/ui-settings-general/src/client/desktop-update-bridge.ts"
+    "packages/client/ui-settings-general/src/client/desktop-update-bridge.ts",
+    "packages/client/ui-sidebar-browser/src/index.ts"
   ],
   "include": [
     "apps/web/product-isolation.ts",
@@ -169,6 +170,7 @@
   "references": [
     { "path": "./packages/client/connection/tsconfig.host.json" },
     { "path": "./packages/skill/skill-office" },
+    { "path": "./packages/skill/tool-workspace-dependencies" },
     { "path": "./packages/browser-use/browser-use" },
     { "path": "./packages/experimental/browser-use-runtime" },
     { "path": "./packages/experimental/browser-use-playwright-mcp" },

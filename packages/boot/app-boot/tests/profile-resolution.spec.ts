@@ -287,7 +287,7 @@ describe('runtime resolution', { concurrent: false }, () => {
       pkg(dirname(f.installAnchor), '@deepseek-ai/dsh', 0)
       f.profile.layers.push({
         packageName: 'bridge', packageDir: f.installed,
-        patchPath: join(f.installed, 'cordis.patch.yml'), patches: [],
+        patchPaths: [join(f.installed, 'cordis.patch.yml')], patches: [],
       })
     }
     expect(createRequire(join(bridge, 'node_modules', 'middle', 'package.json'))('leaf')).toEqual({ marker: 1 })
@@ -325,12 +325,12 @@ describe('runtime resolution', { concurrent: false }, () => {
     f.profile.layers.push({
       packageName: 'test-bundle',
       packageDir: bundleDir,
-      patchPath: join(bundleDir, 'cordis.patch.yml'),
+      patchPaths: [join(bundleDir, 'cordis.patch.yml')],
       patches: [],
     }, {
       packageName: 'later-bundle',
       packageDir: laterBundle,
-      patchPath: join(laterBundle, 'cordis.patch.yml'),
+      patchPaths: [join(laterBundle, 'cordis.patch.yml')],
       patches: [],
     })
 
@@ -954,7 +954,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     f.profile.layers.push({
       packageName: 'test-bundle',
       packageDir: bundleDir,
-      patchPath: join(bundleDir, 'cordis.patch.yml'),
+      patchPaths: [join(bundleDir, 'cordis.patch.yml')],
       patches: [],
     })
     const registration = installRuntimeInterception(await resolutionOf(f))
@@ -1234,7 +1234,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     pkg(bundle, 'my-bundle', 1, { 'bridge': '*' })
     f.profile.layers.push({
       packageName: 'my-bundle', packageDir: bundle,
-      patchPath: join(bundle, 'cordis.patch.yml'), patches: [],
+      patchPaths: [join(bundle, 'cordis.patch.yml')], patches: [],
     })
     const target = join(f.root, 'old-dsh', 'node_modules', 'bridge')
     const owned = join(f.profile.dir, '.dsh-module-fallback', 'node_modules', 'bridge')
@@ -1263,7 +1263,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     pkg(bundleLib, 'bridge', 2)
     f.profile.layers.push({
       packageName: 'my-bundle', packageDir: bundleDir,
-      patchPath: join(bundleDir, 'cordis.patch.yml'), patches: [],
+      patchPaths: [join(bundleDir, 'cordis.patch.yml')], patches: [],
     })
     file(join(f.profile.dir, 'package.json'), JSON.stringify({
       name: 'dsh-profile-web', private: true, dependencies: { 'my-plugin': '*', 'my-bundle': '*' },

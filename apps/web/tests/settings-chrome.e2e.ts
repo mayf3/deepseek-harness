@@ -187,6 +187,50 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('scrolls overflowing section navigation independently of the title and settings content', async () => {
+    const overflowPage = await browser.newPage({ viewport: { width: 1280, height: 768 }, locale: ZH_BROWSER_LOCALE })
+    onTestFinished(() => overflowPage.close())
+    onTestFailed(() => saveFailureShot(overflowPage, 'web-e2e-settings-navigation'))
+    const console = watchConsole(overflowPage)
+    await overflowPage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    await overflowPage.getByRole('button', { name: '设置', exact: true }).click()
+    const dialog = overflowPage.getByRole('dialog', { name: '设置', exact: true })
+    const navigation = dialog.getByRole('navigation')
+    const list = navigation.locator('[class*="_navList"]')
+    const title = navigation.getByText('设置', { exact: true })
+    const options = dialog.locator('[class*="_options"]')
+    const last = navigation.getByRole('button').last()
+    await last.waitFor()
+    expect(await list.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(false)
+
+    // A short viewport overflows the shipped sections without synthetic registrations.
+    await overflowPage.setViewportSize({ width: 1280, height: 240 })
+    expect(await list.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
+    const titleBefore = await title.boundingBox()
+    const contentBefore = await options.innerText()
+    await navigation.getByRole('button').first().hover()
+    await overflowPage.mouse.wheel(0, 1000)
+    await expect.poll(() => last.evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+    })).toBe(true)
+    const navScroll = await list.evaluate(el => el.scrollTop)
+    expect(navScroll).toBeGreaterThan(0)
+    expect(await title.boundingBox()).toEqual(titleBefore)
+    expect(await options.evaluate(el => el.scrollTop)).toBe(0)
+
+    await options.hover()
+    await overflowPage.mouse.wheel(0, 1000)
+    await expect.poll(() => options.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+    expect(await list.evaluate(el => el.scrollTop)).toBe(navScroll)
+    expect(await title.boundingBox()).toEqual(titleBefore)
+    await last.click()
+    await expect.poll(() => last.getAttribute('aria-current')).toBe('true')
+    await expect.poll(() => options.innerText()).not.toBe(contentBefore)
+    expect(console.pageErrors).toEqual([])
+    expect(console.warnings).toEqual([])
+  })
+
   it('stores Permission as the default for future sessions without changing an existing session', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-permission'))
     const existing = scaffold.ctx.sessions.create(SessionId('settings-permission-before'))
@@ -722,10 +766,31 @@ describe('web e2e: settings modal and General preferences', () => {
     }
   }, 90_000)
 
+  it('hides link-opening settings when the built-in browser is disabled', async () => {
+    const fresh = await launchWebScaffold({
+      developerTools: false,
+      extraOverlayPath: fileURLToPath(new URL('./no-sidebar-browser.overlay.yml', import.meta.url)),
+    })
+    onTestFinished(() => fresh.close())
+    const withoutBrowser = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
+    onTestFinished(() => withoutBrowser.close())
+    const browserConsole = watchConsole(withoutBrowser)
+    await withoutBrowser.goto(fresh.authenticatedUrl, { waitUntil: 'load' })
+    await withoutBrowser.getByRole('button', { name: 'Settings', exact: true }).click()
+    const dialog = withoutBrowser.getByRole('dialog', { name: 'Settings' })
+    await dialog.getByRole('button', { name: 'Detailed', exact: true }).waitFor()
+    expect(await dialog.getByText('Open chat links in', { exact: true }).count()).toBe(0)
+    const snapshot = await captureStableAria(withoutBrowser, '[role="dialog"]', fresh.workspaceCwd)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'dialog-no-browser.expected.md'), snapshot, MODE)
+    expect(browserConsole.pageErrors).toEqual([])
+    expect(browserConsole.warnings).toEqual([])
+  })
+
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'dialog-en.expected.md',
+      'dialog-no-browser.expected.md',
       'dialog.expected.md',
       'plugin-instances.expected.md',
       'plugins.expected.md',
