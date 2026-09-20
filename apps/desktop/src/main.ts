@@ -613,7 +613,9 @@ async function main(): Promise<void> {
     ? [{ role: 'fileMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]
     : [{ role: 'editMenu' }]
   const hideCommands: MenuItemConstructorOptions[] = darwin
-    ? [{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }]
+    ? [{ role: 'hide', label: currentDesktopLocale().messages.hideApplication },
+      { role: 'hideOthers', label: currentDesktopLocale().messages.hideOtherApplications },
+      { role: 'unhide', label: currentDesktopLocale().messages.showAllApplications }, { type: 'separator' }]
     : []
   const applicationItems = (): MenuItemConstructorOptions[] => [
     { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
@@ -621,7 +623,8 @@ async function main(): Promise<void> {
     { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
     { type: 'separator' },
     ...hideCommands,
-    { role: 'quit', ...(process.platform === 'win32' ? { label: currentDesktopLocale().messages.exitApplication } : {}) },
+    { role: 'quit', ...(darwin ? { label: currentDesktopLocale().messages.quitApplication }
+      : process.platform === 'win32' ? { label: currentDesktopLocale().messages.exitApplication } : {}) },
   ]
   Menu.setApplicationMenu(process.platform === 'win32' ? null : Menu.buildFromTemplate([{
     label: darwin ? app.name : currentDesktopLocale().messages.application,
