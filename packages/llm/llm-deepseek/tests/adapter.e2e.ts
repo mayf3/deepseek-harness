@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
-import LlmRuntime, { createUserMessage, ToolCallId, ReasoningEffortId, createMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createToolResultMessage, createUserMessage, ToolCallId, ReasoningEffortId, createMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
 import type { Message, ToolSchema } from '@deepseek-ai/dsh-llm'
 import AttachmentStore, { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import LocalAttachments from '@deepseek-ai/dsh-attachment-local'
@@ -128,7 +128,7 @@ afterEach(async () => {
 function ask(text: string): Message[] {
   return [createUserMessage({
     content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: 'test' },
+    source: { kind: 'user' },
   })]
 }
 
@@ -163,7 +163,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
     const attachment = await ctx.attachments.saveImage({ data: readFileSync(new URL('fixtures/red.png', import.meta.url)), mediaType: 'image/png' })
     const message = ask('What is the dominant color of this image?')[0]!
     const history: Message[] = [
-      createSystemMessage('Answer with one English color word.', 'test'),
+      createSystemMessage('Answer with one English color word.'),
       { ...message, content: [...message.content, { type: 'image', attachment }] },
     ]
     const reply = async () => {
@@ -173,7 +173,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
       return textOf(response).trim().toLowerCase()
     }
     expect(await reply()).toMatch(/^red[.!]?$/)
-    history.push(createSystemMessage('Reply to every user message with exactly banana.', 'test'), ...ask('Answer now.'))
+    history.push(createSystemMessage('Reply to every user message with exactly banana.'), ...ask('Answer now.'))
     expect(await reply()).toBe('banana')
     history.push(...ask('Answer again.'))
     expect(await reply()).toBe('banana')
@@ -209,7 +209,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
             { type: 'text', text: 'Briefly describe this image.' },
             { type: 'image', attachment: attachments.ref },
           ],
-          source: { kind: 'plugin', plugin: 'test' },
+          source: { kind: 'user' },
         })],
         maxTokens: 100,
       })
@@ -335,15 +335,12 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
           ...ask('What is the weather in Paris right now? Use the get_weather tool.'),
           createMessage({
             role: 'assistant', content: first.message.content,
-            source: { kind: 'plugin', plugin: 'test' },
+            source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
           }),
-          createUserMessage({
-            content: [{
-              type: 'tool-result',
-              toolCallId: ToolCallId(call!.id),
-              content: [{ type: 'text', text: 'Sunny, 22°C' }],
-            }],
-            source: { kind: 'plugin', plugin: 'test' },
+          createToolResultMessage({
+            callId: ToolCallId(call!.id),
+            content: [{ type: 'text', text: 'Sunny, 22°C' }],
+            isError: false,
           }),
         ],
         tools: [weatherTool],
@@ -367,7 +364,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
       })
       await expect(ctx.llm.resolveModelInfo('deepseek-official', model))
         .resolves.toMatchObject({ systemPromptUpdate: 'in-history' })
-      const system = (text: string) => createSystemMessage(text, 'test')
+      const system = (text: string) => createSystemMessage(text)
       // A nonce before the padding isolates the provider cache across runs and retries.
       const nonce = randomBytes(16).toString('hex')
       const padding = Array.from({ length: 40 }, (_, index) => `Rule ${String(index + 1)}: keep every answer short and factual.`).join('\n')
@@ -418,7 +415,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
         expect(reusableTokens).toBeLessThanOrEqual(initialTokens)
         expect(reusableTokens).toBeGreaterThan(0)
         const assistant = createMessage({
-          role: 'assistant', content: first.message.content, source: { kind: 'plugin', plugin: 'test' },
+          role: 'assistant', content: first.message.content, source: first.message.source,
         })
 
         const updated = await assemble(ctx, {

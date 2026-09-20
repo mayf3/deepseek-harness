@@ -270,14 +270,14 @@ export type RemoteStreamServerMessage =
 export function parseRemoteStreamClientMessage(text: string): RemoteStreamClientMessage {
   return parseMessage(text, (value) => {
     if (value.type === 'cancel' && exactKeys(value, ['type', 'streamId']) && validId(value.streamId)) {
-      return value as unknown as RemoteStreamClientMessage
+      return value as RemoteStreamClientMessage
     }
     if (value.type === 'open'
       && exactKeys(value, ['type', 'streamId', 'endpoint', 'payload'])
       && validId(value.streamId)
       && typeof value.endpoint === 'string'
       && value.endpoint.length > 0) {
-      return value as unknown as RemoteStreamClientMessage
+      return value as RemoteStreamClientMessage
     }
     throw new Error('api gateway: invalid Remote stream client message')
   })
@@ -293,10 +293,10 @@ export function parseRemoteStreamServerMessage(text: string): RemoteStreamServer
     if (value.type === 'item'
       && (exactKeys(value, ['type', 'streamId']) || exactKeys(value, ['type', 'streamId', 'value']))
       && validId(value.streamId)) {
-      return value as unknown as RemoteStreamServerMessage
+      return value as RemoteStreamServerMessage
     }
     if (value.type === 'end' && exactKeys(value, ['type', 'streamId']) && validId(value.streamId)) {
-      return value as unknown as RemoteStreamServerMessage
+      return value as RemoteStreamServerMessage
     }
     if (value.type === 'error'
       && exactKeys(value, ['type', 'streamId', 'error'])
@@ -306,7 +306,7 @@ export function parseRemoteStreamServerMessage(text: string): RemoteStreamServer
       && typeof value.error.code === 'string'
       && typeof value.error.message === 'string'
       && isRecord(value.error.details)) {
-      return value as unknown as RemoteStreamServerMessage
+      return value as RemoteStreamServerMessage
     }
     throw new Error('api gateway: invalid Remote stream server message')
   })

@@ -101,7 +101,7 @@ describe('request image policy bounds', () => {
           [field]: value,
         },
       },
-    } as unknown as Config
+    } as Config
     expect(() => {
       assertServiceable(programmatic)
     }).toThrow(message)

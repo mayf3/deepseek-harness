@@ -206,13 +206,13 @@ const compaction = (over: Partial<CompactionSummaryNode> = {}): CompactionSummar
 /** Empty sessions-list hook for the global standard-kit seat. */
 function emptySessions() {
   const store = createSnapshotStore<SessionListState>(
-    { ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
+    { ids: [], byId: {}, phase: 'ready', projectionsBySession: {}, jobsBySession: {} })
   return bindSnapshotSelector(store)
 }
 
 function emptyWorkspaces() {
   const store = createSnapshotStore<WorkspaceSnapshot>({
-    items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+    items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
   })
   return bindSnapshotSelector(store)
 }
@@ -285,8 +285,8 @@ function makeHarness(
     inspectCall: ChatNodeOwnerProps['inspectCall']
   }> = []
   const renderCommandSlot = ((_key: string, _owner: object, opts?: { fallback?: React.ReactNode }) =>
-    opts?.fallback ?? null) as unknown as React.ComponentProps<typeof CommandNodeView>['renderSlot']
-  const renderTurnTailSlot = (() => null) as unknown as
+    opts?.fallback ?? null) as React.ComponentProps<typeof CommandNodeView>['renderSlot']
+  const renderTurnTailSlot = (() => null) as
     React.ComponentProps<typeof TurnTailNodeView>['renderSlot']
   let nodeSlotOverride: React.ComponentProps<typeof ChatNodeSeat>['renderSlot'] | undefined
   const renderNodeSlot = ((key: string, owner: object, opts?: {
@@ -367,7 +367,7 @@ function makeHarness(
       default:
         return opts?.fallback ?? null
     }
-  }) as unknown as React.ComponentProps<typeof ChatNodeSeat>['renderSlot']
+  }) as React.ComponentProps<typeof ChatNodeSeat>['renderSlot']
   const renderSlot = renderNodeSlot
   // SessionProvider seat arrives with the session-scope child declaration;
   // ChatView never invokes it (pass-through stub).
@@ -1086,7 +1086,9 @@ describe('ChatView', () => {
     expect(branchButtons).toHaveLength(1)
     expect(branchButtons[0]!.getAttribute('aria-disabled')).toBeNull()
     fireEvent.click(branchButtons[0]!)
-    expect(h.forkAt).toHaveBeenCalledWith(1)
+    // The branch action sends the real turn/end seq (the exact inclusive
+    // Host boundary), not the assistant node seq.
+    expect(h.forkAt).toHaveBeenCalledWith(3)
   })
 
   it('keeps a later pending occurrence visible when it reuses a durable MessageId', () => {
@@ -1242,7 +1244,7 @@ describe('ChatView', () => {
           data-first={JSON.stringify(images[0])}
         />
       )
-    }) as unknown as ChatViewSlotProps['renderSlot']
+    }) as ChatViewSlotProps['renderSlot']
     const view = render(<h.ChatView {...{ ...h.props, renderSlot }} />)
     const images = view.getAllByTestId('echo-image')
     expect(images).toHaveLength(2)
@@ -1287,7 +1289,7 @@ describe('ChatView', () => {
           data-compact={String(compact)}
         />
       )
-    }) as unknown as ChatViewSlotProps['renderSlot']
+    }) as ChatViewSlotProps['renderSlot']
     const view = render(<h.ChatView {...{ ...h.props, renderSlot }} />)
     const first = view.getByTestId('images-first.png')
     const file = view.getByTitle('notes.txt')
@@ -2045,7 +2047,7 @@ describe('ChatView', () => {
     expect(buttons).toHaveLength(1)
     expect(buttons[0]!.getAttribute('aria-disabled')).toBeNull()
     fireEvent.click(buttons[0]!)
-    expect(h.forkAt.mock.calls).toEqual([[2]])
+    expect(h.forkAt.mock.calls).toEqual([[3]])
   })
 
   it('disables fork when the indexed Turn has a later steering Node', () => {
@@ -2428,6 +2430,7 @@ describe('ChatView', () => {
     readerScroll(scroller, 100) // far from bottom
     const backButton = view.getByLabelText('回到底部')
     expect(backButton).toBeTruthy()
+    expect(view.container.querySelector('[data-chat-following-tail]')).toBeNull()
     // Streaming growth must NOT drag a scrolled-away reader down.
     act(() => {
       h.setChat({ partial: { turn: 1, step: 1, blocks: [{ kind: 'text', text: 'grow' }] } })
@@ -2435,6 +2438,7 @@ describe('ChatView', () => {
     expect(scroller.scrollTop).toBe(100)
     fireEvent.click(backButton)
     expect(scroller.scrollTop).toBe(700)
+    expect(view.container.querySelector('[data-chat-following-tail]')).not.toBeNull()
     // At the bottom again: follow re-arms and the button unmounts.
     expect(view.queryByLabelText('回到底部')).toBeNull()
   })
@@ -2551,6 +2555,25 @@ describe('ChatView', () => {
     metrics.setHeight(1_040)
     act(() => { notify?.() })
     expect(scroller.scrollTop).toBe(680)
+  })
+
+  it('keeps following when reader input reaches the floor before growth and scrollend', () => {
+    const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const metrics = installScrollMetrics(scroller, 1_000, 300)
+    readerScroll(scroller, 100)
+    expect(view.getByLabelText('回到底部')).toBeTruthy()
+
+    scroller.scrollTop = 700
+    fireEvent.scroll(scroller)
+    metrics.setHeight(1_030)
+    act(() => { h.setSession({ running: true }) })
+    fireEvent(scroller, new Event('scrollend'))
+
+    expect(scroller.scrollTop).toBe(730)
+    expect(view.queryByLabelText('回到底部')).toBeNull()
+    expect(h.chatScroll.read()).toBeNull()
   })
 
   it('follows a new submission immediately while an earlier scroll sample is pending', () => {

@@ -27,13 +27,13 @@ kind: "package-reference"
 
 在侧栏选择**插件**。页面首次打开时通过 `api-remotes` 读取清单与组合包；没有受管 profile 的 Host 上页面显示为不可用。**官方**排在前面，列出安装随附、供开启的组合包——开启前保持关闭、没有卸载、属于 beta 功能的带 **Beta** 标签——其后是注册了配置页的官方插件；**已安装**列出 profile 持有的组合包。卡片按名称排序，启停组合包不会挪动它的卡片。没有组合包 patch 的依赖不是插件，除非 profile 选中了它才会带异常标签列出。全局配置仍在设置的**插件**分区中编辑。
 
-Agent Teams 和 Auto Authorization Review 两个包使用随界面语言切换的本地化名称和描述。详情页保留完整 npm 包名；其他包显示简写包名和原始描述。
+已安装的组合包及其插件行在卡片和详情页中，按当前界面语言显示各自的标题与描述。每个字段先读取导出的 locale `meta`，缺失时回退到该插件地址下可访问的 `package.json`；标题最终使用完整包名或模块名，两处都没有描述时不提供包描述。作者格式见[插件展示元信息](../../../docs/cookbook/adding-a-package.zh.md#plugin-display-metadata)。安装预览仍使用注册表或 manifest 信息。
 
 ### 安装一个组合包
 
-**添加插件**接受包名（可带版本）、Git 地址、压缩包或本地绝对路径；对话框说明包名就是 README 里 `dsh plugin add` 后面的那一段。输入框下方的**插件安装引导和示例**展开一段引导，给出三种常见形式各一个示例；**填入示例**把示例填进输入框。**安装**先让 Host 读出 spec 指向什么（`pluginManager.inspect`）：列表中已有的名字、注册表没有的名字、没有包的路径、没有组合包 patch 的包，或 pnpm 会拒绝的 spec，都以一句话回到输入框下方，spec 保留可继续编辑。通过检查的 spec 打开安装中界面，展示 Host 读到的包名、一句话简介和版本，pnpm 的命令与输出折叠在**查看安装详情**之后。安装完成后提供**立即启用**：启用新组合包、关闭对话框并把列表滚动到它；直接关闭则让它保持已安装但关闭。安装失败时用一行话说明原因——注册表或网络不可达、包不存在、磁盘已满、profile 不可写、pnpm 拦下了构建脚本——pnpm 输出在详情里，**重试**就在手边；Host 已经把 profile 文件放回原样。pnpm 拦下依赖的安装脚本时，失败界面列出等待允许的包，并以**允许这些脚本并重试**取代**重试**；Host 把授权写进 profile 的 `pnpm-workspace.yaml`（失败的运行保留 pnpm 写入的这个文件）再运行 pnpm，安装完成界面会说明允许了哪些脚本。安装成功不代表模块一定能够激活。
+**添加插件**接受包名（可带版本）、Git 地址、压缩包或本地绝对路径；对话框说明包名就是 README 里 `dsh plugin add` 后面的那一段。输入框下方的**插件安装引导和示例**展开一段引导，给出三种常见形式各一个示例；**填入示例**把示例填进输入框。旁边的**安装源**写着安装首先询问的注册表，展开后可选：默认安装源，即 pnpm 自身的注册表，标题带上本机 pnpm 配置指向的主机名；Host 配置的每个镜像（`pluginManager.registries`），npmmirror 显示为中国大陆镜像源；以及手动输入的 http(s) 地址。选项从控件上浮在对话框之上，展开不会拉长卡片；引导使卡片高过视口时，卡片内容可以滚动。Host 首先询问的注册表在记住选择之前就是当前选择；之后选择记在本浏览器（`localStorage`）里，下次打开对话框从它开始，Host 不再提供的已记住地址保留为手动输入的地址。**安装**先让 Host 在所选注册表读出 spec 指向什么（`pluginManager.inspect`）：列表中已有的名字、所有注册表都没有的名字、没有包的路径、没有组合包 patch 的包，或 pnpm 会拒绝的 spec，都以一句话回到输入框下方，spec 保留可继续编辑；所有注册表都连不上时，这句话列出问过的每一个。随后安装从作答的那个注册表开始。通过检查的 spec 打开安装中界面，展示 Host 读到的包名、一句话简介和版本，pnpm 的命令与输出折叠在**查看安装详情**之后。安装完成后提供**立即启用**：启用新组合包、关闭对话框并把列表滚动到它；直接关闭则让它保持已安装但关闭。Host 改问另一个注册表时，安装中界面会说明哪个源没能提供这个包、现在改问哪个，详情里每次 pnpm 运行都带一个写明所用源的标记。安装失败时按 Host 的归因用一行话说明原因——所有安装源都连不上，并列出问过的每一个；GitHub 地址或压缩包链接自身的主机连不上，换源无济于事；包不存在、磁盘已满、profile 不可写、pnpm 拦下了构建脚本——pnpm 输出在详情里，**重试**就在手边，Host 把失败归于所问注册表时还在旁边提供**更换安装源**，回到 spec 输入界面并展开安装源选项；Host 已经把 profile 文件放回原样。pnpm 拦下依赖的安装脚本时，失败界面列出等待允许的包，并以**允许这些脚本并重试**取代**重试**；Host 把授权写进 profile 的 `pnpm-workspace.yaml`（失败的运行保留 pnpm 写入的这个文件）再运行 pnpm，安装完成界面会说明允许了哪些脚本。安装成功不代表模块一定能够激活。
 
-安装期间可点击**取消安装**，对话框显示**正在停止安装…**，直到 Host 确认。加载组合包的阶段不可取消。确认后对话框回到 spec 输入界面，可再次安装，并用 toast 说明安装已取消；manifest 与 lockfile 已恢复原样，已下载文件可能保留。安装进行中关闭对话框，同样会请求 Host 停止安装，Host 确认后对话框才关闭；Host 正在准备、停止或加载时不能关闭对话框。连接错误不代表取消成功：安装中界面会如此说明，可以再次尝试取消。
+准备和下载期间，**取消安装**会请求 Host 停止运行并等待确认。加载组合包的阶段不可取消。点击 ×、按 Escape 或点击遮罩会立即隐藏对话框，并在可以取消时请求取消。**查看安装任务**会重新打开同一任务并保留输出；结果待定或尚未确认时不能发起另一项安装。确认取消后回到 spec 输入界面并显示 toast；manifest 与 lockfile 已恢复，已下载文件可能保留。安装响应丢失后会请求恢复结果；**核对安装状态**和重连会重试该请求。Host 已无活动请求时，**未能获取安装结果**允许检查插件列表后返回编辑。早于接收确认的取消请求会等待并自动重试；取消失败可手动重试。隐藏的任务通过 toast 通知结果，不会重新弹出对话框。
 
 ### 切换一个组合包
 
@@ -41,11 +41,11 @@ Agent Teams 和 Auto Authorization Review 两个包使用随界面语言切换�
 
 ### 切换组合包里的一行
 
-组合包页面上行的开关调用 `pluginManager.setPluginEnabled`，往 profile 的 `cordis.patch.yml` 写入该行的 `disabled` 覆盖。启用了 HMR 的 profile 的树随即重组，该行的宿主半区卸下或挂上，组合包其余部分照常运行，页面无需重载即跟随客户端模块图。行使用共享状态标记表示 Host fiber 阶段：pending 与 disabled 为 idle，loading 与 unloading 为 ongoing，active 为 done，failed 为 error。开关只出现在已打开的组合包上；没有存活条目的行，以及 Host 不通过 profile patch 寻址的行，带着 Host 的原因锁定。超过十行的列表带一个按行 id 筛选的输入框。
+组合包页面上行的开关调用 `pluginManager.setPluginEnabled`，往 profile 的 `cordis.patch.yml` 写入该行的 `disabled` 覆盖。启用了 HMR 的 profile 的树随即重组，该行的宿主半区卸下或挂上，组合包其余部分照常运行，页面无需重载即跟随客户端模块图。行使用共享状态标记表示 Host fiber 阶段：pending 与 disabled 为 idle，loading 与 unloading 为 ongoing，active 为 done，failed 为 error。开关只出现在已打开的组合包上；没有存活条目的行，以及 Host 不通过 profile patch 寻址的行，带着 Host 的原因锁定。超过十行的列表带一个按本地化标题、描述、行 id 和模块名筛选的输入框。
 
 ### 配置页
 
-自带配置的插件把配置渲染在本页而不是设置里，通过本页声明的三个 slot：`plugins.item`（list）用于官方插件，按其 `label` 列在官方分组里；`plugins.bundle.config`（以组合包的包名为键）用于组合包自己的配置，显示在组合包页面的描述与行之间；`plugins.row.config`（以 `<包名>#<行 id>` 为键）用于某一行的配置，这一行由此多出一个**配置**控件，打开该行自己的页面。页面通过 owner props 向每个条目索取两种视图：`view: 'summary'` 是标题下的一句话简介，`view: 'page'` 是带自己保存控件的表单。只有保存才写入：页面负责画标题、图标与面包屑，条目的表单在离开页面时丢弃暂存的修改。安装随附的四个宿主平面配置页——shell 执行器、agent loop、subagent 模型选择、DeepSeek 搜索提供方——来自 [ui-settings-plugins](../ui-settings-plugins/README.zh.md)，在 Host 服务其命名空间期间注册。组合包的浏览器半侧用同样的方式注册：
+自带配置的插件把配置渲染在本页而不是设置里，通过本页声明的三个 slot：`plugins.item`（list）用于官方插件，按其 `label` 列在官方分组里；`plugins.bundle.config`（以组合包的包名为键）用于组合包自己的配置，显示在组合包页面的描述与行之间；`plugins.row.config`（以 `<包名>#<行 id>` 为键）用于某一行的配置，这一行由此多出一个**配置**控件，打开该行自己的页面。页面用 `view: 'page'` 渲染带自己保存控件的表单。官方插件卡片还在标题下渲染 `view: 'summary'`；行详情页只在缺少包描述时使用该视图。只有保存才写入：页面负责画标题、图标与面包屑，条目的表单在离开页面时丢弃暂存的修改。安装随附的四个宿主平面配置页——shell 执行器、agent loop、subagent 模型选择、DeepSeek 搜索提供方——来自 [ui-settings-plugins](../ui-settings-plugins/README.zh.md)，在 Host 服务其命名空间期间注册。组合包的浏览器半侧用同样的方式注册：
 
 ```tsx ignore-check
 ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
@@ -73,7 +73,7 @@ ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
 
 ### store
 
-`PluginManagerController` 拥有组合包视图、忙碌键、提示、安装进度和卸载确认。每次读取先问清单 Host 是否管理着 profile，再把 `listBundles` 与 `listPlugins` 合成每个组合包一份视图，其行携带存活条目的启停状态与 fiber 阶段。它合并重叠读取，在操作后、收到 `plugin-manager/changed` 时以及重连后刷新，并在销毁后忽略晚到结果。安装输出按 job id 分组。安装对话框沿 `idle → checking → starting → running → done | failed` 推进，`cancelling` 与 `applying` 按 Host 的报告呈现；checking 与所有活动阶段使用 ongoing，最终页面使用 done 或 error。检查在一个 `AbortController` 下运行，返回编辑或关闭会中止它并丢弃其结果；运行只能通过 `pluginManager.cancelInstall` 停止，对话框等待其答复。Host 无法应用的变更、要等重启的变更、被更高层覆盖的变更，都是会自行消失的 toast。
+`PluginManagerController` 拥有组合包视图、忙碌键、提示、安装进度和卸载确认。每次读取先问清单 Host 是否管理着 profile，再把 `listBundles` 与 `listPlugins` 合成每个组合包一份视图，其行携带存活条目的启停状态与 fiber 阶段。它合并重叠读取，在操作后、收到 `plugin-manager/changed` 时以及重连后刷新，并在销毁后忽略晚到结果。安装输出按 job id 分组。安装对话框沿 `idle → checking → starting → running → done | failed` 推进，`cancelling` 与 `applying` 按 Host 的报告呈现，安装或取消响应丢失时进入 `unconfirmed`；已确认的 `applying` 阶段不会倒退。通过 `waitForInstall` 恢复结果，无活动请求时结束为 `unknown`；checking 与所有活动阶段使用 ongoing，最终页面使用 done 或 error。检查在一个 `AbortController` 下运行，返回编辑或关闭会中止它并丢弃其结果；运行只能通过 `pluginManager.cancelInstall` 停止。关闭会隐藏任务而保留其状态。如果取消请求先于安装到达，在进度或输出确认该请求后会再次请求取消。Host 无法应用的变更、要等重启的变更、被更高层覆盖的变更，都是会自行消失的 toast。
 
 ### 配置 slot
 
@@ -111,10 +111,13 @@ ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
 
 这些限制界定了管理视图的范围；它们是当前包的约束。
 
+- **页面生命周期**——刷新浏览器会丢失跟踪的请求与输出。同一页面内重连可以恢复活动请求；Host 不保留已完成的结果。profile 文件锁串行化安装写入。
 - **只管理组合包**——没有组合包 patch 的依赖在安装前就被拒绝；profile 里已有的这类依赖不上页面，除非 profile 选中了它；加载普通插件模块仍是文件操作。
 - **行只显示阶段，不显示原因**——失败的行只显示为失败，没有 Host 的错误文本；Host 日志里有。
 - **一次只能安装一个**——对话框一次运行一个 pnpm 命令；第二个 spec 要等前一个完成。
 - **没有版本选择器**——spec 按 pnpm 接受的写法输入；页面不列出注册表版本，也不提供升级。
+- **安装源选择只属于本浏览器**——它存在 `localStorage` 里，所以另一个浏览器、`dsh plugin` 命令和 agent 工具都从 Host 配置的注册表开始。
+- **每次读注册表都要运行 pnpm**——打开对话框、检查、安装各问一次 pnpm 自身配置指向哪里；没有 pnpm 的机器读作未知，不提供备选。
 
 <a id="dev-note"></a>
 ### 开发备注

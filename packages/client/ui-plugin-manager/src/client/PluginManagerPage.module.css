@@ -22,6 +22,13 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  box-sizing: border-box;
+}
+
+/* macOS hiddenInset titlebar: the frame's top clearance keeps the head below
+   the window's top strip in both sidebar states so it never jumps. */
+:global([data-platform='darwin']) .pageHead {
+  padding-top: var(--dsh-frame-top-clearance, 0px);
 }
 
 .pageTitle {
@@ -395,10 +402,17 @@
 }
 
 /* Wider than the default dialog: pnpm's lines are long, and the terminal keeps them unwrapped. The card never
-   outgrows the viewport; the running screens scroll inside it so the head's controls stay reachable. */
+   outgrows the Modal's padding box and shares the settings panel's 800px height cap; the running screens
+   scroll inside it so the head's controls stay reachable. */
 .installDialog {
   width: min(560px, 100%);
-  max-height: calc(100vh - 48px);
+  max-height: min(800px, 100%);
+}
+
+/* The spec screen's content scrolls inside the card when the guide is open on a short viewport; the footer stays put. */
+.installContent {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .installBody {
@@ -568,6 +582,151 @@
 
 .guideExampleLabel {
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* The row under the field: the guide's toggle on the left, the registry's on the right, both folded by default. */
+.optionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+/* The registry toggle names the registry the install asks first, so the choice reads without unfolding. */
+.registryToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.registryToggle:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.registryToggle:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.registryToggle[aria-expanded='true'] {
+  border-color: var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.registryToggle[aria-expanded='true'] .guideChevron {
+  transform: rotate(180deg);
+}
+
+.registryChosen {
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The registry options float from their toggle over the dialog: pnpm's own, the configured mirrors, and a typed
+   address, with the order asked under them. Portaled and fixed, so the dialog keeps its height. */
+.registry {
+  position: fixed;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 24px));
+  margin: 0;
+  padding: 8px 10px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  /* The neutral stroke is the elevation's hairline, not a border beside it. */
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
+  box-shadow: var(--dsw-elevation-prominent);
+  min-width: 0;
+}
+
+.registryOption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 0.5px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.registryOption[data-checked='true'] {
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, transparent);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+/* An offered registry is one row: the radio beside its title and the line under it. */
+label.registryOption {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.registryOption input[type='radio'] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+
+.registryTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.registryHint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.registryCustomPick {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.registryCustomField {
+  height: 32px;
+  margin-left: 26px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  font: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.registryCustomField[aria-invalid='true'] {
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+/* The typed address's field, refusal, and line sit under its title, past the radio and its gap. */
+.registryOption > .inputError,
+.registryOption > .registryHint {
+  margin-left: 26px;
 }
 
 /* What the check refused, under the field. */
@@ -757,6 +916,32 @@
   min-width: 0;
 }
 
+/* The failed screen's actions beside the details toggle: change the registry, retry. */
+.wizardActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* One pnpm run of the install; once several registries were asked, a badge names each run's. */
+.run {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.attemptBadge {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-3);
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .detailsChevron {
     transition: none;
@@ -856,6 +1041,12 @@
 .detail {
   display: flex;
   flex-direction: column;
+}
+
+/* Same top clearance as .pageHead: the crumb is the detail views' leading
+   content and otherwise lands under the traffic lights. */
+:global([data-platform='darwin']) .detail {
+  padding-top: var(--dsh-frame-top-clearance, 0px);
 }
 
 .crumb {

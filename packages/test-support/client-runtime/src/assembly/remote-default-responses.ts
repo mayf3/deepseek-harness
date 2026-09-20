@@ -42,6 +42,6 @@ export const remoteDefaultResponses: RemoteTable = {
     // api-session-controller client `apply`: the control stream's opening baseline, then open.
     'session/control': openStream([{ type: 'baseline', value: { jobs: {}, projections: {} } }]),
     // api-workspace-controller client `apply`: the follow stream's opening baseline, then open.
-    'workspace/follow': openStream([{ type: 'baseline', value: { items: [], archivedSessionIds: [] } }]),
+    'workspace/follow': openStream([{ type: 'baseline', value: { items: [], archivedSessionIds: [], pinnedSessionIds: [] } }]),
   },
 }

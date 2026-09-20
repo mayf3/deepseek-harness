@@ -93,7 +93,7 @@ export class ClientRemoteEvents {
   ): () => void {
     const dispose = privateEvents(callerCtx).on(
       this.eventKey(event),
-      listener as unknown as RemoteEventListener,
+      listener as RemoteEventListener,
     )
     return () => { dispose() }
   }

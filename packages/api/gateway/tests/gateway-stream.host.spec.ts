@@ -1080,7 +1080,7 @@ function rawText(data: RawData): string {
 function streamErrorMessage(frames: readonly Record<string, unknown>[], streamId: string): string | undefined {
   const error = frames.find(frame => frame.streamId === streamId)?.error
   if (typeof error !== 'object' || error === null) return undefined
-  const message = Reflect.get(error, 'message') as unknown
+  const message: unknown = Reflect.get(error, 'message')
   return typeof message === 'string' ? message : undefined
 }
 

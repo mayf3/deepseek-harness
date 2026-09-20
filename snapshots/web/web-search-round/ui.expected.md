@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use web_search once with queries" [disabled]
+  - navigation "Session hierarchy": Use web_search once with queries
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
@@ -11,7 +10,7 @@
 - text: Use web_search once with queries ["DeepSeek Harness snapshot search","DeepSeek Harness multi-query search"]. Then reply exactly SEARCH_DONE and stop. {{clock}}
 - button "Copy"
 - button "1 tool call" [expanded]
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Context injection runtime-context"
 - button "Search DeepSeek Harness snapshot search, DeepSeek Harness multi-query search"
 - paragraph: SEARCH_DONE
 - button "Copy"

@@ -91,8 +91,9 @@ function resolveClientExport(packagePath: string, pkg: ClientPackageManifest): s
   return resolve(dirname(packagePath), relative)
 }
 
-const comboUrl = (ids: readonly string[], rev: string): string =>
-  `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
+/** App-directory-relative combo references, matching the wire the Host composes. */
+const comboReference = (ids: readonly string[], rev: string): string =>
+  `plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
 
 /** Derive the assembled browser graph from the same bundle patches and package declarations as `dsh web`. */
 function loadAssembledPlugins(): readonly AssembledPlugin[] {
@@ -112,7 +113,7 @@ function loadAssembledPlugins(): readonly AssembledPlugin[] {
     plugins.set(entry.name, {
       id: entry.name,
       bundlePath: resolveClientExport(packagePath, pkg),
-      url: comboUrl([entry.name], 'fx'),
+      url: comboReference([entry.name], 'fx'),
       rev: 'fx',
       ...(declaration.inject === undefined ? {} : { inject: declaration.inject }),
       ...(declaration.external === undefined ? {} : { external: declaration.external }),
@@ -145,13 +146,13 @@ function bootGraph(plugins: readonly AssembledPlugin[]): WebBootGraph {
     batches: [
       ...(bootstrapEntries.length === 0 ? [] : [{
         phase: 'bootstrap' as const,
-        url: comboUrl(bootstrapEntries, 'fx'),
+        url: comboReference(bootstrapEntries, 'fx'),
         rev: 'fx',
         entries: bootstrapEntries,
       }]),
       ...(applicationEntries.length === 0 ? [] : [{
         phase: 'application' as const,
-        url: comboUrl(applicationEntries, 'fx'),
+        url: comboReference(applicationEntries, 'fx'),
         rev: 'fx',
         entries: applicationEntries,
       }]),

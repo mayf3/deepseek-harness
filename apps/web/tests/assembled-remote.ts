@@ -20,6 +20,7 @@ interface SessionSummary {
   readonly origin?: 'subagent'
   readonly cwd?: string
   readonly projections?: {
+    readonly kind: 'cached' | 'sequenced'
     readonly asOfSeq: number
     readonly values: Readonly<Record<string, unknown>>
   }
@@ -88,6 +89,7 @@ interface CapturedFixture {
     readonly value: {
       readonly items: readonly WorkspaceView[]
       readonly archivedSessionIds: readonly string[]
+      readonly pinnedSessionIds: readonly string[]
     }
   }
   readonly control: ControlBaseline
@@ -157,7 +159,6 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       'settings/canOpenAgentPresetDirectory': ok(true),
       'settings/openSettingsDocument': ok({ opened: true }),
       'settings/openAgentPresetDirectory': ok({ opened: true }),
-      'subagents/list': ok({ entries: [], parentAvailable: true }),
       'terminal/list': ok([]),
       'skills/list': ok({ skills: [] }),
       'session/canOpenWorkspacePath': ok(true),
@@ -186,6 +187,7 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       value: {
         items: structuredClone(workspaces),
         archivedSessionIds: structuredClone(fixture.workspace.value.archivedSessionIds),
+        pinnedSessionIds: structuredClone(fixture.workspace.value.pinnedSessionIds),
       },
     })
   })
@@ -222,6 +224,11 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
     return ok(undefined)
   })
   mock.unary('session/list', () => ok({ items: structuredClone(sessions) }))
+  mock.unary('session/projections', (request: unknown) => {
+    const sessionId = recordString(recordValue(request, 'request'), 'sessionId')
+    const summary = sessions.find(candidate => candidate.sessionId === sessionId)
+    return ok(structuredClone(summary?.projections ?? fixture.control.value.projections[sessionId] ?? null))
+  })
   mock.unary('workspace/create', (request: unknown) => {
     const path = recordString(recordValue(request, 'request'), 'path')
     const existing = workspaces.find(workspace => workspace.path === path)
@@ -254,7 +261,9 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       running: false,
       blank: true,
       cwd,
-      projections: structuredClone(blankSessionProjections),
+      // The created Session is live on this fixture Host: its list block is
+      // sequenced, like the block the real live registry would serve.
+      projections: { kind: 'sequenced', ...structuredClone(blankSessionProjections) },
     }
     sessions.push(summary)
     records.set(sessionId, [])
