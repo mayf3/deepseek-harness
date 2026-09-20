@@ -47,6 +47,7 @@ function resolution(
     profilesDir,
     profileDir,
     localPackageNames: [],
+    linkedRoots: [],
     entries: [{ name: 'metadata-lib', packageDir, version, declarer, scope: 'installation' }],
   }
 }
@@ -123,7 +124,7 @@ describe('profile package metadata service', () => {
     expect(ctx.pluginPackages.packageOf('missing-package', parentURL)).toBeUndefined()
     expect(ctx.pluginPackages.packageOf('@scope', parentURL)).toBeUndefined()
     expect(() => { ctx.pluginPackages.replace({
-      profilesDir: join(root, 'profiles'), profileDir: undefined, localPackageNames: [], entries: [],
+      profilesDir: join(root, 'profiles'), profileDir: undefined, localPackageNames: [], linkedRoots: [], entries: [],
     }) }).toThrow(/runtime resolution is not installed/u)
   })
 

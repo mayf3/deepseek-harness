@@ -33,6 +33,7 @@ interface ResolutionEvidence {
   sameCjsExternalLeaf: boolean
   externalManaged: boolean
   toolsInstance: boolean
+  pluginToolsInstance: boolean
   scheduler: boolean
   modules: string[]
 }
@@ -91,7 +92,10 @@ export function testProfileResolution(mode: ExampleMode): void {
       }
 
       const sharedModules = join(home, 'profiles', 'node_modules')
-      const pluginDir = join(profileDir, 'node_modules', pluginName)
+      const installedPlugin = join(profileDir, 'node_modules', pluginName)
+      // npm-link keeps the plugin as a linked root outside the profile tree, so its own node_modules hold the
+      // developer's devDependency dsh-tools copy (stale, never read) and the declared dependency's install.
+      const pluginDir = layout === 'npm-link' ? join(root, 'work', pluginName) : installedPlugin
       const sharedExternal = join(sharedModules, externalName)
       const externalDir = layout === 'npm-link' ? join(root, 'external', externalName) : sharedExternal
       const externalLeaf = join(externalDir, 'node_modules', externalLeafName)
@@ -100,8 +104,14 @@ export function testProfileResolution(mode: ExampleMode): void {
       const ancestorLeaf = join(home, 'node_modules', externalLeafName)
       await writePackage(pluginDir, {
         name: pluginName, version: '1.0.0', exports, dependencies: { [externalName]: '*' },
+        peerDependencies: { '@deepseek-ai/dsh-tools': '*' }, devDependencies: { '@deepseek-ai/dsh-tools': '*' },
       }, {
-        'index.mjs': `export { external } from '${externalName}'\nexport function apply() {}`,
+        'index.mjs': [
+          `export { external } from '${externalName}'`,
+          "import Tools from '@deepseek-ai/dsh-tools'",
+          'export { Tools as PluginTools }',
+          'export function apply() {}',
+        ].join('\n'),
         'index.cjs': `module.exports = require('${externalName}')`,
       })
       for (const [dir, version] of [[externalDir, '3.0.0'], [ancestorExternal, '9.0.0']] as const) {
@@ -124,7 +134,12 @@ export function testProfileResolution(mode: ExampleMode): void {
       })
       for (const [target, link] of [
         [staleTools, staleToolsLink],
-        ...layout === 'npm-link' ? [[externalDir, sharedExternal]] as const : [],
+        ...layout === 'npm-link' ? [
+          [externalDir, sharedExternal],
+          [pluginDir, installedPlugin],
+          [staleTools, join(pluginDir, 'node_modules', '@deepseek-ai', 'dsh-tools')],
+          [externalDir, join(pluginDir, 'node_modules', externalName)],
+        ] as const : [],
       ] as const) {
         await mkdir(dirname(link), { recursive: true })
         await symlink(target, link, 'junction')
@@ -143,7 +158,7 @@ export function testProfileResolution(mode: ExampleMode): void {
           `import { leaf } from '${leafName}'`,
           `import { leaf as bridgeLeaf } from '${bridgeName}'`,
           `import { external } from '${externalName}'`,
-          `import { external as pluginExternal } from '${pluginName}'`,
+          `import { external as pluginExternal, PluginTools } from '${pluginName}'`,
           `import { leaf as externalLeaf } from ${JSON.stringify(pathToFileURL(join(externalLeaf, 'index.mjs')).href)}`,
           'const require = createRequire(import.meta.url)',
           "export const inject = ['tools', 'agentLoop', 'loader']",
@@ -165,6 +180,7 @@ export function testProfileResolution(mode: ExampleMode): void {
           `      sameCjsExternalLeaf: externalCjs.leaf === require(${JSON.stringify(join(externalLeaf, 'index.cjs'))}).leaf,`,
           `      externalManaged: entries.some(entry => [${JSON.stringify(externalName)}, ${JSON.stringify(externalLeafName)}].includes(entry.name)),`,
           '      toolsInstance: ctx.tools instanceof Tools,',
+          '      pluginToolsInstance: ctx.tools instanceof PluginTools,',
           "      scheduler: typeof ctx.tools[TOOL_RUNTIME_SCHEDULER]?.prepare === 'function',",
           '      modules: [...ctx.loader.internal.loadCache.keys()]',
           '        .filter(url => /\\/packages\\/core\\/(?:tools|agent-loop)\\//.test(url)),',
@@ -233,6 +249,7 @@ export function testProfileResolution(mode: ExampleMode): void {
       expect(evidence.sameCjsExternalLeaf).toBe(true)
       expect(evidence.externalManaged).toBe(false)
       expect(evidence.toolsInstance).toBe(true)
+      expect(evidence.pluginToolsInstance).toBe(true)
       expect(evidence.scheduler).toBe(true)
       expect(evidence.execArgv).toEqual(mode === 'src' ? launch.args.slice(0, 2) : [])
       for (const name of ['tools', 'agent-loop']) {
