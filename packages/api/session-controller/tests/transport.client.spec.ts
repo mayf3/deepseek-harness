@@ -81,7 +81,6 @@ function sessionClient(remote: SessionTransportRemote): SessionRemotes {
     ),
     commands: { execute: () => Promise.reject(new Error('stream tests never run commands')) },
     subagents: {
-      list: () => Promise.reject(new Error('stream tests never read the subagent catalog')),
       prompt: () => Promise.reject(new Error('stream tests never prompt a subagent')),
       interruptByParent: () => Promise.reject(new Error('stream tests never interrupt a subagent')),
     },
@@ -195,7 +194,7 @@ const invalidWireEvents: [string, unknown][] = [
   ...[false, undefined].map((isError): [string, unknown] => [
     `contradictory tool error ${String(isError)}`,
     { ...surfaceEvent('tool/result'), data: {
-      message: { content: [{ type: 'tool-result', content: [], ...(isError === undefined ? {} : { isError }) }] },
+      message: { role: 'tool', content: [], ...(isError === undefined ? {} : { isError }) },
       error: { name: 'Error', code: 'FAILURE' },
     } },
   ]),
@@ -243,11 +242,11 @@ describe('Session Client stream adapters', () => {
       { ...surfaceEvent(), surfaceOp: { op: 'replace', startSeq: 2, endSeq: 0 }, sourceEventSeqs: [2, 0] },
       { ...surfaceEvent('assistant/message'), data: { turn: 1, step: 1, message: {}, stream: [] } },
       { ...surfaceEvent('tool/result'), data: {
-        message: { content: [{ type: 'tool-result', content: [], isError: true }] },
+        message: { role: 'tool', content: [], isError: true },
         error: { name: 'Error', code: 'FAILURE' }, meta: { extension: ['retained'] },
       } },
       { ...surfaceEvent('tool/result'), sourceEventSeqs: [0], data: {
-        message: { content: [{ type: 'tool-result', content: [], isError: true }] },
+        message: { role: 'tool', content: [], isError: true },
       } },
       { type: 'request/header', seq: 10, time: 10, data: {
         reason: 'initial', header: { config: { provider: 'mock', model: 'mock' } },

@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Load the editing-cordis-compositions ski" [disabled]
+  - navigation "Session hierarchy": Load the editing-cordis-compositions ski
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
@@ -10,7 +9,7 @@
 - text: Load the editing-cordis-compositions skill with the skill tool, then reply DONE. {{date}} {{clock}}
 - button "Copy"
 - button "1 tool call" [expanded]
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Context injection runtime-context"
 - button "Context injection skill-catalog"
 - button "Think Load the requested skill."
 - button "Skill editing-cordis-compositions" [expanded]
@@ -22,7 +21,6 @@
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{date}} {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"

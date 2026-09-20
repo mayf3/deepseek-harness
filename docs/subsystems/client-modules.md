@@ -22,7 +22,10 @@ The graph is the wire single source between the Node and browser halves. The hos
 interface WebBootEntry {
   /** Entry name == package name. */
   id: string
-  /** Revisioned single-resource combo endpoint used by HMR. */
+  /**
+   * Revisioned single-resource combo reference used by HMR. It is relative to
+   * the document, so the browser resolves it under whatever mount served the page.
+   */
   url: string
   /** Opaque plugin-artifact revision used for HMR cache busting. */
   rev: string
@@ -45,7 +48,7 @@ type WebBootBatchPhase = 'bootstrap' | 'application'
 interface WebBootBatch {
   /** Parser-blocking bootstrap or preloaded application scheduling. */
   phase: WebBootBatchPhase
-  /** Revisioned combo script endpoint. */
+  /** Content-addressed combo script reference, document-relative like {@link WebBootEntry.url}. */
   url: string
   /** Revision derived from the ordered entry revisions. */
   rev: string
@@ -82,7 +85,7 @@ Package metadata — including the negative "not a client package" verdict — i
 
 ## The bundle route and index injection
 
-`GET`/`HEAD /plugins/??<package-a>/client.js,<package-b>/client.js&rev=<rev>` addresses one generated combo script; a one-resource request uses the same form and is the HMR path. The script is concatenated once on its first `GET` and ends with an absolute `sourceMappingURL` whose resource suffixes are `.js.map`. The map files are not read by startup, index rendering, script `GET`, or `HEAD`; the first map `GET` reads and validates them, composes one Indexed Source Map v3, and caches that body. An authored component map supplies its section; a component without one receives an identity section whose `sourcesContent` is the captured bundle and whose source name is its packaged `sourceURL` or plugin route. Every startup request URL is at most 3 KiB measured as UTF-8 bytes; partitioning uses the longer map form. All application URLs are preloaded, and all bootstrap URLs execute before the graph global and Vite entry. Materialized responses use long-lived immutable caching. Unknown or altered resource lists, missing revisions, and stale revisions answer 404 rather than serving different bytes or letting the SPA fallback return HTML as JavaScript; other methods are 405. The injection rows carry the current graph on every index render, so a reload always boots against the live composition.
+`GET`/`HEAD /plugins/??<package-a>/client.js,<package-b>/client.js&rev=<rev>` addresses one generated combo script; a one-resource request uses the same form and is the HMR path. The script is concatenated once on its first `GET` and ends with a `sourceMappingURL` that carries the combo query alone — `??<package-a>/client.js.map,<package-b>/client.js.map&rev=<rev>`, resolved against the script's own directory rather than the document. The map files are not read by startup, index rendering, script `GET`, or `HEAD`; the first map `GET` reads and validates them, composes one Indexed Source Map v3, and caches that body. An authored component map supplies its section; a component without one receives an identity section whose `sourcesContent` is the captured bundle and whose source name is its packaged `sourceURL` or plugin route. Every startup request URL is at most 3 KiB measured as UTF-8 bytes; partitioning uses the longer map form. All application URLs are preloaded, and all bootstrap URLs execute before the graph global and Vite entry. Materialized responses use long-lived immutable caching. Unknown or altered resource lists, missing revisions, and stale revisions answer 404 rather than serving different bytes or letting the SPA fallback return HTML as JavaScript; other methods are 405. The injection rows carry the current graph on every index render, so a reload always boots against the live composition.
 
 ## The service
 

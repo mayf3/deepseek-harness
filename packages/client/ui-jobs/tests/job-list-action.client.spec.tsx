@@ -40,7 +40,7 @@ function props(jobs: readonly JobView[] | undefined): JobListActionProps {
     ids: [SESSION],
     byId: {},
     phase: 'ready',
-    subagentsByParent: {},
+    projectionsBySession: {},
     jobsBySession: jobs === undefined ? {} : { [SESSION]: jobs },
   } satisfies SessionListState
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {

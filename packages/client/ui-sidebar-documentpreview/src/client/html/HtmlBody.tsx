@@ -9,7 +9,6 @@ import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import { createHtmlDocument } from './bootstrap.ts'
 import { createBasicHtmlDocument } from './basic-document.ts'
 import { packHtml } from './pack.ts'
-import type { ReadHtmlRelative } from './pack.ts'
 import { createReadHtmlRelative } from './read-relative.ts'
 import type { ReadHtmlRelated } from './read-relative.ts'
 import type {} from './locales.ts'
@@ -25,18 +24,23 @@ export interface HtmlBodyInjected {
   readonly readRelated: ReadHtmlRelated
 }
 
-type FrameInput = {
+type FrameInput = Pick<HtmlBodyProps, 'resourceAddress' | 'readRelated' | 'addResource' | 'setResources'> & {
   readonly data: Uint8Array<ArrayBuffer>
-  readonly readRelative: ReadHtmlRelative
+  readonly signal: AbortSignal
 }
 
-type FrameState = FrameInput & { readonly url: string | undefined }
+type FrameState = Pick<FrameInput, 'data' | 'readRelated'> & { readonly url: string | undefined }
 
 /** One mounted file owns its root Blob; replacing content also replaces the browsing context. */
-function HtmlFrame({ data, readRelative, t }: FrameInput & { t: HtmlBodyProps['t'] }): ReactNode {
+function HtmlFrame({ data, resourceAddress, readRelated, addResource, setResources, signal, t }: FrameInput & { t: HtmlBodyProps['t'] }): ReactNode {
   const [frame, setFrame] = useState<FrameState>()
   useEffect(() => {
     const controller = new AbortController()
+    const resources = new Set<string>()
+    const readRelative = createReadHtmlRelative(readRelated, resourceAddress, signal, (address) => {
+      resources.add(address)
+      addResource(address)
+    })
     let url: string | undefined
     void (async () => {
       try {
@@ -44,18 +48,20 @@ function HtmlFrame({ data, readRelative, t }: FrameInput & { t: HtmlBodyProps['t
         controller.signal.throwIfAborted()
         const html = createHtmlDocument(bundle)
         url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-        setFrame({ data, readRelative, url })
+        setFrame({ data, readRelated, url })
       } catch {
-        if (!controller.signal.aborted) setFrame({ data, readRelative, url: undefined })
+        if (!controller.signal.aborted) setFrame({ data, readRelated, url: undefined })
+      } finally {
+        if (!controller.signal.aborted && !signal.aborted) setResources([...resources])
       }
     })()
     return () => {
       controller.abort()
       if (url !== undefined) URL.revokeObjectURL(url)
     }
-  }, [data, readRelative])
+  }, [data, readRelated, resourceAddress, addResource, setResources, signal])
 
-  if (frame?.data !== data || frame.readRelative !== readRelative) {
+  if (frame?.data !== data || frame.readRelated !== readRelated) {
     return <LoadingIndicator className={clsx(css.status, css.opening)} label={t('loading')} />
   }
   if (frame.url === undefined) return <p className={css.status} role="alert">{t('failed')}</p>
@@ -67,16 +73,18 @@ function HtmlFrame({ data, readRelative, t }: FrameInput & { t: HtmlBodyProps['t
  * @param props - document bytes, hooks, related-file reader and locale.
  * @returns an isolated HTML document, or nothing for text delivery.
  */
-export function HtmlBody({ content, resourceAddress, readRelated, useTabInfo, useInteractivePreview, t }: HtmlBodyProps): ReactNode {
+export function HtmlBody({
+  content, resourceAddress, readRelated, useTabInfo, useInteractivePreview, addResource, setResources, t,
+}: HtmlBodyProps): ReactNode {
   const interactivePreview = useInteractivePreview(value => value)
   const { tab } = useTabInfo()
-  const readRelative = useMemo(
-    () => createReadHtmlRelative(readRelated, resourceAddress, tab.signal),
-    [readRelated, resourceAddress, tab.signal],
-  )
+  useEffect(() => {
+    if (!interactivePreview) setResources([])
+  }, [interactivePreview, setResources])
   if (content.kind !== 'bytes') return null
   if (!interactivePreview) return <BasicHtmlFrame data={content.data} t={t} />
-  return <HtmlFrame key={resourceAddress} data={content.data} readRelative={readRelative} t={t} />
+  return <HtmlFrame key={resourceAddress} data={content.data} resourceAddress={resourceAddress}
+    readRelated={readRelated} signal={tab.signal} addResource={addResource} setResources={setResources} t={t} />
 }
 
 /** Static preview mounts a separate browsing context so a mode change retires running scripts. */

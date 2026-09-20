@@ -1,14 +1,15 @@
 - tree "Sessions":
   - treeitem "{{workspace}}" [expanded]
-  - treeitem "Review deepseek-ai/deepseek-harness#314 Session actions for Review deepseek-ai/deepseek-harness#314" [selected]:
+  - treeitem "Review deepseek-ai/deepseek-harness#314 Session actions for Review deepseek-ai/deepseek-harness#314 Archive session Pin session" [selected]:
     - text: Review deepseek-ai/deepseek-harness#314
     - button "Session actions for Review deepseek-ai/deepseek-harness#314"
+    - button "Archive session"
+    - button "Pin session"
 
 ---
 
 - banner:
-  - navigation "Session hierarchy":
-    - button "Review deepseek-ai/deepseek-harness#314" [disabled]
+  - navigation "Session hierarchy": Review deepseek-ai/deepseek-harness#314
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
@@ -18,13 +19,12 @@
 - button "System prompt"
 - button "Thought for a while" [expanded]
 - button "Context injection webhook github webhook handled by review-pr-when-ready"
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Context injection runtime-context"
 - paragraph: "Review complete: no actionable findings."
 - button "Copy"
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"

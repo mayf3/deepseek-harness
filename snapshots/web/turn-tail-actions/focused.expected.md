@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Begin your reply with the" [disabled]
+  - navigation "Session hierarchy": Begin your reply with the
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
@@ -11,7 +10,7 @@
 - text: Begin your reply with the plain sentence "Reading the workspace now." as text, and in that same message call the bash tool with the command "echo alpha". After the tool result, reply with the single word DONE and stop. {{clock}}
 - button "Copy"
 - button "1 tool call · 1 message" [expanded]
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Context injection runtime-context"
 - button "Think The user wants me to begin with \"Reading the workspace now.\" and call bash with \"echo alpha\" in the same message. Then after the tool result, reply with the single word DONE and stop."
 - paragraph: Reading the workspace now.
 - button "Bash Print alpha to stdout"
@@ -21,7 +20,6 @@
 - button "Bad response"
 - button "Branch into a new conversation"
 - button "Usage 15.8K tok"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"

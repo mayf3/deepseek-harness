@@ -5,7 +5,6 @@
     - button "模型"
     - button "内置插件"
     - button "Agent 预设"
-    - button "已归档会话"
   - button "打开配置文件"
   - button "关闭"
   - text: 权限 选择新会话的默认权限模式
@@ -21,6 +20,8 @@
   - button "减小字号"
   - text: px 对话显示 控制已完成轮次的过程内容
   - button "紧凑"
+  - text: 性能与用量 选择性能与用量信息展示的详细程度
+  - button "详细"
   - text: 开发者工具 显示用于调试和排查问题的工具与信息
   - switch "开发者工具"
   - text: 繁忙时的发送行为 智能体运行时 Enter 键和发送按钮的行为；Cmd/Ctrl+Enter 使用另一行为

@@ -33,6 +33,7 @@ describe('web e2e: plugin configuration pages', () => {
     // The live-client fixture is a bundle with a browser half; switched on
     // below, that half registers its row's configuration into the page.
     scaffold = await launchWebScaffold({
+      extraOverlayPath: fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
       profile: { packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-live-client') }] },
     })
     browser = await chromium.launch()
@@ -95,7 +96,7 @@ describe('web e2e: plugin configuration pages', () => {
       expect(await official.getByRole('button', { name: `查看 ${title}`, exact: true }).count()).toBe(1)
     }
     // A card carries the one-liner; the fields wait for the page.
-    expect(await official.getByText('限制 agent 运行的每一条命令。', { exact: true }).count()).toBe(1)
+    expect(await official.getByText('限制每条命令最多能跑多久、最多输出多少内容。', { exact: true }).count()).toBe(1)
     expect(await panel.getByLabel('命令超时（毫秒）').count()).toBe(0)
 
     const snapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
@@ -286,21 +287,21 @@ describe('web e2e: plugin configuration pages', () => {
     const panel = await openPlugins()
 
     // Off, the bundle's browser half is not loaded and the row has no configuration to open.
-    await panel.getByRole('button', { name: '查看 live-client', exact: true }).click()
+    await panel.getByRole('button', { name: '查看 @fixture/live-client', exact: true }).click()
     const row = panel.locator('[data-plugin-row]', { hasText: 'fixture-live-client' })
     await row.waitFor({ timeout: 10_000 })
-    expect(await panel.getByRole('button', { name: '配置 fixture-live-client' }).count()).toBe(0)
+    expect(await panel.getByRole('button', { name: '配置 @fixture/live-client' }).count()).toBe(0)
 
     // Switched on, the Host recomposes and the browser half mounts without a
     // reload; its registration puts the configure control on the row.
-    await panel.getByRole('switch', { name: '启用 live-client' }).click()
-    const configure = panel.getByRole('button', { name: '配置 fixture-live-client' })
+    await panel.getByRole('switch', { name: '启用 @fixture/live-client' }).click()
+    const configure = panel.getByRole('button', { name: '配置 @fixture/live-client' })
     await configure.waitFor({ timeout: 30_000 })
     await configure.click()
 
     const rowPage = panel.locator('[data-plugin-row-detail="@fixture/live-client#fixture-live-client"]')
     await rowPage.waitFor({ timeout: 10_000 })
-    expect(await rowPage.getByRole('heading', { level: 3 }).textContent()).toBe('fixture-live-client')
+    expect(await rowPage.getByRole('heading', { level: 3 }).textContent()).toBe('@fixture/live-client')
     expect(await rowPage.getByText('示例配置项', { exact: true }).count()).toBe(1)
     const form = rowPage.getByRole('form', { name: '动态插件配置' })
     await form.getByLabel('问候语').fill('你好')
@@ -309,7 +310,7 @@ describe('web e2e: plugin configuration pages', () => {
 
     const snapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(ROW_EXPECTED, snapshot, MODE)
-    await rowPage.getByRole('button', { name: '返回 live-client' }).click()
+    await rowPage.getByRole('button', { name: '返回 @fixture/live-client' }).click()
     await panel.locator('[data-plugin-detail="@fixture/live-client"]').waitFor({ timeout: 10_000 })
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)

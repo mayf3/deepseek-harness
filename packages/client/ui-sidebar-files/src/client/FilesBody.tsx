@@ -7,8 +7,7 @@
  * file opens through the owner's `tabActions` for a `file:` viewer to claim, and
  * anything else is shown but refuses to open. The header row is the text
  * preview's: the root's path, directories greyed and the last segment in full
- * ink, then the one control at its end, reload, which drops every listed level
- * and asks again for the expanded ones.
+ * ink, then reload, which refreshes the expanded directories in place.
  */
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { ReactNode, RefObject } from 'react'
@@ -17,6 +16,7 @@ import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   FileTypeIcon, IconFolderCloseRegular, IconFolderOpenRegular, IconRefreshOutlineRegular, classifyFileType,
+  IconPauseOutlineRegular, IconPlayOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { fileAddressFor, pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { WorkspaceDirectoryEntry } from '@deepseek-ai/dsh-api-workspace-files/types'
@@ -103,7 +103,7 @@ function usePathClipped(
 /** What every level shares: the tab's tree and the two gestures. */
 interface TreeContext {
   readonly state: FilesTabState
-  readonly onToggle: (path: string) => void
+  readonly onToggle: (parent: string, path: string) => void
   readonly onOpen: (path: string) => void
   readonly t: TranslateNS<'sidebarFiles'>
 }
@@ -115,7 +115,7 @@ function Entry({ parent, entry, tree }: { parent: string; entry: WorkspaceDirect
     const expanded = tree.state.expanded.includes(path)
     return (
       <li className={css.item} data-files-entry="directory" data-files-path={path}>
-        <button type="button" className={css.row} aria-expanded={expanded} onClick={() => { tree.onToggle(path) }}>
+        <button type="button" className={css.row} aria-expanded={expanded} onClick={() => { tree.onToggle(parent, path) }}>
           {expanded ? <IconFolderOpenRegular className={css.icon} /> : <IconFolderCloseRegular className={css.icon} />}
           <span className={css.name}>{entry.name}</span>
         </button>
@@ -159,6 +159,7 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
   const entries = orderEntries(level.level.entries)
   return (
     <>
+      {level.failure !== undefined && <li className={css.note} data-files-row="failed">{failureLine(t, level.failure)}</li>}
       {entries.length === 0 && <li className={css.note} data-files-row="empty">{t('empty')}</li>}
       {entries.map(entry => <Entry key={entry.name} parent={path} entry={entry} tree={tree} />)}
       {level.level.truncated && <li className={css.note} data-files-row="truncated">{t('truncated')}</li>}
@@ -168,7 +169,7 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
 
 /** The file tree's body: the workspace root and whatever the reader has opened under it. */
 export function FilesBody({
-  useTabInfo, sessionId, useSessions, useStore, actions, start, load, toggle, t,
+  useTabInfo, sessionId, useSessions, useStore, actions, start, refresh, setAutoRefresh, toggle, t,
 }: FilesBodyProps): ReactNode {
   const { tab } = useTabInfo()
   const { signal, actions: tabActions } = tab
@@ -213,16 +214,13 @@ export function FilesBody({
   if (state === undefined) return null
   const tree: TreeContext = {
     state,
-    onToggle: (path) => { toggle(tab.id, path, state.levels[path] !== undefined, signal) },
+    onToggle: (parent, path) => { toggle(tab.id, parent, path, state.expanded, signal) },
     // Every row is under the tree's root, so its address is session-relative.
     onOpen: (path) => { tabActions.openResource(fileAddressFor(sessionId, state.root, path)) },
     t,
   }
-  // Reload drops every level and asks again for the expanded ones; a collapsed
-  // level is fetched again the next time it opens.
   const reload = (): void => {
-    actions.reset(tab.id)
-    for (const path of state.expanded) load(tab.id, path, signal)
+    refresh(tab.id)
   }
   const { directory, name } = pathPartsOf(state.root)
   return (
@@ -235,6 +233,14 @@ export function FilesBody({
             <span className={css.pathName}>{name}</span>
           </span>
         </div>
+        <span hidden>
+          <button type="button" className={css.tool} aria-label={t('autoRefresh')}
+            aria-pressed={state.autoRefresh} data-files-auto-refresh
+            title={t(state.autoRefresh ? 'autoRefresh.disable' : 'autoRefresh.enable')}
+            onClick={() => { setAutoRefresh(tab.id, !state.autoRefresh) }}>
+            {state.autoRefresh ? <IconPauseOutlineRegular /> : <IconPlayOutlineRegular />}
+          </button>
+        </span>
         <button
           type="button"
           className={css.tool}

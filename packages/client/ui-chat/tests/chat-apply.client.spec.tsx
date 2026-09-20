@@ -23,6 +23,7 @@ import {
 import type {
   ChatNodeTurnDataInjected, ChatSnapshot, TranscriptViewRowInjected, UseChatNodeTurnData,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { PerformanceUsageRowInjected } from '../src/client/settings/PerformanceUsageRow.tsx'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
@@ -93,7 +94,7 @@ describe('Chat apply wiring', () => {
     expect(b.runtime.slots.entries('conversation.composer.dock').map(row => row.options.id))
       .toEqual(['stats'])
     expect(b.runtime.slots.entries('settings.general.item').map(row => row.options.id))
-      .toEqual(['transcript-view', 'composer-enter'])
+      .toEqual(['transcript-view', 'performance-usage', 'composer-enter'])
     await b.runtime.dispose()
   })
 
@@ -109,9 +110,28 @@ describe('Chat apply wiring', () => {
     expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', 'normal')
 
     b.chatSettings.publish({
-      status: 'ready', value: { transcriptView: 'compact' }, revision: 1, writable: true,
+      status: 'ready', value: { transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 1, writable: true,
     })
     expect(face.hooks.transcriptView.getSnapshot()).toBe('compact')
+    await b.runtime.dispose()
+  })
+
+  it('shares the accepted performance preference with settings, composer, and turn tails', async () => {
+    const b = await bench()
+    const row = b.runtime.slots.entries('settings.general.item').find(entry => entry.options.id === 'performance-usage')!
+    const face = (row.inject as unknown as () => PerformanceUsageRowInjected)()
+    expect(face.hooks.performanceUsage.getSnapshot()).toBe('detailed')
+    face.setPerformanceUsage('compact')
+    expect(b.chatSettings.set).toHaveBeenCalledWith('performanceUsage', 'compact')
+    b.chatSettings.publish({ value: { transcriptView: 'compact', performanceUsage: 'compact' } })
+    expect(face.hooks.performanceUsage.getSnapshot()).toBe('compact')
+    for (const entry of [
+      b.runtime.slots.entries('conversation.composer.dock').find(entry => entry.options.id === 'stats')!,
+      b.runtime.slots.entries('conversation.chat.node').find(entry => entry.options.key === 'turn-tail')!,
+    ]) {
+      const injected = (entry.inject as () => Pick<PerformanceUsageRowInjected, 'hooks'>)()
+      expect(injected.hooks.performanceUsage).toBe(face.hooks.performanceUsage)
+    }
     await b.runtime.dispose()
   })
 

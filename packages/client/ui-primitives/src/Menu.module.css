@@ -60,12 +60,13 @@
 }
 
 /* Viewport fit: the card stops 12px short of the viewport's top/bottom edges
- * (24 = 2 × the portal MARGIN in Menu.tsx) and taller content scrolls inside
+ * (the portal MARGIN in Menu.tsx; the top side widens to the frame's published
+ * top clearance, the macOS window strip) and taller content scrolls inside
  * .viewport, so a pinned .footer stays visible. Menus with submenu rows skip
  * this class — the overflow clip would crop the side card, so they rely on
  * staying short. */
 .scrollable {
-  max-height: calc(100vh - 24px);
+  max-height: calc(100vh - 12px - max(12px, var(--dsh-frame-top-clearance, 12px)));
 }
 
 .viewport {
@@ -240,11 +241,12 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Separator cell (figma 122:9481): py 4 / px 2 around the hairline. */
+/* Separator cell (figma 122:9481): py 4 / px 2 around the hairline. l2, not
+ * l1, for the same reason as .footer: l1 is near-invisible on this surface. */
 .separator {
   height: 0.5px;
   margin: 3px 2px;
-  background: var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-border-l2);
 }
 
 /* Nested card to the right of the parent row.

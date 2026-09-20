@@ -15,8 +15,8 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import LlmRuntime, { createAssistantMessage, createSystemMessage, createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
-import type { Message } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createAssistantMessage, createSystemMessage, createToolResultMessage, createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import FileSettings from '@deepseek-ai/dsh-settings-file'
@@ -52,10 +52,16 @@ async function send(agent: Agent, text: string) {
   expect(agent.session.snapshotEvents().at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'completed' } } })
 }
 
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'saved-notice': { kind: 'saved-notice' }
+  }
+}
+
 describe('direct Messages HTTP', () => {
   it('continues through Messages with assistant blocks in saved user history', async () => {
     const http = await endpoint()
-    const notice = createUserMessage({ source: { kind: 'plugin', plugin: 'saved-notice' }, content: [
+    const notice = createUserMessage({ source: { kind: 'saved-notice' }, content: [
       { type: 'text', text: 'Background subagent finished.' },
       { type: 'reasoning', text: 'child reasoning' },
       { type: 'tool-call', id: ToolCallId('child-call'), name: 'read', arguments: '{}' },
@@ -353,9 +359,9 @@ describe('Cordis provider composition', () => {
 
   it('maps multiple system snapshots on direct compaction calls to the latest prompt', async () => {
     const { ctx, http } = await boot()
-    const history = [createSystemMessage('old', 'test'), user(),
+    const history = [createSystemMessage('old'), user(),
       createAssistantMessage({ content: [{ type: 'text', text: 'OK' }], source: { provider: 'deepseek-official', model: MODEL } }),
-      createSystemMessage('current', 'test'), user('summarize')]
+      createSystemMessage('current'), user('summarize')]
     const saved = JSON.stringify(history)
     const response = await assemble(ctx.llm.stream(options({ messages: history, purpose: 'compaction' })))
     expect(response.assembler.finish.kind).toBe('stop')
@@ -372,7 +378,19 @@ describe('Cordis provider composition', () => {
     const records = fixture.trim().split('\n').map(line => JSON.parse(line) as { type: string; data: { message?: Message } })
     const assistant = records.find(record => record.type === 'assistant/message')!.data.message!
     if (assistant.source.kind === 'model') assistant.source.provider = 'deepseek-official'
-    const result = records.find(record => record.type === 'tool/result')!.data.message!
+    // The released v2 row still wraps its tool result inside a user message.
+    const released = records.find(record => record.type === 'tool/result')!.data.message! as unknown as {
+      readonly content: readonly {
+        readonly type: string
+        readonly toolCallId: ToolCallId
+        readonly content: readonly ContentBlock[]
+        readonly isError?: boolean
+      }[]
+    }
+    const releasedBlock = released.content[0]!
+    const result = createToolResultMessage({
+      callId: releasedBlock.toolCallId, content: [...releasedBlock.content], isError: releasedBlock.isError === true,
+    })
     const saved = JSON.stringify([assistant, result])
     const response = await assemble(ctx.llm.stream(options({ messages: [user(), assistant, result] })))
     expect(response.assembler.finish.kind).toBe('stop')

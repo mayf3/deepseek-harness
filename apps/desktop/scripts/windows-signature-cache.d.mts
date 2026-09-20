@@ -18,9 +18,53 @@ export interface WindowsSignatureCacheOptions {
  */
 export function signatureCacheIdentity(files: readonly string[]): Promise<string>
 
+/** Counters include failed attempts; verification covers both restored and newly signed files, while restore time includes its verification and staging cleanup. */
+export interface WindowsSignatureCacheSummary {
+  root: string
+  identity: string
+  hits: number
+  misses: number
+  published: number
+  retained: number
+  signingCalls: number
+  avoidedSigningCalls: number
+  validationFailures: number
+  verificationMs: number
+  restoreMs: number
+  signingMs: number
+}
+
+/** Serial cache callback with a snapshot of this instance's completed and failed operations. */
+export type WindowsCachedSigner = ReturnType<typeof createWindowsTokenSigner> & {
+  /** @returns Current counters and elapsed times; does not wait for queued operations. */
+  summary(): WindowsSignatureCacheSummary
+}
+
 /**
  * Reuse complete signed files only after input, integrity, identity and timestamp checks.
  * @param options Cache policy, supervised signer, public-key verifier and audit sink.
  * @returns Serial signer that stops its queue on any failure and never repairs invalid cache entries.
  */
-export function createCachedSigner(options: WindowsSignatureCacheOptions): ReturnType<typeof createWindowsTokenSigner>
+export function createCachedSigner(options: WindowsSignatureCacheOptions): WindowsCachedSigner
+
+/** The caller validates ownership and holds the user-wide signing-stage lock throughout migration. */
+export interface SignatureCacheMigrationOptions {
+  source: string
+  root: string
+  record: (event: object) => void
+}
+
+/**
+ * Copy complete entries without changing the source or replacing valid destination entries.
+ * @param options Validated directories and credential-free audit sink.
+ * @returns Counts of published, retained and skipped entries; corruption rejects without repair. Actual use rechecks trust.
+ */
+export function migrateSignatureCache(options: SignatureCacheMigrationOptions): Promise<{ published: number, retained: number, skipped: number }>
+
+/**
+ * Inspect or explicitly clear complete entries under the caller's signing-stage lock.
+ * @param root Validated current-account cache directory.
+ * @param clear Remove complete entries after atomic retirement; incomplete staging directories remain untouched.
+ * @returns Count and bytes of complete entries, plus the number of skipped incomplete entries.
+ */
+export function maintainSignatureCache(root: string, clear?: boolean): Promise<{ entries: number, bytes: number, incomplete: number }>

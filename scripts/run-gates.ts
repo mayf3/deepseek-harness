@@ -33,7 +33,7 @@ export type Mode =
   | 'ci-consumers'
   | 'ci-windows-blocking'
   | 'ci-windows-complete'
-  | 'ci-windows-observational'
+  | 'ci-windows-observational-ready'
   | 'node-compat'
   | 'check-all'
   | 'hygiene'
@@ -147,7 +147,7 @@ function parseMode(raw: string | undefined): Mode {
     case 'ci-consumers':
     case 'ci-windows-blocking':
     case 'ci-windows-complete':
-    case 'ci-windows-observational':
+    case 'ci-windows-observational-ready':
     case 'node-compat':
     case 'check-all':
     case 'hygiene':
@@ -156,7 +156,7 @@ function parseMode(raw: string | undefined): Mode {
       return raw
     default:
       throw new Error(
-        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-bench | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | node-compat | check-all | hygiene | doc-sync | doc-quick, got ${JSON.stringify(raw)}.`,
+        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-bench | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational-ready | node-compat | check-all | hygiene | doc-sync | doc-quick, got ${JSON.stringify(raw)}.`,
       )
   }
 }
@@ -293,8 +293,15 @@ export function gatesForMode(selected: Mode): Gate[] {
       return ciWindowsBlockingGates()
     case 'ci-windows-complete':
       return ciWindowsCompleteGates()
-    case 'ci-windows-observational':
+    case 'ci-windows-observational-ready':
+      // The caller owns the successful workspace build; all diagnostics remain.
       return ciWindowsObservationalGates()
+        .filter(gate => gate.id !== 'build')
+        .map(gate => ({
+          ...gate,
+          ...gate.needs === undefined ? {} : { needs: gate.needs.filter(id => id !== 'build') },
+          ...gate.after === undefined ? {} : { after: gate.after.filter(id => id !== 'build') },
+        }))
     case 'node-compat':
       return nodeCompatGates()
     case 'check-all':
@@ -340,15 +347,24 @@ function ciSharedStaticGates(): Gate[] {
     pnpmScript('package-dependencies', 'verify-package-dependencies', { label: 'package dependencies' }),
     pnpmScript('dsh-package-licenses', 'verify-dsh-package-licenses', { label: 'DSH package licenses' }),
     pnpmScript('package-invariants', 'verify-package-invariants', { label: 'package invariants' }),
+    pnpmScript('package-meta', 'verify-package-meta', { label: 'package metadata' }),
     pnpmScript('cordis-config', 'verify-cordis-config', { label: 'Cordis config' }),
+    ...sharedHygieneGates(),
+    pnpmScript('approval-policy', 'test:approval-policy', { label: 'Weighted approval policy' }),
+    pnpmScript('issue-management', 'test:issue-management', { label: 'Issue management policy' }),
+  ]
+}
+
+function sharedHygieneGates(): Gate[] {
+  return [
     pnpmScript('optional-dependency-imports', 'verify-optional-dependency-imports', {
       label: 'optional dependency imports',
     }),
     pnpmScript('client-packages', 'verify-client-packages', { label: 'client packages' }),
     pnpmScript('client-ui-i18n', 'verify-client-ui-i18n', { label: 'client UI i18n' }),
+    pnpmScript('client-route-resolution', 'verify-client-route-resolution', { label: 'client route resolution' }),
     pnpmScript('no-bare-dispatcher', 'verify-no-bare-dispatcher', { label: 'proxy-aware dispatchers' }),
-    pnpmScript('approval-policy', 'test:approval-policy', { label: 'Weighted approval policy' }),
-    pnpmScript('issue-management', 'test:issue-management', { label: 'Issue management policy' }),
+    pnpmScript('no-unknown-casts', 'verify-no-unknown-casts', { label: 'no new unknown casts' }),
   ]
 }
 
@@ -747,12 +763,7 @@ function hygieneLeafGates(options: { artifactNeeds?: string[] } = {}): Gate[] {
       label: 'node-next types',
       ...artifactOptions,
     }),
-    pnpmScript('optional-dependency-imports', 'verify-optional-dependency-imports', {
-      label: 'optional dependency imports',
-    }),
-    pnpmScript('client-packages', 'verify-client-packages', { label: 'client packages' }),
-    pnpmScript('client-ui-i18n', 'verify-client-ui-i18n', { label: 'client UI i18n' }),
-    pnpmScript('no-bare-dispatcher', 'verify-no-bare-dispatcher', { label: 'proxy-aware dispatchers' }),
+    ...sharedHygieneGates(),
   ]
 }
 
@@ -840,6 +851,7 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     '--config',
     'vitest.e2e.config.ts',
     'apps/cli/tests/profiles/headless/tests/keyless-smoke.e2e.ts',
+    'apps/cli/tests/profiles/headless/tests/source-tool.built.e2e.ts',
     'apps/cli/tests/built-bin.e2e.ts',
     'packages/host/directory-picker-native/tests/built-worker.e2e.ts',
     'packages/sdk/server/tests/built-scope-carrier.e2e.ts',

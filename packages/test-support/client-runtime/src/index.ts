@@ -197,7 +197,7 @@ export class TestRoot {
     await this.stabilize(() => {
       // Erased hop (same pattern as SlotRegistry's own implementation arm);
       // the declaration signature above is the typed contract.
-      this.disposeEntry = (this.slots.register as unknown as ErasedRegister)({ name: 'root', children }, frame)
+      this.disposeEntry = (this.slots.register as ErasedRegister)({ name: 'root', children }, frame)
     })
   }
 

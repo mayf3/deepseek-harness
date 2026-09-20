@@ -2,7 +2,7 @@
 - text: 简单画一个 SVG 表示冯诺依曼架构, 保存为 von-neumann.svg {{clock}}
 - button "复制"
 - button "2 次工具调用 · 1 条消息" [expanded]
-- button "上下文注入 @deepseek-ai/dsh-system-prompt"
+- button "上下文注入 runtime-context"
 - button "思考 The user wants a simple SVG diagram of the von Neumann architecture, saved as von-neumann.svg. Let me create a clean SVG showing CPU (control unit, ALU), memory, input, and output with bidirectional data/control buses."
 - paragraph: 我来创建一个冯诺依曼架构的 SVG 示意图。
 - button "写入 von-neumann.svg +83 -0":
@@ -44,5 +44,4 @@
 - button "有问题的回答"
 - button "在新对话中分支"
 - button "用量 32K tok"
-- button "用时 {{duration}}"
 - text: {{clock}}

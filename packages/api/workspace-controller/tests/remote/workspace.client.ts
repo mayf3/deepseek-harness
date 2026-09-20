@@ -19,8 +19,11 @@ import type {
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspacePinSessionRequest,
+  WorkspacePinValue,
   WorkspaceRenameRequest,
   WorkspaceUnarchiveSessionRequest,
+  WorkspaceUnpinSessionRequest,
   WorkspaceValue,
   WorkspaceView,
 } from '../../src/types.ts'
@@ -59,12 +62,15 @@ export function workspace(id: string, overrides: Partial<WorkspaceView> = {}): W
 }
 
 /**
- * A baseline frame holding the named Workspaces and no archived Sessions.
+ * A baseline frame holding the named Workspaces and no archived or pinned Sessions.
  * @param ids - Workspace ids in registry order.
  * @returns the frame.
  */
 export function baseline(...ids: readonly string[]): WorkspaceBaselineFrame {
-  return { type: 'baseline', value: { items: ids.map(id => workspace(id)), archivedSessionIds: [] } }
+  return {
+    type: 'baseline',
+    value: { items: ids.map(id => workspace(id)), archivedSessionIds: [], pinnedSessionIds: [] },
+  }
 }
 
 /**
@@ -98,5 +104,7 @@ export const workspaceWorld: RemoteTable = {
     }),
     'workspace/archiveSession': (request: WorkspaceArchiveSessionRequest): RemoteResult<WorkspaceArchiveValue> => ok({ archivedSessionIds: [request.sessionId] }),
     'workspace/unarchiveSession': (_request: WorkspaceUnarchiveSessionRequest): RemoteResult<WorkspaceArchiveValue> => ok({ archivedSessionIds: [] }),
+    'workspace/pinSession': (request: WorkspacePinSessionRequest): RemoteResult<WorkspacePinValue> => ok({ pinnedSessionIds: [request.sessionId] }),
+    'workspace/unpinSession': (_request: WorkspaceUnpinSessionRequest): RemoteResult<WorkspacePinValue> => ok({ pinnedSessionIds: [] }),
   },
 }

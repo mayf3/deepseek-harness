@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use the read tool twice" [disabled]
+  - navigation "Session hierarchy": Use the read tool twice
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
@@ -20,9 +19,7 @@
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation" [disabled]
-- text: Available only on the last message of a completed turn
-- button "Ran for {{duration}}"
-- text: {{clock}}
+- text: Available only on the last message of a completed turn {{clock}}
 - button "Read a.txt":
   - text: Read
   - button "a.txt"
@@ -37,7 +34,6 @@
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{clock}} Keep this later input in the original conversation. {{clock}}
 - button "Copy"
 - paragraph: ORIGINAL ONLY
@@ -45,7 +41,6 @@
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"

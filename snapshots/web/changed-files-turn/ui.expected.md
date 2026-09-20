@@ -2,7 +2,7 @@
 - text: 不用先查看目录，直接做四件事：把 intro.md 里的标题「示例项目」改成「项目说明」，新建 src/util.ts 导出一个两数相加的 add 函数，新建 app.local 写一行 mode=demo，最后用 bash 在 notes.txt 末尾追加一行 done。 {{clock}}
 - button "复制"
 - button "7 次工具调用" [expanded]
-- button "上下文注入 @deepseek-ai/dsh-system-prompt"
+- button "上下文注入 runtime-context"
 - button "思考 The user wants four things done directly. But I need to read intro.md before editing (fs-observation-policy requires reading existing file first). The user says don't look at the directory first, but reading intro.md is needed for the edit tool. Let me just do it."
 - button "读取 intro.md":
   - text: 读取
@@ -76,7 +76,8 @@
     - button "查看 intro.md 的改动": intro.md +1 -1
   - listitem:
     - button "查看 notes.txt 的改动": notes.txt +1 -0
-- button "展开全部 4 个改动文件": 全部 4 个文件
+  - listitem:
+    - button "查看 src/util.ts 的改动": src/util.ts +3 -0
 - text: 此主机没有可用的桌面，无法使用外部程序打开文件或文件夹；文件仍可在侧边栏预览
 - button "在侧边栏预览 intro.md"
 - text: intro.md 标题已改为「项目说明」
@@ -99,5 +100,4 @@
 - button "有问题的回答"
 - button "在新对话中分支"
 - button "用量 36.2K tok"
-- button "用时 {{duration}}"
 - text: {{clock}}

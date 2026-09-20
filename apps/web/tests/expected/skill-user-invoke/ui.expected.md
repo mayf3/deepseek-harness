@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "/user-invoke-demo @\"meeting notes.md\" an" [disabled]
+  - navigation "Session hierarchy": /user-invoke-demo @"meeting notes.md" an
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
@@ -18,7 +17,6 @@
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"

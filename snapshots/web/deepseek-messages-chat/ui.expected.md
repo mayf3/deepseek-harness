@@ -1,6 +1,5 @@
 - banner:
-  - navigation "会话层级":
-    - button "只回复 MESSAGES_WEB_READY，不调用" [disabled]
+  - navigation "会话层级": 只回复 MESSAGES_WEB_READY，不调用
   - text: 标准模式
   - button "更多操作"
   - button "打开右侧边栏"
@@ -18,7 +17,6 @@
 - button "有问题的回答"
 - button "在新对话中分支"
 - button "用量 8.2K tok"
-- button "用时 {{duration}}"
 - text: {{clock}}
 - textbox "发消息或创建任务, / 调用指令, @ 文件或对话"
 - button "添加文件或调用指令"

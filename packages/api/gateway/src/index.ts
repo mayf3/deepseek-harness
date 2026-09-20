@@ -276,10 +276,10 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const claims = new Set<string>()
     for (const [serviceKey, definition] of Object.entries(this.ctx.reflect.props)) {
       if (definition.type !== 'service') continue
-      const receiver = this.ctx.get(serviceKey) as unknown
+      const receiver: unknown = this.ctx.get(serviceKey)
       if (!isObject(receiver)) continue
       const original = originalOf(receiver)
-      const binding = Reflect.get(original, 'typertRemote') as unknown
+      const binding: unknown = Reflect.get(original, 'typertRemote')
       if (!isObject(binding) || typeof Reflect.get(binding, 'namespace') !== 'string') continue
       const namespace = Reflect.get(binding, 'namespace') as string
       for (const candidate of remoteMethods(original)) {
@@ -483,7 +483,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
       }
       const signals = new Set(projected.signal === undefined ? [] : [projected.signal])
       const abort = (): void => {
-        const reason = [...signals].find(signal => signal.aborted)?.reason as unknown
+        const reason: unknown = [...signals].find(signal => signal.aborted)?.reason
         this.cancelRemoteEvent(pending, reason instanceof Error
           ? reason
           : new Error('typert gateway: Remote event was cancelled', { cause: reason }))
@@ -599,7 +599,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const descriptor = this.resolveDescriptor(request.namespace, request.method, endpoint)
     assertExactArguments(request.args, descriptor, endpoint)
     const receiverContext = await this.resolveReceiverContext(descriptor, request.args, endpoint)
-    const receiver = receiverContext.get(descriptor.service) as unknown
+    const receiver: unknown = receiverContext.get(descriptor.service)
     if (!isObject(receiver)) {
       throw new TypertGatewayError(
         'gateway/service-unavailable',
@@ -612,7 +612,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
       this.resolveParameter(parameter, request.args, endpoint)))
     if (descriptor.cancellation !== undefined) args.push(request.signal ?? NEVER_ABORTED_SIGNAL)
     const implementation = descriptor.implementation ?? descriptor.method
-    const method = Reflect.get(receiver, implementation) as unknown
+    const method: unknown = Reflect.get(receiver, implementation)
     if (typeof method !== 'function') {
       throw new TypertGatewayError(
         'gateway/method-unavailable',
@@ -640,10 +640,10 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const candidates: InvocationDescriptor[] = []
     for (const [serviceKey, definition] of Object.entries(this.ctx.reflect.props)) {
       if (definition.type !== 'service') continue
-      const receiver = this.ctx.get(serviceKey) as unknown
+      const receiver: unknown = this.ctx.get(serviceKey)
       if (!isObject(receiver)) continue
       const original = originalOf(receiver)
-      const value = Reflect.get(original, 'typertRemote') as unknown
+      const value: unknown = Reflect.get(original, 'typertRemote')
       if (value === undefined) continue
       const binding = readBinding(value, original, serviceKey, endpoint)
       if (binding.namespace !== namespace) continue
@@ -961,8 +961,8 @@ async function *cancellableStream(
   endpoint: string,
   signal: AbortSignal,
 ): AsyncGenerator {
-  const asyncFactory = Reflect.get(source, Symbol.asyncIterator) as unknown
-  const syncFactory = Reflect.get(source, Symbol.iterator) as unknown
+  const asyncFactory: unknown = Reflect.get(source, Symbol.asyncIterator)
+  const syncFactory: unknown = Reflect.get(source, Symbol.iterator)
   const iterator = typeof asyncFactory === 'function'
     ? Reflect.apply(asyncFactory, source, []) as AsyncIterator<unknown>
     : Reflect.apply(syncFactory as (...args: never[]) => Iterator<unknown>, source, [])
@@ -1020,7 +1020,7 @@ function validateBinding(
   endpoint: string,
 ): ResolvedBinding {
   const original = originalOf(receiver)
-  const value = Reflect.get(original, 'typertRemote') as unknown
+  const value: unknown = Reflect.get(original, 'typertRemote')
   if (value === undefined) {
     throw new TypertGatewayError(
       'gateway/binding-invalid',
@@ -1052,11 +1052,11 @@ function readBinding(
       `Service ${JSON.stringify(serviceKey)} has an inconsistent typertRemote binding`,
     )
   }
-  return value as unknown as TypertGatewayBinding
+  return value as TypertGatewayBinding
 }
 
 function originalOf(receiver: object): object {
-  const original = Reflect.get(receiver, symbols.original) as unknown
+  const original: unknown = Reflect.get(receiver, symbols.original)
   return isObject(original) ? original : receiver
 }
 

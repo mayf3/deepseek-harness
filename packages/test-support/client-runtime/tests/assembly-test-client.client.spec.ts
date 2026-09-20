@@ -72,7 +72,7 @@ describe('TestClient (jsdom)', () => {
     onTestFinished(() => a.dispose())
     onTestFinished(() => b.dispose())
     const rename = async (client: TestClient): Promise<unknown> =>
-      (client.ctx as unknown as { remote: { session: { rename(request: unknown): Promise<unknown> } } }).remote.session.rename({ sessionId: 's', title: 't' })
+      (client.ctx as { remote: { session: { rename(request: unknown): Promise<unknown> } } }).remote.session.rename({ sessionId: 's', title: 't' })
     await expect(rename(a)).resolves.toEqual({ ok: true, value: { title: 'a', seq: 1 } })
     await expect(rename(b)).resolves.toEqual({ ok: true, value: { title: 'b', seq: 1 } })
     expect(mockA.log.calls('session/rename')).toHaveLength(1)

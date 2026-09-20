@@ -63,7 +63,7 @@ interface PendingHistory {
 export interface SessionOptions {
   /** Catalog-discovered address selecting non-activating subagent transport. */
   address?: SubagentAddress
-  /** Whether the exact direct parent Agent was live at the latest catalog read; absent before that read. */
+  /** Whether the exact direct parent Agent is available in Host summaries; absent until known. */
   parentAvailable?: boolean
   /**
    * First ACCEPTED prompt on a blank session (fires at most once, on the
@@ -552,13 +552,12 @@ export class Session implements SessionFace {
   }
 
   /**
-   * Blank-bit relay from the authoritative summary source (`session.list` and
-   * `api-session/added`). Monotone: once any signal (local first send,
-   * running flip, an earlier summary) cleared it, a stale true never
-   * re-blanks.
-   * @param blank - the summary's derived empty-log bit.
+   * Relay list blankness without overriding a started conversation established
+   * by the current projection, a local prompt, or running state.
+   * @param blank - whether the list or projection reports an unstarted conversation.
    */
   handleBlank(blank: boolean): void {
+    blank = blank && this.projections.values().sessionListMetadata?.blank !== false
     if (blank === this.blankBit) return
     if (blank && (this.promptAttempted || this.running)) return
     this.blankBit = blank

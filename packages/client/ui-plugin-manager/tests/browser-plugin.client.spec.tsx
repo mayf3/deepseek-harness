@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { Context, Service } from '@deepseek-ai/cordis'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -17,6 +17,7 @@ afterEach(cleanup)
 
 async function bench() {
   const ctx = new Context()
+  onTestFinished(async () => { await ctx.fiber.dispose() })
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
   ctx.provide('locale', locale)
@@ -32,6 +33,7 @@ async function bench() {
     pluginManager: {
       listBundles: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
       listPlugins: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
+      registries: vi.fn(() => Promise.resolve({ ok: true as const, value: { registry: null, fallbackRegistries: [], resolved: null } })),
     },
   })
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, remote }
@@ -82,6 +84,11 @@ describe('ui-plugin-manager browser plugin', () => {
     expect(b.slots.spec('plugins.bundle.config')).toMatchObject({ kind: 'keyed', scope: 'root' })
     expect(b.slots.spec('plugins.row.config')).toMatchObject({ kind: 'keyed', scope: 'root' })
     const face = (entry.inject as unknown as () => PluginManagerFace)()
+    const text = { en: 'Local tools', zh: '本地工具' }
+    expect(face.resolveText(text)).toBe('本地工具')
+    b.locale.setLocale('en')
+    expect(face.resolveText(text)).toBe('Local tools')
+    b.locale.setLocale('zh')
     expect(face.hooks.configLedger.getSnapshot()).toEqual({ items: [], bundles: new Set(), rows: new Set() })
     // A Host change before the first render is not a reason to read.
     b.remote.emit('plugin-manager/changed', [{ reason: 'install' }])

@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - 'button "Plan a small change: add" [disabled]'
+  - navigation "Session hierarchy": "Plan a small change: add"
   - text: Standard mode
   - button "More actions"
   - tablist:
@@ -11,7 +10,7 @@
 - text: "Plan a small change: add a --greeting flag to a CLI. Do not read or write any files. Call exit_plan_mode with a short plan of at most five bullet points. Once the plan is approved, reply with the single word DONE and stop. {{clock}}"
 - button "Copy"
 - button "1 tool call · 1 message" [expanded]
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Context injection runtime-context"
 - 'button "Think The user wants me to plan a small change to add a `--greeting` flag to a CLI. They explicitly told me not to read or write any files, and to call exit_plan_mode with a short plan. Let me do that directly."'
 - paragraph:
   - text: Since the user has explicitly asked me not to read or write any files and to go straight to planning, I'll proceed with
@@ -26,7 +25,6 @@
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"

@@ -181,7 +181,7 @@ interface MutateCall {
 
 /** The latest interrogation payload; fails the case when nothing was asked. */
 function lastProbe(discover: ReturnType<typeof vi.fn>): unknown {
-  const call = (discover.mock.calls as unknown as [string, Record<string, unknown>][]).at(-1)
+  const call = (discover.mock.calls as [string, Record<string, unknown>][]).at(-1)
   if (call === undefined) throw new Error('no interrogation was recorded')
   return { settingsNs: call[0], ...call[1] }
 }
@@ -1372,10 +1372,18 @@ describe('hand-declared providers', () => {
 
   it('creates with the chosen protocol and no display name', async () => {
     const { mutate, onClose } = mountCard()
+    const baseUrl = screen.getByLabelText<HTMLInputElement>(en.baseUrl)
+    const protocol = screen.getByLabelText(en.customApi)
+
+    expect(baseUrl.placeholder).toBe('https://gateway.example/v1')
+    fireEvent.change(protocol, { target: { value: 'openai-responses' } })
+    expect(baseUrl.placeholder).toBe('https://gateway.example/v1')
 
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'anthropic-messages' } })
+    fireEvent.change(baseUrl, { target: { value: 'https://acme.test/anthropic' } })
+    fireEvent.change(protocol, { target: { value: 'anthropic-messages' } })
+    expect(baseUrl.placeholder).toBe('https://gateway.example')
+    expect(baseUrl.value).toBe('https://acme.test/anthropic')
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
     fireEvent.click(screen.getByText(en.create))
@@ -1387,7 +1395,7 @@ describe('hand-declared providers', () => {
     // nothing ever sets. The with-key case is covered above.
     expect(firstMutate(mutate).ops[0]?.value).toEqual({
       api: 'anthropic-messages',
-      baseURL: 'https://acme.test/v1',
+      baseURL: 'https://acme.test/anthropic',
       models: [{ id: 'm' }],
     })
   })

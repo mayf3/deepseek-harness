@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Markdown image policy" [disabled]
+  - navigation "Session hierarchy": Markdown image policy
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
@@ -24,7 +23,6 @@
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"

@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - 'button "Using ONE run_code program: run" [disabled]'
+  - navigation "Session hierarchy": "Using ONE run_code program: run"
   - text: PTC mode
   - button "More actions"
   - button "Open right sidebar"
@@ -11,7 +10,7 @@
 - text: "Using ONE run_code program: run bash `echo CODE_ROUND_OK`, then read the file missing.txt catching its error in the program. Return an object with both outcomes. Then reply DONE and stop. {{clock}}"
 - button "Copy"
 - button "1 tool call" [expanded]
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Context injection runtime-context"
 - 'button "Think The user wants me to write a single `run_code` program that:"'
 - button "Code Run bash echo and catch missing file read"
 - button "Bash Echo CODE_ROUND_OK" [expanded]
@@ -27,7 +26,6 @@
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"

@@ -175,10 +175,10 @@ function bench(over?: BenchOptions) {
     useResource,
     useSessions: bindSnapshotSelector(createSnapshotStore<SessionListState>({
       ids: [], byId: {}, phase: 'ready',
-      subagentsByParent: {}, jobsBySession: {},
+      projectionsBySession: {}, jobsBySession: {},
     })),
     useWorkspaces: bindSnapshotSelector(createSnapshotStore({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
     })),
     useProjection: ((key: string, selector?: (v: unknown) => unknown) =>
       (selector ?? (v => v))(key === 'plan'
@@ -1305,9 +1305,9 @@ describe('machine pending lock', () => {
 })
 
 describe('decorations', () => {
-  /** The claim-token styled leaf (the transform's inline warn color). */
+  /** The claim-token styled leaf (the transform's inline accent color). */
   function tokenSpanOf(container: HTMLElement): HTMLElement | null {
-    return container.querySelector('[data-lexical-text][style*="warn-label"]')
+    return container.querySelector('[data-lexical-text][style*="business-primary"]')
   }
 
   it('claimed token styles the leading leaf and sets the blank-args hint variable', () => {

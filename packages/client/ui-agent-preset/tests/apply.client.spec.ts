@@ -74,6 +74,8 @@ const ROSTER_HIDDEN = {
 
 async function bench(options: {
   failSettingsUpdate?: boolean
+  selectGate?: Promise<void>
+  settingsRosterGate?: Promise<undefined>
 } = {}) {
   const ctx = new Context()
   // The host's answer, mutable so a spec can move the default the way the
@@ -87,6 +89,8 @@ async function bench(options: {
   const calls: string[] = []
   let savedDefault = 'standard'
   let selectionEnabled = true
+  let settingsSaved = false
+  const settingsRosterStarted = Promise.withResolvers<undefined>()
   // The row reads `describe` to learn whether this browser may write at all,
   // and its default write is the one op this spec records.
   const settings = {
@@ -112,6 +116,7 @@ async function bench(options: {
       ROSTER = !selectionEnabled
         ? ROSTER_HIDDEN
         : savedDefault === 'minimal' ? ROSTER_MOVED : ROSTER_ONE
+      settingsSaved = true
       return Promise.resolve({ ok: true as const, value: {} })
     },
     openAgentPresetDirectory: (agentPreset: string) => {
@@ -126,7 +131,14 @@ async function bench(options: {
   // `inject`, and the property is what `ctx.remote.agentPresets` reads,
   // because the double is a plain provided object rather than a Service.
   const agentPresets = {
-    list: () => { calls.push('list'); return Promise.resolve(ROSTER) },
+    list: () => {
+      calls.push('list')
+      if (settingsSaved) {
+        settingsRosterStarted.resolve(undefined)
+        if (options.settingsRosterGate !== undefined) return options.settingsRosterGate.then(() => ROSTER)
+      }
+      return Promise.resolve(ROSTER)
+    },
     read: () => Promise.resolve({
       ok: true as const,
       value: { agentPreset: 'standard', trust: 'system', content: '' },
@@ -141,13 +153,13 @@ async function bench(options: {
     deletePreset: () => Promise.resolve({ ok: true as const, value: undefined }),
     select: (_agentId: SessionId, agentPreset: string) => {
       calls.push(`select:${agentPreset}`)
-      return Promise.resolve({ ok: true as const, value: agentPreset })
+      return Promise.resolve(options.selectGate).then(() => ({ ok: true as const, value: agentPreset }))
     },
   }
   ctx.provide('remote.agentPresets', agentPresets as never)
   Object.assign(remote, { agentPresets })
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote, settingsRosterStarted: settingsRosterStarted.promise }
 }
 
 function declareRoot(slots: SlotRegistry): () => void {
@@ -234,10 +246,70 @@ function sessionsDouble(ctx: Context, state: {
     }),
     /** Push a list change the way the runtime's store does. */
     notify: () => { for (const fn of listeners) fn() },
+    listenerCount: () => listeners.size,
   }
 }
 
+async function settingsWithoutChip(initialPreset: string, settingsRosterGate?: Promise<undefined>) {
+  const b = await bench(settingsRosterGate === undefined ? {} : { settingsRosterGate })
+  declareRoot(b.slots)
+  const sessions = sessionsDouble(b.ctx, {
+    current: 'blank',
+    byId: { blank: { id: 'blank', blank: true, projectionValues: { agentPreset: initialPreset } } },
+  })
+  const bindingOwner = b.ctx.plugin({ apply() {} })
+  await bindingOwner.await()
+  sessions.binding('blank')!.ctx = bindingOwner.ctx
+  b.ctx.provide('sessions', sessions as never)
+  const feature = b.ctx.plugin({ inject: [...inject], apply })
+  await feature.await()
+  const section = (b.slots.entries('settings.section')[0]!
+    .inject as unknown as () => AgentPresetSectionInjected)()
+  await section.load()
+  expect(b.slots.entries('conversation.hero.agentPreset')).toHaveLength(0)
+  return { ...b, bindingOwner, feature, section, sessions }
+}
+
 describe('ui-agent-preset apply', () => {
+  const settingsActions = [
+    { action: 'makeDefault', initial: 'standard', selected: 'minimal', run: (section: AgentPresetSectionInjected) => section.makeDefault('minimal') },
+    { action: 'setPickerVisible', initial: 'minimal', selected: 'standard', run: (section: AgentPresetSectionInjected) => section.setPickerVisible(false) },
+  ]
+
+  it.each(settingsActions)('synchronizes $action before the chip mounts', async ({ initial, selected, run }) => {
+    const b = await settingsWithoutChip(initial)
+    try {
+      await run(b.section)
+      expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([`select:${selected}`])
+      expect(b.sessions.listenerCount()).toBe(1)
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
+    expect(b.sessions.listenerCount()).toBe(0)
+  })
+
+  it.each(settingsActions.flatMap(action => (['feature', 'binding'] as const).map(owner => ({ ...action, owner }))))(
+    'does not finish $action into a disposed $owner before the chip mounts',
+    async ({ initial, run, owner }) => {
+      const saved = Promise.withResolvers<undefined>()
+      const b = await settingsWithoutChip(initial, saved.promise)
+      const operation = run(b.section)
+      try {
+        expect(b.sessions.listenerCount()).toBe(1)
+        await b.settingsRosterStarted
+        await (owner === 'feature' ? b.feature : b.bindingOwner).dispose()
+        expect(b.sessions.listenerCount()).toBe(0)
+        saved.resolve(undefined)
+        await operation
+        expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([])
+      } finally {
+        saved.resolve(undefined)
+        await operation
+        await b.ctx.fiber.dispose()
+      }
+    },
+  )
+
   it('keeps the host Loader entry inert', () => {
     expect(hostApply).not.toThrow()
   })
@@ -471,6 +543,58 @@ describe('ui-agent-preset apply', () => {
     sessions.notify()
     await first.load()
     await ctx.fiber.dispose()
+  })
+
+  it.each(['feature', 'binding'] as const)('tracks bound preset changes until its %s owner stops', async (disposedOwner) => {
+    const selection = Promise.withResolvers<undefined>()
+    const { ctx, slots, calls } = await bench({ selectGate: selection.promise })
+    try {
+      declareRoot(slots)
+      declareConversation(slots)
+      ctx.provide('conversation', {} as never)
+      const state = {
+        current: 's1',
+        byId: { s1: { id: 's1', blank: true, projectionValues: {} as { agentPreset?: string } } },
+      }
+      const sessions = sessionsDouble(ctx, state)
+      const bindingOwner = ctx.plugin({ apply() {} })
+      await bindingOwner.await()
+      sessions.binding('s1')!.ctx = bindingOwner.ctx
+      ctx.provide('sessions', sessions as never)
+      ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
+      const feature = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply })
+      await feature.await()
+      const seat = (slots.entries('conversation.hero.agentPreset')[0]!
+        .inject as unknown as (sessionId: SessionId) => AgentPresetSeatInjected)(SessionId('s1'))
+      await seat.load()
+      expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('')
+
+      state.byId.s1.projectionValues.agentPreset = 'standard'
+      sessions.notify()
+      expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
+      state.byId.s1.projectionValues.agentPreset = 'minimal'
+      sessions.notify()
+      expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal')
+      expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
+
+      const selecting = seat.select('standard')
+      expect(seat.hooks.agentPresetSeat.getSnapshot().busy).toBe(true)
+      sessions.notify()
+      sessions.notify()
+      expect(calls.filter(call => call.startsWith('select:'))).toEqual(['select:standard'])
+      selection.resolve(undefined)
+      await selecting
+      state.byId.s1.projectionValues.agentPreset = 'standard'
+      sessions.notify()
+
+      await (disposedOwner === 'feature' ? feature : bindingOwner).dispose()
+      state.byId.s1.projectionValues.agentPreset = 'minimal'
+      sessions.notify()
+      expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
+    } finally {
+      selection.resolve(undefined)
+      await ctx.fiber.dispose()
+    }
   })
 
   it('does not sync a blank Session that is not retained by the main view', async () => {
@@ -822,6 +946,102 @@ describe('ui-agent-preset apply', () => {
 })
 
 describe('AgentPresetSeatController reconciliation', () => {
+  it.each([
+    { refuseFirst: false, refuseLatest: false },
+    { refuseFirst: false, refuseLatest: true },
+    { refuseFirst: true, refuseLatest: false },
+    { refuseFirst: true, refuseLatest: true },
+  ])('waits for a newer Settings selection (first refused: $refuseFirst, latest refused: $refuseLatest)', async ({ refuseFirst, refuseLatest }) => {
+    const refusal = { ok: false as const, error: new RemoteError('gateway/internal', 'selection refused', {}) }
+    type Outcome = { ok: true; value: string } | typeof refusal
+    const requests: { preset: string; outcome: ReturnType<typeof Promise.withResolvers<Outcome>> }[] = []
+    const session = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
+    const controller = new AgentPresetSeatController({
+      remote: { agentPresets: { select: (_id: SessionId, preset: string) => {
+        const outcome = Promise.withResolvers<Outcome>()
+        requests.push({ preset, outcome })
+        return outcome.promise
+      } } },
+    } as never, () => session)
+    const first = controller.select('minimal')
+    let settingsSettled = false
+    const settings = controller.syncBlankSession(session.id, 'cordis').finally(() => { settingsSettled = true })
+    await controller.apply()
+    expect(requests.map(request => request.preset)).toEqual(['minimal'])
+    requests[0]!.outcome.resolve(refuseFirst ? refusal : { ok: true, value: 'minimal' })
+    await first
+    expect(requests.map(request => request.preset)).toEqual(['minimal', 'cordis'])
+    expect(settingsSettled).toBe(false)
+    await controller.apply()
+    expect(requests).toHaveLength(2)
+    requests[1]!.outcome.resolve(refuseLatest ? refusal : { ok: true, value: 'cordis' })
+    await expect(settings).resolves.toBe(refuseLatest ? 'selection refused' : undefined)
+    expect(controller.store.getSnapshot()).toMatchObject({
+      current: refuseLatest ? 'standard' : 'cordis', busy: false,
+      error: refuseLatest ? 'selection refused' : null,
+    })
+  })
+
+  it.each([false, true])('preserves a stage created while an earlier selection is pending (refused: %s)', async (refused) => {
+    const refusal = { ok: false as const, error: new RemoteError('gateway/internal', 'selection refused', {}) }
+    const firstReply = Promise.withResolvers<{ ok: true; value: string } | typeof refusal>()
+    const select = vi.fn((_id: SessionId, preset: string) => preset === 'minimal'
+      ? firstReply.promise
+      : Promise.resolve({ ok: true as const, value: preset }))
+    const controller = new AgentPresetSeatController({ remote: { agentPresets: { select } } } as never,
+      () => ({ id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }))
+    const first = controller.select('minimal')
+    controller.stage('cordis', true)
+    await controller.apply()
+    expect(select).toHaveBeenCalledOnce()
+    firstReply.resolve(refused ? refusal : { ok: true, value: 'minimal' })
+    await first
+    expect(controller.store.getSnapshot().current).toBe('cordis')
+    await controller.apply()
+    expect(select.mock.calls.map(call => call[1])).toEqual(['minimal', 'cordis'])
+  })
+
+  it.each([false, true])('serializes Settings choices and preserves each refusal (middle refused: %s)', async (refused) => {
+    const refusal = { ok: false as const, error: new RemoteError('gateway/internal', 'selection refused', {}) }
+    type Outcome = { ok: true; value: string } | typeof refusal
+    const requests: { preset: string; outcome: ReturnType<typeof Promise.withResolvers<Outcome>> }[] = []
+    const session = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
+    const controller = new AgentPresetSeatController({
+      remote: { agentPresets: { select: (_id: SessionId, preset: string) => {
+        const outcome = Promise.withResolvers<Outcome>()
+        requests.push({ preset, outcome })
+        return outcome.promise
+      } } },
+    } as never, () => session)
+    const first = controller.select('minimal')
+    const second = controller.syncBlankSession(session.id, 'cordis')
+    const third = controller.syncBlankSession(session.id, 'coding')
+    expect(requests.map(request => request.preset)).toEqual(['minimal'])
+    requests[0]!.outcome.resolve({ ok: true, value: 'minimal' })
+    await first
+    expect(requests.map(request => request.preset)).toEqual(['minimal', 'cordis'])
+    requests[1]!.outcome.resolve(refused ? refusal : { ok: true, value: 'cordis' })
+    await expect(second).resolves.toBe(refused ? 'selection refused' : undefined)
+    expect(requests.map(request => request.preset)).toEqual(['minimal', 'cordis', 'coding'])
+    requests[2]!.outcome.resolve({ ok: true, value: 'coding' })
+    await third
+    expect(controller.store.getSnapshot()).toMatchObject({ current: 'coding', busy: false })
+  })
+
+  it('does not apply a waiting Settings choice to a replacement binding', async () => {
+    const reply = Promise.withResolvers<{ ok: true; value: string }>()
+    const select = vi.fn(() => reply.promise)
+    let current = { id: SessionId('first'), blank: true, projectionValues: { agentPreset: 'standard' } }
+    const controller = new AgentPresetSeatController({ remote: { agentPresets: { select } } } as never, () => current)
+    const first = controller.select('minimal')
+    const settings = controller.syncBlankSession(current.id, 'cordis')
+    current = { ...current, id: SessionId('replacement') }
+    reply.resolve({ ok: true, value: 'minimal' })
+    await Promise.all([first, settings])
+    await controller.apply()
+    expect(select).toHaveBeenCalledExactlyOnceWith(SessionId('first'), 'minimal')
+  })
+
   it('does not capture a non-blank Session', () => {
     const controller = new AgentPresetSeatController({} as never, () => ({
       id: SessionId('started'), blank: false,

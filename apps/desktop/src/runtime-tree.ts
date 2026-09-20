@@ -128,7 +128,7 @@ export function writeDesktopRuntime(
   const sharedPackages = [...new Set(sharedNames)].sort().map((name) => {
     if (!PACKAGE_NAME.test(name)) throw new Error(`desktop runtime: invalid shared package ${name}`)
     const path = `node_modules/${name}`
-    const manifest = JSON.parse(readFileSync(join(runtimePath(root, path), 'package.json'), 'utf8')) as unknown
+    const manifest: unknown = JSON.parse(readFileSync(join(runtimePath(root, path), 'package.json'), 'utf8'))
     if (!record(manifest) || manifest.name !== name || typeof manifest.version !== 'string' || valid(manifest.version) === null) {
       throw new Error(`desktop runtime: invalid shared package manifest ${name}`)
     }

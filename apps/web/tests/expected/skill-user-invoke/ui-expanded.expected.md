@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "/user-invoke-demo @\"meeting notes.md\" an" [disabled]
+  - navigation "Session hierarchy": /user-invoke-demo @"meeting notes.md" an
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
@@ -13,14 +12,13 @@
 - text: and confirm the fixture wiring {{clock}}
 - button "Copy"
 - button "Thought for a while" [expanded]
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Context injection runtime-context"
 - button "Context injection user-invoke-demo"
 - paragraph: USER_INVOKE_REPLY acknowledged; following the injected skill.
 - button "Copy"
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
