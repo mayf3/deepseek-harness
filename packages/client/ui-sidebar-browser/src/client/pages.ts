@@ -1,10 +1,7 @@
-/** Assemble navigation providers and presentation adapters without platform branches in consumers. */
-import type { DesktopBrowserBridge } from '../types.ts'
+/** Assemble iframe navigation and presentation without platform branches in consumers. */
 import type { BrowserPage, BrowserPageOptions } from './browser/BrowserPage.ts'
 import { IframeImpl } from './browser/IframeImpl.ts'
-import { ElectronWebViewImpl } from './browser/ElectronWebViewImpl.ts'
 import { IframePresentation } from './view/IframePresentation.ts'
-import { ElectronWebviewPresentation } from './view/ElectronWebviewPresentation.ts'
 
 /**
  * Assemble an idle iframe provider and its DOM presentation.
@@ -18,22 +15,5 @@ export function createIframePage(options: BrowserPageOptions): BrowserPage {
     remounted: () => { frame.reload() },
   })
   const frame = new IframeImpl(options, presentation)
-  return { frame, presentation }
-}
-
-/**
- * Assemble an idle Electron provider; guest creation waits for mounting and navigation.
- * @param options - checkpoint and source-tab callbacks.
- * @param bridge - desktop-only transport.
- * @param workspace - storage account resolver.
- * @returns separate navigation and presentation faces.
- */
-export function createElectronPage(options: BrowserPageOptions, bridge: DesktopBrowserBridge,
-  workspace: (signal: AbortSignal) => Promise<string>): BrowserPage {
-  const presentation = new ElectronWebviewPresentation({
-    mounted: () => { frame.attach() },
-    unmounted: () => { frame.detach() },
-  })
-  const frame = new ElectronWebViewImpl(options, bridge, workspace, presentation)
   return { frame, presentation }
 }

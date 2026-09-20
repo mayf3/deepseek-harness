@@ -1,4 +1,4 @@
-/** Resolve CWD-keyed browser storage after the authoritative Workspace list has arrived. */
+/** Resolve CWD-keyed Electron storage after the authoritative Workspace list has arrived. */
 import type { WorkspaceSource } from '@deepseek-ai/dsh-api-workspace-controller/client'
 
 /**

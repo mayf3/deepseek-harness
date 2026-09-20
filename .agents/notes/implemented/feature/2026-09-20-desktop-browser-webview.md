@@ -18,7 +18,7 @@ The [stable Sidebar mounting decision](../architecture/2026-09-20-sidebar-retain
 
 - `BrowserController` owns address commands and recoverable presentation state. Native history stays in the guest; actual URL and title observations update the persisted address.
 - Controller registries are keyed by DSH Session, independently of presentation bindings. Rebinding replaces the store writer without recreating the page.
-- `pages.ts` composes a navigation provider and a presentation object. `ElectronWebViewImpl` owns guest leases and native navigation; `ElectronWebviewPresentation` creates the tag and attaches it inside the Sidebar-owned content container.
+- `electron/pages.ts` composes the Electron navigation provider and presentation object. `ElectronWebViewImpl` owns guest leases and native navigation; `ElectronWebviewPresentation` creates the tag and attaches it inside the Sidebar-owned content container.
 - The Desktop Browser type declares `keepMounted`. Sidebar retains its DOM ancestors across hiding and docking; CSS owns layout and clipping. Docking gestures disable guest pointer input, and body-local drop hints use normal stacking. A physical unmount cancels pending attachment and releases the guest; a later mount recreates it from the known address.
 - Tab occurrence cancellation, plugin unload and window destruction release guests. Guest crashes leave a retryable failure; Reload creates a new guest. Application restart offers the saved title and URL for explicit restoration; it creates no guest until the user restores or submits an address. Page memory and native history are not restored.
 
@@ -55,3 +55,5 @@ The Desktop toolbar has no sandbox-disable switch. The implementation adds no re
 Sidebar-owned stable ancestors preserve the page without Browser-owned geometry or occlusion handling. Hidden guests retain page memory and may continue network activity; there is no idle eviction policy. Persistent storage, selectable isolation scopes and permission-grant UI remain separate work. Temporary Workspace partitions are the current policy, not a promise that Workspace isolation always implies temporary storage.
 
 Focused tests cover native navigation error recovery, preload listener scoping and migrated iframe behavior. They do not establish real Electron attachment timing, overlap, focus, platform styling or storage isolation; those remain runtime verification gaps. No GUI recording accompanies the change. This implementation is not evidence that the complete browser security policy is ready for release.
+
+The package's Electron provider, presentation, page factory and Workspace storage resolver live in `src/client/electron/`. That directory is temporarily excluded from per-file coverage until a native Electron harness covers guest behavior; its unit tests still run. Shared Browser controllers, restoration UI, iframe code and Sidebar retention remain subject to the existing coverage requirements.

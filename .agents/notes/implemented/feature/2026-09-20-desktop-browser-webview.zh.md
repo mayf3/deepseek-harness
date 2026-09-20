@@ -18,7 +18,7 @@ Desktop 通过 `ElectronWebViewImpl` 使用 `<webview>`；Web 保留显式启用
 
 - `BrowserController` 负责地址命令与可恢复的展示状态。原生 history 留在 guest 内；真实 URL 与标题观察更新持久化地址。
 - 控制器注册表按 DSH Session 索引，不依赖呈现绑定的存活期。重新绑定只替换存储写入方，不重建页面。
-- `pages.ts` 组装导航提供方和呈现对象。`ElectronWebViewImpl` 负责 guest 租约与原生导航；`ElectronWebviewPresentation` 创建标签并挂载到 Sidebar 持有的内容容器内。
+- `electron/pages.ts` 组装 Electron 导航提供方和呈现对象. `ElectronWebViewImpl` 负责 guest 租约与原生导航; `ElectronWebviewPresentation` 创建标签并挂载到 Sidebar 持有的内容容器内.
 - Desktop Browser 类型声明 `keepMounted`。Sidebar 在隐藏和停靠切换时保留其 DOM 祖先，CSS 负责布局与裁剪。停靠手势期间禁用 guest 指针输入，Body 内的放置提示使用普通层叠。物理卸载会取消未完成的挂载并释放 guest，之后重新挂载时从已知地址重建。
 - tab occurrence 取消、插件卸载与窗口销毁会释放 guest。guest 崩溃留下可重试的失败状态；刷新创建新 guest。应用重启展示保存的标题与 URL，等待显式恢复；用户恢复或提交地址之前不创建 guest。不恢复页面内存或原生 history。
 
@@ -55,3 +55,5 @@ Desktop toolbar 没有关闭 sandbox 的开关。实现不增加远程调试端�
 Sidebar 持有的稳定祖先保留页面，无需 Browser 自行处理几何或遮挡。隐藏 guest 保留页面内存，也可能继续联网；当前没有空闲回收策略。持久化存储、可选择的隔离级别与权限授权 UI 留作独立工作。临时 Workspace partition 是当前策略，并不意味着 Workspace 隔离必然要求临时存储。
 
 定向测试覆盖原生导航错误恢复、preload 监听范围和已迁移的 iframe 行为。这些测试不能确认真实 Electron 的挂载时序、遮挡、焦点、平台样式或存储隔离；这些仍是运行时验证缺口。本次变更不附带 GUI 录像。此实现不构成完整浏览器安全策略已经可以发布的证据。
+
+包内的 Electron 提供方、呈现适配器、页面工厂与 Workspace 存储解析集中在 `src/client/electron/`. 在原生 Electron 测试环境覆盖 guest 行为之前, 该目录暂时不参与逐文件覆盖率门禁; 其单元测试仍然运行. 共享 Browser 控制器、恢复 UI、iframe 代码和 Sidebar 保活仍遵循现有覆盖率要求.
