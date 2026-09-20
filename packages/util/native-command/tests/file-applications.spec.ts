@@ -1,5 +1,6 @@
 /** File association results and explicit handler authorization at the native command adapter. */
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, onTestFinished } from 'vitest'
+import * as runner from '../src/runner.ts'
 import { nativeFileApplications, openNativeFileApplication } from '../src/file-applications.ts'
 
 const application = { id: '/Applications/Music.app', name: 'Music', default: true, icon: null }
@@ -34,4 +35,13 @@ describe('native file associations', () => {
     await expect(nativeFileApplications('/file.mp3', AbortSignal.abort(), { platform: 'darwin', run })).rejects.toThrow()
     expect(run).not.toHaveBeenCalled()
   })
+})
+
+
+it('uses the production command adapter and current platform when no override is supplied', async () => {
+  const run = vi.spyOn(runner, 'runNativeCommand').mockResolvedValue({ stdout: JSON.stringify([application]), stderr: '' })
+  onTestFinished(() => { run.mockRestore() })
+  expect(await nativeFileApplications('/file.mp3', signal)).toEqual(process.platform === 'darwin' ? [application] : [])
+  await openNativeFileApplication('/file.mp3', application.id, signal, { platform: 'darwin' })
+  expect(run).toHaveBeenLastCalledWith('open', ['-a', application.id, '/file.mp3'], signal)
 })
