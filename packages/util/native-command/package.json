@@ -21,12 +21,14 @@
     "./src/*": "./src/*",
     "./package.json": "./package.json",
     "./types": {
-      "types": "./lib/types/types.d.ts"
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
     }
   },
   "files": [
     "lib/index.js",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/types/types.js"
   ],
   "license": "MIT",
   "peerDependencies": {
