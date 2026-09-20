@@ -236,7 +236,7 @@ describe('ModelSelect reasoning effort', () => {
       expect(menu.style.top).toBe('12px')
       // Interactions inside the trigger subtree or the portaled card stay open.
       expect(fireEvent.mouseDown(menu)).toBe(true)
-      fireEvent.mouseDown(trigger)
+      expect(fireEvent.mouseDown(trigger)).toBe(false)
       fireEvent.blur(trigger, { relatedTarget: menu })
       expect(screen.getByRole('menu')).toBeTruthy()
       fireEvent.mouseDown(document.body)
@@ -278,7 +278,7 @@ describe('ModelSelect keyboard walk', () => {
     return select
   }
 
-  it.each(['model', 'effort'])('keeps focus through a mouse press on a %s row without selecting it', (pane) => {
+  it.each(['model', 'effort'])('prevents button mousedown defaults in the %s pane without selecting it', (pane) => {
     const select = mountOpen()
     const cell = screen.getByRole('menuitem', { name: pane === 'model' ? /^模型/ : /推理等级/ })
     expect(fireEvent.mouseDown(cell.firstElementChild!)).toBe(false)
@@ -287,7 +287,6 @@ describe('ModelSelect keyboard walk', () => {
     const focused = document.activeElement
     expect(fireEvent.mouseDown(rows[0]!.firstElementChild!)).toBe(false)
     fireEvent.mouseUp(screen.getByRole('menu'))
-    expect(document.activeElement).toBe(focused)
     expect(select).not.toHaveBeenCalled()
     fireEvent.keyDown(focused!, { key: 'Escape' })
     expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: pane === 'model' ? /^模型/ : /推理等级/ }))
@@ -349,8 +348,6 @@ describe('ModelSelect keyboard walk', () => {
       t={t}
     />)
     const trigger = screen.getByRole('button', { name: /选择模型/ })
-    // A real click focuses the trigger first; jsdom's does not.
-    trigger.focus()
     fireEvent.click(trigger)
     expect(fireEvent.keyDown(trigger, { key: 'Tab' })).toBe(false)
     // The root pane's first cell carries the current selection.
@@ -384,6 +381,7 @@ describe('ModelSelect keyboard walk', () => {
   })
 
   it('keeps the card navigable when a pane has no rows, and leaves a retry its Tab', () => {
+    const load = vi.fn()
     const directory = createSnapshotStore<ModelDirectoryState>(state({
       groups: [], failures: [], status: 'error', error: 'catalog down',
     }))
@@ -391,13 +389,11 @@ describe('ModelSelect keyboard walk', () => {
       locked={false}
       available
       directory={directory}
-      load={vi.fn()}
+      load={load}
       select={vi.fn().mockResolvedValue({ ok: true, value: undefined })}
       t={t}
     />)
     const trigger = screen.getByRole('button', { name: /选择模型/ })
-    // A real click focuses the trigger first; jsdom's does not.
-    trigger.focus()
     fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
     // No rows to hand the keyboard to: the trigger keeps it, so the card's
@@ -405,6 +401,10 @@ describe('ModelSelect keyboard walk', () => {
     expect(document.activeElement).toBe(trigger)
 
     const retry = screen.getByRole('button', { name: '重试' })
+    expect(fireEvent.mouseDown(retry)).toBe(false)
+    fireEvent.click(retry)
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('menu')).toBeTruthy()
     retry.focus()
     // A control that is not a row keeps the browser's traversal.
     expect(fireEvent.keyDown(retry, { key: 'Tab' })).toBe(true)

@@ -6,9 +6,9 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Page, Request } from 'playwright'
 import { chromium, webkit } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished } from 'vitest'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
@@ -134,12 +134,38 @@ describe.skipIf(MODE === 'record').each([
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('opens from the pointer with keyboard focus and closes from the trigger in every pane', async () => {
+    onTestFailed(() => saveFailureShot(page, `web-e2e-model-trigger-${engine.name()}`))
+    const trigger = page.getByRole('button', { name: /^选择模型/ })
+    const menu = page.getByRole('menu')
+    for (const pane of ['root', 'model', 'effort']) {
+      await page.locator('[data-composer-input][contenteditable="true"]').focus()
+      await trigger.click()
+      await expect.poll(() => trigger.evaluate(element => element === document.activeElement)).toBe(true)
+      if (pane === 'root') {
+        await page.keyboard.press('ArrowDown')
+        await expect.poll(() => page.getByRole('menuitem', { name: /^模型/ })
+          .evaluate(element => element === document.activeElement)).toBe(true)
+      } else {
+        await page.getByRole('menuitem', { name: pane === 'model' ? /^模型/ : /推理等级/ }).click()
+        await expect.poll(() => page.locator('[role="menuitemradio"][aria-checked="true"]')
+          .evaluate(element => element === document.activeElement)).toBe(true)
+      }
+      await trigger.click()
+      await menu.waitFor({ state: 'detached' })
+      await expect.poll(() => trigger.evaluate(element => element === document.activeElement)).toBe(true)
+    }
+    expect(tripwire.pageErrors).toEqual([])
+  })
+
   it('selects model and effort by mouse and keeps keyboard control after cancelled or rejected clicks', async () => {
     onTestFailed(() => saveFailureShot(page, `web-e2e-model-pointer-${engine.name()}`))
     let selections = 0
-    page.on('request', (request) => {
+    const countSelection = (request: Request): void => {
       if (new URL(request.url()).pathname.endsWith('/session/selectModel')) selections++
-    })
+    }
+    page.on('request', countSelection)
+    onTestFinished(() => { page.off('request', countSelection) })
     const trigger = page.getByRole('button', { name: /^选择模型/ })
     const menu = page.getByRole('menu')
     await trigger.click()
@@ -152,12 +178,13 @@ describe.skipIf(MODE === 'record').each([
     await target.getByText('Acme Swift', { exact: true }).hover()
     await page.mouse.down()
     try {
-      expect(await menu.count()).toBe(1)
-      expect(await current.evaluate(element => element === document.activeElement)).toBe(true)
+      await expect.poll(() => menu.count()).toBe(1)
+      await expect.poll(() => current.evaluate(element => element === document.activeElement)).toBe(true)
       await page.getByText('Acme Gateway', { exact: true }).hover()
     } finally {
       await page.mouse.up()
     }
+    // Later selection counts also include any request from this cancelled press.
     expect(selections).toBe(0)
     await page.keyboard.press('ArrowDown')
     await expect.poll(() => target.evaluate(element => element === document.activeElement)).toBe(true)
@@ -198,9 +225,9 @@ describe.skipIf(MODE === 'record').each([
     await page.getByRole('alert').waitFor()
     expect(selections).toBe(3)
     await compareOrRefreshGolden(POINTER_EXPECTED, await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd), MODE)
-    expect(await trigger.evaluate(element => element === document.activeElement)).toBe(true)
+    await expect.poll(() => trigger.evaluate(element => element === document.activeElement)).toBe(true)
     await page.keyboard.press('Tab')
-    expect(await target.evaluate(element => element === document.activeElement)).toBe(true)
+    await expect.poll(() => target.evaluate(element => element === document.activeElement)).toBe(true)
     await page.keyboard.press('ArrowUp')
     await expect.poll(() => current.evaluate(element => element === document.activeElement)).toBe(true)
     await page.keyboard.press('Escape')
