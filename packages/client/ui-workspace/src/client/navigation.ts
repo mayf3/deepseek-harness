@@ -39,7 +39,8 @@ export interface UiWorkspace {
    * @param workspaceId - target Workspace.
    * @param beforeOpen - optional synchronous preparation for the selected Session, skipped after supersession.
    * @returns completion; a superseded request may create a Session but does not open it.
-   * @throws when the Session cannot be created; the failure is also shown through the Workspace notice.
+   * @throws on failure; a refused creation is also shown through the Workspace
+   * notice unless a later navigation or disposal superseded the request.
    */
   openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>
   /**
@@ -205,9 +206,9 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     try {
       sessionId = await this.connectWorkspace(workspaceId)
     } catch (error: unknown) {
-      // The user asked for this Session, so the refusal is theirs to read;
-      // startup restoration goes through connectWorkspace directly and stays quiet.
-      this.notify({ kind: 'createFailed', message: creationFailureMessage(error) })
+      // Reported here, not in connectWorkspace: startup restoration calls that
+      // directly and stays console-only.
+      if (!navigation.aborted) this.notify({ kind: 'createFailed', message: creationFailureMessage(error) })
       throw error
     }
     if (navigation.aborted) return
@@ -410,8 +411,9 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 }
 
 /**
- * The Session Controller's creation failure `error` is, or undefined. Client
- * plugin bundles do not share error-class identity, so the name decides.
+ * `error` as the Session Controller's creation failure, or undefined when it
+ * is not one. Client plugin bundles do not share error-class identity, so the
+ * name decides.
  */
 function sessionCreateErrorOf(error: unknown): SessionCreateError | undefined {
   return error instanceof Error && error.name === 'SessionCreateError' ? error as SessionCreateError : undefined

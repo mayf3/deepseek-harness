@@ -3,7 +3,8 @@
  * One notice is visible at a time; a parent rerender does not extend its hold.
  */
 import { IconWarningOutlineRegular, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { RowToastProps } from '../contract/slots.ts'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
+import type { RowToastProps, RowToastState } from '../contract/slots.ts'
 
 /**
  * Hold for the notices that take longer to read than a one-line warning: the
@@ -50,16 +51,28 @@ export function RowActionToast({ useToast, dismissToast, undoArchive, showArchiv
       />
     )
   }
-  const text = toast.kind === 'pinFailed'
-    ? t('toast.pinFailed')
-    : toast.kind === 'unpinFailed' ? t('toast.unpinFailed')
-      : toast.kind === 'defaultWorkspaceFailed' ? t('defaultWorkspace.failed') : t('toast.archivedNotOpenable')
   return (
     <Toast
       key={`toast-${String(toast.seq)}`}
-      text={text}
+      text={plainNoticeText(toast, t)}
       icon={<IconWarningOutlineRegular />}
       onDone={dismissToast}
     />
   )
+}
+
+/** The copy of one plain warning, keyed by the notice kind the union closes over. */
+function plainNoticeText(
+  toast: Exclude<RowToastState, { kind: 'archived' | 'createFailed' }>,
+  t: RowToastProps['t'],
+): string {
+  switch (toast.kind) {
+    case 'pinFailed': return t('toast.pinFailed')
+    case 'unpinFailed': return t('toast.unpinFailed')
+    case 'defaultWorkspaceFailed': return t('defaultWorkspace.failed')
+    case 'archivedNotOpenable': return t('toast.archivedNotOpenable')
+    /* v8 ignore next 2 -- closed-union backstop; only reached if a notice kind is forged */
+    default:
+      return assertNever(toast)
+  }
 }

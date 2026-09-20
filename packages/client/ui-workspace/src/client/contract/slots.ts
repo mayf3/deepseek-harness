@@ -245,7 +245,11 @@ export type RowToast =
   | { kind: 'unpinFailed' }
   | { kind: 'archivedNotOpenable' }
   | { kind: 'defaultWorkspaceFailed' }
-  /** An explicit New Session request the Host refused; `message` is the failure in the Host's own words, untranslated. */
+  /**
+   * An explicit New Session request that failed. `message` is untranslated:
+   * a Host refusal as `code: message` — the stable code stays in the copy so
+   * a report can be searched by it — and any other failure's own message.
+   */
   | { kind: 'createFailed'; message: string }
 
 /** The notice on display; `seq` keys remounts so a repeated notice restarts its hold. */

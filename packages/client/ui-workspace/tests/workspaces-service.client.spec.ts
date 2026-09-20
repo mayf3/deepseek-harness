@@ -490,6 +490,18 @@ describe('UiWorkspaceService', () => {
     }
   })
 
+  it.each(['disposal', 'a later navigation'] as const)('keeps a creation refused after %s silent', async (kind) => {
+    const b = bench({ workspaces: workspaceState([workspace('a')]) })
+    const created = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValueOnce(created.promise)
+    const pending = b.uiWorkspace.openWorkspace(wid('a'))
+    if (kind === 'disposal') await b.ctx.fiber.dispose()
+    else b.uiWorkspace.openSession(sid('elsewhere'))
+    created.reject(new Error('late refusal'))
+    await expect(pending).rejects.toThrow('late refusal')
+    expect(b.notify).not.toHaveBeenCalled()
+  })
+
   it('ignores a rejected startup selection and stale catalog callbacks after disposal', async () => {
     const created = Promise.withResolvers<SessionId>()
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
