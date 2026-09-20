@@ -1,6 +1,6 @@
 import type { ViewTab } from './contract/views.ts'
 
-/** Chat remains available when developer tools are disabled. */
+/** Fallback View selected when no stored preference resolves to a registered View. */
 export const DEFAULT_VIEW_ID = 'chat'
 
 /** The one View the Developer tools preference gates; other Views stay registered by their owners. */

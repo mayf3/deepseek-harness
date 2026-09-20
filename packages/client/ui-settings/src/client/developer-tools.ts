@@ -3,7 +3,7 @@ import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-c
 import type { DeveloperToolsSettings } from '../developer-tools-settings.ts'
 import type { SettingsScope } from './settings-contract.ts'
 
-/** Shared preference; no accepted value means developer tools are enabled. */
+/** Shared preference; Host-backed features stay disabled until an accepted value arrives. */
 export class DeveloperToolsPreference {
   /** Accepted enablement, observable through renderer-bound hooks. */
   readonly enabled: ObservableSnapshot<boolean>
@@ -14,7 +14,7 @@ export class DeveloperToolsPreference {
    */
   constructor(private readonly scope: SettingsScope<DeveloperToolsSettings>) {
     this.enabled = scope.getSnapshot().mode === 'memory' ? this.local : {
-      getSnapshot: () => scope.getSnapshot().value?.enabled ?? true,
+      getSnapshot: () => scope.getSnapshot().value?.enabled ?? false,
       subscribe: (listener) => {
         let previous = this.enabled.getSnapshot()
         return scope.subscribe(() => {

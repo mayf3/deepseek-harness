@@ -17,6 +17,8 @@ import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
+const translations: ReadonlyMap<string, string> = new Map(Object.entries(en))
+
 const READY: AgentPresetSectionState = {
   status: 'ready',
   error: null,
@@ -33,6 +35,10 @@ const READY: AgentPresetSectionState = {
   pendingDelete: null,
   deleting: false,
   revealedPaths: {},
+}
+
+function unusedHook(): never {
+  throw new Error('This section does not read global slot sources')
 }
 
 /**
@@ -63,12 +69,18 @@ function renderSection(
     makeDefault: vi.fn(() => Promise.resolve()),
     setPickerVisible: vi.fn(() => Promise.resolve()),
   }
-  const props = {
+  const props: AgentPresetSectionProps = {
     ...actions,
+    usePanelInfo: unusedHook,
+    useSessions: unusedHook,
+    useSessionStatus: unusedHook,
+    useSessionRetainInfo: unusedHook,
+    useWorkspaces: unusedHook,
+    useResource: unusedHook,
     useAgentPresetSection: bindSnapshotSelector(store),
     useDeveloperTools: bindSnapshotSelector(createSnapshotStore(options.developerTools ?? true)),
-    t: (key: keyof typeof en) => en[key],
-  } as unknown as AgentPresetSectionProps
+    t: key => translations.get(key) ?? key,
+  }
   render(<AgentPresetSection {...props} />)
   return actions
 }
@@ -356,15 +368,8 @@ describe('the preset list', () => {
   })
 
   it('renders nothing when the deployment composes no presets', () => {
-    const { container } = render(<AgentPresetSection {...({
-      useDeveloperTools: bindSnapshotSelector(createSnapshotStore(true)),
-      useAgentPresetSection: bindSnapshotSelector(
-        createSnapshotStore<AgentPresetSectionState>({ ...READY, status: 'unavailable', rows: [] })),
-      t: (key: keyof typeof en) => en[key],
-      load: vi.fn(() => Promise.resolve()),
-    } as unknown as AgentPresetSectionProps)} />)
-
-    expect(container.firstChild).toBeNull()
+    renderSection({ status: 'unavailable', rows: [] })
+    expect(screen.queryByRole('heading')).toBeNull()
   })
 
   it('offers a retry when the roster could not be read', () => {

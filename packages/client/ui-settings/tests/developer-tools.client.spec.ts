@@ -39,6 +39,39 @@ describe('developer tools settings', () => {
     expect(ctx.settingsScope.developerTools.enabled.getSnapshot()).toBe(false)
   })
 
+  it.each([false, true])('withholds features during a delayed Host read before accepting %s', async (enabled) => {
+    const ctx = new Context()
+    const accepted = { ok: true, value: {
+      writable: true, hasDocument: true, namespaces: [{
+        ns: DEVELOPER_TOOLS_NAMESPACE,
+        schema: DeveloperToolsSettingsSchema.toJSON(),
+        value: { enabled }, revision: 1, applies: 'live', secrets: [],
+      }],
+    } }
+    const pending = Promise.withResolvers<typeof accepted>()
+    onTestFinished(async () => { pending.resolve(accepted); await ctx.fiber.dispose() })
+    new TestRemote(ctx, { settings: { describe: () => pending.promise } })
+    await ctx.plugin({ inject, apply: clientApply }).await()
+    const preference = ctx.settingsScope.developerTools
+    const changed = vi.fn()
+    const dispose = preference.enabled.subscribe(changed)
+    onTestFinished(dispose)
+    expect(preference.enabled.getSnapshot()).toBe(false)
+    pending.resolve(accepted)
+    await ctx.settingsScope.describe().ensure()
+    expect(preference.enabled.getSnapshot()).toBe(enabled)
+    expect(changed).toHaveBeenCalledTimes(enabled ? 1 : 0)
+  })
+
+  it('keeps features disabled when the initial Host read fails', async () => {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    new TestRemote(ctx, { settings: { describe: () => Promise.reject(new Error('disconnected')) } })
+    await ctx.plugin({ inject, apply: clientApply }).await()
+    await ctx.settingsScope.describe().ensure()
+    expect(ctx.settingsScope.developerTools.enabled.getSnapshot()).toBe(false)
+  })
+
   it('shares one remote-browser preference across consumers and disposes it with the plugin', async () => {
     const ctx = new Context()
     onTestFinished(() => ctx.fiber.dispose())
@@ -74,15 +107,15 @@ describe('developer tools settings', () => {
     expect(ctx.settings.describe().map(row => row.ns)).not.toContain(DEVELOPER_TOOLS_NAMESPACE)
   })
 
-  it('stays on until accepted settings arrive, then follows a stored false and external changes', async () => {
+  it('stays off until accepted settings arrive, then follows a stored false and external changes', async () => {
     const host = stubSettingsScope<DeveloperToolsSettings>()
     const preference = new DeveloperToolsPreference(host.scope)
-    expect(preference.enabled.getSnapshot()).toBe(true)
+    expect(preference.enabled.getSnapshot()).toBe(false)
     const notify = vi.fn()
     const dispose = preference.enabled.subscribe(notify)
     host.publish({ status: 'ready', value: { enabled: false } })
     expect(preference.enabled.getSnapshot()).toBe(false)
-    expect(notify).toHaveBeenCalledOnce()
+    expect(notify).not.toHaveBeenCalled()
     await preference.setEnabled(true)
     expect(host.set).toHaveBeenCalledWith('enabled', true)
     host.publish({ value: { enabled: true } })
@@ -115,9 +148,16 @@ it('ignores host revisions that do not change enablement', () => {
   const notify = vi.fn()
   const dispose = preference.enabled.subscribe(notify)
   host.publish({ revision: 1 })
-  host.publish({ value: { enabled: true } })
-  expect(notify).not.toHaveBeenCalled()
   host.publish({ value: { enabled: false } })
+  expect(notify).not.toHaveBeenCalled()
+  host.publish({ value: { enabled: true } })
   expect(notify).toHaveBeenCalledOnce()
   dispose()
+})
+
+it('keeps an unavailable Host namespace disabled', () => {
+  const host = stubSettingsScope<DeveloperToolsSettings>()
+  const preference = new DeveloperToolsPreference(host.scope)
+  host.publish({ status: 'unavailable' })
+  expect(preference.enabled.getSnapshot()).toBe(false)
 })
