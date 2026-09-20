@@ -573,13 +573,13 @@ class ClientStreamHandle implements RemoteStreamHandle<unknown, unknown> {
     this.generation.abort(new Error(`client api: ${this.endpoint} stream disposed`))
   }
 
-  [Symbol.asyncIterator](): AsyncGenerator<unknown> {
+  [Symbol.asyncIterator](): AsyncGenerator {
     if (this.consumed) throw new Error(`client api: ${this.endpoint} stream has one consumer`)
     this.consumed = true
     return this.iterate()
   }
 
-  private async *iterate(): AsyncGenerator<unknown> {
+  private async *iterate(): AsyncGenerator {
     try {
       while (true) {
         const next = await (this.primed ?? this.downlink.next())

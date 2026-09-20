@@ -2279,7 +2279,10 @@ describe('Client Typert API', () => {
     })
     ctx.set('connection', undefined)
     expect(() => ctx.remote.probe.watch('offline')).toThrow('probe/watch has no active Connection')
+    // A method function read before the withdrawal keeps its mount token and refuses afterwards.
+    const retained = ctx.remote.probe.watch
     await secondDispose()
+    expect(() => retained('withdrawn')).toThrow('Remote method probe/watch is no longer mounted')
   })
 
   it('publishes a namespace only after every contributed method is installed', async () => {
@@ -2467,7 +2470,7 @@ describe('Client Typert API', () => {
       expect(mock.log.streams('probe/attach').map(open => open.args)).toEqual([[{ topic: 'alpha' }], [{ topic: 'beta' }]])
 
       // Arity is a runtime contract, so the topic is deliberately omitted through Reflect.
-      expect(() => Reflect.apply(ctx.remote.probe.attach, ctx.remote.probe, [])).toThrow(
+      expect(() => { Reflect.apply(ctx.remote.probe.attach, ctx.remote.probe, []) }).toThrow(
         'client api: probe/attach expected 1 business argument(s) plus an optional AbortSignal, got 0',
       )
       expect(call).not.toHaveBeenCalled()
@@ -2609,6 +2612,40 @@ describe('Remote stream client carrier lifecycle', () => {
         await client.close()
         vi.unstubAllGlobals()
       }
+    })
+  })
+
+  it('fails the downlink and cancels when an uplink iterable throws, and swallows a rejecting uplink return()', async () => {
+    await withFakeWebSocket('https://harness.example', async () => {
+      const client = new RemoteStreamMuxClient()
+      client.start()
+      const socket = FakeWebSocket.sockets[0]!
+      const exploding = (async function* (): AsyncGenerator<string> {
+        yield 'a'
+        throw new Error('uplink exploded')
+      })()
+      const pending = client.open('probe/attach', {}, new AbortController().signal, exploding)[Symbol.asyncIterator]().next()
+      await expect(pending).rejects.toThrow('uplink exploded')
+      expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'item', 'cancel'])
+
+      const returned = vi.fn(async (): Promise<IteratorResult<string>> => {
+        throw new Error('fixture release failure')
+      })
+      const stuck: AsyncIterable<string> = {
+        [Symbol.asyncIterator]: () => ({
+          next: () => new Promise<IteratorResult<string>>(() => {}),
+          return: returned,
+        }),
+      }
+      const abort = new AbortController()
+      const second = client.open('probe/attach', {}, abort.signal, stuck)[Symbol.asyncIterator]().next()
+      await vi.waitFor(() => { expect(socket.sent).toHaveLength(4) })
+      const reason = new Error('caller left')
+      abort.abort(reason)
+      await expect(second).rejects.toBe(reason)
+      await vi.waitFor(() => { expect(returned).toHaveBeenCalledOnce() })
+      expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'item', 'cancel', 'open', 'cancel'])
+      await client.close()
     })
   })
 

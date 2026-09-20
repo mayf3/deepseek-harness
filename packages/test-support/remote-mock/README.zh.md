@@ -73,7 +73,9 @@ mock.streams.fail('session/follow', new Error('gone'))
 await mock.streams.drained('session/follow')
 ```
 
-失败的流让消费方的下一次读取以给定的 `Error` reject。消费方取消（打开时的 signal 或 iterator 提前 `return()`）会中止 `StreamHandle.signal`、结束迭代而不抛错，并把该流记为 `cancelled`。
+失败的流让消费方的下一次读取以给定的 `Error` reject。消费方取消（打开时的 signal 或 iterator 提前 `return()`）会中止 `StreamHandle.signal`、结束迭代而不抛错，并把该流记为 `cancelled`。`StreamHandle.uplink` 是调用方经 `rpc.open` 随打开传入的上行 iterable，未传入时是立即结束的 iterable；上行不进入记录的 args。
+
+替代生成流方法的假实现返回生成方法所返回的 `RemoteStreamHandle`。`streamHandle(source)` 把一个 `AsyncIterable` 标注为该句柄，其 `send`、`end`、`dispose` 为空操作；`streamMethod<M>(generator)` 把按方法参数编写的 async generator 函数提升为方法自己的签名，供 `vi.fn<M>()` 与 `mockImplementation` 使用。
 
 ### 接上客户端
 
@@ -108,7 +110,7 @@ await mock.streams.drained('session/follow')
 | [`src/index.ts`](src/index.ts) | 公开面转出 |
 | [`src/remote-mock.ts`](src/remote-mock.ts) | `RemoteMock`：默认响应、原生 mock、Connection 分发、受控流与缺失响应检查；`ok` |
 | [`src/remote-proxy.ts`](src/remote-proxy.ts) | 命名空间／方法查找与生成映射的 mock 类型 |
-| [`src/streams.ts`](src/streams.ts) | `frames` / `openStream` 脚本与 `MockStream`（句柄 + `AsyncIterable`） |
+| [`src/streams.ts`](src/streams.ts) | `frames` / `openStream` 脚本、`streamHandle` / `streamMethod` 假实现标注，以及 `MockStream`（句柄 + `AsyncIterable`） |
 | [`src/log.ts`](src/log.ts) | 带共享 `seq` 计数器的日志 |
 | — | 不发布运行时不变量伴生件；本测试支持库不拥有任何生产事件流或可变进程状态，其行为由本包测试覆盖。 |
 

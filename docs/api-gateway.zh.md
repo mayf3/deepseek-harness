@@ -2,7 +2,7 @@
 
 [English](api-gateway.md) | 中文
 
-本文是 Typert API Gateway 的当前状态参考。它描述业务服务如何声明一元、流式与双工 Remote 方法、构建如何生成 Host 与 Client 约定，以及调用如何复用 Connection 的 RPC 与 `/api` 路由。会话事件、增量数据和其他流协议不属于本文范围；它们可以使用同一个 Connection，但不使用 Remote 方法描述符。
+本文是 Typert API Gateway 的当前状态参考。它描述业务服务如何声明一元与流式 Remote 方法、构建如何生成 Host 与 Client 约定，以及调用如何复用 Connection 的 RPC 与 `/api` 路由。会话事件、增量数据和其他流协议不属于本文范围；它们可以使用同一个 Connection，但不使用 Remote 方法描述符。
 
 ## 编程模型
 
@@ -55,7 +55,7 @@ export class GoalService extends TypertRemoteService {
 
 Remote 方法可以同步返回或返回 Promise。若需要协作式取消，Host 签名的最后一个参数必须是全局类型的 `signal: AbortSignal`；它记录在描述符中而不是进入 `args`，Client 生成的方法则接受最后一个可选的 `AbortSignal`。
 
-`@Remote({ mode: 'stream' })` 标记返回 `Iterable` 或 `AsyncIterable` 的方法：Gateway 校验每个产出的项，并经其多路复用的 `/api/remote.mux` WebSocket 或进程内载体投递，Client 生成的方法返回 `AsyncIterable`。`@Remote({ mode: 'duplex' })` 增加 Client 到 Host 的方向：Host 签名在可选的 `signal` 之前紧邻声明保留参数 `uplink: AsyncIterable<In>`，Client 生成的方法在同一位置接受 `AsyncIterable<In>`，Gateway 在 Host 方法读取之前用生成的 `In` codec 校验 Client 发送的每一项。与 `signal` 相同，`uplink` 记录在描述符中而不进入 `args`；帧、半关闭、取消与 inbox 上限的约定由 [Gateway README](../packages/api/gateway/README.zh.md) 拥有。
+`@Remote({ mode: 'stream' })` 标记返回 `Iterable`、`AsyncIterable` 或 `RemoteStream<Out, In>` 的方法：Gateway 校验每个产出的项，并经其多路复用的 `/api/remote.mux` WebSocket 或进程内载体投递，Client 生成的方法返回一个流句柄——`RemoteStreamHandle<Out, In>`，即 Client 面的 `RemoteStream`——它迭代这些项，并为同一条逻辑流上从 Client 到 Host 的上行提供 `send`、`end` 与 `dispose`。`RemoteStream<Out, In>` 的第二个类型参数声明上行项类型；Gateway 在 Host 方法通过 `this.ctx.invocation.uplink<In>()` 读取之前，用生成的 `In` codec 校验 Client 发送的每一项。上行既不进入 `args` 也不进入参数列表；帧、半关闭、取消与 inbox 上限的约定由 [Gateway README](../packages/api/gateway/README.zh.md) 拥有。
 
 Client 使用普通对象上的具体函数，不使用 JavaScript Proxy。直接调用与作用域调用分别出现在 `ctx.remote.<namespace>` 和 `agentCtx.remote.<namespace>`。每个 namespace 都是注册为 `remote.<namespace>` 的可追踪 Cordis 子服务；Client assembly 通过 `ctx.remote.$mount()` 挂载贡献，最后一个方法撤回后该 namespace 随即卸载。依赖声明归实际调用方所有：只有读取 `ctx.remote.<namespace>` 或 `agentCtx.remote.<namespace>` 的业务包才在自己的 `inject` 中同时声明 `remote` 与 `remote.<namespace>`；只负责挂载 contribution 的 assembly，以及不调用该 namespace 的上层运行时，不代业务包声明 namespace 依赖。当一个 `@Remote` 方法恰好有一个 lookup 参数、且同名 `TypertContextMap` 使用相同 wire identity 时，生成的作用域签名会省略该 identity 参数。`@RemoteScope` 只生成作用域调用接口。
 
@@ -158,7 +158,7 @@ pnpm run build:lib
 
 ## 边界
 
-Remote 处理单请求单结果的一元方法调用、项沿 Host → Client 方向流动的流方法，以及 Client 的项经保留参数 `uplink` 到达正在运行的 Host 方法的双工方法。会话事件流、分页、增量 reduce、projection 和实体子流仍需要独立的数据协议与注册模型；即使它们复用 Connection，也不应伪装成 Remote 方法或放入调用描述符。
+Remote 处理单请求单结果的一元方法调用，以及项沿 Host → Client 方向流动、而 Client 的项经 `this.ctx.invocation.uplink()` 到达正在运行的 Host 方法的流方法。会话事件流、分页、增量 reduce、projection 和实体子流仍需要独立的数据协议与注册模型；即使它们复用 Connection，也不应伪装成 Remote 方法或放入调用描述符。
 
 API 各层按 `remotes → gateway → connection → webserver` 组织。BFF 与 Typert RPC 层位于 `packages/api`；Connection 与 WebServer 位于 `packages/client/connection` 和 `packages/host/webserver`。需要流式或浏览器原生响应的功能注册精确的 Connection Fetch 路由，而不定义 Remote 方法。
 

@@ -423,6 +423,11 @@ describe('Typert Remote streams', () => {
     ])
     expect(service.peers.at(-1)?.id).toBe('in-process-operator')
     expect(service.invocationOutsideCall()).toBeUndefined()
+    await expect(collect(await ctx.typertGateway.stream({
+      namespace: 'feed', method: 'context', args: { label: 'again' },
+    }))).resolves.toHaveLength(2)
+    expect(service.peers.at(-1)).toBe(service.peers.at(-2))
+    await expect(service.peers.at(-1)?.dispose()).resolves.toBeUndefined()
 
     // Items sent to a method that never takes its uplink wait in the carrier and are dropped when the downlink ends.
     await expect(collect(await ctx.typertGateway.stream({
@@ -436,6 +441,29 @@ describe('Typert Remote streams', () => {
       code: 'gateway/input-invalid',
       details: { endpoint: 'feed/context', field: 'uplink' },
     })
+  })
+
+  it('releases a taken uplink source even when its return() rejects', async () => {
+    const { ctx } = await setup(false)
+    const abort = new AbortController()
+    const returned = vi.fn(async (): Promise<IteratorResult<string>> => {
+      throw new Error('fixture release failure')
+    })
+    const stuck: AsyncIterable<string> = {
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise<IteratorResult<string>>(() => {}),
+        return: returned,
+      }),
+    }
+    const source = await ctx.typertGateway.stream({
+      namespace: 'feed', method: 'hold', args: {}, uplink: stuck, signal: abort.signal,
+    })
+    const iterator = source[Symbol.asyncIterator]()
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: 'held' })
+    const pending = iterator.next()
+    abort.abort(new Error('fixture cancellation'))
+    await expect(pending).rejects.toThrow('Remote invocation "feed/hold" was aborted')
+    await vi.waitFor(() => { expect(returned).toHaveBeenCalledOnce() })
   })
 
   it('lets a unary method read uplink items while it runs', async () => {

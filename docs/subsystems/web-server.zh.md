@@ -64,7 +64,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.connection` — `HostConnectionHandle`
 
-Host `ctx.connection` shape consumed by transport-independent adapters.
+Host `ctx.connection` members consumed by transport-independent adapters.
 
 ```ts cordis-catalog
 /**
@@ -81,6 +81,15 @@ createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
  * @returns rejection status, or undefined when the route may accept the request.
  */
 requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
+
+/**
+ * Decide which Peer one request speaks for: a carrier bound through `peers`
+ * answers from its binding; every other request passes {@link requestRejection}
+ * and speaks for the operator.
+ * @param request - request headers from the HTTP or upgrade request.
+ * @returns the admitted Peer, or the rejection status.
+ */
+admit(request: ConnectionTrustRequest): PeerAdmission
 
 /**
  * Authenticate one frontend index request, owning a token redirect or 401.

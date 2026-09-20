@@ -73,7 +73,9 @@ mock.streams.fail('session/follow', new Error('gone'))
 await mock.streams.drained('session/follow')
 ```
 
-A failed stream rejects the consumer's next read with the given `Error`. Consumer cancellation (the opening signal or an early iterator `return()`) aborts `StreamHandle.signal`, ends the iteration without throwing, and logs the stream as `cancelled`.
+A failed stream rejects the consumer's next read with the given `Error`. Consumer cancellation (the opening signal or an early iterator `return()`) aborts `StreamHandle.signal`, ends the iteration without throwing, and logs the stream as `cancelled`. `StreamHandle.uplink` is the uplink iterable the caller passed with the open through `rpc.open`, or an immediately ended iterable when it passed none; the uplink stays out of the logged args.
+
+A fake that stands in for a generated stream method returns the `RemoteStreamHandle` the generated method does. `streamHandle(source)` types an `AsyncIterable` as that handle with inert `send`, `end`, and `dispose`; `streamMethod<M>(generator)` lifts an async generator function written for the method's arguments into the method's own signature, for `vi.fn<M>()` and `mockImplementation`.
 
 ### Connect a client
 
@@ -108,7 +110,7 @@ A failed stream rejects the consumer's next read with the given `Error`. Consume
 | [`src/index.ts`](src/index.ts) | Public face re-exports |
 | [`src/remote-mock.ts`](src/remote-mock.ts) | `RemoteMock`: default responses, native mocks, Connection dispatch, controlled streams and missing-response checks; `ok` |
 | [`src/remote-proxy.ts`](src/remote-proxy.ts) | Namespace/method lookup and generated-map mock types |
-| [`src/streams.ts`](src/streams.ts) | `frames` / `openStream` scripts and `MockStream` (handle + `AsyncIterable`) |
+| [`src/streams.ts`](src/streams.ts) | `frames` / `openStream` scripts, `streamHandle` / `streamMethod` fake typing, and `MockStream` (handle + `AsyncIterable`) |
 | [`src/log.ts`](src/log.ts) | Log store with the shared `seq` counter |
 | — | No runtime invariant companion is published; this test-support library owns no production event stream or mutable process state, and its behavior is exercised by its package tests. |
 

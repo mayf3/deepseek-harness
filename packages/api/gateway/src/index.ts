@@ -1225,7 +1225,8 @@ class GatewayInvocation implements RemoteInvocation {
 
   /**
    * The downlink finished: release the uplink. Unread items are dropped, and a
-   * carrier iterable the method never took is returned so it stops producing.
+   * carrier iterable the method never took is returned so it stops producing;
+   * a later `uplink()` throws like a second one would.
    * @returns settles once a taken uplink has closed.
    */
   async close(): Promise<void> {
@@ -1233,7 +1234,6 @@ class GatewayInvocation implements RemoteInvocation {
       await this.decoder.return()
       return
     }
-    if (this.taken) return
     this.taken = true
     // The carrier owns the source iterator; its return() is not awaited for
     // the same reason UplinkDecoder.return() does not await it.

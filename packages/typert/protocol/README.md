@@ -44,6 +44,8 @@ export class GoalService extends TypertRemoteService {
 
 Generation turns the method into a wire endpoint under the service's namespace; Clients call it as a typed method through `ctx.remote` (see the [API Gateway reference](../../../docs/api-gateway.md)). A method opts into cooperative cancellation by declaring `signal: AbortSignal` as its final parameter — the signal is injected, never a JSON parameter or lookup field.
 
+A stream method (`@Remote({ mode: 'stream' })`) returns `Iterable`, `AsyncIterable`, or `RemoteStream<Out, In>`. `In` declares the items the Client may send back on the same logical stream; the method reads them through `this.ctx.invocation.uplink<In>()`, and the descriptor carries their codec. `RemoteInvocation` also names the receiving `service`, the calling `peer` (a `PeerScope` the connection layer admitted), and the carrier `signal`; `ctx.invocation` is `undefined` on a Context no Remote call derived. On the Client face, `@deepseek-ai/dsh-typert-protocol/client` exports `RemoteStreamHandle` and resolves `RemoteStream<Out, In>` to it: the handle a generated stream method returns, with `send`, `end`, and `dispose` beside the downlink iteration.
+
 ### Associating Host objects and Contexts with wire identities
 
 Complex Host objects cannot cross the wire directly. A business package declares the association through the merge-extensible `TypertLookupMap` and `TypertContextMap`. A Host Context adapter owns the stable wire declaration and resolves wire identities to live Contexts. A Client Context adapter maps in both directions because scoped calls originate from a Client Context and forwarded Host events resolve their explicit wire identity there. Host composition may override its synchronous or asynchronous resolver. A resolver that refuses on policy grounds throws `RemoteError` with its own code, which reaches the caller unchanged.
@@ -89,7 +91,7 @@ The package keeps strict reflection in the compiler: decorator initializers reta
 
 ### Protocol maps and descriptors
 
-The merge-extensible protocol maps keep static associations in the type system, while runtime providers register resolution with `ctx.typert`; the map names and shapes live in [`src/types.ts`](src/types.ts). `InvocationDescriptor` is the shared runtime form consumed by the registry, the Gateway, and the Client Remote, covering direct and Context receivers, JSON and lookup parameters, scope projections, cancellation, and result codecs.
+The merge-extensible protocol maps keep static associations in the type system, while runtime providers register resolution with `ctx.typert`; the map names and shapes live in [`src/types.ts`](src/types.ts). `InvocationDescriptor` is the shared runtime form consumed by the registry, the Gateway, and the Client Remote, covering direct and Context receivers, JSON and lookup parameters, scope projections, the uplink codec, cancellation, and result codecs.
 
 ### Wire identity grammar
 
@@ -101,7 +103,8 @@ Every namespace, method, lookup, and Context segment must satisfy `isTypertRemot
 |---|---|
 | [`src/index.ts`](src/index.ts) | Decorators, Gateway bindings, `remoteMethods`, segment validation |
 | [`src/remote-error.ts`](src/remote-error.ts) | `RemoteError` and the structural `remoteErrorOf` recognizer |
-| [`src/types.ts`](src/types.ts) | Protocol maps, `RemoteErrorDetailsMap`, `RemoteResult`, `InvocationDescriptor`, codecs, provider contracts, registry interfaces, `TypertClientRemote` |
+| [`src/types.ts`](src/types.ts) | Protocol maps, `RemoteErrorDetailsMap`, `RemoteResult`, `RemoteStream`, `PeerScope`, `RemoteInvocation`, `InvocationDescriptor`, codecs, provider contracts, registry interfaces, `TypertClientRemote` |
+| [`src/client/index.ts`](src/client/index.ts) | Client face: `RemoteStreamHandle`, the Client `RemoteStream` alias, and every Host export |
 | — | No runtime invariant companion is published; decorators retain private immutable declarations and bindings are frozen values with no independent event stream to cross-check. |
 
 </details>

@@ -85,8 +85,8 @@ interface InvocationDescriptor {
   readonly method: string
   /** Service member invoked when the exported method name is an alias. */
   readonly implementation?: string
-  /** Absent for unary calls; stream and duplex calls validate and deliver every yielded item. */
-  readonly mode?: 'stream' | 'duplex'
+  /** Absent for unary calls; stream calls validate and deliver every yielded item. */
+  readonly mode?: 'stream'
   /** Receiver selection mode. */
   readonly invocation:
     | { readonly kind: 'direct' }
@@ -105,11 +105,14 @@ interface InvocationDescriptor {
   }
   /** Ordered business parameters. */
   readonly parameters: readonly InvocationParameterDescriptor[]
-  /** Duplex only: Client-to-Host item stream injected before `signal` instead of entering wire args. */
+  /**
+   * Client-to-Host items of the same logical stream, generated from the `In`
+   * type argument of the method's `RemoteStream<Out, In>` return type; absent
+   * when `In` is `never`. The method reads the items through
+   * `RemoteInvocation.uplink()`, so nothing enters the parameter list.
+   */
   readonly uplink?: {
-    /** Reserved Host method parameter preceding the optional `signal`. */
-    readonly parameter: 'uplink'
-    /** Codec validating every uplink item before it reaches the Host method. */
+    /** Codec validating every uplink item before `uplink()` delivers it. */
     readonly codec: TypertCodec
   }
   /** Transport cancellation injected after business parameters instead of entering wire args. */
@@ -121,6 +124,75 @@ interface InvocationDescriptor {
   readonly result: TypertCodec
   /** Source declaration used only for diagnostics. */
   readonly sourceLocation?: InvocationSourceLocation
+}
+```
+
+The Host alias `RemoteStream<Out, In>` names both directions of one stream, and the receiving method reads its call context as `this.ctx.invocation`:
+
+```ts type-equiv
+/**
+ * One Remote stream as a Host method returns it: the items it yields to the
+ * Client, iterated as a plain `AsyncIterable<Out>`. `In` is the type of the
+ * items the Client may send back on the same logical stream, read through
+ * `RemoteInvocation.uplink()`; it is carried only as a type-level marker. The
+ * default `never` declares a method that reads none, and its descriptor
+ * carries no uplink codec. On the Client face the same alias, exported by
+ * `@deepseek-ai/dsh-typert-protocol/client`, is the stream handle a generated
+ * method returns as `RemoteStreamHandle<Out, In>`.
+ * @template Out - item type the Host method yields.
+ * @template In - item type the Client may send; `never` when the method reads none.
+ */
+type RemoteStream<Out, In = never> = AsyncIterable<Out> & { readonly [STREAM_UPLINK]?: In }
+```
+
+```ts type-equiv
+/**
+ * One Peer's session on this Host. Opened and disposed by whoever admitted the
+ * Peer; `ctx` is the Cordis scope that owns connection-lifetime registrations.
+ * Who the Peer is and what it may do are not recorded here: business plugins
+ * attach that through `ctx` or a registry keyed by this object.
+ */
+interface PeerScope {
+  readonly id: PeerId
+  readonly ctx: Context
+  /**
+   * Tear down every registration made through `ctx`.
+   * @returns settles once the scope has quiesced; racing calls share one completion.
+   */
+  dispose(): Promise<void>
+}
+```
+
+```ts type-equiv
+/**
+ * The context of one Remote call, reachable inside the receiving method as
+ * `this.ctx.invocation`. The Gateway derives the receiver from a Context that
+ * carries it, so no parameter is injected and nothing crosses the wire.
+ */
+interface RemoteInvocation {
+  readonly request: {
+    readonly namespace: string
+    readonly method: string
+    readonly args: Readonly<Record<string, unknown>>
+  }
+  /** Cordis service key of the receiving Service. */
+  readonly service: string
+  /** Peer the call speaks for; an in-process carrier speaks for the operator. */
+  readonly peer: PeerScope
+  /** Carrier cancellation: Client cancel, socket close, or an uplink failure. */
+  readonly signal: AbortSignal
+  /**
+   * The Client's uplink items for this call. Available once; a second call
+   * throws. With an uplink codec on the descriptor every item is decoded to
+   * `In`; without one items arrive as `unknown` after a JSON-safety check.
+   * Iteration ends when the Client ends its uplink; when the method finishes
+   * its downlink the Gateway calls the iterator's `return()` and unread items
+   * are dropped. `In` is the caller's assertion: the runtime decodes by the
+   * descriptor and does not cross-check it.
+   * @template In - item type the caller reads; the descriptor codec decides what arrives.
+   * @returns the single-consumer uplink iterable.
+   */
+  uplink<In = unknown>(): AsyncIterable<In>
 }
 ```
 
@@ -158,8 +230,13 @@ interface InvokeRemoteRequest {
   readonly method: string
   /** Named wire values; fields must exactly match the descriptor. */
   readonly args: Readonly<Record<string, unknown>>
-  /** Duplex uplink items decoded per item before reaching the method; absent means an immediately ended iterable. */
+  /**
+   * Client uplink items of this logical stream, delivered to the method through
+   * `invocation.uplink()`; absent means an immediately ended iterable.
+   */
   readonly uplink?: AsyncIterable<unknown>
+  /** Peer the call speaks for; absent means an in-process carrier, answered as the operator. */
+  readonly peer?: PeerScope
   /** Carrier or direct-caller cancellation injected only into cancellation-aware methods. */
   readonly signal?: AbortSignal
 }
@@ -212,8 +289,8 @@ interface TypertGateway {
    */
   invoke(request: InvokeRemoteRequest): Promise<unknown>
   /**
-   * Open one live stream or duplex Remote method without assuming a physical carrier.
-   * @param request - decoded endpoint, named wire arguments, and the duplex uplink when the method reads one.
+   * Open one live stream Remote method without assuming a physical carrier.
+   * @param request - decoded endpoint, named wire arguments, and the Client uplink when the carrier has one.
    * @returns a cancellation-aware iterable over the business results.
    */
   stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
@@ -344,8 +421,8 @@ registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo
 async invoke(request: InvokeRemoteRequest): Promise<unknown>
 
 /**
- * Open one live stream or duplex Remote method without assuming a physical carrier.
- * @param request - decoded endpoint, named wire arguments, and the duplex uplink when the method reads one.
+ * Open one live stream Remote method without assuming a physical carrier.
+ * @param request - decoded endpoint, named wire arguments, and the Client uplink when the carrier has one.
  * @returns a cancellation-aware iterable over the business results.
  */
 async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>

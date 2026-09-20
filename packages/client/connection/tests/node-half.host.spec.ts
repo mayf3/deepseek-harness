@@ -8,7 +8,16 @@ import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { IndexInjection, WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
-import { API_PATH, RpcId, apply, inject, type ClientRequest, type ConnectionConfig, type HostConnectionHandle } from '../src/index.ts'
+import {
+  API_PATH,
+  RpcId,
+  apply,
+  inject,
+  type ClientRequest,
+  type ConnectionConfig,
+  type HostConnectionHandle,
+  type PeerScope,
+} from '../src/index.ts'
 import { DEFAULT_MAX_REQUEST_BODY_BYTES } from '../src/http-bridge.ts'
 import { provideBrowserCredentials } from './browser-credentials.ts'
 
@@ -467,6 +476,54 @@ describe('connection node half', () => {
     expect(declared.state.status).toBe(200)
     await removeAuthenticated()
     await fiber.dispose()
+  })
+
+  it('admits a bound carrier as its Peer and hands every call the Peer it speaks for', async () => {
+    const { connection, routes, dispose } = await mounted({ trustedHosts: ['harness.example'] })
+    const peers: PeerScope[] = []
+    const remove = connection.rpc.intercept(
+      '/api',
+      () => true,
+      async (_endpoint, _payload, _signal, peer) => {
+        peers.push(peer)
+        return { ok: true, value: null }
+      },
+    )
+    const admitted = connection.peers.open()
+    expect(admitted).not.toBe(connection.peers.operator)
+    const untrusted = fakeRequest({ host: 'other.example' })
+    expect(connection.admit(untrusted)).toEqual({ rejection: 403 })
+    connection.peers.bind(untrusted, admitted)
+    expect(connection.admit(untrusted)).toEqual({ peer: admitted })
+    expect(connection.peers.of({})).toBeUndefined()
+
+    const route = routes.find(candidate => candidate.path === API_PATH)!
+    const request: ClientRequest = {
+      type: 'client-request',
+      rpcId: RpcId('rpc-peer'),
+      method: 'goals/create',
+      payload: { args: {} },
+    }
+    const boundPost = fakePost({ host: 'other.example' }, '/api/goals/create', request)
+    connection.peers.bind(boundPost, admitted)
+    const answered = fakeResponse()
+    await route.handler(boundPost, answered.response)
+    expect(JSON.parse(String(answered.state.body))).toMatchObject({ result: { ok: true, value: null } })
+    const cookie = browserCookie(connection, '127.0.0.1:3080')
+    await route.handler(fakePost({ host: '127.0.0.1:3080', cookie }, '/api/goals/create', request), fakeResponse().response)
+    // A shell-owned carrier dispatches the shared handler without the bridge; nobody bound its Request.
+    const direct = await connection.createSharedFetchHandler('/api').fetch(new Request('http://127.0.0.1:3080/api/goals/create', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    }))
+    expect(direct.status).toBe(200)
+    expect(peers).toEqual([admitted, connection.peers.operator, connection.peers.operator])
+
+    await admitted.dispose()
+    await admitted.dispose()
+    await remove()
+    await dispose()
   })
 
   it('applies the configured trust fence and JSON envelope checks to generic channels', async () => {

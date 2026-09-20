@@ -272,9 +272,9 @@ describe('Remote stream mux server Peer binding', () => {
 
     const closed = once(client, 'close')
     await peer.dispose()
-    const [code, reason] = await closed
-    expect(code).toBe(1001)
-    expect(String(reason)).toBe('peer left')
+    const closeEvent = await closed
+    expect(closeEvent[0]).toBe(1001)
+    expect(String(closeEvent[1])).toBe('peer left')
   })
 })
 
