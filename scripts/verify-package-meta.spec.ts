@@ -44,6 +44,57 @@ it('does not require locale resources for exported package name and description'
   expect(packageMetaProblems(root)).toEqual([])
 })
 
+it.each([undefined, ['art'], ['art/*.svg'], ['./art/icon.svg']])('accepts a published package icon without locale resources: %j', (files) => {
+  manifest({ icon: './art/icon.svg', files })
+  file('art/icon.svg', '<svg/>')
+  expect(packageMetaProblems(root)).toEqual([])
+})
+
+it.each([{ files: ['lib'] }, { files: ['art', '!art/icon.svg'] }])('rejects an icon omitted from package publication: %j', ({ files }) => {
+  manifest({ icon: './art/icon.svg', files })
+  file('art/icon.svg', '<svg/>')
+  expect(packageMetaProblems(root).join('\n')).toContain('files must include art/icon.svg')
+})
+
+it.each([null, false, 1, '', './icon.gif', '/tmp/icon.svg', './missing.png', '../outside.svg'])('validates icon declarations without locale resources: %j', (icon) => {
+  manifest({ icon })
+  file('../outside.svg', '<svg/>')
+  expect(packageMetaProblems(root).join('\n')).toContain('Plugin metadata for @test/plugin:')
+})
+
+it('requires the root icon declaration to be exported', () => {
+  manifest({ icon: './icon.svg', exports: { '.': './entry.js' }, files: ['icon.svg'] })
+  file('icon.svg', '<svg/>')
+  expect(packageMetaProblems(root).join('\n')).toContain('exports must expose its icon declaration through @test/plugin/package.json')
+})
+
+it.each([
+  { './search/package.json': './resources/search/manifest.json' },
+  { './*/package.json': './resources/*/manifest.json' },
+  { './*': './resources/*' },
+])('validates icons of independent exported manifests: %j', (exports) => {
+  manifest({ exports, files: ['resources'] })
+  const document = './*' in exports ? 'resources/search/package.json' : 'resources/search/manifest.json'
+  json(document, { icon: './icon.webp' })
+  file('resources/search/icon.webp', 'webp')
+  expect(packageMetaProblems(root)).toEqual([])
+  json(document, { icon: './missing.png' })
+  expect(packageMetaProblems(root).join('\n')).toContain('missing.png')
+})
+
+it('requires publication of both an exported icon manifest and its image', () => {
+  manifest({ exports: { './search/package.json': './resources/search.json' }, files: ['resources/icon.svg'] })
+  json('resources/search.json', { icon: './icon.svg' })
+  file('resources/icon.svg', '<svg/>')
+  expect(packageMetaProblems(root).join('\n')).toContain('files must include resources/search.json')
+})
+
+it('ignores icon-like fields in unrelated source JSON', () => {
+  manifest()
+  json('data.json', { icon: false })
+  expect(packageMetaProblems(root)).toEqual([])
+})
+
 it('excludes tests, installed dependencies, and build output from metadata discovery', () => {
   manifest({ exports: { '.': './lib/index.js' }, files: ['lib'] })
   json('tests/fixtures/locale/en.json', { meta: { title: false } })
@@ -88,6 +139,30 @@ it.each(['en', 'zh'])('rejects %s metadata resolved into build output without re
   const problems = packageMetaProblems(root).join('\n')
   expect(problems).toContain(`${language}.json`)
   expect(problems).toContain('source JSON')
+  expect(problems).not.toContain('Plugin metadata for')
+})
+
+it('does not read built locale JSON while checking a source icon declaration', () => {
+  manifest({
+    icon: './icon.svg', files: ['icon.svg'],
+    exports: { './package.json': './package.json', './locale/en.json': './lib/locale/en.json' },
+  })
+  file('icon.svg', '<svg/>')
+  file('lib/locale/en.json', '{')
+  json('locale/en.json', { meta: { title: 'Plugin' } })
+  const problems = packageMetaProblems(root).join('\n')
+  expect(problems).toContain('exports must expose locale/en.json')
+  expect(problems).not.toContain('Plugin metadata for')
+})
+
+it.each(['lib', 'tests'])('rejects an icon declaration when its only locale is excluded source: %s', (directory) => {
+  manifest({
+    icon: './missing.svg', files: ['lib'],
+    exports: { './package.json': './package.json', './locale/en.json': `./${directory}/locale/en.json` },
+  })
+  file(`${directory}/locale/en.json`, '{}')
+  const problems = packageMetaProblems(root).join('\n')
+  expect(problems).toContain('@test/plugin: icon metadata requires locale resources to resolve to source JSON')
   expect(problems).not.toContain('Plugin metadata for')
 })
 

@@ -26,16 +26,25 @@ export type PerformanceUsageMode = typeof PERFORMANCE_USAGE_MODES[number]
 /** Preserve detailed accounting for users without an explicit preference. */
 export const DEFAULT_PERFORMANCE_USAGE: PerformanceUsageMode = 'detailed'
 
+/** Destinations for ordinary clicks on Chat HTTP(S) links. */
+export type LinkOpening = 'sidebar' | 'new-tab'
+
+/** Preserve the built-in browser for users without an explicit preference. */
+export const DEFAULT_LINK_OPENING: LinkOpening = 'sidebar'
+
 /** Durable Chat section shared by the Host schema and browser scope. */
 export interface ChatSettings {
   /** Presentation mode for completed Turn process content. */
   transcriptView: TranscriptViewMode
   /** Detail level for composer statistics and completed-Turn usage. */
   performanceUsage: PerformanceUsageMode
+  /** Default destination for Chat HTTP(S) links. */
+  linkOpening: LinkOpening
 }
 
 /** Durable Chat schema; also the wire envelope the browser scope validates against. */
 export const ChatSettingsSchema: z<ChatSettings> = z.object({
+  linkOpening: z.union(['sidebar', 'new-tab']).default(DEFAULT_LINK_OPENING),
   performanceUsage: z.union([...PERFORMANCE_USAGE_MODES]).default(DEFAULT_PERFORMANCE_USAGE),
   [TRANSCRIPT_VIEW_FIELD]: z.union([...TRANSCRIPT_VIEW_MODES]).default(DEFAULT_TRANSCRIPT_VIEW_MODE),
 })

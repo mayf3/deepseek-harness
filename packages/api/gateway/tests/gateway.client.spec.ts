@@ -14,6 +14,7 @@ import {
 import type {
   InvocationDescriptor,
   RemoteResult,
+  RemoteStreamHandle,
   TypertContextMap,
   TypertContextWire,
   TypertContext,
@@ -25,9 +26,11 @@ import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import type { ClientRemote } from '../src/client/index.ts'
 import { apply, inject, RemoteStream } from '../src/client/index.ts'
 import {
+  ClientUplinkQueue,
   RemoteStreamCarrierError,
   RemoteStreamMuxClient,
 } from '../src/client/stream-client.ts'
+import { parseRemoteStreamClientMessage } from '../src/stream-protocol.ts'
 
 type FixtureApprovalOutcome = 'allowed' | 'unavailable'
 const fixtureContextTag = Symbol('fixture-context-tag')
@@ -93,6 +96,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     ) => Promise<RemoteResult<{ readonly ref: string }>>
     'probe/maybe': (value: string | null | undefined) => Promise<RemoteResult<string | null | undefined>>
     'probe/watch': (topic: string, signal?: AbortSignal) => AsyncIterable<string>
+    'probe/attach': (topic: string, signal?: AbortSignal) => RemoteStreamHandle<string, string>
   }
 
   interface TypertRemoteScopeMap {
@@ -221,6 +225,28 @@ function streamDescriptor(): InvocationDescriptor {
     }],
     cancellation: { parameter: 'signal' },
     result: { mode: 'strict', typeSymbol: '@fixture#WatchItem', create: () => z.string().min(1) },
+  }
+}
+
+function attachDescriptor(): InvocationDescriptor {
+  return {
+    id: '@fixture/probe#probe/attach',
+    service: 'probe',
+    namespace: 'probe',
+    method: 'attach',
+    mode: 'stream',
+    invocation: { kind: 'direct' },
+    parameters: [{
+      name: 'topic',
+      wire: 'topic',
+      source: 'json',
+      codec: { mode: 'strict', typeSymbol: '@fixture#Topic', create: () => z.string().min(1) },
+    }],
+    uplink: {
+      codec: { mode: 'strict', typeSymbol: '@fixture#AttachInput', create: () => z.string() },
+    },
+    cancellation: { parameter: 'signal' },
+    result: { mode: 'strict', typeSymbol: '@fixture#AttachItem', create: () => z.string().min(1) },
   }
 }
 
@@ -2226,20 +2252,6 @@ describe('Client Typert API', () => {
   it('guards stream iteration across mount and Connection withdrawal', async () => {
     const call = vi.fn<ConnectionHandle['rpc']['call']>()
     const ctx = await bench(call)
-    const firstDispose = await ctx.remote.$mount({
-      package: '@fixture/stream-first', descriptors: [streamDescriptor()],
-    })
-    const withdrawn = ctx.remote.probe.watch('withdrawn')[Symbol.asyncIterator]()
-    await firstDispose()
-    await expect(withdrawn.next()).rejects.toThrow('Remote method probe/watch is no longer mounted')
-
-    const secondDispose = await ctx.remote.$mount({
-      package: '@fixture/stream-second', descriptors: [streamDescriptor()],
-    })
-    ctx.set('connection', undefined)
-    await expect(ctx.remote.probe.watch('offline')[Symbol.asyncIterator]().next())
-      .rejects.toThrow('probe/watch has no active Connection')
-
     let release!: () => void
     const released = new Promise<void>((resolve) => { release = resolve })
     let markStarted!: () => void
@@ -2252,12 +2264,26 @@ describe('Client Typert API', () => {
     ctx.set('connection', {
       rpc: { call, open: () => source() },
     } as unknown as ConnectionHandle)
+    const firstDispose = await ctx.remote.$mount({
+      package: '@fixture/stream-first', descriptors: [streamDescriptor()],
+    })
+    // The handle opens its stream when the method is called; the mount is withdrawn before the first item arrives.
     const active = ctx.remote.probe.watch('active')[Symbol.asyncIterator]()
     const pending = active.next()
     await started
-    await secondDispose()
+    await firstDispose()
     release()
     await expect(pending).rejects.toThrow('Remote method probe/watch is no longer mounted')
+
+    const secondDispose = await ctx.remote.$mount({
+      package: '@fixture/stream-second', descriptors: [streamDescriptor()],
+    })
+    ctx.set('connection', undefined)
+    expect(() => ctx.remote.probe.watch('offline')).toThrow('probe/watch has no active Connection')
+    // A method function read before the withdrawal keeps its mount token and refuses afterwards.
+    const retained = ctx.remote.probe.watch
+    await secondDispose()
+    expect(() => retained('withdrawn')).toThrow('Remote method probe/watch is no longer mounted')
   })
 
   it('publishes a namespace only after every contributed method is installed', async () => {
@@ -2416,6 +2442,364 @@ describe('Client Typert API', () => {
       else Object.defineProperty(globalThis, 'document', documentDescriptor)
     }
   })
+
+  it('hands the handle uplink to the in-process carrier and echoes it through remote-mock', async () => {
+    const mock = RemoteMock.create().stream('probe/attach', async (args, stream) => {
+      const [{ topic }] = args as [{ readonly topic: string }]
+      for await (const item of stream.uplink) stream.push(`${topic}:${String(item)}`)
+      stream.end()
+    })
+    const call = vi.fn<ConnectionHandle['rpc']['call']>()
+    const { ctx, client } = await benchFiber(call, 'in-process', mock.rpc.open)
+    await expect(ctx.remote.$mount({
+      package: '@fixture/weak-uplink',
+      descriptors: [{ ...attachDescriptor(), uplink: { codec: { mode: 'src-json' } } }],
+    })).rejects.toThrow('client api: generated Remote probe/attach field "uplink" has no strict codec')
+    const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+    try {
+      const alpha = ctx.remote.probe.attach('alpha')
+      alpha.send('a')
+      alpha.send('b')
+      alpha.end()
+      alpha.end()
+      await expect(drainStream(alpha)).resolves.toEqual(['alpha:a', 'alpha:b'])
+      expect(() => { alpha.send('late') }).toThrow('client api: probe/attach stream has terminated')
+      const beta = ctx.remote.probe.attach('beta', new AbortController().signal)
+      beta.send('c')
+      expect(() => { beta.end(); beta.send('d') }).toThrow('client api: probe/attach uplink was ended')
+      await expect(drainStream(beta)).resolves.toEqual(['beta:c'])
+      expect(mock.log.streams('probe/attach').map(open => open.args)).toEqual([[{ topic: 'alpha' }], [{ topic: 'beta' }]])
+
+      // Arity is a runtime contract, so the topic is deliberately omitted through Reflect.
+      expect(() => { Reflect.apply(ctx.remote.probe.attach, ctx.remote.probe, []) }).toThrow(
+        'client api: probe/attach expected 1 business argument(s) plus an optional AbortSignal, got 0',
+      )
+      expect(call).not.toHaveBeenCalled()
+    } finally {
+      await dispose()
+      await client.dispose()
+    }
+  })
+
+  it('sends handle uplink items as wire frames, queued until the open frame, and half-closes on end', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const handle = ctx.remote.probe.attach('alpha')
+        handle.send('a')
+        handle.send('b')
+        handle.end()
+        const stream = handle[Symbol.asyncIterator]()
+        const first = stream.next()
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(4) })
+        const frames = socket.sent.map(text => parseRemoteStreamClientMessage(text))
+        const opened = frames[0]
+        if (opened?.type !== 'open') throw new Error('fixture expected the open frame first')
+        expect(opened).toMatchObject({ endpoint: 'probe/attach', payload: { args: { topic: 'alpha' } } })
+        expect(frames.slice(1)).toEqual([
+          { type: 'item', streamId: opened.streamId, value: 'a' },
+          { type: 'item', streamId: opened.streamId, value: 'b' },
+          { type: 'end', streamId: opened.streamId },
+        ])
+
+        socket.receive({ type: 'item', streamId: opened.streamId, value: 'alpha:a' })
+        await expect(first).resolves.toEqual({ done: false, value: 'alpha:a' })
+        const ended = stream.next()
+        socket.receive({ type: 'end', streamId: opened.streamId })
+        await expect(ended).resolves.toEqual({ done: true, value: undefined })
+        expect(socket.sent).toHaveLength(4)
+        expect(() => { handle.send('late') }).toThrow('client api: probe/attach stream has terminated')
+        handle.end()
+        expect(socket.sent).toHaveLength(4)
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
+
+  it('terminates the handle uplink when the downlink ends first', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const handle = ctx.remote.probe.attach('alpha')
+        const stream = handle[Symbol.asyncIterator]()
+        const pending = stream.next()
+        handle.send('first')
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(2) })
+        const opened = JSON.parse(socket.sent[0]!) as { streamId: string }
+        socket.receive({ type: 'end', streamId: opened.streamId })
+        await expect(pending).resolves.toEqual({ done: true, value: undefined })
+        expect(() => { handle.send('second') }).toThrow('client api: probe/attach stream has terminated')
+        expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'item'])
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
+
+  it('sends cancel and ends the downlink quietly when the handle is disposed', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const handle = ctx.remote.probe.attach('alpha')
+        const pending = handle[Symbol.asyncIterator]().next()
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(1) })
+        handle.dispose()
+        handle.dispose()
+        await expect(pending).resolves.toEqual({ done: true, value: undefined })
+        expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'cancel'])
+        expect(() => { handle.send('after dispose') }).toThrow('client api: probe/attach stream has terminated')
+
+        // Breaking out of the iteration early is the same as dispose().
+        const second = ctx.remote.probe.attach('beta')
+        const iterator = second[Symbol.asyncIterator]()
+        const opened = iterator.next()
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(3) })
+        const betaId = (JSON.parse(socket.sent[2]!) as { streamId: string }).streamId
+        socket.receive({ type: 'item', streamId: betaId, value: 'beta:1' })
+        await expect(opened).resolves.toEqual({ done: false, value: 'beta:1' })
+        await expect(iterator.return?.()).resolves.toEqual({ done: true, value: undefined })
+        expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type))
+          .toEqual(['open', 'cancel', 'open', 'cancel'])
+        expect(() => { second.send('late') }).toThrow('client api: probe/attach stream has terminated')
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
+
+  it('sends cancel on dispose while nobody reads, and drops what was buffered', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const handle = ctx.remote.probe.attach('alpha')
+        const iterator = handle[Symbol.asyncIterator]()
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(1) })
+        const opened = JSON.parse(socket.sent[0]!) as { streamId: string }
+        socket.receive({ type: 'item', streamId: opened.streamId, value: 'alpha:1' })
+        await expect(iterator.next()).resolves.toEqual({ done: false, value: 'alpha:1' })
+        // No read is pending: the cancel still goes out on dispose, and the buffered item is dropped.
+        socket.receive({ type: 'item', streamId: opened.streamId, value: 'alpha:2' })
+        handle.dispose()
+        await vi.waitFor(() => {
+          expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'cancel'])
+        })
+        await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
+        expect(() => { handle.send('late') }).toThrow('client api: probe/attach stream has terminated')
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
+
+  it('ends the uplink the moment a terminal frame arrives, before the consumer reads it', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const handle = ctx.remote.probe.attach('alpha')
+        handle.send('a')
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(2) })
+        const opened = JSON.parse(socket.sent[0]!) as { streamId: string }
+        socket.receive({ type: 'end', streamId: opened.streamId })
+        expect(() => { handle.send('after end') }).toThrow('client api: probe/attach stream has terminated')
+        handle.end()
+        await expect(drainStream(handle)).resolves.toEqual([])
+        expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'item'])
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
+
+  it('ignores server frames for a stream it no longer tracks', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const alpha = ctx.remote.probe.attach('alpha')
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(1) })
+        const alphaId = (JSON.parse(socket.sent[0]!) as { streamId: string }).streamId
+        const beta = ctx.remote.probe.attach('beta')
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(2) })
+        const betaId = (JSON.parse(socket.sent[1]!) as { streamId: string }).streamId
+        alpha.dispose()
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(3) })
+        // The Host's end for alpha crosses the cancel on the wire, so no stream owns that id any more; a
+        // never-opened id is just as unknown. Neither frame disturbs beta or the socket.
+        socket.receive({ type: 'end', streamId: alphaId })
+        socket.receive({ type: 'item', streamId: 'never-opened', value: 'stray' })
+        socket.receive({ type: 'item', streamId: betaId, value: 'beta:1' })
+        socket.receive({ type: 'end', streamId: betaId })
+        await expect(drainStream(beta)).resolves.toEqual(['beta:1'])
+        expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'open', 'cancel'])
+        expect(socket.closedWith).toEqual([])
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
+
+  it('swallows a carrier iterator whose return() rejects on dispose', async () => {
+    // One item, then silence: dispose reaches the carrier's return() while the stream is suspended at that item.
+    const next = vi.fn<() => Promise<IteratorResult<unknown>>>()
+      .mockResolvedValueOnce({ value: 'alpha:1', done: false })
+      .mockReturnValue(new Promise<IteratorResult<unknown>>(() => {}))
+    const returned = vi.fn<() => Promise<IteratorResult<unknown>>>()
+      .mockRejectedValueOnce(new Error('carrier return failed'))
+      .mockResolvedValue({ value: undefined, done: true })
+    const open: NonNullable<ConnectionHandle['rpc']['open']> = () => ({
+      [Symbol.asyncIterator]: () => ({ next, return: returned }),
+    })
+    const { ctx, client } = await benchFiber(vi.fn<ConnectionHandle['rpc']['call']>(), 'in-process', open)
+    const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+    try {
+      const handle = ctx.remote.probe.attach('alpha')
+      const iterator = handle[Symbol.asyncIterator]()
+      await expect(iterator.next()).resolves.toEqual({ done: false, value: 'alpha:1' })
+      handle.dispose()
+      await vi.waitFor(() => { expect(returned).toHaveBeenCalledOnce() })
+      // The rejection is swallowed (an unhandled rejection would fail this test) and the iteration ends quietly.
+      await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
+    } finally {
+      await dispose()
+      await client.dispose()
+    }
+  })
+
+  it('sends a top-level undefined item as an item frame without value', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const handle: RemoteStreamHandle<string, unknown> = ctx.remote.probe.attach('alpha')
+        handle.send(undefined)
+        expect(() => { handle.send({ nested: undefined }) }).toThrow('is not a lossless JSON value')
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(2) })
+        const opened = JSON.parse(socket.sent[0]!) as { streamId: string }
+        const item = JSON.parse(socket.sent[1]!) as Record<string, unknown>
+        expect(item).toEqual({ type: 'item', streamId: opened.streamId })
+        expect(Object.keys(item)).toEqual(['type', 'streamId'])
+        handle.dispose()
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
+
+  it('disposes on an iterator return that precedes the first read', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const handle = ctx.remote.probe.attach('alpha')
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(1) })
+        await expect(handle[Symbol.asyncIterator]().return?.()).resolves.toEqual({ done: true, value: undefined })
+        await vi.waitFor(() => {
+          expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'cancel'])
+        })
+        expect(() => { handle.send('late') }).toThrow('client api: probe/attach stream has terminated')
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
+
+  it('closes the uplink when the stream fails to open and keeps the failure for the reader', async () => {
+    const open: NonNullable<ConnectionHandle['rpc']['open']> = () => ({
+      [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(new Error('handshake failed')) }),
+    })
+    const { ctx, client } = await benchFiber(vi.fn<ConnectionHandle['rpc']['call']>(), 'in-process', open)
+    const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+    try {
+      const handle = ctx.remote.probe.attach('alpha')
+      await vi.waitFor(() => {
+        expect(() => { handle.send('late') }).toThrow('client api: probe/attach stream has terminated')
+      })
+      await expect(drainStream(handle)).rejects.toThrow('handshake failed')
+    } finally {
+      await dispose()
+      await client.dispose()
+    }
+  })
+
+  it('refuses an uplink item that is not a lossless JSON value', async () => {
+    const mock = RemoteMock.create().stream('probe/attach', async (args, stream) => {
+      const [{ topic }] = args as [{ readonly topic: string }]
+      for await (const item of stream.uplink) stream.push(`${topic}:${String(item)}`)
+      stream.end()
+    })
+    const { ctx, client } = await benchFiber(vi.fn<ConnectionHandle['rpc']['call']>(), 'in-process', mock.rpc.open)
+    const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+    try {
+      // Widened to the loosest caller `send` accepts: the check is on the value, not on the generated type.
+      const handle: RemoteStreamHandle<string, unknown> = ctx.remote.probe.attach('alpha')
+      expect(() => { handle.send(1n) }).toThrow('client api: probe/attach uplink item is not a lossless JSON value')
+      expect(() => { handle.send(Number.NaN) }).toThrow('is not a lossless JSON value')
+      handle.send('ok')
+      handle.end()
+      await expect(drainStream(handle)).resolves.toEqual(['alpha:ok'])
+    } finally {
+      await dispose()
+      await client.dispose()
+    }
+  })
+
+  it('lets one uplink read wait at a time', async () => {
+    const queue = new ClientUplinkQueue('probe/attach')
+    const first = queue.next()
+    await expect(queue.next()).rejects.toThrow('client api: probe/attach uplink has one pending read')
+    queue.push('x')
+    await expect(first).resolves.toEqual({ value: 'x', done: false })
+    queue.end()
+    await expect(queue.next()).resolves.toEqual({ value: undefined, done: true })
+    expect(() => { queue.push('late') }).toThrow('client api: probe/attach uplink was ended')
+    await expect(queue.return()).resolves.toEqual({ value: undefined, done: true })
+    expect(() => { queue.push('closed') }).toThrow('client api: probe/attach stream has terminated')
+  })
+
+  it('sends cancel and fails the downlink when the caller signal aborts', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const abort = new AbortController()
+        const handle = ctx.remote.probe.attach('alpha', abort.signal)
+        const pending = handle[Symbol.asyncIterator]().next()
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(1) })
+        const reason = new Error('caller left')
+        abort.abort(reason)
+        await expect(pending).rejects.toBe(reason)
+        expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'cancel'])
+        expect(() => { handle.send('after abort') }).toThrow('client api: probe/attach stream has terminated')
+        expect(() => handle[Symbol.asyncIterator]().next()).toThrow('client api: probe/attach stream has one consumer')
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
 })
 
 describe('Remote stream client carrier lifecycle', () => {
@@ -2430,6 +2814,40 @@ describe('Remote stream client carrier lifecycle', () => {
         await client.close()
         vi.unstubAllGlobals()
       }
+    })
+  })
+
+  it('fails the downlink and cancels when an uplink iterable throws, and swallows a rejecting uplink return()', async () => {
+    await withFakeWebSocket('https://harness.example', async () => {
+      const client = new RemoteStreamMuxClient()
+      client.start()
+      const socket = FakeWebSocket.sockets[0]!
+      const exploding = (async function* (): AsyncGenerator<string> {
+        yield 'a'
+        throw new Error('uplink exploded')
+      })()
+      const pending = client.open('probe/attach', {}, new AbortController().signal, exploding)[Symbol.asyncIterator]().next()
+      await expect(pending).rejects.toThrow('uplink exploded')
+      expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'item', 'cancel'])
+
+      const returned = vi.fn(async (): Promise<IteratorResult<string>> => {
+        throw new Error('fixture release failure')
+      })
+      const stuck: AsyncIterable<string> = {
+        [Symbol.asyncIterator]: () => ({
+          next: () => new Promise<IteratorResult<string>>(() => {}),
+          return: returned,
+        }),
+      }
+      const abort = new AbortController()
+      const second = client.open('probe/attach', {}, abort.signal, stuck)[Symbol.asyncIterator]().next()
+      await vi.waitFor(() => { expect(socket.sent).toHaveLength(4) })
+      const reason = new Error('caller left')
+      abort.abort(reason)
+      await expect(second).rejects.toBe(reason)
+      await vi.waitFor(() => { expect(returned).toHaveBeenCalledOnce() })
+      expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'item', 'cancel', 'open', 'cancel'])
+      await client.close()
     })
   })
 
@@ -2736,4 +3154,10 @@ async function withFakeWebSocket(
     if (locationDescriptor === undefined) Reflect.deleteProperty(globalThis, 'location')
     else Object.defineProperty(globalThis, 'location', locationDescriptor)
   }
+}
+
+async function drainStream(source: AsyncIterable<unknown>): Promise<unknown[]> {
+  const values: unknown[] = []
+  for await (const value of source) values.push(value)
+  return values
 }

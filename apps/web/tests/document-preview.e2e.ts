@@ -260,7 +260,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     const restoredAdd = await addTab.count()
     expect(restoredFilesClose).toBe(1)
     expect(restoredAdd).toBe(1)
-    const preview = column.locator('[data-document-preview]')
+    const preview = column.locator('[data-textpreview-url]')
     const openFile = openPreviewFile.bind(undefined, column, filesTab, preview)
     const viewer = preview.locator('[data-document-viewer-menu]')
     const body = preview.locator('[data-textpreview-body]')
@@ -365,7 +365,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await successShot(page, 'html-basic')
     sections.push([
       '## Basic HTML', '',
-      '- Developer tools: off by default on Web and desktop',
+      '- Developer tools: disabled for this scenario',
       '- Sandbox: no permissions',
       `- Inline script: ${await basicHtml.locator('#result').innerText()}`,
       `- Local script: ${await basicHtml.locator('#local-result').innerText()}`,
@@ -696,7 +696,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
 
     const officeMenus: number[] = []
     const configurationGuide = 'Read failed: Office previews are unavailable. Enable the document preview service on the computer running DeepSeek Harness.'
-    for (const extension of ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']) {
+    for (const extension of ['doc', 'docx', 'ppt', 'pptx']) {
       await openFile(`unavailable.${extension}`)
       expect(await preview.locator('[data-document-viewer-menu]').count()).toBe(0)
       await preview.getByText(configurationGuide, { exact: true }).waitFor({ timeout: 15_000 })
@@ -707,11 +707,22 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await successShot(page, 'office-unavailable')
     sections.push([
       '## Office unavailable', '',
-      `- DOC, DOCX, XLS, XLSX, PPT, PPTX viewer menus: ${officeMenus.join(' | ')}`,
+      `- DOC, DOCX, PPT, PPTX viewer menus: ${officeMenus.join(' | ')}`,
       `- Guidance: ${configurationGuide}`,
       '- Binary text shown: false',
       '- Plain-text option and viewer picker: hidden',
     ].join('\n'))
+
+    const spreadsheetStates: string[] = []
+    for (const extension of ['xls', 'xlsx']) {
+      await openFile(`unavailable.${extension}`)
+      const spreadsheet = column.locator('[data-textpreview-state="unsupported"]')
+      await spreadsheet.waitFor({ timeout: 15_000 })
+      expect(await spreadsheet.getByText('Preview is not available for this file type yet.', { exact: true }).count()).toBe(1)
+      await spreadsheet.locator('[data-open-path-unpreviewable]').waitFor({ timeout: 15_000 })
+      spreadsheetStates.push(`${extension.toUpperCase()}: unsupported / Open in default app`)
+    }
+    sections.push(['## Spreadsheet preview', '', `- ${spreadsheetStates.join('\n- ')}`].join('\n'))
 
     await openFile('notes.unknown')
     const plainLines = preview.locator('[data-textpreview-line]')
@@ -810,7 +821,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       await column.locator('[data-files-state="tree"]').waitFor({ state: 'visible' })
       await column.locator('[data-files-reload]').click()
       const filesTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('Files', { exact: true }) })
-      const preview = column.locator('[data-document-preview]')
+      const preview = column.locator('[data-textpreview-url]')
       await column.locator('[data-files-entry="file"]').getByRole('button', { name: 'chinese.docx', exact: true }).click()
       expect(await preview.locator('[data-document-viewer-menu]').count()).toBe(0)
       const canvas = preview.getByRole('img', { name: 'PDF page 1', exact: true })
@@ -885,30 +896,36 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
         `- Document top inset: ${topInset}px`,
       ].join('\n'), MODE)
       await successShot(page, 'office-docx')
-      for (const extension of ['doc', 'xls', 'xlsx', 'ppt', 'pptx']) {
+      for (const extension of ['doc', 'ppt', 'pptx']) {
         await openPreviewFile(column, filesTab, preview, `chinese.${extension}`)
         await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible', timeout: 60_000 })
         await expect.poll(async () => (await preview.locator('[data-pdf-text]').allTextContents()).join(''), { timeout: 30_000 }).toContain('中文文档')
-        if (['doc', 'xls', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
+        if (['doc', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
         await successShot(page, `office-${extension}`)
       }
-      expect(convert).toHaveBeenCalledTimes(6)
+      expect(convert).toHaveBeenCalledTimes(4)
+      for (const extension of ['xls', 'xlsx']) {
+        await openPreviewFile(column, filesTab, preview, `chinese.${extension}`)
+        await preview.getByText('Preview is not available for this file type yet.', { exact: true }).waitFor({ timeout: 15_000 })
+        expect(await preview.getByRole('img', { name: 'PDF page 1', exact: true }).count()).toBe(0)
+      }
+      expect(convert).toHaveBeenCalledTimes(4)
       await openPreviewFile(column, filesTab, preview, 'chinese.docx')
       await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible' })
       await preview.getByRole('button', { name: 'Read the file again', exact: true }).click()
-      await expect.poll(() => convert.mock.calls.length).toBe(7)
+      await expect.poll(() => convert.mock.calls.length).toBe(5)
       await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible' })
       await openPreviewFile(column, filesTab, preview, 'renamed.docx')
       await preview.getByText('Read failed: This Office file cannot be previewed. It may be damaged, password protected, or have the wrong extension.', { exact: true }).waitFor({ timeout: 30_000 })
       expect(await preview.locator('[data-textpreview-line]').count()).toBe(0)
       await successShot(page, 'office-invalid')
-      expect(convert).toHaveBeenCalledTimes(8)
-      for (const extension of ['doc', 'xls', 'ppt']) {
+      expect(convert).toHaveBeenCalledTimes(6)
+      for (const extension of ['doc', 'ppt']) {
         await openPreviewFile(column, filesTab, preview, `renamed.${extension}`)
         await preview.getByText('Read failed: This Office file cannot be previewed. It may be damaged, password protected, or have the wrong extension.', { exact: true }).waitFor({ timeout: 30_000 })
         expect(await preview.locator('[data-textpreview-line]').count()).toBe(0)
       }
-      expect(convert).toHaveBeenCalledTimes(11)
+      expect(convert).toHaveBeenCalledTimes(8)
       expect(tripwire.pageErrors).toEqual([])
     } finally { convert.mockRestore() }
   })

@@ -9,6 +9,8 @@ export type { DisclosureRowProps } from './DisclosureRow.tsx'
 export { Button } from './Button.tsx'
 export type { ButtonVariant } from './Button.tsx'
 export { Pill } from './Pill.tsx'
+export { SegmentedTabs } from './SegmentedTabs.tsx'
+export type { SegmentedTab } from './SegmentedTabs.tsx'
 export { Tag } from './Tag.tsx'
 export type { TagTone } from './Tag.tsx'
 export { Switch } from './Switch.tsx'
@@ -83,5 +85,5 @@ export { extractMarkdownPlainText } from './markdown/plain-text.ts'
 export type { MarkdownPlainTextMode, MarkdownPlainTextOptions } from './markdown/plain-text.ts'
 export * from './icons/index.tsx'
 export {
-  PluginArtworkTeam, PluginArtworkTerminal, PluginArtworkLoop, PluginArtworkSubagent, PluginArtworkSearch, PluginArtworkDefault,
+  PluginArtworkTerminal, PluginArtworkLoop, PluginArtworkSubagent, PluginArtworkSearch, PluginArtworkDefault,
 } from './plugin-artwork.tsx'

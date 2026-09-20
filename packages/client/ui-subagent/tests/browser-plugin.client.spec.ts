@@ -119,7 +119,7 @@ describe('apply', () => {
     }
     actions.openChild(address)
     actions.openChildAside(address)
-    actions.refresh(sid('parent'))
+    actions.refreshProjection(sid('parent'))
     expect(face.actionCalls).toEqual([
       { method: 'openSession', args: [address] },
       {
@@ -152,6 +152,8 @@ describe('apply', () => {
     // One-shot stays read-only even while running: it has no stop action.
     expect(select(owner({ address: { ...address, mode: 'one-shot' }, parentAvailable: true }, true)))
       .toEqual({ reason: 'one-shot' })
+    expect(select(owner({ address: { ...address, mode: 'unknown' }, parentAvailable: true })))
+      .toEqual({ reason: 'unknown' })
     expect(select(owner({ address }))).toBeNull()
     expect(select(owner({ address, parentAvailable: true }))).toBeNull()
     expect(select(owner({ address, parentAvailable: false })))

@@ -29,7 +29,7 @@ Enable this package through [`@deepseek-ai/dsh-experimental-agent-team-profile`]
 
 ### Inspect and navigate the roster
 
-Opening the panel calls `agentTeams/view`. Roster rows show durable names, turn availability, model, and diagnostics. Provisioning and running members use the shared ongoing loader, inactive members use idle, and failed members use error. Selecting a healthy teammate refreshes the existing direct-child catalog and opens the ordinary `{ parentSessionId, childSessionId, mode: 'continuable' }` address. History and later human prompts continue through the stable addressed-subagent conversation path; this package adds no Team-specific address field.
+Opening the panel calls `agentTeams/view`. Roster rows show durable names, turn availability, model, and diagnostics. Provisioning and running members use the shared ongoing loader, inactive members use idle, and failed members use error. Selecting a healthy teammate opens the ordinary `{ parentSessionId, childSessionId, mode: 'continuable' }` address from its Lead and roster identity without refreshing or checking the parent catalog. The Host validates the parent, child, and mode when history opens. History and later human prompts continue through the stable addressed-subagent conversation path; this package adds no Team-specific address field.
 
 ### Manage the task board
 

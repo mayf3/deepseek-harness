@@ -49,3 +49,7 @@ Web 用户需要在 Session 旁使用交互式 shell 检查工作区和运行命
 Agent 终端和可移植执行环境两篇记录仍保留，其所有权与 provider 决策继续独立有效，不被浏览器终端取代。
 
 [无人连接终端的两小时回收](2026-09-14-unattended-browser-terminal-reclamation.zh.md)在全部前端持有者断开后设置空闲宽限期，保留忙碌或状态不确定的工作。
+
+## 相关
+
+- [Remote 双工流](../architecture/2026-09-19-remote-duplex-stream.zh.md)：传输层上行，让一条 `attach` 流取代 unary `write`、`resize` 与 `attachmentId` 关联；该终端改动列在其「后续」中。

@@ -19,7 +19,10 @@ export interface SessionListEntry {
   title?: string
   updatedAt: number
   running: boolean
-  /** Summary blankness reconciled with `sessionListMetadata`; lists hide blank sessions (filtering stays with the consumer). */
+  /**
+   * New Session presentation and reuse eligibility, reconciled with
+   * `sessionListMetadata`; lists hide blank sessions (filtering stays with the consumer).
+   */
   blank: boolean
   parentSessionId?: SessionId
   /** Coarse durable origin for navigation filtering; not a continuation capability. */
