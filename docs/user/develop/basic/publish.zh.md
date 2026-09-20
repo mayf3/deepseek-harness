@@ -100,6 +100,8 @@ dsh plugin --profile demo add ./hello-plugin
 }
 ```
 
+通过链接安装的 checkout 保留自己的 `node_modules`。与 harness 自身的包一样，需要与宿主共享实例的 dsh 包同时声明在 `peerDependencies` 与 `devDependencies` 中。devDependency 副本供类型检查和独立测试使用；运行中 dsh 的 runtime resolution 已包含的 peer 使用该安装提供的副本，无论 dsh 来自 npm、Desktop 还是源码。第三方依赖和无状态 dsh 工具包放在 `dependencies` 中。修改 `peerDependencies` 后，重新加载插件时的新解析会读取新声明；这不会自动重载已经加载的模块。
+
 先不启动、只验证该层，再启动：
 
 ```sh

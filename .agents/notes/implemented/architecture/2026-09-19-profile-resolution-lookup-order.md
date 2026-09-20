@@ -12,7 +12,7 @@ A developer must be able to restate the resolution rule in one sentence: which p
 
 ## Decision
 
-Module resolution inside a profile is an ordinary Node ancestor `node_modules` chain. dsh does exactly one thing: every package name in the runtime resolution computed at startup occupies the package directory position `$DSH_HOME/profiles/node_modules/<package>`. When the chain reaches this layer, a package name with an entry is answered by the runtime resolution's package, and a package name without an entry sees the physical directory at this layer. Every other resolution behavior matches Node. [Construction, publication, Worker inheritance, and runtime carriers of immutable generations](2026-09-09-profile-resolution-generations.md) are recorded by the existing Note and are not repeated here.
+Module resolution inside a profile is an ordinary Node ancestor `node_modules` chain. dsh does exactly one thing: every package name in the runtime resolution computed at startup occupies the package directory position `$DSH_HOME/profiles/node_modules/<package>`. When the chain reaches this layer, a package name with an entry is answered by the runtime resolution's package, and a package name without an entry sees the physical directory at this layer. A plugin linked outside the tree has the same form of interception at its real directory: runtime resolution entries that the plugin declares as peers occupy `<real directory>/node_modules/<package>`. Every other resolution behavior matches Node. [Construction, publication, Worker inheritance, and runtime carriers of immutable generations](2026-09-09-profile-resolution-generations.md) are recorded by the existing Note and are not repeated here.
 
 ### Part 1: Resolution rules
 
@@ -46,19 +46,28 @@ Node remains responsible for `exports`, `imports`, conditions, `main`, subpaths,
 
 The interception layer reads, writes, and deletes no disk links. Leftover historical symlinks are treated as ordinary filesystem content: the positions of installation package names at ③ are already occupied by the runtime resolution, so old links are never read; all other package names see the contents of ③ normally along the ancestor chain. Profile load removes, once, the projections the link backend of the dsh 0.1.5 releases wrote into a profile: symlinks under the profile's `node_modules` whose target lies inside `<profile>/.dsh-module-fallback/node_modules`, followed by that directory. pnpm-installed packages and every other symlink stay.
 
-#### 3. What the interception layer holds: the runtime resolution's scan contents
+#### 3. Plugins linked outside the tree: interception at their real directory's `node_modules`
 
-The runtime resolution is computed once at profile startup and consists of three parts.
+When `<profile>/node_modules/<package>` is a symlink whose real target R is outside the profiles tree, R is a linked root. Importers below R follow its real ancestor chain, with `R/node_modules` as the interception layer: deeper `node_modules` on that chain, such as a transitive dependency's own layer inside pnpm's `.pnpm/`, are local layers; above `R/node_modules`, Node continues through `parent(R)/node_modules` up to the filesystem root.
+
+Only some package names are occupied at this layer: names declared in `R/package.json` under `peerDependencies` that also have a runtime resolution entry. A plugin declares dsh packages whose instances it must share with the host as peers. When lookup reaches this layer, the running dsh supplies the package, and the same-named devDependency copy installed at this position for type checking is not loaded. Names declared only under `dependencies`, not as peers, remain unoccupied. The plugin's own third-party versions retain Node's nearest-wins order, just as ① and ② precede ③ inside a profile.
+
+Each resolution reads the peer set from `R/package.json`; runtime resolution construction does not freeze it, and linked importer routes are not memoized. After a developer changes `peerDependencies`, new resolutions during a plugin reload read the new declaration. This neither clears Node's module caches nor automatically watches plugin files. Names not occupied at this layer are delegated to Node from the `R/package.json` anchor: the physical contents of `R/node_modules`, followed by R's real ancestor chain. Runtime resolution construction scans top-level and `@scope/*` entries in `<profile>/node_modules` for linked roots. A successor may add or remove linked roots within the existing package-mapping and local-name constraints; changing the real target of an existing link name rejects publication and requires restart because Node caches real paths. An unreadable `R/package.json` occupies no names at this layer; Node reports its diagnostics.
+
+#### 4. What the interception layer holds: the runtime resolution's scan contents
+
+The runtime resolution is computed once at profile startup and consists of four parts.
 
 - Installation closure: starting from the `package.json` of the currently running dsh package, a breadth-first traversal follows `dependencies` and `peerDependencies`; each edge resolves from the manifest that declares it per Node rules, and the first installed package found owns a package name. The closure holds several hundred entries, roughly half in the `@deepseek-ai/` scope and half third-party libraries. These entries apply to every profile.
 - Bundle-only entries: for a bundle selected by the profile that is not part of the closure, the same traversal starts from its manifest, and package names the closure already owns are not overridden. These entries apply only to profiles that select that bundle; they let the Loader import the bundle's embedded plugins by bare name from the profile root.
 - Local package names: package names among the profile's direct dependencies that are already installed in `$DSH_HOME/profiles/<name>/node_modules`. They already sit at ② on the ancestor chain; recording them only saves one directory probe.
+- Linked roots: top-level and `@scope/*` symlinks in `$DSH_HOME/profiles/<name>/node_modules` whose targets are outside the profiles tree and contain a `package.json`; each records its real directory and link position. Links whose targets remain inside the profiles tree are not recorded because the ancestor chain already covers them.
 
 The CLI derives the installation anchor from `import.meta.url`, which Node has already resolved to its real path; the Desktop Host builds it from its runtime directory, which is not a symlink. Both leave the installation root equal to its real directory, so bundle discovery and dependency traversal use the same location. During the traversal, every dependency level uses the real directory of its owning package as the lookup anchor for the next level and records the location of the manifest that declares it. After a hit, Node resolves from that declaring location and gets the same result the package's own internal imports get. Every entry records the package name, package directory, version, declaring location, and scope. Declared but uninstalled dependencies are skipped; the bundle package root itself does not become an entry.
 
-#### 4. Hook coverage
+#### 5. Hook coverage
 
-The hook participates only when the importer is under `$DSH_HOME/profiles/**`. Builtin, relative-path, absolute-path, and URL requests, and every request whose importer is outside the tree, go straight to Node.
+The hook participates only when the importer is under `$DSH_HOME/profiles/**` or a linked root. Builtin, relative-path, absolute-path, and URL requests, and every request whose importer is outside both locations, go straight to Node.
 
 The ESM and CommonJS adapters call the same routing function, and the main thread and Harness-owned Workers install the same runtime resolution. The implementation lives in `packages/boot/app-boot/src/profile-resolution/resolver.ts`; runtime resolution construction lives in `packages/boot/app-boot/src/profile.ts`.
 
@@ -91,11 +100,16 @@ After a runtime resolution hit, the `ERR_MODULE_NOT_FOUND` and `ERR_PACKAGE_PATH
 
 #### Table 3: Ancestor chain when a plugin is linked outside the tree
 
+The profile links `<profile>/node_modules/my-plugin` to the plugin's real directory R. R's manifest declares `@deepseek-ai/dsh-tools` as a peer and installs it as a devDependency, and declares `zod` as a dependency.
+
 | Import source → target | Hook participates | Result |
 |---|---|---|
 | profile → linked plugin | Participates up to ② | Node follows the symlink at ②; the plugin loads by its real path |
-| Linked plugin → its own third-party dependencies | Does not participate | The real path's ancestor chain; uses the version in the developer's own `node_modules` |
-| Linked plugin → dsh installation packages | Does not participate | The copy in the developer's own `node_modules`; `ERR_MODULE_NOT_FOUND` when absent. Part 3 describes how to make it the same copy as the running dsh |
+| Linked plugin → `zod` | Participates; `zod` is not occupied at `R/node_modules` | `R/node_modules/zod`, the developer's installed version |
+| Linked plugin → `@deepseek-ai/dsh-tools` (peer) | Participates; the name is occupied at `R/node_modules` | The running dsh's copy; the devDependency copy in `R/node_modules` is not read |
+| Linked plugin → a stateful dsh package declared only as a dependency | Participates; the name is not occupied | Its own copy in `R/node_modules`, creating a second instance; the same mistake as installing the dsh package at ② inside the tree. Declare it as a peer instead |
+| Linked plugin → undeclared package name | Participates; the name is not occupied | Physical contents of `R/node_modules`, then R's real ancestor chain |
+| Transitive dependency inside R → any package name | Participates | Its own local layers first, then the rules above; the occupied set still comes from the peers in `R/package.json` |
 
 ### Part 3: Developer integration guide
 
@@ -107,12 +121,11 @@ The plugin's own third-party dependencies are hoisted to `$DSH_HOME/profiles/<na
 
 #### 2. Development mode: the plugin repository is outside the profile tree
 
-`npm link`, or a bare directory path such as `dsh plugin add ../my-plugin` (which pnpm treats as `link:`), makes the entry in the profile a symlink to the plugin repository. The plugin loads by its real path and the hook takes no part in its imports. The plugin repository's own dependency tree must resolve dsh installation packages to the same copy as the running dsh; both layouts below satisfy this.
+`npm link`, or a bare directory path such as `dsh plugin add ../my-plugin` (which pnpm treats as `link:`), makes the profile entry a symlink to the plugin repository, which becomes a linked root. The plugin loads by its real path and uses its own third-party dependencies. The interception layer at `R/node_modules` supplies dsh packages declared as peers from the running installation, whether dsh was installed globally from npm, bundled with Desktop, or started from the source repository. The dsh devDependency copy installed for type checking serves the compiler and is not read at runtime.
 
-- Layout A: the plugin repository installs `@deepseek-ai/dsh` and the `@deepseek-ai/dsh-*` peers the plugin uses as devDependencies and starts with the dsh in that repository, for example `pnpm exec dsh --profile <name>`. The running installation is the copy on the plugin's ancestor chain, so the runtime resolution and the real paths agree.
-- Layout B: the plugin repository links the dsh packages it uses to the local dsh source repository (`link:../deepseek-harness/packages/core/tools` or `pnpm link`) and starts `pnpm dsh --profile <name>` from the source repository. Both sides load the same copy from the source repository.
+Use the same manifest declarations as the harness packages: declare dsh packages whose instances must be shared with the host under both `peerDependencies` and `devDependencies`. The peer declaration occupies their positions at `R/node_modules`; the dev copies serve the compiler and standalone tests. Keep third-party dependencies and stateless dsh utilities such as `@deepseek-ai/dsh-brand` and `@deepseek-ai/dsh-util-values` under `dependencies`. After changing `peerDependencies`, new resolutions during a plugin reload use the new declaration; Node and Cordis still own the lifetime of already loaded modules.
 
-Not provided and not recommended: having the hook proxy installation packages for real paths linked out of the tree, which requires tracking every real root entered from the profile, something Node itself does not do for developers either; and starting with a dsh installed elsewhere while the plugin repository installs its own dsh devDependencies, which produces two module instances and splits both `Symbol()` keys and `instanceof` checks.
+Two other layouts remain available: install `@deepseek-ai/dsh` in the plugin repository and run `pnpm exec dsh --profile <name>` there, or link dsh packages to a local source repository and start dsh from that repository. Both make the running dsh and the repository's copies identical, but linked plugins do not require either layout.
 
 ## Alternatives considered
 
@@ -126,16 +139,23 @@ Not provided and not recommended: having the hook proxy installation packages fo
 
 **Hide the whole physical directory that holds the interception layer.** This conflicts with "all other resolution matches Node": non-installation packages placed in `$DSH_HOME/profiles/node_modules` would become invisible to every profile.
 
-**Extend the hook to the real directories of plugins linked outside the tree.** This requires tracking every real root entered from the profile during resolution and rewriting results for some package names under those directories; Node does this for no linked-out package, and the two layouts in Part 3 do not need it.
+**Let every runtime resolution entry occupy its package directory at `R/node_modules`.** This has exactly the same form as ③, but the closure's hundreds of third-party libraries would shadow the plugin repository's own `zod` and `yaml` versions, unlike ① and ② preceding ③ inside the tree. Occupying only peers preserves the plugin's own third-party versions.
+
+**Use the nearest importer's manifest `dependencies` to decide which names resolve natively.** This can simulate an installation into the profile without devDependencies or peers, but every resolution must find the importer's nearest manifest, and the rule differs from ③. Occupying peers reads only the linked root's manifest.
+
+**Freeze the peer set during runtime resolution construction.** Every edit to `peerDependencies` would require restarting dsh. Reading at resolution time makes plugin reloads sufficient, at the cost of one small-file read per routed request in development mode.
+
+**Connect the ancestor chain above the linked root back to the profile's ② and ③.** This follows the form of Node's `--preserve-symlinks`: `R/node_modules` remains the first native layer, so the devDependency copy still wins and the duplicate-instance problem remains.
 
 ## Verification
 
 - The table-driven matrix in [profile-resolution.spec.ts](../../../../packages/boot/app-boot/tests/profile-resolution.spec.ts): importers are the profile root and a plugin inside the profile; package names are an installation entry, a bundle-only entry, and a name outside the table; every presence combination of the four layers ①②③④, with ② and ③ each in two forms, a real directory and a symlink pointing elsewhere; every cell asserts that ESM import, CommonJS require, `require.resolve`, and the `packageDir` metadata land in the same directory.
+- Linked-root cases in the same file link a profile package to an external repository with a same-named devDependency copy in its `node_modules`. Package names cover an installation entry declared as a peer, one declared as a dependency, the repository's own third-party dependency, and an undeclared name; importers cover the repository's own files and transitive dependencies inside it. The cases assert agreement across the four resolution forms, that the devDependency copy is not read, and that the next resolution observes a rewritten `peerDependencies` declaration.
 - Dedicated cases in the same file cover each row of Table 1: bare names and subpaths with and without `exports`, `#alias`, explicit `paths`, package self-reference, CommonJS skipping ③ and going straight to ④ when a subpath is missing after a runtime resolution hit, and the interception position of an out-of-tree profile.
-- The [real CLI launch test](../../../../apps/cli/tests/profiles/headless/tests/profile-resolution.ts), under src and lib launches and under plain-directory and npm-link layouts, places an old `@deepseek-ai/dsh-tools` link at ③ and an external package with its embedded dependency at ③, and asserts that Tools and AgentLoop share one module instance, that the external package resolves along its real path, and that every file and link target stays byte-identical.
+- The [real CLI launch test](../../../../apps/cli/tests/profiles/headless/tests/profile-resolution.ts), under src and lib launches and under plain-directory and npm-link layouts, places an old `@deepseek-ai/dsh-tools` link at ③ and an external package with its embedded dependency at ③. The npm-link layout also gives the linked plugin a `@deepseek-ai/dsh-tools` devDependency copy and declares it as a peer. It asserts that Tools and AgentLoop share one module instance, that the linked plugin receives that same Tools instance, that the external package resolves along its real path, and that every file and link target stays byte-identical.
 
 ## Consequences
 
-Gained: startup writes nothing to disk; installation packages always come from the running installation; all other resolution matches Node, so developers can predict results with their Node knowledge; no recognition code exists for any historical directory layout.
+Gained: module resolution needs no disk projections; dsh installation packages selected at an interception layer come from the running installation, including peers declared by plugins linked outside the tree; other resolution retains Node's ancestor-chain and package-entry rules; the lookup path does not recognize historical projection directories.
 
-Paid: third-party libraries in the installation closure still occupy package directories at ③, so a profile plugin that declares a third-party library as a peer or omits the declaration gets the version dsh uses internally, as in the disk-link era; plugins should declare third-party libraries as dependencies. Plugins linked outside the tree cannot obtain installation packages through the hook and must align themselves using the layouts in Part 3. Consumers that bypass the hook, namely child processes a plugin spawns itself, third-party Workers, and external tools run inside the profile directory, can no longer find installation packages through disk links in `$DSH_HOME/profiles/node_modules`. The resolver continues to depend on supported Node Internal interfaces.
+Paid: third-party libraries in the installation closure still occupy package directories at ③, so a profile plugin that declares a third-party library as a peer or omits the declaration gets the version dsh uses internally, as in the disk-link era; plugins should declare third-party libraries as dependencies. A linked plugin receives dsh packages from the running installation only when it declares them as peers; dependency declarations retain its own copies. Only direct symlinks from `<profile>/node_modules` become linked roots; dependencies linked elsewhere from the plugin repository or hoisted outside it by npm workspaces remain outside every linked root and use plain Node resolution. Peer requests for other plugins inside the profile do not return to ② and fail if R's real ancestor chain cannot find them. Each routed request in development mode reads the plugin manifest. Changing a link target at the same logical path still requires restart. Consumers that bypass the hook, namely child processes a plugin spawns itself, third-party Workers, and external tools run inside the profile directory, can no longer find installation packages through disk links in `$DSH_HOME/profiles/node_modules`. The resolver continues to depend on supported Node Internal interfaces.

@@ -64,9 +64,9 @@ ESM `import` 和 CommonJS `require` 都选中这些版本。在每种模块格�
 
 ### 不可变 generation
 
-一个 runtime interception 持有一个 `current` generation。每个同步 resolve 在入口只捕获一次该引用，完整调用只读该引用。generation 构造在发布前读取所有必需 manifest；失败时当前 generation 不变。发布成功只替换一个引用，执行中的调用可以继续使用它已捕获的 generation。
+一个 runtime interception 持有一个 `current` generation。每个同步 resolve 在入口只捕获一次该引用，完整调用只读该引用。generation 构造在发布前读取依赖图所需的全部 manifest；失败时当前 generation 不变。发布成功只替换一个引用，执行中的调用可以继续使用它已捕获的 generation。
 
-选包缓存和包元数据缓存归 generation 所有。发布下一代后，旧 generation 在调用方退出后自然不可达，不逐项清理缓存。generation 命中和原生解析成功结果可以缓存，但 generation 未命中会重新扫描，因此未命中后安装的 profile 本地包会通过原生查找变为可见。显式 CommonJS paths 或非默认 conditions 不得复用默认解析缓存。
+选包缓存和包元数据缓存归 generation 所有。发布下一代后，旧 generation 在调用方退出后自然不可达，不逐项清理缓存。profile importer 的命中和原生解析成功结果可以缓存，但 generation 未命中会重新扫描，因此未命中后安装的 profile 本地包会通过原生查找变为可见。linked importer 的路由不缓存，每次解析读取链接包当前的 peer 声明。显式 CommonJS paths 或非默认 conditions 不得复用默认解析缓存。
 
 launcher 只构造启动 generation。服务接受新增型后继 generation，但本实现没有包管理器事务调用替换操作。
 
@@ -74,7 +74,7 @@ launcher 只构造启动 generation。服务接受新增型后继 generation，�
 
 resolver 使用 `node-addon-require-builtin` 读取 `internal/modules/esm/loader` 和 `internal/modules/cjs/loader`。ESM 适配器包装每线程单例 `CascadedLoader` 的 resolve 方法。CommonJS 适配器包装内部 builtin 导出的 `Module._resolveFilename`；该 `Module` 与 `node:module` 导出的对象相同。
 
-两个适配器调用同一个路由函数。builtin、相对或绝对路径、URL、profile 作用域外 parent 和支持的查找以外的显式调用都直接委托原生实现。`#imports` 请求使用所属 manifest 中的 Node 映射；外部 bare target 按相同 conditions 遵循本地包、interception 和 native-after-interception 的选包顺序，精确 target 解析仍由 Node 负责。对于作用域内的 bare request，package self-reference 保留原 parent，即使 npm alias 使安装目录使用另一个名称。Node 能在虚拟共享 fallback 之前从 profile 本地包或插件私有包解析到所请求入口时，也保留原 parent；没有 `exports` 的 CommonJS 包目录仅缺少所请求 subpath 时，不会压过 fallback。其他请求在 interception 命中时通过该条目的声明锚点解析，未命中时从虚拟 fallback 之后继续原生查找。显式 CommonJS path 列表按调用方顺序，对每个 path 独立应用相同的插入规则。
+两个适配器调用同一个路由函数。builtin、相对或绝对路径、URL、profile 与已记录 linked root 之外的 parent，以及支持的查找以外的显式调用，都直接委托原生实现。`#imports` 请求使用所属 manifest 中的 Node 映射；外部 bare target 按相同 conditions 遵循本地包、interception 和 native-after-interception 的选包顺序，精确 target 解析仍由 Node 负责。对于作用域内的 bare request，package self-reference 保留原 parent，即使 npm alias 使安装目录使用另一个名称。Node 能在拦截层之前从 profile 本地包或插件私有包解析到所请求入口时，也保留原 parent；没有 `exports` 的 CommonJS 包目录仅缺少所请求 subpath 时，不会压过拦截条目。其他请求在 interception 命中时通过该条目的声明锚点解析，未命中时从该物理层继续原生查找。[查找顺序 Note](2026-09-19-profile-resolution-lookup-order.zh.md)统一说明 profile 与 linked root 的拦截位置、peer 条件和显式 CommonJS path 行为。
 
 适配器完成路由后调用捕获的原生 resolver。exports、import/require conditions、main、subpath、扩展名、原生缓存和错误码仍归 Node 处理。路由后的 ESM 失败会把 Node 诊断中的内部查找锚点替换为原始 importer。选中包的无效 export 或缺失目标不会触发另一个同名候选。CommonJS 不替换 `_findPath`，也不复制 `_resolveFilename`。
 
@@ -84,7 +84,7 @@ resolver 使用 `node-addon-require-builtin` 读取 `internal/modules/esm/loader
 
 runtime resolution 列出它提供的包；Loader entries 组成活动插件列表，两者不能合并。消费方继续使用 Loader 原有 entry 生命周期，并按自身 scope 过滤相关 entries。需要 package metadata 的消费方将 specifier 和所属树的 base URL 交给 app-boot 中的轻量服务，无需 package 导出 `./package.json`。安装 runtime resolution 后，即使查询未命中也以它为准；底层嵌入方只安装服务而不提供 runtime resolution 时，服务保留 Node 原生查找。
 
-解析器不提供 `imported(entry)`，不观察 ModuleJob，不包装 Entry 方法，不把 fiber 与 import 调用关联，也不替换 registry、tree 或 HMR 方法。重复查询读取同一个 generation，因此不会偏离 import 使用的路线。需要包元数据的非 Node importer 必须显式实现同一个确定性 resolver 接口，不能把调用来源推断重新引入 Node 主路径。
+解析器不提供 `imported(entry)`，不观察 ModuleJob，不包装 Entry 方法，不把 fiber 与 import 调用关联，也不替换 registry、tree 或 HMR 方法。包查询与 import 使用同一套选包规则，包括链接包当前的 peer 声明。需要包元数据的非 Node importer 必须显式实现同一个 resolver 接口。
 
 实现集中在 `app-boot/src/profile-resolution/`。`service.ts` 提供长期存在的 `ctx.pluginPackages`，并拥有主线程拦截与 Worker runtime resolution 的生命周期；`resolver.ts` 实现 runtime resolution 查询和 Node Internal 适配器；`worker-bootstrap.ts` 在线程内安装继承的 runtime resolution。profile 选包和 runtime resolution 构造留在 `profile.ts`。Worker 只通过 `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap` 公开入口引用 bootstrap。
 
@@ -104,13 +104,13 @@ runtime resolution 列出它提供的包；Loader entries 组成活动插件列�
 
 ### 文件系统与运行时载体
 
-解析器不创建、更新或删除 fallback 软链接与代理包。runtime resolution 条目占据 `$DSH_HOME/profiles/node_modules` 上各自的包名位置；其余包名把该目录当作普通祖先，profile 树内任何位置的软链接都是普通文件系统内容，没有专门识别。profile 本地包元数据与 bundle 依赖展开遵循同一套 Node 查找；正常由 pnpm 安装的包保留原生优先级。完整顺序见[查找顺序 Note](2026-09-19-profile-resolution-lookup-order.zh.md)。可写 profile 状态和包管理器事务不属于解析器。
+解析器不创建、更新或删除 fallback 软链接与代理包。runtime resolution 条目占据 `$DSH_HOME/profiles/node_modules` 上各自的包名位置；其余包名把该目录当作普通祖先。构造时还会记录真实目标位于 profiles 树外的 profile 包链接。在每个 linked root 的 `node_modules` 层，只有被声明为 peer 且 runtime resolution 中存在的包名被占据。profile 本地包元数据与 bundle 依赖展开遵循同一套 Node 查找；正常由 pnpm 安装的包保留原生优先级。完整顺序见[查找顺序 Note](2026-09-19-profile-resolution-lookup-order.zh.md)。可写 profile 状态和包管理器事务不属于解析器。
 
 运行时解析要求受支持的 Node Internal loader 接口。Electron Host 通过设置 `ELECTRON_RUN_AS_NODE=1` 的 Electron 可执行文件运行；打包构建从 ASAR 读取 dsh 依赖树，并把 ASAR 中的可执行条目映射到 electron-builder 的 unpacked 目录。pkg 与 Electron 使用和普通 Node 启动相同的 runtime resolution 机制。
 
 ### 性能与验证
 
-generation 构造发生在启动或显式更新阶段，不属于单次 resolve，但需要单独报告绝对延迟。普通热路径只包括 scope 分类、bare name 提取、本地优先判断、Map 查询和一次原生解析；缓存命中直接返回 generation 级结果。当本地 CommonJS 包目录没有 `exports` 且仅缺少所请求 subpath 时，一次请求可能先执行一次原生探测，再执行一次路由解析。作用域外调用不读取 manifest，只缓存 parent 是否位于 profile scope。
+generation 构造发生在启动或显式更新阶段，不属于单次 resolve，但需要单独报告绝对延迟。profile 热路径只包括 scope 分类、bare name 提取、本地优先判断、Map 查询和一次原生解析；缓存命中直接返回 generation 级结果。linked importer 的路由还会读取包的 peer 声明，且不缓存选中的路由。当本地 CommonJS 包目录没有 `exports` 且仅缺少所请求 subpath 时，一次请求可能先执行一次原生探测，再执行一次路由解析。作用域外调用不读取 manifest，只缓存 parent 是否具有拦截层。
 
 实现期间的一次性本地测量用 plain Node 在全新进程中执行构建后的 JavaScript，并与完全没有安装 hook 的进程比较。测量脚本和结果未提交，这些数据不是 benchmark 或 CI 预算。七轮交替顺序覆盖 outside、profile-local 和 fallback 的 dynamic import、`import.meta.resolve`、require、`require.resolve`。Node 22.19、24.18 和 26.8 的热路径中位数最大正向回退为 4.5%。Node 24.18 的 256 包 cold workload 最大回退为 11.2%，generation 构造中位数为 16.027 ms；32 包本地 `require.resolve` 因固定启动成本在整批增加 1.033 ms（+34.7%）。
 

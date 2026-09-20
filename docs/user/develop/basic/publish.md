@@ -100,6 +100,8 @@ The first use initializes the profile (with `@deepseek-ai/dsh-base` as its first
 }
 ```
 
+A linked checkout keeps its own `node_modules`. Declare dsh packages whose instances the plugin must share with the host under both `peerDependencies` and `devDependencies`, as the harness packages do. The devDependency copy serves your type checker and standalone tests; peers present in the running dsh's runtime resolution use that installation's copy, whether dsh comes from npm, Desktop, or source. Keep third-party dependencies and stateless dsh utilities under `dependencies`. After changing `peerDependencies`, new resolutions during a plugin reload read the new declaration; this does not automatically reload already loaded modules.
+
 Verify the layer without booting, then boot:
 
 ```sh
