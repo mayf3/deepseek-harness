@@ -365,7 +365,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await successShot(page, 'html-basic')
     sections.push([
       '## Basic HTML', '',
-      '- Developer tools: off by default on Web and desktop',
+      '- Developer tools: disabled for this scenario',
       '- Sandbox: no permissions',
       `- Inline script: ${await basicHtml.locator('#result').innerText()}`,
       `- Local script: ${await basicHtml.locator('#local-result').innerText()}`,
