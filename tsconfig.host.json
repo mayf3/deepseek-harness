@@ -9,7 +9,8 @@
   },
   "files": [
     "packages/client/ui-settings-general/src/client/desktop-update-bridge.ts",
-    "packages/client/ui-sidebar-browser/src/index.ts"
+    "packages/client/ui-sidebar-browser/src/index.ts",
+    "packages/client/web/src/window-drag/regions.ts"
   ],
   "include": [
     "apps/web/product-isolation.ts",
@@ -135,6 +136,7 @@
     "apps/web/tests/chat-long-interactions.e2e.ts",
     "apps/web/tests/chat-continuous-conversation.e2e.ts",
     "apps/web/tests/composer-tab-geometry.e2e.ts",
+    "apps/web/tests/window-drag-coverage.e2e.ts",
     "apps/web/tests/complex-history.perf.ts",
     "apps/web/tests/pwsh-terminal.e2e.ts",
     "apps/web/tests/workflow-run.e2e.ts",

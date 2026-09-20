@@ -255,7 +255,7 @@ export function TabPanel({ state, pane, callbacks }: TabPanelProps): ReactNode {
         callbacks.onFocusPane(pane.id)
       }}
     >
-      <div className={css.tabStrip} role="tablist" data-dockkit-strip={pane.id}>
+      <div className={css.tabStrip} role="tablist" data-window-drag data-dockkit-strip={pane.id}>
         <div ref={stripTabs} className={css.stripTabs} role="presentation" data-dockkit-strip-tabs={pane.id}>
           {pane.tabs.map((tabId, index) => {
             const tab = getTab(state, tabId)

@@ -239,8 +239,7 @@
   white-space: nowrap;
 }
 
-/* macOS: overlays covering the window drag bands must subtract themselves
-   (Electron app-regions are geometry, not stacking). */
-:global([data-platform='darwin']) .overlay {
-  -webkit-app-region: no-drag;
-}
+/* No app-region rule here: the overlay portals beside #root (SettingsRoot), so
+   ui-web base.css's `body > :not(#root)` subtraction covers it wherever it
+   overlaps a chrome row's drag — including above every column, which an in-root
+   overlay could not promise once a chrome row declares drag itself. */

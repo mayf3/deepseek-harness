@@ -26,7 +26,9 @@
 }
 
 /* macOS hiddenInset titlebar: the frame's top clearance keeps the head below
-   the window's top strip in both sidebar states so it never jumps. */
+   the window's top strip in both sidebar states so it never jumps, and the head
+   owns the window drag over its own box — clearance included — so this page's
+   top strip drags without a frame band. */
 :global([data-platform='darwin']) .pageHead {
   padding-top: var(--dsh-frame-top-clearance, 0px);
 }
@@ -1047,9 +1049,18 @@ label.registryOption {
   flex-direction: column;
 }
 
-/* Same top clearance as .pageHead: the crumb is the detail views' leading
-   content and otherwise lands under the traffic lights. */
-:global([data-platform='darwin']) .detail {
+/* The head row every detail view shares: the crumb over the icon/actions row.
+   It carries the same top clearance as .pageHead — the crumb is the detail
+   views' leading content and otherwise lands under the traffic lights — and the
+   same drag ownership: it marks itself `data-window-drag`, so this row's own box
+   is the window's draggable geometry. The detail container below stays
+   content: marking it would drag the window over its text and form labels. */
+.detailTop {
+  display: flex;
+  flex-direction: column;
+}
+
+:global([data-platform='darwin']) .detailTop {
   padding-top: var(--dsh-frame-top-clearance, 0px);
 }
 
