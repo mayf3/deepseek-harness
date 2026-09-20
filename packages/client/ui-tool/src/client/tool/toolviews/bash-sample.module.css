@@ -172,6 +172,7 @@
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-label-secondary);
+  transition: color 100ms ease;
 }
 
 .sep {
@@ -192,6 +193,12 @@
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-label-tertiary);
+  transition: color 100ms ease;
+}
+
+.root:hover .title,
+.root:hover .summary:not(.errorSummary) {
+  color: var(--dsw-alias-label-primary);
 }
 
 /* Error row's collapsed summary: the failure's first line in the error color. */

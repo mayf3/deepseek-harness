@@ -1,6 +1,6 @@
 import { memo, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutlineRegular } from './icons/index.tsx'
+import { IconChevronDownOutlineRegular, IconChevronUpOutlineRegular } from './icons/index.tsx'
 import css from './DisclosureRow.module.css'
 
 /** Shared 24px disclosure chrome for compact flow rows. */
@@ -67,7 +67,7 @@ export const DisclosureRow = memo(function DisclosureRow({
     )
     : icon
   const leading = open
-    ? <IconChevronDownOutlineRegular className={chevronClassName} />
+    ? <IconChevronUpOutlineRegular className={chevronClassName} />
     : collapsedLeading
 
   return (

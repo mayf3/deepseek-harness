@@ -2,7 +2,8 @@ import { useMemo, useState, type KeyboardEvent } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import clsx from 'clsx'
 import {
-  IconApiOutlineRegular, IconChevronDownOutlineRegular, IconInspectOutlineRegular, TerminalBlock,
+  IconApiOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconInspectOutlineRegular,
+  TerminalBlock,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -25,6 +26,7 @@ function stateStatus(state: ToolRowState, t: BashRowProps['t']): string | null {
   switch (state) {
     case 'running': return t('bash.running')
     case 'error': return t('bash.failed')
+    case 'stopped': return t('bash.stopped')
     default: return null
   }
 }
@@ -71,7 +73,7 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
   }
   const businessIcon = <IconApiOutlineRegular size={14} />
   const leading = open
-    ? <IconChevronDownOutlineRegular className={css.chevron} />
+    ? <IconChevronUpOutlineRegular className={css.chevron} />
     : expandable
       ? (
         <>
