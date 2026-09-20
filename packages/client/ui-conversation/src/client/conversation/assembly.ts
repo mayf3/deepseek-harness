@@ -69,7 +69,7 @@ class BoundConversation implements ConversationBinding {
   ): ObservableSnapshot<ConversationViewSnapshotMap[Target] | undefined> {
     let source = this.targetSources.get(target)
     if (source === undefined) {
-      const views = this.viewStore as unknown as { get(key: string): unknown }
+      const views = this.viewStore as { get(key: string): unknown }
       source = {
         getSnapshot: () => views.get(target),
         subscribe: (listener) => {

@@ -5,9 +5,6 @@ export const NS = 'subagent'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'diagnostic.corrupt': '会话记录损坏',
-  'diagnostic.unsupported': '子代理记录版本不受支持',
-  'diagnostic.unavailable': '会话记录暂不可用',
   'duration.seconds': '{seconds}秒',
   'duration.minutes': '{minutes}分{seconds}秒',
   'duration.hours': '{hours}小时{minutes}分{seconds}秒',
@@ -23,7 +20,6 @@ export const zh = {
   'tokens.million': '{value}M',
   'tokens.total': '{value} tok',
   'loading.label': '正在加载子代理…',
-  'loading.aria': '正在加载子代理',
   'load.error': '无法加载子代理',
   'retry': '重试',
   'mode.oneShot': '一次性',
@@ -49,9 +45,6 @@ export const zh = {
 
 /** English dictionary, key-identical to the Chinese source of truth. */
 export const en: Record<SubagentKey, string> = {
-  'diagnostic.corrupt': 'corrupted session record',
-  'diagnostic.unsupported': 'unsupported subagent record version',
-  'diagnostic.unavailable': 'session record temporarily unavailable',
   'duration.seconds': '{seconds}s',
   'duration.minutes': '{minutes}m {seconds}s',
   'duration.hours': '{hours}h {minutes}m {seconds}s',
@@ -67,7 +60,6 @@ export const en: Record<SubagentKey, string> = {
   'tokens.million': '{value}M',
   'tokens.total': '{value} tok',
   'loading.label': 'Loading subagents…',
-  'loading.aria': 'Loading subagents',
   'load.error': 'Unable to load subagents',
   'retry': 'Retry',
   'mode.oneShot': 'one-shot',

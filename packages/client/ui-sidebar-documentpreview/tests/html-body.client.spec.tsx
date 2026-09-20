@@ -3,6 +3,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { bindSnapshotSelector, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { DeveloperToolsPreference } from '@deepseek-ai/dsh-client-ui-settings/src/client/developer-tools.ts'
+import type { DeveloperToolsSettings } from '@deepseek-ai/dsh-client-ui-settings/src/developer-tools-settings.ts'
 import type { Resources, ResourceSnapshot } from '@deepseek-ai/dsh-client-resources/client'
 import type { WorkspaceFileStat } from '@deepseek-ai/dsh-api-workspace-files/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -151,6 +154,31 @@ describe('HtmlBody', () => {
     expect(revoke).toHaveBeenCalledOnce()
     view.rerender(<HtmlBody {...basic} content={{ kind: 'bytes', data: new Uint8Array([255]) }} />)
     expect(screen.getByRole('alert').textContent).toBe(en.failed)
+  })
+
+  it('follows the shared developer-tools preference from loading through a stored false to enabled', async () => {
+    const host = stubSettingsScope<DeveloperToolsSettings>()
+    const preference = new DeveloperToolsPreference(host.scope)
+    const readRelated = vi.fn<HtmlBodyProps['readRelated']>().mockResolvedValue({ ok: true, value: {
+      absolutePath: '/workspace/asset.js', version: 'asset-v1', offset: 0, eof: true,
+      data: btoa('window.loaded = true'),
+    } })
+    const scripted: HtmlBodyProps = {
+      ...props('<p>Preview</p><script src="./asset.js"></script>'),
+      useInteractivePreview: bindSnapshotSelector(preference.enabled),
+      readRelated,
+    }
+    const view = render(<HtmlBody {...scripted} />)
+    expect(screen.getByTitle(en.frame).getAttribute('sandbox')).toBe('')
+    expect(readRelated).not.toHaveBeenCalled()
+    act(() => { host.publish({ status: 'ready', value: { enabled: false } }) })
+    expect(screen.getByTitle(en.frame).getAttribute('sandbox')).toBe('')
+    expect(readRelated).not.toHaveBeenCalled()
+    act(() => { host.publish({ value: { enabled: true } }) })
+    const advanced = await screen.findByTitle(en.frame)
+    expect(advanced.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(readRelated).toHaveBeenCalledOnce()
+    view.unmount()
   })
 
   it('renders a Blob iframe with only scripts allowed, keeping it mounted for unrelated props', async () => {

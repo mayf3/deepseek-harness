@@ -3,7 +3,7 @@
  * outcomes become toasts, and how the install run folds its output.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { BundleInfo, ChangeResult, ManagementError, PluginEntryId, PluginInfo, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
@@ -87,7 +87,8 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
   }
   const ctx = { remote: { pluginManager: plugins, pluginInventory: inventory } } as never
   const controller = new PluginManagerController(ctx)
-  const face = controller.inject(NO_CONFIG)
+  onTestFinished(() => { controller.dispose() })
+  const face = controller.inject(NO_CONFIG, text => typeof text === 'string' ? text : text.en)
   const state = () => controller.getSnapshot()
   /** The request id of the run the dialog just handed to the Host. */
   const started = async (): Promise<PluginInstallRequestId> => {
@@ -170,6 +171,25 @@ describe('PluginManagerController', () => {
     stopped.resolve(ok({ status: 'cancelled' }))
     await vi.waitFor(() => { expect(state().install).toMatchObject({ open: true, phase: 'idle', spec: 'slow' }) })
     install.resolve(ok({ ...failed(), application: 'cancelled' }))
+  })
+
+  it('keeps local package and row metadata in the loaded view without changing technical identities', async () => {
+    const meta = { title: { en: 'Sidebar', zh: '侧栏' }, description: 'Local package', error: 'locale/zh.json: invalid title' }
+    const rowMeta = { title: { en: 'Theme', zh: '主题' }, description: { en: 'Display options', zh: '显示选项' } }
+    const bundle: BundleInfo = {
+      ...BUNDLE,
+      meta,
+      rows: BUNDLE.rows.map(row => ({ ...row, meta: rowMeta })),
+    }
+    const { controller, state } = bench({ listBundles: vi.fn().mockResolvedValue(ok([bundle])) })
+
+    await controller.load()
+
+    expect(state().packages[0]).toMatchObject({ name: BUNDLE.name, meta })
+    expect(state().packages[0]!.meta).toBe(meta)
+    expect(state().packages[0]!.rows[0]).toMatchObject({ rowId: 'sidebar', moduleName: BUNDLE.name, entryId: ROW_ENTRY, meta: rowMeta })
+    expect(state().packages[0]!.rows[0]!.meta).toBe(rowMeta)
+    expect(state().packages[0]!.error).toBeUndefined()
   })
 
   it('starts idle, reads the inventory then the bundles and entries on first use, and folds concurrent loads', async () => {

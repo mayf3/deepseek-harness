@@ -357,7 +357,7 @@ describe('dsh-tool-team', () => {
         if (identity === undefined) throw new Error('expected initial teammate reminder')
         agent.session.append('user/message', createUserMessage({
           content: [{ type: 'text', text: 'Compacted earlier context.' }],
-          source: { kind: 'plugin', plugin: 'test-compaction' },
+          source: { kind: 'test-compaction' },
         }), {
           surfaceOp: { op: 'replace', startSeq: identity.seq, endSeq: identity.seq },
           sourceEventSeqs: [identity.seq],
@@ -379,7 +379,7 @@ describe('dsh-tool-team', () => {
     await using persisted = await ctx.sessionPersistence.open(childId, 'read')
     const { events } = await persisted.read()
     expect(events.filter(event => event.type === 'user/message'
-      && event.data.source.kind === 'plugin' && event.data.source.plugin === toolTeam.name)).toHaveLength(0)
+      && (event.data.source as { readonly kind?: unknown }).kind === toolTeam.name)).toHaveLength(0)
   })
 
   it.each(['reject', 'empty', 'abort'] as const)('does not revive a teammate step after %s', async (mode) => {
@@ -664,18 +664,27 @@ describe('dsh-tool-team', () => {
   })
 
   it('reinstalls Team scope before a cold-resumed teammate request', async () => {
-    const { ctx, lead, adapter } = await setup([textResponse('first'), 'hang', 'hang'])
+    const { ctx, lead, adapter } = await setup([textResponse('first'), textResponse('lead received settlement'), 'hang'])
     const spawned = await execute(ctx, lead, 'spawn_teammate', {
       name: 'cold-worker', description: 'cold worker', prompt: 'finish once',
     })
     const childId = spawnedChildId(ctx, lead, spawned)
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
+    expect(await ctx.subagents.listChildren(lead.id)).toContainEqual(expect.objectContaining({
+      id: childId,
+      mode: 'continuable',
+    }))
+    await vi.waitFor(() => {
+      expect(adapter.requests.filter(request => request.sessionId === lead.id)).toHaveLength(1)
+    })
+    await lead.whenIdle()
 
-    await ctx.agentTeams.sendMessage(lead, {
+    const receipt = await ctx.agentTeams.sendMessage(lead, {
       target: 'cold-worker',
       content: [{ type: 'text', text: 'resume with Team scope' }],
       signal: SIGNAL,
     })
+    expect(receipt.status).toBe('accepted')
     const resumed = await waitRunning(ctx, childId)
     expect((await assembly(ctx, resumed)).tools.map(schema => schema.name)
       .filter(name => TOOL_NAMES.includes(name)).sort()).toEqual(TOOL_NAMES)

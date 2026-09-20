@@ -16,7 +16,7 @@ afterEach(cleanup)
 
 function emptySessions() {
   return bindSnapshotSelector(createSnapshotStore<SessionListState>({
-    ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+    ids: [], byId: {}, phase: 'ready', projectionsBySession: {}, jobsBySession: {},
   }))
 }
 

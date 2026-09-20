@@ -2,7 +2,7 @@
 - text: 不用先查看目录，直接做四件事：把 intro.md 里的标题「示例项目」改成「项目说明」，新建 src/util.ts 导出一个两数相加的 add 函数，新建 app.local 写一行 mode=demo，最后用 bash 在 notes.txt 末尾追加一行 done。 {{clock}}
 - button "复制"
 - button "7 次工具调用" [expanded]
-- button "上下文注入 @deepseek-ai/dsh-system-prompt"
+- button "上下文注入 runtime-context"
 - button "思考 The user wants four things done directly. But I need to read intro.md before editing (fs-observation-policy requires reading existing file first). The user says don't look at the directory first, but reading intro.md is needed for the edit tool. Let me just do it."
 - button "读取 intro.md":
   - text: 读取

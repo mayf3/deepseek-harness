@@ -182,7 +182,7 @@ describe('dsh web authentication through the real CLI', () => {
 
       const authenticated = await describeSettings(port, firstUrl.host, cookie)
       expect(authenticated.status).toBe(200)
-      const authenticatedBody = JSON.parse(authenticated.body) as unknown
+      const authenticatedBody: unknown = JSON.parse(authenticated.body)
       expect(authenticatedBody).toMatchObject({
         type: 'server-response',
         rpcId: 'web-auth-real-cli',

@@ -172,7 +172,7 @@ describe('Remote stream mux server carrier lifecycle', () => {
     client.send(openFrame('write-failure'))
     await didOpen
     const serverSocket = acceptedSocket(entry.mux)
-    const mutable = serverSocket as unknown as {
+    const mutable = serverSocket as {
       send(data: unknown, callback: (error?: Error) => void): void
     }
     mutable.send = (_data, callback): void => {

@@ -16,6 +16,8 @@ import type {
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
+import type { WorkspaceViewStoreActions } from './stores.ts'
 
 interface MainSelection {
   readonly sessionId?: SessionId
@@ -37,9 +39,9 @@ export interface UiWorkspace {
    */
   openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>
   /**
-   * Fork a Session and open the child unless a later navigation supersedes it.
+   * Fork a Session without changing the current selection.
    * @param sessionId - source Session.
-   * @returns completion; a superseded request leaves its child available without selecting it.
+   * @returns completion after child creation and inherited-title increment.
    */
   forkSession(sessionId: SessionId): Promise<void>
   /**
@@ -63,6 +65,19 @@ export interface UiWorkspace {
    * @param sessionId - Session to unarchive.
    */
   unarchiveSession(sessionId: SessionId): Promise<void>
+  /**
+   * Pin a Session on the Host, then lead it in its accounts' saved orders
+   * (its Workspace group or Ungrouped, and the flat list). The order write
+   * reads the memberships current at completion, so reorders that landed
+   * while the Host call was pending keep their positions.
+   * @param sessionId - Session to pin.
+   */
+  pinSession(sessionId: SessionId): Promise<void>
+  /**
+   * Unpin a Session on the Host; saved positions stay as they are.
+   * @param sessionId - Session to unpin.
+   */
+  unpinSession(sessionId: SessionId): Promise<void>
   /**
    * Open the Host-native directory picker.
    * @returns the selected directory, or null when cancelled.
@@ -115,12 +130,14 @@ class UiWorkspaceService extends Service implements UiWorkspace {
    * @param directoryPicker - the directory-picking Remote namespace.
    * @param workspaces - pure Workspace Controller.
    * @param sessions - pure Session Controller.
+   * @param view - the browser's viewing-store write set (one instance shared with its registration).
    */
   constructor(
     ctx: Context,
     private readonly directoryPicker: ClientRemote['directoryPicker'],
     private readonly workspaces: IWorkspaces,
     private readonly sessions: ISessions,
+    private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>,
   ) {
     super(ctx, 'uiWorkspace')
     ctx.effect(() => {
@@ -174,20 +191,18 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   openSession(target: SessionTarget): void {
-    this.replaceMain(target, this.lifetime.signal)
+    this.replaceMain(target, this.lifetime.signal, 'reveal')
   }
 
   async openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
     const sessionId = await this.connectWorkspace(workspaceId)
     if (navigation.aborted) return
-    this.replaceMain(sessionId, navigation, beforeOpen)
+    this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
   }
 
   async forkSession(sessionId: SessionId): Promise<void> {
-    const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
-    const childId = await this.sessions.fork({ sessionId, increaseTitle: true })
-    if (!navigation.aborted) this.replaceMain(childId, navigation)
+    await this.sessions.fork({ sessionId, increaseTitle: true })
   }
 
   startSession(workspaceId?: WorkspaceId): void {
@@ -217,6 +232,20 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async unarchiveSession(sessionId: SessionId): Promise<void> {
     await this.workspaces.unarchiveSession(sessionId)
+  }
+
+  async pinSession(sessionId: SessionId): Promise<void> {
+    await this.workspaces.pinSession(sessionId)
+    const { items, pinnedSessionIds, archivedSessionIds } = this.workspaces.list.getSnapshot()
+    this.view.pinSessionOrder(
+      sessionId,
+      pinOrderAccounts(items, sessionId),
+      pinOrderSource(items, this.sessions.list.getSnapshot(), { pinnedSessionIds, archivedSessionIds }),
+    )
+  }
+
+  async unpinSession(sessionId: SessionId): Promise<void> {
+    await this.workspaces.unpinSession(sessionId)
   }
 
   async pickDirectory(): Promise<string | null> {
@@ -274,15 +303,15 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   private async restoreSelection(workspaces: WorkspaceSnapshot, sessions: SessionListState): Promise<void> {
     const saved = this.selection.getSnapshot()
     if (saved.subagentAddress !== undefined) {
-      void this.sessions.refreshSubagents(saved.subagentAddress.parentSessionId)
-      this.openSession(saved.subagentAddress)
+      void this.sessions.refreshProjections(saved.subagentAddress.parentSessionId)
+      this.replaceMain(saved.subagentAddress, this.lifetime.signal, 'preserve')
       return
     }
     const summary = saved.sessionId === undefined ? undefined : sessions.byId[saved.sessionId]
     const workspace = summary === undefined ? undefined
       : workspaces.items.find(item => item.sessionIds.includes(summary.id))
     if (summary !== undefined && (!summary.blank || workspace === undefined)) {
-      this.openSession(summary.id)
+      this.replaceMain(summary.id, this.lifetime.signal, 'preserve')
       return
     }
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
@@ -294,7 +323,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const target = workspace?.workspaceId ?? recentWorkspace(workspaces.items, sessions.byId)
     if (sessionId === undefined && target !== undefined) sessionId = await this.connectWorkspace(target)
     if (sessionId !== undefined && !navigation.aborted) {
-      this.replaceMain(sessionId, navigation)
+      this.replaceMain(sessionId, navigation, 'preserve')
     }
   }
 
@@ -318,6 +347,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   private replaceMain(
     target: SessionTarget,
     signal: AbortSignal,
+    panel: 'reveal' | 'preserve',
     beforeOpen?: (sessionId: SessionId) => void,
   ): void {
     signal.throwIfAborted()
@@ -343,8 +373,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const previous = this.mainReference
     this.mainReference = reference
     previous?.release()
-    void this.sessions.refreshSubagents(reference.sessionId)
-    this.ctx.layout.selectPanel(null)
+    void this.sessions.refreshProjections(reference.sessionId)
+    if (panel === 'reveal') this.ctx.layout.selectPanel(null)
   }
 
 }
