@@ -245,6 +245,11 @@ export class HandleUplink implements AsyncIterable<unknown> {
   private done = false
   private waiter: ((result: IteratorResult<unknown>) => void) | undefined
 
+  /**
+   * Queues one uplink item for the script, or completes the read waiting for it.
+   * @param item - the item the handle's `send()` carried.
+   * @throws {Error} after `end()`.
+   */
   push(item: unknown): void {
     if (this.done) throw new Error('remote-mock: uplink was ended')
     const waiter = this.waiter
@@ -253,6 +258,7 @@ export class HandleUplink implements AsyncIterable<unknown> {
     else waiter({ value: item, done: false })
   }
 
+  /** Half-closes the uplink: pending and later reads complete as done; repeated calls are no-ops. */
   end(): void {
     if (this.done) return
     this.done = true
@@ -260,6 +266,7 @@ export class HandleUplink implements AsyncIterable<unknown> {
     this.waiter = undefined
   }
 
+  /** Ends the uplink and drops its unread items; `dispose()` on the handle and `return()` on the script's iterator call it. */
   close(): void {
     this.items.length = 0
     this.end()
