@@ -22,7 +22,9 @@ The [stable Sidebar mounting decision](../architecture/2026-09-20-sidebar-retain
 - The Desktop Browser type declares `keepMounted`. Sidebar retains its DOM ancestors across hiding and docking; CSS owns layout and clipping. Docking gestures disable guest pointer input, and body-local drop hints use normal stacking. A physical unmount cancels pending attachment and releases the guest; a later mount recreates it from the known address.
 - Tab occurrence cancellation, plugin unload and window destruction release guests. Guest crashes leave a retryable failure; Reload creates a new guest. Application restart offers the saved title and URL for explicit restoration; it creates no guest until the user restores or submits an address. Page memory and native history are not restored.
 
-The package's type-only `./desktop` entry declares the lease, reservation, open-request and bridge types shared by the main process, preload and Client. Preload exposes scoped operations and callbacks, not raw IPC or Electron objects.
+The standard `./types` subpath exports the shared lease, reservation, open-request and bridge declarations through a declaration-only `types` condition; Desktop consumers use `import type`. There is no runtime default, extra JavaScript artifact or early Host bundling for these declarations. Preload exposes scoped operations and callbacks, not raw IPC or Electron objects.
+
+Browser has separate Host and Client compiler programs. Desktop and the Host aggregate reference only `tsconfig.host.json`, which compiles the package root and shared bridge declarations; the Client aggregate references `tsconfig.client.json` for the browser implementation. The package root tsconfig is solution-only. This keeps Client consumers of generated `/remote` declarations out of the Host compilation that precedes Typert generation.
 
 ### Storage ownership
 

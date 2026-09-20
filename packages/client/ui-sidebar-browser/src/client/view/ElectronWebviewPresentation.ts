@@ -1,5 +1,5 @@
 /** Electron tag DOM inside a Sidebar-owned, stable content container. */
-import type { DesktopBrowserReservation } from '../../desktop.ts'
+import type { DesktopBrowserReservation } from '../../types.ts'
 import type { BrowserPresentation } from './BrowserPresentation.ts'
 import css from './Browser.module.css'
 

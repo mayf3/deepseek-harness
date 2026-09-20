@@ -1,6 +1,7 @@
 /** Browser type, Slot, locale, and HMR disposal through the real registries. */
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SidebarRightTabRegistry } from '@deepseek-ai/dsh-client-ui-sidebar-right/src/client/tab-registry.ts'
 import { BrowserBody } from '../src/client/view/BrowserBody.tsx'
 import { BrowserTitle } from '../src/client/view/BrowserTitle.tsx'
@@ -8,7 +9,12 @@ import type { BrowserInjected } from '../src/client/browser/BrowserController.ts
 import { BROWSER_ID, BROWSER_KIND } from '../src/client/definition.tsx'
 import { apply, inject } from '../src/client/index.ts'
 import { en, zh } from '../src/client/locales.ts'
-import { apply as hostApply } from '../src/index.ts'
+
+const contexts: Context[] = []
+
+afterEach(async () => {
+  await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+})
 
 interface Recorded {
   name: string
@@ -21,6 +27,7 @@ interface Recorded {
 
 async function boot() {
   const ctx = new Context()
+  contexts.push(ctx)
   const tabs = new SidebarRightTabRegistry(ctx)
   const registered: Recorded[] = []
   const slots = {
@@ -40,6 +47,7 @@ async function boot() {
     }),
   }
   ctx.provide('sidebarRightTabs', tabs as never)
+  ctx.provide('sidebarRight', { openTabs: createSnapshotStore([]) } as never)
   ctx.provide('slots', slots as never)
   ctx.provide('locale', locale as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
@@ -48,10 +56,6 @@ async function boot() {
 }
 
 describe('ui-sidebar-browser apply', () => {
-  it('keeps the Host Loader entry inert', () => {
-    expect(hostApply).not.toThrow()
-  })
-
   it('registers a multi-instance builtin and its body and title', async () => {
     const { tabs, registered, dictionaries } = await boot()
     const definition = tabs.get(BROWSER_KIND)
@@ -72,7 +76,7 @@ describe('ui-sidebar-browser apply', () => {
     expect(registered[0]?.inject).toBeTypeOf('function')
     const injectFace = registered[0]?.inject as ((sessionId: string, actions: unknown) => unknown)
     const browser = injectFace('session', { replace: vi.fn(), forget: vi.fn() }) as BrowserInjected
-    expect(browser.keyedHooks.browserFrame('missing')).toBeUndefined()
+    expect(browser.keyedHooks.browserState('missing')).toBeUndefined()
     expect(typeof browser.mount).toBe('function')
   })
 

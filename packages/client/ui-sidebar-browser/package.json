@@ -22,9 +22,8 @@
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
-    "./desktop": {
-      "types": "./lib/types/desktop.d.ts",
-      "default": "./lib/desktop.js"
+    "./types": {
+      "types": "./lib/types/types.d.ts"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
@@ -67,7 +66,6 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
-    "lib/desktop.js",
     "lib/types/**/*.d.ts"
   ]
 }

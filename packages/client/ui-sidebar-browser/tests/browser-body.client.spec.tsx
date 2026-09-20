@@ -1,19 +1,22 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
-import { createBrowserControllers } from '../src/client/browser/BrowserController.ts'
-import type { BrowserFrameState } from '../src/client/browser/BrowserFrame.ts'
+import type { PaneId, TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { createBrowserControllers, type BrowserControllerState, type BrowserInjected } from '../src/client/browser/BrowserController.ts'
 import { createBrowserStore } from '../src/client/browser/store.ts'
 import type { BrowserBodyProps } from '../src/client/view/BrowserBody.tsx'
-import { BrowserBody, WEB_BROWSER_SANDBOX } from '../src/client/view/BrowserBody.tsx'
+import { BrowserBody } from '../src/client/view/BrowserBody.tsx'
+import { WEB_BROWSER_SANDBOX } from '../src/client/view/IframePresentation.ts'
+import { createIframePage } from '../src/client/pages.ts'
 import { zh } from '../src/client/locales.ts'
 
 const SESSION = 'session' as SessionId
 const TAB = 'tab' as TabId
+const messages: Readonly<Record<string, string>> = zh
 const lifetimes = new Set<AbortController>()
+const controllers: BrowserInjected[] = []
 let mountSequence = 0
 
 function hookOf<T>(store: { subscribe(listener: () => void): () => void; getSnapshot(): T }) {
@@ -25,51 +28,52 @@ function hookOf<T>(store: { subscribe(listener: () => void): () => void; getSnap
   }
 }
 
-const absentFrame = {
+const absentState = {
   subscribe: (_listener: () => void): (() => void) => () => {},
-  getSnapshot: (): BrowserFrameState | undefined => undefined,
+  getSnapshot: (): BrowserControllerState | undefined => undefined,
 }
 
 function mountBrowser(navigation?: { readonly url?: string }) {
   const store = createBrowserStore().create(`browser-body-test-${String(++mountSequence)}`)
   const lifetime = new AbortController()
   lifetimes.add(lifetime)
-  const injected = createBrowserControllers(store.actions)
+  const injected = createBrowserControllers(store.actions, createIframePage, () => true)
+  controllers.push(injected)
   const { keyedHooks, ...commands } = injected
-  const props = {
+  const tabActions = { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn() }
+  const props: Pick<BrowserBodyProps, 'sessionId' | 'useTabInfo' | 'useStore' | 'actions' | 't' | 'useBrowserState'>
+    & Omit<BrowserInjected, 'keyedHooks'> = {
     sessionId: SESSION,
-    useSessions: vi.fn(),
-    useResource: vi.fn(),
-    useWorkspaces: vi.fn(),
-    usePanelInfo: vi.fn(),
-    useSessionPendingInteraction: vi.fn(),
     useTabInfo: () => ({
-      sidebar: { expanded: true, fullscreen: false }, panel: { id: 'pane' },
+      sidebar: { expanded: true, fullscreen: false }, panel: { id: 'pane' as PaneId },
       tab: {
         id: TAB, kind: 'browser', title: 'Browser', contentId: 'sidebar://browser/1', visible: true,
         navigation: { address: 'sidebar://browser/1', params: navigation, revision: 0 },
         signal: lifetime.signal,
-        actions: { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn() },
+        actions: tabActions,
       },
     }),
     useStore: hookOf(store),
     actions: store.actions,
-    t: (key: keyof typeof zh, params?: Record<string, unknown>) => params === undefined
-      ? zh[key] : zh[key].replace('{message}', String(params.message)),
-    ...commands,
-    useBrowserFrame: (key: string) => {
-      const frame = keyedHooks.browserFrame(key) ?? absentFrame
-      return useSyncExternalStore(frame.subscribe, frame.getSnapshot)
+    t: (key, params) => {
+      const template = messages[key] ?? key
+      return params === undefined ? template : template.replace(/\{(\w+)\}/g, (_match, name: string) => String(params[name]))
     },
-  } as unknown as BrowserBodyProps
-  const renderBody = () => render(<BrowserBody {...props} />)
+    ...commands,
+    useBrowserState: (key: string) => {
+      const state = keyedHooks.browserState(key) ?? absentState
+      return useSyncExternalStore(state.subscribe, state.getSnapshot)
+    },
+  }
+  const renderBody = () => render(<BrowserBody {...props as BrowserBodyProps} />)
   return {
     view: renderBody(), remount: renderBody, store, lifetime, injected,
   }
 }
 
-afterEach(() => {
+afterEach(async () => {
   cleanup()
+  await Promise.all(controllers.splice(0).map(controller => controller.dispose()))
   for (const lifetime of lifetimes) lifetime.abort()
   lifetimes.clear()
   localStorage.clear()
@@ -169,15 +173,15 @@ describe('BrowserBody', () => {
     fireEvent.change(input, { target: { value: 'https://example.com/one' } })
     fireEvent.submit(input.closest('form')!)
     await waitFor(() => { expect(mounted.view.container.querySelector('iframe')).not.toBeNull() })
-    const failedRevision = mounted.store.getSnapshot().byTab[TAB]!.request!.revision
+    const failedFrame = mounted.view.container.querySelector('iframe')!
 
-    act(() => { mounted.injected.reportLoadFailed(TAB, failedRevision) })
-    expect(mounted.injected.keyedHooks.browserFrame(TAB)?.getSnapshot().loadFailed).toBe(true)
-    await waitFor(() => { expect(mounted.view.getByText(zh['web.loadFailed'])).toBeDefined() })
+    fireEvent.error(failedFrame)
+    expect(mounted.injected.keyedHooks.browserState(TAB)?.getSnapshot().frame.error).toBeDefined()
+    await waitFor(() => { expect(mounted.view.getByText(zh['load.failed'])).toBeDefined() })
     fireEvent.click(mounted.view.getByRole('button', { name: zh.reload }))
-    await waitFor(() => { expect(mounted.view.queryByText(zh['web.loadFailed'])).toBeNull() })
-    act(() => { mounted.injected.reportLoadFailed(TAB, failedRevision) })
-    expect(mounted.view.queryByText(zh['web.loadFailed'])).toBeNull()
+    await waitFor(() => { expect(mounted.view.queryByText(zh['load.failed'])).toBeNull() })
+    fireEvent.error(failedFrame)
+    expect(mounted.view.queryByText(zh['load.failed'])).toBeNull()
   })
 
   it('loads loopback under the default sandbox and keeps it across sandbox changes', async () => {

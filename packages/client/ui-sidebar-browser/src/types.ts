@@ -1,4 +1,4 @@
-/** Electron bridge declarations shared by the desktop shell and browser provider. */
+/** Type-only Electron bridge declarations shared by the desktop shell and browser provider. */
 import type { Branded } from '@deepseek-ai/dsh-brand'
 
 /** Main-issued identity of one guest reservation. */

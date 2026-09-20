@@ -22,7 +22,9 @@ Desktop 通过 `ElectronWebViewImpl` 使用 `<webview>`；Web 保留显式启用
 - Desktop Browser 类型声明 `keepMounted`。Sidebar 在隐藏和停靠切换时保留其 DOM 祖先，CSS 负责布局与裁剪。停靠手势期间禁用 guest 指针输入，Body 内的放置提示使用普通层叠。物理卸载会取消未完成的挂载并释放 guest，之后重新挂载时从已知地址重建。
 - tab occurrence 取消、插件卸载与窗口销毁会释放 guest。guest 崩溃留下可重试的失败状态；刷新创建新 guest。应用重启展示保存的标题与 URL，等待显式恢复；用户恢复或提交地址之前不创建 guest。不恢复页面内存或原生 history。
 
-包内仅含类型的 `./desktop` 入口声明主进程、preload 和 Client 共用的租约、申请结果、打开请求与桥接类型。preload 只暴露限定范围的操作与回调，不暴露原始 IPC 或 Electron 对象。
+标准 `./types` 子路径通过仅指向声明文件的 `types` 条件导出共享的租约、申请结果、打开请求与桥接声明，Desktop 消费方使用 `import type`。这些声明没有运行时 default、额外 JavaScript 产物或提前进行的 Host 打包。preload 只暴露限定范围的操作与回调，不暴露原始 IPC 或 Electron 对象。
+
+Browser 分别拥有 Host 与 Client 编译程序。Desktop 和 Host 聚合配置只引用 `tsconfig.host.json`，编译包根与共享桥接声明；Client 聚合配置通过 `tsconfig.client.json` 编译浏览器实现。包根 tsconfig 只作为 solution。这样，依赖生成 `/remote` 声明的 Client 消费方不会进入 Typert 生成之前的 Host 编译阶段。
 
 ### Storage ownership
 

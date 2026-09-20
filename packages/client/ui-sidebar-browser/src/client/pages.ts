@@ -1,5 +1,5 @@
 /** Assemble navigation providers and presentation adapters without platform branches in consumers. */
-import type { DesktopBrowserBridge } from '../desktop.ts'
+import type { DesktopBrowserBridge } from '../types.ts'
 import type { BrowserPage, BrowserPageOptions } from './browser/BrowserPage.ts'
 import { IframeImpl } from './browser/IframeImpl.ts'
 import { ElectronWebViewImpl } from './browser/ElectronWebViewImpl.ts'
