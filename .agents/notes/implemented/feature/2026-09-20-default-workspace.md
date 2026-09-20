@@ -21,6 +21,7 @@ Creation failure preserves the draft and offers the existing folder picker. A su
 ## Alternatives considered
 
 - Creating on application startup would write directories for users who never send a message.
+- Falling back to `<home>/Documents` when system lookup is unavailable would choose an unverified Documents location; deployments that need another directory use the explicit Host override.
 - Inferring first use from visible sidebar rows would ignore archived, hidden, and cwd-less Sessions.
 - Using the localized path as the initialization marker would allow language changes or deletion to create another default.
 - Changing a Session's cwd after creation would change the meaning of its recorded tools and attachments.

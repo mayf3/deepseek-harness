@@ -485,6 +485,7 @@ async create(path: string, title?: string): Promise<Workspace>
  * @param resolveDirectory - resolve the absolute directory and initial title;
  * called only for eligible creation, inside the registry mutation queue.
  * Missing directories are created recursively before registration.
+ * After resolution, caller cancellation does not roll back creation or registration.
  * @returns the initialized Workspace, or undefined when automatic creation is ineligible.
  */
 initializeDefault(resolveDirectory: () => Promise<{ path: string; title: string }>): Promise<Workspace | undefined>

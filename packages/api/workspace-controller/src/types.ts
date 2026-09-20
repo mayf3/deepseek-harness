@@ -56,7 +56,7 @@ export interface WorkspaceCreateRequest {
 
 /** Names chosen by the first-use Client before default Workspace initialization. */
 export interface WorkspaceInitializeDefaultRequest {
-  /** Single non-blank name; no separators, colon, NUL, surrounding whitespace, or trailing dot. */
+  /** Host rejects blank names, separators, colon, NUL, surrounding whitespace, and trailing dots; OS filename restrictions also apply. */
   readonly directoryName: string
   /** Initial display title, retained across language changes. */
   readonly title: string
