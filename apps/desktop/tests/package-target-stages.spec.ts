@@ -29,7 +29,8 @@ vi.mock('node:fs', async importOriginal => ({
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks() })
 
 const environment = { DSH_DESKTOP_APP_ID: 'com.example.test', DSH_DESKTOP_AUTO_UPDATE_ENV: 'test',
-  DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com', DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'fixture-pin' }
+  DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com', DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'fixture-pin',
+  DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY: '2' }
 
 function supervisor(failure?: string) {
   vi.stubEnv('npm_execpath', 'fixture-pnpm.cjs')
@@ -56,6 +57,10 @@ it('requires one signing preflight before building, then records only the comple
   for (const call of run.run.mock.calls) {
     if (call[0].startsWith('run prepare:') || call[0].includes('smoke-packaged-runtime')) {
       expect(call[3].env).not.toHaveProperty('DSH_DESKTOP_WINDOWS_TOKEN_PIN')
+      expect(call[3].env).not.toHaveProperty('DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY')
+    }
+    if (call[0].startsWith('run sign:primary-runtime')) {
+      expect(call[3].env).toHaveProperty('DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY', '2')
     }
   }
   expect(writeFileSync).toHaveBeenCalledOnce()
