@@ -25,7 +25,7 @@ Browse HTTP(S) pages, including loopback services, inside independent right-Side
 <a id="use-this-package"></a>
 ## Use this package
 
-The shipped Web and Desktop compositions already mount this package. Open **Browser** from the right-Sidebar guide, enter an HTTP(S) URL, or select an HTTP(S) link in Assistant Markdown. A host name without a scheme becomes HTTPS. Public and loopback targets use the same default sandbox. Each guide action or message-link activation creates another Browser tab.
+Browser is disabled by default in Web profiles and enabled on Desktop. Enable the shipped entry through the Web profile patch to use it. Open **Browser** from the right-Sidebar guide and enter an HTTP(S) URL. Chat HTTP(S) links open here when the [link preference](../ui-chat/README.md) selects the built-in browser. A host name without a scheme becomes HTTPS. Public and loopback targets use the same default sandbox. Each guide action or delegated message-link activation creates another Browser tab.
 
 ### When to choose it
 
@@ -33,11 +33,11 @@ Choose Browser for a Web page that should remain beside the current Session. Cho
 
 ### Minimal configuration
 
-The package has no configuration. A custom Web composition mounts its Host companion; the Client loader then discovers the browser entry declared by the package manifest:
+The package has no plugin configuration. A Web profile enables the shipped entry through its profile patch:
 
 ```yaml
 - id: ui-sidebar-browser
-  name: '@deepseek-ai/dsh-client-ui-sidebar-browser'
+  disabled: false
 ```
 
 Client plugins can open a tab through `ctx.sidebarRight.openTab('browser', { params: { url } })`. The optional URL passes the same validation as address-bar input before navigation.

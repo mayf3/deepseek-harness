@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
@@ -9,7 +9,8 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { TranscriptViewRow, type TranscriptViewRowProps } from '../src/client/settings/TranscriptViewRow.tsx'
 import { PerformanceUsageRow } from '../src/client/settings/PerformanceUsageRow.tsx'
-import type { PerformanceUsageMode } from '../src/chat-settings.ts'
+import type { LinkOpening, PerformanceUsageMode } from '../src/chat-settings.ts'
+import { LinkOpeningRow } from '../src/client/settings/LinkOpeningRow.tsx'
 import { en, zh } from '../src/client/locale.ts'
 
 afterEach(cleanup)
@@ -79,6 +80,50 @@ describe('TranscriptViewRow', () => {
   })
 })
 
+
+describe('LinkOpeningRow', () => {
+  it('follows browser availability without clearing the saved destination', () => {
+    const b = mount()
+    const browserAvailable = createSnapshotStore(false)
+    const source = createSnapshotStore<LinkOpening>('new-tab')
+    render(<LinkOpeningRow
+      {...b.props}
+      useLinkOpening={bindSnapshotSelector(source)}
+      useBrowserAvailable={bindSnapshotSelector(browserAvailable)}
+      setLinkOpening={vi.fn()}
+    />)
+    expect(screen.queryByText('Open chat links in')).toBeNull()
+    act(() => { browserAvailable.set(true) })
+    expect(screen.getByRole('button', { name: 'New browser tab' })).toBeDefined()
+    act(() => { browserAvailable.set(false) })
+    expect(screen.queryByText('Open chat links in')).toBeNull()
+    expect(source.getSnapshot()).toBe('new-tab')
+  })
+
+  it.each([
+    [en, 'Open chat links in', 'Built-in browser', 'New browser tab'],
+    [zh, '聊天链接打开方式', '内置浏览器', '浏览器新标签页'],
+  ] as const)('selects either destination using localized labels (%s)', (dictionary, title, sidebar, newTab) => {
+    const b = mount('compact', dictionary)
+    const source = createSnapshotStore<LinkOpening>('sidebar')
+    const setLinkOpening = vi.fn((destination: LinkOpening) => { source.set(destination) })
+    render(<LinkOpeningRow
+      {...b.props}
+      useLinkOpening={bindSnapshotSelector(source)}
+      useBrowserAvailable={bindSnapshotSelector(createSnapshotStore(true))}
+      setLinkOpening={setLinkOpening}
+    />)
+    expect(screen.getByText(title)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: sidebar }))
+    fireEvent.click(screen.getByRole('menuitem', { name: newTab }))
+    expect(setLinkOpening).toHaveBeenLastCalledWith('new-tab')
+    fireEvent.click(screen.getByRole('button', { name: newTab }))
+    fireEvent.click(screen.getByRole('menuitem', { name: sidebar }))
+    expect(setLinkOpening).toHaveBeenLastCalledWith('sidebar')
+    expect(screen.getByRole('button', { name: sidebar }).getAttribute('aria-expanded')).toBe('false')
+    expect(b.setTranscriptView).not.toHaveBeenCalled()
+  })
+})
 
 describe('PerformanceUsageRow', () => {
   it('selects compact statistics independently of conversation display', () => {

@@ -285,6 +285,38 @@ describe('PluginManagerPage', () => {
     }
   })
 
+  it('renders manifest icons for arbitrary bundles and rows, with decode fallback and source recovery', () => {
+    const icon = 'data:image/svg+xml;base64,PHN2Zy8+'
+    const updatedIcon = 'data:image/png;base64,cG5n'
+    const bundle = pkg({ meta: { icon }, rows: [row({ meta: { icon } }), row({ entryId: 'plain' as PluginEntryId, rowId: 'plain', moduleName: 'plain' })] })
+    const { set } = renderTab({ packages: [bundle] }, { rows: new Set(['dsh-better-sidebar#sidebar']) })
+    const image = () => document.querySelector<HTMLImageElement>('[data-plugin-package] img, [data-plugin-detail] img')!
+    expect(image().getAttribute('src')).toBe(icon)
+    expect(image().getAttribute('alt')).toBe('')
+    expect(image().width).toBe(36)
+    fireEvent.error(image())
+    expect(document.querySelector('[data-plugin-package] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-package] svg')).not.toBeNull()
+    set({ packages: [{ ...bundle, meta: { icon: updatedIcon } }] })
+    expect(image().getAttribute('src')).toBe(updatedIcon)
+    set({ packages: [bundle] })
+    expect(image().getAttribute('src')).toBe(icon)
+    fireEvent.click(screen.getByRole('button', { name: 'View dsh-better-sidebar' }))
+    expect(image().getAttribute('src')).toBe(icon)
+    const rowImage = document.querySelector<HTMLImageElement>('[data-plugin-row] img')!
+    expect(rowImage.getAttribute('src')).toBe(icon)
+    expect(rowImage.width).toBe(30)
+    expect(document.querySelector('[data-plugin-row="plain"] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row="plain"] svg')).not.toBeNull()
+    fireEvent.error(rowImage)
+    expect(document.querySelector('[data-plugin-row] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row] svg')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Configure dsh-better-sidebar' }))
+    const detailImage = document.querySelector<HTMLImageElement>('[data-plugin-row-detail] img')!
+    expect(detailImage.getAttribute('src')).toBe(icon)
+    expect(detailImage.width).toBe(36)
+  })
+
   it('shows metadata diagnostics without blocking management or displaying legacy descriptions', () => {
     const error = 'locale/zh.json: invalid title'
     const { actions, set, setLanguage } = renderTab({
