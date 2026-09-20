@@ -67,10 +67,15 @@
 
 ## Office unavailable
 
-- DOC, DOCX, XLS, XLSX, PPT, PPTX viewer menus: 0 | 0 | 0 | 0 | 0 | 0
+- DOC, DOCX, PPT, PPTX viewer menus: 0 | 0 | 0 | 0
 - Guidance: Read failed: Office previews are unavailable. Enable the document preview service on the computer running DeepSeek Harness.
 - Binary text shown: false
 - Plain-text option and viewer picker: hidden
+
+## Spreadsheet preview
+
+- XLS: unsupported / Open in default app
+- XLSX: unsupported / Open in default app
 
 ## Unknown suffix
 
