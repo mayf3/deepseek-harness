@@ -38,6 +38,12 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 
   export type RemoteStream<Out, In = never> = AsyncIterable<Out> & { readonly uplinkItem?: In }
 
+  export interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
+    send(item: In): void
+    end(): void
+    dispose(): void
+  }
+
   export abstract class TypertRemoteService {
     readonly typertRemote: {
       readonly service: TypertRemoteService
@@ -73,22 +79,4 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     method: (this: This, ...args: Args) => Result,
     context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Result>,
   ) => void
-}
-
-declare module '@deepseek-ai/dsh-typert-protocol/client' {
-  export interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
-    send(item: In): void
-    end(): void
-    dispose(): void
-  }
-
-  export type RemoteStream<Out, In = never> = RemoteStreamHandle<Out, In>
-
-  export type {
-    RemoteResult,
-    TypertRemoteContribution,
-    TypertRemoteMap,
-    TypertRemoteNamespaceMap,
-    TypertRemoteScopeMap,
-  } from '@deepseek-ai/dsh-typert-protocol'
 }

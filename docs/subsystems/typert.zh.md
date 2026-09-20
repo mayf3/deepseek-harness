@@ -136,13 +136,41 @@ Host 别名 `RemoteStream<Out, In>` 同时命名一条流的两个方向，接�
  * items the Client may send back on the same logical stream, read through
  * `RemoteInvocation.uplink()`; it is carried only as a type-level marker. The
  * default `never` declares a method that reads none, and its descriptor
- * carries no uplink codec. On the Client face the same alias, exported by
- * `@deepseek-ai/dsh-typert-protocol/client`, is the stream handle a generated
- * method returns as `RemoteStreamHandle<Out, In>`.
+ * carries no uplink codec. A generated Client stream method returns the same
+ * stream as a `RemoteStreamHandle<Out, In>`.
  * @template Out - item type the Host method yields.
  * @template In - item type the Client may send; `never` when the method reads none.
  */
 type RemoteStream<Out, In = never> = AsyncIterable<Out> & { readonly [STREAM_UPLINK]?: In }
+```
+
+```ts type-equiv
+/**
+ * One open Remote stream as the Client holds it: the downlink items as an
+ * `AsyncIterable`, plus the uplink and cancellation of the same logical
+ * stream. A generated Client stream method returns it. A handle stands for
+ * one generation: when the carrier is lost, iteration fails with the carrier
+ * error and the handle is finished.
+ * @template Out - item type the Host method yields.
+ * @template In - item type the Client may send; `never` when the method reads none.
+ */
+interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
+  /**
+   * Send one uplink item. Items sent before the stream has opened are queued
+   * and sent once the `open` frame is on the wire.
+   * @param item - item the Host validates against the method's uplink codec.
+   * @throws {Error} when `end()` was called or the stream has terminated.
+   */
+  send(item: In): void
+  /** Half-close the uplink: the Host's `uplink()` iteration ends. Idempotent; ignored after termination. */
+  end(): void
+  /**
+   * Cancel the logical stream: send `cancel` unless a terminal frame has
+   * arrived, and end the downlink iterator quietly. Breaking out of
+   * `for await` early does the same.
+   */
+  dispose(): void
+}
 ```
 
 ```ts type-equiv

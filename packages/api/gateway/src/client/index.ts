@@ -7,7 +7,6 @@
 import { Service } from '@deepseek-ai/cordis'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import type { RemoteStreamHandle } from '@deepseek-ai/dsh-typert-protocol/client'
 export type { TypertGatewayFaultDetails } from '../remote-error-codes.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
@@ -19,6 +18,7 @@ import type {
   TypertClientRemote,
   RemoteFailure,
   RemoteResult,
+  RemoteStreamHandle,
   TypertCodec,
   TypertDisposer,
   TypertRemoteContribution,

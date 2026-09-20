@@ -272,7 +272,7 @@ export type {`,
 
     const [artifact] = new WorkspaceTypertGenerator(root).generate()
     expect(artifact?.remote?.dts).toContain(
-      "import type { RemoteStreamHandle } from '@deepseek-ai/dsh-typert-protocol/client'",
+      "  RemoteStreamHandle,\n  TypertRemoteContribution,\n} from '@deepseek-ai/dsh-typert-protocol'",
     )
     expect(artifact?.remote?.dts).toContain("declare module '@deepseek-ai/dsh-typert-protocol' {")
     expect(artifact?.remote?.dts).toContain(
@@ -755,12 +755,12 @@ function assertRemoteConsumerTypechecks(
 import remote from '@fixture/remote/remote'
 import type {
   RemoteResult,
+  RemoteStreamHandle,
   TypertRemoteContribution,
   TypertRemoteScopeMap,
   TypertRemoteMap,
   TypertRemoteNamespaceMap,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { RemoteStreamHandle } from '@deepseek-ai/dsh-typert-protocol/client'
 import type { CreateGoalResult, RenameGoalResult } from '@fixture/remote/types'
 
 const contribution: TypertRemoteContribution = remote
@@ -792,7 +792,6 @@ void navigated
       skipLibCheck: false,
       paths: {
         '@deepseek-ai/dsh-typert-protocol': ['./typert-protocol.d.ts'],
-        '@deepseek-ai/dsh-typert-protocol/client': ['./typert-protocol.d.ts'],
         '@fixture/domain/types': ['./packages/domain/src/types.ts'],
         '@fixture/remote/types': ['./packages/remote/src/types.ts'],
         '@fixture/remote/remote': ['./packages/remote/lib/typert.remote-client.d.ts'],

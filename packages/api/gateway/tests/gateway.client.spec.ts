@@ -14,6 +14,7 @@ import {
 import type {
   InvocationDescriptor,
   RemoteResult,
+  RemoteStreamHandle,
   TypertContextMap,
   TypertContextWire,
   TypertContext,
@@ -21,7 +22,6 @@ import type {
   TypertRemoteScopeApi,
   TypertRemoteNamespace,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { RemoteStreamHandle } from '@deepseek-ai/dsh-typert-protocol/client'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import type { ClientRemote } from '../src/client/index.ts'
 import { apply, inject, RemoteStream } from '../src/client/index.ts'
