@@ -1,4 +1,4 @@
-/* Sized to sit in the document header's 28px control row beside its round
+/* Sized to sit in the document header's 24px control row beside its round
    icon buttons: a hairline pill with a 12px label and a narrow chevron half. */
 
 .menuAnchor {
@@ -11,10 +11,10 @@
   display: inline-flex;
   align-items: stretch;
   box-sizing: border-box;
-  height: 28px;
+  height: 24px;
   overflow: hidden;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 14px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 9px;
   font-family: var(--dsw-font-family);
 }
 
@@ -26,7 +26,7 @@
   border: 0;
   background: none;
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 16px;
   white-space: nowrap;
   cursor: pointer;
@@ -34,12 +34,12 @@
 
 .main {
   gap: 4px;
-  padding: 5px 8px 5px 10px;
+  padding: 3px 5px;
 }
 
 .chevron {
-  padding: 5px 6px 5px 4px;
-  border-left: 0.5px solid var(--dsw-alias-border-l3);
+  padding: 3px 4px 3px 3px;
+  border-left: 0.5px solid var(--dsw-alias-border-l4);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -57,7 +57,32 @@
 }
 
 .appIcon {
-  width: 16px;
-  height: 16px;
   object-fit: contain;
+}
+
+/* The empty state's capsule, sized like the preview's own Retry
+   (ui-sidebar-documentpreview TextPreview `.retry`) so the two recourses read
+   as one family. */
+.empty {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px 0 14px;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  font-family: inherit;
+  background: transparent;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 16px;
+  cursor: pointer;
+}
+
+.empty:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.empty:disabled {
+  cursor: default;
 }

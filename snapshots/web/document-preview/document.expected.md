@@ -81,5 +81,5 @@
 
 - State: unsupported
 - Line: Preview is not available for this file type yet.
-- Header control: Open
-- Empty-state control: Open in default app
+- Header control has no text: true
+- Empty-state control: Open

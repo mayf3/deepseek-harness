@@ -1,0 +1,143 @@
+/** Shared file and directory opener: one default action, application menu, and per-gesture feedback. */
+import { useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import {
+  IconChevronDownOutlineRegular, IconFolderOpenOutlineRegular, IconRightUpOutlineRegular, Menu, Tooltip,
+} from '@deepseek-ai/dsh-client-ui-primitives'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { OpenInAppPathFailure } from './open-path.ts'
+import { useOpenFailureToast } from './open-failure-toast.tsx'
+import type { NS } from './locales.ts'
+import css from './OpenTargetButton.module.css'
+
+/** Application metadata supplied by either the directory catalog or a file association query. */
+export interface OpenTargetApplication {
+  readonly id: string
+  readonly name: string
+  readonly icon: string | null
+}
+
+/** Opening intent; default selection remains owned by the target's adapter. */
+export type OpenTargetOperation = { readonly kind: 'default' } | { readonly kind: 'application'; readonly id: string } | { readonly kind: 'reveal' }
+
+/** Inputs shared by both target adapters and the file empty-state action. */
+export interface OpenTargetButtonProps {
+  readonly kind: 'file' | 'directory'
+  readonly applications: readonly OpenTargetApplication[]
+  readonly defaultId: string | undefined
+  readonly failed: boolean
+  readonly empty?: boolean
+  readonly t: TranslateNS<typeof NS>
+  readonly execute: (operation: OpenTargetOperation) => Promise<OpenInAppPathFailure | null>
+  readonly refresh?: () => void
+}
+
+/**
+ * Serialize gestures and announce their failures through the initiating control's toast.
+ * @param execute - target adapter that returns the failure to announce, or null.
+ * @param t - localized control copy.
+ * @returns the pending state, feedback, and guarded action callback.
+ */
+export function useOpenTargetGesture(execute: OpenTargetButtonProps['execute'], t: TranslateNS<typeof NS>): {
+  pending: boolean
+  toast: ReactNode
+  act: (operation: OpenTargetOperation) => void
+} {
+  const [pending, setPending] = useState(false)
+  const inFlight = useRef(false)
+  const { toast, show } = useOpenFailureToast()
+  return {
+    pending,
+    toast,
+    act: (operation) => {
+      if (inFlight.current) return
+      inFlight.current = true
+      setPending(true)
+      void execute(operation).then((failure) => {
+        if (failure !== null) show(t(`path.${failure}`))
+      }).finally(() => { inFlight.current = false; setPending(false) })
+    },
+  }
+}
+
+/** One application image with a per-image fallback, shared by main and menu buttons. */
+function ApplicationIcon({ source, size = 14 }: { source: string | null; size?: number }): ReactNode {
+  const [failed, setFailed] = useState(false)
+  return source === null || failed
+    ? <IconRightUpOutlineRegular size={size} />
+    : <img src={source} width={size} height={size} className={css.appIcon} alt="" draggable={false} onError={() => { setFailed(true) }} />
+}
+
+/**
+ * Render identical split buttons for files and directories. File reveal always stays last and becomes the default when no app is selected.
+ * @param props - target applications, default selection, and operations.
+ * @returns the control and its transient failure feedback.
+ */
+export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
+  const { applications, defaultId, kind, t } = props
+  const [menuOpen, setMenuOpen] = useState(false)
+  const { pending, toast, act } = useOpenTargetGesture(props.execute, t)
+  const preferred = applications.find(app => app.id === defaultId)
+  const revealDefault = kind === 'file' && preferred === undefined
+  const primaryLabel = revealDefault ? t('path.reveal') : t('open.title', { app: preferred?.name ?? '' })
+  const run = (operation: OpenTargetOperation): void => { setMenuOpen(false); act(operation) }
+  const primary = (): void => { run({ kind: revealDefault ? 'reveal' : 'default' }) }
+  const icon = revealDefault
+    ? <IconFolderOpenOutlineRegular size={13} />
+    : <ApplicationIcon key={preferred?.icon} source={preferred?.icon ?? null} size={13} />
+  if (props.empty === true) return (
+    <>
+      <button type="button" className={css.empty} disabled={pending} data-open-path-unpreviewable onClick={primary}>
+        {t('path.open')}{icon}
+      </button>
+      {toast}
+    </>
+  )
+  return (
+    <>
+      <Menu
+        className={css.menuAnchor}
+        open={menuOpen && !pending}
+        autoFocus
+        portal
+        dense
+        align="end"
+        onClose={() => { setMenuOpen(false) }}
+        items={[
+          ...applications.map(app => ({
+            id: `app:${app.id}`,
+            icon: <ApplicationIcon key={app.icon} source={app.icon} />,
+            label: app.id === defaultId ? t('path.appDefault', { app: app.name }) : app.name,
+          })),
+          ...(props.failed ? [{ id: 'unavailable', label: t('path.appsError'), disabled: true }] : []),
+          ...(kind === 'file' ? [{
+            id: 'reveal', icon: <IconFolderOpenOutlineRegular />,
+            label: revealDefault ? t('path.appDefault', { app: t('path.reveal') }) : t('path.reveal'),
+          }] : []),
+        ]}
+        onSelect={(id) => { run(id === 'reveal' ? { kind: 'reveal' } : { kind: 'application', id: id.slice(4) }) }}
+        anchor={(
+          <div className={css.split} data-open-target={kind} data-open-path={kind === 'file' ? '' : undefined} data-state={pending ? 'busy' : 'idle'}>
+            <Tooltip label={revealDefault ? t('path.reveal') : t('open.tooltip')} side="bottom" delayMs={500}>
+              <button type="button" className={css.main} disabled={pending} aria-label={primaryLabel} data-open-path-open={kind === 'file' ? '' : undefined} onClick={primary}>
+                {icon}
+              </button>
+            </Tooltip>
+            <button
+              type="button" className={css.chevron} disabled={pending}
+              aria-haspopup="menu" aria-expanded={menuOpen && !pending} aria-label={t('path.more')}
+              data-open-path-more={kind === 'file' ? '' : undefined}
+              onClick={() => {
+                if (!menuOpen) props.refresh?.()
+                setMenuOpen(value => !value)
+              }}
+            >
+              <IconChevronDownOutlineRegular size={10} />
+            </button>
+          </div>
+        )}
+      />
+      {toast}
+    </>
+  )
+}

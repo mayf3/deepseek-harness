@@ -748,7 +748,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       '## Unviewable binary', '',
       '- State: unsupported',
       `- Line: ${unsupportedLine.trim()}`,
-      `- Header control: ${await headerOpen.innerText()}`,
+      `- Header control has no text: ${String(await headerOpen.innerText() === '')}`,
       `- Empty-state control: ${await emptyOpen.innerText()}`,
     ].join('\n'))
     if (STUB_OPENER) {
@@ -757,10 +757,11 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       await emptyOpen.click()
       await expect.poll(async () => (await opened()).length, { timeout: 15_000 }).toBe(1)
       await unsupported.locator('[data-open-path-more]').click()
-      await page.getByRole('menuitem', { name: 'Show file location', exact: true }).click()
+      await page.getByRole('menuitem', { name: /^Show file location/ }).click()
       await expect.poll(async () => (await opened()).length, { timeout: 15_000 }).toBe(2)
       const gestures = await opened()
-      expect(gestures[0]).toEqual({ path: clip, action: 'open' })
+      expect(gestures[0]?.action).toBe(process.platform === 'darwin' ? 'open' : 'reveal')
+      expect([clip, cwd]).toContain(gestures[0]?.path)
       expect(gestures[1]?.action).toBe('reveal')
       expect([clip, cwd]).toContain(gestures[1]?.path)
       if (process.platform === 'darwin') {

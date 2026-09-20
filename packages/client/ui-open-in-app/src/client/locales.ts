@@ -39,7 +39,7 @@ const PRODUCT_NAMES = {
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'open.title': '在 {app} 中打开工作目录',
+  'open.title': '在 {app} 中打开',
   'open.tooltip': '在本地打开',
   'open.error': '打开失败',
   'menu.toggle': '选择打开方式',
@@ -63,7 +63,7 @@ export const zh = {
 
 /** English dictionary, key-identical to the Chinese source of truth. */
 export const en: Record<OpenInAppKey, string> = {
-  'open.title': 'Open workspace in {app}',
+  'open.title': 'Open in {app}',
   'open.tooltip': 'Open locally',
   'open.error': 'Failed to open',
   'menu.toggle': 'Choose an app to open in',

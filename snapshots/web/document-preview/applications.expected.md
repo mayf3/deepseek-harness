@@ -1,5 +1,4 @@
 - menu:
-  - menuitem "Open in default app"
   - menuitem "Test Player (default)"
   - menuitem "Other Player"
   - menuitem "Show file location"
