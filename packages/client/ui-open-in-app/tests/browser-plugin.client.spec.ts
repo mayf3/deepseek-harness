@@ -74,6 +74,7 @@ describe('open-in-app browser half', () => {
     const face = (header?.inject as unknown as () => OpenPathInjected)()
     const emptyFace = (empty?.inject as unknown as () => OpenPathInjected)()
     expect(emptyFace.hooks.openInAppDesktop).toBe(face.hooks.openInAppDesktop)
+    expect(emptyFace.applications).toBe(face.applications)
     expect(face.hooks.openInAppDesktop.getSnapshot()).toBeNull()
     await Promise.all([face.loadDesktop(), emptyFace.loadDesktop()])
     expect(remote.session.canOpenWorkspacePath).toHaveBeenCalledOnce()

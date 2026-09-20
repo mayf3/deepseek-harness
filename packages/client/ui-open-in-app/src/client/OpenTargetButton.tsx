@@ -26,6 +26,7 @@ export interface OpenTargetButtonProps {
   readonly applications: readonly OpenTargetApplication[]
   readonly defaultId: string | undefined
   readonly failed: boolean
+  readonly busy?: boolean
   readonly loading?: boolean
   readonly prominent?: boolean
   readonly t: TranslateNS<typeof NS>
@@ -79,19 +80,22 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
   const [menuOpen, setMenuOpen] = useState(false)
   const { pending, toast, act } = useOpenTargetGesture(props.execute, t)
   const preferred = applications.find(app => app.id === defaultId)
-  const disabled = pending || props.loading === true
+  const disabled = pending || props.busy === true || props.loading === true
+  const hasMenu = props.loading === true || props.failed || applications.length + (kind === 'file' ? 1 : 0) > 1
   const revealDefault = kind === 'file' && preferred === undefined && props.loading !== true
   const primaryLabel = preferred === undefined ? t('path.reveal') : t('open.title', { app: preferred.name })
   const run = (operation: OpenTargetOperation): void => { setMenuOpen(false); act(operation) }
   const primary = (): void => { run({ kind: revealDefault ? 'reveal' : 'default' }) }
-  const icon = revealDefault
-    ? <IconFolderOpenOutlineRegular size={props.prominent ? 18 : 13} />
-    : <ApplicationIcon key={preferred?.icon} source={preferred?.icon ?? null} size={props.prominent ? 18 : 13} />
+  const icon = props.loading === true && preferred === undefined
+    ? <span className={css.skeleton} data-open-target-skeleton aria-hidden="true" style={{ width: props.prominent ? 18 : 13, height: props.prominent ? 18 : 13 }} />
+    : revealDefault
+      ? <IconFolderOpenOutlineRegular size={props.prominent ? 18 : 13} />
+      : <ApplicationIcon key={preferred?.icon} source={preferred?.icon ?? null} size={props.prominent ? 18 : 13} />
   return (
     <>
       <Menu
         className={css.menuAnchor}
-        open={menuOpen && !disabled}
+        open={menuOpen && !disabled && hasMenu}
         autoFocus
         portal
         dense
@@ -104,11 +108,11 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
             label: app.id === defaultId ? t('path.appDefault', { app: app.name }) : app.name,
           })),
           ...(props.failed ? [{ id: 'unavailable', label: t('path.appsError'), disabled: true }] : []),
-          ...(kind === 'file' ? [{
-            id: 'reveal', icon: <IconFolderOpenOutlineRegular />,
-            label: revealDefault ? t('path.appDefault', { app: t('path.reveal') }) : t('path.reveal'),
-          }] : []),
         ]}
+        footer={kind === 'file' ? [{
+          id: 'reveal', icon: <IconFolderOpenOutlineRegular />,
+          label: revealDefault ? t('path.appDefault', { app: t('path.reveal') }) : t('path.reveal'),
+        }] : undefined}
         onSelect={(id) => { run(id === 'reveal' ? { kind: 'reveal' } : { kind: 'application', id: id.slice(4) }) }}
         anchor={(
           <div className={css.split} data-open-target={kind} data-size={props.prominent ? 'large' : 'compact'}
@@ -120,7 +124,7 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
                 {icon}{(props.prominent) && (revealDefault ? t('path.reveal') : t('path.open'))}
               </button>
             </Tooltip>
-            <button
+            {hasMenu && <button
               type="button" className={css.chevron} disabled={disabled}
               aria-haspopup="menu" aria-expanded={menuOpen && !disabled} aria-label={t('path.more')}
               data-open-path-more={kind === 'file' && !props.prominent ? '' : undefined}
@@ -130,7 +134,7 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
               }}
             >
               <IconChevronDownOutlineRegular size={10} />
-            </button>
+            </button>}
           </div>
         )}
       />

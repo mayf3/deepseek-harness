@@ -61,11 +61,12 @@ export function apply(ctx: ClientContext): void {
       iconUrl: appId => `${OPEN_IN_APP_ICON_PREFIX_ROUTE}/${appId}`,
     }),
   }, OpenInAppAction))
+  const applications: OpenPathInjected['applications'] = (path, signal) => paths.applications(path, signal)
   const pathInjected = (): OpenPathInjected => ({
     hooks: { openInAppDesktop: paths.desktop },
     loadDesktop: () => paths.load(),
     openPath: (path, action, application) => paths.openPath(path, action, application),
-    applications: (path, signal) => paths.applications(path, signal),
+    applications,
   })
   ctx.slots.inject('sidebar.right.tab.document.actions', () => ctx.slots.register({
     name: 'sidebar.right.tab.document.actions',

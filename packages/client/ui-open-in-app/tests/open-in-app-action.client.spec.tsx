@@ -140,3 +140,10 @@ describe('OpenInAppAction launching', () => {
     expect(await screen.findByText(t('open.title', { app: zh['app.finder'] }))).toBeTruthy()
   })
 })
+
+
+it('omits the dropdown when only one directory application is available', () => {
+  render(<OpenInAppAction {...bench({ apps: ['finder'], cwd: '/w' }).props} />)
+  expect(screen.getAllByRole('button')).toHaveLength(1)
+  expect(screen.queryByRole('button', { name: zh['path.more'] })).toBeNull()
+})

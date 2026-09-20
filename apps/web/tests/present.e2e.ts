@@ -192,6 +192,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
     ])
     expect(exported).not.toContain('EDITED_REPORT')
     if (MODE !== 'record') {
+      await expect.poll(() => page.locator('[data-presented-file] [role="status"]').count(), { timeout: 10_000 }).toBe(0)
       const aria = await captureExpandedTurnProcessAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(join(DIR, 'ui.expected.md'), aria, MODE)
       await page.locator('[data-turn-process]').click()
@@ -233,7 +234,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
               .find(element => element.textContent === 'report.txt'),
           'report title',
         )
-        const description = requiredElement(report.querySelector<HTMLElement>('span[role="status"]'), 'report status')
+        const description = requiredElement(report.querySelector<HTMLElement>('[data-presented-description]'), 'report description')
         const open = requiredElement(
           report.querySelector<HTMLButtonElement>('[data-open-target] button'),
           'report open action',

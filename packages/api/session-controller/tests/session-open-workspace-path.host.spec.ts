@@ -101,7 +101,7 @@ describe('session/openWorkspacePath', () => {
   it('preserves native opener failure and cancellation results', async () => {
     const ctx = await context()
     const openPath = vi.fn((_path: string, _signal: AbortSignal) =>
-      Promise.reject(new Error('desktop unavailable')))
+      Promise.reject(new Error('Command failed: powershell.exe -EncodedCommand private-script-text')))
     const remote = createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/default',
@@ -111,7 +111,7 @@ describe('session/openWorkspacePath', () => {
     await expect(remote.openWorkspacePath({ path: 'result.html' }))
       .resolves.toMatchObject({
         ok: false,
-        error: { code: 'gateway/internal', message: 'path open failed: desktop unavailable' },
+        error: { code: 'gateway/internal', message: 'path open failed' },
       })
 
     const aborted = new AbortController()
@@ -140,7 +140,7 @@ describe('session/openWorkspacePath', () => {
     await expect(controller.openWorkspacePath({
       path: 'second.html',
     }, new AbortController().signal)).rejects.toMatchObject({
-      code: 'gateway/internal', message: 'path open failed: desktop unavailable',
+      code: 'gateway/internal', message: 'path open failed',
     })
   })
 })

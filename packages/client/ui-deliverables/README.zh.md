@@ -32,7 +32,7 @@ kind: "package-reference"
 
 Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present`，用于声明会话文件系统可访问的最终文件，包括通过 Bash 创建的文件。创建后以 `files: [{ path, description? }]` 调用。[present 工具](../../deliverables/tool-present/README.zh.md)拥有文件数量限制和会话声明。单个交付占满一行，多个交付使用双列网格，超过四个时默认收起。卡片显示文件名、说明或文件类型，以及共享的原生打开控件。点击卡片会在右侧 Sidebar 预览文件。控件打开默认应用，并列出关联应用，文件定位始终放在最后。匹配的行内代码引用也打开 Sidebar 预览。重复声明使用收尾回复之前最近一次的说明。
 
-`present` 工具行在执行、成功、失败和中断状态下保留文档图标及记录的结果。原生操作共享等待状态，并在卡片显示进度或可重试错误。卡片挂载时读取桌面信息，连接更换时清除缓存。Host 没有桌面时，卡片保留 Sidebar 预览并隐藏原生控件；元数据读取失败时提供重试。交付卡片和变更对比页通过 `deliverables.file.actions` 和 `deliverables.review.file.actions` 使用 [ui-open-in-app](../ui-open-in-app/README.zh.md) 提供的控件。关联应用 GET 查询与原生 POST 操作都会先校验记录中的文件坐标及会话文件系统映射，再调用 Host 桌面。
+`present` 工具行在执行、成功、失败和中断状态下保留文档图标及记录的结果。原生操作共享等待状态，并在卡片显示进度或可重试错误。打开或定位成功的反馈显示五秒后，在 200ms 内淡出并恢复文件说明；失败信息保留到下次尝试。卡片挂载时读取桌面信息，连接更换时清除缓存。Host 没有桌面时，卡片保留 Sidebar 预览并隐藏原生控件；元数据读取失败时提供重试。交付卡片和变更对比页通过 `deliverables.file.actions` 和 `deliverables.review.file.actions` 使用 [ui-open-in-app](../ui-open-in-app/README.zh.md) 提供的控件。关联应用 GET 查询与原生 POST 操作都会先校验记录中的文件坐标及会话文件系统映射，再调用 Host 桌面。
 
 ### 改动文件卡片
 

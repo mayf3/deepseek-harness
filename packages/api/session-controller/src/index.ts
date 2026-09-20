@@ -329,8 +329,9 @@ export class SessionController extends TypertRemoteService {
       if (error instanceof RemoteError) throw error
       throw new RemoteError(
         'gateway/internal',
-        `path open failed: ${error instanceof Error ? error.message : String(error)}`,
+        'path open failed',
         {},
+        { cause: error },
       )
     }
   }

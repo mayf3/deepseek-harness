@@ -76,3 +76,5 @@
 .split[data-size='large'] .chevron {
   padding: 8px 10px;
 }
+
+.skeleton { display: inline-block; flex: none; border-radius: 3px; background: var(--dsw-alias-interactive-bg-hover); }

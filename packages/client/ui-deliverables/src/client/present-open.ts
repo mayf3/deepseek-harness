@@ -4,6 +4,11 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { changedFileUrl } from '../changes.ts'
 import { presentedFileUrl, PRESENT_HOST_ROUTE, isPresentedHost, type PresentedAction, type PresentedHost } from '../presented.ts'
 
+/** Success feedback remains fully visible for five seconds before fading. */
+export const PRESENTED_SUCCESS_HOLD_MS = 5000
+/** Fade interval shared by the card animation and status expiry. */
+export const PRESENTED_SUCCESS_FADE_MS = 200
+
 /** Failure feedback for the shared native opening control. */
 export type PresentedOpenFailure = 'openError' | 'revealError' | null
 
@@ -16,6 +21,7 @@ export class PresentedOpenController {
   readonly state = createSnapshotStore<Record<string, PresentedOpenPhase | undefined>>({})
   /** Native destination metadata, or a retryable read failure. */
   readonly host = createSnapshotStore<PresentedHost | 'error' | null>(null)
+  private readonly expiry = new Map<string, ReturnType<typeof setTimeout>>()
   private loading: Promise<void> | undefined
   private metadata = new AbortController()
   private readonly lifetime = new AbortController()
@@ -55,6 +61,7 @@ export class PresentedOpenController {
   private async openUrl(url: string, action: PresentedAction, application?: string): Promise<PresentedOpenFailure> {
     const phase = this.state.getSnapshot()[url]
     if (this.lifetime.signal.aborted || phase === 'opening' || phase === 'revealing') return null
+    this.clearExpiry(url)
     this.state.update((state) => { state[url] = action === 'open' ? 'opening' : 'revealing' })
     const task = this.request(url, action, application)
     this.pending.add(task)
@@ -110,7 +117,13 @@ export class PresentedOpenController {
   /** Cancel outstanding requests and wait until no request can publish state. */
   async dispose(): Promise<void> {
     this.lifetime.abort()
+    for (const url of this.expiry.keys()) this.clearExpiry(url)
     await Promise.all(this.pending)
+  }
+
+  private clearExpiry(url: string): void {
+    clearTimeout(this.expiry.get(url))
+    this.expiry.delete(url)
   }
 
   private async request(url: string, action: PresentedAction, application?: string): Promise<PresentedOpenFailure> {
@@ -125,7 +138,15 @@ export class PresentedOpenController {
       // Transport failures share the retryable card state with Host open failures.
       phase = failure
     }
-    if (!this.lifetime.signal.aborted) this.state.update((state) => { state[url] = phase })
+    if (!this.lifetime.signal.aborted) {
+      this.state.update((state) => { state[url] = phase })
+      if (phase === 'opened' || phase === 'revealed') {
+        this.expiry.set(url, setTimeout(() => {
+          this.expiry.delete(url)
+          this.state.update((state) => { Reflect.deleteProperty(state, url) })
+        }, PRESENTED_SUCCESS_HOLD_MS + PRESENTED_SUCCESS_FADE_MS))
+      }
+    }
     return phase === 'opened' || phase === 'revealed' ? null : action === 'reveal' ? 'revealError' : 'openError'
   }
 }
