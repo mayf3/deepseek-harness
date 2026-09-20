@@ -3,8 +3,9 @@
  * frame routing, and control baselines for uninstantiated sessions.
  */
 
-import { describe, expect, vi } from 'vitest'
+import { describe, expect, onTestFinished, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionControlFrame } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -48,6 +49,318 @@ function makeManager(
 }
 
 describe('SessionManager instances', () => {
+  it.for(['event', 'list'] as const)(
+    'forgets running when an unretained identity disappears through a %s',
+    async (source, { mock, remote }) => {
+      const manager = makeManager(mock, remote)
+      onTestFinished(() => manager.dispose())
+      remote.session.list.mockResolvedValueOnce(ok({ items: [summary(S1, { blank: true })] }))
+      await manager.refreshList()
+      manager.handleSessionStatus(S1, true)
+      manager.handleSessionStatus(S1, false)
+      expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+
+      if (source === 'event') manager.handleSessionRemoved(S1)
+      else {
+        remote.session.list.mockResolvedValueOnce(ok({ items: [] }))
+        await manager.refreshList()
+      }
+      expect(manager.getListSnapshot().items).toEqual([])
+      manager.handleSessionAdded(summary(S1, { blank: true }))
+
+      expect(manager.getListSnapshot().items[0]?.blank).toBe(true)
+    },
+  )
+
+  it('retains acceptance while an unlisted Session remains resident, then forgets it on drop', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    const session = manager.get(S1)
+    await session.prompt([{ type: 'text', text: 'first' }], 'queue')
+    remote.session.list.mockResolvedValue(ok({ items: [] }))
+
+    await manager.refreshList()
+    expect(manager.getListSnapshot().items).toEqual([])
+    expect(session.getSnapshot().blank).toBe(false)
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+
+    await manager.refreshList()
+    await manager.drop(S1, session)
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(true)
+  })
+
+  it('retains running for an unlisted child with only a retained address', async ({ mock, remote }) => {
+    const address: SubagentAddress = { parentSessionId: S1, childSessionId: S2, mode: 'continuable' }
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    manager.resolveTarget(address)
+    manager.handleSessionAdded(summary(S2, { blank: true }))
+    manager.handleSessionStatus(S2, true)
+    manager.handleSessionStatus(S2, false)
+    remote.session.list.mockResolvedValueOnce(ok({ items: [] }))
+
+    await manager.refreshList()
+    expect(manager.getListSnapshot().items).toEqual([])
+    manager.handleSessionAdded(summary(S2, { blank: true }))
+
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+  })
+
+  it('retains running for a row added during a pull whose baseline omits it', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    manager.handleSessionStatus(S1, true)
+    manager.handleSessionStatus(S1, false)
+    const response = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
+    remote.session.list.mockReturnValueOnce(response.promise)
+    const refreshing = manager.refreshList()
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    response.resolve(ok({ items: [] }))
+
+    await refreshing
+
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+  })
+
+  it.for(['result', 'transport'] as const)(
+    'retains running observed before listing when the pull fails through %s',
+    async (source, { mock, remote }) => {
+      const manager = makeManager(mock, remote)
+      onTestFinished(() => manager.dispose())
+      manager.handleSessionStatus(S1, true)
+      manager.handleSessionStatus(S1, false)
+      const error = new RemoteError('gateway/internal', 'list unavailable', {})
+      if (source === 'result') remote.session.list.mockResolvedValueOnce(err(error))
+      else remote.session.list.mockRejectedValueOnce(error)
+
+      await manager.refreshList()
+      expect(manager.getListSnapshot().state).toBe('error')
+      manager.handleSessionAdded(summary(S1, { blank: true }))
+
+      expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+    },
+  )
+
+  it('accepts a later blank baseline without an acceptance or running observation', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    manager.handleSessionAdded(summary(S1, { blank: false }))
+    const session = manager.get(S1)
+    expect(session.getSnapshot().blank).toBe(false)
+    remote.session.list.mockResolvedValueOnce(ok({ items: [summary(S1, { blank: true })] }))
+
+    await manager.refreshList()
+
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(true)
+    expect(session.getSnapshot().blank).toBe(true)
+  })
+
+  it('retains acceptance received before the first list response', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    const response = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
+    remote.session.list.mockReturnValueOnce(response.promise)
+    const refreshing = manager.refreshList()
+    const session = manager.get(S1)
+    await session.prompt([{ type: 'text', text: 'first' }], 'queue')
+    expect(manager.getListSnapshot().items).toEqual([])
+    response.resolve(ok({ items: [summary(S1, { blank: true })] }))
+
+    await refreshing
+
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+    expect(session.getSnapshot().blank).toBe(false)
+  })
+
+  it('keeps a rejected first prompt blank across refresh and object replacement', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    remote.session.prompt.mockResolvedValueOnce(err(new RemoteError('session/agent-busy', 'busy', { reason: 'x' })))
+    const session = manager.get(S1)
+    expect((await session.prompt([{ type: 'text', text: 'first' }], 'queue')).ok).toBe(false)
+    remote.session.list.mockResolvedValueOnce(ok({ items: [summary(S1, { blank: true })] }))
+    await manager.refreshList()
+    await manager.drop(S1, session)
+
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(true)
+    expect(manager.get(S1).getSnapshot().blank).toBe(true)
+  })
+
+  it('ignores running from a list response that predates removal, including after re-addition', async ({ mock, remote }) => {
+    for (const readdBeforeResponse of [false, true]) {
+      const manager = makeManager(mock, remote)
+      onTestFinished(() => manager.dispose())
+      manager.handleSessionAdded(summary(S1, { blank: true }))
+      const response = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
+      remote.session.list.mockReturnValueOnce(response.promise)
+      const refreshing = manager.refreshList()
+      manager.handleSessionRemoved(S1)
+      if (readdBeforeResponse) manager.handleSessionAdded(summary(S1, { blank: true }))
+
+      response.resolve(ok({ items: [summary(S1, { blank: true, running: true })] }))
+      await refreshing
+      if (!readdBeforeResponse) {
+        expect(manager.getListSnapshot().items).toEqual([])
+        manager.handleSessionAdded(summary(S1, { blank: true }))
+      }
+
+      expect(manager.getListSnapshot().items[0]).toMatchObject({ blank: true, running: false })
+    }
+  })
+
+  it('retains running observations after re-addition while an older list response is pending', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    const response = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
+    remote.session.list.mockReturnValue(response.promise)
+    const refreshing = manager.refreshList()
+    manager.handleSessionRemoved(S1)
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    manager.handleSessionStatus(S1, true)
+    manager.handleSessionStatus(S1, false)
+
+    response.resolve(ok({ items: [summary(S1, { blank: true })] }))
+    await refreshing
+
+    expect(manager.getListSnapshot().items[0]).toMatchObject({ blank: false, running: false })
+  })
+
+  it('applies late acceptance to a re-added list row without materializing its Session', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    const acceptance = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.prompt>>>()
+    remote.session.prompt.mockReturnValue(acceptance.promise)
+    const session = manager.get(S1)
+    const sending = session.prompt([{ type: 'text', text: 'first' }], 'queue')
+    manager.handleSessionRemoved(S1)
+    await manager.drop(S1, session)
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    const getSession = vi.spyOn(manager, 'get')
+    onTestFinished(() => { getSession.mockRestore() })
+    acceptance.resolve(ok({ accepted: true }))
+    await sending
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+    expect(getSession).not.toHaveBeenCalled()
+  })
+
+  it('publishes a late acceptance to the replacement Session with the same id', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    const acceptance = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.prompt>>>()
+    remote.session.prompt.mockReturnValue(acceptance.promise)
+    const session = manager.get(S1)
+    const sending = session.prompt([{ type: 'text', text: 'first' }], 'queue')
+    await manager.drop(S1, session)
+    const replacement = manager.get(S1)
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(true)
+    expect(replacement.getSnapshot().blank).toBe(true)
+    acceptance.resolve(ok({ accepted: true }))
+    await sending
+
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+    expect(replacement.getSnapshot().blank).toBe(false)
+    await manager.drop(S1, session)
+    expect(manager.get(S1)).toBe(replacement)
+  })
+
+  it('keeps accepted presentation when its Session is rebuilt', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    const session = manager.get(S1)
+    await session.prompt([{ type: 'text', text: 'first' }], 'queue')
+    await manager.drop(S1, session)
+
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+    expect(manager.get(S1).getSnapshot().blank).toBe(false)
+  })
+
+  it('publishes acceptance from a nonblank sender after its list row is replaced', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    const sender = manager.get(S1)
+    await sender.prompt([{ type: 'text', text: 'first' }], 'queue')
+    const acceptance = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.prompt>>>()
+    remote.session.prompt.mockReturnValueOnce(acceptance.promise)
+    const sending = sender.prompt([{ type: 'text', text: 'next' }], 'queue')
+    manager.handleSessionRemoved(S1)
+    await manager.drop(S1, sender)
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    const replacement = manager.get(S1)
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(true)
+    expect(replacement.getSnapshot().blank).toBe(true)
+
+    acceptance.resolve(ok({ accepted: true }))
+    await sending
+
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+    expect(replacement.getSnapshot().blank).toBe(false)
+  })
+
+  it('keeps observed running presentation across idle empty-history summaries', async ({ mock, remote }) => {
+    for (const source of ['addition', 'refresh'] as const) {
+      const manager = makeManager(mock, remote)
+      onTestFinished(() => manager.dispose())
+      manager.handleSessionAdded(summary(S1, { blank: true }))
+      const session = manager.get(S1)
+      manager.handleSessionStatus(S1, true)
+      manager.handleSessionStatus(S1, false)
+      expect(session.getSnapshot().blank).toBe(false)
+
+      if (source === 'addition') manager.handleSessionAdded(summary(S1, { blank: true }))
+      else {
+        remote.session.list.mockResolvedValueOnce(ok({ items: [summary(S1, { blank: true })] }))
+        await manager.refreshList()
+      }
+
+      expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+      expect(session.getSnapshot().blank).toBe(false)
+    }
+  })
+
+  it('does not restore a removed row or publish after disposal when acceptance arrives late', async ({ mock, remote }) => {
+    for (const dispose of [false, true]) {
+      const manager = makeManager(mock, remote)
+      onTestFinished(() => manager.dispose())
+      manager.handleSessionAdded(summary(S1, { blank: true }))
+      const acceptance = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.prompt>>>()
+      remote.session.prompt.mockReturnValue(acceptance.promise)
+      const session = manager.get(S1)
+      const sending = session.prompt([{ type: 'text', text: 'first' }], 'queue')
+      manager.handleSessionRemoved(S1)
+      if (dispose) await manager.dispose()
+      else await manager.drop(S1, session)
+      const notify = vi.fn()
+      const unsubscribe = manager.subscribe(notify)
+      onTestFinished(unsubscribe)
+      acceptance.resolve(ok({ accepted: true }))
+      await sending
+      expect(manager.getListSnapshot().items).toEqual([])
+      expect(notify).not.toHaveBeenCalled()
+    }
+  })
+
+  it('keeps accepted presentation across a later list refresh without a turn', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    remote.session.list.mockResolvedValue(ok({ items: [summary(S1, { blank: true })] as never[] }))
+    await manager.refreshList()
+    await manager.get(S1).prompt([{ type: 'text', text: 'first' }], 'queue')
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+
+    await manager.refreshList()
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+  })
+
   it('lazily builds one resident instance per id and syncs the running bit from the list', async ({ mock, remote }) => {
     remote.session.list.mockResolvedValue(ok({ items: [summary(S1, { running: true })] as never[] }))
     const manager = makeManager(mock, remote)
@@ -504,6 +817,25 @@ describe('subagent catalogs', () => {
     })
   })
 
+  it('resolves an unknown browsing mode from the child projection without changing parent membership', async ({ mock, start }) => {
+    mock.load(sessionWorld)
+    const client = await start()
+    const manager = new SessionManager(client.ctx.remote)
+    const entries = [{ id: S2, createdAt: 1, mode: 'unknown' as const }]
+    manager.handleControlFrame({ type: 'projection', sessionId: S1, key: 'subagentCatalog', seq: 0, value: entries })
+    const address = manager.subagentAddress(S2)!
+    expect(address).toEqual({ parentSessionId: S1, childSessionId: S2, mode: 'unknown' })
+    manager.resolveTarget(address)
+    const child = manager.get(S2)
+    expect(child.getSnapshot().subagent?.address.mode).toBe('unknown')
+    manager.handleControlFrame({ type: 'projection', sessionId: S2, key: 'subagent', seq: 0,
+      value: { seq: SessionSeq(0), mode: 'continuable', label: 'repaired child' } })
+    await child.open()
+    expect(child.getSnapshot().subagent?.address).toEqual({ ...address, mode: 'continuable' })
+    expect(manager.getListSnapshot().projectionsBySession[S1]?.values.subagentCatalog).toEqual(entries)
+    await manager.dispose()
+  })
+
   it('publishes pushed membership without a catalog request or an instantiated parent', ({ mock, remote }) => {
     const manager = makeManager(mock, remote)
     manager.handleSessionAdded(summary(S2, { origin: 'subagent', parentSessionId: S1, running: true }))
@@ -876,6 +1208,32 @@ describe('remaining branches', () => {
 })
 
 describe('connected generation', () => {
+  it('does not prune running observations from a superseded empty list response', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    const oldList = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
+    const newList = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
+    remote.session.list.mockReturnValueOnce(oldList.promise).mockReturnValueOnce(newList.promise)
+    const oldPull = manager.refreshList()
+    manager.handleSessionStatus(S1, true)
+    manager.handleSessionStatus(S1, false)
+    manager.handleConnected()
+    const newPull = manager.refreshList()
+    try {
+      oldList.resolve(ok({ items: [] }))
+      await oldPull
+      expect(manager.getListSnapshot().state).toBe('loading')
+      newList.resolve(ok({ items: [summary(S1, { blank: true })] }))
+      await newPull
+
+      expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+    } finally {
+      oldList.resolve(ok({ items: [] }))
+      newList.resolve(ok({ items: [] }))
+      await Promise.all([oldPull, newPull])
+    }
+  })
+
   it.for(['old-first', 'new-first'] as const)(
     'ignores a previous generation list response (%s)',
     async (order, { mock, remote }) => {

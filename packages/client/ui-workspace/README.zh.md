@@ -1,5 +1,5 @@
 ---
-description: "dsh Web 客户端的共享 Workspace 浏览器与选择器插件：分组或扁平的会话行、添加、重命名、重排序、搜索、fork、归档，以及目录流选取子 slot。"
+description: "dsh Web 客户端的共享 Workspace 浏览器与选择器插件：分组或扁平的会话行、管理操作、由 slot 组合的 Session 行 action 与目录选择。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包让用户浏览分组或扁平的 Session 列表、为新 Session 选择 Workspace，并通过添加、重命名、重排序、搜索、fork、归档和删除 Workspace 来管理 Workspace 与 Session。待处理交互显示为警告点，活动定时任务显示为闹钟标识，subagent 来源的 Session 则保持隐藏。规范化后仍有差异的文件夹路径会保留为独立 Workspace。添加 Workspace 需要组合目录选择器；没有目录选择器时，添加操作不可用。
+本包让用户浏览分组或扁平的 Session 列表、为新 Session 选择 Workspace，并通过添加、重命名、重排序、搜索、fork、归档和删除 Workspace 来管理 Workspace 与 Session；Session 行菜单及其悬停按钮是可由客户端插件扩展的 slot 列表。待处理交互显示为警告点，活动定时任务显示为闹钟标识，subagent 来源的 Session 则保持隐藏。规范化后仍有差异的文件夹路径会保留为独立 Workspace。添加 Workspace 需要组合目录选择器；没有目录选择器时，添加操作不可用。
 
 ## 目录
 
@@ -47,9 +47,9 @@ kind: "package-reference"
 
 ### 管理会话
 
-Session 行内的 Rename 操作打开一个以该行显示标题预填的对话框；确认未修改的标题是有意允许的——这正是把当前自动标题钉住、不再被重新生成覆盖的手势。双击标题也会打开 Rename；对于未归档 Session，先发生的点击会打开其对话。Rename 使用临时 `workspaceOperation` reference，并等待首次历史打开。行内 Fork 在源会话最后一个已完成轮次处 fork，通过 Session Controller 递增继承的持久化标题，不 retain 子会话、不打开其历史，也不改变选择。Workspace 行内的 Delete 操作会打开确认框，说明保留边界；成功后该分组被移除，其 Session 则留在 Ungrouped 下。
+Session 行内的 Rename 操作打开一个以该行显示标题预填的对话框；确认未修改的标题是有意允许的——这正是把当前自动标题钉住、不再被重新生成覆盖的手势。双击标题也会打开 Rename；对于未归档 Session，先发生的点击会打开其对话。Rename 使用临时 `workspaceOperation` reference，并等待首次历史打开。行内 Fork 在源会话最后一个已完成轮次处 fork，通过 Session Controller 递增继承的持久化标题，不 retain 子会话、不打开其历史，也不改变选择。Workspace 行内的 Delete 操作会打开确认框，说明保留边界；成功后该分组被移除，其 Session 则留在 Ungrouped 下。Pin、Rename、Fork、Archive 本身就是 `sidebar.workspaces.session.menu.item` 列表的条目（pin 与 archive 同时也是 `sidebar.workspaces.session.row.action` 的条目），因此客户端插件的 action 由其 `order` 决定落在哪个位置。
 
-Archive 不经确认对话框直接提交，并保留 Session 的记账位置。视图选项控制显隐：默认隐藏已归档 Session，显示已归档会将其纳入列表，仅显示已归档则隐藏普通 Session。可见的归档行置灰，并提供无障碍说明，告知取消归档后才能打开；Rename、Fork 与取消归档仍然可用。归档成功后，toast 提供撤销与打开筛选菜单的操作。取消归档移除归档标记，但不恢复置顶，也不改变保存的位置。
+Archive 不经确认对话框直接提交，并保留 Session 的记账位置。视图选项控制显隐：默认隐藏已归档 Session，显示已归档会将其纳入列表，仅显示已归档则隐藏普通 Session。可见的归档行置灰，并提供无障碍说明，告知取消归档后才能打开；Rename、Fork 与取消归档仍然可用。归档成功后的提示提供"撤销"和"筛选已归档会话"两个动作，后者直接把筛选切到显示已归档。取消归档移除归档标记，但不恢复置顶，也不改变保存的位置。
 
 标题宽于所在行时，静止状态以省略号裁切。把指针停在行上，标题会滚动到远端——例如 fork 递增后的标题——并在揭示时不显示省略号；指针离开后标题回到开头。
 
@@ -80,6 +80,79 @@ Session 行渲染运行时的实时 `pendingInteraction` 分类：审批显示**
 ### 目录流子 slot
 
 每个注册各自声明一个**目录流子 slot**（`single` kind：`conversation.hero.workspace.directoryFlow`／`sidebar.workspaces.directoryFlow`），由组合的选择器包 client half 填入其选取交互——`-native` 后端的无渲染 OS 选择器驱动，`-browse` 组合下则是应用内浏览对话框。平铺显示的**添加工作区…** 操作仅在当前界面的 slot 被占用时渲染；slot 为空意味着该组合没有目录选择能力。本包持有触发与接纳：占用方通过 slot 的属主交互约定（`open`/`busy`/`onPicked`/`onCancel`/`onError`）每次打开上报一个所选路径，owner 通过对象层接纳它，并等待 Workspace 列表投影刷新后才选中已提交的 Workspace。
+
+### Session 行 action
+
+Session 行的 "..." 菜单和行尾悬停按钮是 WorkspaceBrowser 注册项声明的两个 `list` slot：`sidebar.workspaces.session.menu.item` 与 `sidebar.workspaces.session.row.action`。每一个菜单行、每一个悬停按钮都是条目，本包自己的 action 也不例外：`apply` 以客户端插件注册自己 action 的同一方式注册 `pin`（菜单 100、按钮 200）、`rename`（200）、`fork`（300）、`archive`（菜单 400、按钮 100），因此插件 action 落在其 `order` 所指的位置，以另一个 `priority` 复用内置 id 则遮蔽该 action。
+
+条目只接收行身份（`sessionId`、`displayTitle`），其余一切自己负责：用自己注入的 hook 读自己关心的 Host 状态（置顶与归档集合，以每次 Workspace 快照只派生一次的 Set 形式），自己决定是否显示（Host 规定归档与置顶互斥，所以 pin 在归档行上不渲染），整套行为放在注册项自己的 `inject` face 里（置顶成功后顺带把会话推到保存顺序最前，归档成功后发提示），浮层也自己带——重命名对话框和行 action 的提示是本包注册在 `shell.overlay` 的条目，由 action 注入的请求驱动。菜单条目渲染一个 `role="menuitem"` 的按钮（本包自己的行用 ui-primitives 的 `MenuItemButton`，它带宿主样式，开启新分组的行加 `separatorBefore`，分隔线随行一起出现和消失），并通过 slot 级 `useMenuOpenState` hook（菜单自身的打开状态，从该行的渲染出现处绑定）关闭菜单；悬停按钮条目渲染一个图标按钮，按钮条会拦住点击、不让它打开该行。browser 不再向行传任何 action 回调，它剩下的动作只有搜索结果里的恢复按钮和标题双击，后者发出的是同一个重命名请求。
+
+#### 打包客户端插件
+
+按照 Client 依赖规则，将 `ui-workspace`、`ui-slots`、`ui-renderer`、`client-locale` 与 `ui-primitives` 声明为浏览器／类型开发依赖。纯类型的 `ui-workspace/client` import 会加载本包的 `SlotMap` 声明；缺少该 import 时，独立编译的插件不会知道这些 slot key。Component 保持模块级稳定身份；用户可见文案由贡献包自己的 locale namespace 持有。
+
+```tsx
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import { MenuItemButton } from '@deepseek-ai/dsh-client-ui-primitives'
+import type {
+  InjectFace, LocaleDictOf, PropsLocale, PropsRuntime,
+} from '@deepseek-ai/dsh-client-ui-slots'
+import { exportSession } from './export-session.ts'
+
+const NS = 'acme.sessionActions'
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    'acme.sessionActions': 'export'
+  }
+}
+
+const en: LocaleDictOf<typeof NS> = { export: 'Export {title}' }
+const zh: LocaleDictOf<typeof NS> = { export: '导出 {title}' }
+
+interface ExportRowInjected {
+  exportSession: (sessionId: SessionId) => void
+}
+
+type ExportRowProps =
+  PropsRuntime<'sidebar.workspaces.session.menu.item'>
+  & PropsLocale<typeof NS>
+  & InjectFace<ExportRowInjected>
+
+function ExportRow({ sessionId, displayTitle, useMenuOpenState, exportSession, t }: ExportRowProps) {
+  const [, setMenuOpen] = useMenuOpenState()
+  return (
+    <MenuItemButton separatorBefore onSelect={() => { setMenuOpen(false); exportSession(sessionId) }}>
+      {t('export', { title: displayTitle })}
+    </MenuItemButton>
+  )
+}
+
+export const inject = ['slots', 'locale']
+
+export function apply(ctx: Context): void {
+  ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'acme-session-actions: dictionaries')
+
+  // Order 500 places the row after the shipped Archive (400); `separatorBefore` opens the plugin group.
+  ctx.slots.inject('sidebar.workspaces.session.menu.item', () => ctx.slots.register({
+    name: 'sidebar.workspaces.session.menu.item',
+    id: 'acme.export-session',
+    order: 500,
+    locale: NS,
+    inject: (): ExportRowInjected => ({ exportSession }),
+  }, ExportRow))
+}
+```
+
+即使 owner 通常已经存在，也必须使用 `ctx.slots.inject()`：它等待声明，在声明折叠时移除贡献项，并在声明恢复后重新注册。注册项的 `inject` factory 可以闭包使用插件已声明的 Cordis service；Component 只接收投影后的数据和 callback。悬停按钮以同样方式注册到 `sidebar.workspaces.session.row.action`，渲染一个图标按钮。
+
+#### 动态客户端包
+
+动态加载的 browser half 采用同一套组件协议，能拿到哪些模块取决于它走哪条 lane。Module Loader 包（`factory(require)`，即真实 Loader/Web fixture 那种）把 `@deepseek-ai/dsh-client-ui-primitives` 当作隐式 baseline external：通过 loader 的 `require` 解析 `MenuItemButton`，不要把 primitive 列为运行时依赖或打包另一份副本，仅在源码编译需要其类型时声明开发依赖。`cordis-client-runner` 闭包（生成的 Client Slot catalog 面向的读者）无法 import 任何东西：它用 `React.createElement` 渲染自己的 `role="menuitem"` `<button>`，样式经 `styles.insert` 注入，并通过同一个 `useMenuOpenState` hook 关闭菜单，catalog 里的示例就是这个写法。
 
 ### 视图状态
 

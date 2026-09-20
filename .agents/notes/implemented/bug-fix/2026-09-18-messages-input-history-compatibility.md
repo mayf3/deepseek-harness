@@ -10,7 +10,7 @@ Saved subagent settlement notices can contain child reasoning and tool calls in 
 
 ## Decision
 
-The [Messages serializer](../../../../packages/llm/llm-deepseek/src/protocols/messages/serialize.ts) omits `reasoning` and `tool-call` blocks from user and tool-result input. This matches Chat Completions and pi-ai for these two block types, without changing Session records or converting child reasoning into parent user text. The [provider README](../../../../packages/llm/llm-deepseek/README.md#model-experience) owns the input rules, including empty user messages, empty tool results, and rejection of other unsupported blocks.
+The [Messages serializer](../../../../packages/llm/llm-deepseek/src/serialize.ts) omits `reasoning` and `tool-call` blocks from user and tool-result input. This matches Chat Completions and pi-ai for these two block types, without changing Session records or converting child reasoning into parent user text. The [provider README](../../../../packages/llm/llm-deepseek/README.md#model-experience) owns the input rules, including empty user messages, empty tool results, and rejection of other unsupported blocks.
 
 This partially supersedes the settlement decision's rejection of serializer tolerance and the [Messages adapter decision](../feature/2026-09-07-deepseek-messages-adapter.md)'s input rejection. Notice construction still projects nonempty child text for every parent provider. Canonical child output and ordinary assistant reasoning and tool calls remain available to their existing consumers. The omission is based on input role and block type, not the notice source or creation date, so it also applies to newly supplied user and tool-result content.
 

@@ -111,12 +111,14 @@ describe('recorded-session corpus policy', () => {
   )
 
   it('bounds explicitly retained roles and requires a baseline/current majority', () => {
+    expect(assertSnapshotCorpusPolicy([
+      baseline, current,
+      { ...completeV0, selectedVersions: Array<number>(9).fill(0) }, ...adjacent,
+    ]).retainedRoles).toBe(11)
     expect(() => assertSnapshotCorpusPolicy([
-      baseline,
-      current,
-      { ...completeV0, selectedVersions: Array<number>(11).fill(0) },
-      ...adjacent,
-    ])).toThrow(`Session corpus retains ${11 + adjacent.length} historical roles; maximum is 10`)
+      baseline, current,
+      { ...completeV0, selectedVersions: Array<number>(10).fill(0) }, ...adjacent,
+    ])).toThrow('Session corpus retains 12 historical roles; maximum is 11')
     expect(() => assertSnapshotCorpusPolicy([
       { ...baseline, selectedVersions: [3] }, completeV0, ...adjacent,
     ])).toThrow(`Session corpus requires a baseline/current majority; baseline=1, current=0, retained=${1 + adjacent.length}`)

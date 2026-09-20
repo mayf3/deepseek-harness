@@ -16,7 +16,7 @@ import {
   Button, IconBrowseOutlineRegular, IconCopyOutlineRegular, IconFolderOpenOutlineRegular,
   IconPlusOutlineRegular, IconTrashOutlineRegular, Modal, Switch, Tag, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { draftBlocker, type AgentPresetSectionState } from './section-store.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
@@ -27,6 +27,8 @@ export interface AgentPresetSectionInjected {
   hooks: {
     /** Page snapshot bound by the renderer as useAgentPresetSection. */
     agentPresetSection: SnapshotStore<AgentPresetSectionState>
+    /** Shared preference controlling the picker-policy row. */
+    developerTools: ObservableSnapshot<boolean>
   }
   /** Read the roster; called once when the section first renders. */
   load: () => Promise<void>
@@ -181,6 +183,7 @@ function CardDescription({ text }: { text: string }): ReactNode {
 export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
   const { useAgentPresetSection, t, load } = props
   const state = useAgentPresetSection(snapshot => snapshot)
+  const developerTools = props.useDeveloperTools(enabled => enabled)
   const viewedId = state.view?.id
   const viewedRow = viewedId === undefined ? undefined : state.rows.find(row => row.id === viewedId)
   const viewedTitle = state.view === null
@@ -236,21 +239,23 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
     <div className={css.section}>
       <h2 className={css.title}>{t('nav')}</h2>
       <p className={css.intro}>{t('sectionIntro')}</p>
-      <div className={css.pickerPreference}>
-        <div className={css.pickerPreferenceCopy}>
-          <span className={css.pickerPreferenceTitleRow}>
-            <span className={css.pickerPreferenceTitle}>{t('showPicker')}</span>
-            <Tag>{t('showPickerBeta')}</Tag>
-          </span>
-          <p className={css.pickerPreferenceDescription}>{t('showPickerDescription')}</p>
+      {developerTools && (
+        <div className={css.pickerPreference}>
+          <div className={css.pickerPreferenceCopy}>
+            <span className={css.pickerPreferenceTitleRow}>
+              <span className={css.pickerPreferenceTitle}>{t('showPicker')}</span>
+              <Tag>{t('showPickerBeta')}</Tag>
+            </span>
+            <p className={css.pickerPreferenceDescription}>{t('showPickerDescription')}</p>
+          </div>
+          <Switch
+            checked={state.showPicker}
+            label={t('showPicker')}
+            disabled={state.status !== 'ready' || state.policySaving}
+            onChange={(next) => { void props.setPickerVisible(next) }}
+          />
         </div>
-        <Switch
-          checked={state.showPicker}
-          label={t('showPicker')}
-          disabled={state.status !== 'ready' || state.policySaving}
-          onChange={(next) => { void props.setPickerVisible(next) }}
-        />
-      </div>
+      )}
       {state.error === null ? null : <p className={css.error} role="alert">{state.error}</p>}
       {([['system', t('builtInGroup')], ['user', t('customGroup')]] as const).map(([trust, heading]) => {
         const group = state.rows

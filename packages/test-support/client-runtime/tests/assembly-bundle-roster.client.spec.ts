@@ -7,6 +7,11 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { MODULES_PACKAGE } from '../src/assembly/modules.ts'
 import { WEB_PROFILE_BUNDLES, bundleRoster, webApp } from '../src/assembly/bundle-roster.ts'
 
+function profileScope(name: string) {
+  const services: Record<string, object | undefined> = { profileContext: { name } }
+  return { get: (key: string) => services[key] }
+}
+
 describe('webApp (the real web profile)', () => {
   it('composes dsh-base then dsh-web-app: unique names, inject edges on roster rows or platform seed words', () => {
     expect(WEB_PROFILE_BUNDLES).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
@@ -15,7 +20,10 @@ describe('webApp (the real web profile)', () => {
     const known = new Set([...names, ...Object.keys(getStaticModules())])
     const dangling = webApp.rows.flatMap(row => row.inject.filter(target => !known.has(target)).map(target => `${row.name} -> ${target}`))
     expect(dangling).toEqual([])
-    expect(bundleRoster(WEB_PROFILE_BUNDLES).rows).toEqual(webApp.rows)
+    expect(bundleRoster(WEB_PROFILE_BUNDLES, undefined, profileScope('web')).rows).toEqual(webApp.rows)
+    expect(names).not.toContain('@deepseek-ai/dsh-client-ui-sidebar-browser')
+    expect(bundleRoster(WEB_PROFILE_BUNDLES, undefined, profileScope('desktop')).rows.map(row => row.name))
+      .toContain('@deepseek-ai/dsh-client-ui-sidebar-browser')
   })
 
   it('keeps browser rows with their declarations and drops Host-only, disabled, and subpath rows', () => {
@@ -152,6 +160,84 @@ describe('bundleRoster on a scratch installation', () => {
       disabled: !!js process.platform === 'win32'
 `)
     expect(() => scratch.roster(['@t/maybe-bundle'])).toThrow('browser row @t/maybe has a `disabled` value this reader cannot evaluate')
+  })
+
+  it('evaluates profile conditions before deduplication and skips ignored row expressions', () => {
+    scratch.web('@t/conditional')
+    scratch.bundle('@t/conditional-bundle', `
+- insert:
+    - id: ignored
+      name: ./ignored.mjs
+      disabled: !!js missingIgnoredValue
+    - id: first
+      name: '@t/conditional'
+      disabled: !!js ctx.get('profileContext').name !== 'desktop'
+    - id: second
+      name: '@t/conditional'
+      disabled: false
+`)
+    expect(bundleRoster(['@t/conditional-bundle'], scratch.anchor, profileScope('web')).rows.map(row => row.name))
+      .toEqual(['@t/conditional'])
+  })
+
+  it('combines ancestor and child conditions without evaluating disabled subtrees', () => {
+    scratch.web('@t/conditional-on')
+    scratch.web('@t/conditional-off')
+    scratch.bundle('@t/conditional-groups', `
+- insert:
+    - id: parent-off
+      name: cordis:group
+      group: true
+      disabled: !!js true
+      config:
+        - id: unreachable
+          name: '@t/not-installed'
+          disabled: !!js missingInactiveValue
+    - id: literal-off
+      name: cordis:group
+      group: true
+      disabled: true
+      config:
+        - id: also-unreachable
+          name: '@t/not-installed-either'
+          disabled: !!js missingInactiveValue
+    - id: parent-on
+      name: cordis:group
+      group: true
+      disabled: !!js false
+      config:
+        - id: child-off
+          name: '@t/conditional-off'
+          disabled: true
+        - id: nested-on
+          name: cordis:group
+          group: true
+          disabled: !!js false
+          config:
+            - id: child-on
+              name: '@t/conditional-on'
+              disabled: null
+`)
+    expect(bundleRoster(['@t/conditional-groups'], scratch.anchor, {}).rows.map(row => row.name))
+      .toEqual(['@t/conditional-on'])
+  })
+
+  it('propagates evaluation failures and rejects unsupported literal flags with a scope', () => {
+    scratch.web('@t/bad-condition')
+    scratch.bundle('@t/bad-expression', `
+- insert:
+    - id: bad
+      name: '@t/bad-condition'
+      disabled: !!js missingConditionValue
+`)
+    expect(() => bundleRoster(['@t/bad-expression'], scratch.anchor, {})).toThrow('missingConditionValue')
+    scratch.bundle('@t/bad-literal', `
+- insert:
+    - id: bad
+      name: '@t/bad-condition'
+      disabled: not-a-boolean
+`)
+    expect(() => bundleRoster(['@t/bad-literal'], scratch.anchor, {})).toThrow('disabled')
   })
 
   it('fails loud on a bundle that does not resolve, declares no patch, or whose patch is not a list', () => {

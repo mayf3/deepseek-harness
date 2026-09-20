@@ -17,7 +17,7 @@
 
 ## Basic HTML
 
-- Developer tools: off by default on Web and desktop
+- Developer tools: disabled for this scenario
 - Sandbox: no permissions
 - Inline script: pending
 - Local script: pending

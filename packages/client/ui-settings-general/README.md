@@ -27,6 +27,8 @@ Use this package to give the dsh web client a Settings panel, connection-recover
 
 Users reach the shell through the sidebar's bottom Settings control; feature plugins contribute their pages and onboarding steps through the slot ledgers this shell projects. In both the expanded sidebar and collapsed rail, the control exposes the localized Settings label as its accessible name. A pale-yellow **Disconnected** action beside Settings indicates browser offline suspension; its permanent retry glyph marks the retry action, which the Chinese outage copy also names (连接异常，刷新重试). Every recovery attempt shows the shared ongoing loader beside **Reconnecting** with one to three dots advancing every 500ms, and an attempt stays visible for at least 800ms so brief retries do not flicker. Selecting either yellow state starts an immediate retry; press feedback stays within the warning palette. Recovery changes the region to pale-green **Connected** for two seconds from the moment the green pill becomes visible. The pill fades in on appearance, fades out over 150ms on removal, and sizes to its current label. Initial startup and uninterrupted healthy operation remain silent. The shell renders the modal panel, the navigation built from `settings.section` entries, and exactly one mounted onboarding step at a time.
 
+When the section navigation exceeds the panel's available height, the list scrolls independently of the settings content and keeps the Settings title fixed.
+
 In Desktop, the account-row update control shows availability, progress, verification, readiness, and persistent retry feedback. The preload carries semantic phase, version, progress, and classified failures; the component resolves every visible and accessible string from the active `settings` locale, including after an in-application language change. Selecting an available update starts downloading; installation requires a separate shell-owned confirmation. A collapsed sidebar shows the same status as a dot on its top expand button. Connection feedback takes priority except during shell-reported installation, when the expected backend disconnect must not hide update status. Failure restores connection feedback. Both controls share one carrier subscription; browser code cannot choose packages or authorize installation. [Desktop updates](../../../apps/desktop/README.md) owns the release workflow.
 
 ### The General section
@@ -103,6 +105,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define what the shell itself provides versus what features must supply; they are current package constraints.
 
 - **Additional General rows require their feature plugins** — the shell supplies Developer tools; feature plugins supply the remaining preferences.
+- **The Windows caption badge keeps a side-opening bubble** — `DesktopUpdateBadge` occupies `sidebar.toggle.badge` in the caption and requests `side="right"`, so the Desktop-owned menu text can cover its bubble while the sidebar is collapsed on Windows; the sidebar toggle and New Session bubbles open below the caption instead (#4688).
 
 <a id="dev-note"></a>
 ### Dev Note
