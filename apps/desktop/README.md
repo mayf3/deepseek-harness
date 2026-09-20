@@ -158,6 +158,8 @@ pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Makensis $Makensis
 
 The Windows installer extracts the new version beside the installation directory, stops the old application, and replaces directories through same-volume renames. Same-path upgrades preserve the old directory until promotion succeeds; extraction failure leaves it intact, and promotion failure attempts to restore it. The installer removes the old backup before launch. Forced termination or power loss can leave `.new-*` or `.old-*` directories; installation-location and scope migrations retain electron-builder's old-uninstaller flow.
 
+<a id="upload-updates"></a>
+
 ### Upload updates
 
 Test and production uploads through `upload:*` retain a fresh `.desktop-build/upload-records/<environment>-<target>-*` directory after release preflight. `plan.json` records destination, version, every file's size/SHA-512, and published YAML bytes; flushed `events.jsonl` records PUT intent and available response status/request ID; `result.json` records completion or the last failed stage. A missing final result means interruption or unavailable storage, not success. No credential values, authorization headers, or raw SDK errors are recorded. Audit-write failures stop later PUTs. Every object is one streamed Tencent COS PUT with an explicit length and Content-MD5; the COS SDK repeats a request only when its body is not a stream, and this uploader does not retry either. Retain partial records and inspect remote state before another operation: a timeout or failed receipt write does not prove that the object was not stored. These records are local, not tamper-proof or automatically backed up; archive each release's records with its build evidence in controlled storage. Public CDN readback remains separate release qualification, explicitly marked `not-performed` in the upload result.
@@ -173,13 +175,13 @@ The update destination and upload credentials follow the selected deployment:
 | `test` or unset | `DOWNLOAD_TEST_ORIGIN` | `DOWNLOAD_TEST_COS_BUCKET` | `DOWNLOAD_TEST_COS_SECRET_ID`, `DOWNLOAD_TEST_COS_SECRET_KEY` |
 | `production` | `https://download.deepseek.com` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`, `DOWNLOAD_PROD_COS_SECRET_KEY` |
 
-Generate a fresh ID for each test release batch with the command below and copy its output into `DOWNLOAD_TEST_RELEASE_ID` in `.env.macos` or `.env.windows`. These Git-ignored platform files own the value; shell variables do not override it, and dotenv values are not shell-expanded. Keep the ID through packaging, upload, and retries; upload rejects a completion record with a different update URL. Production does not use this field.
+Generate a fresh ID for each test release batch with the command below and copy its output into `DOWNLOAD_TEST_RELEASE_ID` in `.env.macos` or `.env.windows`. These Git-ignored platform files own the value; shell variables do not override it, and dotenv values are not shell-expanded. Keep the ID through packaging, upload, and retries; upload rejects a completion record with a different update URL. To test an upgrade between versions, reuse the installed client’s ID for the later version. Production does not use this field.
 
 ```sh
-node --input-type=module -e 'import { randomBytes } from "node:crypto"; console.log(randomBytes(16).toString("hex"))'
+node --input-type=module -e "import { randomBytes } from 'node:crypto'; console.log(randomBytes(16).toString('hex'))"
 ```
 
-Distribute each test batch through its complete download links. Installed test clients retain their batch feed and do not discover a new ID automatically. Random paths reduce guessing, not access by link holders; withdrawing a batch requires deleting its COS objects and purging its CDN directory.
+Distribute each test batch through its complete download links. Installed test clients retain their batch feed and do not discover a new ID automatically. Format validation cannot establish randomness; use the generator output. Random paths reduce guessing, not access by link holders; withdrawing a batch requires deleting its COS objects and purging its CDN directory.
 
 Configure the update origin and selected COS bucket, SecretId, and SecretKey in the target dotenv file, then package and upload the same target:
 
