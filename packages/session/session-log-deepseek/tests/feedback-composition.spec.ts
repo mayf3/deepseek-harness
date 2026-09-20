@@ -53,7 +53,7 @@ it('uploads freeform feedback and message put/edit/delete through the unchanged 
       : name === '@deepseek-ai/dsh-message-feedback'
         ? { config: { maxNoteBytes: 1024 } }
         : name === '@deepseek-ai/dsh-llm-deepseek'
-          ? { config: { protocol: 'chat-completions', baseURL: server!.baseURL } }
+          ? { config: { baseURL: server!.baseURL } }
           : name === '@deepseek-ai/dsh-session-log-deepseek'
             ? { config: { enabled: true } }
             : {},
@@ -128,11 +128,11 @@ it('uploads freeform feedback and message put/edit/delete through the unchanged 
     expect(session.deriveMessages()).toEqual(messages)
     expect(await ctx.messageFeedback.list({ sessionId: session.id })).toEqual({ ok: true, value: { items: [] } })
     for (const wire of server.requests) {
-      expect(wire.path).toBe('/chat/completions')
+      expect(wire.path).toBe('/v1/messages')
       expect(wire.body).not.toHaveProperty('dsh_feedback')
       expect(wire.body).toMatchObject({ model: 'deepseek-v4-flash', messages: [
-        { role: 'user', content: 'Question' },
-        { role: 'assistant', content: 'Answer' },
+        { role: 'user', content: [{ type: 'text', text: 'Question' }] },
+        { role: 'assistant', content: [{ type: 'text', text: 'Answer' }] },
       ] })
     }
     await ctx.sessions.flush(session)

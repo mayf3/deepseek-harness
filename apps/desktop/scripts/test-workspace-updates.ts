@@ -43,6 +43,11 @@ try {
   for (const owner of [application, project]) {
     await symlink(join(repo, 'node_modules/.pnpm/node_modules'), join(owner, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
   }
+  const target = `${process.platform === 'darwin' ? 'mac' : 'win'}-${process.arch}`
+  const targetRoot = join(application, '.desktop-build/targets', target)
+  await mkdir(targetRoot, { recursive: true })
+  await symlink(join(repo, 'apps/desktop/.desktop-build/targets', target, 'runtime'), join(targetRoot, 'runtime'),
+    process.platform === 'win32' ? 'junction' : 'dir')
   await writeFile(join(profile, 'cordis.patch.yml'), JSON.stringify([
     { id: 'webserver', config: { host: '127.0.0.1', port: 0 } },
     { id: 'llm-deepseek', disabled: true }, { id: 'session-title-llm', disabled: true },

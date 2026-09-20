@@ -318,7 +318,7 @@ describe('web e2e: clickable links gallery', () => {
     await seedSession(scaffold, galleryFixture(imageUrl), SEED_ID, undefined, { createdAt: GALLERY_TIME })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
-    await page.route(/https?:\/\/docs\.example\.test\/.*/u, async route => route.fulfill({
+    await page.context().route(/https?:\/\/docs\.example\.test\/.*/u, async route => route.fulfill({
       contentType: 'text/html',
       body: `<h1>${new URL(route.request().url()).pathname}</h1>`,
     }))
@@ -454,5 +454,31 @@ describe('web e2e: clickable links gallery', () => {
     await expect.poll(() => browserAddress.inputValue()).toBe(GUIDE_URL)
     await markdown.locator(`a[href="${HTTP_URL}"]`).click()
     await expect.poll(() => browserAddress.inputValue()).toBe(HTTP_URL)
+
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Built-in browser', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'New browser tab', exact: true }).click()
+    await expect.poll(() => scaffold.ctx.settings.get('ui-chat')).toMatchObject({ linkOpening: 'new-tab' })
+    await page.keyboard.press('Escape')
+    const popupPromise = page.waitForEvent('popup')
+    await guideLink.click()
+    const popup = await popupPromise
+    try {
+      await popup.waitForURL(GUIDE_URL)
+      expect(await popup.evaluate(() => window.opener === null)).toBe(true)
+      expect(await browserAddress.inputValue()).toBe(HTTP_URL)
+    } finally {
+      await popup.close()
+    }
+
+    await page.reload()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('button', { name: 'New browser tab', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Built-in browser', exact: true }).click()
+    await expect.poll(() => scaffold.ctx.settings.get('ui-chat')).toMatchObject({ linkOpening: 'sidebar' })
+    await page.keyboard.press('Escape')
+    await guideLink.click()
+    await expect.poll(() => browserAddress.inputValue()).toBe(GUIDE_URL)
+    expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 })
