@@ -215,3 +215,25 @@ it('dispatches default-app opening to the association adapter', async () => {
   await controller.openWorkspacePath({ path: '/report.html' }, signal)
   expect(open).toHaveBeenCalledWith('/report.html', signal)
 })
+
+
+it('uses the same path verification for handler queries and explicit application opening', async () => {
+  const ctx = await context()
+  const applications = [{ id: '/Applications/Music.app', name: 'Music', default: true, icon: null }]
+  const fileApplications = vi.fn(async () => applications)
+  const openFileApplication = vi.fn(async () => {})
+  const controller = createSessionTestController(ctx, {
+    defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: true,
+    fileApplications, openFileApplication,
+  })
+  const signal = new AbortController().signal
+  expect(await controller.workspacePathApplications({ path: '/file.mp3' }, signal)).toEqual(applications)
+  await controller.openWorkspacePath({ path: '/file.mp3', application: applications[0]!.id }, signal)
+  expect(openFileApplication).toHaveBeenCalledWith(expect.stringContaining('file.mp3'), applications[0]!.id, signal)
+  const mapping = vi.spyOn(ctx.fs, 'processPathFromHostPath').mockReturnValue(undefined)
+  onTestFinished(() => { mapping.mockRestore() })
+  await expect(controller.workspacePathApplications({ path: '/remote.mp3' }, signal)).rejects.toThrow('verified Host path')
+  await expect(controller.openWorkspacePath({ path: '/remote.mp3', application: applications[0]!.id }, signal)).rejects.toThrow('verified Host path')
+  expect(fileApplications).toHaveBeenCalledOnce()
+  expect(openFileApplication).toHaveBeenCalledOnce()
+})

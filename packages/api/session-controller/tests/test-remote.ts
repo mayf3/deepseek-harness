@@ -1,3 +1,4 @@
+import type { SessionControllerInternals } from '../src/index.ts'
 /** Test-only direct Remote face over the Session Controller's internal controllers. */
 
 import { SessionLogOffset } from '@deepseek-ai/dsh-session'
@@ -94,6 +95,8 @@ export interface TestSessionRemoteDefaults {
   readonly nativeOpen?: boolean
   readonly saveDefaultModelSelection?: (selection: AgentModelSelection) => void | Promise<void>
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
+  readonly fileApplications?: SessionControllerInternals['fileApplications']
+  readonly openFileApplication?: SessionControllerInternals['openFileApplication']
   readonly revealPath?: (path: string, signal: AbortSignal) => Promise<void>
   readonly canOpenPath?: () => boolean
 }
@@ -288,6 +291,8 @@ function installControllers(
       },
       {
         ...defaults.openPath === undefined ? {} : { openPath: defaults.openPath },
+        ...defaults.fileApplications === undefined ? {} : { fileApplications: defaults.fileApplications },
+        ...defaults.openFileApplication === undefined ? {} : { openFileApplication: defaults.openFileApplication },
         ...defaults.revealPath === undefined ? {} : { revealPath: defaults.revealPath },
         ...defaults.canOpenPath === undefined ? {} : { canOpenPath: defaults.canOpenPath },
       },

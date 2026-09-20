@@ -2,15 +2,9 @@
 import { runNativeCommand } from './runner.ts'
 import type { PathOpenerInternals } from './path-opener.ts'
 
-/** One OS-registered application capable of opening the requested file. */
-export interface NativeFileApplication {
-  /** OS application identifier; callers must revalidate it against the file's current handlers before opening. */
-  readonly id: string
-  readonly name: string
-  readonly default: boolean
-  /** PNG data URL, or null when the desktop supplies no icon. */
-  readonly icon: string | null
-}
+import type { NativeFileApplication } from './types.ts'
+
+export type { NativeFileApplication } from './types.ts'
 
 /** AppKit runs inside the system JXA host; paths arrive as argv, never executable source. */
 const MAC_APPLICATIONS = `

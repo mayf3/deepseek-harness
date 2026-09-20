@@ -19,7 +19,10 @@
       "default": "./lib/index.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./types": {
+      "types": "./lib/types/types.d.ts"
+    }
   },
   "files": [
     "lib/index.js",

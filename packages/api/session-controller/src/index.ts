@@ -8,7 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
-import { canOpenNativePath, nativeFileManager, nativeFileApplications, openNativeFileApplication, openNativeAssociatedPath, revealNativePath, type NativeFileApplication } from '@deepseek-ai/dsh-native-command'
+import { canOpenNativePath, nativeFileManager, nativeFileApplications, openNativeFileApplication, openNativeAssociatedPath, revealNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -29,6 +29,7 @@ import { SessionSkillCatalog } from './skill-catalog.ts'
 import { SessionMediaReferences } from './media-references.ts'
 import type {
   ModelCatalog,
+  SessionWorkspacePathApplication,
   SessionAttachmentRequest,
   SessionAttachmentValue,
   SessionCancelRequest,
@@ -349,7 +350,7 @@ export class SessionController extends TypertRemoteService {
   @Remote('workspacePathApplications')
   async workspacePathApplications(
     request: { readonly path: string }, signal: AbortSignal,
-  ): Promise<readonly NativeFileApplication[]> {
+  ): Promise<readonly SessionWorkspacePathApplication[]> {
     if (!this.canOpenPath()) return []
     await this.verifyDesktopPath(request.path, signal)
     return this.fileApplications(resolve(request.path), signal)

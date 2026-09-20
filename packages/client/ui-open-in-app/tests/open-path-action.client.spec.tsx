@@ -141,3 +141,22 @@ it('dismisses a failure on schedule even when its owner rerenders', async () => 
   act(() => { vi.advanceTimersByTime(1) })
   expect(screen.queryByRole('alert')).toBeNull()
 })
+
+
+it('shows the default icon and current application list, and selects an application without replacing default opening', async () => {
+  const b = bench()
+  const icon = 'data:image/png;base64,aGVsbG8='
+  const applications = vi.fn(async () => [
+    { id: '/Music.app', name: 'Music', default: true, icon },
+    { id: '/Player.app', name: 'Player', default: false, icon: null },
+  ])
+  const view = render(<OpenPathAction {...b.props} applications={applications} />)
+  await act(async () => {})
+  expect(view.container.querySelector('[data-open-path-open] img')?.getAttribute('src')).toBe(icon)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.more'] })) })
+  expect(screen.getByRole('menuitem', { name: 'Music（默认）' })).toBeTruthy()
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Player' })) })
+  expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open', '/Player.app')
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.open'] })) })
+  expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open', undefined)
+})

@@ -1,4 +1,4 @@
-import type { NativeFileApplication } from '@deepseek-ai/dsh-native-command'
+import type { NativeFileApplication } from '@deepseek-ai/dsh-native-command/types'
 /** Browser-safe request, result, and lifecycle vocabulary for the Session Remote service. */
 
 import type {
