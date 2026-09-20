@@ -20,6 +20,8 @@ Serialize each complete signing stage and cache-maintenance operation with an ex
 
 Group public-key inspection into bounded batches of 32 files with at most four processes. Require one ordered result for every requested path and await every process in a failed batch. Preserve verification immediately after each hardware signature, before the next signing request.
 
+Within the stage lock, restore distinct cache-hit targets with a bounded worker pool and complete their post-verification before serially signing misses. Stop dispatch on the first restore, verification or audit failure and drain active workers before releasing ownership. Four workers are the configurable default: warm-cache experiments on 134 primary-runtime and 228 application files reduce combined median restore-plus-post-verification time from 226.18 seconds at one worker to 63.22 seconds at four; eight takes 42.18 seconds but increases measured CPU by 25.5% and peak committed memory from 387 to 631 MiB. These three-repeat measurements use exact reconstructed unsigned inputs, real Windows verification and a rejecting hardware callback; they exclude full packaging, cold trust state and hardware misses.
+
 The [primary-runtime decision](../feature/2026-09-14-desktop-primary-runtime.md) continues to own runtime contents, vendor-signature preservation and execution checks. The [release decision](../architecture/2026-08-25-electron-desktop-packaging-and-updates.md) continues to own release identity and signing. Neither is superseded. The cache must preserve their supervised preflight, per-user signing interlock, single-file hardware calls, signed inventory and final packaged-runtime validation.
 
 ## Alternatives considered
