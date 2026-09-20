@@ -151,7 +151,7 @@
 }
 
 .cardContent:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-alias-brand-primary);
   outline-offset: -2px;
 }
 
@@ -239,7 +239,7 @@
 }
 
 .groupToggle:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
 }
 
@@ -297,7 +297,7 @@
 }
 
 .switcher:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
 }
 

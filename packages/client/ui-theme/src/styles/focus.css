@@ -1,3 +1,10 @@
+/* The standard ring geometry. A component inside a clipping container sets its
+ * own offset, and the dense tables and toolbars keep a thinner 1px ring, rather
+ * than bending this value — those exceptions are deliberate, not drift. */
+:root {
+  --dsw-focus-ring-width: 2px;
+}
+
 /* One keyboard-focus colour for every control. A control that declares its own
  * focus ring sets the colour explicitly, so this sheet reaches only the ones
  * that would otherwise paint the browser default — whose colour follows the
