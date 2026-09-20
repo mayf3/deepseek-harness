@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 徽章显示什么
 
-当有效目标为 plan 模式时，该座位渲染 蓝色「计划 ×」状态按钮，执行 `/plan off`。否则座位保持为空：未组合 plan-mode 的宿主，或尚无会话的 Draft，都不显示任何内容。plan 模式为有效目标期间，composer 文本框的 placeholder 切换为 plan 任务提示——「describe your task to generate plan」——除非所属 surface 提供自己的 placeholder。
+当有效目标为 plan 模式时，该座位渲染蓝色「计划」状态按钮——标签前是计划图标，按钮可用且被悬停或键盘聚焦时换成圆形 ×——点击执行 `/plan off`。否则座位保持为空：未组合 plan-mode 的宿主，或尚无会话的 Draft，都不显示任何内容。plan 模式为有效目标期间，composer 文本框的 placeholder 切换为 plan 任务提示——「describe your task to generate plan」——除非所属 surface 提供自己的 placeholder。
 
 ### 查看已提交的计划
 
