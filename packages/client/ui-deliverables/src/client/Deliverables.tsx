@@ -57,7 +57,7 @@ export function DeliverablesTail(props: PropsRuntime<'conversation.chat.turnTail
 
 /**
  * Render the changed-files card, once the Host has served the announced
- * summary and it lists a file, and default-application buttons for declared
+ * summary and it lists a file, and shared native opening controls for declared
  * files. A summary the Host no longer serves leaves no card.
  * @param props - matched announcement and files, workspace opener, and localized copy.
  * @returns the closing turn's file rows.

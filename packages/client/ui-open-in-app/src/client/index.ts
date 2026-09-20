@@ -1,12 +1,7 @@
 /**
- * Browser half of open-in-app: one Session-header split button opening the
- * session's workspace directory (the summary's `cwd`) in the remembered
- * installed application, and the document preview's default-application
- * controls opening one previewed file. Application availability arrives once
- * per page from the host apps route and the last choice persists in the
- * browser through the controller's persisted snapshot store; desktop
- * availability for file paths arrives once per page from the Session Remote,
- * which also runs the open and reveal gestures.
+ * Shared native opening controls for workspace directories, document previews,
+ * delivery cards, and changed-file review. Directory choices persist in the browser;
+ * file defaults and application lists come from the serving Host desktop.
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
