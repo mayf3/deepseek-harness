@@ -34,7 +34,7 @@ function bench(over: {
     byId: over.cwd === undefined ? {} : { [SESSION]: { cwd: over.cwd } },
     current: SESSION,
     phase: 'ready',
-    subagentsByParent: {},
+    projectionsBySession: {},
     jobsBySession: {},
     currentAddress: undefined,
   } as unknown as SessionListState

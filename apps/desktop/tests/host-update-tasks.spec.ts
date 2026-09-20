@@ -27,7 +27,7 @@ afterEach(async () => { await ctx.fiber.dispose() })
 function idleAgent(): AgentState { return { status: 'idle', inbox: { nextTurn: [], nextStep: [] } } }
 
 function request(next: () => Promise<void>) {
-  const incoming = Readable.from([]) as unknown as IncomingMessage
+  const incoming = Readable.from([]) as IncomingMessage
   const response = { writeHead: vi.fn(), end: vi.fn() }
   return { response, done: ctx.waterfall('connection/request', incoming, response as unknown as ServerResponse, next) }
 }

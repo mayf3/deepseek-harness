@@ -7,8 +7,8 @@ import type { AssistantBlock } from '../src/client/contract/snapshot.ts'
 
 afterEach(cleanup)
 
-const t = ((_key: string) => 'label') as unknown as ChatViewSlotProps['t']
-const renderMessageImages = (() => null) as unknown as ChatNodeOwnerProps['renderMessageImages']
+const t = ((_key: string) => 'label') as ChatViewSlotProps['t']
+const renderMessageImages = (() => null) as ChatNodeOwnerProps['renderMessageImages']
 
 function textBlock(text: string): AssistantBlock {
   return { kind: 'text', text }

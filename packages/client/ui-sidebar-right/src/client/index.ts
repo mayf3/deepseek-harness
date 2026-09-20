@@ -122,16 +122,18 @@ export function apply(ctx: ClientContext): void {
 
   ctx.effect(() => {
     const handle = createSidebarRightStore(() => defaultSeed(tabs))
-    // The runtime mints one instance of this handle per session (the scope key
-    // is the session id) and caches it per key. Each is adopted as it is minted,
-    // so a tab's own action reaches its session's store while another session
-    // is on screen, and that store's commits sync the Tab domain themselves.
-    const adoptions: Array<() => void> = []
+    // Each Session Context generation owns one Store. Background tab actions
+    // use the latest adoption for that Session.
+    const adoptions = new Map<SessionId, () => void>()
     const store: typeof handle = {
       ...handle,
       create: (scopeKey) => {
         const instance = handle.create(scopeKey)
-        if (scopeKey !== undefined) adoptions.push(adopt(scopeKey as SessionId, instance))
+        if (scopeKey !== undefined) {
+          const sessionId = scopeKey as SessionId
+          adoptions.get(sessionId)?.()
+          adoptions.set(sessionId, adopt(sessionId, instance))
+        }
         return { ...instance, clearPersisted() {
           instance.clearPersisted()
           if (scopeKey !== undefined) forget(scopeKey as SessionId)
@@ -212,7 +214,8 @@ export function apply(ctx: ClientContext): void {
       disposeExpand()
       disposeSeat()
       for (const dispose of disposeTypes.reverse()) dispose()
-      for (const release of adoptions) release()
+      for (const release of adoptions.values()) release()
+      adoptions.clear()
     }
   }, 'ui-sidebar-right: seats and shipped tab type')
 }

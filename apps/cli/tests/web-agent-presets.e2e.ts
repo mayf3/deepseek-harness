@@ -7,7 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import {
   boot,
   initProfile,
-  createProfileResolutionGeneration,
+  createRuntimeResolution,
   loadOverlayPatches,
   loadProfile,
   PluginPackages,
@@ -35,7 +35,7 @@ const BASE_PATCH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
 const CODEX_PACKAGE_DIR = join(REPO_ROOT, 'packages/subagent/subagent-codex')
 const CLAUDE_CODE_PACKAGE_DIR = join(REPO_ROOT, 'packages/subagent/subagent-claude-code')
-/** The installation anchor whose dependency surface the preset module fallback mirrors. */
+/** The installation anchor whose dependency surface the runtime resolution mirrors. */
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 const MINIMAL_PROMPT = 'You are a helpful software engineer assistant.'
 const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
@@ -156,7 +156,7 @@ async function bootWeb(
     profile = loadProfile('dsh-test', 'spec', INSTALL_ANCHOR, home, { userLayer: false })
     bundlePatches = profile.layers.flatMap(layer => layer.patches)
   }
-  const resolution = await createProfileResolutionGeneration({ installAnchor: INSTALL_ANCHOR, home, profile })
+  const resolution = await createRuntimeResolution({ installAnchor: INSTALL_ANCHOR, home, profile })
   const rootConfig = join(profileDir, 'cordis.yml')
   await writeFile(rootConfig, '[]\n')
   return await boot('dsh-test', rootConfig, [...bundlePatches, ...overrides], async (bootCtx) => {
@@ -164,7 +164,7 @@ async function bootWeb(
       installAnchor: INSTALL_ANCHOR, home, cwd: home,
       startedBundles: profileBundles ?? ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
       overlays: overrides, telemetryDisabledEnv: '1' })
-    await bootCtx.plugin(PluginPackages, { generation: resolution })
+    await bootCtx.plugin(PluginPackages, { resolution })
     bootCtx.provide('connection', {
       fetch: { register: () => () => {} },
       rpc: { intercept: () => () => {} },

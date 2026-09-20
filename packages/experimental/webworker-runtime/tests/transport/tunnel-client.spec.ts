@@ -96,7 +96,7 @@ function stubWorker(): {
   const { worker, sent, deliver } = stubWorker()
   const tunnel = new WorkerTunnel(worker)
   const response = tunnel.fetch('/api/session.list', { method: 'POST', body: '{"a":1}' })
-  const request = sent[0] as unknown as { t: string; id: number; method: string; url: string; body: ArrayBuffer }
+  const request = sent[0] as { t: string; id: number; method: string; url: string; body: ArrayBuffer }
   check('the request frame carries method and absolute url', [request.t, request.id, request.method, request.url],
     ['req', 1, 'POST', 'http://localhost:4173/api/session.list'])
   check('the request body travels as bytes', new TextDecoder().decode(request.body), '{"a":1}')

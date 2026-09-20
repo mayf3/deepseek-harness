@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { Context } from '@deepseek-ai/cordis'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -11,7 +12,8 @@ import z from '@deepseek-ai/schemastery'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { pluginEntryId, readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import {
-  readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries, reconcileProfilePatches, readProfilePatches, OPTIONAL_BUNDLES,
+  readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries,
+  reconcileProfilePatches, readProfilePatches, OPTIONAL_BUNDLES,
 } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-hmr'
 import type { ProfileContext, ProfileManifest } from '@deepseek-ai/dsh-app-boot'
@@ -232,8 +234,8 @@ export class PluginManager extends TypertRemoteService {
 
   /** Read the profile's installed bundles, the bundles this dsh installation supplies, and the selected names that are not bundles.
    * A dependency without a bundle patch is listed, as a `not-bundle` problem, only while it is selected.
-   * @returns Package versions, one-liners, rows, activation selections, whether the installation offers the
-   * bundle, and removal availability.
+   * @returns Package versions, manifest descriptions, rows, optional display metadata, activation selections,
+   * whether the installation offers the bundle, and removal availability.
    */
   @Remote
   listBundles(): Promise<BundleInfo[]> {
@@ -256,8 +258,11 @@ export class PluginManager extends TypertRemoteService {
             ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: { code: 'not-bundle' }, rows: [], overrides: [] })
           continue
         }
+        const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
+        const meta = readPluginMeta(info.name ?? name, pathToFileURL(join(dir, 'package.json')).href)
         bundles.push({ name, ...(info.version === undefined ? {} : { version: info.version }),
           ...(info.description === undefined || info.description === '' ? {} : { description: info.description }),
+          ...meta === undefined ? {} : { meta },
           enabled, installed, optional, removable: removable && readOnlyReason === undefined,
           ...(readOnlyReason === undefined ? {} : { readOnlyReason }),
           ...this.declaredRows(name, info) })
@@ -557,16 +562,23 @@ export class PluginManager extends TypertRemoteService {
     const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
     const patches: PatchOptions[] = loadOverlayPatches('dsh', join(dir, patch))
     // One entry per row id: the Loader keeps a single entry for an id, whichever layer declared it last.
-    const live = new Map<string, PluginEntryId>()
+    const live = new Map<string, { entryId: PluginEntryId; baseUrl: string | undefined }>()
     for (const entry of this.ctx.loader.entries()) {
       /* v8 ignore next -- the Loader gives every entry an id before it is listed */
-      if (typeof entry.options.id === 'string') live.set(entry.options.id, pluginEntryId(entry.id))
+      if (typeof entry.options.id === 'string') live.set(entry.options.id, {
+        entryId: pluginEntryId(entry.id), baseUrl: entry.parent.tree.ctx.baseUrl,
+      })
     }
     const rows: BundleRowInfo[] = []
+    const packages = this.ctx.get('pluginPackages')
     for (const row of flatten(composeEntries([patches.filter(item => item.insert !== undefined)]))) {
       if (typeof row.id !== 'string' || typeof row.name !== 'string') continue
-      const entryId = live.get(row.id)
-      rows.push({ rowId: row.id, moduleName: row.name, ...entryId === undefined ? {} : { entryId } })
+      const active = live.get(row.id)
+      const entryId = active?.entryId
+      const base = active?.baseUrl ?? pathToFileURL(join(dir, 'package.json')).href
+      const meta = packages?.metaOf(row.name, base)
+      rows.push({ rowId: row.id, moduleName: row.name,
+        ...entryId === undefined ? {} : { entryId }, ...meta === undefined ? {} : { meta } })
     }
     const declared = new Set(rows.map(row => row.rowId))
     const overrides = [...new Set(patches.flatMap(item =>

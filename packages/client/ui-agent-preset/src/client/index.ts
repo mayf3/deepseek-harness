@@ -68,22 +68,32 @@ export function apply(ctx: ClientContext): void {
   const controller = new AgentPresetSettingsController(ctx)
   const staged: AgentPresetStage = { id: undefined, introduce: false }
   const seats = new WeakMapWithValues<SessionBinding, AgentPresetSeatController>()
+  const boundSeatDisposers = new Set<() => Promise<void>>()
+  ctx.effect(() => async () => {
+    await Promise.all([...boundSeatDisposers].map(dispose => dispose()))
+  }, 'ui-agent-preset: bound selections')
   const unboundSeat = new AgentPresetSeatController(ctx, () => undefined, staged)
-  const seatFor = (scope: ClientContext, binding: SessionBinding): AgentPresetSeatController => {
-    let seat = seats.get(binding)
-    if (seat !== undefined) return seat
-    seat = new AgentPresetSeatController(scope, () => {
-      if (scope.sessions.binding(binding.sessionId) !== binding) return undefined
-      const summary = scope.sessions.list.getSnapshot().byId[binding.sessionId]
+  const seatFor = (binding: SessionBinding): AgentPresetSeatController => {
+    const existing = seats.get(binding)
+    if (existing !== undefined) return existing
+    const seat = new AgentPresetSeatController(ctx, () => {
+      if (ctx.sessions.binding(binding.sessionId) !== binding) return undefined
+      const summary = ctx.sessions.list.getSnapshot().byId[binding.sessionId]
       return summary !== undefined
-        && (scope.sessions.retainInfo(binding.sessionId).getSnapshot().retainedBy.mainView ?? 0) > 0
+        && (ctx.sessions.retainInfo(binding.sessionId).getSnapshot().retainedBy.mainView ?? 0) > 0
         ? summary
         : undefined
     }, staged)
     seats.set(binding, seat)
-    binding.ctx.effect(() => () => {
-      seats.delete(binding)
+    const dispose = binding.ctx.effect(() => {
+      const stop = ctx.sessions.list.subscribe(() => { void seat.apply() })
+      return () => {
+        stop()
+        seats.delete(binding)
+        boundSeatDisposers.delete(dispose)
+      }
     }, 'ui-agent-preset: Provider binding')
+    boundSeatDisposers.add(dispose)
     return seat
   }
   const section = new AgentPresetSectionController(ctx, () => {
@@ -91,14 +101,14 @@ export function apply(ctx: ClientContext): void {
     void unboundSeat.load()
     for (const seat of seats.values) void seat.load()
   })
-  const mainBlankSeat = (scope: ClientContext): AgentPresetSeatController | undefined => {
-    const summary = Object.values(scope.sessions.list.getSnapshot().byId)
+  const mainBlankSeat = (): AgentPresetSeatController | undefined => {
+    const summary = Object.values(ctx.sessions.list.getSnapshot().byId)
       .find((session) => {
         /* v8 ignore next -- retained source counts omit zero-valued entries. */
         return session.blank && (session.retainedBy.mainView ?? 0) > 0
       })
-    const binding = summary === undefined ? undefined : scope.sessions.binding(summary.id)
-    return binding === undefined ? undefined : seatFor(scope, binding)
+    const binding = summary === undefined ? undefined : ctx.sessions.binding(summary.id)
+    return binding === undefined ? undefined : seatFor(binding)
   }
 
   ctx.effect(() => ctx.locale.register('settings.agentPreset', { zh, en }), 'ui-agent-preset: settings row dictionaries')
@@ -134,8 +144,8 @@ export function apply(ctx: ClientContext): void {
   let creatorDraft: (() => void) | undefined
   ctx.inject(['slots', 'conversation', 'sessions', 'uiWorkspace'], (scope: ClientContext) => {
     const seatInjected = (sessionId: SessionId | undefined): AgentPresetSeatInjected => {
-      const binding = sessionId === undefined ? undefined : scope.sessions.binding(sessionId)
-      const seat = binding === undefined ? unboundSeat : seatFor(scope, binding)
+      const binding = sessionId === undefined ? undefined : ctx.sessions.binding(sessionId)
+      const seat = binding === undefined ? unboundSeat : seatFor(binding)
       return {
         hooks: { agentPresetSeat: seat.store, showPresetPicker: ctx.settingsScope.developerTools.enabled },
         load: () => seat.load(),
@@ -152,7 +162,7 @@ export function apply(ctx: ClientContext): void {
     scope.effect(() => {
       creatorDraft = () => {
         if (!section.store.getSnapshot().showPicker) return
-        const seat = mainBlankSeat(scope) ?? unboundSeat
+        const seat = mainBlankSeat() ?? unboundSeat
         seat.stage('cordis', true)
         scope.uiWorkspace.startSession()
         void seat.apply()
@@ -183,7 +193,7 @@ export function apply(ctx: ClientContext): void {
     const summary = Object.values(ctx.sessions.list.getSnapshot().byId)
       .find(session => session.blank && (session.retainedBy.mainView ?? 0) > 0)
     const binding = summary === undefined ? undefined : ctx.sessions.binding(summary.id)
-    const seat = binding === undefined ? undefined : seats.get(binding)
+    const seat = binding === undefined ? undefined : seatFor(binding)
     const sessionId = seat?.blankSessionId()
     return async (id: string) => {
       if (seat === undefined || sessionId === undefined || binding === undefined

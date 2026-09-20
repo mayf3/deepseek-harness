@@ -156,6 +156,16 @@ describe('WorkspaceController commands', () => {
     vi.spyOn(ctx.workspaceRegistry, 'unarchiveSession').mockRejectedValueOnce(unarchiveFailure)
     await expect(controller.unarchiveSession({ sessionId: SessionId('session') }))
       .rejects.toBe(unarchiveFailure)
+
+    const pinFailure = new Error('pin storage failed')
+    vi.spyOn(ctx.workspaceRegistry, 'pinSession').mockRejectedValueOnce(pinFailure)
+    await expect(controller.pinSession({ sessionId: SessionId('session') }))
+      .rejects.toBe(pinFailure)
+
+    const unpinFailure = new Error('unpin storage failed')
+    vi.spyOn(ctx.workspaceRegistry, 'unpinSession').mockRejectedValueOnce(unpinFailure)
+    await expect(controller.unpinSession({ sessionId: SessionId('session') }))
+      .rejects.toBe(unpinFailure)
   })
 
   it('resolves queued Workspace identities when their operation starts', async () => {
@@ -232,6 +242,33 @@ describe('WorkspaceController commands', () => {
     await expect(controller.unarchiveSession({ sessionId: session.id }))
       .resolves.toEqual({ archivedSessionIds: [] })
   })
+
+  it('pins only known unarchived Sessions and unpins idempotently', async () => {
+    const { controller, ctx, root } = await harness()
+    const created = await controller.create({ path: stageDir(root, 'pins') })
+    const session = ctx.sessions.create(SessionId('pin-me'), {
+      meta: { cwd: created.workspace.path },
+    })
+
+    await expect(controller.pinSession({ sessionId: session.id }))
+      .resolves.toEqual({ pinnedSessionIds: [session.id] })
+    await expect(controller.pinSession({ sessionId: SessionId('unknown') }))
+      .rejects.toMatchObject({ code: 'session/not-found' })
+
+    // Pinning an archived Session is a caller error, not a missing session.
+    const archived = ctx.sessions.create(SessionId('stored'), {
+      meta: { cwd: created.workspace.path },
+    })
+    await controller.archiveSession({ sessionId: archived.id })
+    await expect(controller.pinSession({ sessionId: archived.id }))
+      .rejects.toMatchObject({ code: 'gateway/bad-request' })
+
+    await expect(controller.unpinSession({ sessionId: session.id }))
+      .resolves.toEqual({ pinnedSessionIds: [] })
+    // Unpin is idempotent: an id that is not pinned is not an error.
+    await expect(controller.unpinSession({ sessionId: session.id }))
+      .resolves.toEqual({ pinnedSessionIds: [] })
+  })
 })
 
 describe('WorkspaceController follow', () => {
@@ -253,9 +290,29 @@ describe('WorkspaceController follow', () => {
           initialized: true,
           workspaceIds: ['missing'],
           archivedSessionIds: [],
+          pinnedSessionIds: [],
         },
       })
     }).toThrow('references missing Workspace "missing"')
+  })
+
+  it('starts a fresh feed with existing pins and follows their removal', async () => {
+    const { controller, ctx, root } = await harness()
+    const session = ctx.sessions.create(SessionId('already-pinned'), { meta: { cwd: root } })
+    await controller.pinSession({ sessionId: session.id })
+    const feed = new WorkspaceFeed(ctx)
+    const abort = new AbortController()
+    const iterator = feed.follow(abort.signal)[Symbol.asyncIterator]()
+    try {
+      await expect(nextFrame(iterator)).resolves.toMatchObject({
+        type: 'baseline', value: { pinnedSessionIds: [session.id] },
+      })
+      await controller.unpinSession({ sessionId: session.id })
+      await expect(nextFrame(iterator)).resolves.toEqual({ type: 'pinned', pinnedSessionIds: [] })
+    } finally {
+      abort.abort()
+      await iterator.return?.()
+    }
   })
 
   it('starts with a complete baseline and emits committed increments in domain order', async () => {
@@ -264,7 +321,7 @@ describe('WorkspaceController follow', () => {
     const iterator = controller.follow(abort.signal)[Symbol.asyncIterator]()
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'baseline',
-      value: { items: [], archivedSessionIds: [] },
+      value: { items: [], archivedSessionIds: [], pinnedSessionIds: [] },
     })
 
     const first = await controller.create({ path: stageDir(root, 'first') })
@@ -306,6 +363,15 @@ describe('WorkspaceController follow', () => {
     await controller.unarchiveSession({ sessionId: session.id })
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'archived', archivedSessionIds: [],
+    })
+    await controller.pinSession({ sessionId: session.id })
+    await expect(nextFrame(iterator)).resolves.toEqual({
+      type: 'pinned', pinnedSessionIds: [session.id],
+    })
+    // Unpin rides the same complete-set increment: no new frame type.
+    await controller.unpinSession({ sessionId: session.id })
+    await expect(nextFrame(iterator)).resolves.toEqual({
+      type: 'pinned', pinnedSessionIds: [],
     })
     await controller.delete({ workspaceId: second.workspace.workspaceId })
     await expect(nextFrame(iterator)).resolves.toEqual({

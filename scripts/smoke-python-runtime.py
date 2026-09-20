@@ -1499,6 +1499,7 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
         files = build_snapshot_files(result, logs, child_ids, root)
         compare_snapshot_files(
             files, update_snapshots, ADVANCED_SNAPSHOT_DIRECTORY, ADVANCED_SNAPSHOT_FILENAMES,
+            native_writer_output=True,
         )
 
 
@@ -1565,6 +1566,7 @@ def smoke_sdk_restart_snapshot(base_url: str, executable: Path, update_snapshots
         )
         compare_snapshot_files(
             files, update_snapshots, RESTART_SNAPSHOT_DIRECTORY, RESTART_SNAPSHOT_FILENAMES,
+            native_writer_output=True,
         )
 
 
@@ -2303,7 +2305,7 @@ def normalize_snapshot_value(
                 dt = member.get("dt")
                 if isinstance(dt, list):
                     member["dt"] = [0] * len(dt)
-    if isinstance(normalized.get("id"), str) and normalized.get("role") in ("assistant", "system", "user"):
+    if isinstance(normalized.get("id"), str) and normalized.get("role") in ("assistant", "system", "user", "tool", "developer"):
         if not normalized["id"].startswith("{{message:"):
             normalized["id"] = "{{messageId}}"
     if normalized.get("type") in ("feedback/message-put", "feedback/message-delete"):
@@ -2368,6 +2370,7 @@ def project_session_snapshot(records: list[dict[str, object]]) -> list[dict[str,
 
 
 SESSION_FORMAT_TOKEN = "{{sessionFormatVersion}}"
+NATIVE_DELIVERY_FORMAT_TOKEN = "{{sourceSessionFormatVersion}}"
 
 
 def expand_snapshot_stream_member(member: object) -> list[dict[str, object]]:
@@ -2490,7 +2493,31 @@ def normalize_session_format_comparison(
     return normalized
 
 
-def normalize_snapshot_comparison_text(name: str, content: str) -> str:
+def normalize_native_delivery_record(value: object, source_version: int) -> object:
+    """Tokenize a native delivery qualifier in one Session event or SDK notification."""
+    if not isinstance(value, dict):
+        return value
+    if value.get("method") == "session.event":
+        for key in ("payload", "params"):
+            wrapper = value.get(key)
+            if isinstance(wrapper, dict) and "event" in wrapper:
+                return {**value, key: {
+                    **wrapper,
+                    "event": normalize_native_delivery_record(wrapper["event"], source_version),
+                }}
+    data = value.get("data")
+    if value.get("type") != "session-log-deepseek/delivery-accepted" or not isinstance(data, dict):
+        return value
+    if data.get("sessionFormatVersion") != source_version:
+        return value
+    return {**value, "data": {**data, "sessionFormatVersion": NATIVE_DELIVERY_FORMAT_TOKEN}}
+
+
+def normalize_snapshot_comparison_text(
+    name: str,
+    content: str,
+    native_writer_version: int | None = None,
+) -> str:
     """Normalize Session generation metadata only while comparing committed expected outputs."""
     if name.startswith("session") and name.endswith(".jsonl"):
         parsed = [json.loads(line) for line in content.splitlines() if line]
@@ -2498,6 +2525,8 @@ def normalize_snapshot_comparison_text(name: str, content: str) -> str:
         source_version = header.get("version") if isinstance(header, dict) else None
         if not isinstance(source_version, int):
             raise AssertionError(f"{name}: snapshot Session header has no integer format version")
+        if native_writer_version is not None:
+            parsed = [normalize_native_delivery_record(record, native_writer_version) for record in parsed]
         records = [
             normalize_session_format_comparison(expanded, source_version)
             for record in parsed
@@ -2505,8 +2534,18 @@ def normalize_snapshot_comparison_text(name: str, content: str) -> str:
         ]
         return render_jsonl(records)
     if name.endswith(".json"):
+        value = json.loads(content)
+        if name == "result.json" and native_writer_version is not None and isinstance(value, dict):
+            value = {
+                **value,
+                **{
+                    key: [normalize_native_delivery_record(record, native_writer_version) for record in value[key]]
+                    for key in ("events", "notifications")
+                    if isinstance(value.get(key), list)
+                },
+            }
         return json.dumps(
-            normalize_session_format_comparison(json.loads(content)),
+            normalize_session_format_comparison(value),
             indent=2,
             ensure_ascii=False,
         ) + "\n"
@@ -2518,8 +2557,10 @@ def compare_snapshot_files(
     update: bool,
     directory: Path,
     filenames: tuple[str, ...],
+    *,
+    native_writer_output: bool = False,
 ) -> None:
-    """Compare ordered artifact roles and Session content across generations, or write generated filenames."""
+    """Compare artifact roles and content, optionally matching each side's native delivery generation."""
     scenario = directory.name
 
     def role_name(name: str) -> str:
@@ -2571,12 +2612,24 @@ def compare_snapshot_files(
             f"{scenario} snapshot Session roles differ: "
             f"expected={sorted(selected_expected)}, actual={sorted(actual_sessions)}",
         )
+    actual_native_version = expected_native_version = None
+    if native_writer_output:
+        def common_generation(contents: list[tuple[str, str]]) -> int:
+            versions = {session_header_version(content, name) for name, content in contents}
+            if len(versions) != 1:
+                raise AssertionError(f"{scenario}: native writer comparison requires one Session generation across all roles")
+            return versions.pop()
+
+        actual_native_version = common_generation(list(actual_sessions.values()))
+        expected_native_version = common_generation([
+            (path.name, path.read_text(encoding="utf-8")) for path in selected_expected.values()
+        ])
     for name, actual in files.items():
         parsed = parse_snapshot_session_filename(name)
         expected_path = directory / name if parsed is None else selected_expected[parsed[0]]
         expected_text = expected_path.read_text(encoding="utf-8")
-        compared_actual = normalize_snapshot_comparison_text(name, actual)
-        compared_expected = normalize_snapshot_comparison_text(expected_path.name, expected_text)
+        compared_actual = normalize_snapshot_comparison_text(name, actual, actual_native_version)
+        compared_expected = normalize_snapshot_comparison_text(expected_path.name, expected_text, expected_native_version)
         if compared_actual == compared_expected:
             continue
         diff = "".join(difflib.unified_diff(
