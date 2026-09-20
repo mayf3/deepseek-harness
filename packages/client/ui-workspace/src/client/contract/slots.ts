@@ -28,9 +28,9 @@
  * end is an entry of `sidebar.workspaces.session.row.action`. The shipped
  * actions — pin, rename, fork, archive — are ordinary entries this package
  * registers from `apply`, each carrying its own behavior in its own inject
- * face and reading its own Host state through the standard hooks, so a client
- * plugin's action lands beside them by `order` and needs nothing from the
- * browser beyond the row identity.
+ * face and reading its own Host state through hooks that face injects, so a
+ * client plugin's action lands beside them by `order` and needs nothing from
+ * the browser beyond the row identity.
  */
 import type {
   HostObservable, InjectFace, PropsHooks, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore, SlotHookFactory,
@@ -105,14 +105,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * (300), `archive` (400) — so a plugin row is placed by its own `order`
      * among them. Use a package-namespaced `id`; reusing a shipped id at
      * another `priority` shadows that row. Each entry renders one
-     * `MenuItemButton` (`separatorBefore` when it starts a new group), decides
-     * its own visibility from its own state, and dismisses the menu through the
-     * injected `useMenuOpenState` hook after acting. Labels come from the
-     * contributing package's locale namespace.
+     * `role="menuitem"` `<button>` (the shipped rows use ui-primitives'
+     * `MenuItemButton`, which adds the host styling and `separatorBefore`),
+     * decides its own visibility from its own state, and dismisses the menu
+     * through the injected `useMenuOpenState` hook after acting; the list's
+     * keyboard walk and focus return read the DOM, so any such button joins
+     * them. Labels come from the contributing package's locale namespace.
      * @example
-     * const React = require('react')
-     * const { MenuItemButton } = require('@deepseek-ai/dsh-client-ui-primitives')
-     *
      * return {
      *   inject: ['slots'],
      *   apply(ctx) {
@@ -122,8 +121,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      *       ({ sessionId, useMenuOpenState }) => {
      *         const [, setMenuOpen] = useMenuOpenState()
      *         return React.createElement(
-     *           MenuItemButton,
-     *           { onSelect: () => { setMenuOpen(false); void navigator.clipboard.writeText(sessionId) } },
+     *           'button',
+     *           { type: 'button', role: 'menuitem', onClick: () => { setMenuOpen(false); void navigator.clipboard.writeText(sessionId) } },
      *           copyLabel,
      *         )
      *       },
@@ -142,7 +141,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * The hover buttons at the end of one Session row, in ascending `order`,
      * after the "..." menu trigger. ui-workspace registers `archive` (100) and
      * `pin` (200) here. An entry renders one icon button (or nothing, when its
-     * action does not apply to the row) and owns the action it performs.
+     * action does not apply to the row) and owns the action it performs. Clicks
+     * inside the strip stay in the strip, so the button needs no propagation
+     * handling to keep the row from opening.
      */
     'sidebar.workspaces.session.row.action': { kind: 'list'; scope: 'root'; owner: SessionRowOwnerProps }
   }

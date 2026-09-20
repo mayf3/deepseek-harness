@@ -11,6 +11,9 @@ import type { RowToastProps } from '../contract/slots.ts'
 const ARCHIVED_TOAST_HOLD_MS = 6000
 
 /**
+ * Render the row actions' current notice: the archived notice with its undo
+ * and show-archived actions on a 6 s hold, or a plain warning for a failed
+ * pin or an archived row that was clicked.
  * @param props - the notice hook, its dismissal, the two archived-notice actions, and the locale seat.
  * @returns the notice on display, or null.
  */

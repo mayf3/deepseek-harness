@@ -6,8 +6,9 @@
  * request → the `shell.overlay` dialog → the injected renameSession hop
  * (sessions.binding → ISession.rename) → on the accepted unary response the
  * dialog closes and the row re-labels from the list state — no push-frame
- * wait. Coverage split: the assembled-app snapshot
- * (apps/web/tests/session-actions.snapshot.ts) pins the full-app transcript;
+ * wait. Coverage split: the real Loader/Web e2e
+ * (apps/web/tests/client-plugin-live.e2e.ts, with the ARIA golden under
+ * apps/web/tests/expected/client-plugin-live/) pins the full-app menu;
  * the verb's wire behavior stays with the Session Controller client package
  * (session.spec.ts#rename), the entries' own arms with
  * session-actions.client.spec, the row's list rendering with rows.client.spec.
