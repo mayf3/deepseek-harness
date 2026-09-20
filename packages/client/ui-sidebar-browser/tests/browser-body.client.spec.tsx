@@ -43,28 +43,28 @@ function mountBrowser(navigation?: { readonly url?: string }) {
   const tabActions = { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn() }
   const props: Pick<BrowserBodyProps, 'sessionId' | 'useTabInfo' | 'useStore' | 'actions' | 't' | 'useBrowserState'>
     & Omit<BrowserInjected, 'keyedHooks'> = {
-    sessionId: SESSION,
-    useTabInfo: () => ({
-      sidebar: { expanded: true, fullscreen: false }, panel: { id: 'pane' as PaneId },
-      tab: {
-        id: TAB, kind: 'browser', title: 'Browser', contentId: 'sidebar://browser/1', visible: true,
-        navigation: { address: 'sidebar://browser/1', params: navigation, revision: 0 },
-        signal: lifetime.signal,
-        actions: tabActions,
+      sessionId: SESSION,
+      useTabInfo: () => ({
+        sidebar: { expanded: true, fullscreen: false }, panel: { id: 'pane' as PaneId },
+        tab: {
+          id: TAB, kind: 'browser', title: 'Browser', contentId: 'sidebar://browser/1', visible: true,
+          navigation: { address: 'sidebar://browser/1', params: navigation, revision: 0 },
+          signal: lifetime.signal,
+          actions: tabActions,
+        },
+      }),
+      useStore: hookOf(store),
+      actions: store.actions,
+      t: (key, params) => {
+        const template = messages[key] ?? key
+        return params === undefined ? template : template.replace(/\{(\w+)\}/g, (_match, name: string) => String(params[name]))
       },
-    }),
-    useStore: hookOf(store),
-    actions: store.actions,
-    t: (key, params) => {
-      const template = messages[key] ?? key
-      return params === undefined ? template : template.replace(/\{(\w+)\}/g, (_match, name: string) => String(params[name]))
-    },
-    ...commands,
-    useBrowserState: (key: string) => {
-      const state = keyedHooks.browserState(key) ?? absentState
-      return useSyncExternalStore(state.subscribe, state.getSnapshot)
-    },
-  }
+      ...commands,
+      useBrowserState: (key: string) => {
+        const state = keyedHooks.browserState(key) ?? absentState
+        return useSyncExternalStore(state.subscribe, state.getSnapshot)
+      },
+    }
   const renderBody = () => render(<BrowserBody {...props as BrowserBodyProps} />)
   return {
     view: renderBody(), remount: renderBody, store, lifetime, injected,

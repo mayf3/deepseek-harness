@@ -27,7 +27,8 @@ it('limits product documents to update status and a native confirmation action',
   expect(api.updates).not.toHaveProperty('install')
   const listener = vi.fn()
   const dispose = api.updates.subscribe(listener)
-  const handler = electron.ipcRenderer.on.mock.calls.find(([channel]) => channel === DESKTOP_IPC.updatesPresentation)?.[1] as (event: unknown, state: unknown) => void
+  const handler = electron.ipcRenderer.on.mock.calls.find(([channel]) => channel === DESKTOP_IPC.updatesPresentation)?.[1] as
+    (event: unknown, state: unknown) => void
   handler({}, { visible: false })
   expect(listener).toHaveBeenCalledWith({ visible: false })
   dispose()

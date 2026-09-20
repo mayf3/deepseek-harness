@@ -421,7 +421,9 @@ export function RightbarSeat({
   // Republished on every committed change: the service's readers answer from the
   // last commit, and its commands act on the session actually on screen.
   useEffect(
-    () => active ? bindService({ sessionId, actions, surfaces, canSplitPane: paneId => room.current.get(paneId)?.row !== false }) : undefined,
+    () => active
+      ? bindService({ sessionId, actions, surfaces, canSplitPane: paneId => room.current.get(paneId)?.row !== false })
+      : undefined,
     [bindService, sessionId, actions, surfaces, active],
   )
   // The Tab domain is not synced here: the controller adopted this session's

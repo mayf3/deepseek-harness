@@ -124,7 +124,7 @@ export function FloatHeader({ paneId, tab, labels, intents, renderTabTitle, canC
       <div className={css.stripFill} />
       <Tooltip label={labels.dockFloat} side="bottom" delayMs={500}>
         <button type="button" className={css.iconButton} aria-label={labels.dockFloat}
-          data-dockkit-float-dock={paneId} onPointerDown={event => { event.stopPropagation() }}
+          data-dockkit-float-dock={paneId} onPointerDown={(event) => { event.stopPropagation() }}
           onClick={() => { intents.unfloatPane(paneId) }}>
           <IconPanelLeftOutlineRegular className={css.dockGlyph} />
         </button>
@@ -132,7 +132,7 @@ export function FloatHeader({ paneId, tab, labels, intents, renderTabTitle, canC
       {(canCloseTab?.(tab.id) ?? true) && (
         <Tooltip label={labels.closeFloat} side="bottom" delayMs={500}>
           <button type="button" className={css.iconButton} aria-label={labels.closeFloat}
-            data-dockkit-float-close={paneId} onPointerDown={event => { event.stopPropagation() }}
+            data-dockkit-float-close={paneId} onPointerDown={(event) => { event.stopPropagation() }}
             onClick={() => { intents.closeTab(tab.id) }}>
             <IconCloseOutlineRegular />
           </button>

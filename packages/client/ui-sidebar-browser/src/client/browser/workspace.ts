@@ -12,7 +12,12 @@ export async function browserWorkspace(source: WorkspaceSource, sessionId: strin
   signal.throwIfAborted()
   if (source.getSnapshot().phase !== 'ready') {
     await new Promise<void>((resolve, reject) => {
-      const abort = (): void => { stop(); reject(signal.reason) }
+      const abort = (): void => {
+        stop()
+        const reason: unknown = signal.reason
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Preserve the caller-owned AbortSignal reason.
+        reject(reason)
+      }
       const stop = source.subscribe(() => {
         if (source.getSnapshot().phase !== 'ready') return
         stop()

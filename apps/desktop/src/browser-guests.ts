@@ -54,7 +54,7 @@ export class DesktopBrowserGuests {
     this.leases.delete(key)
     const guest = lease.guest
     if (guest !== undefined && !guest.isDestroyed()) {
-      const destroyed = new Promise<void>(resolve => { guest.once('destroyed', resolve) })
+      const destroyed = new Promise<void>((resolve) => { guest.once('destroyed', resolve) })
       guest.close({ waitForBeforeUnload: false })
       await destroyed
     }

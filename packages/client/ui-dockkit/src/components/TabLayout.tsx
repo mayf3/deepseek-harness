@@ -35,7 +35,8 @@ interface TabHostProps extends LayoutProps {
 }
 
 /** A tab's ancestors stay identical across selection, pane moves and floating. */
-function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRequest, keepMounted, active = true }: TabHostProps): ReactNode {
+function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRequest, keepMounted,
+  active = true }: TabHostProps): ReactNode {
   const floating = pane.host === 'float'
   const selected = floating || pane.activeTabId === tab.id
   const visible = active && selected && (floating || state.expanded)
@@ -77,32 +78,32 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
     <div className={clsx(css.tabCell, floating && css.floatingCell)} hidden={!selected}
       data-dockkit-host={floating ? 'float' : 'dock'} data-dockkit-column={floating ? undefined : column}
       style={{ gridColumn: floating ? 1 : column * 2 + 1, gridRow: 1, order: floating ? depth : 0 }}>
-    <section ref={host} className={clsx(css.tabHost, floating ? css.float : css.pane)}
-      aria-hidden={!visible || undefined}
-      data-dockkit-content={tab.id}
-      data-dockkit-pane={!floating && selected ? pane.id : undefined}
-      data-dockkit-pane-active={!floating && state.activePaneId === pane.id || undefined}
-      data-dockkit-float={floating ? pane.id : undefined}
-      data-dockkit-float-active={floating && state.activePaneId === pane.id || undefined}
-      data-dockkit-column={!floating ? column : undefined}
-      style={rect === undefined ? undefined : {
-        left: rect.x, top: rect.y, width: rect.width, height: rect.height,
-      }}
-      onPointerDown={() => { if (floating) floats.raise(pane.id) }}
-      onClick={() => { if (!floating && state.activePaneId !== pane.id) callbacks.onFocusPane(pane.id) }}>
-      <div className={css.tabHostHeader}>
-        {selected && (floating
-          ? <FloatHeader paneId={pane.id} tab={tab} labels={callbacks.labels} intents={intents}
-            renderTabTitle={callbacks.renderTabTitle} canCloseTab={callbacks.canCloseTab} drag={floats.drag} />
-          : <TabStrip state={state} pane={pane} callbacks={callbacks} />)}
-      </div>
-      <div ref={body} className={clsx(css.tabHostBody, floating ? css.floatBody : css.paneBody)}>
-        {visited && (retained || (active && selected)) ? callbacks.renderTab(tab) : null}
-        {!floating && <PaneDropHints pane={pane} callbacks={callbacks} />}
-      </div>
-      {floating && <div className={css.floatResize} data-dockkit-float-resize={pane.id}
-        onPointerDown={event => { floats.drag('resize', pane.id, event) }} />}
-    </section>
+      <section ref={host} className={clsx(css.tabHost, floating ? css.float : css.pane)}
+        aria-hidden={!visible || undefined}
+        data-dockkit-content={tab.id}
+        data-dockkit-pane={!floating && selected ? pane.id : undefined}
+        data-dockkit-pane-active={!floating && state.activePaneId === pane.id || undefined}
+        data-dockkit-float={floating ? pane.id : undefined}
+        data-dockkit-float-active={floating && state.activePaneId === pane.id || undefined}
+        data-dockkit-column={!floating ? column : undefined}
+        style={rect === undefined ? undefined : {
+          left: rect.x, top: rect.y, width: rect.width, height: rect.height,
+        }}
+        onPointerDown={() => { if (floating) floats.raise(pane.id) }}
+        onClick={() => { if (!floating && state.activePaneId !== pane.id) callbacks.onFocusPane(pane.id) }}>
+        <div className={css.tabHostHeader}>
+          {selected && (floating
+            ? <FloatHeader paneId={pane.id} tab={tab} labels={callbacks.labels} intents={intents}
+              renderTabTitle={callbacks.renderTabTitle} canCloseTab={callbacks.canCloseTab} drag={floats.drag} />
+            : <TabStrip state={state} pane={pane} callbacks={callbacks} />)}
+        </div>
+        <div ref={body} className={clsx(css.tabHostBody, floating ? css.floatBody : css.paneBody)}>
+          {visited && (retained || (active && selected)) ? callbacks.renderTab(tab) : null}
+          {!floating && <PaneDropHints pane={pane} callbacks={callbacks} />}
+        </div>
+        {floating && <div className={css.floatResize} data-dockkit-float-resize={pane.id}
+          onPointerDown={(event) => { floats.drag('resize', pane.id, event) }} />}
+      </section>
     </div>
   )
 }
@@ -118,7 +119,7 @@ export function TabLayout(props: LayoutProps): ReactNode {
   const focusRequest = useRef<{ readonly tabId: TabId; readonly origin: Element | null }>()
   const tabCallbacks: PaneCallbacks = {
     ...callbacks,
-    onFocusTab: tabId => {
+    onFocusTab: (tabId) => {
       // Only changing the selected body replaces its strip; pane-only focus does not.
       focusRequest.current = findTabPane(state, tabId).activeTabId === tabId
         ? undefined : { tabId, origin: document.activeElement }
@@ -137,7 +138,7 @@ export function TabLayout(props: LayoutProps): ReactNode {
     <div className={css.tabLayout} data-dockkit-split={root.kind === 'split' ? root.id : undefined}
       style={{ gridTemplateColumns: columns }}>
       {/* Logical order changes must not make React move a connected webview's ancestor. */}
-      {Object.values(state.tabs).sort((a, b) => a.id.localeCompare(b.id)).map(tab => {
+      {Object.values(state.tabs).sort((a, b) => a.id.localeCompare(b.id)).map((tab) => {
         const pane = findTabPane(state, tab.id)
         return <TabHost key={tab.id} {...props} callbacks={tabCallbacks} tab={tab} pane={pane}
           column={panes.findIndex(candidate => candidate.id === pane.id)} floats={floats} focusRequest={focusRequest} />
@@ -149,7 +150,7 @@ export function TabLayout(props: LayoutProps): ReactNode {
       ))}
       {root.kind === 'split' && <div className={clsx(css.divider, css.tabLayoutDivider)}
         data-dockkit-divider={`${root.id}:0`} style={{ gridColumn: 2, gridRow: 1 }}
-        onPointerDown={event => { callbacks.onDividerPressed(root.id, 0, event) }} />}
+        onPointerDown={(event) => { callbacks.onDividerPressed(root.id, 0, event) }} />}
     </div>
   )
 }

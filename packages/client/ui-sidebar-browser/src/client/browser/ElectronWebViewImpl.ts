@@ -145,13 +145,14 @@ export class ElectronWebViewImpl implements BrowserFrame {
     this.workspaceKey ??= await this.workspace(attachmentSignal)
     if (attachmentSignal.aborted) return
     const reservation = await this.bridge.acquire(this.workspaceKey)
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- The signal can abort while acquire is pending.
     if (attachmentSignal.aborted) { await this.release(reservation.lease); return }
     this.lease = reservation.lease
     this.guestLifetime = new AbortController()
     const signal = AbortSignal.any([attachmentSignal, this.guestLifetime.signal])
     const element = this.presentation.createElement(reservation)
     this.element = element
-    const unsubscribeOpen = this.bridge.onOpenRequested(reservation.lease, url => {
+    const unsubscribeOpen = this.bridge.onOpenRequested(reservation.lease, (url) => {
       if (this.element === element && !signal.aborted) this.options.openRequested(url)
     })
     signal.addEventListener('abort', unsubscribeOpen, { once: true })
@@ -161,10 +162,10 @@ export class ElectronWebViewImpl implements BrowserFrame {
       this.loadPending()
     }, { signal })
     element.addEventListener('did-navigate', () => { this.observe(true) }, { signal })
-    element.addEventListener('did-navigate-in-page', event => {
+    element.addEventListener('did-navigate-in-page', (event) => {
       if ((event as NavigationEvent).isMainFrame) this.observe(true)
     }, { signal })
-    element.addEventListener('did-start-navigation', event => {
+    element.addEventListener('did-start-navigation', (event) => {
       if ((event as NavigationEvent).isMainFrame) {
         this.store.set({ ...this.store.getSnapshot(), loading: true, error: undefined })
       }
@@ -174,7 +175,7 @@ export class ElectronWebViewImpl implements BrowserFrame {
         this.observe(name === 'page-title-updated' && this.store.getSnapshot().address === 'observed')
       }, { signal })
     }
-    element.addEventListener('did-fail-load', event => {
+    element.addEventListener('did-fail-load', (event) => {
       const failure = event as LoadFailureEvent
       if (failure.isMainFrame && failure.errorCode !== -3) {
         this.failed({ code: failure.errorCode, description: failure.errorDescription })

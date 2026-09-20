@@ -32,9 +32,9 @@ export class SidebarSessionViews {
     if (this.closed || this.selected === sessionId) return
     this.selected = sessionId
     if (sessionId !== undefined && !this.views.has(sessionId)) {
-      const view = new SidebarSessionView(sessionId, this.sessions, disposed => {
+      const view = new SidebarSessionView(sessionId, this.sessions, (disposed) => {
         this.viewsByReference.delete(disposed.reference)
-      }, released => { this.prune(released) })
+      }, (released) => { this.prune(released) })
       this.views.set(sessionId, view)
       this.viewsByReference.set(view.reference, view)
     }

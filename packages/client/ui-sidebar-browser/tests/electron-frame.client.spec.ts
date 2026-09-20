@@ -16,7 +16,7 @@ it('clears a failed load when the main page retries without a toolbar command', 
     acquire: vi.fn(async () => ({ lease: 'lease' as DesktopBrowserLeaseId, partition: 'partition' })),
     release: vi.fn(async () => {}), onOpenRequested: () => () => {},
   }
-  const presentation = new ElectronWebviewPresentation({ mounted: () => frame.attach(), unmounted: () => frame.detach() })
+  const presentation = new ElectronWebviewPresentation({ mounted: () =>{  frame.attach() }, unmounted: () =>{  frame.detach() } })
   const frame = new ElectronWebViewImpl({ initial: undefined, persist: vi.fn(), openRequested: vi.fn() },
     bridge, async () => 'cwd:/workspace', presentation)
   const createElement = vi.spyOn(presentation, 'createElement').mockReturnValue(element)

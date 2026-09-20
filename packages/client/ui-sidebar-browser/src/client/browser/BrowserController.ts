@@ -46,12 +46,12 @@ export class BrowserController implements HostObservable<BrowserControllerState>
     this.checkpoint = options.initial
     this.page = options.createPage({
       initial: options.initial,
-      persist: state => {
+      persist: (state) => {
         if (this.disposed) return
         this.checkpoint = state
         this.actions.replace(options.tabId, state)
       },
-      openRequested: value => {
+      openRequested: (value) => {
         if (this.disposed) return
         const result = parseBrowserAddress(value, options.applicationOrigin)
         if (!result.ok) { this.addressFailed(result.reason); return }
@@ -254,15 +254,15 @@ export function createBrowserControllers(actions: BoundActions<BrowserStore>, cr
       controllers.clear()
       await Promise.all(pending)
     },
-    rebind: actions => {
+    rebind: (actions) => {
       currentActions = actions
       for (const { controller } of controllers.values()) controller.rebind(actions)
     },
     loadUrl: (id, value) => { controller(id)?.loadUrl(value) },
-    restore: id => { controller(id)?.restore() },
-    goBack: id => { controller(id)?.goBack() },
-    goForward: id => { controller(id)?.goForward() },
-    reload: id => { controller(id)?.reload() },
+    restore: (id) => { controller(id)?.restore() },
+    goBack: (id) => { controller(id)?.goBack() },
+    goForward: (id) => { controller(id)?.goForward() },
+    reload: (id) => { controller(id)?.reload() },
     setSandbox: (id, enabled) => { controller(id)?.setSandbox(enabled) },
   }
 }

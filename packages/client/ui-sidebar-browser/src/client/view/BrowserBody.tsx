@@ -40,7 +40,7 @@ export type BrowserBodyProps = PropsRuntime<'sidebar.right.pane.tab'>
 function useBrowserDraft(url: string | undefined, revision: number): readonly [string, (value: string) => void] {
   const [edit, setEdit] = useState<{ readonly revision: number; readonly value: string }>()
   return [edit?.revision === revision ? edit.value : url ?? '',
-    value => { setEdit({ revision, value }) }]
+    (value) => { setEdit({ revision, value }) }]
 }
 
 /** Render provider-neutral navigation state and optional controls. */
@@ -62,7 +62,7 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
     const hide = mount({
       tabId: tab.id, signal: tab.signal, viewportId, applicationOrigin: window.location.origin,
       initial: initial.current, initialUrl: initialUrl.current,
-      openTab: url => { tab.actions.openTab('browser', { params: { url }, revealIfOpened: false }) },
+      openTab: (url) => { tab.actions.openTab('browser', { params: { url }, revealIfOpened: false }) },
     })
     setMountEpoch(value => value + 1)
     return hide
@@ -88,7 +88,7 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
             aria-label={t('address.placeholder')}
             placeholder={t('address.placeholder')}
             spellCheck={false}
-            onChange={event => { setDraft(event.currentTarget.value) }}
+            onChange={(event) => { setDraft(event.currentTarget.value) }}
           />
           {unknown && <span className={css.addressChanged}>{t('address.changed')}</span>}
           <button type="submit" className={[css.tool, css.addressGo].join(' ')} aria-label={t('go')} title={t('go')}><IconLinkOutlineRegular /></button>

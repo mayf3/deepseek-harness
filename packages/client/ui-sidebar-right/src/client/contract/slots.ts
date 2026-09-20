@@ -39,11 +39,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
   interface SlotMap {
     /** Session content selected by the root-scoped right Sidebar controller. */
-    'rightbar.session': { kind: 'single'; scope: 'session'; owner: RightbarOwnerProps & {
-      readonly active: boolean
-      /** @param tabId - retained body. @param signal - tab occurrence lifetime. @returns releases the View-owned hold. */
-      readonly retainTab: (tabId: TabId, signal: AbortSignal) => () => void
-    } }
+    'rightbar.session': {
+      kind: 'single'
+      scope: 'session'
+      owner: RightbarOwnerProps & {
+        readonly active: boolean
+        /** @param tabId - retained body. @param signal - tab occurrence lifetime. @returns releases the View-owned hold. */
+        readonly retainTab: (tabId: TabId, signal: AbortSignal) => () => void
+      }
+    }
     /**
      * One tab's body, dispatched with the `id` of the type in force for
      * `tab.kind`. A tab type registers here under its definition's `id` and

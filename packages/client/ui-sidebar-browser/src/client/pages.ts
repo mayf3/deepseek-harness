@@ -13,8 +13,8 @@ import { ElectronWebviewPresentation } from './view/ElectronWebviewPresentation.
  */
 export function createIframePage(options: BrowserPageOptions): BrowserPage {
   const presentation = new IframePresentation({
-    loaded: revision => { frame.handleLoaded(revision) },
-    failed: revision => { frame.handleLoadFailed(revision) },
+    loaded: (revision) => { frame.handleLoaded(revision) },
+    failed: (revision) => { frame.handleLoadFailed(revision) },
     remounted: () => { frame.reload() },
   })
   const frame = new IframeImpl(options, presentation)
@@ -30,11 +30,10 @@ export function createIframePage(options: BrowserPageOptions): BrowserPage {
  */
 export function createElectronPage(options: BrowserPageOptions, bridge: DesktopBrowserBridge,
   workspace: (signal: AbortSignal) => Promise<string>): BrowserPage {
-  let frame: ElectronWebViewImpl
   const presentation = new ElectronWebviewPresentation({
     mounted: () => { frame.attach() },
     unmounted: () => { frame.detach() },
   })
-  frame = new ElectronWebViewImpl(options, bridge, workspace, presentation)
+  const frame = new ElectronWebViewImpl(options, bridge, workspace, presentation)
   return { frame, presentation }
 }

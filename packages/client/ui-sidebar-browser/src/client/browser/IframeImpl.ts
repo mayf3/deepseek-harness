@@ -8,7 +8,7 @@ import type { BrowserTarget } from './url.ts'
 
 /** Owns iframe navigation; the view reports loads without reading cross-origin content. */
 export class IframeImpl implements BrowserFrame {
-  readonly sandbox: BrowserSandboxControl = { setEnabled: enabled => { this.setSandbox(enabled) } }
+  readonly sandbox: BrowserSandboxControl = { setEnabled: (enabled) => { this.setSandbox(enabled) } }
   private readonly navigation: BrowserNavigation
   private readonly store: SnapshotStore<BrowserFrameState>
   private sandboxed = true
