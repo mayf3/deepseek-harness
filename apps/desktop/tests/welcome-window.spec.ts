@@ -57,7 +57,7 @@ describe('desktop welcome window', () => {
     })
     expect(options.webPreferences?.preload).toMatch(/preload-welcome\.cjs$/u)
     if (platform === 'darwin') {
-      expect(options.vibrancy).toBe('titlebar')
+      expect(options.vibrancy).toBe('menu')
       expect(options.visualEffectState).toBe('active')
       expect(options.trafficLightPosition).toEqual({ x: 21, y: 21 })
     } else if (platform === 'win32') {

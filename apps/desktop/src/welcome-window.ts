@@ -28,7 +28,7 @@ export function welcomeWindowOptions(platform: NodeJS.Platform, locale: DesktopL
     ...(platform === 'darwin' ? {
       titleBarStyle: 'hidden',
       trafficLightPosition: { x: 21, y: 21 },
-      vibrancy: 'titlebar',
+      vibrancy: 'menu',
       visualEffectState: 'active',
     } as const : {}),
     ...(platform === 'win32' ? {
