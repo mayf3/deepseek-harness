@@ -150,7 +150,7 @@ export function apply(ctx: ClientContext): void {
       },
     }
     const layout: ILayout = ctx.layout
-    const injected: Omit<SidebarRightInjected, 'keyedHooks' | 'occurrence' | 'closeTab' | 'retainTab'> = {
+    const injected: Omit<SidebarRightInjected, 'keyedHooks' | 'occurrence' | 'closeTab'> = {
       syncPresentation({ shown, track, fullscreen }) {
         if (shown) layout.openRightbar(track, fullscreen)
         else layout.closeRightbar()
@@ -187,7 +187,6 @@ export function apply(ctx: ClientContext): void {
           },
           keyedHooks: { tabNavigation: key => controller.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation },
           occurrence: tab => controller.tabDomain.occurrence(sessionId, tab),
-          retainTab: tabId => views.retainTab(sessionId, tabId, controller.tabDomain.occurrence(sessionId, { id: tabId }).signal),
         }),
       }, RightbarSeat)
     })

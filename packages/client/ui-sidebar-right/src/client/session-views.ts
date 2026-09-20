@@ -1,7 +1,6 @@
 /** Selection and retention policy for independently owned Sidebar Session views. */
 import type { ISessions, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SidebarSessionView } from './session-view.ts'
 
@@ -10,6 +9,8 @@ export interface SidebarSessionViewSnapshot {
   readonly sessionId: SessionId
   readonly reference: SessionReference
   readonly selected: boolean
+  /** Stable for this View's lifetime, independently of Session injection bindings. */
+  readonly retainTab: SidebarSessionView['retainTab']
 }
 
 /** Selects and retires views; the Sidebar plugin's injected dependencies own global teardown. */
@@ -29,7 +30,7 @@ export class SidebarSessionViews {
     if (sessionId !== undefined && !this.views.has(sessionId)) {
       const view = new SidebarSessionView(sessionId, this.sessions, disposed => {
         this.viewsByReference.delete(disposed.reference)
-      })
+      }, released => { this.prune(released) })
       this.views.set(sessionId, view)
       this.viewsByReference.set(view.reference, view)
     }
@@ -51,20 +52,6 @@ export class SidebarSessionViews {
     return view.mount()
   }
 
-  /**
-   * Hold an initialized tab occurrence until unmount or occurrence cancellation.
-   * @param sessionId - mounted Session identity.
-   * @param tabId - initialized body identity.
-   * @param signal - occurrence lifetime; closing and undoing a tab creates a new lifetime.
-   * @returns idempotent release of this body's hold.
-   */
-  retainTab(sessionId: SessionId, tabId: TabId, signal: AbortSignal): () => void {
-    if (signal.aborted || this.closed) return () => {}
-    const view = this.views.get(sessionId)
-    if (view === undefined) throw new Error(`Sidebar Session "${sessionId}" has no mounted view`)
-    return view.retainTab(tabId, signal, () => { this.prune(view) })
-  }
-
   /** Plugin shutdown releases every view, including any awaiting a React unmount. */
   dispose(): void {
     this.closed = true
@@ -84,7 +71,7 @@ export class SidebarSessionViews {
   private publish(): void {
     if (this.closed) return
     this.source.set([...this.views.values()].sort((a, b) => a.sessionId.localeCompare(b.sessionId)).map(view => ({
-      sessionId: view.sessionId, reference: view.reference, selected: view.sessionId === this.selected,
+      sessionId: view.sessionId, reference: view.reference, selected: view.sessionId === this.selected, retainTab: view.retainTab,
     })))
   }
 }

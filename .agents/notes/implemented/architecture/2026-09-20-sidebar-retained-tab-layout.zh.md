@@ -28,7 +28,7 @@ Sidebar 负责活 Body 的保留，不依赖 Browser 导航和 Workspace 存储�
 
 `SidebarSessionView` 使用独立的 `sidebarView` 来源申请、释放一个 `SessionReference`，并管理自己的已提交挂载计数和 Body 保活持有。`SidebarSessionViews` 管理选中、保留策略和视图索引，将生命周期操作委托给视图，而不修改其计数或释放其引用。`RightbarRoot` 接收 `SidebarSessionViewSnapshot` 和已有注入回调，不接收资源所有者对象；它为各视图分别渲染显式 `SessionProvider`，保持会话 key 稳定，渲染器通用的会话重挂载语义不变。
 
-Tab 提供 Body 保活持有，而不独立申请会话引用。这些持有跟随已有 occurrence signal，包括关闭后撤销恢复得到的新 signal；视图不创建第二套 Tab 生命周期。退出视图列表的视图仍留在集合的引用索引中，直到自行释放时移除索引，因此插件关闭时也能清理尚未结束 React 挂载的视图。
+Tab 提供 Body 保活持有，而不独立申请会话引用。View 的稳定 `retainTab` 回调通过 owner props 传给席位，因此替换 Session injection binding 不会释放再重新获取这些持有。这些持有跟随已有 occurrence signal，包括关闭后撤销恢复得到的新 signal；视图不创建第二套 Tab 生命周期。退出视图列表的视图仍留在集合的引用索引中，直到自行释放时移除索引，因此插件关闭时也能清理尚未结束 React 挂载的视图。
 
 只有选中的会话向 frame 报告占位、绑定公共 Sidebar 导航。后台 Tab actions 仍指向自己的已接管存储。`tab.visible` 包含会话和全局面板的可见性，浮动不会让后台会话变成可见。切会话或打开全局面板隐藏整个内容树，收起 Sidebar 则只隐藏停靠 cell，前台浮窗仍可见。隐藏内容不可通过指针或键盘访问，隐藏 Body 内的焦点会被移除。
 
@@ -81,4 +81,4 @@ Tab 提供 Body 保活持有，而不独立申请会话引用。这些持有跟�
 
 ## Verification
 
-定向 TypeScript 编译覆盖 Sidebar、Browser 和 Desktop 源码，DockKit、Sidebar、Browser、Desktop 打包及 Web 外壳构建完成。未添加或运行测试、未录制演示，也未重启正在运行的 Electron。稳定树实现仍需真实 Electron 验证 guest 身份、表单与 history 保留、多浮窗绘制顺序、缩放、裁剪、放置提示、焦点和平台窗口控件。编译与打包不代表这些运行时观察已通过。
+定向测试覆盖 Session 数据源注册与注销期间的正文保活、存档布局校验和既有 Sidebar 呈现。Host 与 Client TypeScript 编译通过。用户已手动验收重新构建后的 Electron 冷启动；未录制 GIF。guest 身份、表单与 history 保留、多浮窗绘制顺序、缩放、裁剪、放置提示、焦点和平台窗口控件仍需独立于这些单元测试的真实 Electron 证据。

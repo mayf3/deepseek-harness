@@ -719,7 +719,7 @@ describe('web e2e: shipped right Sidebar', () => {
       onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-right-content'))
       const column = page.locator('[data-rightbar-col]')
       const panes = column.locator('[data-dockkit-pane]')
-      const floats = page.locator('[data-sidebar-right-float-host] [data-dockkit-float]')
+      const floats = page.locator('[data-sidebar-right-session]:not([hidden]) [data-dockkit-float]')
 
       // Observation before action: does the read ever leave the browser? The
       // assertion states the healthy answer so a failure prints the real one.
@@ -891,7 +891,7 @@ describe('web e2e: shipped right Sidebar', () => {
       onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-right-gestures'))
       const column = await resetSidebar(page)
       const panes = column.locator('[data-dockkit-pane]')
-      const floats = page.locator('[data-sidebar-right-float-host] [data-dockkit-float]')
+      const floats = page.locator('[data-sidebar-right-session]:not([hidden]) [data-dockkit-float]')
 
       // Chromium cancels pointer capture if a render replaces the pressed
       // element; jsdom cannot establish that the whole gesture survives.

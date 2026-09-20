@@ -107,8 +107,6 @@ export interface SidebarRightInjected {
   }
   /** Read a committed record's lifetime; never creates an occurrence. */
   readonly occurrence: (tab: Pick<TabRecord, 'id'>) => TabOccurrence
-  /** Keep this Session generation while an initialized body is retained. */
-  readonly retainTab: (tabId: TabId) => () => void
 }
 
 /** The column seat's props: session scope, so the session arrives as a standard prop. */
@@ -135,7 +133,7 @@ interface PanelProps {
   readonly fullscreen: boolean
   readonly autoFullscreen: boolean
   readonly active: boolean
-  readonly retainTab: SidebarRightInjected['retainTab']
+  readonly retainTab: RightbarSeatProps['retainTab']
   /** Receives the kit's room-rule readings for the service's `split`. */
   readonly reportRoom: (fits: ReadonlyMap<PaneId, HalvesFit>) => void
 }
@@ -190,7 +188,7 @@ function TabSlot({
   const { signal, tabActions } = occurrence(tab)
   const definition = useTabTypes(types => types.find(definition => definition.kind === tab.kind))
   const retained = seat === 'sidebar.right.pane.tab' && definition?.keepMounted === true
-  useLayoutEffect(() => retained ? retainTab(tab.id) : undefined, [retained, retainTab, tab.id, signal])
+  useLayoutEffect(() => retained ? retainTab(tab.id, signal) : undefined, [retained, retainTab, tab.id, signal])
   const hookContext = useMemo((): TabHookContext => ({
     tabId: tab.id,
     title: seat === 'sidebar.right.pane.tab.title',

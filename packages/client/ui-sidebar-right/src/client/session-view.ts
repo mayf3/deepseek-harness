@@ -21,11 +21,13 @@ export class SidebarSessionView {
    * @param sessionId - Session displayed by this view.
    * @param sessions - allocator for this view's independent reference.
    * @param onDispose - removes this view from the collection's index before reference release.
+   * @param onTabRelease - reconsiders retention after a body releases its hold.
    */
   constructor(
     readonly sessionId: SessionId,
     sessions: ISessions,
     private readonly onDispose: (view: SidebarSessionView) => void,
+    private readonly onTabRelease: (view: SidebarSessionView) => void,
   ) {
     this.reference = sessions.retain(sessionId, { source: 'sidebarView' })
     void this.reference.ready.catch(error => { console.error('Sidebar Session opening failed:', error) })
@@ -49,10 +51,9 @@ export class SidebarSessionView {
    * Hold an initialized body until unmount or occurrence cancellation.
    * @param tabId - initialized body identity.
    * @param signal - occurrence lifetime; closing and undoing a tab creates a new lifetime.
-   * @param onRelease - lets the collection reconsider retaining this view.
    * @returns idempotent release of this body's hold.
    */
-  retainTab(tabId: TabId, signal: AbortSignal, onRelease: () => void): () => void {
+  readonly retainTab = (tabId: TabId, signal: AbortSignal): (() => void) => {
     if (signal.aborted || this.disposed) return () => {}
     this.tabs.set(tabId, (this.tabs.get(tabId) ?? 0) + 1)
     let held = true
@@ -63,7 +64,7 @@ export class SidebarSessionView {
       const count = this.tabs.get(tabId) as number
       if (count === 1) this.tabs.delete(tabId)
       else this.tabs.set(tabId, count - 1)
-      onRelease()
+      this.onTabRelease(this)
     }
     signal.addEventListener('abort', release, { once: true })
     return release

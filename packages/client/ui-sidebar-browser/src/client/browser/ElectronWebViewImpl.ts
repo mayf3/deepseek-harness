@@ -164,6 +164,11 @@ export class ElectronWebViewImpl implements BrowserFrame {
     element.addEventListener('did-navigate-in-page', event => {
       if ((event as NavigationEvent).isMainFrame) this.observe(true)
     }, { signal })
+    element.addEventListener('did-start-navigation', event => {
+      if ((event as NavigationEvent).isMainFrame) {
+        this.store.set({ ...this.store.getSnapshot(), loading: true, error: undefined })
+      }
+    }, { signal })
     for (const name of ['did-start-loading', 'did-stop-loading', 'page-title-updated']) {
       element.addEventListener(name, () => {
         this.observe(name === 'page-title-updated' && this.store.getSnapshot().address === 'observed')

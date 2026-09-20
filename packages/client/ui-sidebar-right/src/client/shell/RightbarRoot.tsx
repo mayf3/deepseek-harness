@@ -21,7 +21,7 @@ function SessionView({ view, visible, SessionProvider, renderSlot, mountView, wi
   const active = visible && view.selected
   return <div className={css.session} hidden={!active} data-sidebar-right-session={view.sessionId}>
     <SessionProvider session={view.reference}>
-      {renderSlot('rightbar.session', { width, viewportWidth, canShow, active })}
+      {renderSlot('rightbar.session', { width, viewportWidth, canShow, active, retainTab: view.retainTab })}
     </SessionProvider>
   </div>
 }

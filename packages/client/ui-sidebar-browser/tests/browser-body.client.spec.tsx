@@ -105,7 +105,8 @@ describe('BrowserBody', () => {
     expect(frame.getAttribute('src')).toBe('https://example.com/one')
     expect(frame.getAttribute('sandbox')).toBe(WEB_BROWSER_SANDBOX)
     expect(frame.getAttribute('allow')).toBeNull()
-    expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer')
+    // jsdom does not reflect the iframe referrerPolicy property to its attribute.
+    expect(frame.referrerPolicy).toBe('no-referrer')
     const disableSandbox = mounted.view.getByRole('button', { name: zh['sandbox.disable'] })
     const protectedMark = disableSandbox.querySelector('svg path:last-child')?.getAttribute('d')
     fireEvent.click(disableSandbox)
