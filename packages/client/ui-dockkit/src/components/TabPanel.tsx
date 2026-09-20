@@ -208,8 +208,8 @@ function splitBlockedTitle(labels: PaneCallbacks['labels'], block: SplitBlock): 
   }
 }
 
-/** The pane's tab strip, split control, and body. */
-export function TabPanel({ state, pane, callbacks }: TabPanelProps): ReactNode {
+/** @param props - pane state and gestures. @returns its tab strip without a content container. */
+export function TabStrip({ state, pane, callbacks }: TabPanelProps): ReactNode {
   // The open context menu and the chip that opened it; the menu positions
   // itself against that chip from its portal.
   const [menu, setMenu] = useState<{ readonly tabId: TabId; readonly anchor: HTMLElement } | undefined>(undefined)
@@ -218,14 +218,10 @@ export function TabPanel({ state, pane, callbacks }: TabPanelProps): ReactNode {
   const stripTabs = useRef<HTMLDivElement | null>(null)
   useStripScrollFades(stripTabs, pane.tabs)
   useActiveChipInView(stripTabs, chips, pane.tabs, pane.activeTabId)
-  const active = pane.activeTabId === undefined ? undefined : getTab(state, pane.activeTabId)
   const block = callbacks.splitBlock(pane.id)
   const target = callbacks.dropTarget
   const stripIndex = target !== undefined && target.kind === 'strip' && target.paneId === pane.id
     ? target.index
-    : undefined
-  const zone = target !== undefined && target.kind === 'zone' && target.paneId === pane.id
-    ? target.zone
     : undefined
 
   /** Select a tab from a click or a key, unless it is the active pane's selected tab already: that changes nothing. */
@@ -242,19 +238,6 @@ export function TabPanel({ state, pane, callbacks }: TabPanelProps): ReactNode {
   }
 
   return (
-    <section
-      className={css.pane}
-      data-dockkit-pane={pane.id}
-      data-dockkit-pane-active={state.activePaneId === pane.id || undefined}
-      // A click on the pane's body or strip focuses the pane, unless it is the
-      // active one already: that click changes nothing and records nothing. The
-      // chips and the strip's controls stop their own clicks: each reports one
-      // intent, and that intent already decides which pane is active.
-      onClick={() => {
-        if (state.activePaneId === pane.id) return
-        callbacks.onFocusPane(pane.id)
-      }}
-    >
       <div className={css.tabStrip} role="tablist" data-dockkit-strip={pane.id}>
         <div ref={stripTabs} className={css.stripTabs} role="presentation" data-dockkit-strip-tabs={pane.id}>
           {pane.tabs.map((tabId, index) => {
@@ -407,21 +390,43 @@ export function TabPanel({ state, pane, callbacks }: TabPanelProps): ReactNode {
           </div>
         )}
       </div>
+  )
+}
+
+/** @param props - target pane and drag preview. @returns body-local drop feedback, or nothing. */
+export function PaneDropHints({ pane, callbacks }: Pick<TabPanelProps, 'pane' | 'callbacks'>): ReactNode {
+  const target = callbacks.dropTarget
+  const zone = target?.kind === 'zone' && target.paneId === pane.id ? target.zone : undefined
+  if (zone === undefined) return null
+  return <>
+    <div className={css.dockScrim} data-dockkit-dock-scrim />
+    {callbacks.horizontalDrops && zone !== 'center'
+      ? <>
+        <DockHint zone="left" active={zone === 'left'} labels={callbacks.labels} />
+        <DockHint zone="right" active={zone === 'right'} labels={callbacks.labels} />
+      </>
+      : <DockHint zone={zone} active labels={callbacks.labels} />}
+  </>
+}
+
+/** @param props - pane state and gestures. @returns one pane in the recursive, visibility-mounted layout. */
+export function TabPanel({ state, pane, callbacks }: TabPanelProps): ReactNode {
+  const active = pane.activeTabId === undefined ? undefined : getTab(state, pane.activeTabId)
+  return (
+    <section
+      className={css.pane}
+      data-dockkit-pane={pane.id}
+      data-dockkit-pane-active={state.activePaneId === pane.id || undefined}
+      onClick={() => {
+        if (state.activePaneId !== pane.id) callbacks.onFocusPane(pane.id)
+      }}
+    >
+      <TabStrip state={state} pane={pane} callbacks={callbacks} />
       <div className={css.paneBody}>
         {active === undefined
           ? <p className={css.empty}>{callbacks.labels.emptyPane}</p>
           : callbacks.renderTab(active)}
-        {zone !== undefined && (
-          <>
-            <div className={css.dockScrim} data-dockkit-dock-scrim />
-            {callbacks.horizontalDrops && zone !== 'center'
-              ? <>
-                <DockHint zone="left" active={zone === 'left'} labels={callbacks.labels} />
-                <DockHint zone="right" active={zone === 'right'} labels={callbacks.labels} />
-              </>
-              : <DockHint zone={zone} active labels={callbacks.labels} />}
-          </>
-        )}
+        <PaneDropHints pane={pane} callbacks={callbacks} />
       </div>
     </section>
   )
