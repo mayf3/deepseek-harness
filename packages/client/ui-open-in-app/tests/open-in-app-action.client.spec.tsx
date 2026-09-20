@@ -134,9 +134,9 @@ describe('OpenInAppAction launching', () => {
     expect(view.container.querySelector('svg')).not.toBeNull()
   })
 
-  it('uses the shared product tooltip', async () => {
+  it('names the selected application in the tooltip', async () => {
     render(<OpenInAppAction {...bench({ apps: ['finder'], cwd: '/w' }).props} />)
     fireEvent.mouseEnter(screen.getByRole('button', { name: t('open.title', { app: zh['app.finder'] }) }))
-    expect(await screen.findByText(zh['open.tooltip'])).toBeTruthy()
+    expect(await screen.findByText(t('open.title', { app: zh['app.finder'] }))).toBeTruthy()
   })
 })
