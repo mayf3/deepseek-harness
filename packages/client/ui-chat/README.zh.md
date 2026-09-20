@@ -20,6 +20,7 @@ kind: "package-reference"
 - [轮次 token 用量](#turn-token-usage)
 - [已完成轮次的页脚](#completed-turn-footer)
 - [轮次过程折叠](#turn-process-folding)
+- [分组渲染](#grouped-rendering)
 - [滚动归属](#scroll-ownership)
 - [模型体验](#model-experience)
 - [已知限制与暂缓事项](#known-limitations-and-deferred-work)
@@ -82,6 +83,13 @@ Chat 在所有工作过程展示模式下都不显示系统提示词行和 `perm
 控件展示覆盖整个轮次的非 subagent 工具调用数、最终答案之前带回复内容的 Assistant 消息数和 subagent 委派数。值为 0 的分段省略；工具调用与 subagent 两项互斥，上下文注入不增加计数。三项全为 0 时过程仍会收起，控件标题显示「已思考」（英文为 `Thought for a while`）。摘要下方的通栏分隔线将其与正文或展开后的过程行隔开。用户与 steering 消息、错误、最大 token 与 turn-tail 行留在过程之外。新的过程控件保留既有行的相对顺序，开场人工输入位于控件和过程行之前。
 
 稳定 Chat Node Seat 会让每个 renderer 保持挂载，隐藏成员不产生消息流间距；只有中间没有独立输入时，收起控件才与正文相隔 8px。完成后的收起不依赖是否跟随尾部，因此正在上方阅读的用户可能看到 transcript 重排。若自动收起会隐藏当前键盘焦点，则过程保持展开且焦点留在原处；手动收起会先把焦点移到过程控件，再隐藏成员。会话作用域存储只记录用户手动展开的「轮次 + 正文步骤」generation；不同正文 generation 默认收起。切换工作过程展示模式会保留手动展开状态。
+
+-----
+
+<a id="grouped-rendering"></a>
+## 分组渲染
+
+Chat 可以把可选的 Conversation Group Definition 输出渲染为混合 `node`/`group` 根列表。组容器只订阅成员数组，每个成员保留既有的按键 Node 来源与渲染器。`groupPart` 作为业务拥有的部分选择器传给渲染器，不同部分具有不同 DOM 锚点。展示模式不选择根分支，也不改变成员父级。本包尚未注册过程 Group Definition，默认文本记录仍未分组。
 
 -----
 

@@ -3,7 +3,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import type {
-  ConversationTimelineSnapshot, RenderMessageImages,
+  ConversationTimelineSnapshot, NodeKey, RenderEntry, RenderMessageImages,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import {
@@ -13,6 +13,9 @@ import type { ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
+import { ChatGroupSeat } from './ChatGroupSeat.tsx'
+import { chatRenderKey } from './render-entry.ts'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { TurnNavigator } from './TurnNavigator.tsx'
 import { mergeTurnRailItems } from './turn-rail-items.ts'
 import { useChatScroll } from './use-chat-scroll.ts'
@@ -97,13 +100,22 @@ function TurnStatus({ startTime, t }: {
 }
 
 type ChatNodeListProps = Omit<ComponentProps<typeof ChatNodeSeat>, 'nodeKey'> & {
-  readonly order: readonly string[]
+  readonly entries: readonly RenderEntry[]
+  readonly useChatGroup: ChatViewSlotProps['useChatGroup']
 }
 
-const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNodeListProps) {
-  return order.map(nodeKey => (
-    <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} {...seatProps} />
-  ))
+const ChatNodeList = memo(function ChatNodeList({ entries, useChatGroup, ...seatProps }: ChatNodeListProps) {
+  return entries.map((entry) => {
+    switch (entry.kind) {
+      case 'node':
+        return <ChatNodeSeat {...seatProps} key={chatRenderKey(entry)} nodeKey={entry.key}
+          {...entry.groupPart === undefined ? {} : { groupPart: entry.groupPart }} />
+      case 'group':
+        return <ChatGroupSeat {...seatProps} key={chatRenderKey(entry)} groupKey={entry.key} useChatGroup={useChatGroup} />
+      default:
+        return assertNever(entry)
+    }
+  })
 })
 
 /**
@@ -111,11 +123,14 @@ const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNod
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useStore, actions, renderSlot,
+  useSession, useChat, useChatNode, useChatNodeProcess, useChatGroup, useConversation, useSessions, useStore, actions, renderSlot,
   sessionId, openFile, openSkill, openExternalLink, loadOlder, loadThrough, loadImage, inspectCall, chatScroll, forkAt, fileMentions,
   usePresentation, useProjection, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
+  const groupedEntries = useConversation(snapshot => snapshot.views.grouped('chat')?.entries)
+  const entries = useMemo<readonly RenderEntry[]>(() => groupedEntries
+    ?? order.map(key => ({ kind: 'node', key: key as NodeKey })), [groupedEntries, order])
   const nodeStore = useChat(s => s.nodes)
   // The rail's items are accumulated in the Chat snapshot, so this selector is
   // both the data and its change signal: the array identity moves only when a
@@ -233,7 +248,9 @@ export function ChatView({
           )}
           <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={requestOpenFile}>
             <ChatNodeList
-              order={order}
+              entries={entries}
+              nodeStore={nodeStore}
+              useChatGroup={useChatGroup}
               useChatNode={useChatNode}
               useChatNodeProcess={useChatNodeProcess}
               usePresentation={usePresentation}

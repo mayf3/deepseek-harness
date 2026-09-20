@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type {
   ConversationLocation, ConversationNode, ConversationTimelineSnapshot, ConversationViewBuilder,
-  ConversationViewDefinition, PartialAssistant, RunningToolCall,
+  ConversationViewDefinition, ConversationGroupInput, NodeChange, NodeKey, PartialAssistant, RunningToolCall,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatConversationViewNode, ChatNode } from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
@@ -966,12 +966,20 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
   private readonly referenceLabels = new ReferenceLabelProjector()
   private readonly skillNames = new SkillNameProjector()
   private order: readonly string[] = EMPTY_KEYS
+  private latestGroupInput: ConversationGroupInput<ChatConversationViewNode>
+  private readonly readGroupNode = (key: NodeKey): ChatConversationViewNode | undefined => this.store.get(key)
   /** Last published timeline: a Turn boundary can land without a new node. */
   private timeline: ConversationTimelineSnapshot | null = null
   readonly empty: ChatSnapshot
 
   constructor() {
     this.empty = this.snapshot({ turnOrder: EMPTY_TURNS, turns: new Map() })
+    this.latestGroupInput = {
+      kind: 'replace',
+      order: this.order as readonly NodeKey[],
+      readNode: this.readGroupNode,
+      timeline: this.empty.timeline,
+    }
   }
 
   replace(input: {
@@ -985,21 +993,29 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
     this.store.replaceProcesses(this.order, this.locations)
     this.navigation.rebuild(input.timeline, this.locations, this.store)
     this.timeline = input.timeline
+    this.latestGroupInput = {
+      kind: 'replace',
+      order: this.order as readonly NodeKey[],
+      readNode: this.readGroupNode,
+      timeline: input.timeline,
+    }
     const snapshot = this.snapshot(input.timeline, this.legacy.replace(nodes, input.timeline))
-    this.store.publish()
     return snapshot
   }
 
   apply(input: {
     readonly upserts: readonly ChatConversationViewNode[]
     readonly timeline: ConversationTimelineSnapshot
+    readonly changedTurns?: readonly number[]
   }): ChatSnapshot {
     const upserts = this.skillNames.apply(this.referenceLabels.apply(input.upserts, this.store), this.store)
     const processTurns = new Set<number>()
     let structural = false
     const contentOnly: ChatConversationViewNode[] = []
+    const changes: NodeChange<ChatConversationViewNode>[] = []
     for (const node of upserts) {
       const previous = this.store.get(node.key)
+      if (previous !== node) changes.push({ previous, current: node })
       const nodeStructural = previous === undefined
         || previous.kind !== node.kind
         || previous.anchorSeq !== node.anchorSeq
@@ -1028,9 +1044,24 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
       this.navigation.touch(turnsOf(contentOnly), this.locations, this.store)
     }
     this.timeline = input.timeline
+    this.latestGroupInput = {
+      kind: 'apply',
+      changes,
+      order: this.order as readonly NodeKey[],
+      readNode: this.readGroupNode,
+      timeline: input.timeline,
+      changedTurns: input.changedTurns ?? EMPTY_TURNS,
+    }
     const snapshot = this.snapshot(input.timeline, this.legacy.apply(upserts, input.timeline))
-    this.store.publish()
     return snapshot
+  }
+
+  groupInput(): ConversationGroupInput<ChatConversationViewNode> {
+    return this.latestGroupInput
+  }
+
+  publish(): void {
+    this.store.publish()
   }
 
   private snapshot(

@@ -16,7 +16,8 @@ import type {
   SessionListState, SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
-  ConversationLocationDataStore, ConversationTurnDataMap,
+  ConversationLocationDataStore, ConversationTurnDataMap, ConversationGroupedView,
+  ConversationSnapshot, ConversationViewSnapshotStore, GroupKey, GroupSnapshot, NodeKey,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -47,6 +48,13 @@ import { ChatSnapshotBuilder } from '../src/client/conversation-nodes/chat-snaps
 import type { TurnProcessSpec } from '../src/client/contract/turn-process.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 import { installTurnNavigatorObserver } from './turn-navigator-fixture.ts'
+import { ConversationGroupStore } from '../../ui-conversation/src/client/conversation/group-store.ts'
+
+declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+  interface ConversationGroupDataMap {
+    chat: number
+  }
+}
 
 // Every session-scope fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
@@ -259,6 +267,18 @@ function makeHarness(
   const useChatNodeProcess = bindKeyedSnapshotSelector(
     key => chatSource.source.getSnapshot().nodes.processSource(key),
   )
+  let grouped: ConversationGroupedView<number> | undefined
+  const absentGroup = createSnapshotStore<GroupSnapshot<number> | undefined>(undefined)
+  const conversation = createSnapshotStore<ConversationSnapshot>({
+    ...EMPTY_CONVERSATION_SNAPSHOT,
+    views: {
+      ...EMPTY_CONVERSATION_SNAPSHOT.views,
+      grouped: (() => grouped) as ConversationViewSnapshotStore['grouped'],
+    },
+  })
+  const useChatGroup = bindKeyedSnapshotSelector(
+    key => grouped?.groupSource(key as GroupKey) ?? absentGroup,
+  )
   const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
   const openSkill = vi.fn<(name: string) => void>()
   const loadOlder = vi.fn()
@@ -380,7 +400,8 @@ function makeHarness(
     useChat: bindSnapshotSelector(chatSource.source),
     useChatNode,
     useChatNodeProcess,
-    useConversation: bindSnapshotSelector(createSnapshotStore(EMPTY_CONVERSATION_SNAPSHOT)),
+    useChatGroup,
+    useConversation: bindSnapshotSelector(conversation),
     useTrajectory: (() => { throw new Error('unused') }),
     useSessions: emptySessions(),
     useSessionRetainInfo: () => undefined,
@@ -448,6 +469,10 @@ function makeHarness(
     setOutline: (value: unknown) => { outlineValue = value },
     chatScroll, forkAt, toolOwners,
     setPerformanceUsage: (mode: 'compact' | 'detailed') => { performanceUsage.set(mode) },
+    setGrouped: (value: ConversationGroupedView<number> | undefined) => {
+      grouped = value
+      conversation.set({ ...conversation.getSnapshot() })
+    },
     setTranscriptView: (mode: TranscriptViewMode) => { transcriptView.set(mode) },
     setNodeRenderer: (renderer: React.ComponentProps<typeof ChatNodeSeat>['renderSlot']) => {
       nodeSlotOverride = renderer
@@ -484,10 +509,12 @@ function withSystemPrompt(
     visibility: 'visible',
     data: { text },
   }
-  return builder.replace({
+  const next = builder.replace({
     nodes: [prompt, ...snapshot.nodes.values()],
     timeline: snapshot.timeline,
   })
+  builder.publish()
+  return next
 }
 
 function renderedFlowKinds(container: HTMLElement): Array<string | undefined> {
@@ -582,6 +609,104 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('keeps grouped Node instances mounted across presentation modes and group data updates', () => {
+    const snapshot = chatSnapshotFixture({ nodes: [user(1, 'outside'), user(2, 'inside')] })
+    const h = makeHarness({}, {}, snapshot)
+    const [outside, inside] = snapshot.order.map(key => ({ kind: 'node' as const, key: key as NodeKey }))
+    if (outside === undefined || inside === undefined) throw new Error('expected two Nodes')
+    const key = 'process' as GroupKey
+    const groupStore = new ConversationGroupStore<number>()
+    const record = { key, data: 0, members: [inside] }
+    groupStore.prepareAndInstall({
+      entries: [outside, { kind: 'group', key }],
+      groups: { kind: 'replace', snapshots: [record] },
+    }, id => snapshot.nodes.get(id))
+    groupStore.publish()
+    h.setGrouped(groupStore)
+    h.setNodeRenderer(((slot: string, owner: object) => {
+      if (slot !== 'conversation.chat.node' || !('node' in owner)) return null
+      const node = (owner as RoutedChatNodeOwner).node
+      return <input aria-label={node.key} defaultValue={node.kind} />
+    }) as ChatViewSlotProps['renderSlot'])
+    const view = render(<h.ChatView {...h.props} />)
+    const input = view.getByRole('textbox', { name: inside.key }) as HTMLInputElement
+    const parent = input.closest('[data-chat-group-key]')
+    expect(parent).not.toBeNull()
+    fireEvent.change(input, { target: { value: 'retained local input' } })
+    for (const mode of ['detailed', 'expanded', 'compact'] as const) {
+      act(() => { h.setTranscriptView(mode) })
+      expect(view.getByRole('textbox', { name: inside.key })).toBe(input)
+      expect(input.value).toBe('retained local input')
+      expect(input.closest('[data-chat-group-key]')).toBe(parent)
+    }
+    act(() => {
+      groupStore.prepareAndInstall({ groups: { kind: 'apply', upserts: [{ ...record, data: 1 }], removes: [] } }, id => snapshot.nodes.get(id))
+      groupStore.publish()
+    })
+    expect(view.getByRole('textbox', { name: inside.key })).toBe(input)
+    expect(view.getByRole('textbox', { name: outside.key }).closest('[data-chat-group-key]')).toBeNull()
+    act(() => {
+      groupStore.clear()
+      groupStore.publish()
+    })
+    expect(view.queryByRole('textbox', { name: inside.key })).toBeNull()
+    act(() => { h.setGrouped(groupStore) })
+    expect(view.queryByRole('textbox', { name: outside.key })).toBeNull()
+  })
+
+  it('passes independently keyed group parts to business Node renderers', () => {
+    const snapshot = chatSnapshotFixture({ nodes: [assistant(1, 'answer')] })
+    const h = makeHarness({}, {}, snapshot)
+    const nodeKey = snapshot.order.find(key => snapshot.nodes.get(key)?.kind === 'assistant-step') as NodeKey
+    const key = 'parts' as GroupKey
+    const groupStore = new ConversationGroupStore<number>()
+    groupStore.prepareAndInstall({
+      entries: [{ kind: 'group', key }, { kind: 'node', key: nodeKey, groupPart: 'response' }],
+      groups: { kind: 'replace', snapshots: [{ key, data: 0, members: [{ kind: 'node', key: nodeKey, groupPart: 'reasoning' }] }] },
+    }, id => snapshot.nodes.get(id))
+    h.setGrouped(groupStore)
+    h.setNodeRenderer(((slot: string, owner: object) => {
+      if (slot !== 'conversation.chat.node' || !('node' in owner)) return null
+      return <span>{(owner as RoutedChatNodeOwner).groupPart}</span>
+    }) as ChatViewSlotProps['renderSlot'])
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByText('reasoning').closest('[data-chat-group-key]')).not.toBeNull()
+    expect(view.getByText('response').closest('[data-chat-group-key]')).toBeNull()
+    const anchors = [...view.container.querySelectorAll('[data-chat-group-part]')]
+      .map(element => element.getAttribute('data-chat-flow-key'))
+    expect(new Set(anchors).size).toBe(2)
+  })
+
+  it('rebinds grouped members when registry rebuilding replaces the Node store', () => {
+    const snapshot = chatSnapshotFixture({ nodes: [user(1, 'before rebuild')] })
+    const h = makeHarness({}, {}, snapshot)
+    const key = 'retained-group' as GroupKey
+    const members = snapshot.order.map(id => ({ kind: 'node' as const, key: id as NodeKey }))
+    const groups = new ConversationGroupStore<number>()
+    groups.prepareAndInstall({
+      entries: [{ kind: 'group', key }],
+      groups: { kind: 'replace', snapshots: [{ key, data: 0, members }] },
+    }, id => snapshot.nodes.get(id))
+    groups.publish()
+    h.setGrouped(groups)
+    const view = render(<h.ChatView {...h.props} />)
+    const original = view.getByText('before rebuild').closest('[data-chat-anchor-key]')
+    const builder = new ChatSnapshotBuilder()
+    const replacement = builder.replace({ nodes: snapshot.nodes.values(), timeline: snapshot.timeline })
+    act(() => { h.set({ chat: replacement }) })
+    const current = replacement.nodes.get(members[0]!.key) as ChatNode<'user'>
+    act(() => {
+      builder.apply({
+        upserts: [{ ...current, data: { ...current.data, content: [{ type: 'text', text: 'after rebuild' }] } }],
+        timeline: snapshot.timeline,
+      })
+      builder.publish()
+    })
+    expect(view.queryByText('before rebuild')).toBeNull()
+    expect(view.getByText('after rebuild').closest('[data-chat-anchor-key]')).toBe(original)
+    expect(groups.groupSource(key).getSnapshot()?.members).toBe(members)
+  })
+
   it('leaves the turn rail unrendered when an unrelated Chat update commits', () => {
     const snapshot = chatSnapshotFixture({
       nodes: [
@@ -1875,6 +2000,7 @@ describe('ChatView', () => {
 
     act(() => {
       turnData.publish()
+      builder.publish()
       h.set({ chat: complete, hasMore: false })
     })
     expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')

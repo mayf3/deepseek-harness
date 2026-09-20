@@ -20,6 +20,7 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 - [Turn token usage](#turn-token-usage)
 - [Completed-turn footer](#completed-turn-footer)
 - [Turn Process Folding](#turn-process-folding)
+- [Grouped rendering](#grouped-rendering)
 - [Scroll ownership](#scroll-ownership)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
@@ -82,6 +83,13 @@ While a Turn is open, its process rows remain in the transcript; individual reas
 The control reports Turn-wide durable counts for non-subagent Tool calls, reply-bearing Assistant messages before the final answer, and subagent delegation calls. Zero-valued segments are omitted; the Tool and subagent figures are mutually exclusive, and Context injection contributes no count. When all three counts are zero, the process still folds and the control reads `Thought for a while`. A full-width divider below the summary separates it from the answer or expanded process rows. User and steering messages, error, max-token, and turn-tail rows stay outside. A newly available process control preserves existing row order, with opening human input before the control and process rows.
 
 Stable Chat Node Seats keep every renderer mounted, hidden members add no flow spacing, and a closed control sits 8px above its answer only when no independent input intervenes. Completion collapse does not depend on tail-follow position, so a reader above the tail may see the transcript reflow. An automatic collapse that would hide keyboard focus keeps the process open and leaves focus in place; a manual close focuses the process control before hiding its members. The session-scoped store records only manually expanded Turn-and-answer-Step generations; a different answer generation starts collapsed. Switching work-details modes preserves manual expansion.
+
+-----
+
+<a id="grouped-rendering"></a>
+## Grouped rendering
+
+Chat can render optional Conversation Group Definition output as a mixed `node`/`group` root list. A group seat subscribes only to its member array; each member retains the existing keyed Node source and renderer. `groupPart` reaches that renderer as a business-owned part selector, with distinct DOM anchors for different parts. Presentation modes do not select the root branch or alter member parents. No process Group Definition is registered by this package yet; the default transcript remains ungrouped.
 
 -----
 
