@@ -139,11 +139,70 @@ async function bench() {
   return {
     runtime, feature, slots: runtime.slots, entryOf, conversationApi, headerApi, residentApi, composerApi,
     inputApi, viewSource, sessionFake, connectWorkspace, rootUpload, uploads, rootReference, references, opened,
-    locale, openDefaultWorkspace,
+    locale, openDefaultWorkspace, replaceMain,
   }
 }
 
 describe('Conversation inject API', () => {
+  it.each([false, true])('keeps the saved first draft after its Session retires (reopened during preparation: %s)', async (reopenEarly) => {
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    const settings = Promise.withResolvers<undefined>()
+    const started = Promise.withResolvers<undefined>()
+    b.runtime.ctx.on('conversation/prepare-first-send', () => {
+      started.resolve(undefined)
+      return settings.promise
+    })
+    b.openDefaultWorkspace.mockImplementation(async (_request, beforeOpen) => {
+      b.replaceMain(ROOT, beforeOpen)
+      return ROOT
+    })
+    const body = b.conversationApi(ROOT)
+    const unmirror = body.injected.bindDraftMirror(body.instance.actions.setDraft)
+    const composer = b.composerApi(undefined)
+    let reopened: SessionReference | undefined
+    try {
+      composer.keyboard.paste('keep this first draft')
+      composer.keyboard.submit('queue')
+      await started.promise
+      expect(body.instance.store.getSnapshot().draft).toBe('keep this first draft')
+      const other = 'other-first-send' as SessionId
+      await b.runtime.sessions.add({ id: other, session: sessionFakeFor() })
+      unmirror()
+      b.rootReference.release()
+      b.replaceMain(other)
+      await vi.waitFor(() => { expect(b.runtime.sessions.binding(ROOT)).toBeUndefined() })
+      if (reopenEarly) reopened = b.runtime.sessions.retain(ROOT)
+      settings.resolve(undefined)
+      await vi.waitFor(() => { expect(b.residentApi(undefined).hooks.firstDraft.getSnapshot().busy).toBe(false) })
+      await b.runtime.flush()
+      expect(b.sessionFake.prompt).not.toHaveBeenCalled()
+      reopened ??= b.runtime.sessions.retain(ROOT)
+      b.references.set(ROOT, reopened)
+      expect(b.conversationApi(ROOT).instance.store.getSnapshot().draft).toBe('keep this first draft')
+      expect(composer.hooks.composerInput.getSnapshot().draft).toBe('')
+    } finally {
+      settings.resolve(undefined)
+      reopened?.release()
+      unmirror()
+    }
+  })
+
+  it('submits the first draft through its retained destination input', async () => {
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    b.openDefaultWorkspace.mockImplementation(async (_request, beforeOpen) => {
+      b.replaceMain(ROOT, beforeOpen)
+      return ROOT
+    })
+    const composer = b.composerApi(undefined)
+    composer.keyboard.paste('first message')
+    composer.keyboard.submit('queue')
+    await vi.waitFor(() => { expect(b.sessionFake.prompt).toHaveBeenCalledOnce() })
+    expect(b.sessionFake.prompt.mock.calls[0]?.[0]).toEqual([{ type: 'text', text: 'first message' }])
+    expect(composer.hooks.composerInput.getSnapshot().draft).toBe('')
+  })
+
   it.each([
     ['zh', '默认工作区', '默认工作区'],
     ['en', 'Default workspace', 'Default workspace'],

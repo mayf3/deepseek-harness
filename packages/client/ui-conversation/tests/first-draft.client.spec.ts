@@ -27,7 +27,7 @@ function harness() {
     beforeOpen = prepare
     return opened.promise
   })
-  const first = new FirstDraft(ctx, { open, shell: () => target })
+  const first = new FirstDraft(ctx, { open, shell: () => target, isCurrent: () => true })
   return {
     ctx, first, target, submitted, open, opened,
     complete: () => {

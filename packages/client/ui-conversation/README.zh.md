@@ -52,7 +52,7 @@ target package 通过 declaration merge 扩展 snapshot 与 Location data map，
 
 Client 在发送时决定默认目录名和初始标题：中文使用 `默认工作区`，英文使用 `Default workspace`，其他语言使用目录 `default-workspace` 和标题 `Default workspace`。初始化期间，请求保留这些名称。初始化失败后的重试使用当前语言；初始化成功的 Workspace 在切换语言后仍保留原目录和标题。
 
-首次使用时，同一个输入框允许在选择 Workspace 前输入文字。首条消息会准备[默认工作区](../../workspace/workspace/README.zh.md#first-use-workspace)、选中其 blank Session、转移草稿，再使用普通消息提交流程。准备期间锁定后续输入。失败时保留草稿，并提供“取消”或通过已有选择器“选择文件夹”。手动选择的文件夹接收未发送草稿，用户再次发送。Workspace 创建成功后，不会因提示词发送失败而消失。`conversation/prepare-first-send` 在自动提交已转移的首次使用草稿前等待暂存的 Session 设置完成；监听器拒绝时保留该草稿并显示错误。
+首次使用时，同一个输入框允许在选择 Workspace 前输入文字。首条消息会准备[默认工作区](../../workspace/workspace/README.zh.md#first-use-workspace)、选中其 blank Session、转移草稿，再使用普通消息提交流程。准备期间锁定后续输入。失败时保留草稿，并提供“取消”或通过已有选择器“选择文件夹”。手动选择的文件夹接收未发送草稿，用户再次发送。Workspace 创建成功后，不会因提示词发送失败而消失。`conversation/prepare-first-send` 在自动提交已转移的首次使用草稿前等待暂存的 Session 设置完成；监听器拒绝时保留该草稿并显示错误。如果导航在准备期间释放了目标 Session，自动提交会停止，已持久化的草稿会在重新打开时保留。
 
 本包占据 root 作用域 `main` 中的 `conversation` key。其 `main.conversation` 外壳将常驻的 `conversation.header` 放在可选 Session 的 `conversation.content` Component Factory 外。未选中 Session 时，头部仍承载根作用域导航；标题、操作和 View 标签保留在严格 Session 子组件中。Factory 拥有共享正文与 Composer，通过其标准 Hook 读取当前 Session，并公开 strict-Session `views` 与 root-scoped `widthControls` 两个局部位置。默认 adapter 渲染现有 `conversation.session` entry，主 occurrence 选择宽度拖拽条；嵌入式 occurrence 可以替换 `views`、省略拖拽条，且不渲染主 Header。共享正文与 Composer 注册 queue dock 和 Todo dock。Todo dock 在 composer 上方使用共享面板 elevation；其中的行分别以共享 idle、ongoing 与 done 标记表示待处理、进行中与已完成。`ctx.uiSession.provide()` 从同一个 Session binding 物化 Conversation 与 input source，并将 `inputActions` 作为稳定标准 prop 提供。
 

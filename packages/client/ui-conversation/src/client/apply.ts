@@ -208,6 +208,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const firstDraft = new FirstDraft(ctx, {
     open: (beforeOpen, signal) => {
       const language = ctx.locale.getSnapshot().active.toLowerCase().split('-')[0]
+      // Persisted Workspace names follow the send-time language, including the English fallback.
       const title = (language === 'zh' ? zh : en)['defaultWorkspace.title']
       return workspaceNavigation.openDefaultWorkspace({
         directoryName: language === 'zh' || language === 'en' ? title : 'default-workspace',
@@ -215,6 +216,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       }, beforeOpen, signal)
     },
     shell: id => inputHub.shell(id),
+    isCurrent: (id, shell) => sessions.binding(id) !== undefined && inputHub.shell(id) === shell,
   })
   const composerBlocks = new ComposerBlockRegistry()
 

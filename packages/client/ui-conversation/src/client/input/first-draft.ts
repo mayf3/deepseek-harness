@@ -10,13 +10,15 @@ import { SessionInputShell } from './facade.ts'
 interface FirstDraftDeps {
   open(beforeOpen: (id: SessionId) => void, signal: AbortSignal): Promise<SessionId | undefined>
   shell(id: SessionId): SessionInputShell
+  /** Whether the borrowed input still belongs to the retained Session generation. */
+  isCurrent(id: SessionId, shell: SessionInputShell): boolean
 }
 
 /** Owns a root-lifetime text editor without allocating a Host Session. */
 export class FirstDraft {
   /** Preparation progress and the recoverable directory failure. */
   readonly state = createSnapshotStore<FirstDraftState>({ busy: false, failed: false })
-  /** Local editor that stays independent of Host Session allocation. */
+  /** Local editor owns failed-submit restoration before transfer to a Host Session. */
   readonly shell: SessionInputShell
   private pending: { text: string; transferred: boolean } | undefined
 
@@ -63,6 +65,7 @@ export class FirstDraft {
       target = this.deps.shell(id)
       await this.ctx.serial('conversation/prepare-first-send', id)
       signal.throwIfAborted()
+      if (!this.deps.isCurrent(id, target)) return { kind: 'success' }
       target.submit(mode)
       return { kind: 'success' }
     } catch (error) {
