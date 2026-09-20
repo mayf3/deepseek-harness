@@ -1,4 +1,4 @@
-/** Shared settings are off on a fresh Host and survive browser reload through the ordinary settings UI. */
+/** Developer tools default on for a fresh Host and survive browser reload through the ordinary settings UI. */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
@@ -7,29 +7,22 @@ import { launchWebScaffold } from './scaffold.ts'
 import { newEnglishPage } from './support.ts'
 
 it('persists developer tools in the Host settings document and restores the accepted choice', async () => {
-  const scaffold = await launchWebScaffold({ developerTools: false })
+  const scaffold = await launchWebScaffold()
   onTestFinished(() => scaffold.close())
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
   const page = await newEnglishPage(browser)
   await page.goto(scaffold.authenticatedUrl)
-  await page.getByRole('button', { name: 'Account menu', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'General', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   const toggle = page.getByRole('switch', { name: 'Developer tools' })
-  expect(await toggle.getAttribute('aria-checked')).toBe('false')
+  expect(await toggle.getAttribute('aria-checked')).toBe('true')
   expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).not.toContain('ui-developer-tools:')
-  await toggle.click()
-  await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
-  expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).toContain('ui-developer-tools:\n  enabled: true')
-  await page.reload()
-  await page.getByRole('button', { name: 'Account menu', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'General', exact: true }).click()
-  await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
   await toggle.click()
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
   expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).toContain('ui-developer-tools:\n  enabled: false')
+  await page.reload()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
 
   await page.getByRole('button', { name: 'Agent presets', exact: true }).click()
   const pickerToggle = page.getByRole('switch', { name: 'Allow switching Agent modes' })
