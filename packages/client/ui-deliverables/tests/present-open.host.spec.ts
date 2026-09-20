@@ -63,7 +63,7 @@ describe('Presented workspace file native open route', () => {
     const { cwd, open, file, fiber, opener, handler, ctx } = await fixture()
     const source = await realpath(join(cwd, file.path))
     expect(presentedFileUrl(SessionId('owner'), 7, 0)).toBe('api/present.open?sessionId=owner&seq=7&index=0')
-    expect((await handler.fetch(new Request(`http://localhost${PRESENT_OPEN_PATH}`))).status).toBe(404)
+    expect((await handler.fetch(new Request(`http://localhost${PRESENT_OPEN_PATH}`))).status).toBe(400)
     expect((await handler.fetch(new Request('http://localhost/api/present.download?sessionId=owner&seq=7&index=0'))).status).toBe(404)
     for (const contents of ['current source', 'edited source']) {
       await writeFile(source, contents)

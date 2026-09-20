@@ -45,7 +45,7 @@ export interface ReviewInjected {
 
 /** The body's composed props: the tab it draws, its store, its injected face, and its copy. */
 export type ReviewTabProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsStore<ReturnType<typeof createReviewStore>>
-  & InjectFace<ReviewInjected> & PropsLocale<typeof NS> & PropsRenderSlots<'deliverables.file.actions'>
+  & InjectFace<ReviewInjected> & PropsLocale<typeof NS> & PropsRenderSlots<'deliverables.review.file.actions'>
 
 /** One drawn line of a hunk with its line numbers on each side. */
 export interface DiffRow {
@@ -266,7 +266,7 @@ export function ReviewTab({
             <button type="button" className={css.tool} aria-label={t('review.openFileAria', { name: file.display })} data-review-tool="open-file"
               onClick={() => { tab.actions.openResource(fileAddressFor(sessionId, cwd, file.path)) }}><IconInspectOutlineRegular /></button>
           </Tooltip>}
-          {file !== undefined && renderSlot('deliverables.file.actions', {
+          {file !== undefined && renderSlot('deliverables.review.file.actions', {
             actionUrl: changedFileUrl(sessionId, seq, index), available: native,
             pending: phase === 'opening' || phase === 'revealing',
             onAction: (action, application) => openChanged(sessionId, seq, index, action, application),

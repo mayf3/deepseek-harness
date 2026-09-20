@@ -86,7 +86,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     {
       name: 'sidebar.right.pane.tab', key: CHANGES_REVIEW_ID, locale: NS, store: createReviewStore(),
-      children: { 'deliverables.file.actions': { kind: 'list', scope: 'session' } },
+      children: { 'deliverables.review.file.actions': { kind: 'list', scope: 'session' } },
       inject: (): ReviewInjected => ({
         hooks: { changesSummary: summaries.state, changesDiff: diffs.state, presentedOpen: opener.state, presentedHost: opener.host },
         loadChangesSummary: (sessionId, seq) => summaries.load(sessionId, seq),

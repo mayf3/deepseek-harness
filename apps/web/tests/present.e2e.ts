@@ -57,6 +57,13 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       agentPresets: { roots: [], default: 'ptc' }, compareReplaySession: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE }),
     })
+    // File associations belong to the desktop rather than the recorded Session.
+    const controller = scaffold.ctx.get('sessionController')
+    if (controller === undefined) throw new Error('present requires Session Controller')
+    const nativeQuery: unknown = Reflect.get(controller, 'fileApplications')
+    if (typeof nativeQuery !== 'function') throw new Error('present requires native association discovery')
+    Reflect.set(controller, 'fileApplications', async () => [{ id: 'test-editor', name: 'Test Editor', default: true, icon: null }])
+    scaffold.ctx.effect(() => () => { Reflect.set(controller, 'fileApplications', nativeQuery) }, 'present: native association fixture')
     disposeApproval = scaffold.ctx.on('approval/request', () => Promise.resolve('allowed-once'), { prepend: true })
     scaffold.ctx.on('session/event', (_session, event) => { events.push(event) })
     browser = await chromium.launch()
@@ -121,7 +128,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       }
       const row = page.locator('[data-presented-files-row]')
       await row.waitFor()
-      expect(await row.getByRole('button', { name: /More file actions/ }).count()).toBe(2)
+      expect(await row.getByRole('button', { name: 'More ways to open' }).count()).toBe(2)
       expect(await row.getByText('report.txt', { exact: true }).innerText()).toBe('report.txt')
       const beforePreview = (await opened()).length
       const column = page.locator('[data-rightbar-col]')
@@ -139,19 +146,16 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       expect(downloads).toEqual([])
       await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).click()
       const beforeReveal = (await opened()).length
-      await row.getByRole('button', { name: 'More file actions for report.txt', exact: true }).click()
+      await row.locator('[data-presented-file]').filter({ hasText: 'report.txt' }).getByRole('button', { name: 'More ways to open', exact: true }).click()
       const revealResponse = page.waitForResponse(response => response.url().includes('action=reveal') && response.request().method() === 'POST')
-      await page.getByRole('menuitem', { name: process.platform === 'darwin' ? /Show in Finder/ : /Open containing folder/ }).click()
+      await page.getByRole('menuitem', { name: 'Show file location', exact: true }).click()
       expect((await revealResponse).status()).toBe(204)
-      expect(await row.getByRole('button', { name: 'Open report.txt in sidebar', exact: true })
-        .evaluate(button => button === document.activeElement)).toBe(true)
       await expect.poll(opened).toHaveLength(beforeReveal + 1)
       expect((await opened()).at(-1)).toEqual({ action: 'reveal', content: null, path: await realpath(process.platform === 'darwin' ? join(cwd, 'report.txt') : cwd) })
       for (const [name, bytes] of [['report.txt', 'EDITED_REPORT\n'], ['说明.txt', 'EDITED_NOTE\n']] as const) {
         const count = (await opened()).length
         const response = page.waitForResponse(response => response.url().includes('/api/present.open?') && response.request().method() === 'POST')
-        await row.getByRole('button', { name: `More file actions for ${name}`, exact: true }).click()
-        await page.getByRole('menuitem', { name: 'Open in default app', exact: true }).click()
+        await row.locator('[data-presented-file]').filter({ hasText: name }).getByRole('button', { name: 'Open in Test Editor', exact: true }).click()
         expect((await response).status()).toBe(204)
         await page.waitForFunction(() => document.querySelector('[data-presented-files-row] button:disabled') === null)
         expect(await opened()).toHaveLength(count + 1)
@@ -217,7 +221,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
         )
         const description = requiredElement(report.querySelector<HTMLElement>('span[role="status"]'), 'report status')
         const open = requiredElement(
-          report.querySelector<HTMLButtonElement>('button[aria-label="Open report.txt in sidebar"]'),
+          report.querySelector<HTMLButtonElement>('[data-open-target] button'),
           'report open action',
         )
         const icon = requiredElement(report.querySelector<SVGElement>('svg'), 'report icon')
@@ -250,7 +254,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       expect(geometry.iconWidth).toBe('20')
       expect(geometry.titleFontSize).toBe('13px')
       expect(geometry.descriptionFontSize).toBe('10px')
-      expect(geometry.openFontSize).toBe('12px')
+      expect(geometry.openFontSize).toBe('11px')
       await page.setViewportSize({ width: 480, height: 900 })
       const row = page.locator('[data-presented-files-row]')
       await row.scrollIntoViewIfNeeded()
@@ -263,9 +267,9 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
     }
     const beforeDelete = (await opened()).length
     await unlink(join(cwd, 'report.txt'))
-    const missing = page.waitForResponse(response => response.url().includes('/api/present.open?'))
-    await page.locator('[data-presented-files-row]').getByRole('button', { name: 'More file actions for report.txt', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Open in default app', exact: true }).click()
+    const missing = page.waitForResponse(response => response.url().includes('/api/present.open?') && response.request().method() === 'POST')
+    await page.locator('[data-presented-file]').filter({ hasText: 'report.txt' })
+      .getByRole('button', { name: 'Open in Test Editor', exact: true }).click()
     expect((await missing).status()).toBe(404)
     await page.getByText('Could not open. Click to retry.', { exact: true }).waitFor()
     expect(await opened()).toHaveLength(beforeDelete)

@@ -17,5 +17,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         readonly onAction: (action: PresentedAction, application?: string) => Promise<PresentedOpenFailure>
       }
     }
+    /** The same file actions owned by a changed-file review tab. */
+    'deliverables.review.file.actions': SlotMap['deliverables.file.actions']
   }
 }
