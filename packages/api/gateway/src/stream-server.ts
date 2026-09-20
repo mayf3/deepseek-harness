@@ -70,16 +70,14 @@ export class RemoteStreamMuxServer {
    */
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, peer: PeerScope): void {
     this.server.handleUpgrade(req, socket, head, (websocket) => {
+      const release = bindPeer(websocket, peer)
+      if (release === undefined) return
       this.missedHeartbeats.set(websocket, 0)
       websocket.on('pong', () => { this.missedHeartbeats.set(websocket, 0) })
       this.startHeartbeat()
       const bound: BoundStreamOpener = (endpoint, payload, uplink, control) =>
         this.open(endpoint, payload, uplink, peer, control)
       const connection = new RemoteStreamMuxConnection(websocket, bound, this.failure, this.streamInboxBytes)
-      const release = peer.ctx.effect(
-        () => () => { websocket.close(1001, 'peer left') },
-        'api-gateway: Remote stream socket bound to its Peer',
-      )
       const done = connection.run()
       this.connections.add(done)
       void done.then(() => {
@@ -167,6 +165,12 @@ class RemoteStreamMuxConnection {
     await Promise.all(active.map(stream => stream.done))
   }
 
+  /**
+   * Dispatch one frame. `item`, `end`, and `cancel` for a stream this connection
+   * no longer owns are dropped: a finished stream leaves the table while the
+   * Client's in-flight frames are still arriving. A duplicate `open` is the one
+   * protocol violation that closes the socket.
+   */
   private receive(text: string): void {
     const message = parseRemoteStreamClientMessage(text)
     switch (message.type) {
@@ -175,11 +179,11 @@ class RemoteStreamMuxConnection {
         return
       }
       case 'item': {
-        this.requireStream(message.streamId).inbox.push(message.value, Buffer.byteLength(text, 'utf8'))
+        this.streams.get(message.streamId)?.inbox.push(message.value, Buffer.byteLength(text, 'utf8'))
         return
       }
       case 'end': {
-        this.requireStream(message.streamId).inbox.end()
+        this.streams.get(message.streamId)?.inbox.end()
         return
       }
       case 'cancel': {
@@ -192,15 +196,6 @@ class RemoteStreamMuxConnection {
         throw new Error(`api gateway: unknown Remote stream client message ${JSON.stringify(unknown)}`)
       }
     }
-  }
-
-  /** Uplink frames for an id this connection does not own are a protocol violation. */
-  private requireStream(streamId: string): ActiveStream {
-    const active = this.streams.get(streamId)
-    if (active === undefined) {
-      throw new Error(`api gateway: unknown Remote stream id ${JSON.stringify(streamId)}`)
-    }
-    return active
   }
 
   private openStream(message: Extract<RemoteStreamClientMessage, { readonly type: 'open' }>): void {
@@ -404,6 +399,23 @@ class UplinkInbox implements AsyncIterable<unknown>, AsyncIterator<unknown> {
     const wake = this.wake
     this.wake = undefined
     wake?.()
+  }
+}
+
+/**
+ * Close the socket when the Peer's scope is disposed. A scope that is already
+ * disposed leaves no Peer for the socket to speak for, so the socket closes now.
+ * @returns the registration's disposer, or `undefined` when the socket was closed.
+ */
+function bindPeer(websocket: WebSocket, peer: PeerScope): (() => unknown) | undefined {
+  try {
+    return peer.ctx.effect(
+      () => () => { websocket.close(1001, 'peer left') },
+      'api-gateway: Remote stream socket bound to its Peer',
+    )
+  } catch {
+    websocket.close(1001, 'peer left')
+    return undefined
   }
 }
 

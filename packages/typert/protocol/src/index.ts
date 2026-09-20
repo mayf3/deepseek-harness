@@ -170,7 +170,19 @@ export abstract class TypertRemoteService<out T = never> extends Service<T> {
   protected constructor(ctx: Context, serviceKey: string, options: TypertGatewayBindingOptions = {}) {
     super(ctx, serviceKey)
     this.typertRemote = bindTypertRemote(this, this.name, options)
+    provideInvocationAccessor(ctx)
   }
+}
+
+/**
+ * Make `ctx.invocation` read as `undefined` outside a Remote call instead of the
+ * reflect service's "cannot get property" error; a call-derived Context shadows
+ * the accessor with its own property. The first Remote Service constructed in a
+ * tree registers it on the root, where it outlives any one Service.
+ */
+function provideInvocationAccessor(ctx: Context): void {
+  if (Object.hasOwn(ctx.root.reflect.props, 'invocation')) return
+  ctx.root.accessor('invocation', { get: () => undefined })
 }
 
 /**

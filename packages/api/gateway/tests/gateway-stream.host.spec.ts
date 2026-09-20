@@ -2,14 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket, { type RawData } from 'ws'
-import { Context, Service, symbols } from '@deepseek-ai/cordis'
+import { Context, symbols } from '@deepseek-ai/cordis'
 import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import {
-  bindTypertRemote,
   Remote,
   remoteErrorOf,
+  TypertRemoteService,
   type InvocationDescriptor,
   type PeerScope,
   type RemoteInvocation,
@@ -50,8 +50,7 @@ const REMOTE_HOST = { home: '/home/fixture' } as const
 type AgentWireId = TypertContextWire<TypertContextMap['agent']>
 const agentId = (value: string): AgentWireId => value as AgentWireId
 
-class FeedService extends Service {
-  readonly typertRemote = bindTypertRemote(this, 'feed')
+class FeedService extends TypertRemoteService {
   readonly signals: AbortSignal[] = []
   readonly peeked: unknown[] = []
   readonly peers: PeerScope[] = []
@@ -165,6 +164,13 @@ class FeedService extends Service {
     yield 'ready'
     await abortOf(signal)
     this.peeked.push(await pending, await iterator.next().then(result => result, (error: unknown) => error))
+  }
+
+  /** Yields once, then blocks on the uplink until the Gateway closes it. */
+  @Remote({ mode: 'stream' })
+  async *drain(): RemoteStream<string, string> {
+    yield 'ready'
+    for await (const item of this.invocation().uplink<string>()) yield item
   }
 
   /** Reports the call context; its descriptor declares no uplink codec, so items arrive as `unknown`. */
@@ -407,7 +413,8 @@ describe('Typert Remote streams', () => {
     await expect(pending).rejects.toThrow('Remote invocation "feed/hold" was aborted')
     const leftover = service.leftover
     if (leftover === undefined) throw new Error('fixture did not retain its uplink iterator')
-    await expect(leftover.next()).resolves.toEqual({ done: true, value: undefined })
+    // The unread item is gone; a cancelled stream reports the cancellation on every later read.
+    await expect(leftover.next()).rejects.toMatchObject({ code: 'gateway/cancelled' })
     await expect(leftover.return?.()).resolves.toEqual({ done: true, value: undefined })
   })
 
@@ -421,7 +428,7 @@ describe('Typert Remote streams', () => {
       'raw:{"nested":true}',
       'typert gateway: feed/context: invocation.uplink() is available once per call',
     ])
-    expect(service.peers.at(-1)?.id).toBe('in-process-operator')
+    expect(service.peers.at(-1)?.id).toMatch(/^[0-9a-f-]{36}$/)
     expect(service.invocationOutsideCall()).toBeUndefined()
     await expect(collect(await ctx.typertGateway.stream({
       namespace: 'feed', method: 'context', args: { label: 'again' },
@@ -463,6 +470,28 @@ describe('Typert Remote streams', () => {
     const pending = iterator.next()
     abort.abort(new Error('fixture cancellation'))
     await expect(pending).rejects.toThrow('Remote invocation "feed/hold" was aborted')
+    await vi.waitFor(() => { expect(returned).toHaveBeenCalledOnce() })
+  })
+
+  it('closes the uplink before returning a method blocked on it', async () => {
+    const { ctx } = await setup(false)
+    const source = await ctx.typertGateway.stream({
+      namespace: 'feed', method: 'drain', args: {}, uplink: neverYielding(),
+    })
+    const iterator = source[Symbol.asyncIterator]()
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: 'ready' })
+    await expect(iterator.return?.()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('releases the uplink when a unary method is opened through the stream carrier', async () => {
+    const { ctx } = await setup(false)
+    const returned = vi.fn(async (): Promise<IteratorResult<string>> => ({ value: undefined, done: true }))
+    const unread: AsyncIterable<string> = {
+      [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<string>>(() => {}), return: returned }),
+    }
+    await expect(ctx.typertGateway.stream({
+      namespace: 'feed', method: 'unary', args: { label: 'a' }, uplink: unread,
+    })).rejects.toMatchObject({ code: 'gateway/signature-invalid' })
     await vi.waitFor(() => { expect(returned).toHaveBeenCalledOnce() })
   })
 
@@ -1289,6 +1318,7 @@ function descriptors(): InvocationDescriptor[] {
     withUplink('ignore', [prefix], false),
     withUplink('hold', []),
     withUplink('peek', []),
+    withUplink('drain', [], false),
     stream('context', [label], z.string()),
     { ...stream('follow', [label], z.string()), cancellation: { parameter: 'signal' } },
     stream('sync', [label], z.string()),

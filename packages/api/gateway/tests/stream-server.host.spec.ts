@@ -258,6 +258,21 @@ describe('Remote stream mux server carrier lifecycle', () => {
 })
 
 describe('Remote stream mux server Peer binding', () => {
+  it('closes an upgrade at once when the admitted Peer scope is already disposed', async () => {
+    const peer = await fixturePeer()
+    await peer.dispose()
+    const opened = vi.fn()
+    const entry = await startMux(async (_endpoint, _payload, _uplink, _peer, control) => {
+      opened()
+      return waitForAbort(control.signal)
+    }, 2_000, 262_144, peer)
+    const client = new WebSocket(entry.url)
+    const closeEvent = await once(client, 'close')
+    expect(closeEvent[0]).toBe(1001)
+    expect(String(closeEvent[1])).toBe('peer left')
+    expect(opened).not.toHaveBeenCalled()
+  })
+
   it('hands the admitted Peer to every opener and closes the socket when its scope is disposed', async () => {
     const peer = await fixturePeer()
     const seen: PeerScope[] = []
@@ -370,16 +385,21 @@ describe('Remote stream mux server uplink', () => {
     await once(client, 'close')
   })
 
-  it('closes the socket for uplink frames naming an unknown stream', async () => {
-    const entry = await startMux(async (_endpoint, _payload, _uplink, _peer, control) => waitForAbort(control.signal))
-    for (const frame of [itemFrame('absent', 1), endFrame('absent')]) {
-      const client = await connect(entry.url)
-      const closed = once(client, 'close')
-      client.send(frame)
-      const closeEvent = await closed
-      expect(closeEvent[0]).toBe(1008)
-      expect(String(closeEvent[1])).toBe('invalid Remote stream request')
-    }
+  it('drops uplink frames for a stream it no longer owns and keeps the socket open', async () => {
+    const entry = await startMux(async (endpoint, _payload, uplink, _peer, control) =>
+      endpoint === 'fixture/echo' ? echoUplink(uplink) : waitForAbort(control.signal))
+    const client = await connect(entry.url)
+    const frames = collectFrames(client)
+    const received = countMessages(acceptedSocket(entry.mux))
+    client.send(itemFrame('absent', 1))
+    client.send(endFrame('absent'))
+    client.send(openFrame('live', 'fixture/echo'))
+    client.send(itemFrame('live', 'served'))
+    await vi.waitFor(() => { expect(received.count).toBe(4) })
+    await vi.waitFor(() => { expect(frames).toEqual([{ type: 'item', streamId: 'live', value: 'served' }]) })
+    expect(client.readyState).toBe(WebSocket.OPEN)
+    client.close()
+    await once(client, 'close')
   })
 
   it('ends a pending uplink read when the socket closes', async () => {

@@ -7,7 +7,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
-import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
+import { OperatorPeer, type ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import type { WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -19,7 +19,6 @@ import {
   remoteMethods,
   type InvocationDescriptor,
   type InvocationParameterDescriptor,
-  type PeerId,
   type PeerScope,
   type RemoteInvocation,
   type TypertCodec,
@@ -223,10 +222,6 @@ export class TypertGatewayService extends Service implements TypertGateway {
     ctx.on('internal/service', () => {
       this.srcClaims = undefined
     })
-    // Outside a Remote call `ctx.invocation` reads as undefined instead of the
-    // reflect service's "cannot get property" error; a call-derived Context
-    // shadows this accessor with its own property.
-    ctx.accessor('invocation', { get: () => undefined })
     ctx.inject(['connection'], (connectionCtx) => {
       connectionCtx.connection.rpc.intercept(
         '/api',
@@ -366,6 +361,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
   private async openStream(request: InvokeRemoteRequest, control: AbortController): Promise<AsyncIterable<unknown>> {
     const prepared = await this.prepareInvocation(request, control)
     if (prepared.descriptor.mode === undefined) {
+      await prepared.invocation.close()
       throw new TypertGatewayError(
         'gateway/signature-invalid',
         prepared.endpoint,
@@ -430,18 +426,14 @@ export class TypertGatewayService extends Service implements TypertGateway {
 
   /**
    * The Peer an in-process carrier speaks for when it names none: the
-   * operator's Peer when Connection is mounted, otherwise a Gateway-local
-   * stand-in that the Gateway treats the same way.
+   * operator's Peer when Connection is mounted, otherwise an operator scope the
+   * Gateway owns for its own lifetime.
    * @returns the operator Peer.
    */
   private operatorPeer(): PeerScope {
     const connection = this.ctx.get('connection')
     if (connection !== undefined) return connection.operator
-    this.inProcessOperator ??= {
-      id: 'in-process-operator' as PeerId,
-      ctx: this.ctx,
-      dispose: () => Promise.resolve(),
-    }
+    this.inProcessOperator ??= new OperatorPeer(this.ctx)
     return this.inProcessOperator
   }
 
@@ -1098,8 +1090,10 @@ async function *cancellableStream(
     }
   } finally {
     signal.removeEventListener('abort', onAbort)
-    await iterator.return?.()
+    // The uplink closes first so a method blocked on `uplink.next()` unwinds
+    // before its iterator is asked to return.
     await invocation.close()
+    await iterator.return?.()
   }
 }
 
@@ -1152,8 +1146,9 @@ class UplinkDecoder implements AsyncIterable<unknown>, AsyncIterator<unknown> {
   }
 
   async next(): Promise<IteratorResult<unknown>> {
-    if (this.closed) return UPLINK_DONE
+    // A cancelled stream reports the cancellation on every read, closed or not.
     if (this.signal.aborted) throw streamAbortFailure(this.endpoint, this.signal.reason)
+    if (this.closed) return UPLINK_DONE
     const next = await Promise.race([this.source.next(), this.interrupted.promise])
     if (next.done === true) {
       this.finish()

@@ -45,7 +45,11 @@ export interface StreamHandle {
   fail(error: Error): void
   /** Aborts when the opening signal aborts or the consumer returns early. */
   readonly signal: AbortSignal
-  /** Uplink items the caller passed with the open; an immediately ended iterable when it passed none. */
+  /**
+   * Uplink items for the script: the carrier's iterable when the open came
+   * through `rpc.open`, otherwise what the returned handle's `send()` and
+   * `end()` feed.
+   */
   readonly uplink: AsyncIterable<unknown>
 }
 
@@ -101,7 +105,7 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
   /**
    * @param record - log entry this stream updates.
    * @param sourceSignal - cancellation from the caller that opened the stream.
-   * @param uplink - the caller's uplink, exposed to the script unchanged.
+   * @param uplink - the uplink the script reads.
    */
   constructor(
     readonly record: StreamRecord,
@@ -130,6 +134,11 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
 
   fail(error: Error): void {
     this.settle({ kind: 'fail', error }, 'failed')
+  }
+
+  /** The consumer left: cancel the stream and drop what it left. */
+  dispose(): void {
+    this.cancel(new Error(`remote-mock: ${this.record.endpoint} stream disposed`))
   }
 
   /**
@@ -223,6 +232,85 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
     const waiters = this.drainWaiters
     this.drainWaiters = []
     for (const resolve of waiters) resolve()
+  }
+}
+
+/**
+ * The uplink a direct handle owns: `send()` pushes, `end()` half-closes,
+ * `close()` ends it when the handle is disposed. The script reads it as
+ * `StreamHandle.uplink`.
+ */
+export class HandleUplink implements AsyncIterable<unknown> {
+  private readonly items: unknown[] = []
+  private done = false
+  private waiter: ((result: IteratorResult<unknown>) => void) | undefined
+
+  push(item: unknown): void {
+    if (this.done) throw new Error('remote-mock: uplink was ended')
+    const waiter = this.waiter
+    this.waiter = undefined
+    if (waiter === undefined) this.items.push(item)
+    else waiter({ value: item, done: false })
+  }
+
+  end(): void {
+    if (this.done) return
+    this.done = true
+    this.waiter?.({ value: undefined, done: true })
+    this.waiter = undefined
+  }
+
+  close(): void {
+    this.items.length = 0
+    this.end()
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<unknown> {
+    return {
+      next: () => {
+        if (this.items.length > 0) return Promise.resolve({ value: this.items.shift(), done: false })
+        if (this.done) return Promise.resolve({ value: undefined, done: true })
+        return new Promise((resolve) => { this.waiter = resolve })
+      },
+      return: () => {
+        this.close()
+        return Promise.resolve({ value: undefined, done: true })
+      },
+    }
+  }
+}
+
+/**
+ * The handle a direct `mock.remote` stream call returns, as a generated method
+ * would: iterate it for the script's downlink, `send()` and `end()` feed
+ * `StreamHandle.uplink`, `dispose()` cancels the stream. A stream opened through
+ * `rpc.open` reads the carrier's uplink instead, and this handle owns none.
+ */
+export class MockClientStream implements RemoteStreamHandle<unknown, unknown> {
+  /**
+   * @param stream - the script-side stream.
+   * @param uplink - the uplink this handle feeds; absent when the carrier supplied one.
+   */
+  constructor(private readonly stream: MockStream, private readonly uplink: HandleUplink | undefined) {}
+
+  send(item: unknown): void {
+    if (this.uplink === undefined) {
+      throw new Error(`remote-mock: ${this.stream.record.endpoint} uplink belongs to the carrier that opened the stream`)
+    }
+    this.uplink.push(item)
+  }
+
+  end(): void {
+    this.uplink?.end()
+  }
+
+  dispose(): void {
+    this.uplink?.close()
+    this.stream.dispose()
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<unknown> {
+    return this.stream[Symbol.asyncIterator]()
   }
 }
 

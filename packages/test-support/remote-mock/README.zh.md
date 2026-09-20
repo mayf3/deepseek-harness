@@ -73,7 +73,7 @@ mock.streams.fail('session/follow', new Error('gone'))
 await mock.streams.drained('session/follow')
 ```
 
-失败的流让消费方的下一次读取以给定的 `Error` reject。消费方取消（打开时的 signal 或 iterator 提前 `return()`）会中止 `StreamHandle.signal`、结束迭代而不抛错，并把该流记为 `cancelled`。`StreamHandle.uplink` 是调用方经 `rpc.open` 随打开传入的上行 iterable，未传入时是立即结束的 iterable；上行不进入记录的 args。
+失败的流让消费方的下一次读取以给定的 `Error` reject。消费方取消（打开时的 signal 或 iterator 提前 `return()`）会中止 `StreamHandle.signal`、结束迭代而不抛错，并把该流记为 `cancelled`。`StreamHandle.uplink` 是脚本读到的 Client 上行：经 `rpc.open` 打开时它是载体传入的 iterable；直接调用 `mock.remote.<namespace>.<method>(...)` 时它由返回的句柄喂入——该句柄就是生成方法返回的 `RemoteStreamHandle`（迭代它读下行，`send()` 与 `end()` 喂上行，`dispose()` 取消流）。mock 函数只以方法自己的参数被调用，上行不会出现在调用断言或记录的 args 里。
 
 替代生成流方法的假实现返回生成方法所返回的 `RemoteStreamHandle`。`streamHandle(source)` 把一个 `AsyncIterable` 标注为该句柄，其 `send`、`end`、`dispose` 为空操作；`streamMethod<M>(generator)` 把按方法参数编写的 async generator 函数提升为方法自己的签名，供 `vi.fn<M>()` 与 `mockImplementation` 使用。
 

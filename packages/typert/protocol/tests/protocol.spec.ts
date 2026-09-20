@@ -253,6 +253,34 @@ describe('typert-protocol Remote declarations', () => {
     ])
   })
 
+  it('registers the invocation accessor once per tree, on the root', async () => {
+    const root = new Context()
+    class First extends TypertRemoteService {
+      constructor(ctx: Context) {
+        super(ctx, 'first')
+      }
+
+      outside(): unknown {
+        return this.ctx.invocation
+      }
+    }
+    class Second extends TypertRemoteService {
+      constructor(ctx: Context) {
+        super(ctx, 'second')
+      }
+    }
+    await root.plugin(First)
+    const second = root.plugin(Second)
+    await second
+    const child = root.plugin(() => {})
+    await child
+    expect(child.ctx.invocation).toBeUndefined()
+    expect((root.get('first') as First).outside()).toBeUndefined()
+    // The accessor belongs to the root, so a Remote Service leaving does not take it along.
+    await second.dispose()
+    expect(child.ctx.invocation).toBeUndefined()
+  })
+
   it('rejects malformed decorator calls and targets', () => {
     const method: (this: object) => void = function (this: object): void {}
     expect(() => { (Remote as unknown as (value: typeof method) => void)(method) }).toThrow('context is missing')

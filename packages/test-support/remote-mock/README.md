@@ -73,7 +73,7 @@ mock.streams.fail('session/follow', new Error('gone'))
 await mock.streams.drained('session/follow')
 ```
 
-A failed stream rejects the consumer's next read with the given `Error`. Consumer cancellation (the opening signal or an early iterator `return()`) aborts `StreamHandle.signal`, ends the iteration without throwing, and logs the stream as `cancelled`. `StreamHandle.uplink` is the uplink iterable the caller passed with the open through `rpc.open`, or an immediately ended iterable when it passed none; the uplink stays out of the logged args.
+A failed stream rejects the consumer's next read with the given `Error`. Consumer cancellation (the opening signal or an early iterator `return()`) aborts `StreamHandle.signal`, ends the iteration without throwing, and logs the stream as `cancelled`. `StreamHandle.uplink` is what the script reads as the Client's uplink: through `rpc.open` it is the carrier's iterable; for a direct `mock.remote.<namespace>.<method>(...)` call it is fed by the returned handle, which is the `RemoteStreamHandle` a generated method returns (iterate it for the downlink, `send()` and `end()` feed the uplink, `dispose()` cancels the stream). The mock function is called with the method's own arguments only, so the uplink never appears in call assertions or logged args.
 
 A fake that stands in for a generated stream method returns the `RemoteStreamHandle` the generated method does. `streamHandle(source)` types an `AsyncIterable` as that handle with inert `send`, `end`, and `dispose`; `streamMethod<M>(generator)` lifts an async generator function written for the method's arguments into the method's own signature, for `vi.fn<M>()` and `mockImplementation`.
 

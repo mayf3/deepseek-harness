@@ -1,6 +1,6 @@
 /** The Connection carrier face: payload forms, streams, unmatched rejections, and abort. */
 import { describe, expect, it } from 'vitest'
-import { RemoteMock, ok, openStream } from '../src/index.ts'
+import { RemoteMock, ok, openStream, type MockClientStream } from '../src/index.ts'
 
 const idle = (): AbortSignal => new AbortController().signal
 
@@ -32,9 +32,22 @@ describe('RemoteMock.rpc', () => {
 
     await expect(drain(mock.rpc.open!('/api', 'job/attach', { args: ['job-1'] }, idle(), uplink(['a', 'b']))))
       .resolves.toEqual(['job-1:a', 'job-1:b'])
-    await expect(drain(mock.open('job/attach', ['job-2', uplink(['c'])], idle()))).resolves.toEqual(['job-2:c'])
-    await expect(drain(mock.open('job/attach', ['job-3'], idle()))).resolves.toEqual([])
-    expect(mock.log.streams('job/attach').map(open => open.args)).toEqual([['job-1'], ['job-2'], ['job-3']])
+    await expect(drain(mock.open('job/attach', ['job-2'], idle(), uplink(['c'])))).resolves.toEqual(['job-2:c'])
+    // A direct open returns the handle a generated method would: its send/end feed the script's uplink.
+    const direct = mock.open('job/attach', ['job-3'], idle()) as MockClientStream
+    direct.send('d')
+    direct.end()
+    direct.end()
+    await expect(drain(direct)).resolves.toEqual(['job-3:d'])
+    expect(() => { direct.send('late') }).toThrow('remote-mock: uplink was ended')
+    const disposed = mock.open('job/attach', ['job-4'], idle()) as MockClientStream
+    disposed.dispose()
+    await expect(drain(disposed)).resolves.toEqual([])
+    expect(mock.log.streams('job/attach').map(open => [open.args, open.state]))
+      .toEqual([[['job-1'], 'ended'], [['job-2'], 'ended'], [['job-3'], 'ended'], [['job-4'], 'cancelled']])
+    const carried = mock.open('job/attach', ['job-5'], idle(), uplink([])) as MockClientStream
+    expect(() => { carried.send('x') }).toThrow('remote-mock: job/attach uplink belongs to the carrier that opened the stream')
+    await expect(drain(carried)).resolves.toEqual([])
   })
 
   it('rejects malformed payloads and unmatched endpoints, logging the miss', async () => {

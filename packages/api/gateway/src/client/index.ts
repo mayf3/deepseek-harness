@@ -5,7 +5,6 @@
  */
 
 import { Service } from '@deepseek-ai/cordis'
-import { Deque } from '@deepseek-ai/dsh-deque'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 export type { TypertGatewayFaultDetails } from '../remote-error-codes.ts'
 import type { Context } from '@deepseek-ai/cordis'
@@ -25,9 +24,11 @@ import type {
   TypertRemoteEvent,
 } from '@deepseek-ai/dsh-typert-protocol'
 import {
+  ClientUplinkQueue,
   RemoteStreamCarrierError,
   RemoteStreamMuxClient,
 } from './stream-client.ts'
+import { isRemoteJsonValue } from '../stream-protocol.ts'
 import { ClientRemoteEvents } from './remote-events.ts'
 import {
   RemoteStream,
@@ -81,8 +82,6 @@ interface PreparedClientInvocation {
   readonly args: Readonly<Record<string, unknown>>
   readonly signal: AbortSignal
 }
-
-const UPLINK_DONE: IteratorReturnResult<undefined> = { value: undefined, done: true }
 
 interface RemoteNamespaceHandle {
   readonly service: RemoteNamespaceService
@@ -534,8 +533,9 @@ class ClientRemoteService extends Service implements ClientRemote {
 /**
  * The handle a generated stream method returns: one generation of one logical
  * stream. The downlink is iterated once; `send`/`end` feed the uplink queue the
- * carrier pump drains; `dispose` aborts the generation, which sends `cancel`
- * unless a terminal frame arrived, and the iterator then ends quietly.
+ * carrier pump drains; `dispose` aborts the generation and returns the carrier
+ * iterator, which sends `cancel` unless a terminal frame arrived, drops what was
+ * buffered, and ends the iteration quietly.
  */
 class ClientStreamHandle implements RemoteStreamHandle<unknown, unknown> {
   private readonly downlink: AsyncIterator<unknown>
@@ -559,6 +559,7 @@ class ClientStreamHandle implements RemoteStreamHandle<unknown, unknown> {
   }
 
   send(item: unknown): void {
+    if (!isRemoteJsonValue(item)) throw new Error(`client api: ${this.endpoint} uplink item is not a lossless JSON value`)
     this.uplink.push(item)
   }
 
@@ -571,6 +572,9 @@ class ClientStreamHandle implements RemoteStreamHandle<unknown, unknown> {
     this.disposed = true
     this.uplink.close()
     this.generation.abort(new Error(`client api: ${this.endpoint} stream disposed`))
+    // Returning the carrier iterator reaches its `finally` even while nobody
+    // reads the downlink, so `cancel` goes out now and the pump stops.
+    void Promise.resolve(this.downlink.return?.()).catch(() => undefined)
   }
 
   [Symbol.asyncIterator](): AsyncGenerator {
@@ -584,7 +588,7 @@ class ClientStreamHandle implements RemoteStreamHandle<unknown, unknown> {
       while (true) {
         const next = await (this.primed ?? this.downlink.next())
         this.primed = undefined
-        if (next.done === true) return
+        if (this.disposed || next.done === true) return
         if (!mountActive(this.token)) throw new Error(withdrawn(this.endpoint).error.message)
         yield next.value
       }
@@ -596,66 +600,6 @@ class ClientStreamHandle implements RemoteStreamHandle<unknown, unknown> {
       this.dispose()
       await this.downlink.return?.()
     }
-  }
-}
-
-/**
- * Uplink items a stream handle queues for its carrier: the mux pump or the
- * in-process Host decoder iterates it as the stream's uplink. `end()` is the
- * Client half-close; `close()` marks the stream terminated, after which
- * `push()` throws.
- */
-class ClientUplinkQueue implements AsyncIterable<unknown>, AsyncIterator<unknown> {
-  private readonly items = new Deque<unknown>()
-  private ended = false
-  private closed = false
-  private wake: (() => void) | undefined
-
-  constructor(private readonly endpoint: string) {}
-
-  push(item: unknown): void {
-    if (this.closed) throw new Error(`client api: ${this.endpoint} stream has terminated`)
-    if (this.ended) throw new Error(`client api: ${this.endpoint} uplink was ended`)
-    this.items.pushBack(item)
-    this.signal()
-  }
-
-  end(): void {
-    if (this.ended || this.closed) return
-    this.ended = true
-    this.signal()
-  }
-
-  /** The carrier stopped reading: the logical stream terminated or was disposed. Idempotent. */
-  close(): void {
-    if (this.closed) return
-    this.closed = true
-    this.items.clear()
-    this.signal()
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<unknown> {
-    return this
-  }
-
-  async next(): Promise<IteratorResult<unknown>> {
-    while (true) {
-      if (this.closed) return UPLINK_DONE
-      if (this.items.size > 0) return { value: this.items.popFront(), done: false }
-      if (this.ended) return UPLINK_DONE
-      await new Promise<void>((resolve) => { this.wake = resolve })
-    }
-  }
-
-  return(): Promise<IteratorResult<unknown>> {
-    this.close()
-    return Promise.resolve(UPLINK_DONE)
-  }
-
-  private signal(): void {
-    const wake = this.wake
-    this.wake = undefined
-    wake?.()
   }
 }
 
