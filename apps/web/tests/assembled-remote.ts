@@ -20,6 +20,7 @@ interface SessionSummary {
   readonly origin?: 'subagent'
   readonly cwd?: string
   readonly projections?: {
+    readonly kind: 'cached' | 'sequenced'
     readonly asOfSeq: number
     readonly values: Readonly<Record<string, unknown>>
   }
@@ -260,7 +261,9 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       running: false,
       blank: true,
       cwd,
-      projections: structuredClone(blankSessionProjections),
+      // The created Session is live on this fixture Host: its list block is
+      // sequenced, like the block the real live registry would serve.
+      projections: { kind: 'sequenced', ...structuredClone(blankSessionProjections) },
     }
     sessions.push(summary)
     records.set(sessionId, [])

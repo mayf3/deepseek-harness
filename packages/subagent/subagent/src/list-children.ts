@@ -9,7 +9,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { type Session, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import type { SessionProjectionCache } from '@deepseek-ai/dsh-session-projection-cache'
@@ -297,13 +297,13 @@ async function resolveColdIdentity(
 ): Promise<SubagentListEntry> {
   const childId = header.id
   // A header deliberately exposes only whether a fork cut exists, not its
-  // integer. An unseeded lifecycle has the exact cut 0 and may use the cache;
-  // a seeded lifecycle must read the body before an identity seq can be
-  // classified as inherited or owned.
+  // integer. An unseeded lifecycle has the exact cut 0, so its cached
+  // descriptor is owned at every valid seq; a seeded lifecycle must read the
+  // body before an identity seq can be classified as inherited or owned.
   if (cache !== undefined && !header.isSeeded) {
     let cached: SubagentIdentityProjection | null | undefined
     try {
-      cached = cache.cachedSnapshot(header, SessionLogOffset(0), ['subagent'])?.values.subagent
+      cached = cache.cachedSnapshot(header, ['subagent'])?.values.subagent
     } catch {
       // Unlike the preparation fold below, a throwing cache read renders no
       // verdict: the cache is derived data, so its damage (a poisoned stored
