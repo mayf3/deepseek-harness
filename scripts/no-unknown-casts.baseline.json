@@ -632,9 +632,6 @@
     "d6ca469f487b05b19564776f9a8f8288b1f0d9fb5b7fb6681e68f063fb021f38": 1,
     "fdc0ec545dc17a50bdc1c64102915706cfbfdbb65a2165ae4691f29d577063cd": 1
   },
-  "packages/client/ui-open-in-app/tests/open-path-action.client.spec.tsx": {
-    "362d9206df82a6d4563c2e5c19457342207b02b246c91656dec01a4b2033fd8e": 1
-  },
   "packages/client/ui-permission-presets/tests/browser-plugin.client.spec.ts": {
     "dc36dd8f678695e3b84ce0573968470941c5b6fc5efe529cba17acb1f2799d1c": 1
   },
