@@ -87,7 +87,13 @@ export class SessionManager {
   private readonly sessions = new Map<SessionId, Session>()
   /** In-flight Session disposals remain here after instances leave `sessions`, so manager disposal can await quiescence. */
   private readonly sessionDisposals = new Set<Promise<void>>()
-  /** Accepted/running presentation must survive a later empty-history list response. */
+  /**
+   * Accepted/running presentation must survive a later empty-history list
+   * response. Host-asserted running is recorded even before a row, instance, or
+   * address holds the identity — the listing that would hold it may not have
+   * landed yet — while the client-local acceptance callback requires a current
+   * holder, because it can arrive from a replaced or already-dropped Session.
+   */
   private readonly engagedSessions = new Set<SessionId>()
   private disposed = false
   /** Per-session projection value stores, retained independently of instance arrival (the
@@ -187,7 +193,7 @@ export class SessionManager {
     if (session !== expected) return Promise.resolve()
     this.sessions.delete(sessionId)
     this.addresses.delete(sessionId)
-    this.pruneEngagement(sessionId)
+    this.pruneEngagement(sessionId, this.retainedIds(this.summaries))
     return this.startSessionDisposal(session)
   }
 
@@ -276,9 +282,12 @@ export class SessionManager {
       // The sender's local first-send flip mirrors into the list row so the
       // session surfaces (lists filter on blank) before any host frame lands.
       onEngaged: (engaged) => {
-        if (this.disposed || !this.retainsSession(engaged.sessionId)) return
-        this.engagedSessions.add(engaged.sessionId)
-        this.recordMutation({ kind: 'engaged', sessionId: engaged.sessionId })
+        if (this.disposed || !this.retainedIds(this.summaries).has(engaged.sessionId)) return
+        // An identity already on the ledger needs no second row mutation.
+        if (!this.engagedSessions.has(engaged.sessionId)) {
+          this.engagedSessions.add(engaged.sessionId)
+          this.recordMutation({ kind: 'engaged', sessionId: engaged.sessionId })
+        }
         this.sessions.get(engaged.sessionId)?.handleBlank(false)
       },
       projections: this.projectionStore(sessionId),
@@ -289,13 +298,26 @@ export class SessionManager {
     return summary.blank && !this.engagedSessions.has(summary.sessionId)
   }
 
-  private retainsSession(sessionId: SessionId): boolean {
-    return this.sessions.has(sessionId) || this.addresses.has(sessionId)
-      || this.summaries.some(summary => summary.sessionId === sessionId)
+  /**
+   * Identities an engagement may still belong to: the given list rows, resident
+   * Session instances, and retained child addresses.
+   * @param summaries - list rows of the caller's snapshot.
+   * @returns the retained identity set.
+   */
+  private retainedIds(summaries: readonly SessionSummary[]): Set<SessionId> {
+    const retained = new Set(summaries.map(summary => summary.sessionId))
+    for (const sessionId of this.sessions.keys()) retained.add(sessionId)
+    for (const sessionId of this.addresses.keys()) retained.add(sessionId)
+    return retained
   }
 
-  private pruneEngagement(sessionId: SessionId): void {
-    if (!this.retainsSession(sessionId)) this.engagedSessions.delete(sessionId)
+  /**
+   * Forget one engagement that no retained identity holds.
+   * @param sessionId - identity whose engagement may be dropped.
+   * @param retained - identities from {@link retainedIds} for the caller's snapshot.
+   */
+  private pruneEngagement(sessionId: SessionId, retained: ReadonlySet<SessionId>): void {
+    if (!retained.has(sessionId)) this.engagedSessions.delete(sessionId)
   }
 
   /** Resident per-session projection store (create-on-demand; outlives instantiation). */
@@ -402,12 +424,8 @@ export class SessionManager {
           const summaries = mutations.reduce(applyMutation, baseline)
           this.summaries = summaries
           // A full list can remove identities without a removal frame.
-          const listedIds = new Set(summaries.map(summary => summary.sessionId))
-          for (const sessionId of this.engagedSessions) {
-            if (!listedIds.has(sessionId) && !this.sessions.has(sessionId) && !this.addresses.has(sessionId)) {
-              this.engagedSessions.delete(sessionId)
-            }
-          }
+          const retained = this.retainedIds(summaries)
+          for (const sessionId of this.engagedSessions) this.pruneEngagement(sessionId, retained)
           this.listState = 'idle'
           this.listPhase = 'ready'
           this.updateParentAvailability()
@@ -686,7 +704,7 @@ export class SessionManager {
     if (!durableSubagent && (catalog === undefined || catalog.length === 0)) {
       this.projectionStores.delete(sessionId)
     }
-    this.pruneEngagement(sessionId)
+    this.pruneEngagement(sessionId, this.retainedIds(this.summaries))
     this.projectionInflight.get(sessionId)?.controller.abort()
     this.projectionInflight.delete(sessionId)
     this.projectionLoads.delete(sessionId)
