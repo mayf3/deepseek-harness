@@ -100,7 +100,7 @@ Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteReq
  * Client 面上生成方法返回的是 RemoteStreamHandle<Out, In>；两个名字各自只有一个含义。
  * In 是客户端可上行的项类型；缺省 never 表示该方法不读上行。
  */
-export type RemoteStream<Out, In = never> = AsyncIterable<Out>
+export type RemoteStream<Out, In = never> = AsyncIterable<Out> & { readonly [STREAM_UPLINK]?: In }
 
 // Host
 @Remote({ mode: 'stream' })
@@ -315,7 +315,7 @@ credit 帧留待需要持续大流量上行的消费者出现时再加；inbox �
 
 ```text
 // types.ts
-export type RemoteStream<Out, In = never> = AsyncIterable<Out>
+export type RemoteStream<Out, In = never> = AsyncIterable<Out> & { readonly [STREAM_UPLINK]?: In }
 export type PeerId = Branded<'PeerId'>
 export interface PeerScope { readonly id: PeerId; readonly ctx: Context; dispose(): Promise<void> }
 export interface RemoteInvocation { … }              // 见 Host 面
@@ -587,3 +587,9 @@ for await (const reply of stream) replies.push(reply)   // ['> a', '> b']
 - `streamInboxBytes` 默认值 262144 对键盘与 stdin 远超需要；若第一个消费者是终端粘贴，可能与 `terminal-controller` 的 `maxInputBytes` 对齐。
 - Host 发起的半关闭帧（Host 不再读上行但继续写下行）：没有消费者，不加。
 - unary 方法的 `uplink()`：能读到方法运行期间到达的项，语义成立但用处存疑；允许，README 注明。
+
+## 相关
+
+- [Remote 事件投递](2026-08-10-remote-event-delivery.zh.md)：`$events/result` 的 unary 回答路径；「后续」里的双工 `$events` 落地后部分取代它。
+- [会话历史与事件传输](2026-08-18-session-history-and-event-transport.zh.md)：`$stream()` 监督器与其上的 journal / snapshot 协议，本 Note 不改它们。
+- [Web 侧边栏终端](../feature/2026-09-09-web-sidebar-terminal.zh.md)：终端按键的 unary `write` 与 `attachmentId`；「后续」里的 `attach` 流落地后取代它。
