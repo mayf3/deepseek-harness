@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { createWindowsTokenSigner } from './windows-sign.mjs'
 import { inspectWindowsRuntimeSignature, signWindowsCode, type WindowsCodeSigningOptions } from './windows-runtime-signature.mjs'
 import { createCachedSigner, signatureCacheIdentity } from './windows-signature-cache.mjs'
+import { resolveWindowsPackageSettings } from './windows-package-settings.mjs'
 import { prepareWindowsSignatureCacheDirectory, resolveWindowsSignatureCacheDirectory } from './windows-signature-cache-directory.mjs'
 import { withWindowsSigningStage } from './windows-signing-stage.mjs'
 import { failPackagingRun, recordPackagingEvent } from './packaging-run.mjs'
@@ -46,6 +47,7 @@ export async function signWindowsDesktopRuntime(root: string, version: string,
 
 async function main(): Promise<void> {
   if (process.platform !== 'win32' || resolveDesktopBuildTarget() !== 'win-x64') throw new Error('primary runtime signing requires Windows x64')
+  const { signatureCacheConcurrency } = resolveWindowsPackageSettings(process.env)
   const runDirectory = process.env.DSH_DESKTOP_PACKAGING_RUN_DIR
   if (!runDirectory) throw new Error('primary runtime signing requires a supervised packaging run')
   await readFile(join(runDirectory, 'run.json'))
@@ -67,7 +69,8 @@ async function main(): Promise<void> {
       await prepareWindowsSignatureCacheDirectory(cacheRoot)
       const cachedSign = createCachedSigner({ root: cacheRoot, identity, thumbprint,
         sign, inspect: inspectWindowsRuntimeSignature, record })
-      const options = { thumbprint, sign: cachedSign, record }
+      const options = { thumbprint, sign: cachedSign, record,
+        cache: { restore: cachedSign.restore, concurrency: signatureCacheConcurrency } }
       record({ type: 'signature-cache-open', root: cachedSign.summary().root, identity })
       try {
         if (process.argv.includes('--dsh')) {
