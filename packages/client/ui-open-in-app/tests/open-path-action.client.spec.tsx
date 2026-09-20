@@ -187,6 +187,7 @@ it('ignores an obsolete file query and refreshes the default application when th
 it('keeps reveal last and makes it the default when the file query fails', async () => {
   const b = bench()
   render(<OpenPathAction {...b.props} applications={async () => null} />)
+  await act(async () => {})
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.more'] })) })
   const items = screen.getAllByRole('menuitem')
   expect(items.map(item => item.textContent)).toEqual([zh['path.appsError'], '显示文件位置（默认）'])
@@ -198,6 +199,7 @@ it('keeps reveal last and makes it the default when the file query fails', async
 it.each([{ apps: [] }, { apps: [{ id: '/Player.app', name: 'Player', default: false, icon: null }] }])('uses reveal as the default after the available applications when none is default', async ({ apps }) => {
   const b = bench()
   render(<OpenPathAction {...b.props} applications={async () => apps} />)
+  await act(async () => {})
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.more'] })) })
   expect(screen.getAllByRole('menuitem').at(-1)?.textContent).toBe('显示文件位置（默认）')
   expect(screen.queryByText('用默认应用打开')).toBeNull()
@@ -229,4 +231,19 @@ it('closes the application menu from its chevron without querying again', async 
   await act(async () => { fireEvent.click(more) })
   expect(screen.queryByRole('menu')).toBeNull()
   expect(b.props.applications).toHaveBeenCalledTimes(calls)
+})
+
+
+it('waits for the file association query before allowing a default action', async () => {
+  const b = bench()
+  const query = Promise.withResolvers<Awaited<ReturnType<OpenPathActionProps['applications']>>>()
+  const view = render(<OpenPathAction {...b.props} applications={() => query.promise} />)
+  const main = view.container.querySelector('[data-open-path-open]')!
+  expect(main).toHaveProperty('disabled', true)
+  fireEvent.click(main)
+  expect(b.openPath).not.toHaveBeenCalled()
+  await act(async () => { query.resolve([]) })
+  expect(main).toHaveProperty('disabled', false)
+  await act(async () => { fireEvent.click(main) })
+  expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'reveal', undefined)
 })
