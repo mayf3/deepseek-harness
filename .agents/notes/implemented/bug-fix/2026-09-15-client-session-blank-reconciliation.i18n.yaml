@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-15-client-session-blank-reconciliation.md
-2026-09-15-client-session-blank-reconciliation.md: c9fe88f82f088f03539f8487740c83437bc53ade
-2026-09-15-client-session-blank-reconciliation.zh.md: 70e144b552d1dabfecb428db04894ad4007011c5
+2026-09-15-client-session-blank-reconciliation.md: 6303132ff61519c43383e44c1ee4ef6a6c74664d
+2026-09-15-client-session-blank-reconciliation.zh.md: 51ddd2d4cc73f5b585a79f62690847242631414d

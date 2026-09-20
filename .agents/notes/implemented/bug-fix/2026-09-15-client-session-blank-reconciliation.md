@@ -32,7 +32,7 @@ Accepted or observed-running Sessions retain their existing display conversion, 
 
 The Manager owns one additional per-id display flag. It does not replace Session-local presentation fields or implement a history/draft/presentation redesign.
 
-For an identity with neither subagent origin nor a retained child address, a removal notification discards its projection store, while a retained Session object keeps the store it was constructed with — for example a current row removed while its Session is still staged. If that identity returns to the list before its Session object is dropped, the Manager creates and seeds a second store that the resident object never reads, so list rows and that object's projection readers can disagree until a replacement instance adopts the current store. Repairing that projection ownership is deferred to its own change; blank display does not depend on it.
+For an identity with neither subagent origin nor a retained child address, a removal notification discards its projection store unless that store already carries a non-empty `subagentCatalog`; a retained Session object keeps the store it was constructed with — for example a current row removed while its Session is still staged. If that identity returns to the list before its Session object is dropped, the Manager creates and seeds a second store that the resident object never reads, so list rows and that object's projection readers can disagree until a replacement instance adopts the current store. Repairing that projection ownership is deferred to its own change; blank display does not depend on it.
 
 ## Verification
 
