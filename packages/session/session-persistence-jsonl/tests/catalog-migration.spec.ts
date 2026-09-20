@@ -58,15 +58,36 @@ describe.each(['none', 'zstd'] as const)('historical catalog publication (%s)', 
     await expect(f.ctx.sessionPersistence.open(f.parent, access)).rejects.toThrow('wrong Session')
   })
 
-  it('opens the parent when another Session header cannot be read', async () => {
-    const f = await fixture()
-    const path = await f.write('child', [], true)
-    await writeFile(path, compression === 'none' ? '{broken header\n' : await compressZstdFrame('{broken header\n'))
-    expect(await f.read()).toEqual([])
-    const writer = await f.ctx.sessionPersistence.open(f.parent, 'write')
-    await writer.close()
-    expect(await readFile(generationLogPath(f.root, undefined, f.parent, 4, compression))).not.toHaveLength(0)
-  })
+  it.each(compression === 'none' ? ['json'] as const : ['json', 'magic', 'checksum', 'lines'] as const)(
+    'opens the parent when another Session header has corrupt %s', async (damage) => {
+      const f = await fixture()
+      await f.write('child', [f.descriptor], true)
+      const path = await f.write('unrelated', [])
+      let damaged: Buffer
+      if (damage === 'json') {
+        damaged = compression === 'none' ? Buffer.from('{broken header\n') : await compressZstdFrame('{broken header\n')
+      } else if (damage === 'lines') {
+        damaged = await compressZstdFrame('{}\n{}\n')
+      } else {
+        damaged = await readFile(path)
+        const offset = damage === 'magic' ? 0 : damaged.length - 1
+        damaged[offset] = damaged[offset]! ^ 0xFF
+      }
+      await writeFile(path, damaged)
+      expect((await f.ctx.sessionPersistence.list()).map(row => row.header.id).sort()).toEqual(['child', f.parent])
+      const expected = [{ type: 'subagent/catalog', data: { childId: 'child', mode: 'continuable', label: 'old child' } }]
+      expect(await f.read()).toMatchObject(expected)
+      const writer = await f.ctx.sessionPersistence.open(f.parent, 'write')
+      try { expect((await writer.read()).events).toMatchObject(expected) } finally { await writer.close() }
+      expect(await readFile(generationLogPath(f.root, undefined, f.parent, 4, compression))).not.toHaveLength(0)
+      for (const access of ['read', 'write'] as const) {
+        await expect(f.ctx.sessionPersistence.open(SessionId('unrelated'), access)).rejects.toThrow()
+      }
+      expect(await readFile(path)).toEqual(damaged)
+      await expect(readFile(generationLogPath(f.root, undefined, SessionId('unrelated'), 4, compression)))
+        .rejects.toMatchObject({ code: 'ENOENT' })
+    },
+  )
 
   it('invalidates lightweight revisions on child membership and contents while retaining stable tokens', async () => {
     const f = await fixture()

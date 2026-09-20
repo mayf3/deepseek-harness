@@ -51,8 +51,14 @@ describe.skipIf(webSnapshotMode() === 'record')('historical preset restoration t
           data: { turn: 1, reason: { kind: 'completed' } } }) + '\n')),
       ]))
       const brokenSource = await readFile(brokenPath)
+      const corruptHeaderId = SessionId('preset-migration-corrupt-header')
+      const corruptHeaderPath = generationLogPath(scaffold.persistenceRoot, scaffold.workspaceCwd, corruptHeaderId, 2, 'zstd')
+      const corruptHeaderSource = Buffer.from('invalid Zstandard header frame')
+      await mkdir(dirname(corruptHeaderPath), { recursive: true })
+      await writeFile(corruptHeaderPath, corruptHeaderSource)
       const listed = await scaffold.ctx.sessionController.list({}, new AbortController().signal)
       expect(listed.items.map(item => item.sessionId)).toEqual(expect.arrayContaining([id, childId, brokenId]))
+      expect(listed.items.map(item => item.sessionId)).not.toContain(corruptHeaderId)
 
       const reader = await scaffold.ctx.sessionPersistence.open(id, 'read')
       try {
@@ -123,6 +129,8 @@ describe.skipIf(webSnapshotMode() === 'record')('historical preset restoration t
       const context = { sessionIds: [id], cwd: scaffold.workspaceCwd }
       expect(normalizeSessionSnapshots([published], context)).toEqual(normalizeSessionSnapshots([expected], context))
       expect(await readFile(predecessor)).toEqual(source)
+      await expect(scaffold.ctx.sessionPersistence.open(corruptHeaderId, 'read')).rejects.toThrow(/invalid frame magic/)
+      expect(await readFile(corruptHeaderPath)).toEqual(corruptHeaderSource)
       expect((await readdir(dirname(predecessor))).filter(name => name.endsWith('.jsonl.zstd')).sort())
         .toEqual(['session.v2.jsonl.zstd', `session.v${SESSION_FORMAT_VERSION}.jsonl.zstd`])
     } finally {
