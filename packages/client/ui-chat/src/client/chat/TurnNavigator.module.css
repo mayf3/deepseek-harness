@@ -140,7 +140,8 @@
   width: 20px;
   border-radius: inherit;
   outline: 1px solid var(--dsw-alias-brand-primary);
-  outline-offset: 2px;
+  /* The scroller clips the right edge; keep the marker's ring inside it. */
+  outline-offset: -1px;
   content: '';
 }
 
