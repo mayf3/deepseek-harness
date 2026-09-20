@@ -39,6 +39,8 @@ export {
   createRuntimeResolution,
   DEFAULT_PROFILE_BUNDLES,
   OPTIONAL_BUNDLES,
+  bundlePatchFiles,
+  bundlePatchPaths,
   initProfile,
   removeLinkProjections,
   loadProfile,
