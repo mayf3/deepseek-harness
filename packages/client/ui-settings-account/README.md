@@ -32,6 +32,8 @@ Contact us opens the Feishu questionnaire in the system browser on Desktop or a 
 
 The sidebar account menu uses the shared Menu surface, backdrop blur, spacing, and row typography; feature styles only size its launcher.
 
+The account card’s More account information link opens `https://platform.deepseek.com` in the system browser on Desktop or a new tab on Web.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

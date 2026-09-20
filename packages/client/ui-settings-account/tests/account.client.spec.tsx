@@ -227,3 +227,14 @@ it.each([[], [{ currency: 'CNY' as const, balance: '0.00' }, { currency: 'USD' a
     expect(screen.getByText('¥0.00')).toBeTruthy()
   },
 )
+
+it('opens more account information externally without invoking the embedded Platform bridge', () => {
+  const platform: PlatformBridge = { open: vi.fn(), close: vi.fn(), setBounds: vi.fn() }
+  mount({ status: 'credential-stored', attempt: null }, en, undefined, platform)
+  const link = screen.getByRole('link', { name: en.accountInfo })
+  expect(link.getAttribute('href')).toBe('https://platform.deepseek.com')
+  expect(link.getAttribute('target')).toBe('_blank')
+  expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+  fireEvent.click(link)
+  expect(platform.open).not.toHaveBeenCalled()
+})

@@ -1,7 +1,7 @@
 /** Account settings renders safe Host state and explicit login actions. */
 import { Big } from 'big.js'
 import { useEffect, useState } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { PropsRuntime, PropsLocale, InjectFace, HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { PlatformOverlay, type PlatformBridge } from './PlatformOverlay.tsx'
@@ -102,7 +102,9 @@ export function AccountSection({ t, useAccount, start, cancel, refresh, platform
             <span className={css.status} role="status">{status}</span>
           </div>
         </div>
-
+        {signedIn && <a className={css.accountInfo} href="https://platform.deepseek.com" target="_blank" rel="noopener noreferrer">
+          {t('accountInfo')}<IconRightUpOutlineRegular size={12} />
+        </a>}
       </div>
       {active && <div className={css.actions}>
         {attempt.authorizeUrl && <a className={css.linkButton} href={attempt.authorizeUrl} target="_blank" rel="noreferrer">

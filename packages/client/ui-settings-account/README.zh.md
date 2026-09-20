@@ -32,6 +32,8 @@ Desktop 的用量和充值操作在 48px 返回栏下方打开隔离的原生 Pl
 
 侧边栏账号菜单使用公共 Menu 的表面、背景模糊、间距和菜单项排版；功能样式仅设置入口布局。
 
+账号卡片的“更多账号信息”链接在 Desktop 中通过系统浏览器打开 `https://platform.deepseek.com`，在 Web 中打开新标签页。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
