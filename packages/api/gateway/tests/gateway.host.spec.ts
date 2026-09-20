@@ -113,11 +113,11 @@ class FakeConnectionService extends Service {
   matches: ((endpoint: string) => boolean) | undefined
   handler: FakeRpcHandler | undefined
   /** The operator Peer every call this fake dispatches speaks for. */
-  readonly peers: { readonly operator: PeerScope }
+  readonly operator: PeerScope
 
   constructor(ctx: Context) {
     super(ctx, 'connection')
-    this.peers = { operator: { id: 'fake-operator' as PeerId, ctx, dispose: () => Promise.resolve() } }
+    this.operator = { id: 'fake-operator' as PeerId, ctx, dispose: () => Promise.resolve() }
   }
 
   get rpc() {

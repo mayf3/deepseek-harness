@@ -501,7 +501,7 @@ describe('Typert Remote streams', () => {
       ])
     })
     expect(service.returns).toBe(1)
-    expect(service.peers.at(-1)).toBe(ctx.connection.peers.operator)
+    expect(service.peers.at(-1)).toBe(ctx.connection.operator)
 
     sendOpen(socket, 'rejected', 'feed/echo', { prefix: '' })
     socket.send(JSON.stringify({ type: 'item', streamId: 'rejected', value: 1 }))

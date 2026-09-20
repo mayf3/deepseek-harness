@@ -749,8 +749,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'readonly peers: PeerRegistryHandle',
-        description: 'Peers this Host answers to.',
+        signature: 'readonly operator: PeerScope',
+        description: 'The operator Peer every admitted request speaks for; its scope lives as long as Connection.',
         parameters: [],
       },
       {
@@ -767,9 +767,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'admit(request: ConnectionTrustRequest): PeerAdmission',
-        description: 'Decide which Peer one request speaks for: a carrier bound through `peers` answers from its binding; every other request passes requestRejection and speaks for the operator.',
+        description: 'Admit one request: it passes requestRejection and speaks for the operator, or it is refused with that status.',
         parameters: [{ name: 'request', description: 'request headers from the HTTP or upgrade request.' }],
-        returns: 'the admitted Peer, or the rejection status.',
+        returns: 'the operator Peer, or the rejection status.',
       },
       {
         signature: 'authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean',
@@ -5333,10 +5333,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PeerId',
     declaration: 'export type PeerId = Branded<\'PeerId\'>;',
-  },
-  {
-    name: 'PeerRegistryHandle',
-    declaration: 'export interface PeerRegistryHandle {\n    readonly operator: PeerScope;\n    open(): PeerScope;\n    bind(carrier: object, peer: PeerScope): void;\n    of(carrier: object): PeerScope | undefined;\n}',
   },
   {
     name: 'PeerScope',

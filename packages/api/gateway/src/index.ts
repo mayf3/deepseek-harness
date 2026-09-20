@@ -436,7 +436,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
    */
   private operatorPeer(): PeerScope {
     const connection = this.ctx.get('connection')
-    if (connection !== undefined) return connection.peers.operator
+    if (connection !== undefined) return connection.operator
     this.inProcessOperator ??= {
       id: 'in-process-operator' as PeerId,
       ctx: this.ctx,

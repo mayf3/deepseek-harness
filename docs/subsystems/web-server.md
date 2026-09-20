@@ -83,11 +83,10 @@ createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
 requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
 
 /**
- * Decide which Peer one request speaks for: a carrier bound through `peers`
- * answers from its binding; every other request passes {@link requestRejection}
- * and speaks for the operator.
+ * Admit one request: it passes {@link requestRejection} and speaks for the
+ * operator, or it is refused with that status.
  * @param request - request headers from the HTTP or upgrade request.
- * @returns the admitted Peer, or the rejection status.
+ * @returns the operator Peer, or the rejection status.
  */
 admit(request: ConnectionTrustRequest): PeerAdmission
 

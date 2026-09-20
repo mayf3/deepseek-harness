@@ -478,7 +478,7 @@ describe('connection node half', () => {
     await fiber.dispose()
   })
 
-  it('admits a bound carrier as its Peer and hands every call the Peer it speaks for', async () => {
+  it('admits every trusted, authenticated request as the operator Peer and hands each call that Peer', async () => {
     const { connection, routes, dispose } = await mounted({ trustedHosts: ['harness.example'] })
     const peers: PeerScope[] = []
     const remove = connection.rpc.intercept(
@@ -489,13 +489,10 @@ describe('connection node half', () => {
         return { ok: true, value: null }
       },
     )
-    const admitted = connection.peers.open()
-    expect(admitted).not.toBe(connection.peers.operator)
-    const untrusted = fakeRequest({ host: 'other.example' })
-    expect(connection.admit(untrusted)).toEqual({ rejection: 403 })
-    connection.peers.bind(untrusted, admitted)
-    expect(connection.admit(untrusted)).toEqual({ peer: admitted })
-    expect(connection.peers.of({})).toBeUndefined()
+    expect(connection.admit(fakeRequest({ host: 'other.example' }))).toEqual({ rejection: 403 })
+    expect(connection.admit(fakeRequest({ host: '127.0.0.1:3080' }))).toEqual({ rejection: 401 })
+    const cookie = browserCookie(connection, '127.0.0.1:3080')
+    expect(connection.admit(fakeRequest({ host: '127.0.0.1:3080', cookie }))).toEqual({ peer: connection.operator })
 
     const route = routes.find(candidate => candidate.path === API_PATH)!
     const request: ClientRequest = {
@@ -504,24 +501,20 @@ describe('connection node half', () => {
       method: 'goals/create',
       payload: { args: {} },
     }
-    const boundPost = fakePost({ host: 'other.example' }, '/api/goals/create', request)
-    connection.peers.bind(boundPost, admitted)
     const answered = fakeResponse()
-    await route.handler(boundPost, answered.response)
+    await route.handler(fakePost({ host: '127.0.0.1:3080', cookie }, '/api/goals/create', request), answered.response)
     expect(JSON.parse(String(answered.state.body))).toMatchObject({ result: { ok: true, value: null } })
-    const cookie = browserCookie(connection, '127.0.0.1:3080')
-    await route.handler(fakePost({ host: '127.0.0.1:3080', cookie }, '/api/goals/create', request), fakeResponse().response)
-    // A shell-owned carrier dispatches the shared handler without the bridge; nobody bound its Request.
+    // A shell-owned carrier dispatches the shared handler without the bridge and speaks for the operator too.
     const direct = await connection.createSharedFetchHandler('/api').fetch(new Request('http://127.0.0.1:3080/api/goals/create', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(request),
     }))
     expect(direct.status).toBe(200)
-    expect(peers).toEqual([admitted, connection.peers.operator, connection.peers.operator])
+    expect(peers).toEqual([connection.operator, connection.operator])
 
-    await admitted.dispose()
-    await admitted.dispose()
+    // Racing disposals share one completion, and the scope goes with the Connection.
+    await Promise.all([connection.operator.dispose(), connection.operator.dispose()])
     await remove()
     await dispose()
   })

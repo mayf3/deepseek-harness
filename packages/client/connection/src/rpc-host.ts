@@ -13,7 +13,7 @@ import { bridge } from './http-bridge.ts'
 import { isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type { BrowserAuth } from './browser-auth.ts'
-import { PeerRegistry } from './peer-scope.ts'
+import { OperatorPeer } from './operator-peer.ts'
 import type {
   PeerAdmission,
   ConnectionIndexRequest,
@@ -34,9 +34,6 @@ import type {
 const INVALID_REQUEST_RPC_ID = RpcId('invalid-request')
 const CHANNEL_PATTERN = /^\/[A-Za-z0-9._~-]+$/
 const ENDPOINT_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]+$/
-
-/** Resolve the Peer one Fetch request speaks for. */
-type PeerResolver = (request: Request) => PeerScope
 
 interface ConnectionRpcInterceptor {
   readonly matches: ConnectionRpcEndpointMatcher
@@ -64,8 +61,8 @@ declare module '@deepseek-ai/cordis' {
 
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
-  /** Peers this Host answers to. */
-  readonly peers: PeerRegistry
+  /** The operator Peer every admitted request speaks for. */
+  readonly operator: PeerScope
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
   private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
 
@@ -81,8 +78,8 @@ export class HostConnectionService extends Service implements HostConnectionHand
     private readonly browserAuth: BrowserAuth,
   ) {
     super(ctx, 'connection')
-    this.peers = new PeerRegistry(ctx)
-    ctx.effect(() => () => this.peers.dispose(), 'client-connection: Peer registry')
+    this.operator = new OperatorPeer(ctx)
+    ctx.effect(() => () => this.operator.dispose(), 'client-connection: operator Peer')
   }
 
   /** Generic channel registry scoped to the Context reading this service. */
@@ -109,22 +106,10 @@ export class HostConnectionService extends Service implements HostConnectionHand
     return this.browserAuth.isAuthenticated(request) ? undefined : 401
   }
 
-  /** A bound carrier answers from its binding; everything else passes the fence and speaks for the operator. */
+  /** A request that passes the fence and authentication speaks for the operator. */
   admit(request: ConnectionTrustRequest): PeerAdmission {
-    const bound = this.peers.of(request)
-    if (bound !== undefined) return { peer: bound }
     const rejection = this.requestRejection(request)
-    return rejection === undefined ? { peer: this.peers.operator } : { rejection }
-  }
-
-  /**
-   * Resolve the Peer one Fetch request speaks for. A request nobody bound came
-   * from an in-process carrier the operator owns outright.
-   * @param request - dispatched Fetch request.
-   * @returns the bound Peer, or the operator.
-   */
-  private peerOf(request: Request): PeerScope {
-    return this.peers.of(request) ?? this.peers.operator
+    return rejection === undefined ? { peer: this.operator } : { rejection }
   }
 
   /** Authenticate an index request through the process-token exchange or cookie. */
@@ -189,7 +174,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     handler: ConnectionRpcHandler,
   ): () => Promise<void> {
     assertChannel(channel)
-    const fetchHandler = rpcFetchHandler(channel, handler, request => this.peerOf(request))
+    const fetchHandler = rpcFetchHandler(channel, handler, this.operator)
     const route: WebRoute = {
       kind: 'prefix',
       path: channel,
@@ -200,7 +185,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
           res.end(admission.rejection === 401 ? 'unauthorized' : 'forbidden')
           return
         }
-        await bridge(req, res, fetchHandler, undefined, (request) => { this.peers.bind(request, admission.peer) })
+        await bridge(req, res, fetchHandler)
       },
     }
     return owner.effect(
@@ -220,7 +205,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
     const interceptor: ConnectionRpcInterceptor = {
       matches,
-      fetchHandler: rpcFetchHandler(channel, handler, request => this.peerOf(request)),
+      fetchHandler: rpcFetchHandler(channel, handler, this.operator),
     }
     return owner.effect(() => {
       if (this.interceptors.has(channel)) {
@@ -237,7 +222,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
 function rpcFetchHandler(
   channel: string,
   handler: ConnectionRpcHandler,
-  peerOf: PeerResolver,
+  peer: PeerScope,
 ): ConnectionFetchHandler {
   return {
     requestBodyMode: () => 'buffered',
@@ -273,7 +258,7 @@ function rpcFetchHandler(
       }
 
       try {
-        const result = await handler(endpoint, message.payload, request.signal, peerOf(request))
+        const result = await handler(endpoint, message.payload, request.signal, peer)
         return fullResponse(message.rpcId, result)
       } catch (error) {
         return new Response(`handler failure: ${String(error)}`, { status: 500 })

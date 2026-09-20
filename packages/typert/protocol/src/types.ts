@@ -358,10 +358,9 @@ export interface InvocationDescriptor {
 export type PeerId = Branded<'PeerId'>
 
 /**
- * One Peer's session on this Host. Opened and disposed by whoever admitted the
- * Peer; `ctx` is the Cordis scope that owns connection-lifetime registrations.
- * Who the Peer is and what it may do are not recorded here: business plugins
- * attach that through `ctx` or a registry keyed by this object.
+ * One Peer's session on this Host. Connection owns it: `ctx` is the Cordis
+ * scope that owns connection-lifetime registrations and is disposed with the
+ * Peer. Who the Peer is and what it may do are not recorded here.
  */
 export interface PeerScope {
   readonly id: PeerId

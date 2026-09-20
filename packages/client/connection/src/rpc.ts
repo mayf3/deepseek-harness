@@ -97,38 +97,14 @@ export interface ConnectionIndexResponse {
   end(body?: string): unknown
 }
 
-/** Outcome of admitting one request: the Peer it speaks for, or the status refusing it. */
+/** Outcome of admitting one request: the operator Peer it speaks for, or the status refusing it. */
 export type PeerAdmission =
   | { readonly peer: PeerScope }
   | { readonly rejection: 401 | 403 }
 
-/** Registry of the Peers this Host answers to. */
-export interface PeerRegistryHandle {
-  /** The operator's own Peer: every browser-cookie request and every in-process carrier speaks for it. */
-  readonly operator: PeerScope
-  /**
-   * Admit one Peer on behalf of an admitter. What the Peer may do is not
-   * recorded here: the admitter attaches its own policy through the scope.
-   * @returns the opened scope; the admitter disposes it when the Peer leaves.
-   */
-  open(): PeerScope
-  /**
-   * Record which Peer one carrier object speaks for, before it is dispatched.
-   * @param carrier - node request, upgrade request, WebSocket, or Fetch `Request`.
-   * @param peer - the Peer it was admitted as.
-   */
-  bind(carrier: object, peer: PeerScope): void
-  /**
-   * Read the Peer a carrier object was bound to.
-   * @param carrier - node request, upgrade request, WebSocket, or Fetch `Request`.
-   * @returns the bound Peer, or undefined when nobody bound one.
-   */
-  of(carrier: object): PeerScope | undefined
-}
-
 /**
  * Handler invoked after Connection has decoded the transport envelope.
- * `peer` is the Peer the request was admitted as.
+ * `peer` is the Peer the request was admitted as: the operator.
  */
 export type ConnectionRpcHandler = (
   endpoint: string,
@@ -201,8 +177,8 @@ export interface HostConnectionHandle {
   readonly rpc: HostConnectionRpc
   /** Exact Fetch routes for streaming or browser-native responses. */
   readonly fetch: HostConnectionFetch
-  /** Peers this Host answers to. */
-  readonly peers: PeerRegistryHandle
+  /** The operator Peer every admitted request speaks for; its scope lives as long as Connection. */
+  readonly operator: PeerScope
 
   /**
    * Compose exact Fetch routes and the shared-channel RPC interceptor.
@@ -220,11 +196,10 @@ export interface HostConnectionHandle {
   requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
 
   /**
-   * Decide which Peer one request speaks for: a carrier bound through `peers`
-   * answers from its binding; every other request passes {@link requestRejection}
-   * and speaks for the operator.
+   * Admit one request: it passes {@link requestRejection} and speaks for the
+   * operator, or it is refused with that status.
    * @param request - request headers from the HTTP or upgrade request.
-   * @returns the admitted Peer, or the rejection status.
+   * @returns the operator Peer, or the rejection status.
    */
   admit(request: ConnectionTrustRequest): PeerAdmission
 
