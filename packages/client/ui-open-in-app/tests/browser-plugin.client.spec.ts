@@ -74,6 +74,9 @@ describe('open-in-app browser half', () => {
     expect(face.hooks.openInAppDesktop.getSnapshot()).toBeNull()
     await Promise.all([face.loadDesktop(), emptyFace.loadDesktop()])
     expect(remote.session.canOpenWorkspacePath).toHaveBeenCalledOnce()
+    const signal = new AbortController().signal
+    await expect(face.applications('/w/clip.mp4', signal)).resolves.toEqual([])
+    expect(remote.session.workspacePathApplications).toHaveBeenCalledWith({ path: '/w/clip.mp4' }, signal)
     expect(face.hooks.openInAppDesktop.getSnapshot()).toBe(true)
     expect(await face.openPath('/w/clip.mp4', 'reveal')).toBeNull()
     expect(remote.session.openWorkspacePath).toHaveBeenLastCalledWith({ path: '/w/clip.mp4', action: 'reveal' })

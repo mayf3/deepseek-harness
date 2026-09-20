@@ -85,3 +85,12 @@ it('queries current handlers and carries an explicit application without changin
   await controller.openPath('/file.mp3', 'open')
   expect(open).toHaveBeenLastCalledWith({ path: '/file.mp3' })
 })
+
+
+it('distinguishes failed association queries from an empty application list', async () => {
+  const remote = remoteOf({ workspacePathApplications: async () => ({ ok: false, error: new RemoteError('gateway/internal', 'unavailable', {}) }) })
+  const controller = new OpenInAppPathController(remote)
+  expect(await controller.applications('/file.mp3', new AbortController().signal)).toBeNull()
+  const rejecting = new OpenInAppPathController(remoteOf({ workspacePathApplications: async () => { throw new Error('disconnected') } }))
+  expect(await rejecting.applications('/file.mp3', new AbortController().signal)).toBeNull()
+})

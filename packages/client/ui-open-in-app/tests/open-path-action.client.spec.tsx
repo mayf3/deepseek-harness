@@ -5,10 +5,10 @@
  * through their own toast.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { OpenPathAction, type OpenPathActionProps } from '../src/client/OpenPathAction.tsx'
+import { OpenPathAction, usePathGesture, type OpenPathActionProps } from '../src/client/OpenPathAction.tsx'
 import { OpenPathEmptyAction, type OpenPathEmptyActionProps } from '../src/client/OpenPathEmptyAction.tsx'
 import type { OpenInAppPathAction, OpenInAppPathFailure } from '../src/client/open-path.ts'
 import { zh } from '../src/client/locales.ts'
@@ -185,4 +185,15 @@ it('keeps default opening available when application discovery fails', async () 
   expect(screen.getByRole('menuitem', { name: zh['path.appsError'] }).hasAttribute('disabled')).toBe(true)
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: zh['path.defaultApp'] })) })
   expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open', undefined)
+})
+
+
+it('coalesces repeated gestures before the busy state renders', async () => {
+  const pending = Promise.withResolvers<OpenInAppPathFailure | null>()
+  const b = bench({ openPath: vi.fn(() => pending.promise) })
+  const { result } = renderHook(() => usePathGesture(b.props))
+  act(() => { result.current.act('open'); result.current.act('open') })
+  expect(b.openPath).toHaveBeenCalledOnce()
+  await act(async () => { pending.resolve(null) })
+  expect(result.current.pending).toBe(false)
 })

@@ -237,3 +237,17 @@ it('uses the same path verification for handler queries and explicit application
   expect(fileApplications).toHaveBeenCalledOnce()
   expect(openFileApplication).toHaveBeenCalledOnce()
 })
+
+
+it('avoids desktop queries when unavailable and rejects an empty query path', async () => {
+  const fileApplications = vi.fn(async () => [])
+  const unavailable = createSessionTestController(await context(), {
+    defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: false, fileApplications,
+  })
+  expect(await unavailable.workspacePathApplications({ path: '/file.mp3' }, new AbortController().signal)).toEqual([])
+  const available = createSessionTestController(await context(), {
+    defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: true, fileApplications,
+  })
+  await expect(available.workspacePathApplications({ path: '' }, new AbortController().signal)).rejects.toMatchObject({ code: 'gateway/bad-request' })
+  expect(fileApplications).not.toHaveBeenCalled()
+})

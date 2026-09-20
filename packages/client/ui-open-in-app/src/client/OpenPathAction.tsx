@@ -125,7 +125,7 @@ export function OpenPathAction(props: OpenPathActionProps): ReactNode {
         ]}
         onSelect={(id) => {
           if (id.startsWith('app:')) run('open', id.slice(4))
-          else if (id === 'open' || id === 'reveal') run(id)
+          else run(id === 'reveal' ? 'reveal' : 'open')
         }}
         anchor={(
           <div className={css.split} data-open-path data-state={pending ? 'busy' : 'idle'}>
