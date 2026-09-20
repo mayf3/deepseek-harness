@@ -457,7 +457,7 @@ describe('Conversation inject API', () => {
     })
     onTestFinished(off)
     const files = [new File([], 'a.txt'), new File([], 'b.txt')]
-    const event = new Event('paste', { cancelable: true })
+    const event = new KeyboardEvent('paste', { cancelable: true })
     Object.defineProperty(event, 'clipboardData', { value: {
       items: files.map(file => ({ kind: 'file', getAsFile: () => file })), getData: () => '',
     } })
