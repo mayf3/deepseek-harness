@@ -17,6 +17,8 @@ import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
+const translations: ReadonlyMap<string, string> = new Map(Object.entries(en))
+
 const READY: AgentPresetSectionState = {
   status: 'ready',
   error: null,
@@ -35,6 +37,10 @@ const READY: AgentPresetSectionState = {
   revealedPaths: {},
 }
 
+function unusedHook(): never {
+  throw new Error('This section does not read global slot sources')
+}
+
 /**
  * Render the section over a fixed snapshot, with every action a spy.
  * @param state - the snapshot to render.
@@ -42,7 +48,7 @@ const READY: AgentPresetSectionState = {
  */
 function renderSection(
   state: Partial<AgentPresetSectionState> = {},
-  options: { creator?: boolean } = {},
+  options: { creator?: boolean; developerTools?: boolean } = {},
 ) {
   const store = createSnapshotStore<AgentPresetSectionState>({ ...READY, ...state })
   const actions = {
@@ -63,11 +69,18 @@ function renderSection(
     makeDefault: vi.fn(() => Promise.resolve()),
     setPickerVisible: vi.fn(() => Promise.resolve()),
   }
-  const props = {
+  const props: AgentPresetSectionProps = {
     ...actions,
+    usePanelInfo: unusedHook,
+    useSessions: unusedHook,
+    useSessionStatus: unusedHook,
+    useSessionRetainInfo: unusedHook,
+    useWorkspaces: unusedHook,
+    useResource: unusedHook,
     useAgentPresetSection: bindSnapshotSelector(store),
-    t: (key: keyof typeof en) => en[key],
-  } as unknown as AgentPresetSectionProps
+    useDeveloperTools: bindSnapshotSelector(createSnapshotStore(options.developerTools ?? true)),
+    t: key => translations.get(key) ?? key,
+  }
   render(<AgentPresetSection {...props} />)
   return actions
 }
@@ -82,6 +95,13 @@ function rowFor(id: string): HTMLElement {
 }
 
 describe('the preset list', () => {
+  it('hides the complete picker-policy row while developer tools are off', () => {
+    renderSection({}, { developerTools: false })
+    expect(screen.queryByRole('switch', { name: en.showPicker })).toBeNull()
+    expect(screen.queryByText(en.showPickerDescription)).toBeNull()
+    expect(screen.queryByText(en.showPickerBeta)).toBeNull()
+  })
+
   it('reads the roster once when it first renders', async () => {
     const actions = renderSection()
 
@@ -348,14 +368,8 @@ describe('the preset list', () => {
   })
 
   it('renders nothing when the deployment composes no presets', () => {
-    const { container } = render(<AgentPresetSection {...({
-      useAgentPresetSection: bindSnapshotSelector(
-        createSnapshotStore<AgentPresetSectionState>({ ...READY, status: 'unavailable', rows: [] })),
-      t: (key: keyof typeof en) => en[key],
-      load: vi.fn(() => Promise.resolve()),
-    } as unknown as AgentPresetSectionProps)} />)
-
-    expect(container.firstChild).toBeNull()
+    renderSection({ status: 'unavailable', rows: [] })
+    expect(screen.queryByRole('heading')).toBeNull()
   })
 
   it('offers a retry when the roster could not be read', () => {

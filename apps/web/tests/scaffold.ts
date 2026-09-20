@@ -302,7 +302,7 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
-  /** The scaffold enables developer tools unless false preserves the shipped default. */
+  /** Override the developer-tools preference; omitted uses the shipped default. */
   developerTools?: boolean
   /** Enable the real Open In rows with deterministic launch-environment facts. */
   openInAppEnvironment?: LaunchEnvironmentSnapshot
@@ -818,8 +818,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     }
     await ctx.loader.await()
     await auditStartupEntries(ctx, 'web e2e scaffold')
-    if (options.developerTools !== false) {
-      await ctx.settings.update('ui-developer-tools', { enabled: true })
+    if (options.developerTools !== undefined) {
+      await ctx.settings.update('ui-developer-tools', { enabled: options.developerTools })
     }
     if (options.welcomeNoticePending !== true) {
       await ctx.settings.mutate(WELCOME_NOTICE_SETTINGS_NAMESPACE, [{
