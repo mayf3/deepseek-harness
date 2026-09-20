@@ -194,10 +194,12 @@ Requires: `typert`
 export interface Config {
   /** WebSocket Ping interval from 1 through 2,147,483,647 milliseconds. @default 2000 */
   readonly websocketHeartbeatIntervalMs?: number
+  /** Buffered uplink frame bytes one logical stream may hold before it fails with `gateway/uplink-overflow`. @default 262144 */
+  readonly streamInboxBytes?: number
 }
 ```
 
-Source: [`packages/api/gateway/src/index.ts:119`](../packages/api/gateway/src/index.ts)
+Source: [`packages/api/gateway/src/index.ts:140`](../packages/api/gateway/src/index.ts)
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
@@ -428,7 +430,7 @@ export interface ConnectionRecoveryConfig {
 }
 ```
 
-Source: [`packages/client/connection/src/index.ts:87`](../packages/client/connection/src/index.ts)
+Source: [`packages/client/connection/src/index.ts:90`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
