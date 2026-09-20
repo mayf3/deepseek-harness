@@ -188,8 +188,7 @@ it('rebinds policy updates and reloads to a replacement Windows main window', ()
   window.webContents.mainFrame.url = 'dsh-app://app/?recovery=1#home'
   ui!.sync()
   expect(previous.webContents.listenerCount('did-finish-load')).toBe(0)
-  expect(window.webContents.send).toHaveBeenCalledWith(MANDATORY_IPC.state,
-    expect.objectContaining({ policy: expect.objectContaining({ blocking: true }) }))
+  expect(window.webContents.send.mock.calls.at(-1)).toMatchObject([MANDATORY_IPC.state, { policy: { blocking: true } }])
   window.webContents.send.mockClear()
   window.webContents.emit('did-finish-load')
   expect(window.webContents.send).toHaveBeenCalledOnce()

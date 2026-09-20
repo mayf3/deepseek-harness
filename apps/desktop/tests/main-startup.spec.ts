@@ -887,8 +887,7 @@ describe('desktop main startup', () => {
     expect(modal.isDestroyed()).toBe(false)
     await vi.advanceTimersByTimeAsync(150)
     expect(modal.isDestroyed()).toBe(false)
-    expect(modal.webContents.send).toHaveBeenLastCalledWith(MANDATORY_IPC.state,
-      expect.objectContaining({ policy: expect.objectContaining({ blocking: false }) }))
+    expect(modal.webContents.send.mock.calls.at(-1)).toMatchObject([MANDATORY_IPC.state, { policy: { blocking: false } }])
     expect(host.stop).not.toHaveBeenCalled()
     expect(request.mock.calls[0]![1]!.headers).toMatchObject({ 'x-client-bundle-id': 'com.deepseek.dsh', 'x-client-version': '1.0.0' })
   })

@@ -41,10 +41,10 @@ function setup() {
   // JSDOM has no browsing context for a shadow-root iframe; transport uses real paired Node ports.
   const post = vi.spyOn(dom.window, 'postMessage').mockImplementation(() => {})
   Object.defineProperty(frame, 'contentWindow', { value: dom.window })
-  vi.spyOn(frame, 'focus').mockImplementation(() => {})
+  const focus = vi.spyOn(frame, 'focus').mockImplementation(() => {})
   frame.dispatchEvent(new dom.window.Event('load'))
   expect(post).toHaveBeenCalledWith({ type: 'dsh-mandatory-connect' }, 'dsh-app://shell', [channel.port2])
-  return { publish, view, root, frame, host: root.host as HTMLElement }
+  return { publish, view, root, frame, focus, host: root.host as HTMLElement }
 }
 
 it('uses an in-page frame below the caption and reuses it on updates', () => {
@@ -62,8 +62,8 @@ it('rejects forged window events and accepts actions only through the transferre
   const data = { type: 'dsh-mandatory-action', id: 1, action: 'download', version: '2.0.0', revision: undefined }
   dom.window.dispatchEvent(new dom.window.MessageEvent('message', { source: f.frame.contentWindow, origin: 'dsh-app://shell', data }))
   expect(ipc.invoke).not.toHaveBeenCalled()
-  const result = new Promise<unknown>(resolve => channel.port2.on('message', (message) => {
-    if (message.type === 'dsh-mandatory-result') resolve(message)
+  const result = new Promise<unknown>(resolve => channel.port2.on('message', (message: unknown) => {
+    if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'dsh-mandatory-result') resolve(message)
   }))
   channel.port2.postMessage(data)
   await expect(result).resolves.toEqual({ type: 'dsh-mandatory-result', id: 1, ok: true })
@@ -87,7 +87,7 @@ it('keeps caption menu keyboard events available while blocking background short
   const background = new dom.window.KeyboardEvent('keydown', { key: 'n', bubbles: true, cancelable: true })
   dom.window.document.body.dispatchEvent(background)
   expect(background.defaultPrevented).toBe(true)
-  expect(f.frame.focus).toHaveBeenCalled()
+  expect(f.focus).toHaveBeenCalled()
 })
 
 it('clears once without postponing removal on progress ticks, and closes the channel on navigation', () => {
