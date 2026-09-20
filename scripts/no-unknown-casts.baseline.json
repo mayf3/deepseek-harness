@@ -1506,48 +1506,6 @@
   "packages/llm/deepseek-llm-api-extensions/src/index.ts": {
     "1f519aabb00553384bc9c1c57064a1ed6fcd757032061e1b14e0718d91dd4817": 1
   },
-  "packages/llm/llm-deepseek/src/protocols/chat-completions/adapter.ts": {
-    "598014dcfe77101781e3c6a02709097e3b0151a335e909c44719fac08fdea433": 1
-  },
-  "packages/llm/llm-deepseek/src/protocols/messages/adapter.ts": {
-    "598014dcfe77101781e3c6a02709097e3b0151a335e909c44719fac08fdea433": 1
-  },
-  "packages/llm/llm-deepseek/src/protocols/messages/replay.ts": {
-    "9ebdedf03d9d83739a3d01d1c579242aceca09ea5be1be17f96eacf29e07cdea": 1
-  },
-  "packages/llm/llm-deepseek/tests/adapter.spec.ts": {
-    "34a631902f39d3a40e1baabacdccb986c3a2205cf2a6c8c1880061b87f39609d": 1,
-    "3f65e71f59e11feed30a6ca5bf870cad688d0bd161f6d52fe263a7aaf01bdb19": 2,
-    "b744a3b1ea1021e620ae97ba95bab540b731d7df9634e06fa3830ea7d9e5ebac": 1,
-    "cf2695bf7b16a8d315df73d326e926645d03499422d39f6b97bc569dda04137e": 1,
-    "d09a59b309ad22650abede4b87a64dc6afaf18c08e4313635a22f0121c0a6a92": 1,
-    "eea7d67f2cd0210a9a2d81bce690d485033ea7f120396b8a8b7f2016ea7ae396": 1
-  },
-  "packages/llm/llm-deepseek/tests/loader-composition.spec.ts": {
-    "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
-  },
-  "packages/llm/llm-deepseek/tests/messages/adapter.e2e.ts": {
-    "0dd149237441659d6dc629eb4e30914ac604236cbe023d90693e512b7e300a49": 1
-  },
-  "packages/llm/llm-deepseek/tests/messages/adapter.spec.ts": {
-    "ae6cc7d948e6e78f72fcd1764acabc731e7498c880b7d709710f8bfeee113ef8": 1,
-    "f1f72ca0a6b4cc00365db8c58c0477975b87b4293f0751815e1e971a7191c34d": 1
-  },
-  "packages/llm/llm-deepseek/tests/messages/files.spec.ts": {
-    "65121d4bf51b358c794748d5895b388149f6883d4ae88f6c16b39802813c223f": 1,
-    "eea7d67f2cd0210a9a2d81bce690d485033ea7f120396b8a8b7f2016ea7ae396": 1
-  },
-  "packages/llm/llm-deepseek/tests/messages/serialize.spec.ts": {
-    "02285954262e9d3346a33f080c4aeb89b7f6349014fd23d64e5aeb28a52f1ced": 1,
-    "8c7e2bcfcb534160c7df81de8490cfe4e9891e913c7c429a3f47f603d1129da3": 2,
-    "a394f4cff3c3d3755ffce930afc5cbee43f92de4ae2112a2325b64bdceb74ad2": 1,
-    "ab74fe25dbefba4c45ffa5bab2729b4bb372df0b946711e5d463686e4a0edc02": 2
-  },
-  "packages/llm/llm-deepseek/tests/serialize.spec.ts": {
-    "12712253c43410ab721190981c8b815d102f799ce6942bee3975b035c203dfa8": 1,
-    "98bef9260e144cee077af05112a07d3e9626caa43f06c66ad08f9c024f5469b1": 1,
-    "a394f4cff3c3d3755ffce930afc5cbee43f92de4ae2112a2325b64bdceb74ad2": 1
-  },
   "packages/llm/llm-pi-ai/src/catalog.ts": {
     "5b1064d0195802d24eaa5155c66eb381da6046a8ccd0cacc3d852336475da7ef": 1
   },
@@ -2124,9 +2082,7 @@
     "b50b6842b3565ea7f1441afb3214ab0ccf027df0e44bb485005935849c46f8ea": 1
   },
   "packages/subagent/subagent/src/catalog.ts": {
-    "29a67bf48723006b65c652af8a0ff30a4385bb14d651d91ca3059e1ddcb44fcf": 1,
     "3e704e331ed2fc5d4c0855e2455b31b82924c525f2e267416e393cdbd36c251b": 1,
-    "c3a7c8abe19131a8d98f4fb6a495b590e67a56cbf2e741caccfe730f8261edb0": 1,
     "fdc5fcade0ba1abbc426ccccb07a1ad4998253799b8561815047d95178441cdf": 1
   },
   "packages/subagent/subagent/src/internal.ts": {

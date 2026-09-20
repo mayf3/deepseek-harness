@@ -90,6 +90,7 @@ export interface PackageManifest {
     | undefined
   >
   files?: string[]
+  icon?: string
   publishConfig?: { access?: string }
   repository?: { type?: string; url?: string; directory?: string }
   peerDependencies?: Record<string, string>
@@ -210,9 +211,9 @@ function sameStringList(actual: readonly string[] | undefined, expected: readonl
 }
 
 /**
- * Compute canonical publication patterns, including explicitly exported locale JSON resources.
+ * Compute canonical publication patterns, including the declared icon and exported locale JSON resources.
  * @param manifest - workspace package manifest.
- * @returns deduplicated locale targets followed by the package's runtime and declaration payloads.
+ * @returns the icon and deduplicated locale targets followed by runtime and declaration payloads.
  */
 export function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
   const localeFiles = new Set<string>()
@@ -228,6 +229,7 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),
   ]
   return [
+    ...typeof manifest.icon === 'string' ? [manifest.icon.replace(/^\.\//u, '')] : [],
     ...[...localeFiles].sort(),
     'lib/index.js',
     // Packages with an invariant export publish its runtime as a separate
