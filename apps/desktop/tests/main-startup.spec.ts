@@ -62,7 +62,9 @@ const harness = await vi.hoisted(async () => {
       getZoomFactor: () => 1,
       focus: vi.fn(),
       sendInputEvent: vi.fn(),
-      send: vi.fn(),
+      send: vi.fn((channel: string, state: { policy?: { blocking: boolean } }) => {
+        if (channel === 'dsh-desktop:mandatory-state' && state.policy?.blocking) policyBlocked.resolve()
+      }),
     })
     readonly show = vi.fn()
     readonly hide = vi.fn()
@@ -71,7 +73,7 @@ const harness = await vi.hoisted(async () => {
     readonly setSize = vi.fn()
     readonly setTitleBarOverlay = vi.fn()
     constructor(readonly options: { show: boolean; modal?: boolean }) {
-      super(); if (windowFailure !== undefined) throw windowFailure; windows.push(this); if (options.modal) policyBlocked.resolve()
+      super(); if (windowFailure !== undefined) throw windowFailure; windows.push(this)
     }
     isDestroyed() { return this.destroyed }
     fullscreen = false
@@ -468,7 +470,7 @@ describe('desktop main startup', () => {
     expect(testAuth.login).not.toHaveBeenCalled()
   })
 
-  it('retains the same blocking window and running Host after expired test login is cancelled', async () => {
+  it('retains the embedded block and running Host after expired test login is cancelled', async () => {
     harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test', allowedAuthOrigins: ['https://login.example.com'],
       allowedPageOrigins: ['https://downloads.example.com'], intervalMs: 1000, jitter: 0 }
     const request = vi.fn<typeof fetch>().mockImplementation(async () =>
@@ -479,7 +481,7 @@ describe('desktop main startup', () => {
     const host = await readyForUpdate()
     await harness.policyBlocked.promise
     await vi.advanceTimersByTimeAsync(1000)
-    const modal = harness.windows.find(window => window.options.modal)!
+    const modal = harness.windows[0]!
     const owned = { sender: modal.webContents, senderFrame: modal.webContents.mainFrame }
     harness.dialog.showMessageBox.mockResolvedValue({ response: 0 })
     testAuth.login.mockResolvedValueOnce('cancelled')
@@ -867,14 +869,15 @@ describe('desktop main startup', () => {
     vi.stubGlobal('fetch', request)
     const host = await readyForUpdate()
     await harness.policyBlocked.promise
-    const modal = harness.windows.find(window => window.options.modal)!
+    const modal = harness.windows[0]!
     expect(modal).toBeDefined()
+    expect(harness.windows).toHaveLength(1)
     const status = harness.handlers.get(MANDATORY_IPC.status)!
     const action = harness.handlers.get(MANDATORY_IPC.action)!
     const owned = { sender: modal.webContents, senderFrame: modal.webContents.mainFrame }
     expect(status(owned)).toMatchObject({ policy: { blocking: true } })
     const unowned = [
-      { ...owned, sender: harness.windows[0]!.webContents },
+      { ...owned, sender: {} },
       { ...owned, senderFrame: { url: 'dsh-app://app/index.html' } },
       { ...owned, senderFrame: { url: 'https://untrusted.example.com/' } },
     ]
@@ -899,7 +902,8 @@ describe('desktop main startup', () => {
     await vi.advanceTimersByTimeAsync(20_000)
     expect(modal.isDestroyed()).toBe(false)
     await vi.advanceTimersByTimeAsync(150)
-    expect(modal.isDestroyed()).toBe(true)
+    expect(modal.isDestroyed()).toBe(false)
+    expect(modal.webContents.send.mock.calls.at(-1)).toMatchObject([MANDATORY_IPC.state, { policy: { blocking: false } }])
     expect(host.stop).not.toHaveBeenCalled()
     expect(request.mock.calls[0]![1]!.headers).toMatchObject({ 'x-client-bundle-id': 'com.deepseek.dsh', 'x-client-version': '1.0.0' })
   })
@@ -1115,7 +1119,7 @@ describe('desktop main startup', () => {
   })
 
   async function answerMandatory(action: 'install' | 'later') {
-    const modal = harness.windows.find(window => window.options.modal && !window.isDestroyed())!
+    const modal = harness.windows[0]!
     const event = { sender: modal.webContents, senderFrame: modal.webContents.mainFrame }
     await vi.waitFor(() => {
       expect(harness.handlers.get(MANDATORY_IPC.status)!(event)).toHaveProperty('confirmation')
@@ -1124,14 +1128,14 @@ describe('desktop main startup', () => {
     await harness.handlers.get(MANDATORY_IPC.action)!(event, action, view.confirmation.version, view.confirmation.revision)
   }
 
-  it('releases the mandatory modal when the confirmed installer quits Electron', async () => {
+  it('closes the main window when the confirmed installer quits Electron', async () => {
     harness.embeddedPolicy = { origin: 'https://policy.example.com', allowedPageOrigins: ['https://downloads.example.com'] }
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ code: 40005, data: {
       show_content: { title: 'Update required', detail: 'Please update' }, desktop_app_link: 'https://downloads.example.com/',
     } })))
     const host = await readyForUpdate()
     await harness.policyBlocked.promise
-    const modal = harness.windows.find(window => window.options.modal)!
+    const modal = harness.windows[0]!
     const preparing = harness.prepareUpdate()
     await answerMandatory('install')
     await host.stopping.promise
@@ -1175,7 +1179,10 @@ describe('desktop main startup', () => {
     await expect(retry).resolves.toBe(false)
     expect(replacement.updateTasks.mock.calls).toEqual([['inspect']])
     expect(replacement.stop).not.toHaveBeenCalled()
-    if (mandatory) expect(harness.windows.find(window => window.options.modal)?.isDestroyed()).toBe(false)
+    if (mandatory) {
+      expect(harness.windows).toHaveLength(1)
+      expect(harness.windows[0]!.isDestroyed()).toBe(false)
+    }
   })
 
   it.each([false, true])('restores a confirmed non-graceful exit without approving installation, mandatory: %s', async (mandatory) => {
@@ -1209,7 +1216,10 @@ describe('desktop main startup', () => {
     await expect(retry).resolves.toBe(false)
     expect(replacement.updateTasks.mock.calls).toEqual([['inspect']])
     expect(replacement.stop).not.toHaveBeenCalled()
-    if (mandatory) expect(harness.windows.find(window => window.options.modal)?.isDestroyed()).toBe(false)
+    if (mandatory) {
+      expect(harness.windows).toHaveLength(1)
+      expect(harness.windows[0]!.isDestroyed()).toBe(false)
+    }
   })
 
   it('does not replace a Host whose failed stop has not confirmed process exit', async () => {

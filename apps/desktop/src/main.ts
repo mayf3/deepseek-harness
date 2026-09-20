@@ -410,7 +410,7 @@ async function main(): Promise<void> {
   protocol.handle(SCHEME, (request) => {
     const url = new URL(request.url)
     // Serves shell URLs declared in update-dialog.ts and mandatory-update-window.ts plus their renderer assets.
-    // Removing this route leaves those modal windows empty while their parent remains blocked.
+    // Removing this route leaves those shell windows and embedded documents empty while their parent remains blocked.
     if (url.hostname === 'shell') return serveWebDocument(request, join(app.getAppPath(), 'renderer'))
     if (url.hostname === 'app') {
       if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname.startsWith('/assets/')
