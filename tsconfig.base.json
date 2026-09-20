@@ -193,6 +193,7 @@
       "@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client": ["./packages/client/ui-sidebar-documentpreview/src/client"],
       "@deepseek-ai/dsh-client-ui-sidebar-browser": ["./packages/client/ui-sidebar-browser/src"],
       "@deepseek-ai/dsh-client-ui-sidebar-browser/client": ["./packages/client/ui-sidebar-browser/src/client"],
+      "@deepseek-ai/dsh-client-ui-sidebar-browser/desktop": ["./packages/client/ui-sidebar-browser/src/desktop.ts"],
       "@deepseek-ai/dsh-api-workspace-files": ["./packages/api/workspace-files/src"],
       "@deepseek-ai/dsh-api-workspace-files/types": ["./packages/api/workspace-files/src/types.ts"],
       "@deepseek-ai/dsh-api-workspace-files/client": ["./packages/api/workspace-files/src/client/index.ts"],

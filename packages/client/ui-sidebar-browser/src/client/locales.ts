@@ -20,8 +20,9 @@ export const zh = {
   'error.protocol': '只支持 HTTP 和 HTTPS 地址；本地文件请使用文档预览。',
   'error.credentials': '地址不能包含用户名或密码。',
   'error.application-origin': '不能在嵌入浏览器中打开 DSH 应用自身。',
-  'web.loadFailed': '页面报告加载失败或可能禁止嵌入；可尝试在系统浏览器中打开。',
-  'web.unknown': '页面已在 iframe 内跳转；Web 模式无法读取当前 URL。',
+  'load.failed': '页面加载失败；请刷新重试或在系统浏览器中打开。',
+  'load.failed.detail': '页面加载失败（{code}）：{description}',
+  'address.unknown': '页面已跳转；当前载体无法读取新的 URL。',
 } satisfies Record<string, string>
 
 /** Browser dictionary key union. */
@@ -49,8 +50,9 @@ export const en = {
   'error.protocol': 'Only HTTP and HTTPS addresses are supported; use Document Preview for local files.',
   'error.credentials': 'Addresses cannot contain a username or password.',
   'error.application-origin': 'The embedded browser cannot open the DSH application itself.',
-  'web.loadFailed': 'The page reported a load failure or may block embedding; try opening it in the system browser.',
-  'web.unknown': 'The page navigated inside the iframe; Web mode cannot read its current URL.',
+  'load.failed': 'The page could not load; reload or open it in the system browser.',
+  'load.failed.detail': 'Page load failed ({code}): {description}',
+  'address.unknown': 'The page navigated; this carrier cannot read its new URL.',
 } satisfies Record<SidebarBrowserKey, string>
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

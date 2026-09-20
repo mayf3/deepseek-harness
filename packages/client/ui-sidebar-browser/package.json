@@ -22,6 +22,10 @@
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./desktop": {
+      "types": "./lib/types/desktop.d.ts",
+      "default": "./lib/desktop.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -44,6 +48,8 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-api-workspace-controller": "workspace:^",
+    "@deepseek-ai/dsh-brand": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
     "@deepseek-ai/dsh-client-store": "workspace:^",
     "@deepseek-ai/dsh-client-ui-dockkit": "workspace:^",
@@ -61,6 +67,7 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
+    "lib/desktop.js",
     "lib/types/**/*.d.ts"
   ]
 }

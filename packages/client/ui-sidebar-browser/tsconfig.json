@@ -9,6 +9,8 @@
   ],
   "references": [
     { "path": "../../../vendor/cordis" },
+    { "path": "../../api/workspace-controller/tsconfig.client.json" },
+    { "path": "../../util/brand" },
     { "path": "../locale" },
     { "path": "../store" },
     { "path": "../ui-dockkit" },
