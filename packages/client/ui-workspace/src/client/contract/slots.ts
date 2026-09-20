@@ -245,6 +245,8 @@ export type RowToast =
   | { kind: 'unpinFailed' }
   | { kind: 'archivedNotOpenable' }
   | { kind: 'defaultWorkspaceFailed' }
+  /** An explicit New Session request the Host refused; `message` is the failure in the Host's own words, untranslated. */
+  | { kind: 'createFailed'; message: string }
 
 /** The notice on display; `seq` keys remounts so a repeated notice restarts its hold. */
 export type RowToastState = RowToast & { seq: number }

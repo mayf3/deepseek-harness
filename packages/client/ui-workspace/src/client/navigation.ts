@@ -17,6 +17,7 @@ import type {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type { RowToast } from './contract/slots.ts'
 import { en, zh } from './locales.ts'
 import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
 import type { WorkspaceViewStoreActions } from './stores.ts'
@@ -38,6 +39,7 @@ export interface UiWorkspace {
    * @param workspaceId - target Workspace.
    * @param beforeOpen - optional synchronous preparation for the selected Session, skipped after supersession.
    * @returns completion; a superseded request may create a Session but does not open it.
+   * @throws when the Session cannot be created; the failure is also shown through the Workspace notice.
    */
   openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>
   /**
@@ -53,7 +55,8 @@ export interface UiWorkspace {
    */
   connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
   /**
-   * Start a New Session flow and navigate to its Session.
+   * Start a New Session flow and navigate to its Session; a creation the Host
+   * refuses is shown through the Workspace notice and leaves the selection as it was.
    * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
    */
   startSession(workspaceId?: WorkspaceId): void
@@ -133,7 +136,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
    * @param workspaces - pure Workspace Controller.
    * @param sessions - pure Session Controller.
    * @param view - the browser's viewing-store write set (one instance shared with its registration).
-   * @param notifyDefaultFailure - show the startup creation failure through the Workspace notice channel.
+   * @param notify - show one notice through the Workspace notice channel.
    */
   constructor(
     ctx: Context,
@@ -141,7 +144,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     private readonly workspaces: IWorkspaces,
     private readonly sessions: ISessions,
     private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>,
-    private readonly notifyDefaultFailure: () => void,
+    private readonly notify: (toast: RowToast) => void,
   ) {
     super(ctx, 'uiWorkspace')
     ctx.effect(() => {
@@ -187,9 +190,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     try {
       return await this.sessions.create({ workspaceId, sessionId })
     } catch (error: unknown) {
-      // Client plugin bundles do not share error-class identity.
-      if (!(error instanceof Error) || error.name !== 'SessionCreateError'
-        || (error as SessionCreateError).rpcError.code !== 'session/writer-held') throw error
+      if (sessionCreateErrorOf(error)?.rpcError.code !== 'session/writer-held') throw error
       return this.sessions.create({ workspaceId })
     }
   }
@@ -200,7 +201,15 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
-    const sessionId = await this.connectWorkspace(workspaceId)
+    let sessionId: SessionId
+    try {
+      sessionId = await this.connectWorkspace(workspaceId)
+    } catch (error: unknown) {
+      // The user asked for this Session, so the refusal is theirs to read;
+      // startup restoration goes through connectWorkspace directly and stays quiet.
+      this.notify({ kind: 'createFailed', message: creationFailureMessage(error) })
+      throw error
+    }
     if (navigation.aborted) return
     this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
   }
@@ -344,7 +353,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         title,
       }, signal)
     } catch (_error: unknown) {
-      if (!signal.aborted) this.notifyDefaultFailure()
+      if (!signal.aborted) this.notify({ kind: 'defaultWorkspaceFailed' })
       return undefined
     }
   }
@@ -398,6 +407,24 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     if (panel === 'reveal') this.ctx.layout.selectPanel(null)
   }
 
+}
+
+/**
+ * The Session Controller's creation failure `error` is, or undefined. Client
+ * plugin bundles do not share error-class identity, so the name decides.
+ */
+function sessionCreateErrorOf(error: unknown): SessionCreateError | undefined {
+  return error instanceof Error && error.name === 'SessionCreateError' ? error as SessionCreateError : undefined
+}
+
+/**
+ * The words a failed Session creation is reported in: a Host refusal keeps its
+ * stable code and message; any other failure keeps its own message.
+ */
+function creationFailureMessage(error: unknown): string {
+  const refused = sessionCreateErrorOf(error)
+  if (refused !== undefined) return `${refused.rpcError.code}: ${refused.rpcError.message}`
+  return error instanceof Error ? error.message : String(error)
 }
 
 /** Stable tie-breaking follows Host Workspace order. */

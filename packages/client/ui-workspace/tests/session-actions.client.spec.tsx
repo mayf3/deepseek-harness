@@ -404,6 +404,24 @@ describe('RowActionToast', () => {
     }
   })
 
+  it('shows a refused creation with the Host reason and holds it as long as the archived notice', () => {
+    vi.useFakeTimers()
+    try {
+      const { dismissToast, notify } = toastSurface()
+      notify({ kind: 'createFailed', message: 'agent-preset/invalid: agent-presets: preset "broken" failed to mount' })
+      const alert = screen.getByRole('alert')
+      expect(alert.textContent).toBe('新建会话失败：agent-preset/invalid: agent-presets: preset "broken" failed to mount')
+      expect(alert.querySelector('button')).toBeNull()
+      act(() => { vi.advanceTimersByTime(4000) })
+      expect(dismissToast).not.toHaveBeenCalled()
+      act(() => { vi.advanceTimersByTime(3000) })
+      expect(dismissToast).toHaveBeenCalledOnce()
+      expect(screen.queryByRole('alert')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('the archived notice holds longer than a plain notice, and a repeat restarts its hold', () => {
     vi.useFakeTimers()
     try {

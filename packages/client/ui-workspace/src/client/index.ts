@@ -107,8 +107,7 @@ export function apply(ctx: Context): void {
   let toastSeq = 0
   const notify = (toast: RowToast): void => { rowToast.set({ ...toast, seq: ++toastSeq }) }
   const uiWorkspace = new UiWorkspaceService(
-    ctx, ctx.remote.directoryPicker, workspaces, sessions, viewInstance.actions,
-    () => { notify({ kind: 'defaultWorkspaceFailed' }) },
+    ctx, ctx.remote.directoryPicker, workspaces, sessions, viewInstance.actions, notify,
   )
   ctx.slots.provideRoot({ hooks: { workspaces: workspaces.list } })
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
