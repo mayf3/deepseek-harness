@@ -29,7 +29,7 @@ export interface AssistantMarkdownProps {
   interrupted?: boolean | undefined
   /** Render consecutive image blocks through the attachment slot. */
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
-  /** Hide reasoning that belongs to the Turn-level process disclosure or a collapsed step group. */
+  /** Hide reasoning that belongs to the Turn-level process disclosure. */
   reasoningHidden?: boolean | undefined
   /** Live display policy for reasoning summaries. */
   usePresentation: UsePresentation

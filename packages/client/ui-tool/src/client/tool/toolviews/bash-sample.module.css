@@ -172,7 +172,7 @@
 }
 
 .root:hover .title,
-.root:hover .summary:not(.errorSummary) {
+.root:hover .summary:not(.errorSummary):not(.stoppedSummary) {
   color: var(--dsw-alias-label-primary);
 }
 

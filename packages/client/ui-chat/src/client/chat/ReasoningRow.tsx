@@ -16,7 +16,7 @@ function firstLine(text: string): string {
 function latestCompletedParagraphFirstLine(text: string): string {
   let summary = ''
   let paragraphStart = 0
-  const separator = /\r?\n[\t ]*\r?\n/g
+  const separator = /\r?\n(?:[\t ]*\r?\n)+/g
   while (true) {
     const nextParagraph = separator.exec(text)
     const paragraphEnd = nextParagraph === null ? text.length

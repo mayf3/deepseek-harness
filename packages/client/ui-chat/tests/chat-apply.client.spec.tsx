@@ -88,6 +88,12 @@ function storeOf(runtime: SlotTestRuntime, key: 'conversation.session' | 'conver
 }
 
 describe('Chat apply wiring', () => {
+  it('keeps presentation-policy helpers out of the public browser entry', async () => {
+    const entry = await import('../src/client/index.ts')
+    expect(entry).not.toHaveProperty('derivePresentationPolicy')
+    expect(entry).not.toHaveProperty('presentationPolicyFor')
+  })
+
   it('contributes Chat View, node renderers, and stats', async () => {
     const b = await bench()
     const views = b.runtime.slots.entries('conversation.view')
