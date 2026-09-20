@@ -80,7 +80,8 @@ export interface SidebarRightInjected {
    * Publish this seat's session, actions, and the store's surfaces to `ctx.sidebarRight`.
    *
    * The service is root-scoped and cannot read a per-entry store, so the only
-   * honest source is the mounted seat. Held for as long as the seat is mounted.
+   * honest source is the mounted seat. Held for as long as the seat is mounted;
+   * the service publishes the bound session through `ctx.sidebarRight.mounted`.
    * @param binding - what a command needs to act on this session, and what a tab's own action needs to act on its.
    * @returns a release callback.
    */

@@ -495,9 +495,10 @@ describe('connection client apply', () => {
   it('exposes a worker-local Gateway stream through connection.rpc.open', async () => {
     ;(globalThis as Win).location = { hostname: 'preview.example' }
     const openStream = vi.fn<NonNullable<ClientTransportHooks['openStream']>>(
-      (endpoint, payload, signal) => (async function *(): AsyncGenerator {
+      (endpoint, payload, signal, uplink) => (async function *(): AsyncGenerator {
         signal.throwIfAborted()
         yield { endpoint, payload }
+        if (uplink !== undefined) yield* uplink
       })(),
     )
     ;(globalThis as Win).__DSH_TRANSPORT__ = {
@@ -521,7 +522,14 @@ describe('connection client apply', () => {
       'session/follow',
       { args: { sessionId: 'session-1' } },
       abort.signal,
+      undefined,
     )
+
+    const uplink = (async function *(): AsyncGenerator<string> { yield 'typed' })()
+    const echoed = []
+    for await (const value of open('/api', 'job/attach', { args: {} }, abort.signal, uplink)) echoed.push(value)
+    expect(echoed).toEqual([{ endpoint: 'job/attach', payload: { args: {} } }, 'typed'])
+    expect(openStream).toHaveBeenLastCalledWith('job/attach', { args: {} }, abort.signal, uplink)
     expect(handle.isLoopback).toBe(true)
     expect(() => open('/rpc', 'session/follow', {}, abort.signal))
       .toThrow('worker-local streams require the /api channel')

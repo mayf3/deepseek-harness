@@ -20,6 +20,7 @@ import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { draftBlocker, type AgentPresetSectionState } from './section-store.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
+import { PresetGuideDialog, presetGuide, type PresetGuidePage } from './PresetGuideDialog.tsx'
 import css from './AgentPresetSection.module.css'
 
 /** Registration-side business face for the management section. */
@@ -184,6 +185,10 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
   const { useAgentPresetSection, t, load } = props
   const state = useAgentPresetSection(snapshot => snapshot)
   const developerTools = props.useDeveloperTools(enabled => enabled)
+  const [guide, setGuide] = useState<{
+    content: NonNullable<ReturnType<typeof presetGuide>>
+    page: PresetGuidePage
+  } | null>(null)
   const viewedId = state.view?.id
   const viewedRow = viewedId === undefined ? undefined : state.rows.find(row => row.id === viewedId)
   const viewedTitle = state.view === null
@@ -263,6 +268,7 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
           .map(row => ({
             row,
             text: presetDisplayText(row, t),
+            help: presetGuide(row.id, row.trust),
             selectionAction: row.broken !== undefined
               ? t('brokenBadge')
               : row.isDefault
@@ -278,7 +284,7 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
             <h3 className={css.groupHead}>{heading}</h3>
             {group.length === 0 ? null : (
               <ul className={css.cards}>
-                {group.map(({ row, text, selectionAction }) => (
+                {group.map(({ row, text, selectionAction, help }) => (
                   <li
                     key={row.id}
                     className={[
@@ -322,29 +328,27 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                       }}
                     >
                       <span className={css.cardHead}>
-                        <span className={css.cardName}>{text.name}</span>
-                        {row.broken !== undefined
-                          ? (
-                            <span className={css.brokenBadge}>
-                              {t('brokenBadge')}
-                              {/* Pointer-only, hence `aria-hidden`: the same
-                                reason reaches assistive technology through the
-                                alert below, and a second copy inside the card's
-                                own text would be read out twice. */}
-                              <span className={css.brokenTip} aria-hidden="true">{row.broken}</span>
-                            </span>
-                          )
-                          : null}
-                        <Tag>
-                          {row.trust === 'user' ? t('userTrust') : t('builtIn')}
-                        </Tag>
-                        {row.isDefault
-                          ? (
-                            <Tag tone="solid" className={css.inUse}>
-                              {state.showPicker ? t('inUse') : t('selectionOffDefault')}
-                            </Tag>
-                          )
-                          : null}
+                        <span className={css.cardIdentity}>
+                          <span className={css.cardName} title={text.name}>{text.name}</span>
+                          {row.broken !== undefined
+                            ? (
+                              <span className={css.brokenBadge}>
+                                {t('brokenBadge')}
+                                {/* Pointer-only, hence `aria-hidden`: the same
+                                  reason reaches assistive technology through the
+                                  alert below, and a second copy inside the card's
+                                  own text would be read out twice. */}
+                                <span className={css.brokenTip} aria-hidden="true">{row.broken}</span>
+                              </span>
+                            )
+                            : null}
+                          <Tag tone={row.isDefault ? 'solid' : 'outline'}>
+                            {row.isDefault
+                              ? state.showPicker ? t('inUse') : t('selectionOffDefault')
+                              : row.trust === 'user' ? t('userTrust') : t('builtIn')}
+                          </Tag>
+                        </span>
+                        <code className={css.cardId} title={row.id}>{row.id}</code>
                       </span>
                       <CardDescription text={text.description ?? t('noDescription')} />
                       {/* Visually hidden, deliberately: the pointer path is the
@@ -354,9 +358,28 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                       {row.broken === undefined
                         ? null
                         : <span className={css.cardBrokenReason} role="alert">{row.broken}</span>}
-                      <code className={css.cardId}>{row.id}</code>
                     </button>
                     <div className={css.cardFoot}>
+                      {help === undefined ? null : (
+                        <div className={css.cardHelp}>
+                          <Button
+                            variant="ghost"
+                            className={css.helpButton}
+                            aria-label={`${t('modeExplanation')}: ${text.name}`}
+                            onClick={() => { setGuide({ content: help, page: 'explanation' }) }}
+                          >
+                            {t('modeExplanation')}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className={css.helpButton}
+                            aria-label={`${t('howToUse')}: ${text.name}`}
+                            onClick={() => { setGuide({ content: help, page: 'usage' }) }}
+                          >
+                            {t('howToUse')}
+                          </Button>
+                        </div>
+                      )}
                       {/* Shipped presets are the compositions a copy starts
                         from, so READING one is the point; a custom preset is
                         edited in its files instead, which the location action
@@ -431,6 +454,14 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
           </section>
         )
       })}
+      {guide === null ? null : (
+        <PresetGuideDialog
+          guide={guide.content}
+          initialPage={guide.page}
+          t={t}
+          onClose={() => { setGuide(null) }}
+        />
+      )}
       <CopyDialog
         state={state}
         t={t}

@@ -54,6 +54,9 @@ importers:
       '@deepseek-ai/dsh-tool-session-query':
         specifier: workspace:^
         version: link:packages/session-query/tool-session-query
+      '@deepseek-ai/dsh-tool-workspace-dependencies':
+        specifier: workspace:^
+        version: link:packages/skill/tool-workspace-dependencies
       '@deepseek-ai/dsh-web-fetch-http':
         specifier: workspace:^
         version: link:packages/web/web-fetch-http
@@ -96,9 +99,15 @@ importers:
       execa:
         specifier: ^10.0.0
         version: 10.0.0
+      extract-zip:
+        specifier: ^2.0.1
+        version: 2.0.1(supports-color@9.4.0)
       fast-check:
         specifier: ^4.8.0
         version: 4.8.0
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
       istanbul-lib-report:
         specifier: ^3.0.1
         version: 3.0.1
@@ -135,6 +144,9 @@ importers:
       oxlint-tsgolint:
         specifier: 7.0.2001
         version: 7.0.2001
+      pnpm:
+        specifier: 11.7.0
+        version: 11.7.0
       publint:
         specifier: ^0.3.21
         version: 0.3.21
@@ -144,6 +156,9 @@ importers:
       spdx-expression-parse:
         specifier: ^5.0.0
         version: 5.0.0
+      tar:
+        specifier: ^7.5.0
+        version: 7.5.22
       tsdown:
         specifier: ^0.22.2
         version: 0.22.2(oxc-resolver@11.20.0)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)
@@ -294,6 +309,9 @@ importers:
       '@deepseek-ai/dsh-skill-filesystem':
         specifier: workspace:^
         version: link:../../packages/skill/skill-filesystem
+      '@deepseek-ai/dsh-skill-office':
+        specifier: workspace:^
+        version: link:../../packages/skill/skill-office
       '@deepseek-ai/dsh-terminal':
         specifier: workspace:^
         version: link:../../packages/terminal/terminal
@@ -366,6 +384,9 @@ importers:
       '@deepseek-ai/dsh-tool-workflow':
         specifier: workspace:^
         version: link:../../packages/workflow/tool-workflow
+      '@deepseek-ai/dsh-tool-workspace-dependencies':
+        specifier: workspace:^
+        version: link:../../packages/skill/tool-workspace-dependencies
       '@deepseek-ai/dsh-web-app':
         specifier: workspace:^
         version: link:../../packages/bundle/web-app
@@ -572,9 +593,6 @@ importers:
       extract-zip:
         specifier: ^2.0.1
         version: 2.0.1(supports-color@9.4.0)
-      fflate:
-        specifier: ^0.8.2
-        version: 0.8.3
       js-yaml:
         specifier: ^4.2.0
         version: 4.3.1
@@ -584,9 +602,6 @@ importers:
       pnpm:
         specifier: 11.7.0
         version: 11.7.0
-      tar:
-        specifier: ^7.5.0
-        version: 7.5.22
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -620,9 +635,9 @@ importers:
       '@deepseek-ai/dsh-skill-office':
         specifier: workspace:^
         version: link:../../packages/skill/skill-office
-      '@deepseek-ai/dsh-tools':
+      '@deepseek-ai/dsh-tool-workspace-dependencies':
         specifier: workspace:^
-        version: link:../../packages/core/tools
+        version: link:../../packages/skill/tool-workspace-dependencies
 
   apps/web:
     devDependencies:
@@ -1270,6 +1285,9 @@ importers:
       '@deepseek-ai/dsh-fs':
         specifier: workspace:^
         version: link:../../fs/fs
+      '@deepseek-ai/dsh-remote-mock':
+        specifier: workspace:^
+        version: link:../../test-support/remote-mock
       '@deepseek-ai/dsh-sandbox':
         specifier: workspace:^
         version: link:../../sandbox/sandbox
@@ -1371,6 +1389,9 @@ importers:
       '@deepseek-ai/dsh-fs':
         specifier: workspace:^
         version: link:../../fs/fs
+      '@deepseek-ai/dsh-remote-mock':
+        specifier: workspace:^
+        version: link:../../test-support/remote-mock
       '@deepseek-ai/dsh-sandbox-policy':
         specifier: workspace:^
         version: link:../../sandbox/sandbox-policy
@@ -1951,6 +1972,12 @@ importers:
       '@deepseek-ai/dsh-sdk-jsonrpc-server':
         specifier: workspace:^
         version: link:../../sdk/server
+      '@deepseek-ai/dsh-skill-office':
+        specifier: workspace:^
+        version: link:../../skill/skill-office
+      '@deepseek-ai/dsh-tool-workspace-dependencies':
+        specifier: workspace:^
+        version: link:../../skill/tool-workspace-dependencies
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -2378,9 +2405,15 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-scope':
+        specifier: workspace:^
+        version: link:../../core/scope
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
 
   packages/client/file-upload:
     dependencies:
@@ -10378,6 +10411,34 @@ importers:
         specifier: workspace:^
         version: link:../../core/tools
 
+  packages/skill/tool-workspace-dependencies:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
+
   packages/spill/spill:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -11844,6 +11905,10 @@ importers:
         version: 4.4.3
 
   packages/typert/protocol:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -12694,6 +12759,9 @@ importers:
       '@deepseek-ai/dsh-skill-filesystem':
         specifier: workspace:^
         version: link:../../packages/skill/skill-filesystem
+      '@deepseek-ai/dsh-skill-office':
+        specifier: workspace:^
+        version: link:../../packages/skill/skill-office
       '@deepseek-ai/dsh-spill':
         specifier: workspace:^
         version: link:../../packages/spill/spill
@@ -12793,6 +12861,9 @@ importers:
       '@deepseek-ai/dsh-tool-workflow':
         specifier: workspace:^
         version: link:../../packages/workflow/tool-workflow
+      '@deepseek-ai/dsh-tool-workspace-dependencies':
+        specifier: workspace:^
+        version: link:../../packages/skill/tool-workspace-dependencies
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../packages/core/tools

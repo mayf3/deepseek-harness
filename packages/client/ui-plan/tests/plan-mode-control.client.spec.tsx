@@ -11,6 +11,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { PlanProjection } from '@deepseek-ai/dsh-plan-mode/client'
 import { PlanChip, type PlanChipProps } from '../src/client/PlanModeControl.tsx'
+import css from '../src/client/PlanModeControl.module.css'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/client/locales.ts'
 
@@ -52,6 +53,21 @@ describe('PlanChip', () => {
     cleanup()
     setup({ active: false, pending: true })
     expect(chip().textContent).toBe('计划')
+  })
+
+  it('leads with the plan glyph and swaps in the circled close only while hovered', () => {
+    setup({ active: true, pending: false })
+    // Glyph-then-label like the sibling access-mode trigger; the two glyphs
+    // share one slot and CSS shows exactly one of them, so no trailing cross.
+    const glyphs = chip().querySelectorAll('svg')
+    expect(glyphs).toHaveLength(2)
+    const slot = glyphs[0]!.parentElement!
+    expect(slot).toBe(chip().firstElementChild)
+    expect(slot.getAttribute('aria-hidden')).toBe('true')
+    expect(glyphs[0]!.classList.contains(css.restGlyph!)).toBe(true)
+    expect(glyphs[1]!.classList.contains(css.hoverGlyph!)).toBe(true)
+    expect(glyphs[1]!.parentElement).toBe(slot)
+    expect(chip().lastChild?.textContent).toBe('计划')
   })
 
   it('executes /plan off once and follows the projection down', async () => {
