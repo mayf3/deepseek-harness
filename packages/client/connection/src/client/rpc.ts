@@ -124,7 +124,7 @@ async function parseBinaryResponse(response: Response): Promise<ReturnType<typeo
       }
       if (!Object.hasOwn(value, segment)) throw new TypeError('connection: invalid binary response path')
       parent = value
-      key = segment as string | number
+      key = segment
     }
     if (Reflect.get(parent, key) !== null) throw new TypeError('connection: invalid binary response placeholder')
     Object.defineProperty(parent, key, {
