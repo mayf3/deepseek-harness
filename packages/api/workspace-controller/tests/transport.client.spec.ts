@@ -310,6 +310,18 @@ describe('Workspace state stream', () => {
 })
 
 describe('WorkspaceController', () => {
+  it('returns no Workspace when startup is ineligible without changing the list', async ({ mock, start }) => {
+    const { remote, client } = await gatewayClient(mock, start)
+    const model = new ClientWorkspaceModel(remote.workspace)
+    model.replaceBaseline({ items: [], archivedSessionIds: [], pinnedSessionIds: [] })
+    const controller = new WorkspaceController(client.ctx, model)
+    const before = model.getSnapshot()
+    mock.remote.workspace.initializeDefault.mockResolvedValueOnce({ ok: true, value: undefined })
+    await expect(controller.initializeDefault({ directoryName: 'Default workspace', title: 'Default workspace' }))
+      .resolves.toBeUndefined()
+    expect(model.getSnapshot()).toBe(before)
+  })
+
   it('publishes the model source and exposes successful Workspace commands', async ({ mock, start }) => {
     const { remote, client } = await gatewayClient(mock, start)
     const model = new ClientWorkspaceModel(remote.workspace)

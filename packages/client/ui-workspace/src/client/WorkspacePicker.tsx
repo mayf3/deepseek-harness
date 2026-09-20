@@ -231,21 +231,45 @@ export function WorkspacePicker({
   onClose,
   createWorkspace,
   useDirectoryFlow,
+  useDefaultFailure,
+  dismissDefaultFailure,
   renderSlot,
   t,
 }: WorkspacePickerProps) {
+  const failed = useDefaultFailure(value => value)
+  const flowAvailable = useDirectoryFlow(value => value)
+  const [recovering, setRecovering] = useState(false)
   return (
-    <WorkspacePickFlow
-      t={t}
-      open={open}
-      anchorRef={anchorRef}
-      useWorkspaces={useWorkspaces}
-      createWorkspace={createWorkspace}
-      useDirectoryFlow={useDirectoryFlow}
-      renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
-      selectedId={selectedId}
-      onPick={onPick}
-      onClose={onClose}
-    />
+    <>
+      <WorkspacePickFlow
+        t={t}
+        open={open || recovering}
+        anchorRef={anchorRef}
+        useWorkspaces={useWorkspaces}
+        createWorkspace={createWorkspace}
+        useDirectoryFlow={useDirectoryFlow}
+        renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
+        selectedId={selectedId}
+        onPick={onPick}
+        onClose={() => { setRecovering(false); onClose() }}
+      />
+      <Modal
+        open={failed}
+        title={t('defaultWorkspace.failed')}
+        closeLabel={t('close')}
+        onClose={dismissDefaultFailure}
+        footer={(
+          <>
+            <Button variant="outline" onClick={dismissDefaultFailure}>{t('cancel')}</Button>
+            <Button variant="primary" disabled={!flowAvailable} onClick={() => {
+              dismissDefaultFailure()
+              setRecovering(true)
+            }}>{t('defaultWorkspace.choose')}</Button>
+          </>
+        )}
+      >
+        {t('defaultWorkspace.retry')}
+      </Modal>
+    </>
   )
 }

@@ -2,7 +2,6 @@
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { CommandContribution, CommandUiContract } from '@deepseek-ai/dsh-client-ui-commands/client'
-import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -74,14 +73,12 @@ async function bench() {
     opened(id)
   }
   const openSession = vi.fn((id: SessionId) => { replaceMain(id) })
-  const openDefaultWorkspace = vi.fn<UiWorkspace['openDefaultWorkspace']>(async () => undefined)
   runtime.ctx.provide('uiWorkspace', {
     openWorkspace: async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
       const id = await connectWorkspace()
       replaceMain(id, beforeOpen)
     },
     openSession,
-    openDefaultWorkspace,
   } as never)
   const sessionFake = sessionFakeFor()
   await runtime.sessions.add({
@@ -139,113 +136,10 @@ async function bench() {
   return {
     runtime, feature, slots: runtime.slots, entryOf, conversationApi, headerApi, residentApi, composerApi,
     inputApi, viewSource, sessionFake, connectWorkspace, rootUpload, uploads, rootReference, references, opened,
-    locale, openDefaultWorkspace, replaceMain,
   }
 }
 
 describe('Conversation inject API', () => {
-  it.each([false, true])('keeps the saved first draft after its Session retires (reopened during preparation: %s)', async (reopenEarly) => {
-    const b = await bench()
-    onTestFinished(() => b.runtime.dispose())
-    const settings = Promise.withResolvers<undefined>()
-    const started = Promise.withResolvers<undefined>()
-    b.runtime.ctx.on('conversation/prepare-first-send', () => {
-      started.resolve(undefined)
-      return settings.promise
-    })
-    b.openDefaultWorkspace.mockImplementation(async (_request, beforeOpen) => {
-      b.replaceMain(ROOT, beforeOpen)
-      return ROOT
-    })
-    const body = b.conversationApi(ROOT)
-    const unmirror = body.injected.bindDraftMirror(body.instance.actions.setDraft)
-    const composer = b.composerApi(undefined)
-    let reopened: SessionReference | undefined
-    try {
-      composer.keyboard.paste('keep this first draft')
-      composer.keyboard.submit('queue')
-      await started.promise
-      expect(body.instance.store.getSnapshot().draft).toBe('keep this first draft')
-      const other = 'other-first-send' as SessionId
-      await b.runtime.sessions.add({ id: other, session: sessionFakeFor() })
-      unmirror()
-      b.rootReference.release()
-      b.replaceMain(other)
-      await vi.waitFor(() => { expect(b.runtime.sessions.binding(ROOT)).toBeUndefined() })
-      if (reopenEarly) reopened = b.runtime.sessions.retain(ROOT)
-      settings.resolve(undefined)
-      await vi.waitFor(() => { expect(b.residentApi(undefined).hooks.firstDraft.getSnapshot().busy).toBe(false) })
-      await b.runtime.flush()
-      expect(b.sessionFake.prompt).not.toHaveBeenCalled()
-      reopened ??= b.runtime.sessions.retain(ROOT)
-      b.references.set(ROOT, reopened)
-      expect(b.conversationApi(ROOT).instance.store.getSnapshot().draft).toBe('keep this first draft')
-      expect(composer.hooks.composerInput.getSnapshot().draft).toBe('')
-    } finally {
-      settings.resolve(undefined)
-      reopened?.release()
-      unmirror()
-    }
-  })
-
-  it('submits the first draft through its retained destination input', async () => {
-    const b = await bench()
-    onTestFinished(() => b.runtime.dispose())
-    b.openDefaultWorkspace.mockImplementation(async (_request, beforeOpen) => {
-      b.replaceMain(ROOT, beforeOpen)
-      return ROOT
-    })
-    const composer = b.composerApi(undefined)
-    composer.keyboard.paste('first message')
-    composer.keyboard.submit('queue')
-    await vi.waitFor(() => { expect(b.sessionFake.prompt).toHaveBeenCalledOnce() })
-    expect(b.sessionFake.prompt.mock.calls[0]?.[0]).toEqual([{ type: 'text', text: 'first message' }])
-    expect(composer.hooks.composerInput.getSnapshot().draft).toBe('')
-  })
-
-  it.each([
-    ['zh', '默认工作区', '默认工作区'],
-    ['en', 'Default workspace', 'Default workspace'],
-    ['ja', 'default-workspace', 'Default workspace'],
-  ])('resolves first-use names in the Client using the send-time locale %s', async (language, directoryName, title) => {
-    const b = await bench()
-    if (language === 'ja') b.locale.addLanguage({ id: 'ja', label: '日本語', fallback: 'en' })
-    const composer = b.composerApi(undefined)
-    composer.keyboard.paste('first message')
-    b.locale.setLocale(language)
-    composer.keyboard.submit('steer')
-    await vi.waitFor(() => {
-      expect(b.openDefaultWorkspace).toHaveBeenCalledWith({ directoryName, title }, expect.any(Function), expect.any(AbortSignal))
-      expect(b.residentApi(undefined).hooks.firstDraft.getSnapshot().busy).toBe(false)
-    })
-  })
-
-  it('keeps in-flight names fixed and resolves the new locale when retrying a failed first send', async () => {
-    const b = await bench()
-    const pending = Promise.withResolvers<SessionId | undefined>()
-    b.openDefaultWorkspace.mockReturnValueOnce(pending.promise)
-    const composer = b.composerApi(undefined)
-    b.locale.setLocale('en')
-    composer.keyboard.paste('keep this draft')
-    composer.keyboard.submit('steer')
-    try {
-      await vi.waitFor(() => { expect(b.openDefaultWorkspace).toHaveBeenCalledOnce() })
-      b.locale.setLocale('zh')
-      expect(b.openDefaultWorkspace.mock.calls[0]?.[0]).toEqual({ directoryName: 'Default workspace', title: 'Default workspace' })
-      pending.reject(new Error('directory unavailable'))
-      await vi.waitFor(() => { expect(b.residentApi(undefined).hooks.firstDraft.getSnapshot().busy).toBe(false) })
-      expect(composer.hooks.composerInput.getSnapshot().draft).toBe('keep this draft')
-      composer.keyboard.submit('steer')
-      await vi.waitFor(() => {
-        expect(b.openDefaultWorkspace).toHaveBeenLastCalledWith({ directoryName: '默认工作区', title: '默认工作区' }, expect.any(Function), expect.any(AbortSignal))
-        expect(b.residentApi(undefined).hooks.firstDraft.getSnapshot().busy).toBe(false)
-      })
-    } finally {
-      pending.resolve(undefined)
-      await vi.waitFor(() => { expect(b.residentApi(undefined).hooks.firstDraft.getSnapshot().busy).toBe(false) })
-    }
-  })
-
   it('owns the File action, reads its mounted composer availability, and unregisters on disposal', async () => {
     const b = await bench()
     onTestFinished(() => b.runtime.dispose())
@@ -265,7 +159,7 @@ describe('Conversation inject API', () => {
     expect(file.available({ sessionId: 'missing' as SessionId })).toBe(false)
     if (file.ui.kind !== 'action') throw new Error('File must be an action')
     file.ui.run({ sessionId: 'missing' as SessionId })
-    const keyboard = b.composerApi(ROOT).keyboard
+    const keyboard = b.composerApi(ROOT).keyboard!
     const open = vi.fn()
     let available = true
     const unbind = keyboard.bindFilePicker({ open, available: () => available })
@@ -514,8 +408,7 @@ describe('Conversation inject API', () => {
     expect(() => { injectBar('ghost' as SessionId).stop!() }).toThrow(/resolved no binding/)
 
     const absent = injectBar(undefined)
-    expect(absent.keyboard).toBeDefined()
-    expect(absent.hooks.composerInput.getSnapshot().draft).toBe('')
+    expect(absent.keyboard).toBeUndefined()
     expect(absent.toggleCommandMenu).toBeUndefined()
     expect(absent.stop).toBeUndefined()
     expect(absent.hooks.notices.getSnapshot()).toBeNull()

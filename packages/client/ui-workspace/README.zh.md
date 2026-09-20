@@ -69,7 +69,9 @@ Session 行渲染运行时的实时 `pendingInteraction` 分类：审批显示**
 
 新建会话尝试获取列表中第一个符合条件的空白会话；启动恢复尝试已保存的空白会话。若该写锁被占用，导航直接新建 Session，不再尝试其他空白会话。其他获取错误会中止请求，目前只报告到控制台。已释放的空白会话被复用时保留 slash 命令状态。后续导航会取消尚未完成的启动选择。
 
-`openDefaultWorkspace(request, beforeOpen, signal)` 在连接 Session 前，按请求中的目录名和标题初始化 Host 默认工作区。它在目录准备之前捕获导航取消信号；被取代的操作不能转移草稿或选中 Session。登记成功的工作区在 Session 创建或后续提交失败时仍然保留。[Conversation](../ui-conversation/README.zh.md) 负责首次使用草稿和失败弹窗。
+Workspace 和 Session 的启动基线均就绪后，空安装环境调用 `workspaces.initializeDefault`，创建或复用其空白 Session。选中该 Session 后输入框才可编辑，不会自动提交消息。后续导航或所属上下文销毁会阻止启动流程选中其结果。不符合首次使用条件时仍可选择文件夹，不显示错误。准备失败时通过现有选择器提供取消或选择文件夹操作，直到下次启动才重试。登记成功的工作区在 Session 创建或后续提交失败时仍然保留。
+
+Client 在启动时按其语言选择初始目录名和标题：中文使用 `默认工作区`，英文使用 `Default workspace`，其他语言使用目录 `default-workspace` 和标题 `Default workspace`。初始化过程中保留请求中的名称。成功初始化的工作区在切换语言后保留原目录和标题。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现

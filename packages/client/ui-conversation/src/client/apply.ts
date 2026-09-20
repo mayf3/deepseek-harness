@@ -2,7 +2,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ISessions, SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { WorkspaceInitializeDefaultRequest } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { IconPaperclipOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { createSnapshotStore, type BoundActions } from '@deepseek-ai/dsh-client-store'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -18,13 +17,13 @@ import type {
   ComposerBarInjected, ConversationInjected, ConversationSessionHeaderInjected,
   ConversationSessionInjected, DraftFileUploads,
 } from './contract/slots.ts'
+import type { InputNotice } from './contract/input.ts'
 import { createConversationStore, readConversationViewPreference } from './stores.ts'
 import { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
 import type { ComposerBlock } from './contract/composer-blocks.ts'
 import { InputHub } from './input/hub.ts'
-import { FirstDraft } from './input/first-draft.ts'
 import { ComposerSubmissionPolicy } from './input/submission-policy.ts'
 import { queueDockEntry } from './queue/QueueDock.tsx'
 import { EnterBehaviorRow } from './settings/EnterBehaviorRow.tsx'
@@ -65,8 +64,17 @@ export const Config: z<Config> = z.object({
 
 // Stable no-session sources keep the renderer's observable-hook cache and
 // hook order unchanged across current-Session transitions.
+const ABSENT_NOTICES = {
+  getSnapshot: (): InputNotice | null => null,
+  subscribe: () => () => {},
+}
 const ABSENT_BLOCK = {
   getSnapshot: (): ComposerBlock | undefined => undefined,
+  subscribe: () => () => {},
+}
+const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
+const ABSENT_LEXICON = {
+  getSnapshot: () => EMPTY_LEXICON,
   subscribe: () => () => {},
 }
 const ABSENT_MENU_LAUNCHER = {
@@ -79,19 +87,12 @@ const ABSENT_FILE_UPLOADS = {
   subscribe: () => () => {},
 }
 
-// ui-workspace consumes Conversation slots, so this reverse runtime dependency
-// uses a local method projection to keep the TypeScript project graph acyclic.
 interface WorkspaceNavigation {
   openSession(sessionId: SessionId): void
   openWorkspace(
     workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
     beforeOpen: (sessionId: SessionId) => void,
   ): Promise<void>
-  openDefaultWorkspace(
-    request: WorkspaceInitializeDefaultRequest,
-    beforeOpen: (sessionId: SessionId) => void,
-    signal: AbortSignal,
-  ): Promise<SessionId | undefined>
 }
 
 /** Action registration used by the composer without importing its command-UI consumer. */
@@ -205,19 +206,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   }, 'ui-conversation: View selection')
 
   const inputHub = new InputHub(ctx, t)
-  const firstDraft = new FirstDraft(ctx, {
-    open: (beforeOpen, signal) => {
-      const language = ctx.locale.getSnapshot().active.toLowerCase().split('-')[0]
-      // Persisted Workspace names follow the send-time language, including the English fallback.
-      const title = (language === 'zh' ? zh : en)['defaultWorkspace.title']
-      return workspaceNavigation.openDefaultWorkspace({
-        directoryName: language === 'zh' || language === 'en' ? title : 'default-workspace',
-        title,
-      }, beforeOpen, signal)
-    },
-    shell: id => inputHub.shell(id),
-    isCurrent: (id, shell) => sessions.binding(id) !== undefined && inputHub.shell(id) === shell,
-  })
   const composerBlocks = new ComposerBlockRegistry()
 
   ctx.inject(['commandUi'], (scope) => {
@@ -278,11 +266,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
       hooks: {
         composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
-        firstDraft: firstDraft.state,
       },
-      dismissDefaultFailure: () => { firstDraft.dismiss() },
       selectWorkspace: workspaceId => workspaceNavigation.openWorkspace(workspaceId, (nextId) => {
-        if (sessionId === undefined) firstDraft.transfer(nextId)
         if (sessionId !== undefined && nextId !== sessionId) {
           const from = inputHub.shell(sessionId)
           const draft = from.snapshot.draft
@@ -388,7 +373,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     inject: (sessionId: SessionId | undefined): ComposerBarInjected => {
       if (sessionId === undefined) {
         return {
-          keyboard: firstDraft.shell,
+          keyboard: undefined,
           addFiles: undefined,
           removeAttachment: undefined,
           resolveDraftAttachments: undefined,
@@ -396,11 +381,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           toggleCommandMenu: undefined,
           stop: undefined,
           hooks: {
-            composerInput: firstDraft.shell.state,
             busyEnter: submissionPolicy.busyEnter,
             fileUploads: ABSENT_FILE_UPLOADS,
-            notices: firstDraft.shell.notices,
-            lexicon: firstDraft.shell.lexicon,
+            notices: ABSENT_NOTICES,
+            lexicon: ABSENT_LEXICON,
             menuLauncher: ABSENT_MENU_LAUNCHER,
           },
         }
@@ -449,7 +433,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           })
         },
         hooks: {
-          composerInput: shell.state,
           busyEnter: submissionPolicy.busyEnter,
           fileUploads: conversation.fileUploads,
           notices: shell.notices,

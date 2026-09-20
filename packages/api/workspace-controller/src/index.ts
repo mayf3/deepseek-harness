@@ -86,13 +86,13 @@ export class WorkspaceController extends TypertRemoteService {
   }
 
   /**
-   * Initialize or reuse the default Workspace before the first user message.
+   * Initialize or reuse the default Workspace during first-use startup.
    * @param request - initial directory name and title; never rename an existing default.
    * @param signal - caller lifetime; cancels native directory lookup.
-   * @returns the durable Workspace without creating a Session or sending a message.
+   * @returns the durable Workspace, or undefined when first-use initialization is ineligible; creates no Session or message.
    */
   @Remote('initializeDefault')
-  async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal: AbortSignal): Promise<WorkspaceValue> {
+  async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal: AbortSignal): Promise<WorkspaceValue | undefined> {
     const { directoryName, title } = request
     if (directoryName.trim() === '' || directoryName !== directoryName.trim()
       || directoryName.endsWith('.') || /[/\\:\0]/.test(directoryName) || title.trim() === '') {
@@ -105,10 +105,7 @@ export class WorkspaceController extends TypertRemoteService {
       )
       return { path, title }
     })
-    if (workspace === undefined) {
-      throw new RemoteError('gateway/bad-request', 'choose a directory to create a Workspace', {})
-    }
-    return { workspace: workspaceView(workspace) }
+    return workspace === undefined ? undefined : { workspace: workspaceView(workspace) }
   }
 
   /**

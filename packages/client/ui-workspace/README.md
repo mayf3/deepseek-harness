@@ -69,7 +69,9 @@ The value is intentionally best effort for cold Sessions. An identity-matching u
 
 New Session tries to acquire the first eligible blank in catalog order; startup restoration tries the saved blank. If that writer is held, navigation creates a new Session without trying other blanks. Other acquisition failures abort the request and are currently reported only to the console. Released blanks retain their slash-command state when reused. Later navigation cancels a pending startup selection.
 
-`openDefaultWorkspace(request, beforeOpen, signal)` initializes the Host default Workspace from the requested directory name and title before connecting its Session. It captures navigation cancellation before directory preparation; superseded work cannot transfer the draft or select its Session. A successfully registered Workspace remains available when Session creation or later submission fails. [Conversation](../ui-conversation/README.md) owns the first-use draft and failure dialog.
+Once both Workspace and Session startup baselines are ready, an empty installation calls `workspaces.initializeDefault` and creates or reuses its blank Session. The composer becomes editable when that Session is selected; no message is submitted automatically. Later navigation or owner disposal prevents startup from selecting its result. Ineligible first use leaves the folder picker available without an error. Preparation failure offers Cancel or Choose folder through the existing picker, and is not retried until the next startup. A successfully registered Workspace remains available when Session creation or later submission fails.
+
+The Client chooses the initial directory name and title from its language at startup: Chinese uses `默认工作区`, English uses `Default workspace`, and other languages use directory `default-workspace` with title `Default workspace`. The request retains those names during initialization. A successfully initialized Workspace keeps its directory and title across language changes.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

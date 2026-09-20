@@ -43,9 +43,9 @@ export interface IWorkspaces {
    * Initialize or reuse the default Workspace.
    * @param request - initial directory name and title.
    * @param signal - caller lifetime.
-   * @returns the prepared Workspace; rejects when directory selection is required.
+   * @returns the prepared Workspace, or undefined when first-use initialization is ineligible; rejects on preparation failure.
    */
-  initializeDefault(request: WorkspaceInitializeDefaultRequest, signal?: AbortSignal): Promise<WorkspaceView>
+  initializeDefault(request: WorkspaceInitializeDefaultRequest, signal?: AbortSignal): Promise<WorkspaceView | undefined>
   /**
    * Rename a Workspace.
    * @param workspaceId - target Workspace.
@@ -117,10 +117,10 @@ export class WorkspaceController extends Service implements IWorkspaces {
     return result.value.workspace
   }
 
-  async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal?: AbortSignal): Promise<WorkspaceView> {
+  async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal?: AbortSignal): Promise<WorkspaceView | undefined> {
     const result = await this.model.initializeDefault(request, signal)
     if (!result.ok) throw new WorkspaceCreateError(result.error)
-    return result.value.workspace
+    return result.value?.workspace
   }
 
   async rename(workspaceId: WorkspaceId, title: string): Promise<WorkspaceView> {

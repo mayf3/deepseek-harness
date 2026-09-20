@@ -100,10 +100,8 @@ async function bench(opts?: { blank?: boolean }) {
 }
 
 describe('resident composer', () => {
-  it('accepts a local draft before any Session exists and keeps the Workspace chip available', async () => {
+  it('renders the locked view state while no session exists at all', async () => {
     const runtime = await SlotTestRuntime.create()
-    runtime.sessions.list.set({ ...runtime.sessions.list.getSnapshot(), phase: 'pending' })
-    await runtime.workspaces.update((draft) => { draft.phase = 'pending' })
     provideWorkspaceNavigation(runtime)
     runtime.ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
@@ -115,21 +113,15 @@ describe('resident composer', () => {
     const view = runtime.renderRoot()
     const textarea = view.container.querySelector<HTMLDivElement>('[data-composer-input]')
     expect(textarea).not.toBeNull()
-    expect(textarea!.getAttribute('contenteditable')).toBe('false')
-    await runtime.workspaces.update((draft) => { draft.phase = 'ready' })
-    expect(textarea!.getAttribute('contenteditable')).toBe('false')
-    await act(async () => {
-      runtime.sessions.list.set({ ...runtime.sessions.list.getSnapshot(), phase: 'ready' })
-    })
     expect(textarea!.getAttribute('aria-disabled')).not.toBe('true')
-    expect(textarea!.getAttribute('contenteditable')).toBe('true')
-    expect(textarea!.getAttribute('aria-haspopup')).toBeNull()
+    expect(textarea!.getAttribute('contenteditable')).not.toBe('true')
+    expect(textarea!.getAttribute('aria-haspopup')).toBe('menu')
     expect(view.getByTestId('workspace-probe').textContent).toBe('false:0')
-    fireEvent.click(view.getByRole('button', { name: '选择工作区' }))
+    fireEvent.click(textarea!)
     expect(view.getByTestId('workspace-probe').textContent).toBe('true:0')
-    expect(textarea!.getAttribute('aria-expanded')).toBeNull()
+    expect(textarea!.getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(view.getByRole('button', { name: '选择工作区' }))
-    fireEvent.click(view.getByRole('button', { name: '选择工作区' }))
+    fireEvent.keyDown(textarea!, { key: 'Enter' })
     expect(view.getByTestId('workspace-probe').textContent).toBe('true:0')
     expect(view.getByRole('button', { name: '选择工作区' })).toBeTruthy()
     await runtime.dispose()
@@ -157,7 +149,7 @@ describe('resident composer', () => {
     const workspaceChip = view.getByRole('button', { name: '选择工作区' })
     const workspaceProbe = view.getByTestId('workspace-probe')
     expect(textarea.getAttribute('aria-disabled')).not.toBe('true')
-    expect(textarea.getAttribute('contenteditable')).toBe('true')
+    expect(textarea.getAttribute('contenteditable')).not.toBe('true')
 
     fireEvent.click(workspaceChip)
     fireEvent.click(workspaceProbe)

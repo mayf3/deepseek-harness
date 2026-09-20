@@ -6,7 +6,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -76,7 +76,6 @@ async function bench(options: {
   failSettingsUpdate?: boolean
   selectGate?: Promise<void>
   settingsRosterGate?: Promise<undefined>
-  refuseSelect?: boolean
 } = {}) {
   const ctx = new Context()
   // The host's answer, mutable so a spec can move the default the way the
@@ -154,9 +153,7 @@ async function bench(options: {
     deletePreset: () => Promise.resolve({ ok: true as const, value: undefined }),
     select: (_agentId: SessionId, agentPreset: string) => {
       calls.push(`select:${agentPreset}`)
-      return Promise.resolve(options.selectGate).then(() => options.refuseSelect === true
-        ? { ok: false as const, error: new RemoteError('gateway/internal', 'preset refused', {}) }
-        : { ok: true as const, value: agentPreset })
+      return Promise.resolve(options.selectGate).then(() => ({ ok: true as const, value: agentPreset }))
     },
   }
   ctx.provide('remote.agentPresets', agentPresets as never)
@@ -718,10 +715,8 @@ describe('ui-agent-preset apply', () => {
     conversation()
   })
 
-  it.each([false, true])('awaits the staged choice before first send and propagates refusal (%s)', async (refuseSelect) => {
-    const selection = Promise.withResolvers<undefined>()
-    const { ctx, slots, calls } = await bench({ refuseSelect, selectGate: selection.promise })
-    onTestFinished(async () => { selection.resolve(undefined); await ctx.fiber.dispose() })
+  it('applies the staged choice to the blank session the flow lands on', async () => {
+    const { ctx, slots, calls } = await bench()
     declareRoot(slots)
     declareConversation(slots)
     ctx.provide('conversation', {} as never)
@@ -741,8 +736,6 @@ describe('ui-agent-preset apply', () => {
       .inject as unknown as (sessionId?: SessionId) => AgentPresetSeatInjected
     const chip = injectSeat()
 
-    await ctx.serial('conversation/prepare-first-send', SessionId('absent'))
-
     await chip.load()
     // Picked on the hero screen, where there is no session yet.
     await chip.select('minimal')
@@ -754,16 +747,10 @@ describe('ui-agent-preset apply', () => {
     }
     sessions.notify()
     const bound = injectSeat(SessionId('s1'))
-    const preparing = ctx.serial('conversation/prepare-first-send', SessionId('s1'))
-    const settled = refuseSelect ? expect(preparing).rejects.toThrow('preset refused') : expect(preparing).resolves.toBeUndefined()
-    selection.resolve(undefined)
-    await settled
-    await ctx.serial('conversation/prepare-first-send', SessionId('s1'))
     await bound.load()
 
     // Connecting a workspace produced the session; the stage reaches it there.
     await vi.waitFor(() => { expect(calls).toContain('select:minimal') })
-    expect(calls.filter(call => call === 'select:minimal')).toHaveLength(1)
   })
 
   it('applies the stage to a session that records no preset of its own', async () => {
@@ -959,28 +946,6 @@ describe('ui-agent-preset apply', () => {
 })
 
 describe('AgentPresetSeatController reconciliation', () => {
-  it.each([false, true])('shares the result of an active preset selection (refused: %s)', async (refused) => {
-    const refusal = { ok: false as const, error: new RemoteError('gateway/internal', 'selection refused', {}) }
-    const reply = Promise.withResolvers<{ ok: true; value: string } | typeof refusal>()
-    const select = vi.fn(() => reply.promise)
-    const controller = new AgentPresetSeatController({ remote: { agentPresets: { select } } } as never,
-      () => ({ id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }))
-    const selecting = controller.select('minimal')
-    let prepared = false
-    const preparation = controller.apply().finally(() => { prepared = true })
-    try {
-      expect(prepared).toBe(false)
-      expect(select).toHaveBeenCalledOnce()
-      reply.resolve(refused ? refusal : { ok: true, value: 'minimal' })
-      await expect(preparation).resolves.toBe(refused ? 'selection refused' : undefined)
-      await selecting
-      expect(select).toHaveBeenCalledOnce()
-    } finally {
-      reply.resolve({ ok: true, value: 'minimal' })
-      await Promise.allSettled([selecting, preparation])
-    }
-  })
-
   it.each([
     { refuseFirst: false, refuseLatest: false },
     { refuseFirst: false, refuseLatest: true },
@@ -1001,17 +966,16 @@ describe('AgentPresetSeatController reconciliation', () => {
     const first = controller.select('minimal')
     let settingsSettled = false
     const settings = controller.syncBlankSession(session.id, 'cordis').finally(() => { settingsSettled = true })
-    const repeatedFirst = controller.apply()
+    await controller.apply()
     expect(requests.map(request => request.preset)).toEqual(['minimal'])
     requests[0]!.outcome.resolve(refuseFirst ? refusal : { ok: true, value: 'minimal' })
     await first
     expect(requests.map(request => request.preset)).toEqual(['minimal', 'cordis'])
     expect(settingsSettled).toBe(false)
-    const repeatedLatest = controller.apply()
+    await controller.apply()
     expect(requests).toHaveLength(2)
     requests[1]!.outcome.resolve(refuseLatest ? refusal : { ok: true, value: 'cordis' })
     await expect(settings).resolves.toBe(refuseLatest ? 'selection refused' : undefined)
-    await Promise.all([repeatedFirst, repeatedLatest])
     expect(controller.store.getSnapshot()).toMatchObject({
       current: refuseLatest ? 'standard' : 'cordis', busy: false,
       error: refuseLatest ? 'selection refused' : null,
@@ -1028,10 +992,10 @@ describe('AgentPresetSeatController reconciliation', () => {
       () => ({ id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }))
     const first = controller.select('minimal')
     controller.stage('cordis', true)
-    const repeated = controller.apply()
+    await controller.apply()
     expect(select).toHaveBeenCalledOnce()
     firstReply.resolve(refused ? refusal : { ok: true, value: 'minimal' })
-    await Promise.all([first, repeated])
+    await first
     expect(controller.store.getSnapshot().current).toBe('cordis')
     await controller.apply()
     expect(select.mock.calls.map(call => call[1])).toEqual(['minimal', 'cordis'])

@@ -12,10 +12,12 @@ import type {
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type {
-  IWorkspaces, WorkspaceId, WorkspaceInitializeDefaultRequest, WorkspaceSnapshot, WorkspaceView,
+  IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import { en, zh } from './locales.ts'
 import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
 import type { WorkspaceViewStoreActions } from './stores.ts'
 
@@ -38,18 +40,6 @@ export interface UiWorkspace {
    * @returns completion; a superseded request may create a Session but does not open it.
    */
   openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>
-  /**
-   * Prepare the first-use Workspace and select its blank Session.
-   * @param request - initial directory name and title.
-   * @param beforeOpen - synchronous draft transfer after retaining the Session.
-   * @param signal - caller cancellation.
-   * @returns selected Session, or undefined after navigation supersession.
-   */
-  openDefaultWorkspace(
-    request: WorkspaceInitializeDefaultRequest,
-    beforeOpen: (sessionId: SessionId) => void,
-    signal: AbortSignal,
-  ): Promise<SessionId | undefined>
   /**
    * Fork a Session without changing the current selection.
    * @param sessionId - source Session.
@@ -130,6 +120,8 @@ export class DirectoryBrowseError extends Error {
 
 /** Implements Workspace archive and directory UI operations. */
 class UiWorkspaceService extends Service implements UiWorkspace {
+  /** Startup failure awaiting dismissal or explicit directory selection. */
+  readonly defaultFailure = createSnapshotStore(false)
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   private readonly lifetime = new AbortController()
   private readonly selection = createSnapshotStore<MainSelection>(
@@ -211,25 +203,6 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const sessionId = await this.connectWorkspace(workspaceId)
     if (navigation.aborted) return
     this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
-  }
-
-  async openDefaultWorkspace(
-    request: WorkspaceInitializeDefaultRequest,
-    beforeOpen: (sessionId: SessionId) => void,
-    signal: AbortSignal,
-  ): Promise<SessionId | undefined> {
-    const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal, signal])
-    try {
-      const workspace = await this.workspaces.initializeDefault(request, navigation)
-      navigation.throwIfAborted()
-      const sessionId = await this.connectWorkspace(workspace.workspaceId)
-      navigation.throwIfAborted()
-      this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
-      return sessionId
-    } catch (error) {
-      if (navigation.aborted) return undefined
-      throw error
-    }
   }
 
   async forkSession(sessionId: SessionId): Promise<void> {
@@ -353,8 +326,27 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     }
     const target = workspace?.workspaceId ?? recentWorkspace(workspaces.items, sessions.byId)
     if (sessionId === undefined && target !== undefined) sessionId = await this.connectWorkspace(target)
+    if (target === undefined && workspaces.items.length === 0 && sessions.ids.length === 0) {
+      sessionId = await this.initializeDefaultWorkspace(navigation)
+    }
     if (sessionId !== undefined && !navigation.aborted) {
       this.replaceMain(sessionId, navigation, 'preserve')
+    }
+  }
+
+  private async initializeDefaultWorkspace(signal: AbortSignal): Promise<SessionId | undefined> {
+    const language = this.ctx.locale.getSnapshot().active.toLowerCase().split('-')[0]
+    const title = (language === 'zh' ? zh : en)['defaultWorkspace.title']
+    try {
+      const workspace = await this.workspaces.initializeDefault({
+        directoryName: language === 'zh' || language === 'en' ? title : 'default-workspace',
+        title,
+      }, signal)
+      if (workspace === undefined || signal.aborted) return undefined
+      return await this.connectWorkspace(workspace.workspaceId)
+    } catch (_error: unknown) {
+      if (!signal.aborted) this.defaultFailure.set(true)
+      return undefined
     }
   }
 

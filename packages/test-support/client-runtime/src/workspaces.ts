@@ -81,16 +81,15 @@ export class TestWorkspaces implements IWorkspaces {
   }
 
   /**
-   * Initialize the default Workspace through an explicitly installed test stub.
+   * Initialize the default Workspace through a test stub; defaults to an ineligible first use.
    * @param request - initial directory name and title.
    * @param signal - caller lifetime.
-   * @returns the stubbed Workspace.
+   * @returns the stubbed Workspace, or undefined when initialization is ineligible.
    */
-  async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal?: AbortSignal): Promise<WorkspaceView> {
+  async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal?: AbortSignal): Promise<WorkspaceView | undefined> {
     this.calls.push({ method: 'initializeDefault', args: [request, signal] })
     const stub = this.stubs.get('initializeDefault')
-    if (stub === undefined) throw new Error('initializeDefault requires a Workspace fixture')
-    return await (stub(request, signal) as Promise<WorkspaceView>)
+    return await (stub?.(request, signal) as Promise<WorkspaceView | undefined> | undefined)
   }
 
   /**

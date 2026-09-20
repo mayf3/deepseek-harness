@@ -219,7 +219,8 @@ export function apply(ctx: Context): void {
   })
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => workspaces.create(input),
-    hooks: { directoryFlow: pickerFlowSource },
+    dismissDefaultFailure: () => { uiWorkspace.defaultFailure.set(false) },
+    hooks: { directoryFlow: pickerFlowSource, defaultFailure: uiWorkspace.defaultFailure },
   })
   // Each registration declares its owned children in the same call; slot
   // injection follows both the owner and declaration HMR lifetimes.

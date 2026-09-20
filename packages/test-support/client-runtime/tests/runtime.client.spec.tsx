@@ -557,12 +557,12 @@ describe('workspaces', () => {
     expect(view.container.textContent).toContain('ws:pending')
     await runtime.dispose()
   })
-  it('requires an explicit default Workspace fixture and forwards its request and lifetime', async () => {
+  it('skips default initialization without a fixture and forwards a configured request and lifetime', async () => {
     const runtime = await SlotTestRuntime.create()
     try {
       const request = { directoryName: 'default-workspace', title: 'Default workspace' }
       const signal = new AbortController().signal
-      await expect(runtime.workspaces.initializeDefault(request, signal)).rejects.toThrow('requires a Workspace fixture')
+      await expect(runtime.workspaces.initializeDefault(request, signal)).resolves.toBeUndefined()
       const workspace = {
         workspaceId: 'default' as WorkspaceId, title: request.title, path: '/default', sessionIds: [],
         createdAt: '2026-09-20T00:00:00Z', updatedAt: '2026-09-20T00:00:00Z',

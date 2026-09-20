@@ -447,24 +447,24 @@ describe('first-use Remote', () => {
   it('uses the requested display title independently of the directory name', async () => {
     const { controller, root } = await harness()
     const result = await controller.initializeDefault({ directoryName: 'default-workspace', title: 'Default workspace' }, new AbortController().signal)
-    expect(result.workspace).toMatchObject({ path: join(root, 'deepseek-harness', 'default-workspace'), title: 'Default workspace' })
+    expect(result?.workspace).toMatchObject({ path: join(root, 'deepseek-harness', 'default-workspace'), title: 'Default workspace' })
   })
 
   it('returns a durable Workspace without allocating a Session', async () => {
     const { controller, ctx, root } = await harness()
     const signal = new AbortController().signal
     const result = await controller.initializeDefault({ directoryName: 'Default workspace', title: 'Default workspace' }, signal)
-    expect(result.workspace.path).toBe(join(root, 'deepseek-harness', 'Default workspace'))
-    expect(existsSync(result.workspace.path)).toBe(true)
+    expect(result!.workspace.path).toBe(join(root, 'deepseek-harness', 'Default workspace'))
+    expect(existsSync(result!.workspace.path)).toBe(true)
     expect(ctx.sessions.list()).toEqual([])
     expect(await controller.initializeDefault({ directoryName: '默认工作区', title: '默认工作区' }, signal)).toEqual(result)
   })
 
-  it('rejects ineligible first use and propagates preparation failures', async () => {
+  it('skips ineligible first use and propagates preparation failures', async () => {
     const { controller, ctx, root } = await harness()
     await ctx.workspaceRegistry.create(root)
     await expect(controller.initializeDefault({ directoryName: 'Default workspace', title: 'Default workspace' }, new AbortController().signal))
-      .rejects.toMatchObject({ code: 'gateway/bad-request' })
+      .resolves.toBeUndefined()
     vi.spyOn(ctx.workspaceRegistry, 'initializeDefault').mockRejectedValueOnce(new Error('permission denied'))
     await expect(controller.initializeDefault({ directoryName: 'Default workspace', title: 'Default workspace' }, new AbortController().signal))
       .rejects.toThrow('permission denied')

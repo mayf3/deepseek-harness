@@ -1,5 +1,6 @@
-// Resident conversation shell keeps the composer mounted across local-draft,
-// blank-Session, and active-conversation views.
+// Resident conversation skeleton. Hero chrome, composer positioning, the
+// chain, AND the composer bar (session-maybe slot) stay mounted across
+// no-session/session transitions — the bar renders inert via owner props.
 
 import type { ConversationSlotProps } from '../contract/slots.ts'
 import { ConversationMainPanel } from './ConversationMainPanel.tsx'

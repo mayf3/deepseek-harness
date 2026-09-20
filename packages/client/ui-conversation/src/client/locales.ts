@@ -9,10 +9,6 @@ const PLAN_NEXT_ACTION_EN = 'describe your task to generate plan'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'defaultWorkspace.failed': '无法创建默认工作区',
-  'defaultWorkspace.title': '默认工作区',
-  'defaultWorkspace.retry': '请选择一个文件夹后重试',
-  'defaultWorkspace.choose': '选择文件夹',
   'hint.plan': PLAN_NEXT_ACTION_ZH,
   'hint.goal': '输入目标，智能体将持续执行',
   'hint.goal.active': '当前目标进行中。可输入 edit 修改 / pause 暂停 / resume 继续 / clear 清除',
@@ -22,7 +18,6 @@ export const zh = {
   'placeholder.parentOffline': '父会话已离线，无法继续发送；仍可停止当前运行',
   'placeholder.hero': '描述你想要构建的内容, / 调用指令, @ 文件或对话',
   'placeholder.workspace': '选择一个工作区开始',
-  'placeholder.preparing': '正在准备工作区…',
   'placeholder.steerQueue': 'Cmd/Ctrl+Enter 插话发送全部排队消息',
   'input.commands': '添加文件或调用指令',
   'input.file': '文件',
@@ -365,10 +360,6 @@ export type ConversationKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'defaultWorkspace.failed': 'Unable to create default workspace',
-  'defaultWorkspace.title': 'Default workspace',
-  'defaultWorkspace.retry': 'Please choose a folder and try again',
-  'defaultWorkspace.choose': 'Choose folder',
   'hint.plan': PLAN_NEXT_ACTION_EN,
   'hint.goal': 'describe the objective for a long-running task',
   'hint.goal.active': 'goal active — edit / pause / resume / clear',
@@ -378,7 +369,6 @@ export const en = {
   'placeholder.parentOffline': 'Parent session offline; sending is unavailable but you can still stop the run',
   'placeholder.hero': 'Describe what you want to build, / commands, @ files or sessions',
   'placeholder.workspace': 'Choose a workspace to start',
-  'placeholder.preparing': 'Preparing workspace…',
   'placeholder.steerQueue': 'Cmd/Ctrl+Enter steers all queued messages',
   'input.commands': 'Add files or run commands',
   'input.file': 'File',

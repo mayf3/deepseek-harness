@@ -306,12 +306,12 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('create') create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>
 
 /**
- * Initialize or reuse the default Workspace before the first user message.
+ * Initialize or reuse the default Workspace during first-use startup.
  * @param request - initial directory name and title; never rename an existing default.
  * @param signal - caller lifetime; cancels native directory lookup.
- * @returns the durable Workspace without creating a Session or sending a message.
+ * @returns the durable Workspace, or undefined when first-use initialization is ineligible; creates no Session or message.
  */
-@Remote('initializeDefault') async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal: AbortSignal): Promise<WorkspaceValue>
+@Remote('initializeDefault') async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal: AbortSignal): Promise<WorkspaceValue | undefined>
 
 /**
  * Rename one Workspace to a unique non-blank title.
