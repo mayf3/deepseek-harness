@@ -548,17 +548,20 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
-  it('persists the completed-Turn transcript mode across reload', async () => {
+  it.each([
+    ['detailed', '详细'], ['expanded', '完全展开'],
+  ] as const)('persists the %s work-details mode across reload', async (mode, label) => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-transcript-view'))
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.waitFor({ timeout: 10_000 })
-    await dialog.getByText('对话显示', { exact: true }).waitFor({ timeout: 10_000 })
-    await dialog.getByRole('button', { name: '紧凑', exact: true }).click()
-    await page.getByRole('menuitem', { name: '标准', exact: true }).click()
-    await dialog.getByRole('button', { name: '标准', exact: true }).waitFor({ timeout: 10_000 })
+    await dialog.getByText('工作过程展示', { exact: true }).waitFor({ timeout: 10_000 })
+    const details = dialog.getByText('工作过程展示', { exact: true }).locator('../..')
+    await details.getByRole('button', { name: '简洁', exact: true }).click()
+    await page.getByRole('menuitem', { name: label, exact: true }).click()
+    await details.getByRole('button', { name: label, exact: true }).waitFor({ timeout: 10_000 })
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
-      .toMatch(/ui-chat:\n\s+transcriptView: normal/)
+      .toContain(`transcriptView: ${mode}`)
     await page.keyboard.press('Escape')
 
     const warningStart = tripwire.warnings.length
@@ -567,11 +570,12 @@ describe('web e2e: settings modal and General preferences', () => {
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const reloaded = page.getByRole('dialog', { name: '设置' })
-    await reloaded.getByRole('button', { name: '标准', exact: true }).waitFor({ timeout: 10_000 })
+    const restoredDetails = reloaded.getByText('工作过程展示', { exact: true }).locator('../..')
+    await restoredDetails.getByRole('button', { name: label, exact: true }).waitFor({ timeout: 10_000 })
 
-    await reloaded.getByRole('button', { name: '标准', exact: true }).click()
-    await page.getByRole('menuitem', { name: '紧凑', exact: true }).click()
-    await reloaded.getByRole('button', { name: '紧凑', exact: true }).waitFor({ timeout: 10_000 })
+    await restoredDetails.getByRole('button', { name: label, exact: true }).click()
+    await page.getByRole('menuitem', { name: '简洁', exact: true }).click()
+    await restoredDetails.getByRole('button', { name: '简洁', exact: true }).waitFor({ timeout: 10_000 })
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
       .toMatch(/ui-chat:\n\s+transcriptView: compact/)
     await page.keyboard.press('Escape')

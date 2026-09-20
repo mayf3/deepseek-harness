@@ -1472,6 +1472,7 @@ describe('ChatView', () => {
         assistant(5, 'final answer', 1, 2),
       ],
       turnEnds: new Map([[1, 6]]),
+      turnTimings: new Map([[1, { startTime: 0, endTime: 6_000 }]]),
     })
     const view = render(<h.ChatView {...h.props} />)
     const contextRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="context"]')
@@ -1485,18 +1486,16 @@ describe('ChatView', () => {
     expect(members.map(member => member.getAttribute('hidden'))).toEqual([null, null, null])
   })
 
-  it('keeps the first System prompt above User and outside Process through completion and expansion', () => {
+  it('omits the System prompt through Turn completion and process expansion', () => {
     const builder = new ChatSnapshotBuilder()
     const initial = withSystemPrompt(chatSnapshotFixture({
       nodes: [userInTurn(2, 'question', 1), context(3, 'runtime policy', 1)],
+      turnTimings: new Map([[1, { startTime: 0 }]]),
     }), builder)
     const h = makeHarness({ chat: initial }, { running: true })
     const view = render(<h.ChatView {...h.props} />)
-    const promptRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="system-prompt"]')!
-
-    expect(renderedFlowKinds(view.container)).toEqual(['system-prompt', 'user', 'context'])
-    expect(promptRow.getAttribute('hidden')).toBeNull()
-    expect(promptRow.hasAttribute('data-turn-process-member')).toBe(false)
+    expect(renderedFlowKinds(view.container)).toEqual(['user', 'context'])
+    expect(view.container.querySelector('[data-chat-flow-kind="system-prompt"]')).toBeNull()
 
     act(() => {
       h.set({
@@ -1506,15 +1505,15 @@ describe('ChatView', () => {
             context(3, 'runtime policy', 1),
             reasoningAssistant(4, 'inspect', 1, 1),
           ],
+          turnTimings: new Map([[1, { startTime: 0 }]]),
         }), builder),
         running: true,
       })
     })
     expect(renderedFlowKinds(view.container)).toEqual([
-      'system-prompt', 'user', 'turn-process', 'context', 'assistant-step',
+      'user', 'turn-process', 'context', 'assistant-step',
     ])
-    expect(view.container.querySelector('[data-chat-flow-kind="system-prompt"]')).toBe(promptRow)
-    expect(promptRow.getAttribute('hidden')).toBeNull()
+    expect(view.container.querySelector('[data-chat-flow-kind="system-prompt"]')).toBeNull()
 
     act(() => {
       h.set({
@@ -1526,6 +1525,7 @@ describe('ChatView', () => {
             assistant(6, 'final answer', 1, 2),
           ],
           turnEnds: new Map([[1, 7]]),
+          turnTimings: new Map([[1, { startTime: 0, endTime: 7_000 }]]),
         }), builder),
         running: false,
       })
@@ -1533,19 +1533,18 @@ describe('ChatView', () => {
     const toggle = turnProcessControl(view.container)!
     const members = [...view.container.querySelectorAll<HTMLElement>('[data-turn-process-member]')]
     expect(renderedFlowKinds(view.container)).toEqual([
-      'system-prompt', 'user', 'turn-process', 'context', 'assistant-step', 'assistant-step', 'turn-tail',
+      'user', 'turn-process', 'context', 'assistant-step', 'assistant-step', 'turn-tail',
     ])
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(promptRow.getAttribute('hidden')).toBeNull()
-    expect(promptRow.hasAttribute('data-turn-process-member')).toBe(false)
+    expect(view.container.querySelector('[data-chat-flow-kind="system-prompt"]')).toBeNull()
     expect(members.map(member => member.dataset.chatFlowKind)).toEqual(['context', 'assistant-step'])
     expect(members.map(member => member.getAttribute('hidden'))).toEqual(['until-found', 'until-found'])
 
     fireEvent.click(toggle)
     expect(renderedFlowKinds(view.container)).toEqual([
-      'system-prompt', 'user', 'turn-process', 'context', 'assistant-step', 'assistant-step', 'turn-tail',
+      'user', 'turn-process', 'context', 'assistant-step', 'assistant-step', 'turn-tail',
     ])
-    expect(promptRow.getAttribute('hidden')).toBeNull()
+    expect(view.container.querySelector('[data-chat-flow-kind="system-prompt"]')).toBeNull()
     expect(members.map(member => member.getAttribute('hidden'))).toEqual([null, null])
   })
 
@@ -1553,6 +1552,7 @@ describe('ChatView', () => {
     const h = makeHarness({
       nodes: [user(1, 'question'), context(2, 'runtime policy', 1), assistant(3, 'final answer', 1, 1)],
       turnEnds: new Map([[1, 4]]),
+      turnTimings: new Map([[1, { startTime: 0, endTime: 4_000 }]]),
     })
     const view = render(<h.ChatView {...h.props} />)
     const toggle = view.getByRole('button', { name: '已思考' })
@@ -1607,6 +1607,7 @@ describe('ChatView', () => {
       nodes: [user(1, 'question'), process],
       partial: { turn: 1, step: 2, blocks: [{ kind: 'text', text: 'streaming answer' }] },
       running: true,
+      turnTimings: new Map([[1, { startTime: 0 }]]),
     })
     const view = render(<h.ChatView {...h.props} />)
     expect(turnProcessControl(view.container)).toBeNull()
@@ -1625,11 +1626,12 @@ describe('ChatView', () => {
     expect(processRow.getAttribute('hidden')).toBe('until-found')
   })
 
-  it('switches completed Turns between the persisted Normal and Compact modes', () => {
+  it('preserves whole-Turn folding and manual expansion across work-details modes', () => {
     const process = assistant(2, 'inspect', 1, 1)
     const h = makeHarness({
       nodes: [user(1, 'question'), process, assistant(4, 'final answer', 1, 2)],
       turnEnds: new Map([[1, 5]]),
+      turnTimings: new Map([[1, { startTime: 0, endTime: 5_000 }]]),
     })
     const view = render(<h.ChatView {...h.props} />)
     const processRow = view.getByText('inspect').closest('[data-chat-flow-kind="assistant-step"]') as HTMLElement
@@ -1637,13 +1639,20 @@ describe('ChatView', () => {
     expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')
     expect(processRow.getAttribute('hidden')).toBe('until-found')
 
-    act(() => { h.setTranscriptView('detailed') })
-    expect(turnProcessControl(view.container)).toBeNull()
-    expect(processRow.getAttribute('hidden')).toBeNull()
-
-    act(() => { h.setTranscriptView('compact') })
-    expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')
-    expect(processRow.getAttribute('hidden')).toBe('until-found')
+    const toggle = turnProcessControl(view.container)!
+    for (const mode of ['detailed', 'expanded', 'compact'] as const) {
+      act(() => { h.setTranscriptView(mode) })
+      expect(turnProcessControl(view.container)).toBe(toggle)
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(processRow.getAttribute('hidden')).toBe('until-found')
+    }
+    fireEvent.click(toggle)
+    for (const mode of ['detailed', 'expanded', 'compact'] as const) {
+      act(() => { h.setTranscriptView(mode) })
+      expect(turnProcessControl(view.container)).toBe(toggle)
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(processRow.getAttribute('hidden')).toBeNull()
+    }
   })
 
   it('folds final-step reasoning under the fallback title when every summary count is zero', () => {
@@ -1654,7 +1663,11 @@ describe('ChatView', () => {
         { kind: 'text' as const, text: 'final answer' },
       ],
     }
-    const h = makeHarness({ nodes: [user(1, 'question'), final], turnEnds: new Map([[1, 4]]) })
+    const h = makeHarness({
+      nodes: [user(1, 'question'), final],
+      turnEnds: new Map([[1, 4]]),
+      turnTimings: new Map([[1, { startTime: 0, endTime: 4_000 }]]),
+    })
     const view = render(<h.ChatView {...h.props} />)
     const toggle = view.getByRole('button', { name: '已思考' })
     const reasoning = view.container.querySelector<HTMLElement>('[data-turn-process-inline]')
@@ -1667,7 +1680,10 @@ describe('ChatView', () => {
 
   it('folds a completed Turn even while the reader is away from the tail', () => {
     const first = assistant(2, 'first answer', 1, 1)
-    const h = makeHarness({ nodes: [user(1, 'question'), first], running: true })
+    const h = makeHarness({
+      nodes: [user(1, 'question'), first], running: true,
+      turnTimings: new Map([[1, { startTime: 0 }]]),
+    })
     const view = render(<h.ChatView {...h.props} />)
     const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
     Object.defineProperty(scroller, 'scrollHeight', { value: 1_000, writable: true })
@@ -1689,6 +1705,7 @@ describe('ChatView', () => {
     const h = makeHarness({
       nodes: [user(1, 'question'), context(2, 'runtime policy', 1)],
       running: true,
+      turnTimings: new Map([[1, { startTime: 0 }]]),
     })
     const view = render(<h.ChatView {...h.props} />)
     const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
@@ -1716,6 +1733,7 @@ describe('ChatView', () => {
     const h = makeHarness({
       nodes: [user(1, 'question'), context(2, 'runtime policy', 1)],
       running: true,
+      turnTimings: new Map([[1, { startTime: 0 }]]),
     })
     const view = render(<h.ChatView {...h.props} />)
     const contextToggle = view.getByRole('button', { name: '上下文注入' })
@@ -1743,7 +1761,7 @@ describe('ChatView', () => {
     expect(contextRow?.getAttribute('hidden')).toBe('until-found')
   })
 
-  it('keeps a foldable closed Turn fully visible while history is partial', () => {
+  it('withholds folding until the Turn start arrives even when older history remains', () => {
     const h = makeHarness({
       nodes: [
         user(1, 'question'),
@@ -1762,6 +1780,13 @@ describe('ChatView', () => {
     expect(contextRow?.hasAttribute('data-turn-process-member')).toBe(false)
 
     act(() => { h.set({ hasMore: false }) })
+    expect(turnProcessControl(view.container)).toBeNull()
+    expect(contextRow?.getAttribute('hidden')).toBeNull()
+
+    act(() => { h.set({
+      hasMore: true,
+      turnTimings: new Map([[1, { startTime: 0, endTime: 5_000 }]]),
+    }) })
     const toggle = turnProcessControl(view.container)!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(contextRow?.getAttribute('hidden')).toBe('until-found')
@@ -1785,6 +1810,7 @@ describe('ChatView', () => {
           assistant(10, 'visible answer', 2),
         ],
         turnEnds: new Map([[1, 5]]),
+        turnTimings: new Map([[1, { startTime: 0, endTime: 5_000 }]]),
         hasMore: false,
       })
     })
@@ -1808,6 +1834,7 @@ describe('ChatView', () => {
         assistant(4, 'final answer', 1, 2),
       ],
       turnEnds: new Map([[1, 5]]),
+      turnTimings: new Map([[1, { startTime: 0, endTime: 5_000 }]]),
     })
     const process = source.nodes.values()
       .find((candidate): candidate is ChatNode<'turn-process'> => candidate.kind === 'turn-process')
@@ -1863,6 +1890,7 @@ describe('ChatView', () => {
       const h = makeHarness({
         nodes: [user(1, 'question'), first, assistant(4, 'new answer', 1, 2)],
         turnEnds: new Map([[1, 5]]),
+        turnTimings: new Map([[1, { startTime: 0, endTime: 5_000 }]]),
       })
       const view = render(<h.ChatView {...h.props} />, { container: host })
       fireEvent.click(turnProcessControl(view.container)!)

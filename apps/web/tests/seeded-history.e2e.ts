@@ -721,24 +721,21 @@ describe('web e2e: seeded history renders through cold resume', () => {
     if (bodyError !== undefined) throw bodyError
   })
 
-  it.skipIf(MODE === 'record')('an Access-chip switch lands one command row: bare name, non-repeating settlement text', async () => {
+  it.skipIf(MODE === 'record')('an Access-chip switch persists its command without adding a Chat row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-command-row'))
-    // The Access chip submits `/permission <preset>` — a host command with no
-    // model call, so the settled row renders keylessly over this cold history.
-    // The row copy is the assertion: `permission · preset read-only`,
-    // where neither half repeats the other (the dispatched `/` and its
-    // argument stay out of the title, and the settlement text never restates
-    // the command's own name).
     await page.getByRole('button', { name: 'Access mode, current: Workspace Write' }).click()
     await page.getByRole('menuitem', { name: 'Read Only' }).click()
     const access = page.getByRole('button', { name: 'Access mode, current: Read Only' })
     await expect.poll(() => access.isEnabled(), { timeout: 10_000 }).toBe(true)
-    // Scoped to the row itself, so unrelated page text that happens to read
-    // `permission` (a future resident slash menu) cannot satisfy or break it.
     const row = page.locator('[data-variant="others"]').filter({ hasText: 'preset read-only' })
-    await expect.poll(() => row.count(), { timeout: 10_000 }).toBe(1)
-    expect(await row.getByText('permission', { exact: true }).count()).toBe(1)
-    expect(await row.getByText('/permission read-only', { exact: true }).count()).toBe(0)
+    expect(await row.count()).toBe(0)
+    const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
+    if (agent === undefined) throw new Error('seeded session did not attach an agent')
+    const events = agent.session.snapshotEvents()
+    const run = events.findLast(event => event.type === 'command/run' && event.data.name === 'permission')
+    if (run?.type !== 'command/run') throw new Error('permission command was not persisted')
+    expect(events.find(event => event.type === 'command/done' && event.data.commandId === run.data.commandId)?.data)
+      .toMatchObject({ kind: 'success', text: 'preset read-only' })
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(COMMAND_ROW_EXPECTED, snapshot, MODE)

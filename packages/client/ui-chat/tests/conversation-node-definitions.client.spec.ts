@@ -166,6 +166,12 @@ function node(value: ChatSnapshot, kind: string): ChatConversationViewNode | und
   return value.nodes.values().find(candidate => candidate.kind === kind)
 }
 
+function promptNodes(value: ChatSnapshot): ChatConversationViewNode[] {
+  const prompts = value.nodes.values().filter(candidate => candidate.kind === 'system-prompt')
+  for (const prompt of prompts) expect(value.order).not.toContain(prompt.key)
+  return prompts.sort((left, right) => left.anchorSeq - right.anchorSeq)
+}
+
 function textMessage(id: string, text: string) {
   return {
     id,
@@ -317,6 +323,42 @@ describe('built-in conversation node Definitions', () => {
     expect(hasAssistantReplyContent([{ kind: 'text', text: 'answer' }])).toBe(true)
     expect(hasAssistantReplyContent([{ kind: 'image', attachment: {} as never }])).toBe(true)
     expect(hasAssistantReplyContent([{ kind: 'other', block: { type: 'future' } }])).toBe(true)
+  })
+
+  it.each(['replay', 'live', 'prepend'] as const)('hides permission commands but retains their data and ordinary Context (%s)', (mode) => {
+    const entries = [
+      at(1, 'command/run', { commandId: 'permission-1', name: 'permission', source: { kind: 'user' } }),
+      at(2, 'command/done', { commandId: 'permission-1', kind: 'success', text: 'Granted' }),
+      at(3, 'command/run', { commandId: 'plan-1', name: 'plan', source: { kind: 'user' } }),
+      at(4, 'command/done', { commandId: 'plan-1', kind: 'success', text: 'Plan mode' }),
+      at(5, 'turn/start', { turn: 1 }),
+      at(6, 'step/start', { turn: 1, step: 1 }),
+      at(7, 'user/message', {
+        ...textMessage('context-1', 'workspace context'),
+        source: { kind: 'context' },
+      }, { surfaceOp: 'append' }),
+    ]
+    const value = assembler(mode === 'replay' ? entries : [])
+    if (mode === 'live') {
+      for (const entry of entries) {
+        value.append(entry)
+        value.flush()
+      }
+    } else if (mode === 'prepend') {
+      value.replaceWindow(entries.slice(1), true)
+      value.flush()
+      expect(node(snapshot(value), 'command')?.data).toMatchObject({ name: null })
+      value.prepend(entries.slice(0, 1), false)
+      value.flush()
+    }
+    const current = snapshot(value)
+    const visible = current.order.map(key => current.nodes.get(key))
+    expect(visible.map(candidate => candidate?.kind)).toEqual(['command', 'context'])
+    expect(visible[0]?.data).toMatchObject({ name: 'plan' })
+    expect(current.nodes.values().filter(candidate => candidate.kind === 'command')).toHaveLength(2)
+    expect(node(current, 'command')?.data).toMatchObject({
+      name: 'permission', outcome: { kind: 'success', text: 'Granted' },
+    })
   })
 
   it('projects one reversible process window before the finalized answer', () => {
@@ -1543,7 +1585,7 @@ describe('built-in conversation node Definitions', () => {
     expect(current.nodes.values().filter(candidate => candidate.kind === 'unknown')).toEqual([])
   })
 
-  it('shows a complete appended prompt at the start of a headerless window', () => {
+  it('retains a complete appended prompt at the start of a headerless window', () => {
     const value = assembler([
       systemUpdateAt(10, '# Known prompt', 2, 1),
       at(11, 'user/message', textMessage('window-user', 'continue'), { surfaceOp: 'append' }),
@@ -1558,8 +1600,8 @@ describe('built-in conversation node Definitions', () => {
     ], false)
     value.flush()
     const restored = snapshot(value)
-    expect(restored.order.map(key => restored.nodes.get(key)).filter(candidate => candidate?.kind === 'system-prompt')
-      .map(candidate => candidate?.data)).toEqual([{ text: '# Original' }, { text: '# Known prompt', update: true }])
+    expect(promptNodes(restored).map(candidate => candidate.data))
+      .toEqual([{ text: '# Original' }, { text: '# Known prompt', update: true }])
   })
 
   it('withholds windowed replacement prompts until prepend resolves their positions', () => {
@@ -1595,10 +1637,7 @@ describe('built-in conversation node Definitions', () => {
     ]
     const promptTexts = (value: ConversationNodeAssembler) => {
       const restored = snapshot(value)
-      return restored.order.flatMap((key) => {
-        const candidate = restored.nodes.get(key)
-        return candidate?.kind === 'system-prompt' ? [candidate.data] : []
-      })
+      return promptNodes(restored).map(candidate => candidate.data)
     }
     windowed.prepend(older, false)
     windowed.flush()
@@ -1608,7 +1647,7 @@ describe('built-in conversation node Definitions', () => {
     expect(promptTexts(nodeless)).toEqual([{ text: '# Original prompt' }, { text: '# Original prompt' }])
   })
 
-  it('shows the system node text as the request prompt card before the request messages', () => {
+  it('retains the request prompt without adding it to visible Chat rows', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'step/start', { turn: 1, step: 1 }),
@@ -1626,7 +1665,6 @@ describe('built-in conversation node Definitions', () => {
 
     const current = snapshot(value)
     expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual([
-      'system-prompt',
       'user',
       'context',
     ])
@@ -1675,8 +1713,7 @@ describe('built-in conversation node Definitions', () => {
       }
     }
     const current = snapshot(value)
-    expect(current.order.map(key => current.nodes.get(key)).filter(candidate => candidate?.kind === 'system-prompt')
-      .map(candidate => candidate?.data)).toEqual([
+    expect(promptNodes(current).map(candidate => candidate.data)).toEqual([
       { text: 'A' }, { text: 'B', update: true }, { text: 'A' },
     ])
   })
@@ -1704,15 +1741,15 @@ describe('built-in conversation node Definitions', () => {
     ])
 
     const current = snapshot(value)
-    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user'])
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['user'])
 
     value.append(systemAt(5, '# Replaced', 3))
     value.flush()
     const replaced = snapshot(value)
-    expect(replaced.order.map(key => replaced.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user'])
+    expect(replaced.order.map(key => replaced.nodes.get(key)?.kind)).toEqual(['user'])
   })
 
-  it('presents an in-history prompt update as its own card and lets no same-step header repeat it', () => {
+  it('retains an in-history prompt update without duplicating it at the same-step header', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'step/start', { turn: 1, step: 1 }),
@@ -1731,19 +1768,14 @@ describe('built-in conversation node Definitions', () => {
     ])
     const cards = () => {
       const current = snapshot(value)
-      return current.order.flatMap((key) => {
-        const candidate = current.nodes.get(key)
-        return candidate?.kind === 'system-prompt' ? [[candidate.anchorSeq, candidate.data]] : []
-      })
+      return promptNodes(current).map(candidate => [candidate.anchorSeq, candidate.data])
     }
 
-    // The update is the model-visible change at its position; node 0 keeps its card.
     expect(cards()).toEqual([
       [1, { text: '# System' }],
       [10, { text: '# Updated', update: true }],
     ])
 
-    // A series header in the same step shows nothing more: the update card already carries the text.
     value.append(at(12, 'request/header', {
       reason: 'series',
       startsSeries: true,
@@ -1752,7 +1784,6 @@ describe('built-in conversation node Definitions', () => {
     value.flush()
     expect(cards()).toHaveLength(2)
 
-    // A later series header presents the effective prompt again, as any series start does.
     value.append(at(13, 'step/end', { turn: 2, step: 1 }))
     value.append(at(14, 'step/start', { turn: 2, step: 2 }))
     value.append(at(15, 'request/header', {
@@ -1784,10 +1815,11 @@ describe('built-in conversation node Definitions', () => {
     ])
 
     const current = snapshot(value)
-    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user'])
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['user'])
+    expect(promptNodes(current).map(candidate => candidate.data)).toEqual([{ text: '# System' }])
   })
 
-  it('keeps the initial system prompt before the opening User as Turn process state changes', () => {
+  it('keeps the system prompt out of Chat order as Turn process state changes', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'step/start', { turn: 1, step: 1 }),
@@ -1808,14 +1840,14 @@ describe('built-in conversation node Definitions', () => {
     }
     const promptKey = node(snapshot(value), 'system-prompt')?.key
 
-    expect(kinds()).toEqual(['system-prompt', 'user', 'context'])
+    expect(kinds()).toEqual(['user', 'context'])
 
     value.append(at(7, 'assistant/live-chunk', {
       turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'thinking' },
     }))
     value.flush()
     expect(kinds()).toEqual([
-      'system-prompt', 'user', 'turn-process', 'context', 'assistant-step',
+      'user', 'turn-process', 'context', 'assistant-step',
     ])
 
     value.append(at(8, 'step/end', { turn: 1, step: 1 }))
@@ -1828,7 +1860,7 @@ describe('built-in conversation node Definitions', () => {
     value.flush()
 
     expect(kinds()).toEqual([
-      'system-prompt', 'user', 'turn-process', 'context', 'assistant-step', 'assistant-step', 'turn-tail',
+      'user', 'turn-process', 'context', 'assistant-step', 'assistant-step', 'turn-tail',
     ])
     expect(node(snapshot(value), 'system-prompt')?.key).toBe(promptKey)
   })
@@ -1855,7 +1887,8 @@ describe('built-in conversation node Definitions', () => {
       const candidate = current.nodes.get(key)
       return candidate?.kind === 'system-prompt' || candidate?.kind === 'user' ? [candidate] : []
     })
-    expect(ordered.map(candidate => candidate.kind)).toEqual(['system-prompt', 'user', 'user'])
+    expect(ordered.map(candidate => candidate.kind)).toEqual(['user', 'user'])
+    expect(promptNodes(current).map(candidate => candidate.data)).toEqual([{ text: '# System' }])
   })
 
   it('places a withheld replacement prompt after prepend supplies its original node', () => {
@@ -1892,10 +1925,7 @@ describe('built-in conversation node Definitions', () => {
       windowed.flush()
 
       const restored = snapshot(windowed)
-      const prompts = restored.order.flatMap((key) => {
-        const candidate = restored.nodes.get(key)
-        return candidate?.kind === 'system-prompt' ? [candidate] : []
-      })
+      const prompts = promptNodes(restored)
       expect(prompts.map(candidate => candidate.anchorSeq)).toEqual([1, 10])
       expect(prompts.at(-1)?.data).toEqual({ text: windowedSystem })
       expect(restored.nodes.get(user.key)).toBeDefined()
@@ -1936,11 +1966,8 @@ describe('built-in conversation node Definitions', () => {
       const candidate = current.nodes.get(key)
       return candidate?.kind === 'system-prompt' || candidate?.kind === 'user' ? [candidate] : []
     })
-    expect(ordered.map(candidate => candidate?.kind)).toEqual([
-      'system-prompt', 'user', 'system-prompt', 'system-prompt', 'user',
-    ])
-    expect(ordered.filter(candidate => candidate?.kind === 'system-prompt')
-      .map(candidate => candidate?.anchorSeq)).toEqual([1, 7, 10])
+    expect(ordered.map(candidate => candidate.kind)).toEqual(['user', 'user'])
+    expect(promptNodes(current).map(candidate => candidate.anchorSeq)).toEqual([1, 7, 10])
   })
 
   it('associates each direct message with its immediately following session recall', () => {

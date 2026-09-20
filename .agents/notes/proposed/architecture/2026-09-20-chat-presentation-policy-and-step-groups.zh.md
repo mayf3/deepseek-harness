@@ -2,9 +2,11 @@
 
 Status: proposed
 
+[English](2026-09-20-chat-presentation-policy-and-step-groups.md) | 中文
+
 ## 问题
 
-Chat 的「对话显示」设置今天只有两档：`normal` 不折叠、`compact` 在轮次结束后把过程行折进一个整轮控件。设置值的流向是：`TranscriptViewPolicy.mode` 观察量注入 ChatView，ChatView 用 `useTranscriptView` 读成一个布尔值 `compactTranscript`，再作为 prop 传给 `ChatNodeList`，再传给每一个 `ChatNodeSeat`。另一个全局布尔值 `hasMore` 走同一条路，以 `historyIncomplete` 的名字进每个 seat。两个值一变，全部 seat 重渲染一遍，哪怕只有可折叠的那几个输出真的变了。
+Chat 的「对话显示」设置在本提案开始时只有两档：`normal` 不折叠、`compact` 在轮次结束后把过程行折进一个整轮控件。设置值的流向是：`TranscriptViewPolicy.mode` 观察量注入 ChatView，ChatView 用 `useTranscriptView` 读成一个布尔值 `compactTranscript`，再作为 prop 传给 `ChatNodeList`，再传给每一个 `ChatNodeSeat`。另一个全局布尔值 `hasMore` 走同一条路，以 `historyIncomplete` 的名字进每个 seat。两个值一变，全部 seat 重渲染一遍，哪怕只有可折叠的那几个输出真的变了。
 
 产品要把这个设置改成三档：简洁、详细、完全展开；并在简洁和详细两档里把回复之间的连续过程行归成可折叠的组。PR #4565 做过一次完整实现，合并八分钟后因性能回退被整体撤回。合并前后在本机的对照实测：长会话分页耗时 +27%，DOM 节点 +23%，堆内存 +14%，Trajectory 切换 +10%，全部仍在 CI 预算内；仓库现有六个基准没有任何一个覆盖「流式期间 reasoning 或工具 chunk 进入活动分组、分组重投影、seat 重渲染」这条它新增的热路径。
 
@@ -19,6 +21,8 @@ Chat 的「对话显示」设置今天只有两档：`normal` 不折叠、`compa
 
 本记录给出一套基础架构，让三档模式与分组落地时满足下面的约束，并让后续产品变化只落在少数节点上。
 
+三档设置、展示策略通道与按轮折叠资格已实现；step-group 仍是提案。当前实现、已提交范围和未完成项以[迁移进度表](../feature/2026-09-20-chat-work-details-migration.zh.md)为准，下面的分组状态机与改动清单不表示已经交付。
+
 ## 目标与约束
 
 下表是评审阶段已经确认的裁决，本方案不再重新讨论它们。
@@ -31,7 +35,7 @@ Chat 的「对话显示」设置今天只有两档：`normal` 不折叠、`compa
 | 4 | 模式不开关 Definition | 注册变化会触发 registry 重建与全量重放，所有 seat 必刷；Definition 必须与模式无关 |
 | 5 | 折叠按轮判定 | 一轮只要自己的 `turn/start` 已加载就可以折叠；被分页切开的最老一轮保持展开，本轮不优化 |
 | 6 | 允许改 ui-conversation | 引擎可以改，但只做让方案正确成立所必需的小改动 |
-| 7 | 本轮范围 | 只写代码与本记录；不写测试，不改其他文档；测试与文档在下一轮补 |
+| 7 | 初始实现范围 | 初始阶段只写代码与本记录；测试与其他文档在 CI 修复阶段补齐 |
 
 有一条前置澄清：接受「切模式全屏重排版」不等于接受「所有 seat 重渲染」。浏览器重排是几何结果，seat 重渲染是 React 组件函数重跑，后者才是这里要限制的量。
 
@@ -49,7 +53,7 @@ Chat 的「对话显示」设置今天只有两档：`normal` 不折叠、`compa
 
 **路线 δ，Definition 拥有结构，builder 物化行。** turn 级 Definition 折叠出组列表并发布为 Turn 数据；Chat builder 据此物化组头节点并给成员写归属；seat 用组合 selector 决定隐藏；引擎给 `ViewBuilder.apply` 的入参加一份「本次 flush 哪些 Location 数据换了引用」。
 
-## 砍掉的路线与理由
+## 备选方案与取舍
 
 **每组一个 Context 无法成立。** 引擎要求 `match(event)` 只看单个事件算出 id，「第几组」取决于前面有没有回复，单个事件算不出。这不是实现难度，是契约上的不可能。
 
@@ -154,6 +158,12 @@ fold 只发布 Turn 数据，没有视图节点。engine 的 `flush` 在 Locatio
 seat 不再接收 `compactTranscript` 与 `historyIncomplete` 两个 prop。它通过 `usePresentation` 读策略，但选出的不是模式，而是自己的结论：
 
 ```ts
+declare function usePresentation<T>(select: (policy: {
+  stepGrouping: 'collapsed' | 'none'
+  foldCompletedTurns: boolean
+}) => T): T
+declare const group: { readonly headStep: number } | undefined
+
 const grouping = usePresentation(p => group === undefined ? 'none' : p.stepGrouping)
 const foldCompleted = usePresentation(p => p.foldCompletedTurns)
 ```
@@ -244,11 +254,11 @@ per-key presentation 增加 `turnStarted`，来源是该轮 `turn/start` 是否�
 | ui-chat | `chat/register-node-renderers.ts` | 注册组头渲染器；给 assistant-step 注入策略 |
 | ui-chat | `apply.ts`、`index.ts` | 创建策略观察量并注入；导出类型 |
 
-本轮不改：README、i18n 配对文件、slot catalog、测试、快照。slot catalog 中 `ChatNodeOwnerProps` 的源码摘录与 key 列表需要在提 PR 前重新生成。
+上述清单保留完整分组方案；独立功能已经更新 README、i18n 配对文件及 slot catalog。测试与快照进度见迁移记录，未完成的分组改动不随这些更新自动完成。
 
 ## 验收标准
 
-下一轮补齐，本轮不实现。
+分组相关验收仍待实现；独立展示功能的验证进度见迁移记录。
 
 **渲染次数隔离测试。** 在现有 `chat-view.client.spec` 的挂载方式上加计数：React Profiler 的 `onRender` 按 seat 计数，测试专用的计数渲染器注册进 `conversation.chat.node` 按 kind 计数。刺激与期望按「刷新范围」一节的表逐行断言精确集合。
 
@@ -260,7 +270,7 @@ per-key presentation 增加 `turnStarted`，来源是该轮 `turn/start` 是否�
 
 **基准补位。** `conversation-fold` 增加带推理与工具的增量 apply 场景；`long-session-browser` 增加带工具与推理的流式 fixture。这是墙钟兜底，不是门禁。
 
-## 风险与待决
+## 风险
 
 - **builder 产出节点的边界。** 这是这套架构里第一次由视图 builder 产出节点。边界写死为：builder 只能从 Turn 或 Step 数据物化行，不能读事件，不能自己算业务结构。合成 key 用 `step-group:` 前缀，Context key 以数字开头，不会冲突。如果实践中被否决，退到路线 A。
 - **组头锚点随头成员移动一次。** 头成员是流式 Assistant 时，落盘让锚点从首个可见 chunk 移到消息事件，组头跟着移动一次。与 Assistant 自己的结构性更新同时发生。

@@ -9,11 +9,10 @@
   - button "Jump to turn 1"
   - button "Jump to turn 2"
   - button "Jump to turn 3"
-- button "System prompt"
 - text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. {{clock}}"
 - button "Copy"
 - tooltip "Copy"
-- button "Think The user wants me to read a.txt and b.txt, then reply with \"DONE\". Let me do both reads in parallel."
+- button "Think"
 - paragraph: I will read both files before answering.
 - button "Copy"
 - button "Good response"
@@ -26,7 +25,6 @@
 - button "Read b.txt":
   - text: Read
   - button "b.txt"
-- button "System prompt"
 - text: Now give the final answer. {{clock}}
 - button "Copy"
 - paragraph: DONE
