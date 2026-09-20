@@ -1,22 +1,26 @@
 /**
- * Last-input modality for the whole document. Focus alone cannot reveal how it
- * arrived: a closing menu hands focus back to its trigger, and after a mouse
- * selection that programmatic return must stay silent, while keyboard focus
- * must not. Capture-phase window listeners record the modality, and only focus
- * navigation returns the document to the keyboard — a stray modifier or Escape
- * is not a reason to reveal the pointer's focus.
+ * Input modality for the whole document, under the two rules its consumers need.
  *
- * The guard keeps the module loadable where no window exists (node-side imports
- * of the package's pure helpers).
+ * A tooltip asks what the last input was: after any key the user is working from
+ * the keyboard, so a programmatic focus may raise a bubble. A focus ring asks
+ * something narrower — a pointer's focus must stay invisible — because Chromium
+ * reveals an already-focused control as soon as any key arrives, including a
+ * modifier or Escape that never navigated anywhere. Only focus navigation
+ * returns that second answer to the keyboard.
+ *
+ * Both are recorded from capture-phase window listeners. The guard keeps the
+ * module loadable where no window exists (node-side imports of the package's
+ * pure helpers).
  */
 
 /** Modality values published on the document element. */
 export const INPUT_MODALITY = { pointer: 'pointer', keyboard: 'keyboard' } as const
 
-/** Attribute carrying the current modality, read by the global focus sheet. */
+/** Attribute carrying whether focus navigation last owned focus. */
 export const INPUT_MODALITY_ATTRIBUTE = 'data-input-modality'
 
 let pointer = false
+let pointerOwnsFocus = false
 
 /** Navigation keys move focus; every other key must not reveal existing focus. */
 function isFocusNavigation(event: KeyboardEvent): boolean {
@@ -24,7 +28,7 @@ function isFocusNavigation(event: KeyboardEvent): boolean {
 }
 
 function publish(): void {
-  document.documentElement.setAttribute(INPUT_MODALITY_ATTRIBUTE, pointer ? INPUT_MODALITY.pointer : INPUT_MODALITY.keyboard)
+  document.documentElement.setAttribute(INPUT_MODALITY_ATTRIBUTE, pointerOwnsFocus ? INPUT_MODALITY.pointer : INPUT_MODALITY.keyboard)
 }
 
 /** Whether the last input able to own focus came from a pointer. */
@@ -33,10 +37,16 @@ export function pointerModality(): boolean {
 }
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('pointerdown', () => { pointer = true; publish() }, true)
+  window.addEventListener('pointerdown', () => {
+    pointer = true
+    pointerOwnsFocus = true
+    publish()
+  }, true)
   window.addEventListener('keydown', (event) => {
-    if (!isFocusNavigation(event)) return
+    // Any key returns tooltips to the keyboard; only navigation reveals a ring.
     pointer = false
+    if (!isFocusNavigation(event)) return
+    pointerOwnsFocus = false
     publish()
   }, true)
 }
