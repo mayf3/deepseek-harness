@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ReactNode } from 'react'
 import type {
   SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarSectionOwnerProps,
@@ -57,6 +58,7 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
       ) => {
         if (key === 'sidebar.brand.mark') return brandMark
         if (key === 'sidebar.brand.name') return brandName
+        if (key === 'sidebar.toggle.badge') return null
         if (key === 'sidebar.settings') {
           settingsOwner = owner
           return <div data-testid="settings-seat" data-wide={owner.wide} />
@@ -190,6 +192,33 @@ describe('SidebarRoot shell', () => {
     expect(b.regionOwner().wide).toBe(false)
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
   })
+
+  it('shows only the badge bubble while the rail badge is hovered inside the toggle', () => {
+    vi.useFakeTimers()
+    render(<SidebarRoot
+      collapsed width={56}
+      useSessions={neverHook} useSessionStatus={useSessionStatus} useSessionRetainInfo={neverHook}
+      usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])}
+      useResource={useResource} useWorkspaces={neverHook}
+      startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
+      renderSlot={((key: string) => key === 'sidebar.toggle.badge'
+        ? <Tooltip label="Update — V1.2.3"><span data-testid="badge" /></Tooltip>
+        : null) as SidebarRootComponentProps['renderSlot']}
+    />)
+    const toggle = screen.getByRole('button', { name: 'Open sidebar' })
+    fireEvent.mouseEnter(toggle)
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(screen.getByRole('tooltip').textContent).toBe('Open sidebar')
+    // The badge's own bubble replaces the toggle's rather than stacking on it,
+    // even after the toggle's longer hover delay has elapsed.
+    fireEvent.mouseEnter(screen.getByTestId('badge'))
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(screen.getAllByRole('tooltip').map(bubble => bubble.textContent)).toEqual(['Update — V1.2.3'])
+    fireEvent.mouseLeave(screen.getByTestId('badge'), { relatedTarget: toggle })
+    expect(screen.getByRole('tooltip').textContent).toBe('Open sidebar')
+    fireEvent.mouseLeave(toggle)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
 })
 
 it('keeps the macOS sidebar toggle in its top strip', () => {
@@ -197,19 +226,20 @@ it('keeps the macOS sidebar toggle in its top strip', () => {
   const shell = mountShell()
   fireEvent.click(screen.getByRole('button', { name: en['toggle.collapse'] }))
   expect(shell.toggleSidebar).toHaveBeenCalledOnce()
+  // The brand stays part of the logo row's window-drag surface: no button
+  // role (the global no-drag rule would subtract it); only the dedicated
+  // New Session capsule starts a session.
+  expect(screen.getAllByRole('button', { name: 'New session' })).toHaveLength(1)
+  expect(screen.getByTestId('custom-brand-mark')).toBeTruthy()
 })
 
-it.each([undefined, 'win32', 'linux', 'darwin'])('shows header sidebar controls only on macOS desktop (%s)', (platform) => {
-  if (platform !== undefined) document.documentElement.dataset.platform = platform
+it('wires the shell.leading controls to the shared sidebar actions', () => {
   const toggleSidebar = vi.fn()
   const startSession = vi.fn()
-  // This occupant only consumes its two actions and locale, not Session hooks.
+  // This occupant only consumes its two actions and locale, not Session hooks;
+  // mounting is the frame's decision (ui-layout shell.leading seat).
   const props = { toggleSidebar, startSession, t } as HeaderLeadingControlsProps
-  const view = render(<HeaderLeadingControls {...props} />)
-  if (platform !== 'darwin') {
-    expect(view.container.innerHTML).toBe('')
-    return
-  }
+  render(<HeaderLeadingControls {...props} />)
   fireEvent.click(screen.getByRole('button', { name: en['toggle.open'] }))
   fireEvent.click(screen.getByRole('button', { name: en['session.new.label'] }))
   expect(toggleSidebar).toHaveBeenCalledOnce()

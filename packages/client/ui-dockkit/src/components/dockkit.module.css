@@ -221,6 +221,23 @@
   margin-left: 4px;
 }
 
+/* macOS desktop: an embedder may pin this surface under the window's top drag
+   band (ui-layout .leadingBand — full-window geometry that Electron composes
+   in DOM order, not by stacking). The chip run, the strip-end chrome, the
+   pane body, and the split divider subtract their whole boxes so tabs,
+   controls, content, and the resize grab stay usable even where they overlap
+   the band; the strip's blank fill and top inset keep the band's drag, so the
+   row moves the window like a native tab bar. The divider must be named here:
+   it is a plain div, so ui-web base.css's interactive-element subtraction
+   never matches it. Hidden surfaces contribute nothing: Blink skips
+   non-visible boxes when it collects draggable regions. */
+:global(html[data-platform='darwin']) .stripTabs,
+:global(html[data-platform='darwin']) .stripChrome,
+:global(html[data-platform='darwin']) .paneBody,
+:global(html[data-platform='darwin']) .divider {
+  -webkit-app-region: no-drag;
+}
+
 /* The slot between two chips: a 10px box with a hairline down its centre.
    Targeted by a drag, the same box draws the caret instead, so the chips
    around it never move. */
@@ -450,10 +467,11 @@
   display: flex;
   flex-direction: column;
   min-width: 96px;
-  padding: 4px;
-  background: var(--dsw-alias-bg-layer-3);
+  padding: 3px;
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 .menu:not(:has([role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'])) {
@@ -461,13 +479,13 @@
 }
 
 .menuItem {
-  padding: 5px 8px;
+  padding: 4px 7px;
   color: var(--dsw-alias-label-primary);
-  font-size: var(--dsh-content-font-size-secondary, 13px);
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
   text-align: left;
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
   cursor: pointer;
 }
 

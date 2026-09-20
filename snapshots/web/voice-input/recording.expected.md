@@ -1,8 +1,6 @@
 - textbox "Describe what you want to build, / commands, @ files or sessions":
   - paragraph: Use the bash tool to
-- button "Cancel":
-  - img
+- button "Cancel"
 - img "Recording…"
-- button "Stop and transcribe":
-  - img
+- button "Stop and transcribe"
 - button "Send message"

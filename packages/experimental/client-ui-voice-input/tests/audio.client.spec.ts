@@ -29,14 +29,14 @@ it('reports unavailable recording and denied permission', async () => {
 })
 
 it('releases a microphone granted after cancellation', async () => {
-  const permission = Promise.withResolvers<MediaStream>()
+  const permission = Promise.withResolvers<{ getTracks: () => { stop: () => void }[] }>()
   const stop = vi.fn(), dispose = vi.fn()
   vi.stubGlobal('MediaRecorder', function RecorderStub() {})
   vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: () => permission.promise } })
   const recording = new Recording(dispose)
   const acquiring = recording.start()
   await recording.dispose()
-  permission.resolve({ getTracks: () => [{ stop }] } as unknown as MediaStream)
+  permission.resolve({ getTracks: () => [{ stop }] })
   await expect(acquiring).rejects.toMatchObject({ kind: 'cancelled' })
   expect(stop).toHaveBeenCalledOnce()
   expect(dispose).toHaveBeenCalledOnce()

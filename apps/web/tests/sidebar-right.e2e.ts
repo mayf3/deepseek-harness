@@ -297,9 +297,11 @@ describe('web e2e: shipped right Sidebar', () => {
         step: 1,
         message: {
           id: 'result-call-write-1',
-          role: 'user',
+          role: 'tool',
           source: { kind: 'tool', callId: 'call-write-1' },
-          content: [{ type: 'tool-result', toolCallId: 'call-write-1', content: [{ type: 'text', text: 'ok' }] }],
+          toolCallId: 'call-write-1',
+          content: [{ type: 'text', text: 'ok' }],
+          isError: false,
         },
       } as never, { surfaceOp: 'append' })
       agent.session.append('assistant/message', {
@@ -407,7 +409,7 @@ describe('web e2e: shipped right Sidebar', () => {
       }
 
       await expect.poll(async () => await tabTitles(column)).toEqual(['Start'])
-      await expect.poll(async () => await column.locator('[data-sidebar-right-guide-entry]').count()).toBe(2)
+      await expect.poll(async () => await column.locator('[data-sidebar-right-guide-entry]').count()).toBe(3)
       await column.locator('[data-sidebar-right-guide-entry="files"]').click()
 
       // A manual guide is closable beside Files and suppresses another add
@@ -680,7 +682,7 @@ describe('web e2e: shipped right Sidebar', () => {
     }, 60_000)
 
     it('CONTROL: the host endpoint answers when called directly, bypassing the wire', async () => {
-      const files = (scaffold.ctx as unknown as {
+      const files = (scaffold.ctx as {
         get(name: string): {
           read(
             scope: { sessionId: string; workspaceRoot: string },

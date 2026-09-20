@@ -17,6 +17,7 @@ import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { execa } from 'execa'
 import * as yaml from 'js-yaml'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { testProfileResolution } from './profiles/headless/tests/profile-resolution.ts'
 
 /** Published-entry acceptance for argument errors, profile lifecycle, and boot-free config dumps. */
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
@@ -341,6 +342,8 @@ function startStartupProfile(fixture: StartupFixture, args: readonly string[]) {
 }
 
 describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', () => {
+  testProfileResolution('lib')
+
   it('requires a profile and rejects removed flags', async () => {
     const bare = await runBuiltBin()
     expect(bare.code).toBe(1)
@@ -984,7 +987,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     try {
       await waitForFile(fixture.ready)
       expect(readFileSync(fixture.echo, 'utf8')).toBe('bundle-default')
-      expect(existsSync(join(fixture.home, 'profiles', 'node_modules'))).toBe(true)
+      expect(existsSync(join(fixture.home, 'profiles', 'node_modules'))).toBe(false)
       requestProfileShutdown(child, fixture)
       expect((await child).exitCode).toBe(0)
     } finally {

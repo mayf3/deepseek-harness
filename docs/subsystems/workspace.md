@@ -121,6 +121,10 @@ Ownership truth is the record's ordered `sessionIds`, never derived from session
 
 Sessions get their cwd at create time from whoever creates them, not from this registry — the API gateway resolves a new session's cwd from the chosen workspace's `path` (falling back to an explicit or default cwd), creates the session so the cwd lands in its immutable [`SessionHeader`](persistence.md#sessionheader--metadata-beside-the-log), then calls `attachSession`, which re-validates that stored header cwd against the workspace path. On the first successful start, the registry bootstraps history from persisted headers alone (`id`, `cwd`, `createdAt` — never event bodies), grouping sessions with a valid canonical cwd into per-directory workspaces, newest first; the initialized marker is written last so an interrupted bootstrap resumes safely. The bootstrap is one-time: cwd-less legacy sessions stay Ungrouped, and sessions created afterwards join a workspace only through `attachSession`.
 
+## Session pinning
+
+The controller's [transport types](../../packages/api/workspace-controller/src/types.ts) define `WorkspacePinSessionRequest` and `WorkspaceUnpinSessionRequest`, each carrying one `sessionId`. Both operations return `WorkspacePinValue`: the complete `pinnedSessionIds` array of Session ids, most recently pinned first. Pinning requires a known, unarchived Session; unpinning an id that is not pinned succeeds without changing the set. Archiving removes the Session's pin in the same durable write, and unarchiving does not restore it.
+
 ## Consumers
 
 [`dsh-workspace-controller`](../../packages/api/workspace-controller) serves workspace CRUD to GUI clients over `ctx.workspaceRegistry`, and [`dsh-session-controller`](../../packages/api/session-controller) performs the create-session-then-attach flow above. [dsh-agent-instructions](../../packages/context/agent-instructions) is **not** a consumer despite the name: it discovers AGENTS.md-style instruction files under an agent's own cwd and never touches `ctx.workspaceRegistry` — the shared word refers to the user's working directory, not to this registry's entities.
@@ -340,6 +344,20 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('unarchiveSession') unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue>
 
 /**
+ * Surface one known unarchived Session ahead of unpinned Sessions.
+ * @param request - Session identity to pin.
+ * @returns the complete resulting pin set, most recently pinned first.
+ */
+@Remote('pinSession') pinSession(request: WorkspacePinSessionRequest): Promise<WorkspacePinValue>
+
+/**
+ * Remove one Session's pin without changing its saved Session order.
+ * @param request - Session identity to unpin.
+ * @returns the complete resulting pin set, most recently pinned first.
+ */
+@Remote('unpinSession') unpinSession(request: WorkspaceUnpinSessionRequest): Promise<WorkspacePinValue>
+
+/**
  * Stream a complete Workspace baseline followed by ordered increments.
  * @param signal - generation cancellation.
  * @returns baseline followed by ordered Workspace increments.
@@ -415,15 +433,15 @@ Host Remote file reads and workspace directory observations over the composed fi
 @Remote async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>
 
 /**
- * Stream every `fs/observed` observation of a file inside the Session's
- * workspace. Only instrumented filesystem operations report here; the OS is
- * not watched.
+ * Watch one file or a directory's direct entries in the Session's filesystem.
+ * Files use the backend's read authority; directories remain workspace-scoped.
  * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+ * @param path - target path; the Host determines its type and confines directories to the workspace.
  * @param signal - generation cancellation.
- * @returns `ready` once the Host observation queue is active and the workspace
- *   root is resolved, then queued and live observations in emission order.
+ * @returns `ready` once the target watch is active, then current metadata for queued and live invalidations.
+ * @throws RemoteError when watching is unavailable or a directory is outside the workspace.
  */
-@Remote({ mode: 'stream' }) changes(workspaceFileScope: WorkspaceFileScope, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>
+@Remote({ mode: 'stream' }) changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>
 ```
 
 Source: [`packages/api/workspace-files/src/index.ts`](../../packages/api/workspace-files/src/index.ts)
@@ -485,7 +503,9 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
 /**
  * Archive one session durably. The session must exist (live or in session
  * persistence); its workspace accounting — or lack of one — is irrelevant.
- * An already archived id resolves without writing.
+ * Archiving drops the session's pin in the same durable write (pinning and
+ * archival are mutually exclusive). An already archived id resolves without
+ * writing.
  * @param sessionId - The session to archive.
  * @returns resolution after durability.
  */
@@ -502,6 +522,25 @@ archiveSession(sessionId: SessionId): Promise<void>
  * @returns resolution after durability.
  */
 unarchiveSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Pin one session durably, prepending it to the registry-global pin set.
+ * The session must exist (live or in session persistence) and must not be
+ * archived. An already pinned id resolves without writing or reordering.
+ * @param sessionId - The session to pin.
+ * @returns resolution after durability.
+ */
+pinSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Unpin one session durably by dropping it from the registry-global pin
+ * set. Unpinning runs no session-existence check because removing an id
+ * cannot introduce an unknown one, so an entry whose session is gone still
+ * resolves. An id that is not pinned resolves without writing.
+ * @param sessionId - The session to unpin.
+ * @returns resolution after durability.
+ */
+unpinSession(sessionId: SessionId): Promise<void>
 
 /**
  * Resolve by canonical directory path without creating or mutating a

@@ -11,7 +11,7 @@ function fixture(platform: NodeJS.Platform = 'darwin') {
   const setPermissionCheckHandler = vi.fn<Session['setPermissionCheckHandler']>()
   const setPermissionRequestHandler = vi.fn<Session['setPermissionRequestHandler']>()
   const primary = {} as WebContents
-  installMicrophonePermissions({ setPermissionCheckHandler, setPermissionRequestHandler } as unknown as Session, () => primary)
+  installMicrophonePermissions({ setPermissionCheckHandler, setPermissionRequestHandler }, () => primary)
   return { primary, check: setPermissionCheckHandler.mock.calls[0]![0]!, request: setPermissionRequestHandler.mock.calls[0]![0]! }
 }
 it('allows only audio checks from the owned primary application frame', () => {

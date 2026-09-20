@@ -54,7 +54,7 @@ function mountBar(shell: SessionInputShell, over?: { running?: boolean; disabled
     useSession: bindSnapshotSelector(session),
     useSessions: bindSnapshotSelector(createSnapshotStore({
       ids: [], byId: {}, current: undefined, phase: 'ready',
-      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+      projectionsBySession: {}, jobsBySession: {}, currentAddress: undefined,
     })),
     useSessionStatus: bindSnapshotSelector(
       createSnapshotStore<SessionStatusSnapshot>(new Map()),
@@ -62,7 +62,7 @@ function mountBar(shell: SessionInputShell, over?: { running?: boolean; disabled
     useSessionRetainInfo: () => undefined,
     useResource,
     useWorkspaces: bindSnapshotSelector(createSnapshotStore({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
       baselinesReady: true, recentWorkspaceId: undefined,
     })),
     useProjection: (() => undefined),
@@ -161,7 +161,7 @@ describe('matrix row: claimed', () => {
     claim()
     act(() => { shell.editor.update(() => {}, { discrete: true }) }) // flush the queued decoration refresh
     expect(shell.snapshot.claim).toEqual({ name: 'goal', token: '/goal ', hint: '目标' })
-    expect(view.container.querySelector('[data-lexical-text][style*="warn-label"]')?.textContent).toBe('/goal ')
+    expect(view.container.querySelector('[data-lexical-text][style*="business-primary"]')?.textContent).toBe('/goal ')
     // The zh dictionary owns a hint.goal entry, which overrides the raw claim hint (production behavior).
     expect(textarea.style.getPropertyValue('--dsh-composer-hint')).toBe(JSON.stringify('输入目标，智能体将持续执行'))
     expect(textarea.getAttribute('contenteditable')).toBe('true')
@@ -191,7 +191,7 @@ describe('matrix row: claimed', () => {
     expect(shell.snapshot.phase).toBe('plain')
     expect(shell.snapshot.claim).toBeUndefined()
     act(() => { shell.editor.update(() => {}, { discrete: true }) }) // flush the queued decoration refresh
-    expect(view.container.querySelector('[data-lexical-text][style*="warn-label"]')).toBeNull()
+    expect(view.container.querySelector('[data-lexical-text][style*="business-primary"]')).toBeNull()
   })
 })
 

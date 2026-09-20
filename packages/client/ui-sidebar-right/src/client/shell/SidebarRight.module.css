@@ -46,17 +46,45 @@
   transition: transform var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
+/* One-frame app-region pulse at each open/close edge (RightbarSeat): changing
+   this computed value is what makes Electron recollect the window's drag
+   rects, which the slide's transform/visibility flips alone never dirty
+   (electron#32341). The panel's steady state sets no app-region in either
+   presentation, so this write is a real change at both edges — including a
+   hidden panel opening straight into fullscreen (a narrow window's first
+   open), whose rects were skipped while hidden. While set, the whole panel is
+   out of the drag band for that frame; the removal frame recollects the
+   steady-state geometry below. */
+:global(html[data-platform='darwin']) .panel[data-sidebar-right-region-nudge] {
+  -webkit-app-region: no-drag;
+}
+
 .panel[data-sidebar-right-panel='fullscreen'] {
   position: fixed;
   inset: 0;
   z-index: 40;
   border: none;
-  /* Electron drag regions are window geometry, not stacking: the conversation
-     title row's and the sidebar top strip's drag bands underneath keep taking
-     the pointer through this overlay, making the first strip's tabs unclickable.
-     The panel appears after both in DOM order, so this subtracts its whole box;
-     the strip rule below restores dragging on the strip's blank run. */
-  -webkit-app-region: no-drag;
+}
+
+/* No whole-box subtraction here: Electron drag regions are window geometry,
+   not stacking, so the frame's leading band does keep acting through this
+   fixed overlay — but the kit already subtracts every box that must stay
+   usable (tabs, strip-end chrome, pane bodies, dividers; ui-dockkit), and
+   ui-web base.css subtracts interactive elements and portalled overlays.
+   What remains of the band under the strips' blank runs is the window drag
+   affordance, the same native-tab-bar reading as the push presentation. A
+   panel-wide no-drag would trade it away and, worse, make no-drag the
+   steady state, turning the open/close pulse above into a computed-value
+   no-op exactly when a hidden panel opens straight into fullscreen. */
+
+/* Windows keeps caption controls above fullscreen file and terminal panels. */
+:global([data-windows-titlebar]) .panel[data-sidebar-right-panel='fullscreen'] {
+  overflow: hidden;
+  left: var(--dsh-windows-sidebar-width);
+  max-width: calc(100% - var(--dsh-windows-sidebar-width));
+  top: var(--dsh-windows-titlebar-height);
+  border-radius: var(--dsh-windows-content-radius) 0 0 0;
+  corner-shape: round;
 }
 
 /* macOS fullscreen: the panel reaches the window's top-left corner, where the
@@ -74,14 +102,10 @@
   --dsh-dockkit-strip-inline-start: 10px;
 }
 
-/* Fullscreen keeps a window drag affordance on the tab strips' blank runs;
-   tabs and strip controls opt back out. */
-:global([data-platform='darwin']) .panel[data-sidebar-right-panel='fullscreen'] :global([data-dockkit-strip]) {
-  -webkit-app-region: drag;
-}
-
-:global([data-platform='darwin']) .panel[data-sidebar-right-panel='fullscreen'] :global([data-dockkit-strip]) > * {
-  -webkit-app-region: no-drag;
+/* Window fullscreen hides the traffic lights (html[data-fullscreen], desktop
+   preload); the first pane's strip keeps only the ordinary inset. */
+:global([data-platform='darwin'][data-fullscreen]) .panel[data-sidebar-right-panel='fullscreen'] .panelBody {
+  --dsh-dockkit-strip-inline-start: 10px;
 }
 
 @media (prefers-reduced-motion: reduce) {

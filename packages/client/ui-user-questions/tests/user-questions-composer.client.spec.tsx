@@ -50,13 +50,14 @@ const sessionList = {
   ids: [SID],
   byId: { [SID]: { id: SID, displayTitle: 'Session', running: false, retainedBy: {}, blank: false, updatedAt: 0 } },
   phase: 'ready' as const,
-  subagentsByParent: {},
+  projectionsBySession: {},
   jobsBySession: {},
 }
 const attentionState: AttentionState = new Map()
 const workspaceState = {
   items: [],
   archivedSessionIds: [],
+  pinnedSessionIds: [],
   state: 'idle' as const,
   phase: 'ready' as const,
   error: null,
@@ -107,6 +108,8 @@ const inputState: InputState = {
  *  the composed props type mandates delivery of the rest (framework hooks are
  *  plain stubs per the client testing discipline). */
 const kitBase: Omit<QuestionComposerProps, 'matched' | 'useStore' | 'actions'> = {
+  renderSlot: () => null,
+  SessionProvider: ({ children }) => children,
   session: undefined,
   sessionId: SID,
   pendingInteraction: undefined,

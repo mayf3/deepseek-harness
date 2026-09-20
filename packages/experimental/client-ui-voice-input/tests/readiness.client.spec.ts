@@ -1,10 +1,10 @@
 /** All voice views share one readiness subscription, including reconnect and terminal failure. */
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { RemoteStreamOptions } from '@deepseek-ai/dsh-api-gateway/client'
 import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
 import type { SpeechProviderId } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type { SpeechCatalog } from '@deepseek-ai/dsh-experimental-api-speech-to-text/types'
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi, onTestFinished } from 'vitest'
 import { observeReadiness } from '../src/client/readiness.ts'
 
 const catalog: SpeechCatalog = { providers: [], selection: { providerId: 'local' as SpeechProviderId, language: 'auto' },
@@ -24,9 +24,11 @@ function fixture(failure?: unknown) {
     dispose: async () => { abort.abort(); release.resolve(undefined) },
   }
   // Only the Gateway-owned transport is replaced; the readiness publication remains real.
-  const ctx = { remote: { speech: { follow },
+  const ctx = new Context()
+  onTestFinished(async () => { await ctx.fiber.dispose() })
+  ctx.provide('remote', { speech: { follow },
     $stream: (value: typeof options) => { options = value; return stream },
-  } } as unknown as Context
+  })
   const mirror = observeReadiness(ctx)
   return { mirror, options, follow, accept, release }
 }

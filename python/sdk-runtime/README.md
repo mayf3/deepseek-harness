@@ -27,7 +27,7 @@ Unsupported platforms and missing executables or sidecars raise `FileNotFoundErr
 
 ## Packaged profile resolution
 
-`dsh` initializes shipped profiles under the explicit home, composes their bundle patches, and loads bundled plugins from the executable's virtual filesystem. Because operating-system symlinks cannot enter that filesystem, packaged launches maintain small real ESM proxy packages under `$DSH_HOME/profiles/node_modules`. Each proxy mirrors explicit runtime exports, records the original package identity, and re-exports the virtual module URL. Built-in rows and external plugin peers therefore share one Cordis/module instance. Native shared libraries and Windows ConPTY addons are packaged with native addons, while ripgrep and the macOS PTY helper remain executable sidecars.
+`dsh` initializes shipped profiles under the explicit home, composes their bundle patches, and loads bundled plugins from the executable's virtual filesystem. Runtime resolution uses an in-memory generation instead of disk symlinks or proxy packages. Fallback imports use recorded declaring-package paths, including paths inside the executable's virtual filesystem, so built-in rows and external plugin peers share the bundled Cordis/module instance. Native shared libraries and Windows ConPTY addons are packaged with native addons, while ripgrep and the macOS PTY helper remain executable sidecars.
 
 The Python bootstrap resolves the Office kit from its adjacent directory so native helpers and URL Workers use real filesystem paths. The kit owns engine selection and validation; the Python bootstrap adds no runtime download or compilation.
 

@@ -18,6 +18,8 @@ Status: implemented
 
 两种协议均优先为确定性请求图片使用 Files 引用，并共享上传缓存、刷新、配额恢复和附件卸载。Files 客户端保留所选协议与已配置端点：Messages 遵循[严格匹配 `/v1` 的根地址规则](../bug-fix/2026-09-15-messages-v1-base-url.zh.md)，Chat Completions 则追加 `/files`。Messages Files 请求携带必需的 beta 标头。缓存 id 按解析后的 Files 根地址和凭据限定作用域，因此等价的 `/v1` 与无版本 Messages 根地址可以复用上传。Messages 元数据不含过期时间，因此本地复用从原始上传时间起受限，但不宣称远端文件已删除。Files 解析失败会按独立的内联图片预算重建完整请求；调用方取消则停止请求。共享图片策略在请求与 token 计量中保留 128 MiB 的保留图片预算、20 MiB 的内联 base64 预算，以及最旧前缀卸载。
 
+成功 HTTP 响应之后的 JSON 语法错误不足以证明传输故障。Files 解码复用已有的 `INVALID_RESPONSE` code 并补充操作上下文，不将其改标为 `TRANSPORT` 或添加重试；错误字段由 [provider README](../../../../packages/llm/llm-deepseek/README.zh.md) 维护。
+
 系统提示词更新在端点与模型显式声明支持时，使用现有[路由能力](2026-09-02-in-history-system-prompt-replacement.zh.md)。Messages 保留初始顶层 system，在对应的用户或工具结果轮次之后，将后续快照发送为原生 system 轮次，保留此前发送的前缀。这个位置不同于循环先 system、后 user 的接纳顺序；序列化既不改写持久化日志，也不改变对话轮次的顺序。未声明能力的路由将最新快照归并到顶层，直接压缩调用也如此。仅凭协议或模型名称推断能力并不充分，因为支持情况和更新语义取决于实际部署的端点。
 
 Web 始终显示 DeepSeek，不提供协议选择器。两个协议共用 `baseURL` 与 `apiKeyEnv`，没有嵌套的协议配置表。未提供地址覆盖时使用当前协议的官方默认值；Messages 为 `https://api.deepseek.com/anthropic`。切换协议保留已有端点覆盖，部署者负责其兼容性。Messages 遵循严格匹配 `/v1` 的根地址规则，不根据其他版本式后缀推断兼容性。模型目录只维护一份，包含 `deepseek-flash` 的文本/图片和历史内 system 更新能力，也保留 V4 条目。显式 `chat-completions` 仍受支持，并使用自己的官方默认值，追加 `/chat/completions` 而不增加版本段。
@@ -36,6 +38,6 @@ Web 始终显示 DeepSeek，不提供协议选择器。两个协议共用 `baseU
 
 ## 结果
 
-该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。Messages 默认配置覆盖共享 base、Web 和独立的官方组合。协议变化保留 provider id 与已保存的模型选择，但显式端点覆盖必须支持所选协议。
+该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。用户与工具结果输入遵循[已保存输入兼容规则](../bug-fix/2026-09-18-messages-input-history-compatibility.zh.md)；其他不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。Messages 默认配置覆盖共享 base、Web 和独立的官方组合。协议变化保留 provider id 与已保存的模型选择，但显式端点覆盖必须支持所选协议。
 
 验证覆盖协议夹具、真实 Loader 组合、逐文件单元覆盖率、[已记录 Session 回放](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml)与[未知回放版本](../../../../snapshots/session/deepseek-messages-degraded-replay/snapshot.yml)，Web Messages Session 回放，以及凭证控制的文本、思考、工具续接、图片和取消请求。真实网关检查证明与已配置网关的兼容性，不能证明与所有 Anthropic 代理兼容。

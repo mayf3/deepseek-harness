@@ -37,7 +37,8 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
       process.send({ type: 'booting', packageManager: options.packageManager });
       return new Promise((resolve, reject) => process.once('disconnect', () => {
         if (${String(fail)}) { reject(new Error('fixture boot failure')); return; }
-        resolve({ ctx: { plugin: async () => {}, connection: { authenticatedUrl: value => value }, webServer: { port: 19387 } },
+        resolve({ ctx: { plugin: async () => {}, effect: () => {}, on: () => {},
+          connection: { authenticatedUrl: value => value }, webServer: { port: 19387 } },
           shutdown: { shutdown: async () => writeFileSync(${JSON.stringify(join(root, 'stopped'))}, 'stopped') } });
       }));
     }
@@ -46,7 +47,7 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
   copyFileSync(join(hostDirectory, 'lib', 'index.js'), entry)
   const pnpm = join(root, 'bundled-pnpm.mjs')
   const nodeBin = join(root, 'bin')
-  const child = fork(entry, [root, root, root, 'runtime', pnpm, nodeBin], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+  const child = fork(entry, [root, root, root, pnpm, nodeBin], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
   let stderr = ''
   child.stderr!.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk })
   const exited = new Promise<number | null>(resolve => child.once('exit', resolve))

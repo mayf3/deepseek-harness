@@ -44,6 +44,8 @@ await runtime.dispose()
 
 The optional render options select a keyed entry with `entryKey` or a list item with `only`; `view.update(owner)` retains that selection. `runtime.panelInfo` supplies the default `usePanelInfo` source with no global panel selected. Release it with `releasePanelInfoSource()` before mounting the production Layout owner. `dispose()` releases both default Workspace and panel-info root sources; early release is idempotent and does not remove replacement owners.
 
+The Session fixture resolves subagent addresses from explicitly supplied addresses or loaded parent projections without retaining a Session generation.
+
 ### Local DOM snapshots
 
 A registered snapshot serializer folds CSS-module class hashes (`_frame_a1b2c3` → `frame`) so `.snap` files stay structural, and collapses `<svg>` internals to a `data-content` fingerprint. Suites needing a custom page frame use `root.declare(children, Frame)` instead of the auto frame; `dispose()` tears down views, feature fibers, minted scopes, and persisted store state on one axis and is idempotent.
@@ -123,7 +125,7 @@ The bench copies no production logic: it mounts the production `SlotRegistry`, p
 | [`src/snapshot.ts`](src/snapshot.ts) | DOM snapshot serializer (class-hash folding, `<svg>` fingerprint) |
 | [`src/remote.ts`](src/remote.ts) | `TestRemote` double for host RPC, `RemoteError` value re-export |
 | [`src/translate.ts`](src/translate.ts) + [`src/locale-env.ts`](src/locale-env.ts) | Translation and pinned-browser-language test helpers |
-| [`src/settings-scope.ts`](src/settings-scope.ts) | `stubSettingsScope` with test-driven publications and a write spy |
+| [`src/settings-scope.ts`](src/settings-scope.ts) | `stubSettingsScope` with test-driven publications and write spies |
 | [`src/assembly/roster.ts`](src/assembly/roster.ts) | `ClientRosterRow`, `ClientRoster` (`of`/`closure`/`pick`/`without`), the `AssemblyPlan` it annotates, and `graphFromRoster` |
 | [`src/assembly/modules.ts`](src/assembly/modules.ts) | Source `/client` imports and replacements, registered through the production module facade's pending factory queue |
 | [`src/assembly/test-client.ts`](src/assembly/test-client.ts) | `TestClient`: instance-bound Connection, shared jsdom shims, `bootClient`, mount, readiness wait, `reload`/`unload`/`dispose` |

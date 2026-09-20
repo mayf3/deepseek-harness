@@ -11,17 +11,26 @@
 
 - Heading: Markdown smoke
 - Tail loaded by scrolling: Markdown tail
+- Loaded images: relative image | absolute image | reference image
 - Viewers: Markdown -> Code -> Plain text
 - Same tab: true
+
+## Basic HTML
+
+- Developer tools: off by default on Web and desktop
+- Sandbox: no permissions
+- Inline script: pending
+- Local script: pending
+- Network requests: 0
 
 ## HTML
 
 - Viewer: HTML
 - Sandbox: allow-scripts
 - Inline script: INLINE_OK
-- Local script: LOCAL_JS_OK
+- Local script after save: LOCAL_JS_REFRESHED
 - Outside-workspace script: OUTSIDE_JS_OK
-- Local stylesheet: rgb(12, 34, 56)
+- Local stylesheet after save: rgb(56, 34, 12)
 - Parent access: parent-blocked (SecurityError)
 - Parent unchanged: true
 
@@ -33,6 +42,20 @@
 - Horizontal overflow: false
 - Canvas fills: red -> blue -> blue
 - Same tab: true
+- Selected and copied text: Selectable PDF text
+
+## PDF page units
+
+- UserUnit 2: selected and copied text aligns with the canvas
+
+## PDF page rotation
+
+- 90, 180, 270 degrees: selection and copied text align with canvas ink before and after resizing
+
+## PDF drag selection
+
+- Table selection: forward and backward drags exclude later sections
+- Line-break highlight: transparent
 
 ## Code paging
 
@@ -41,6 +64,13 @@
 - Lines: 64 -> 65
 - Prefix retained: true
 - Tail: const tail = "CODE_TAIL";
+
+## Office unavailable
+
+- DOC, DOCX, XLS, XLSX, PPT, PPTX viewer menus: 0 | 0 | 0 | 0 | 0 | 0
+- Guidance: Read failed: Office previews are unavailable. Enable the document preview service on the computer running DeepSeek Harness.
+- Binary text shown: false
+- Plain-text option and viewer picker: hidden
 
 ## Unknown suffix
 
@@ -51,3 +81,5 @@
 
 - State: unsupported
 - Line: Preview is not available for this file type yet.
+- Header control: Open
+- Empty-state control: Open in default app

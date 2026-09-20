@@ -230,13 +230,13 @@ describe('pushed invalidations', () => {
       store: { getSnapshot: () => ({ status: 'ready' }) },
       load: () => { loads.push(1); return Promise.resolve() },
     }
-    refreshIfLoaded(controller as unknown as import('../src/client/store.ts').ModelsSettingsStore)
+    refreshIfLoaded(controller as import('../src/client/store.ts').ModelsSettingsStore)
     expect(loads).toHaveLength(1)
     const idle = {
       store: { getSnapshot: () => ({ status: 'idle' }) },
       load: () => { loads.push(2); return Promise.resolve() },
     }
-    refreshIfLoaded(idle as unknown as import('../src/client/store.ts').ModelsSettingsStore)
+    refreshIfLoaded(idle as import('../src/client/store.ts').ModelsSettingsStore)
     expect(loads).toHaveLength(1)
   })
 

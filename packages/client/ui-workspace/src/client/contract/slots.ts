@@ -134,6 +134,12 @@ export type WorkspaceBrowserInjected = {
    * session clears the selection into the New Session view state.
    */
   archiveSession: (sessionId: SessionId) => Promise<void>
+  /** Remove a Session from the registry-global archived set. */
+  unarchiveSession: (sessionId: SessionId) => Promise<void>
+  /** Add a Session to the registry-global pinned set (newest pin first). */
+  pinSession: (sessionId: SessionId) => Promise<void>
+  /** Remove a Session from the registry-global pinned set. */
+  unpinSession: (sessionId: SessionId) => Promise<void>
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
 }

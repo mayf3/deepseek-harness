@@ -276,7 +276,7 @@ describe('update', () => {
     const { ctx } = await boot()
     const scope = ctx.settings.register('ui-theme', ThemeSchema)
     await expect(scope.update([1])).rejects.toThrow(TypeError)
-    await expect(scope.update(new Date() as unknown as object)).rejects.toThrow(TypeError)
+    await expect(scope.update(new Date() as object)).rejects.toThrow(TypeError)
     await expect(scope.replace([1])).rejects.toThrow(/replace for "ui-theme"/)
   })
 

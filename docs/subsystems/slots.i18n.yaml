@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/slots.md
-slots.md: e4cc9ac9977d680fdd7235b01089eb6b0ba31caf
-slots.zh.md: 00f1772010d878083ca354ced1ef808454bea094
+slots.md: 20d094f719baabc1a9e5d0199221c1c8015f4ab6
+slots.zh.md: b7e50924cd91c009c34ccdf5fac553f059377b32

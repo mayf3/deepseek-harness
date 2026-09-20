@@ -14,17 +14,18 @@ describe('StateDot', () => {
     expect(dot.getAttribute('aria-hidden')).toBe('true')
   })
 
-  it('solid states are spans; ongoing is an svg pixel matrix', () => {
+  it('solid states are spans; ongoing is an svg loading spinner', () => {
     const { container, rerender } = render(<StateDot state="done" />)
     expect(container.firstElementChild?.tagName).toBe('SPAN')
     rerender(<StateDot state="ongoing" />)
-    const matrix = container.firstElementChild as SVGSVGElement
-    expect(matrix.tagName).toBe('svg')
-    const cells = matrix.querySelectorAll('rect')
-    expect(cells).toHaveLength(8)
-    // Chase phase: every cell carries its own negative animation delay.
-    const delays = [...cells].map(cell => (cell).style.animationDelay)
-    expect(new Set(delays).size).toBe(8)
+    const spinner = container.firstElementChild as SVGSVGElement
+    expect(spinner.tagName).toBe('svg')
+    expect(spinner.querySelectorAll('rect')).toHaveLength(0)
+    expect(spinner.getAttribute('viewBox')).toBe('0 0 24 24')
+    expect(spinner.querySelector('g')).not.toBeNull()
+    const rings = spinner.querySelectorAll('circle')
+    expect(rings).toHaveLength(2)
+    expect([...rings].map(ring => ring.getAttribute('r'))).toEqual(['9.5', '9.5'])
   })
 
   it('sizes via the size prop in both shapes', () => {
@@ -36,6 +37,17 @@ describe('StateDot', () => {
     const ring = container.firstElementChild as SVGSVGElement
     expect(ring.getAttribute('width')).toBe('12')
     expect(ring.getAttribute('height')).toBe('12')
+  })
+
+  it('defaults solid dots to 10px and the ongoing loader to 14px', () => {
+    const { container, rerender } = render(<StateDot state="done" />)
+    const dot = container.firstElementChild as HTMLElement
+    expect(dot.style.width).toBe('10px')
+    expect(dot.style.height).toBe('10px')
+    rerender(<StateDot state="ongoing" />)
+    const spinner = container.firstElementChild as SVGSVGElement
+    expect(spinner.getAttribute('width')).toBe('14')
+    expect(spinner.getAttribute('height')).toBe('14')
   })
 
   it('rejects unknown states at the type level', () => {

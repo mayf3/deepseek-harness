@@ -43,6 +43,11 @@ function Start-Setup([string]$Theme, [string]$Path = $installPath) {
         Start-Sleep -Milliseconds 5
     } while ($timer.Elapsed.TotalSeconds -lt 30)
     if ($window -eq [IntPtr]::Zero) { throw 'Installer welcome window did not appear' }
+    $timer.Restart()
+    while ([InstallerCapture]::GetProp($window, 'HarnessInstaller.Presented') -eq [IntPtr]::Zero) {
+        if ($process.HasExited -or $timer.Elapsed.TotalSeconds -gt 10) { throw 'Installer welcome window was not presented' }
+        Start-Sleep -Milliseconds 10
+    }
     [InstallerCapture]::Reveal($window)
     $languages = @($localizedCopy.Keys | Where-Object {
         [InstallerCapture]::FindButton($process.Id, $localizedCopy[$_].INSTALLER_INSTALL) -ne [IntPtr]::Zero
@@ -127,6 +132,7 @@ function Run-Silent([string]$Arguments, [int]$Code) {
 }
 try {
     $process = Start-Setup light
+    $results.Add('welcome-presented-on-first-show')
     $window = [InstallerCapture]::Find($process.Id)
     [void][InstallerCapture]::Save($window, (Join-Path $OutputDirectory 'light-welcome.png'))
     Click-Control $process $copy.INSTALLER_CHOOSE_PATH

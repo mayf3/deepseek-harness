@@ -96,7 +96,7 @@ it.skipIf(webSnapshotMode() === 'record')('records from cached standby and submi
     await page.setViewportSize({ width, height: 900 })
     await expect.poll(async () => {
       const micRect = await mic.boundingBox(), meterRect = await meter.boundingBox()
-      return micRect !== null && meterRect !== null && meterRect.x + meterRect.width <= micRect.x
+      return micRect !== null && meterRect !== null && meterRect.y >= micRect.y + micRect.height
     }).toBe(true)
     await meter.click()
     await page.getByRole('dialog', { name: 'of context used', exact: true }).waitFor()

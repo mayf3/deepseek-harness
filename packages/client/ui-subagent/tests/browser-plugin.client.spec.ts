@@ -1,4 +1,5 @@
 /** ui-subagent browser half: catalog actions and read-only composer routing. */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context } from '@deepseek-ai/cordis'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { describe, expect, it } from 'vitest'
@@ -22,6 +23,7 @@ function summary(partial: Partial<SessionSummary> & { id: SessionId }): SessionS
   return {
     displayTitle: partial.id,
     running: false,
+    retainedBy: {},
     updatedAt: 0,
     ...partial,
   } as SessionSummary
@@ -33,20 +35,25 @@ const sid = (id: string) => id as SessionId
 function sessionsWith(sessions: SessionSummary[]) {
   const byId: Record<string, SessionSummary> = {}
   for (const s of sessions) byId[s.id] = s
-  const snapshot = { ids: sessions.map(s => s.id), byId, current: undefined } as unknown as SessionListState
+  const snapshot: SessionListState = { ids: sessions.map(s => s.id), byId, phase: 'ready', projectionsBySession: {}, jobsBySession: {} }
   const actionCalls: { method: string; args: unknown[] }[] = []
+  const address: SubagentAddress = {
+    parentSessionId: sid('parent'),
+    childSessionId: sid('c1'),
+    mode: 'continuable',
+  }
   return {
     list: {
       getSnapshot: () => snapshot,
       subscribe: () => () => {},
     },
     actionCalls,
-    refreshSubagents: (parentSessionId: SessionId) => {
-      actionCalls.push({ method: 'refreshSubagents', args: [parentSessionId] })
+    subagentAddress: (childSessionId: SessionId) => childSessionId === address.childSessionId
+      ? address
+      : undefined,
+    refreshProjections: (parentSessionId: SessionId) => {
+      actionCalls.push({ method: 'refreshProjections', args: [parentSessionId] })
       return Promise.resolve()
-    },
-    setSubagentCatalogOpen: (parentSessionId: SessionId, open: boolean) => {
-      actionCalls.push({ method: 'setSubagentCatalogOpen', args: [parentSessionId, open] })
     },
   }
 }
@@ -72,8 +79,13 @@ async function fullBench(sessions: SessionSummary[]) {
       face.actionCalls.push({ method: 'openSession', args: [address] })
     },
   } as never)
+  ctx.provide('sidebarRight', {
+    openResource: (address: string, options: unknown) => {
+      face.actionCalls.push({ method: 'openResource', args: [address, options] })
+    },
+  } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
-  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
   await provideSlotFaces(ctx)
   await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
   await ctx.plugin({ inject: [...inject], apply }).await()
@@ -92,7 +104,7 @@ const FAMILY: SessionSummary[] = [
 
 describe('apply', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['sessions', 'uiWorkspace', 'slots', 'locale'])
+    expect(inject).toEqual(['sessions', 'uiWorkspace', 'slots', 'locale', 'sidebarRight'])
   })
 
   it('registers catalog actions and selects read-only subagent composers from session facts', async () => {
@@ -106,12 +118,18 @@ describe('apply', () => {
       mode: 'continuable',
     }
     actions.openChild(address)
+    actions.openChildAside(address)
     actions.refresh(sid('parent'))
-    actions.setCatalogOpen(sid('parent'), true)
     expect(face.actionCalls).toEqual([
       { method: 'openSession', args: [address] },
-      { method: 'refreshSubagents', args: [sid('parent')] },
-      { method: 'setSubagentCatalogOpen', args: [sid('parent'), true] },
+      {
+        method: 'openResource',
+        args: [
+          'dsh-resource://subagentchat/session/c1?parent=parent&mode=continuable',
+          { kind: 'subagentchat', preferNewPane: true },
+        ],
+      },
+      { method: 'refreshProjections', args: [sid('parent')] },
     ])
 
     const composerEntry = ctx.slots.entries('conversation.composer')

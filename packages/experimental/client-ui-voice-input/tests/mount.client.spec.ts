@@ -1,4 +1,6 @@
 /** The optional namespace and microphone ownership follow Client plugin disposal. */
+import assert from 'node:assert/strict'
+import { Recording } from '../src/client/audio.ts'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -19,6 +21,16 @@ const REMOTE: TypertRemoteContribution = {
 vi.mock('../src/client/readiness.ts', () => ({ observeReadiness: () => ({
   state: createSnapshotStore({ catalog: null, connected: true, error: null }), dispose: async () => {},
 }) }))
+
+/** Narrow the erased registry payload before exercising its registered actions. */
+function assertVoiceActions(value: Record<string, unknown>): asserts value is Record<string, unknown> & VoiceInputInjected {
+  assert(typeof value.createRecording === 'function')
+  assert(typeof value.configure === 'function')
+  assert(typeof value.prepare === 'function')
+  assert(typeof value.cancelPreparation === 'function')
+  assert(typeof value.transcribe === 'function')
+  assert(typeof value.hooks === 'object' && value.hooks !== null)
+}
 
 async function fixture(fail = false) {
   const ctx = new Context(), unmount = vi.fn(async () => {})
@@ -55,10 +67,13 @@ it('withdraws its Remote, localized slot and microphone captures on disposal', a
     await fiber
     const entry = b.ctx.slots.entries('conversation.input.activity').find(item => item.component === VoiceInput)
     expect(entry).toMatchObject({ locale: 'voice-input' })
-    const actions = (entry!.inject as unknown as () => VoiceInputInjected)()
+    const actions = entry!.inject!()
+    assertVoiceActions(actions)
     const finished = actions.createRecording()
+    assert(finished instanceof Recording)
     await finished.dispose()
     const pending = actions.createRecording()
+    assert(pending instanceof Recording)
     const dispose = vi.spyOn(pending, 'dispose')
     await actions.configure({ language: 'zh' })
     await actions.prepare('local' as SpeechProviderId)
@@ -66,7 +81,7 @@ it('withdraws its Remote, localized slot and microphone captures on disposal', a
     for (const slot of ['plugins.bundle.config', 'plugins.bundle.activation'] as const) {
       const item = b.ctx.slots.entries(slot)[0]!
       expect(item.locale).toBe('voice-input')
-      const injected = (item.inject as unknown as () => VoiceInputInjected & { compact?: boolean })()
+      const injected = item.inject!()
       expect(injected.hooks).toBe(actions.hooks)
     }
     const failure = { ok: false, error: new RemoteError('gateway/internal', 'offline', {}) }
@@ -104,8 +119,10 @@ it('joins the same audio closure when cancellation overlaps Client plugin withdr
     const fiber = b.ctx.plugin({ inject: [...inject], apply: ctx => mountVoiceInput(ctx, REMOTE) })
     await fiber
     const entry = b.ctx.slots.entries('conversation.input.activity').find(item => item.component === VoiceInput)!
-    const actions = (entry.inject as unknown as () => VoiceInputInjected)()
+    const actions = entry.inject!()
+    assertVoiceActions(actions)
     const recording = actions.createRecording()
+    assert(recording instanceof Recording)
     await recording.start()
     cancelled = recording.dispose()
     const originalDispose = recording.dispose.bind(recording), joined = Promise.withResolvers<{ pending: Promise<void> }>()

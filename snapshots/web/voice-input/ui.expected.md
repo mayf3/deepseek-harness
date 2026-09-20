@@ -1,22 +1,12 @@
 - banner:
-  - button "Open right sidebar":
-    - img
+  - button "Open right sidebar"
 - text: Into the Unknown Preview
-- button "Choose workspace":
-  - img
-  - text: workspace
-  - img
-- button "Standard mode":
-  - img
-  - text: Standard mode
-  - img
+- button "Choose workspace": workspace
+- button "Standard mode"
 - textbox "Describe what you want to build, / commands, @ files or sessions":
   - paragraph: "Use the bash tool to run exactly: echo WEB_E2E_OK. Then reply with the single word DONE and stop."
-- button "Add files or run commands":
-  - img
+- button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
-  - img
+- button "Select model, current DeepSeek-V4-Flash": DeepSeek-V4-Flash
 - button "Start recording"
 - button "Send message"

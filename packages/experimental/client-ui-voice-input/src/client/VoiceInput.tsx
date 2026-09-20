@@ -9,7 +9,7 @@ import { RecordingError, audioBase64, type Recording } from './audio.ts'
 import type { SpeechReadiness } from './readiness.ts'
 import { Waveform } from './Waveform.tsx'
 import { NS } from './locales.ts'
-import { Button, IconCloseOutline16, IconStopFill16, IconMicrophoneOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseOutlineRegular, IconStopFillRegular, IconMicrophoneOutlineRegular, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './VoiceInput.module.css'
 
 /** Host calls injected without exposing a Cordis Context to React. */
@@ -136,22 +136,22 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
   }
   if (!expanded) return <Button className={css.trigger} size="sm" disabled={!usable || locked}
     aria-label={t('start')} title={t(usable ? 'dictate' : 'prepareRequired')}
-    onMouseDown={(event) =>{  event.preventDefault() }} onClick={() => { void start() }}><IconMicrophoneOutline16 size={18} /></Button>
+    onMouseDown={(event) =>{  event.preventDefault() }} onClick={() => { void start() }}><IconMicrophoneOutlineRegular size={18} /></Button>
   return <div className={css.captureRow} data-voice-activity={phase}>
     <Button type="button" className={css.roundButton} size="sm" aria-label={t(pending ? 'discard' : 'cancel')}
-      onClick={cancel}><IconCloseOutline16 size={14} /></Button>
+      onClick={cancel}><IconCloseOutlineRegular size={14} /></Button>
     {phase === 'recording' ? <Waveform recording={current.current?.capture} label={t('recording')} />
       : <span className={css.activityMessage} role="status" title={pending || message}>
         {(phase === 'requesting' || phase === 'transcribing') && <StateDot state="ongoing" />}
         {phase === 'feedback' ? message : t(phase === 'requesting' ? 'requesting'
           : provider?.preparation.phase === 'waking' ? 'wakingShort' : 'transcribingShort')}</span>}
     {phase === 'recording' && <Button type="button" className={css.roundButton} size="sm" aria-label={t('stop')}
-      onClick={() => { void finish() }}><IconStopFill16 size={14} /></Button>}
+      onClick={() => { void finish() }}><IconStopFillRegular size={14} /></Button>}
     {phase === 'feedback' && (pending
       ? <Button className={css.inlineAction} size="sm" type="button" onClick={() => {
         if (inputActions.insertText(pending, inputActions.captureInsertion())) { setPending(''); setPhase('idle') }
       }}>{t('insert')}</Button>
       : <Button className={css.roundButton} size="sm" type="button" aria-label={t('retryRecording')} disabled={!usable || locked}
-        onClick={() => { void start() }}><IconMicrophoneOutline16 size={18} /></Button>)}
+        onClick={() => { void start() }}><IconMicrophoneOutlineRegular size={18} /></Button>)}
   </div>
 }

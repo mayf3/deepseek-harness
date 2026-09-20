@@ -210,7 +210,18 @@ function sameStringList(actual: readonly string[] | undefined, expected: readonl
   return !!actual && actual.length === expected.length && actual.every((value, index) => value === expected[index])
 }
 
+/**
+ * Compute canonical publication patterns, including explicitly exported locale JSON resources.
+ * @param manifest - workspace package manifest.
+ * @returns deduplicated locale targets followed by the package's runtime and declaration payloads.
+ */
 export function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
+  const localeFiles = new Set<string>()
+  for (const resource of Object.keys(manifest.exports ?? {})) {
+    if (!/^\.\/(?:.+\/)?locale\/[^/]+\.json$/u.test(resource)) continue
+    const target = exportDefault(manifest, resource)
+    if (target?.startsWith('./') && target.endsWith('.json')) localeFiles.add(target.slice(2))
+  }
   const declaredPatch = manifest.dsh?.bundle?.patch
   const bundleFiles = declaredPatch === undefined ? [] : [declaredPatch.replace(/^\.\//, '')]
   const extras = [
@@ -218,6 +229,7 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),
   ]
   return [
+    ...[...localeFiles].sort(),
     'lib/index.js',
     // Packages with an invariant export publish its runtime as a separate
     // bundle; the package-invariant gate validates the source/export pairing.

@@ -13,7 +13,7 @@ function applicationFrame(url: string): boolean {
  * @param session - application's browser session.
  * @param primary - current primary window contents, absent while no window is open.
  */
-export function installMicrophonePermissions(session: Session, primary: () => WebContents | undefined): void {
+export function installMicrophonePermissions(session: Pick<Session, 'setPermissionCheckHandler' | 'setPermissionRequestHandler'>, primary: () => WebContents | undefined): void {
   session.setPermissionCheckHandler((contents, permission, origin, details) => {
     if (permission !== 'media') return true
     return contents != null && contents === primary() && details.isMainFrame

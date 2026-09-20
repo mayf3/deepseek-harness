@@ -7,12 +7,14 @@
  * and face — and that every registration is gone after dispose, which is what
  * makes a reload safe.
  */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SidebarRightTabRegistry } from '@deepseek-ai/dsh-client-ui-sidebar-right/src/client/tab-registry.ts'
 import { TEXTPREVIEW_ID, TEXTPREVIEW_KIND } from '../src/client/definition.ts'
 import { apply, inject } from '../src/client/index.ts'
-import { apply as hostApply } from '../src/index.ts'
+import { OfficeFontAction } from '../src/client/office/OfficeFontAction.tsx'
+import { OfficeBody } from '../src/client/office/OfficeBody.tsx'
 import { TextPreview } from '../src/client/TextPreview.tsx'
 import { TextTitle } from '../src/client/TextTitle.tsx'
 import { TextBody } from '../src/client/text/TextBody.tsx'
@@ -27,9 +29,10 @@ import { LazyPdfBody } from '../src/client/pdf/LazyPdfBody.tsx'
 import { PDF_BODY_ID } from '../src/client/pdf/index.ts'
 import { CodeBody } from '../src/client/code/CodeBody.tsx'
 import { en, zh } from '../src/client/locales.ts'
+import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { textFace } from '../src/client/face.ts'
 import type { TextStore } from '../src/client/store.ts'
-import { FILE, SESSION, TAB_ID, page } from './fixtures.client.ts'
+import { FILE, SESSION, TAB_ID, createResources, page } from './fixtures.client.ts'
 
 interface Recorded {
   name: string
@@ -42,6 +45,8 @@ interface Recorded {
 
 async function boot() {
   const ctx = new Context()
+  ctx.provide('resources', createResources())
+  ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) } } as never)
   const tabs = new SidebarRightTabRegistry(ctx)
   const registered: Recorded[] = []
   const slots = {
@@ -78,10 +83,6 @@ async function boot() {
 }
 
 describe('ui-sidebar-documentpreview apply', () => {
-  it('keeps the host Loader entry inert', () => {
-    expect(hostApply).not.toThrow()
-  })
-
   it('registers the type, its dictionaries, and the body and title seats under the type\'s id, the body with a store and a face', async () => {
     const { tabs, registered, dictionaries } = await boot()
     expect(tabs.get(TEXTPREVIEW_KIND)?.priority).toBe('fallback')
@@ -98,6 +99,9 @@ describe('ui-sidebar-documentpreview apply', () => {
       ['sidebar.right.tab.document', IMAGE_BODY_ID, 'sidebarImage', ImageBody],
       ['sidebar.right.tab.document', PDF_BODY_ID, 'sidebarPdf', LazyPdfBody],
       ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code', 'sidebarCodePreview', CodeBody],
+      ['sidebar.right.tab.document.action', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', 'sidebarOffice', OfficeFontAction],
+      ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', 'sidebarOffice', OfficeBody],
+      ['sidebar.right.tab.document.office.pdf', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', 'sidebarPdf', LazyPdfBody],
     ])
     expect(registered[0]?.store).toBeDefined()
     expect(typeof registered[0]?.inject).toBe('function')
@@ -111,7 +115,7 @@ describe('ui-sidebar-documentpreview apply', () => {
     expect(dictionaries.size).toBe(0)
   })
 
-  it('injects ordinary Remote reads without requiring a Resource service', async () => {
+  it('injects ordinary Remote reads independently of resource metadata', async () => {
     const { registered, workspaceFiles } = await boot()
     const registration = registered.find(entry => entry.component === TextPreview)
     if (registration === undefined) throw new Error('missing preview registration')
@@ -125,7 +129,12 @@ describe('ui-sidebar-documentpreview apply', () => {
     expect(instance.getSnapshot().byTab[TAB_ID]?.pages[1]?.text).toBe('first')
     face.loadAll(TAB_ID, FILE, controller.signal, 'v1')
     await workspaceFiles.readAll.mock.results[0]?.value
-    expect(workspaceFiles.readAll).toHaveBeenCalledExactlyOnceWith(FILE.sessionId, FILE.path, controller.signal)
-    expect(instance.getSnapshot().byTab[TAB_ID]?.complete?.data).toEqual(new Uint8Array([0, 1, 255]))
+    expect(workspaceFiles.readAll).toHaveBeenCalledExactlyOnceWith(FILE.sessionId, FILE.path, expect.any(AbortSignal))
+    await expect.poll(() => instance.getSnapshot().byTab[TAB_ID]?.complete?.data).toEqual(new Uint8Array([0, 1, 255]))
+    const failure = new RemoteError('workspace-file/not-found', 'File missing', { path: FILE.path })
+    workspaceFiles.readAll.mockResolvedValueOnce({ ok: false, error: failure })
+    face.reloadAll(TAB_ID, FILE, controller.signal, 'v2')
+    await expect.poll(() => instance.getSnapshot().byTab[TAB_ID]?.failure).toBe(failure)
+    expect(instance.getSnapshot().byTab[TAB_ID]?.complete).toBeUndefined()
   })
 })

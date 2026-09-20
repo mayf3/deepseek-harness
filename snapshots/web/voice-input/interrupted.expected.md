@@ -1,6 +1,5 @@
 - textbox "Message or run a task, / commands, @ files or sessions"
-- button "Cancel":
-  - img
+- button "Cancel"
 - status "Recording was interrupted. Please try again."
 - button "Record again"
 - button "Send message" [disabled]

@@ -201,14 +201,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a stable read-only source across same-id generations, with zero counts when none is live.',
       },
       {
-        signature: 'setSubagentCatalogOpen(parentSessionId: SessionId, open: boolean): void',
-        description: 'Mark whether a catalog menu is consuming live membership updates.',
-        parameters: [{ name: 'parentSessionId', description: 'catalog owner.' }, { name: 'open', description: 'current menu state.' }],
-      },
-      {
-        signature: 'refreshSubagents(parentSessionId: SessionId): Promise<void>',
-        description: 'Refresh one direct-child catalog.',
-        parameters: [{ name: 'parentSessionId', description: 'catalog owner.' }],
+        signature: 'refreshProjections(sessionId: SessionId): Promise<void>',
+        description: 'Load all Session projections once per connection; retry an unsuccessful initial read.',
+        parameters: [{ name: 'sessionId', description: 'Session to inspect without opening its conversation.' }],
         returns: 'completion of the current or newly started refresh.',
       },
       {
@@ -219,8 +214,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId>',
-        description: 'Fork a session from a completed-turn prefix of the source; on resolution the child is in the catalog and may be explicitly retained.',
-        parameters: [{ name: 'opts', description: 'source session id, the optional event seq anchoring the cut (the boundary is the first turn/end at or after it; an in-log anchor in an open turn is unavailable rather than clipped backward), and whether to increment an inherited durable title before resolving.' }],
+        description: 'Fork a session from an exact inclusive prefix of the source; on resolution the child is catalogued and can be explicitly retained.',
+        parameters: [{ name: 'opts', description: 'source session id, the optional exact inclusive boundary seq (a real event seq the caller already knows; a cut inside an open turn is balanced Host-side with synthetic closers, and omission selects the latest completed-turn prefix), and whether to increment an inherited durable title before resolving.' }],
         returns: 'the child session id.',
         throws: ['when the fork fails, or when a requested child-title rename fails after creation.'],
       },
@@ -245,8 +240,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'declare readonly register: SlotCore[\'register\']',
-        description: 'The single registration API. The typed face IS the core\'s register (both overloads reused verbatim — one authority, no structural copy; see SlotCore.register for children declaration, store seat, inject face, load-time validation, and the unload cascade). This layer adds: disposal through the caller\'s ctx.effect (fiber unload = cascade), exclusive-factory minting (`store: createXxxStore` becomes a per-entry handle), the registrant diagnostics stamp, and store-instance lifecycle on the entry axis.\n\nDeclared here, implemented by prototype assignment below the class: it MUST stay a prototype method (never an instance arrow) — the cordis service proxy binds `this.ctx` to the CALLER\'s context at call time, which is what routes the effect (and the unload cascade) into the caller\'s fiber. An arrow property would freeze `this` to the service\'s own root ctx and silently break per-plugin disposal.',
+        description: 'The ordinary Slot registration API. The typed face IS the core\'s register (both overloads reused verbatim — one authority, no structural copy; see SlotCore.register for children declaration, store seat, inject face, load-time validation, and the unload cascade). This layer adds: disposal through the caller\'s ctx.effect (fiber unload = cascade), exclusive-factory minting (`store: createXxxStore` becomes a per-entry handle), the registrant diagnostics stamp, and store-instance lifecycle on the entry axis.\n\nDeclared here, implemented by prototype assignment below the class: it MUST stay a prototype method (never an instance arrow) — the cordis service proxy binds `this.ctx` to the CALLER\'s context at call time, which is what routes the effect (and the unload cascade) into the caller\'s fiber. An arrow property would freeze `this` to the service\'s own root ctx and silently break per-plugin disposal.',
         parameters: [],
+      },
+      {
+        signature: 'declare readonly registerFactory: RegisterFactory',
+        description: 'Register one reusable Component Factory under the caller\'s effect lifetime. A Store factory mints one handle per rendered occurrence rather than per definition. Like SlotRegistry.register, this remains a prototype method so the Cordis proxy binds `this.ctx` to the caller\'s Context.',
+        parameters: [{ name: 'options', description: 'runtime definition checked against `SlotFactoryMap`.' }, { name: 'component', description: 'reusable Factory Component.' }],
+        returns: 'the idempotent definition disposer.',
       },
       {
         signature: 'inject(key: keyof SlotMap & string, callback: () => SlotInjectionEffect): () => void',
@@ -347,9 +348,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'forkSession(sessionId: SessionId): Promise<void>',
-        description: 'Fork a Session and open the child unless a later navigation supersedes it.',
+        description: 'Fork a Session without changing the current selection.',
         parameters: [{ name: 'sessionId', description: 'source Session.' }],
-        returns: 'completion; a superseded request leaves its child available without selecting it.',
+        returns: 'completion after child creation and inherited-title increment.',
       },
       {
         signature: 'connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>',
@@ -456,8 +457,8 @@ export const EVENT_API: readonly EventApiEntry[] = [
     name: 'slots/changed',
     mode: 'emit',
     signature: '\'slots/changed\'(key: string): void',
-    summary: 'A slot declaration or registration set changed.',
-    description: 'A slot declaration or registration set changed.',
+    summary: 'An ordinary Slot declaration or entry registration set changed.',
+    description: 'An ordinary Slot declaration or entry registration set changed. Factory definitions publish through `subscribeFactory()` instead.',
     parameters: [{ name: 'key', description: 'mutated SlotMap key.' }],
   },
   {
@@ -526,7 +527,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ComposedProps',
-    declaration: 'export type ComposedProps<K extends keyof SlotMap & string, EntryKey extends EntryKeyOf<K>, S extends keyof SlotMap & string, H, I extends object, M = never, N = undefined> = PropsRuntime<K, EntryKey> & PropsRenderSlots<S> & PropsStore<H> & InjectFace<I> & MatchedShare<SlotMap[K], M> & PropsLocale<N>;',
+    declaration: 'export type ComposedProps<K extends keyof SlotMap & string, EntryKey extends EntryKeyOf<K>, S extends keyof SlotMap & string, H, I extends object, M = never, N = undefined> = PropsRuntime<K, EntryKey> & PropsRenderSlots<S> & PropsRenderFactories & PropsStore<H> & InjectFace<I> & MatchedShare<SlotMap[K], M> & PropsLocale<N>;',
   },
   {
     name: 'ConnectionGeneration',
@@ -581,6 +582,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type EntryKeyOf<K extends keyof SlotMap & string> = SlotMap[K] extends {\n    kind: \'keyed\';\n    keyProps: infer P extends object;\n} ? keyof P & string : string;',
   },
   {
+    name: 'FactoryComponentPropsOf',
+    declaration: 'export type FactoryComponentPropsOf<F extends keyof SlotFactoryMap & string> = FactoryInputPropsOf<F> & FactoryRegistrationPropsOf<F> & ScopeStandardProps<FactoryDefOf<F>[\'scope\']> & {\n    useFactorySlot: UseFactorySlot<F>;\n};',
+  },
+  {
+    name: 'FactoryInjectParams',
+    declaration: 'export type FactoryInjectParams<F extends keyof SlotFactoryMap & string> = FactoryDefOf<F>[\'scope\'] extends \'session\' ? ([\n    FactoryStoreOf<F>\n] extends [\n    StoreDecl\n] ? [\n    sessionId: SessionIdOf,\n    actions: BoundActions<FactoryStoreOf<F>>\n] : [\n    sessionId: SessionIdOf\n]) : FactoryDefOf<F>[\'scope\'] extends \'session-maybe\' ? ([\n    FactoryStoreOf<F>\n] extends [\n    StoreDecl\n] ? [\n    sessionId: SessionIdOf | undefined,\n    actions: BoundActions<FactoryStoreOf<F>> | undefined\n] : [\n    sessionId: SessionIdOf | undefined\n]) : ([\n    FactoryStoreOf<F>\n] extends [\n    StoreDecl\n] ? [\n    actions: BoundActions<FactoryStoreOf<F>>\n] : [\n]);',
+  },
+  {
+    name: 'FactoryLocalComponent',
+    declaration: 'export type FactoryLocalComponent<F extends keyof SlotFactoryMap & string, N extends FactoryLocalNameOf<F>> = SlotComponent<FactoryLocalComponentPropsOf<F, N>>;',
+  },
+  {
+    name: 'FactoryLocalComponentPropsOf',
+    declaration: 'export type FactoryLocalComponentPropsOf<F extends keyof SlotFactoryMap & string, N extends FactoryLocalNameOf<F>> = FactoryLocalInputPropsOf<F, N> & FactoryRegistrationPropsOf<F> & ScopeStandardProps<FactoryLocalDefOf<F, N>[\'scope\']>;',
+  },
+  {
+    name: 'FactoryRegistrationPropsOf',
+    declaration: 'export type FactoryRegistrationPropsOf<F extends keyof SlotFactoryMap & string> = FactoryRenderPropsOf<F> & PropsStore<FactoryStoreOf<F>> & InjectFace<FactoryInjectOf<F>> & PropsLocale<FactoryLocaleOf<F>> & PropsRenderFactories;',
+  },
+  {
     name: 'GlobalStandardProps',
     declaration: 'export interface GlobalStandardProps {\n}',
   },
@@ -627,6 +648,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LanguageRegistration',
     declaration: 'export interface LanguageRegistration {\n    id: LocaleId;\n    label: string;\n    fallback: LocaleId;\n}',
+  },
+  {
+    name: 'LiveCompositionNode',
+    declaration: 'export type LiveCompositionNode = LiveSlotNode | LiveFactoryNode;',
+  },
+  {
+    name: 'LiveFactoryNode',
+    declaration: 'export interface LiveFactoryNode {\n    type: \'factory\';\n    name: string;\n    scope: SlotScope;\n    registrant?: string;\n    children: LiveSlotNode[];\n}',
+  },
+  {
+    name: 'LiveSlotNode',
+    declaration: 'export interface LiveSlotNode {\n    type: \'slot\';\n    name: string;\n    kind: SlotKind;\n    scope: SlotScope;\n    declaredBy?: string;\n    occupants: LiveSlotOccupant[];\n    children: LiveSlotNode[];\n}',
+  },
+  {
+    name: 'LiveSlotOccupant',
+    declaration: 'export interface LiveSlotOccupant {\n    registrant?: string;\n    key?: string;\n    id?: string;\n    order?: number;\n    priority: number;\n    active: boolean;\n}',
   },
   {
     name: 'LocaleDefinition',
@@ -729,12 +766,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PropsLocale<N> = N extends keyof LocaleNamespaceMap & string ? {\n    t: TranslateNS<N>;\n} : object;',
   },
   {
+    name: 'PropsRenderFactories',
+    declaration: 'export interface PropsRenderFactories {\n    renderFactorySlot: RenderFactorySlot;\n}',
+  },
+  {
     name: 'PropsRenderSlots',
     declaration: 'export type PropsRenderSlots<S extends keyof SlotMap & string> = {\n    renderSlot: RenderSlotFn<Exclude<S, ChainKeysOf<S>>>;\n    readonly __renders?: ((key: S) => void) | undefined;\n} & ([\n    ChainKeysOf<S>\n] extends [\n    never\n] ? object : {\n    renderSlotChain: <K extends ChainKeysOf<S>>(key: K, owner: OwnerOf<K>, opts?: ChainRenderOpts) => ReactNode;\n}) & ([\n    Extract<ScopeOf<S>, \'session\' | \'session-maybe\'>\n] extends [\n    never\n] ? object : {\n    SessionProvider: SessionProviderComponent;\n});',
   },
   {
     name: 'PropsRuntime',
-    declaration: 'export type PropsRuntime<K extends keyof SlotMap & string, EntryKey extends EntryKeyOf<K> = EntryKeyOf<K>> = OwnerOf<K> & KeyPropsOf<K, EntryKey> & SlotInjectFace<SlotInjectOf<K>> & (ScopeOf<K> extends \'session\' ? SessionStandardProps : ScopeOf<K> extends \'session-maybe\' ? SessionMaybeStandardProps : object) & GlobalStandardProps;',
+    declaration: 'export type PropsRuntime<K extends keyof SlotMap & string, EntryKey extends EntryKeyOf<K> = EntryKeyOf<K>> = OwnerOf<K> & KeyPropsOf<K, EntryKey> & SlotInjectFace<SlotInjectOf<K>> & ScopeStandardProps<ScopeOf<K>>;',
   },
   {
     name: 'PropsSlotHooks',
@@ -746,7 +787,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'QueueAction',
-    declaration: 'export type QueueAction = {\n    readonly kind: \'edit\';\n    readonly content: readonly ContentBlock[];\n} | {\n    readonly kind: \'remove\';\n} | {\n    readonly kind: \'steer\';\n};',
+    declaration: 'export type QueueAction = {\n    readonly kind: \'edit\';\n    readonly content: readonly TextBlock[];\n} | {\n    readonly kind: \'remove\';\n} | {\n    readonly kind: \'steer\';\n};',
+  },
+  {
+    name: 'RegisterFactory',
+    declaration: 'export interface RegisterFactory {\n    <F extends keyof SlotFactoryMap & string>(options: RegisterFactoryOptions<F>, component: SlotComponent<FactoryComponentPropsOf<F>>): () => void;\n}',
+  },
+  {
+    name: 'RegisterFactoryOptions',
+    declaration: 'export type RegisterFactoryOptions<F extends keyof SlotFactoryMap & string> = {\n    name: F;\n    scope: FactoryDefOf<F>[\'scope\'];\n} & FactoryField<F, \'children\', FactoryChildrenOf<F>> & FactoryField<F, \'store\', FactoryStoreOf<F> | (() => FactoryStoreOf<F>)> & FactoryField<F, \'inject\', (...args: FactoryInjectParams<F>) => FactoryInjectOf<F>> & FactoryField<F, \'locale\', FactoryLocaleOf<F>> & FactoryField<F, \'slots\', RuntimeFactorySlots<F>> & FactoryCollisionCheck<F> & FactoryChildrenCheck<F>;',
   },
   {
     name: 'RemoteHostFacts',
@@ -769,8 +818,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RemoteStreamOptions<Item> {\n    readonly name: string;\n    readonly open: (signal: AbortSignal) => AsyncIterable<Item>;\n    readonly ended: (accepted: boolean) => Error;\n    readonly carrierFailed?: (error: RemoteStreamCarrierError) => void;\n}',
   },
   {
+    name: 'RenderFactorySlot',
+    declaration: 'export type RenderFactorySlot = <F extends keyof SlotFactoryMap & string>(name: F, props: FactoryInputPropsOf<F>, options?: {\n    slots?: Partial<{\n        [N in FactoryLocalNameOf<F>]: FactoryLocalComponent<F, N>;\n    }>;\n    fallback?: ReactNode;\n}) => ReactNode;',
+  },
+  {
     name: 'ScopeOf',
     declaration: 'export type ScopeOf<K extends keyof SlotMap & string> = SlotMap[K][\'scope\'];',
+  },
+  {
+    name: 'ScopeStandardProps',
+    declaration: 'export type ScopeStandardProps<S extends SlotScope> = (S extends \'session\' ? SessionStandardProps : S extends \'session-maybe\' ? SessionMaybeStandardProps : object) & GlobalStandardProps;',
   },
   {
     name: 'SessionAreaProps',
@@ -862,11 +919,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SlotCore',
-    declaration: 'export class SlotCore {\n    constructor();\n    register<K extends keyof SlotMap & string, const EntryKey extends EntryKeyOf<K> = EntryKeyOf<K>, const D extends ChildrenDecl = Record<never, never>, H extends StoreDecl | undefined = undefined, M = never, N extends (keyof LocaleNamespaceMap & string) | undefined = undefined, C extends SlotComponent<never> = SlotComponent<never>>(options: BaseOptions<K, EntryKey, D, H, M, N> & {\n        inject?: undefined;\n    }, component: C & SlotComponent<ComposedProps<K, NoInfer<EntryKey>, keyof NoInfer<D> & keyof SlotMap & string, HandleOf<NoInfer<H>>, object, NoInfer<M>, NoInfer<N>>> & RendersCheck<C, D>): () => void;\n    register<K extends keyof SlotMap & string, I extends object, const EntryKey extends EntryKeyOf<K> = EntryKeyOf<K>, const D extends ChildrenDecl = Record<never, never>, H extends StoreDecl | undefined = undefined, M = never, N extends (keyof LocaleNamespaceMap & string) | undefined = undefined, C extends SlotComponent<never> = SlotComponent<never>>(options: BaseOptions<K, EntryKey, D, H, M, N> & {\n        inject: (...args: InjectParams<K, H>) => I;\n    }, component: C & SlotComponent<ComposedProps<K, NoInfer<EntryKey>, keyof NoInfer<D> & keyof SlotMap & string, HandleOf<NoInfer<H>>, I, NoInfer<M>, NoInfer<N>>> & RendersCheck<C, D>): () => void;\n    register(options: ErasedOptions, component: unknown): () => void;\n    isLive(entry: StoredEntry): boolean;\n    entries(key: string): readonly StoredEntry[];\n    entriesOfSlot(key /* …truncated — full shape in source */',
+    declaration: 'export class SlotCore {\n    constructor();\n    readonly registerFactory: RegisterFactory;\n    factory(name: string): StoredFactory | undefined;\n    factoryVersion(name: string): number;\n    subscribeFactory(name: string, listener: () => void): () => void;\n    isFactoryLive(definition: StoredFactory): boolean;\n    register<K extends keyof SlotMap & string, const EntryKey extends EntryKeyOf<K> = EntryKeyOf<K>, const D extends ChildrenDecl = Record<never, never>, H extends StoreDecl | undefined = undefined, M = never, N extends (keyof LocaleNamespaceMap & string) | undefined = undefined, C extends SlotComponent<never> = SlotComponent<never>>(options: BaseOptions<K, EntryKey, D, H, M, N> & {\n        inject?: undefined;\n    }, component: C & SlotComponent<ComposedProps<K, NoInfer<EntryKey>, keyof NoInfer<D> & keyof SlotMap & string, HandleOf<NoInfer<H>>, object, NoInfer<M>, NoInfer<N>>> & RendersCheck<C, D>): () => void;\n    register<K extends keyof SlotMap & string, I extends object, const EntryKey extends EntryKeyOf<K> = EntryKeyOf<K>, const D extends ChildrenDecl = Record<never, never>, H extends StoreDecl | undefined = undefined, M = never, N extends (keyof LocaleNamespaceMap & string) | undefined = undefined, C extends SlotComponent<never> = SlotComponent<never>>(options: BaseOptions<K, EntryKey, D, H, M, N> & {\n        inject: (...args: InjectParams<K, H>) => I;\n    }, component: C & SlotComponent<ComposedProps<K, NoInfer<EntryKey>, keyof NoInfer<D> & keyof SlotMap & string, HandleOf<NoInfer<H>>, I, NoInfer<M>, NoInfer<N>>> & RendersCheck<C, D>): () => void;\n    register(options: ErasedOptions, component: unknown): () => void;\n    isLive(entry: StoredEntry): boolean;\n    entries(key: string): readonly StoredEntry[];\n    entriesOfSlot(key: string): readonly StoredEntry[];\n    spec<K extends keyof SlotMap & string>(key: K): SlotSpec<SlotMap[K]> | undefined;\n    specDynamic(key: string): SlotSpec<SlotEntryDef> | undefined;\n    snapshot(root?: string): LiveCompositionNode[];\n    declarationEpoch(key: string): number;\n    subscribe(key: string, fn: () => void): () => void;\n    subscribeDeclaration(key: string, fn: () => void): () => void;\n    getVersion(key: string): number;\n    onMutate(fn: (key: string) => void): () => void;\n    reportEntryError(key: string, entry: StoredEntry, error: unknown, info: {\n        abdicate: boolean;\n    }): void;\n    reportFactoryError(name: string, registration: StoredEntry | StoredFactory, error: unknown): void;\n    onEntryError(fn: (key: string, registration: StoredEntry | StoredFactory, error: unknown, info: {\n        abdicated: boolean;\n    }) => void): () => void;\n}',
   },
   {
     name: 'SlotEntryDef',
     declaration: 'export interface SlotEntryDef {\n    kind: SlotKind;\n    scope: SlotScope;\n    owner?: object;\n    keyProps?: Record<string, object>;\n    hookContext?: unknown;\n    inject?: object;\n}',
+  },
+  {
+    name: 'SlotFactoryMap',
+    declaration: 'export interface SlotFactoryMap {\n}',
   },
   {
     name: 'SlotInjectFace',
@@ -911,6 +972,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'StoredEntry',
     declaration: 'export interface StoredEntry {\n    component: unknown;\n    options: {\n        key?: string;\n        id?: string;\n        order?: number;\n        label?: SlotLabel;\n        priority?: number;\n    };\n    select?: ((owner: never) => unknown) | undefined;\n    inject?: ((...args: never[]) => Record<string, unknown>) | undefined;\n    children?: Readonly<Record<string, SlotSpec<SlotEntryDef>>> | undefined;\n    store?: StoreDecl | undefined;\n    locale?: string | undefined;\n    registrant?: string | undefined;\n}',
+  },
+  {
+    name: 'StoredFactory',
+    declaration: 'export interface StoredFactory {\n    readonly name: string;\n    readonly component: unknown;\n    readonly scope: SlotScope;\n    readonly children?: Readonly<Record<string, SlotSpec<SlotEntryDef>>> | undefined;\n    readonly store?: StoreDecl | undefined;\n    readonly inject?: ((...args: never[]) => Record<string, unknown>) | undefined;\n    readonly locale?: string | undefined;\n    readonly slots?: Readonly<Record<string, {\n        scope: SlotScope;\n    }>> | undefined;\n    readonly registrant?: string | undefined;\n}',
   },
   {
     name: 'StoreFactory',
@@ -959,6 +1024,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TranslateNS',
     declaration: 'export type TranslateNS<N extends keyof LocaleNamespaceMap & string> = Translate<LocaleKeysOf<N>>;',
+  },
+  {
+    name: 'UseFactorySlot',
+    declaration: 'export type UseFactorySlot<F extends keyof SlotFactoryMap & string> = <N extends FactoryLocalNameOf<F>>(name: N, fallback: FactoryLocalComponent<F, N>) => SlotComponent<FactoryLocalInputPropsOf<F, N>>;',
   },
   {
     name: 'WorkspaceView',

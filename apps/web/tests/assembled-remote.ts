@@ -20,6 +20,7 @@ interface SessionSummary {
   readonly origin?: 'subagent'
   readonly cwd?: string
   readonly projections?: {
+    readonly kind: 'cached' | 'sequenced'
     readonly asOfSeq: number
     readonly values: Readonly<Record<string, unknown>>
   }
@@ -71,7 +72,14 @@ interface ControlBaseline {
 
 interface CapturedFixture {
   readonly sessionList: { readonly ok: true; readonly value: { readonly items: readonly SessionSummary[] } }
-  readonly settingsDescribe: unknown
+  readonly settingsDescribe: {
+    readonly ok: true
+    readonly value: {
+      readonly writable: boolean
+      readonly hasDocument: boolean
+      readonly namespaces: readonly unknown[]
+    }
+  }
   readonly credentialsDescribe: unknown
   readonly modelCatalog: unknown
   readonly agentPresets: unknown
@@ -81,6 +89,7 @@ interface CapturedFixture {
     readonly value: {
       readonly items: readonly WorkspaceView[]
       readonly archivedSessionIds: readonly string[]
+      readonly pinnedSessionIds: readonly string[]
     }
   }
   readonly control: ControlBaseline
@@ -90,6 +99,8 @@ interface CapturedFixture {
 }
 
 export interface AssembledRemoteOptions {
+  /** Supply an enabled Host preference for diagnostic View scenarios. */
+  readonly developerTools?: boolean
   /** Return the fixture's image-dimension admission error from Session prompt. */
   readonly rejectPrompt?: boolean
 }
@@ -131,7 +142,16 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
   const mock = RemoteMock.create().load(remoteDefaultResponses)
   mock.load({
     unary: {
-      'settings/describe': structuredClone(fixture.settingsDescribe),
+      'settings/describe': options.developerTools === true
+        ? ok({
+          ...fixture.settingsDescribe.value,
+          namespaces: [...fixture.settingsDescribe.value.namespaces, {
+            ns: 'ui-developer-tools',
+            schema: { type: 'object', dict: { enabled: { type: 'boolean' } } },
+            value: { enabled: true }, applies: 'live', secrets: [], revision: 0,
+          }],
+        })
+        : structuredClone(fixture.settingsDescribe),
       'credentials/describe': structuredClone(fixture.credentialsDescribe),
       'session/modelCatalog': structuredClone(fixture.modelCatalog),
       'agentPresets/list': structuredClone(fixture.agentPresets),
@@ -139,7 +159,6 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       'settings/canOpenAgentPresetDirectory': ok(true),
       'settings/openSettingsDocument': ok({ opened: true }),
       'settings/openAgentPresetDirectory': ok({ opened: true }),
-      'subagents/list': ok({ entries: [], parentAvailable: true }),
       'terminal/list': ok([]),
       'skills/list': ok({ skills: [] }),
       'session/canOpenWorkspacePath': ok(true),
@@ -168,6 +187,7 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       value: {
         items: structuredClone(workspaces),
         archivedSessionIds: structuredClone(fixture.workspace.value.archivedSessionIds),
+        pinnedSessionIds: structuredClone(fixture.workspace.value.pinnedSessionIds),
       },
     })
   })
@@ -204,6 +224,11 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
     return ok(undefined)
   })
   mock.unary('session/list', () => ok({ items: structuredClone(sessions) }))
+  mock.unary('session/projections', (request: unknown) => {
+    const sessionId = recordString(recordValue(request, 'request'), 'sessionId')
+    const summary = sessions.find(candidate => candidate.sessionId === sessionId)
+    return ok(structuredClone(summary?.projections ?? fixture.control.value.projections[sessionId] ?? null))
+  })
   mock.unary('workspace/create', (request: unknown) => {
     const path = recordString(recordValue(request, 'request'), 'path')
     const existing = workspaces.find(workspace => workspace.path === path)
@@ -236,7 +261,9 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       running: false,
       blank: true,
       cwd,
-      projections: structuredClone(blankSessionProjections),
+      // The created Session is live on this fixture Host: its list block is
+      // sequenced, like the block the real live registry would serve.
+      projections: { kind: 'sequenced', ...structuredClone(blankSessionProjections) },
     }
     sessions.push(summary)
     records.set(sessionId, [])

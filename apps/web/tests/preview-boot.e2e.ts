@@ -18,6 +18,7 @@
  */
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { once } from 'node:events'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -27,7 +28,7 @@ import { chromium } from 'playwright'
 import type { Browser } from 'playwright'
 import { expect, it } from 'vitest'
 import {
-  composeProfile, configTrees, indexWorkspacePackages, packVfsImage, packVfsOverlay,
+  composeProfile, configTrees, indexWorkspacePackages, packVfsImage, packPreviewFixture,
   previewFixtures, WRAPPER_CONTRACT,
 } from '@deepseek-ai/dsh-experimental-webworker-packer'
 import {
@@ -118,9 +119,9 @@ function requirePreviewPages(): void {
  * The base image, fixture manifest, and overlays to serve. `pnpm run build`
  * emits the pages but only `build:preview` packs the image, so this lane packs
  * a missing image rather than skipping the deployment it accepts. The example
- * overlay pairs its committed Session generations with the generator-owned
- * current projection cache. The worker therefore exercises historical reads
- * without relying on a stale cache schema. Generated files land in a temp
+ * overlay retains its committed Session generations, prepares current successors
+ * through the Node catalog, and supplies the generator-owned current projection cache.
+ * Generated files land in a temp
  * directory, never in `dist/`: the
  * client-artifact digest record treats `dist/` as build-owned, so a test write
  * there fails the record check for every later consumer.
@@ -161,7 +162,7 @@ function requireVfsAssets(): PreviewAssets {
     const trees = fixture.id === 'vfs-example'
       ? [...fixture.trees, { mount: 'home/storages', directory: cacheDirectory }]
       : fixture.trees
-    writeAsset(relativePath, packVfsOverlay(trees).image)
+    writeAsset(relativePath, packPreviewFixture(trees).image)
     return {
       id: fixture.id,
       label: fixture.label,
@@ -211,7 +212,8 @@ async function respond(
  */
 async function serveDist(overrides: ReadonlyMap<string, string>): Promise<Site> {
   const server = createServer((request, response) => { void respond(request, response, overrides) })
-  await new Promise<void>((listening) => { server.listen(0, '127.0.0.1', listening) })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('preview boot: the static server bound no port')
   return {

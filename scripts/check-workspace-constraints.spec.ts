@@ -164,6 +164,51 @@ describe('dsh family version coherence', () => {
 })
 
 describe('package payload constraints', () => {
+  it.each([
+    { exports: { './locale/*.json': './locale/*.json' }, resources: ['locale/*.json'] },
+    { exports: { './search/locale/*.json': './resources/search/*.json' }, resources: ['resources/search/*.json'] },
+    { exports: { './locale/en.json': './locale/en.json', './locale/zh.json': './locale/zh.json' }, resources: ['locale/en.json', 'locale/zh.json'] },
+    { exports: { './locale/*.json': { default: './locale/*.json' } }, resources: ['locale/*.json'] },
+    { exports: { './locale/*.json': './locale/*.json', './search/locale/*.json': './locale/*.json' }, resources: ['locale/*.json'] },
+    { exports: { './search/locale/*.json': './z/*.json', './locale/*.json': './a/*.json' }, resources: ['a/*.json', 'z/*.json'] },
+  ])('includes declared locale resources in the canonical payload: $exports', ({ exports, resources }) => {
+    expect(expectedDshPackageFiles({ name: '@deepseek-ai/dsh-localized', exports })).toEqual([
+      ...resources, 'lib/index.js', 'lib/types/**/*.d.ts',
+    ])
+  })
+
+  it('does not infer locale payloads from unrelated or non-JSON exports', () => {
+    expect(expectedDshPackageFiles({
+      exports: {
+        './config.json': './config.json',
+        './locale/README.md': './locale/README.md',
+        './locale/en.json': './metadata.js',
+        './locale/zh.json': null,
+        './locale/fr.json': { types: './locale/fr.d.ts' },
+      },
+    })).toEqual(['lib/index.js', 'lib/types/**/*.d.ts'])
+  })
+
+  it.each(['agent-team', 'agent-team-profile', 'auto-review', 'client-ui-agent-team', 'tool-agent-team'])(
+    'accepts the published locale files for %s and rejects their omission', (name) => {
+      const dir = `packages/experimental/${name}`
+      const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+      expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+      expect(checkWorkspaceManifest({ dir, manifest: {
+        ...manifest, files: manifest.files!.filter(file => file !== 'locale/*.json'),
+      } })).toEqual([expect.stringContaining('package.json files must be')])
+    },
+  )
+
+  it('rejects locale publication entries without their resource exports', () => {
+    const dir = 'packages/experimental/auto-review'
+    const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+    const exports = { ...manifest.exports }
+    delete exports['./locale/*.json']
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, exports } }))
+      .toEqual([expect.stringContaining('package.json files must be')])
+  })
+
   it('includes a declared profile patch without a package-name allowlist', () => {
     expect(expectedDshPackageFiles({
       name: '@deepseek-ai/dsh-private-profile',

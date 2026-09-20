@@ -58,6 +58,15 @@ describe('Session open', () => {
     expect(session.getSnapshot()).toMatchObject({ blank: false, running: true })
   }, COLD_BOOT_TIMEOUT_MS)
 
+  it('rejects a blank list hint when current metadata records a started conversation', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    session.projections.apply('sessionListMetadata', { blank: false, lastPromptAt: 1200 }, SessionSeq(8))
+
+    session.handleBlank(true)
+
+    expect(session.getSnapshot()).toMatchObject({ blank: false, promptAttempted: false, running: false })
+  })
+
   it('installs the tail page: cold → loading → open with window and nodes in place', async ({ mock, start }) => {
     const session = await sessionBench(mock, start, SID)
     const page = plainTurn(SessionSeq(10), 3, '问', '答')
@@ -260,6 +269,88 @@ describe('paging', () => {
     await session.loadThrough(SessionSeq(6)) // baseSeq is already 6
     await session.loadThrough(SessionSeq(9)) // inside the window
     expect(mock.log.requests()).toHaveLength(sent)
+  })
+
+  it('publishes jump pages together while live events remain visible', async ({ mock, start }) => {
+    const oldest = plainTurn(SessionSeq(0), 0, 'old', 'answer')
+    const middle = plainTurn(SessionSeq(6), 1, 'middle', 'answer')
+    const newest = plainTurn(SessionSeq(12), 2, 'new', 'answer')
+    const session = await sessionBench(mock, start, SID)
+    mock.stream(FOLLOW, followScript(history(newest, true)))
+    await session.open()
+    const secondRequested = Promise.withResolvers<undefined>()
+    const lastPage = Promise.withResolvers<RemoteResult<SessionPage>>()
+    mock.remote.session.page.mockImplementation(pageRule((request) => {
+      if (request.beforeSeq === 12) return history(middle, true)
+      secondRequested.resolve(undefined)
+      return lastPage.promise
+    }))
+    const changes: string[] = []
+    onTestFinished(session.eventSource.subscribe(() => { changes.push(session.eventSource.getSnapshot().change.kind) }))
+    const jump = session.loadThrough(SessionSeq(0))
+    await secondRequested.promise
+    expect(changes).toEqual([])
+    expect(eventSeqs(session)).toEqual(newest.map(event => event.seq))
+    expect(session.getSnapshot().loadingOlder).toBe(true)
+
+    await pushEvent(mock, ev.turnStart(SessionSeq(18), 3))
+    expect(changes).toEqual(['append'])
+    expect(eventSeqs(session)).toEqual([...newest.map(event => event.seq), 18])
+    const nearerJump = session.loadThrough(SessionSeq(6))
+    expect(nearerJump).toBe(jump)
+
+    lastPage.resolve(history(oldest))
+    await jump
+    expect(changes).toEqual(['append', 'prepend'])
+    expect(eventSeqs(session)).toEqual(Array.from({ length: 19 }, (_, index) => index))
+    expect(session.eventSource.getSnapshot().change).toMatchObject({
+      kind: 'prepend', entries: entries([...oldest, ...middle]),
+    })
+    expect(session.getSnapshot()).toMatchObject({ loadingOlder: false, hasMore: false })
+  })
+
+  it('publishes the successful jump prefix once when a later page fails', async ({ mock, start }) => {
+    const middle = plainTurn(SessionSeq(6), 1, 'middle', 'answer')
+    const newest = plainTurn(SessionSeq(12), 2, 'new', 'answer')
+    const session = await sessionBench(mock, start, SID)
+    mock.stream(FOLLOW, followScript(history(newest, true)))
+    await session.open()
+    const changed = vi.fn()
+    onTestFinished(session.eventSource.subscribe(changed))
+    mock.remote.session.page.mockImplementation(pageRule(request => request.beforeSeq === 12
+      ? history(middle, true)
+      : err(new RemoteError('gateway/internal', 'page unavailable', {}))))
+
+    await session.loadThrough(SessionSeq(0))
+
+    expect(changed).toHaveBeenCalledOnce()
+    expect(eventSeqs(session)).toEqual([...middle, ...newest].map(event => event.seq))
+    expect(session.getSnapshot()).toMatchObject({ loadingOlder: false, hasMore: true })
+  })
+
+  it('discards buffered jump pages when the Session replaces its stream', async ({ mock, start }) => {
+    const newest = plainTurn(SessionSeq(12), 2, 'new', 'answer')
+    const session = await sessionBench(mock, start, SID)
+    mock.stream(FOLLOW, followScript(history(newest, true)))
+    await session.open()
+    const secondRequested = Promise.withResolvers<undefined>()
+    const lastPage = Promise.withResolvers<RemoteResult<SessionPage>>()
+    mock.remote.session.page.mockImplementation(pageRule((request) => {
+      if (request.beforeSeq === 12) return history(plainTurn(SessionSeq(6), 1, 'middle', 'answer'), true)
+      secondRequested.resolve(undefined)
+      return lastPage.promise
+    }))
+    const changes: string[] = []
+    onTestFinished(session.eventSource.subscribe(() => { changes.push(session.eventSource.getSnapshot().change.kind) }))
+    const jump = session.loadThrough(SessionSeq(0))
+    await secondRequested.promise
+    const replacement = session.resync()
+    lastPage.resolve(history(plainTurn(SessionSeq(0), 0, 'old', 'answer')))
+    await Promise.all([jump, replacement])
+
+    expect(changes).toEqual(['replace'])
+    expect(eventSeqs(session)).toEqual(newest.map(event => event.seq))
+    expect(session.getSnapshot().loadingOlder).toBe(false)
   })
 
   it('loadThrough retargets a running jump to the lowest requested seq and shares its completion', async ({ mock, start }) => {

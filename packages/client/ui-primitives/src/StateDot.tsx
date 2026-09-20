@@ -1,55 +1,42 @@
 import clsx from 'clsx'
 import css from './StateDot.module.css'
-import { IconCheckOutline16 } from './icons/index.tsx'
+import { IconCheckOutlineRegular } from './icons/index.tsx'
 
 /**
- * State semantic: green done / amber user-attention / blue running ring /
- * red error / grey idle for a tracked subject with nothing in progress.
+ * State semantic: green done / amber user-attention / tertiary-grey loading /
+ * red error / neutral-grey idle for a tracked subject with nothing in progress.
  */
 export type StateDotState = 'done' | 'warning' | 'ongoing' | 'error' | 'idle'
-
-/** Outer 3x3 matrix cells (2px pixels on a 10px grid), clockwise from top-left. */
-const MATRIX_CELLS: readonly (readonly [number, number])[] = [
-  [0, 0], [4, 0], [8, 0], [8, 4], [8, 8], [4, 8], [0, 8], [0, 4],
-]
 
 /**
  * Render a state dot.
  * @param props.state - which of `done`, `warning`, `ongoing`, `error`, or `idle` to show.
- * @param props.size - outer diameter in px (default 10, the figma size).
+ * @param props.size - outer diameter in px; defaults to 14 for ongoing and 10 for solid states.
  * @param props.className - extra class for layout placement.
  * @param props.appearance - compact dot by default; step uses a filled check or hollow pending circle.
  * @returns the dot element (aria-hidden; pair with text for accessibility).
  */
-export function StateDot({ state, size = 10, className, appearance = 'dot' }: {
+export function StateDot({ state, size, className, appearance = 'dot' }: {
   state: StateDotState
   size?: number | undefined
   className?: string | undefined
   appearance?: 'dot' | 'step'
 }) {
+  const edge = size ?? (state === 'ongoing' ? 14 : 10)
   if (state === 'ongoing') {
     return (
       <svg
-        className={clsx(css.matrix, className)}
+        className={clsx(css.spinner, className)}
         data-state="ongoing"
-        width={size}
-        height={size}
-        viewBox="0 0 10 10"
-        shapeRendering="crispEdges"
+        width={edge}
+        height={edge}
+        viewBox="0 0 24 24"
         aria-hidden="true"
       >
-        {MATRIX_CELLS.map(([x, y], index) => (
-          <rect
-            key={`${x}-${y}`}
-            className={css.cell}
-            x={x}
-            y={y}
-            width="2"
-            height="2"
-            /* Negative delay phases the chase so every cell animates from mount. */
-            style={{ animationDelay: `${(index - MATRIX_CELLS.length) * 125}ms` }}
-          />
-        ))}
+        <g className={css.spinnerMotion}>
+          <circle className={css.spinnerTrack} cx="12" cy="12" r="9.5" />
+          <circle className={css.spinnerArc} cx="12" cy="12" r="9.5" />
+        </g>
       </svg>
     )
   }
@@ -57,8 +44,8 @@ export function StateDot({ state, size = 10, className, appearance = 'dot' }: {
     <span
       className={clsx(appearance === 'step' ? css.step : css.dot, className)}
       data-state={state}
-      style={{ width: size, height: size }}
+      style={{ width: edge, height: edge }}
       aria-hidden="true"
-    >{appearance === 'step' && state === 'done' && <IconCheckOutline16 size={size - 2} />}</span>
+    >{appearance === 'step' && state === 'done' && <IconCheckOutlineRegular size={edge - 2} />}</span>
   )
 }

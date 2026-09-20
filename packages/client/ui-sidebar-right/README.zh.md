@@ -43,6 +43,8 @@ kind: "package-reference"
 | `push`（默认） | 面板宽度：会话区让出空间 | 在轨道内；它的左缘与会话区的右缘沿框架自己的曲线一起移动 |
 | `fullscreen` | 保留宽屏普通轨道；窄屏自动全屏不占轨道 | 覆盖整个窗口 |
 
+在 Windows Electron 中，`html[data-windows-titlebar]` 让全屏面板保持在顶栏下方及展开侧栏的右侧。框架的 `--dsh-windows-sidebar-width` 提供该缩进及最大宽度；`--dsh-windows-content-radius` 提供左上圆角。仅全屏面板为该圆角裁剪溢出内容。
+
 席位通过 `ctx.layout.openRightbar(track, fullscreen)` / `closeRightbar()` 报告呈现，框架不注入本包。宽屏切换全屏不改变中栏宽度；宽度拖拽区只在普通展开态显示。独立浮窗及 `float`/`dock` 操作保持可用。
 
 面板没有标题行。它的两个控件——形态切换与折叠按钮——搭在套件 chrome 席位上，位于右上格 tab 条的最末端，因此 tab 条就是面板的整条上边。每条 tab 条从左到右读作：在允许时带关闭按钮的 tab 胶囊，添加控件（只在该格没有引导 tab 时绘制；它通过 `ctx.sidebarRight.openTab` 在该格打开引导页），该格的分栏控件，以及右上格里的两个面板控件。窄格里只有 chip 让位；其后的控件从不收缩或被裁切。
@@ -88,12 +90,14 @@ tab 类型分两阶段注册，随包发布的引导类型走的正是别的包�
 
 `openResource(address, options?)` 与 `openTab(kind, options?)` 是导航控制器，进入该列的每条路都调用其中之一：会话区的文件链接与工具行的行号引用（`openResource(fileAddress, { params: { line } })`），tab 条的添加控件与引导入口框（`openTab`），文件树的行（`tab.actions.openResource`）。资源地址是 `dsh-resource://<type>/…` URI；不带 `options.kind` 时由注册表认领（glob 与 `canOpen`，最高档胜出），带它时由该 kind 生效的类型打开。页按 kind 命名；tab 记录在本包拼出、别处无人书写的地址下（`contract/seed.ts`）。两者以同一组步骤作为一条历史运行：已展示同一 (kind, contentId) 的资源 tab 被聚焦，不限所在分栏，除非 `revealIfOpened: false`；页 tab 始终只在目标分栏内去重，不受该选项影响；否则新 tab 落到 `options.replaceTab` 所在的格与位置（并关掉那个 tab），再退而落到 `options.paneId`，再退而落到活跃停靠格；面板展开，因为用户看不到的内容不算打开。随后 Tab 域记录这次导航——`params` 以 `navigation.params` 抵达正文，`revision` 递增——不进布局历史。`params` 按所开之物定型：某资源类型的查看器把自己那项并入 `SidebarRightResourceParamsMap`（文本预览声明 `{ line?: number }`）；接受参数的页类型按其 kind 并入 `SidebarRightTabParamsMap`；值约定为 JSON 形状，运行时不校验。`dsh-resource://` 之外的地址、无人认领的地址、或未注册的 kind 都会 throw：那是接线错误，不是用户错误。
 
+`preferNewPane: true` 会先按普通的两格上限与空间规则尝试分割目标停靠格，无法分栏时回退到该格。`replaceTab` 优先并会禁用这项偏好。
+
 `close(tabId)` 关闭一个 tab；`active()` 读取活动 tab。`isExpanded()` 与 `toggleExpanded()` 读取并驱动该列的展开；形态切换是面板自己的控件，不属于这个接口。布局操作供以编程方式安排该列的调用方使用，每个都像它替代的手势一样被记录：`focus(tabId)` 聚焦一个 tab 及其格；`split(paneId?)` 在与 tab 条控件相同的格预算与空间规则下分栏一个停靠格（默认活跃格），返回新格的 id，做不到时返回 `undefined`——且不记录任何东西；`float(tabId, rect?)` 把停靠 tab 浮出为浮窗；`dock(paneId)` 把浮窗放回活跃停靠格。不存在的 tab 或格、或已处于调用目标状态的，都原样不动。该接口只暴露操作：没有布局快照、没有操作日志、没有按地址查找。`_undo()` / `_redo()` 步进已挂载停靠面的历史；它们是 `@internal`——序列没有面向用户的控件，这两个只为测试存在。命令需要一个已挂载的会话停靠面；没有时它们 throw，而不是写进一个没人绘制的面里。
 
 <a id="the-tab-domain"></a>
 ## Tab 域
 
-Tab 域按（Session，Tab id）保留导航、中止信号与绑定动作。私有装配回调采用各 Session 的 store，立即对齐恢复的记录，再跟随其提交。记录消失或插件卸载才中止 signal，收起和切会话不销毁记录；undo 恢复的是新 occurrence。`useTabInfo()` 组合框架绑定的 store 与导航 hook，不在组件中手写订阅或在渲染时创建记录。`tab.actions` 始终作用于自己的会话；`tab.visible` 区分正文与标题，浮窗不受整栏收起影响。`adopt` 不在公开控制器上。
+Tab 域按（Session，Tab id）保留导航、中止信号与绑定动作。私有装配回调采用各 Session 的 store，立即对齐恢复的记录，再跟随其提交。同一 Session 的 store 重建会替换其 `adopt` 注册，同时释放旧订阅与清理引用。记录消失或插件卸载才中止 signal，收起和切会话不销毁记录；undo 恢复的是新 occurrence。`useTabInfo()` 组合框架绑定的 store 与导航 hook，不在组件中手写订阅或在渲染时创建记录。`tab.actions` 始终作用于自己的会话；`tab.visible` 区分正文与标题，浮窗不受整栏收起影响。`adopt` 不在公开控制器上。
 
 标签页所有者通过 effect 注册 `registerCloseHandler(kind, handler)`。handler 在允许显式关闭或替换前同步保存后台清理任务。资源所有者跟踪完成和重试，侧栏不等待清理。handler 抛错时保留标签页。折叠、展示方式改变和插件卸载不调用关闭 handler；tab abort signal 标识 occurrence 卸载，不代表显式关闭。
 

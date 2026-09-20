@@ -1,6 +1,6 @@
 /** Provider-owned preparation steps and persisted recognition preferences. */
 import { useEffect, useState } from 'react'
-import { Button, DisclosureRow, IconChevronDownOutline14, StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, DisclosureRow, IconChevronDownOutlineRegular, StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SpeechPreparationState, SpeechProviderId, SpeechProviderView, SpeechSelectionPatch } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type { VoiceInputInjected } from './VoiceInput.tsx'
@@ -72,7 +72,7 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
     <DisclosureRow icon={<StateDot state={preparationTone(state)} size={16} appearance="step" />}
       title={expanded ? t('preparationSteps') : summary} open={expanded} expandable={(state.steps?.length ?? 0) > 0} expandOnRowClick previewChevron={false}
       onToggle={() => { setExpanded(value => !value) }} rowClassName={css.summaryRow} titleClassName={css.summaryTitle}
-      collapsedContent={<><span className={css.metric} role="status">{metric}</span>{state.steps && <IconChevronDownOutline14 />}</>}>
+      collapsedContent={<><span className={css.metric} role="status">{metric}</span>{state.steps && <IconChevronDownOutlineRegular />}</>}>
       <ol className={css.steps}>
         {state.steps?.map(step => <li key={step.kind} data-step={step.kind} data-step-state={step.status}
           aria-label={`${t(`step.${step.kind}`, { name: provider.name })} · ${t(`stepStatus.${step.status}`)}`}>

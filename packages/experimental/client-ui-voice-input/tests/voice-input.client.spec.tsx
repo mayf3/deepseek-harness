@@ -9,7 +9,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SpeechProviderId, Transcript } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { VoiceInput, type VoiceInputProps } from '../src/client/VoiceInput.tsx'
-import { RecordingError, type Recording } from '../src/client/audio.ts'
+import { RecordingError, Recording } from '../src/client/audio.ts'
 import type { SpeechReadiness } from '../src/client/readiness.ts'
 import { zh } from '../src/client/locales.ts'
 import { captureFixture } from './audio-fixture.client.ts'
@@ -19,8 +19,8 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 const id = 'sensevoice-local' as SpeechProviderId
 const transcript: Transcript = { text: '检查 TypeScript 类型', audioSeconds: 2, inferenceSeconds: 0.4 }
 function fixture(recording?: Recording) {
-  const capture = { start: vi.fn<Recording['start']>(async () => {}), stop: vi.fn(async () => new Uint8Array(48)),
-    amplitude: () => 0, dispose: vi.fn(async () => {}) }
+  const capture = Object.assign(new Recording(() => {}), { start: vi.fn<Recording['start']>(async () => {}), stop: vi.fn(async () => new Uint8Array(48)),
+    amplitude: () => 0, dispose: vi.fn(async () => {}) })
   const inputActions = { notify: vi.fn(), captureInsertion: vi.fn(() => ({ start: 3, end: 3, draftRev: 1 })), insertText: vi.fn(() => true),
     setDraft: vi.fn(), addAttachments: vi.fn(() => true), removeAttachment: vi.fn(), pruneAttachments: vi.fn(), submit: vi.fn() }
   const readiness = createSnapshotStore<SpeechReadiness>({ connected: true, error: null, catalog: {
@@ -31,7 +31,7 @@ function fixture(recording?: Recording) {
     async () => ({ ok: true, value: transcript }))
   const props: VoiceInputProps = { sessionId: 'one' as SessionId, inputActions, transcribe, locked: false, onActiveChange: vi.fn(),
     prepare: vi.fn(async () => {}), cancelPreparation: vi.fn(async () => {}), configure: vi.fn(async () => {}),
-    useSpeechReadiness: bindSnapshotSelector(readiness), createRecording: () => recording ?? capture as unknown as Recording,
+    useSpeechReadiness: bindSnapshotSelector(readiness), createRecording: () => recording ?? capture,
     t: makeTranslate(zh, commonZh) }
   const view = render(<VoiceInput {...props} />)
   return { props, capture, inputActions, readiness, transcribe, view }

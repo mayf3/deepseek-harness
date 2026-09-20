@@ -160,6 +160,7 @@ function makeHost() {
       abdicated.add(entry)
       bump(key)
     },
+    reportFactoryError: () => {},
     specOf: key => specs.get(key),
     isLive: entry => live.has(entry),
     storeOf: (entry, scopeBinding) => {
@@ -180,6 +181,12 @@ function makeHost() {
       }
       return instance
     },
+    factoryStoreOf: () => undefined,
+    retainFactoryOccurrence: () => () => {},
+    subscribeFactory: () => () => {},
+    getFactoryVersion: () => 0,
+    factoryOf: () => undefined,
+    isFactoryLive: () => false,
     root,
     scopeRevision,
     scope: () => activeScopeAdapter,

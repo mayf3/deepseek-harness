@@ -1,7 +1,7 @@
-- button "返回 live-client":
-  - img
-  - text: live-client
-- heading "fixture-live-client" [level=3]
+- button "返回 @fixture/live-client": "@fixture/live-client"
+- heading "@fixture/live-client" [level=3]
+- paragraph:
+  - code: fixture-live-client
 - paragraph:
   - code: "@fixture/live-client"
 - paragraph: 示例配置项

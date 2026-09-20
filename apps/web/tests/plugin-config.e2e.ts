@@ -33,6 +33,7 @@ describe('web e2e: plugin configuration pages', () => {
     // The live-client fixture is a bundle with a browser half; switched on
     // below, that half registers its row's configuration into the page.
     scaffold = await launchWebScaffold({
+      extraOverlayPath: fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
       profile: { packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-live-client') }] },
     })
     browser = await chromium.launch()
@@ -89,13 +90,13 @@ describe('web e2e: plugin configuration pages', () => {
     // the official bundles the installation ships switched off.
     await panel.getByRole('button', { name: '查看 网页搜索', exact: true }).waitFor({ timeout: 20_000 })
     const official = panel.locator('[data-plugin-group="official"]')
-    expect(await official.locator('[data-plugin-package]').count()).toBe(3)
+    expect(await official.locator('[data-plugin-package]').count()).toBe(2)
     expect(await official.locator('[data-plugin-item]').count()).toBe(4)
     for (const title of ['终端', 'Agent 循环', 'Subagent', '网页搜索']) {
       expect(await official.getByRole('button', { name: `查看 ${title}`, exact: true }).count()).toBe(1)
     }
     // A card carries the one-liner; the fields wait for the page.
-    expect(await official.getByText('限制 agent 运行的每一条命令。', { exact: true }).count()).toBe(1)
+    expect(await official.getByText('限制每条命令最多能跑多久、最多输出多少内容。', { exact: true }).count()).toBe(1)
     expect(await panel.getByLabel('命令超时（毫秒）').count()).toBe(0)
 
     const snapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
@@ -103,12 +104,72 @@ describe('web e2e: plugin configuration pages', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('persists selected adapter routes as the subagent model allowlist', async () => {
+  it('saves subagent limits and resets them to the deployment defaults', async () => {
+    const panel = await openPlugins()
+    await openPage(panel, 'Subagent')
+    const depth = panel.getByLabel('最大递归深度', { exact: true })
+    const capacity = panel.getByLabel('Subagent 并行数量上限', { exact: true })
+    expect(await depth.inputValue()).toBe('1')
+    expect(await capacity.inputValue()).toBe('8')
+    await depth.fill('2')
+    await capacity.fill('12')
+    await panel.getByRole('button', { name: '保存', exact: true }).click()
+    await expect.poll(() => panel.getByRole('button', { name: '保存', exact: true }).isDisabled()).toBe(true)
+    await expect.poll(settingsDocument).toContain('maxActiveSubagents: 12')
+    await expect.poll(settingsDocument).toContain('maxDepth: 2')
+    await openPlugins()
+    await openPage(panel, 'Subagent')
+    const snapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'subagent.expected.md'), snapshot, MODE)
+    const controlHeight = await depth.evaluate(element => element.getBoundingClientRect().height)
+    await depth.fill('1.5')
+    expect(await depth.evaluate(element => element.getBoundingClientRect().height)).toBe(controlHeight)
+    expect(await panel.getByRole('button', { name: '保存', exact: true }).isDisabled()).toBe(true)
+    await depth.fill('2')
+    await panel.getByRole('button', { name: '恢复默认', exact: true }).first().click()
+    await panel.getByRole('button', { name: '恢复默认', exact: true }).first().click()
+    await panel.getByRole('button', { name: '保存', exact: true }).click()
+    await expect.poll(() => panel.getByRole('button', { name: '保存', exact: true }).isDisabled()).toBe(true)
+    await openPlugins()
+    await openPage(panel, 'Subagent')
+    expect(await depth.inputValue()).toBe('1')
+    expect(await capacity.inputValue()).toBe('8')
+    await panel.getByRole('button', { name: '返回插件列表', exact: true }).click()
+  })
+
+  it('opens field explanations with the keyboard and retains unsaved edits', async () => {
+    const panel = await openPlugins()
+    await openPage(panel, 'Subagent')
+    const depth = panel.getByLabel('最大递归深度', { exact: true })
+    await depth.fill('2')
+    const depthHelp = panel.getByRole('button', { name: '最大递归深度说明', exact: true })
+    expect(await panel.getByRole('region', { name: '最大递归深度说明', exact: true }).count()).toBe(0)
+    await depthHelp.press('Enter')
+    const depthRules = panel.getByRole('region', { name: '最大递归深度说明', exact: true })
+    await depthRules.waitFor()
+    expect(await depthRules.getByText('限制 Agent 创建 Subagent 的递归层级。', { exact: true }).count()).toBe(1)
+    const depthTable = depthRules.getByRole('table', { name: '最大递归深度说明', exact: true })
+    expect(await depthTable.getByRole('row', { name: '0 禁用 Subagent', exact: true }).count()).toBe(1)
+    expect(await depthTable.getByRole('row', { name: '1 仅允许主 Agent 创建 Subagent', exact: true }).count()).toBe(1)
+    expect(await depthRules.getByText('如果某个工具单独设置了最大递归深度，以该工具的设置为准。', { exact: true }).count()).toBe(1)
+    await depthHelp.press('Enter')
+    expect(await depthRules.count()).toBe(0)
+    expect(await depth.inputValue()).toBe('2')
+    await panel.getByRole('button', { name: 'Subagent 并行数量上限说明', exact: true }).click()
+    const capacityRules = panel.getByRole('region', { name: 'Subagent 并行数量上限说明', exact: true })
+    expect(await capacityRules.getByText('同一主 Agent 下，所有递归层级同时存活的 Subagent 总数，主 Agent 不计入。达到上限时，新的启动请求会被拒绝。', { exact: true }).count()).toBe(1)
+    await panel.getByRole('button', { name: '返回插件列表', exact: true }).click()
+    await openPage(panel, 'Subagent')
+    expect(await depth.inputValue()).toBe('1')
+  })
+
+  it('saves limits and the model allowlist together from the shared card', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-subagent-model-selection'))
     const panel = await openPlugins()
     await openPage(panel, 'Subagent')
     const toggle = panel.getByRole('switch', { name: '允许 Agent 为 Subagent 选择模型' })
 
+    await panel.getByLabel('最大递归深度', { exact: true }).fill('2')
     await toggle.click()
     const models = panel.getByRole('group', { name: 'Agent 可选择的模型' })
     await models.waitFor({ timeout: 10_000 })
@@ -117,15 +178,16 @@ describe('web e2e: plugin configuration pages', () => {
     const save = panel.getByRole('button', { name: '保存', exact: true })
     await save.click()
 
-    await expect.poll(async () => (await settingsDocument()).includes('subagent-model-selection:'), { timeout: 10_000 })
-      .toBe(true)
-    expect(await settingsDocument()).toContain('enabled: true')
-    expect(await settingsDocument()).toContain('allowedModels:')
-    expect(await settingsDocument()).toContain('provider:')
-    expect(await settingsDocument()).toContain('model:')
-    // The page stays open once the save landed; a settled form offers no save to repeat.
+    // The Save label returns only after both namespace controllers settle.
+    await expect.poll(() => save.isDisabled(), { timeout: 10_000 }).toBe(true)
+    const saved = await settingsDocument()
+    expect(saved).toContain('subagent-model-selection:')
+    expect(saved).toContain('maxDepth: 2')
+    expect(saved).toContain('enabled: true')
+    expect(saved).toContain('allowedModels:')
+    expect(saved).toContain('provider:')
+    expect(saved).toContain('model:')
     await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: 5_000 }).toBe('true')
-    await expect.poll(() => save.isDisabled(), { timeout: 5_000 }).toBe(true)
 
     await toggle.click()
     await save.click()
@@ -225,21 +287,21 @@ describe('web e2e: plugin configuration pages', () => {
     const panel = await openPlugins()
 
     // Off, the bundle's browser half is not loaded and the row has no configuration to open.
-    await panel.getByRole('button', { name: '查看 live-client', exact: true }).click()
+    await panel.getByRole('button', { name: '查看 @fixture/live-client', exact: true }).click()
     const row = panel.locator('[data-plugin-row]', { hasText: 'fixture-live-client' })
     await row.waitFor({ timeout: 10_000 })
-    expect(await panel.getByRole('button', { name: '配置 fixture-live-client' }).count()).toBe(0)
+    expect(await panel.getByRole('button', { name: '配置 @fixture/live-client' }).count()).toBe(0)
 
     // Switched on, the Host recomposes and the browser half mounts without a
     // reload; its registration puts the configure control on the row.
-    await panel.getByRole('switch', { name: '启用 live-client' }).click()
-    const configure = panel.getByRole('button', { name: '配置 fixture-live-client' })
+    await panel.getByRole('switch', { name: '启用 @fixture/live-client' }).click()
+    const configure = panel.getByRole('button', { name: '配置 @fixture/live-client' })
     await configure.waitFor({ timeout: 30_000 })
     await configure.click()
 
     const rowPage = panel.locator('[data-plugin-row-detail="@fixture/live-client#fixture-live-client"]')
     await rowPage.waitFor({ timeout: 10_000 })
-    expect(await rowPage.getByRole('heading', { level: 3 }).textContent()).toBe('fixture-live-client')
+    expect(await rowPage.getByRole('heading', { level: 3 }).textContent()).toBe('@fixture/live-client')
     expect(await rowPage.getByText('示例配置项', { exact: true }).count()).toBe(1)
     const form = rowPage.getByRole('form', { name: '动态插件配置' })
     await form.getByLabel('问候语').fill('你好')
@@ -248,13 +310,13 @@ describe('web e2e: plugin configuration pages', () => {
 
     const snapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(ROW_EXPECTED, snapshot, MODE)
-    await rowPage.getByRole('button', { name: '返回 live-client' }).click()
+    await rowPage.getByRole('button', { name: '返回 @fixture/live-client' }).click()
     await panel.locator('[data-plugin-detail="@fixture/live-client"]').waitFor({ timeout: 10_000 })
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['official.expected.md', 'row.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['official.expected.md', 'row.expected.md', 'subagent.expected.md'])
   })
 })
