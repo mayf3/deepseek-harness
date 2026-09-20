@@ -93,6 +93,14 @@ function dragData(): Pick<DataTransfer, 'effectAllowed' | 'dropEffect' | 'setDat
   return { effectAllowed: 'uninitialized', dropEffect: 'none', setData: vi.fn() }
 }
 
+// The default child stub: an open directory flow shows its marker; the two
+// Session row lists stay empty (their entries have their own spec). A stub
+// satisfies the generic render signature only with an erased owner type.
+const renderDirectoryFlowOnly: WorkspaceBrowserProps['renderSlot'] = (name: string, owner: object) =>
+  name === 'sidebar.workspaces.directoryFlow' && (owner as DirectoryFlowOwnerProps).open
+    ? <div data-testid="directory-flow" />
+    : null
+
 function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   const store = createWorkspaceViewStore().create()
   const props: WorkspaceBrowserProps = {
@@ -109,19 +117,16 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     open: vi.fn(),
     searchSessions: vi.fn(async () => ({ items: [], hasMore: false })),
     searchResultLimit: 20,
-    renameSession: vi.fn(async () => {}),
-    forkSession: vi.fn(),
+    requestSessionRename: vi.fn(),
+    notifyArchivedNotOpenable: vi.fn(),
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),
-    archiveSession: vi.fn(async () => {}),
     unarchiveSession: vi.fn(async () => {}),
-    pinSession: vi.fn(async () => {}),
-    unpinSession: vi.fn(async () => {}),
     insertWorkspaceBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
     useHostInfo: selector => selector({ home: undefined, isLoopback: true }),
-    renderSlot: ((_name: string, owner: { open: boolean }) => (owner.open ? <div data-testid="directory-flow" /> : null)) as never,
+    renderSlot: renderDirectoryFlowOnly,
     t,
     ...overrides,
   }
@@ -630,6 +635,47 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('alpha-s')).toBeNull()
   })
 
+  it('a title double-click asks for the rename dialog with the row title', () => {
+    const requestSessionRename = vi.fn()
+    const open = vi.fn()
+    const b = mount({
+      useSessions: hook(sessionState([summary('alpha-s', 1, { displayTitle: 'Alpha session' })])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['alpha-s'])])),
+      requestSessionRename,
+      open,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.doubleClick(screen.getByText('Alpha session'))
+    expect(requestSessionRename).toHaveBeenCalledWith(sid('alpha-s'), 'Alpha session')
+    expect(open).not.toHaveBeenCalled()
+    // The flat list threads the same request.
+    act(() => { b.store.actions.setGroupBy('flat') })
+    fireEvent.doubleClick(screen.getByText('Alpha session'))
+    expect(requestSessionRename).toHaveBeenCalledTimes(2)
+  })
+
+  it('renders both Session row lists for every visible row in the grouped tree and the flat list', () => {
+    const rendered = vi.fn()
+    const renderSlot: WorkspaceBrowserProps['renderSlot'] = (name: string, owner: object) => {
+      rendered(name, owner)
+      return null
+    }
+    const b = mount({
+      useSessions: hook(sessionState([summary('alpha-s', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['alpha-s'])])),
+      renderSlot,
+    })
+    expect(rendered).not.toHaveBeenCalledWith('sidebar.workspaces.session.menu.item', expect.anything())
+    fireEvent.click(screen.getByText('alpha'))
+    const owner = { sessionId: sid('alpha-s'), displayTitle: 'alpha-s' }
+    expect(rendered).toHaveBeenCalledWith('sidebar.workspaces.session.menu.item', owner)
+    expect(rendered).toHaveBeenCalledWith('sidebar.workspaces.session.row.action', owner)
+    rendered.mockClear()
+    act(() => { b.store.actions.setGroupBy('flat') })
+    expect(rendered).toHaveBeenCalledWith('sidebar.workspaces.session.menu.item', owner)
+    expect(rendered).toHaveBeenCalledWith('sidebar.workspaces.session.row.action', owner)
+  })
+
   it('shows five sessions by default and clears transient show-all when the Workspace collapses', () => {
     const items = Array.from({ length: 7 }, (_, index) => summary(`session-${index + 1}`, 7 - index))
     const b = mount({
@@ -769,17 +815,13 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('two')
   })
 
-  it('archives a session from the row menu and hides archived rows in both modes', async () => {
-    const archiveSession = vi.fn(async () => {})
+  it('hides archived rows in both modes once the archive set carries them', () => {
     const b = mount({
       useSessions: hook(sessionState([summary('kept-s', 2), summary('gone-s', 1)])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['kept-s', 'gone-s'])])),
-      archiveSession,
     })
     fireEvent.click(screen.getByText('alpha'))
-    fireEvent.click(screen.getByRole('button', { name: '会话“gone-s”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
-    expect(archiveSession).toHaveBeenCalledWith(sid('gone-s'))
+    expect(screen.getByText('gone-s')).toBeTruthy()
 
     // The archive-set echo hides the row in grouped and flat modes.
     rerender(b, { useWorkspaces: hook(workspaceState([workspace('alpha', ['kept-s', 'gone-s'])], [sid('gone-s')])) })
@@ -788,144 +830,6 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
     expect(screen.getByText('kept-s')).toBeTruthy()
     expect(screen.queryByText('gone-s')).toBeNull()
-  })
-
-  it('logs and keeps the tree when the archive call rejects', async () => {
-    const rejection = new Error('archive exploded')
-    const archiveSession = vi.fn(async () => { throw rejection })
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      mount({
-        useSessions: hook(sessionState([summary('alpha-s', 1)])),
-        useWorkspaces: hook(workspaceState([workspace('alpha', ['alpha-s'])])),
-        archiveSession,
-      })
-      fireEvent.click(screen.getByText('alpha'))
-      fireEvent.click(screen.getByRole('button', { name: '会话“alpha-s”的操作' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
-      await Promise.resolve()
-      await Promise.resolve()
-      expect(warn).toHaveBeenCalledWith('session archive rejected:', rejection)
-      expect(screen.getByText('alpha-s')).toBeTruthy()
-    } finally {
-      warn.mockRestore()
-    }
-  })
-
-  it('fronts a freshly pinned row in the saved manual orders and seeds missing accounts', async () => {
-    const pinSession = vi.fn(async () => {})
-    const b = mount({
-      useSessions: hook(sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])])),
-      pinSession,
-    })
-    act(() => { b.store.actions.setSessionOrder('alpha', ['one', 'two', 'three'], {}) })
-    fireEvent.click(screen.getByText('alpha'))
-    fireEvent.click(screen.getByRole('button', { name: '会话“three”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
-    expect(pinSession).toHaveBeenCalledWith(sid('three'))
-    await waitFor(() => {
-      expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'one', 'two'])
-    })
-    expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['three', 'one', 'two'])
-  })
-
-  it('saves a Pin reorder without leaving Last updated and leaves positions unchanged on unpin', async () => {
-    localStorage.clear()
-    const pinSession = vi.fn(async () => {})
-    const unpinSession = vi.fn(async () => {})
-    const b = mount({
-      useSessions: hook(sessionState([summary('one', 2), summary('two', 1)])),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
-      pinSession, unpinSession,
-    })
-    expect(b.store.getSnapshot().orderBy).toBe('updated')
-    fireEvent.click(screen.getByText('alpha'))
-    fireEvent.click(screen.getByRole('button', { name: '会话“two”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
-    expect(pinSession).toHaveBeenCalledWith(sid('two'))
-    await act(async () => { await Promise.resolve() })
-    expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({
-      alpha: ['two', 'one'],
-      [UNGROUPED_KEY]: [],
-      [FLAT_SESSION_ORDER_KEY]: ['two', 'one'],
-    })
-    expect(b.store.getSnapshot().orderBy).toBe('updated')
-
-    rerender(b, { useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])], [], [sid('two')])) })
-    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '手动排序' }))
-    const before = b.store.getSnapshot().sessionOrderByAccount
-    expect(before).toEqual({
-      alpha: ['one', 'two'],
-      [UNGROUPED_KEY]: [],
-      [FLAT_SESSION_ORDER_KEY]: ['one', 'two'],
-    })
-    fireEvent.click(screen.getByRole('button', { name: '会话“two”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '取消置顶' }))
-    expect(unpinSession).toHaveBeenCalledWith(sid('two'))
-    await act(async () => { await Promise.resolve() })
-    expect(b.store.getSnapshot().sessionOrderByAccount).toEqual(before)
-  })
-
-  it('keeps newer saved orders when a pending Pin completes', async () => {
-    const pending = Promise.withResolvers<undefined>()
-    const pinSession = vi.fn(() => pending.promise)
-    const b = mount({
-      useSessions: hook(sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])])),
-      pinSession,
-    })
-    fireEvent.click(screen.getByText('alpha'))
-    fireEvent.click(screen.getByRole('button', { name: '会话“three”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
-    expect(pinSession).toHaveBeenCalledWith(sid('three'))
-    act(() => {
-      b.store.actions.setSessionOrder('alpha', ['two', 'one', 'three'], {})
-      b.store.actions.setSessionOrder(FLAT_SESSION_ORDER_KEY, ['two', 'one', 'three'], {})
-    })
-    await act(async () => { pending.resolve(undefined) })
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'two', 'one'])
-    expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['three', 'two', 'one'])
-  })
-
-  it('uses current membership when a Workspace disappears during a pending Pin', async () => {
-    const pending = Promise.withResolvers<undefined>()
-    const b = mount({
-      useSessions: hook(sessionState([summary('one', 2), summary('two', 1)])),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
-      pinSession: vi.fn(() => pending.promise),
-    })
-    fireEvent.click(screen.getByText('alpha'))
-    fireEvent.click(screen.getByRole('button', { name: '会话“two”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
-    rerender(b, { useWorkspaces: hook(workspaceState([])) })
-    await act(async () => { pending.resolve(undefined) })
-    expect(b.store.getSnapshot().sessionOrderByAccount).not.toHaveProperty('alpha')
-    expect(b.store.getSnapshot().sessionOrderByAccount[UNGROUPED_KEY]).toEqual(['two', 'one'])
-    expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['two', 'one'])
-  })
-
-  it('keeps saved Workspace members with temporarily missing summaries when pinning in Last updated', async () => {
-    localStorage.clear()
-    const b = mount({
-      useSessions: hook(sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])])),
-    })
-    fireEvent.click(screen.getByText('alpha'))
-    fireEvent.click(screen.getByRole('button', { name: '会话“one”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
-    await act(async () => { await Promise.resolve() })
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['one', 'two', 'three'])
-    rerender(b, {
-      useSessions: hook(sessionState([summary('one', 3), summary('three', 1)])),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])], [], [sid('one')])),
-    })
-    fireEvent.click(screen.getByRole('button', { name: '会话“three”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
-    await act(async () => { await Promise.resolve() })
-    expect(b.store.getSnapshot().orderBy).toBe('updated')
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'one', 'two'])
   })
 
   it.each(['workspace', 'flat', 'ungrouped'] as const)(
@@ -1000,95 +904,32 @@ describe('WorkspaceBrowser', () => {
       .toEqual(['c', 'a', 'b'])
   })
 
-  it('surfaces pin and unpin rejections as toasts', async () => {
-    const pinSession = vi.fn(async () => { throw new Error('pin wire down') })
-    const unpinSession = vi.fn(async () => { throw new Error('unpin wire down') })
-    const b = mount({
-      useSessions: hook(sessionState([summary('one', 1)])),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one'])])),
-      pinSession, unpinSession,
-    })
-    fireEvent.click(screen.getByText('alpha'))
-    fireEvent.click(screen.getByRole('button', { name: '会话“one”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
-    await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toContain('置顶失败，请稍后重试')
-    })
-    rerender(b, { useWorkspaces: hook(workspaceState([workspace('alpha', ['one'])], [], [sid('one')])) })
-    fireEvent.click(screen.getByRole('button', { name: '会话“one”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '取消置顶' }))
-    await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toContain('取消置顶失败，请稍后重试')
-    })
-  })
-
-  it('confirms every archive with an undo/filter toast', async () => {
-    const archiveSession = vi.fn(async () => {})
-    const unarchiveSession = vi.fn(async () => {})
-    const b = mount({
-      useSessions: hook(sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])])),
-      archiveSession, unarchiveSession,
-    })
-    fireEvent.click(screen.getByText('alpha'))
-    const archive = (name: string) => {
-      fireEvent.click(screen.getByRole('button', { name: `会话“${name}”的操作` }))
-      fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
-    }
-    const flush = () => act(async () => { await Promise.resolve() })
-
-    // Every archive confirms with the actionable toast; a back-to-back
-    // archive replaces the still-showing toast.
-    archive('two')
-    await flush()
-    expect(screen.getByRole('alert').textContent).toContain('会话已归档')
-    archive('three')
-    await flush()
-    expect(screen.getAllByRole('alert')).toHaveLength(1)
-
-    // 撤销 unarchives the toast's session and dismisses the banner.
-    fireEvent.click(screen.getByRole('button', { name: '撤销' }))
-    expect(unarchiveSession).toHaveBeenCalledWith(sid('three'))
-    expect(screen.queryByRole('alert')).toBeNull()
-
-    // 筛选查看 dismisses the banner and opens the view-options menu.
-    archive('two')
-    await flush()
-    fireEvent.click(screen.getByRole('button', { name: '筛选已归档会话' }))
-    expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByRole('menuitem', { name: '显示已归档' })).toBeTruthy()
-
-    // A chrome remount (window resized through the rail breakpoint) must not
-    // replay the toast-action bump and reopen the closed menu.
-    fireEvent.click(screen.getByRole('menuitem', { name: '显示已归档' }))
-    expect(screen.queryByRole('menuitem', { name: '显示已归档' })).toBeNull()
-    rerender(b, { wide: false })
-    rerender(b, { wide: true })
-    expect(screen.queryByRole('menuitem', { name: '显示已归档' })).toBeNull()
-  })
-
-  it.each(['show', 'only'] as const)('does not open an archived row in the %s filter', (filter) => {
+  it.each(['show', 'only'] as const)('does not open an archived row in the %s filter; it raises the not-openable notice instead', (filter) => {
     const open = vi.fn()
+    const notifyArchivedNotOpenable = vi.fn()
     const b = mount({
       useSessions: hook(sessionState([summary('gone', 1)])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['gone'])], [sid('gone')])),
       open,
+      notifyArchivedNotOpenable,
     })
     act(() => { b.store.actions.setArchivedFilter(filter) })
     fireEvent.click(screen.getByText('alpha'))
     fireEvent.click(screen.getByText('gone'))
     expect(open).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert').textContent).toBe('已归档对话暂时无法查看，请取消归档后查看')
+    expect(notifyArchivedNotOpenable).toHaveBeenCalledOnce()
     expect(screen.getByText('gone').closest('[role="treeitem"]')?.getAttribute('aria-description'))
       .toBe('已归档对话暂时无法查看，请取消归档后查看')
   })
 
-  it('does not open an archived search result or clear its query', async () => {
+  it('does not open an archived search result or clear its query; it raises the not-openable notice instead', async () => {
     const open = vi.fn()
+    const notifyArchivedNotOpenable = vi.fn()
     const b = mount({
       useSessions: hook(sessionState([summary('gone', 1)])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['gone'])], [sid('gone')])),
       open,
+      notifyArchivedNotOpenable,
     })
     act(() => { b.store.actions.setArchivedFilter('show') })
     fireEvent.click(screen.getByRole('button', { name: '搜索会话' }))
@@ -1098,7 +939,7 @@ describe('WorkspaceBrowser', () => {
     const row = within(screen.getByRole('tree', { name: '搜索结果' })).getByRole('treeitem')
     fireEvent.click(row)
     expect(open).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert').textContent).toBe('已归档对话暂时无法查看，请取消归档后查看')
+    expect(notifyArchivedNotOpenable).toHaveBeenCalledOnce()
     expect(row.getAttribute('aria-description')).toBe('已归档对话暂时无法查看，请取消归档后查看')
     expect((input as HTMLInputElement).value).toBe('gone')
   })
