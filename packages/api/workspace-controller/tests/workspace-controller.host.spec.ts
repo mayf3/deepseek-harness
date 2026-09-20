@@ -41,7 +41,7 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve }
 }
 
-async function harness() {
+async function harness(options: { systemDocuments?: boolean } = {}) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-workspace-controller-')))
   tempDirs.push(root)
   const ctx = new Context()
@@ -59,7 +59,7 @@ async function harness() {
     lookups: { configure: () => dispose },
     contexts: { configureHost: () => dispose },
   } as never)
-  const controller = new WorkspaceController(ctx, { documentsDirectory: root })
+  const controller = new WorkspaceController(ctx, options.systemDocuments === true ? {} : { documentsDirectory: root })
   return { controller, ctx, root, storageDomain }
 }
 
@@ -418,6 +418,14 @@ describe('WorkspaceController follow', () => {
 })
 
 describe('first-use Remote', () => {
+  it('reuses an initialized Workspace without looking up system Documents', async () => {
+    const { controller, ctx, root } = await harness({ systemDocuments: true })
+    const workspace = await ctx.workspaceRegistry.initializeDefault(async () => ({ path: root, title: 'Existing default' }))
+    const signal = AbortSignal.abort()
+    await expect(controller.initializeDefault({ directoryName: 'Default workspace', title: 'Default workspace' }, signal))
+      .resolves.toMatchObject({ workspace: { workspaceId: workspace!.id, path: root, title: 'Existing default' } })
+  })
+
   it.each(['', ' ', '.', '..', '../outside', 'nested/name', 'nested\\name', 'C:outside', 'name\0', '.. ', 'tail.'])(
     'rejects invalid directory name %j before invoking the registry', async (directoryName) => {
       const { controller, ctx } = await harness()

@@ -6,7 +6,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -76,6 +76,7 @@ async function bench(options: {
   failSettingsUpdate?: boolean
   selectGate?: Promise<void>
   settingsRosterGate?: Promise<undefined>
+  refuseSelect?: boolean
 } = {}) {
   const ctx = new Context()
   // The host's answer, mutable so a spec can move the default the way the
@@ -153,7 +154,9 @@ async function bench(options: {
     deletePreset: () => Promise.resolve({ ok: true as const, value: undefined }),
     select: (_agentId: SessionId, agentPreset: string) => {
       calls.push(`select:${agentPreset}`)
-      return Promise.resolve(options.selectGate).then(() => ({ ok: true as const, value: agentPreset }))
+      return Promise.resolve(options.selectGate).then(() => options.refuseSelect === true
+        ? { ok: false as const, error: new RemoteError('gateway/internal', 'preset refused', {}) }
+        : { ok: true as const, value: agentPreset })
     },
   }
   ctx.provide('remote.agentPresets', agentPresets as never)
@@ -715,8 +718,10 @@ describe('ui-agent-preset apply', () => {
     conversation()
   })
 
-  it('applies the staged choice to the blank session the flow lands on', async () => {
-    const { ctx, slots, calls } = await bench()
+  it.each([false, true])('awaits the staged choice before first send and propagates refusal (%s)', async (refuseSelect) => {
+    const selection = Promise.withResolvers<undefined>()
+    const { ctx, slots, calls } = await bench({ refuseSelect, selectGate: selection.promise })
+    onTestFinished(async () => { selection.resolve(undefined); await ctx.fiber.dispose() })
     declareRoot(slots)
     declareConversation(slots)
     ctx.provide('conversation', {} as never)
@@ -736,6 +741,8 @@ describe('ui-agent-preset apply', () => {
       .inject as unknown as (sessionId?: SessionId) => AgentPresetSeatInjected
     const chip = injectSeat()
 
+    await ctx.serial('conversation/prepare-first-send', SessionId('absent'))
+
     await chip.load()
     // Picked on the hero screen, where there is no session yet.
     await chip.select('minimal')
@@ -747,6 +754,10 @@ describe('ui-agent-preset apply', () => {
     }
     sessions.notify()
     const bound = injectSeat(SessionId('s1'))
+    const preparing = ctx.serial('conversation/prepare-first-send', SessionId('s1'))
+    const settled = refuseSelect ? expect(preparing).rejects.toThrow('preset refused') : expect(preparing).resolves.toBeUndefined()
+    selection.resolve(undefined)
+    await settled
     await ctx.serial('conversation/prepare-first-send', SessionId('s1'))
     await bound.load()
 

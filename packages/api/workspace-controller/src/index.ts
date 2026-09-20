@@ -38,6 +38,9 @@ export interface Config {
   documentsLookupTimeoutMs?: number
 }
 
+/** Directory policy after schema defaults have been applied. */
+type ResolvedConfig = Config & { documentsLookupTimeoutMs: number }
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Host Workspace business API and Remote namespace owner. */
@@ -49,12 +52,12 @@ declare module '@deepseek-ai/cordis' {
 export class WorkspaceController extends TypertRemoteService {
   static inject = ['typert', 'workspaceRegistry']
 
-  static Config: z<Config> = z.object({
+  static Config: z<Config, ResolvedConfig> = z.object({
     documentsDirectory: z.string(),
     documentsLookupTimeoutMs: z.natural().min(1).default(10_000),
   })
 
-  private readonly config: Config
+  private readonly config: ResolvedConfig
   private readonly commands: WorkspaceCommands
   private readonly feed: WorkspaceFeed
 
@@ -96,7 +99,7 @@ export class WorkspaceController extends TypertRemoteService {
       throw new RemoteError('gateway/bad-request', 'default Workspace requires a directory name and non-blank title', {})
     }
     const workspace = await this.ctx.workspaceRegistry.initializeDefault(async () => {
-      const timeout = AbortSignal.timeout(this.config.documentsLookupTimeoutMs as number)
+      const timeout = AbortSignal.timeout(this.config.documentsLookupTimeoutMs)
       const path = await defaultWorkspaceDirectory(
         directoryName, this.config.documentsDirectory, AbortSignal.any([signal, timeout]),
       )
