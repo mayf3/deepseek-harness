@@ -16,7 +16,7 @@ function quoted(value: string): string {
   return `"${value.replace(/[\\"`$]/g, match => `\\${match}`)}"`
 }
 
-it.skipIf(!gioAvailable)('queries and launches an installed Linux desktop entry through GIO', async () => {
+it.skipIf(!gioAvailable)('queries and launches an installed Linux desktop entry through GIO', async ({ task }) => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-gio-associations-'))
   const lifetime = new AbortController()
   const active = new Set<Promise<Awaited<ReturnType<NativeCommandRunner>>>>()
@@ -54,6 +54,6 @@ it.skipIf(!gioAvailable)('queries and launches an installed Linux desktop entry 
   await vi.waitFor(async () => {
     opened = JSON.parse(await readFile(marker, 'utf8')) as { path: string; pid: number }
     expect(opened.path).toBe(path)
-  }, { timeout: vi.getConfig().testTimeout })
-  await vi.waitFor(() => { expect(() => process.kill(opened!.pid, 0)).toThrow() }, { timeout: vi.getConfig().testTimeout })
+  }, { timeout: task.timeout })
+  await vi.waitFor(() => { expect(() => process.kill(opened!.pid, 0)).toThrow() }, { timeout: task.timeout })
 })

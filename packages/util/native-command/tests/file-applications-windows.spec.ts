@@ -12,7 +12,7 @@ function literal(value: string): string {
   return `[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${Buffer.from(value).toString('base64')}'))`
 }
 
-it.skipIf(process.platform !== 'win32')('queries and invokes a registered Windows handler through the system Shell', async () => {
+it.skipIf(process.platform !== 'win32')('queries and invokes a registered Windows handler through the system Shell', async ({ task }) => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-windows-association-'))
   const suffix = randomUUID().replaceAll('-', '')
   const extension = `.dsh${suffix}`
@@ -61,7 +61,7 @@ $key.SetValue('', ${literal(`"${process.execPath}" "${script}" "%1"`)}); $key.Di
   await vi.waitFor(async () => {
     opened = JSON.parse(await readFile(marker, 'utf8')) as { path: string; pid: number }
     expect(opened.path).toBe(path)
-  }, { timeout: vi.getConfig().testTimeout })
+  }, { timeout: task.timeout })
   // Shell invocation does not own the application's lifetime; wait for this fixture's process to exit before removing its files.
-  await vi.waitFor(() => { expect(() => process.kill(opened!.pid, 0)).toThrow() }, { timeout: vi.getConfig().testTimeout })
+  await vi.waitFor(() => { expect(() => process.kill(opened!.pid, 0)).toThrow() }, { timeout: task.timeout })
 })
