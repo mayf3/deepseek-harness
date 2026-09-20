@@ -39,9 +39,11 @@ describe('native file associations', () => {
 
 
 it('uses the production command adapter and current platform when no override is supplied', async () => {
-  const run = vi.spyOn(runner, 'runNativeCommand').mockResolvedValue({ stdout: JSON.stringify([application]), stderr: '' })
+  const run = vi.spyOn(runner, 'runNativeCommand').mockImplementation(async command => ({
+    stdout: command === 'gio' ? 'standard::content-type: audio/mpeg' : command === 'env' ? 'No applications found' : JSON.stringify([application]), stderr: '',
+  }))
   onTestFinished(() => { run.mockRestore() })
-  if (process.platform !== 'linux') expect(await nativeFileApplications('/file.mp3', signal)).toEqual([application])
+  expect(await nativeFileApplications('/file.mp3', signal)).toEqual(process.platform === 'linux' ? [] : [application])
   await openNativeFileApplication('/file.mp3', application.id, signal, { platform: 'darwin' })
   expect(run).toHaveBeenLastCalledWith('open', ['-a', application.id, '/file.mp3'], signal)
 })
