@@ -81,7 +81,7 @@ type BadgeProps = PropsRuntime<'sidebar.toggle.badge'> & PropsLocale<'settings'>
 
 /**
  * @param props - Framework-bound carrier and connection state.
- * @returns A non-interactive notification on the sidebar expand button.
+ * @returns A non-interactive brand-blue notification on the sidebar expand button.
  */
 export function DesktopUpdateBadge({ useDesktopUpdate, useConnectionState, t }: BadgeProps) {
   const { presentation: state, failed } = useDesktopUpdate(value => value)
@@ -92,6 +92,6 @@ export function DesktopUpdateBadge({ useDesktopUpdate, useConnectionState, t }: 
   const copy = state === undefined ? { label: retryLabel, detail: retryLabel } : updateCopy(state, t)
   const label = failed ? retryLabel : copy.label
   return <Tooltip label={failed ? label : copy.detail} side="right">
-    <span role="img" aria-label={label} className={css.badge} data-error={failed || state?.phase === 'error' || undefined} />
+    <span role="img" aria-label={label} className={css.badge} />
   </Tooltip>
 }

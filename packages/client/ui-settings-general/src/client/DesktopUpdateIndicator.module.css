@@ -38,7 +38,6 @@
   background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
 }
 
-.badge[data-error] { background: var(--dsw-alias-state-error-primary); }
 .errorDot { background: currentColor; width: 6px; height: 6px; border-radius: 50%; corner-shape: round; }
 .spinner { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
