@@ -12,7 +12,7 @@ Status: implemented
 
 [Remote 方法架构](2026-08-02-typert-remote-method-calls.zh.md)负责方法分发与生命周期；本记录规定二进制成功响应的编码及 Client 校验。[工作区文件服务](2026-09-05-workspace-files-service.zh.md)提供单一的二进制 `readBytes` Remote。其必填选项对象独立选择字节 `range` 和用于相对目标解析的 `baseFile`。未传 `range` 时读取完整文件。这避免为正交的选择设置不同方法名，同时保留有界的 `fs.readBytes` 和 `fs.readByteRange` 读取。
 
-Typert 递归识别一元结果类型中的 `Uint8Array`，包括根值、可选字段和容器。生成的结果 codec 提供 `encode()` 处理类型可能包含字节的子树，并通过 `decode()` 校验还原后的值，不逐字节遍历、复制或冻结字节载荷；Client 声明将每个字节缓冲区限定为 `ArrayBuffer`。Gateway 将 encoder 交给 Connection，对 strict JSON 结果原值传递，从而避免递归识别。源码模式调用保留运行时字节识别。Connection 负责标准 `FormData` 部分，并在 JSON 元数据中保留 RPC 信封和关联 id，不依赖 Typert 反射。附件表将字节部分与 JSON 结果中的路径关联，字段名仍由业务拥有。Client 恢复基于 `Blob.arrayBuffer()` 的 `Uint8Array` 视图，Gateway 将校验交给生成的解码器。普通结果与错误继续使用 JSON 响应。Gateway 负责方法分发、Session 查找、取消及挂载生命周期；功能代码无需 multipart 读取器或专用路由。
+Typert 递归识别一元结果类型中的 `Uint8Array`，包括根值、可选字段和容器。生成的结果 codec 提供 `encode()` 处理类型可能包含字节的子树，并通过 `decode()` 校验还原后的值，不逐字节遍历、复制或冻结字节载荷；Client 声明将每个字节缓冲区限定为 `ArrayBuffer`。Gateway 执行生成的 encoder，保持 strict JSON 值不变，并为源码模式调用执行运行时字节识别；随后向 Connection 返回 JSON 兼容元数据及相对于结果的字节附件。Connection 负责标准 `FormData` 部分，并在 JSON 元数据中保留 RPC 信封和关联 id；它不检查业务值，也不依赖 Typert 反射。附件表将字节部分与 JSON 结果中的路径关联，字段名仍由业务拥有。Client 恢复基于 `Blob.arrayBuffer()` 的 `Uint8Array` 视图，Gateway 将校验交给生成的解码器。普通结果与错误继续使用 JSON 响应。Gateway 负责方法分发、Session 查找、取消、结果投影及挂载生命周期；功能代码无需 multipart 读取器或专用路由。
 
 ## 考虑过的替代方案
 

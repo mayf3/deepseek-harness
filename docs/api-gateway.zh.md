@@ -122,7 +122,7 @@ Remote Client 声明中的参数名来自 wire 字段，参数和返回类型则
 
 Remote 调用使用 Connection 的 `/api` 路由。Client Remote 调用 `connection.rpc.call('/api', '<namespace>/<method>', { args }, signal)`；HTTP carrier 对应 `POST /api/<namespace>/<method>`，payload 只包含一个具名 `args` 对象。
 
-Connection 在 HTTP bridge 之前执行 `/api` 的统一信任检查，再在共享 FetchHandler 内分发。Typert Gateway 只认领存在严格描述符或活跃 SRC marker 的两段式 endpoint；二进制 Remote 成功响应使用 multipart，功能自有的精确 Fetch 路由处理 RPC 信封之外的响应，其他请求返回 404。Connection 拥有传输、RPC id、响应 envelope 和请求取消，Gateway 只拥有 Remote 数据协议和业务分发。替换 Connection carrier 不要求改变 Remote 描述符或 Client 编程接口。
+Connection 在 HTTP bridge 之前执行 `/api` 的统一信任检查，再在共享 FetchHandler 内分发。Typert Gateway 只认领存在严格描述符或活跃 SRC marker 的两段式 endpoint；它把二进制 Remote 字段投影为 JSON 兼容元数据及相对于结果的字节附件，再由 Connection 封装为 multipart 响应。功能自有的精确 Fetch 路由处理 RPC 信封之外的响应，其他请求返回 404。Connection 拥有传输、RPC id、响应 envelope 和请求取消，Gateway 拥有 Remote 数据协议和业务分发。替换 Connection carrier 不要求改变 Remote 描述符或 Client 编程接口。
 
 Gateway 每次调用都从当前注册表解析描述符和实时服务，不缓存业务对象。它要求 `args` 的字段集合与描述符完全一致，先用 codec 校验 wire 值，再通过注册的 lookup 或 Context 提供方解析对象或接收者，最后调用 binding 指向的服务方法。Client Gateway 使用生成的结果 codec 校验解码后的二进制结果；普通 JSON 结果保持原有处理方式。缺少提供方、identity 未命中、binding 不一致、参数缺失或多余、schema 失败和方法不存在都会在进入业务代码前或离开业务代码后失败。
 

@@ -31,8 +31,8 @@ Remote 消费端投影同时包含 `.d.ts`、`.d.ts.map` 和 `.js`。`.d.ts` 只
 | `@deepseek-ai/dsh-typert-protocol` | 只声明 `ctx.typert` 的最小协议 | `TypertRemoteService`、decorator、binding 回退、descriptor、lookup/Context 和 Remote map；不依赖 compiler、Zod、Connection 或 Browser |
 | Typert registry | `ctx.typert` | 分开保存当前环境 reflection、导入的 Remote contribution、lookup provider 和 Context provider |
 | Typert generator/loader | 无新增业务服务 | 从 Host/Client Program 生成三类 `lib` 产物，并把当前环境产物注册到 `ctx.typert` |
-| API Gateway 的 Host face | `ctx.typertGateway` | 关联 Host definition 与活 Service，解码参数、解析 receiver 并调用方法 |
-| Connection | `ctx.connection` | 独占 HTTP Server/未来 WebSocket、共享 `/api` route、RPC envelope、rpcId、序列化、trust、错误传输、Typert 拦截，以及各 owner 在同一 channel 上注册的精确 Fetch route |
+| API Gateway 的 Host face | `ctx.typertGateway` | 关联 Host definition 与活 Service，解码参数、解析 receiver、调用方法，并将一元结果投影为载体无关的字段与附件 |
+| Connection | `ctx.connection` | 独占 HTTP Server/未来 WebSocket、共享 `/api` route、RPC envelope、rpcId、物理序列化、trust、错误传输、Typert 拦截，以及各 owner 在同一 channel 上注册的精确 Fetch route |
 | API Gateway 的 Client face | `ctx.remote`、`ctx.remote.<namespace>` | mount Remote contribution，把每个 namespace 实体化为可追踪的 `remote.<namespace>` 子 Service，并把规范调用交给 `ctx.connection.rpc` |
 | API Remotes | 无新增服务 | 负责 Host Agent/Session lookup 策略，并作为 Client 业务的唯一 facade，选择并挂载 `/remote` contribution，同时暴露所选 API 声明 |
 | Agent/Session owning 包 | 既有领域服务 | 同时提供静态 interface merge 与运行时 lookup/Context provider |

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import type { BrowserAuth } from '../src/browser-auth.ts'
 import { createWebConnectionRpc } from '../src/client/rpc.ts'
 import { bridge } from '../src/http-bridge.ts'
-import type { ConnectionRpcResult } from '../src/rpc.ts'
+import type { ConnectionRpcHandlerResult, ConnectionRpcResult } from '../src/rpc.ts'
 import { HostConnectionService } from '../src/rpc-host.ts'
 
 function binaryResponse(rpcId: string, mutate: (parts: FormData) => void = () => {}): Response {
@@ -29,7 +29,11 @@ describe('Connection binary RPC', () => {
       const connection = ctx.get('connection') as HostConnectionService
       const data = new Uint8Array(1024 * 1024).fill(65)
       data.set([0, 128, 255])
-      connection.rpc.intercept('/api', endpoint => endpoint === 'fixture/read', async () => ({ ok: true, value: { data, bytes: data.length } }))
+      connection.rpc.intercept('/api', endpoint => endpoint === 'fixture/read', async () => ({
+        ok: true,
+        value: { data: null, bytes: data.length },
+        attachments: [{ path: ['data'], bytes: data }],
+      }))
       const handler = connection.createSharedFetchHandler('/api')
       ctx.webServer.register({ kind: 'prefix', path: '/api', handler: (req, res) => bridge(req, res, handler) })
       let transferred = 0
@@ -73,17 +77,36 @@ describe('Connection binary RPC', () => {
     await fiber.await()
     try {
       const connection = ctx.get('connection') as HostConnectionService
-      const results: ConnectionRpcResult<unknown>[] = [
-        { ok: true, value: { data: new Uint8Array([9, 0, 128, 255, 9]).subarray(1, 4), offset: 7, eof: false, bytes: 42 } },
-        { ok: true, value: { data: new Uint8Array(new SharedArrayBuffer(3)).fill(255), offset: 0, eof: true, bytes: 3 } },
-        { ok: true, value: { data: new Uint8Array(), offset: 0, eof: true, bytes: 0 } },
-        { ok: true, value: { data: 'AID/', encoding: 'base64' } },
-        { ok: true, value: { count: 4 } },
-        { ok: true, value: null },
-        { ok: true, value: 'plain' },
-        { ok: false, error: { code: 'fixture/denied', message: 'denied', details: { path: 'private' } } },
+      const byteValues = [
+        new Uint8Array([9, 0, 128, 255, 9]).subarray(1, 4),
+        new Uint8Array(new SharedArrayBuffer(3)).fill(255),
+        new Uint8Array(),
       ]
-      let next: ConnectionRpcResult<unknown> = results[0]!
+      const cases: readonly {
+        readonly sent: ConnectionRpcHandlerResult
+        readonly expected: ConnectionRpcResult<unknown>
+      }[] = [
+        ...byteValues.map((data, index) => ({
+          sent: {
+            ok: true as const,
+            value: { data: null, offset: index === 0 ? 7 : 0, eof: index !== 0, bytes: index === 0 ? 42 : data.length },
+            attachments: [{ path: ['data'], bytes: data }],
+          },
+          expected: {
+            ok: true as const,
+            value: { data, offset: index === 0 ? 7 : 0, eof: index !== 0, bytes: index === 0 ? 42 : data.length },
+          },
+        })),
+        { sent: { ok: true, value: { data: 'AID/', encoding: 'base64' } }, expected: { ok: true, value: { data: 'AID/', encoding: 'base64' } } },
+        { sent: { ok: true, value: { count: 4 } }, expected: { ok: true, value: { count: 4 } } },
+        { sent: { ok: true, value: null }, expected: { ok: true, value: null } },
+        { sent: { ok: true, value: 'plain' }, expected: { ok: true, value: 'plain' } },
+        {
+          sent: { ok: false, error: { code: 'fixture/denied', message: 'denied', details: { path: 'private' } } },
+          expected: { ok: false, error: { code: 'fixture/denied', message: 'denied', details: { path: 'private' } } },
+        },
+      ]
+      let next: ConnectionRpcHandlerResult = cases[0]!.sent
       connection.rpc.intercept('/api', endpoint => endpoint === 'fixture/read', async () => next)
       const shared = connection.createSharedFetchHandler('/api')
       const mediaTypes: (string | null)[] = []
@@ -92,10 +115,10 @@ describe('Connection binary RPC', () => {
         mediaTypes.push(response.headers.get('content-type'))
         return response
       })
-      for (const result of results) {
-        next = result
+      for (const { sent, expected } of cases) {
+        next = sent
         const received = await rpc.call('/api', 'fixture/read', { args: {} })
-        expect(received).toEqual(result)
+        expect(received).toEqual(expected)
         if (received.ok && typeof received.value === 'object' && received.value !== null
           && 'data' in received.value && received.value.data instanceof Uint8Array) {
           expect(received.value.data.buffer).toBeInstanceOf(ArrayBuffer)
@@ -108,28 +131,23 @@ describe('Connection binary RPC', () => {
     }
   })
 
-  it('uses owner result codecs without putting their callbacks on the wire', async () => {
+  it('frames attachments already projected by the result owner', async () => {
     const ctx = new Context()
     const fiber = ctx.plugin((owner) => { new HostConnectionService(owner, [], {} as BrowserAuth) })
     await fiber.await()
     try {
       const connection = ctx.get('connection') as HostConnectionService
       const content = Buffer.from([9, 0, 128, 255, 9]).subarray(1, 4)
-      let reads = 0
-      const value = { content, metadata: { get count() { return ++reads } } }
       connection.rpc.intercept('/api', () => true, async () => ({
-        ok: true, value,
-        encode: (input, writeBytes) => {
-          expect(input).toBe(value)
-          return { content: writeBytes(content, ['content']), metadata: value.metadata }
-        },
+        ok: true,
+        value: { content: null, metadata: { count: 1 } },
+        attachments: [{ path: ['content'], bytes: content }],
       }))
       const handler = connection.createSharedFetchHandler('/api')
       const rpc = createWebConnectionRpc((url, init) => handler.fetch(new Request(new URL(url, 'http://host'), init)))
       expect(await rpc.call('/api', 'fixture/read', {})).toEqual({
         ok: true, value: { content: new Uint8Array([0, 128, 255]), metadata: { count: 1 } },
       })
-      expect(reads).toBe(1)
     } finally {
       await fiber.dispose()
     }
@@ -166,55 +184,56 @@ describe('Connection binary RPC', () => {
     await expect(rpc.call('/api', 'fixture/read', {})).rejects.toThrow('rpcId mismatch')
   })
 
-  it('roundtrips nested, optional and root bytes without changing caller objects or reserving field names', async () => {
+  it('roundtrips nested, optional and root attachment paths without reserving field names', async () => {
     const ctx = new Context()
     const fiber = ctx.plugin((owner) => { new HostConnectionService(owner, [], {} as BrowserAuth) })
     await fiber.await()
     try {
       const data = new Uint8Array([0, 128, 255])
-      const shared = { content: data }
-      const value = {
-        files: [{ name: 'a.png', ...shared }, { name: 'b.png', content: Buffer.from([9, 2, 3, 9]).subarray(1, 3) }, { name: 'empty' }],
-        'dots./[]': [new Uint8Array(), null, [data]],
-        metadata: { attachments: shared },
-        ...JSON.parse('{"__proto__":null,"constructor":null}') as object,
+      const second = Buffer.from([9, 2, 3, 9]).subarray(1, 3)
+      let next: ConnectionRpcHandlerResult = {
+        ok: true,
+        value: {
+          files: [{ name: 'a.png', content: null }, { name: 'b.png', content: null }, { name: 'empty' }],
+          'dots./[]': [null, null, [null]],
+          metadata: { attachments: { content: null } },
+          ...JSON.parse('{"__proto__":null,"constructor":null}') as object,
+        },
+        attachments: [
+          { path: ['files', 0, 'content'], bytes: data },
+          { path: ['files', 1, 'content'], bytes: second },
+          { path: ['dots./[]', 0], bytes: new Uint8Array() },
+          { path: ['dots./[]', 2, 0], bytes: data },
+          { path: ['metadata', 'attachments', 'content'], bytes: data },
+          { path: ['__proto__'], bytes: data },
+        ],
       }
-      Object.defineProperty(value, '__proto__', { value: data, enumerable: true })
-      Object.freeze(value.files)
-      Object.freeze(value)
-      let next: unknown = value
       const connection = ctx.get('connection') as HostConnectionService
-      connection.rpc.intercept('/api', () => true, async () => ({ ok: true, value: next }))
+      connection.rpc.intercept('/api', () => true, async () => next)
       const handler = connection.createSharedFetchHandler('/api')
       const rpc = createWebConnectionRpc((url, init) => handler.fetch(new Request(new URL(url, 'http://host'), init)))
-      expect(await rpc.call('/api', 'fixture/read', {})).toEqual({ ok: true, value: {
-        ...value, files: [value.files[0], { name: 'b.png', content: new Uint8Array([2, 3]) }, value.files[2]],
-      } })
-      expect(value.files[0]?.content).toBe(data)
-      expect(shared.content).toBe(data)
-      expect(Object.getPrototypeOf(value)).toBe(Object.prototype)
+      const expected = {
+        files: [{ name: 'a.png', content: data }, { name: 'b.png', content: new Uint8Array([2, 3]) }, { name: 'empty' }],
+        'dots./[]': [new Uint8Array(), null, [data]],
+        metadata: { attachments: { content: data } },
+        ...JSON.parse('{"__proto__":null,"constructor":null}') as object,
+      }
+      Object.defineProperty(expected, '__proto__', { value: data, enumerable: true })
+      expect(await rpc.call('/api', 'fixture/read', {})).toEqual({ ok: true, value: expected })
       for (const bytes of [data, Buffer.from([0, 128, 255]), new Uint8Array(new SharedArrayBuffer(3))]) {
-        next = bytes
+        next = { ok: true, value: null, attachments: [{ path: [], bytes }] }
         const response = await rpc.call('/api', 'fixture/read', {})
         expect(response).toEqual({ ok: true, value: new Uint8Array(bytes) })
         if (!response.ok || !(response.value instanceof Uint8Array)) throw new Error('expected root bytes')
         expect(response.value.buffer).toBeInstanceOf(ArrayBuffer)
         expect(Object.isFrozen(response.value)).toBe(false)
       }
-      next = [data, [data]]
-      expect(await rpc.call('/api', 'fixture/read', {})).toEqual({ ok: true, value: next })
-      const circular: { next?: object } = {}
-      circular.next = circular
-      next = circular
-      await expect(rpc.call('/api', 'fixture/read', {})).rejects.toThrow('HTTP 500')
-      next = { ordinary: [1, 'base64', null], omitted: undefined, date: new Date('2026-01-01T00:00:00Z') }
-      expect(await rpc.call('/api', 'fixture/read', {})).toEqual({ ok: true, value: {
-        ordinary: [1, 'base64', null], date: '2026-01-01T00:00:00.000Z',
-      } })
-      const sparse = [data, , null]
-      Object.assign(sparse, { extra: data, '-1': data, '01': data, '1.5': data, Infinity: data })
-      next = sparse
-      expect(await rpc.call('/api', 'fixture/read', {})).toEqual({ ok: true, value: [data, null, null] })
+      next = {
+        ok: true,
+        value: [null, [null]],
+        attachments: [{ path: [0], bytes: data }, { path: [1, 0], bytes: data }],
+      }
+      expect(await rpc.call('/api', 'fixture/read', {})).toEqual({ ok: true, value: [data, [data]] })
     } finally {
       await fiber.dispose()
     }
@@ -248,49 +267,6 @@ describe('Connection binary RPC', () => {
       })
     })
     await expect(rpc.call('/api', 'fixture/read', {})).rejects.toThrow('invalid binary response')
-  })
-
-  it('preserves JSON accessor and toJSON evaluation while reading all array indices', async () => {
-    const ctx = new Context()
-    const fiber = ctx.plugin((owner) => { new HostConnectionService(owner, [], {} as BrowserAuth) })
-    await fiber.await()
-    try {
-      let reads = 0
-      let next: unknown = { get count() { return ++reads } }
-      const connection = ctx.get('connection') as HostConnectionService
-      connection.rpc.intercept('/api', () => true, async () => ({ ok: true, value: next }))
-      const handler = connection.createSharedFetchHandler('/api')
-      const rpc = createWebConnectionRpc((url, init) => handler.fetch(new Request(new URL(url, 'http://host'), init)))
-      const read = () => rpc.call('/api', 'fixture/read', {})
-      expect(await read()).toEqual({ ok: true, value: { count: 1 } })
-      expect(reads).toBe(1)
-      const bytes = new Uint8Array([1, 2])
-      next = { get content() { reads++; return bytes }, get count() { return ++reads } }
-      expect(await read()).toEqual({ ok: true, value: { content: bytes, count: 3 } })
-      const array: Uint8Array[] = []
-      Object.defineProperty(array, 0, { value: bytes })
-      next = array
-      expect(await read()).toEqual({ ok: true, value: [bytes] })
-      const date = Object.assign(new Date('2026-01-01T00:00:00Z'), { content: bytes })
-      next = date
-      expect(await read()).toEqual({ ok: true, value: '2026-01-01T00:00:00.000Z' })
-      const json = { self: {} as object, toJSON: () => ({ selected: true }) }
-      json.self = json
-      next = json
-      expect(await read()).toEqual({ ok: true, value: { selected: true } })
-      let conversions = 0
-      next = { toJSON(key: string) { conversions++; expect(key).toBe('value'); return this }, count: 5 }
-      expect(await read()).toEqual({ ok: true, value: { count: 5 } })
-      expect(conversions).toBe(1)
-      for (const primitive of [1, 'text', true]) {
-        next = Object(primitive) as object
-        expect(await read()).toEqual({ ok: true, value: primitive })
-      }
-      next = { toJSON: 'ordinary' }
-      expect(await read()).toEqual({ ok: true, value: next })
-    } finally {
-      await fiber.dispose()
-    }
   })
 
   it('rejects truncated multipart and late bytes after caller cancellation', async () => {

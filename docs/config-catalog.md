@@ -199,7 +199,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/gateway/src/index.ts:140`](../packages/api/gateway/src/index.ts)
+Source: [`packages/api/gateway/src/index.ts:144`](../packages/api/gateway/src/index.ts)
 
 <a id="deepseek-aidsh-api-job-controller"></a>
 
@@ -466,7 +466,7 @@ export interface ConnectionRecoveryConfig {
 }
 ```
 
-Source: [`packages/client/connection/src/index.ts:90`](../packages/client/connection/src/index.ts)
+Source: [`packages/client/connection/src/index.ts:92`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 

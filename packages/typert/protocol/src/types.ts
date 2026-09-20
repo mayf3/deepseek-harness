@@ -280,7 +280,7 @@ export type TypertCodec =
      */
     readonly decode?: (value: unknown) => unknown
     /**
-     * Project typed binary fields into carrier-owned multipart attachments.
+     * Project typed binary fields into RPC result attachments.
      * @param value - native unary result.
      * @param writeBytes - records a byte view at its result-relative path and returns its JSON placeholder.
      * @returns JSON metadata with untouched JSON subtrees retained.
