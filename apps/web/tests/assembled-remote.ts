@@ -99,7 +99,7 @@ interface CapturedFixture {
 }
 
 export interface AssembledRemoteOptions {
-  /** Supply an enabled Host preference for diagnostic View scenarios. */
+  /** Override the schema-resolved Host preference for developer-tool scenarios. */
   readonly developerTools?: boolean
   /** Return the fixture's image-dimension admission error from Session prompt. */
   readonly rejectPrompt?: boolean
@@ -142,16 +142,14 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
   const mock = RemoteMock.create().load(remoteDefaultResponses)
   mock.load({
     unary: {
-      'settings/describe': options.developerTools === true
-        ? ok({
-          ...fixture.settingsDescribe.value,
-          namespaces: [...fixture.settingsDescribe.value.namespaces, {
-            ns: 'ui-developer-tools',
-            schema: { type: 'object', dict: { enabled: { type: 'boolean' } } },
-            value: { enabled: true }, applies: 'live', secrets: [], revision: 0,
-          }],
-        })
-        : structuredClone(fixture.settingsDescribe),
+      'settings/describe': ok({
+        ...fixture.settingsDescribe.value,
+        namespaces: [...fixture.settingsDescribe.value.namespaces, {
+          ns: 'ui-developer-tools',
+          schema: { type: 'object', dict: { enabled: { type: 'boolean' } } },
+          value: { enabled: options.developerTools ?? true }, applies: 'live', secrets: [], revision: 0,
+        }],
+      }),
       'credentials/describe': structuredClone(fixture.credentialsDescribe),
       'session/modelCatalog': structuredClone(fixture.modelCatalog),
       'agentPresets/list': structuredClone(fixture.agentPresets),
