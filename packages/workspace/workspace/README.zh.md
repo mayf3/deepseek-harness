@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### 设置
 
-此包本身不声明任何配置；它需要会话存储、会话持久化后端，以及保存其记录的存储行。最小组合如下：
+此包需要会话存储、会话持久化后端，以及保存其记录的存储行。最小组合如下：
 
 ```yaml
 - name: '@deepseek-ai/dsh-session'
@@ -58,6 +58,15 @@ const project = await ctx.workspaceRegistry.create('/path/to/dir', 'My Project')
 await project.setTitle('Renamed')
 ctx.workspaceRegistry.list() // shows the project, newest first
 ```
+
+<a id="first-use-workspace"></a>
+### 首次使用工作区
+
+`initializeDefault(resolveDirectory)` 初始化默认 Workspace，不创建 Session。首次创建要求 Workspace 注册表为空，且不存在运行时、持久化或已归档 Session，包括没有工作目录的 Session。注册表直接检查持久化历史；仅凭可见侧边栏为空不足以判断。
+
+目录解析器仅在允许创建时于变更队列内运行。它返回绝对路径和初始标题；注册表创建缺失的父目录、规范化路径、重新检查 Session 历史，再一起提交 Workspace 和初始化标记。已存在的目录直接复用；文件冲突或目录操作失败时拒绝初始化。[Host 控制器](../../api/workspace-controller/README.zh.md#first-use-workspace)提供 Documents 路径策略。
+
+首次成功登记会持久保存工作区身份。重复调用直接返回它，不再解析目录；改名保留该身份，删除登记也不会允许再次自动创建。目录或登记失败时，初始化状态保持未设置，可以重试。后续步骤失败前已创建的目录会保留在磁盘上。[首次使用决策](../../../.agents/notes/implemented/feature/2026-09-20-default-workspace.zh.md)说明这一生命周期。
 
 ### 将会话归入项目
 
@@ -102,7 +111,7 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 
 ### 持久形态
 
-注册表打开 `workspace` 领域（版本 2）：一张以 `WorkspaceId` 为键的 `workspaces` 表，加上一个持有 `workspaceIds`（权威显示顺序）、`archivedSessionIds`、`pinnedSessionIds` 与可选 `pendingMutation` 标记的全局状态。归档与置顶集合存储会话 id 字符串，默认值为空，不包含逐项对象或时间戳；置顶数组把最近置顶的 id 放在前面。归档在同一次全局状态写入中清除置顶，但不改变 Workspace 成员关系。取消归档不做会话存在性探测，因为从集合中移除 id 不可能引入未知 id，而归档会在加入前校验会话。
+注册表打开 `workspace` 领域（版本 2）：一张以 `WorkspaceId` 为键的 `workspaces` 表，加上一个持有 `workspaceIds`（权威显示顺序）、`archivedSessionIds`、`pinnedSessionIds`、可选的首次使用身份 `defaultWorkspaceId` 与可选 `pendingMutation` 标记的全局状态。归档与置顶集合存储会话 id 字符串，默认值为空，不包含逐项对象或时间戳；置顶数组把最近置顶的 id 放在前面。归档在同一次全局状态写入中清除置顶，但不改变 Workspace 成员关系。取消归档不做会话存在性探测，因为从集合中移除 id 不可能引入未知 id，而归档会在加入前校验会话。
 
 ### 生命周期
 

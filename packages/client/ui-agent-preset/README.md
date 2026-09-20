@@ -49,6 +49,8 @@ The settings section writes the Host's existing `agent-presets` namespace throug
 
 The chip follows the preset projection of its bound Session while its plugin and Provider generation remain active. Settings synchronization creates the same bound controller when needed, even before the chip mounts. A late projection or another client's preset update refreshes the display without submitting a selection; list notifications do not repeat an in-flight selection. Settings changes wait for that selection and recheck the captured blank Session before applying. A choice staged during a pending request remains available afterward.
 
+After preparing a default Workspace, the first-use draft waits for the staged preset through `conversation/prepare-first-send`. Concurrent `apply()` calls wait for the active selection without repeating it. A refusal keeps the unsent Session draft.
+
 </details>
 
 -----

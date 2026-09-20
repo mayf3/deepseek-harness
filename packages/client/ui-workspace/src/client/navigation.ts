@@ -12,7 +12,7 @@ import type {
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type {
-  IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
+  IWorkspaces, WorkspaceId, WorkspaceInitializeDefaultRequest, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -36,6 +36,18 @@ export interface UiWorkspace {
    * @returns completion; a superseded request may create a Session but does not open it.
    */
   openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>
+  /**
+   * Prepare the first-use Workspace and select its blank Session.
+   * @param request - initial directory name and title.
+   * @param beforeOpen - synchronous draft transfer after retaining the Session.
+   * @param signal - caller cancellation.
+   * @returns selected Session, or undefined after navigation supersession.
+   */
+  openDefaultWorkspace(
+    request: WorkspaceInitializeDefaultRequest,
+    beforeOpen: (sessionId: SessionId) => void,
+    signal: AbortSignal,
+  ): Promise<SessionId | undefined>
   /**
    * Fork a Session without changing the current selection.
    * @param sessionId - source Session.
@@ -182,6 +194,25 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const sessionId = await this.connectWorkspace(workspaceId)
     if (navigation.aborted) return
     this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
+  }
+
+  async openDefaultWorkspace(
+    request: WorkspaceInitializeDefaultRequest,
+    beforeOpen: (sessionId: SessionId) => void,
+    signal: AbortSignal,
+  ): Promise<SessionId | undefined> {
+    const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal, signal])
+    try {
+      const workspace = await this.workspaces.initializeDefault(request, navigation)
+      navigation.throwIfAborted()
+      const sessionId = await this.connectWorkspace(workspace.workspaceId)
+      navigation.throwIfAborted()
+      this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
+      return sessionId
+    } catch (error) {
+      if (navigation.aborted) return undefined
+      throw error
+    }
   }
 
   async forkSession(sessionId: SessionId): Promise<void> {

@@ -5,8 +5,8 @@
  * scoped-event application verbs, the submit transaction plumbing
  * (adjudicate via the session's InputTriggerController; claim.submit; default
  * sink), the notice channel, and the draft persistence mirror.
- * Package-private; the hub alone constructs it and wires the scoped event
- * listeners onto it.
+ * Package-private; InputHub binds Session events, while FirstDraft owns the
+ * local editor used before a Session exists.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'

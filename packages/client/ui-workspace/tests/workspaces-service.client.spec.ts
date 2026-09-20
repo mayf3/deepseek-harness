@@ -167,6 +167,11 @@ class FakeSessions implements ISessions {
 }
 
 class FakeWorkspaces implements IWorkspaces {
+  readonly initializeDefault = vi.fn<IWorkspaces['initializeDefault']>(async () => {
+    const item = workspace('default')
+    this.list.set(workspaceState([item]))
+    return item
+  })
   readonly list: MutableSource<WorkspaceSnapshot>
   readonly archiveCalls: SessionId[] = []
   readonly unarchiveCalls: SessionId[] = []
@@ -272,6 +277,41 @@ function bench(options: BenchOptions = {}) {
 }
 
 describe('UiWorkspaceService', () => {
+  it('prepares the default Workspace before creating and retaining its Session', async () => {
+    const b = bench({ workspaces: workspaceState(), sessions: sessionState() })
+    const beforeOpen = vi.fn(() => {
+      expect(b.sessions.retain).toHaveBeenCalledWith(sid('created-default'), { source: 'mainView' })
+    })
+    await expect(b.uiWorkspace.openDefaultWorkspace({ directoryName: '默认工作区', title: '默认工作区' }, beforeOpen, new AbortController().signal))
+      .resolves.toBe(sid('created-default'))
+    expect(b.workspaces.initializeDefault).toHaveBeenCalledWith({ directoryName: '默认工作区', title: '默认工作区' }, expect.any(AbortSignal))
+    expect(b.sessions.create).toHaveBeenCalledWith({ workspaceId: wid('default') })
+    expect(beforeOpen).toHaveBeenCalledWith(sid('created-default'))
+  })
+
+  it('does not create a Session when default preparation fails or is superseded', async () => {
+    const b = bench({ workspaces: workspaceState(), sessions: sessionState() })
+    b.workspaces.initializeDefault.mockRejectedValueOnce(new Error('denied'))
+    await expect(b.uiWorkspace.openDefaultWorkspace({ directoryName: 'Default workspace', title: 'Default workspace' }, vi.fn(), new AbortController().signal)).rejects.toThrow('denied')
+    expect(b.sessions.create).not.toHaveBeenCalled()
+    const pending = Promise.withResolvers<WorkspaceView>()
+    b.workspaces.initializeDefault.mockReturnValueOnce(pending.promise)
+    const beforeOpen = vi.fn()
+    const opening = b.uiWorkspace.openDefaultWorkspace({ directoryName: 'Default workspace', title: 'Default workspace' }, beforeOpen, new AbortController().signal)
+    b.uiWorkspace.openSession(sid('manual'))
+    pending.resolve(workspace('default'))
+    await expect(opening).resolves.toBeUndefined()
+    expect(b.sessions.create).not.toHaveBeenCalled()
+    expect(beforeOpen).not.toHaveBeenCalled()
+  })
+
+  it('retains the prepared Workspace if creating its Session fails', async () => {
+    const b = bench({ workspaces: workspaceState(), sessions: sessionState() })
+    b.sessions.create.mockRejectedValueOnce(new Error('session failed'))
+    await expect(b.uiWorkspace.openDefaultWorkspace({ directoryName: 'Default workspace', title: 'Default workspace' }, vi.fn(), new AbortController().signal)).rejects.toThrow('session failed')
+    expect(b.workspaces.list.getSnapshot().items).toEqual([workspace('default')])
+  })
+
   it('retains an explicit main target before revealing its Conversation', () => {
     const b = bench()
     b.uiWorkspace.openSession(sid('target'))

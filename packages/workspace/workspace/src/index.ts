@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { stat } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -15,7 +15,7 @@ import { WorkspaceEntity } from './entity.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
 export { WorkspaceMoveInvalidError } from './entity.ts'
-import { defaultWorkspaceTitle, realpathNormalize } from './paths.ts'
+import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 import type { Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
@@ -173,6 +173,34 @@ export class WorkspaceRegistry extends Service {
       throw new Error(`cannot create a workspace at '${canonical}': path is not a directory`)
     }
     return await this.enqueueOperation(() => this.createCanonical(canonical, title))
+  }
+
+  /**
+   * Initialize the default Workspace only while both the registry and Session
+   * history are empty. Repeated requests reuse its durable identity; deleting
+   * that registration permanently disables automatic creation.
+   * @param resolveDirectory - resolve the absolute directory and initial title;
+   * called only for eligible creation, inside the registry mutation queue.
+   * Missing directories are created recursively before registration.
+   * @returns the initialized Workspace, or undefined when automatic creation is ineligible.
+   */
+  initializeDefault(resolveDirectory: () => Promise<{ path: string; title: string }>): Promise<Workspace | undefined> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (state.defaultWorkspaceId !== undefined) return this.entities.get(state.defaultWorkspaceId)
+      const sessions = this.ctx.get('sessions')
+      if (sessions === undefined) throw new Error('default Workspace initialization requires the Session store')
+      if (state.workspaceIds.length > 0 || state.archivedSessionIds.length > 0
+        || sessions.list().length > 0 || (await this.listStoredHeaders()).length > 0) return undefined
+
+      const { path, title } = await resolveDirectory()
+      if (!fullyQualifiedWorkspacePath(path)) throw new TypeError(`Workspace path is not fully qualified: '${path}'`)
+      await mkdir(path, { recursive: true })
+      const canonical = await realpathNormalize(path)
+      // A Session can start outside the registry queue while directory preparation awaits I/O.
+      if ((await this.listStoredHeaders()).length > 0 || sessions.list().length > 0) return undefined
+      return this.createCanonical(canonical, title, true)
+    })
   }
 
   /**
@@ -379,7 +407,7 @@ export class WorkspaceRegistry extends Service {
     return undefined
   }
 
-  private async createCanonical(canonical: string, title?: string): Promise<WorkspaceEntity> {
+  private async createCanonical(canonical: string, title?: string, firstUse = false): Promise<WorkspaceEntity> {
     for (const entity of this.entities.values()) {
       if (entity.path === canonical) return entity
     }
@@ -425,7 +453,10 @@ export class WorkspaceRegistry extends Service {
 
     try {
       await this.setState({
+        ...state,
+        pendingMutation: undefined,
         initialized: true,
+        ...(firstUse ? { defaultWorkspaceId: id } : {}),
         workspaceIds: [id, ...state.workspaceIds],
         archivedSessionIds: state.archivedSessionIds,
         pinnedSessionIds: state.pinnedSessionIds,
@@ -458,6 +489,8 @@ export class WorkspaceRegistry extends Service {
     if (entity === undefined) return false
     const state = this.requireState()
     const nextState = {
+      ...state,
+      pendingMutation: undefined,
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
       archivedSessionIds: state.archivedSessionIds,
@@ -516,6 +549,8 @@ export class WorkspaceRegistry extends Service {
     }
     await this.requireTable().delete(pending.workspaceId)
     await this.setState({
+      ...state,
+      pendingMutation: undefined,
       initialized: state.initialized,
       workspaceIds: state.workspaceIds,
       archivedSessionIds: state.archivedSessionIds,

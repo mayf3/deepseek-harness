@@ -63,6 +63,7 @@
     "apps/web/tests/public-mount.e2e.ts",
     "apps/web/tests/workspace-new-session-folding.e2e.ts",
     "apps/web/tests/workspace-management.e2e.ts",
+    "apps/web/tests/default-workspace.e2e.ts",
     "apps/web/tests/workspace-recency.e2e.ts",
     "apps/web/tests/session-unarchive.e2e.ts",
     "apps/web/tests/replay-round-trip.e2e.ts",

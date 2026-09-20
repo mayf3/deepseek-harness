@@ -54,6 +54,14 @@ export interface WorkspaceCreateRequest {
   readonly path: string
 }
 
+/** Names chosen by the first-use Client before default Workspace initialization. */
+export interface WorkspaceInitializeDefaultRequest {
+  /** Single non-blank name; no separators, colon, NUL, surrounding whitespace, or trailing dot. */
+  readonly directoryName: string
+  /** Initial display title, retained across language changes. */
+  readonly title: string
+}
+
 /** Created or previously registered Workspace. */
 export interface WorkspaceCreateValue {
   readonly workspace: WorkspaceView

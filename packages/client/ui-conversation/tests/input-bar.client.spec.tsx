@@ -185,6 +185,7 @@ function bench(over?: BenchOptions) {
         ? over?.plan
         : key === 'goal' ? over?.goal
           : key === 'imageLimits' ? over?.imageLimits : undefined)),
+    useComposerInput: bindSnapshotSelector(shell.state),
     useInput: bindSnapshotSelector(shell.state),
     inputActions: shell.actions,
     keyboard: shell,

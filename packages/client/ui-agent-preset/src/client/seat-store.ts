@@ -193,11 +193,18 @@ export class AgentPresetSeatController {
    *
    * Called both by `select()` and by whoever observes the current session
    * changing, because the session may appear either before or after the pick.
-   * List updates do not repeat a selection while its response is pending.
-   * @returns this attempt's Host refusal, or undefined when successful or no switch starts.
+   * Concurrent callers wait for the active selection without repeating it.
+   * @returns the Host refusal, or undefined when successful or no switch starts.
    */
   async apply(): Promise<string | undefined> {
-    if (this.store.getSnapshot().busy) return
+    let pending = this.pendingSelection
+    while (pending !== undefined) {
+      await pending
+      const error = this.store.getSnapshot().error
+      if (error !== null) return error
+      pending = this.pendingSelection
+      if (pending === undefined && this.staged.id === undefined) return
+    }
     const staged = this.staged.id
     const session = this.currentSession()
     if (staged === undefined) {

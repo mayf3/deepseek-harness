@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
+import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ConversationContentProps, ConversationViewsProps, InputZone } from '../contract/slots.ts'
 import { HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
@@ -22,7 +23,7 @@ export function ConversationContent(props: ConversationContentProps) {
   const {
     sessionId, phase, hero, useSession, useSessions, useSessionStatus,
     useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain,
-    selectWorkspace, t, useFactorySlot,
+    selectWorkspace, dismissDefaultFailure, useFirstDraft, t, useFactorySlot,
   } = props
   const session = useSession(snapshot => snapshot)
   const Views = useFactorySlot('views', ConversationSessionView)
@@ -33,6 +34,8 @@ export function ConversationContent(props: ConversationContentProps) {
   const inputState = useInput(s => s)
   const cwd = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
   const workspaces = useWorkspaces(s => s)
+  const sessionsReady = useSessions(s => s.phase === 'ready')
+  const firstDraft = useFirstDraft(s => s)
   // A plugin this package cannot import (ui-model-selection) says this session cannot
   // send; its reason is already localized by whoever raised it.
   const composerBlock = useComposerBlock(block => block)
@@ -127,15 +130,13 @@ export function ConversationContent(props: ConversationContentProps) {
     </div>
   )
 
-  // The placeholder chip ("Choose workspace") and the Workspace-trigger input travel
-  // together: no workspace picked yet (cold start, no session at all), or a
-  // blank session whose workspace vanished (deleted from the sidebar). The
-  // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
-  // not a different tree, so the textarea DOM survives the transition.
-  const inert = sessionId === undefined || (hero && chipTitle === undefined)
-  // A raised block is the same inert posture with the blocker's own reason:
-  // one disabled textarea, never a second tree. The no-workspace state wins
-  // when both hold — picking a workspace is the earlier prerequisite.
+  // First-use sending waits for both baselines. A blank Session whose
+  // Workspace disappeared still requires explicit directory selection.
+  const needsWorkspace = sessionId !== undefined && hero && chipTitle === undefined
+  const inert = firstDraft.busy || (sessionId === undefined
+    ? workspaces.phase !== 'ready' || !sessionsReady
+    : needsWorkspace)
+  // Owner availability takes precedence over a Session-specific model block.
   const blocked = !inert && composerBlock !== undefined
   const inputBar = renderSlot('conversation.composer.bar', {
     variant: hero ? 'hero' : 'composer',
@@ -144,7 +145,7 @@ export function ConversationContent(props: ConversationContentProps) {
         disabled: true,
         placeholder: t('placeholder.workspace'),
         workspacePickerOpen: pickerOpen,
-        onRequestWorkspace: () => { setPickerOpen(true) },
+        ...(needsWorkspace ? { onRequestWorkspace: () => { setPickerOpen(true) } } : {}),
       }
       : blocked
         // `blocked`, not `disabled`: the bar refuses input either way, but a
@@ -191,6 +192,23 @@ export function ConversationContent(props: ConversationContentProps) {
         {composerSeat}
       </div>
       <WidthControls container={body} phase={phase} />
+      <Modal
+        open={sessionId === undefined && firstDraft.failed}
+        title={t('defaultWorkspace.failed')}
+        closeLabel={t('close')}
+        onClose={dismissDefaultFailure}
+        footer={(
+          <>
+            <Button variant="outline" onClick={dismissDefaultFailure}>{t('cancel')}</Button>
+            <Button variant="primary" onClick={() => {
+              dismissDefaultFailure()
+              setPickerOpen(true)
+            }}>{t('defaultWorkspace.choose')}</Button>
+          </>
+        )}
+      >
+        {t('defaultWorkspace.retry')}
+      </Modal>
     </div>
   )
 }

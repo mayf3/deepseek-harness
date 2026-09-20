@@ -56,6 +56,8 @@ const workspacePendingMutation = z.discriminatedUnion('operation', [
  */
 export const workspaceDomainState = z.object({
   initialized: z.boolean(),
+  /** First-use Workspace identity, retained after its registration is deleted. */
+  defaultWorkspaceId: workspaceId.optional(),
   workspaceIds: z.array(workspaceId),
   archivedSessionIds: z.array(sessionId).default([]),
   pinnedSessionIds: z.array(sessionId).default([]),

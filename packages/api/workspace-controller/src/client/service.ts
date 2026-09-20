@@ -4,7 +4,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import type { WorkspaceView } from '../types.ts'
+import type { WorkspaceInitializeDefaultRequest, WorkspaceView } from '../types.ts'
 import type { ClientWorkspaceModel, WorkspaceSnapshot } from './model.ts'
 
 /** Structured create failure for callers that distinguish Host business errors. */
@@ -39,6 +39,13 @@ export interface IWorkspaces {
    * @returns the created or idempotently resolved Workspace.
    */
   create(input: { path: string }): Promise<WorkspaceView>
+  /**
+   * Initialize or reuse the default Workspace.
+   * @param request - initial directory name and title.
+   * @param signal - caller lifetime.
+   * @returns the prepared Workspace; rejects when directory selection is required.
+   */
+  initializeDefault(request: WorkspaceInitializeDefaultRequest, signal?: AbortSignal): Promise<WorkspaceView>
   /**
    * Rename a Workspace.
    * @param workspaceId - target Workspace.
@@ -106,6 +113,12 @@ export class WorkspaceController extends Service implements IWorkspaces {
 
   async create(input: { path: string }): Promise<WorkspaceView> {
     const result = await this.model.create(input)
+    if (!result.ok) throw new WorkspaceCreateError(result.error)
+    return result.value.workspace
+  }
+
+  async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal?: AbortSignal): Promise<WorkspaceView> {
+    const result = await this.model.initializeDefault(request, signal)
     if (!result.ok) throw new WorkspaceCreateError(result.error)
     return result.value.workspace
   }

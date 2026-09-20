@@ -9,6 +9,10 @@ const PLAN_NEXT_ACTION_EN = 'describe your task to generate plan'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'defaultWorkspace.failed': '无法创建默认工作区',
+  'defaultWorkspace.title': '默认工作区',
+  'defaultWorkspace.retry': '请选择一个文件夹后重试',
+  'defaultWorkspace.choose': '选择文件夹',
   'hint.plan': PLAN_NEXT_ACTION_ZH,
   'hint.goal': '输入目标，智能体将持续执行',
   'hint.goal.active': '当前目标进行中。可输入 edit 修改 / pause 暂停 / resume 继续 / clear 清除',
@@ -360,6 +364,10 @@ export type ConversationKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'defaultWorkspace.failed': 'Unable to create default workspace',
+  'defaultWorkspace.title': 'Default workspace',
+  'defaultWorkspace.retry': 'Please choose a folder and try again',
+  'defaultWorkspace.choose': 'Choose folder',
   'hint.plan': PLAN_NEXT_ACTION_EN,
   'hint.goal': 'describe the objective for a long-running task',
   'hint.goal.active': 'goal active — edit / pause / resume / clear',

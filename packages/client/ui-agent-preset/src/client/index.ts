@@ -143,6 +143,14 @@ export function apply(ctx: ClientContext): void {
   // render and simply hides the button while no flow exists.
   let creatorDraft: (() => void) | undefined
   ctx.inject(['slots', 'conversation', 'sessions', 'uiWorkspace'], (scope: ClientContext) => {
+    scope.on('conversation/prepare-first-send', async (sessionId) => {
+      const binding = scope.sessions.binding(sessionId)
+      if (binding === undefined) return
+      const seat = seatFor(binding)
+      if (staged.id === undefined && !seat.store.getSnapshot().busy) return
+      const error = await seat.apply()
+      if (error !== undefined) throw new Error(error)
+    })
     const seatInjected = (sessionId: SessionId | undefined): AgentPresetSeatInjected => {
       const binding = sessionId === undefined ? undefined : ctx.sessions.binding(sessionId)
       const seat = binding === undefined ? unboundSeat : seatFor(binding)

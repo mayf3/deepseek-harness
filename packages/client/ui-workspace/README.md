@@ -69,6 +69,8 @@ The value is intentionally best effort for cold Sessions. An identity-matching u
 
 New Session tries to acquire the first eligible blank in catalog order; startup restoration tries the saved blank. If that writer is held, navigation creates a new Session without trying other blanks. Other acquisition failures abort the request and are currently reported only to the console. Released blanks retain their slash-command state when reused. Later navigation cancels a pending startup selection.
 
+`openDefaultWorkspace(request, beforeOpen, signal)` initializes the Host default Workspace from the requested directory name and title before connecting its Session. It captures navigation cancellation before directory preparation; superseded work cannot transfer the draft or select its Session. A successfully registered Workspace remains available when Session creation or later submission fails. [Conversation](../ui-conversation/README.md) owns the first-use draft and failure dialog.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

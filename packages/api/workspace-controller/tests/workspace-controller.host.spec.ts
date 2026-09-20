@@ -59,7 +59,7 @@ async function harness() {
     lookups: { configure: () => dispose },
     contexts: { configureHost: () => dispose },
   } as never)
-  const controller = new WorkspaceController(ctx)
+  const controller = new WorkspaceController(ctx, { documentsDirectory: root })
   return { controller, ctx, root, storageDomain }
 }
 
@@ -414,5 +414,51 @@ describe('WorkspaceController follow', () => {
     await ctx.fiber.dispose()
     roots.splice(roots.indexOf(ctx), 1)
     await expect(closing).resolves.toEqual({ done: true, value: undefined })
+  })
+})
+
+describe('first-use Remote', () => {
+  it.each(['', ' ', '.', '..', '../outside', 'nested/name', 'nested\\name', 'C:outside', 'name\0', '.. ', 'tail.'])(
+    'rejects invalid directory name %j before invoking the registry', async (directoryName) => {
+      const { controller, ctx } = await harness()
+      const initialize = vi.spyOn(ctx.workspaceRegistry, 'initializeDefault').mockResolvedValue(undefined)
+      await expect(controller.initializeDefault({ directoryName, title: 'Default workspace' }, new AbortController().signal))
+        .rejects.toMatchObject({ code: 'gateway/bad-request' })
+      expect(initialize).not.toHaveBeenCalled()
+    },
+  )
+
+  it('rejects a blank initial title before invoking the registry', async () => {
+    const { controller, ctx } = await harness()
+    const initialize = vi.spyOn(ctx.workspaceRegistry, 'initializeDefault').mockResolvedValue(undefined)
+    await expect(controller.initializeDefault({ directoryName: 'default-workspace', title: ' ' }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'gateway/bad-request' })
+    expect(initialize).not.toHaveBeenCalled()
+  })
+
+  it('uses the requested display title independently of the directory name', async () => {
+    const { controller, root } = await harness()
+    const result = await controller.initializeDefault({ directoryName: 'default-workspace', title: 'Default workspace' }, new AbortController().signal)
+    expect(result.workspace).toMatchObject({ path: join(root, 'deepseek-harness', 'default-workspace'), title: 'Default workspace' })
+  })
+
+  it('returns a durable Workspace without allocating a Session', async () => {
+    const { controller, ctx, root } = await harness()
+    const signal = new AbortController().signal
+    const result = await controller.initializeDefault({ directoryName: 'Default workspace', title: 'Default workspace' }, signal)
+    expect(result.workspace.path).toBe(join(root, 'deepseek-harness', 'Default workspace'))
+    expect(existsSync(result.workspace.path)).toBe(true)
+    expect(ctx.sessions.list()).toEqual([])
+    expect(await controller.initializeDefault({ directoryName: '默认工作区', title: '默认工作区' }, signal)).toEqual(result)
+  })
+
+  it('rejects ineligible first use and propagates preparation failures', async () => {
+    const { controller, ctx, root } = await harness()
+    await ctx.workspaceRegistry.create(root)
+    await expect(controller.initializeDefault({ directoryName: 'Default workspace', title: 'Default workspace' }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'gateway/bad-request' })
+    vi.spyOn(ctx.workspaceRegistry, 'initializeDefault').mockRejectedValueOnce(new Error('permission denied'))
+    await expect(controller.initializeDefault({ directoryName: 'Default workspace', title: 'Default workspace' }, new AbortController().signal))
+      .rejects.toThrow('permission denied')
   })
 })

@@ -1,7 +1,7 @@
 /** Test-owned workspaces face: the renderer standard-kit observable plus recorded actions. */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
-  IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
+  IWorkspaces, WorkspaceId, WorkspaceInitializeDefaultRequest, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -78,6 +78,19 @@ export class TestWorkspaces implements IWorkspaces {
       path: input.path,
       sessionIds: [],
     } as unknown as WorkspaceView
+  }
+
+  /**
+   * Initialize the default Workspace through an explicitly installed test stub.
+   * @param request - initial directory name and title.
+   * @param signal - caller lifetime.
+   * @returns the stubbed Workspace.
+   */
+  async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal?: AbortSignal): Promise<WorkspaceView> {
+    this.calls.push({ method: 'initializeDefault', args: [request, signal] })
+    const stub = this.stubs.get('initializeDefault')
+    if (stub === undefined) throw new Error('initializeDefault requires a Workspace fixture')
+    return await (stub(request, signal) as Promise<WorkspaceView>)
   }
 
   /**

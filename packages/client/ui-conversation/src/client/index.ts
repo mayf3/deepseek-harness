@@ -72,6 +72,14 @@ export type { ArbitrateKey, ArbitrateOutcome, ReferenceInsert, TokenSpan } from 
 export type { ComposerBlock, ComposerBlocks } from './contract/composer-blocks.ts'
 
 declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * Finish staged settings before automatically submitting the first-use draft to its new Session.
+     * @mode serial
+     * @param sessionId - destination Session.
+     */
+    'conversation/prepare-first-send'(sessionId: import('@deepseek-ai/dsh-session/types').SessionId): void | Promise<void>
+  }
   interface Context {
     /** Scope-addressed Conversation actions and per-Session input registry. */
     conversation: import('./service.ts').IConversation

@@ -12,6 +12,7 @@ import type {
   WorkspaceCreateValue,
   WorkspaceDeleteValue,
   WorkspaceInsertSessionBeforeRequest,
+  WorkspaceInitializeDefaultRequest,
   WorkspaceOrderValue,
   WorkspacePinSessionRequest,
   WorkspacePinValue,
@@ -97,6 +98,18 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    */
   async create(input: WorkspaceCreateRequest): Promise<RemoteResult<WorkspaceCreateValue>> {
     const result = await this.remote.create(input)
+    if (result.ok) this.upsert(result.value.workspace)
+    return result
+  }
+
+  /**
+   * Initialize the default Workspace and merge its authoritative row.
+   * @param request - initial directory name and title.
+   * @param signal - caller lifetime.
+   * @returns generated Remote result.
+   */
+  async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal?: AbortSignal): Promise<RemoteResult<WorkspaceValue>> {
+    const result = await this.remote.initializeDefault(request, signal)
     if (result.ok) this.upsert(result.value.workspace)
     return result
   }

@@ -137,6 +137,8 @@ function mount(
     nestedSubagent?: boolean
     /** A composer block another plugin raised for this session. */
     composerBlock?: { reason: string }
+    /** First-use preparation remains active after selecting its Session. */
+    preparingFirstDraft?: boolean
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
   } = {},
@@ -280,6 +282,7 @@ function mount(
           useProjection={(() => undefined)}
           useInput={useInput}
           inputActions={inputActions}
+          useComposerInput={useInput}
           keyboard={wiring}
           addFiles={() => null}
           useFileUploads={bindSnapshotSelector(createSnapshotStore({}))}
@@ -336,6 +339,8 @@ function mount(
       useWorkspaces: bindSnapshotSelector(workspaces),
       useProjection: (() => undefined),
       useComposerBlock: select => select(options.composerBlock),
+      useFirstDraft: select => select({ busy: options.preparingFirstDraft === true, failed: false }),
+      dismissDefaultFailure: () => {},
       useInput,
       inputActions,
       renderSlot,
@@ -403,6 +408,17 @@ describe('ConversationRoot resident composer', () => {
     expect(b.slotCalls).not.toContain('conversation.session.header')
     expect(b.view.queryByRole('tablist')).toBeNull()
     expect(b.view.queryByTestId('view-conversation.session.header.corner')).toBeNull()
+  })
+
+  it('locks the selected Session draft until automatic first-use preparation settles', () => {
+    const b = mount(sessionSnapshotOf({ blank: true }), undefined, undefined, {
+      summaryBlank: true, preparingFirstDraft: true,
+    })
+    const box = b.view.getByRole('textbox')
+    expect(box.getAttribute('aria-disabled')).toBe('true')
+    expect(box.getAttribute('aria-haspopup')).toBeNull()
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(b.sink).not.toHaveBeenCalled()
   })
 
   it('does not redispatch composer child slots for an unrelated Session publication', () => {

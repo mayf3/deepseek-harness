@@ -34,6 +34,12 @@ export interface SubmitOutcome {
   readonly text?: string
 }
 
+/** State of first-use Workspace preparation. */
+export interface FirstDraftState {
+  readonly busy: boolean
+  readonly failed: boolean
+}
+
 /** Command-mode credential supplied by one input-trigger source. */
 export interface CommandClaim {
   /** Catalog command name without the leading slash (the key of per-command composer copy such as `hint.*`). */

@@ -2,7 +2,7 @@ import type { z } from 'zod'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, join, relative } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import type { StorageBackend } from '@deepseek-ai/dsh-storage'
@@ -1154,5 +1154,147 @@ describe('registry-global session unpin', () => {
     await expect(result.registry.unpinSession(SessionId('vanished'))).resolves.toBeUndefined()
     expect(result.registry.pinnedSessionIds).toEqual([])
     expect(result.list.mock.calls.length).toBe(listingsBefore)
+  })
+})
+
+describe('first-use Workspace preparation', () => {
+  const contexts: Context[] = []
+
+  afterEach(async () => {
+    for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
+  })
+
+  async function firstUse(options: HarnessOptions = {}) {
+    const directoryRoot = await makeDir('first-use')
+    const result = await harness({ liveSessions: [], ...options })
+    contexts.push(result.ctx)
+    const resolveDirectory = vi.fn(async () => ({ path: join(directoryRoot, 'nested', 'Workspace'), title: 'Workspace' }))
+    return { ...result, directoryRoot, resolveDirectory }
+  }
+
+  it('creates parent directories and resolves only one directory for concurrent initialization', async () => {
+    const h = await firstUse()
+    const laterDirectory = vi.fn(async () => { throw new Error('directory lookup unavailable') })
+    const [first, repeated] = await Promise.all([
+      h.registry.initializeDefault(h.resolveDirectory), h.registry.initializeDefault(laterDirectory),
+    ])
+    expect(first).toBeDefined()
+    expect(repeated).toBe(first)
+    expect(h.resolveDirectory).toHaveBeenCalledOnce()
+    expect(laterDirectory).not.toHaveBeenCalled()
+    expect(first?.path).toBe(await realpath(join(h.directoryRoot, 'nested', 'Workspace')))
+    expect(first?.title).toBe('Workspace')
+    expect(h.registry.list()).toEqual([first])
+    expect(storedState(h.pool).defaultWorkspaceId).toBe(first?.id)
+    expect(h.ctx.sessions.list()).toEqual([])
+    expect(h.open).not.toHaveBeenCalled()
+  })
+
+  it('reuses an existing directory without changing its contents', async () => {
+    const h = await firstUse()
+    const directory = join(h.directoryRoot, 'nested', 'Workspace')
+    await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, 'keep.txt'), 'keep')
+    expect((await h.registry.initializeDefault(h.resolveDirectory))?.path).toBe(directory)
+    const { readFile } = await import('node:fs/promises')
+    expect(await readFile(join(directory, 'keep.txt'), 'utf8')).toBe('keep')
+  })
+
+  it('leaves initialization retryable when directory resolution fails', async () => {
+    const h = await firstUse()
+    h.resolveDirectory.mockRejectedValueOnce(new Error('lookup unavailable'))
+    await expect(h.registry.initializeDefault(h.resolveDirectory)).rejects.toThrow('lookup unavailable')
+    expect(storedState(h.pool).defaultWorkspaceId).toBeUndefined()
+    expect(await h.registry.initializeDefault(h.resolveDirectory)).toBeDefined()
+  })
+
+  it('rejects a relative candidate before creating its directory', async () => {
+    const h = await firstUse()
+    const candidate = join(h.directoryRoot, 'relative')
+    h.resolveDirectory.mockResolvedValueOnce({ path: relative(process.cwd(), candidate), title: 'Workspace' })
+    await expect(h.registry.initializeDefault(h.resolveDirectory)).rejects.toThrow('fully qualified')
+    await expect(realpath(candidate)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(h.registry.list()).toEqual([])
+    expect(storedState(h.pool).defaultWorkspaceId).toBeUndefined()
+  })
+
+  it('keeps the initialization marker across deletion and restart', async () => {
+    const h = await firstUse()
+    const workspace = (await h.registry.initializeDefault(h.resolveDirectory))!
+    await workspace.setTitle('Renamed')
+    expect((await h.registry.initializeDefault(h.resolveDirectory))?.title).toBe('Renamed')
+    await h.registry.delete(workspace.id)
+    await h.ctx.fiber.dispose()
+    const restarted = await firstUse({ pool: h.pool })
+    await expect(restarted.registry.initializeDefault(restarted.resolveDirectory)).resolves.toBeUndefined()
+    expect(storedState(h.pool).defaultWorkspaceId).toBe(workspace.id)
+    expect(restarted.registry.list()).toEqual([])
+    expect(restarted.resolveDirectory).not.toHaveBeenCalled()
+  })
+
+  it.each(['persisted', 'live', 'archived'] as const)('refuses automatic creation for a %s cwd-less Session', async (kind) => {
+    const history = header('old')
+    const h = await firstUse(kind === 'persisted' ? { sessions: [history] } : { liveSessions: [history] })
+    if (kind === 'archived') await h.registry.archiveSession(history.id)
+    await expect(h.registry.initializeDefault(h.resolveDirectory)).resolves.toBeUndefined()
+    expect(h.registry.list()).toEqual([])
+    expect(storedState(h.pool).defaultWorkspaceId).toBeUndefined()
+    expect(h.resolveDirectory).not.toHaveBeenCalled()
+  })
+
+  it('refuses a non-empty Workspace list and newly persisted history', async () => {
+    const h = await firstUse()
+    const explicit = await h.registry.create(h.directoryRoot)
+    await expect(h.registry.initializeDefault(h.resolveDirectory)).resolves.toBeUndefined()
+    await h.registry.delete(explicit.id)
+    h.setSessions([header('arrived')])
+    await expect(h.registry.initializeDefault(h.resolveDirectory)).resolves.toBeUndefined()
+  })
+
+  it('fails on a same-path file and remains eligible after it is removed', async () => {
+    const h = await firstUse()
+    const parent = join(h.directoryRoot, 'nested')
+    await mkdir(parent)
+    const path = join(parent, 'Workspace')
+    await writeFile(path, 'occupied')
+    await expect(h.registry.initializeDefault(h.resolveDirectory)).rejects.toThrow()
+    expect(storedState(h.pool).defaultWorkspaceId).toBeUndefined()
+    expect(h.registry.list()).toEqual([])
+    await rm(path)
+    expect((await h.registry.initializeDefault(h.resolveDirectory))?.path).toBe(path)
+  })
+
+  it.each(['persisted', 'live'] as const)('refuses registration when a %s Session appears during directory preparation', async (kind) => {
+    const h = await firstUse()
+    const arrived = header('arrived-during-preparation')
+    if (kind === 'persisted') {
+      h.list.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        { header: arrived, revision: SessionPersistenceRevision('arrived-revision') },
+      ])
+    } else {
+      vi.spyOn(h.ctx.sessions, 'list').mockReturnValueOnce([]).mockReturnValueOnce([{ header: arrived }] as never)
+    }
+    await expect(h.registry.initializeDefault(h.resolveDirectory)).resolves.toBeUndefined()
+    expect(h.registry.list()).toEqual([])
+    expect(storedState(h.pool).defaultWorkspaceId).toBeUndefined()
+  })
+
+  it('does not infer an empty live Session store when the peer is unavailable', async () => {
+    const h = await harness()
+    contexts.push(h.ctx)
+    const resolveDirectory = vi.fn(async () => { throw new Error('unexpected directory lookup') })
+    await expect(h.registry.initializeDefault(resolveDirectory)).rejects.toThrow('Session store')
+    expect(resolveDirectory).not.toHaveBeenCalled()
+    expect(storedState(h.pool).defaultWorkspaceId).toBeUndefined()
+  })
+
+  it('rolls back a failed final marker write and allows a retry', async () => {
+    const pool = new MemoryMediaPool()
+    const h = await firstUse({ pool, backend: selectiveFailureBackend(pool, { globalAt: 3 }) })
+    await expect(h.registry.initializeDefault(h.resolveDirectory)).rejects.toThrow('marker failure')
+    expect(h.registry.list()).toEqual([])
+    expect(storedState(pool).defaultWorkspaceId).toBeUndefined()
+    await expect(realpath(join(h.directoryRoot, 'nested', 'Workspace'))).resolves.toBe(join(h.directoryRoot, 'nested', 'Workspace'))
+    expect(await h.registry.initializeDefault(h.resolveDirectory)).toBeDefined()
   })
 })

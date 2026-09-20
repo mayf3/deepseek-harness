@@ -1,10 +1,12 @@
 /** Host Workspace Remote owner: explicit commands and reconnect-safe state. */
 
 import { Context } from '@deepseek-ai/cordis'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import z from '@deepseek-ai/schemastery'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceCommands } from './commands.ts'
 import { DirectoryPickerController } from './directory-picker.ts'
-import { WorkspaceFeed } from './feed.ts'
+import { WorkspaceFeed, workspaceView } from './feed.ts'
+import { defaultWorkspaceDirectory, validateDocumentsDirectory } from './default-directory.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
@@ -14,6 +16,7 @@ import type {
   WorkspaceDeleteValue,
   WorkspaceFollowFrame,
   WorkspaceInsertBeforeRequest,
+  WorkspaceInitializeDefaultRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
   WorkspacePinSessionRequest,
@@ -27,6 +30,14 @@ import type {
 export type * from './types.ts'
 export { DirectoryPickerController } from './directory-picker.ts'
 
+/** First-use directory policy for the Host account. */
+export interface Config {
+  /** Override the system Documents directory with a fully qualified path. */
+  documentsDirectory?: string
+  /** Maximum duration of the operating system's Documents lookup. */
+  documentsLookupTimeoutMs?: number
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Host Workspace business API and Remote namespace owner. */
@@ -38,12 +49,20 @@ declare module '@deepseek-ai/cordis' {
 export class WorkspaceController extends TypertRemoteService {
   static inject = ['typert', 'workspaceRegistry']
 
+  static Config: z<Config> = z.object({
+    documentsDirectory: z.string(),
+    documentsLookupTimeoutMs: z.natural().min(1).default(10_000),
+  })
+
+  private readonly config: Config
   private readonly commands: WorkspaceCommands
   private readonly feed: WorkspaceFeed
 
-  /** @param ctx - Host context containing the Workspace registry. */
-  constructor(ctx: Context) {
+  /** @param ctx - Host context containing the Workspace registry. @param config - first-use directory policy. */
+  constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'workspaceController', { namespace: 'workspace' })
+    this.config = WorkspaceController.Config(config)
+    if (this.config.documentsDirectory !== undefined) validateDocumentsDirectory(this.config.documentsDirectory)
     this.commands = new WorkspaceCommands(ctx)
     this.feed = new WorkspaceFeed(ctx)
     // This package is the Loader entry for both Remote owners it hosts: the
@@ -61,6 +80,32 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('create')
   create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue> {
     return this.commands.create(request)
+  }
+
+  /**
+   * Initialize or reuse the default Workspace before the first user message.
+   * @param request - initial directory name and title; never rename an existing default.
+   * @param signal - caller lifetime; cancels native directory lookup.
+   * @returns the durable Workspace without creating a Session or sending a message.
+   */
+  @Remote('initializeDefault')
+  async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal: AbortSignal): Promise<WorkspaceValue> {
+    const { directoryName, title } = request
+    if (directoryName.trim() === '' || directoryName !== directoryName.trim()
+      || directoryName.endsWith('.') || /[/\\:\0]/.test(directoryName) || title.trim() === '') {
+      throw new RemoteError('gateway/bad-request', 'default Workspace requires a directory name and non-blank title', {})
+    }
+    const workspace = await this.ctx.workspaceRegistry.initializeDefault(async () => {
+      const timeout = AbortSignal.timeout(this.config.documentsLookupTimeoutMs as number)
+      const path = await defaultWorkspaceDirectory(
+        directoryName, this.config.documentsDirectory, AbortSignal.any([signal, timeout]),
+      )
+      return { path, title }
+    })
+    if (workspace === undefined) {
+      throw new RemoteError('gateway/bad-request', 'choose a directory to create a Workspace', {})
+    }
+    return { workspace: workspaceView(workspace) }
   }
 
   /**

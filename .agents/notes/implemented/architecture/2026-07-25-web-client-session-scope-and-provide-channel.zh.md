@@ -26,8 +26,8 @@ web client 只有一张全局会话面：slot 全部从根上下文渲染，插�
 host 侧 `session.create(workspaceId)` 一体产出 Session + Agent + cwd（作为不可拆分的原子整体）；client 侧就是这次出生的镜像——会话行进入 list mirror 的瞬间，client 为它铸 Agent scope（actx + provide + 输入面全套挂上）：
 
 - 会话身份自出生即为 host 真身：sessionId 由 `session.create` 响应 / `host/session-added` 帧带来，client 侧一切寻址（scope tag、slot store 键、RPC 地址）用的都是同一个 id。
-- 实体化时点 = 用户选定 Workspace（cwd 确定）的瞬间：client 当场调 `session.create({workspaceId})`，拿到完整实体。
-- 「New Session 且未选 workspace」是**纯视图态**（一个导航位置），不对应任何会话/scope 实体；选定之前 composer 整体锁死（无 slash、无纯文本）。
+- 手动选择 Workspace 或成功[准备首次使用默认工作区](../feature/2026-09-20-default-workspace.zh.md)先确定 cwd，client 随后调用 `session.create({workspaceId})` 并取得完整实体。
+- 「New Session 且未选 workspace」没有 Session 或 scope 实体。Composer 保留本地文本草稿；连接后才提供 Session scope 的 slash 命令。
 - 「空会话」就是一个日志还空着的普通实体化会话；对 host 上所有 Agent-scope 插件（goal/plan/skill（技能）/…）它与任何会话无异，slash/plan 天然全活。
 
 ### Agent scope：actx 是 client 侧 cordis 世界的唯一会话载体
@@ -95,7 +95,7 @@ slot scope 是闭集 `root | session-maybe | session`：
 - `session-maybe` 以**收养（adoption）身份语义**继承最近 `SessionProvider` 的 binding：空态出生的化身在该 Provider 第一次收到 binding 时保持 React 实例，此后 Provider 切换 generation 或回到空态时重挂。Provider 切换 generation 时，组件本地的逐 Session 状态会清零。切换过程中，只有持久化 Store 值能活过 generation 退休；只有另一份 reference 保活该 generation 时，binding 自有 source 才能保留。无 binding 时，`sessionId`、`useSession`/`useInput` 的结果与 `inputActions` 均可缺省。Provider roster 变化会重新物化已挂载 binding，但不改变其 identity；逐 entry 的收养记账住在 renderer 的 `SessionMaybeEntry`。
 - `session` 保证 `sessionId`、所有钩子 source 与 props 均存在；每个严格 entry 的错误边界以 `sessionId` 为 key，切换会话会重建该 entry 及其会话 store。
 
-`conversation` 是其 owner `SessionProvider` 下的 `session-maybe` 常驻外壳：`ConversationRoot`、HeroShell、Workspace picker、scrollport 与 composer stack，以及 overlay chain 的 fallback 外框，在无 Session → blank Session 的切换中保持 React 实例。两个严格 session entry 只填入固定区域，不改变该树的父级：`conversation.session.header` 在 scrollport 上方承载 breadcrumb／tab／action，`conversation.session` 在其内部承载 view ring 与 draft mirror；二者共享同一个 Session scope chat store。composer bar（`conversation.composer.bar`）本身即为 `session-maybe`：无 Session 时，其 machine faces 和消息动作保持惰性，整张虚线卡片可经指针打开现有 Workspace picker，只读 textarea 也可通过 Enter 或 Space 打开。binding 出现后同一实例（含 textarea）转为 live；其余输入 slot 保持严格 `session`，在此之前不派发任何内容。blank → engaging/active 的 InputBar 不因 phase 翻转而重建。
+`conversation` 是其 owner `SessionProvider` 下的 `session-maybe` 常驻外壳：`ConversationRoot`、HeroShell、Workspace picker、scrollport 与 composer stack，以及 overlay chain 的 fallback 外框，在无 Session → blank Session 的切换中保持 React 实例。两个严格 session entry 只填入固定区域，不改变该树的父级：`conversation.session.header` 在 scrollport 上方承载 breadcrumb／tab／action，`conversation.session` 在其内部承载 view ring 与 draft mirror；二者共享同一个 Session scope chat store。composer bar（`conversation.composer.bar`）本身即为 `session-maybe`：Session 存在前，注入的编辑器保存首次使用文本草稿；连接后，同一 InputBar 实例接收已持有 Session 的输入。其余输入 slot 保持严格 `session`，在此之前不派发任何内容。blank → engaging/active 的 InputBar 不因 phase 翻转而重建。
 
 blank Session 保留 header 的 leading 与 corner slot，让右侧栏展开入口等导航控件在首条消息之前即可使用。标题、actions、utilities 和 View tabs 在 blank phase 中继续隐藏。header 仍要求已选中的 Session；Files 与 Terminal 入口使用该 Session 的工作区和执行服务，无需已有 Turn 记录。
 
@@ -136,5 +136,5 @@ blank Session 保留 header 的 leading 与 corner slot，让右侧栏展开入�
 - 插件获得与 host 同构的会话上下文：逐会话状态挂 actx、随 scope fiber 一次拆装，泄漏结构性不可能；双会话隔离由 scope filter 结构性保证。
 - client 对象层收敛为 wire 镜像：会话身份、生命周期、能力判别全部以 host 实体为准——输入体系（下一层）面对的永远是「有真 Agent 的会话」，slash/skill 等提供方一律以 sessionId 直接寻址。
 - 空会话治理零专用机制：状态靠一个派生位，可见性靠统一列表投影（仅 current blank 以 `New Session` 展示），复用时获取持久化写锁，常规上限靠同 Workspace 复用。
-- 代价：id→ctx 换乘纪律、provide 的 Concurrent 纪律都是约定而非类型强制，靠 review 与测试钉住。单一状态轴仍会在 Session 存在前隐藏 machine face；这段时间内，[常驻会话壳](../../../../packages/client/ui-conversation/README.zh.md)会把激活操作转到 Workspace picker。
+- 代价：id→ctx 换乘纪律、provide 的 Concurrent 纪律都是约定而非类型强制，靠 review 与测试钉住。Session 存在前，其 scope 输入仍不可用；这段时间内，[常驻会话壳](../../../../packages/client/ui-conversation/README.zh.md)负责本地首次使用草稿。
 - 已知欠账：approval/question 跨 prune 恢复（TODO）；模型选择以 live-mutation 形状回归（host `selectModel` 三件套现成，其 client 消费方尚未构建）。

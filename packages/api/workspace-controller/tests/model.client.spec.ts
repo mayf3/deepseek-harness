@@ -68,6 +68,7 @@ function deferred<T>(): Deferred<T> {
 }
 
 class FakeWorkspaceRemote implements WorkspaceRemote {
+  readonly initializeDefault = vi.fn<WorkspaceRemote['initializeDefault']>(async () => remoteOk({ workspace: workspace('default') }))
   readonly calls: Array<{ readonly method: string; readonly request: unknown }> = []
   onCreate: (request: WorkspaceCreateRequest) => Promise<RemoteResult<WorkspaceCreateValue>> = request =>
     Promise.resolve(remoteOk({ workspace: workspace(request.path.split('/').pop() ?? 'workspace'), created: true }))
@@ -167,6 +168,22 @@ function baseline(
 }
 
 describe('ClientWorkspaceModel', () => {
+  it('publishes the prepared Workspace and leaves the list unchanged on refusal', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model)
+    const signal = new AbortController().signal
+    await expect(model.initializeDefault({ directoryName: '默认工作区', title: '默认工作区' }, signal)).resolves.toMatchObject({ ok: true })
+    expect(remote.initializeDefault).toHaveBeenCalledWith({ directoryName: '默认工作区', title: '默认工作区' }, signal)
+    expect(model.getSnapshot().items.map(item => item.workspaceId)).toEqual(['default'])
+    const before = model.getSnapshot()
+    remote.initializeDefault.mockResolvedValueOnce(workspaceError(
+      new RemoteError('gateway/bad-request', 'choose a folder', {}),
+    ))
+    await expect(model.initializeDefault({ directoryName: 'Default workspace', title: 'Default workspace' })).resolves.toMatchObject({ ok: false })
+    expect(model.getSnapshot()).toBe(before)
+  })
+
   it('replaces reconnect state and applies ordered increments', () => {
     const model = modelFor()
     expect(model.getSnapshot()).toMatchObject({ phase: 'pending', state: 'loading' })

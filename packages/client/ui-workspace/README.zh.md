@@ -69,6 +69,8 @@ Session 行渲染运行时的实时 `pendingInteraction` 分类：审批显示**
 
 新建会话尝试获取列表中第一个符合条件的空白会话；启动恢复尝试已保存的空白会话。若该写锁被占用，导航直接新建 Session，不再尝试其他空白会话。其他获取错误会中止请求，目前只报告到控制台。已释放的空白会话被复用时保留 slash 命令状态。后续导航会取消尚未完成的启动选择。
 
+`openDefaultWorkspace(request, beforeOpen, signal)` 在连接 Session 前，按请求中的目录名和标题初始化 Host 默认工作区。它在目录准备之前捕获导航取消信号；被取代的操作不能转移草稿或选中 Session。登记成功的工作区在 Session 创建或后续提交失败时仍然保留。[Conversation](../ui-conversation/README.zh.md) 负责首次使用草稿和失败弹窗。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

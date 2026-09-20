@@ -26,6 +26,18 @@ Host 控制器会串行执行正确性取决于当前注册表状态的变更，
 
 Client 入口提供 `ClientWorkspaceModel` 和 `createWorkspaceStateStream()`。该模型拥有 Workspace 行、registry 顺序、归档与置顶会话身份、一元变更回显，以及流与一元调用的竞态处理。较新的 Host 行按 `updatedAt` 获胜；已提交的流顺序优先于较旧的一元响应；已经移除的 Workspace id 不会被延迟数据复活。置顶快照仅在会话身份或顺序变化时更新。该包公开与框架无关的快照和订阅，把导航策略与 React 钩子留给 UI owner。
 
+<a id="first-use-workspace"></a>
+### 首次使用工作区
+
+`workspace.initializeDefault({ directoryName, title })` 返回持久化的默认工作区；Client service 通过 `workspaces.initializeDefault(request, signal?)` 提供同一请求。[Conversation Client](../../client/ui-conversation/README.zh.md)按发送时的语言解析这些名称。Host 将目录放在其账户的 `<Documents>/deepseek-harness` 下，远程 Web Host 也遵循此规则。目录名必须是非空的单个片段，不能含分隔符、冒号、NUL、首尾空白或末尾句点；标题不能为空。Linux 系统查询要求存在 `xdg-user-dir` 且启用了 Documents 目录。
+
+[Workspace 注册表](../../workspace/workspace/README.zh.md#first-use-workspace)负责资格判断、目录创建和持久化初始化。已有默认工作区直接返回，不再查询 Documents；请求中的名称不会将其重命名。名称无效或不满足首次使用条件时，以 `gateway/bad-request` 拒绝；查询和创建失败遵循标准 Remote 错误处理。初始化不创建 Session，也不发送消息。
+
+| 配置 | 默认值 | 用途 |
+| --- | --- | --- |
+| `documentsDirectory` | 系统 Documents 目录 | 完全限定的 Host 目录覆盖值 |
+| `documentsLookupTimeoutMs` | `10000` | 操作系统目录查询的正数最大时长，单位为毫秒 |
+
 -----
 
 <a id="model-experience"></a>

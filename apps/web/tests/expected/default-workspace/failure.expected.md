@@ -1,0 +1,6 @@
+- dialog "无法创建默认工作区":
+  - heading "无法创建默认工作区" [level=2]
+  - button "关闭"
+  - text: 请选择一个文件夹后重试
+  - button "取消"
+  - button "选择文件夹"

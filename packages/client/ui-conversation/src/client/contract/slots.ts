@@ -16,7 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ComposerBlock } from './composer-blocks.ts'
-import type { DraftAttachmentId, InputActions, InputNotice, InputState } from './input.ts'
+import type { DraftAttachmentId, FirstDraftState, InputActions, InputNotice, InputState } from './input.ts'
 import type { ComposerKeyboard, EditSelection } from './draft-editor.ts'
 import type { createConversationStore } from '../stores.ts'
 import type { BusyEnterBehavior } from './composer-submission.ts'
@@ -319,8 +319,13 @@ export type ConvViewProps = PropsRuntime<'conversation.view'>
 export interface ConversationInjected {
   /** Connect and open a blank Session in the selected Workspace. */
   selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
+  /** Dismiss default Workspace creation failure without discarding input. */
+  dismissDefaultFailure: () => void
   /** Session-addressed composer block source, or the stable absent source. */
-  hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
+  hooks: {
+    composerBlock: ObservableSnapshot<ComposerBlock | undefined>
+    firstDraft: ObservableSnapshot<FirstDraftState>
+  }
 }
 
 /** Business callbacks injected into the strict Session body. */
@@ -365,7 +370,7 @@ export interface ComposerBarOwnerProps {
 
 /** Package-private operations injected into the resident composer bar. */
 export interface ComposerBarInjected {
-  keyboard: ComposerKeyboard | undefined
+  keyboard: ComposerKeyboard
   addFiles: ((files: readonly File[]) => string | null) | undefined
   removeAttachment: ((id: DraftAttachmentId) => void) | undefined
   resolveDraftAttachments: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
@@ -374,6 +379,8 @@ export interface ComposerBarInjected {
   toggleCommandMenu: ((selection: EditSelection) => void) | undefined
   stop: (() => void) | undefined
   hooks: {
+    /** Resident editor state, including input before a Session exists. */
+    composerInput: ObservableSnapshot<InputState>
     /**
      * Live busy-state submission preference: the delivery mode plain Enter
      * and the primary Send button use while the addressed agent is busy.
