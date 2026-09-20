@@ -128,3 +128,6 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     },
   })
 }
+
+/** The bound write set of one viewing-store instance (what the UiWorkspace service drives). */
+export type WorkspaceViewStoreActions = ReturnType<ReturnType<typeof createWorkspaceViewStore>['create']>['actions']

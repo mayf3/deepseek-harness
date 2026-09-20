@@ -1156,6 +1156,17 @@ describe('scrubModelRequestBulk', () => {
 })
 
 describe('scrubSessionSnapshot', () => {
+  it('writes expanded source-event references and remains idempotent', () => {
+    const input = [
+      { type: 'session', id: 's' },
+      { type: 'assistant/message', sourceEventSeqs: [[1, 3], 5], surfaceOp: 'append', data: { turn: 1, step: 1 } },
+    ].map(record => JSON.stringify(record)).join('\n')
+
+    const output = scrubSessionSnapshot(input)
+    expect(output).toContain('"sourceEventSeqs":[1,2,3,5]')
+    expect(scrubSessionSnapshot(output)).toBe(output)
+  })
+
   it('writes stable feedback clocks while retaining notes and version identity', () => {
     const input = [
       { type: 'session', id: 's' },

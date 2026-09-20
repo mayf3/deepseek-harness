@@ -71,7 +71,7 @@ async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
       ...(r.origin !== undefined ? { origin: r.origin } : {}),
       ...(r.projections === undefined
         ? {}
-        : { projections: { asOfSeq: 0, values: r.projections } }),
+        : { projections: { kind: 'sequenced' as const, asOfSeq: 0, values: r.projections } }),
     })),
   }))
   await b.svc.refresh()
