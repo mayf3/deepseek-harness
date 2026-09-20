@@ -17,7 +17,7 @@ it('queries the authorized route, selects a handler, and keeps reveal last', asy
   const p = props()
   render(<FileRouteAction {...p} />)
   await act(async () => {})
-  expect(fetcher).toHaveBeenCalledWith(p.actionUrl, { signal: expect.any(AbortSignal) })
+  expect(fetcher).toHaveBeenCalledWith(p.actionUrl, { signal: expect.any(AbortSignal) as AbortSignal })
   fireEvent.mouseEnter(screen.getByRole('button', { name: 'Open in Music' }))
   expect(await screen.findByRole('tooltip')).toHaveProperty('textContent', 'Open in Music')
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: en['path.more'] })) })

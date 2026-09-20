@@ -128,7 +128,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       }
       const row = page.locator('[data-presented-files-row]')
       await row.waitFor()
-      expect(await row.getByRole('button', { name: 'More ways to open' }).count()).toBe(2)
+      await expect.poll(() => row.getByRole('button', { name: 'More ways to open' }).count()).toBe(2)
       expect(await row.getByText('report.txt', { exact: true }).innerText()).toBe('report.txt')
       const beforePreview = (await opened()).length
       const column = page.locator('[data-rightbar-col]')

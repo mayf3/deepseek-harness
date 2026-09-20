@@ -181,6 +181,6 @@ it('encodes an explicit application identifier without changing the file coordin
   vi.stubGlobal('fetch', fetcher)
   const controller = new PresentedOpenController()
   expect(await controller.open(id, 2, 1, 'open', '/Apps/A&B.app')).toBeNull()
-  expect(fetcher).toHaveBeenCalledWith(`${url}&application=%2FApps%2FA%26B.app`, { method: 'POST', signal: expect.any(AbortSignal) })
+  expect(fetcher).toHaveBeenCalledWith(`${url}&application=%2FApps%2FA%26B.app`, { method: 'POST', signal: expect.any(AbortSignal) as AbortSignal })
   await controller.dispose()
 })
