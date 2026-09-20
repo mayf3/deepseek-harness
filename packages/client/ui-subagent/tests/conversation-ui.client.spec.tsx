@@ -943,7 +943,7 @@ describe('SubagentHeaderLineage', () => {
 
     hoverCatalog(screen.getByRole('button', { name: '切换子代理：indexer' }))
 
-    expect(input.refreshProjection).toHaveBeenCalledWith(CHILD)
+    expect(input.refreshProjection).not.toHaveBeenCalled()
     const current = screen.getByRole('treeitem', { name: /indexer/ })
     expect(current.getAttribute('aria-current')).toBe('true')
     expect(within(current).getByText('indexer').className).toContain('currentLabel')

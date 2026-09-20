@@ -300,7 +300,7 @@ describe('UiWorkspaceService', () => {
     b.uiWorkspace.openSession(sid('target'))
     expect(b.selectPanel).toHaveBeenCalledWith(null)
     expect(b.sessions.retain).toHaveBeenCalledWith(sid('target'), { source: 'mainView' })
-    expect(b.sessions.refreshProjections).toHaveBeenCalledWith(sid('target'))
+    expect(b.sessions.refreshProjections).not.toHaveBeenCalled()
   })
 
   it('keeps the current panel when retaining the target fails', () => {
@@ -827,10 +827,7 @@ describe('UiWorkspaceService', () => {
     })
 
     expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(address, { source: 'mainView' })
-    expect(b.sessions.refreshProjections.mock.calls).toEqual([
-      [address.parentSessionId],
-      [address.childSessionId],
-    ])
+    expect(b.sessions.refreshProjections).not.toHaveBeenCalled()
   })
 
   it('persists a catalog-resolved address after string subagent navigation', () => {
