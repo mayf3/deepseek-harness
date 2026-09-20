@@ -93,7 +93,7 @@ Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteReq
 
 ### 类型签名
 
-```ts
+```text
 // @deepseek-ai/dsh-typert-protocol
 /**
  * 一条 Remote 流。Host 面：方法返回它，运行时就是 AsyncIterable<Out>。
@@ -125,7 +125,7 @@ stream.dispose()
 
 ### Host 面
 
-```ts
+```text
 /** 本次 Remote 调用的上下文。方法通过 this.ctx.invocation 读它。 */
 export interface RemoteInvocation {
   readonly request: {
@@ -173,7 +173,7 @@ declare module '@deepseek-ai/cordis' {
 
 ### PeerScope
 
-```ts
+```text
 /** 一个 Peer 的不透明身份。 */
 export type PeerId = Branded<'PeerId'>
 
@@ -200,7 +200,7 @@ export interface PeerScope {
 
 ### Client 面
 
-```ts
+```text
 /** Client 面上生成方法返回的句柄；RemoteStream<Out, In> 在 Client 面解析为它。 */
 export interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
   /** 发送一个上行项。流已终止或已 end 时抛错。 */
@@ -219,7 +219,7 @@ export interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
 
 ### 线路帧
 
-```ts
+```text
 export type RemoteStreamClientMessage =
   | { readonly type: 'open'; readonly streamId: string; readonly endpoint: string; readonly payload: unknown }
   | { readonly type: 'item'; readonly streamId: string; readonly value?: unknown }   // 新增：上行项
@@ -314,7 +314,7 @@ credit 帧留待需要持续大流量上行的消费者出现时再加；inbox �
 
 ### typert protocol（`packages/typert/protocol/src`）
 
-```ts
+```text
 // types.ts
 export type RemoteStream<Out, In = never> = AsyncIterable<Out>
 export type PeerId = Branded<'PeerId'>
@@ -347,7 +347,7 @@ export interface InvocationDescriptor {
 
 ### 网关 Host（`packages/api/gateway/src`）
 
-```ts
+```text
 // types.ts
 export interface InvokeRemoteRequest {
   readonly namespace: string
@@ -381,7 +381,7 @@ readonly streamInboxBytes?: number
 
 `prepareInvocation`：
 
-```ts
+```text
 const args = await Promise.all(descriptor.parameters.map(parameter => this.resolveParameter(parameter, request.args, endpoint)))
 const signal = request.signal ?? NEVER_ABORTED_SIGNAL
 const invocation = new GatewayInvocation(
@@ -399,7 +399,7 @@ if (descriptor.cancellation !== undefined) args.push(signal)
 
 ### 网关 Host mux（`stream-server.ts`）
 
-```ts
+```text
 interface ActiveStream { readonly control: AbortController; readonly inbox: UplinkInbox; done: Promise<void> }
 
 /** 有界上行队列；作为 uplink() 的源被迭代。 */
@@ -525,7 +525,7 @@ Client 调用方         mux client             mux server                      
 
 验收用，放在网关测试支持里：
 
-```ts
+```text
 class EchoService extends TypertRemoteService {
   constructor(ctx: Context) { super(ctx, 'echo', { namespace: 'echo' }) }
 
