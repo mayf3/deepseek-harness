@@ -1,6 +1,6 @@
 /** Account sign-out confirmation with the current task impact. */
 import { useState } from 'react'
-import { Button, IconCloseOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountKey } from './locales.ts'
 import css from './SignInDialog.module.css'
 
@@ -26,7 +26,7 @@ export function SignOutDialog({ running, signOut, close, t }: {
       <div className={css.header}>
         <h2 className={css.title}>{t('signOut')}</h2>
         <button type="button" className={css.close} aria-label={t('close')} disabled={busy} onClick={dismiss}>
-          <IconCloseOutline16 size={14} />
+          <IconCloseOutlineRegular size={14} />
         </button>
       </div>
       <p className={css.description}>{t(running ? 'signOutRunningDescription' : 'signOutDescription')}</p>

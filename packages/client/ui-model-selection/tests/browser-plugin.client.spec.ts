@@ -71,8 +71,7 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
   let selected = defaultSelection
   const calls = { models: 0, select: 0 }
   const projections = new Map<SessionId, SnapshotStore<ModelSelectionProjection | undefined>>()
-  // Whether the Host reports an adapter for the current route; the composer
-  // block follows this, never catalog membership.
+  // Whether the Host advertises available models for the current route.
   let routable = true
   let selectionFailure: RemoteError<'session/writer-held'> | undefined
   const sessionRemote = {
@@ -382,14 +381,14 @@ describe('ui-model-selection dual entry', () => {
     await oldDirectory.load()
     const replacement = b.mint('s1')
     replacement.projection.set({ lastUsed: null,
-      next: { provider: routable ? 'deepseek-official' : 'missing', model: 'replacement' } })
+      next: { provider: routable ? 'deepseek-official' : 'missing', model: 'deepseek-v4-flash' } })
     const directory = b.ctx.modelDirectories.directoryFor(sid('s1'))
     try {
       expect(directory.store.getSnapshot().routable).toBe(routable)
       const expected = b.blockOf('s1')
       await Promise.resolve().then(() => {
         first.projection.set({ lastUsed: null,
-          next: { provider: routable ? 'missing' : 'deepseek-official', model: 'late-old' } })
+          next: { provider: routable ? 'missing' : 'deepseek-official', model: 'deepseek-v4-pro' } })
       })
       expect(oldDirectory.store.getSnapshot().routable).toBe(!routable)
       expect(b.blockOf('s1')).toBe(expected)
