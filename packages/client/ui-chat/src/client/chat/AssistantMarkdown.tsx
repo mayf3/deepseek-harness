@@ -2,7 +2,7 @@ import { Fragment, memo, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions, MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
+import type { ChatNodeOwnerProps, ChatViewSlotProps, UsePresentation } from '../contract/slots.ts'
 import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
@@ -29,9 +29,11 @@ export interface AssistantMarkdownProps {
   interrupted?: boolean | undefined
   /** Render consecutive image blocks through the attachment slot. */
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
-  /** Hide reasoning that belongs to the Turn-level process disclosure. */
+  /** Hide reasoning that belongs to the Turn-level process disclosure or a collapsed step group. */
   reasoningHidden?: boolean | undefined
-  /** Reveal the owning Turn-level process disclosure. */
+  /** Live display policy for reasoning summaries. */
+  usePresentation: UsePresentation
+  /** Reveal the disclosure that hides this reasoning. */
   revealProcess?: (() => void) | undefined
   /** Resolved prose file mentions for this Assistant's closing turn. */
   mentions?: MarkdownFileMentions | undefined
@@ -42,7 +44,7 @@ export interface AssistantMarkdownProps {
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, renderMessageImages,
-  reasoningHidden = false, revealProcess, mentions, t,
+  reasoningHidden = false, usePresentation, revealProcess, mentions, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -83,7 +85,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
             hidden={reasoningHidden}
             reveal={revealProcess}
           >
-            <ReasoningRow text={block.text} running={streaming && i === last} t={t} />
+            <ReasoningRow text={block.text} running={streaming && i === last} usePresentation={usePresentation} t={t} />
           </ProcessReasoning>,
         )
         break

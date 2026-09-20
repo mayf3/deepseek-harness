@@ -6,7 +6,6 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - button "/user-invoke-demo"
 - button "meeting notes.md"
 - text: and confirm the fixture wiring {{clock}}

@@ -81,10 +81,10 @@ describe('tool-call-model', () => {
     expect(t(toolRowModel('cordis_unmount', running({ name: 'cordis_unmount', argsRaw: '{}' })).titleKey)).toBe('工具调用')
   })
 
-  it('gives the pwsh shell row the bash family treatment with its own title', () => {
+  it('gives the pwsh shell row the bash family treatment and localized command title', () => {
     const m = toolRowModel('pwsh', running())
     expect(m.variant).toBe('bash')
-    expect(t(m.titleKey)).toBe('Pwsh')
+    expect(t(m.titleKey)).toBe('运行命令')
   })
 
   it('derives state across running/ok/error/interrupted', () => {
@@ -96,7 +96,7 @@ describe('tool-call-model', () => {
 
   it('derives the bash summary from description over command', () => {
     const m = toolRowModel('bash', running())
-    expect(t(m.titleKey)).toBe('Bash')
+    expect(t(m.titleKey)).toBe('运行命令')
     expect(m.summary).toBe('List files')
     expect(toolRowModel('bash', running({ argsRaw: '{"command":"pwd"}' })).summary).toBe('pwd')
   })
@@ -420,7 +420,7 @@ describe('ToolRow', () => {
   it('an error row without an error summary keeps the args summary', () => {
     const view = render(<ToolRow {...rowProps} state="error" errorSummary={null} />)
     const summary = view.getByText('List files')
-    expect(summary.className).toContain('errorSummary')
+    expect(summary.parentElement?.className).toContain('errorSummary')
   })
 
   it('renders summarySuffix outside the ellipsized summary span, and drops it on a failure line', () => {
@@ -499,7 +499,7 @@ describe('GenericToolCard', () => {
 
   it('renders the classified variant row from the frozen slice', () => {
     const view = render(<GenericToolCard {...props('bash', result())} />)
-    expect(view.getByText('Bash')).toBeTruthy()
+    expect(view.getByText('运行命令')).toBeTruthy()
     expect(view.getByText('List files')).toBeTruthy()
     expect(view.container.querySelector('[data-variant="bash"]')).not.toBeNull()
   })
@@ -556,7 +556,7 @@ describe('GenericToolCard', () => {
   it('passes the owner inspect callback through to the expanded row pill', () => {
     const inspect = vi.fn()
     const view = render(<GenericToolCard {...props('bash', result())} inspect={inspect} />)
-    fireEvent.click(view.getByRole('button', { name: /Bash/ }))
+    fireEvent.click(view.getByRole('button', { name: /运行命令/ }))
     fireEvent.click(view.getByText('查看'))
     expect(inspect).toHaveBeenCalledTimes(1)
   })

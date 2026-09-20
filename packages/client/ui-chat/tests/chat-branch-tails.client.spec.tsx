@@ -16,6 +16,7 @@ import {
   UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
+import { useDetailedPresentation } from './presentation-fixture.client.ts'
 import { StatsPills } from '../src/client/chat/StatsPills.tsx'
 import { zh } from '../src/client/locale.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
@@ -1044,6 +1045,7 @@ describe('small branch tails', () => {
   it('AssistantMarkdown single-line reasoning summary skips the newline cut', () => {
     const view = render(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         t={t}
         blocks={[{ kind: 'reasoning', text: 'one-liner' }]}
         streaming={false}

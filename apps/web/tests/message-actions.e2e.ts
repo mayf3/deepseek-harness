@@ -227,7 +227,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     await expect.poll(
       () => page.getByRole('button', { name: 'System prompt', exact: true }).count(),
       { timeout: 10_000 },
-    ).toBe(2)
+    ).toBe(0)
 
     // Focus-reveal the footers (hover:hover keeps them opacity-hidden until
     // hover/focus-within). Branch renders only under assistant answers — user
@@ -255,7 +255,10 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     const copy = page.getByRole('button', { name: 'Copy', exact: true }).last()
     const composer = page.locator('[data-composer-seat]')
     const tooltip = page.getByRole('tooltip', { name: 'Copy', exact: true })
+    const originalViewport = page.viewportSize()
+    if (originalViewport === null) throw new Error('tooltip probe requires a fixed viewport')
     try {
+      await page.setViewportSize({ width: originalViewport.width, height: 600 })
       // Grow the sticky seat upward so the bottom tooltip overlaps it without
       // depending on the fixture's resting composer height.
       await composer.evaluate((element) => { element.style.paddingTop = '48px' })
@@ -297,6 +300,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
       await page.mouse.move(0, 0)
       if (await copy.count() > 0) await copy.evaluate((element) => { element.blur() })
       if (await tooltip.count() > 0) await tooltip.waitFor({ state: 'hidden', timeout: 5_000 })
+      await page.setViewportSize(originalViewport)
     }
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)

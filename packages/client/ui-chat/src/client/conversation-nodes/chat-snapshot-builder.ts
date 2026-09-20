@@ -6,6 +6,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatConversationViewNode, ChatNode } from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
+import { isVisibleChatNode } from '../contract/chat-visibility.ts'
 import type {
   ChatLocationNodeIndex, ChatNodeProcessSource, ChatNodeSource, ChatNodeStore, ChatSnapshot,
   ChatTurnNavigationIndex, ChatTurnProcessPresentation, LegacyConversationSlice, TurnNavigationItem,
@@ -400,7 +401,7 @@ function presentationPosition(
 export function orderedVisibleChatNodes(
   nodes: readonly ChatConversationViewNode[],
 ): ChatConversationViewNode[] {
-  const visible = nodes.filter(node => node.visibility === 'visible')
+  const visible = nodes.filter(node => isVisibleChatNode(node as ChatNode))
   const presentations = turnProcessPresentations(visible)
   return visible.sort((left, right) => {
     const leftPosition = presentationPosition(left, presentations)
