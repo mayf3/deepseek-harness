@@ -13,7 +13,7 @@ export function useFileApplications(
   target: string,
   query: (target: string, signal: AbortSignal) => Promise<readonly SessionWorkspacePathApplication[] | null>,
   enabled: boolean,
-) {
+): { apps: readonly SessionWorkspacePathApplication[]; loading: boolean; failed: boolean; refresh: () => void } {
   const [revision, setRevision] = useState(0)
   const [association, setAssociation] = useState<{
     target: string

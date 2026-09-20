@@ -41,6 +41,7 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
       'sidebar.right.tab.document.actions': { kind: 'list', scope: 'session' },
       'sidebar.right.tab.document.unpreviewable': { kind: 'list', scope: 'session' },
       'deliverables.file.actions': { kind: 'list', scope: 'session' },
+      'deliverables.review.file.actions': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
   ctx.provide('sessions', {})

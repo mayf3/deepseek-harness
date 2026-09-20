@@ -174,3 +174,13 @@ it.each(['open', 'reveal'] as const)('reports an unavailable Host path for %s wh
   expect(controller.state.getSnapshot()[url]).toBe('nativeUnavailable')
   await controller.dispose()
 })
+
+
+it('encodes an explicit application identifier without changing the file coordinates', async () => {
+  const fetcher = vi.fn(async () => new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetcher)
+  const controller = new PresentedOpenController()
+  expect(await controller.open(id, 2, 1, 'open', '/Apps/A&B.app')).toBeNull()
+  expect(fetcher).toHaveBeenCalledWith(`${url}&application=%2FApps%2FA%26B.app`, { method: 'POST', signal: expect.any(AbortSignal) })
+  await controller.dispose()
+})

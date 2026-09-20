@@ -18,6 +18,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       }
     }
     /** The same file actions owned by a changed-file review tab. */
-    'deliverables.review.file.actions': SlotMap['deliverables.file.actions']
+    'deliverables.review.file.actions': {
+      kind: 'list'
+      scope: 'session'
+      owner: SlotMap['deliverables.file.actions']['owner']
+    }
   }
 }
