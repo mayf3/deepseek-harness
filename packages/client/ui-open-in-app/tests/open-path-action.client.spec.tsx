@@ -40,6 +40,7 @@ function bench(over: { desktop?: boolean | null; openPath?: Bench['openPath'] } 
     absolutePath: ABSOLUTE_PATH,
     useOpenInAppDesktop: useSelector(desktop),
     loadDesktop,
+    applications: vi.fn(async () => []),
     openPath,
     t,
   } as unknown as Bench['props']

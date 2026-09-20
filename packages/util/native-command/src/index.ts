@@ -18,3 +18,6 @@ export type {
   PathOpenerInternals,
   PathOpenerRunner,
 } from './path-opener.ts'
+
+export { nativeFileApplications, openNativeFileApplication } from './file-applications.ts'
+export type { NativeFileApplication } from './file-applications.ts'

@@ -68,7 +68,8 @@ export function apply(ctx: ClientContext): void {
   const pathInjected = (): OpenPathInjected => ({
     hooks: { openInAppDesktop: paths.desktop },
     loadDesktop: () => paths.load(),
-    openPath: (path, action) => paths.openPath(path, action),
+    openPath: (path, action, application) => paths.openPath(path, action, application),
+    applications: (path, signal) => paths.applications(path, signal),
   })
   ctx.slots.inject('sidebar.right.tab.document.actions', () => ctx.slots.register({
     name: 'sidebar.right.tab.document.actions',

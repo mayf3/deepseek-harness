@@ -3,11 +3,12 @@
  * its default application, the chevron's menu adds the file-manager reveal.
  * Both path controls share the gesture hook declared here.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   IconChevronDownOutlineRegular, IconFolderOpenOutlineRegular, IconRightUpOutlineRegular, Menu, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionWorkspacePathApplication } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
@@ -22,7 +23,8 @@ export interface OpenPathInjected {
     openInAppDesktop: ObservableSnapshot<boolean | null>
   }
   loadDesktop: () => Promise<void>
-  openPath: (path: string, action: OpenInAppPathAction) => Promise<OpenInAppPathFailure | null>
+  openPath: (path: string, action: OpenInAppPathAction, application?: string) => Promise<OpenInAppPathFailure | null>
+  applications: (path: string, signal: AbortSignal) => Promise<readonly SessionWorkspacePathApplication[] | null>
 }
 
 /** Full props of the document-header contribution. */
@@ -48,10 +50,11 @@ export function usePathGesture({ absolutePath, useOpenInAppDesktop, loadDesktop,
   available: boolean
   pending: boolean
   toast: ReactNode
-  act: (action: OpenInAppPathAction) => void
+  act: (action: OpenInAppPathAction, application?: string) => void
 } {
   const desktop = useOpenInAppDesktop(value => value)
   const [pending, setPending] = useState(false)
+  const inFlight = useRef(false)
   const { toast, show } = useOpenFailureToast()
   useEffect(() => {
     if (desktop === null) void loadDesktop()
@@ -60,11 +63,13 @@ export function usePathGesture({ absolutePath, useOpenInAppDesktop, loadDesktop,
     available: desktop === true,
     pending,
     toast,
-    act: (action) => {
+    act: (action, application) => {
+      if (inFlight.current) return
+      inFlight.current = true
       setPending(true)
-      void openPath(absolutePath, action).then((failure) => {
+      void openPath(absolutePath, action, application).then((failure) => {
         if (failure !== null) show(t(`path.${failure}`))
-      }).finally(() => { setPending(false) })
+      }).finally(() => { inFlight.current = false; setPending(false) })
     },
   }
 }
@@ -78,10 +83,24 @@ export function OpenPathAction(props: OpenPathActionProps): ReactNode {
   const { t } = props
   const [menuOpen, setMenuOpen] = useState(false)
   const { available, pending, toast, act } = usePathGesture(props)
+  const [association, setAssociation] = useState<{
+    path: string
+    apps: readonly SessionWorkspacePathApplication[] | null
+  } | null>(null)
+  useEffect(() => {
+    if (!available) return
+    const controller = new AbortController()
+    void props.applications(props.absolutePath, controller.signal).then((apps) => {
+      if (!controller.signal.aborted) setAssociation({ path: props.absolutePath, apps })
+    })
+    return () => { controller.abort() }
+  }, [available, props.absolutePath, props.applications, menuOpen])
+  const apps = association?.path === props.absolutePath ? association.apps : null
+  const preferred = apps?.find(app => app.default)
   if (!available) return null
-  const run = (action: OpenInAppPathAction): void => {
+  const run = (action: OpenInAppPathAction, application?: string): void => {
     setMenuOpen(false)
-    act(action)
+    act(action, application)
   }
   return (
     <>
@@ -95,9 +114,19 @@ export function OpenPathAction(props: OpenPathActionProps): ReactNode {
         onClose={() => { setMenuOpen(false) }}
         items={[
           { id: 'open', icon: <IconRightUpOutlineRegular />, label: t('path.defaultApp') },
+          ...(apps ?? []).map(app => ({
+            id: `app:${app.id}`,
+            icon: app.icon === null ? <IconRightUpOutlineRegular /> : <img src={app.icon} className={css.appIcon} alt="" />,
+            label: app.default ? t('path.appDefault', { app: app.name }) : app.name,
+          })),
+          ...(association?.path === props.absolutePath && apps === null
+            ? [{ id: 'unavailable', label: t('path.appsError'), disabled: true }] : []),
           { id: 'reveal', icon: <IconFolderOpenOutlineRegular />, label: t('path.reveal') },
         ]}
-        onSelect={(id) => { run(id === 'reveal' ? 'reveal' : 'open') }}
+        onSelect={(id) => {
+          if (id.startsWith('app:')) run('open', id.slice(4))
+          else if (id === 'open' || id === 'reveal') run(id)
+        }}
         anchor={(
           <div className={css.split} data-open-path data-state={pending ? 'busy' : 'idle'}>
             <Tooltip label={t('path.open.tooltip')} side="bottom" delayMs={500}>
@@ -108,6 +137,7 @@ export function OpenPathAction(props: OpenPathActionProps): ReactNode {
                 data-open-path-open
                 onClick={() => { run('open') }}
               >
+                {preferred?.icon != null && <img src={preferred.icon} className={css.appIcon} alt="" />}
                 {t('path.open')}
               </button>
             </Tooltip>

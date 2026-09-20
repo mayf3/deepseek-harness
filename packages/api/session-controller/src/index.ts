@@ -8,7 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
-import { canOpenNativePath, nativeFileManager, openNativeAssociatedPath, revealNativePath } from '@deepseek-ai/dsh-native-command'
+import { canOpenNativePath, nativeFileManager, nativeFileApplications, openNativeFileApplication, openNativeAssociatedPath, revealNativePath, type NativeFileApplication } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -83,6 +83,9 @@ export interface Config {
 export interface SessionControllerInternals {
   /** Native default-application handoff. */
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
+  /** Native file-association query and explicit application handoff. */
+  readonly fileApplications?: typeof nativeFileApplications
+  readonly openFileApplication?: typeof openNativeFileApplication
   /** Native file-manager handoff. */
   readonly revealPath?: (path: string, signal: AbortSignal) => Promise<void>
   /** Native handoff availability probe. */
@@ -115,6 +118,8 @@ export class SessionController extends TypertRemoteService {
   private readonly history: SessionHistoryController
   private readonly listState: ApiSessionList
   private readonly openPath: (path: string, signal: AbortSignal) => Promise<void>
+  private readonly fileApplications: typeof nativeFileApplications
+  private readonly openFileApplication: typeof openNativeFileApplication
   private readonly revealPath: (path: string, signal: AbortSignal) => Promise<void>
   private readonly canOpenPath: () => boolean
   private readonly promotions = new Set<Promise<void>>()
@@ -142,6 +147,8 @@ export class SessionController extends TypertRemoteService {
     }, 'session-controller.promotions')
     this.history = new SessionHistoryController(ctx, (observation) => { this.promote(observation) })
     this.listState = new ApiSessionList(ctx)
+    this.fileApplications = internals.fileApplications ?? nativeFileApplications
+    this.openFileApplication = internals.openFileApplication ?? openNativeFileApplication
     this.openPath = internals.openPath ?? openNativeAssociatedPath
     this.revealPath = internals.revealPath ?? revealNativePath
     this.canOpenPath = internals.canOpenPath
@@ -318,14 +325,9 @@ export class SessionController extends TypertRemoteService {
     }
     signal.throwIfAborted()
     try {
-      const hostPath = resolve(request.path)
-      const { fs } = this.ctx
-      const mapped = fs.processPathFromHostPath(hostPath)
-      if (mapped === undefined || fs.processPath(await fs.resolve(mapped, { signal })) !== hostPath) {
-        throw new Error('Path has no verified Host path')
-      }
-      signal.throwIfAborted()
+      await this.verifyDesktopPath(request.path, signal)
       if (request.action === 'reveal') await this.revealPath(request.path, signal)
+      else if (request.application !== undefined) await this.openFileApplication(resolve(request.path), request.application, signal)
       else await this.openPath(request.path, signal)
       return { opened: true }
     } catch (error: unknown) {
@@ -336,6 +338,33 @@ export class SessionController extends TypertRemoteService {
         {},
       )
     }
+  }
+
+  /**
+   * Query current file handlers on the serving desktop without activating an Agent.
+   * @param request - file path in Host filesystem syntax.
+   * @param signal - caller lifetime, propagated to filesystem and desktop queries.
+   * @returns OS application names, icons, and default selection; empty when desktop opening is unavailable.
+   */
+  @Remote('workspacePathApplications')
+  async workspacePathApplications(
+    request: { readonly path: string }, signal: AbortSignal,
+  ): Promise<readonly NativeFileApplication[]> {
+    if (!this.canOpenPath()) return []
+    await this.verifyDesktopPath(request.path, signal)
+    return this.fileApplications(resolve(request.path), signal)
+  }
+
+  private async verifyDesktopPath(path: string, signal: AbortSignal): Promise<void> {
+    if (path.length === 0) throw new RemoteError('gateway/bad-request', 'A non-empty file path is required', {})
+    signal.throwIfAborted()
+    const hostPath = resolve(path)
+    const { fs } = this.ctx
+    const mapped = fs.processPathFromHostPath(hostPath)
+    if (mapped === undefined || fs.processPath(await fs.resolve(mapped, { signal })) !== hostPath) {
+      throw new RemoteError('gateway/bad-request', 'Path has no verified Host path', {})
+    }
+    signal.throwIfAborted()
   }
 
   /**

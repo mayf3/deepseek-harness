@@ -33,6 +33,7 @@
 }
 
 .main {
+  gap: 4px;
   padding: 5px 8px 5px 10px;
 }
 
@@ -53,4 +54,10 @@
 .main:disabled,
 .chevron:disabled {
   cursor: default;
+}
+
+.appIcon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
 }

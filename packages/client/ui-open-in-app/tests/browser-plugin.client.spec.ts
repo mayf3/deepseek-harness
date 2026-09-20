@@ -24,6 +24,7 @@ afterEach(() => {
 /** The Session Remote slice the path controls call; answers a desktop and acknowledges every gesture. */
 const remote = {
   session: {
+    workspacePathApplications: vi.fn(async () => ({ ok: true as const, value: [] })),
     canOpenWorkspacePath: vi.fn(async () => ({ ok: true as const, value: true })),
     openWorkspacePath: vi.fn(async () => ({ ok: true as const, value: { opened: true as const } })),
   },
