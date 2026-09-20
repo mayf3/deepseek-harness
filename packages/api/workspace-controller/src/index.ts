@@ -61,7 +61,10 @@ export class WorkspaceController extends TypertRemoteService {
   private readonly commands: WorkspaceCommands
   private readonly feed: WorkspaceFeed
 
-  /** @param ctx - Host context containing the Workspace registry. @param config - first-use directory policy. */
+  /**
+   * @param ctx - Host context containing the Workspace registry.
+   * @param config - first-use directory policy.
+   */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'workspaceController', { namespace: 'workspace' })
     this.config = WorkspaceController.Config(config)
