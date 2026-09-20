@@ -12990,6 +12990,9 @@ importers:
       '@deepseek-ai/cosmokit':
         specifier: link:../cosmokit
         version: link:../cosmokit
+      '@deepseek-ai/schemastery':
+        specifier: link:../schemastery
+        version: link:../schemastery
       node-addon-require-builtin:
         specifier: ^0.1.6
         version: 0.1.6
