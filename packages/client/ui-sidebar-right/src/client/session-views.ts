@@ -73,7 +73,6 @@ export class SidebarSessionViews {
   }
 
   private publish(): void {
-    if (this.closed) return
     this.source.set([...this.views.values()].sort((a, b) => a.sessionId.localeCompare(b.sessionId)).map(view => ({
       sessionId: view.sessionId, reference: view.reference, selected: view.sessionId === this.selected, retainTab: view.retainTab,
     })))

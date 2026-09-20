@@ -17,6 +17,9 @@ describe('IframeImpl', () => {
     const listener = vi.fn()
     const unsubscribe = frame.subscribe(listener)
     try {
+      frame.handleLoaded(0)
+      expect(frame.getSnapshot().address).toBe('empty')
+      frame.sandbox.setEnabled(false)
       frame.sandbox.setEnabled(false)
       expect(frame.getSnapshot().sandboxEnabled).toBe(false)
       expect(frame.getSnapshot().target).toBeUndefined()
@@ -43,6 +46,10 @@ describe('IframeImpl', () => {
       frame.handleLoadFailed(2)
       frame.handleLoaded(2)
       frame.reload()
+      frame.loadUrl(target)
+      frame.goBack()
+      frame.goForward()
+      frame.sandbox.setEnabled(true)
       expect(frame.getSnapshot()).toBe(stopped)
     } finally {
       unsubscribe()

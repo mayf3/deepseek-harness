@@ -46,23 +46,24 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
   const host = useRef<HTMLElement | null>(null)
   const body = useRef<HTMLDivElement | null>(null)
   useLayoutEffect(() => {
-    if (host.current !== null) host.current.inert = !visible
+    // Both refs target unconditional descendants attached before these effects.
+    const section = host.current as HTMLElement
+    section.inert = !visible
     const focused = document.activeElement
-    if (!visible && focused instanceof HTMLElement && host.current?.contains(focused)) focused.blur()
+    if (!visible && focused instanceof HTMLElement && section.contains(focused)) focused.blur()
     const request = focusRequest.current
     if (!visible || request?.tabId !== tab.id) return
     focusRequest.current = undefined
     // Preserve deliberate focus taken by another control or the newly shown body.
     if (focused !== null && focused !== document.body && focused !== document.documentElement && focused !== request.origin) return
-    const strip = host.current?.querySelector('[data-dockkit-strip]')
+    const strip = section.querySelector('[data-dockkit-strip]')
     const chip = [...strip?.querySelectorAll<HTMLElement>('[data-dockkit-tab]') ?? []]
       .find(element => element.dataset.dockkitTab === tab.id)
     chip?.focus({ preventScroll: true })
   }, [visible, tab.id, focusRequest])
   // Electron emits a non-bubbling focus event on the webview element.
   useEffect(() => {
-    const element = body.current
-    if (element === null) return
+    const element = body.current as HTMLDivElement
     const focus = (): void => {
       if (!visible) return
       if (floating) floats.raise(pane.id)

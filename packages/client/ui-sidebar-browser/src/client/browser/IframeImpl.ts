@@ -78,9 +78,7 @@ export class IframeImpl implements BrowserFrame {
       this.store.set({ ...this.store.getSnapshot(), sandboxEnabled: enabled })
       return
     }
-    const request = this.navigation.reload()
-    if (request === undefined) this.publish()
-    else this.load(request)
+    this.load(this.navigation.reload())
   }
 
   private load(request: ReturnType<BrowserNavigation['navigate']> | undefined): void {

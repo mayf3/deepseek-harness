@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PaneId, TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -11,6 +11,10 @@ import { BrowserBody } from '../src/client/view/BrowserBody.tsx'
 import { WEB_BROWSER_SANDBOX } from '../src/client/view/IframePresentation.ts'
 import { createIframePage } from '../src/client/pages.ts'
 import { zh } from '../src/client/locales.ts'
+import { browserAddressCheckpoint, type BrowserTabState } from '../src/client/browser/BrowserPersistence.ts'
+import type { BrowserPageFactory, BrowserPageOptions } from '../src/client/browser/BrowserPage.ts'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { emptyBrowserFrame, type BrowserFrameState } from '../src/client/browser/BrowserFrame.ts'
 
 const SESSION = 'session' as SessionId
 const TAB = 'tab' as TabId
@@ -33,11 +37,13 @@ const absentState = {
   getSnapshot: (): BrowserControllerState | undefined => undefined,
 }
 
-function mountBrowser(navigation?: { readonly url?: string }) {
+function mountBrowser(navigation?: { readonly url?: string },
+  options: { initial?: BrowserTabState; createPage?: BrowserPageFactory } = {}) {
   const store = createBrowserStore().create(`browser-body-test-${String(++mountSequence)}`)
+  if (options.initial !== undefined) store.actions.replace(TAB, options.initial)
   const lifetime = new AbortController()
   lifetimes.add(lifetime)
-  const injected = createBrowserControllers(store.actions, createIframePage, () => true)
+  const injected = createBrowserControllers(store.actions, options.createPage ?? createIframePage, () => true)
   controllers.push(injected)
   const { keyedHooks, ...commands } = injected
   const tabActions = { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn() }
@@ -67,7 +73,7 @@ function mountBrowser(navigation?: { readonly url?: string }) {
     }
   const renderBody = () => render(<BrowserBody {...props as BrowserBodyProps} />)
   return {
-    view: renderBody(), remount: renderBody, store, lifetime, injected,
+    view: renderBody(), remount: renderBody, store, lifetime, injected, tabActions,
   }
 }
 
@@ -81,6 +87,39 @@ afterEach(async () => {
 })
 
 describe('BrowserBody', () => {
+  it('shows the saved title and URL without loading until Restore is clicked', async () => {
+    const target = { kind: 'https' as const, url: 'https://saved.example/page', title: 'Saved title' }
+    const mounted = mountBrowser(undefined, { initial: browserAddressCheckpoint(target, 1) })
+    expect(mounted.view.getByText(target.title)).toBeDefined()
+    expect(mounted.view.getByText(target.url)).toBeDefined()
+    expect(mounted.view.container.querySelector('iframe')).toBeNull()
+    expect(mounted.view.getByRole('button', { name: zh.reload })).toHaveProperty('disabled', false)
+    fireEvent.click(mounted.view.getByRole('button', { name: zh['restore.action'] }))
+    await waitFor(() => { expect(mounted.view.container.querySelector('iframe')?.src).toBe(target.url) })
+    expect(mounted.view.queryByText(target.title)).toBeNull()
+  })
+
+  it('renders native error details and routes provider open requests through the source tab', () => {
+    const state = createSnapshotStore<BrowserFrameState>({ ...emptyBrowserFrame(), error: { code: -105, description: 'DNS failure' } })
+    const providers: BrowserPageOptions[] = []
+    const mounted = mountBrowser(undefined, { createPage: (options) => {
+      providers.push(options)
+      return {
+        presentation: { mount: () => () => {} },
+        frame: { getSnapshot: () => state.getSnapshot(), subscribe: listener => state.subscribe(listener),
+          loadUrl: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn(), dispose: async () => {} },
+      }
+    } })
+    expect(mounted.view.getByRole('status').textContent).toContain('DNS failure')
+    expect(mounted.view.getByRole('status').textContent).toContain('-105')
+    act(() => { state.set({ ...state.getSnapshot(), error: { code: -105, description: undefined } }) })
+    expect(mounted.view.getByRole('status').textContent).toBe(zh['load.failed'])
+    act(() => { providers[0]!.openRequested('https://new.example/') })
+    expect(mounted.tabActions.openTab).toHaveBeenCalledExactlyOnceWith('browser', {
+      params: { url: 'https://new.example/' }, revealIfOpened: false,
+    })
+  })
+
   it('routes address input to the controller and renders parser failures', async () => {
     const mounted = mountBrowser()
     const input = mounted.view.getByRole('textbox')

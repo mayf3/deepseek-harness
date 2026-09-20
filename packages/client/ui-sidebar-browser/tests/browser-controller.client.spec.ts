@@ -4,6 +4,10 @@ import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { BrowserController, createBrowserControllers } from '../src/client/browser/BrowserController.ts'
 import { createBrowserStore } from '../src/client/browser/store.ts'
 import { createIframePage } from '../src/client/pages.ts'
+import type { BrowserPageFactory, BrowserPageOptions } from '../src/client/browser/BrowserPage.ts'
+import { browserAddressCheckpoint } from '../src/client/browser/BrowserPersistence.ts'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { emptyBrowserFrame, type BrowserFrameState } from '../src/client/browser/BrowserFrame.ts'
 
 const TAB = 'tab' as TabId
 const APP = 'https://dsh.example'
@@ -50,6 +54,91 @@ afterEach(async () => {
 })
 
 describe('BrowserController', () => {
+  it('restores only on request and redirects saved checkpoints to a replacement binding', () => {
+    const h = harness()
+    const saved = browserAddressCheckpoint({ kind: 'https', url: 'https://saved.example/', title: 'Saved page' }, 2)
+    h.store.actions.replace(TAB, saved)
+    const tabLifetime = lifetime()
+    h.mount(tabLifetime.signal)
+    const state = h.face.keyedHooks.browserState(TAB)!
+    expect(state.getSnapshot().restoreTarget?.title).toBe('Saved page')
+    expect(state.getSnapshot().frame.target).toBeUndefined()
+    const rebound = createBrowserStore().create('rebound-browser-controller')
+    h.face.rebind(rebound.actions)
+    h.mount(tabLifetime.signal)
+    expect(rebound.getSnapshot().byTab[TAB]).toEqual(saved)
+    h.face.restore(TAB)
+    expect(h.iframe().src).toBe('https://saved.example/')
+    h.face.restore(TAB)
+    h.face.loadUrl(TAB, 'https://next.example/')
+    expect(rebound.getSnapshot().byTab[TAB]?.entries.at(-1)?.url).toBe('https://next.example/')
+    expect(h.store.getSnapshot().byTab[TAB]).toEqual(saved)
+    tabLifetime.abort()
+    expect(rebound.getSnapshot().byTab[TAB]).toBeDefined()
+    h.face.restore(TAB)
+    h.face.setSandbox(TAB, false)
+    h.mount(tabLifetime.signal)()
+    expect(h.face.keyedHooks.browserState(TAB)).toBeUndefined()
+  })
+
+  it('refresh restores a saved page and ignores cancellation from a retired physical mount', () => {
+    const h = harness()
+    h.store.actions.replace(TAB, browserAddressCheckpoint({ kind: 'https', url: 'https://saved.example/', title: 'Saved' }, 1))
+    const tabLifetime = lifetime()
+    const oldMount = h.mount(tabLifetime.signal)
+    h.face.reload(TAB)
+    const secondHost = document.createElement('div')
+    secondHost.id = 'replacement-browser-host'
+    document.body.append(secondHost)
+    hosts.push(secondHost)
+    h.face.mount({ tabId: TAB, signal: tabLifetime.signal, viewportId: secondHost.id,
+      applicationOrigin: APP, initial: undefined, initialUrl: undefined, openTab: vi.fn() })
+    oldMount()
+    expect(secondHost.querySelector('iframe')?.src).toBe('https://saved.example/')
+    expect(() => h.face.mount({ tabId: TAB, signal: tabLifetime.signal, viewportId: 'missing-browser-host',
+      applicationOrigin: APP, initial: undefined, initialUrl: undefined, openTab: vi.fn() })).toThrow('not mounted')
+  })
+
+  it('validates provider open requests and ignores late provider callbacks after disposal', async () => {
+    const saved = browserAddressCheckpoint({ kind: 'https', url: 'https://saved.example/', title: 'Saved' }, 1)
+    const frames = createSnapshotStore<BrowserFrameState>(emptyBrowserFrame())
+    const callbacks: BrowserPageOptions[] = []
+    const pendingNotifications: (() => void)[] = []
+    const pageFactory: BrowserPageFactory = (options) => {
+      callbacks.push(options)
+      return {
+        frame: { getSnapshot: () => frames.getSnapshot(), subscribe: (listener) => {
+          pendingNotifications.push(listener)
+          return frames.subscribe(listener)
+        }, loadUrl: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn(), dispose: async () => {} },
+        presentation: { mount: () => () => {}, dispose: () => {} },
+      }
+    }
+    const store = createBrowserStore().create('provider-callbacks')
+    const openTab = vi.fn()
+    const controller = new BrowserController({ tabId: TAB, signal: lifetime().signal, applicationOrigin: APP,
+      actions: store.actions, initial: saved, createPage: pageFactory, openTab })
+    disposables.push(controller)
+    const provider = callbacks[0]!
+    provider.openRequested('file:/secret')
+    expect(controller.getSnapshot().addressFailure).toBe('protocol')
+    provider.openRequested('https://new.example/path')
+    expect(openTab).toHaveBeenCalledExactlyOnceWith('https://new.example/path')
+    controller.setSandbox(false)
+    frames.set({ ...emptyBrowserFrame(), loading: true })
+    expect(controller.getSnapshot().restoreTarget?.title).toBe('Saved')
+    expect(controller.getSnapshot().addressFailure).toBe('protocol')
+    const before = controller.getSnapshot()
+    await controller.dispose()
+    controller.start('https://ignored.example/')
+    provider.persist(saved)
+    provider.openRequested('https://ignored.example/')
+    for (const notify of pendingNotifications) notify()
+    expect(controller.getSnapshot()).toBe(before)
+    expect(store.getSnapshot().byTab[TAB]).toBeUndefined()
+    expect(openTab).toHaveBeenCalledOnce()
+  })
+
   it('ignores navigation commands after its tab occurrence ends', async () => {
     const store = createBrowserStore().create('browser-controller-ended-test')
     const tabLifetime = lifetime()

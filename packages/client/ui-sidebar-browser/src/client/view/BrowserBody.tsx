@@ -94,7 +94,7 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
           <button type="submit" className={[css.tool, css.addressGo].join(' ')} aria-label={t('go')} title={t('go')}><IconLinkOutlineRegular /></button>
         </div>
         <button type="button" className={css.tool} aria-label={t('external')} title={t('external')} disabled={externalUrl === undefined}
-          onClick={() => { if (externalUrl !== undefined) window.open(externalUrl, '_blank', 'noopener,noreferrer') }}
+          onClick={externalUrl === undefined ? undefined : () => { window.open(externalUrl, '_blank', 'noopener,noreferrer') }}
         ><IconRightUpOutlineRegular size={14} /></button>
         {sandboxed !== undefined && <button
           type="button"

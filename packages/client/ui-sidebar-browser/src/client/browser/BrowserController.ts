@@ -233,7 +233,6 @@ export function createBrowserControllers(actions: BoundActions<BrowserStore>, cr
         }
         const created = new BrowserController({ ...request, actions: currentActions, createPage })
         const forget = (): void => {
-          if (controllers.get(tabId)?.controller !== created) return
           controllers.delete(tabId)
           // Plugin unload also aborts occurrences; only layout removal deletes saved navigation.
           if (!isTabOpen(tabId)) currentActions.forget(tabId)
