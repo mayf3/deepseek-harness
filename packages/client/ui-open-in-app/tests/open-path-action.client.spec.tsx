@@ -160,3 +160,29 @@ it('shows the default icon and current application list, and selects an applicat
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.open'] })) })
   expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open', undefined)
 })
+
+
+it('ignores an obsolete file query and refreshes the default application when the menu opens', async () => {
+  const b = bench()
+  const old = Promise.withResolvers<readonly { id: string; name: string; default: boolean; icon: null }[]>()
+  const applications = vi.fn<OpenPathActionProps['applications']>()
+    .mockImplementationOnce(() => old.promise)
+    .mockResolvedValue([{ id: '/Player.app', name: 'Player', default: true, icon: null }])
+  const view = render(<OpenPathAction {...b.props} applications={applications} />)
+  view.rerender(<OpenPathAction {...b.props} absolutePath="/other.mp3" applications={applications} />)
+  await act(async () => { old.resolve([{ id: '/Old.app', name: 'Old', default: true, icon: null }]) })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.more'] })) })
+  expect(screen.queryByRole('menuitem', { name: 'Old（默认）' })).toBeNull()
+  expect(screen.getByRole('menuitem', { name: 'Player（默认）' })).toBeTruthy()
+  expect(applications.mock.calls[0]![1].aborted).toBe(true)
+  expect(applications).toHaveBeenLastCalledWith('/other.mp3', expect.any(AbortSignal))
+})
+
+it('keeps default opening available when application discovery fails', async () => {
+  const b = bench()
+  render(<OpenPathAction {...b.props} applications={async () => null} />)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.more'] })) })
+  expect(screen.getByRole('menuitem', { name: zh['path.appsError'] }).getAttribute('aria-disabled')).toBe('true')
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: zh['path.defaultApp'] })) })
+  expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open', undefined)
+})
