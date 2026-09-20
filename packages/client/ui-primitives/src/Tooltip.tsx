@@ -4,6 +4,7 @@
 import { cloneElement, createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FocusEventHandler, MouseEventHandler, MutableRefObject, ReactElement, Ref } from 'react'
 import css from './Tooltip.module.css'
+import { pointerModality } from './input-modality.ts'
 
 /** Bubble placement relative to the anchor. */
 export type TooltipSide = 'right' | 'bottom' | 'top'
@@ -26,18 +27,6 @@ interface AnchorProps {
 }
 
 type TooltipLabel = string | (() => string)
-
-// Focus alone cannot reveal how it arrived: a closing menu hands focus back to
-// its trigger, and after a mouse selection that programmatic return must not
-// raise the trigger's bubble, while keyboard focus must. Capture-phase window
-// listeners record the last input modality for every Tooltip. The guard keeps
-// the module loadable where no window exists (node-side imports of the
-// package's pure helpers).
-let pointerModality = false
-if (typeof window !== 'undefined') {
-  window.addEventListener('pointerdown', () => { pointerModality = true }, true)
-  window.addEventListener('keydown', () => { pointerModality = false }, true)
-}
 
 /**
  * Attach a hover/focus tooltip to an anchor element.
@@ -194,7 +183,7 @@ export function Tooltip({ label, side = 'right', align = 'center', delayMs = 0, 
         // what the anchor now does (pin → unpin), and the click leaves the
         // anchor focused, which would otherwise pin the relabelled bubble up.
         onClick: (e) => { children.props.onClick?.(e); triggers.current.focus = false; cancelShow(); withdraw() },
-        onFocus: (e) => { children.props.onFocus?.(e); if (pointerModality) return; triggers.current.focus = true; cancelShow(); show() },
+        onFocus: (e) => { children.props.onFocus?.(e); if (pointerModality()) return; triggers.current.focus = true; cancelShow(); show() },
         onBlur: (e) => { children.props.onBlur?.(e); triggers.current.focus = false; hide() },
       })}
       {visible && !suppressed && (

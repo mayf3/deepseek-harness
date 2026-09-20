@@ -6,3 +6,12 @@
 :focus-visible {
   outline-color: var(--dsw-alias-brand-primary);
 }
+
+/* A pointer keeps its focus silent. Clicking a control leaves it focused with no
+ * visible ring, and a later stray key — a modifier, Escape, a typed character —
+ * must not be the moment that ring appears; the user never navigated there.
+ * Only focus navigation publishes the keyboard modality that reveals a ring
+ * again. Controls that own a ring keep their own colour and stay unaffected. */
+html[data-input-modality='pointer'] :focus-visible {
+  outline-color: transparent;
+}
