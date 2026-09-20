@@ -42,6 +42,7 @@ function openProps(controller = new PresentedOpenController(), summaries = new C
   controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
   const sessions: SessionListState = { ids: [], byId: {}, phase: 'ready', projectionsBySession: {}, jobsBySession: {} }
   return {
+    SessionProvider: ({ children }: { children?: import('react').ReactNode }) => <>{children}</>,
     renderSlot: renderFileActions,
     useShowCodeDiff: <T,>(select: (value: boolean) => T): T => select(true),
     useSessions: <T,>(select: (state: SessionListState) => T): T => select(sessions),
