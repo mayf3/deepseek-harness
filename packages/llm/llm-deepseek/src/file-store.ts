@@ -7,7 +7,6 @@ import type { DeepSeekFileId } from './file-id.ts'
 import { messagesApiRoot } from './messages-api.ts'
 import { deepSeekFileScope, DeepSeekUploadIndex } from './upload-index.ts'
 import type { DeepSeekUploadRecord } from './upload-index.ts'
-import type { DeepSeekProtocol } from './types.ts'
 
 /** Shared Files-store limit for each request image, including file-id references. */
 export const MAX_IMAGE_BYTES = 32 * 1024 * 1024
@@ -24,8 +23,6 @@ export interface DeepSeekFilePolicy {
 export interface DeepSeekFileConnection {
   baseURL: string
   apiKey: string
-  /** Files wire protocol selected by the resolved connection. */
-  protocol: DeepSeekProtocol
 }
 
 /** Result of one file-id resolution. */
@@ -47,10 +44,10 @@ interface SharedUpload {
   waiters: number
 }
 
-/** The Files resource's parent URL distinguishes custom protocol namespaces. */
+/** The Files resource's parent URL identifies the upload namespace. */
 function fileScope(connection: DeepSeekFileConnection) {
   return deepSeekFileScope(
-    connection.protocol === 'messages' ? messagesApiRoot(connection.baseURL) : connection.baseURL,
+    messagesApiRoot(connection.baseURL),
     connection.apiKey,
   )
 }
@@ -139,7 +136,6 @@ export class DeepSeekFileStore {
     return new DeepSeekFilesClient({
       baseURL: connection.baseURL,
       apiKey: connection.apiKey,
-      protocol: connection.protocol,
       ...this.fetchImpl === undefined ? {} : { fetch: this.fetchImpl },
     })
   }
@@ -306,23 +302,19 @@ export class DeepSeekFileStore {
     const client = this.client(connection)
     let after: DeepSeekFileId | undefined
     const owned: { id: DeepSeekFileId; createdAt: number }[] = []
-    while (connection.protocol === 'messages' || owned.length < count) {
+    while (true) {
       const page = await client.list({
         ...after === undefined ? {} : { after },
         limit: 1_000,
-        order: 'asc',
         ...signal === undefined ? {} : { signal },
       })
       for (const file of page.data) {
         if (!file.filename.startsWith(OWNED_FILE_PREFIX)) continue
         owned.push({ id: file.id, createdAt: file.createdAt })
-        if (connection.protocol === 'chat-completions' && owned.length === count) break
       }
-      if (connection.protocol === 'messages') {
-        // Messages offers no ascending-order query; retain the oldest candidates across every page.
-        owned.sort((left, right) => left.createdAt - right.createdAt)
-        owned.splice(count)
-      }
+      // The API offers no ascending-order query; retain the oldest candidates across every page.
+      owned.sort((left, right) => left.createdAt - right.createdAt)
+      owned.splice(count)
       if (!page.hasMore || page.lastId === undefined || page.lastId === after) break
       after = page.lastId
     }

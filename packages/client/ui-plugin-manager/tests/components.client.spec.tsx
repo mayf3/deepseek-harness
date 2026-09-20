@@ -101,20 +101,31 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     setRowEnabled: vi.fn(),
     dismissNotice: vi.fn(),
   }
-  const renderSlot: PluginManagerPageProps['renderSlot'] = (name, owner, opts) => {
-    if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
-      throw new Error('Configuration slot requires a summary or page view')
-    }
-    return bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]?.(owner.view) ?? null
+  const unusedStandardHook = (): never => { throw new Error('Plugin manager fixture does not provide global state') }
+  const standard = {
+    usePanelInfo: unusedStandardHook,
+    useWorkspaces: unusedStandardHook,
+    useSessions: unusedStandardHook,
+    useSessionStatus: unusedStandardHook,
+    useSessionRetainInfo: unusedStandardHook,
+    useResource: unusedStandardHook,
   }
-  const props = {
+  const props: PluginManagerPageProps = {
+    ...standard,
     t,
     resolveText,
     ...actions,
     usePluginManager: bindSnapshotSelector(store),
     useConfigLedger: bindSnapshotSelector(ledger),
-    renderSlot,
-  } as PluginManagerPageProps
+    renderSlot: (name, owner, opts) => {
+      const body = bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]
+      if (body === undefined) return null
+      if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
+        throw new Error('Plugin configuration fixture requires a summary or page view')
+      }
+      return body(owner.view)
+    },
+  }
   const { rerender } = render(<PluginManagerPage {...props} />)
   return {
     store,

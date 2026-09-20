@@ -56,9 +56,9 @@ function validateReplay(message: Message, model: string): ReplayBlock[] | undefi
   const blocks = envelope.blocks.map((value, index): ReplayBlock => {
     const block = object(value, 'INVALID_REPLAY_STATE')
     if (block.type !== message.content[index]?.type
-      || !['text', 'reasoning', 'tool-call'].includes(String(block.type))) return fail('block type mismatch')
+      || (block.type !== 'text' && block.type !== 'reasoning' && block.type !== 'tool-call')) return fail('block type mismatch')
     if (block.signature !== undefined && (block.type !== 'reasoning' || typeof block.signature !== 'string')) return fail('invalid signature')
-    return block as unknown as ReplayBlock
+    return { type: block.type, ...typeof block.signature === 'string' ? { signature: block.signature } : {} }
   })
   return response.model === model ? blocks : undefined
 }

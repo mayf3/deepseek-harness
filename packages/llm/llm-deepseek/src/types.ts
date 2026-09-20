@@ -1,13 +1,10 @@
-/** Shared catalog and request-local dependencies for DeepSeek protocols. */
+/** Model catalog and request-local dependencies for DeepSeek Messages. */
 import type { ModelModality, SystemPromptUpdate, ResolvedRetryPolicy, ImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import type { DeepSeekLlmApiExtensionRequest, PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import type { DeepSeekFileStore, DeepSeekFilePolicy } from './file-store.ts'
-
-/** Supported wire implementations; Responses is not yet implemented. */
-export type DeepSeekProtocol = 'chat-completions' | 'messages'
 
 /** One optional model entry advertised by the direct-fetch adapter. */
 export interface DeepSeekCatalogModel {
@@ -46,9 +43,7 @@ export interface DeepSeekCatalogModel {
  * makes a configuration change reach the next request without re-registration.
  */
 export interface DeepSeekConnectionOptions {
-  /** Wire protocol selected by plugin configuration. */
-  protocol: DeepSeekProtocol
-  /** Root compatible with the selected protocol; custom paths remain unchanged. */
+  /** Messages API root; custom paths remain unchanged. */
   baseURL: string
   /**
    * Credential reference of this same resolution, resolved per request.
@@ -94,7 +89,7 @@ export interface DeepSeekAdapterOptions {
   /** Current validated connection facts; called once per operation. */
   options: () => DeepSeekConnectionOptions
   /**
-   * Resolve the bearer token for the connection facts of one request. The
+   * Resolve the API key for the connection facts of one request. The
    * snapshot is passed in — never re-read — so the key can only ever come
    * from the same resolution as the endpoint it is sent to. Throws `LlmError`
    * `MISSING_CREDENTIAL` when no key is available anywhere.

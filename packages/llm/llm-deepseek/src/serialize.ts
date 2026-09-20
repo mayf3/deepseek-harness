@@ -3,10 +3,10 @@
 import { LlmError, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message, RequestMessage } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
-import type { DeepSeekConnectionOptions as Connection } from '../../common/types.ts'
-import type { DeepSeekFileId } from '../../common/file-id.ts'
+import type { DeepSeekConnectionOptions as Connection } from './types.ts'
+import type { DeepSeekFileId } from './file-id.ts'
 import { readReplay } from './replay.ts'
-import type { WireBlock, WireInput, WireMessage, WireRequest } from './types.ts'
+import type { WireBlock, WireInput, WireMessage, WireRequest } from './wire-types.ts'
 
 function unsupported(type: string): never {
   throw new LlmError(`DeepSeek Messages cannot represent ${type}`, 'UNSUPPORTED_CONTENT')

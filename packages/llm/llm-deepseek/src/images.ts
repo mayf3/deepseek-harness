@@ -3,12 +3,12 @@
 import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { contentHasImage, IMAGE_OFFLOAD_REQUIRED_CODE, LlmError, offloadedImageText, projectOffloadedImages, requiredImageOffload } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ImageAttachmentAccessResolver, RequestMessage } from '@deepseek-ai/dsh-llm'
-import type { DeepSeekConnectionOptions as Connection } from '../../common/types.ts'
-import { resolveRequestImageTarget } from '../../common/request-pricing.ts'
-import type { DeepSeekFileId } from '../../common/file-id.ts'
-import type { RequestFiles } from '../../common/request-files.ts'
+import type { DeepSeekConnectionOptions as Connection } from './types.ts'
+import { resolveRequestImageTarget } from './request-pricing.ts'
+import type { DeepSeekFileId } from './file-id.ts'
+import type { RequestFiles } from './request-files.ts'
 
-export { deepSeekImageRequestPricing as imagePricing } from '../../common/request-pricing.ts'
+export { deepSeekImageRequestPricing as imagePricing } from './request-pricing.ts'
 
 function bounds(connection: Connection, representation: 'raw' | 'base64') {
   return {

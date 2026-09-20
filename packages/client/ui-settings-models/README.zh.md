@@ -37,7 +37,7 @@ kind: "package-reference"
 
 收起的「自定义设置」折叠区承载精选的额外字段：两个家族都有 `baseURL`（deepseek 的占位符显示公共端点）、各适配器自己的模型目录，以及适配器未提供的 pi-ai 路由的**显示名称**与 **API 协议**。Profile `headers` 仍是 `settings.yaml` 或 Cordis 配置中的部署配置，Models 页面不提供编辑器。Provider ID 保持固定：它是 settings 的键、其他每个 namespace 与每一条已记录会话引用的名字，也是页面读不回、因而搬不走的凭据引用词干。推理等级刻意不在可编辑字段之列：它是按模型的能力，提供方级的控件只可能被设成某些模型会拒绝的值。每个模型行可编辑 `id`、可选显示 `name`、可选 `contextWindow`/`maxTokens` 和输入类型；无关的模型字段在编辑后仍会保留。
 
-`llm-deepseek` 的 DeepSeek 卡片编辑共用的端点、凭据和模型目录，不提供协议选择器。Cordis YAML 选择 Messages 时，官方端点占位符为 `https://api.deepseek.com/anthropic`；保存卡片不会改写协议配置。
+`llm-deepseek` 的 DeepSeek 卡片编辑端点、凭据和模型目录。它使用 Messages，默认端点占位符为 `https://api.deepseek.com/anthropic`。
 
 展开**自定义设置 → 模型选项**编辑模型。两个提供方家族共用相同的模型行布局、标签和图标：上下文窗口与最大输出 token 数分为两列，**输入类型**独占下一行，提供**文本**和**图片**复选框。未声明输入类型的模型行优先显示已安装模型的输入类型，其次是提供方默认值，最后回退为文本。已知 pi-ai 提供方会加载已安装目录，不向端点发送请求；打开模型行不会写入覆盖值。显式输入选择具有优先权，包括为视觉模型设置的仅文本覆盖。修改复选框会保存所选类型，且至少保留一种。DeepSeek 写入 `inputModalities`，pi-ai 写入 `input`。DeepSeek 取消勾选图片时，还会移除 `imagePixelBudget` 和 `imageMaxBytes`，因为适配器在没有图片输入时拒绝这些限制。在 `settings.yaml` 中清除输入字段可恢复适配器继承；**恢复默认模型**会重置整个模型目录覆盖。仅声明上游模型实际能够处理的输入类型。
 

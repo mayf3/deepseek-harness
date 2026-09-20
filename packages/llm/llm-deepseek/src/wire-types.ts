@@ -13,13 +13,13 @@ export type WireBlock = WireInput
   | { type: 'tool_result'; tool_use_id: string; content: WireInput[]; is_error?: boolean }
 
 /** Conversation turn; capable routes retain later system updates in message history. */
-export interface WireMessage {
+export type WireMessage = {
   role: 'user' | 'assistant' | 'system'
   content: WireBlock[]
 }
 
 /** JSON body submitted to the resolved Messages endpoint. */
-export interface WireRequest {
+export type WireRequest = {
   model: string
   stream: true
   max_tokens: number
