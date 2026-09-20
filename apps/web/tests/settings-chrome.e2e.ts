@@ -722,10 +722,31 @@ describe('web e2e: settings modal and General preferences', () => {
     }
   }, 90_000)
 
+  it('hides link-opening settings when the built-in browser is disabled', async () => {
+    const fresh = await launchWebScaffold({
+      developerTools: false,
+      extraOverlayPath: fileURLToPath(new URL('./no-sidebar-browser.overlay.yml', import.meta.url)),
+    })
+    onTestFinished(() => fresh.close())
+    const withoutBrowser = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
+    onTestFinished(() => withoutBrowser.close())
+    const browserConsole = watchConsole(withoutBrowser)
+    await withoutBrowser.goto(fresh.authenticatedUrl, { waitUntil: 'load' })
+    await withoutBrowser.getByRole('button', { name: 'Settings', exact: true }).click()
+    const dialog = withoutBrowser.getByRole('dialog', { name: 'Settings' })
+    await dialog.getByRole('button', { name: 'Detailed', exact: true }).waitFor()
+    expect(await dialog.getByText('Open chat links in', { exact: true }).count()).toBe(0)
+    const snapshot = await captureStableAria(withoutBrowser, '[role="dialog"]', fresh.workspaceCwd)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'dialog-no-browser.expected.md'), snapshot, MODE)
+    expect(browserConsole.pageErrors).toEqual([])
+    expect(browserConsole.warnings).toEqual([])
+  })
+
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'dialog-en.expected.md',
+      'dialog-no-browser.expected.md',
       'dialog.expected.md',
       'plugin-instances.expected.md',
       'plugins.expected.md',

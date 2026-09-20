@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-browser/client'
@@ -34,7 +34,8 @@ import { en, NS, zh } from './locale.ts'
 import { TranscriptViewRow, type TranscriptViewRowInjected } from './settings/TranscriptViewRow.tsx'
 import { createChatStore } from './stores.ts'
 import { TranscriptViewPolicy } from './transcript-view.ts'
-import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../chat-settings.ts'
+import { CHAT_SETTINGS_NAMESPACE, DEFAULT_LINK_OPENING, type ChatSettings } from '../chat-settings.ts'
+import { LinkOpeningRow, type LinkOpeningRowInjected } from './settings/LinkOpeningRow.tsx'
 import { PerformanceUsageRow, type PerformanceUsageRowInjected } from './settings/PerformanceUsageRow.tsx'
 import { PerformanceUsagePolicy } from './performance-usage.ts'
 import { useTurnDataValue } from './chat/use-turn-data.ts'
@@ -82,6 +83,33 @@ export function apply(ctx: Context): void {
   const chatStore = createChatStore()
   const chatScrollPositions = new Map<SessionId, ChatScrollPosition>()
   const chatSettings = ctx.settingsScope.bind<ChatSettings>({ namespace: CHAT_SETTINGS_NAMESPACE })
+  const linkOpening = createSnapshotStore(chatSettings.getSnapshot().value?.linkOpening ?? DEFAULT_LINK_OPENING)
+  ctx.effect(() => chatSettings.subscribe(() => {
+    const accepted = chatSettings.getSnapshot().value?.linkOpening
+    if (accepted !== undefined) linkOpening.set(accepted)
+  }))
+  ctx.inject(['sidebarRightTabs'], (scope) => {
+    const tabs = scope.sidebarRightTabs
+    const browserAvailable: ObservableSnapshot<boolean> = {
+      getSnapshot: () => tabs.get('browser') !== undefined,
+      subscribe: listener => tabs.subscribe(listener),
+    }
+    scope.slots.inject('settings.general.item', () => scope.slots.register({
+      name: 'settings.general.item',
+      id: 'link-opening',
+      order: 14,
+      locale: NS,
+      inject: (): LinkOpeningRowInjected => ({
+        hooks: { linkOpening, browserAvailable },
+        setLinkOpening: (destination) => {
+          linkOpening.set(destination)
+          void chatSettings.set('linkOpening', destination).catch((_error: unknown) => {
+            // The local choice remains usable when persistence is unavailable.
+          })
+        },
+      }),
+    }, LinkOpeningRow))
+  })
   const transcriptView = new TranscriptViewPolicy(chatSettings)
   const performancePolicy = new PerformanceUsagePolicy(chatSettings)
   const performanceUsage = performancePolicy.mode
@@ -158,7 +186,7 @@ export function apply(ctx: Context): void {
             ctx.get('inputTriggers')?.sessionOf(scope).openReference('skill', { ref: `/${name}` })
           },
           openExternalLink: (url) => {
-            if (ctx.get('sidebarRightTabs')?.get('browser') !== undefined) {
+            if (linkOpening.getSnapshot() === 'sidebar' && ctx.get('sidebarRightTabs')?.get('browser') !== undefined) {
               ctx.sidebarRight.openTab('browser', { params: { url } })
             } else {
               window.open(url, '_blank', 'noopener,noreferrer')
