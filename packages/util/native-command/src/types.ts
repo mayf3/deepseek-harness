@@ -6,6 +6,6 @@ export interface NativeFileApplication {
   readonly id: string
   readonly name: string
   readonly default: boolean
-  /** PNG data URL, or null when the desktop supplies no icon. */
+  /** PNG or SVG data URL, or null when the desktop supplies no icon. */
   readonly icon: string | null
 }

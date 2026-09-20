@@ -77,11 +77,11 @@ describe('OpenInAppAction visibility', () => {
 
   it('shows the remembered choice, falling back to the first available app when it is gone', () => {
     render(<OpenInAppAction {...bench({ apps: ['finder', 'cursor'], choice: 'cursor', cwd: '/w' }).props} />)
-    expect(screen.getByRole('button', { name: zh['open.title'].replace('{app}', 'Cursor') })).toBeDefined()
+    expect(screen.getByRole('button', { name: zh['path.open'] })).toBeDefined()
     cleanup()
 
     render(<OpenInAppAction {...bench({ apps: ['finder', 'cursor'], choice: 'vscode', cwd: '/w' }).props} />)
-    expect(screen.getByRole('button', { name: zh['open.title'].replace('{app}', zh['app.finder']) })).toBeDefined()
+    expect(screen.getByRole('button', { name: zh['path.open'] })).toBeDefined()
   })
 })
 
@@ -90,7 +90,7 @@ describe('OpenInAppAction launching', () => {
     const pending = Promise.withResolvers<undefined>()
     const b = bench({ apps: ['finder', 'cursor'], cwd: '/w/dir', launch: () => pending.promise })
     const view = render(<OpenInAppAction {...b.props} />)
-    const main = screen.getByRole('button', { name: t('open.title', { app: zh['app.finder'] }) })
+    const main = screen.getByRole('button', { name: zh['path.open'] })
     fireEvent.click(main)
     expect(main).toHaveProperty('disabled', true)
     expect(screen.getByRole('button', { name: zh['path.more'] })).toHaveProperty('disabled', true)
@@ -136,7 +136,7 @@ describe('OpenInAppAction launching', () => {
 
   it('uses the shared product tooltip', async () => {
     render(<OpenInAppAction {...bench({ apps: ['finder'], cwd: '/w' }).props} />)
-    fireEvent.mouseEnter(screen.getByRole('button', { name: t('open.title', { app: zh['app.finder'] }) }))
+    fireEvent.mouseEnter(screen.getByRole('button', { name: zh['path.open'] }))
     expect(await screen.findByText(zh['open.tooltip'])).toBeTruthy()
   })
 })

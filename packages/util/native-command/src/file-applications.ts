@@ -1,5 +1,8 @@
 /** Native file associations queried from the desktop that owns the path. */
 import { runNativeCommand } from './runner.ts'
+import { linuxFileApplications } from './file-applications-linux.ts'
+import { windowsFileApplications } from './file-applications-windows.ts'
+import { nativeFileManager } from './path-opener.ts'
 import type { PathOpenerInternals } from './path-opener.ts'
 
 import type { NativeFileApplication } from './types.ts'
@@ -47,10 +50,15 @@ export async function nativeFileApplications(
   path: string, signal: AbortSignal, internals: PathOpenerInternals = {},
 ): Promise<readonly NativeFileApplication[]> {
   signal.throwIfAborted()
-  const platform = internals.platform ?? process.platform
-  if (platform !== 'darwin') return []
+  const target = await desktopTarget(path, signal, internals)
   const run = internals.run ?? runNativeCommand
-  const { stdout } = await run('osascript', ['-l', 'JavaScript', '-e', MAC_APPLICATIONS, path], signal)
+  if (target.platform === 'linux') return linuxFileApplications(path, signal, run, internals.env ?? process.env)
+  let stdout: string
+  if (target.platform === 'darwin') {
+    stdout = (await run('osascript', ['-l', 'JavaScript', '-e', MAC_APPLICATIONS, target.path], signal)).stdout
+  } else if (target.platform === 'win32') {
+    stdout = await windowsFileApplications(target.path, null, signal, run)
+  } else return []
   const value: unknown = JSON.parse(stdout)
   if (!Array.isArray(value)) throw new Error('Invalid native application list')
   const applications: NativeFileApplication[] = []
@@ -60,7 +68,7 @@ export async function nativeFileApplications(
       || !('id' in entry) || !('name' in entry) || !('default' in entry) || !('icon' in entry)
       || typeof entry.id !== 'string' || entry.id.length === 0
       || typeof entry.name !== 'string' || typeof entry.default !== 'boolean'
-      || !(entry.icon === null || (typeof entry.icon === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(entry.icon)))) {
+      || !(entry.icon === null || (typeof entry.icon === 'string' && /^data:image\/(?:png|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(entry.icon)))) {
       throw new Error('Invalid native application entry')
     }
     applications.push({ id: entry.id, name: entry.name, default: entry.default, icon: entry.icon })
@@ -79,8 +87,29 @@ export async function nativeFileApplications(
 export async function openNativeFileApplication(
   path: string, application: string, signal: AbortSignal, internals: PathOpenerInternals = {},
 ): Promise<void> {
+  const target = await desktopTarget(path, signal, internals)
+  const run = internals.run ?? runNativeCommand
+  if (target.platform === 'win32') {
+    await windowsFileApplications(target.path, application, signal, run)
+    return
+  }
   const apps = await nativeFileApplications(path, signal, internals)
   if (!apps.some(app => app.id === application)) throw new Error('Application is not registered for this file')
-  const run = internals.run ?? runNativeCommand
-  await run('open', ['-a', application, path], signal)
+  if (target.platform === 'linux') await run('gio', ['launch', application, path], signal)
+  else await run('open', ['-a', application, path], signal)
+}
+
+/** Resolve the desktop that owns the file, including Windows applications reached from WSL. */
+async function desktopTarget(
+  path: string, signal: AbortSignal, internals: PathOpenerInternals,
+): Promise<{ platform: NodeJS.Platform; path: string }> {
+  signal.throwIfAborted()
+  const platform = internals.platform ?? process.platform
+  if (platform === 'linux' && nativeFileManager(internals) === 'explorer') {
+    const translated = await (internals.run ?? runNativeCommand)('wslpath', ['-w', path], signal)
+    const windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
+    if (windowsPath === '') throw new Error('wslpath returned no Windows path')
+    return { platform: 'win32', path: windowsPath }
+  }
+  return { platform, path }
 }
