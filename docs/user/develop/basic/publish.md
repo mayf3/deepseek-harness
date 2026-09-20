@@ -100,7 +100,9 @@ The first use initializes the profile (with `@deepseek-ai/dsh-base` as its first
 }
 ```
 
-A linked checkout keeps its own `node_modules`. Declare dsh packages whose instances the plugin must share with the host under both `peerDependencies` and `devDependencies`, as the harness packages do. The devDependency copy serves your type checker and standalone tests; peers present in the running dsh's runtime resolution use that installation's copy, whether dsh comes from npm, Desktop, or source. Keep third-party dependencies and stateless dsh utilities under `dependencies`. After changing `peerDependencies`, new resolutions during a plugin reload read the new declaration; this does not automatically reload already loaded modules.
+A linked checkout keeps its own `node_modules`. Declare dsh packages whose instances the plugin must share with the host under both `peerDependencies` and `devDependencies`, as the harness packages do. At that manifest's lookup position, peers present in the running dsh's runtime resolution use the installation's copy; the devDependency copy serves your type checker and standalone tests. Keep independently versioned third-party dependencies and stateless dsh utilities under `dependencies`.
+
+Ordinary linked imports follow Node's ancestor order and check each directory's current peer declarations. A nearer physical package wins before a higher peer declaration. A link target can lack `package.json`; ancestor peers still apply, even without a physical `node_modules` beside that manifest. Explicit `require.resolve(..., { paths })` is always native, including paths inside a profile. These rules are shared by npm, Desktop, and source launches; they do not invalidate loaded modules or validate peer version ranges. See the [resolution rules](../../../../.agents/notes/implemented/architecture/2026-09-19-profile-resolution-lookup-order.md) for scope and file-query behavior.
 
 Verify the layer without booting, then boot:
 

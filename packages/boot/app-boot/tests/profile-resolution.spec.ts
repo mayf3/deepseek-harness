@@ -407,7 +407,8 @@ describe('runtime resolution', { concurrent: false }, () => {
     registrations.push(registration)
     const require = createRequire(join(profileDir, 'entry.cjs'))
     expect(require('@deepseek-ai/dsh-core')).toEqual({ marker: 1 })
-    expect(require.resolve('@deepseek-ai/dsh-core', { paths: [profileDir] })).toBe(join(f.installed, 'index.cjs'))
+    expect(require.resolve('@deepseek-ai/dsh-core', { paths: [profileDir] }))
+      .toBe(join(f.root, 'node_modules', '@deepseek-ai/dsh-core', 'index.cjs'))
     const parent = pathToFileURL(join(profileDir, 'entry.mjs')).href
     expect(resolveFrom('@deepseek-ai/dsh-core', parent)).toBe(pathToFileURL(join(f.installed, 'index.js')).href)
     expect(await importFrom('@deepseek-ai/dsh-core', parent)).toMatchObject({ marker: 1 })
@@ -425,9 +426,11 @@ describe('runtime resolution', { concurrent: false }, () => {
     const require = createRequire(join(f.profile.dir, 'entry.cjs'))
     expect(require.resolve('@deepseek-ai/dsh-core')).toBe(join(f.installed, 'index.cjs'))
     expect(require.resolve('@deepseek-ai/dsh-core', { paths: [alternative] })).toBe(join(alternativePackage, 'index.cjs'))
-    expect(require.resolve('@deepseek-ai/dsh-core', { paths: [f.profile.dir] })).toBe(join(f.installed, 'index.cjs'))
-    expect(require.resolve('@deepseek-ai/dsh-core', { paths: [join(f.root, 'missing'), f.profile.dir] }))
-      .toBe(join(f.installed, 'index.cjs'))
+    expect(thrownError(() => require.resolve('@deepseek-ai/dsh-core', { paths: [f.profile.dir] })))
+      .toMatchObject({ code: 'MODULE_NOT_FOUND' })
+    expect(thrownError(() => require.resolve('@deepseek-ai/dsh-core', {
+      paths: [join(f.root, 'missing'), f.profile.dir],
+    }))).toMatchObject({ code: 'MODULE_NOT_FOUND' })
     const relative = join(f.profile.dir, 'relative.cjs')
     file(relative, '')
     expect(require.resolve('./relative.cjs', { paths: [f.profile.dir] })).toBe(relative)
@@ -435,9 +438,10 @@ describe('runtime resolution', { concurrent: false }, () => {
     file(join(invalid, 'node_modules', '@deepseek-ai/dsh-core', 'package.json'), '{')
     expect(() => { require.resolve('@deepseek-ai/dsh-core', { paths: [invalid, f.profile.dir] }) })
       .toThrow(/Invalid package config/u)
+    expect(require.resolve('@deepseek-ai/dsh-core')).toBe(join(f.installed, 'index.cjs'))
   })
 
-  it('keeps earlier explicit CommonJS paths ahead of a managed local failure', async () => {
+  it('keeps earlier explicit CommonJS paths ahead of a profile-local failure', async () => {
     const f = fixture()
     const resolution = await createRuntimeResolution({
       installAnchor: f.installAnchor,
@@ -460,7 +464,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     expect(require.resolve('@deepseek-ai/dsh-core', { paths })).toBe(selected)
   })
 
-  it('keeps a missing legacy main before a managed explicit CommonJS path', async () => {
+  it('preserves a missing legacy main error before an explicit profile path', async () => {
     const f = fixture()
     const invalid = join(f.root, 'invalid')
     const selected = join(invalid, 'node_modules', '@deepseek-ai/dsh-core')
@@ -480,7 +484,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     expect(runtimeError.message).toBe(nativeError.message)
   })
 
-  it('keeps a missing fallback legacy main before later explicit CommonJS paths', async () => {
+  it('preserves a missing ancestor legacy main error before later explicit CommonJS paths', async () => {
     const f = fixture()
     const name = 'fallback-invalid-main'
     const selected = join(f.root, 'node_modules', name)
@@ -502,7 +506,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     expect(runtimeError.message).toBe(nativeError.message)
   })
 
-  it('keeps a missing fallback legacy main after a resolution miss', async () => {
+  it('preserves a missing legacy main error for explicit paths when a runtime entry is unavailable', async () => {
     const f = fixture()
     const selected = join(f.root, 'node_modules', '@deepseek-ai/dsh-core')
     file(join(selected, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-core', main: './missing.cjs' }))
@@ -945,7 +949,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     )).toThrow(/Cannot find/u)
   })
 
-  it('limits bundle-only entries to the active profile', async () => {
+  it('limits bundle-only interception to ordinary lookup in the active profile', async () => {
     const f = fixture()
     const bundleDir = join(f.root, 'bundle')
     pkg(bundleDir, 'test-bundle', 0, { 'bundle-only': '*' })
@@ -962,10 +966,9 @@ describe('runtime resolution', { concurrent: false }, () => {
     expect(createRequire(join(f.profile.dir, 'entry.cjs'))('bundle-only')).toEqual({ marker: 4 })
     const other = join(f.root, 'profiles', 'other', 'entry.cjs')
     expect(() => { createRequire(other)('bundle-only') }).toThrow(/Cannot find module/u)
-    const resolvedBundleOnly = createRequire(other).resolve('bundle-only', {
+    expect(thrownError(() => createRequire(other).resolve('bundle-only', {
       paths: [dirname(other), f.profile.dir],
-    })
-    expect(realpathSync.native(resolvedBundleOnly)).toBe(realpathSync.native(join(bundleOnly, 'index.cjs')))
+    }))).toMatchObject({ code: 'MODULE_NOT_FOUND' })
     expect(() => createRequire(other).resolve('bundle-only', { paths: [dirname(other)] }))
       .toThrow(/Cannot find module/u)
     expect(() => createRequire(other).resolve('missing-explicit', { paths: [dirname(other)] }))
@@ -1024,7 +1027,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     expect(require.resolve('@deepseek-ai/dsh-core/sub.cjs')).toBe(ancestorSubpath)
   })
 
-  it('continues explicit CommonJS paths after a resolution subpath miss', async () => {
+  it('uses later explicit CommonJS paths when the profile has no matching package', async () => {
     const f = fixture()
     file(join(f.installed, 'package.json'), JSON.stringify({
       name: '@deepseek-ai/dsh-core', version: '1.0.0', type: 'module', main: './index.cjs',
@@ -1045,7 +1048,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     file(join(f.installed, 'package.json'), JSON.stringify({
       name: '@deepseek-ai/dsh-core', version: '1.0.0', main: './index.cjs',
     }))
-    // The resolution entry stands in for profiles/node_modules/@deepseek-ai/dsh-core, so this stale copy is never read.
+    // Ordinary profile lookup replaces the shared copy with the runtime entry; explicit paths still read the shared copy.
     const shared = join(f.root, 'profiles', 'node_modules', '@deepseek-ai/dsh-core')
     file(join(shared, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-core', version: '9.0.0' }))
     file(join(shared, 'sub.cjs'), 'module.exports = { marker: 9 }\n')
@@ -1062,7 +1065,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     expect(require.resolve('@deepseek-ai/dsh-core')).toBe(join(f.installed, 'index.cjs'))
     expect(require.resolve('@deepseek-ai/dsh-core/sub.cjs')).toBe(join(home, 'sub.cjs'))
     expect(require('@deepseek-ai/dsh-core/sub.cjs')).toEqual({ marker: 3 })
-    expect(require.resolve('@deepseek-ai/dsh-core/sub.cjs', { paths: [f.profile.dir] })).toBe(join(home, 'sub.cjs'))
+    expect(require.resolve('@deepseek-ai/dsh-core/sub.cjs', { paths: [f.profile.dir] })).toBe(join(shared, 'sub.cjs'))
     expect(require('left-pad')).toEqual({ marker: 9 })
     // ESM resolves the subpath inside the selected package and never consults another copy.
     const parent = pathToFileURL(join(f.profile.dir, 'entry.mjs')).href
@@ -1293,10 +1296,18 @@ describe('runtime resolution', { concurrent: false }, () => {
     const importerDir = importer === 'plugin' ? pluginDir : f.profile.dir
     const require = createRequire(join(importerDir, 'entry.cjs'))
     const parent = pathToFileURL(join(importerDir, 'entry.mjs')).href
+    const explicitWinner = LOOKUP_LAYERS.find(layer => (
+      layers.includes(layer) && (layer !== 'private' || importer === 'plugin')
+    ))
+    if (explicitWinner === undefined) {
+      expect(thrownError(() => require.resolve(name, { paths: [importerDir] })))
+        .toMatchObject({ code: 'MODULE_NOT_FOUND' })
+    } else {
+      expect(require.resolve(name, { paths: [importerDir] })).toBe(join(real[explicitWinner], 'index.cjs'))
+    }
     const winner = lookupWinner(matrixCase)
     if (winner === 'missing') {
       expect(thrownError(() => require(name))).toMatchObject({ code: 'MODULE_NOT_FOUND' })
-      expect(thrownError(() => require.resolve(name, { paths: [importerDir] }))).toMatchObject({ code: 'MODULE_NOT_FOUND' })
       await expect(importFrom(name, parent)).rejects.toMatchObject({ code: 'ERR_MODULE_NOT_FOUND' })
       expect(registration.packageDir(name, parent)).toBeUndefined()
       return
@@ -1308,7 +1319,6 @@ describe('runtime resolution', { concurrent: false }, () => {
     const marker = winner === 'interception' ? (kind === 'installation' ? 1 : 2) : LOOKUP_MARKERS[winner]
     expect(require(name)).toEqual({ marker })
     expect(require.resolve(name)).toBe(join(realDir, 'index.cjs'))
-    expect(require.resolve(name, { paths: [importerDir] })).toBe(join(realDir, 'index.cjs'))
     expect(resolveFrom(name, parent)).toBe(pathToFileURL(join(realDir, 'index.js')).href)
     expect(await importFrom(name, parent)).toMatchObject({ marker })
     expect(registration.packageDir(name, parent)).toBe(packageDir)
@@ -1670,7 +1680,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     expect(getEnvironmentData(key)).toBe(previous)
   })
 
-  it('records active profile packages linked outside the profiles tree as linked roots', async () => {
+  it('records active profile links to external directories with or without manifests', async () => {
     const f = fixture()
     const modules = join(f.profile.dir, 'node_modules')
     const outside = join(f.root, 'work', 'my-plugin')
@@ -1688,6 +1698,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     symlinkSync(outside, join(modules, 'my-plugin'), linkType)
     symlinkSync(scopedOutside, join(modules, '@scope', 'linked'), linkType)
     symlinkSync(inside, join(modules, 'inside-lib'), linkType)
+    symlinkSync(join(f.root, 'profiles'), join(modules, 'profiles-root'), linkType)
     symlinkSync(bare, join(modules, 'bare-dir'), linkType)
     symlinkSync(dangling, join(modules, 'dangling'), linkType)
     rmSync(dangling, { recursive: true })
@@ -1695,6 +1706,7 @@ describe('runtime resolution', { concurrent: false }, () => {
     const resolution = await resolutionOf(f)
     expect(resolution.linkedRoots).toEqual([
       { name: '@scope/linked', linkPath: join(modules, '@scope', 'linked'), realPath: scopedOutside },
+      { name: 'bare-dir', linkPath: join(modules, 'bare-dir'), realPath: bare },
       { name: 'my-plugin', linkPath: join(modules, 'my-plugin'), realPath: outside },
     ])
     expect(Object.isFrozen(resolution.linkedRoots)).toBe(true)
@@ -1707,6 +1719,19 @@ describe('runtime resolution', { concurrent: false }, () => {
       home: join(f.root, 'later'),
     })
     expect(unmaterialized.linkedRoots).toEqual([])
+  })
+
+  it('excludes profile symlinks to files from linked roots', async () => {
+    const f = fixture()
+    const modules = join(f.profile.dir, 'node_modules')
+    const target = join(f.root, 'work', 'file.cjs')
+    file(target, 'module.exports = { marker: 5 }\n')
+    mkdirSync(join(modules, '@scope'), { recursive: true })
+    symlinkSync(target, join(modules, 'file-link'), 'file')
+    symlinkSync(target, join(modules, '@scope', 'file-link'), 'file')
+
+    const resolution = await resolutionOf(f)
+    expect(resolution.linkedRoots).toEqual([])
   })
 
   /** A plugin repository linked into the profile, with the manifest a plugin developer keeps for type checking. */
@@ -1814,6 +1839,33 @@ describe('runtime resolution', { concurrent: false }, () => {
     expect(require('@deepseek-ai/dsh-core/sub.cjs')).toEqual({ marker: 3 })
   })
 
+  it('preserves the native require stack for a missing linked legacy subpath', async () => {
+    const { f, linkedRoot } = linkedPluginFixture()
+    const name = '@deepseek-ai/dsh-core'
+    file(join(f.installed, 'package.json'), JSON.stringify({
+      name, version: '1.0.0', type: 'module', main: './index.cjs',
+    }))
+    rmSync(join(linkedRoot, 'node_modules', name), { recursive: true })
+    const importer = join(linkedRoot, 'entry.cjs')
+    const require = createRequire(importer)
+    const request = `${name}/missing.cjs`
+    const nativeError = thrownError(() => require.resolve(request))
+    expect(nativeError.code).toBe('MODULE_NOT_FOUND')
+    expect(nativeError.requireStack).toEqual([importer])
+
+    const registration = installRuntimeInterception(await resolutionOf(f))
+    registrations.push(registration)
+    try {
+      const runtimeError = thrownError(() => require.resolve(request))
+      expect(runtimeError.code).toBe(nativeError.code)
+      expect(runtimeError.requireStack).toEqual(nativeError.requireStack)
+      expect(runtimeError.message).toBe(nativeError.message)
+    } finally {
+      registration.dispose()
+      registrations.pop()
+    }
+  })
+
   it('reads a linked plugin manifest at every resolution', async () => {
     const { f, linkedRoot, writeManifest } = linkedPluginFixture({})
     const registration = installRuntimeInterception(await resolutionOf(f))
@@ -1842,6 +1894,37 @@ describe('runtime resolution', { concurrent: false }, () => {
     // Without a manifest the linked package occupies nothing.
     rmSync(join(linkedRoot, 'package.json'))
     expect(require.resolve('@deepseek-ai/dsh-core')).toBe(join(devCopy, 'index.cjs'))
+  })
+
+  it('reads ancestor peer declarations at every linked resolution', async () => {
+    const { f, linkedRoot } = linkedPluginFixture({})
+    const name = '@deepseek-ai/dsh-core'
+    rmSync(join(linkedRoot, 'node_modules', name), { recursive: true })
+    const ancestor = dirname(linkedRoot)
+    const ancestorCopy = join(ancestor, 'node_modules', name)
+    pkg(ancestorCopy, name, 31)
+    const manifestPath = join(ancestor, 'package.json')
+    const manifest = { name: 'plugin-workspace', private: true }
+    file(manifestPath, JSON.stringify(manifest))
+    const require = createRequire(join(linkedRoot, 'entry.cjs'))
+    const parent = pathToFileURL(join(linkedRoot, 'entry.mjs')).href
+    const registration = installRuntimeInterception(await resolutionOf(f))
+    registrations.push(registration)
+    try {
+      for (const [peerDependencies, expectedDir] of [
+        [undefined, ancestorCopy],
+        [{ [name]: '*' }, f.installed],
+        [undefined, ancestorCopy],
+      ] as const) {
+        file(manifestPath, JSON.stringify({ ...manifest, peerDependencies }))
+        expect(require.resolve(name)).toBe(join(expectedDir, 'index.cjs'))
+        expect(resolveFrom(name, parent)).toBe(pathToFileURL(join(expectedDir, 'index.js')).href)
+        expect(registration.packageDir(name, parent)).toBe(expectedDir)
+      }
+    } finally {
+      registration.dispose()
+      registrations.pop()
+    }
   })
 
   it('restores CommonJS resolution when the registration is disposed', async () => {

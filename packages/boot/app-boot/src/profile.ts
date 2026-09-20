@@ -22,7 +22,7 @@
  */
 
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -113,16 +113,15 @@ export interface RuntimeResolutionEntry {
 }
 
 /**
- * A profile package whose `node_modules` entry is a symlink or junction to a directory outside the profiles tree.
- * Importers below `realPath` keep Node's lookup from the real path; `<realPath>/node_modules` is their interception
- * layer, occupied only by the names the package's current manifest lists under `peerDependencies`.
+ * A profile node_modules entry linked to a directory outside the profiles tree.
+ * Importers below `realPath` use Node's real ancestor chain, with peer mappings read at each node_modules position.
  */
 export interface LinkedRoot {
   /** Package name of the profile `node_modules` entry, including its scope. */
   readonly name: string
   /** The symlink or junction path under the active profile's node_modules. */
   readonly linkPath: string
-  /** Real directory the link resolves to; it lies outside the profiles tree and holds a package.json. */
+  /** Real directory the link resolves to; it lies outside the profiles tree and need not hold a package.json. */
   readonly realPath: string
 }
 
@@ -275,8 +274,8 @@ function symlinksUnder(modules: string): string[] {
 }
 
 /**
- * Active profile `node_modules` entries linked to package directories outside the profiles tree.
- * Links whose target is missing, lies inside the profiles tree, or holds no package.json are not roots.
+ * Active profile `node_modules` entries linked to directories outside the profiles tree.
+ * Missing targets, files, and directories inside the profiles tree are not linked roots.
  */
 function linkedProfileRoots(profile: Profile, profilesDir: string): LinkedRoot[] {
   const modules = join(profile.dir, 'node_modules')
@@ -300,7 +299,7 @@ function linkedProfileRoots(profile: Profile, profilesDir: string): LinkedRoot[]
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       continue
     }
-    if (realPath.startsWith(tree) || !existsSync(join(realPath, 'package.json'))) continue
+    if (realPath + sep === tree || realPath.startsWith(tree) || !statSync(realPath).isDirectory()) continue
     roots.push({ name: relative(modules, linkPath).split(sep).join('/'), linkPath, realPath })
   }
   return roots.sort((left, right) => left.name.localeCompare(right.name))

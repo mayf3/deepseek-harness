@@ -66,6 +66,12 @@ interface ResolutionRouteState {
   cjs?: string
 }
 
+interface CommonJsLookup {
+  readonly cacheable: boolean
+  resolveNative(searchPaths: readonly string[]): string
+  resolveEntry(entry: RuntimeResolutionEntry, after: string): string
+}
+
 /** The lookup positions that one interception layer fixes on an importer's ancestor chain. */
 interface LayerPositions {
   /** Search paths with this prefix lie below the layer and are answered by their physical content. */
@@ -78,12 +84,12 @@ interface LayerPositions {
 
 /**
  * The interception layer of one importer. A profile's layer is its parent's node_modules and answers every entry
- * for the active profile; a linked package's layer is its own node_modules, occupied only by the package's
- * current peers and never memoized.
+ * for the active profile. Linked importers apply current peer declarations at each ancestor node_modules
+ * position without memoizing the selected route.
  */
 type InterceptionLayer =
   | LayerPositions & { readonly kind: 'profile'; readonly active: boolean }
-  | LayerPositions & { readonly kind: 'linked'; readonly root: LinkedRoot }
+  | { readonly kind: 'linked'; readonly root: LinkedRoot }
 
 interface CompiledLinkedRoot {
   readonly root: LinkedRoot
@@ -116,6 +122,7 @@ interface CompiledResolution {
 export interface RuntimeInterception {
   /**
    * Locate a bare package without requiring one of its exports.
+   * A package subpath selects its package directory without resolving or validating the requested file.
    * @param specifier - bare package or package-subpath specifier.
    * @param parentURL - file URL whose lookup order applies.
    * @returns selected package directory, or undefined when it is absent.
@@ -190,15 +197,11 @@ function computeProfileLayer(dir: string, active: boolean): InterceptionLayer {
 }
 
 /**
- * A linked package keeps Node's lookup from its real path: `<realPath>/node_modules` is its interception layer,
- * deeper node_modules directories are local, and the layer above it belongs to the real parent directory.
+ * A linked directory admits its importers to peer-aware lookup along Node's real ancestor chain.
  */
 function computeLinkedLayer(root: LinkedRoot): InterceptionLayer {
   return {
     kind: 'linked', root,
-    localPrefix: join(root.realPath, 'node_modules') + sep,
-    nativeAfter: join(root.realPath, 'package.json'),
-    after: join(dirname(root.realPath), 'package.json'),
   }
 }
 
@@ -211,10 +214,10 @@ function findInterceptionLayer(path: string, resolution: CompiledResolution): In
   return resolution.linkedRoots.find(candidate => startsWithin(path, candidate.paths))?.layer
 }
 
-/** Package names the linked package's manifest currently lists as peers; an unreadable manifest lists none. */
-function readLinkedPeerNames(root: LinkedRoot): ReadonlySet<string> {
+/** Package names a directory's current manifest lists as peers; an unreadable manifest lists none. */
+function readPeerNames(directory: string): ReadonlySet<string> {
   try {
-    const manifest = JSON.parse(readFileSync(join(root.realPath, 'package.json'), 'utf8')) as {
+    const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as {
       peerDependencies?: unknown
     }
     const peers = manifest.peerDependencies
@@ -368,7 +371,7 @@ function sameResolution(left: string, right: string): boolean {
 class ResolutionRouter {
   private current: CompiledResolution
 
-  constructor(resolution: RuntimeResolution) {
+  constructor(resolution: RuntimeResolution, private readonly nodeModulePaths: (directory: string) => string[]) {
     this.current = compileResolution(resolution)
   }
 
@@ -446,11 +449,10 @@ class ResolutionRouter {
     parentRoutes: ParentRoutes,
     resolution: CompiledResolution,
     flavor: 'esm' | 'cjs',
-    nativeResolve?: (searchPaths: readonly string[]) => string,
-    cacheable = false,
+    cjs?: CommonJsLookup,
   ): ResolutionRouteState | undefined {
     const { parent, layer, requests } = parentRoutes
-    const memo = layer.kind === 'profile'
+    const memo = layer.kind === 'profile' && (cjs === undefined || cjs.cacheable)
     const name = barePackageName(request)
     if (name === undefined) return undefined
 
@@ -463,6 +465,8 @@ class ResolutionRouter {
       return state
     }
 
+    if (layer.kind === 'linked') return this.routeLinked(request, name, parent, resolution, flavor, cjs)
+
     const target = resolution.entries.get(name)
     const candidates: string[] = []
     const localSearchPaths: string[] = []
@@ -473,9 +477,9 @@ class ResolutionRouter {
       if (candidate !== undefined) candidates.push(candidate)
     }
     if (candidates.length > 0) {
-      if (flavor === 'cjs' && nativeResolve !== undefined) {
+      if (cjs !== undefined) {
         try {
-          const resolved = nativeResolve(localSearchPaths)
+          const resolved = cjs.resolveNative(localSearchPaths)
           const selected = candidates.find(candidate => (
             localCandidateOwnsResolution(candidate, resolved, request, name)
           ))
@@ -483,7 +487,7 @@ class ResolutionRouter {
             const state = {
               route: { kind: 'native' as const, packageDir: selected },
               packageDir: selected,
-              ...(cacheable && memo ? { cjs: resolved } : {}),
+              cjs: resolved,
             }
             if (memo) requests.set(request, state)
             return state
@@ -497,20 +501,59 @@ class ResolutionRouter {
           route: { kind: 'native' as const, packageDir: selected },
           packageDir: selected,
         }
-        if (memo) requests.set(request, state)
+        requests.set(request, state)
         return state
       }
     }
 
-    // An entry occupies its name at the interception layer; below a linked root only the names its manifest
-    // currently lists as peers are occupied.
     const route: ResolutionRoute = target !== undefined
-      && (layer.kind === 'linked' ? readLinkedPeerNames(layer.root).has(name) : target.scope === 'installation' || layer.active)
+      && (target.scope === 'installation' || layer.active)
       ? { kind: 'interception', entry: target, after: layer.after }
       : { kind: 'native-after-interception', parent: layer.nativeAfter }
     const state: ResolutionRouteState = { route }
     if (route.kind === 'interception' && memo) requests.set(request, state)
     return state
+  }
+
+  private routeLinked(
+    request: string, name: string, parent: string, resolution: CompiledResolution,
+    flavor: 'esm' | 'cjs', cjs: CommonJsLookup | undefined,
+  ): ResolutionRouteState {
+    const target = resolution.entries.get(name)
+    if (target === undefined) return { route: { kind: 'native' } }
+    const ancestors = this.nodeModulePaths(dirname(parent))
+    const ancestorSet = new Set(ancestors)
+    const searchPaths = flavor === 'esm' ? ancestors : createRequire(parent).resolve.paths(name) as string[]
+    for (const searchPath of searchPaths) {
+      const directory = dirname(searchPath)
+      if (ancestorSet.has(searchPath) && readPeerNames(directory).has(name)) {
+        const route: ResolutionRoute = { kind: 'interception', entry: target, after: join(dirname(directory), 'package.json') }
+        if (cjs === undefined) return { route }
+        try {
+          const resolved = cjs.resolveEntry(target, route.after)
+          if (localCandidateOwnsResolution(target.packageDir, resolved, request, name)) {
+            return { route, packageDir: target.packageDir, cjs: resolved }
+          }
+        } catch (error) {
+          if (!isUnselectedPackageMiss(error)) throw error
+        }
+        // This position is occupied even when a legacy CommonJS subpath is absent from the supplied package.
+        continue
+      }
+      const candidate = localPackageCandidate(searchPath, name, flavor)
+      if (candidate === undefined) continue
+      if (cjs === undefined) return { route: { kind: 'native', packageDir: candidate }, packageDir: candidate }
+      try {
+        const resolved = cjs.resolveNative([searchPath])
+        if (localCandidateOwnsResolution(candidate, resolved, request, name)) {
+          return { route: { kind: 'native', packageDir: candidate }, packageDir: candidate, cjs: resolved }
+        }
+      } catch (error) {
+        if (!isUnselectedPackageMiss(error)) throw error
+      }
+    }
+    // An exhausted CommonJS lookup must not retry the physical copies at occupied peer positions.
+    return cjs === undefined ? { route: { kind: 'native' } } : { route: { kind: 'native' }, cjs: cjs.resolveNative([]) }
   }
 
   private routeLocalPackage(
@@ -536,45 +579,25 @@ class ResolutionRouter {
   }
 
   routePath(
-    request: string, parent: string, nativeResolve?: (searchPaths: readonly string[]) => string, cacheable = false,
+    request: string, parent: string, cjs: CommonJsLookup,
   ): ResolutionRouteState | undefined {
     const resolution = this.current
     let parentRoutes = resolution.cjsRoutes.get(parent)
     if (parentRoutes === false) return undefined
-    const cached = parentRoutes?.requests.get(request)
+    const cached = cjs.cacheable ? parentRoutes?.requests.get(request) : undefined
     if (cached !== undefined) return cached
     if (parentRoutes === undefined) {
       parentRoutes = this.createParentRoutes(parent, resolution) ?? false
       resolution.cjsRoutes.set(parent, parentRoutes)
       if (parentRoutes === false) return undefined
     }
-    return this.routeScoped(request, parentRoutes, resolution, 'cjs', nativeResolve, cacheable)
-  }
-
-  explicitRoute(
-    request: string, paths: readonly string[],
-  ): { index: number; parent: string } | undefined {
-    if (barePackageName(request) === undefined) return undefined
-    for (const [index, path] of paths.entries()) {
-      const parent = join(resolve(path), '.dsh-profile-resolution.cjs')
-      if (startsWithin(parent, this.current.profilePaths) || startsWithin(parent, this.current.profile)) {
-        return { index, parent }
-      }
-    }
-    return undefined
-  }
-
-  nativeSelfReference(request: string, parent: string): boolean {
-    const name = barePackageName(request)
-    if (name === undefined) return false
-    const self = selfReferenceName(parent)
-    return self === name || self === null
+    return this.routeScoped(request, parentRoutes, resolution, 'cjs', cjs)
   }
 
   packageDir(specifier: string, parentURL: string): string | undefined {
     const name = barePackageName(specifier)
     if (name === undefined) return undefined
-    const state = this.routeUrl(specifier, parentURL)
+    const state = this.routeUrl(name, parentURL)
     if (state?.route.kind === 'interception') return state.route.entry.packageDir
     if (state?.packageDir !== undefined) return state.packageDir
     let parent: string
@@ -677,8 +700,8 @@ function throwWithoutCjsAnchor(error: unknown, anchor: string): never {
 export function installRuntimeInterception(
   resolution: RuntimeResolution,
 ): RuntimeInterception {
-  const router = new ResolutionRouter(resolution)
   const { esm, esmDefaultResolve, esmConditions, cjs, cjsConditions, modern } = internalModules()
+  const router = new ResolutionRouter(resolution, directory => cjs._nodeModulePaths(directory))
   let delegatedEsm: { parent: string | undefined; request: string } | undefined
 
   const adaptEsm = (native: EsmResolve): EsmResolve => {
@@ -801,7 +824,7 @@ export function installRuntimeInterception(
     parentFilename: string, main: boolean, conditions: ReadonlySet<string> | undefined,
   ): string => {
     const synthetic = new cjs(parentFilename)
-    synthetic.parent = parent
+    if (parent.parent !== undefined) synthetic.parent = parent.parent
     synthetic.filename = parentFilename
     synthetic.paths = [...searchPaths]
     const options = conditions === undefined ? undefined : { conditions }
@@ -822,37 +845,24 @@ export function installRuntimeInterception(
     return resolveFrom(pathToFileURL(route.entry.declarer).href)
   }
   const wrappedFilename: CommonJsModule['_resolveFilename'] = (request, parent, main, options) => {
-    if (delegatedCjs || !parent?.filename) {
+    if (delegatedCjs || !parent?.filename || options?.paths !== undefined) {
       return originalFilename.call(cjs, request, parent, main, options)
     }
     const parentFilename = parent.filename
-    const cacheable = options?.paths === undefined && options?.conditions === undefined
-    const explicitPaths = Array.isArray(options?.paths) ? options.paths : undefined
-    if (explicitPaths !== undefined && router.nativeSelfReference(request, parentFilename)) {
-      return originalFilename.call(cjs, request, parent, main, options)
-    }
-    const explicit = explicitPaths === undefined
-      ? undefined
-      : router.explicitRoute(request, explicitPaths)
-    if (options?.paths !== undefined && explicit === undefined) {
-      return originalFilename.call(cjs, request, parent, main, options)
-    }
-    if (explicit !== undefined && explicitPaths !== undefined && explicit.index > 0) {
-      try {
-        return originalFilename.call(cjs, request, parent, main, {
-          ...options,
-          paths: explicitPaths.slice(0, explicit.index),
-        })
-      } catch (error) {
-        if (!isUnselectedPackageMiss(error)) throw error
-      }
-    }
-    const state = router.routePath(
-      request,
-      explicit?.parent ?? parentFilename,
-      searchPaths => resolveNativeCjs(request, searchPaths, parent, parentFilename, main, options?.conditions),
-      explicit === undefined && cacheable,
-    )
+    const cacheable = options?.conditions === undefined
+    const routedOptions = options?.conditions === undefined ? undefined : { conditions: options.conditions }
+    const state = router.routePath(request, parentFilename, {
+      cacheable,
+      resolveNative: searchPaths => resolveNativeCjs(request, searchPaths, parent, parentFilename, main, options?.conditions),
+      resolveEntry: (entry, after) => {
+        delegatedCjs++
+        try {
+          return resolveRoutedCjs(request, { kind: 'interception', entry, after }, parent, main, routedOptions)
+        } finally {
+          delegatedCjs--
+        }
+      },
+    })
     if (state === undefined) {
       const scoped = router.hasInterceptionLayerForPath(parentFilename)
       const conditions = options?.conditions ?? cjsConditions
@@ -862,52 +872,23 @@ export function installRuntimeInterception(
       if (target === undefined) return originalFilename.call(cjs, request, parent, main, options)
       return resolvePackageImportCjs(target, conditions)
     }
-    if (cacheable && state.cjs !== undefined) return state.cjs
+    if (state.cjs !== undefined) return state.cjs
     const route = state.route
     if (route.kind === 'native') {
       const result = originalFilename.call(cjs, request, parent, main, options)
       if (cacheable) state.cjs = result
       return result
     }
-    if (route.kind === 'native-after-interception' && explicit !== undefined && explicitPaths !== undefined) {
-      try {
-        return originalFilename.call(cjs, request, parent, main, {
-          ...options,
-          paths: [dirname(route.parent)],
-        })
-      } catch (error) {
-        if (!isUnselectedPackageMiss(error)) throw error
-        const remaining = explicitPaths.slice(explicit.index + 1)
-        if (remaining.length === 0) throw error
-        return wrappedFilename(request, parent, main, { ...options, paths: remaining })
-      }
-    }
     delegatedCjs++
     try {
-      const routedOptions = options?.conditions === undefined ? undefined : { conditions: options.conditions }
       let expected: string
       try {
         expected = resolveRoutedCjs(request, route, parent, main, routedOptions)
       } catch (error) {
         if (route.kind !== 'interception' || !isUnselectedPackageMiss(error)) throw error
-        try {
-          expected = resolveRoutedCjs(
-            request, { kind: 'native-after-interception', parent: route.after }, parent, main, routedOptions,
-          )
-        } catch (afterError) {
-          const remaining = explicit === undefined || explicitPaths === undefined
-            ? []
-            : explicitPaths.slice(explicit.index + 1)
-          if (!isUnselectedPackageMiss(afterError) || remaining.length === 0) {
-            throw afterError
-          }
-          delegatedCjs--
-          try {
-            return wrappedFilename(request, parent, main, { ...options, paths: remaining })
-          } finally {
-            delegatedCjs++
-          }
-        }
+        expected = resolveRoutedCjs(
+          request, { kind: 'native-after-interception', parent: route.after }, parent, main, routedOptions,
+        )
       }
       if (cacheable) state.cjs = expected
       return expected
