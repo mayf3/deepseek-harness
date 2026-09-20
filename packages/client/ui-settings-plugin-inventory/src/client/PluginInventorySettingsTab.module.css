@@ -178,7 +178,9 @@
   font-weight: 600;
 }
 
-/* The Loader entry id keeps one size in the card subtitle and the row it expands into. */
+/* The Loader entry id keeps one size in the card subtitle and the row it expands into;
+   the collapsed subtitle stays on the quieter label tier, while the expanded row carries
+   the card's primary value. */
 .cardIdentity,
 .entryValue {
   font-family: var(--ds-font-family-code);

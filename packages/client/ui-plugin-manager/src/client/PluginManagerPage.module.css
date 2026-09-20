@@ -1112,8 +1112,8 @@ label.registryOption {
   line-height: 22px;
 }
 
-/* The package name under the title: the exact spec that installs the package
-   elsewhere, where a title of its own or a shortened name hides it. */
+/* The package or row identity under the title: the exact spec that installs the
+   package elsewhere, where a title of its own or a shortened name hides it. */
 .detailName {
   margin: 0;
   font-size: 12px;
