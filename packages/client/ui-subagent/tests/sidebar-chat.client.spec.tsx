@@ -116,7 +116,7 @@ describe('Sidebar chat registration', () => {
     const controller = new AbortController()
     const stream = provider!.open(subagentChatAddress(ADDRESS), { signal: controller.signal })[Symbol.asyncIterator]()
     expect(await stream.next()).toEqual({ done: false, value: { ok: true, value: { address: ADDRESS, reference } } })
-    expect(refreshProjections).toHaveBeenCalledWith(PARENT)
+    expect(refreshProjections).not.toHaveBeenCalled()
     expect(retain).toHaveBeenCalledWith(ADDRESS, { source: 'sidebarChat', signal: controller.signal })
     const completion = stream.next()
     await Promise.resolve()
@@ -130,17 +130,6 @@ describe('Sidebar chat registration', () => {
     abortedAfterYield.abort()
     expect(await yielded.next()).toEqual({ done: true, value: undefined })
     expect(release).toHaveBeenCalledTimes(2)
-
-    let finishRefresh: (() => void) | undefined
-    refreshProjections.mockImplementationOnce(() => new Promise<void>((resolve) => { finishRefresh = resolve }))
-    const abortedDuringRefresh = new AbortController()
-    const pending = provider!.open(
-      subagentChatAddress(ADDRESS), { signal: abortedDuringRefresh.signal },
-    )[Symbol.asyncIterator]().next()
-    await vi.waitFor(() => { expect(finishRefresh).toBeTypeOf('function') })
-    abortedDuringRefresh.abort()
-    finishRefresh?.()
-    expect(await pending).toEqual({ done: true, value: undefined })
 
     const alreadyAborted = new AbortController()
     alreadyAborted.abort()
