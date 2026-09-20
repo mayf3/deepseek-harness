@@ -1118,7 +1118,7 @@ label.registryOption {
   margin: 0;
   font-size: 12px;
   line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-tertiary);
   overflow-wrap: anywhere;
 }
 

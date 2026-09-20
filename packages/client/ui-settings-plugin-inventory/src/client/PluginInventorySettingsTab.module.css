@@ -189,7 +189,7 @@
 .cardIdentity {
   display: block;
   width: 100%;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .cardTrailing {
