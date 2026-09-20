@@ -177,6 +177,8 @@ describe('ConversationNodeAssembler', () => {
     const turnStart = at(SessionSeq(1), 'turn/start', { turn: 1 })
     const stepStart = at(SessionSeq(2), 'step/start', { turn: 1, step: 1 })
     index.rebuild([input(turnStart), input(stepStart)])
+    expect(index.takeChangedTurns()).toEqual([1])
+    expect(index.takeChangedTurns()).toEqual([])
     const location = index.locationOf(stepStart)
     if (location.kind !== 'step') throw new Error('scope probe requires a Step Location')
     const source = location.step.data.source('scope-probe')
@@ -192,6 +194,7 @@ describe('ConversationNodeAssembler', () => {
     }])).toBe(true)
     expect(source.getSnapshot()).toBe(initial)
     expect(listener).not.toHaveBeenCalled()
+    expect(index.takeChangedTurns()).toEqual([1])
 
     index.publishData()
     expect(listener).toHaveBeenCalledOnce()
@@ -204,6 +207,7 @@ describe('ConversationNodeAssembler', () => {
     }])
     index.publishData()
     expect(listener).not.toHaveBeenCalled()
+    expect(index.takeChangedTurns()).toEqual([1])
 
     const changed = { value: 2 }
     index.replaceData([{

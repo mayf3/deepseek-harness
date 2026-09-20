@@ -64,7 +64,7 @@ const workspaceState = {
   error: null,
 }
 const conversationState: ConversationState = {
-  views: { get: () => undefined },
+  views: { get: () => undefined, grouped: () => undefined },
   activeTargets: new Set(),
 }
 const emptyKeys: readonly string[] = []
