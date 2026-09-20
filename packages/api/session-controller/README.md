@@ -101,6 +101,8 @@ No direct effect; model requests remain owned by the Agent and LLM packages.
 - A failed follow resumption remains visible to the caller instead of retrying indefinitely.
 - The raw browser upload is one streaming HTTP request without resumable offsets; a retry sends the file again from byte zero.
 - File-reference completion uses the shared Agent lookup and can resume a cold Session; the `skills/list` catalog is the non-activating alternative for skill metadata.
+- Accepted/running display memory lives only in Client memory and is lost on page reload.
+- That memory is not shared between tabs: one tab can show a converted row while another still shows `New Session` for the same Session.
 
 
 <a id="dev-note"></a>
