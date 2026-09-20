@@ -728,9 +728,6 @@
     "14a0dc9ccde2879c016f779e0e43f3aa71792759126530b418c9a31a5a2e7a53": 1,
     "ad8886dedfafd8e5f4bf7cb55525bb961822ad0c4fb0ff4a643bfb336fb9d94b": 1
   },
-  "packages/client/ui-sidebar-browser/tests/browser-body.client.spec.tsx": {
-    "dac38a9cc792ab6f3a345802975995e35a48d5a706c26d67cb7dba1c906ee3d5": 1
-  },
   "packages/client/ui-sidebar-documentpreview/tests/document-toolbar.client.spec.tsx": {
     "fb9804cc2774409af6935d5a1369497b433c34cd9305cac88e3400eae0f70936": 1
   },
