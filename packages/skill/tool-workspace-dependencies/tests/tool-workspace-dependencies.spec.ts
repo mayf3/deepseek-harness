@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
+import z from '@deepseek-ai/schemastery'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -195,18 +196,11 @@ it('loads the real tool through Cordis, exposes payload paths in place, and unre
     ctx.baseUrl = pathToFileURL(directory).href + '/'
     await ctx.plugin(Loader)
     ctx.loader.builtins.include = Include
-    const modules = new Map<string, unknown>([
-      ['agents', AgentRegistry], ['systemPrompt', SystemPrompt], ['tools', ToolRuntime], ['dependencies', workspaceDependencies],
-    ])
-    ctx.loader.internal = {
-      version: 'v2',
-      async import(specifier: string) {
-        if (!modules.has(specifier)) throw new Error(`unexpected plugin ${specifier}`)
-        return modules.get(specifier)
-      },
-    } as unknown as NonNullable<typeof ctx.loader.internal>
+    Object.assign(ctx.loader.builtins, {
+      agents: AgentRegistry, systemPrompt: SystemPrompt, tools: ToolRuntime, dependencies: workspaceDependencies,
+    })
     const config = join(directory, 'cordis.yml')
-    await writeFile(config, `- name: agents\n- name: systemPrompt\n- name: tools\n- name: dependencies\n  config:\n    source: ${JSON.stringify(source)}\n`)
+    await writeFile(config, `- name: cordis:agents\n- name: cordis:systemPrompt\n- name: cordis:tools\n- name: cordis:dependencies\n  config:\n    source: ${JSON.stringify(source)}\n`)
     await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
     await ctx.loader.await()
     for (const entry of ctx.loader.entries()) await entry.fiber?.await()
@@ -218,7 +212,7 @@ it('loads the real tool through Cordis, exposes payload paths in place, and unre
       expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(workspaceDependencyPaths(source, manifest), undefined, 2) }])
     }
     expect(process.env).toEqual(environment)
-    const entry = [...ctx.loader.entries()].find(entry => entry.options.name === 'dependencies')
+    const entry = [...ctx.loader.entries()].find(entry => entry.options.name === 'cordis:dependencies')
     expect(entry).toBeDefined()
     await entry?.fiber?.dispose()
     expect(ctx.tools.schemas().some(tool => tool.name === 'load_workspace_dependencies')).toBe(false)
@@ -373,7 +367,7 @@ it.each([{ source: 'relative' }, { source: process.cwd(), root: 'relative' }])('
 })
 
 it.each([{}, { source: '' }, { source: 1 }])('rejects invalid payload configuration with a named source error: %j', (config) => {
-  expect(() => workspaceDependencies.Config(config as unknown as workspaceDependencies.Config)).toThrow('source')
+  expect(() => z.resolve(config, workspaceDependencies.Config, {})).toThrow('source')
 })
 
 it('validates the previous directory even when a current installation exists', async () => {

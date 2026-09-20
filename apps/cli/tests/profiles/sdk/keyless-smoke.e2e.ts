@@ -513,11 +513,12 @@ it.each(['unset', 'empty', 'bundled', 'full', 'python-only', 'missing-assets', '
     `)
   } else if (enabled) {
     expect(requests).toHaveLength(2)
+    const content: unknown = expect.arrayContaining([
+      expect.objectContaining({ type: 'tool_result', tool_use_id: 'workspace-dependencies',
+        content: [{ type: 'text', text: JSON.stringify(paths, undefined, 2) }] }),
+    ])
     expect(requests[1]!.messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({ role: 'user', content: expect.arrayContaining([
-        expect.objectContaining({ type: 'tool_result', tool_use_id: 'workspace-dependencies',
-          content: [{ type: 'text', text: JSON.stringify(paths, undefined, 2) }] }),
-      ]) as unknown }),
+      expect.objectContaining({ role: 'user', content }),
     ]))
   }
   if (mode === 'missing-assets') expect(stderr).toContain('check_office.py')
