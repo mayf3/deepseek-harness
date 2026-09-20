@@ -66,6 +66,41 @@ describe('RemoteMock.rpc', () => {
     expect(() => { direct.send('late') }).toThrow('remote-mock: uplink was ended')
   })
 
+  it('applies the real handle checks to send and closes the owned uplink with the stream', async () => {
+    const mock = RemoteMock.create()
+      .stream('job/attach', async (args, stream) => {
+        for await (const item of stream.uplink) stream.push(`${String(args[0])}:${String(item)}`)
+        stream.end()
+      })
+      .stream('job/quiet', (args, stream) => {
+        stream.push(String(args[0]))
+        stream.end()
+      })
+    const absent = mock.open('job/attach', ['job-7'], idle()) as MockClientStream
+    absent.send(undefined)
+    expect(() => { absent.send(1n) }).toThrow('remote-mock: job/attach uplink item is not a lossless JSON value')
+    absent.end()
+    await expect(drain(absent)).resolves.toEqual(['job-7:undefined'])
+    // A script that ends the downlink without reading the uplink closes the owned uplink.
+    const quiet = mock.open('job/quiet', ['job-8'], idle()) as MockClientStream
+    await expect(drain(quiet)).resolves.toEqual(['job-8'])
+    expect(() => { quiet.send('late') }).toThrow('remote-mock: uplink was ended')
+    // A consumer that leaves early closes it too, and a script blocked on the uplink wakes.
+    const unblocked = Promise.withResolvers<undefined>()
+    const blocked = RemoteMock.create().stream('job/attach', async (args, stream) => {
+      stream.push(`${String(args[0])}:first`)
+      for await (const item of stream.uplink) stream.push(String(item))
+      unblocked.resolve(undefined)
+    })
+    const left = blocked.open('job/attach', ['job-9'], idle()) as MockClientStream
+    for await (const item of left) {
+      expect(item).toBe('job-9:first')
+      break
+    }
+    await unblocked.promise
+    expect(() => { left.send('late') }).toThrow('remote-mock: uplink was ended')
+  })
+
   it('rejects malformed payloads and unmatched endpoints, logging the miss', async () => {
     const mock = RemoteMock.create()
     await expect(mock.rpc.call('/api', 'a/b', 'bare')).rejects.toThrow('remote-mock: payload of a/b must be { args: unknown[] | object }')

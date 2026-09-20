@@ -95,18 +95,22 @@ export type RemoteStream<Out, In = never> = AsyncIterable<Out> & { readonly [STR
 /**
  * One open Remote stream as the Client holds it: the downlink items as an
  * `AsyncIterable`, plus the uplink and cancellation of the same logical
- * stream. A generated Client stream method returns it. A handle stands for
- * one generation: when the carrier is lost, iteration fails with the carrier
- * error and the handle is finished.
+ * stream. A generated Client stream method returns it, and calling that
+ * method opens the stream: a holder that neither iterates nor disposes the
+ * handle keeps the Host stream alive. A handle stands for one generation:
+ * when the carrier is lost, iteration fails with the carrier error and the
+ * handle is finished.
  * @template Out - item type the Host method yields.
  * @template In - item type the Client may send; `never` when the method reads none.
  */
 export interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
   /**
    * Send one uplink item. Items sent before the stream has opened are queued
-   * and sent once the `open` frame is on the wire.
+   * and sent once the `open` frame is on the wire. A top-level `undefined`
+   * travels as an `item` frame without `value`.
    * @param item - item the Host validates against the method's uplink codec.
-   * @throws {Error} when `end()` was called or the stream has terminated.
+   * @throws {Error} when the item is not a lossless JSON value, when `end()`
+   * was called, or once the stream has terminated.
    */
   send(item: In): void
   /** Half-close the uplink: the Host's `uplink()` iteration ends. Idempotent; ignored after termination. */
@@ -309,7 +313,7 @@ export interface InvocationDescriptor {
   readonly method: string
   /** Service member invoked when the exported method name is an alias. */
   readonly implementation?: string
-  /** Absent for unary calls; stream calls validate and deliver every yielded item. */
+  /** Absent for unary calls; stream calls deliver every yielded item as the Host produced it. */
   readonly mode?: 'stream'
   /** Receiver selection mode. */
   readonly invocation:

@@ -5,7 +5,7 @@
  */
 
 import { Service } from '@deepseek-ai/cordis'
-import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, isRemoteUplinkItem, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 export type { TypertGatewayFaultDetails } from '../remote-error-codes.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
@@ -28,7 +28,6 @@ import {
   RemoteStreamCarrierError,
   RemoteStreamMuxClient,
 } from './stream-client.ts'
-import { isRemoteJsonValue } from '../stream-protocol.ts'
 import { ClientRemoteEvents } from './remote-events.ts'
 import {
   RemoteStream,
@@ -553,13 +552,14 @@ class ClientStreamHandle implements RemoteStreamHandle<unknown, unknown> {
     this.downlink = downlink[Symbol.asyncIterator]()
     // The carrier opens the logical stream on the first pull; pulling now puts
     // the `open` frame on the wire before any `send()`. The first read is kept
-    // for the consumer, and a failure waits for it instead of surfacing here.
+    // for the consumer, and a failure waits for it instead of surfacing here;
+    // it also terminates the stream, so the queue closes and `send()` throws.
     this.primed = this.downlink.next()
-    void this.primed.catch(() => undefined)
+    void this.primed.catch(() => { this.uplink.close() })
   }
 
   send(item: unknown): void {
-    if (!isRemoteJsonValue(item)) throw new Error(`client api: ${this.endpoint} uplink item is not a lossless JSON value`)
+    if (!isRemoteUplinkItem(item)) throw new Error(`client api: ${this.endpoint} uplink item is not a lossless JSON value`)
     this.uplink.push(item)
   }
 
@@ -577,10 +577,18 @@ class ClientStreamHandle implements RemoteStreamHandle<unknown, unknown> {
     void Promise.resolve(this.downlink.return?.()).catch(() => undefined)
   }
 
-  [Symbol.asyncIterator](): AsyncGenerator {
+  [Symbol.asyncIterator](): AsyncIterator<unknown> {
     if (this.consumed) throw new Error(`client api: ${this.endpoint} stream has one consumer`)
     this.consumed = true
-    return this.iterate()
+    const iteration = this.iterate()
+    return {
+      next: () => iteration.next(),
+      // A return before the first read ends a generator that never started, so its `finally` would not dispose.
+      return: (value?: unknown) => {
+        this.dispose()
+        return iteration.return(value)
+      },
+    }
   }
 
   private async *iterate(): AsyncGenerator {

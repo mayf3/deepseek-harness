@@ -1,6 +1,6 @@
 /** Stream scripts and the pushable, abort-aware stream a script drives. */
 
-import type { RemoteStreamHandle } from '@deepseek-ai/dsh-typert-protocol'
+import { isRemoteUplinkItem, type RemoteStreamHandle } from '@deepseek-ai/dsh-typert-protocol'
 import type { StreamRecord } from './log.ts'
 
 /**
@@ -106,11 +106,13 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
    * @param record - log entry this stream updates.
    * @param sourceSignal - cancellation from the caller that opened the stream.
    * @param uplink - the uplink the script reads.
+   * @param release - closes the uplink this stream owns; called once, when the stream settles, is cancelled, or the consumer leaves.
    */
   constructor(
     readonly record: StreamRecord,
     private readonly sourceSignal: AbortSignal,
     readonly uplink: AsyncIterable<unknown>,
+    private readonly release: () => void,
   ) {
     if (sourceSignal.aborted) this.cancel(sourceSignal.reason)
     else sourceSignal.addEventListener('abort', this.onAbort, { once: true })
@@ -200,6 +202,7 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
     this.record.state = state
     this.settled = settled
     this.sourceSignal.removeEventListener('abort', this.onAbort)
+    this.release()
     this.wakeDrained()
     // A pending read exists only while the queue is empty: push() resolves it directly instead of queueing.
     const waiting = this.waiting
@@ -216,6 +219,7 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
       this.waiting = undefined
       this.queue.length = 0
       this.cancellation.abort(reason)
+      this.release()
       waiting?.resolve({ value: undefined, done: true })
     }
     // Whether cancelled or left after the producer settled, the consumer pulls nothing more: drop what it left.
@@ -236,9 +240,9 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
 }
 
 /**
- * The uplink a direct handle owns: `send()` pushes, `end()` half-closes,
- * `close()` ends it when the handle is disposed. The script reads it as
- * `StreamHandle.uplink`.
+ * The uplink a direct handle owns: `send()` pushes, `end()` half-closes, and
+ * `close()` ends it and drops unread items once the stream settles, is
+ * cancelled, or the consumer leaves. The script reads it as `StreamHandle.uplink`.
  */
 export class HandleUplink implements AsyncIterable<unknown> {
   private readonly items: unknown[] = []
@@ -266,7 +270,7 @@ export class HandleUplink implements AsyncIterable<unknown> {
     this.waiter = undefined
   }
 
-  /** Ends the uplink and drops its unread items; `dispose()` on the handle and `return()` on the script's iterator call it. */
+  /** Ends the uplink and drops unread items; the owning stream calls it on settle or cancel, the script's iterator on `return()`. */
   close(): void {
     this.items.length = 0
     this.end()
@@ -290,8 +294,10 @@ export class HandleUplink implements AsyncIterable<unknown> {
 /**
  * The handle a direct `mock.remote` stream call returns, as a generated method
  * would: iterate it for the script's downlink, `send()` and `end()` feed
- * `StreamHandle.uplink`, `dispose()` cancels the stream. A stream opened through
- * `rpc.open` reads the carrier's uplink instead, and this handle owns none.
+ * `StreamHandle.uplink`, `dispose()` cancels the stream. `send()` applies the
+ * real handle's check, so a non-lossless JSON item throws and a top-level
+ * `undefined` passes. A stream opened through `rpc.open` reads the carrier's
+ * uplink instead, and this handle owns none.
  */
 export class MockClientStream implements RemoteStreamHandle<unknown, unknown> {
   /**
@@ -304,6 +310,9 @@ export class MockClientStream implements RemoteStreamHandle<unknown, unknown> {
     if (this.uplink === undefined) {
       throw new Error(`remote-mock: ${this.stream.record.endpoint} uplink belongs to the carrier that opened the stream`)
     }
+    if (!isRemoteUplinkItem(item)) {
+      throw new Error(`remote-mock: ${this.stream.record.endpoint} uplink item is not a lossless JSON value`)
+    }
     this.uplink.push(item)
   }
 
@@ -312,7 +321,6 @@ export class MockClientStream implements RemoteStreamHandle<unknown, unknown> {
   }
 
   dispose(): void {
-    this.uplink?.close()
     this.stream.dispose()
   }
 

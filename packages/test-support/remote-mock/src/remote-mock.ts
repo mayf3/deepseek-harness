@@ -337,7 +337,7 @@ export class RemoteMock {
     } else {
       uplink = carrierUplink
     }
-    const stream = new MockStream(this.logStore.stream(endpoint, args), signal, uplink)
+    const stream = new MockStream(this.logStore.stream(endpoint, args), signal, uplink, () => { owned?.close() })
     this.live.push(stream)
     this.wakeOpened(endpoint)
     stream.run(script, args)

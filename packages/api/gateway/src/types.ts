@@ -86,7 +86,8 @@ export interface TypertGatewayWireStream {
    * Open one logical stream from its wire endpoint and payload.
    * @param endpoint - canonical Remote endpoint or Gateway-owned stream name.
    * @param payload - decoded carrier payload.
-   * @param uplink - Client-to-Host items of the logical stream; Gateway-owned endpoints ignore them.
+   * @param uplink - Client-to-Host items of the logical stream; a Gateway-owned endpoint returns its iterator
+   * as soon as it opens, so the carrier drops those items instead of buffering them.
    * @param peer - Peer the stream speaks for; `undefined` means the operator's in-process carrier.
    * @param signal - logical-stream cancellation.
    * @returns validated stream values.

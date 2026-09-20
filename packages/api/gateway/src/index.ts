@@ -15,6 +15,7 @@ import z from '@deepseek-ai/schemastery'
 export type { TypertGatewayFaultDetails } from './remote-error-codes.ts'
 import {
   RemoteError,
+  isRemoteJsonValue,
   remoteErrorOf,
   remoteMethods,
   type InvocationDescriptor,
@@ -45,7 +46,6 @@ import {
   REMOTE_EVENT_RESULT_ENDPOINT,
   REMOTE_STREAM_MUX_PATH,
   isRemoteEventAgentId,
-  isRemoteJsonValue,
   parseRemoteEventResult,
   projectRemoteEventRequest,
   restoreRemoteEventRejection,
@@ -419,6 +419,8 @@ export class TypertGatewayService extends Service implements TypertGateway {
     control: AbortController,
   ): Promise<AsyncIterable<unknown>> {
     if (endpoint === REMOTE_EVENT_STREAM_ENDPOINT) {
+      // A Gateway-owned stream reads no uplink: releasing it now keeps its items out of the bounded inbox.
+      releaseUplink(uplink)
       return this.openRemoteEvents(payload, signal)
     }
     return this.openStream({ ...remoteRequest(endpoint, payload, signal, peer), uplink }, control)
@@ -1156,7 +1158,10 @@ class UplinkDecoder implements AsyncIterable<unknown>, AsyncIterator<unknown> {
     }
     let value: unknown
     try {
-      value = decode(this.codec, next.value, this.endpoint, 'uplink')
+      // A top-level `undefined` is the absent `value` of its frame: without a codec it is the item itself.
+      value = next.value === undefined && this.codec.mode === 'src-json'
+        ? undefined
+        : decode(this.codec, next.value, this.endpoint, 'uplink')
     } catch (failure) {
       // The codec failure (`gateway/input-invalid`, field `uplink`) fails the whole logical stream.
       this.abort(failure)
@@ -1230,10 +1235,18 @@ class GatewayInvocation implements RemoteInvocation {
       return
     }
     this.taken = true
-    // The carrier owns the source iterator; its return() is not awaited for
-    // the same reason UplinkDecoder.return() does not await it.
-    void Promise.resolve().then(() => this.uplink_.source[Symbol.asyncIterator]().return?.()).catch(() => undefined)
+    releaseUplink(this.uplink_.source)
   }
+}
+
+/**
+ * Return a carrier uplink nobody will read, so it drops later items instead of
+ * buffering them. The carrier owns the iterator and `return()` is not awaited:
+ * a generator blocked in `next()` completes it only once it yields.
+ * @param source - the carrier's uplink iterable.
+ */
+function releaseUplink(source: AsyncIterable<unknown>): void {
+  void Promise.resolve().then(() => source[Symbol.asyncIterator]().return?.()).catch(() => undefined)
 }
 
 function rpcFailure(error: unknown): ConnectionRpcResult {

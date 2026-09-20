@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   bindTypertRemote,
@@ -279,6 +279,22 @@ describe('typert-protocol Remote declarations', () => {
     // The accessor belongs to the root, so a Remote Service leaving does not take it along.
     await second.dispose()
     expect(child.ctx.invocation).toBeUndefined()
+  })
+
+  it('provides the invocation accessor for a plain Service bound with bindTypertRemote', async () => {
+    const root = new Context()
+    expect(Object.hasOwn(root.reflect.props, 'invocation')).toBe(false)
+    class Plain extends Service {
+      readonly typertRemote = bindTypertRemote(this, 'plain')
+
+      constructor(ctx: Context) {
+        super(ctx, 'plain')
+      }
+    }
+    await root.plugin(Plain)
+    expect(Object.hasOwn(root.reflect.props, 'invocation')).toBe(true)
+    expect(root.invocation).toBeUndefined()
+    expect((root.get('plain') as Plain).typertRemote.namespace).toBe('plain')
   })
 
   it('rejects malformed decorator calls and targets', () => {

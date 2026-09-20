@@ -337,6 +337,27 @@ function stubWorker(): {
   check('the caller iterator is released without an uplink end', [released, sent.map(frame => frame.t)], [true, ['stream-open']])
 }
 
+// A terminal frame releases the caller's uplink iterator in the receive path, before the consumer reads it.
+{
+  const { worker, deliver } = stubWorker()
+  const tunnel = new WorkerTunnel(worker)
+  let released = false
+  const uplink: AsyncIterable<string> = {
+    [Symbol.asyncIterator]: () => ({
+      next: () => new Promise<IteratorResult<string>>(() => {}),
+      return: async (): Promise<IteratorResult<string>> => {
+        released = true
+        return { value: undefined, done: true }
+      },
+    }),
+  }
+  const stream = tunnel.open('job/attach', {}, new AbortController().signal, uplink)[Symbol.asyncIterator]()
+  const ended = stream.next()
+  deliver({ t: 'stream-end', id: 1 })
+  check('a terminal frame releases the uplink before the consumer reads', released, true)
+  check('the downlink then ends', await ended, { done: true, value: undefined })
+}
+
 /** Wait, in small hops, for a condition that a concurrent pump settles. */
 async function settled(condition: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 200 && !condition(); attempt += 1) {

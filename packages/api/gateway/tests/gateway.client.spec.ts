@@ -2683,6 +2683,66 @@ describe('Client Typert API', () => {
     }
   })
 
+  it('sends a top-level undefined item as an item frame without value', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const handle: RemoteStreamHandle<string, unknown> = ctx.remote.probe.attach('alpha')
+        handle.send(undefined)
+        expect(() => { handle.send({ nested: undefined }) }).toThrow('is not a lossless JSON value')
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(2) })
+        const opened = JSON.parse(socket.sent[0]!) as { streamId: string }
+        const item = JSON.parse(socket.sent[1]!) as Record<string, unknown>
+        expect(item).toEqual({ type: 'item', streamId: opened.streamId })
+        expect(Object.keys(item)).toEqual(['type', 'streamId'])
+        handle.dispose()
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
+
+  it('disposes on an iterator return that precedes the first read', async () => {
+    await withFakeWebSocket('https://harness.example/', async () => {
+      const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>(), 'web')
+      const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+      try {
+        const handle = ctx.remote.probe.attach('alpha')
+        const socket = FakeWebSocket.sockets[0]!
+        await vi.waitFor(() => { expect(socket.sent).toHaveLength(1) })
+        await expect(handle[Symbol.asyncIterator]().return?.()).resolves.toEqual({ done: true, value: undefined })
+        await vi.waitFor(() => {
+          expect(socket.sent.map(text => (JSON.parse(text) as { type: string }).type)).toEqual(['open', 'cancel'])
+        })
+        expect(() => { handle.send('late') }).toThrow('client api: probe/attach stream has terminated')
+      } finally {
+        await dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+  })
+
+  it('closes the uplink when the stream fails to open and keeps the failure for the reader', async () => {
+    const open: NonNullable<ConnectionHandle['rpc']['open']> = () => ({
+      [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(new Error('handshake failed')) }),
+    })
+    const { ctx, client } = await benchFiber(vi.fn<ConnectionHandle['rpc']['call']>(), 'in-process', open)
+    const dispose = await ctx.remote.$mount({ package: '@fixture/attach', descriptors: [attachDescriptor()] })
+    try {
+      const handle = ctx.remote.probe.attach('alpha')
+      await vi.waitFor(() => {
+        expect(() => { handle.send('late') }).toThrow('client api: probe/attach stream has terminated')
+      })
+      await expect(drainStream(handle)).rejects.toThrow('handshake failed')
+    } finally {
+      await dispose()
+      await client.dispose()
+    }
+  })
+
   it('refuses an uplink item that is not a lossless JSON value', async () => {
     const mock = RemoteMock.create().stream('probe/attach', async (args, stream) => {
       const [{ topic }] = args as [{ readonly topic: string }]

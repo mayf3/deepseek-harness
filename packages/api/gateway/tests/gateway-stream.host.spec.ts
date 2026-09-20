@@ -499,6 +499,21 @@ describe('Typert Remote streams', () => {
     }))).resolves.toEqual(['a', 'b', 'done'])
   })
 
+  it('accepts a top-level undefined uplink item where no codec applies and rejects it where one does', async () => {
+    const { ctx } = await setup(false)
+    await expect(collect(await ctx.typertGateway.stream({
+      namespace: 'feed', method: 'context', args: { label: 'absent' }, uplink: toAsync<unknown>([undefined, 'x']),
+    }))).resolves.toEqual([
+      'feed/context:feed:{"label":"absent"}:absent',
+      'raw:undefined',
+      'raw:"x"',
+      'typert gateway: feed/context: invocation.uplink() is available once per call',
+    ])
+    await expect(collect(await ctx.typertGateway.stream({
+      namespace: 'feed', method: 'echo', args: { prefix: '' }, uplink: toAsync<unknown>([undefined]),
+    }))).rejects.toMatchObject({ code: 'gateway/input-invalid', details: { endpoint: 'feed/echo', field: 'uplink' } })
+  })
+
   it('releases the uplink when a unary method is opened through the stream carrier', async () => {
     const { ctx } = await setup(false)
     const returned = vi.fn(async (): Promise<IteratorResult<string>> => ({ value: undefined, done: true }))
@@ -555,6 +570,13 @@ describe('Typert Remote streams', () => {
         type: 'error',
         error: { code: 'gateway/input-invalid', details: { endpoint: 'feed/echo', field: 'uplink' } },
       })
+    })
+
+    // An item frame without value is a top-level undefined item.
+    sendOpen(socket, 'absent', 'feed/context', { label: 'w' })
+    socket.send(JSON.stringify({ type: 'item', streamId: 'absent' }))
+    await vi.waitFor(() => {
+      expect(frames).toContainEqual({ type: 'item', streamId: 'absent', value: 'raw:undefined' })
     })
 
     sendOpen(socket, 'late', 'feed/hold', {})
@@ -723,6 +745,44 @@ describe('Typert Remote streams', () => {
     expect(String(closeEvent[1])).toBe('Remote stream failure could not be delivered')
     await vi.waitFor(() => { expect(service.returns).toBe(2) })
     expect(service.signals[1]?.aborted).toBe(true)
+  })
+
+  it('keeps uplink frames to a Gateway-owned stream out of the bounded inbox', async () => {
+    const { ctx } = await setup(true, { streamInboxBytes: 64 })
+    const source = (signal: AbortSignal): AsyncIterable<{ event: string; args: readonly unknown[] }> => (async function *() {
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve()
+        else signal.addEventListener('abort', () => { resolve() }, { once: true })
+      })
+    })()
+    ctx.typertGateway.registerRemoteEvents(source, REMOTE_HOST)
+
+    // An in-process carrier's uplink is returned as soon as the Gateway-owned stream opens.
+    const returned = vi.fn(async (): Promise<IteratorResult<unknown>> => ({ value: undefined, done: true }))
+    const idle: AsyncIterable<unknown> = {
+      [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<unknown>>(() => {}), return: returned }),
+    }
+    const events = await ctx.typertGateway.wireStream.open('$events', { args: {} }, idle, undefined, new AbortController().signal)
+    await vi.waitFor(() => { expect(returned).toHaveBeenCalledOnce() })
+    await events[Symbol.asyncIterator]().return?.()
+
+    const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
+      headers: { cookie: browserCookie(ctx) },
+    })
+    await once(socket, 'open')
+    const frames: Record<string, unknown>[] = []
+    socket.on('message', (data) => { frames.push(JSON.parse(rawText(data)) as Record<string, unknown>) })
+    sendOpen(socket, 'events', '$events', {})
+    await vi.waitFor(() => { expect(frames.filter(frame => frame.streamId === 'events')).toHaveLength(1) })
+    for (let index = 0; index < 4; index += 1) {
+      socket.send(JSON.stringify({ type: 'item', streamId: 'events', value: 'x'.repeat(40) }))
+    }
+    // A Remote stream opened afterwards on the same socket shows the flood was processed and harmed nothing.
+    sendOpen(socket, 'after', 'feed/sync', { label: 'after' })
+    await vi.waitFor(() => { expect(frames).toContainEqual({ type: 'end', streamId: 'after' }) })
+    expect(frames.filter(frame => frame.streamId === 'events').map(frame => frame.type)).toEqual(['item'])
+    socket.close()
+    await once(socket, 'close')
   })
 
   it('carries the registered Remote event source and withdraws its active stream', async () => {
