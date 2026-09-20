@@ -113,6 +113,23 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
         ]
         await writeFile(join(nativeRoot, 'osascript'), `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(apps))});\n`, { mode: 0o700 })
       }
+      if (process.platform === 'linux') {
+        const data = join(nativeRoot, 'data')
+        await mkdir(join(data, 'applications'), { recursive: true })
+        const icon = join(nativeRoot, 'icon.png')
+        await writeFile(icon, TINY_PNG)
+        await writeFile(join(data, 'applications', 'test.desktop'), `[Desktop Entry]\nName=Test Player\nIcon=${icon}\n`)
+        await writeFile(join(data, 'applications', 'other.desktop'), '[Desktop Entry]\nName=Other Player\n')
+        await writeFile(join(nativeRoot, 'gio'), `#!/usr/bin/env node
+const fs = require('node:fs');
+if (process.argv[2] === 'info') process.stdout.write('standard::content-type: video/mp4');
+else if (process.argv[2] === 'mime') process.stdout.write('Default application for video/mp4: test.desktop\\nRegistered applications:\\n  test.desktop\\n  other.desktop\\n');
+else if (process.argv[2] === 'launch') fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.argv[4], action: 'application' }) + '\\n');
+else process.exit(1);
+`, { mode: 0o700 })
+        vi.stubEnv('XDG_DATA_HOME', data)
+        vi.stubEnv('XDG_DATA_DIRS', '')
+      }
       vi.stubEnv('PATH', `${nativeRoot}${delimiter}${process.env.PATH ?? ''}`)
     }
     // The Open In rows carry the default-application controls; the SSH marker
@@ -763,11 +780,11 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       await page.getByRole('menuitem', { name: /^Show file location/ }).click()
       await expect.poll(async () => (await opened()).length, { timeout: 15_000 }).toBe(2)
       const gestures = await opened()
-      expect(gestures[0]?.action).toBe(process.platform === 'darwin' ? 'open' : 'reveal')
+      expect(gestures[0]?.action).toBe('open')
       expect([clip, cwd]).toContain(gestures[0]?.path)
       expect(gestures[1]?.action).toBe('reveal')
       expect([clip, cwd]).toContain(gestures[1]?.path)
-      if (process.platform === 'darwin') {
+      if (STUB_OPENER) {
         await expect.poll(() => headerOpen.locator('img').count()).toBe(1)
         await prominent.getByRole('button', { name: 'More ways to open' }).click()
         await page.getByRole('menuitem', { name: 'Test Player (default)', exact: true }).waitFor()

@@ -153,7 +153,7 @@ export async function windowsFileApplications(
   const encodedApplication = Buffer.from(application ?? '').toString('base64')
   const script = `$ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
+Add-Type -ReferencedAssemblies System,System.Core,System.Drawing -TypeDefinition @'
 ${WINDOWS_ASSOCIATIONS}
 '@
 $path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedPath}'))

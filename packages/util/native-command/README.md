@@ -49,7 +49,7 @@ The `NativeCommandRunner` type is the injectable command boundary for host integ
 
 `revealNativePath(path, signal)` selects the file in Finder or Explorer, including WSL path translation, and opens its parent directory through `xdg-open` on desktop Linux. `nativeFileManager()` identifies that action for Host-derived UI labels; desktop availability remains a separate `canOpenNativePath()` check. Callers must authorize the absolute file path before invoking either operation. Platform dispatch is covered by injected-runner tests; native desktop verification belongs to the corresponding platform. Explorer receives an encoded file URI as a separate argument. Its exit code 1 is accepted as a delegated handoff; cancellation, missing executables, and other exit codes still reject. This acknowledgement does not prove that a desktop window selected the file.
 
-`nativeFileApplications(path, signal)` queries macOS LaunchServices for the file’s registered handlers, current default, localized names, and PNG application icons. `openNativeFileApplication(path, application, signal)` rechecks membership before launching the selected handler. Callers authorize the local file path. Windows and Linux currently return no handlers; default opening and reveal remain available through the path openers.
+`nativeFileApplications(path, signal)` returns registered applications, localized names, icons, and the current default. macOS uses LaunchServices; Windows uses Shell association handlers; Linux uses GIO with shared XDG desktop-entry and icon lookup. `openNativeFileApplication(path, application, signal)` revalidates the handler without changing the system default. Windows delegates invocation to the Shell, and Linux delegates argument expansion to `gio launch`. WSL translates the path and uses the Windows adapter. Callers authorize the local file path. Native integration tests use private Windows file associations and Linux XDG roots on their respective platforms.
 
 -----
 
@@ -102,6 +102,8 @@ Nothing here enters a request prefix; this package neither assembles nor sends a
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
+
+Linux association discovery and explicit launching require GIO. Missing native commands reject the query, and missing artwork returns null; callers can retain file-manager reveal as their fallback.
 
 
 These limits define when this runner is not the right tool. They are current package constraints, not a task backlog.
