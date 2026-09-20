@@ -471,6 +471,29 @@ export function classifyPersistenceChange(before: PersistenceRoot | null, after:
   function compareAlternatives(
     oldTypes: readonly number[], newTypes: readonly number[], path: string, scope: Scope, active: ReadonlySet<string>,
   ): PersistenceTypeChange[] {
+    if (key === 'event:subagent/catalog' && path === `${key}.data` && scope === 'body'
+      && oldTypes.length === 2 && newTypes.length === 3) {
+      const modeNode = (index: number): number | undefined => {
+        const node = newRoot.schema.nodes[index]
+        return node?.kind === 'object' ? node.properties.find(property => property.name === 'mode' && !property.optional)?.type : undefined
+      }
+      const mode = (index: number): string | number | boolean | null | undefined => {
+        const node = newRoot.schema.nodes[modeNode(index) ?? -1]
+        return node?.kind === 'literal' ? node.value : undefined
+      }
+      const unknown = newTypes.find(index => mode(index) === 'unknown')
+      const oneShot = newTypes.find(index => mode(index) === 'one-shot')
+      if (unknown !== undefined && oneShot !== undefined) {
+        // The catalog exception admits only the one-shot fields with unknown mode;
+        // existing branches still pass the ordinary structural comparison below.
+        const normalized = { ...newRoot.schema, nodes: newRoot.schema.nodes.map((node, index) =>
+          index === modeNode(unknown) ? { kind: 'literal' as const, value: 'one-shot' } : node) }
+        if (subDigest(normalized, unknown) === fingerprint(newRoot.schema, oneShot, 1)) {
+          return [describe(path, 'union-variants-changed', false),
+            ...compareAlternatives(oldTypes, newTypes.filter(index => index !== unknown), path, scope, active)]
+        }
+      }
+    }
     if (oldTypes.length !== newTypes.length) return [describe(path, 'union-variants-changed')]
     const candidates = oldTypes.map(oldType => newTypes.map(newType => compare(oldType, newType, path, scope, active)))
     const matching = matchUnionVariants(candidates.map(row => row.flatMap((candidate, index) =>
