@@ -342,7 +342,7 @@ node apps/desktop/node_modules/pnpm/bin/pnpm.mjs --dir apps/desktop run test:upd
 
 ## 底层开发覆盖项
 
-未打包的 Electron 进程使用应用目录下的 `.desktop-build/development/project` 作为开发项目。`DSH_DESKTOP_PNPM_ENTRY` 和 `DSH_DESKTOP_DSH_DIR` 用于选择明确的运行时资源。打包应用会忽略这些变量，从 `process.resourcesPath` 解析签名资源，并使用受管 Desktop profile。
+未打包的 Electron 进程使用应用目录下的 `.desktop-build/development/project` 作为开发项目。`DSH_DESKTOP_PNPM_ENTRY`、`DSH_DESKTOP_DSH_DIR` 和 `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` 用于选择明确的运行时资源。开发启动器将 `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` 设置为其已准备目标的 primary-runtime 目录，因为 Windows 目标固定为 x64。打包应用会忽略这些变量，从 `process.resourcesPath` 解析签名资源，并使用受管 Desktop profile。
 
 ## 已知限制
 

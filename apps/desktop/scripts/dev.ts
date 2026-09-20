@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import type { DesktopRelease } from '../src/release.ts'
+import { developmentRuntimeDirectory } from './desktop-build-paths.mjs'
 import { prepareDevelopmentProject } from './development-project.ts'
 import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
 
@@ -66,6 +67,7 @@ async function launchElectron(): Promise<void> {
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: home,
+    DSH_DESKTOP_PRIMARY_RUNTIME_DIR: developmentRuntimeDirectory(),
     DSH_DESKTOP_HOST_INSPECT_PORT: String(hostPort),
     DSH_DESKTOP_OPEN_DEVTOOLS: process.env.DSH_DESKTOP_OPEN_DEVTOOLS ?? '1',
     ELECTRON_ENABLE_LOGGING: process.env.ELECTRON_ENABLE_LOGGING ?? '1',

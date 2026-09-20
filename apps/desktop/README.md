@@ -342,7 +342,7 @@ The downloaded bytes are inert, and the installation call is recorded rather tha
 
 ## Low-level development overrides
 
-An unpackaged Electron process uses `.desktop-build/development/project` under its application directory as its development project. `DSH_DESKTOP_PNPM_ENTRY` and `DSH_DESKTOP_DSH_DIR` select explicit runtime resources. Packaged applications ignore these variables, resolve signed resources from `process.resourcesPath`, and use the managed Desktop profile.
+An unpackaged Electron process uses `.desktop-build/development/project` under its application directory as its development project. `DSH_DESKTOP_PNPM_ENTRY`, `DSH_DESKTOP_DSH_DIR`, and `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` select explicit runtime resources. The development launcher sets `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` to the primary-runtime directory of the target it prepared, because the Windows target is always x64. Packaged applications ignore these variables, resolve signed resources from `process.resourcesPath`, and use the managed Desktop profile.
 
 ## Known limitations
 

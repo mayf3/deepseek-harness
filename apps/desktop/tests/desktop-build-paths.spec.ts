@@ -2,6 +2,7 @@ import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   desktopTargetBuildPaths,
+  developmentRuntimeDirectory,
   resolveDesktopBuildTarget,
 } from '../scripts/desktop-build-paths.mjs'
 
@@ -36,6 +37,15 @@ describe('desktop build paths', () => {
     const x64 = desktopTargetBuildPaths('mac-x64')
     expect(arm64.downloads).toBe(x64.downloads)
     expect(arm64.downloads).not.toContain(`${sep}targets${sep}`)
+  })
+
+  it('resolves the development primary runtime from the build target rather than the host architecture', () => {
+    expect(developmentRuntimeDirectory({}, 'darwin', 'arm64'))
+      .toContain(join('targets', 'mac-arm64', 'runtime', 'primary-runtime'))
+    expect(developmentRuntimeDirectory({}, 'darwin', 'x64'))
+      .toContain(join('targets', 'mac-x64', 'runtime', 'primary-runtime'))
+    expect(developmentRuntimeDirectory({}, 'win32', 'arm64'))
+      .toContain(join('targets', 'win-x64', 'runtime', 'primary-runtime'))
   })
 
   it('resolves environment overrides and rejects unsupported targets', () => {

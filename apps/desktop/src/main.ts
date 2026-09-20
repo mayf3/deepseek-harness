@@ -98,6 +98,14 @@ function runtimeResources(): RuntimeResources {
   return { node, nodeBin, pnpm, dsh }
 }
 
+function developmentPrimaryRuntime(): string {
+  const directory = process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR
+  if (directory === undefined || directory === '') {
+    throw new Error('dsh desktop: DSH_DESKTOP_PRIMARY_RUNTIME_DIR is required for an unpackaged launch')
+  }
+  return directory
+}
+
 function developmentHostInspectPort(enabled: boolean): number | undefined {
   const configured = process.env.DSH_DESKTOP_HOST_INSPECT_PORT
   if (!enabled || configured === undefined || configured === '') return undefined
@@ -261,7 +269,7 @@ async function main(): Promise<void> {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
       hostInspectPort, process.env, onFailure,
-      development ? join(app.getAppPath(), '.desktop-build', 'targets', `${process.platform === 'darwin' ? 'mac' : 'win'}-${process.arch}`, 'runtime', 'primary-runtime')
+      development ? developmentPrimaryRuntime()
         : join(process.resourcesPath, 'runtime', 'primary-runtime'),
       resources)
     return {

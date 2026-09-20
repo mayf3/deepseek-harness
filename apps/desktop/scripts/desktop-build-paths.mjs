@@ -69,3 +69,20 @@ export function resolveDesktopTargetBuildPaths(
 ) {
   return desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
 }
+
+/**
+ * Resolve the primary-runtime directory an unpackaged development launch uses.
+ * The build target fixes Windows to x64, so the shell cannot derive this directory from
+ * the architecture of the process that launched it.
+ * @param {NodeJS.ProcessEnv} env - Packaging environment.
+ * @param {NodeJS.Platform} hostPlatform - Build-host platform used when no target override exists.
+ * @param {string} hostArch - Build-host architecture used when no target override exists.
+ * @returns {string} Primary-runtime directory prepared for the selected target.
+ */
+export function developmentRuntimeDirectory(
+  env = process.env,
+  hostPlatform = process.platform,
+  hostArch = process.arch,
+) {
+  return join(resolveDesktopTargetBuildPaths(env, hostPlatform, hostArch).runtime, 'primary-runtime')
+}

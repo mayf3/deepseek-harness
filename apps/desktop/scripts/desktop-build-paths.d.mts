@@ -47,3 +47,16 @@ export function resolveDesktopTargetBuildPaths(
   hostPlatform?: NodeJS.Platform,
   hostArch?: string,
 ): DesktopTargetBuildPaths
+
+/**
+ * Resolve the primary-runtime directory an unpackaged development launch uses.
+ * @param env - Packaging environment.
+ * @param hostPlatform - Build-host platform used when no target override exists.
+ * @param hostArch - Build-host architecture used when no target override exists.
+ * @returns Primary-runtime directory prepared for the selected target.
+ */
+export function developmentRuntimeDirectory(
+  env?: NodeJS.ProcessEnv,
+  hostPlatform?: NodeJS.Platform,
+  hostArch?: string,
+): string
