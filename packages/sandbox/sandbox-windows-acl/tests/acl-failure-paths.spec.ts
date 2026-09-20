@@ -11,6 +11,7 @@
 import { tmpdir } from 'node:os'
 import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 import { describe, expect, it, vi } from 'vitest'
+import type { Mock } from 'vitest'
 import koffi from 'koffi'
 
 import { grantWrite, revokeWrite, withPathLock } from '../src/acl.ts'
@@ -511,8 +512,8 @@ describe('mergeAndApply failure paths', () => {
 
 describe('revokeWrite label handling', () => {
   /** The SECURITY_INFORMATION and SACL of the last apply. */
-  function applyArgs(api: Win32Bindings): { information: number; sacl: unknown } {
-    const call = (api.setNamedSecurityInfoW as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)
+  function applyArgs(setNamedSecurityInfoW: Mock<Win32Bindings['setNamedSecurityInfoW']>): { information: number; sacl: unknown } {
+    const call = setNamedSecurityInfoW.mock.calls.at(-1)
     return { information: call?.[2] as number, sacl: call?.[6] }
   }
 
@@ -529,7 +530,7 @@ describe('revokeWrite label handling', () => {
       setNamedSecurityInfoW,
     })
     expect(revokeWrite(api, 'C:\\granted', sid)).toBe(true)
-    const { information, sacl } = applyArgs(api)
+    const { information, sacl } = applyArgs(setNamedSecurityInfoW)
     expect(information & abi.LABEL_SECURITY_INFORMATION).toBe(0) // the label was left untouched
     expect(sacl).toBeNull()
   })
@@ -543,7 +544,7 @@ describe('revokeWrite label handling', () => {
       setNamedSecurityInfoW,
     })
     expect(revokeWrite(api, 'C:\\granted', sid)).toBe(true)
-    expect(applyArgs(api).information & abi.LABEL_SECURITY_INFORMATION).toBe(abi.LABEL_SECURITY_INFORMATION)
+    expect(applyArgs(setNamedSecurityInfoW).information & abi.LABEL_SECURITY_INFORMATION).toBe(abi.LABEL_SECURITY_INFORMATION)
   })
 
   it('clears the Low label when a malformed tiny DACL hides any foreign grant', () => {
@@ -554,7 +555,7 @@ describe('revokeWrite label handling', () => {
     const setNamedSecurityInfoW = vi.fn(() => 0)
     const api = aclApi({ getNamedSecurityInfoW: readStub(acl, null, 6n), setNamedSecurityInfoW })
     expect(revokeWrite(api, 'C:\\granted', craftSid(1, 0))).toBe(true)
-    expect(applyArgs(api).information & abi.LABEL_SECURITY_INFORMATION).toBe(abi.LABEL_SECURITY_INFORMATION)
+    expect(applyArgs(setNamedSecurityInfoW).information & abi.LABEL_SECURITY_INFORMATION).toBe(abi.LABEL_SECURITY_INFORMATION)
   })
 
   it('clears the Low label when a lying ACE size hides any foreign grant', () => {
@@ -566,7 +567,7 @@ describe('revokeWrite label handling', () => {
     const setNamedSecurityInfoW = vi.fn(() => 0)
     const api = aclApi({ getNamedSecurityInfoW: readStub(acl, null, 6n), setNamedSecurityInfoW })
     expect(revokeWrite(api, 'C:\\granted', craftSid(1, 0))).toBe(true)
-    expect(applyArgs(api).information & abi.LABEL_SECURITY_INFORMATION).toBe(abi.LABEL_SECURITY_INFORMATION)
+    expect(applyArgs(setNamedSecurityInfoW).information & abi.LABEL_SECURITY_INFORMATION).toBe(abi.LABEL_SECURITY_INFORMATION)
   })
 })
 

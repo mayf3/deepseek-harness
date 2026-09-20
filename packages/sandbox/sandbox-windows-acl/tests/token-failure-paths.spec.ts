@@ -21,6 +21,11 @@ import * as abi from '../src/win32-abi.ts'
 
 const PVOID = koffi.pointer('void')
 
+/** Stub binding table: only the members a test drives, so the rest are never called. */
+function stubBindings(overrides: Partial<Win32Bindings>): Win32Bindings {
+  return overrides as Win32Bindings
+}
+
 describe('openCurrentProcessToken failure paths', () => {
   it('reports when OpenProcess yields no handle', () => {
     const api = {
@@ -383,17 +388,17 @@ describe('restrictTokenIntegrity', () => {
       expect(info.readUInt32LE(8)).toBe(abi.SE_GROUP_INTEGRITY)
       return 1
     })
-    const api = { getLengthSid: vi.fn(() => 12), setTokenInformation } as unknown as Win32Bindings
+    const api = stubBindings({ getLengthSid: vi.fn(() => 12), setTokenInformation })
     restrictTokenIntegrity(api, 5n as NativePtr, lowSid)
     expect(setTokenInformation).toHaveBeenCalledTimes(1)
   })
 
   it('fails closed when the Low label SID has no length', () => {
-    const api = {
+    const api = stubBindings({
       getLengthSid: vi.fn(() => 0),
       getLastError: vi.fn(() => 87),
       formatMessageW: vi.fn(() => 0),
-    } as unknown as Win32Bindings
+    })
     let caught: unknown
     try {
       restrictTokenIntegrity(api, 5n as NativePtr, allocBytes(12))
@@ -405,12 +410,12 @@ describe('restrictTokenIntegrity', () => {
   })
 
   it('fails closed when SetTokenInformation rejects the integrity level', () => {
-    const api = {
+    const api = stubBindings({
       getLengthSid: vi.fn(() => 12),
       setTokenInformation: vi.fn(() => 0),
       getLastError: vi.fn(() => 5),
       formatMessageW: vi.fn(() => 0),
-    } as unknown as Win32Bindings
+    })
     let caught: unknown
     try {
       restrictTokenIntegrity(api, 5n as NativePtr, allocBytes(12))

@@ -61,6 +61,11 @@ function scratch(): string {
   return dir
 }
 
+/** Stub binding table: only the members a test drives, so the rest are never called. */
+function stubBindings(overrides: Partial<Win32Bindings>): Win32Bindings {
+  return overrides as Win32Bindings
+}
+
 /**
  * The stub the whole happy pipeline needs: token opening, capability-SID
  * parsing, workspace+temp grants, logon-SID scan, well-known SID, restricted token,
@@ -69,7 +74,7 @@ function scratch(): string {
  */
 function happyStubs(): HappyStubs {
   let next = 0n
-  const fresh = () => ++next
+  const fresh = (): NativePtr => ++next as NativePtr
 
   const openProcess = vi.fn(() => fresh())
   const openProcessToken = vi.fn((_process: unknown, _access: unknown, slot: NativePtr) => {
@@ -155,12 +160,12 @@ function happyStubs(): HappyStubs {
   const resumeThread = vi.fn(() => 0)
   const terminateProcess = vi.fn(() => 1)
   const getStdHandle = vi.fn(() => fresh())
-  const localFree = vi.fn(() => 0n)
+  const localFree = vi.fn(() => 0n as NativePtr)
   const closeHandle = vi.fn(() => 1)
   const getLastError = vi.fn(() => ERROR_BROKEN_PIPE) // the drains' clean EOF
   const formatMessageW = vi.fn(() => 0)
 
-  const api = {
+  const api = stubBindings({
     openProcess, openProcessToken, convertStringSidToSidW, getTempPathW, createFileW,
     lockFileEx: vi.fn(() => 1), unlockFileEx: vi.fn(() => 1),
     getNamedSecurityInfoW, setEntriesInAclW, setNamedSecurityInfoW, getTokenInformation,
@@ -171,7 +176,7 @@ function happyStubs(): HappyStubs {
     setInformationJobObject, assignProcessToJobObject, resumeThread, terminateProcess,
     getStdHandle,
     localFree, closeHandle, getLastError, formatMessageW,
-  } as unknown as Win32Bindings
+  })
   return {
     api, setNamedSecurityInfoW, convertStringSidToSidW, closeHandle, localFree,
     createRestrictedToken, createJobObjectW, getNamedSecurityInfoW, setTokenInformation, addMandatoryAce,
