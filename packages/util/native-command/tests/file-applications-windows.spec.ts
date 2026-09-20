@@ -59,11 +59,15 @@ using System.IO;
 using System.Diagnostics;
 public static class Handler {
   public static void Main(string[] args) {
-    File.WriteAllLines(${JSON.stringify(marker)}, new string[] { args[0], Process.GetCurrentProcess().Id.ToString() });
+    File.WriteAllLines(${JSON.stringify(marker)}, new string[] { args.Length == 0 ? "(no file argument)" : args[0], Process.GetCurrentProcess().Id.ToString() });
   }
 }
 '@
 `)
+  phase = 'verify fixture executable'
+  await run(executable, [path], signal)
+  expect((await readFile(marker, 'utf8')).split(/\r?\n/)[0]).toBe(path)
+  await rm(marker)
   phase = 'register association'
   const command = literal(`"${executable}" "%1"`)
   await runScript(`$ErrorActionPreference = 'Stop'

@@ -42,6 +42,68 @@ public static class DshFileAssociations {
   [DllImport("user32.dll")]
   static extern bool DestroyIcon(IntPtr icon);
 
+  [DllImport("shlwapi.dll", PreserveSig = false)]
+  static extern void SHCreateThreadRef(IntPtr count, out IntPtr reference);
+  [DllImport("shlwapi.dll", PreserveSig = false)]
+  static extern void SHSetThreadRef(IntPtr reference);
+  [DllImport("shell32.dll")]
+  static extern void SHSetInstanceExplorer(IntPtr reference);
+  [StructLayout(LayoutKind.Sequential)]
+  struct Message {
+    public IntPtr window;
+    public uint message;
+    public UIntPtr wParam;
+    public IntPtr lParam;
+    public uint time;
+    public int x, y;
+    public uint reserved;
+  }
+  [DllImport("user32.dll", SetLastError = true)]
+  static extern UIntPtr SetTimer(IntPtr window, UIntPtr id, uint milliseconds, IntPtr callback);
+  [DllImport("user32.dll")]
+  static extern bool KillTimer(IntPtr window, UIntPtr id);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  static extern int GetMessage(out Message message, IntPtr window, uint min, uint max);
+  [DllImport("user32.dll")]
+  static extern bool TranslateMessage(ref Message message);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  static extern IntPtr DispatchMessage(ref Message message);
+
+  // Shell handlers may return before their asynchronous launch work releases the host.
+  // The shared Shell reference, rather than an arbitrary delay, owns that lifetime.
+  static void WithShellLifetime(Action action) {
+    IntPtr count = Marshal.AllocHGlobal(sizeof(int));
+    IntPtr reference = IntPtr.Zero;
+    try {
+      Marshal.WriteInt32(count, 0);
+      SHCreateThreadRef(count, out reference);
+      SHSetThreadRef(reference);
+      SHSetInstanceExplorer(reference);
+      int owned = Marshal.ReadInt32(count);
+      try { action(); }
+      finally {
+        if (Marshal.ReadInt32(count) > owned) {
+          // USER_TIMER_MINIMUM wakes the STA to inspect the reference count while dispatching COM work.
+          UIntPtr timer = SetTimer(IntPtr.Zero, UIntPtr.Zero, 10, IntPtr.Zero);
+          if (timer == UIntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+          try {
+            while (Marshal.ReadInt32(count) > owned) {
+              Message message;
+              if (GetMessage(out message, IntPtr.Zero, 0, 0) <= 0) throw new InvalidOperationException("Shell handoff message loop ended");
+              TranslateMessage(ref message);
+              DispatchMessage(ref message);
+            }
+          } finally { KillTimer(IntPtr.Zero, timer); }
+        }
+      }
+    } finally {
+      SHSetInstanceExplorer(IntPtr.Zero);
+      SHSetThreadRef(IntPtr.Zero);
+      if (reference != IntPtr.Zero) Marshal.Release(reference);
+      Marshal.FreeHGlobal(count);
+    }
+  }
+
   public sealed class Application {
     public string id;
     public string name;
@@ -115,6 +177,9 @@ public static class DshFileAssociations {
     return apps.ToArray();
   }
   public static void Open(string path, string application) {
+    WithShellLifetime(delegate { OpenRegistered(path, application); });
+  }
+  static void OpenRegistered(string path, string application) {
     bool opened = false;
     Visit(path, delegate(IHandler handler) {
       string id; handler.GetName(out id);
