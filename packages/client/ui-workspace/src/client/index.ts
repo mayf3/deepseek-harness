@@ -103,8 +103,13 @@ export function apply(ctx: Context): void {
   const viewHandle = createWorkspaceViewStore()
   const viewInstance = viewHandle.create()
   const viewStore: typeof viewHandle = { ...viewHandle, create: () => viewInstance }
+  const rowToast = createSnapshotStore<RowToastState | null>(null)
+  let toastSeq = 0
+  const notify = (toast: RowToast): void => { rowToast.set({ ...toast, seq: ++toastSeq }) }
   const uiWorkspace = new UiWorkspaceService(
-    ctx, ctx.remote.directoryPicker, workspaces, sessions, viewInstance.actions)
+    ctx, ctx.remote.directoryPicker, workspaces, sessions, viewInstance.actions,
+    () => { notify({ kind: 'defaultWorkspaceFailed' }) },
+  )
   ctx.slots.provideRoot({ hooks: { workspaces: workspaces.list } })
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
 
@@ -137,9 +142,6 @@ export function apply(ctx: Context): void {
   // writes through its own injected callback and the surface reads through
   // its bound hook.
   const renameRequest = createSnapshotStore<SessionRenameTarget | null>(null)
-  const rowToast = createSnapshotStore<RowToastState | null>(null)
-  let toastSeq = 0
-  const notify = (toast: RowToast): void => { rowToast.set({ ...toast, seq: ++toastSeq }) }
   const requestSessionRename = (sessionId: SessionId, currentTitle: string): void => {
     renameRequest.set({ sessionId, currentTitle })
   }

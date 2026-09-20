@@ -26,7 +26,7 @@ web client 只有一张全局会话面：slot 全部从根上下文渲染，插�
 host 侧 `session.create(workspaceId)` 一体产出 Session + Agent + cwd（作为不可拆分的原子整体）；client 侧就是这次出生的镜像——会话行进入 list mirror 的瞬间，client 为它铸 Agent scope（actx + provide + 输入面全套挂上）：
 
 - 会话身份自出生即为 host 真身：sessionId 由 `session.create` 响应 / `host/session-added` 帧带来，client 侧一切寻址（scope tag、slot store 键、RPC 地址）用的都是同一个 id。
-- 实体化时点 = 用户选定 Workspace（cwd 确定）的瞬间：client 当场调 `session.create({workspaceId})`，拿到完整实体。
+- 手动选定 Workspace 或完成[首次使用的启动初始化](../feature/2026-09-20-default-workspace.zh.md) 后，cwd 已确定，client 再调 `session.create({workspaceId})`，拿到完整实体。
 - 「New Session 且未选 workspace」是**纯视图态**（一个导航位置），不对应任何会话/scope 实体；选定之前 composer 整体锁死（无 slash、无纯文本）。
 - 「空会话」是尚无轮次的普通实体化会话；对 host 上的 Agent-scope 插件（goal/plan/skill（技能）/…）而言，它仍是普通 Session，因此 slash/plan 自然可用。
 
