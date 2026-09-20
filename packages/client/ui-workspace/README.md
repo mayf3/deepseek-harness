@@ -1,5 +1,5 @@
 ---
-description: "Shared Workspace browser and picker plugin for the dsh web client: grouped or flat session rows, management actions, extensible Session menus, and directory picking."
+description: "Shared Workspace browser and picker plugin for the dsh web client: grouped or flat session rows, management actions, the slot-composed Session row actions, and directory picking."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package lets users browse grouped or flat Session lists, choose a Workspace for a new Session, and manage Workspaces and Sessions through add, rename, reorder, search, fork, archive, extensible row-menu actions, and Workspace deletion. Pending interactions appear as warning dots, active scheduled tasks as alarm markers, and subagent-origin Sessions remain hidden. Canonically distinct folder paths remain separate Workspaces. Adding a Workspace requires a composed directory picker; without one, the add action is unavailable.
+This package lets users browse grouped or flat Session lists, choose a Workspace for a new Session, and manage Workspaces and Sessions through add, rename, reorder, search, fork, archive, and Workspace deletion; the Session row menu and its hover buttons are slot lists that client plugins extend. Pending interactions appear as warning dots, active scheduled tasks as alarm markers, and subagent-origin Sessions remain hidden. Canonically distinct folder paths remain separate Workspaces. Adding a Workspace requires a composed directory picker; without one, the add action is unavailable.
 
 ## Table of Contents
 
@@ -47,9 +47,9 @@ Collapsed search is one header action beside the view and add actions: activatin
 
 ### Managing sessions
 
-The Session row's Rename action opens a dialog prefilled with the row's display title; confirming an unchanged title is deliberately allowed — it pins the current automatic title against regeneration. Double-clicking a title also opens Rename; for an unarchived Session, the preceding clicks open its conversation. Rename uses a temporary `workspaceOperation` reference and awaits its initial history opening. The row's Fork action forks at the source's last completed turn and increments the inherited persisted title through Session Controller without retaining the child, opening its history, or changing selection. Workspace Delete opens a confirmation that states the retention boundary; success removes the group while its Sessions remain under Ungrouped. Client plugins can append Session-specific actions to this menu through the ordered `sidebar.workspaces.session.menu.action` slot.
+The Session row's Rename action opens a dialog prefilled with the row's display title; confirming an unchanged title is deliberately allowed — it pins the current automatic title against regeneration. Double-clicking a title also opens Rename; for an unarchived Session, the preceding clicks open its conversation. Rename uses a temporary `workspaceOperation` reference and awaits its initial history opening. The row's Fork action forks at the source's last completed turn and increments the inherited persisted title through Session Controller without retaining the child, opening its history, or changing selection. Workspace Delete opens a confirmation that states the retention boundary; success removes the group while its Sessions remain under Ungrouped. Pin, Rename, Fork, and Archive are themselves entries of the `sidebar.workspaces.session.menu.item` list (pin and archive also of `sidebar.workspaces.session.row.action`), so a client plugin's action takes whatever position its `order` gives it.
 
-Archive commits without a confirmation dialog and retains the Session's account position. View options control visibility: the default hides archived Sessions, Show archived includes them, and Archived only hides ordinary Sessions. Visible archived rows are grayed and carry an accessible explanation that they cannot be opened until restored; Rename, Fork, and Unarchive remain available. A successful archive shows a toast with undo and filter-menu actions. Unarchive removes the archive mark without restoring a pin or changing the saved position.
+Archive commits without a confirmation dialog and retains the Session's account position. View options control visibility: the default hides archived Sessions, Show archived includes them, and Archived only hides ordinary Sessions. Visible archived rows are grayed and carry an accessible explanation that they cannot be opened until restored; Rename, Fork, and Unarchive remain available. A successful archive shows a notice with an undo action and a "show archived" action that switches the filter directly. Unarchive removes the archive mark without restoring a pin or changing the saved position.
 
 A Session title wider than its row is clipped with an ellipsis at rest. Hovering the row scrolls the title to its far edge — the incremented title of a fork, for example — and reveals it without the ellipsis; leaving the row returns the title to its start.
 
@@ -81,15 +81,15 @@ The package is one composition: both target slots are declared by other plugins,
 
 Each registration declares a **directory-flow child hole** (`single` kind: `conversation.hero.workspace.directoryFlow` / `sidebar.workspaces.directoryFlow`) that the composed picker package's client half fills with its picking interaction — the `-native` backend's renderless OS-chooser driver, an in-app browsing dialog under a `-browse` composition. The flat **Add workspace...** action renders only while the surface's hole is occupied; an empty hole means the composition has no picking affordance. This package owns the trigger and the adoption: the occupant reports one picked path per open through the hole's owner conversation (`open`/`busy`/`onPicked`/`onCancel`/`onError`), and the owner adopts it through the object layer, selecting the committed Workspace only after its list projection has refreshed.
 
-### Session menu actions
+### Session row actions
 
-An external client plugin contributes to `sidebar.workspaces.session.menu.action`. Built-in actions stay first in their fixed order; contributed actions form a secondary group after a semantic separator. The group is absent from presentation and accessibility APIs when it has no rendered menu-item button.
+The Session row's "..." menu and its hover buttons are two `list` slots declared by the WorkspaceBrowser entry: `sidebar.workspaces.session.menu.item` and `sidebar.workspaces.session.row.action`. Every menu row and every hover button is an entry, this package's own actions included: `apply` registers `pin` (menu 100, button 200), `rename` (200), `fork` (300), and `archive` (menu 400, button 100) the way a client plugin registers its actions, so a plugin action lands wherever its `order` says, and reusing a shipped id at another `priority` shadows that action.
 
-Each contribution receives the target `sessionId` and row `displayTitle` (persisted title, project basename, then Session id). Render the contribution with the shared `MenuAction` primitive; it owns the menu's styling, keyboard behavior, dismissal, and focus restoration. Use a fresh, package-namespaced `id`. Lower `order` values render first. Equal-order packaged registrations keep registration sequence; equal-order dynamic registrations use the facade's decreasing shadowing priority, so the newer entry comes first. `priority` otherwise selects the active registration when two entries deliberately reuse one `id`; it does not move a distinct id across `order` groups.
+An entry receives only the row identity (`sessionId`, `displayTitle`) and owns everything else. It reads the Host state it cares about through its own injected hooks (the pin and archive sets, as Sets derived once per Workspace snapshot), decides its own visibility (pin renders nothing on an archived row, because the Host keeps the two sets exclusive), carries its whole behavior in its registration's `inject` face (a pin also fronts the Session in its saved orders; an archive raises the notice), and raises its own surfaces: the rename dialog and the row-action notice are this package's `shell.overlay` entries, fed by the requests the actions inject. A menu entry renders one `MenuItemButton` (with `separatorBefore` when it starts a new group; the hairline comes and goes with the row) and dismisses the menu through the slot-level `useMenuOpenState` hook, the menu's own open state bound from the row's render occurrence; a hover button entry renders one icon button. The browser passes no action callbacks to its rows; its remaining verbs are the search results' restore button and the title double-click, which raises the same rename request.
 
 #### Packaged client plugin
 
-Declare `ui-workspace`, `ui-slots`, `ui-renderer`, `client-locale`, and `ui-primitives` as browser/type development dependencies according to the Client dependency policy. The type-only `ui-workspace/client` import loads this package's `SlotMap` declaration; without it, an independently compiled plugin does not know the slot key. Keep the Component at module scope, project business operations through the registration's `inject` face, and own visible copy in the contributing package's locale namespace.
+Declare `ui-workspace`, `ui-slots`, `ui-renderer`, `client-locale`, and `ui-primitives` as browser/type development dependencies according to the Client dependency policy. The type-only `ui-workspace/client` import loads this package's `SlotMap` declaration; without it, an independently compiled plugin does not know the slot keys. Keep the Component at module scope and own visible copy in the contributing package's locale namespace.
 
 ```tsx
 import type { Context } from '@deepseek-ai/cordis'
@@ -97,7 +97,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
-import { MenuAction } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MenuItemButton } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   InjectFace, LocaleDictOf, PropsLocale, PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -114,20 +114,21 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const en: LocaleDictOf<typeof NS> = { export: 'Export {title}' }
 const zh: LocaleDictOf<typeof NS> = { export: '导出 {title}' }
 
-interface ExportActionInjected {
+interface ExportRowInjected {
   exportSession: (sessionId: SessionId) => void
 }
 
-type ExportActionProps =
-  PropsRuntime<'sidebar.workspaces.session.menu.action'>
+type ExportRowProps =
+  PropsRuntime<'sidebar.workspaces.session.menu.item'>
   & PropsLocale<typeof NS>
-  & InjectFace<ExportActionInjected>
+  & InjectFace<ExportRowInjected>
 
-function ExportAction({ sessionId, displayTitle, exportSession, t }: ExportActionProps) {
+function ExportRow({ sessionId, displayTitle, useMenuOpenState, exportSession, t }: ExportRowProps) {
+  const [, setMenuOpen] = useMenuOpenState()
   return (
-    <MenuAction onSelect={() => { exportSession(sessionId) }}>
+    <MenuItemButton separatorBefore onSelect={() => { setMenuOpen(false); exportSession(sessionId) }}>
       {t('export', { title: displayTitle })}
-    </MenuAction>
+    </MenuItemButton>
   )
 }
 
@@ -136,21 +137,22 @@ export const inject = ['slots', 'locale']
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'acme-session-actions: dictionaries')
 
-  ctx.slots.inject('sidebar.workspaces.session.menu.action', () => ctx.slots.register({
-    name: 'sidebar.workspaces.session.menu.action',
+  // Order 500 places the row after the shipped Archive (400); `separatorBefore` opens the plugin group.
+  ctx.slots.inject('sidebar.workspaces.session.menu.item', () => ctx.slots.register({
+    name: 'sidebar.workspaces.session.menu.item',
     id: 'acme.export-session',
-    order: 100,
+    order: 500,
     locale: NS,
-    inject: (): ExportActionInjected => ({ exportSession }),
-  }, ExportAction))
+    inject: (): ExportRowInjected => ({ exportSession }),
+  }, ExportRow))
 }
 ```
 
-`ctx.slots.inject()` is required even if the owner is normally present: it waits for the declaration, removes the contribution when that declaration collapses, and registers it again after restoration. The registration's `inject` factory may close over the plugin's declared Cordis services; the Component receives only the projected data and callbacks.
+`ctx.slots.inject()` is required even if the owner is normally present: it waits for the declaration, removes the contribution when that declaration collapses, and registers it again after restoration. The registration's `inject` factory may close over the plugin's declared Cordis services; the Component receives only the projected data and callbacks. A hover button registers into `sidebar.workspaces.session.row.action` the same way and renders one icon button.
 
 #### Dynamic client package
 
-A dynamically loaded browser half follows the same component contract. `@deepseek-ai/dsh-client-ui-primitives` is an implicit baseline external: resolve its shared `MenuAction` export directly through the loader's `require`, and render it with `React.createElement`. Do not list the primitive as a runtime dependency or bundle another copy; declare a development dependency only when source compilation needs its types. `MenuAction` must share the host menu context. The real Loader/Web fixture and generated Client Slot catalog contain runnable examples.
+A dynamically loaded browser half follows the same component contract. `@deepseek-ai/dsh-client-ui-primitives` is an implicit baseline external: resolve `MenuItemButton` through the loader's `require` and render it with `React.createElement`. Do not list the primitive as a runtime dependency or bundle another copy; declare a development dependency only when source compilation needs its types. The real Loader/Web fixture and the generated Client Slot catalog contain runnable examples.
 
 ### View state
 

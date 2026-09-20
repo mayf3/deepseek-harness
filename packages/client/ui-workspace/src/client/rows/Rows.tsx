@@ -2,23 +2,26 @@
  * Workspace browser tree row components (figma Cell set 14:3080): pure presentational —
  * all data and callbacks arrive via props. Hover swaps (folder->chevron,
  * time->ellipsis, action buttons) are CSS-only, and a session row's clipped
- * title is scrolled programmatically while the row is hovered. Row ... menus are
- * visual-only except workspace Rename/Delete and the Session built-ins plus
- * ordered plugin actions; the session and workspace hover cards are suppressed
- * while a menu is open.
+ * title is scrolled programmatically while the row is hovered. Workspace row
+ * menus are visual-only except Rename/Delete. A Session row's "..." menu and
+ * its hover buttons are the `sidebar.workspaces.session.menu.item` and
+ * `sidebar.workspaces.session.row.action` lists, rendered through the
+ * browser's `renderSlot` with the menu's open state as the occurrence's hook
+ * context; this package's own actions are entries like any plugin's. The
+ * session and workspace hover cards are suppressed while a menu is open.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  HoverCard, IconAlarmClockOutlineRegular, IconArchiveOutlineRegular, IconBranchOutlineRegular,
-  IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular,
-  IconNewChatOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, IconTrashOutlineRegular,
+  HoverCard, IconAlarmClockOutlineRegular, IconArchiveOutlineRegular, IconEditOutlineRegular,
+  IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular,
+  IconNewChatOutlineRegular, IconPinFillRegular, IconTrashOutlineRegular,
   IconTriangleRightFillRegular, IconUnarchiveOutlineRegular, Menu, relativeTime, StateDot, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
-import type { WorkspaceBrowserProps } from '../contract/slots.ts'
+import type { MenuOpenState, WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts'
 import css from './Rows.module.css'
 
@@ -461,10 +464,8 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: 
  * @param props.currentId - selected session id (row highlight).
  * @param props.now - epoch ms for relative-time formatting.
  * @param props.onOpen - open a session by id.
- * @param props.onRename - open the session rename dialog (id + current title).
- * @param props.onFork - fork a session at its last completed turn.
- * @param props.onArchive - archive a session by id.
- * @param props.renderSlot - render ordered plugin actions after the built-in actions.
+ * @param props.onRenameRequest - open the rename dialog from a title double-click (id + current title).
+ * @param props.renderSlot - render the row's `sidebar.workspaces.session.menu.item` and `sidebar.workspaces.session.row.action` lists.
  * @param props.onReveal - scroll this row into view after search navigation, then acknowledge it.
  * @param props.drag - optional row-drag target wiring; blank rows cannot start a drag.
  * @param props.flat - omit the empty status slot in the hierarchy-free flat list.
@@ -472,22 +473,14 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: 
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onUnarchive, onPin, renderSlot, onReveal, drag, flat = false, t,
+  node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, flat = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
   now: number
   onOpen: (id: SessionNode['id']) => void
-  /** Open the browser-owned session rename dialog (row menu action). */
-  onRename: (id: SessionNode['id'], currentTitle: string) => void
-  /** Fork a session at its last completed turn (row menu action). */
-  onFork: (id: SessionNode['id']) => void
-  /** Archive this session (row menu action; commits without a dialog). */
-  onArchive: (id: SessionNode['id']) => void
-  /** Unarchive this session (row menu action on archived rows). */
-  onUnarchive: (id: SessionNode['id']) => void
-  /** Pin or unpin this session (row menu action; `pin` false unpins). */
-  onPin: (id: SessionNode['id'], pin: boolean) => void
+  /** Open the rename dialog from a title double-click (id + current title). */
+  onRenameRequest: (id: SessionNode['id'], currentTitle: string) => void
   /** Scroll this row into view after search navigation, then acknowledge it. */
   onReveal?: (() => void) | undefined
   /** Present on reorderable-list rows so every row can remain a drop target. */
@@ -495,7 +488,7 @@ export function SessionNodeItem({
   /** The row is rendered without a parent Workspace header. */
   flat?: boolean | undefined
   t: RowTranslate
-} & PropsRenderSlots<'sidebar.workspaces.session.menu.action'>) {
+} & PropsRenderSlots<'sidebar.workspaces.session.menu.item' | 'sidebar.workspaces.session.row.action'>) {
   const row = node
   const title = displayTitle(node, t)
   const selected = node.id === currentId
@@ -507,6 +500,8 @@ export function SessionNodeItem({
   // their drop targets to fellow pinned rows.
   const draggable = drag !== undefined && !row.blank && !row.archived
   const [menuOpen, setMenuOpen] = useState(false)
+  // The menu's open state, bound into the row entries' `useMenuOpenState` hook.
+  const menuOpenState = useMemo((): MenuOpenState => [menuOpen, setMenuOpen], [menuOpen])
   const rowRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
@@ -514,25 +509,6 @@ export function SessionNodeItem({
     rowRef.current?.scrollIntoView({ block: 'nearest' })
     onReveal()
   }, [onReveal])
-  // Archive hides the row through the registry-global archive set and never
-  // touches the session log, so it is not styled as destructive and needs no
-  // confirmation dialog. Archived rows swap pin/archive for unarchive.
-  const sessionMenuItems = row.archived
-    ? [
-      { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
-      { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutlineRegular /> },
-      { id: 'unarchive', label: t('menu.unarchiveSession'), icon: <IconUnarchiveOutlineRegular size={14} /> },
-    ]
-    : [
-      {
-        id: row.pinned ? 'unpin' : 'pin',
-        label: t(row.pinned ? 'menu.unpinSession' : 'menu.pinSession'),
-        icon: row.pinned ? <IconPinFillRegular /> : <IconPinOutlineRegular />,
-      },
-      { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
-      { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutlineRegular /> },
-      { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutlineRegular size={14} /> },
-    ]
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
   const ownRow = (
     <div
@@ -590,7 +566,7 @@ export function SessionNodeItem({
         className={css.title}
         onDoubleClick={row.blank
           ? undefined
-          : (e) => { e.stopPropagation(); onRename(node.id, row.title) }}
+          : (e) => { e.stopPropagation(); onRenameRequest(node.id, row.title) }}
       >
         {title}
       </span>
@@ -615,16 +591,6 @@ export function SessionNodeItem({
           <Menu
             open={menuOpen}
             onClose={() => { setMenuOpen(false) }}
-            items={sessionMenuItems}
-            onSelect={(id) => {
-              setMenuOpen(false)
-              if (id === 'rename') onRename(node.id, row.title)
-              if (id === 'fork') onFork(node.id)
-              if (id === 'archive') onArchive(node.id)
-              if (id === 'unarchive') onUnarchive(node.id)
-              if (id === 'pin') onPin(node.id, true)
-              if (id === 'unpin') onPin(node.id, false)
-            }}
             portal
             closeOnPointerLeave
             anchor={(
@@ -638,38 +604,13 @@ export function SessionNodeItem({
               </button>
             )}
           >
-            {renderSlot('sidebar.workspaces.session.menu.action', {
-              sessionId: node.id,
-              displayTitle: row.title,
-            })}
+            {renderSlot(
+              'sidebar.workspaces.session.menu.item',
+              { sessionId: node.id, displayTitle: row.title },
+              { hookContext: menuOpenState },
+            )}
           </Menu>
-          <Tooltip label={row.archived ? t('actions.unarchive') : t('actions.archive')} side="bottom" align="end" delayMs={500}>
-            <button
-              type="button"
-              className={css.iconButton}
-              aria-label={row.archived ? t('menu.unarchiveSession') : t('menu.archiveSession')}
-              onClick={(e) => {
-                e.stopPropagation()
-                if (row.archived) onUnarchive(node.id)
-                else onArchive(node.id)
-              }}
-            >
-              {row.archived ? <IconUnarchiveOutlineRegular size={14} /> : <IconArchiveOutlineRegular size={14} />}
-            </button>
-          </Tooltip>
-          {/* Rightmost so it lands where the rest-state pin marker sits. */}
-          {!row.archived && (
-            <Tooltip label={row.pinned ? t('actions.unpin') : t('actions.pin')} side="bottom" align="end" delayMs={500}>
-              <button
-                type="button"
-                className={css.iconButton}
-                aria-label={row.pinned ? t('menu.unpinSession') : t('menu.pinSession')}
-                onClick={(e) => { e.stopPropagation(); onPin(node.id, !row.pinned) }}
-              >
-                {row.pinned ? <IconPinFillRegular size={14} /> : <IconPinOutlineRegular size={14} />}
-              </button>
-            </Tooltip>
-          )}
+          {renderSlot('sidebar.workspaces.session.row.action', { sessionId: node.id, displayTitle: row.title })}
         </span>
       )}
     </div>

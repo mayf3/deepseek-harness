@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Button, ConnectionIndicator, Input, Menu, MenuAction, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, ConnectionIndicator, Input, Menu, MenuItemButton, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
 
 afterEach(cleanup)
@@ -77,7 +77,7 @@ describe('Menu', () => {
     expect(onSelect).toHaveBeenCalledWith('a')
   })
 
-  it('appends extension actions to keyboard order and restores trigger focus after selection', async () => {
+  it('walks component rows with the data rows and returns focus to the trigger after one is activated', async () => {
     const onAction = vi.fn()
     function Harness() {
       const [open, setOpen] = useState(true)
@@ -85,24 +85,27 @@ describe('Menu', () => {
         <Menu
           open={open}
           anchor={<button type="button">trigger</button>}
-          items={[{ id: 'a', label: 'Alpha', submenu: [{ id: 'a1', label: 'Alpha one' }] }]}
+          items={[{ id: 'a', label: 'Alpha' }]}
           onSelect={() => {}}
           onClose={() => { setOpen(false) }}
         >
-          <MenuAction onSelect={onAction}>Publish</MenuAction>
+          <MenuItemButton separatorBefore onSelect={() => { onAction(); setOpen(false) }}>Publish</MenuItemButton>
         </Menu>
       )
     }
     render(<Harness />)
     const trigger = screen.getByRole('button', { name: 'trigger' })
-    fireEvent.mouseEnter(screen.getByRole('menuitem', { name: 'Alpha' }))
-    expect(screen.getByRole('menuitem', { name: 'Alpha one' })).toBeDefined()
-    expect(screen.getByRole('separator')).toBeDefined()
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Alpha', 'Publish'])
+    // The component row starts a group: one hairline, between the data row and it.
+    const publishWrap = screen.getByRole('menuitem', { name: 'Publish' }).parentElement
+    expect(screen.getByRole('separator').nextElementSibling).toBe(screen.getByRole('menuitem', { name: 'Publish' }))
+    expect(publishWrap?.contains(screen.getByRole('separator'))).toBe(true)
     const publish = screen.getByRole('menuitem', { name: 'Publish' })
     trigger.focus()
     fireEvent.keyDown(trigger, { key: 'End' })
     expect(document.activeElement).toBe(publish)
-    expect(screen.queryByRole('menuitem', { name: 'Alpha one' })).toBeNull()
+    fireEvent.keyDown(publish, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Alpha' }))
     fireEvent.click(publish)
     expect(onAction).toHaveBeenCalledOnce()
     expect(screen.queryByRole('menu')).toBeNull()
