@@ -825,6 +825,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:^
         version: link:../packages/typert/protocol
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:^
+        version: link:../packages/util/values
       '@xterm/headless':
         specifier: ^6.0.0
         version: 6.0.0
