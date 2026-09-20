@@ -99,8 +99,9 @@ public static class DshFileAssociations {
     } finally {
       SHSetInstanceExplorer(IntPtr.Zero);
       SHSetThreadRef(IntPtr.Zero);
-      if (reference != IntPtr.Zero) Marshal.Release(reference);
-      Marshal.FreeHGlobal(count);
+      int remaining = reference == IntPtr.Zero ? 0 : Marshal.Release(reference);
+      // An interrupted drain leaves its counter owned by the terminating helper process.
+      if (remaining == 0) Marshal.FreeHGlobal(count);
     }
   }
 

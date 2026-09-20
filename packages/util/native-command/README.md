@@ -108,7 +108,7 @@ Linux association discovery and explicit launching require GIO. Missing native c
 
 These limits define when this runner is not the right tool. They are current package constraints, not a task backlog.
 
-- **No output bounding** — both streams buffer unbounded in memory; every current caller invokes small native tools whose output is a path or an error line. Adopt `dsh-output-retention` bounding before pointing this at commands with meaningful output volume.
+- Command output uses Node’s `execFile` buffer limit; oversized replies reject. Use the subprocess capability for streaming output.
 
 <a id="dev-note"></a>
 ### Dev Note
