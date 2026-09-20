@@ -673,6 +673,22 @@ describe('desktop main startup', () => {
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
   })
 
+  it.each(['en-US', 'zh-CN'])('localizes macOS visibility and quit commands without changing the application name (%s)', async (locale) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    vi.spyOn(harness.app, 'getLocale').mockReturnValue(locale)
+    const originalName = harness.app.name
+    harness.app.name = '@deepseek-ai/dsh-desktop'
+    try {
+      await import('../src/main.ts')
+      await harness.preparing.promise
+      const commands = applicationMenuItems().filter(item =>
+        item.role === 'hide' || item.role === 'hideOthers' || item.role === 'unhide' || item.role === 'quit')
+      await expect(JSON.stringify(commands, null, 2) + '\n')
+        .toMatchFileSnapshot(`./expected/application-menu-${locale}.json`)
+      expect(harness.app.name).toBe('@deepseek-ai/dsh-desktop')
+    } finally { harness.app.name = originalName }
+  })
+
   it('attaches Host socket credentials only to the owned application origin and window', async () => {
     await import('../src/main.ts')
     await harness.preparing.promise

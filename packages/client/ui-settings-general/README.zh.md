@@ -103,6 +103,7 @@ kind: "package-reference"
 这些限制说明外壳自身提供什么、功能包必须提供什么；它们是当前包约束。
 
 - **额外的通用设置行需要相应功能插件**：外壳提供开发者工具；功能插件提供其他偏好。
+- **Windows 顶栏徽标的气泡仍向右展开**：`DesktopUpdateBadge` 占用顶栏的 `sidebar.toggle.badge` 且请求 `side="right"`，侧栏收起时其气泡会被 Desktop 菜单文字遮挡；侧栏开关与新建会话的气泡则改在顶栏下方展开（#4688）。
 
 <a id="dev-note"></a>
 ### 开发备注
