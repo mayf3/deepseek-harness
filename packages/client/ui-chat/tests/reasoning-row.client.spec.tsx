@@ -26,6 +26,12 @@ describe('ReasoningRow', () => {
     ['First\nSecond\nThird\n', 'First'],
     ['First\n\nNext unfinished', 'First'],
     ['First\n\nNext complete\nDetails', 'Next complete'],
+    ['First\n\n\nNext complete\n', 'Next complete'],
+    ['First\n \n\t\nNext complete\nDetails', 'Next complete'],
+    ['First\r\n\r\n\r\nNext complete\r\n', 'Next complete'],
+    ['First\r\n \r\n\t\r\nNext complete\r\nDetails', 'Next complete'],
+    ['First\n\n\nNext unfinished', 'First'],
+    ['\n\n\nFirst complete\n', 'First complete'],
     ['First\r\n \t\r\nNext complete\r\n', 'Next complete'],
     ['First\n\n\n', 'First'],
   ])('previews the completed paragraph first line for %j', (text, summary) => {

@@ -76,7 +76,7 @@
 }
 
 .row:hover .title,
-.row:hover .summary:not(.errorSummary),
+.row:hover .summary:not(.errorSummary):not(.stoppedSummary),
 .row:hover .summarySuffix {
   color: var(--dsw-alias-label-primary);
 }

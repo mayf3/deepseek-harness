@@ -13,11 +13,7 @@ export interface ChatPresentationPolicy {
   readonly mode: TranscriptViewMode
   /** Whether a normally completed Turn folds its process rows behind the whole-Turn control. */
   readonly foldCompletedTurns: boolean
-  /**
-   * How consecutive process rows between Assistant replies present: `collapsed`
-   * groups them behind a step-group row that starts closed; `none` renders
-   * every row directly under the whole-Turn control with no group rows.
-   */
+  /** Reserved secondary-grouping preference; no renderer consumes this field yet. */
   readonly stepGrouping: 'collapsed' | 'none'
   /** Whether a settled reasoning row previews its first line beside the Think title. */
   readonly settledReasoningPreview: boolean
