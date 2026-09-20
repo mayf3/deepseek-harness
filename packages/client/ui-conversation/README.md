@@ -40,7 +40,7 @@ The shared image slot props keep display choices separate from durable reference
 
 The context-occupancy button shows a ring and percentage below the input card, after the Session statistics. Clicking it opens the token breakdown in a panel kept inside the viewport, including when no statistics are shown; the button stays hidden until context usage and capacity are available.
 
-With Developer tools off, the shell exposes only Chat and hides the View tab bar. Turning it off while another View is active returns to Chat; stored View preferences and recorded Session data remain intact. Turning it on makes registered Views available again. View owners receive the available roster so their navigation actions can follow the same visibility.
+With Developer tools off, the shell hides only Trajectory; other plugin-contributed Views remain available. The View tab bar is hidden when fewer than two Views are available. Turning Developer tools off while Trajectory is active returns to Chat; stored View preferences and recorded Session data remain intact. Turning it on makes Trajectory available again. View owners receive the available roster so their navigation actions can follow the same visibility.
 
 The composer registers the File command action and owns its label, availability, and native file-dialog callback. Menu availability and invocation both consult the mounted composer's current attachment-intake policy. Unmounting or locking the composer disables that action; disposing the plugin removes its registration. The callback binding stays inside the input module.
 

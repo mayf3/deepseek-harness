@@ -66,12 +66,9 @@ export interface SessionOptions {
   /** Whether the exact direct parent Agent is available in Host summaries; absent until known. */
   parentAvailable?: boolean
   /**
-   * First ACCEPTED prompt on a blank session (fires at most once, on the
-   * prompt RPC's success response): the manager mirrors the blank→false flip
-   * into its list row so the session surfaces without waiting for a host
-   * frame. Acceptance is the flip point because it proves the user message
-   * is in the host log; a rejected first prompt keeps the session blank
-   * (hidden, still reusable by connectWorkspace).
+   * Publish each accepted prompt to the Manager, including after this Session
+   * object is replaced. Acceptance converts display state, but does not
+   * establish that a turn started or reached durable history.
    */
   onEngaged?(session: Session): void
   /**
@@ -117,7 +114,7 @@ export class Session implements SessionFace {
   private promptAttempted = false
   /** A first accepted prompt stays in the engaging phase until its turn is observable. */
   private firstPromptPendingTurn = false
-  /** Empty-log mirror (see ConversationSnapshot.blank); unknown bare sessions begin conservatively blank. */
+  /** New Session display state; unknown bare sessions begin conservatively blank. */
   private blankBit = true
   private removed = false
   private promptError: PromptError | null = null
@@ -291,19 +288,12 @@ export class Session implements SessionFace {
       this.notifier.markDirty()
       return result
     }
-    // Blank flips on ACCEPTANCE, not attempt: an accepted prompt starts the
-    // conversation's first turn on the host (the host criterion — a logged
-    // turn/start — is fact, not optimism; standalone command and projection
-    // events never flip it), while a rejected first prompt must keep the
-    // session blank — the client-side blank mirror only ever lowers, so
-    // flipping early on a failure would surface the session forever and
-    // strip its connectWorkspace reuse eligibility against the host's
-    // authority.
+    // Rejection must leave a first prompt blank and eligible for workspace reuse.
     if (this.blankBit) {
       this.blankBit = false
-      this.options.onEngaged?.(this)
       this.notifier.markDirty()
     }
+    this.options.onEngaged?.(this)
     return result
   }
 
@@ -514,8 +504,7 @@ export class Session implements SessionFace {
    * @param running - the new running state.
    */
   handleRunning(running: boolean): void {
-    // Turn-start conversion: a blank session never runs, so the first
-    // running:true proves another side's first message landed.
+    // Running converts display state without establishing durable turn history.
     if (running && this.blankBit) {
       this.blankBit = false
       this.notifier.markDirty()
@@ -553,9 +542,12 @@ export class Session implements SessionFace {
   }
 
   /**
-   * Relay list blankness without overriding a started conversation established
-   * by the current projection, a local prompt, or running state.
-   * @param blank - whether the list or projection reports an unstarted conversation.
+   * Apply the Manager's effective display blank, further reconciled with the
+   * current `sessionListMetadata` projection. Local send attempts and current
+   * running state prevent re-blanking; an earlier false summary alone does not.
+   * The Manager retains acceptance and earlier running observations across
+   * Session-object replacement.
+   * @param blank - New Session display state after Manager reconciliation.
    */
   handleBlank(blank: boolean): void {
     blank = blank && this.projections.values().sessionListMetadata?.blank !== false

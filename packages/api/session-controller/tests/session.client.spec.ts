@@ -625,6 +625,30 @@ describe('prompt and cancel errors', () => {
     expect(session.getSnapshot()).toMatchObject({ running: true, awaitingFirstTurn: false })
   })
 
+  it('does not await a first turn when the history already contains one', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    session.handleBlank(false)
+    const inFlight = session.prompt([{ type: 'text', text: '继续' }], 'queue')
+    expect(session.getSnapshot()).toMatchObject({ blank: false, promptAttempted: true, awaitingFirstTurn: false })
+    expect((await inFlight).ok).toBe(true)
+    expect(session.getSnapshot()).toMatchObject({ blank: false, awaitingFirstTurn: false })
+  })
+
+  it('keeps an accepted first prompt converted when a later prompt is rejected', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    session.handleBlank(true)
+    expect((await session.prompt([{ type: 'text', text: '第一次' }], 'queue')).ok).toBe(true)
+    session.handleRunning(true)
+    session.handleRunning(false)
+    mock.remote.session.prompt.mockResolvedValue(err(new RemoteError('session/agent-busy', 'busy', { reason: 'x' })))
+
+    expect((await session.prompt([{ type: 'text', text: '第二次' }], 'queue')).ok).toBe(false)
+    expect(session.getSnapshot()).toMatchObject({
+      blank: false, running: false, awaitingFirstTurn: false,
+      promptError: { op: 'send', error: { code: 'session/agent-busy' } },
+    })
+  })
+
   it('keeps the attempted-first-prompt state when the Host rejects the prompt', async ({ mock, start }) => {
     const session = await sessionBench(mock, start, SID)
     session.handleBlank(true)
