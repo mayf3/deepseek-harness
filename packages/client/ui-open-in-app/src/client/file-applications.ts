@@ -67,7 +67,7 @@ export function useFileApplications(
   const snapshot = useCallback(
     () => enabled ? readers.get(query)?.get(target)?.state.getSnapshot() ?? EMPTY : EMPTY, [enabled, query, target],
   )
-  const state = useSyncExternalStore(retain, snapshot, () => EMPTY)
+  const state = useSyncExternalStore(retain, snapshot, snapshot)
   const refresh = useCallback(() => { readers.get(query)?.get(target)?.refresh() }, [query, target])
   return { ...state, refresh }
 }

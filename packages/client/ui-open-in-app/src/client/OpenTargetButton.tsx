@@ -112,7 +112,7 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
         footer={kind === 'file' ? [{
           id: 'reveal', icon: <IconFolderOpenOutlineRegular />,
           label: revealDefault ? t('path.appDefault', { app: t('path.reveal') }) : t('path.reveal'),
-        }] : undefined}
+        }] : []}
         onSelect={(id) => { run(id === 'reveal' ? { kind: 'reveal' } : { kind: 'application', id: id.slice(4) }) }}
         anchor={(
           <div className={css.split} data-open-target={kind} data-size={props.prominent ? 'large' : 'compact'}
