@@ -270,7 +270,7 @@ function bindings(): Win32Bindings {
     unlockFileEx: bind(kernel32, 'UnlockFileEx', 'int', [
       PVOID, 'uint32', 'uint32', 'uint32', PVOID,
     ]),
-  })) as unknown as Win32Bindings
+  })) as Win32Bindings
   return cached
 }
 

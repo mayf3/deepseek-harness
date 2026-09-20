@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - 'button "Plan a small change: add" [disabled]'
+  - navigation "Session hierarchy": "Plan a small change: add"
   - text: Standard mode
   - button "More actions"
   - tablist:

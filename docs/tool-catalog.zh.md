@@ -88,6 +88,10 @@
         "type": "string"
       }
     },
+    "registry": {
+      "type": "string",
+      "description": "For install_bundle: the npm registry URL asked first, when the user names one; otherwise the configured registry is asked, and its configured fallbacks while a registry is unreachable."
+    },
     "offset": {
       "type": "number",
       "description": "Zero-based list offset; defaults to 0."
@@ -631,7 +635,7 @@ bash 工具是 bash 执行器 seam 面向模型的消费方。使用 `run_in_bac
 
 ### `present`
 
-声明交付 Session 文件系统可访问的已有文件。如果你创建或更新的文件是用户要求接收的成果，则必须在写入完成后、最终回复前调用 present，包括通过 Bash 或代码执行创建的文件。在回复中提到文件路径不能替代这次调用。文件必须已存在。用户打开当前源文件；不复制或保存其内容。
+选择 Session 文件系统可访问的已有文件，声明为最终交付物。当用户需要独立的文件交付物时使用 present，尤其是 Office 文档、电子表格和演示文稿。如果最终回复已经足够展示结果，优先在回复中展示；创建或编辑文件本身不要求调用 present。通常选择最重要的 1 至 2 项交付物，任务需要时可以更多，但一次 present 调用最多 4 个文件。文件必须已存在。用户打开当前源文件；不复制或保存其内容。
 
 ```json
 {
@@ -1888,7 +1892,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 ### `list_agents`
 
-按持久 id 和标签列出你的可继续后台 subagent。用它回忆你启动过哪些 subagent，而不是轮询完成情况——subagent 完成时你会被告知。状态来自实时注册表：running 表示 agent 此刻正在工作；inactive 表示没有轮次在执行，包括已加载和需要恢复的 child。inactive 不表示任务完成、成功、失败或等待其他 agent。`send_message` 会在运行中 child 的最近 step 边界 steer 消息，或为 inactive child 启动或恢复轮次，且无论处于哪种状态，直接子级都仍可作为 `send_message` 的目标。该快照并非投递承诺；`send_message` 会执行权威检查，仍可能失败。无法读取的子级会作为诊断信息报告，而不会被静默丢弃。`descendants` 作用域会按稳定的前序顺序遍历你下方的整棵树，并为每个条目标注其持久的直接父会话 id 和深度。只有深度为 1 的条目可以使用 `send_message`；更深的条目只能作为 `interrupt_agent` 的候选目标。
+按持久 id 和标签列出你的可继续后台 subagent。用它回忆你启动过哪些 subagent，而不是轮询完成情况——subagent 完成时你会被告知。状态来自实时注册表：running 表示 agent 此刻正在工作；inactive 表示没有轮次在执行，包括已加载和需要恢复的 child。inactive 不表示任务完成、成功、失败或等待其他 agent。`send_message` 会在运行中 child 的最近 step 边界 steer 消息，或为 inactive child 启动或恢复轮次，且无论处于哪种状态，直接子级都仍可作为 `send_message` 的目标。该快照并非投递承诺；`send_message` 会执行权威检查，仍可能失败。无法读取的子级仅在 `descendants` 作用域中作为诊断信息报告。`descendants` 作用域会按稳定的前序顺序遍历你下方的整棵树，并为每个条目标注其持久的直接父会话 id 和深度。只有深度为 1 的条目可以使用 `send_message`；更深的条目只能作为 `interrupt_agent` 的候选目标。
 
 ```json
 {

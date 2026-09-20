@@ -21,6 +21,7 @@ import type {
 
 /** A minimal in-memory fake implementing the provider primitives. */
 class FakeFileSystem extends FileSystem {
+  override watch(): never { throw new Error('Fixture does not support watching') }
   files = new Map<string, string>()
 
   override async resolve(path: string): Promise<FsTarget> {

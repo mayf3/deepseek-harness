@@ -1,10 +1,8 @@
-import {
-  useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent,
-} from 'react'
+import { useMemo, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  type SessionListState, type SessionProjectionMap, type SessionSummary,
-  type SubagentCatalogSnapshot,
+  type SessionProjectionMap, type SessionSummary,
+  type SessionProjectionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -16,17 +14,18 @@ import { NS } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-token-meter/client'
 import css from './SubagentHeaderLineage.module.css'
-import { indexSubagentDescendants } from './subagent-lineage.ts'
 
-type CatalogEntry = SubagentCatalogSnapshot['entries'][number]
-type Catalogs = SessionListState['subagentsByParent']
+type SubagentCatalogSnapshot = Omit<SessionProjectionSnapshot, 'values' | 'state'> & {
+  state: 'loading' | 'ready' | 'error'
+  entries: (SessionProjectionMap['subagentCatalog'][number] & { activity: 'running' | 'inactive' })[]
+}
+type Catalogs = Readonly<Record<SessionId, SubagentCatalogSnapshot>>
 
 /** Business actions supplied by the slot registration. */
 export interface SubagentCatalogInjected {
   openChild: (address: SubagentAddress) => void
   openChildAside: (address: SubagentAddress) => void
   refresh: (parentSessionId: SessionId) => void
-  setCatalogOpen: (parentSessionId: SessionId, open: boolean) => void
 }
 
 /** Full props for the session-header lineage renderer. */
@@ -41,23 +40,11 @@ interface CatalogRowsProps {
   summaries: Readonly<Record<SessionId, SessionSummary>>
   expanded: ReadonlySet<SessionId>
   level: number
-  now: number
   openChild: (address: SubagentAddress) => void
   openChildAside: (address: SubagentAddress) => void
   refresh: (parentSessionId: SessionId) => void
   toggleBranch: (childSessionId: SessionId) => void
   closeCatalog: () => void
-}
-
-function diagnosticReason(
-  entry: Extract<CatalogEntry, { kind: 'diagnostic' }>,
-  t: TranslateNS<typeof NS>,
-): string {
-  switch (entry.reason) {
-    case 'corrupt': return t('diagnostic.corrupt')
-    case 'unsupported': return t('diagnostic.unsupported')
-    case 'unavailable': return t('diagnostic.unavailable')
-  }
 }
 
 function treeItems(root: HTMLDivElement | null): HTMLElement[] {
@@ -177,8 +164,6 @@ function formatExactDuration(ms: number, t: TranslateNS<typeof NS>): string {
     })
 }
 
-const NO_DESCENDANTS = { count: 0, runningCount: 0 } as const
-
 function SubagentSwitcherIcon() {
   return (
     <svg
@@ -202,59 +187,34 @@ function SubagentSwitcherIcon() {
   )
 }
 
-/** Render the known direct-child shape while its authoritative catalog hydrates. */
-function CatalogLoadingRows({
-  parentSessionId,
-  summaries,
-  level,
-  t,
-}: {
-  parentSessionId: SessionId
-  summaries: Readonly<Record<SessionId, SessionSummary>>
-  level: number
-  t: TranslateNS<typeof NS>
-}) {
-  const children = Object.values(summaries).filter(summary => (
-    summary.origin === 'subagent' && summary.parentId === parentSessionId
-  ))
-  if (children.length === 0) return <div className={css.notice}>{t('loading.label')}</div>
-  return children.map(summary => (
-    <div key={summary.id} className={css.node}>
-      <div
-        role="treeitem"
-        aria-disabled="true"
-        aria-level={level}
-        aria-label={t('loading.aria')}
-        className={`${css.row} ${css.disabled} ${css.loadingRow}`}
-      >
-        <span className={css.disclosureSpace} />
-        <StateDot state="ongoing" />
-        <span className={css.content}>
-          <span className={css.label}>{t('loading.label')}</span>
-        </span>
-      </div>
-    </div>
-  ))
+/** Render catalog loading without inventing child membership. */
+function CatalogLoadingRows({ t }: { t: TranslateNS<typeof NS> }) {
+  return <div className={css.notice}>{t('loading.label')}</div>
+}
+
+/** A child becomes a known leaf only after its own authoritative catalog loads empty. */
+function isKnownLeaf(catalog: SubagentCatalogSnapshot | undefined): boolean {
+  return catalog?.state === 'ready' && catalog.entries.length === 0
 }
 
 /** Render one catalog level and recurse only through explicitly expanded rows. */
 function CatalogRows({
-  parentSessionId, currentSessionId, catalog, catalogs, summaries, expanded, level, now,
+  parentSessionId, currentSessionId, catalog, catalogs, summaries, expanded, level,
   openChild, openChildAside, refresh, toggleBranch, closeCatalog, t,
 }: CatalogRowsProps & { t: TranslateNS<typeof NS> }) {
+  const [now, setNow] = useState(() => Date.now())
+  const running = catalog.entries.some(entry => entry.activity === 'running')
+  useEffect(() => {
+    if (!running) return
+    const timer = setInterval(() => { setNow(Date.now()) }, 1_000)
+    return () => { clearInterval(timer) }
+  }, [running])
   const emptyLoading = catalog.state === 'loading' && catalog.entries.length === 0
-  const reserveDisclosure = catalog.entries.some(
-    entry => entry.kind === 'child' && entry.hasChildren,
-  )
+  const reserveDisclosure = catalog.entries.some(entry => !isKnownLeaf(catalogs[entry.id]))
   return (
     <>
       {emptyLoading && (
-        <CatalogLoadingRows
-          parentSessionId={parentSessionId}
-          summaries={summaries}
-          level={level}
-          t={t}
-        />
+        <CatalogLoadingRows t={t} />
       )}
       {catalog.state === 'error' && (
         <div className={css.error}>
@@ -270,39 +230,22 @@ function CatalogRows({
         </div>
       )}
       {catalog.entries.map((entry) => {
-        if (entry.kind === 'diagnostic') {
-          const reason = diagnosticReason(entry, t)
-          return (
-            <div key={entry.id} className={css.node}>
-              <div
-                role="treeitem"
-                aria-disabled="true"
-                aria-level={level}
-                aria-label={`${entry.id} ${reason}`}
-                className={`${css.row} ${css.disabled}`}
-                title={reason}
-              >
-                {reserveDisclosure && <span className={css.disclosureSpace} />}
-                <StateDot state="error" />
-                <span className={css.content}>
-                  <span className={css.label}>{entry.id}</span>
-                  <span className={css.summary}>{reason}</span>
-                </span>
-              </div>
-            </div>
-          )
-        }
-
         const childCatalog = catalogs[entry.id]
         const isCurrent = entry.id === currentSessionId
         const isExpanded = expanded.has(entry.id)
-        const knownLeaf = !entry.hasChildren
+        const knownLeaf = isKnownLeaf(childCatalog)
         const childLoading = childCatalog === undefined
           || (childCatalog.state === 'loading' && childCatalog.entries.length === 0)
         const summary = summaries[entry.id]
         const label = entry.label ?? entry.id
         const mode = entry.mode === 'one-shot' ? t('mode.oneShot') : t('mode.continuable')
-        const activity = entry.activity === 'running' ? t('activity.running') : t('activity.inactive')
+        const completed = entry.activity === 'inactive'
+          && summary?.projectionValues?.subagentTiming?.lastTurnCompleted === true
+        const activity = entry.activity === 'running'
+          ? t('activity.running')
+          : completed
+            ? t('activity.completed')
+            : t('activity.inactive')
         const secondary = [summary?.title, mode, activity]
           .filter(value => value !== undefined)
           .join(' · ')
@@ -326,7 +269,11 @@ function CatalogRows({
           .join(' · ')
 
         const open = (): void => {
-          openChild({ parentSessionId, childSessionId: entry.id, mode: entry.mode })
+          openChild({
+            parentSessionId,
+            childSessionId: entry.id,
+            mode: entry.mode,
+          })
           closeCatalog()
         }
         const openAside = (event: MouseEvent<HTMLButtonElement>): void => {
@@ -382,7 +329,9 @@ function CatalogRows({
                   </button>
                 )}
               <div className={css.clickarea}>
-                <StateDot state={entry.activity === 'running' ? 'ongoing' : 'idle'} />
+                <span className={css.rowActivitySlot}>
+                  <StateDot state={entry.activity === 'running' ? 'ongoing' : completed ? 'done' : 'idle'} />
+                </span>
                 <span className={css.content}>
                   <span className={`${css.label} ${isCurrent ? css.currentLabel : ''}`}>{label}</span>
                   <span className={css.summary}>{secondary}</span>
@@ -421,14 +370,7 @@ function CatalogRows({
                 aria-busy={childLoading || undefined}
               >
                 {childCatalog === undefined
-                  ? (
-                    <CatalogLoadingRows
-                      parentSessionId={entry.id}
-                      summaries={summaries}
-                      level={level + 1}
-                      t={t}
-                    />
-                  )
+                  ? <CatalogLoadingRows t={t} />
                   : (
                     <CatalogRows
                       parentSessionId={entry.id}
@@ -438,7 +380,6 @@ function CatalogRows({
                       summaries={summaries}
                       expanded={expanded}
                       level={level + 1}
-                      now={now}
                       openChild={openChild}
                       openChildAside={openChildAside}
                       refresh={refresh}
@@ -462,6 +403,7 @@ interface CatalogDropdownSharedProps extends SubagentCatalogInjected {
   /** Whether an ordinary title needs a breadcrumb separator before its count. */
   separator?: boolean
   useSessions: SubagentHeaderLineageProps['useSessions']
+  useSessionStatus: SubagentHeaderLineageProps['useSessionStatus']
   t: TranslateNS<typeof NS>
 }
 
@@ -503,66 +445,44 @@ function catalogMenuPosition(trigger: HTMLButtonElement): CSSProperties {
 /** One trigger-plus-tree dropdown over the catalog rooted at `rootSessionId`. */
 function CatalogDropdown({
   rootSessionId, currentSessionId, displayTitle, openTitle, variant, separator = false,
-  useSessions, openChild, openChildAside, refresh, setCatalogOpen, t,
+  useSessions, useSessionStatus, openChild, openChildAside, refresh, t,
 }: CatalogDropdownProps) {
   const ancestorSwitcher = variant === 'switcher' && openTitle !== undefined
-  const catalogs = useSessions(state => state.subagentsByParent)
+  const projections = useSessions(state => state.projectionsBySession)
   const summaries = useSessions(state => state.byId)
+  const statuses = useSessionStatus(value => value)
+  const catalogs = useMemo<Catalogs>(() => Object.fromEntries(Object.entries(projections).map(([id, snapshot]) => [id, {
+    state: snapshot.state === 'idle'
+      ? snapshot.values.subagentCatalog === undefined ? 'loading' : 'ready'
+      : snapshot.state,
+    error: snapshot.error,
+    entries: (snapshot.values.subagentCatalog ?? []).map(entry => ({
+      ...entry, activity: (statuses.get(entry.id)?.running ?? summaries[entry.id]?.running) === true ? 'running' as const : 'inactive' as const,
+    })),
+  }])), [projections, summaries, statuses])
   const catalog = catalogs[rootSessionId]
   const [open, setOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState<CSSProperties>()
-  const [now, setNow] = useState(() => Date.now())
   const [expanded, setExpanded] = useState<ReadonlySet<SessionId>>(() => new Set())
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const hoverOpenTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const observedCatalogs = useRef(new Set<SessionId>())
-  const setCatalogOpenRef = useRef(setCatalogOpen)
-  setCatalogOpenRef.current = setCatalogOpen
   const currentEntry = currentSessionId === undefined
     ? undefined
-    : catalog?.entries.find(entry => entry.kind === 'child' && entry.id === currentSessionId)
-  const switcherDisplayTitle = currentEntry?.kind === 'child'
+    : catalog?.entries.find(entry => entry.id === currentSessionId)
+  const switcherDisplayTitle = currentEntry !== undefined
     ? currentEntry.label ?? currentEntry.id
     : displayTitle
-  const healthy = catalog?.entries.filter(entry => entry.kind === 'child') ?? []
-  const descendants = useMemo(
-    () => indexSubagentDescendants(summaries).get(rootSessionId) ?? NO_DESCENDANTS,
-    [rootSessionId, summaries],
-  )
-  // The catalog can arrive before the session-list baseline; never undercount
-  // the already-visible direct rows during that short bootstrap window.
-  const descendantCount = Math.max(healthy.length, descendants.count)
-  const totalCountKey = descendantCount === 1 ? 'count.total.one' : 'count.total.other'
-  const runningCountKey = descendants.runningCount === 1 ? 'count.running.one' : 'count.running.other'
-  // Session summaries can announce membership before the descriptor-backed catalog catches up.
-  // Keep that entry point visible through disabled loading rows; only catalog rows are navigable.
-  const summaryBackedLoading = (descendants.count > 0 || variant === 'switcher')
-    && (catalog === undefined || (catalog.state === 'ready' && catalog.entries.length === 0))
-  const presentedCatalog: SubagentCatalogSnapshot | undefined = summaryBackedLoading
-    ? {
-      entries: [],
-      parentAvailable: catalog?.parentAvailable ?? false,
-      state: 'loading',
-      error: null,
-    }
-    : catalog
-
-  const observeCatalog = (parentSessionId: SessionId, next: boolean): void => {
-    if (next) observedCatalogs.current.add(parentSessionId)
-    else observedCatalogs.current.delete(parentSessionId)
-    setCatalogOpen(parentSessionId, next)
-  }
-
-  const closeAllCatalogs = (): void => {
-    for (const parentSessionId of observedCatalogs.current) {
-      setCatalogOpen(parentSessionId, false)
-    }
-    observedCatalogs.current.clear()
-    setExpanded(new Set())
-  }
+  const directChildren = catalog?.entries ?? []
+  const directCount = directChildren.length
+  const runningCount = directChildren.filter(entry => entry.activity === 'running').length
+  const totalCountKey = directCount === 1 ? 'count.total.one' : 'count.total.other'
+  const runningCountKey = runningCount === 1 ? 'count.running.one' : 'count.running.other'
+  const presentedCatalog: SubagentCatalogSnapshot | undefined = catalog ?? (variant === 'switcher'
+    ? { entries: [], state: 'loading', error: null }
+    : undefined)
 
   const cancelHoverClose = (): void => {
     if (hoverCloseTimer.current === undefined) return
@@ -585,13 +505,12 @@ function CatalogDropdown({
       if (trigger === null) return
       setOpen(true)
       setMenuPosition(catalogMenuPosition(trigger))
-      setNow(Date.now())
-      observeCatalog(rootSessionId, true)
+      refresh(rootSessionId)
     }
     else {
       setOpen(false)
       setMenuPosition(undefined)
-      closeAllCatalogs()
+      setExpanded(new Set())
     }
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
   }
@@ -622,11 +541,10 @@ function CatalogDropdown({
       closing.add(parentSessionId)
       const branch = catalogs[parentSessionId]
       for (const entry of branch?.entries ?? []) {
-        if (entry.kind === 'child') visit(entry.id)
+        visit(entry.id)
       }
     }
     visit(root)
-    for (const parentSessionId of closing) observeCatalog(parentSessionId, false)
     setExpanded(current => new Set([...current].filter(id => !closing.has(id))))
   }
 
@@ -636,7 +554,7 @@ function CatalogDropdown({
       return
     }
     setExpanded(current => new Set(current).add(childSessionId))
-    observeCatalog(childSessionId, true)
+    refresh(childSessionId)
   }
 
   useEffect(() => {
@@ -670,37 +588,24 @@ function CatalogDropdown({
     }
   }, [open])
 
-  useEffect(() => {
-    if (!open || descendants.runningCount === 0) return
-    const timer = setInterval(() => { setNow(Date.now()) }, 1_000)
-    return () => { clearInterval(timer) }
-  }, [open, descendants.runningCount])
-
   useEffect(() => () => {
     cancelHoverOpen()
     cancelHoverClose()
-    for (const parentSessionId of observedCatalogs.current) {
-      setCatalogOpenRef.current(parentSessionId, false)
-    }
-    observedCatalogs.current.clear()
   }, [])
 
-  // Visibility needs evidence of children (entries, summary-known descendants,
-  // or a failed load worth retrying). A bare loading catalog is not evidence:
-  // an opened menu or another active catalog consumer can start a refresh whose
-  // loading snapshot would otherwise flash the action on childless sessions.
+  // Visibility needs catalog evidence of children or a failed load worth retrying.
+  // An empty loading catalog is not evidence of children.
   const visible = presentedCatalog !== undefined
     && (variant === 'switcher'
       || presentedCatalog.state === 'error'
-      || presentedCatalog.entries.length > 0
-      || descendantCount > 0)
+      || presentedCatalog.entries.length > 0)
   useEffect(() => {
     if (visible) return
     cancelHoverOpen()
     cancelHoverClose()
     if (!open) return
     setOpen(false)
-    closeAllCatalogs()
+    setExpanded(new Set())
   }, [visible, open])
 
   if (!visible) return null
@@ -752,8 +657,8 @@ function CatalogDropdown({
         aria-label={variant === 'switcher'
           ? t('switcher.aria', { title: switcherDisplayTitle })
           : t(
-            descendants.runningCount > 0 ? runningCountKey : totalCountKey,
-            { count: descendants.runningCount > 0 ? descendants.runningCount : descendantCount },
+            runningCount > 0 ? runningCountKey : totalCountKey,
+            { count: runningCount > 0 ? runningCount : directCount },
           )}
         onClick={openTitle === undefined
           ? undefined
@@ -773,12 +678,12 @@ function CatalogDropdown({
           ? <span className={css.switcherTitle}>{switcherDisplayTitle}</span>
           : (
             <>
-              {descendants.runningCount > 0 && (
+              {runningCount > 0 && (
                 <span className={css.activitySlot}>
                   <StateDot state="ongoing" />
                 </span>
               )}
-              <span className={css.count}>{t(totalCountKey, { count: descendantCount })}</span>
+              <span className={css.count}>{t(totalCountKey, { count: directCount })}</span>
             </>
           )}
         {variant === 'switcher'
@@ -803,7 +708,6 @@ function CatalogDropdown({
             summaries={summaries}
             expanded={expanded}
             level={1}
-            now={now}
             openChild={openChild}
             openChildAside={openChildAside}
             refresh={refresh}
@@ -820,17 +724,21 @@ function CatalogDropdown({
 /**
  * Render one breadcrumb title together with its subagent navigation.
  * @param props - Breadcrumb title, session standard props, and catalog actions.
- * @returns An ordinary-title descendant count, or a title-and-chevron sibling switcher.
+ * @returns An ordinary-title direct-child count, or a title-and-chevron sibling switcher.
  */
 export function SubagentHeaderLineage({
   lineageSessionId, displayTitle, openTitle,
-  useSessions, openChild, openChildAside, refresh, setCatalogOpen, t,
+  useSessions, useSession, useSessionStatus, openChild, openChildAside, refresh, t,
 }: SubagentHeaderLineageProps) {
+  const address = useSession(session => session.subagent?.address)
   const parentId = useSessions((state) => {
-    const summary = state.byId[lineageSessionId]
-    return summary?.origin === 'subagent' ? summary.parentId : undefined
+    if (address?.childSessionId === lineageSessionId) return address.parentSessionId
+    for (const [parentId, snapshot] of Object.entries(state.projectionsBySession)) {
+      if (snapshot.values.subagentCatalog?.some(entry => entry.id === lineageSessionId)) return parentId as SessionId
+    }
+    return undefined
   })
-  const shared = { useSessions, openChild, openChildAside, refresh, setCatalogOpen, t }
+  const shared = { useSessions, useSessionStatus, openChild, openChildAside, refresh, t }
   if (parentId === undefined) {
     return (
       <CatalogDropdown

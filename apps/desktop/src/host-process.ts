@@ -114,7 +114,6 @@ export class DesktopHostProcess {
    * @param primaryRuntime - Optional bundled dependency payload; when supplied, missing sibling
    *   `office-skills` resources fail Host startup.
    * @param packageManager - Bundled pnpm entry and Node launcher directory, scoped to package operations.
-   * @param profileResolution - Package resolution mode for the application-owned profile.
    * @param onPlatformSession - Private credential updates for embedded Platform views.
    */
   constructor(
@@ -125,7 +124,6 @@ export class DesktopHostProcess {
     private readonly environment: NodeJS.ProcessEnv = process.env,
     private readonly onFailure?: (error: Error) => void,
     private readonly primaryRuntime?: string,
-    private readonly profileResolution: 'link' | 'runtime' = 'link',
     private readonly packageManager?: { readonly pnpm: string; readonly nodeBin: string },
 
     private readonly onPlatformSession?: (session: PlatformSession | null) => void,
@@ -145,7 +143,6 @@ export class DesktopHostProcess {
       this.runtimeDir,
       this.projectDir,
       this.primaryRuntime ?? join(this.runtimeDir, '..', 'runtime', 'primary-runtime'),
-      this.profileResolution,
       ...this.packageManager === undefined ? [] : [this.packageManager.pnpm, this.packageManager.nodeBin],
     ], {
       cwd: this.projectDir,

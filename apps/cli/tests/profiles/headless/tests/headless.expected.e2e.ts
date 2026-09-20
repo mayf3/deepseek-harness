@@ -234,10 +234,12 @@ async function persistedLogs(cwd: string, root: string = join(cwd, '.sessions'))
 
 describe('headless stream-json snapshots', () => {
 
-  it('runs one task through the product headless profile command', async () => {
+  it.each(['src', 'lib'] as const)('runs one task through the product headless profile command (%s)', async (mode) => {
     const task = 'Prove the product headless profile path with one real tool round trip.'
     const result = await runLoaderSmoke({
       label: 'product headless profile snapshot',
+      mode,
+      sourceImport: 'tsx/esm',
       tempDirPrefix: 'headless-snapshot-profile-',
       binScript: dshBinScript,
       configPath: headlessOverlayPath,
@@ -925,8 +927,7 @@ describe('headless stream-json snapshots', () => {
         })
         const probeData = probeResult?.data as JsonObject | undefined
         const probeMessage = probeData?.message as JsonObject | undefined
-        const probeContent = probeMessage?.content as JsonObject[] | undefined
-        expect(probeContent?.[0]?.isError).toBe(true)
+        expect(probeMessage?.isError).toBe(true)
         expect((probeData?.error as JsonObject | undefined)?.code).toBe('GOAL_NOT_FOUND')
         const goalChanges = records.filter(record => record.type === 'goal/change')
         expect(goalChanges).toHaveLength(1)

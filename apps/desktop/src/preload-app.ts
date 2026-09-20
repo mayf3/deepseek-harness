@@ -3,7 +3,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation } from './ipc.ts'
 import { PLATFORM_IPC } from './platform-ipc.ts'
-import { markDocumentPlatform } from './preload-platform.ts'
+import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.ts'
 import { syncNativeTheme } from './preload-theme.ts'
 import { syncWindowsAppearance } from './preload-windows.ts'
 
@@ -45,6 +45,7 @@ if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
 }
 
 markDocumentPlatform()
+syncWindowFullscreen()
 syncNativeTheme()
 // Main-process IPC also verifies the owning window and top frame.
 contextBridge.exposeInMainWorld('dshDesktop', location.protocol === `${SCHEME}:` && location.hostname === 'app' ? product : { protocolVersion: 1 })

@@ -129,7 +129,7 @@ describe('Chat apply wiring', () => {
       b.runtime.slots.entries('conversation.composer.dock').find(entry => entry.options.id === 'stats')!,
       b.runtime.slots.entries('conversation.chat.node').find(entry => entry.options.key === 'turn-tail')!,
     ]) {
-      const injected = (entry.inject as unknown as () => Pick<PerformanceUsageRowInjected, 'hooks'>)()
+      const injected = (entry.inject as () => Pick<PerformanceUsageRowInjected, 'hooks'>)()
       expect(injected.hooks.performanceUsage).toBe(face.hooks.performanceUsage)
     }
     await b.runtime.dispose()

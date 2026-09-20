@@ -7,8 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { getEnvironmentData, setEnvironmentData } from 'node:worker_threads'
 import type { ModuleLoaderV1, ModuleLoaderV2, ResolveResult } from '@deepseek-ai/cordis-plugin-loader'
 import { imports as resolvePackageImports, type Package as ResolvePackageManifest } from 'resolve.exports'
-import { isProfileModuleFallbackLink } from './legacy-links.ts'
-import type { ProfileResolutionEntry, ProfileResolutionGeneration } from '../profile.ts'
+import type { RuntimeResolutionEntry, RuntimeResolution } from '../profile.ts'
 
 const WORKER_RESOLUTION_KEY = '@deepseek-ai/dsh-app-boot/profile-resolution'
 const EMPTY_ATTRIBUTES: ImportAttributes = Object.freeze({})
@@ -48,9 +47,16 @@ type EsmResolve = (
   request: string, parent: string | undefined, attributes: ImportAttributes,
 ) => ResolveResult | Promise<ResolveResult>
 
+/**
+ * Where Node continues a scoped bare request. `native` keeps the importer's own lookup: the chain is
+ * answered below the interception layer. `interception` answers at the interception layer from the
+ * entry's declaring manifest; `after` anchors Node's chain above the layer for a CommonJS subpath the
+ * entry lacks. `native-after-interception` resumes Node's chain from `parent`: the interception layer for a
+ * name without an entry, or the layer above it after an `interception` subpath miss.
+ */
 type ResolutionRoute =
-  | { readonly kind: 'fallback'; readonly entry: ProfileResolutionEntry; readonly after: string }
-  | { readonly kind: 'after-fallback'; readonly parent: string }
+  | { readonly kind: 'interception'; readonly entry: RuntimeResolutionEntry; readonly after: string }
+  | { readonly kind: 'native-after-interception'; readonly parent: string }
   | { readonly kind: 'native'; readonly packageDir?: string }
 
 interface ResolutionRouteState {
@@ -62,7 +68,8 @@ interface ResolutionRouteState {
 
 interface ParentRoutes {
   readonly parent: string
-  readonly profilesDir: string
+  /** Profile directory owning the importer; its node_modules are local, the first ancestor above it is the interception layer. */
+  readonly localRoot: string
   readonly activeProfile: boolean
   readonly requests: Map<string, ResolutionRouteState>
   selfReferenceName?: string | false | null
@@ -70,8 +77,8 @@ interface ParentRoutes {
 
 type ResolutionRoutes = Map<string, ParentRoutes | false>
 
-interface CompiledGeneration {
-  readonly entries: ReadonlyMap<string, ProfileResolutionEntry>
+interface CompiledResolution {
+  readonly entries: ReadonlyMap<string, RuntimeResolutionEntry>
   readonly profilesDir: string
   readonly profileDir: string | undefined
   readonly profilePaths: readonly string[]
@@ -79,16 +86,12 @@ interface CompiledGeneration {
   readonly profile: readonly string[]
   readonly activeProfileUrls: readonly string[]
   readonly localPackageNames: ReadonlySet<string>
-  readonly shared: ReadonlySet<string>
   readonly esmRoutes: ResolutionRoutes
   readonly cjsRoutes: ResolutionRoutes
 }
 
-/** Whether runtime resolution redirects requests or verifies the materialized backend. */
-export type ProfileResolutionBehavior = 'enforce' | 'verify'
-
-/** Active resolver registration in one Node isolate. */
-export interface ProfileResolutionRegistration {
+/** Active interception in one Node isolate. */
+export interface RuntimeInterception {
   /**
    * Locate a bare package without requiring one of its exports.
    * @param specifier - bare package or package-subpath specifier.
@@ -97,12 +100,12 @@ export interface ProfileResolutionRegistration {
    */
   packageDir(specifier: string, parentURL: string): string | undefined
   /**
-   * Atomically publish an additive package table and fresh generation-owned caches.
-   * @param generation - fully constructed successor generation.
+   * Atomically publish an additive package table and fresh caches.
+   * @param successor - fully constructed additive successor generation.
    * @throws when the profile scope or an existing package mapping changes.
    */
-  replace(generation: ProfileResolutionGeneration): void
-  /** Restore the native resolver methods. Registrations dispose in reverse order. */
+  replace(successor: RuntimeResolution): void
+  /** Restore the native resolver methods. Interceptions dispose in reverse order. */
   dispose(): void
 }
 
@@ -125,7 +128,7 @@ function canonicalPath(path: string): string {
   try {
     return realpathSync(path)
   } catch {
-    // A generation may name a profile scope before that directory is materialized.
+    // A runtime resolution may name a profile scope before that directory is materialized.
     return resolve(path)
   }
 }
@@ -136,19 +139,18 @@ function prefixes(path: string): readonly string[] {
   return canonical === configured ? [configured] : [configured, canonical]
 }
 
-function compileGeneration(generation: ProfileResolutionGeneration): CompiledGeneration {
-  const profilePaths = prefixes(generation.profilesDir)
-  const profile = generation.profileDir === undefined ? [] : prefixes(generation.profileDir)
+function compileResolution(resolution: RuntimeResolution): CompiledResolution {
+  const profilePaths = prefixes(resolution.profilesDir)
+  const profile = resolution.profileDir === undefined ? [] : prefixes(resolution.profileDir)
   return {
-    entries: new Map(generation.entries.map(entry => [entry.name, entry])),
-    profilesDir: generation.profilesDir,
-    profileDir: generation.profileDir,
+    entries: new Map(resolution.entries.map(entry => [entry.name, entry])),
+    profilesDir: resolution.profilesDir,
+    profileDir: resolution.profileDir,
     profilePaths,
     profileUrls: profilePaths.map(path => pathToFileURL(path).href),
     profile,
     activeProfileUrls: profile.map(path => pathToFileURL(path).href),
-    localPackageNames: new Set(generation.localPackageNames),
-    shared: new Set(profilePaths.map(prefix => join(prefix, 'node_modules'))),
+    localPackageNames: new Set(resolution.localPackageNames),
     esmRoutes: new Map(),
     cjsRoutes: new Map(),
   }
@@ -161,6 +163,18 @@ function startsWithin(path: string, roots: readonly string[]): boolean {
   return false
 }
 
+/**
+ * The profile directory owning a module inside the profiles tree: the first path segment below the tree root.
+ * @param path - module path below `treePrefix`.
+ * @param treePrefix - profiles directory with a trailing separator.
+ * @returns the profile directory without a trailing separator.
+ */
+function profileChild(path: string, treePrefix: string): string {
+  const rest = path.slice(treePrefix.length)
+  const end = rest.indexOf(sep)
+  return treePrefix + (end < 0 ? rest : rest.slice(0, end))
+}
+
 function nativePackageDir(parent: string, name: string): string | undefined {
   for (const searchPath of createRequire(parent).resolve.paths(name) as string[]) {
     const candidate = join(searchPath, name)
@@ -169,16 +183,14 @@ function nativePackageDir(parent: string, name: string): string | undefined {
   return undefined
 }
 
-function localPackageCandidate(
-  searchPath: string, name: string, flavor: 'esm' | 'cjs',
-): { packageDir: string; canBeManagedLink: boolean } | undefined {
+function localPackageCandidate(searchPath: string, name: string, flavor: 'esm' | 'cjs'): string | undefined {
   const candidate = join(searchPath, name)
   const stat = statSync(candidate, { throwIfNoEntry: false })
   const found = flavor === 'esm'
     ? stat?.isDirectory() === true
     : stat !== undefined
       || ['.js', '.json', '.node'].some(extension => existsSync(candidate + extension))
-  return found ? { packageDir: candidate, canBeManagedLink: stat !== undefined } : undefined
+  return found ? candidate : undefined
 }
 
 function selfReferenceName(parent: string): string | false | null {
@@ -243,10 +255,10 @@ function packageImportsTarget(
 }
 
 function packageSearchPaths(
-  entry: ProfileResolutionEntry, request: string, cjs: CommonJsModule,
+  entry: RuntimeResolutionEntry, request: string, cjs: CommonJsModule,
 ): string[] {
   const name = barePackageName(request)
-  /* v8 ignore next -- fallback routes are created only for bare package requests */
+  /* v8 ignore next -- interception routes are created only for bare package requests */
   if (name === undefined) return cjs._nodeModulePaths(dirname(entry.declarer))
   const suffix = sep + name.split('/').join(sep)
   return entry.packageDir.endsWith(suffix)
@@ -280,24 +292,22 @@ function isUnselectedPackageMiss(error: unknown): boolean {
 
 function sameResolution(left: string, right: string): boolean {
   if (left === right) return true
-  const leftPath = left.startsWith('file:') ? fileURLToPath(left) : left
-  const rightPath = right.startsWith('file:') ? fileURLToPath(right) : right
-  return canonicalPath(leftPath) === canonicalPath(rightPath)
+  return canonicalPath(left) === canonicalPath(right)
 }
 
-/** One mutable pointer to immutable generation data. */
+/** One mutable pointer to the immutable runtime resolution. */
 class ResolutionRouter {
-  private current: CompiledGeneration
+  private current: CompiledResolution
 
-  constructor(generation: ProfileResolutionGeneration) {
-    this.current = compileGeneration(generation)
+  constructor(resolution: RuntimeResolution) {
+    this.current = compileResolution(resolution)
   }
 
-  replace(generation: ProfileResolutionGeneration): void {
-    const entries = new Map(generation.entries.map(entry => [entry.name, entry]))
-    if (generation.profilesDir !== this.current.profilesDir
-      || generation.profileDir !== this.current.profileDir) {
-      throw new Error('profile resolution: a generation cannot change its profile scope')
+  replace(successor: RuntimeResolution): void {
+    const entries = new Map(successor.entries.map(entry => [entry.name, entry]))
+    if (successor.profilesDir !== this.current.profilesDir
+      || successor.profileDir !== this.current.profileDir) {
+      throw new Error('profile resolution: a successor cannot change its profile scope')
     }
     for (const [name, current] of this.current.entries) {
       const next = entries.get(name)
@@ -309,7 +319,7 @@ class ResolutionRouter {
         throw new Error(`profile resolution: replacing ${JSON.stringify(name)} requires a process restart`)
       }
     }
-    const localPackageNames = new Set(generation.localPackageNames)
+    const localPackageNames = new Set(successor.localPackageNames)
     for (const name of this.current.localPackageNames) {
       if (!localPackageNames.has(name)) {
         throw new Error(`profile resolution: removing local package ${JSON.stringify(name)} requires a process restart`)
@@ -320,18 +330,18 @@ class ResolutionRouter {
         throw new Error(`profile resolution: overriding ${JSON.stringify(name)} locally requires a process restart`)
       }
     }
-    this.current = compileGeneration(generation)
+    this.current = compileResolution(successor)
   }
 
   private routeScoped(
     request: string,
     parentRoutes: ParentRoutes,
-    generation: CompiledGeneration,
+    resolution: CompiledResolution,
     flavor: 'esm' | 'cjs',
     nativeResolve?: (searchPaths: readonly string[]) => string,
     cacheable = false,
   ): ResolutionRouteState | undefined {
-    const { parent, profilesDir, requests } = parentRoutes
+    const { parent, localRoot, requests } = parentRoutes
     const name = barePackageName(request)
     if (name === undefined) return undefined
 
@@ -344,32 +354,27 @@ class ResolutionRouter {
       return state
     }
 
-    const target = generation.entries.get(name)
-    const candidates: Array<{ packageDir: string; canBeManagedLink: boolean }> = []
+    const target = resolution.entries.get(name)
+    const candidates: string[] = []
     const localSearchPaths: string[] = []
+    const localPrefix = localRoot + sep
     for (const searchPath of createRequire(parent).resolve.paths(name) as string[]) {
-      if (generation.shared.has(resolve(searchPath))) break
+      if (!searchPath.startsWith(localPrefix)) break
       localSearchPaths.push(searchPath)
       const candidate = localPackageCandidate(searchPath, name, flavor)
-      if (candidate !== undefined) {
-        const legacy = candidate.canBeManagedLink && generation.profile.some(prefix => (
-          candidate.packageDir === join(prefix, 'node_modules', name)
-          && isProfileModuleFallbackLink(prefix.slice(0, -1), name)
-        ))
-        if (!legacy) candidates.push(candidate)
-      }
+      if (candidate !== undefined) candidates.push(candidate)
     }
     if (candidates.length > 0) {
       if (flavor === 'cjs' && nativeResolve !== undefined) {
         try {
           const resolved = nativeResolve(localSearchPaths)
           const selected = candidates.find(candidate => (
-            localCandidateOwnsResolution(candidate.packageDir, resolved, request, name)
+            localCandidateOwnsResolution(candidate, resolved, request, name)
           ))
           if (selected !== undefined) {
             const state = {
-              route: { kind: 'native' as const, packageDir: selected.packageDir },
-              packageDir: selected.packageDir,
+              route: { kind: 'native' as const, packageDir: selected },
+              packageDir: selected,
               ...(cacheable ? { cjs: resolved } : {}),
             }
             requests.set(request, state)
@@ -379,104 +384,95 @@ class ResolutionRouter {
           if (!isUnselectedPackageMiss(error)) throw error
         }
       } else {
-        const selected = candidates[0] as { packageDir: string }
+        const selected = candidates[0] as string
         const state = {
-          route: { kind: 'native' as const, packageDir: selected.packageDir },
-          packageDir: selected.packageDir,
+          route: { kind: 'native' as const, packageDir: selected },
+          packageDir: selected,
         }
         requests.set(request, state)
         return state
       }
     }
 
+    // The interception layer is `<profileParent>/node_modules`: a runtime resolution entry occupies its name
+    // there, so its subpath misses continue above it; a name without an entry continues at it.
+    const profileParent = dirname(localRoot)
     const eligible = target?.scope === 'installation'
       || (target?.scope === 'profile' && parentRoutes.activeProfile)
-    const after = join(dirname(profilesDir), 'package.json')
     const route: ResolutionRoute = eligible
-      ? { kind: 'fallback', entry: target, after }
-      : { kind: 'after-fallback', parent: after }
+      ? { kind: 'interception', entry: target, after: join(dirname(profileParent), 'package.json') }
+      : { kind: 'native-after-interception', parent: join(profileParent, 'package.json') }
     const state: ResolutionRouteState = { route }
-    if (route.kind === 'fallback') requests.set(request, state)
+    if (route.kind === 'interception') requests.set(request, state)
     return state
   }
 
   private routeLocalPackage(
-    request: string, parentRoutes: ParentRoutes, generation: CompiledGeneration,
+    request: string, parentRoutes: ParentRoutes, resolution: CompiledResolution,
   ): ResolutionRouteState | undefined {
     const name = barePackageName(request)
-    if (name === undefined || !parentRoutes.activeProfile || !generation.localPackageNames.has(name)) return undefined
+    if (name === undefined || !parentRoutes.activeProfile || !resolution.localPackageNames.has(name)) return undefined
     const state = { route: { kind: 'native' as const } }
     parentRoutes.requests.set(request, state)
     return state
   }
 
   routeUrl(request: string, parentURL: string): ResolutionRouteState | undefined {
-    const generation = this.current
-    let parentRoutes = generation.esmRoutes.get(parentURL)
+    const resolution = this.current
+    let parentRoutes = resolution.esmRoutes.get(parentURL)
     if (parentRoutes === false) return undefined
     const cached = parentRoutes?.requests.get(request)
     if (cached !== undefined) return cached
     if (parentRoutes === undefined) {
-      const profileIndex = generation.profileUrls.findIndex(prefix => parentURL.startsWith(prefix))
-      const activeProfileIndex = generation.activeProfileUrls.findIndex(prefix => parentURL.startsWith(prefix))
+      const profileIndex = resolution.profileUrls.findIndex(prefix => parentURL.startsWith(prefix))
+      const activeProfileIndex = resolution.activeProfileUrls.findIndex(prefix => parentURL.startsWith(prefix))
       if (profileIndex < 0 && activeProfileIndex < 0) {
-        generation.esmRoutes.set(parentURL, false)
+        resolution.esmRoutes.set(parentURL, false)
         return undefined
       }
       let parent: string
       try {
         parent = fileURLToPath(parentURL)
       } catch {
-        generation.esmRoutes.set(parentURL, false)
+        resolution.esmRoutes.set(parentURL, false)
         return undefined
       }
-      const profileRoot = profileIndex >= 0
-        ? generation.profilePaths[profileIndex]
-        : generation.profile[activeProfileIndex]
+      const treeRoot = resolution.profilePaths[profileIndex]
+      const localRoot = treeRoot !== undefined
+        ? profileChild(parent, treeRoot)
+        : resolution.profile[activeProfileIndex]?.slice(0, -1)
       /* v8 ignore next -- one matching index was established above */
-      if (profileRoot === undefined) return undefined
-      parentRoutes = {
-        parent,
-        profilesDir: profileRoot.slice(0, -1),
-        activeProfile: activeProfileIndex >= 0,
-        requests: new Map(),
-      }
-      generation.esmRoutes.set(parentURL, parentRoutes)
+      if (localRoot === undefined) return undefined
+      parentRoutes = { parent, localRoot, activeProfile: activeProfileIndex >= 0, requests: new Map() }
+      resolution.esmRoutes.set(parentURL, parentRoutes)
     }
-    const local = this.routeLocalPackage(request, parentRoutes, generation)
+    const local = this.routeLocalPackage(request, parentRoutes, resolution)
     if (local !== undefined) return local
-    return this.routeScoped(request, parentRoutes, generation, 'esm')
+    return this.routeScoped(request, parentRoutes, resolution, 'esm')
   }
 
   routePath(
     request: string, parent: string, nativeResolve?: (searchPaths: readonly string[]) => string, cacheable = false,
   ): ResolutionRouteState | undefined {
-    const generation = this.current
-    let parentRoutes = generation.cjsRoutes.get(parent)
+    const resolution = this.current
+    let parentRoutes = resolution.cjsRoutes.get(parent)
     if (parentRoutes === false) return undefined
     const cached = parentRoutes?.requests.get(request)
     if (cached !== undefined) return cached
     if (parentRoutes === undefined) {
-      const profilesDir = generation.profilePaths.find(prefix => parent.startsWith(prefix))
-      const activeProfile = generation.profile.find(prefix => parent.startsWith(prefix))
-      if (profilesDir !== undefined || activeProfile !== undefined) {
-        const profileRoot = profilesDir ?? activeProfile
-        /* v8 ignore next -- one matching root was established above */
-        if (profileRoot === undefined) return undefined
-        parentRoutes = {
-          parent,
-          profilesDir: profileRoot.slice(0, -1),
-          activeProfile: activeProfile !== undefined,
-          requests: new Map(),
-        }
-        generation.cjsRoutes.set(parent, parentRoutes)
+      const treeRoot = resolution.profilePaths.find(prefix => parent.startsWith(prefix))
+      const activeProfile = resolution.profile.find(prefix => parent.startsWith(prefix))
+      const localRoot = treeRoot !== undefined ? profileChild(parent, treeRoot) : activeProfile?.slice(0, -1)
+      if (localRoot !== undefined) {
+        parentRoutes = { parent, localRoot, activeProfile: activeProfile !== undefined, requests: new Map() }
+        resolution.cjsRoutes.set(parent, parentRoutes)
       }
     }
     if (parentRoutes === undefined) {
-      generation.cjsRoutes.set(parent, false)
+      resolution.cjsRoutes.set(parent, false)
       return undefined
     }
-    return this.routeScoped(request, parentRoutes, generation, 'cjs', nativeResolve, cacheable)
+    return this.routeScoped(request, parentRoutes, resolution, 'cjs', nativeResolve, cacheable)
   }
 
   explicitRoute(
@@ -503,11 +499,11 @@ class ResolutionRouter {
     const name = barePackageName(specifier)
     if (name === undefined) return undefined
     const state = this.routeUrl(specifier, parentURL)
-    if (state?.route.kind === 'fallback') return state.route.entry.packageDir
+    if (state?.route.kind === 'interception') return state.route.entry.packageDir
     if (state?.packageDir !== undefined) return state.packageDir
     let parent: string
     try {
-      parent = state?.route.kind === 'after-fallback' ? state.route.parent : fileURLToPath(parentURL)
+      parent = state?.route.kind === 'native-after-interception' ? state.route.parent : fileURLToPath(parentURL)
     } catch {
       return undefined
     }
@@ -597,39 +593,20 @@ function throwWithoutCjsAnchor(error: unknown, anchor: string): never {
   throw error
 }
 
-function assertEquivalent(actual: string, expected: string, request: string, parent: string): void {
-  if (sameResolution(actual, expected)) return
-  throw new Error(
-    `profile resolution mismatch for ${JSON.stringify(request)} from ${parent}: disk resolved ${actual}, generation resolved ${expected}`,
-  )
-}
-
-function assertOptionalEquivalent(
-  actual: string | undefined, expected: string | undefined, request: string, parent: string,
-): void {
-  if (actual === undefined && expected === undefined) return
-  if (actual !== undefined && expected !== undefined && sameResolution(actual, expected)) return
-  throw new Error(
-    `profile resolution mismatch for ${JSON.stringify(request)} from ${parent}: disk selected ${actual ?? 'nothing'}, generation selected ${expected ?? 'nothing'}`,
-  )
-}
-
 /**
- * Install one profile generation on Node's default ESM and CommonJS resolvers.
- * @param generation - complete package table and profile scope.
- * @param behavior - enforce the generation, or verify a materialized generation.
- * @returns a registration that replaces the generation or restores the native methods.
+ * Install one runtime resolution as the interception on Node's default ESM and CommonJS resolvers.
+ * @param resolution - complete package table and profile scope.
+ * @returns an interception that publishes a successor or restores the native methods.
  */
-export function installProfileResolution(
-  generation: ProfileResolutionGeneration,
-  behavior: ProfileResolutionBehavior = 'enforce',
-): ProfileResolutionRegistration {
-  const router = new ResolutionRouter(generation)
+export function installRuntimeInterception(
+  resolution: RuntimeResolution,
+): RuntimeInterception {
+  const router = new ResolutionRouter(resolution)
   const { esm, esmDefaultResolve, esmConditions, cjs, cjsConditions, modern } = internalModules()
   const esmScope = new Map<string, boolean>()
   const profilePaths = [
-    ...prefixes(generation.profilesDir),
-    ...(generation.profileDir === undefined ? [] : prefixes(generation.profileDir)),
+    ...prefixes(resolution.profilesDir),
+    ...(resolution.profileDir === undefined ? [] : prefixes(resolution.profileDir)),
   ]
   const profileUrls = profilePaths.map(path => pathToFileURL(path).href)
   let recentEsmParent: string | undefined
@@ -669,18 +646,7 @@ export function installProfileResolution(
         } catch (error) {
           return restoreImporter(error)
         }
-        if (behavior === 'enforce') return expected
-        const actual = native(request, parent, attributes)
-        /* v8 ignore start -- Node 22 is the asynchronous adapter and is covered by the external version matrix */
-        if (expected instanceof Promise || actual instanceof Promise) {
-          return Promise.all([actual, expected]).then(([resolved, wanted]) => {
-            assertEquivalent(resolved.url, wanted.url, request, parent)
-            return resolved
-          })
-        }
-        /* v8 ignore stop */
-        assertEquivalent(actual.url, expected.url, request, parent)
-        return actual
+        return expected
       }
       const cacheable = attributes === EMPTY_ATTRIBUTES || Object.keys(attributes).length === 0
       if (cacheable && state.esm !== undefined) return state.esm
@@ -690,52 +656,21 @@ export function installProfileResolution(
         if (cacheable && !(result instanceof Promise)) state.esm = result
         return result
       }
-      const routedParent = pathToFileURL(route.kind === 'fallback' ? route.entry.declarer : route.parent).href
-      if (behavior === 'enforce') {
-        const previous = delegatedEsm
-        delegatedEsm = { parent: routedParent, request }
-        const restoreImporter = (error: unknown): never => throwWithImporter(error, routedParent, parent)
-        try {
-          let result: ResolveResult | Promise<ResolveResult>
-          try {
-            result = native(request, routedParent, attributes)
-          } catch (error) {
-            return restoreImporter(error)
-          }
-          /* v8 ignore next -- Node 24+ resolves synchronously; the Node 22 matrix covers its Promise result */
-          if (result instanceof Promise) return result.catch(restoreImporter)
-          if (cacheable) state.esm = result
-          return result
-        } finally {
-          delegatedEsm = previous
-        }
-      }
-      const actual = native(request, parent, attributes)
+      const routedParent = pathToFileURL(route.kind === 'interception' ? route.entry.declarer : route.parent).href
       const previous = delegatedEsm
       delegatedEsm = { parent: routedParent, request }
       const restoreImporter = (error: unknown): never => throwWithImporter(error, routedParent, parent)
       try {
-        let expected: ResolveResult | Promise<ResolveResult>
+        let result: ResolveResult | Promise<ResolveResult>
         try {
-          const result = native(request, routedParent, attributes)
-          expected = result
-          /* v8 ignore next -- Node 24+ resolves synchronously; the Node 22 matrix covers its Promise result */
-          if (result instanceof Promise) expected = result.catch(restoreImporter)
+          result = native(request, routedParent, attributes)
         } catch (error) {
           return restoreImporter(error)
         }
-        /* v8 ignore start -- Node 22 is the asynchronous adapter and is covered by the external version matrix */
-        if (expected instanceof Promise || actual instanceof Promise) {
-          return Promise.all([actual, expected]).then(([resolved, wanted]) => {
-            assertEquivalent(resolved.url, wanted.url, request, parent)
-            if (cacheable) state.esm = resolved
-            return resolved
-          })
-        }
-        /* v8 ignore stop */
-        assertEquivalent(actual.url, expected.url, request, parent)
-        if (cacheable) state.esm = actual
-        return actual
+        /* v8 ignore next -- Node 24+ resolves synchronously; the Node 22 matrix covers its Promise result */
+        if (result instanceof Promise) return result.catch(restoreImporter)
+        if (cacheable) state.esm = result
+        return result
       } finally {
         delegatedEsm = previous
       }
@@ -760,7 +695,7 @@ export function installProfileResolution(
     )
     loader.resolveSync = wrapped
     restoreEsm = () => {
-      /* v8 ignore else -- registrations are disposed in reverse installation order */
+      /* v8 ignore else -- interceptions are disposed in reverse installation order */
       if (loader.resolveSync === wrapped) loader.resolveSync = original
     }
   } else {
@@ -789,12 +724,12 @@ export function installProfileResolution(
     request: string, routed: Exclude<ResolutionRoute, { kind: 'native' }>,
     parent: CommonJsParent, main: boolean, options?: CommonJsOptions,
   ): string => {
-    const anchor = routed.kind === 'fallback' ? routed.entry.declarer : routed.parent
+    const anchor = routed.kind === 'interception' ? routed.entry.declarer : routed.parent
     const synthetic = new cjs(anchor)
     // Late parent assignment preserves Node's require stack without publishing this routing anchor in parent.children.
     synthetic.parent = parent
     synthetic.filename = anchor
-    synthetic.paths = routed.kind === 'fallback'
+    synthetic.paths = routed.kind === 'interception'
       ? packageSearchPaths(routed.entry, request, cjs)
       : cjs._nodeModulePaths(dirname(anchor))
     try {
@@ -825,7 +760,7 @@ export function installProfileResolution(
     if (state === undefined) return resolveFrom(target.parentURL)
     if (state.route.kind === 'native') return resolveFrom(target.parentURL)
     const route = state.route
-    if (route.kind === 'after-fallback') return resolveFrom(pathToFileURL(route.parent).href)
+    if (route.kind === 'native-after-interception') return resolveFrom(pathToFileURL(route.parent).href)
     return resolveFrom(pathToFileURL(route.entry.declarer).href)
   }
   const wrappedFilename: CommonJsModule['_resolveFilename'] = (request, parent, main, options) => {
@@ -867,11 +802,7 @@ export function installProfileResolution(
         ? packageImportsTarget(parentFilename, request, conditions)
         : undefined
       if (target === undefined) return originalFilename.call(cjs, request, parent, main, options)
-      const expected = resolvePackageImportCjs(target, conditions)
-      if (behavior === 'enforce') return expected
-      const actual = originalFilename.call(cjs, request, parent, main, options)
-      assertEquivalent(actual, expected, request, parentFilename)
-      return actual
+      return resolvePackageImportCjs(target, conditions)
     }
     if (cacheable && state.cjs !== undefined) return state.cjs
     const route = state.route
@@ -880,7 +811,7 @@ export function installProfileResolution(
       if (cacheable) state.cjs = result
       return result
     }
-    if (route.kind === 'after-fallback' && explicit !== undefined && explicitPaths !== undefined) {
+    if (route.kind === 'native-after-interception' && explicit !== undefined && explicitPaths !== undefined) {
       try {
         return originalFilename.call(cjs, request, parent, main, {
           ...options,
@@ -900,10 +831,10 @@ export function installProfileResolution(
       try {
         expected = resolveRoutedCjs(request, route, parent, main, routedOptions)
       } catch (error) {
-        if (route.kind !== 'fallback' || !isUnselectedPackageMiss(error)) throw error
+        if (route.kind !== 'interception' || !isUnselectedPackageMiss(error)) throw error
         try {
           expected = resolveRoutedCjs(
-            request, { kind: 'after-fallback', parent: route.after }, parent, main, routedOptions,
+            request, { kind: 'native-after-interception', parent: route.after }, parent, main, routedOptions,
           )
         } catch (afterError) {
           const remaining = explicit === undefined || explicitPaths === undefined
@@ -920,14 +851,8 @@ export function installProfileResolution(
           }
         }
       }
-      if (behavior === 'enforce') {
-        if (cacheable) state.cjs = expected
-        return expected
-      }
-      const actual = originalFilename.call(cjs, request, parent, main, options)
-      assertEquivalent(actual, expected, request, parentFilename)
-      if (cacheable) state.cjs = actual
-      return actual
+      if (cacheable) state.cjs = expected
+      return expected
     } finally {
       delegatedCjs--
     }
@@ -936,23 +861,11 @@ export function installProfileResolution(
 
   return {
     packageDir(specifier, parentURL) {
-      const expected = router.packageDir(specifier, parentURL)
-      if (behavior !== 'verify' || !startsWithin(parentURL, profileUrls)) return expected
-      const name = barePackageName(specifier)
-      if (name === undefined) return expected
-      let parent: string
-      try {
-        parent = fileURLToPath(parentURL)
-      } catch {
-        return expected
-      }
-      const actual = nativePackageDir(parent, name)
-      assertOptionalEquivalent(actual, expected, specifier, parentURL)
-      return expected
+      return router.packageDir(specifier, parentURL)
     },
     replace(next) { router.replace(next) },
     dispose() {
-      /* v8 ignore else -- registrations are disposed in reverse installation order */
+      /* v8 ignore else -- interceptions are disposed in reverse installation order */
       if (cjs._resolveFilename === wrappedFilename) cjs._resolveFilename = originalFilename
       restoreEsm()
     },
@@ -960,16 +873,14 @@ export function installProfileResolution(
 }
 
 /**
- * Publish one generation for Harness-owned Workers.
- * @param generation - complete package table and profile scope.
- * @param behavior - enforce or verify the generation in newly created Workers.
+ * Publish one runtime resolution for Harness-owned Workers.
+ * @param resolution - complete package table and profile scope.
  * @returns a disposer restoring the previous thread environment data.
  */
 export function registerWorkerResolution(
-  generation: ProfileResolutionGeneration,
-  behavior: ProfileResolutionBehavior = 'enforce',
+  resolution: RuntimeResolution,
 ): () => void {
   const previous = getEnvironmentData(WORKER_RESOLUTION_KEY)
-  setEnvironmentData(WORKER_RESOLUTION_KEY, { generation, behavior })
+  setEnvironmentData(WORKER_RESOLUTION_KEY, { resolution })
   return () => { setEnvironmentData(WORKER_RESOLUTION_KEY, previous) }
 }

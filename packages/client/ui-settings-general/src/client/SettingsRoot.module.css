@@ -75,13 +75,19 @@
 }
 
 /* Settings 2552:26025 uses a shared 760×500 panel; longer sections scroll
-   inside the options column without moving the navigation. */
+   inside the options column without moving the navigation. One height for
+   every section, taken from the viewport rather than the content, because a
+   content-sized panel would resize under the pointer on every nav click.
+   The viewport height leaves 24px of air above and below, widened to the
+   frame's published top clearance (the macOS window strip, where clicks drag
+   the window) on both sides, so the panel sits centered and clear of the
+   strip. */
 .panel {
   position: relative;
   z-index: 1;
   display: flex;
   width: 760px;
-  height: min(500px, calc(100vh - 48px));
+  height: min(500px, calc(100vh - 2 * max(24px, var(--dsh-frame-top-clearance, 24px))));
   max-width: calc(100vw - 48px);
   border-radius: 24px;
   overflow: hidden;
@@ -229,4 +235,10 @@
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* macOS: overlays covering the window drag bands must subtract themselves
+   (Electron app-regions are geometry, not stacking). */
+:global([data-platform='darwin']) .overlay {
+  -webkit-app-region: no-drag;
 }

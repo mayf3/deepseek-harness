@@ -2,7 +2,7 @@
 export const zh = {
   'type.label': '浏览器',
   'guide.title': '浏览器',
-  'guide.description': '浏览 HTTP(S) 网页',
+  'guide.description': '浏览网页',
   'address.placeholder': '输入 HTTP(S) 地址',
   'address.changed': 'URL 已变化',
   back: '后退',
@@ -31,7 +31,7 @@ export type SidebarBrowserKey = keyof typeof zh
 export const en = {
   'type.label': 'Browser',
   'guide.title': 'Browser',
-  'guide.description': 'Browse HTTP(S) pages',
+  'guide.description': 'Browse web pages',
   'address.placeholder': 'Enter an HTTP(S) address',
   'address.changed': 'URL changed',
   back: 'Back',

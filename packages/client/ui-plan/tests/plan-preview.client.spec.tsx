@@ -176,14 +176,14 @@ describe('plan entry points and document', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open plan in sidebar' }))
     expect(openReview).toHaveBeenCalledTimes(2)
     const revised = { plan: '# Revised', ...(logged ? { callId: 'call:2' } : {}) }
-    second.rerender(<PlanReviewOpen {...{ ...props, review: revised, requestKey: 'question:2' } as unknown as Parameters<typeof PlanReviewOpen>[0]} />)
+    second.rerender(<PlanReviewOpen {...{ ...props, review: revised, requestKey: 'question:2' } as Parameters<typeof PlanReviewOpen>[0]} />)
     expect(openReview).toHaveBeenLastCalledWith(revised, 'question:2')
     expect(openReview).toHaveBeenCalledTimes(3)
     second.unmount()
     const other = createPlanReviewStore().create()
     render(<PlanReviewOpen {...{ ...props, actions: other.actions,
       useStore: (select: (state: ReturnType<typeof other.getSnapshot>) => unknown) => select(other.getSnapshot()),
-    } as unknown as Parameters<typeof PlanReviewOpen>[0]} />)
+    } as Parameters<typeof PlanReviewOpen>[0]} />)
     expect(openReview).toHaveBeenCalledTimes(4)
   })
   it('renders temporary Markdown and reports expired navigation after reload', () => {

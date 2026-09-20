@@ -13,7 +13,7 @@ const instances: DesktopMandatoryUpdatePolicy[] = []
 function fixture(authentication: 'anonymous' | 'feishu-test' = 'anonymous') {
   const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json(clear))
   const publish = vi.fn<(state: DesktopPolicyState) => void>()
-  const policy = new DesktopMandatoryUpdatePolicy(resolveDesktopPolicyConfig({ ...deployment, authentication })!,
+  const policy = new DesktopMandatoryUpdatePolicy(resolveDesktopPolicyConfig({ ...deployment, authentication, ...(authentication === 'feishu-test' ? { allowedAuthOrigins: ['https://login.example.com'] } : {}) })!,
     identity, publish, request)
   instances.push(policy)
   return { policy, request, publish }
@@ -162,6 +162,15 @@ describe('mandatory update policy', () => {
 })
 
 describe('policy deployment and page validation', () => {
+  it('requires validated login origins only for test authentication', () => {
+    expect(() => resolveDesktopPolicyConfig({ ...deployment, authentication: 'feishu-test' })).toThrow('allowedAuthOrigins')
+    expect(() => resolveDesktopPolicyConfig({ ...deployment, allowedAuthOrigins: ['https://login.example.com'] })).toThrow('anonymous')
+    expect(() => resolveDesktopPolicyConfig({ ...deployment, authentication: 'feishu-test',
+      allowedAuthOrigins: ['https://login.example.com/path'] })).toThrow('HTTPS origin')
+    expect(resolveDesktopPolicyConfig({ ...deployment, authentication: 'feishu-test',
+      allowedAuthOrigins: ['https://login.example.com'] })?.allowedAuthOrigins).toEqual(['https://login.example.com'])
+  })
+
   it('requires explicit production origins and confines HTTP to an explicit local policy fixture', () => {
     expect(resolveDesktopPolicyConfig(undefined)).toBeUndefined()
     expect(() => resolveDesktopPolicyConfig({ ...deployment, origin: 'http://127.0.0.1:19001' })).toThrow('HTTPS')

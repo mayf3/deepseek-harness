@@ -1,11 +1,13 @@
-/** Keyless document-preview smoke through a real Session, Files tab, and shipped renderers. */
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+/** Keyless document-preview smoke through a real Session, Files tab, shipped renderers, and the default-application controls. */
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
+import { nativeFileManager } from '@deepseek-ai/dsh-native-command'
+import { delimiter, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { realOfficeBytes } from './office-fixture.ts'
 import { pdfFixture, selectionPdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
@@ -19,6 +21,8 @@ const PAGE_LINES = 64
 const SHOT_DIR = fileURLToPath(new URL('../../../.artifacts/screenshots/0908-document-preview', import.meta.url))
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 const MODE = webSnapshotMode()
+/** The stubbed opener runs as a POSIX script; Windows and WSL keep their real file associations out of the lane. */
+const STUB_OPENER = nativeFileManager() !== 'explorer'
 const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
@@ -83,11 +87,33 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   let outsideRoot: string | undefined
+  let nativeRoot: string | undefined
+  let openLog = ''
+  const opened = async (): Promise<Array<{ path: string; action: 'open' | 'reveal' }>> =>
+    (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; action: 'open' | 'reveal' })
 
   beforeAll(async () => {
     outsideRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-outside-'))
+    if (STUB_OPENER) {
+      // Exercise the built Host through its actual OS command, replacing only the desktop application.
+      nativeRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-native-'))
+      openLog = join(nativeRoot, 'opened.jsonl')
+      await writeFile(openLog, '')
+      const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
+      await writeFile(join(nativeRoot, command), `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = process.argv[2] === '-R' ? process.argv[3] : process.argv[2];
+const action = process.argv[2] === '-R' || fs.statSync(path).isDirectory() ? 'reveal' : 'open';
+fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) + '\\n');
+`, { mode: 0o700 })
+      vi.stubEnv('PATH', `${nativeRoot}${delimiter}${process.env.PATH ?? ''}`)
+    }
+    // The Open In rows carry the default-application controls; the SSH marker
+    // keeps the host's application catalog empty, so the Session-header split
+    // button stays off every platform while the pinned desktop serves the file controls.
     scaffold = await launchWebScaffold({
-      developerTools: false, replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false, extraOverlayPath: PAGING_PATCH,
+      developerTools: false, replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false, extraOverlayPath: [PAGING_PATCH, fileURLToPath(new URL('./fixtures/native-open-on.patch.yml', import.meta.url))],
+      openInAppEnvironment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { SSH_CONNECTION: '10.0.0.2 55000 10.0.0.9 22' } }]),
     })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -103,7 +129,9 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       try {
         await scaffold?.close()
       } finally {
+        vi.unstubAllEnvs()
         if (outsideRoot !== undefined) await rm(outsideRoot, { recursive: true, force: true })
+        if (nativeRoot !== undefined) await rm(nativeRoot, { recursive: true, force: true })
       }
     }
   })
@@ -141,7 +169,11 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       '# Markdown smoke', '', 'Rendered from the workspace.', '',
       ...Array.from({ length: (PAGE_LINES - 4) / 2 }, (_, index) => [`Paragraph ${index + 1}: ${'visible prefix '.repeat(20)}`, '']).flat(),
       '# Markdown tail',
+      '', '![relative image](preview-images/local%20image.png)',
+      '', `![absolute image](<${join(cwd, 'tiny.png').replaceAll('\\', '/')}>)`,
+      '', '![reference image][local-image]', '', '[local-image]: preview-images/local%20image.png',
     ].join('\n')
+    await mkdir(join(cwd, 'preview-images'))
     const codeLines = [
       ...Array.from({ length: PAGE_LINES }, (_, index) => index === 0 ? 'const prefix = "CODE_PREFIX";' : `// prefix line ${index + 1}`),
       'const tail = "CODE_TAIL";',
@@ -176,6 +208,7 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       writeFile(join(cwd, 'local.css'), '#local-result { color: rgb(12, 34, 56); }'),
       writeFile(outsideScript, 'document.getElementById("outside-result").textContent="OUTSIDE_JS_OK";'),
       writeFile(join(cwd, 'tiny.png'), TINY_PNG),
+      writeFile(join(cwd, 'preview-images', 'local image.png'), TINY_PNG),
       writeFile(join(cwd, 'large.svg'), [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">',
         '<script>parent.document.documentElement.setAttribute("data-image-preview-escape","true")</script>',
@@ -243,7 +276,7 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     await openFile('smoke.md')
     await expect.poll(() => viewer.innerText()).toBe('Markdown')
     await preview.getByRole('heading', { name: 'Markdown smoke', exact: true }).waitFor({ timeout: 15_000 })
-    expect(await preview.getByText('Rendered from the workspace.', { exact: true }).isVisible()).toBe(true)
+    await preview.getByText('Rendered from the workspace.', { exact: true }).waitFor({ state: 'visible' })
     const heading = await preview.getByRole('heading', { name: 'Markdown smoke', exact: true }).innerText()
     const markdownTail = preview.getByRole('heading', { name: 'Markdown tail', exact: true })
     await expect.poll(() => preview.locator('[data-textpreview-more]').isEnabled()).toBe(true)
@@ -254,6 +287,15 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     expect(await preview.getByRole('heading', { name: heading, exact: true }).count()).toBe(1)
     expect(await preview.getByText('Rendered from the workspace.', { exact: true }).count()).toBe(1)
     const tailHeading = await markdownTail.innerText()
+    const markdownImages: string[] = []
+    for (const alt of ['relative image', 'absolute image', 'reference image']) {
+      const image = preview.getByRole('img', { name: alt, exact: true })
+      await image.scrollIntoViewIfNeeded()
+      await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0)).toBe(true)
+      const source = new URL(await image.getAttribute('src') ?? '')
+      expect(source.pathname).toBe('/api/file')
+      markdownImages.push(alt)
+    }
     await preview.getByRole('heading', { name: heading, exact: true }).scrollIntoViewIfNeeded()
     await successShot(page, 'markdown')
     const markdownTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('smoke.md', { exact: true }) })
@@ -286,6 +328,7 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       '## Markdown', '',
       `- Heading: ${heading}`,
       `- Tail loaded by scrolling: ${tailHeading}`,
+      `- Loaded images: ${markdownImages.join(' | ')}`,
       `- Viewers: ${markdownViewers.join(' -> ')}`,
       `- Same tab: ${String(await markdownTab.getAttribute('data-dockkit-tab') === markdownTabId)}`,
     ].join('\n'))
@@ -351,13 +394,23 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     const html = page.frameLocator('[data-html-preview]')
     await html.getByRole('heading', { name: 'HTML smoke', exact: true }).waitFor({ timeout: 15_000 })
     await expect.poll(() => html.locator('#result').innerText()).toBe('INLINE_OK')
-    await expect.poll(() => previewNetworkRequests).toBe(1)
+    await expect.poll(() => html.locator('img[src="https://preview.invalid/developer-tools.png"]')
+      .evaluate(node => (node as HTMLImageElement).naturalWidth)).toBe(1)
     await expect.poll(() => html.locator('#local-result').innerText()).toBe('LOCAL_JS_OK')
     await expect.poll(() => html.locator('#outside-result').innerText()).toBe('OUTSIDE_JS_OK')
     await expect.poll(() => html.locator('#local-result').evaluate(node => getComputedStyle(node).color)).toBe('rgb(12, 34, 56)')
     await expect.poll(() => html.locator('#parent-result').innerText()).toBe('parent-blocked')
     expect(await html.locator('#parent-result').getAttribute('data-error')).toBe('SecurityError')
     expect(await page.locator('html').getAttribute('data-document-preview-escape')).toBeNull()
+    expect(previewNetworkRequests).toBe(1)
+    const beforeStyleSave = await iframe.getAttribute('src')
+    await writeFile(join(cwd, 'local.css'), '#local-result { color: rgb(56, 34, 12); }')
+    await expect.poll(() => html.locator('#local-result').evaluate(node => getComputedStyle(node).color)).toBe('rgb(56, 34, 12)')
+    expect(await iframe.getAttribute('src')).not.toBe(beforeStyleSave)
+    const beforeScriptSave = await iframe.getAttribute('src')
+    await writeFile(join(cwd, 'local.js'), 'document.getElementById("local-result").textContent="LOCAL_JS_REFRESHED";')
+    await expect.poll(() => html.locator('#local-result').innerText()).toBe('LOCAL_JS_REFRESHED')
+    expect(await iframe.getAttribute('src')).not.toBe(beforeScriptSave)
     await page.getByRole('tab', { name: /Trajectory/ }).click()
     await scaffold.ctx.settings.update('ui-developer-tools', { enabled: false })
     await expect.poll(() => page.getByRole('tab', { name: /Trajectory/ }).count()).toBe(0)
@@ -372,9 +425,9 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       `- Viewer: ${await viewer.innerText()}`,
       `- Sandbox: ${await iframe.getAttribute('sandbox')}`,
       `- Inline script: ${await html.locator('#result').innerText()}`,
-      `- Local script: ${await html.locator('#local-result').innerText()}`,
+      `- Local script after save: ${await html.locator('#local-result').innerText()}`,
       `- Outside-workspace script: ${await html.locator('#outside-result').innerText()}`,
-      `- Local stylesheet: ${await html.locator('#local-result').evaluate(node => getComputedStyle(node).color)}`,
+      `- Local stylesheet after save: ${await html.locator('#local-result').evaluate(node => getComputedStyle(node).color)}`,
       `- Parent access: ${await html.locator('#parent-result').innerText()} (${await html.locator('#parent-result').getAttribute('data-error')})`,
       `- Parent unchanged: ${String(await page.locator('html').getAttribute('data-document-preview-escape') === null)}`,
     ].join('\n'))
@@ -566,11 +619,15 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       initialReading = await reading.isVisible()
       expect(initialReading).toBe(true)
       expect(await preview.locator('[data-code-preview]').count()).toBe(0)
-      const indicator = await reading.boundingBox()
-      const scroller = await body.boundingBox()
-      if (indicator === null || scroller === null) throw new Error('reading indicator or document body is not rendered')
-      expect(indicator.y).toBeGreaterThanOrEqual(scroller.y)
-      expect(indicator.y + indicator.height).toBeLessThanOrEqual(scroller.y + scroller.height)
+      const bounds = await reading.evaluate((node) => {
+        const body = node.closest('[data-textpreview-body]')
+        if (body === null) throw new Error('reading indicator has no document body')
+        const indicator = node.getBoundingClientRect()
+        const scroller = body.getBoundingClientRect()
+        return { top: indicator.top - scroller.top, bottom: scroller.bottom - indicator.bottom }
+      })
+      expect(bounds.top).toBeGreaterThanOrEqual(0)
+      expect(bounds.bottom).toBeGreaterThanOrEqual(0)
       await successShot(page, 'code-reading')
     } finally {
       releaseRead.resolve(undefined)
@@ -669,13 +726,39 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     await column.locator('[data-files-entry="file"]').getByRole('button', { name: 'clip.mp4', exact: true }).click()
     const unsupported = column.locator('[data-textpreview-state="unsupported"]')
     await unsupported.waitFor({ timeout: 15_000 })
-    const unsupportedLine = await unsupported.locator('[data-textpreview-unsupported]').innerText()
+    const unsupportedLine = await unsupported.locator('[data-textpreview-unsupported] p').innerText()
     expect(unsupportedLine).toContain('Preview is not available for this file type yet.')
     expect(await unsupported.locator('[data-textpreview-path]').innerText()).toContain('clip.mp4')
     expect(await unsupported.locator('[data-document-viewer-menu]').count()).toBe(0)
     expect(await unsupported.locator('[data-textpreview-tool="reload"]').count()).toBe(0)
+    // The default-application controls land once the Host answered the pinned desktop read.
+    const headerOpen = unsupported.locator('[data-open-path-open]')
+    await headerOpen.waitFor({ timeout: 15_000 })
+    const emptyOpen = unsupported.locator('[data-textpreview-unsupported] [data-open-path-unpreviewable]')
+    await emptyOpen.waitFor({ timeout: 15_000 })
     await successShot(page, 'unsupported')
-    sections.push(['## Unviewable binary', '', '- State: unsupported', `- Line: ${unsupportedLine.trim()}`].join('\n'))
+    sections.push([
+      '## Unviewable binary', '',
+      '- State: unsupported',
+      `- Line: ${unsupportedLine.trim()}`,
+      `- Header control: ${await headerOpen.innerText()}`,
+      `- Empty-state control: ${await emptyOpen.innerText()}`,
+    ].join('\n'))
+    if (STUB_OPENER) {
+      // Real Host gestures against the stubbed opener: default application from the empty state, reveal from the header menu.
+      const clip = join(cwd, 'clip.mp4')
+      await emptyOpen.click()
+      await expect.poll(async () => (await opened()).length, { timeout: 15_000 }).toBe(1)
+      await unsupported.locator('[data-open-path-more]').click()
+      await page.getByRole('menuitem', { name: 'Show file location', exact: true }).click()
+      await expect.poll(async () => (await opened()).length, { timeout: 15_000 }).toBe(2)
+      const gestures = await opened()
+      expect(gestures[0]).toEqual({ path: clip, action: 'open' })
+      expect(gestures[1]?.action).toBe('reveal')
+      expect([clip, cwd]).toContain(gestures[1]?.path)
+      // Gesture facts stay out of the golden: the stub does not run on Windows.
+      expect(await page.getByRole('alert').count()).toBe(0)
+    }
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await compareOrRefreshGolden(EXPECTED, sections.join('\n\n'), MODE)

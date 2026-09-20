@@ -88,7 +88,7 @@ function mount({
         updatedAt: 0,
       },
     },
-    phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+    phase: 'ready', projectionsBySession: {}, jobsBySession: {},
   }
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
   const props: SettingsRootComponentProps = {

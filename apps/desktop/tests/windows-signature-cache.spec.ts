@@ -3,7 +3,7 @@ import { it as test, type TestContext } from 'vitest'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createCachedSigner, signatureCacheIdentity } from '../scripts/windows-signature-cache.mjs'
+import { createCachedSigner, maintainSignatureCache, migrateSignatureCache, signatureCacheIdentity } from '../scripts/windows-signature-cache.mjs'
 
 async function fixture(t: TestContext) {
   const root = await mkdtemp(join(import.meta.dirname, 'cache-test-'))
@@ -32,6 +32,20 @@ test('unchanged bytes restored in another file avoid another hardware call', asy
   assert.equal(f.state.hardwareCalls, 1)
   assert.equal(await readFile(second, 'utf8'), 'signed:original')
   assert.equal(f.state.events.filter(e => 'type' in e && e.type === 'signature-cache-hit').length, 1)
+})
+
+test('cache summaries distinguish avoided signatures from actual signing attempts', async (t) => {
+  const f = await fixture(t)
+  const signer = createCachedSigner(f.options)
+  await signer(f.request)
+  await writeFile(f.path, 'original')
+  await signer(f.request)
+  const { verificationMs, restoreMs, signingMs, ...summary } = signer.summary()
+  assert.deepEqual(summary, { root: f.cache, identity: f.options.identity, hits: 1, misses: 1,
+    published: 1, retained: 0, signingCalls: 1, avoidedSigningCalls: 1, validationFailures: 0 })
+  assert(verificationMs >= 0 && restoreMs >= 0 && signingMs >= 0)
+  assert.equal(f.state.hardwareCalls, summary.signingCalls)
+  assert.equal(await readFile(f.path, 'utf8'), 'signed:original')
 })
 
 test('restores cached signatures into deeply nested dependency paths', async (t) => {
@@ -64,7 +78,10 @@ for (const corrupt of ['payload', 'record.json']) test(`corrupt ${corrupt} stops
   const entry = (await readdir(f.cache)).find(name => !name.startsWith('.'))
   assert(entry)
   await writeFile(join(f.cache, entry, corrupt), 'corrupt')
-  await assert.rejects(createCachedSigner(f.options)(f.request))
+  const signer = createCachedSigner(f.options)
+  await assert.rejects(signer(f.request))
+  assert.equal(signer.summary().validationFailures, 1)
+  assert.equal(signer.summary().avoidedSigningCalls, 0)
   assert.equal(f.state.hardwareCalls, 1)
   assert.equal(await readFile(f.path, 'utf8'), 'original')
 })
@@ -89,6 +106,8 @@ test('hardware failure rejects queued work without publishing an entry or retryi
   assert(results.every(result => result.status === 'rejected'))
   assert.equal(f.state.hardwareCalls, 1)
   assert.deepEqual(await readdir(f.cache), [])
+  assert.equal(signer.summary().signingCalls, 1)
+  assert.equal(signer.summary().validationFailures, 0)
 })
 
 test('a failed new signature verification never publishes a cache entry', async (t) => {
@@ -140,6 +159,8 @@ test('two writers publish one complete entry without overwriting another writer'
     createCachedSigner(options)({ ...f.request, path: second }),
   ])
   for (const result of results) if (result.status === 'rejected') throw result.reason
+  assert.equal(f.state.events.filter(e => 'type' in e && e.type === 'signature-cache-published').length, 1)
+  assert.equal(f.state.events.filter(e => 'type' in e && e.type === 'signature-cache-retained').length, 1)
   assert.equal((await readdir(f.cache)).length, 1)
   await writeFile(f.path, 'original')
   await createCachedSigner(f.options)(f.request)
@@ -165,4 +186,68 @@ test('a target changed during verification is never replaced with stale cache by
   assert.equal(await readFile(f.path, 'utf8'), 'new input')
   assert.equal(f.state.hardwareCalls, 1)
   assert(!(await readdir(f.root)).some(name => name.startsWith('.signature-restore-')))
+})
+
+test('migration preserves different valid timestamp bytes at the same destination key', async (t) => {
+  const f = await fixture(t)
+  await createCachedSigner(f.options)(f.request)
+  const destination = join(f.root, 'shared')
+  await writeFile(f.path, 'original')
+  await createCachedSigner({ ...f.options, root: destination,
+    sign: async ({ path }) => writeFile(path, 'signed:original:another-timestamp'),
+  })(f.request)
+  const key = (await readdir(f.cache))[0]!
+  const sourceRecord = await readFile(join(f.cache, key, 'record.json'), 'utf8')
+  const counts = await migrateSignatureCache({ source: f.cache, root: destination, record: () => {} })
+  assert.deepEqual(counts, { published: 0, retained: 1, skipped: 0 })
+  assert.equal(await readFile(join(destination, key, 'payload'), 'utf8'), 'signed:original:another-timestamp')
+  assert.equal(await readFile(join(f.cache, key, 'record.json'), 'utf8'), sourceRecord)
+})
+
+test('migration copies complete entries and skips staging directories without reading them', async (t) => {
+  const f = await fixture(t)
+  await createCachedSigner(f.options)(f.request)
+  await mkdir(join(f.cache, '.publish-incomplete'))
+  const destination = join(f.root, 'shared')
+  assert.deepEqual(await migrateSignatureCache({ source: f.cache, root: destination, record: () => {} }),
+    { published: 1, retained: 0, skipped: 1 })
+  await writeFile(f.path, 'original')
+  await createCachedSigner({ ...f.options, root: destination })(f.request)
+  assert.equal(f.state.hardwareCalls, 1)
+  assert.equal(await readFile(f.path, 'utf8'), 'signed:original')
+  assert.equal((await readdir(destination)).length, 1)
+})
+
+test('migration refuses a corrupt existing destination instead of replacing it', async (t) => {
+  const f = await fixture(t)
+  await createCachedSigner(f.options)(f.request)
+  const destination = join(f.root, 'shared')
+  await migrateSignatureCache({ source: f.cache, root: destination, record: () => {} })
+  const key = (await readdir(destination))[0]!
+  await writeFile(join(destination, key, 'payload'), 'corrupt')
+  await assert.rejects(migrateSignatureCache({ source: f.cache, root: destination, record: () => {} }), /corrupt/u)
+  assert.equal(await readFile(join(destination, key, 'payload'), 'utf8'), 'corrupt')
+})
+
+test('maintenance counts and clears complete entries while preserving incomplete staging', async (t) => {
+  const f = await fixture(t)
+  await createCachedSigner(f.options)(f.request)
+  await mkdir(join(f.cache, '.publish-incomplete'))
+  const usage = await maintainSignatureCache(f.cache)
+  assert.equal(usage.entries, 1)
+  assert(usage.bytes > 0)
+  assert.equal(usage.incomplete, 1)
+  assert.deepEqual(await maintainSignatureCache(f.cache, true), usage)
+  assert.deepEqual(await readdir(f.cache), ['.publish-incomplete'])
+  assert.equal(await readFile(f.path, 'utf8'), 'signed:original')
+})
+
+test('maintenance refuses unexpected entry contents without deleting them', async (t) => {
+  const f = await fixture(t)
+  await createCachedSigner(f.options)(f.request)
+  const key = (await readdir(f.cache))[0]!
+  const unexpected = join(f.cache, key, 'unrecognized')
+  await writeFile(unexpected, 'keep')
+  await assert.rejects(maintainSignatureCache(f.cache, true), /unexpected files/u)
+  assert.equal(await readFile(unexpected, 'utf8'), 'keep')
 })

@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Stream one TypeScript fence for" [disabled]
+  - navigation "Session hierarchy": Stream one TypeScript fence for
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
@@ -10,7 +9,7 @@
 - button "System prompt"
 - text: Stream one TypeScript fence for the highlighting snapshot. {{clock}}
 - button "Copy"
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Context injection runtime-context"
 - text: ts
 - button "Copy"
 - code: "const first: number = 1 const second = \"two\" let tail"

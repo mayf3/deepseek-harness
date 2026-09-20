@@ -1,8 +1,7 @@
 ## Collapsed
 
 - banner:
-  - navigation "Session hierarchy":
-    - button "{{workspace}}" [disabled]
+  - navigation "Session hierarchy": {{workspace}}
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
@@ -27,8 +26,7 @@
 ## Expanded
 
 - banner:
-  - navigation "Session hierarchy":
-    - button "{{workspace}}" [disabled]
+  - navigation "Session hierarchy": {{workspace}}
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
@@ -57,8 +55,7 @@
 ## Trajectory
 
 - banner:
-  - navigation "Session hierarchy":
-    - button "{{workspace}}" [disabled]
+  - navigation "Session hierarchy": {{workspace}}
   - button "More actions"
   - button "Open right sidebar"
   - tablist:

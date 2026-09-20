@@ -19,18 +19,17 @@ async function main(): Promise<void> {
   const application = runProfile({
     environment: loadLayeredEnv('dsh'),
     profile: 'desktop',
-    resolutionMode: process.argv[5] === 'runtime' ? 'runtime' : 'link',
     resolvedProfile: { profile, installAnchor },
     patchFiles: [],
     args: ['--no-open', '--port', '19387'],
-    ...(process.argv[6] === undefined ? {} : {
+    ...(process.argv[5] === undefined ? {} : {
       packageManager: {
         command: process.execPath,
-        args: ['--expose-internals', process.argv[6]],
+        args: ['--expose-internals', process.argv[5]],
         env: {
           ELECTRON_RUN_AS_NODE: '1',
           DSH_DESKTOP_NODE_EXECUTABLE: process.execPath,
-          PATH: `${process.argv[7] ?? ''}${delimiter}${process.env.PATH ?? ''}`,
+          PATH: `${process.argv[6] ?? ''}${delimiter}${process.env.PATH ?? ''}`,
         },
       },
     }),
