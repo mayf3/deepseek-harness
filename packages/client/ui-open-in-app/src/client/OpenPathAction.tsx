@@ -1,11 +1,12 @@
 /** File association adapter for the shared file/directory opening control. */
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import type { SessionWorkspacePathApplication } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import type { OpenInAppPathAction, OpenInAppPathFailure } from './open-path.ts'
+import { useFileApplications } from './file-applications.ts'
 import { OpenTargetButton } from './OpenTargetButton.tsx'
 import type { NS } from './locales.ts'
 
@@ -37,30 +38,18 @@ type FileOpenTargetProps = Pick<OpenPathActionProps, 'absolutePath' | 'useOpenIn
  */
 export function FileOpenTarget(props: FileOpenTargetProps): ReactNode {
   const desktop = props.useOpenInAppDesktop(value => value)
-  const [revision, setRevision] = useState(0)
-  const [association, setAssociation] = useState<{
-    path: string
-    apps: readonly SessionWorkspacePathApplication[] | null
-  } | null>(null)
+  const association = useFileApplications(props.absolutePath, props.applications, desktop === true)
   useEffect(() => {
     if (desktop === null) void props.loadDesktop()
   }, [desktop, props.loadDesktop])
-  useEffect(() => {
-    if (desktop !== true) return
-    const controller = new AbortController()
-    void props.applications(props.absolutePath, controller.signal).then((apps) => {
-      if (!controller.signal.aborted) setAssociation({ path: props.absolutePath, apps })
-    })
-    return () => { controller.abort() }
-  }, [desktop, props.absolutePath, props.applications, revision])
   if (desktop !== true) return null
-  const apps = association?.path === props.absolutePath ? association.apps : null
+  const { apps } = association
   return (
     <OpenTargetButton
-      key={props.absolutePath} kind="file" applications={apps ?? []} defaultId={apps?.find(app => app.default)?.id}
-      loading={association?.path !== props.absolutePath} failed={association?.path === props.absolutePath && apps === null}
+      key={props.absolutePath} kind="file" applications={apps} defaultId={apps.find(app => app.default)?.id}
+      loading={association.loading} failed={association.failed}
       prominent={props.empty === true} t={props.t}
-      refresh={() => { setRevision(value => value + 1) }}
+      refresh={association.refresh}
       execute={operation => props.openPath(props.absolutePath, operation.kind === 'reveal' ? 'reveal' : 'open',
         operation.kind === 'application' ? operation.id : undefined)}
     />

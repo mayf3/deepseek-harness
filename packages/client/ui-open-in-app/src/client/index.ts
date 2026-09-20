@@ -22,6 +22,7 @@ import { OpenInAppController } from './controller.ts'
 import { OpenInAppAction, type OpenInAppActionInjected } from './OpenInAppAction.tsx'
 import { OpenInAppPathController } from './open-path.ts'
 import { OpenPathAction, type OpenPathInjected } from './OpenPathAction.tsx'
+import { FileRouteAction } from './FileRouteAction.tsx'
 import { OpenPathEmptyAction } from './OpenPathEmptyAction.tsx'
 import { en, NS, zh, type OpenInAppKey } from './locales.ts'
 
@@ -83,4 +84,7 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: pathInjected,
   }, OpenPathEmptyAction))
+  ctx.slots.inject('deliverables.file.actions', () => ctx.slots.register({
+    name: 'deliverables.file.actions', id: 'open-in-app', locale: NS,
+  }, FileRouteAction))
 }

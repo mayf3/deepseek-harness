@@ -4,7 +4,7 @@ import { linuxFileApplications } from './file-applications-linux.ts'
 import { windowsFileApplications } from './file-applications-windows.ts'
 import { nativeFileManager } from './path-opener.ts'
 import type { PathOpenerInternals } from './path-opener.ts'
-import type { NativeFileApplication } from './types.ts'
+import { parseNativeFileApplications, type NativeFileApplication } from './types.ts'
 
 /** AppKit runs inside the system JXA host; paths arrive as argv, never executable source. */
 const MAC_APPLICATIONS = `
@@ -67,21 +67,7 @@ async function queryFileApplications(
   } else if (target.platform === 'win32') {
     stdout = await windowsFileApplications(target.path, null, signal, run)
   } else return []
-  const value: unknown = JSON.parse(stdout)
-  if (!Array.isArray(value)) throw new Error('Invalid native application list')
-  const applications: NativeFileApplication[] = []
-  const entries: readonly unknown[] = value
-  for (const entry of entries) {
-    if (typeof entry !== 'object' || entry === null
-      || !('id' in entry) || !('name' in entry) || !('default' in entry) || !('icon' in entry)
-      || typeof entry.id !== 'string' || entry.id.length === 0
-      || typeof entry.name !== 'string' || typeof entry.default !== 'boolean'
-      || !(entry.icon === null || (typeof entry.icon === 'string' && /^data:image\/(?:png|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(entry.icon)))) {
-      throw new Error('Invalid native application entry')
-    }
-    applications.push({ id: entry.id, name: entry.name, default: entry.default, icon: entry.icon })
-  }
-  return applications
+  return parseNativeFileApplications(JSON.parse(stdout))
 }
 
 /**

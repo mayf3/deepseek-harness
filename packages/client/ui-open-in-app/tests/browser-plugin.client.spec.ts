@@ -40,6 +40,7 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'sidebar.right.tab.document.actions': { kind: 'list', scope: 'session' },
       'sidebar.right.tab.document.unpreviewable': { kind: 'list', scope: 'session' },
+      'deliverables.file.actions': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
   ctx.provide('sessions', {})
@@ -67,6 +68,7 @@ describe('open-in-app browser half', () => {
     const empty = ctx.slots.entries('sidebar.right.tab.document.unpreviewable')[0]
     expect(header?.component).toBe(OpenPathAction)
     expect(empty?.component).toBe(OpenPathEmptyAction)
+    expect(ctx.slots.entries('deliverables.file.actions')).toHaveLength(1)
     expect(header?.options).toMatchObject({ id: 'open-in-app' })
     const face = (header?.inject as unknown as () => OpenPathInjected)()
     const emptyFace = (empty?.inject as unknown as () => OpenPathInjected)()
@@ -83,6 +85,7 @@ describe('open-in-app browser half', () => {
     await fiber.dispose()
     expect(ctx.slots.entries('sidebar.right.tab.document.actions').map(entry => entry.options.id)).not.toContain('open-in-app')
     expect(ctx.slots.entries('sidebar.right.tab.document.unpreviewable').map(entry => entry.options.id)).not.toContain('open-in-app')
+    expect(ctx.slots.entries('deliverables.file.actions')).toHaveLength(0)
   })
 
   it('registers the header split button, and fiber teardown removes it (HMR safety)', async () => {
@@ -147,11 +150,11 @@ describe('open-in-app browser half', () => {
     const { ctx, fiber } = await bench()
     ctx.locale.setLocale('zh')
     const translate = ctx.locale.bind(NS)
-    expect(translate('menu.aria')).toBe(zh['menu.aria'])
+    expect(translate('path.more')).toBe(zh['path.more'])
     ctx.locale.setLocale('en')
-    expect(translate('menu.aria')).toBe(en['menu.aria'])
+    expect(translate('path.more')).toBe(en['path.more'])
     await fiber.dispose()
-    expect(translate('menu.aria')).not.toBe(en['menu.aria'])
+    expect(translate('path.more')).not.toBe(en['path.more'])
   })
 
   it('keeps the English dictionary key-identical to the Chinese source of truth', () => {
