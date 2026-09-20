@@ -216,3 +216,17 @@ it('coalesces repeated gestures before the busy state renders', async () => {
   await act(async () => { pending.resolve(null) })
   expect(result.current.pending).toBe(false)
 })
+
+
+it('closes the application menu from its chevron without querying again', async () => {
+  const b = bench()
+  render(<OpenPathAction {...b.props} />)
+  await act(async () => {})
+  const more = screen.getByRole('button', { name: zh['path.more'] })
+  await act(async () => { fireEvent.click(more) })
+  expect(screen.getByRole('menu')).toBeTruthy()
+  const calls = vi.mocked(b.props.applications).mock.calls.length
+  await act(async () => { fireEvent.click(more) })
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(b.props.applications).toHaveBeenCalledTimes(calls)
+})

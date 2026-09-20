@@ -79,7 +79,7 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
   const { pending, toast, act } = useOpenTargetGesture(props.execute, t)
   const preferred = applications.find(app => app.id === defaultId)
   const revealDefault = kind === 'file' && preferred === undefined
-  const primaryLabel = revealDefault ? t('path.reveal') : t('open.title', { app: preferred?.name ?? '' })
+  const primaryLabel = preferred === undefined ? t('path.reveal') : t('open.title', { app: preferred.name })
   const run = (operation: OpenTargetOperation): void => { setMenuOpen(false); act(operation) }
   const primary = (): void => { run({ kind: revealDefault ? 'reveal' : 'default' }) }
   const icon = revealDefault
