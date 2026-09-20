@@ -54,8 +54,10 @@ export async function nativeFileApplications(
   const value: unknown = JSON.parse(stdout)
   if (!Array.isArray(value)) throw new Error('Invalid native application list')
   const applications: NativeFileApplication[] = []
-  for (const entry of value) {
+  const entries: readonly unknown[] = value
+  for (const entry of entries) {
     if (typeof entry !== 'object' || entry === null
+      || !('id' in entry) || !('name' in entry) || !('default' in entry) || !('icon' in entry)
       || typeof entry.id !== 'string' || entry.id.length === 0
       || typeof entry.name !== 'string' || typeof entry.default !== 'boolean'
       || !(entry.icon === null || (typeof entry.icon === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(entry.icon)))) {

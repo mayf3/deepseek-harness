@@ -89,8 +89,8 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
   let outsideRoot: string | undefined
   let nativeRoot: string | undefined
   let openLog = ''
-  const opened = async (): Promise<Array<{ path: string; action: 'open' | 'reveal' }>> =>
-    (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; action: 'open' | 'reveal' })
+  const opened = async (): Promise<Array<{ path: string; action: 'open' | 'reveal' | 'application' }>> =>
+    (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; action: 'open' | 'reveal' | 'application' })
 
   beforeAll(async () => {
     outsideRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-outside-'))
