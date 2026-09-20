@@ -1,0 +1,8 @@
+/* One keyboard-focus colour for every control. A control that declares its own
+ * focus ring sets the colour explicitly, so this sheet reaches only the ones
+ * that would otherwise paint the browser default — whose colour follows the
+ * operating-system accent and therefore differs per machine. Declaring
+ * `outline-color` alone preserves each control's own width, style and offset. */
+:focus-visible {
+  outline-color: var(--dsw-alias-brand-primary);
+}

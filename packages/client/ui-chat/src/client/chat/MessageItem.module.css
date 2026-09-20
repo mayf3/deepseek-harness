@@ -231,7 +231,7 @@
 }
 
 .retrySummary:focus-visible {
-  outline: 1.5px solid var(--dsw-alias-button-info-fill);
+  outline: 1.5px solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
 }
 

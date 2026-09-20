@@ -187,7 +187,7 @@
 }
 
 .stringToggle:focus-visible {
-  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline: 1px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
 }
 
@@ -286,7 +286,7 @@
 }
 
 .actionButton:focus-visible {
-  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline: 1px solid var(--dsw-alias-brand-primary);
   outline-offset: -1px;
 }
 

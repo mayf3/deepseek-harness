@@ -255,4 +255,4 @@
 }
 
 .path:hover { text-decoration: underline; }
-.path:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 3px; }
+.path:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 3px; }
