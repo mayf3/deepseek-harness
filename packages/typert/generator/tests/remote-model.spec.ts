@@ -27,6 +27,9 @@ interface RuntimeDescriptor {
     readonly acceptsUndefined?: true
     readonly codec: { readonly create: () => RuntimeSchema }
   }[]
+  readonly uplink?: {
+    readonly codec: { readonly create: () => RuntimeSchema }
+  }
   readonly result: { readonly create: () => RuntimeSchema }
 }
 
@@ -142,7 +145,7 @@ describe('Remote model generation', { timeout: 60_000 }, () => {
       "'agent:goals/rename': (request: RenameGoalRequest) => Promise<RemoteResult<RenameGoalResult>>",
     )
     expect(artifact?.remote?.dts).toContain(
-      "'goals/watch': (agentId: AgentId, signal?: AbortSignal) => AsyncIterable<CreateGoalResult>",
+      "'goals/watch': (agentId: AgentId, signal?: AbortSignal) => RemoteStreamHandle<CreateGoalResult, never>",
     )
 
     const remoteJs = artifact?.remote?.js
@@ -217,6 +220,105 @@ export type {`,
     expect(labelled?.parameters[1]?.acceptsUndefined).toBe(true)
     expect(labelled?.parameters[1]?.codec.create().safeParse(undefined).success).toBe(true)
     expect(labelled?.parameters[1]?.codec.create().safeParse(7).success).toBe(false)
+  })
+
+  it('models RemoteStream return types with an uplink boundary and renders them on consumers', async () => {
+    const root = copyFixture()
+    editFile(root, 'packages/remote/src/index.ts', source => source
+      .replace(
+        "import { TypertRemoteService, Remote, RemoteScope } from '@deepseek-ai/dsh-typert-protocol'",
+        "import { TypertRemoteService, Remote, RemoteScope, type RemoteStream } from '@deepseek-ai/dsh-typert-protocol'",
+      )
+      .replace(
+        "  @Remote({ mode: 'stream' })\n  async *watch",
+        `  @Remote({ mode: 'stream' })
+  async *attach(agent: Agent, signal: AbortSignal): RemoteStream<CreateGoalResult, CreateGoalRequest> {
+    signal.throwIfAborted()
+    yield { ref: agent.id }
+  }
+
+  @Remote({ mode: 'stream' })
+  async *tail(): RemoteStream<string> {
+    yield 'tail'
+  }
+
+  @Remote({ mode: 'stream' })
+  async *silent(): RemoteStream<string, never> {
+    yield 'silent'
+  }
+
+  @Remote({ mode: 'stream' })
+  async *watch`,
+      ))
+
+    const model = remotePackage(root)
+    const attach = model.invocations.find(invocation => invocation.method === 'attach')
+    expect(attach).toMatchObject({
+      id: '@fixture/remote#goals/attach',
+      mode: 'stream',
+      invocation: { kind: 'direct' },
+      scope: { context: 'agent', wire: 'agentId' },
+      parameters: [{ name: 'agent', wire: 'agentId', source: 'lookup', lookup: 'agent' }],
+      uplink: { boundary: { typeSymbol: '@fixture/remote/types#CreateGoalRequest' } },
+      cancellation: { parameter: 'signal' },
+      result: { typeSymbol: '@fixture/remote/types#CreateGoalResult' },
+    })
+    for (const method of ['tail', 'silent']) {
+      const modeled = model.invocations.find(invocation => invocation.method === method)
+      expect(modeled).toMatchObject({ mode: 'stream', parameters: [] })
+      expect(modeled?.uplink).toBeUndefined()
+      expect(modeled?.cancellation).toBeUndefined()
+    }
+
+    const [artifact] = new WorkspaceTypertGenerator(root).generate()
+    expect(artifact?.remote?.dts).toContain(
+      "  RemoteStreamHandle,\n  TypertRemoteContribution,\n} from '@deepseek-ai/dsh-typert-protocol'",
+    )
+    expect(artifact?.remote?.dts).toContain("declare module '@deepseek-ai/dsh-typert-protocol' {")
+    expect(artifact?.remote?.dts).toContain(
+      "'goals/attach': (agentId: AgentId, signal?: AbortSignal) => RemoteStreamHandle<CreateGoalResult, CreateGoalRequest>",
+    )
+    expect(artifact?.remote?.dts).toContain(
+      "'agent:goals/attach': (signal?: AbortSignal) => RemoteStreamHandle<CreateGoalResult, CreateGoalRequest>",
+    )
+    expect(artifact?.remote?.dts).toContain("'goals/tail': () => RemoteStreamHandle<string, never>")
+    expect(artifact?.remote?.dts).toContain("'goals/silent': () => RemoteStreamHandle<string, never>")
+
+    const remoteJs = artifact?.remote?.js
+    if (remoteJs === undefined) throw new Error('RemoteStream fixture emitted no Host-for-Client JavaScript')
+    const executable = remoteJs.replace("from 'zod'", `from ${JSON.stringify(import.meta.resolve('zod'))}`)
+    const generated = await import(`data:text/javascript,${encodeURIComponent(executable)}`) as RuntimeRemoteModule
+    const descriptor = generated.TYPERT_REMOTE.descriptors.find(candidate => candidate.id.endsWith('/attach'))
+    expect(descriptor?.mode).toBe('stream')
+    expect(descriptor?.uplink?.codec.create().safeParse({ title: 'ship' }).success).toBe(true)
+    expect(descriptor?.uplink?.codec.create().safeParse({ title: 1 }).success).toBe(false)
+    expect(descriptor?.cancellation).toEqual({ parameter: 'signal' })
+    expect(generated.TYPERT_REMOTE.descriptors.find(candidate => candidate.id.endsWith('/tail'))?.uplink).toBeUndefined()
+    assertRemoteConsumerTypechecks(artifact?.remote?.dts, artifact?.remote?.dtsMap, root)
+  })
+
+  it.each([
+    {
+      name: 'a stream method returning a Promise',
+      mode: 'stream',
+      method: 'async attach(agent: Agent, signal: AbortSignal): Promise<CreateGoalResult>',
+      message: 'stream Remote methods must return Iterable<Out>, AsyncIterable<Out>, or RemoteStream<Out, In>',
+    },
+    {
+      name: 'an unknown Remote mode',
+      mode: 'duplex',
+      method: 'async *attach(agent: Agent, signal: AbortSignal): AsyncIterable<CreateGoalResult>',
+      message: 'Remote\\(\\) options must contain exactly mode: "stream"',
+    },
+  ])('rejects $name', ({ mode, method, message }) => {
+    const root = copyFixture()
+    const decorator = mode === 'unary' ? '@Remote' : `@Remote({ mode: '${mode}' })`
+    editFile(root, 'packages/remote/src/index.ts', source => source.replace(
+      "  @Remote({ mode: 'stream' })\n  async *watch",
+      `  ${decorator}\n  ${method} {\n    throw new Error('fixture never runs')\n  }\n\n  @Remote({ mode: 'stream' })\n  async *watch`,
+    ))
+
+    expect(() => analyzeRemote(root, false)).toThrow(new RegExp(message))
   })
 
   it('evaluates declaration-merged mapped and conditional boundaries for codecs without widening consumer types', async () => {
@@ -653,6 +755,7 @@ function assertRemoteConsumerTypechecks(
 import remote from '@fixture/remote/remote'
 import type {
   RemoteResult,
+  RemoteStreamHandle,
   TypertRemoteContribution,
   TypertRemoteScopeMap,
   TypertRemoteMap,
@@ -664,10 +767,12 @@ const contribution: TypertRemoteContribution = remote
 declare const create: TypertRemoteMap['goals/create']
 declare const createScoped: TypertRemoteScopeMap['agent:goals/create']
 declare const rename: TypertRemoteScopeMap['agent:goals/rename']
+declare const watch: TypertRemoteMap['goals/watch']
 const created: Promise<RemoteResult<CreateGoalResult>> = create('agent-1', { title: 'ship' })
 const cancellable: Promise<RemoteResult<CreateGoalResult>> = create('agent-1', { title: 'ship' }, new AbortController().signal)
 const createdScoped: Promise<RemoteResult<CreateGoalResult>> = createScoped({ title: 'ship' })
 const renamed: Promise<RemoteResult<RenameGoalResult>> = rename({ ref: 'goal-1', title: 'land' })
+const watched: RemoteStreamHandle<CreateGoalResult, never> = watch('agent-1')
 declare const ctx: { remote: TypertRemoteNamespaceMap }
 const navigated: Promise<RemoteResult<CreateGoalResult>> = ctx.remote.goals.create('agent-1', { title: 'navigate' })
 void contribution
@@ -675,6 +780,7 @@ void created
 void cancellable
 void createdScoped
 void renamed
+void watched
 void navigated
 `
   writeFileSync(consumerPath, consumerSource)

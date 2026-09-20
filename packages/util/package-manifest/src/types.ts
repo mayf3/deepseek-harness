@@ -12,6 +12,8 @@ export interface DshPackageManifest {
   version: string
   /** Package summary for discovery and display. */
   description?: string
+  /** SVG, PNG, JPEG, or WebP file relative to this manifest's directory, at most 256 KiB and contained there after realpath resolution. */
+  icon?: string
   /** Prevent npm publication, for example for local profile projects. */
   private?: boolean
   /** Packages installed alongside this package. */
@@ -39,12 +41,14 @@ export interface DshManifest {
 /** Literal text or translations indexed by lowercase language id, with a required English fallback. */
 export type LocalizedText = string | { readonly en: string; readonly [locale: string]: string }
 
-/** Validated plugin display fields or a diagnostic from reading exported locale files. */
+/** Validated plugin display fields and diagnostics from exported locales, manifests, or icon files. */
 export interface PluginLocalizedMeta {
   /** Display title; omission preserves the consumer's technical-name fallback. */
   readonly title?: LocalizedText
   /** Display introduction after locale and package-field fallback. */
   readonly description?: LocalizedText
+  /** Base64 image data URL read from the manifest's icon file; render as an image, not inline markup. */
+  readonly icon?: string
   /** Unmodified local metadata diagnostic; the plugin remains manageable. */
   readonly error?: string
 }
@@ -63,8 +67,8 @@ export interface DshEnginesManifest {
 
 /** The configuration layer exported by a bundle package. */
 export interface DshBundleManifest {
-  /** Patch file path relative to the declaring package root. */
-  patch: string
+  /** One patch file path, or an ordered list applied in sequence, each relative to the declaring package root. */
+  patch: string | string[]
 }
 
 /** The bundle composition declared by a profile directory. */

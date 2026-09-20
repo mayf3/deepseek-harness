@@ -101,20 +101,31 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     setRowEnabled: vi.fn(),
     dismissNotice: vi.fn(),
   }
-  const renderSlot: PluginManagerPageProps['renderSlot'] = (name, owner, opts) => {
-    if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
-      throw new Error('Configuration slot requires a summary or page view')
-    }
-    return bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]?.(owner.view) ?? null
+  const unusedStandardHook = (): never => { throw new Error('Plugin manager fixture does not provide global state') }
+  const standard = {
+    usePanelInfo: unusedStandardHook,
+    useWorkspaces: unusedStandardHook,
+    useSessions: unusedStandardHook,
+    useSessionStatus: unusedStandardHook,
+    useSessionRetainInfo: unusedStandardHook,
+    useResource: unusedStandardHook,
   }
-  const props = {
+  const props: PluginManagerPageProps = {
+    ...standard,
     t,
     resolveText,
     ...actions,
     usePluginManager: bindSnapshotSelector(store),
     useConfigLedger: bindSnapshotSelector(ledger),
-    renderSlot,
-  } as PluginManagerPageProps
+    renderSlot: (name, owner, opts) => {
+      const body = bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]
+      if (body === undefined) return null
+      if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
+        throw new Error('Plugin configuration fixture requires a summary or page view')
+      }
+      return body(owner.view)
+    },
+  }
   const { rerender } = render(<PluginManagerPage {...props} />)
   return {
     store,
@@ -283,6 +294,38 @@ describe('PluginManagerPage', () => {
       setLanguage(dict)
       expect(screen.getByRole('dialog', { name: dict.confirmUninstallTitle.replace('{name}', title(dict)) })).toBeTruthy()
     }
+  })
+
+  it('renders manifest icons for arbitrary bundles and rows, with decode fallback and source recovery', () => {
+    const icon = 'data:image/svg+xml;base64,PHN2Zy8+'
+    const updatedIcon = 'data:image/png;base64,cG5n'
+    const bundle = pkg({ meta: { icon }, rows: [row({ meta: { icon } }), row({ entryId: 'plain' as PluginEntryId, rowId: 'plain', moduleName: 'plain' })] })
+    const { set } = renderTab({ packages: [bundle] }, { rows: new Set(['dsh-better-sidebar#sidebar']) })
+    const image = () => document.querySelector<HTMLImageElement>('[data-plugin-package] img, [data-plugin-detail] img')!
+    expect(image().getAttribute('src')).toBe(icon)
+    expect(image().getAttribute('alt')).toBe('')
+    expect(image().width).toBe(36)
+    fireEvent.error(image())
+    expect(document.querySelector('[data-plugin-package] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-package] svg')).not.toBeNull()
+    set({ packages: [{ ...bundle, meta: { icon: updatedIcon } }] })
+    expect(image().getAttribute('src')).toBe(updatedIcon)
+    set({ packages: [bundle] })
+    expect(image().getAttribute('src')).toBe(icon)
+    fireEvent.click(screen.getByRole('button', { name: 'View dsh-better-sidebar' }))
+    expect(image().getAttribute('src')).toBe(icon)
+    const rowImage = document.querySelector<HTMLImageElement>('[data-plugin-row] img')!
+    expect(rowImage.getAttribute('src')).toBe(icon)
+    expect(rowImage.width).toBe(30)
+    expect(document.querySelector('[data-plugin-row="plain"] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row="plain"] svg')).not.toBeNull()
+    fireEvent.error(rowImage)
+    expect(document.querySelector('[data-plugin-row] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row] svg')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Configure dsh-better-sidebar' }))
+    const detailImage = document.querySelector<HTMLImageElement>('[data-plugin-row-detail] img')!
+    expect(detailImage.getAttribute('src')).toBe(icon)
+    expect(detailImage.width).toBe(36)
   })
 
   it('shows metadata diagnostics without blocking management or displaying legacy descriptions', () => {

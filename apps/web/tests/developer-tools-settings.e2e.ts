@@ -25,7 +25,7 @@ it('persists developer tools in the Host settings document and restores the acce
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
 
   await page.getByRole('button', { name: 'Agent presets', exact: true }).click()
-  const pickerToggle = page.getByRole('switch', { name: 'Allow switching Agent modes' })
+  const pickerToggle = page.getByRole('switch', { name: 'Choose a mode for new tasks' })
   await expect.poll(() => page.getByRole('heading', { name: 'Agent presets', exact: true }).count()).toBe(1)
   expect(await pickerToggle.count()).toBe(0)
   await scaffold.ctx.settings.update('ui-developer-tools', { enabled: true })

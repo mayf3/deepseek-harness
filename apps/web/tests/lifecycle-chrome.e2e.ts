@@ -227,14 +227,19 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
         document.body.append(probe)
         const actual = getComputedStyle(element)
         const reference = getComputedStyle(probe)
+        // The sibling access-mode trigger: the chip shares its corner
+        // curvature (the theme's superellipse, not a circular capsule).
+        const accessMode = document.querySelector('button[aria-label^="Access mode"]')
         const result = {
           color: actual.color,
           backgroundColor: actual.backgroundColor,
           height: actual.height,
           borderRadius: actual.borderRadius,
+          cornerShape: actual.getPropertyValue('corner-shape'),
           fontSize: actual.fontSize,
           referenceColor: reference.color,
           referenceBackgroundColor: reference.backgroundColor,
+          siblingCornerShape: accessMode === null ? null : getComputedStyle(accessMode).getPropertyValue('corner-shape'),
         }
         probe.remove()
         return result
@@ -242,7 +247,11 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       expect(planStyle.color).toBe(planStyle.referenceColor)
       expect(planStyle.backgroundColor).toBe(planStyle.referenceBackgroundColor)
       expect(planStyle.height).toBe('28px')
-      expect(planStyle.borderRadius).toBe('999px')
+      // Half the 28px height, the compact Button geometry, under the theme's
+      // corner curvature; a 999px pill would need the circular opt-out.
+      expect(planStyle.borderRadius).toBe('14px')
+      expect(planStyle.siblingCornerShape).not.toBeNull()
+      expect(planStyle.cornerShape).toBe(planStyle.siblingCornerShape)
       expect(planStyle.fontSize).toBe('13px')
       await planButton.click()
       await expect.poll(() => planButton.count()).toBe(0)

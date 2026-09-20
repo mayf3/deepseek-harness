@@ -92,7 +92,9 @@ describe('web e2e: Markdown inline-code links', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    scaffold = await launchWebScaffold({
+      extraOverlayPath: fileURLToPath(new URL('./sidebar-browser.overlay.yml', import.meta.url)),
+    })
     await seedSession(scaffold, markdownFixture(LINK_URL), SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)

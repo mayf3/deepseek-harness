@@ -44,4 +44,4 @@
               - id: deepseek-v4-flash
               - id: deepseek-v4-pro
     - id: messages-input-history-snapshot
-      name: '../../../packages/llm/llm-deepseek/tests/messages/fixtures/input-history.ts'
+      name: '../../../packages/llm/llm-deepseek/tests/fixtures/input-history.ts'

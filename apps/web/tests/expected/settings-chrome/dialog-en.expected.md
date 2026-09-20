@@ -26,3 +26,4 @@
   - switch "Developer tools"
   - text: Send behavior while busy What Enter and the Send button do while the agent is running; Cmd/Ctrl+Enter uses the other behavior
   - button "Queue"
+  - text: "Current version: {{version}}"
