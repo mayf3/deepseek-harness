@@ -209,7 +209,7 @@ it.each([false, true])('keeps the complete Office engine outside ASAR with exter
   await config.beforePack(input.context)
   await packageFixture(input)
   const archive = await readAsar(join(input.resources, 'app.asar'))
-  expect(archive.getFile('dsh/node_modules/@deepseek-ai/libreoffice-kit-wasm/package.json').unpacked).not.toBe(true)
+  expect(archive.getFile(join('dsh', 'node_modules', '@deepseek-ai', 'libreoffice-kit-wasm', 'package.json')).unpacked).not.toBe(true)
   for (const file of files) {
     expect(archive.getFile(join('dsh', engine, file), false).unpacked).toBe(true)
     expect(await readFile(join(input.resources, 'app.asar.unpacked', 'dsh', engine, file), 'utf8')).toBe('{}')
