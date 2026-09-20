@@ -54,11 +54,7 @@ function registerUi(ctx: ClientContext): void {
     async openTeammate(sessionId: SessionId, member: TeamRosterMember): Promise<void> {
       if (member.role !== 'teammate') return
       const parentSessionId = leadSessionId(sessionId)
-      await sessions.refreshProjections(parentSessionId)
       if ((sessions.retainInfo(sessionId).getSnapshot().retainedBy.mainView ?? 0) === 0) return
-      const catalog = sessions.list.getSnapshot().projectionsBySession[parentSessionId]
-      const child = catalog?.values.subagentCatalog?.find(entry => entry.id === member.id)
-      if (child === undefined) return
       ctx.uiWorkspace.openSession({
         parentSessionId,
         childSessionId: member.id,
