@@ -5,6 +5,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/client/locale.ts'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
+import { useDetailedPresentation } from './presentation-fixture.client.ts'
 
 afterEach(() => {
   cleanup()
@@ -20,16 +21,22 @@ describe('ReasoningRow', () => {
   ])('starts collapsed and preserves manual expansion when $kind arrives', (nextBlock) => {
     const reasoning = { kind: 'reasoning' as const, text: 'Inspect the session\nCheck persistence' }
     const view = render(
-      <AssistantMarkdown t={t} blocks={[reasoning]} streaming renderMessageImages={renderMessageImages} />,
+      <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
+        t={t} blocks={[reasoning]} streaming renderMessageImages={renderMessageImages} />,
     )
     expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(view.getByText('思考'))
     view.rerender(
-      <AssistantMarkdown t={t} blocks={[reasoning, nextBlock]} streaming renderMessageImages={renderMessageImages} />,
+      <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
+        t={t} blocks={[reasoning, nextBlock]} streaming renderMessageImages={renderMessageImages} />,
     )
     expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('true')
     view.rerender(
-      <AssistantMarkdown t={t} blocks={[reasoning, nextBlock]} streaming={false} renderMessageImages={renderMessageImages} />,
+      <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
+        t={t} blocks={[reasoning, nextBlock]} streaming={false} renderMessageImages={renderMessageImages} />,
     )
     expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('true')
     expect(view.getByText(/Check persistence/)).toBeTruthy()
@@ -40,6 +47,7 @@ describe('ReasoningRow', () => {
   it('follows the latest streaming line, then restores the settled first line', () => {
     const view = render(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         t={t}
         blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens' }]}
         streaming
@@ -53,6 +61,7 @@ describe('ReasoningRow', () => {
 
     view.rerender(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         t={t}
         blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving' }]}
         streaming
@@ -64,6 +73,7 @@ describe('ReasoningRow', () => {
 
     view.rerender(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         t={t}
         blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n' }]}
         streaming={false}
@@ -79,6 +89,7 @@ describe('ReasoningRow', () => {
   it('expands from either Think or the reasoning summary', () => {
     const view = render(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         t={t}
         blocks={[{ kind: 'reasoning', text: 'Inspect the session\nCheck persistence' }]}
         streaming={false}
@@ -109,6 +120,7 @@ describe('ReasoningRow', () => {
   ])('strips double-asterisk markers from the $label summary and renders body emphasis', ({ text, streaming }) => {
     const view = render(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         t={t}
         blocks={[{ kind: 'reasoning', text }]}
         streaming={streaming}
@@ -129,6 +141,7 @@ describe('ReasoningRow', () => {
       .join('\n\n') + '\n\nReasoning body.'
     const view = render(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         t={t}
         blocks={[{ kind: 'reasoning', text }]}
         streaming={false}
@@ -154,6 +167,7 @@ describe('ReasoningRow', () => {
     const first = '## Investigation\n\n**Check persistence**\n\n'
     const view = render(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         t={t}
         blocks={[{ kind: 'reasoning', text: first }]}
         streaming
@@ -166,6 +180,7 @@ describe('ReasoningRow', () => {
     const text = first + Array.from({ length: 8 }, (_, index) => `Paragraph ${index}.`).join('\n\n')
     view.rerender(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         t={t}
         blocks={[{ kind: 'reasoning', text }]}
         streaming
@@ -180,6 +195,7 @@ describe('ReasoningRow', () => {
   it('expanded Think drops the inline summary and renders prose without an IN card', () => {
     const view = render(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         t={t}
         blocks={[{ kind: 'reasoning', text: 'Inspect the session\nCheck persistence' }]}
         streaming={false}
@@ -196,6 +212,7 @@ describe('ReasoningRow', () => {
   it('anchors the sticky-header selector: only an open Think row nests the disclosure row under data-expanded and data-open', () => {
     const view = render(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         t={t}
         blocks={[
           { kind: 'reasoning', text: 'Inspect the session\nCheck persistence' },

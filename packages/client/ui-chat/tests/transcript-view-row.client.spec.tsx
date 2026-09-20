@@ -9,7 +9,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { TranscriptViewRow, type TranscriptViewRowProps } from '../src/client/settings/TranscriptViewRow.tsx'
 import { PerformanceUsageRow } from '../src/client/settings/PerformanceUsageRow.tsx'
-import type { LinkOpening, PerformanceUsageMode } from '../src/chat-settings.ts'
+import type { LinkOpening, PerformanceUsageMode, TranscriptViewMode } from '../src/chat-settings.ts'
 import { LinkOpeningRow } from '../src/client/settings/LinkOpeningRow.tsx'
 import { en, zh } from '../src/client/locale.ts'
 
@@ -34,9 +34,9 @@ function noPendingInteraction() {
 // The resource hook the resources plugin merges into GlobalStandardProps; this row reads no address.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
 
-function mount(mode: 'normal' | 'compact' = 'compact', dictionary: typeof en | typeof zh = en) {
-  const source = createSnapshotStore(mode)
-  const setTranscriptView = vi.fn((next: 'normal' | 'compact') => { source.set(next) })
+function mount(mode: TranscriptViewMode = 'compact', dictionary: typeof en | typeof zh = en) {
+  const source = createSnapshotStore<TranscriptViewMode>(mode)
+  const setTranscriptView = vi.fn((next: TranscriptViewMode) => { source.set(next) })
   const props: TranscriptViewRowProps = {
     usePanelInfo: selector => selector({ activePanelId: null }),
     useSessions: emptySessions(),

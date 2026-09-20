@@ -97,6 +97,11 @@
   text-overflow: clip;
 }
 
+.root:not([data-preview]) .separator,
+.root:not([data-preview]) .summary {
+  display: none;
+}
+
 .thinkBody {
   /* Indent under the title, which starts at leading (16 + delta) + gap 6. */
   padding: 4px 0 4px calc(22px + var(--dsh-content-font-delta, 0px));

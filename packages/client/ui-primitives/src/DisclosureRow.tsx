@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { memo, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutlineRegular } from './icons/index.tsx'
 import css from './DisclosureRow.module.css'
@@ -27,10 +27,11 @@ export interface DisclosureRowProps {
 
 /**
  * Render one disclosure header and its controlled expanded content.
+ * Shallow prop comparison requires stable callbacks and React nodes to skip unchanged renders.
  * @param props - Visual content, controlled state, and interaction policy.
  * @returns the disclosure row.
  */
-export function DisclosureRow({
+export const DisclosureRow = memo(function DisclosureRow({
   icon,
   title,
   open,
@@ -101,4 +102,4 @@ export function DisclosureRow({
       {open && children}
     </div>
   )
-}
+})
