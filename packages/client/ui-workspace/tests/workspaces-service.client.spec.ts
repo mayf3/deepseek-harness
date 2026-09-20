@@ -732,6 +732,7 @@ describe('UiWorkspaceService', () => {
 
     expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(address, { source: 'mainView' })
     expect(b.sessions.refreshProjections.mock.calls).toEqual([
+      [address.parentSessionId],
       [address.childSessionId],
     ])
   })

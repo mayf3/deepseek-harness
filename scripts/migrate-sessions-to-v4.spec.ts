@@ -225,7 +225,7 @@ describe('one-time V4 migration command', () => {
     }
   })
 
-  it.each(['none', 'zstd'] as const)('migrates %s parent/child history independently with serial or parallel jobs', async (compression) => {
+  it.each(['none', 'zstd'] as const)('preserves %s parent/child history and catalog with serial or parallel jobs', async (compression) => {
     const outputs: Buffer[][] = []
     for (const jobs of [1, 2]) {
       const root = temporaryRoot()
@@ -246,9 +246,8 @@ describe('one-time V4 migration command', () => {
         ))
         current.push(decoded)
       }
-      expect(current[0]!.toString().trim().split('\n').slice(1)).toEqual([])
-      expect(current[1]!.toString().trim().split('\n').slice(1).map((line): unknown => JSON.parse(line))).toMatchObject([
-        { type: 'subagent/descriptor', data: { mode: 'continuable', label: 'saved child' } },
+      expect(current[0]!.toString().trim().split('\n').slice(1).map((line): unknown => JSON.parse(line))).toMatchObject([
+        { type: 'subagent/catalog', data: { childId: 'z-child', childCreatedAt: 2, mode: 'continuable', label: 'saved child' } },
       ])
       outputs.push(current)
     }
@@ -342,7 +341,7 @@ describe('one-time V4 migration command', () => {
       Backend.prototype.open = async function(id, access, options) {
         if (id === 'a-parent' && access === 'write' && !changed) {
           changed = true;
-          throw new JsonlGenerationSourceChangedError(${JSON.stringify(parent.path)});
+          throw new JsonlGenerationSourceChangedError(${JSON.stringify(child.path)});
         }
         return open.call(this, id, access, options);
       };
@@ -361,8 +360,7 @@ describe('one-time V4 migration command', () => {
     expect(lines.filter(line => line.includes('RETRY'))).toHaveLength(1)
     expect(result.summary).toMatchObject({ totals: { converted: 2, alreadyV4: 0, failed: 0, skipped: 0 }, failureGroups: [] })
     const target = await readFile(join(parent.directory, 'session.v4.jsonl'), 'utf8')
-    expect(target.trim().split('\n')).toHaveLength(1)
-    expect(JSON.parse(target)).toMatchObject({ version: 4, id: 'a-parent' })
+    expect(target).toContain('"type":"subagent/catalog"')
     for (const source of [parent, child]) expect(await readFile(source.path)).toEqual(source.bytes)
   })
 
