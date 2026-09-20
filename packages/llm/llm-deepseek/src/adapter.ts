@@ -41,7 +41,7 @@ export class DeepSeekAdapter extends LlmAdapter {
     }
   }
 
-  override providerInfo(provider: string) { return { id: provider, name: provider === 'deepseek-account' ? 'DeepSeek Account' : 'DeepSeek (API Key)' } }
+  override providerInfo(provider: string) { return { id: provider, name: provider === 'deepseek-account' ? 'DeepSeek Account' : 'DeepSeek' } }
   override providerRetryPolicy(provider: string) { return this.implementation().providerRetryPolicy(provider) }
   override async listModels(provider: string) {
     try { await this.dependencies.resolveApiKey(this.dependencies.options()) }

@@ -455,3 +455,21 @@ it('shows the unselected model control without a stale model or effort', async (
   await expect(`${trigger.textContent}\n`).toMatchFileSnapshot('./expected/unselected-model.txt')
   expect(trigger.textContent).not.toContain('High')
 })
+
+
+it('places account models first while preserving other provider and model order', async () => {
+  const groups = ['custom', 'deepseek-official', 'deepseek-account', 'another'].map(id => ({
+    id, name: id, models: [1, 2].map(index => ({ id: `${id}-${index}`, name: `${id}-${index}` })),
+  }))
+  const directory = createSnapshotStore<ModelDirectoryState>(state({ current: null, groups }))
+  render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
+  fireEvent.click(screen.getByRole('button', { name: '请选择模型' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+  const names = screen.getAllByRole('menuitemradio').map(row => row.textContent)
+  expect(names).toEqual([
+    'deepseek-account-1', 'deepseek-account-2', 'custom-1', 'custom-2',
+    'deepseek-official-1', 'deepseek-official-2', 'another-1', 'another-2',
+  ])
+  expect(groups.map(group => group.id)).toEqual(['custom', 'deepseek-official', 'deepseek-account', 'another'])
+  await expect(`${names.join('\n')}\n`).toMatchFileSnapshot('./expected/account-first.txt')
+})

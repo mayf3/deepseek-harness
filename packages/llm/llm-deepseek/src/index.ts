@@ -133,7 +133,7 @@ export function apply(ctx: Context, config: Config): void {
     },
   })
   ctx.llm.registerConfigurableProviders([
-    { provider: PROVIDER, displayName: 'DeepSeek (API Key)', settingsNs: NS, settingsPath: [] },
+    { provider: PROVIDER, displayName: 'DeepSeek', settingsNs: NS, settingsPath: [] },
     { provider: 'deepseek-account', displayName: 'DeepSeek Account', settingsNs: NS, settingsPath: [] },
   ])
   // Route effects bind to this apply fiber via the stable `ctx` reference,
