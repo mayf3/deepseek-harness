@@ -7,6 +7,7 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type {
   SessionControlBaseline,
   SessionControlFrame,
+  SessionRenameValue,
   SessionSummary,
   SessionJob as JobView,
 } from '../../types.ts'
@@ -506,6 +507,20 @@ export class SessionManager {
         parentSessionId: opts.sessionId,
         ...(source?.cwd !== undefined ? { cwd: source.cwd } : {}),
       } })
+    }
+    return result
+  }
+
+  /**
+   * Rename a Session and update its title projection without opening its history.
+   * @param sessionId - Session to rename.
+   * @param title - raw title text for Host normalization.
+   * @returns the accepted title and event position, or the Remote failure.
+   */
+  async rename(sessionId: SessionId, title: string): Promise<RemoteResult<SessionRenameValue>> {
+    const result = await this.remote.session.rename({ sessionId, title })
+    if (result.ok) {
+      this.projectionStore(sessionId).apply('title', result.value.title, SessionSeq(result.value.seq))
     }
     return result
   }

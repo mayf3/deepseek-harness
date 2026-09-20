@@ -52,10 +52,12 @@ const contentBlockSchema: z.ZodType<ContentBlock> = z.lazy(() => z.union([
     name: z.string(),
     arguments: z.string(),
   }).strict(),
-  z.object({ type: z.string().min(1) }).loose().refine(
-    block => !coreContentBlockTypes.has(block.type),
-    { message: 'known content block types must match their declared fields' },
-  ),
+  // Keep unknown JSON objects by reference; loose-object parsing drops their own __proto__ keys.
+  z.custom<ContentBlock>((value) => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+    const type = (value as { type?: unknown }).type
+    return typeof type === 'string' && type.length > 0 && !coreContentBlockTypes.has(type)
+  }),
 ])) as z.ZodType<ContentBlock>
 
 const teamMemberSnapshotSchema = z.object({
@@ -300,7 +302,7 @@ function applyCurrentTeamEvent(state: TeamState, event: TeamSessionEvent): void 
 /** Host-only Team projection selected by the projected Session identity. */
 export const teamProjectionDefinition = {
   key: 'agentTeam',
-  stateVersion: 3,
+  stateVersion: 4,
   stateSchema: teamProjectionEntrySchema,
   init: header => emptyTeamState(header.id),
   apply: (state, event) => {

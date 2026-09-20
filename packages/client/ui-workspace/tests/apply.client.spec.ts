@@ -156,10 +156,11 @@ describe('ui-workspace apply', () => {
       'session', { source: 'workspaceOperation' }, expect.any(Function),
     )
     expect(b.renameSession).toHaveBeenCalledWith('renamed session')
+    b.retain.mockClear()
+    const forkSession = vi.spyOn(b.ctx.uiWorkspace, 'forkSession')
     browser.forkSession('session' as never)
-    await vi.waitFor(() => {
-      expect(b.retain).toHaveBeenCalledWith('forked', { source: 'mainView' })
-    })
+    await forkSession.mock.results[0]!.value
+    expect(b.retain).not.toHaveBeenCalled()
     expect(b.fork).toHaveBeenCalledWith({ sessionId: 'session', increaseTitle: true })
     await browser.renameWorkspace('ws' as never, 'renamed')
     expect(b.rename).toHaveBeenCalledWith('ws', 'renamed')

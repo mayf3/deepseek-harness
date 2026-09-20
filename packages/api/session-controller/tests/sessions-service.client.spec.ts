@@ -934,6 +934,9 @@ describe('fork', () => {
 
     expect(b.mock.remote.session.fork).toHaveBeenCalledExactlyOnceWith({ sessionId: 'source', atSeq: 7 })
     expect(b.mock.remote.session.rename).toHaveBeenCalledExactlyOnceWith({ sessionId: 'child', title: childTitle })
+    expect(b.mock.log.requests(FOLLOW)).toHaveLength(0)
+    expect(b.svc.binding(sid('child'))).toBeUndefined()
+    expect(b.svc.retainInfo(sid('child')).getSnapshot().referenceCount).toBe(0)
     await Promise.resolve()
     expect(b.svc.list.getSnapshot().byId[sid('child')]).toMatchObject({
       title: childTitle,
@@ -964,7 +967,7 @@ describe('fork', () => {
     expect(b.mock.remote.session.rename).not.toHaveBeenCalled()
   })
 
-  it('rejects child rename failure while preserving its catalog row and releasing the operation', async ({ bench }) => {
+  it('rejects child rename failure while preserving its catalog row without retaining the child', async ({ bench }) => {
     const b = bench()
     b.svc.handleControlFrame({
       type: 'projection', sessionId: sid('source'), key: 'title', value: 'Roadmap', seq: 2,
@@ -978,11 +981,12 @@ describe('fork', () => {
     expect(b.svc.list.getSnapshot().byId[sid('child')]).toBeDefined()
     expect(b.svc.binding(sid('child'))).toBeUndefined()
     expect(b.svc.retainInfo(sid('child')).getSnapshot().referenceCount).toBe(0)
+    expect(b.mock.log.requests(FOLLOW)).toHaveLength(0)
   })
 })
 
 describe('catalog arrival', () => {
-  it('keeps a retained generation indexed after its Host row is removed', async ({ bench }) => {
+  it('keeps a retained binding alive without a catalog row after Host removal', async ({ bench }) => {
     const b = bench()
     b.svc.handleSessionAdded({ agentAvailable: true, sessionId: sid('s-new'), updatedAt: 1, running: false, blank: true })
     await Promise.resolve()
@@ -993,9 +997,11 @@ describe('catalog arrival', () => {
     b.svc.handleSessionRemoved(sid('s-new'))
     await Promise.resolve()
     expect(b.svc.list.getSnapshot().ids).not.toContain(sid('s-new'))
-    expect(b.svc.list.getSnapshot().byId[sid('s-new')]?.retainedBy).toEqual({ controllerOperation: 1 })
+    expect(b.svc.list.getSnapshot().byId[sid('s-new')]).toBeUndefined()
+    expect(b.svc.retainInfo(sid('s-new')).getSnapshot().referenceCount).toBe(1)
     expect(b.svc.binding(sid('s-new'))).toBe(binding)
     reference.release()
+    expect(b.svc.binding(sid('s-new'))).toBeUndefined()
     expect(b.svc.list.getSnapshot().byId[sid('s-new')]).toBeUndefined()
   })
 })

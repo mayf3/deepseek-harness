@@ -377,13 +377,30 @@ describe('UiWorkspaceService', () => {
     expect(b.sessions.create).not.toHaveBeenCalled()
   })
 
-  it('forwards fork policy and rejects a failed fork', async () => {
+  it('forks with title increment without selecting or retaining the child, and rejects failure', async () => {
     const b = bench()
+    b.uiWorkspace.openSession(sid('source'))
+    b.sessions.retain.mockClear()
+    b.selectPanel.mockClear()
     await b.uiWorkspace.forkSession(sid('source'))
     expect(b.sessions.fork).toHaveBeenCalledWith({ sessionId: sid('source'), increaseTitle: true })
-    expect(b.sessions.retain).toHaveBeenCalledWith(sid('forked'), { source: 'mainView' })
+    expect(b.sessions.retain).not.toHaveBeenCalled()
     b.sessions.fork.mockRejectedValueOnce(new Error('fork failed'))
     await expect(b.uiWorkspace.forkSession(sid('source'))).rejects.toThrow('fork failed')
+    expect(b.sessions.retain).not.toHaveBeenCalled()
+    expect(b.selectPanel).not.toHaveBeenCalled()
+    expect(b.sessions.retained[0]!.release).not.toHaveBeenCalled()
+  })
+
+  it('does not supersede a pending Workspace selection when a sidebar fork completes', async () => {
+    const b = bench({ workspaces: workspaceState([workspace('a')]) })
+    const created = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValueOnce(created.promise)
+    const opening = b.uiWorkspace.openWorkspace(wid('a'))
+    await b.uiWorkspace.forkSession(sid('source'))
+    created.resolve(sid('chosen'))
+    await opening
+    expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('chosen'), { source: 'mainView' })
   })
 
   it('reuses only an unarchived member blank and coalesces concurrent creation', async () => {
