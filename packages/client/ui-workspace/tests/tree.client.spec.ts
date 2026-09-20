@@ -6,6 +6,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { ScheduleId, ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionProjectionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   type ArchivedFilter,
   deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
@@ -22,7 +23,15 @@ const summary = (id: string, updatedAt: number, cwd?: string): SessionSummary =>
 const list = (...items: SessionSummary[]): SessionListState => ({
   ids: items.map(item => item.id),
   byId: Object.fromEntries(items.map(item => [item.id, item])),
-  phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+  phase: 'ready', projectionsBySession: {}, jobsBySession: {},
+})
+const catalog = (...ids: string[]): SessionProjectionSnapshot => ({
+  values: { subagentCatalog: ids.map(id => ({
+    id: sid(id), mode: 'continuable', label: id,
+    createdAt: 1,
+  })) },
+  state: 'ready',
+  error: null,
 })
 const withMain = (state: SessionListState, id: SessionId): SessionListState => ({
   ...state,
@@ -145,6 +154,54 @@ describe('Session ordering', () => {
     ])
     expect(reconcileManualOrder(members, complete, sessions.byId, state)).toEqual(complete)
     expect(saved).toEqual(['saved-archive', 'saved-plain', 'saved-pin'])
+  })
+
+  it('inserts new forks before their saved source while preserving saved positions', () => {
+    const sessions = list(
+      summary('source', 1), summary('other', 2),
+      { ...summary('older-fork', 3), parentId: sid('source') },
+      { ...summary('newer-fork', 4), parentId: sid('source') },
+    )
+    const order = reconcileManualOrder(sessions.ids, ['other', 'source'], sessions.byId)
+    expect(order).toEqual(['other', 'older-fork', 'newer-fork', 'source'])
+    expect(reconcileManualOrder(sessions.ids, ['source', 'other', 'older-fork', 'newer-fork'], sessions.byId))
+      .toEqual(['source', 'other', 'older-fork', 'newer-fork'])
+  })
+
+  it('places nested new forks before their parents even when catalog recency differs', () => {
+    const sessions = list(
+      summary('source', 1), summary('other', 2),
+      { ...summary('parent', 4), parentId: sid('source') },
+      { ...summary('child', 3), parentId: sid('parent') },
+    )
+    expect(reconcileManualOrder(sessions.ids, ['source', 'other'], sessions.byId))
+      .toEqual(['child', 'parent', 'source', 'other'])
+  })
+
+  it('appends forks with absent or self-referencing parents without duplicating rows', () => {
+    const sessions = list(
+      summary('source', 1),
+      { ...summary('orphan', 3), parentId: sid('absent') },
+      { ...summary('self', 2), parentId: sid('self') },
+    )
+    expect(reconcileManualOrder(sessions.ids, ['source'], sessions.byId))
+      .toEqual(['source', 'orphan', 'self'])
+  })
+
+  it.each(['workspace', 'ungrouped', 'flat'] as const)('keeps forks of pinned sources in the ordinary %s section', (mode) => {
+    const sessions = list(
+      summary('source', 1), summary('other-pin', 2), summary('ordinary', 3),
+      { ...summary('fork', 4), parentId: sid('source') },
+    )
+    const state = rowState({ pinned: ['source', 'other-pin'] })
+    const order = reconcileManualOrder(sessions.ids, ['source', 'other-pin', 'ordinary'], sessions.byId, state)
+    const rows = mode === 'flat'
+      ? deriveFlat(sessions, order, state, noAttention)
+      : deriveGroups(
+        sessions, mode === 'workspace' ? [workspace('alpha', order)] : [], state, noAttention,
+        view([mode === 'workspace' ? 'alpha' : UNGROUPED_KEY], order),
+      )[0]!.sessions
+    expect(rows.map(row => row.id)).toEqual(['source', 'other-pin', 'fork', 'ordinary'])
   })
 
   it('keeps archive filtering out of complete flat membership', () => {
@@ -302,7 +359,7 @@ describe('deriveGroups', () => {
     ).items.map(node => [node.id, node.hasActiveSchedule])).toEqual(expected)
   })
 
-  it('hides subagent-origin sessions without hiding ordinary forks', () => {
+  it('hides subagent-origin sessions and reads direct running counts from catalogs', () => {
     const parent = summary('parent', 1)
     const subagent = {
       ...summary('subagent', 3), parentId: parent.id, origin: 'subagent' as const, running: true,
@@ -314,7 +371,17 @@ describe('deriveGroups', () => {
     const forkChild = {
       ...summary('fork-child', 5), parentId: fork.id, origin: 'subagent' as const, running: true,
     }
-    const sessions = { ...list(parent, fork, subagent, grandchild, forkChild), current: subagent.id }
+    const sessions = {
+      ...withMain(list(parent, fork, subagent, grandchild, forkChild), subagent.id),
+      projectionsBySession: {
+        [parent.id]: catalog(
+          'subagent',
+          'inactive-child',
+        ),
+        [fork.id]: catalog('fork-child'),
+        [subagent.id]: catalog('grandchild'),
+      },
+    }
     const groups = deriveGroups(
       sessions,
       [workspace('first', ['parent', 'fork', 'subagent', 'grandchild', 'fork-child'])],
@@ -325,16 +392,42 @@ describe('deriveGroups', () => {
 
     expect(groups[0]!.sessions.map(node => node.id)).toEqual([parent.id, fork.id])
     expect(groups[0]!.sessionCount).toBe(2)
-    expect(groups[0]!.sessions[0]).toMatchObject({ running: false, runningSubagentCount: 2 })
+    expect(groups[0]!.sessions[0]).toMatchObject({ running: false, runningSubagentCount: 1 })
     expect(groups[0]!.sessions[1]).toMatchObject({ running: false, runningSubagentCount: 1 })
     expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive, 'default'), noRows, noAttention)
       .map(node => [node.id, node.runningSubagentCount])).toEqual([
-      [parent.id, 2], [fork.id, 1],
+      [parent.id, 1], [fork.id, 1],
     ])
     expect(deriveSearchResults(
       sessions, [workspace('first', ['parent', 'fork'])], 'parent', noArchive, 'default',
       noAttention, { items: [], hasMore: false }, 10,
-    ).items[0]).toMatchObject({ id: parent.id, runningSubagentCount: 2 })
+    ).items[0]).toMatchObject({ id: parent.id, runningSubagentCount: 1 })
+  })
+
+  it('uses current child status only for members of the direct parent catalog', () => {
+    const parent = summary('parent', 1)
+    const child = { ...summary('child', 2), running: false }
+    const stopped = { ...summary('stopped', 3), running: true }
+    const unrelated = { ...summary('unrelated', 4), parentId: parent.id, running: true }
+    const sessions = {
+      ...list(parent, child, stopped, unrelated),
+      projectionsBySession: {
+        [parent.id]: catalog('child', 'stopped'),
+      },
+    }
+    const statuses = new Map<SessionId, SessionStatus>([
+      [child.id, status(undefined, { running: true })],
+      [stopped.id, status(undefined, { running: false })],
+      [unrelated.id, status(undefined, { running: true })],
+    ])
+    const counts = (snapshot: SessionStatusSnapshot) => [
+      deriveGroups(sessions, [workspace('first', ['parent'])], noRows, snapshot, view(['first']))[0]!.sessions[0]!.runningSubagentCount,
+      deriveFlat(sessions, [parent.id], noRows, snapshot)[0]!.runningSubagentCount,
+      deriveSearchResults(sessions, [], 'parent', noArchive, 'default', snapshot, { items: [], hasMore: false }, 10).items[0]!.runningSubagentCount,
+    ]
+    expect(counts(statuses)).toEqual([1, 1, 1])
+    statuses.set(child.id, status(undefined, { running: false }))
+    expect(counts(statuses)).toEqual([0, 0, 0])
   })
 
   it('ignores fork lineage and sorts every ungrouped session as a top-level row', () => {

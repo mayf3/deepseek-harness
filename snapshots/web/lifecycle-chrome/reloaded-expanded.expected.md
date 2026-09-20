@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Reply with the single word" [disabled]
+  - navigation "Session hierarchy": Reply with the single word
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
@@ -11,7 +10,7 @@
 - text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
 - button "Copy"
 - button "Thought for a while" [expanded]
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Context injection runtime-context"
 - button "Think The user wants me to reply with a single word. Let me comply."
 - paragraph: LIGHTHOUSE
 - button "Copy"

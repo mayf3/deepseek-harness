@@ -771,7 +771,7 @@ describe('client bundle activation', () => {
     expect((await routeRequest(route, batch.url, 'HEAD')).body).toHaveLength(0)
     expect((await routeRequest(route, batch.url, 'POST')).status).toBe(405)
     const batchMap = await routeRequest(route, mapUrl(batch.url))
-    const parsedBatchMap = JSON.parse(batchMap.body.toString('utf8')) as unknown
+    const parsedBatchMap: unknown = JSON.parse(batchMap.body.toString('utf8'))
     const parsedPluginMap = JSON.parse(map) as Record<string, unknown>
     expect(parsedBatchMap).toMatchObject({
       version: 3,
@@ -945,12 +945,13 @@ describe('shared module declarations', () => {
     const { service } = constructWithRoute([packageName])
     const row = service.graph().entries[0]
     if (row === undefined) throw new Error('shared-declared graph row missing')
+    const revisionMatcher: unknown = expect.any(String)
     // The browser resolves this reference against its own document; the
     // response table still answers the absolute route it resolves to.
     expect(row).toEqual({
       id: packageName,
       url: `plugins/??${packageName}/client.js&rev=${row.rev}`,
-      rev: expect.any(String) as unknown,
+      rev: revisionMatcher,
       external: ['react'],
     })
   })

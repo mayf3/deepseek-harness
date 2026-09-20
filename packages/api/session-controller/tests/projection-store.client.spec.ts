@@ -187,7 +187,7 @@ describe('manager frame routing', () => {
   it('preserves a newer title when the control baseline omits it', async ({ mock, remote }) => {
     const manager = makeManager(mock, remote)
     remote.session.list.mockResolvedValue(ok({
-      items: [{ sessionId: sid('s1'), updatedAt: 1, running: false, blank: false }],
+      items: [{ agentAvailable: true, sessionId: sid('s1'), updatedAt: 1, running: false, blank: false }],
     }))
     await manager.refreshList()
     manager.handleControlFrame({
@@ -209,7 +209,7 @@ describe('manager frame routing', () => {
   it('projects every retained value into list rows with stable snapshot identity', async ({ mock, remote }) => {
     const manager = makeManager(mock, remote)
     remote.session.list.mockResolvedValue(ok({
-      items: [{
+      items: [{ agentAvailable: true,
         sessionId: sid('s1'), updatedAt: 1, running: false, blank: false,
         projections: {
           asOfSeq: 2,
@@ -232,16 +232,21 @@ describe('manager frame routing', () => {
     expect(manager.getListSnapshot().items[0]?.projectionValues).not.toBe(baseline)
   })
 
-  it('drops the projection store with the removed session', async ({ mock, remote }) => {
+  it.for([undefined, []])('drops the removed ordinary Session store with catalog %s', async (catalog, { mock, remote }) => {
     const manager = makeManager(mock, remote)
     remote.session.list.mockResolvedValue(ok({
-      items: [{ sessionId: sid('s1'), updatedAt: 1, running: false, blank: false }],
+      items: [{ agentAvailable: true, sessionId: sid('s1'), updatedAt: 1, running: false, blank: false }],
     }))
     await manager.refreshList()
     manager.handleControlFrame({
       type: 'projection', sessionId: sid('s1'), key: 'title', value: 'Doomed', seq: 4,
     })
+    if (catalog !== undefined) {
+      manager.handleControlFrame({ type: 'projection', sessionId: sid('s1'), key: 'subagentCatalog', value: catalog, seq: 4 })
+    }
     manager.handleSessionRemoved(sid('s1'))
+    expect(manager.getListSnapshot().projectionsBySession[sid('s1')]).toBeUndefined()
     expect(manager.get(sid('s1')).projections.get('title')).toBeUndefined()
+    await manager.dispose()
   })
 })

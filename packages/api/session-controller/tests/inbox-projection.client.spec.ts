@@ -63,7 +63,7 @@ describe('Inbox projection intake', () => {
       const empty = { 'next-turn': [], 'next-step': [] }
       const stale = { ...empty, 'next-turn': [message('removed', 'already removed')] }
       const result = ok({ items: [{
-        sessionId: SID, updatedAt: 1, running: false, blank: false,
+        sessionId: SID, updatedAt: 1, running: false, blank: false, agentAvailable: false,
         projections: { asOfSeq: 21, values: { inbox: empty } },
       }] })
       let refreshed: Promise<void> | undefined
@@ -108,9 +108,9 @@ describe('Inbox projection intake', () => {
       const face = manager.get(SID).projections.faceOf('inbox')
       const baseline = { type: 'baseline', value: { jobs: {}, projections: {} } } as const
       const result = ok({ items: [
-        { sessionId: SID, updatedAt: 1, running: false, blank: false,
+        { sessionId: SID, updatedAt: 1, running: false, blank: false, agentAvailable: false,
           projections: { asOfSeq: 1, values: { inbox: empty } } },
-        { sessionId: hiddenSessionId, updatedAt: 1, running: false, blank: false,
+        { sessionId: hiddenSessionId, updatedAt: 1, running: false, blank: false, agentAvailable: false,
           projections: { asOfSeq: 1, values: { inbox: restored } } },
       ] })
       let refreshed: Promise<void> | undefined

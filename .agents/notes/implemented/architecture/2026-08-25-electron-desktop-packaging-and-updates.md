@@ -40,6 +40,8 @@ The Desktop Host exposes the shared Web plugin manager for its reserved profile 
 
 The renderer uses `nodeIntegration: false`, `contextIsolation: true`, and `sandbox: true`. Preload provides boot readiness and failure reporting, native directory selection, theme synchronization, and Windows menu and appearance adapters. It exposes no raw `ipcRenderer`, filesystem access, shell commands, or pnpm arguments. Electron menus and native dialogs use typed English or Chinese copy with English fallback; Windows follows the main document’s language. The shared Web plugin manager owns its client copy.
 
+Update confirmations use the shell static origin because they must remain available without a ready Web Host. Their packaged documents and assets retain the same method and path restrictions as other local static assets.
+
 ## Filesystem layout
 
 ```text

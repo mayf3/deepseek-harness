@@ -1,4 +1,4 @@
-/** Plugin management copy and display names of shipped global rows. */
+/** Plugin management interface copy. */
 
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
@@ -16,15 +16,11 @@ export const zh = {
   overriddenNotice: '{name} 已保存，但被更高优先级的配置覆盖，当前未生效',
   bundlesTitle: '已安装',
   officialTitle: '官方',
-  builtinAgentTeamTitle: '智能体团队',
-  builtinAgentTeamDescription: '启用团队协作、团队工具、成员列表和共享任务看板。',
-  builtinAutoReviewTitle: '自动授权审查',
-  builtinAutoReviewDescription: '提供自动审查权限模式，由模型在每次工具调用前判断是否授权。',
   statusProblem: '异常',
   statusBeta: 'Beta',
   reasonLabel: '原因',
+  metadataError: '包元信息错误：{error}',
   versionTag: 'v{version}',
-  noDescription: '暂无描述。',
   partsLabel: '包含的组件',
   partsEmpty: '这个插件包不包含任何组件。',
   partsCountTotal: '共 {count} 个',
@@ -204,15 +200,11 @@ export const en = {
   overriddenNotice: '{name} was saved, but a higher-priority configuration overrides it, so it is not in effect',
   bundlesTitle: 'Installed',
   officialTitle: 'Official',
-  builtinAgentTeamTitle: 'Agent Teams',
-  builtinAgentTeamDescription: 'Enable team collaboration, team tools, the member roster, and the shared task board.',
-  builtinAutoReviewTitle: 'Auto Authorization Review',
-  builtinAutoReviewDescription: 'Add an Auto review permission mode that uses the model to assess authorization before each tool call.',
   statusProblem: 'Problem',
   statusBeta: 'Beta',
   reasonLabel: 'Reason',
+  metadataError: 'Package metadata error: {error}',
   versionTag: 'v{version}',
-  noDescription: 'No description.',
   partsLabel: 'Components',
   partsEmpty: 'This plugin pack contains no components.',
   partsCountTotal: '{count} total',

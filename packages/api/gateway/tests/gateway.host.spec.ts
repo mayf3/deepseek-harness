@@ -1223,7 +1223,7 @@ describe('TypertGatewayService', () => {
         }),
       })
       expect(invalid.status).toBe(200)
-      const invalidBody = await invalid.json() as unknown
+      const invalidBody: unknown = await invalid.json()
       expect(invalidBody).toMatchObject({
         type: 'server-response',
         rpcId: 'rpc-invalid',
@@ -1247,7 +1247,7 @@ describe('TypertGatewayService', () => {
         }),
       })
       expect(withdrawn.status).toBe(200)
-      const withdrawnBody = await withdrawn.json() as unknown
+      const withdrawnBody: unknown = await withdrawn.json()
       expect(withdrawnBody).toMatchObject({
         type: 'server-response',
         rpcId: 'rpc-withdrawn',

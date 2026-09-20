@@ -57,7 +57,7 @@ import {
   writesCurrentSessionFixtures,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
-import type { Profile, ProfileContext, ProfileResolutionMode } from '@deepseek-ai/dsh-app-boot'
+import type { Profile, ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
@@ -196,7 +196,7 @@ export function recordedSessionFixturePath(path: string, version: number): strin
 /** The shipped composition under test: the dsh-base and dsh-web-app bundle patches over the empty profile root. */
 const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
-/** The installation anchor whose dependency surface the profile module fallback mirrors. */
+/** The installation anchor whose dependency surface the runtime resolution mirrors. */
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 
 // Replay publishes the provider catalog the gateway routes to (providers
@@ -304,8 +304,6 @@ export interface WebScaffold {
 export interface LaunchOptions {
   /** The scaffold enables developer tools unless false preserves the shipped default. */
   developerTools?: boolean
-  /** Profile resolver backend used by this test Host; defaults to runtime coverage. */
-  profileResolutionMode?: Extract<ProfileResolutionMode, 'dual' | 'runtime'>
   /** Enable the real Open In rows with deterministic launch-environment facts. */
   openInAppEnvironment?: LaunchEnvironmentSnapshot
   /** Compare the replayed root session with `replayFixture`; defaults on for a manifest-owned canonical recording. */
@@ -467,7 +465,7 @@ async function cleanupScaffoldWorld(ctx: Context, workspaceCwd: string, persiste
 export async function launchWebScaffold(options: LaunchOptions = {}): Promise<WebScaffold> {
   requireDist()
   const {
-    auditStartupEntries, composeEntries, createProfileResolutionGeneration, healProfilesModuleFallback, initProfile,
+    auditStartupEntries, composeEntries, createRuntimeResolution, initProfile,
     mountRootInclude, readProfileManifest, readProfilePatches, loadProfileDirectory, loadOverlayPatches, PluginPackages,
   } = appBoot()
   const mode = webSnapshotMode()
@@ -750,11 +748,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       patchPath: join(profileDir, 'cordis.patch.yml'),
       patches: [],
     }
-    const profileResolutionMode = options.profileResolutionMode ?? 'runtime'
     const resolutionOptions = { installAnchor: INSTALL_ANCHOR, home: harnessHome, profile }
-    const resolution = profileResolutionMode === 'runtime'
-      ? await createProfileResolutionGeneration(resolutionOptions)
-      : await healProfilesModuleFallback(resolutionOptions)
+    const resolution = await createRuntimeResolution(resolutionOptions)
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
@@ -801,8 +796,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       },
     })
     await ctx.plugin(PluginPackages, {
-      generation: resolution,
-      behavior: profileResolutionMode === 'dual' ? 'verify' : 'enforce',
+      resolution,
     })
     await ctx.plugin(Loader)
     if (profileContext === undefined) {
@@ -819,7 +813,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     } else {
       // The launcher's own mount, so the manager's reloads find the root Include
       // and compose the same layers the profile files name; bare names still
-      // resolve through the resolution generation above, as in the direct mount.
+      // resolve through the runtime resolution above, as in the direct mount.
       await mountRootInclude(ctx, rootConfig, readProfilePatches('dsh', profileContext))
     }
     await ctx.loader.await()
@@ -1307,12 +1301,7 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
   }).join('\n')
 }
 
-/**
- * Parse a committed web seed fixture through the replay reader.
- * @param fixtureText - session JSONL fixture contents.
- * @returns the current header line, parsed header, and logical events.
- */
-/** Give a migrated fixture stream positive relative timing before its final wall-clock rebase. */
+/** Give reconstructed V0/V1 chunk streams positive intervals before the final wall-clock rebase. */
 function spreadMigratedSeedStream(
   stream: SessionEvent<'assistant/message'>['data']['stream'],
 ): SessionEvent<'assistant/message'>['data']['stream'] {
@@ -1329,6 +1318,12 @@ function spreadMigratedSeedStream(
   })
 }
 
+/**
+ * Parse a committed web seed fixture through the replay reader.
+ * Embedded streams retain their recorded timing; V0/V1 chunk streams receive positive relative intervals.
+ * @param fixtureText - session JSONL fixture contents.
+ * @returns the current header line, parsed header, and logical events.
+ */
 export function parseSeedFixture(fixtureText: string): {
   headerLine: string
   header: Record<string, unknown>
@@ -1343,7 +1338,7 @@ export function parseSeedFixture(fixtureText: string): {
   const header = JSON.parse(headerLine) as Record<string, unknown>
   if (header.type !== 'session') throw new Error('seed fixture must start with a session header')
   const events = parseSessionLog(current).map((event) => {
-    if (sourceHeader.version === SESSION_FORMAT_VERSION) return event
+    if (sourceHeader.version !== 0 && sourceHeader.version !== 1) return event
     if (event.type === 'assistant/message') {
       return { ...event, data: { ...event.data, stream: spreadMigratedSeedStream(event.data.stream) } }
     }
