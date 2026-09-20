@@ -20,13 +20,13 @@ The [stable Sidebar mounting decision](../architecture/2026-09-20-sidebar-retain
 - Controller registries are keyed by DSH Session, independently of presentation bindings. Rebinding replaces the store writer without recreating the page.
 - `pages.ts` composes a navigation provider and a presentation object. `ElectronWebViewImpl` owns guest leases and native navigation; `ElectronWebviewPresentation` creates the tag and attaches it inside the Sidebar-owned content container.
 - The Desktop Browser type declares `keepMounted`. Sidebar retains its DOM ancestors across hiding and docking; CSS owns layout and clipping. Docking gestures disable guest pointer input, and body-local drop hints use normal stacking. A physical unmount cancels pending attachment and releases the guest; a later mount recreates it from the known address.
-- Tab occurrence cancellation, plugin unload and window destruction release guests. Guest crashes leave a retryable failure; Reload creates a new guest. Application restart restores an address, not page memory or native history.
+- Tab occurrence cancellation, plugin unload and window destruction release guests. Guest crashes leave a retryable failure; Reload creates a new guest. Application restart offers the saved title and URL for explicit restoration; it creates no guest until the user restores or submits an address. Page memory and native history are not restored.
 
 The package's type-only `./desktop` entry declares the lease, reservation, open-request and bridge types shared by the main process, preload and Client. Preload exposes scoped operations and callbacks, not raw IPC or Electron objects.
 
 ### Storage ownership
 
-`DesktopBrowserGuests` assigns a random, non-persistent Electron partition to each Workspace account. Browser tabs in different DSH Sessions share that account when they belong to the same Workspace; ungrouped Sessions have separate accounts. Workspace membership is resolved after the Client receives its authoritative baseline and is fixed for a guest occurrence.
+`DesktopBrowserGuests` assigns a random, non-persistent Electron partition to each canonical CWD account. The Client uses the Host-normalized `WorkspaceView.path`, not the Workspace record UUID, so recreating a Workspace at the same directory does not change its storage account key. Browser tabs whose DSH Sessions resolve to that CWD share the account; Sessions without a resolved Workspace remain separately isolated. Workspace membership is resolved after the Client receives its authoritative baseline and is fixed for a guest occurrence. The CWD key controls sharing, not disk persistence.
 
 Closing a tab releases its guest, not its account's cookies or storage. Cookies, localStorage, IndexedDB, Service Workers and cache remain partition-owned and subject to normal origin rules. DOM, native history and sessionStorage remain page-owned. Account partitions survive window recreation within the Electron process but do not persist across application exit.
 

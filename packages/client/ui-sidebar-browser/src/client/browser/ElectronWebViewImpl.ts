@@ -40,9 +40,8 @@ export class ElectronWebViewImpl implements BrowserFrame {
   constructor(private readonly options: BrowserPageOptions, private readonly bridge: DesktopBrowserBridge,
     private readonly workspace: (signal: AbortSignal) => Promise<string>,
     private readonly presentation: ElectronWebviewPresentation) {
-    const target = currentBrowserTarget(options.initial)
-    this.checkpoint = target
-    this.store = createSnapshotStore({ ...emptyBrowserFrame(), target, address: target === undefined ? 'empty' : 'requested' })
+    this.checkpoint = currentBrowserTarget(options.initial)
+    this.store = createSnapshotStore(emptyBrowserFrame())
   }
 
   /** @returns immutable carrier-neutral navigation state. */

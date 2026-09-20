@@ -22,13 +22,17 @@ The Web carrier is an iframe; Desktop uses the [retained webview carrier](2026-0
 
 Each tab receives one `BrowserController` for address validation and carrier-independent commands. `BrowserFrame` exposes navigation, observable address/loading/history/error state, and an optional sandbox control; `BrowserPresentation` owns DOM attachment. `pages.ts` composes these two objects into a `BrowserPage`. `IframeImpl` owns application-known `BrowserNavigation`, while `ElectronWebViewImpl` observes native history. Slot injection exposes keyed controller state through `useBrowserState` and plain callbacks; the React body owns its draft and content container, with no carrier branch, controller instance or observable source.
 
-For the iframe carrier, `BrowserNavigation` keeps the canonical current URL, controlled-load revision, navigation state, and a bounded sequence with its index. A new address drops the forward branch; Back and Forward move the index; Reload recreates the last application-known URL without adding history. A remounted body reloads the latest application-known URL and consults its optional initial URL only before the first controlled target. The Session-scoped store only persists immutable snapshots from that class for title rendering and application reload. An occurrence abort removes its bucket; `TabDomain` uses that same abort for both tab removal and `ui-sidebar-right` unload, so unloading or hot-reloading the Sidebar clears Browser history even when DockKit later restores the tab record.
+For the iframe carrier, `BrowserNavigation` keeps the canonical current URL, controlled-load revision, navigation state, and a bounded sequence with its index. A new address drops the forward branch; Back and Forward move the index; Reload recreates the last application-known URL without adding history. Within a live controller, remounting a body reloads its last requested URL. The Session-scoped store persists immutable checkpoints for tab titles and cold-start recovery; it does not serialize a live page.
+
+A controller created from a saved checkpoint offers its last title and URL with a Restore page button. The provider starts idle: mounting the restored tab neither creates a browsing guest nor requests the saved site. Restore, toolbar Reload or address submission starts navigation; a fresh typed-open URL remains an explicit navigation request and loads directly. Before a page is requested, Back and Forward remain disabled, while Reload restores the saved address through the same controller action as Restore. Changing an idle iframe's sandbox does not restore it. This offer belongs to `BrowserControllerState`, not the live `BrowserFrame` interface or the persisted navigation status.
+
+Occurrence cancellation releases the controller. It removes the saved checkpoint only when the Sidebar's authoritative `openTabs` inventory no longer contains that tab. The inventory publishes layout removal before `TabDomain` aborts its occurrence; plugin unload also aborts occurrences but leaves saved tab membership intact. Cleanup therefore does not interpret plugin unload as a request to erase recovery data.
 
 Browser state is presentation state. It does not enter the Session log, model request, resource model, or DockKit layout operations. The existing [right Sidebar infrastructure](2026-09-04-right-sidebar-docking-infrastructure.md), [tab type contract](../architecture/2026-09-05-sidebar-tab-types-and-navigation.md), [resource model](../architecture/2026-09-05-client-resource-model.md), and [Document Preview operations](../architecture/2026-09-08-document-preview-operations.md) retain their existing responsibilities.
 
 ## Web navigation states
 
-The Web carrier treats only the first iframe `load` for a controlled revision as confirmation of the application-known URL. A later `load` for that revision proves that the document changed but cannot reveal the new cross-origin URL. Events carrying an older revision are ignored.
+The Web carrier treats only the first iframe `load` for a controlled revision as confirmation of the application-known URL. A later `load` for that revision proves that the document changed but cannot reveal the new cross-origin URL. Events carrying an older revision are ignored. These states describe active navigation; an unrequested saved checkpoint remains a separate restore offer.
 
 | State | Entry | Address and controls |
 |---|---|---|
@@ -37,13 +41,15 @@ The Web carrier treats only the first iframe `load` for a controlled revision as
 | `known` | The first iframe `load` arrives for the current revision. | The requested URL remains authoritative even when that first load includes an HTTP redirect. The controls follow the same known-target rules as `loading`. |
 | `unknown` | A second or later iframe `load` arrives for the current revision. | The last controlled URL is muted and marked `URL changed`. Back and Forward are disabled because iframe exposes no cross-origin `canGoBack` or `canGoForward`; external-open is disabled. Reload starts a new revision at the last controlled URL. |
 
-Address editing is available in every state. An invalid draft reports an address failure without changing the current navigation state. Focusing the unknown address hides its marker and reveals Go; Enter and Go both start a controlled load. Changing sandbox mode reloads the last controlled Web target under a new revision. An iframe `error` event marks only the current `BrowserFrame` revision with a transient load-failure notice; it does not change URL history, and the next controlled document clears it. Browsers do not reliably emit this event for DNS, TLS, mixed-content, CSP, or `X-Frame-Options` failures. `pushState`, `replaceState`, and fragment changes that emit no iframe `load` remain unobservable.
+Address editing is available in every state. An invalid draft reports an address failure without changing the current navigation state. Focusing the unknown address hides its marker and reveals Go; Enter and Go both start a controlled load. For an already requested page, changing sandbox mode reloads the last controlled Web target under a new revision. An iframe `error` event marks only the current `BrowserFrame` revision with a transient load-failure notice; it does not change URL history, and the next controlled document clears it. Browsers do not reliably emit this event for DNS, TLS, mixed-content, CSP, or `X-Frame-Options` failures. `pushState`, `replaceState`, and fragment changes that emit no iframe `load` remain unobservable.
 
 ## Electron carrier
 
 The [Desktop webview decision](2026-09-20-desktop-browser-webview.md) owns native page lifetime, Workspace storage sharing, guest policy, and runtime verification gaps. The iframe behavior in this note remains independently useful; its cross-origin limitations do not describe the Desktop carrier.
 
 ## Alternatives considered
+
+**Automatically reload saved pages when their tabs mount.** This resumes third-party requests and scripts merely by restoring the layout. An explicit restore action preserves the saved address without opening the site.
 
 **Add a Host embeddability probe and persist the sandbox preference.** Rejected because fetching arbitrary targets on the Host adds an SSRF path, the probe can disagree with later redirects, and a persistent global escape makes later tabs inherit an unsafe choice. Browser instead offers an explicit per-tab, non-persistent sandbox toggle with a visible warning.
 
@@ -58,6 +64,8 @@ The [Desktop webview decision](2026-09-20-desktop-browser-webview.md) owns nativ
 ## Verification
 
 Unit tests cover protocol parsing, delegated Markdown links, controller commands and lifecycle, deterministic navigation-state transitions, bounded history, best-effort iframe errors, and plugin disposal. Keyless Web scenarios boot the shipped composition and exercise message-link routing, HTTP(S), Back, Forward, sandbox control, unknown navigation, and protocol refusal.
+
+Manual cold-start restoration and checkpoint retention across plugin unload have no runtime verification yet.
 
 ## Consequences
 

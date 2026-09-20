@@ -16,5 +16,5 @@ export interface BrowserPage {
   readonly presentation: BrowserPresentation
 }
 
-/** Construct a provider without starting navigation or attaching DOM. */
+/** Construct an idle provider without attaching DOM; saved navigation waits for an explicit frame command. */
 export type BrowserPageFactory = (options: BrowserPageOptions) => BrowserPage

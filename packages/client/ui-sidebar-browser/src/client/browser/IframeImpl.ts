@@ -1,7 +1,7 @@
 /** Iframe navigation provider with bounded application-known history. */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { IframePresentation } from '../view/IframePresentation.ts'
-import type { BrowserFrame, BrowserFrameState, BrowserLoadError, BrowserSandboxControl } from './BrowserFrame.ts'
+import { emptyBrowserFrame, type BrowserFrame, type BrowserFrameState, type BrowserLoadError, type BrowserSandboxControl } from './BrowserFrame.ts'
 import type { BrowserPageOptions } from './BrowserPage.ts'
 import { BrowserNavigation } from './BrowserNavigation.ts'
 import type { BrowserTarget } from './url.ts'
@@ -19,7 +19,7 @@ export class IframeImpl implements BrowserFrame {
   /** @param options - initial checkpoint and persistence writer. @param presentation - iframe DOM adapter. */
   constructor(private readonly options: BrowserPageOptions, private readonly presentation: IframePresentation) {
     this.navigation = new BrowserNavigation(options.initial)
-    this.store = createSnapshotStore(this.snapshot())
+    this.store = createSnapshotStore({ ...emptyBrowserFrame(), sandboxEnabled: this.sandboxed })
   }
 
   /** @param revision - document generation whose iframe emitted load. */
@@ -68,6 +68,10 @@ export class IframeImpl implements BrowserFrame {
   private setSandbox(enabled: boolean): void {
     if (this.disposed || enabled === this.sandboxed) return
     this.sandboxed = enabled
+    if (this.store.getSnapshot().target === undefined) {
+      this.store.set({ ...this.store.getSnapshot(), sandboxEnabled: enabled })
+      return
+    }
     const request = this.navigation.reload()
     if (request === undefined) this.publish()
     else this.load(request)

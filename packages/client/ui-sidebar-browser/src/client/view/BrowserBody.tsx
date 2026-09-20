@@ -2,6 +2,7 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
+  Button,
   IconChevronLeftOutlineRegular,
   IconChevronRightOutlineRegular,
   IconLinkOutlineRegular,
@@ -44,7 +45,7 @@ function useBrowserDraft(url: string | undefined, revision: number): readonly [s
 
 /** Render provider-neutral navigation state and optional controls. */
 export function BrowserBody(props: BrowserBodyProps): ReactNode {
-  const { mount, loadUrl, goBack, goForward, reload, setSandbox, useBrowserState, useStore, useTabInfo, t } = props
+  const { mount, loadUrl, restore, goBack, goForward, reload, setSandbox, useBrowserState, useStore, useTabInfo, t } = props
   const { tab } = useTabInfo()
   const saved = useStore(state => state.byTab[tab.id])
   const initial = useRef(saved)
@@ -53,7 +54,8 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
   const [mountEpoch, setMountEpoch] = useState(0)
   const state = useBrowserState(tab.id)
   const frame = state?.frame ?? EMPTY_FRAME
-  const target = frame.target ?? currentBrowserTarget(initial.current)
+  const restoreTarget = state === undefined ? currentBrowserTarget(initial.current) : state.restoreTarget
+  const target = frame.target ?? restoreTarget
   const [draft, setDraft] = useBrowserDraft(target?.url ?? initialUrl.current, state?.addressRevision ?? 0)
 
   useLayoutEffect(() => {
@@ -110,7 +112,15 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
       {failure !== undefined && <div className={css.failure} role="alert">{t(`error.${failure}`)}</div>}
       <div className={css.content} aria-busy={frame.loading}>
         <div id={viewportId} className={css.viewport} aria-label={t('type.label')} />
-        {(target === undefined || frame.loading) && error === undefined && <div className={css.placeholder}>
+        {restoreTarget !== undefined && <section className={css.restore} aria-label={t('restore.previous')}>
+          <p className={css.restoreLabel}>{t('restore.previous')}</p>
+          <p className={css.restoreTitle}>{restoreTarget.title}</p>
+          <p className={css.restoreUrl}>{restoreTarget.url}</p>
+          <Button variant="primary" size="sm" disabled={mountEpoch === 0} onClick={() => { restore(tab.id) }}>
+            {t('restore.action')}
+          </Button>
+        </section>}
+        {restoreTarget === undefined && (target === undefined || frame.loading) && error === undefined && <div className={css.placeholder}>
           <div className={css.start}>{t(target === undefined ? 'start' : 'loading')}</div>
         </div>}
       </div>

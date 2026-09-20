@@ -22,13 +22,17 @@ Web 使用 iframe 载体；Desktop 使用[保持页面实例的 webview 载体](
 
 每个 tab 获得一个 `BrowserController`，负责地址校验与载体无关的命令。`BrowserFrame` 提供导航、可观察的地址/加载/history/错误状态和可选 sandbox 控制，`BrowserPresentation` 负责 DOM 挂载。`pages.ts` 把两个对象组装成 `BrowserPage`。`IframeImpl` 持有应用已知的 `BrowserNavigation`，`ElectronWebViewImpl` 则观察原生 history。Slot injection 通过 `useBrowserState` 提供按 key 索引的控制器状态和普通回调；React body 只持有草稿与内容容器，没有载体分支、控制器实例或可观察源。
 
-对于 iframe 载体，`BrowserNavigation` 保存 canonical 当前 URL、受控加载 revision、导航状态，以及有上限的序列与当前位置。新地址丢弃 forward 分支；后退和前进移动 index；刷新重建应用最后已知的 URL 且不增加 history。body 重挂载时会重新加载应用最后已知的 URL，并且仅在尚无受控目标时使用可选初始 URL。Session-scoped store 只持久化该 class 的 immutable snapshot，供标题渲染与应用刷新恢复。occurrence abort 会删除其 bucket；`TabDomain` 对 tab 删除与 `ui-sidebar-right` 卸载使用同一个 abort，因此卸载或热重载 Sidebar 会清空 Browser history，即使 DockKit 随后恢复 tab record。
+对于 iframe 载体，`BrowserNavigation` 保存 canonical 当前 URL、受控加载 revision、导航状态，以及有上限的序列与当前位置。新地址丢弃 forward 分支；后退和前进移动 index；刷新重建应用最后已知的 URL 且不增加 history。在仍存活的控制器内，body 重挂载会重新加载最后请求的 URL。Session-scoped store 持久化不可变检查点，供 Tab 标题与冷启动恢复使用，不序列化活页面。
+
+从已保存检查点创建的控制器展示上次标题、URL 和“恢复页面”按钮。提供方初始为空闲状态：挂载恢复的 Tab 既不创建浏览 guest，也不请求保存的站点。恢复、工具栏刷新或提交地址才启动导航；新打开 Tab 时显式传入的 URL 仍是主动导航请求，会直接加载。页面尚未请求时，后退和前进仍禁用，刷新则通过与“恢复页面”相同的控制器操作加载保存的地址。切换空闲 iframe 的沙箱也不会恢复页面。恢复提示属于 `BrowserControllerState`，不进入活页面的 `BrowserFrame` 接口或持久化导航状态。
+
+occurrence 取消会释放控制器。只有 Sidebar 的权威 `openTabs` 清单已不再包含该 Tab 时，才删除保存的检查点。清单先发布布局中的 Tab 移除，再由 `TabDomain` abort 对应 occurrence；插件卸载也会 abort occurrence，但仍保留已保存的 Tab 成员信息。因此清理不会把插件卸载当成删除恢复数据的请求。
 
 Browser 状态只属于呈现层，不进入 Session log、模型请求、resource model 或 DockKit layout operation。现有的[右侧 Sidebar 基础设施](2026-09-04-right-sidebar-docking-infrastructure.zh.md)、[tab 类型契约](../architecture/2026-09-05-sidebar-tab-types-and-navigation.zh.md)、[resource model](../architecture/2026-09-05-client-resource-model.zh.md)和[文档预览操作](../architecture/2026-09-08-document-preview-operations.zh.md)继续负责各自现有职责。
 
 ## Web 导航状态
 
-对于一个受控 revision，Web 载体只把 iframe 的第一次 `load` 当作应用已知 URL 的确认。同一 revision 后续发生 `load`，只能证明文档已经变化，无法给出新的跨域 URL。携带旧 revision 的事件会被忽略。
+对于一个受控 revision，Web 载体只把 iframe 的第一次 `load` 当作应用已知 URL 的确认。同一 revision 后续发生 `load`，只能证明文档已经变化，无法给出新的跨域 URL。携带旧 revision 的事件会被忽略。这些状态描述活动导航；尚未请求的已保存检查点仍是独立的恢复提示。
 
 | 状态 | 进入条件 | 地址与控件 |
 |---|---|---|
@@ -37,13 +41,15 @@ Browser 状态只属于呈现层，不进入 Session log、模型请求、resour
 | `known` | 当前 revision 收到 iframe 的第一次 `load`。 | 即使第一次加载包含 HTTP redirect，请求 URL 仍是权威地址。控件规则与 `loading` 的已知目标规则相同。 |
 | `unknown` | 当前 revision 收到 iframe 的第二次或后续 `load`。 | 最后一个受控 URL 变灰，并标记 `URL 已变化`。iframe 不提供跨域 `canGoBack` 或 `canGoForward`，因此后退和前进禁用；外部打开禁用。刷新以最后一个受控 URL 启动新的 revision。 |
 
-每个状态都允许编辑地址。无效草稿只报告地址错误，不改变当前导航状态。聚焦 unknown 地址会隐藏标记并显示前往按钮；回车与前往都会启动受控加载。切换 sandbox 模式会使用新的 revision 重新加载最后一个受控 Web 目标。iframe `error` event 只会为当前 `BrowserFrame` revision 标记临时加载失败 notice；它不改变 URL history，下一个受控 document 会清除它。浏览器不会为 DNS、TLS、mixed-content、CSP 或 `X-Frame-Options` 失败可靠触发该 event。不产生 iframe `load` 的 `pushState`、`replaceState` 与 fragment 变化仍不可观察。
+每个状态都允许编辑地址。无效草稿只报告地址错误，不改变当前导航状态。聚焦 unknown 地址会隐藏标记并显示前往按钮；回车与前往都会启动受控加载。对于已经请求的页面，切换 sandbox 模式会使用新的 revision 重新加载最后一个受控 Web 目标。iframe `error` event 只会为当前 `BrowserFrame` revision 标记临时加载失败 notice；它不改变 URL history，下一个受控 document 会清除它。浏览器不会为 DNS、TLS、mixed-content、CSP 或 `X-Frame-Options` 失败可靠触发该 event。不产生 iframe `load` 的 `pushState`、`replaceState` 与 fragment 变化仍不可观察。
 
 ## Electron carrier
 
 [Desktop webview 决策](2026-09-20-desktop-browser-webview.zh.md)负责原生页面生命周期、Workspace 存储共享、guest 策略与运行时验证缺口。本文的 iframe 行为仍具有独立价值；其跨域限制不描述 Desktop 载体。
 
 ## Alternatives considered
+
+**Tab 挂载时自动重新加载已保存页面。** 这会仅因恢复布局就恢复第三方请求与脚本执行。显式恢复操作保留已保存地址，但不会自行打开站点。
 
 **增加 Host embeddability probe 并持久化 sandbox 偏好。** 不采用，因为由 Host 请求任意目标会新增 SSRF 路径，probe 可能与后续重定向结果不一致，而持久化的全局逃生开关会让后续 tab 继承不安全选择。Browser 改为提供显式、按 tab、非持久化的 sandbox 开关，并持续显示警告。
 
@@ -58,6 +64,8 @@ Browser 状态只属于呈现层，不进入 Session log、模型请求、resour
 ## Verification
 
 单元测试覆盖协议解析、Markdown 链接委托、controller 命令与生命周期、确定性导航状态转换、有界 history、best-effort iframe error 和插件 disposal。Keyless Web 场景启动随附 composition，并覆盖消息链接路由、HTTP(S)、后退、前进、sandbox 控制、unknown 导航和协议拒绝。
+
+手动冷启动恢复和跨插件卸载保留检查点尚无运行时验证。
 
 ## Consequences
 

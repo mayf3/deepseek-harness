@@ -20,13 +20,13 @@ Desktop 通过 `ElectronWebViewImpl` 使用 `<webview>`；Web 保留显式启用
 - 控制器注册表按 DSH Session 索引，不依赖呈现绑定的存活期。重新绑定只替换存储写入方，不重建页面。
 - `pages.ts` 组装导航提供方和呈现对象。`ElectronWebViewImpl` 负责 guest 租约与原生导航；`ElectronWebviewPresentation` 创建标签并挂载到 Sidebar 持有的内容容器内。
 - Desktop Browser 类型声明 `keepMounted`。Sidebar 在隐藏和停靠切换时保留其 DOM 祖先，CSS 负责布局与裁剪。停靠手势期间禁用 guest 指针输入，Body 内的放置提示使用普通层叠。物理卸载会取消未完成的挂载并释放 guest，之后重新挂载时从已知地址重建。
-- tab occurrence 取消、插件卸载与窗口销毁会释放 guest。guest 崩溃留下可重试的失败状态；刷新创建新 guest。应用重启只恢复地址，不恢复页面内存或原生 history。
+- tab occurrence 取消、插件卸载与窗口销毁会释放 guest。guest 崩溃留下可重试的失败状态；刷新创建新 guest。应用重启展示保存的标题与 URL，等待显式恢复；用户恢复或提交地址之前不创建 guest。不恢复页面内存或原生 history。
 
 包内仅含类型的 `./desktop` 入口声明主进程、preload 和 Client 共用的租约、申请结果、打开请求与桥接类型。preload 只暴露限定范围的操作与回调，不暴露原始 IPC 或 Electron 对象。
 
 ### Storage ownership
 
-`DesktopBrowserGuests` 为每个 Workspace 存储账号分配随机、非持久化的 Electron partition。不同 DSH Session 的 Browser tab 属于同一 Workspace 时共享该账号；未分组 Session 使用独立账号。Workspace 归属在 Client 收到权威基线后解析，并在一次 guest occurrence 内保持不变。
+`DesktopBrowserGuests` 为每个规范化 CWD 存储账号分配随机、非持久化的 Electron partition。Client 使用 Host 规范化后的 `WorkspaceView.path`，不使用 Workspace 记录 UUID，因此在同一目录重建 Workspace 不改变存储账号 key。DSH Session 解析到同一 CWD 的 Browser Tab 共享账号；没有可解析 Workspace 的 Session 仍单独隔离。Workspace 归属在 Client 收到权威基线后解析，并在一次 guest occurrence 内保持不变。CWD key 控制共享关系，不决定是否落盘。
 
 关闭 tab 只释放它的 guest，不清空账号的 Cookie 或存储。Cookie、localStorage、IndexedDB、Service Worker 与缓存由 partition 持有，并继续遵循普通 origin 规则。DOM、原生 history 与 sessionStorage 仍由页面持有。账号 partition 在同一 Electron 进程内重建窗口后仍保留，但不跨应用退出持久化。
 

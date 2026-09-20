@@ -35,13 +35,14 @@ declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
 }
 
 /** Required Browser services. */
-export const inject = ['slots', 'locale', 'sidebarRightTabs']
+export const inject = ['slots', 'locale', 'sidebarRight', 'sidebarRightTabs']
 
 /** Register the Browser type, localized guide entry, body, and title. */
 export function apply(ctx: Context): void {
   const namespace = 'sidebarBrowser'
   const t = ctx.locale.bind(namespace)
   const store = createBrowserStore()
+  const openTabs = ctx.sidebarRight.openTabs
   const carrier = (globalThis as typeof globalThis & {
     dshDesktop?: { readonly protocolVersion: number; readonly browser?: DesktopBrowserBridge }
   }).dshDesktop
@@ -63,7 +64,8 @@ export function apply(ctx: Context): void {
           existing.rebind(actions)
           return existing
         }
-        const controller = createBrowserControllers(actions, factory(sessionId))
+        const controller = createBrowserControllers(actions, factory(sessionId), tabId =>
+          openTabs.getSnapshot().some(tab => tab.sessionId === sessionId && tab.tabId === tabId))
         controllers.set(sessionId, controller)
         return controller
       },

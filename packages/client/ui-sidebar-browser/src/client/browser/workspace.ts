@@ -1,8 +1,8 @@
-/** Resolve browser storage only after the authoritative Workspace list has arrived. */
+/** Resolve CWD-keyed browser storage after the authoritative Workspace list has arrived. */
 import type { WorkspaceSource } from '@deepseek-ai/dsh-api-workspace-controller/client'
 
 /**
- * Resolve the workspace account; ungrouped Sessions get separate accounts.
+ * Use the Workspace's canonical CWD, not its record id; ungrouped Sessions remain isolated.
  * @param source - authoritative Workspace membership.
  * @param sessionId - owning DSH Session.
  * @param signal - guest initialization lifetime.
@@ -24,5 +24,5 @@ export async function browserWorkspace(source: WorkspaceSource, sessionId: strin
   }
   signal.throwIfAborted()
   const workspace = source.getSnapshot().items.find(item => item.sessionIds.some(id => id === sessionId))
-  return workspace === undefined ? `session:${sessionId}` : `workspace:${workspace.workspaceId}`
+  return workspace === undefined ? `session:${sessionId}` : `cwd:${workspace.path}`
 }

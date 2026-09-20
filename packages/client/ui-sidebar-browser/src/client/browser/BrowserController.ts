@@ -6,11 +6,13 @@ import type { BrowserFrameState } from './BrowserFrame.ts'
 import type { BrowserPage, BrowserPageFactory } from './BrowserPage.ts'
 import { currentBrowserTarget, type BrowserTabState } from './BrowserPersistence.ts'
 import type { BrowserStore } from './store.ts'
-import { parseBrowserAddress, type BrowserAddressFailure } from './url.ts'
+import { parseBrowserAddress, type BrowserAddressFailure, type BrowserTarget } from './url.ts'
 
 /** Live tab state; navigation comes from its provider and draft validation stays local. */
 export interface BrowserControllerState {
   readonly frame: BrowserFrameState
+  /** Saved address offered for explicit restoration before any page has been requested. */
+  readonly restoreTarget: BrowserTarget | undefined
   readonly addressFailure: BrowserAddressFailure | undefined
   readonly addressRevision: number
 }
@@ -56,13 +58,15 @@ export class BrowserController implements HostObservable<BrowserControllerState>
         options.openTab(result.target.url)
       },
     })
-    this.store = createSnapshotStore({ frame: this.page.frame.getSnapshot(), addressFailure: undefined, addressRevision: 0 })
+    this.store = createSnapshotStore({ frame: this.page.frame.getSnapshot(),
+      restoreTarget: currentBrowserTarget(this.checkpoint), addressFailure: undefined, addressRevision: 0 })
     this.unsubscribe = this.page.frame.subscribe(() => {
       if (this.disposed) return
       const current = this.store.getSnapshot()
       const frame = this.page.frame.getSnapshot()
       const changed = frame.target?.url !== current.frame.target?.url
-      this.store.set({ frame, addressFailure: changed ? undefined : current.addressFailure,
+      this.store.set({ frame, restoreTarget: frame.target === undefined ? currentBrowserTarget(this.checkpoint) : undefined,
+        addressFailure: changed ? undefined : current.addressFailure,
         addressRevision: current.addressRevision + Number(changed) })
     })
     options.signal.addEventListener('abort', this.abort, { once: true })
@@ -79,12 +83,17 @@ export class BrowserController implements HostObservable<BrowserControllerState>
     return this.page.presentation.mount(viewportId)
   }
 
-  /** @param initialUrl - typed-open address used only when no checkpoint exists. */
+  /** @param initialUrl - explicit typed-open address; a saved checkpoint alone never starts navigation. */
   start(initialUrl: string | undefined): void {
     if (this.started || this.disposed) return
     this.started = true
-    const value = currentBrowserTarget(this.checkpoint)?.url ?? initialUrl
-    if (value !== undefined) this.loadUrl(value)
+    if (initialUrl !== undefined) this.loadUrl(initialUrl)
+  }
+
+  /** Load the saved address only after an explicit restore action. */
+  restore(): void {
+    const target = this.store.getSnapshot().restoreTarget
+    if (target !== undefined) this.loadUrl(target.url)
   }
 
   /** @param value - address-bar or typed-open input. */
@@ -99,8 +108,11 @@ export class BrowserController implements HostObservable<BrowserControllerState>
   goBack(): void { this.command(() => { this.page.frame.goBack() }) }
   /** Delegate Forward to the page's navigation provider. */
   goForward(): void { this.command(() => { this.page.frame.goForward() }) }
-  /** Delegate Reload to the page's navigation provider. */
-  reload(): void { this.command(() => { this.page.frame.reload() }) }
+  /** Restore a saved address, or reload the already requested page. */
+  reload(): void {
+    if (this.store.getSnapshot().restoreTarget !== undefined) this.restore()
+    else this.command(() => { this.page.frame.reload() })
+  }
 
   /** @param enabled - optional embedding-sandbox control; unavailable providers remain unchanged. */
   setSandbox(enabled: boolean): void {
@@ -161,18 +173,26 @@ export interface BrowserInjected {
   rebind(actions: BoundActions<BrowserStore>): void
   /** @param tabId - owning tab. @param value - address input. */
   loadUrl(tabId: TabId, value: string): void
+  /** @param tabId - tab whose saved address the user requested to restore. */
+  restore(tabId: TabId): void
   /** @param tabId - owning tab. */
   goBack(tabId: TabId): void
   /** @param tabId - owning tab. */
   goForward(tabId: TabId): void
-  /** @param tabId - owning tab. */
+  /** Restore a saved address or reload its page. @param tabId - owning tab. */
   reload(tabId: TabId): void
   /** @param tabId - owning tab. @param enabled - provider's optional sandbox control. */
   setSandbox(tabId: TabId, enabled: boolean): void
 }
 
-/** @param actions - persisted view-state writer. @param createPage - composition-selected provider. @returns tab callbacks. */
-export function createBrowserControllers(actions: BoundActions<BrowserStore>, createPage: BrowserPageFactory): BrowserInjected {
+/**
+ * @param actions - persisted view-state writer.
+ * @param createPage - composition-selected provider.
+ * @param isTabOpen - authoritative layout membership, independent of mounted bodies and plugin lifetime.
+ * @returns tab callbacks.
+ */
+export function createBrowserControllers(actions: BoundActions<BrowserStore>, createPage: BrowserPageFactory,
+  isTabOpen: (tabId: TabId) => boolean): BrowserInjected {
   let currentActions = actions
   const controllers = new Map<TabId, {
     readonly signal: AbortSignal
@@ -195,7 +215,8 @@ export function createBrowserControllers(actions: BoundActions<BrowserStore>, cr
         const forget = (): void => {
           if (controllers.get(tabId)?.controller !== created) return
           controllers.delete(tabId)
-          currentActions.forget(tabId)
+          // Plugin unload also aborts occurrences; only layout removal deletes saved navigation.
+          if (!isTabOpen(tabId)) currentActions.forget(tabId)
         }
         held = { signal, controller: created, forget }
         controllers.set(tabId, held)
@@ -218,6 +239,7 @@ export function createBrowserControllers(actions: BoundActions<BrowserStore>, cr
       for (const { controller } of controllers.values()) controller.rebind(actions)
     },
     loadUrl: (id, value) => { controller(id)?.loadUrl(value) },
+    restore: id => { controller(id)?.restore() },
     goBack: id => { controller(id)?.goBack() },
     goForward: id => { controller(id)?.goForward() },
     reload: id => { controller(id)?.reload() },
