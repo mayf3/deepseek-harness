@@ -109,7 +109,8 @@ async function bench(
     await ctx.fiber.dispose()
   })
   ctx.provide('sessions', sessionStore)
-  await sessionStore.add({ id: session.sessionId, ...opening, summary: listed[session.sessionId] })
+  const summary = listed[session.sessionId]
+  await sessionStore.add({ id: session.sessionId, ...opening, ...summary === undefined ? {} : { summary } })
   for (const [id, summary] of Object.entries(listed)) {
     if (id !== session.sessionId) await sessionStore.add({ id, summary })
   }

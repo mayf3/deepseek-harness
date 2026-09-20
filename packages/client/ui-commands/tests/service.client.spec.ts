@@ -115,7 +115,11 @@ async function bench(opts: BenchOptions = {}) {
   })
   const removeSessions = ctx.provide('sessions', sessions)
   for (const id of new Set(['s1', 's2', 'other', 'ghost', ...opts.addressed === undefined ? [] : [opts.addressed]])) {
-    await sessions.add({ id, initialOpen: opts.initialOpen, snapshot: opts.snapshot })
+    await sessions.add({
+      id,
+      ...opts.initialOpen === undefined ? {} : { initialOpen: opts.initialOpen },
+      ...opts.snapshot === undefined ? {} : { snapshot: opts.snapshot },
+    })
   }
   const mint = (key: string) => {
     const id = sid(key)

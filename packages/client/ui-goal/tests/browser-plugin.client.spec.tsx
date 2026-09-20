@@ -63,7 +63,11 @@ async function bench(options: {
     await sessions.disposeScopes()
     await ctx.fiber.dispose()
   })
-  await sessions.add({ id: 's1', initialOpen: options.initialOpen, snapshot: options.snapshot })
+  await sessions.add({
+    id: 's1',
+    ...options.initialOpen === undefined ? {} : { initialOpen: options.initialOpen },
+    ...options.snapshot === undefined ? {} : { snapshot: options.snapshot },
+  })
   await sessions.setProjection('s1', 'goal', options.projection)
   const owner = sessions.retainFor(ctx, sid('s1'))
   ctx.provide('sessions', sessions)
