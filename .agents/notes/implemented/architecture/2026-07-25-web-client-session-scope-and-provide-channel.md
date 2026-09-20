@@ -28,7 +28,7 @@ Host-side `session.create(workspaceId)` produces Session + Agent + cwd in one pi
 - Session identity is the host's true form from birth: the sessionId arrives via the `session.create` response / the `host/session-added` frame, and every client-side address (the scope tag, slot store keys, RPC addressing) uses that same id.
 - The materialization moment = the instant the user picks a Workspace (cwd settled): the client calls `session.create({workspaceId})` on the spot and receives the complete entity.
 - "New Session with no workspace picked" is a **pure view state** (a navigation position) corresponding to no session/scope entity; until the pick, the composer is locked whole (no slash, no plain text).
-- A "blank session" is just an ordinary materialized session whose log is still empty; to every Agent-scope plugin on the host (goal/plan/skill/…) it is indistinguishable from any session, so slash/plan are all naturally live.
+- A "blank session" is an ordinary materialized session with no turn yet; to Agent-scope plugins on the host (goal/plan/skill/…) it remains an ordinary Session, so slash/plan are naturally live.
 
 ### Agent scope: the actx is the sole session carrier in the client-side cordis world
 
@@ -63,14 +63,14 @@ Session instances share the scope's lifecycle, while the catalog reports discove
 
 A session "materialized but with no first prompt" is governed by the summary-derived bit `blank` (a derived column, not a header field; SessionHeader stays immutable):
 
-- The Host criterion is absence of `turn/start`; slash-command and configuration events do not clear `blank`. Live summaries use the Session projection. Cold summaries use cached metadata, leaving cache misses visible as unknown. Reuse acquires the writer under [blank Session acquisition](2026-09-17-process-local-blank-sessions.md).
+- The Host criterion is absence of `turn/start`: the `sessionListMetadata.blank` projection starts true and only that event clears it, so slash-command, configuration, and creation-checkpoint events leave it true even after they reach disk — blank does not mean unpersisted. Missing metadata falls back to `session.seq === 0` for live Sessions and false for cold ones; cold summaries otherwise read cached metadata, leaving cache misses visible as unknown. Reuse acquires the writer under [blank Session acquisition](2026-09-17-process-local-blank-sessions.md).
 - The wire carries it in two places: the required `SessionSummary.blank` column, and the required `blank` field on the `host/session-added` frame (always true at creation, letting other tabs enter the same blank-session state into their mirrors).
-- The client mirror only lowers, never raises (monotonic), flipped from three sources, all reusing existing wire signals:
-  - The sender's own tab: the **successful response** to the first `prompt()` flips false (acceptance proves the user/message is already in the host log — this flip is confirmation, not optimism; `onEngaged` synchronously updates the list mirror, converting the current `New Session` row in place to an ordinary title, adding no list row). A rejected first prompt keeps the session blank: aligned with host authority, still shown as `New Session`, keeping its connectWorkspace reuse eligibility while it remains a Workspace member.
-  - Other tabs: the `host/session-status (running:true)` frame flips it — a blank session never runs, so the first running necessarily means no longer blank;
-  - Reconnect alignment: `session.list`'s summary.blank is authoritative, so a tab that missed frames aligns naturally on its next pull; a stale blank:true can never mark a converted session back to blank.
+- Client display also reflects accepted/running observations, whose retention the [blank rollback decision](../bug-fix/2026-09-15-client-session-blank-reconciliation.md) owns:
+  - The sender's own tab: the **successful response** to the first `prompt()` converts the current `New Session` row in place, adding no list row — acceptance is display memory, not proof that a turn or user message reached durable history. A rejected first prompt keeps the session blank: aligned with host authority, still shown as `New Session`, keeping its connectWorkspace reuse eligibility while it remains a Workspace member.
+  - Other tabs: the `host/session-status (running:true)` frame converts it — a blank session never runs, so the first running necessarily means no longer blank;
+  - Reconnect alignment: a list pull updates Host summaries while the Manager keeps those observations, and a `sessionListMetadata` hint of existing history prevents re-blanking on top of that; an empty-history response cannot mark a converted session back to blank.
 - List discipline: the store retains every row; the Workspace browser's grouping, flat view, search, and counts share one visible projection — every non-blank session shows, while blank sessions show only the row retained by the `mainView` source, with its title forced to `New Session`. After a Workspace switch, the old blank entity stays in the mirror but is hidden from the list while the target Workspace's main blank shows; the user-visible surface therefore holds at most one blank row globally.
-- Blank Sessions can persist through creation checkpoints and command events. Browser reloads and Host restarts reuse eligible blanks after acquiring their writer; occupied blanks are skipped. Old logs remain on disk without automatic cleanup.
+- Blank Sessions can persist through creation checkpoints and command events, and have no automatic garbage collection: browser reloads, Host restarts, and Workspace connections reuse eligible blanks after acquiring their writer and skip occupied candidates, while list-loading and multi-tab races can still create additional blank Sessions, whose old logs remain on disk.
 
 ### connectWorkspace: the sole entry point of New Session
 
@@ -129,12 +129,13 @@ Blank Sessions retain the header's leading and corner slots so navigation contro
 | Components receiving wiring-callback bundles (two-layer inject→props pass-down) | The standard-kit channel lets components fetch their own; the public API converges to hooks + stable props |
 | Swapping the no-session Hero view for the entire session Conversation | Even with the outer layout unchanged, the Hero, picker, and composer subtrees would remount together, making the whole UI region jump |
 | Making InputBar itself `session-maybe` | The input state machine, keyboard command surface, and actions would all have to accept absent values; replacing only the disabled input body keeps optionality at the shell boundary |
-| A dedicated conversion frame | `session-status(running:true)` semantically implies conversion (a blank session never runs); adding a frame buys zero information for one more wire type |
+| A dedicated conversion frame | Existing acceptance and running signals provide the observations used by the display rule; a new frame is unnecessary for that rule |
 
 ## Consequences
 
 - Plugins gain session context isomorphic to the host's: per-session state hangs on the actx and mounts/tears down in one piece with the scope fiber, making leaks structurally impossible; two-session isolation is structurally guaranteed by the scope filter.
 - The client object layer converges to a wire mirror: session identity, lifecycle, and capability adjudication all defer to the host entity — the input system (the next layer) always faces a session with a real Agent, and providers like slash/skill uniformly address by sessionId directly.
-- Blank-session governance takes zero dedicated mechanisms: state rides one derived bit, visibility rides the unified list projection (only the current blank shows, as `New Session`), reuse acquires the persisted writer, and the ordinary ceiling rides same-Workspace reuse.
+- Blank-session governance takes zero dedicated mechanisms: state rides one derived bit, visibility rides the unified list projection (only the current blank shows, as `New Session`), reuse acquires the persisted writer, and the ordinary ceiling rides same-Workspace reuse. The accepted/running display memory that guards the conversion is Client-local.
+
 - The cost: the id→ctx handoff discipline and provide's Concurrent discipline are conventions rather than type-enforced, pinned by review and tests. The single state axis still withholds machine faces until a Session exists; the [resident conversation shell](../../../../packages/client/ui-conversation/README.md) routes activation to the Workspace picker during that interval.
 - Known gaps: approval/question recovery across prune (TODO); model selection returns in live-mutation shape (the host `selectModel` trio is ready-made, its client consumer not yet built).
