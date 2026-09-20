@@ -823,9 +823,6 @@
   "packages/client/ui-subagent/tests/browser-plugin.client.spec.ts": {
     "810a8e63d34628d25866491b3c6455a51b2d114261b67e62b42728b765370993": 1
   },
-  "packages/client/ui-subagent/tests/conversation-ui.client.spec.tsx": {
-    "92d757187bb2dba986b160c2417c7b4a8b199784d441bfa0777d8077774b932b": 1
-  },
   "packages/client/ui-subagent/tests/sidebar-chat.client.spec.tsx": {
     "024f8748e8908a495117a23a7673046a871f0d8187f8fe561aceba1269aefa31": 1,
     "6f46259a9f4093d68b3fc7859c263f21b6318197b74aba368e8904321ab5c4f9": 1,

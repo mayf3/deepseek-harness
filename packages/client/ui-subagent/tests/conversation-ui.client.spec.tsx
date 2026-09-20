@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import { makeTranslate, RemoteError, sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
   SessionListState, SessionSummary, SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -80,20 +80,42 @@ function props(
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
   }
+  const snapshot: SessionSnapshot = {
+    ...sessionSnapshot(PARENT),
+    subagent: boundAddress === undefined ? null : { address: boundAddress },
+  }
+  const unused = (): never => { throw new Error('Subagent header fixture does not provide this slot source or action') }
+  const standard = {
+    usePanelInfo: unused,
+    useSessionRetainInfo: unused,
+    useWorkspaces: unused,
+    useResource: unused,
+    useProjection: unused,
+    useConversation: unused,
+    useInput: unused,
+    useChat: unused,
+    useTrajectory: unused,
+    inputActions: {
+      setDraft: unused,
+      addAttachments: unused,
+      removeAttachment: unused,
+      pruneAttachments: unused,
+      submit: unused,
+    },
+  }
   return {
+    ...standard,
     sessionId: PARENT,
     useSessions,
     useSessionStatus: <T,>(select: (snapshot: SessionStatusSnapshot) => T): T => select(statuses),
-    useSession: <T,>(select: (snapshot: SessionSnapshot) => T): T => select({
-      subagent: boundAddress === undefined ? undefined : { address: boundAddress },
-    } as SessionSnapshot),
+    useSession: <T,>(select: (snapshot: SessionSnapshot) => T): T => select(snapshot),
     openChild: vi.fn(),
     openChildAside: vi.fn(),
     refreshProjection: vi.fn(),
     lineageSessionId: PARENT,
     displayTitle: 'Parent title',
     t,
-  } as unknown as SubagentHeaderLineageProps
+  } satisfies SubagentHeaderLineageProps
 }
 
 function summary(id: SessionId, updatedAt: number): SessionSummary {
