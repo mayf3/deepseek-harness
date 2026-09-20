@@ -26,7 +26,7 @@ async function openInventory(page: Page, url: string) {
   return dialog
 }
 
-it('loads ordered Session actions through the real plugin graph and removes them with their fiber', async () => {
+it('places dynamic Session menu rows by order among the shipped ones and removes them with their fiber', async () => {
   const scaffold = await launchWebScaffold({ extraInstallAnchors: [join(FIXTURE, 'package.json')] })
   const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
   const sessionId = await seedSession(scaffold, await readFile(SESSION_SEED, 'utf8'), 'session-menu-actions-web-e2e')
@@ -51,6 +51,7 @@ it('loads ordered Session actions through the real plugin graph and removes them
     expect(await menu.getByRole('menuitem').allTextContents()).toEqual([
       'Pin session', 'Rename', 'Fork session', 'Archive session', 'Export session', 'Copy session ID',
     ])
+    expect(await menu.getByRole('separator').count()).toBe(1)
     await compareOrRefreshGolden(
       SESSION_ACTION_EXPECTED,
       await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd),

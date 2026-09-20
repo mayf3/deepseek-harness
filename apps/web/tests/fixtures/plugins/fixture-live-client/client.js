@@ -3,7 +3,7 @@ window.__ModuleLoader__.load({
   id: '@fixture/live-client',
   factory(require) {
     const React = require('react')
-    const { MenuAction } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { MenuItemButton } = require('@deepseek-ai/dsh-client-ui-primitives')
     const style = document.createElement('style')
     style.dataset.plugin = '@fixture/live-client'
     style.textContent = '[data-live-client] { color: rgb(12, 34, 56); position: absolute; bottom: 20px; right: 20px; }'
@@ -48,22 +48,27 @@ window.__ModuleLoader__.load({
             counters.sessionActionTitle = displayTitle
           },
         })
-        const registerSessionAction = (id, order, label) => ctx.slots.register({
-          name: 'sidebar.workspaces.session.menu.action', id, order, locale: 'fixtureLive', inject: actionInjected,
-        }, ({ sessionId, displayTitle, selectAction, t }) => React.createElement(
-          MenuAction,
-          {
-            onSelect: () => {
-              selectAction(id, sessionId, displayTitle)
+        const registerSessionAction = (id, order, label, separatorBefore) => ctx.slots.register({
+          name: 'sidebar.workspaces.session.menu.item', id, order, locale: 'fixtureLive', inject: actionInjected,
+        }, ({ sessionId, displayTitle, useMenuOpenState, selectAction, t }) => {
+          const [, setMenuOpen] = useMenuOpenState()
+          return React.createElement(
+            MenuItemButton,
+            {
+              separatorBefore,
+              onSelect: () => {
+                setMenuOpen(false)
+                selectAction(id, sessionId, displayTitle)
+              },
             },
-          },
-          t(label),
-        ))
-        ctx.slots.inject('sidebar.workspaces.session.menu.action', function* () {
-          // The later registration receives the lower dynamic priority, but
-          // list order remains the primary cross-id display policy.
-          yield registerSessionAction('fixture.export-session', 100, 'exportSession')
-          yield registerSessionAction('fixture.copy-session-id', 200, 'copySessionId')
+            t(label),
+          )
+        })
+        ctx.slots.inject('sidebar.workspaces.session.menu.item', function* () {
+          // The shipped rows end at archive (400); these follow as one group,
+          // opened by the export row's hairline.
+          yield registerSessionAction('fixture.export-session', 500, 'exportSession', true)
+          yield registerSessionAction('fixture.copy-session-id', 600, 'copySessionId', false)
         })
         ctx.effect(() => {
           const ping = () => { counters.liveHits = String(Number(counters.liveHits ?? 0) + 1) }
