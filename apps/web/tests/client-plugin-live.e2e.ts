@@ -28,6 +28,7 @@ async function openInventory(page: Page, url: string) {
 
 it('places dynamic Session menu rows by order among the shipped ones and removes them with their fiber', async () => {
   const scaffold = await launchWebScaffold({ extraInstallAnchors: [join(FIXTURE, 'package.json')] })
+  onTestFinished(() => scaffold.close())
   const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
   const sessionId = await seedSession(scaffold, await readFile(SESSION_SEED, 'utf8'), 'session-menu-actions-web-e2e')
   await workspace.attachSession(sessionId)
@@ -84,7 +85,6 @@ it('places dynamic Session menu rows by order among the shipped ones and removes
     ])
   } finally {
     await browser.close()
-    await scaffold.close()
   }
 }, 120_000)
 

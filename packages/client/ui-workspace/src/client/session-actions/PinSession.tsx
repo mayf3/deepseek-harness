@@ -60,10 +60,7 @@ export function PinSessionRowButton(props: SessionRowActionProps<PinSessionInjec
         type="button"
         className={css.iconButton}
         aria-label={t(pinned ? 'menu.unpinSession' : 'menu.pinSession')}
-        onClick={(e) => {
-          e.stopPropagation()
-          ;(pinned ? unpinSession : pinSession)(sessionId)
-        }}
+        onClick={() => { (pinned ? unpinSession : pinSession)(sessionId) }}
       >
         {pinned ? <IconPinFillRegular size={14} /> : <IconPinOutlineRegular size={14} />}
       </button>

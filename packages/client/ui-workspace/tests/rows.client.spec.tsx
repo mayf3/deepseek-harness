@@ -190,6 +190,24 @@ describe('workspace browser rows', () => {
     expect(onOpen).toHaveBeenCalledWith(node.id)
   })
 
+  it('keeps a row.action entry click in the strip, so a plain button does not open the row', () => {
+    const node: SessionNode = {
+      id: sid('session'), title: 'Session', blank: false, running: false,
+      runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0, pinned: false, archived: false,
+    }
+    const onOpen = vi.fn()
+    const pluginAction = vi.fn()
+    const renderSlot: RowRenderSlot = (name: RowSlotName) => (name === 'sidebar.workspaces.session.row.action'
+      ? <button type="button" onClick={pluginAction}>plugin</button>
+      : null)
+    render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen} renderSlot={renderSlot} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: 'plugin' }))
+    expect(pluginAction).toHaveBeenCalledOnce()
+    expect(onOpen).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('treeitem'))
+    expect(onOpen).toHaveBeenCalledWith(node.id)
+  })
+
   it('reveals a clipped session title by scrolling it while the row is hovered', () => {
     const node: SessionNode = {
       id: sid('clipped'), title: 'A Session Title Long Enough To Be Clipped (1)', blank: false,

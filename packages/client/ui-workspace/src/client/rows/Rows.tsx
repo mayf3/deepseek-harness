@@ -586,8 +586,11 @@ export function SessionNodeItem({
       {/* Trails the time so the marker occupies the same right-edge cell as
           the hover pin button that replaces it. */}
       {row.pinned && !row.archived && <PinnedIndicator t={t} />}
+      {/* The strip's clicks stay in the strip: the trigger and every
+          row.action entry act without also opening the row, so an entry's
+          button needs no propagation handling of its own. */}
       {!row.blank && (
-        <span className={css.rowActions}>
+        <span className={css.rowActions} onClick={(e) => { e.stopPropagation() }}>
           <Menu
             open={menuOpen}
             onClose={() => { setMenuOpen(false) }}
@@ -598,7 +601,7 @@ export function SessionNodeItem({
                 type="button"
                 className={css.iconButton}
                 aria-label={t('actions.session.aria', { name: title })}
-                onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
+                onClick={() => { setMenuOpen(v => !v) }}
               >
                 <IconEllipsisOutlineRegular />
               </button>

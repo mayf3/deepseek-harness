@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, ReactNode, SyntheticEvent } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { IconCheckOutlineRegular } from './icons/index.tsx'
@@ -49,8 +49,8 @@ export interface MenuItemButtonProps {
   /**
    * Start a new group: a hairline above this row, the same one a
    * `{ type: 'separator' }` data entry draws. It comes and goes with the row,
-   * so a row that renders nothing leaves no stray line, and two adjacent
-   * group starts collapse into one line.
+   * so a row that renders nothing leaves no stray line; a data separator
+   * directly before it draws no second line, and the list's first row draws none.
    */
   separatorBefore?: boolean
   /** Row activation (click, Enter, or Tab on the focused row). */
@@ -112,7 +112,7 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * @param props.autoFocus - focus the first item on open; the arrow keys walk the list either way.
  * @param props.open - whether the list is showing (owner-controlled).
  * @param props.anchor - the trigger element (rendered in place).
- * @param props.items - selectable data rows and optional separators (default none).
+ * @param props.items - selectable data rows and optional separators (default none; with no `children` either, the list is empty).
  * @param props.selectedId - row shown as selected.
  * @param props.selectedIds - rows shown as selected when a menu contains independent option groups.
  * @param props.onSelect - data-row activation callback (not called for disabled rows or submenu parents that only open children).
@@ -140,8 +140,9 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * @param props.footer - rows pinned below the scrolling items area, separated
  * by a hairline; they stay visible while the items above scroll.
  * @param props.children - component rows rendered after `items` in the same
- * list, each a {@link MenuItemButton}; they share the keyboard walk and the
- * post-selection focus return.
+ * list, each a `role="menuitem"` button such as {@link MenuItemButton}; they
+ * share the keyboard walk, the submenu exclusivity, and the post-selection
+ * focus return.
  * @param props.selection - how a selected row is marked: a trailing check
  * (`'check'`, default — figma .Menu_cell) or the hover fill held on the row
  * with no check (`'fill'`, for icon-labelled rows where a trailing glyph
@@ -416,7 +417,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
       <div
         key={entry.id}
         className={css.itemWrap}
-        onMouseEnter={() => { setOpenSubmenuId(hasSub ? entry.id : null) }}
+        onMouseEnter={hasSub ? () => { setOpenSubmenuId(entry.id) } : undefined}
         onMouseLeave={() => { setOpenSubmenuId(null) }}
       >
         <button
@@ -426,7 +427,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
           disabled={entry.disabled}
           aria-haspopup={hasSub ? 'menu' : undefined}
           aria-expanded={hasSub ? subOpen : undefined}
-          onFocus={() => { setOpenSubmenuId(hasSub ? entry.id : null) }}
+          onFocus={hasSub ? () => { setOpenSubmenuId(entry.id) } : undefined}
           onClick={() => {
             if (hasSub) {
               setOpenSubmenuId(entry.id)
@@ -461,6 +462,17 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
     )
   }
 
+  // Submenu exclusivity is decided from the list's own bubble, by DOM:
+  // reaching a top-level row that is not a submenu parent — by pointer or by
+  // focus, data row or component row — closes the open card. A parent opens
+  // its card in its own handlers; rows inside the card are not top-level rows.
+  const collapseSubmenuFrom = (e: SyntheticEvent<HTMLDivElement>): void => {
+    const row = e.target instanceof Element ? e.target.closest('button[role="menuitem"]') : null
+    if (row === null || row.getAttribute('aria-haspopup') === 'menu') return
+    if (row.closest('[role="menu"]') !== e.currentTarget) return
+    setOpenSubmenuId(null)
+  }
+
   // Portal lists render hidden until placed: the placement effect measures
   // this pre-render in the same commit, so the first painted frame is
   // already at the final position (with getAnchorRect returning null the
@@ -482,6 +494,8 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
         const row = e.target instanceof Element ? e.target.closest('button[role="menuitem"]') : null
         if (row !== null && row.getAttribute('aria-haspopup') !== 'menu') refocusAfterSelection()
       }}
+      onMouseOver={collapseSubmenuFrom}
+      onFocus={collapseSubmenuFrom}
     >
       <div className={css.viewport} role="presentation">
         {items.map(renderEntry)}

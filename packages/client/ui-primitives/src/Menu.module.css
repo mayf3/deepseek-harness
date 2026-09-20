@@ -249,10 +249,11 @@
   background: var(--dsw-alias-border-l2);
 }
 
-/* Two group starts in a row (a data separator followed by a row that also
- * starts a group, or two such rows) draw one line, not two. */
+/* A data separator directly followed by a row that starts a group draws one
+ * line, not two; a group start on the list's first row draws none. */
 .separator + .separator,
-.separator + .itemWrap > .separator:first-child {
+.separator + .itemWrap > .separator:first-child,
+.itemWrap:first-child > .separator:first-child {
   display: none;
 }
 

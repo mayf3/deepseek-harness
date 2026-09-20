@@ -399,6 +399,32 @@ describe('Menu', () => {
     expect(rowClick).not.toHaveBeenCalled()
   })
 
+  it('closes an open submenu when the pointer or focus reaches a component row', () => {
+    render(
+      <Menu
+        open
+        anchor={<span>trigger</span>}
+        items={[{ id: 'p', label: 'Parent', submenu: [{ id: 's', label: 'Sub' }] }]}
+        onSelect={() => {}}
+        onClose={() => {}}
+      >
+        <MenuItemButton onSelect={() => {}}>Row</MenuItemButton>
+      </Menu>,
+    )
+    const parent = screen.getByRole('menuitem', { name: 'Parent' })
+    fireEvent.focus(parent)
+    expect(screen.getByRole('menuitem', { name: 'Sub' })).toBeDefined()
+    // Rows inside the card are not top-level rows: focusing one keeps it open.
+    fireEvent.focus(screen.getByRole('menuitem', { name: 'Sub' }))
+    expect(screen.getByRole('menuitem', { name: 'Sub' })).toBeDefined()
+    fireEvent.focus(screen.getByRole('menuitem', { name: 'Row' }))
+    expect(screen.queryByRole('menuitem', { name: 'Sub' })).toBeNull()
+    fireEvent.mouseEnter(parent.parentElement as HTMLElement)
+    expect(screen.getByRole('menuitem', { name: 'Sub' })).toBeDefined()
+    fireEvent.mouseOver(screen.getByRole('menuitem', { name: 'Row' }))
+    expect(screen.queryByRole('menuitem', { name: 'Sub' })).toBeNull()
+  })
+
   it('opens a submenu on hover and selects a nested item', () => {
     const onSelect = vi.fn()
     render(

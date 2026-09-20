@@ -132,27 +132,17 @@ describe('pin action', () => {
     expect(callOrder(setMenuOpen)).toBeLessThan(callOrder(pin.unpinSession))
   })
 
-  it('row button toggles the pin without opening the row', () => {
-    const onRowClick = vi.fn()
+  it('row button toggles the pin', () => {
     const pin = pinShare()
-    const view = render(
-      <div onClick={onRowClick}>
-        <PinSessionRowButton {...actionRow} {...pin} />
-      </div>,
-    )
+    const view = render(<PinSessionRowButton {...actionRow} {...pin} />)
     fireEvent.click(screen.getByRole('button', { name: '置顶会话' }))
     expect(pin.pinSession).toHaveBeenCalledWith(sid('one'))
     expect(pin.unpinSession).not.toHaveBeenCalled()
 
-    view.rerender(
-      <div onClick={onRowClick}>
-        <PinSessionRowButton {...actionRow} {...pin} usePinned={hook(idSet('one'))} />
-      </div>,
-    )
+    view.rerender(<PinSessionRowButton {...actionRow} {...pin} usePinned={hook(idSet('one'))} />)
     fireEvent.click(screen.getByRole('button', { name: '取消置顶' }))
     expect(pin.unpinSession).toHaveBeenCalledWith(sid('one'))
     expect(pin.pinSession).toHaveBeenCalledOnce()
-    expect(onRowClick).not.toHaveBeenCalled()
   })
 
   it('offers nothing on an archived Session', () => {
@@ -199,25 +189,15 @@ describe('archive action', () => {
     expect(callOrder(setMenuOpen)).toBeLessThan(callOrder(archive.unarchiveSession))
   })
 
-  it('row button archives and restores without opening the row', () => {
-    const onRowClick = vi.fn()
+  it('row button archives and restores', () => {
     const archive = archiveShare()
-    const view = render(
-      <div onClick={onRowClick}>
-        <ArchiveSessionRowButton {...actionRow} {...archive} />
-      </div>,
-    )
+    const view = render(<ArchiveSessionRowButton {...actionRow} {...archive} />)
     fireEvent.click(screen.getByRole('button', { name: '归档会话' }))
     expect(archive.archiveSession).toHaveBeenCalledWith(sid('one'))
-    view.rerender(
-      <div onClick={onRowClick}>
-        <ArchiveSessionRowButton {...actionRow} {...archive} useArchived={hook(idSet('one'))} />
-      </div>,
-    )
+    view.rerender(<ArchiveSessionRowButton {...actionRow} {...archive} useArchived={hook(idSet('one'))} />)
     fireEvent.click(screen.getByRole('button', { name: '取消归档' }))
     expect(archive.unarchiveSession).toHaveBeenCalledWith(sid('one'))
     expect(archive.archiveSession).toHaveBeenCalledOnce()
-    expect(onRowClick).not.toHaveBeenCalled()
   })
 })
 

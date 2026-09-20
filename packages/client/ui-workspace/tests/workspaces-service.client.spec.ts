@@ -16,6 +16,7 @@ import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { DirectoryBrowseError, UiWorkspaceService } from '../src/client/navigation.ts'
 import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
+import { UNGROUPED_KEY } from '../src/client/tree.ts'
 
 const sid = (id: string): SessionId => SessionId(id)
 const wid = (id: string): WorkspaceId => id as WorkspaceId
@@ -444,6 +445,57 @@ describe('UiWorkspaceService', () => {
     // A rejected pin writes no order.
     b.workspaces.onPin = async () => { throw new Error('pin failed') }
     await expect(b.uiWorkspace.pinSession(sid('one'))).rejects.toThrow('pin failed')
+    expect(b.view.getSnapshot().sessionOrderByAccount.a).toEqual(['three', 'one', 'two'])
+  })
+
+  it('keeps newer saved orders when a pending pin completes', async () => {
+    const b = bench({
+      workspaces: workspaceState([workspace('a', [sid('one'), sid('two'), sid('three')])]),
+      sessions: sessionState([summary('one', { updatedAt: 3 }), summary('two', { updatedAt: 2 }), summary('three', { updatedAt: 1 })]),
+    })
+    const pending = Promise.withResolvers<undefined>()
+    const hostPin = b.workspaces.onPin
+    b.workspaces.onPin = async (sessionId) => { await pending.promise; await hostPin(sessionId) }
+    const pin = b.uiWorkspace.pinSession(sid('three'))
+    b.view.actions.setSessionOrder('a', ['two', 'one', 'three'], {})
+    b.view.actions.setSessionOrder(FLAT_SESSION_ORDER_KEY, ['two', 'one', 'three'], {})
+    pending.resolve(undefined)
+    await pin
+    expect(b.view.getSnapshot().sessionOrderByAccount).toMatchObject({
+      a: ['three', 'two', 'one'],
+      [FLAT_SESSION_ORDER_KEY]: ['three', 'two', 'one'],
+    })
+  })
+
+  it('uses the membership current at completion when a Workspace disappears during a pending pin', async () => {
+    const b = bench({
+      workspaces: workspaceState([workspace('a', [sid('one'), sid('two')])]),
+      sessions: sessionState([summary('one', { updatedAt: 2 }), summary('two', { updatedAt: 1 })]),
+    })
+    const pending = Promise.withResolvers<undefined>()
+    const hostPin = b.workspaces.onPin
+    b.workspaces.onPin = async (sessionId) => { await pending.promise; await hostPin(sessionId) }
+    const pin = b.uiWorkspace.pinSession(sid('two'))
+    b.workspaces.list.update(state => ({ ...state, items: [] }))
+    pending.resolve(undefined)
+    await pin
+    expect(b.view.getSnapshot().sessionOrderByAccount).not.toHaveProperty('a')
+    expect(b.view.getSnapshot().sessionOrderByAccount).toMatchObject({
+      [UNGROUPED_KEY]: ['two', 'one'],
+      [FLAT_SESSION_ORDER_KEY]: ['two', 'one'],
+    })
+  })
+
+  it('keeps saved Workspace members whose summaries are temporarily missing when pinning in Last updated', async () => {
+    const b = bench({
+      workspaces: workspaceState([workspace('a', [sid('one'), sid('two'), sid('three')])]),
+      sessions: sessionState([summary('one', { updatedAt: 3 }), summary('two', { updatedAt: 2 }), summary('three', { updatedAt: 1 })]),
+    })
+    await b.uiWorkspace.pinSession(sid('one'))
+    expect(b.view.getSnapshot().sessionOrderByAccount.a).toEqual(['one', 'two', 'three'])
+    b.sessions.list.set(sessionState([summary('one', { updatedAt: 3 }), summary('three', { updatedAt: 1 })]))
+    await b.uiWorkspace.pinSession(sid('three'))
+    expect(b.view.getSnapshot().orderBy).toBe('updated')
     expect(b.view.getSnapshot().sessionOrderByAccount.a).toEqual(['three', 'one', 'two'])
   })
 
