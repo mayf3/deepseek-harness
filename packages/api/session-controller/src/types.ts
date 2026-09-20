@@ -1,5 +1,5 @@
-import type { NativeFileApplication } from '@deepseek-ai/dsh-native-command/types'
 /** Browser-safe request, result, and lifecycle vocabulary for the Session Remote service. */
+import type { NativeFileApplication } from '@deepseek-ai/dsh-native-command/types'
 
 import type {
   AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
@@ -382,7 +382,7 @@ export interface SessionCancelValue {
 export interface SessionOpenWorkspacePathRequest {
   /** File-manager navigation when requested; omission uses the default application. */
   readonly action?: 'reveal'
-  /** Registered application path; omission preserves the operating system default. */
+  /** Registered application identifier; ignored for reveal. Omission preserves the operating system default. */
   readonly application?: string
   /** Path after best-effort Session workspace resolution, in Host filesystem syntax. */
   readonly path: string

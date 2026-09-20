@@ -11,7 +11,7 @@ describe('native file associations', () => {
     const run = vi.fn(async () => ({ stdout: JSON.stringify([application]), stderr: '' }))
     const path = '/tmp/中文 $(touch nope).mp3'
     await expect(nativeFileApplications(path, signal, { platform: 'darwin', run })).resolves.toEqual([application])
-    expect(run).toHaveBeenCalledWith('osascript', ['-l', 'JavaScript', '-e', expect.any(String), path], signal)
+    expect(run).toHaveBeenCalledWith('osascript', ['-l', 'JavaScript', '-e', expect.any(String), path, 'icons'], signal)
   })
 
   it.each(['{}', '[null]', '[{"id":1}]', JSON.stringify([{ ...application, icon: 'javascript:alert(1)' }])])('rejects malformed native output %s', async (stdout) => {
@@ -23,6 +23,7 @@ describe('native file associations', () => {
   it('launches only a currently registered application with argv', async () => {
     const run = vi.fn(async () => ({ stdout: JSON.stringify([application]), stderr: '' }))
     await openNativeFileApplication('/file.mp3', application.id, signal, { platform: 'darwin', run })
+    expect(run).toHaveBeenNthCalledWith(1, 'osascript', ['-l', 'JavaScript', '-e', expect.any(String), '/file.mp3', 'handlers'], signal)
     expect(run).toHaveBeenLastCalledWith('open', ['-a', application.id, '/file.mp3'], signal)
     run.mockClear()
     await expect(openNativeFileApplication('/file.mp3', '/arbitrary.app', signal, { platform: 'darwin', run })).rejects.toThrow('not registered')

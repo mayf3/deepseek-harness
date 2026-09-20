@@ -1,6 +1,5 @@
 /**
- * Default-application actions on one Host file path, over the Session Remote:
- * whether this Host can hand a path to a desktop, and the open or reveal call.
+ * Host desktop availability, file associations, and open/reveal actions over the Session Remote.
  * The desktop answer is read once per page; a failed read renders no control.
  */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -18,6 +17,7 @@ export interface OpenInAppPathRemote {
   readonly session: {
     /** Whether the Host can hand a workspace path to a native desktop. */
     canOpenWorkspacePath(): Promise<RemoteResult<boolean>>
+    /** Current registered file handlers and their default selection. */
     workspacePathApplications(
       request: { path: string }, signal?: AbortSignal,
     ): Promise<RemoteResult<readonly SessionWorkspacePathApplication[]>>
@@ -72,13 +72,14 @@ export class OpenInAppPathController {
    * @returns application metadata, or null when the query fails.
    */
   async applications(path: string, signal: AbortSignal): Promise<readonly SessionWorkspacePathApplication[] | null> {
+    let result: RemoteResult<readonly SessionWorkspacePathApplication[]>
     try {
-      const result = await this.remote.session.workspacePathApplications({ path }, signal)
-      return result.ok ? result.value : null
+      result = await this.remote.session.workspacePathApplications({ path }, signal)
     } catch (_error) {
-      // Carrier failure leaves default opening available while the menu reports the failed query.
+      // The control reports query failure and keeps file reveal available.
       return null
     }
+    return result.ok ? result.value : null
   }
 
   private async run(): Promise<void> {

@@ -28,7 +28,6 @@ export interface OpenTargetButtonProps {
   readonly failed: boolean
   readonly loading?: boolean
   readonly prominent?: boolean
-  readonly showLabel?: boolean
   readonly t: TranslateNS<typeof NS>
   readonly execute: (operation: OpenTargetOperation) => Promise<OpenInAppPathFailure | null>
   readonly refresh?: () => void
@@ -115,10 +114,10 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
           <div className={css.split} data-open-target={kind} data-size={props.prominent ? 'large' : 'compact'}
             data-open-path={kind === 'file' && !props.prominent ? '' : undefined} data-state={disabled ? 'busy' : 'idle'}>
             <Tooltip label={revealDefault ? t('path.reveal') : t('open.tooltip')} side="bottom" delayMs={500}>
-              <button type="button" className={css.main} disabled={disabled} aria-label={props.prominent || props.showLabel ? undefined : primaryLabel}
+              <button type="button" className={css.main} disabled={disabled} aria-label={props.prominent ? undefined : primaryLabel}
                 data-open-path-open={kind === 'file' && !props.prominent ? '' : undefined}
                 data-open-path-unpreviewable={props.prominent ? '' : undefined} onClick={primary}>
-                {icon}{(props.prominent || props.showLabel) && (revealDefault ? t('path.reveal') : t('path.open'))}
+                {icon}{(props.prominent) && (revealDefault ? t('path.reveal') : t('path.open'))}
               </button>
             </Tooltip>
             <button

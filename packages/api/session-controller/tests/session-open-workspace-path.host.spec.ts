@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import * as nativeCommand from '@deepseek-ai/dsh-native-command'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -65,11 +66,11 @@ describe('session/openWorkspacePath', () => {
 
     await expect(remote.openWorkspacePath({ path: '/workspace/project/src/a.ts' }, signal))
       .resolves.toEqual({ ok: true, value: { opened: true } })
-    expect(openPath).toHaveBeenCalledWith('/workspace/project/src/a.ts', signal)
+    expect(openPath).toHaveBeenCalledWith(resolve('/workspace/project/src/a.ts'), signal)
     expect(ctx.agents.list()).toEqual([])
   })
 
-  it('preserves relative and absolute Host-resolvable paths', async () => {
+  it('normalizes relative and absolute Host-resolvable paths', async () => {
     const ctx = await context()
     const openPath = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
     const remote = createSessionTestRemote(ctx, {
@@ -80,7 +81,7 @@ describe('session/openWorkspacePath', () => {
 
     await remote.openWorkspacePath({ path: '/workspace/result.html' })
     await remote.openWorkspacePath({ path: 'result.html' })
-    expect(openPath.mock.calls.map(call => call[0])).toEqual(['/workspace/result.html', 'result.html'])
+    expect(openPath.mock.calls.map(call => call[0])).toEqual([resolve('/workspace/result.html'), resolve('result.html')])
   })
 
   it('rejects empty paths before opening anything', async () => {
@@ -156,7 +157,7 @@ it('reports Host file-manager metadata and dispatches reveal separately from def
     expect(controller.workspaceDesktop()).toMatchObject({ available: true, name: expect.any(String) as string })
     const signal = new AbortController().signal
     await controller.openWorkspacePath({ path: '/workspace/report.txt', action: 'reveal' }, signal)
-    expect(revealPath).toHaveBeenCalledWith('/workspace/report.txt', signal)
+    expect(revealPath).toHaveBeenCalledWith(resolve('/workspace/report.txt'), signal)
     expect(openPath).not.toHaveBeenCalled()
   } finally { await ctx.fiber.dispose() }
 })
@@ -186,7 +187,7 @@ it.each(['open', 'reveal'] as const)('rejects an unmapped remote path before nat
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', openPath, revealPath,
   })
   await expect(controller.openWorkspacePath({ path: '/remote/report.html', ...(action === 'reveal' ? { action } : {}) }, new AbortController().signal))
-    .rejects.toMatchObject({ code: 'gateway/internal', message: 'path open failed: Path has no verified Host path' })
+    .rejects.toMatchObject({ code: 'gateway/bad-request', message: 'Path has no verified Host path' })
   expect(openPath).not.toHaveBeenCalled()
   expect(revealPath).not.toHaveBeenCalled()
 })
@@ -200,7 +201,7 @@ it('rejects a filesystem mapping that resolves to another process path', async (
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', openPath,
   })
   await expect(controller.openWorkspacePath({ path: '/report.html' }, new AbortController().signal))
-    .rejects.toMatchObject({ code: 'gateway/internal', message: 'path open failed: Path has no verified Host path' })
+    .rejects.toMatchObject({ code: 'gateway/bad-request', message: 'Path has no verified Host path' })
   expect(openPath).not.toHaveBeenCalled()
 })
 
@@ -213,7 +214,7 @@ it('dispatches default-app opening to the association adapter', async () => {
   })
   const signal = new AbortController().signal
   await controller.openWorkspacePath({ path: '/report.html' }, signal)
-  expect(open).toHaveBeenCalledWith('/report.html', signal)
+  expect(open).toHaveBeenCalledWith(resolve('/report.html'), signal)
 })
 
 
@@ -250,4 +251,24 @@ it('avoids desktop queries when unavailable and rejects an empty query path', as
   })
   await expect(available.workspacePathApplications({ path: '' }, new AbortController().signal)).rejects.toMatchObject({ code: 'gateway/bad-request' })
   expect(fileApplications).not.toHaveBeenCalled()
+})
+
+
+it('returns bounded query failures and classifies cancellation through the Remote', async () => {
+  const lifetime = new AbortController()
+  const fileApplications = vi.fn()
+    .mockRejectedValueOnce(new Error('Command failed: osascript -e private-script-text'))
+    .mockImplementationOnce(async () => {
+      lifetime.abort()
+      throw new Error('native query stopped')
+    })
+  const remote = createSessionTestRemote(await context(), {
+    defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: true, fileApplications,
+  })
+  await expect(remote.workspacePathApplications({ path: '/file.mp3' })).resolves.toMatchObject({
+    ok: false, error: { code: 'gateway/internal', message: 'file application query failed' },
+  })
+  await expect(remote.workspacePathApplications({ path: '/file.mp3' }, lifetime.signal)).resolves.toMatchObject({
+    ok: false, error: { code: 'gateway/cancelled' },
+  })
 })

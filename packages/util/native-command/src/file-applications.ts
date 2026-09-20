@@ -4,10 +4,7 @@ import { linuxFileApplications } from './file-applications-linux.ts'
 import { windowsFileApplications } from './file-applications-windows.ts'
 import { nativeFileManager } from './path-opener.ts'
 import type { PathOpenerInternals } from './path-opener.ts'
-
 import type { NativeFileApplication } from './types.ts'
-
-export type { NativeFileApplication } from './types.ts'
 
 /** AppKit runs inside the system JXA host; paths arrive as argv, never executable source. */
 const MAC_APPLICATIONS = `
@@ -22,18 +19,22 @@ function run(argv) {
   for (var i = 0; i < urls.count; i++) {
     var url = urls.objectAtIndex(i);
     var path = ObjC.unwrap(url.path);
-    var icon = workspace.iconForFile(path);
-    var thumbnail = $.NSImage.alloc.initWithSize($.NSMakeSize(32, 32));
-    thumbnail.lockFocus;
-    icon.drawInRectFromRectOperationFraction($.NSMakeRect(0, 0, 32, 32), $.NSZeroRect, $.NSCompositingOperationSourceOver, 1);
-    thumbnail.unlockFocus;
-    var bitmap = $.NSBitmapImageRep.imageRepWithData(thumbnail.TIFFRepresentation);
-    var png = bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({}));
+    var image = null;
+    if (argv[1] === 'icons') {
+      var icon = workspace.iconForFile(path);
+      var thumbnail = $.NSImage.alloc.initWithSize($.NSMakeSize(32, 32));
+      thumbnail.lockFocus;
+      icon.drawInRectFromRectOperationFraction($.NSMakeRect(0, 0, 32, 32), $.NSZeroRect, $.NSCompositingOperationSourceOver, 1);
+      thumbnail.unlockFocus;
+      var bitmap = $.NSBitmapImageRep.imageRepWithData(thumbnail.TIFFRepresentation);
+      var png = bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({}));
+      image = png.isNil() ? null : 'data:image/png;base64,' + ObjC.unwrap(png.base64EncodedStringWithOptions(0));
+    }
     apps.push({
       id: path,
       name: ObjC.unwrap($.NSFileManager.defaultManager.displayNameAtPath(path)),
       default: path === preferredPath,
-      icon: png.isNil() ? null : 'data:image/png;base64,' + ObjC.unwrap(png.base64EncodedStringWithOptions(0))
+      icon: image
     });
   }
   return JSON.stringify(apps);
@@ -49,13 +50,20 @@ function run(argv) {
 export async function nativeFileApplications(
   path: string, signal: AbortSignal, internals: PathOpenerInternals = {},
 ): Promise<readonly NativeFileApplication[]> {
+  return queryFileApplications(path, signal, internals, true)
+}
+
+/** Query metadata with optional macOS icon rendering for display or launch authorization. */
+async function queryFileApplications(
+  path: string, signal: AbortSignal, internals: PathOpenerInternals, icons: boolean,
+): Promise<readonly NativeFileApplication[]> {
   signal.throwIfAborted()
   const target = await desktopTarget(path, signal, internals)
   const run = internals.run ?? runNativeCommand
   if (target.platform === 'linux') return linuxFileApplications(path, signal, run, internals.env ?? process.env)
   let stdout: string
   if (target.platform === 'darwin') {
-    stdout = (await run('osascript', ['-l', 'JavaScript', '-e', MAC_APPLICATIONS, target.path], signal)).stdout
+    stdout = (await run('osascript', ['-l', 'JavaScript', '-e', MAC_APPLICATIONS, target.path, icons ? 'icons' : 'handlers'], signal)).stdout
   } else if (target.platform === 'win32') {
     stdout = await windowsFileApplications(target.path, null, signal, run)
   } else return []
@@ -93,7 +101,7 @@ export async function openNativeFileApplication(
     await windowsFileApplications(target.path, application, signal, run)
     return
   }
-  const apps = await nativeFileApplications(path, signal, internals)
+  const apps = await queryFileApplications(path, signal, internals, false)
   if (!apps.some(app => app.id === application)) throw new Error('Application is not registered for this file')
   if (target.platform === 'linux') await run('gio', ['launch', application, path], signal)
   else await run('open', ['-a', application, path], signal)

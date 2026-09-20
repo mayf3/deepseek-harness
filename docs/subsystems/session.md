@@ -852,6 +852,7 @@ workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 
  * @param request - file path in Host filesystem syntax.
  * @param signal - caller lifetime, propagated to filesystem and desktop queries.
  * @returns OS application names, icons, and default selection; empty when desktop opening is unavailable.
+ * @throws RemoteError when the path is invalid, the query is cancelled, or native discovery fails.
  */
 @Remote('workspacePathApplications') async workspacePathApplications( request: { readonly path: string }, signal: AbortSignal, ): Promise<readonly SessionWorkspacePathApplication[]>
 

@@ -81,7 +81,7 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
   if (preferred === undefined || cwd === undefined || cwd === '') return null
   return (
     <OpenTargetButton
-      key={cwd} kind="directory" showLabel applications={apps} defaultId={preferred.id} failed={false} t={t}
+      key={cwd} kind="directory" applications={apps} defaultId={preferred.id} failed={false} t={t}
       execute={async (operation) => {
         const id = operation.kind === 'application' ? operation.id : preferred.id
         try {

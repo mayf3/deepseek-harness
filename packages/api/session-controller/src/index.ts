@@ -84,8 +84,9 @@ export interface Config {
 export interface SessionControllerInternals {
   /** Native default-application handoff. */
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
-  /** Native file-association query and explicit application handoff. */
+  /** Native file-association query. */
   readonly fileApplications?: typeof nativeFileApplications
+  /** Explicit registered-application handoff. */
   readonly openFileApplication?: typeof openNativeFileApplication
   /** Native file-manager handoff. */
   readonly revealPath?: (path: string, signal: AbortSignal) => Promise<void>
@@ -317,22 +318,15 @@ export class SessionController extends TypertRemoteService {
     request: SessionOpenWorkspacePathRequest,
     signal: AbortSignal,
   ): Promise<SessionOpenWorkspacePathValue> {
-    if (request.path.length === 0) {
-      throw new RemoteError(
-        'gateway/bad-request',
-        'session.openWorkspacePath requires a non-empty path',
-        {},
-      )
-    }
-    signal.throwIfAborted()
     try {
-      await this.verifyDesktopPath(request.path, signal)
-      if (request.action === 'reveal') await this.revealPath(request.path, signal)
-      else if (request.application !== undefined) await this.openFileApplication(resolve(request.path), request.application, signal)
-      else await this.openPath(request.path, signal)
+      const path = await this.verifyDesktopPath(request.path, signal)
+      if (request.action === 'reveal') await this.revealPath(path, signal)
+      else if (request.application !== undefined) await this.openFileApplication(path, request.application, signal)
+      else await this.openPath(path, signal)
       return { opened: true }
     } catch (error: unknown) {
       if (signal.aborted) throw new RemoteError('gateway/cancelled', 'path open was aborted', {})
+      if (error instanceof RemoteError) throw error
       throw new RemoteError(
         'gateway/internal',
         `path open failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -346,17 +340,24 @@ export class SessionController extends TypertRemoteService {
    * @param request - file path in Host filesystem syntax.
    * @param signal - caller lifetime, propagated to filesystem and desktop queries.
    * @returns OS application names, icons, and default selection; empty when desktop opening is unavailable.
+   * @throws RemoteError when the path is invalid, the query is cancelled, or native discovery fails.
    */
   @Remote('workspacePathApplications')
   async workspacePathApplications(
     request: { readonly path: string }, signal: AbortSignal,
   ): Promise<readonly SessionWorkspacePathApplication[]> {
     if (!this.canOpenPath()) return []
-    await this.verifyDesktopPath(request.path, signal)
-    return this.fileApplications(resolve(request.path), signal)
+    try {
+      const path = await this.verifyDesktopPath(request.path, signal)
+      return await this.fileApplications(path, signal)
+    } catch (error: unknown) {
+      if (signal.aborted) throw new RemoteError('gateway/cancelled', 'application query was aborted', {})
+      if (error instanceof RemoteError) throw error
+      throw new RemoteError('gateway/internal', 'file application query failed', {}, { cause: error })
+    }
   }
 
-  private async verifyDesktopPath(path: string, signal: AbortSignal): Promise<void> {
+  private async verifyDesktopPath(path: string, signal: AbortSignal): Promise<string> {
     if (path.length === 0) throw new RemoteError('gateway/bad-request', 'A non-empty file path is required', {})
     signal.throwIfAborted()
     const hostPath = resolve(path)
@@ -366,6 +367,7 @@ export class SessionController extends TypertRemoteService {
       throw new RemoteError('gateway/bad-request', 'Path has no verified Host path', {})
     }
     signal.throwIfAborted()
+    return hostPath
   }
 
   /**
