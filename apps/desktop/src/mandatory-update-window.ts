@@ -2,7 +2,7 @@
 
 import { app, BrowserWindow, clipboard, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import type { DesktopLocale } from './locale.ts'
-import type { DesktopUpdateState } from './ipc.ts'
+import { assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
 import { desktopPolicyPage, type DesktopPolicyState } from './mandatory-update-policy.ts'
 import { MANDATORY_IPC } from './mandatory-update-ipc.ts'
 import { createUpdateOverlay } from './update-overlay.ts'
@@ -49,8 +49,9 @@ const page = 'dsh-app://shell/mandatory-update.html'
 /** Shell-owned update presentation; Windows embeds it in the main document without a child window. */
 export class DesktopMandatoryUpdateWindow {
   private readonly embedded = process.platform === 'win32'
-  private readonly embeddedParent: BrowserWindow | undefined
-  private readonly publishEmbedded = (): void => { this.sync() }
+  private embeddedParent: BrowserWindow | undefined
+  private embeddedBlocking = false
+  private readonly publishEmbedded = (): void => { this.embeddedBlocking = false; this.sync() }
   private window: BrowserWindow | undefined
   private closing: ReturnType<typeof setTimeout> | undefined
   private disposed = false
@@ -143,6 +144,18 @@ export class DesktopMandatoryUpdateWindow {
   /** Publish current status, create the block immediately, or close it only after policy clearance. */
   sync(): void {
     if (this.disposed) return
+    if (this.embedded) {
+      const parent = this.options.parent()
+      if (parent !== this.embeddedParent) {
+        if (this.embeddedParent !== undefined && !this.embeddedParent.isDestroyed()) {
+          this.embeddedParent.webContents.off('did-finish-load', this.publishEmbedded)
+        }
+        this.embeddedBlocking = false
+        this.embeddedParent = parent
+        if (parent !== undefined && !parent.isDestroyed()) parent.webContents.on('did-finish-load', this.publishEmbedded)
+      }
+      if (parent === undefined || parent.isDestroyed()) return
+    }
     if (!this.options.policy().blocking) {
       this.finishConfirmation(false)
       this.attention.reset()
@@ -159,7 +172,10 @@ export class DesktopMandatoryUpdateWindow {
         }, 150)
       }
       this.error = undefined
-      if (this.embedded) this.embeddedParent?.webContents.send(MANDATORY_IPC.state, this.view())
+      if (this.embedded && this.embeddedBlocking) {
+        this.embeddedBlocking = false
+        this.embeddedParent?.webContents.send(MANDATORY_IPC.state, this.view())
+      }
       return
     }
     clearTimeout(this.closing)
@@ -167,6 +183,7 @@ export class DesktopMandatoryUpdateWindow {
     if (this.navigationUrl !== this.options.policy().page) this.clearNavigation()
     if (this.options.update().phase === 'error') this.restart = undefined
     if (this.embedded) {
+      this.embeddedBlocking = true
       this.embeddedParent?.webContents.send(MANDATORY_IPC.state, this.view())
       return
     }
@@ -198,6 +215,7 @@ export class DesktopMandatoryUpdateWindow {
   focus(): void {
     this.sync()
     const parent = this.options.parent()
+    if (parent?.isDestroyed()) return
     if (parent?.isMinimized()) parent.restore()
     parent?.show()
     if (this.embedded) parent?.focus()
@@ -276,10 +294,11 @@ export class DesktopMandatoryUpdateWindow {
   private assertSender(event: IpcMainInvokeEvent): void {
     if (this.embedded) {
       const parent = this.options.parent()
-      if (parent === undefined || event.sender !== parent.webContents || event.senderFrame !== parent.webContents.mainFrame
-        || !['dsh-app://app/', 'dsh-app://app/index.html'].includes(event.senderFrame.url)) {
+      if (parent === undefined || parent.isDestroyed() || event.sender !== parent.webContents
+        || event.senderFrame !== parent.webContents.mainFrame) {
         throw new Error('desktop policy: rejected unowned renderer')
       }
+      assertDesktopSender(event, ['app'])
       return
     }
     if (event.sender !== this.window?.webContents || event.senderFrame !== this.window.webContents.mainFrame

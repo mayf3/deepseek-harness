@@ -48,6 +48,7 @@ it('releases IPC after the Windows main window has already been destroyed', () =
   setup('win32')
   vi.spyOn(window, 'isDestroyed').mockReturnValue(true)
   Object.defineProperty(window, 'webContents', { get() { throw new Error('Object has been destroyed') } })
+  expect(() => { ui!.sync(); ui!.focus() }).not.toThrow()
   expect(() => { ui!.dispose() }).not.toThrow()
   expect(native.handlers.size).toBe(0)
   expect(() => { ui!.dispose() }).not.toThrow()
@@ -178,4 +179,24 @@ it('publishes Windows overlays into the main document without creating or destro
   ui!.dispose()
   expect(window.destroy).not.toHaveBeenCalled()
   expect(window.webContents.listenerCount('did-finish-load')).toBe(0)
+})
+
+it('rebinds policy updates and reloads to a replacement Windows main window', () => {
+  setup('win32')
+  const previous = window
+  window = fakeWindow()
+  window.webContents.mainFrame.url = 'dsh-app://app/?recovery=1#home'
+  ui!.sync()
+  expect(previous.webContents.listenerCount('did-finish-load')).toBe(0)
+  expect(window.webContents.send).toHaveBeenCalledWith(MANDATORY_IPC.state,
+    expect.objectContaining({ policy: expect.objectContaining({ blocking: true }) }))
+  window.webContents.send.mockClear()
+  window.webContents.emit('did-finish-load')
+  expect(window.webContents.send).toHaveBeenCalledOnce()
+  expect(() => native.handlers.get(MANDATORY_IPC.status)!({
+    sender: previous.webContents, senderFrame: previous.webContents.mainFrame,
+  })).toThrow(/unowned/)
+  expect(() => native.handlers.get(MANDATORY_IPC.status)!({
+    sender: window.webContents, senderFrame: window.webContents.mainFrame,
+  })).not.toThrow()
 })
