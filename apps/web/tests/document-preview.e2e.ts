@@ -102,10 +102,17 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
       await writeFile(join(nativeRoot, command), `#!/usr/bin/env node
 const fs = require('node:fs');
-const path = process.argv[2] === '-R' ? process.argv[3] : process.argv[2];
-const action = process.argv[2] === '-R' || fs.statSync(path).isDirectory() ? 'reveal' : 'open';
+const path = process.argv[2] === '-a' ? process.argv[4] : process.argv[2] === '-R' ? process.argv[3] : process.argv[2];
+const action = process.argv[2] === '-a' ? 'application' : process.argv[2] === '-R' || fs.statSync(path).isDirectory() ? 'reveal' : 'open';
 fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) + '\\n');
 `, { mode: 0o700 })
+      if (process.platform === 'darwin') {
+        const apps = [
+          { id: '/Applications/Test Player.app', name: 'Test Player', default: true, icon: `data:image/png;base64,${TINY_PNG.toString('base64')}` },
+          { id: '/Applications/Other Player.app', name: 'Other Player', default: false, icon: null },
+        ]
+        await writeFile(join(nativeRoot, 'osascript'), `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(apps))});\n`, { mode: 0o700 })
+      }
       vi.stubEnv('PATH', `${nativeRoot}${delimiter}${process.env.PATH ?? ''}`)
     }
     // The Open In rows carry the default-application controls; the SSH marker
@@ -756,13 +763,25 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       expect(gestures[0]).toEqual({ path: clip, action: 'open' })
       expect(gestures[1]?.action).toBe('reveal')
       expect([clip, cwd]).toContain(gestures[1]?.path)
+      if (process.platform === 'darwin') {
+        await expect.poll(() => headerOpen.locator('img').count()).toBe(1)
+        await unsupported.locator('[data-open-path-more]').click()
+        await page.getByRole('menuitem', { name: 'Test Player (default)', exact: true }).waitFor()
+        await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'applications.expected.md'), await page.getByRole('menu').ariaSnapshot(), MODE)
+        await page.getByRole('menuitem', { name: 'Other Player', exact: true }).click()
+        await expect.poll(async () => (await opened()).length).toBe(3)
+        expect((await opened())[2]).toEqual({ path: clip, action: 'application' })
+        await headerOpen.click()
+        await expect.poll(async () => (await opened()).length).toBe(4)
+        expect((await opened())[3]).toEqual({ path: clip, action: 'open' })
+      }
       // Gesture facts stay out of the golden: the stub does not run on Windows.
       expect(await page.getByRole('alert').count()).toBe(0)
     }
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await compareOrRefreshGolden(EXPECTED, sections.join('\n\n'), MODE)
-    await assertFixtureInventory(SNAPSHOT_DIR, ['document.expected.md', 'paging.patch.yml'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['document.expected.md', 'applications.expected.md', 'paging.patch.yml'])
   })
 })
 

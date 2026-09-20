@@ -50,7 +50,7 @@ export async function nativeFileApplications(
   const platform = internals.platform ?? process.platform
   if (platform !== 'darwin') return []
   const run = internals.run ?? runNativeCommand
-  const { stdout } = await run('/usr/bin/osascript', ['-l', 'JavaScript', '-e', MAC_APPLICATIONS, path], signal)
+  const { stdout } = await run('osascript', ['-l', 'JavaScript', '-e', MAC_APPLICATIONS, path], signal)
   const value: unknown = JSON.parse(stdout)
   if (!Array.isArray(value)) throw new Error('Invalid native application list')
   const applications: NativeFileApplication[] = []
@@ -80,5 +80,5 @@ export async function openNativeFileApplication(
   const apps = await nativeFileApplications(path, signal, internals)
   if (!apps.some(app => app.id === application)) throw new Error('Application is not registered for this file')
   const run = internals.run ?? runNativeCommand
-  await run('/usr/bin/open', ['-a', application, path], signal)
+  await run('open', ['-a', application, path], signal)
 }
