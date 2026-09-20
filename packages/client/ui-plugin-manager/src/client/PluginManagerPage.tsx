@@ -17,7 +17,7 @@ import {
   IconChevronRightOutlineRegular, IconCloseOutlineMedium,
   IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
   IconWarningOutlineRegular, Input, Modal,
-  PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTeam, PluginArtworkTerminal,
+  PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTerminal,
   StateDot, Switch, Tag, TerminalBlock, Toast, useAnchoredPosition, useDismissOnOutsidePointer,
   type IconProps, type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -130,21 +130,23 @@ const ITEM_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
   ['web-search', PluginArtworkSearch],
 ])
 
-/** The artwork of the official bundles with artwork of their own, by package name. */
-const PACKAGE_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
-  ['@deepseek-ai/dsh-experimental-agent-team-profile', PluginArtworkTeam],
-])
-
 /** An official plugin's card and page artwork; plugins without their own get the default. */
 function itemArtwork(id: string): ReactNode {
   const Artwork = ITEM_ARTWORK.get(id) ?? PluginArtworkDefault
   return <Artwork size={CARD_ARTWORK_SIZE} />
 }
 
-/** A package's card and page artwork; packages without their own get the default. */
-function packageArtwork(name: string): ReactNode {
-  const Artwork = PACKAGE_ARTWORK.get(name) ?? PluginArtworkDefault
-  return <Artwork size={CARD_ARTWORK_SIZE} />
+/** Manifest images remain isolated from the page DOM; a failed decode keeps the position's default artwork. */
+function PackageArtwork({ src, row = false, size = row ? ROW_ARTWORK_SIZE : CARD_ARTWORK_SIZE }: {
+  readonly src: string | undefined
+  readonly row?: boolean
+  readonly size?: number
+}): ReactNode {
+  const [failedSource, setFailedSource] = useState<string>()
+  const Fallback = row ? PluginArtworkSubagent : PluginArtworkDefault
+  return src === undefined || src === failedSource
+    ? <Fallback size={size} />
+    : <img className={css.packageImage} src={src} width={size} height={size} alt="" onError={() => { setFailedSource(src) }} />
 }
 
 /** A row's switch: locked, saying why, when the Host refuses to address the row through the profile patch. */
@@ -234,7 +236,7 @@ function RowsSection({ rows, t, resolveText, toggle, configure }: {
                 {...row.phase === 'failed' ? { 'data-state': 'failed' } : row.enabled ? {} : { 'data-state': 'off' }}
               >
                 <div className={css.rowLine}>
-                  <span className={css.rowIcon} aria-hidden="true"><PluginArtworkSubagent size={ROW_ARTWORK_SIZE} /></span>
+                  <span className={css.rowIcon} aria-hidden="true"><PackageArtwork key={row.meta?.icon} src={row.meta?.icon} row /></span>
                   <div className={css.rowMain}>
                     {configure?.has(row) === true
                       ? (
@@ -367,7 +369,7 @@ function PackageCard({ pkg, t, resolveText, busy, highlighted, onOpen, onSetEnab
         title={title}
         t={t}
         onOpen={onOpen}
-        icon={packageArtwork(pkg.name)}
+        icon={<PackageArtwork key={pkg.meta?.icon} src={pkg.meta?.icon} />}
         tags={(
           <>
             {beta ? <Tag className={css.statusTag} tone="info">{t('statusBeta')}</Tag> : null}
@@ -439,7 +441,7 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot }: {
   const key = rowConfigKey(pkg.name, row.rowId)
   return (
     <div className={css.detail} data-plugin-row-detail={key}>
-      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<PluginArtworkSubagent size={CARD_ARTWORK_SIZE} />} />
+      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<PackageArtwork key={row.meta?.icon} src={row.meta?.icon} row size={CARD_ARTWORK_SIZE} />} />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{rowTitle}</h3>
@@ -491,7 +493,7 @@ function PackageDetail({
         crumbLabel={t('backToList')}
         crumbText={t('crumbRoot')}
         onBack={onBack}
-        icon={packageArtwork(pkg.name)}
+        icon={<PackageArtwork key={pkg.meta?.icon} src={pkg.meta?.icon} />}
         actions={(
           <div className={css.detailActions}>
             {pkg.installed

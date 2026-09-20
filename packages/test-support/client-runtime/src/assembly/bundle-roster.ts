@@ -17,7 +17,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { exactPackageSpecifier, parseDshClient } from '@deepseek-ai/dsh-client-modules/client'
 import * as yaml from 'js-yaml'
@@ -41,11 +41,16 @@ interface BundleLayer {
  * Compose the browser roster of `bundles`, applied in order.
  * @param bundles - bundle package names in application order.
  * @param anchor - file whose package resolution locates the bundles; default this package.
+ * @param disabledContext - optional Loader evaluation scope for trusted `disabled` expressions.
  * @returns the roster in composition order, one row per package.
  * @throws {Error} when a bundle, its patch file, or an enabled row's package does not resolve, when the patch list
- * is not a list or does not apply as written, or when a browser row's `disabled` is a `!!js` expression.
+ * is not a list or does not apply as written, or when a browser row has an unevaluated `disabled` expression.
  */
-export function bundleRoster(bundles: readonly string[], anchor: string = fileURLToPath(import.meta.url)): ClientRoster {
+export function bundleRoster(
+  bundles: readonly string[],
+  anchor: string = fileURLToPath(import.meta.url),
+  disabledContext?: object,
+): ClientRoster {
   const layers = bundles.map(name => readLayer(name, anchor))
   const entries = applyEntryPatches([], layers.flatMap(layer => layer.patches), (message: string, ...args: unknown[]) => {
     throw new Error(`client-test-runtime: bundle patch ${describe(message, args)}`)
@@ -55,7 +60,9 @@ export function bundleRoster(bundles: readonly string[], anchor: string = fileUR
   const seen = new Set<string>()
   for (const { entry, disabled } of flattenGroups(entries)) {
     const name = exactPackageSpecifier(entry.name)
-    if (name === undefined || disabled === true || seen.has(name)) continue
+    if (name === undefined || disabled.includes(true) || seen.has(name)) continue
+    if (disabledContext !== undefined
+      && disabled.some(value => isJsExpr(value) && Boolean(evaluate(disabledContext, value.__jsExpr)))) continue
     seen.add(name)
     const manifestPath = locateManifest(anchors, name)
     if (manifestPath === undefined) {
@@ -67,7 +74,8 @@ export function bundleRoster(bundles: readonly string[], anchor: string = fileUR
     }
     const declaration = parseDshClient(name, manifest.dsh?.client)
     if (declaration === undefined || declaration.platform !== 'web') continue
-    if (disabled !== undefined && disabled !== null && typeof disabled !== 'boolean') {
+    if (disabled.some(value => value !== undefined && value !== null && typeof value !== 'boolean'
+      && !(disabledContext !== undefined && isJsExpr(value)))) {
       throw new Error(`client-test-runtime: browser row ${name} has a \`disabled\` value this reader cannot evaluate (a !!js expression)`)
     }
     rows.push({ name, inject: declaration.inject ?? [], immediately: declaration.immediately === true })
@@ -86,24 +94,23 @@ function readLayer(bundle: string, anchor: string): BundleLayer {
   return { manifestPath, patches: parsed as PatchOptions[] }
 }
 
-/** One Loader row with the `disabled` value that governs it: its own, or the nearest enclosing group's when that is set. */
+/** One Loader row with its ancestor and own disable conditions, in outer-to-inner order. */
 interface FlatEntry {
   readonly entry: EntryOptions
-  readonly disabled: unknown
+  readonly disabled: readonly unknown[]
 }
 
 /**
  * Rows in Loader order with groups descended, as the Loader loads them: a group is never a plugin itself, and a group's
  * `disabled` disables every row beneath it.
  * @param entries - composed entries, possibly nested.
- * @param inherited - the enclosing group's `disabled` when set.
+ * @param inherited - the enclosing groups' disable conditions.
  * @returns the plugin rows.
  */
-function flattenGroups(entries: readonly EntryOptions[], inherited?: unknown): FlatEntry[] {
+function flattenGroups(entries: readonly EntryOptions[], inherited: readonly unknown[] = []): FlatEntry[] {
   const rows: FlatEntry[] = []
   for (const entry of entries) {
-    const own = (entry as { disabled?: unknown }).disabled
-    const disabled = inherited !== undefined && inherited !== null && inherited !== false ? inherited : own
+    const disabled = [...inherited, (entry as { disabled?: unknown }).disabled]
     if (entry.group === true && Array.isArray(entry.config)) {
       rows.push(...flattenGroups(entry.config as EntryOptions[], disabled))
       continue
@@ -134,5 +141,9 @@ function describe(message: string, args: readonly unknown[]): string {
   return message.replace(/%C/g, () => JSON.stringify(args[index++]))
 }
 
-/** The `web` profile's browser roster, composed from its bundles at import. */
-export const webApp: ClientRoster = bundleRoster(WEB_PROFILE_BUNDLES)
+const webProfileServices: Readonly<Record<string, object | undefined>> = { profileContext: { name: 'web' } }
+
+/** The `web` profile's browser roster, composed with its profile name and no business Host services. */
+export const webApp: ClientRoster = bundleRoster(WEB_PROFILE_BUNDLES, undefined, {
+  get: (name: string) => webProfileServices[name],
+})

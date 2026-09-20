@@ -10,9 +10,10 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import { ImageVariantId } from '@deepseek-ai/dsh-attachment'
-import { serializeRequestWithImages } from '@deepseek-ai/dsh-llm-deepseek/src/protocols/chat-completions/serialize.ts'
+import { resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
+import { inlineImages } from '@deepseek-ai/dsh-llm-deepseek/src/images.ts'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { createAssistantMessage, createToolResultMessage, createUserMessage, IMAGE_OFFLOAD_REQUIRED_CODE, LlmAdapter, LlmError, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createToolResultMessage, createUserMessage, projectOffloadedImages, offloadedImageText, IMAGE_OFFLOAD_REQUIRED_CODE, LlmAdapter, LlmError, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { isReplacementSurfaceEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -32,15 +33,15 @@ class ScriptedAdapter extends LlmAdapter {
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
     if (this.serializeSummary && options.purpose === 'compaction') {
-      await serializeRequestWithImages(options, {
-        representation: { kind: 'base64' },
-        requestImages: new Map([image('first').attachment].map(ref => [ref.attachmentId, {
+      inlineImages(
+        projectOffloadedImages(options.messages, ref => offloadedImageText(ref)),
+        new Map([image('first').attachment].map(ref => [ref.attachmentId, {
           variantId: ImageVariantId(`sha256:${'b'.repeat(64)}`), attachment: ref,
           data: new Uint8Array(ref.bytes), mediaType: ref.mediaType, bytes: ref.bytes,
           width: ref.width, height: ref.height, depth: 'uchar', space: 'srgb', hasAlpha: false,
         }])),
-        maxRequestImageBytes: 1,
-      })
+        resolveAdapterOptions({ maxInlineRequestImageBytes: 1, inlineImageOffloadByteQuantum: 1 }),
+      )
     }
     const entry = this.script.shift()
     if (entry === undefined) throw new Error('script exhausted')
@@ -132,7 +133,7 @@ describe('summary image offload', () => {
     expect(decisions(agent.session)).toEqual([])
   })
 
-  it('recovers the real summary serializer with a tighter image budget and fresh pricing', async () => {
+  it('recovers real summary image preparation with a tighter budget and fresh pricing', async () => {
     const { compact, agent, adapter } = await summaryHarness([textResponse('answer'), textResponse('checkpoint')])
     const span = await seedImages(agent, ['first', 'second'])
     adapter.serializeSummary = true

@@ -817,6 +817,25 @@ describe('subagent catalogs', () => {
     })
   })
 
+  it('resolves an unknown browsing mode from the child projection without changing parent membership', async ({ mock, start }) => {
+    mock.load(sessionWorld)
+    const client = await start()
+    const manager = new SessionManager(client.ctx.remote)
+    const entries = [{ id: S2, createdAt: 1, mode: 'unknown' as const }]
+    manager.handleControlFrame({ type: 'projection', sessionId: S1, key: 'subagentCatalog', seq: 0, value: entries })
+    const address = manager.subagentAddress(S2)!
+    expect(address).toEqual({ parentSessionId: S1, childSessionId: S2, mode: 'unknown' })
+    manager.resolveTarget(address)
+    const child = manager.get(S2)
+    expect(child.getSnapshot().subagent?.address.mode).toBe('unknown')
+    manager.handleControlFrame({ type: 'projection', sessionId: S2, key: 'subagent', seq: 0,
+      value: { seq: SessionSeq(0), mode: 'continuable', label: 'repaired child' } })
+    await child.open()
+    expect(child.getSnapshot().subagent?.address).toEqual({ ...address, mode: 'continuable' })
+    expect(manager.getListSnapshot().projectionsBySession[S1]?.values.subagentCatalog).toEqual(entries)
+    await manager.dispose()
+  })
+
   it('publishes pushed membership without a catalog request or an instantiated parent', ({ mock, remote }) => {
     const manager = makeManager(mock, remote)
     manager.handleSessionAdded(summary(S2, { origin: 'subagent', parentSessionId: S1, running: true }))

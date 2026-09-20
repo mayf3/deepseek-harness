@@ -2,7 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
 import { SessionFormatUnsupportedError, SessionPersistenceCorruptionError } from '@deepseek-ai/dsh-session-persistence'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -14,6 +14,7 @@ const roots: string[] = []
 const contexts: Context[] = []
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
@@ -57,16 +58,36 @@ describe.each(['none', 'zstd'] as const)('historical catalog publication (%s)', 
     await expect(f.ctx.sessionPersistence.open(f.parent, access)).rejects.toThrow('wrong Session')
   })
 
-  it('does not publish incomplete membership after a child header becomes unreadable', async () => {
-    const f = await fixture()
-    const path = await f.write('child', [], true)
-    const broken = '{broken header\n'
-    await writeFile(path, compression === 'none' ? broken : await compressZstdFrame(broken))
-    await expect(f.read()).rejects.toThrow(path)
-    await expect(f.ctx.sessionPersistence.open(f.parent, 'write')).rejects.toThrow(path)
-    expect((await readdir(dirname(generationLogPath(f.root, undefined, f.parent, 3, compression)))).filter(name => name !== 'session.lock'))
-      .toEqual([compression === 'none' ? 'session.v3.jsonl' : 'session.v3.jsonl.zstd'])
-  })
+  it.each(compression === 'none' ? ['json'] as const : ['json', 'magic', 'checksum', 'lines'] as const)(
+    'opens the parent when another Session header has corrupt %s', async (damage) => {
+      const f = await fixture()
+      await f.write('child', [f.descriptor], true)
+      const path = await f.write('unrelated', [])
+      let damaged: Buffer
+      if (damage === 'json') {
+        damaged = compression === 'none' ? Buffer.from('{broken header\n') : await compressZstdFrame('{broken header\n')
+      } else if (damage === 'lines') {
+        damaged = await compressZstdFrame('{}\n{}\n')
+      } else {
+        damaged = await readFile(path)
+        const offset = damage === 'magic' ? 0 : damaged.length - 1
+        damaged[offset] = damaged[offset]! ^ 0xFF
+      }
+      await writeFile(path, damaged)
+      expect((await f.ctx.sessionPersistence.list()).map(row => row.header.id).sort()).toEqual(['child', f.parent])
+      const expected = [{ type: 'subagent/catalog', data: { childId: 'child', mode: 'continuable', label: 'old child' } }]
+      expect(await f.read()).toMatchObject(expected)
+      const writer = await f.ctx.sessionPersistence.open(f.parent, 'write')
+      try { expect((await writer.read()).events).toMatchObject(expected) } finally { await writer.close() }
+      expect(await readFile(generationLogPath(f.root, undefined, f.parent, 4, compression))).not.toHaveLength(0)
+      for (const access of ['read', 'write'] as const) {
+        await expect(f.ctx.sessionPersistence.open(SessionId('unrelated'), access)).rejects.toThrow()
+      }
+      expect(await readFile(path)).toEqual(damaged)
+      await expect(readFile(generationLogPath(f.root, undefined, SessionId('unrelated'), 4, compression)))
+        .rejects.toMatchObject({ code: 'ENOENT' })
+    },
+  )
 
   it('invalidates lightweight revisions on child membership and contents while retaining stable tokens', async () => {
     const f = await fixture()
@@ -114,34 +135,35 @@ describe.each(['none', 'zstd'] as const)('historical catalog publication (%s)', 
     expect((await f.ctx.sessionPersistence.list()).find(row => row.header.id === f.parent)?.revision).not.toBe(removed)
   })
 
-  it('reports a corrupt child body at the child location', async () => {
+  it('isolates a corrupt child catalog and reports its path', async () => {
     const f = await fixture()
+    const warn = vi.spyOn(f.ctx.logger, 'warn')
     const catalog = { type: 'subagent/catalog', seq: 0, time: 1,
       data: { version: 0, childId: 'grandchild', childCreatedAt: 3, mode: 'one-shot' } }
     const path = await f.write('child', [catalog, { ...catalog, seq: 1 }], true, 4)
-    await expect(f.read()).rejects.toBeInstanceOf(SessionPersistenceCorruptionError)
-    await expect(f.read()).rejects.toThrow(path)
+    expect(await f.read()).toMatchObject([{ type: 'subagent/catalog', data: { childId: 'child', mode: 'unknown' } }])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(path))
+    await expect(f.ctx.sessionPersistence.open(SessionId('child'), 'read')).rejects.toBeInstanceOf(SessionPersistenceCorruptionError)
   })
 
-  it.each(['read', 'write'] as const)('locates physical child JSON corruption during %s access', async (access) => {
+  it.each(['read', 'write'] as const)('isolates malformed child JSON during parent %s access', async (access) => {
     const f = await fixture()
     const childPath = await f.write('child', [], true)
     const first = JSON.stringify({ ...f.header, id: 'child', origin: 'subagent', parentSession: f.parent, delegationDepth: 1 }) + '\n'
-    // A sealed turn makes the malformed row corruption rather than a recoverable tail.
     const body = '{broken\n' + JSON.stringify({ type: 'turn/end', seq: 1, time: 2,
       data: { turn: 1, reason: { kind: 'completed' } } }) + '\n'
     await writeFile(childPath, compression === 'none' ? first + body
       : Buffer.concat([await compressZstdFrame(first), await compressZstdFrame(body)]))
-    const parentPath = generationLogPath(f.root, undefined, f.parent, 3, compression)
-    const original = await Promise.all([readFile(parentPath), readFile(childPath)])
-    const error: unknown = await f.ctx.sessionPersistence.open(f.parent, access).catch((error: unknown) => error)
-    expect(error).toBeInstanceOf(SessionPersistenceCorruptionError)
-    expect((error as Error).message).toContain(childPath)
-    expect((error as Error).message).not.toContain(parentPath)
-    expect((error as Error).message).toContain('row 1 is not valid JSON')
-    expect(await Promise.all([readFile(parentPath), readFile(childPath)])).toEqual(original)
-    expect((await readdir(dirname(parentPath))).filter(name => name !== 'session.lock'))
-      .toEqual([compression === 'none' ? 'session.v3.jsonl' : 'session.v3.jsonl.zstd'])
+    const original = await readFile(childPath)
+    await f.write('healthy', [f.descriptor], true)
+    const parent = await f.ctx.sessionPersistence.open(f.parent, access)
+    try { expect((await parent.read()).events).toMatchObject([
+      { type: 'subagent/catalog', data: { childId: 'child', mode: 'unknown' } },
+      { type: 'subagent/catalog', data: { childId: 'healthy', mode: 'continuable' } },
+    ]) } finally { await parent.close() }
+    await expect(f.ctx.sessionPersistence.open(SessionId('child'), access)).rejects.toBeInstanceOf(SessionPersistenceCorruptionError)
+    expect(await readFile(childPath)).toEqual(original)
+    await expect(readFile(generationLogPath(f.root, undefined, SessionId('child'), 4, compression))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('preserves opaque inherited catalogs through read preparation and write publication', async () => {
@@ -165,21 +187,20 @@ describe.each(['none', 'zstd'] as const)('historical catalog publication (%s)', 
     expect(await readFile(parentPath)).toEqual(original)
   })
 
-  it.skipIf(compression !== 'zstd')('locates invalid compressed child frames at the child path', async () => {
+  it.skipIf(compression !== 'zstd')('isolates invalid compressed child frames', async () => {
     const f = await fixture()
     const childPath = await f.write('child', [], true)
     await writeFile(childPath, Buffer.concat([await readFile(childPath), Buffer.alloc(8)]))
-    const error: unknown = await f.read().catch((error: unknown) => error)
-    expect(error).toBeInstanceOf(SessionPersistenceCorruptionError)
-    expect((error as Error).message).toContain(childPath)
+    expect(await f.read()).toMatchObject([{ type: 'subagent/catalog', data: { childId: 'child', mode: 'unknown' } }])
+    await expect(f.ctx.sessionPersistence.open(SessionId('child'), 'read')).rejects.toBeInstanceOf(SessionPersistenceCorruptionError)
   })
 
-  it('keeps a complete parent catalog when a published child never writes a descriptor', async () => {
+  it.each([false, true])('keeps a complete parent catalog when child metadata is unavailable (corrupt=%s)', async (corrupt) => {
     const f = await fixture()
     const catalog = { type: 'subagent/catalog', seq: 0, time: 2,
       data: { version: 0, childId: 'child', childCreatedAt: 2, mode: 'one-shot', label: 'failed startup' } }
     const parentPath = await f.write(f.parent, [catalog])
-    const childPath = await f.write('child', [], true)
+    const childPath = await f.write('child', corrupt ? [{ type: 'future/required', seq: 0, time: 2, data: {} }] : [], true)
     const original = await Promise.all([readFile(parentPath), readFile(childPath)])
     expect(await f.read()).toEqual([catalog])
     const writer = await f.ctx.sessionPersistence.open(f.parent, 'write')
@@ -208,10 +229,10 @@ describe.each(['none', 'zstd'] as const)('historical catalog publication (%s)', 
     const childPath = await f.write('child', events, true)
     const parentPath = generationLogPath(f.root, undefined, f.parent, 3, compression)
     const original = await Promise.all([readFile(parentPath), readFile(childPath)])
-    expect(await f.read()).toEqual([])
+    expect(await f.read()).toMatchObject([{ type: 'subagent/catalog', data: { childId: 'child', mode: 'unknown' } }])
     const writer = await f.ctx.sessionPersistence.open(f.parent, 'write')
-    try { expect((await writer.read()).events).toEqual([]) } finally { await writer.close() }
-    expect(await f.read()).toEqual([])
+    try { expect((await writer.read()).events).toMatchObject([{ type: 'subagent/catalog', data: { childId: 'child', mode: 'unknown' } }]) } finally { await writer.close() }
+    expect(await f.read()).toMatchObject([{ type: 'subagent/catalog', data: { childId: 'child', mode: 'unknown' } }])
     const child = await f.ctx.sessionPersistence.open(SessionId('child'), 'read')
     try { expect((await child.read()).events).toEqual(events) } finally { await child.close() }
     expect(await Promise.all([readFile(parentPath), readFile(childPath)])).toEqual(original)
@@ -219,35 +240,37 @@ describe.each(['none', 'zstd'] as const)('historical catalog publication (%s)', 
       .toEqual(compression === 'none' ? ['session.v3.jsonl', 'session.v4.jsonl'] : ['session.v3.jsonl.zstd', 'session.v4.jsonl.zstd'])
   })
 
-  it.each([false, true])('refuses an opaque future generation before publishing membership (prepared=%s)', async (prepared) => {
+  it.each([false, true])('omits an unsupported child generation (prepared=%s)', async (prepared) => {
     const f = await fixture()
     await f.write('child', [f.descriptor], true)
     if (prepared) expect(await f.read()).toHaveLength(1)
     await f.write('child', [], true, 5)
-    await expect(f.ctx.sessionPersistence.open(f.parent, 'write')).rejects.toBeInstanceOf(SessionFormatUnsupportedError)
-    expect((await readdir(dirname(generationLogPath(f.root, undefined, f.parent, 3, compression)))).filter(name => name !== 'session.lock'))
-      .toEqual([compression === 'none' ? 'session.v3.jsonl' : 'session.v3.jsonl.zstd'])
+    expect(await f.read()).toEqual([])
+    const writer = await f.ctx.sessionPersistence.open(f.parent, 'write')
+    await writer.close()
+    await expect(f.ctx.sessionPersistence.open(SessionId('child'), 'read')).rejects.toBeInstanceOf(SessionFormatUnsupportedError)
   })
 
-  it('requires a readable corpus even when an unknown header cannot identify its parent', async () => {
+  it('opens the parent independently of an unrelated future generation', async () => {
     const f = await fixture()
     await f.write('future-root', [], false, 5)
     expect((await f.ctx.sessionPersistence.list()).map(row => row.header.id)).toEqual([f.parent])
-    await expect(f.read()).rejects.toBeInstanceOf(SessionFormatUnsupportedError)
+    expect(await f.read()).toEqual([])
   })
 
-  it('preserves unsupported child decoding errors instead of reporting parent corruption', async () => {
+  it('retains unknown child identity without migrating unsupported contents', async () => {
     const f = await fixture()
-    const path = await f.write('child', [{ type: 'future/required', seq: 0, time: 2, data: {} }], true)
-    await expect(f.read()).rejects.toBeInstanceOf(SessionFormatUnsupportedError)
-    await expect(f.read()).rejects.toThrow(path)
+    await f.write('child', [{ type: 'future/required', seq: 0, time: 2, data: {} }], true)
+    expect(await f.read()).toMatchObject([{ type: 'subagent/catalog', data: { childId: 'child', mode: 'unknown' } }])
+    await expect(f.ctx.sessionPersistence.open(SessionId('child'), 'read')).rejects.toBeInstanceOf(SessionFormatUnsupportedError)
   })
 
-  it('locates incomplete historical descriptor fields at their child source', async () => {
+  it('retains unknown child identity and reports invalid descriptor fields', async () => {
     const f = await fixture()
+    const warn = vi.spyOn(f.ctx.logger, 'warn')
     const path = await f.write('child', [{ ...f.descriptor, data: { version: 2, provider: 'spawn', mode: 'unknown' } }], true)
-    await expect(f.read()).rejects.toBeInstanceOf(SessionFormatUnsupportedError)
-    await expect(f.read()).rejects.toThrow(path)
+    expect(await f.read()).toMatchObject([{ type: 'subagent/catalog', data: { childId: 'child', mode: 'unknown' } }])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(path))
   })
 
   it.each(['read', 'write'] as const)('rejects duplicate own catalogs through a current %s open', async (access) => {
@@ -281,7 +304,7 @@ describe.each(['none', 'zstd'] as const)('historical catalog publication (%s)', 
   it('recollects newly available discovery fields before publishing a prepared parent', async () => {
     const f = await fixture()
     const childPath = await f.write('child', [], true)
-    expect(await f.read()).toEqual([])
+    expect(await f.read()).toMatchObject([{ type: 'subagent/catalog', data: { childId: 'child', mode: 'unknown' } }])
     await f.write('child', [f.descriptor], true)
     await expect(f.ctx.sessionPersistence.open(f.parent, 'write')).rejects.toThrow(childPath)
     const parentPath = generationLogPath(f.root, undefined, f.parent, 3, compression)
@@ -376,5 +399,49 @@ describe.each(['none', 'zstd'] as const)('historical catalog publication (%s)', 
     expect(await Promise.all(sourcePaths.map(path => readFile(path)))).toEqual(original)
     const reopened = await ctx.sessionPersistence.open(parent, 'read')
     try { expect((await reopened.read()).events).toEqual(expected) } finally { await reopened.close() }
+  })
+
+  it('recollects a repaired child before publishing a prepared parent', async () => {
+    const f = await fixture()
+    await f.write('child', [{ type: 'future/required', seq: 0, time: 2, data: {} }], true)
+    expect(await f.read()).toMatchObject([{ type: 'subagent/catalog', data: { childId: 'child', mode: 'unknown' } }])
+    await f.write('child', [f.descriptor], true)
+    expect(await f.read()).toMatchObject([{ type: 'subagent/catalog', data: { childId: 'child' } }])
+    const writer = await f.ctx.sessionPersistence.open(f.parent, 'write')
+    await writer.close()
+  })
+
+  it('keeps published unknown membership while a repaired child opens independently', async () => {
+    const f = await fixture()
+    await f.write('child', [{ type: 'future/required', seq: 0, time: 2, data: {} }], true)
+    const writer = await f.ctx.sessionPersistence.open(f.parent, 'write')
+    await writer.close()
+    const current = generationLogPath(f.root, undefined, f.parent, 4, compression)
+    const published = await readFile(current)
+    await f.write('child', [f.descriptor], true)
+    const child = await f.ctx.sessionPersistence.open(SessionId('child'), 'read')
+    try { expect((await child.read()).events).toEqual([f.descriptor]) } finally { await child.close() }
+    expect(await f.read()).toMatchObject([{ data: { childId: 'child', mode: 'unknown' } }])
+    expect(await readFile(current)).toEqual(published)
+  })
+
+  it('completes only the opened parent catalog and defers its child catalog', async () => {
+    const f = await fixture()
+    const childPath = await f.write('child', [f.descriptor], true)
+    const grandchildPath = await f.write('grandchild', [{ type: 'future/required', seq: 0, time: 2, data: {} }], true)
+    // Reparent the physical fixture so only opening the child can inspect this damaged log.
+    const first = JSON.stringify({ ...f.header, id: 'grandchild', origin: 'subagent', parentSession: 'child', createdAt: 3, delegationDepth: 2 }) + '\n'
+    const body = JSON.stringify({ type: 'future/required', seq: 0, time: 3, data: {} }) + '\n'
+    await writeFile(grandchildPath, compression === 'none' ? first + body : Buffer.concat([await compressZstdFrame(first), await compressZstdFrame(body)]))
+    const warn = vi.spyOn(f.ctx.logger, 'warn')
+    const source = await readFile(childPath)
+    const writer = await f.ctx.sessionPersistence.open(f.parent, 'write')
+    try { expect((await writer.read()).events).toMatchObject([{ type: 'subagent/catalog', data: { childId: 'child' } }]) } finally { await writer.close() }
+    expect(warn).not.toHaveBeenCalled()
+    expect(await readFile(childPath)).toEqual(source)
+    await expect(readFile(generationLogPath(f.root, undefined, SessionId('child'), 4, compression))).rejects.toMatchObject({ code: 'ENOENT' })
+    const child = await f.ctx.sessionPersistence.open(SessionId('child'), 'write')
+    await child.close()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(grandchildPath))
   })
 })

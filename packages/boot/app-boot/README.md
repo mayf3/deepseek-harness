@@ -68,7 +68,7 @@ Before you boot, you can print the exact configuration the app will mount: the d
 
 ### Reading plugin display metadata
 
-Use `readPluginMeta(specifier, parentURL)` or `ctx.pluginPackages.metaOf(specifier, parentURL)` to read installed package display text without importing or activating the plugin. Lookup uses the complete package specifier and the caller's resolution base, respecting Node exports. File paths and file URLs return no metadata without resolving resources. Missing locale fields fall back to the accessible `package.json` at that address; malformed metadata returns an `error` diagnostic. Results retain translations for Client-side language selection. See [Plugin display metadata](../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) for the author format.
+Use `readPluginMeta(specifier, parentURL)` or `ctx.pluginPackages.metaOf(specifier, parentURL)` to read installed package display text without importing or activating the plugin. Lookup uses the complete package specifier and the caller's resolution base, respecting Node exports. File paths and file URLs return no metadata without resolving resources. Missing locale fields fall back to the accessible `package.json` at that address; malformed metadata returns an `error` diagnostic. Results retain translations for Client-side language selection. The reader also loads `package.json.icon` as an image data URL, even when locale text is complete; an icon error preserves valid text alongside the diagnostic. See [Plugin display metadata](../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) for the author format.
 
 <a id="startup-and-reload-failures"></a>
 ### Startup and reload failures

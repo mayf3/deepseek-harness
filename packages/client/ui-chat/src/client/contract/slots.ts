@@ -150,7 +150,7 @@ export interface ChatViewInjected {
   }
   /** Open the current source file of a skill referenced by a sent message. */
   openSkill: (name: string) => void
-  /** Open one HTTP(S) message link in a Sidebar Browser tab. */
+  /** Open one HTTP(S) message link at the selected destination, using an external tab if Sidebar Browser is unavailable. */
   openExternalLink: (url: string) => void
   openFile: (path: string, options?: OpenFileOptions) => Promise<void>
   loadOlder: () => void
