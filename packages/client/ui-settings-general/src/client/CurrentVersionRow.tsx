@@ -4,7 +4,7 @@ import css from './CurrentVersionRow.module.css'
 
 /**
  * Render the version embedded by the client build; partial builds without metadata omit the row.
- * @param props - Localized settings copy.
+ * @param props - runtime share and localized copy.
  * @returns the current release label, or nothing when build metadata is absent.
  */
 export function CurrentVersionRow({ t }: PropsRuntime<'settings.general.item'> & PropsLocale<'settings'>) {
