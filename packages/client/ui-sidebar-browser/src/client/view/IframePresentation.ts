@@ -46,7 +46,10 @@ export class IframePresentation implements BrowserPresentation {
     }
   }
 
-  /** @param value - prepared document and event generation. */
+  /**
+   * Retain the prepared document and render it when a container is mounted.
+   * @param value - prepared document and event generation.
+   */
   show(value: IframeDocument): void {
     this.document = value
     this.render()

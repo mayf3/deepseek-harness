@@ -77,13 +77,20 @@ export class BrowserController implements HostObservable<BrowserControllerState>
   /** @param listener - state invalidation. @returns unsubscribe callback. */
   subscribe = (listener: () => void): (() => void) => this.store.subscribe(listener)
 
-  /** @param viewportId - mounted content container. @returns physical attachment cleanup only. */
+  /**
+   * Attach the page without transferring ownership of its tab occurrence.
+   * @param viewportId - mounted content container.
+   * @returns physical attachment cleanup only.
+   */
   mount(viewportId: string): () => void {
     this.publishSaved()
     return this.page.presentation.mount(viewportId)
   }
 
-  /** @param initialUrl - explicit typed-open address; a saved checkpoint alone never starts navigation. */
+  /**
+   * Consume initial navigation once; a saved checkpoint alone never starts a page.
+   * @param initialUrl - explicit typed-open address, or absence.
+   */
   start(initialUrl: string | undefined): void {
     if (this.started || this.disposed) return
     this.started = true
@@ -96,7 +103,10 @@ export class BrowserController implements HostObservable<BrowserControllerState>
     if (target !== undefined) this.loadUrl(target.url)
   }
 
-  /** @param value - address-bar or typed-open input. */
+  /**
+   * Validate an address before navigation, publishing invalid input for correction.
+   * @param value - address-bar or typed-open input.
+   */
   loadUrl(value: string): void {
     if (this.disposed) return
     const parsed = parseBrowserAddress(value, this.options.applicationOrigin)
@@ -114,16 +124,25 @@ export class BrowserController implements HostObservable<BrowserControllerState>
     else this.command(() => { this.page.frame.reload() })
   }
 
-  /** @param enabled - optional embedding-sandbox control; unavailable providers remain unchanged. */
+  /**
+   * Apply the optional embedding-sandbox control; unsupported providers remain unchanged.
+   * @param enabled - whether to enforce the provider's embedding sandbox.
+   */
   setSandbox(enabled: boolean): void {
     const sandbox = this.page.frame.sandbox
     if (sandbox !== undefined) this.command(() => { sandbox.setEnabled(enabled) })
   }
 
-  /** @param actions - writer from a replacement Session presentation binding. */
+  /**
+   * Redirect future checkpoint writes to a replacement Session binding.
+   * @param actions - replacement persistence writer.
+   */
   rebind(actions: BoundActions<BrowserStore>): void { this.actions = actions }
 
-  /** @returns after page teardown; repeated callers join the same disposal. */
+  /**
+   * Release the page and detach occurrence and state listeners.
+   * @returns after page teardown; repeated callers join the same disposal.
+   */
   dispose(): Promise<void> {
     if (this.disposal !== undefined) return this.disposal
     this.disposed = true
@@ -186,6 +205,7 @@ export interface BrowserInjected {
 }
 
 /**
+ * Own tab-occurrence controllers behind Session-scoped callbacks.
  * @param actions - persisted view-state writer.
  * @param createPage - composition-selected provider.
  * @param isTabOpen - authoritative layout membership, independent of mounted bodies and plugin lifetime.

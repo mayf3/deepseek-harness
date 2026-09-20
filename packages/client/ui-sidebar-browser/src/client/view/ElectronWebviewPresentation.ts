@@ -44,7 +44,11 @@ export class ElectronWebviewPresentation implements BrowserPresentation {
     }
   }
 
-  /** @param reservation - main-approved partition and bootstrap lease. @returns a detached, configured webview. */
+  /**
+   * Configure a detached webview for an approved guest reservation.
+   * @param reservation - main-approved partition and bootstrap lease.
+   * @returns a detached, configured webview.
+   */
   createElement(reservation: DesktopBrowserReservation): WebviewElement {
     const element = document.createElement('webview') as WebviewElement
     element.className = css.webview as string
@@ -55,7 +59,11 @@ export class ElectronWebviewPresentation implements BrowserPresentation {
     return element
   }
 
-  /** @param element - configured guest with its navigation listeners already installed. */
+  /**
+   * Attach a prepared guest, removing any previous guest DOM from the container.
+   * @param element - configured guest with its navigation listeners already installed.
+   * @throws when no content container is mounted.
+   */
   present(element: WebviewElement): void {
     if (this.host === undefined) throw new Error('Electron presentation: cannot attach without a content container')
     this.clear()
@@ -63,7 +71,10 @@ export class ElectronWebviewPresentation implements BrowserPresentation {
     this.host.append(element)
   }
 
-  /** @param title - observed document title, also used as the accessible label. */
+  /**
+   * Set the guest element's accessible label.
+   * @param title - observed document title.
+   */
   show(title: string): void {
     this.element?.setAttribute('aria-label', title)
   }

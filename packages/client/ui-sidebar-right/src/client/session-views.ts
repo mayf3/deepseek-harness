@@ -15,6 +15,7 @@ export interface SidebarSessionViewSnapshot {
 
 /** Selects and retires views; the Sidebar plugin's injected dependencies own global teardown. */
 export class SidebarSessionViews {
+  /** Selected and retained View targets observed by the root renderer. */
   readonly source = createSnapshotStore<readonly SidebarSessionViewSnapshot[]>([])
   private readonly views = new Map<SessionId, SidebarSessionView>()
   private readonly viewsByReference = new Map<SessionReference, SidebarSessionView>()
@@ -23,7 +24,10 @@ export class SidebarSessionViews {
 
   constructor(private readonly sessions: ISessions) {}
 
-  /** @param sessionId - main selection, or absence; existing retained background views stay bound. */
+  /**
+   * Change the foreground Session while preserving retained background Views.
+   * @param sessionId - main selection, or absence.
+   */
   select(sessionId: SessionId | undefined): void {
     if (this.closed || this.selected === sessionId) return
     this.selected = sessionId

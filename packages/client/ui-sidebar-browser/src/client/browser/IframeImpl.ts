@@ -22,14 +22,20 @@ export class IframeImpl implements BrowserFrame {
     this.store = createSnapshotStore({ ...emptyBrowserFrame(), sandboxEnabled: this.sandboxed })
   }
 
-  /** @param revision - document generation whose iframe emitted load. */
+  /**
+   * Record a controlled load or a later navigation to an unreadable address.
+   * @param revision - document generation whose iframe emitted load.
+   */
   handleLoaded(revision: number): void {
     if (this.disposed) return
     this.navigation.frameLoaded(revision)
     this.publish()
   }
 
-  /** @param revision - document generation whose iframe reported failure. */
+  /**
+   * Publish a failure only for the current document generation.
+   * @param revision - document generation whose iframe reported failure.
+   */
   handleLoadFailed(revision: number): void {
     if (this.disposed || this.navigation.snapshot.request?.revision !== revision) return
     this.error = { code: undefined, description: undefined }

@@ -11,6 +11,7 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
 
 /** Owns its reference until retirement finishes or the Sidebar plugin shuts down. */
 export class SidebarSessionView {
+  /** Session reference released exclusively by this View. */
   readonly reference: SessionReference
   private readonly tabs = new Map<TabId, number>()
   private mounts = 0
@@ -38,7 +39,10 @@ export class SidebarSessionView {
     return this.tabs.size > 0
   }
 
-  /** @returns cleanup for one committed root; the final cleanup releases a retired view. */
+  /**
+   * Keep a retired View's reference until its committed roots finish unmounting.
+   * @returns cleanup to call once for this root; the final cleanup releases a retired View.
+   */
   mount(): () => void {
     this.mounts += 1
     return () => {

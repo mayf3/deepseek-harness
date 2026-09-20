@@ -6,7 +6,11 @@ import { ElectronWebViewImpl } from './browser/ElectronWebViewImpl.ts'
 import { IframePresentation } from './view/IframePresentation.ts'
 import { ElectronWebviewPresentation } from './view/ElectronWebviewPresentation.ts'
 
-/** @param options - saved navigation and callbacks. @returns the Web page's two independent faces. */
+/**
+ * Assemble an idle iframe provider and its DOM presentation.
+ * @param options - saved navigation and callbacks.
+ * @returns the Web page's navigation and presentation objects.
+ */
 export function createIframePage(options: BrowserPageOptions): BrowserPage {
   const presentation = new IframePresentation({
     loaded: revision => { frame.handleLoaded(revision) },
@@ -18,6 +22,7 @@ export function createIframePage(options: BrowserPageOptions): BrowserPage {
 }
 
 /**
+ * Assemble an idle Electron provider; guest creation waits for mounting and navigation.
  * @param options - checkpoint and source-tab callbacks.
  * @param bridge - desktop-only transport.
  * @param workspace - storage account resolver.
