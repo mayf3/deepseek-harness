@@ -24,6 +24,8 @@ Range.prototype.getBoundingClientRect = () => ({
 
 usePinnedBrowserLanguages('zh-CN')
 
+import './control-row-dom.ts'
+
 const SID = 's1' as SessionId
 
 /** jsdom has no ResizeObserver; the composer seat publishes its height through one. */
