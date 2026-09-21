@@ -1,8 +1,4 @@
 ; NSIS owns installer localization independently of the Electron application locale.
-!ifdef BUILD_UNINSTALLER
-LangString UNINSTALL_DATA_FAILED ${LANG_ENGLISH} "Could not remove all local application data. Remaining files: $UnTarget"
-LangString UNINSTALL_DATA_FAILED ${LANG_SIMPCHINESE} "未能清除全部本机应用数据，剩余文件位于：$UnTarget"
-!endif
 LangString INSTALLER_INSTALL ${LANG_ENGLISH} "Install now"
 LangString INSTALLER_INSTALL ${LANG_SIMPCHINESE} "立即安装"
 LangString INSTALLER_FINISH ${LANG_ENGLISH} "Finish"

@@ -1,17 +1,15 @@
 ; Electron user data and updater downloads leave with the application; the Harness home is never touched.
 !include FileFunc.nsh
+Var UnTarget
 
 Function un.DataInit
   InitPluginsDir
   File "/oname=$PLUGINSDIR\window-frame.dll" "${INSTALLER_BUILD_DIR}\window-frame.dll"
 FunctionEnd
 
-; The helper refuses unsafe roots and never descends into reparse points; locked files are reported, not fatal.
+; The helper refuses unsafe roots and never descends into reparse points; a locked file leaves residue and never fails the uninstall.
 Function un.RemoveData
-  System::Call '$PLUGINSDIR\window-frame.dll::UninstallRemoveData(w "$UnTarget", w "$INSTDIR") i.r0 ?c'
-  ${If} $0 != 0
-    DetailPrint "$(UNINSTALL_DATA_FAILED)"
-  ${EndIf}
+  System::Call '$PLUGINSDIR\window-frame.dll::UninstallRemoveData(w "$UnTarget", w "$INSTDIR") i ?c'
 FunctionEnd
 
 Function un.CleanData
