@@ -97,7 +97,7 @@ kind: "package-reference"
 
 这些限制定义哪些插件会有页面、分组有多新鲜；它们是当前包约束。
 
-- **只有宿主平面的插件有页面**：由 agent preset 挂载的插件把配置内联在该 preset 的 `agent.cordis.yml` 中，且根本无法注册 settings 命名空间，因此本包不会为它注册任何东西。编辑那些值仍是 preset 编辑器的职责。
+- **只有宿主平面的插件有页面**：由 agent preset 挂载的插件把配置内联在该 preset 的 `config.plugins` 中，且根本无法注册 settings 命名空间，因此本包不会为它注册任何东西。编辑那些值仍是 preset 编辑器的职责。
 - **页面仍然需要一份浏览器 bundle**：浏览器半侧必须是按客户端模块系统的 lazy-CJS factory 格式构建的 `dsh.client` 包，而产出它的 `clientBundle` 预设位于 `../../../packages/client/tsdown.client.ts`，并非已发布的包，因此本仓库之外的插件得自行复刻该构建。
 - **被服务的命名空间只在两种信号上重读**：协议通告的是 settings 文档提交与连接重置，而非注册行为，因此在镜像读取之后才被其拥有方注册的命名空间，要等下一次文档提交或重连才会加入官方分组。
 - **shell 页面跟随被组装的执行器**：POSIX 与 PowerShell 两个执行器家族共用 `shell` 命名空间，因为一个宿主只组装其中之一，所以被服务的 schema 随平台不同（PowerShell 多出 `pwshPath`），尽管页面在两者下编辑的都是同样两个字段。
