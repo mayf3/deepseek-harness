@@ -22575,7 +22575,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:227"
+        "packages/experimental/agent-team/src/types.ts:216"
       ]
     },
     {
@@ -69181,7 +69181,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:223"
+        "packages/experimental/agent-team/src/types.ts:212"
       ]
     },
     {
@@ -71163,7 +71163,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:221"
+        "packages/experimental/agent-team/src/types.ts:210"
       ]
     },
     {
@@ -83593,7 +83593,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:225"
+        "packages/experimental/agent-team/src/types.ts:214"
       ]
     },
     {
