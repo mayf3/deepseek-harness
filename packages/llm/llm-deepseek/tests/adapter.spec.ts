@@ -1,4 +1,5 @@
 /** HTTP lifecycle, routing and optional Cordis services under real composition. */
+import type { DeepSeekAccount } from '@deepseek-ai/dsh-deepseek-account'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -448,4 +449,30 @@ describe('Cordis provider composition', () => {
 
 it('rejects invalid catalog context windows at the options resolver', () => {
   expect(() => Messages.resolveAdapterOptions({ models: [{ id: 'invalid-window', contextWindow: 0 }] })).toThrow('contextWindow must be a positive integer')
+})
+
+
+it.each([
+  ['https://api.deepseek.com', 'account-token'],
+  ['https://custom.example.test', 'ambient-key'],
+] as const)('selects account or API-key credentials from the actual endpoint %s', async (baseURL, expected) => {
+  vi.stubEnv('DEEPSEEK_API_KEY', 'ambient-key')
+  const { ctx } = await context()
+  // This consumer uses only resolveToken; the real provider owns origin validation in its own suite.
+  ctx.provide('deepseekAccount', {
+    resolveToken: (url: string) => Promise.resolve(url === 'https://api.deepseek.com' ? 'account-token' : undefined),
+  } as DeepSeekAccount)
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(Messages, { baseURL })
+  const request = vi.fn<typeof fetch>((_input, init) => {
+    const headers = new Headers(init?.headers)
+    expect(headers.has('authorization')).toBe(false)
+    expect(headers.get('x-api-key')).toBe(expected === 'account-token' ? null : expected)
+    expect(headers.get('x-dsh-auth-token')).toBe(expected === 'account-token' ? expected : null)
+    expect(init?.redirect).toBe('error')
+    return Promise.resolve(new Response(sse(textEvents), { status: 200 }))
+  })
+  vi.stubGlobal('fetch', request)
+  await assemble(ctx.llm.stream(options()))
+  expect(request).toHaveBeenCalledOnce()
 })

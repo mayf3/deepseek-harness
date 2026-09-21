@@ -50,6 +50,8 @@ A committed write folds its answer into the shared mirror. Refused writes refres
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+The optional settings.launcher contribution receives wide and openSettings to supply a sidebar account menu; the shell retains its plain Settings trigger when no launcher is registered.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 

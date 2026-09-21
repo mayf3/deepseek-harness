@@ -13,7 +13,7 @@ import { excelFixture, excelHtmlFixture, excelHtmlText, meetingMinutesFixture } 
 import { xlsFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/xls-fixture.ts'
 import { pdfFixture, selectionPdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { openSettingsFromAccountMenu, connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v3.jsonl', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/document-preview', import.meta.url))
@@ -423,7 +423,7 @@ else process.exit(1);
       `- Local script: ${await basicHtml.locator('#local-result').innerText()}`,
       `- Network requests: ${previewNetworkRequests}`,
     ].join('\n'))
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await openSettingsFromAccountMenu(page, 'en')
     const settings = page.getByRole('dialog', { name: 'Settings' })
     await settings.getByRole('switch', { name: 'Developer tools' }).click()
     await expect.poll(() => settings.getByRole('switch', { name: 'Developer tools' }).getAttribute('aria-checked')).toBe('true')

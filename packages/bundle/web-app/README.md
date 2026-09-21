@@ -162,3 +162,5 @@ These limits tell you what to expect in unusual setups — a source checkout, SS
 None.
 
 </details>
+
+The Web composition includes the account Remote controller and Account settings section.

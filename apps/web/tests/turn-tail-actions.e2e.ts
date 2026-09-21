@@ -20,7 +20,7 @@ import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { openSettingsFromAccountMenu, connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/turn-tail-actions', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
@@ -245,7 +245,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     expect(await process.getAttribute('aria-expanded')).toBe('false')
     expect(await tool.isVisible()).toBe(false)
 
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await openSettingsFromAccountMenu(page, 'en')
     const dialog = page.getByRole('dialog', { name: 'Settings' })
     await dialog.getByText('Work details', { exact: true }).locator('../..')
       .getByRole('button', { name: 'Compact', exact: true }).click()
@@ -258,7 +258,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     await expect.poll(async () => readFile(join(scaffold!.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain(`transcriptView: ${mode}`)
 
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await openSettingsFromAccountMenu(page, 'en')
     const restored = page.getByRole('dialog', { name: 'Settings' })
     await restored.getByText('Work details', { exact: true }).locator('../..')
       .getByRole('button', { name: label, exact: true }).click()

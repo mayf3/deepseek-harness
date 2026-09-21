@@ -22,6 +22,8 @@ Use this package to give the dsh web client a Settings panel, connection-recover
 
 -----
 
+The Settings panel uses a shared 760 × 500 layout, bounded by the viewport. Longer sections scroll inside the content column; the Account entry uses the account icon.
+
 <a id="use-this-package"></a>
 ## Use this package
 
@@ -51,6 +53,8 @@ The onboarding ledger projects in ascending order and mounts exactly one step at
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
+
+The shell declares settings.launcher for an account-owned sidebar menu and retains the Settings button as its fallback. Closing the dialog returns focus to the active launcher.
 
 <details>
 <summary>Implementation internals — click to expand</summary>

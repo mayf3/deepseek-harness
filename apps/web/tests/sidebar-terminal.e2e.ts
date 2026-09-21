@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-api-terminal-controller'
 import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { createProcessInspector, type ProcessIdentity } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import { compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
-import { connectFreshWorkspace, saveFailureShot } from './support.ts'
+import { openSettingsFromAccountMenu, connectFreshWorkspace, saveFailureShot } from './support.ts'
 
 const expected = fileURLToPath(new URL('./expected/sidebar-terminal/running.expected.md', import.meta.url))
 const shots = fileURLToPath(new URL('../../../.artifacts/screenshots/sidebar-terminal/', import.meta.url))
@@ -47,7 +47,7 @@ async function controlTransport(page: Page) {
 }
 
 async function selectTerminalTheme(page: Page, name: string): Promise<void> {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await openSettingsFromAccountMenu(page, 'en')
   const dialog = page.getByRole('dialog', { name: 'Settings' })
   const [response] = await Promise.all([
     page.waitForResponse(candidate => new URL(candidate.url()).pathname === '/api/settings/mutate' && candidate.request().method() === 'POST'),

@@ -1,6 +1,6 @@
 /**
  * Settings shell root: the sidebar-foot trigger row plus the centered modal
- * panel (figma 501:29947, 1080x700) with the section nav rail. The shell is
+ * panel (figma 2552:26025, 760x500) with the section nav rail. The shell is
  * a pure composition face — slot-owned text (trigger label, panel title,
  * close label, sections) arrives from registrants through slots; accessible
  * names resolve from localized content (trigger: shell locale; dialog:
@@ -15,7 +15,7 @@ import clsx from 'clsx'
 import {
   ConnectionIndicator,
   IconAgentPresetOutlineMedium, IconArchiveOutlineMedium, IconCloseOutlineRegular, IconDataOutlineMedium,
-  IconPersonalizationOutlineMedium, IconSettingsOutlineMedium,
+  IconPersonalizationOutlineMedium, IconSettingsOutlineMedium, IconUserOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConnectionIndicatorState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
@@ -29,6 +29,7 @@ const CONNECTING_MIN_VISIBLE_MS = 800
 
 /** Nav glyph by section id; unknown ids fall back to the settings gear. */
 function navIcon(id: string) {
+  if (id === 'account') return <IconUserOutlineMedium className={css.navIcon} size={16} />
   if (id === 'models') return <IconDataOutlineMedium className={css.navIcon} size={16} />
   if (id === 'agent-presets') return <IconAgentPresetOutlineMedium className={css.navIcon} size={16} />
   if (id === 'plugins') return <IconPersonalizationOutlineMedium className={css.navIcon} size={16} />
@@ -117,10 +118,12 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   } = props
   const [open, setOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
+  const [requestedOnboarding, setRequestedOnboarding] = useState<string | undefined>()
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
   const [showRecovery, setShowRecovery] = useState(false)
   const [holdConnecting, setHoldConnecting] = useState(false)
   const connectingShownAt = useRef<number | undefined>(undefined)
+  const triggerRow = useRef<HTMLDivElement | null>(null)
   const triggerButton = useRef<HTMLButtonElement | null>(null)
   const wasOpen = useRef(open)
   const close = useCallback(() => {
@@ -129,7 +132,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   }, [])
   // Restore after the close commit, when the dialog can no longer own focus.
   useEffect(() => {
-    if (wasOpen.current && !open) triggerButton.current?.focus()
+    if (wasOpen.current && !open) triggerRow.current?.querySelector('button')?.focus()
     wasOpen.current = open
   }, [open])
   const openSection = useCallback((id: string) => {
@@ -150,9 +153,11 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
       .find(session => (session.retainedBy.mainView ?? 0) > 0)
     return state.phase === 'ready' && (main === undefined || main.blank)
   })
-  const onboardingStep = onboardingActive
-    ? onboardingSteps.find(step => !completedOnboarding.has(step.id))
-    : undefined
+  const onboardingStep = requestedOnboarding !== undefined
+    ? onboardingSteps.find(step => step.id === requestedOnboarding)
+    : onboardingActive
+      ? onboardingSteps.find(step => !completedOnboarding.has(step.id))
+      : undefined
 
   useEffect(() => {
     if (onboardingActive) return
@@ -197,6 +202,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   }, [connectionState])
 
   const completeOnboardingStep = useCallback((id: string) => {
+    setRequestedOnboarding(undefined)
     setCompletedOnboarding((previous) => {
       if (previous.has(id)) return previous
       return new Set([...previous, id])
@@ -214,8 +220,8 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
 
   return (
     <>
-      <div className={clsx(css.triggerRow, !wide && css.railRow)}>
-        <button
+      <div ref={triggerRow} className={clsx(css.triggerRow, !wide && css.railRow)}>
+        {renderSlot('settings.launcher', { wide, openSettings: () => { setOpen(true) }, openOnboarding: (id) => { setOpen(false); setRequestedOnboarding(id) } }, { fallback: <button
           ref={triggerButton}
           type="button"
           className={clsx(css.trigger, !wide && css.rail)}
@@ -225,7 +231,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           onClick={() => { setOpen(true) }}
         >
           {renderSlot('settings.trigger', { wide })}
-        </button>
+        </button> })}
         <ConnectionIndicator
           state={wide && desktopUpdate.presentation?.phase !== 'installing' ? connectionIndicator : undefined}
           disconnectedLabel={t('connection.error')}
@@ -252,6 +258,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           renders null, so nothing paints or blocks while it decides. */}
       {onboardingStep !== undefined && renderSlot('settings.onboarding', {
         stepId: onboardingStep.id,
+        explicit: requestedOnboarding !== undefined,
         complete: () => { completeOnboardingStep(onboardingStep.id) },
         openSection,
       }, { only: onboardingStep.id })}

@@ -9,7 +9,7 @@ import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold,
   watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
+import { openSettingsFromAccountMenu, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
 const EXPECTED = fileURLToPath(new URL('./expected/models-settings-recovery/stored-error.expected.md', import.meta.url))
 const FAILURE = 'llm-pi-ai: provider "openrouter" model "111" needs an api; '
@@ -37,7 +37,7 @@ describe('web e2e: repairs a stored provider after catalog drift', () => {
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openSettingsFromAccountMenu(page, 'zh')
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.getByRole('button', { name: '模型', exact: true }).click()
     await dialog.getByText(FAILURE, { exact: true }).waitFor()
