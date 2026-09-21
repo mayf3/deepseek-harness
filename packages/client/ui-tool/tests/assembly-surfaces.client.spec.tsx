@@ -22,6 +22,8 @@ import { apply as applyTool, inject as injectTool } from '../src/client/apply.ts
 usePinnedBrowserLanguages('zh-CN')
 
 const SID = 's1' as SessionId
+// jsdom omits font loading events used by the resident composer.
+const fonts = Object.getOwnPropertyDescriptor(document, 'fonts')
 
 /** jsdom has no ResizeObserver; the composer seat publishes its height through one. */
 class ResizeObserverStub {
@@ -33,10 +35,13 @@ class ResizeObserverStub {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  if (fonts === undefined) Reflect.deleteProperty(document, 'fonts')
+  else Object.defineProperty(document, 'fonts', fonts)
 })
 beforeEach(() => {
   localStorage.clear()
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+  Object.defineProperty(document, 'fonts', { configurable: true, value: new EventTarget() })
 })
 const TODOS: TodoItem[] = [
   { content: '梳理需求', status: 'completed' },
