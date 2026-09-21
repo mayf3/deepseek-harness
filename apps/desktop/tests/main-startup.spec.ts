@@ -368,6 +368,24 @@ describe('desktop main startup', () => {
     expect((await handler(new Request('dsh-app://unknown/update-dialog.html'))).status).toBe(404)
   })
 
+  it.each(['darwin', 'win32'])('opens packaged main-window DevTools with F12 on %s', async (platform) => {
+    vi.stubGlobal('process', { ...process, platform })
+    await readyForUpdate()
+    const contents = harness.windows[0]!.webContents
+    expect(contents.openDevTools).not.toHaveBeenCalled()
+    const event = { preventDefault: vi.fn() }
+    for (const input of [
+      { type: 'keyUp', key: 'F12' },
+      { type: 'keyDown', key: 'F11' },
+      { type: 'keyDown', key: 'F12', isAutoRepeat: true },
+    ]) contents.emit('before-input-event', event, input)
+    expect(contents.openDevTools).not.toHaveBeenCalled()
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    contents.emit('before-input-event', event, { type: 'keyDown', key: 'F12', isAutoRepeat: false })
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(contents.openDevTools).toHaveBeenCalledExactlyOnceWith({ mode: 'detach' })
+  })
+
   it.each([
     ['darwin', true, 'en-US'],
     ['darwin', false, 'zh-CN'],

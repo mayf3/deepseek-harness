@@ -153,6 +153,13 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
       webviewTag: primary,
     },
   })
+  if (primary) {
+    window.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown' || input.key !== 'F12' || input.isAutoRepeat) return
+      event.preventDefault()
+      window.webContents.openDevTools({ mode: 'detach' })
+    })
+  }
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (['http:', 'https:'].includes(new URL(url).protocol)) void shell.openExternal(url)
     return { action: 'deny' }
