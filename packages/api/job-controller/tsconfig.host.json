@@ -15,6 +15,7 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
+    { "path": "../../core/agent" },
     { "path": "../../core/session" },
     { "path": "../../jobs/jobs" },
     { "path": "../../typert/protocol" }

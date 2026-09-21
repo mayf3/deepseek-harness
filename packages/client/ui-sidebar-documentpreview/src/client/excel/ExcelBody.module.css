@@ -49,16 +49,3 @@
   padding: 16px;
   color: var(--dsw-alias-label-secondary);
 }
-
-.loadingIcon {
-  display: flex;
-  animation: turn 0.8s linear infinite;
-}
-
-@keyframes turn {
-  to { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .loadingIcon { animation: none; }
-}

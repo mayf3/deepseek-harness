@@ -61,6 +61,7 @@ export interface DesktopElectronBuilderConfig {
  * @param hostPlatform - Build-host platform used when no explicit target is present.
  * @param hostArch - Build-host architecture used when no explicit target is present.
  * @param preparedRuntime - Verified private qualification runtime; ordinary releases use target-owned resources.
+ * @param preparedRuntimeVersion - Version that private runtime declares, which qualification rewrites away from the product version.
  * @returns electron-builder configuration.
  */
 export function createElectronBuilderConfig(
@@ -68,6 +69,7 @@ export function createElectronBuilderConfig(
   hostPlatform?: NodeJS.Platform,
   hostArch?: string,
   preparedRuntime?: string,
+  preparedRuntimeVersion?: string,
 ): DesktopElectronBuilderConfig
 
 declare const electronBuilderConfig: DesktopElectronBuilderConfig

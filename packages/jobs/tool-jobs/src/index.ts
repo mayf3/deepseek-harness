@@ -37,17 +37,6 @@ export const inject = ['tools', 'jobs', 'systemPrompt']
  */
 export type CompletionDelivery = 'quiet' | 'wakeup'
 
-/**
- * One model touch of a live job's settlement: a wait in flight or a kill the
- * model requested. `live` says whether the tool result that made the claim
- * will still carry the settlement; a wait's claim dies the moment its caller
- * aborts, before the registry's rejection reaches the tool.
- */
-interface Claim {
-  readonly id: JobId
-  live: boolean
-}
-
 /** Configures bounded `job_output` waits and completion-notice delivery. */
 export interface Config {
   /** Wait duration applied when `job_output` sets `wait` without `timeout_ms` (default 30s). */
@@ -188,11 +177,6 @@ function presentJobCall(title: string, kind: 'read' | 'execute', rawInput?: stri
   return { card: 'generic', title, kind, ...rawInput !== undefined ? { rawInput } : {} }
 }
 
-/** True for the three terminal statuses. */
-function isTerminal(job: JobView): boolean {
-  return job.status === 'completed' || job.status === 'killed' || job.status === 'failed'
-}
-
 /** The consuming read as the model sees it: the delta, then the result once, then the status line. */
 function readBody(read: JobRead): { text: string; job: PublicJobSnapshot } {
   const delta = renderModelDelta(read.chunks, read.lossy, read.job.output.spillPaths ?? [])
@@ -266,35 +250,16 @@ export function apply(ctx: Context, config: Config): void {
     text: 'Track every background job id you start. You are notified in-session when a job finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running job\'s work. Before giving a final answer, collect every still-relevant job with job_output (set wait: true only when you are genuinely blocked on it), and job_kill jobs that stopped mattering.',
   })
 
-  // Jobs whose terminal state this plugin already handed to the model through
-  // a tool result: a terminal `job_output`, a wait that returned it, or a
-  // `job_kill` it requested. A wait claims when it starts, not when it
-  // returns — settlement releases waiters before it announces, but their
-  // continuations run after the event. Each call holds its own claim, so a
-  // timed-out wait drops only its own while a concurrent wait on the same job
-  // keeps the settlement covered. The settlement event drops every claim on
-  // the job, so the ledger holds only live jobs the model already touched.
-  const claims = new Set<Claim>()
-  const claim = (id: JobId): Claim => {
-    const entry: Claim = { id, live: true }
-    claims.add(entry)
-    return entry
-  }
-  // Drop every claim on the job; true when one of them still covered the settlement.
-  const settleClaims = (id: JobId): boolean => {
-    let covered = false
-    for (const entry of claims) {
-      if (entry.id !== id) continue
-      claims.delete(entry)
-      if (entry.live) covered = true
-    }
-    return covered
-  }
+  // Live jobs whose kill the model itself requested through `job_kill`: that
+  // tool result is the model's delivery, so the settlement notice would only
+  // repeat it. A wait needs no entry here — the registry reports a settlement
+  // that released a live wait as `awaited`, whichever plugin was waiting.
+  const killedByModel = new Set<JobId>()
 
   // A busy owner is injected: the notice waits in its next-step inbox, which
   // the turn cannot close over, so jobs settling together cost one step. An
-  // idle owner is woken instead, because an unclaimed notice is a completion
-  // the model never learns about. Either way, disposal before the claim
+  // idle owner is woken instead, because an undelivered notice is a completion
+  // the model never learns about. Either way, disposal before delivery
   // discards it with the owner, and a teardown settlement has no reader left.
   //
   // The registry routes each settlement to the scope this plugin was mounted
@@ -302,12 +267,12 @@ export function apply(ctx: Context, config: Config): void {
   // this listener owns delivery, not the choice of whom to deliver to.
   ctx.jobs.events.subscribe({ owners: 'scope' }, (event) => {
     if (event.type === 'removed') {
-      settleClaims(event.job.id)
+      killedByModel.delete(event.job.id)
       return
     }
     if (event.type !== 'settled') return
-    const claimed = settleClaims(event.job.id)
-    if (claimed || event.cause === 'teardown' || event.job.owner === undefined) return
+    const delivered = killedByModel.delete(event.job.id) || event.awaited
+    if (delivered || event.cause === 'teardown' || event.job.owner === undefined) return
     // The destination is the agent registered for the owner session now. An
     // owned job needed the agent registry to start, so the registry is only
     // absent here when it left before settlement — and then no inbox is left.
@@ -365,26 +330,11 @@ export function apply(ctx: Context, config: Config): void {
       const id = validateJobId(args.job_id)
       const jobs = ctx.jobs
       if (args.wait === true) {
-        const timeout = Math.min(args.timeout_ms ?? waitDefault, waitCap)
-        const entry = claim(id)
-        // The registry rejects an aborted wait on a later microtask, and a
-        // settlement announced in between must not find this claim live: the
-        // tool result carries the abort, so the notice is the model's only
-        // completion record. ToolRuntime never dispatches an aborted call, so
-        // the listener covers every abort. A timeout needs no such guard —
-        // the registry resolves it from a timer callback, and the wait's
-        // continuation runs before anything else can settle the job.
-        const abandon = (): void => { entry.live = false }
-        exec.signal.addEventListener('abort', abandon, { once: true })
-        try {
-          const view = await jobs.wait(id, timeout, exec.agent?.id, exec.signal)
-          if (!isTerminal(view)) claims.delete(entry)
-        } catch (error: unknown) {
-          claims.delete(entry)
-          throw error
-        } finally {
-          exec.signal.removeEventListener('abort', abandon)
-        }
+        // A settlement that releases this wait is reported `awaited`, so the
+        // notice listener above skips it: this result carries the terminal
+        // state. A timed-out or aborted wait has left the registry's waiter
+        // set before any later settlement, which then notifies as usual.
+        await jobs.wait(id, Math.min(args.timeout_ms ?? waitDefault, waitCap), exec.agent?.id, exec.signal)
       }
       return readBody(jobs.read(id, exec.agent?.id))
     },
@@ -445,7 +395,7 @@ export function apply(ctx: Context, config: Config): void {
       const result = jobs.kill(id, exec.agent?.id, args.reason)
       // The model's own kill is its delivery: the settlement notice would only
       // repeat what this tool result already said.
-      if (result === 'requested') claim(id)
+      if (result === 'requested') killedByModel.add(id)
       // A projection describes current state without consuming pending output.
       const job = publicJob(jobs.get(id, exec.agent?.id))
       return Promise.resolve({

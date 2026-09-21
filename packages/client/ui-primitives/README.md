@@ -55,6 +55,8 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `Tooltip` | Hover text anchored to a cloned child; optional `portal` rendering escapes clipping containers. |
 | `HoverCard` | Hover preview the pointer can rest on and select from; optional copy button. |
 | `Toast` | Transient top-center banner held for the owner's `holdMs`. |
+| `SettingsForm`, `SettingsValueField`, `SettingsSecretField` | The frame and the controls of a plugin's settings page: the frame takes its copy as `labels`, saves only on its button, and discards on unmount; a value field shows staged text with the overridden badge and reset; a secret field starts blank and reports only whether a value is configured. |
+| `SettingsFormModel`, `settingsNumberField`, `settingsTextField` | The staged-edit model behind such a page over a settings scope: drafts are staged and written on save, a field is overridden by its presence in the user layer, and a save that did not land keeps its drafts. |
 | `JsonTree`, `JsonBlock` | Read-only JSON inspection. |
 | `MarkdownText`, `MarkdownDelegateProvider`, `CodeBlock` | Untrusted GFM with TeX math, owner-delegated HTTP(S) navigation, and highlighted code. `CodeBlock` accepts opt-in `lineNumbers`; copied source excludes the gutter, and `contentRef` exposes its stable source wrapper to an owner that uses it as a scrollport. Set `showHeader={false}` when the owner supplies its own language and copy toolbar. |
 | `TerminalBlock`, `ReadBlock`, `DiffBlock`, `SearchBlock`, `WebBlock` | The agent-output card matching each tool-result intent. |
@@ -116,6 +118,7 @@ The package enforces one separation: presentational React atoms with zero Cordis
 | [`src/code-highlighting.ts`](src/code-highlighting.ts) | Shared filename grammar selection and lazy line highlighting |
 | [`src/plugin-artwork.tsx`](src/plugin-artwork.tsx) | Fixed-palette plugin artwork with per-instance SVG def ids |
 | [`src/useAnchoredPosition.ts`](src/useAnchoredPosition.ts) / [`src/useAnchoredMaxHeight.ts`](src/useAnchoredMaxHeight.ts) | Floating-panel and overlay geometry hooks |
+| [`src/settings-form/`](src/settings-form/) | The settings page kit: the staged form model over a settings scope, the value and secret fields, and the form frame |
 
 ### Streaming markdown
 

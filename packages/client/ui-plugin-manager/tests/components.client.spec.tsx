@@ -12,7 +12,7 @@ import type { PluginManagerPageProps } from '../src/client/index.ts'
 import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { rowKey, type InstallState, type PackageRow, type PackageView, type PluginManagerState } from '../src/client/manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
-import type { PluginActivationOwnerProps } from '../src/client/slot-contract.ts'
+import type { PluginActivationOwnerProps, PluginDetailProps, PluginsSubject } from '../src/client/slot-contract.ts'
 
 afterEach(cleanup)
 
@@ -66,8 +66,17 @@ const READY: PluginManagerState = {
   highlight: null,
 }
 
-/** Configuration entries a test supplies: what each slot cell renders, by `<slot>:<cell>` and the view asked for. */
-type SlotBodies = Record<string, (view: 'summary' | 'page' | 'activation', owner: unknown) => ReactNode>
+/**
+ * Slot entries a test supplies: what each slot cell renders, by `<slot>:<cell>`
+ * (a list slot's cell is empty), the view asked for — `detail` for a detail
+ * contribution — and the owner props.
+ */
+type SlotBodies = Record<string, (view: 'summary' | 'page' | 'activation' | 'detail', owner: unknown) => ReactNode>
+
+/** The subject a detail contribution was rendered with. */
+function subjectOf(owner: unknown): PluginsSubject | undefined {
+  return typeof owner === 'object' && owner !== null && 'subject' in owner ? (owner as PluginDetailProps).subject : undefined
+}
 
 const NO_CONFIG: ConfigLedger = { items: [], bundles: new Set(), rows: new Set() }
 
@@ -122,6 +131,7 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
       const body = bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]
       if (body === undefined) return null
       if (name === 'plugins.bundle.activation') return body('activation', owner)
+      if (name.startsWith('plugins.detail.')) return body('detail', owner)
       if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
         throw new Error('Plugin configuration fixture requires a summary or page view')
       }
@@ -595,6 +605,74 @@ describe('PluginManagerPage', () => {
       fireEvent.click(within(page).getByRole('button', { name: en.backToPackage.replace('{name}', 'dsh-better-sidebar') }))
       expect(document.querySelector('[data-plugin-row-detail]')).toBeNull()
       expect(document.querySelector('[data-plugin-detail="dsh-better-sidebar"]')).toBeTruthy()
+    })
+  })
+
+  describe('detail contributions', () => {
+    const subjects: PluginsSubject[] = []
+    const label = (owner: unknown): string => {
+      const subject = subjectOf(owner)
+      if (subject === undefined) return 'none'
+      subjects.push(subject)
+      if (subject.kind === 'bundle') return `bundle ${subject.pkg.name}`
+      if (subject.kind === 'row') return `row ${subject.pkg.name}#${subject.row.rowId}`
+      return `item ${subject.id}`
+    }
+    const bodies: SlotBodies = {
+      'plugins.item:bash': view => view === 'summary' ? 'Limits every command.' : <form aria-label="bash form" />,
+      'plugins.row.config:dsh-better-sidebar#sidebar': view => view === 'summary' ? 'The sidebar row.' : <form aria-label="row form" />,
+      'plugins.detail.actions:': (_view, owner) => <button type="button">{`act ${label(owner)}`}</button>,
+      'plugins.detail.badge:': (_view, owner) => <span>{`badge ${label(owner)}`}</span>,
+      'plugins.detail.section:': (_view, owner) => <section aria-label={`section ${label(owner)}`} />,
+    }
+
+    it('renders the contributed actions, badges, and sections on each page, told what the page is about', () => {
+      renderTab(
+        { packages: [pkg({ rows: [row()] })] },
+        { items: [{ id: 'bash', label: 'Shell' }], rows: new Set(['dsh-better-sidebar#sidebar']) },
+        bodies,
+      )
+      // The cards carry none of it.
+      expect(screen.queryByRole('button', { name: /^act / })).toBeNull()
+
+      fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
+      const detail = document.querySelector('[data-plugin-detail]') as HTMLElement
+      const act = within(detail).getByRole('button', { name: 'act bundle dsh-better-sidebar' })
+      expect(within(detail).getByText('badge bundle dsh-better-sidebar')).toBeTruthy()
+      const section = within(detail).getByRole('region', { name: 'section bundle dsh-better-sidebar' })
+      // The contributed actions come before the page's own switch; the sections after the rows.
+      const toggle = within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-better-sidebar') })
+      expect(act.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      const rows = detail.querySelector('[data-plugin-rows]') as HTMLElement
+      expect(rows.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      // A contribution sees the bundle's facts, not the page's own state.
+      expect(subjects.at(-1)).toEqual({
+        kind: 'bundle',
+        pkg: { name: 'dsh-better-sidebar', version: '0.16.0', installed: true, enabled: true, rows: [{ rowId: 'sidebar', moduleName: 'dsh-better-sidebar', enabled: true }] },
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: en.configureRow.replace('{name}', 'dsh-better-sidebar') }))
+      const page = document.querySelector('[data-plugin-row-detail]') as HTMLElement
+      expect(within(page).getByRole('button', { name: 'act row dsh-better-sidebar#sidebar' })).toBeTruthy()
+      expect(within(page).getByText('badge row dsh-better-sidebar#sidebar')).toBeTruthy()
+      expect(within(page).getByRole('region', { name: 'section row dsh-better-sidebar#sidebar' })).toBeTruthy()
+      expect(subjects.at(-1)).toMatchObject({ kind: 'row', row: { rowId: 'sidebar', moduleName: 'dsh-better-sidebar', enabled: true } })
+      fireEvent.click(within(page).getByRole('button', { name: en.backToPackage.replace('{name}', 'dsh-better-sidebar') }))
+      fireEvent.click(screen.getByRole('button', { name: en.backToList }))
+
+      fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Shell') }))
+      const item = document.querySelector('[data-plugin-item-detail="bash"]') as HTMLElement
+      expect(within(item).getByRole('button', { name: 'act item bash' })).toBeTruthy()
+      expect(within(item).getByText('badge item bash')).toBeTruthy()
+      expect(within(item).getByRole('region', { name: 'section item bash' })).toBeTruthy()
+      expect(within(item).getByRole('form', { name: 'bash form' })).toBeTruthy()
+    })
+
+    it('leaves the version out of a bundle the Host reports none for', () => {
+      const unversioned: PackageView = { name: 'dsh-better-sidebar', installed: true, optional: false, enabled: true, rows: [] }
+      renderTab({ packages: [unversioned] }, {}, bodies)
+      fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
+      expect(subjects.at(-1)).toEqual({ kind: 'bundle', pkg: { name: 'dsh-better-sidebar', installed: true, enabled: true, rows: [] } })
     })
   })
 

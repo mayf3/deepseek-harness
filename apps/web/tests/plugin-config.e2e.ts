@@ -20,6 +20,7 @@ import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/plugin-config', import.meta.url))
 const OFFICIAL_EXPECTED = join(SNAPSHOT_DIR, 'official.expected.md')
 const ROW_EXPECTED = join(SNAPSHOT_DIR, 'row.expected.md')
+const BUNDLE_EXPECTED = join(SNAPSHOT_DIR, 'bundle.expected.md')
 const FIXTURE_PLUGINS = fileURLToPath(new URL('./fixtures/plugins', import.meta.url))
 const MODE = webSnapshotMode()
 
@@ -292,17 +293,37 @@ describe('web e2e: plugin configuration pages', () => {
     await row.waitFor({ timeout: 10_000 })
     expect(await panel.getByRole('button', { name: '配置 @fixture/live-client' }).count()).toBe(0)
 
+    // Off, the bundle's page carries no contribution either: the browser half
+    // that would make them is not loaded.
+    const bundlePage = panel.locator('[data-plugin-detail="@fixture/live-client"]')
+    expect(await bundlePage.locator('[data-live-action]').count()).toBe(0)
+
     // Switched on, the Host recomposes and the browser half mounts without a
-    // reload; its registration puts the configure control on the row.
+    // reload; its registration puts the configure control on the row, and
+    // its detail contributions on the bundle's page: the action before the
+    // page's own switch, the badge beside the title, the section after the rows.
     await panel.getByRole('switch', { name: '启用 @fixture/live-client' }).click()
     const configure = panel.getByRole('button', { name: '配置 @fixture/live-client' })
     await configure.waitFor({ timeout: 30_000 })
+    await bundlePage.locator('[data-live-section="bundle"]').waitFor({ timeout: 10_000 })
+    // The page's own view of the row follows the Host's change event, which
+    // can land after the browser half mounted; the golden holds the settled page.
+    await row.getByText('运行中', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await bundlePage.getByRole('button', { name: '夹具操作' }).count()).toBe(1)
+    expect(await bundlePage.locator('[data-live-badge="bundle"]').textContent()).toBe('夹具标签')
+    expect(await bundlePage.getByRole('region', { name: '夹具区块' }).getByText('来自夹具的区块内容').count()).toBe(1)
+    const bundleSnapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(BUNDLE_EXPECTED, bundleSnapshot, MODE)
     await configure.click()
 
     const rowPage = panel.locator('[data-plugin-row-detail="@fixture/live-client#fixture-live-client"]')
     await rowPage.waitFor({ timeout: 10_000 })
     expect(await rowPage.getByRole('heading', { level: 3 }).textContent()).toBe('@fixture/live-client')
     expect(await rowPage.getByText('示例配置项', { exact: true }).count()).toBe(1)
+    // The same entries render for the row's page, told it is about the row.
+    expect(await rowPage.locator('[data-live-action="row"]').count()).toBe(1)
+    expect(await rowPage.locator('[data-live-badge="row"]').count()).toBe(1)
+    expect(await rowPage.locator('[data-live-section="row"]').count()).toBe(1)
     const form = rowPage.getByRole('form', { name: '动态插件配置' })
     await form.getByLabel('问候语').fill('你好')
     await form.getByRole('button', { name: '保存' }).click()
@@ -311,12 +332,18 @@ describe('web e2e: plugin configuration pages', () => {
     const snapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(ROW_EXPECTED, snapshot, MODE)
     await rowPage.getByRole('button', { name: '返回 @fixture/live-client' }).click()
-    await panel.locator('[data-plugin-detail="@fixture/live-client"]').waitFor({ timeout: 10_000 })
+    await bundlePage.waitFor({ timeout: 10_000 })
+
+    // An official plugin's page is another subject; the fixture's entries render nothing for it.
+    await panel.getByRole('button', { name: '返回插件列表' }).click()
+    await openPage(panel, '终端')
+    const itemPage = panel.locator('[data-plugin-item-detail]')
+    expect(await itemPage.locator('[data-live-action], [data-live-badge], [data-live-section]').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['official.expected.md', 'row.expected.md', 'subagent.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['bundle.expected.md', 'official.expected.md', 'row.expected.md', 'subagent.expected.md'])
   })
 })

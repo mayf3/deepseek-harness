@@ -333,6 +333,12 @@ export class LocalJobRegistry extends JobRegistry {
     return this.waitJob(this.expect(id, caller), timeoutMs, signal)
   }
 
+  remove(id: JobId, caller?: SessionId): void {
+    const job = this.expect(id, caller)
+    if (!isTerminal(job.status)) throw new Error(`job ${id} is still ${job.status}; kill it and wait for settlement before removing it`)
+    this.drop([job])
+  }
+
   attachController(name: string): () => void {
     // One token per call keeps duplicate labels independently disposable.
     const token = Symbol(name)
@@ -564,8 +570,9 @@ export class LocalJobRegistry extends JobRegistry {
   /**
    * Record the first terminal outcome, release waiters, then announce the
    * settlement. First-wins preserves a teardown force-failure against late
-   * producer settlement. The settled event follows every released waiter, so
-   * a consumer that claims while waiting always claims before the event.
+   * producer settlement. The settled event follows every released waiter and
+   * reports whether it released one: a timed-out or aborted wait has already
+   * left the set, so only a wait still owed the projection counts.
    */
   private settle(job: TrackedJob, outcome: JobOutcome, cause: JobSettleCause): void {
     if (isTerminal(job.status)) return
@@ -593,7 +600,7 @@ export class LocalJobRegistry extends JobRegistry {
     job.waitResolvers.clear()
     for (const resolveWait of waitResolvers) resolveWait()
     job.markSettled()
-    this.emit({ type: 'settled', job: this.view(job), cause }, job.owner)
+    this.emit({ type: 'settled', job: this.view(job), cause, awaited: waitResolvers.length > 0 }, job.owner)
     // The ring's stream ends with settlement; the signal follows the committed
     // settlement so an observer that wakes on it reads the terminal state.
     this.emitOutput(job)
@@ -619,11 +626,11 @@ export class LocalJobRegistry extends JobRegistry {
     const owned = [...this.store.values()].filter(job => job.owner === owner)
     this.cancelForTeardown(owned, 'owner disposed')
     await Promise.all(owned.map(job => job.settled))
-    this.remove(owned)
+    this.drop(owned)
   }
 
   /** Drop settled records and announce each removal, the one visible-set change no per-job record carries. */
-  private remove(jobs: readonly TrackedJob[]): void {
+  private drop(jobs: readonly TrackedJob[]): void {
     for (const job of jobs) {
       this.store.delete(job.id)
       this.emit({ type: 'removed', job: this.view(job) }, job.owner)
@@ -642,7 +649,7 @@ export class LocalJobRegistry extends JobRegistry {
     // stream registers from its own context — is still reachable here.
     // Without the removals it keeps the rows it last received after a
     // registry reload.
-    this.remove(all)
+    this.drop(all)
     // Detach cross-fiber owner effects after the shared store is quiescent.
     const ownerCleanups = [...this.ownerCleanups.values()]
     this.ownerCleanups.clear()

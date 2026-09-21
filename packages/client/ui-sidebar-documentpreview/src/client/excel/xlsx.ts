@@ -21,20 +21,28 @@ const THEME_ORDER = ['lt1', 'dk1', 'lt2', 'dk2', 'accent1', 'accent2', 'accent3'
 export async function convertXlsx(bytes: Uint8Array<ArrayBuffer>, limits: ExcelLimits): Promise<ExcelPreview> {
   const workbook = new ExcelJS.Workbook()
   try {
-    await workbook.xlsx.load(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+    const input = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+      ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    await workbook.xlsx.load(input)
   } catch (error) {
     throw new ExcelPreviewError('invalid', { cause: error })
   }
   if (!workbook.worksheets.some(sheet => sheet.state === 'visible')) throw new ExcelPreviewError('invalid')
   let area = 0
-  for (const sheet of workbook.worksheets) {
-    area += Math.max(1, sheet.rowCount) * Math.max(1, sheet.columnCount)
-    if (area > limits.maxCells) throw new ExcelPreviewError('tooLarge')
-  }
   const colors = themeColors(workbook)
   let missingResults = 0
   let active = false
   const sheets = workbook.worksheets.map((worksheet, order): Sheet => {
+    let row = 1
+    let column = 1
+    const include = (r: number, c: number): void => {
+      row = Math.max(row, r + 1)
+      column = Math.max(column, c + 1)
+      const sheetArea = row * column
+      if (!Number.isSafeInteger(sheetArea) || !Number.isSafeInteger(area + sheetArea) || area + sheetArea > limits.maxCells) {
+        throw new ExcelPreviewError('tooLarge')
+      }
+    }
     const config: Required<Pick<SheetConfig, 'merge' | 'rowlen' | 'columnlen' | 'rowhidden' | 'colhidden' | 'borderInfo'>> = {
       merge: {}, rowlen: {}, columnlen: {}, rowhidden: {}, colhidden: {}, borderInfo: [],
     }
@@ -48,6 +56,7 @@ export async function convertXlsx(bytes: Uint8Array<ArrayBuffer>, limits: ExcelL
         r: Number(first.row) - 1, c: Number(first.col) - 1,
         rs: Number(last.row) - Number(first.row) + 1, cs: Number(last.col) - Number(first.col) + 1,
       }
+      include(merge.r + merge.rs - 1, merge.c + merge.cs - 1)
       config.merge[`${merge.r}_${merge.c}`] = merge
     }
     // ExcelJS's declarations omit absent parsed collections and style fields.
@@ -63,6 +72,7 @@ export async function convertXlsx(bytes: Uint8Array<ArrayBuffer>, limits: ExcelL
       if (row.hidden) config.rowhidden[r] = 0
       row.eachCell({ includeEmpty: true }, (cell) => {
         const c = Number(cell.col) - 1
+        include(r, c)
         const v = convertCell(cell, colors)
         if (v.f !== undefined && v.v === undefined) missingResults += 1
         if (cell.isMerged) {
@@ -81,13 +91,18 @@ export async function convertXlsx(bytes: Uint8Array<ArrayBuffer>, limits: ExcelL
         }
       })
     })
+    config.rowlen = withinBounds(config.rowlen, row)
+    config.rowhidden = withinBounds(config.rowhidden, row)
+    config.columnlen = withinBounds(config.columnlen, column)
+    config.colhidden = withinBounds(config.colhidden, column)
+    area += row * column
     const view = (worksheet.views as ExcelJS.WorksheetView[] | null)?.[0]
     const visible = worksheet.state === 'visible'
     const status = visible && !active ? 1 : 0
     active ||= visible
     const sheet: Sheet = {
       id: String(worksheet.id), name: worksheet.name, order, status, hide: visible ? 0 : 1,
-      row: Math.max(1, worksheet.rowCount), column: Math.max(1, worksheet.columnCount),
+      row, column,
       config, celldata, showGridLines: view?.showGridLines !== false,
       defaultRowHeight: worksheet.properties.defaultRowHeight * 96 / 72,
       luckysheet_select_save: initialSelection(config),
@@ -121,27 +136,62 @@ function convertCell(
     else if (alignment.textRotation !== undefined) result.rt = alignment.textRotation
   }
   const value = cell.value
-  let display: ExcelJS.CellValue = value
+  let display: unknown = value
   if (value !== null && typeof value === 'object' && ('formula' in value || 'sharedFormula' in value)) {
     result.f = `=${cell.formula}`
-    display = value.result ?? null
+    // ExcelJS omits falsy caches from cell.value, while cell.result retains 0 and false.
+    const cached: unknown = cell.result
+    display = cached
   }
-  if (display instanceof Date) {
+  const richText = richTextOf(display)
+  if (richText !== undefined) {
+    setRichText(result, richText, colors)
+  } else if (display instanceof Date) {
     // FortuneSheet uses the 1900 date system; ExcelJS has already resolved the workbook epoch.
     result.v = display.getTime() / 86_400_000 + 25569
   } else if (display !== null && typeof display === 'object') {
-    if ('richText' in display) {
-      result.ct = { t: 'inlineStr', s: display.richText.map(run => ({ v: run.text, ...fontStyle(run.font, colors) })) }
-      result.v = display.richText.map(run => run.text).join('')
-    } else if ('text' in display) result.v = display.text
-    else result.v = (display as ExcelJS.CellErrorValue).error
-  } else if (display !== null && display !== undefined) result.v = display
+    const text: unknown = Reflect.get(display, 'text')
+    const hyperlinkRichText = richTextOf(text)
+    if (hyperlinkRichText !== undefined) setRichText(result, hyperlinkRichText, colors)
+    else if (typeof text === 'string') result.v = text
+    else result.v = String(Reflect.get(display, 'error'))
+  } else if (typeof display === 'string' || typeof display === 'number' || typeof display === 'boolean') result.v = display
   return formatCell(result, cell.numFmt || 'General')
+}
+
+type RichTextRun = { text: string; font?: Partial<Font> | undefined }
+
+function richTextOf(value: unknown): RichTextRun[] | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const source: unknown = Reflect.get(value, 'richText')
+  if (!Array.isArray(source)) return undefined
+  return source.map((item): RichTextRun => {
+    const run = record(item)
+    const font = run.font
+    return { text: String(run.text), font: typeof font === 'object' && font !== null ? font : undefined }
+  })
+}
+
+function setRichText(result: Cell, runs: readonly RichTextRun[], colors: readonly (string | undefined)[]): void {
+  result.ct = { t: 'inlineStr', s: runs.map(run => ({ v: run.text, ...fontStyle(run.font, colors) })) }
+  result.v = runs.map(run => run.text).join('')
+}
+
+function withinBounds(values: Record<number, number>, length: number): Record<number, number> {
+  const result: Record<number, number> = {}
+  for (const [key, value] of Object.entries(values)) {
+    const index = Number(key)
+    if (index < length) result[index] = value
+  }
+  return result
 }
 
 function fontStyle(font: Partial<Font> | undefined, colors: readonly (string | undefined)[]): CellStyle {
   if (font === undefined) return {}
-  const result: CellStyle = { bl: font.bold ? 1 : 0, it: font.italic ? 1 : 0, cl: font.strike ? 1 : 0, un: font.underline ? 1 : 0 }
+  const result: CellStyle = {
+    bl: font.bold ? 1 : 0, it: font.italic ? 1 : 0, cl: font.strike ? 1 : 0,
+    un: font.underline !== undefined && font.underline !== false && font.underline !== 'none' ? 1 : 0,
+  }
   if (font.name !== undefined) result.ff = font.name
   if (font.size !== undefined) result.fs = font.size
   const fc = colorOf(font.color, colors)
