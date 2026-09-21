@@ -688,18 +688,6 @@
     "79c53da50aa08004e201cebca842267ae2650a543b435a7906960f6492c2398b": 1,
     "a3c1509d552d0102e118f3071a234002a5c83c30ca6923f8a87e9e3733ce0dcf": 1
   },
-  "packages/client/ui-settings-plugins/tests/apply.client.spec.ts": {
-    "3d455f54ba188122f29085e9d462bebbca24c517057052f346229efd175e6e3c": 1
-  },
-  "packages/client/ui-settings-plugins/tests/section.client.spec.tsx": {
-    "0d8472724f1363e2891409f0a3a4add1cff1ca68b49e3c553457ad69deb9743c": 2,
-    "203a19d9e599f039376a58265a2e59a5350752ca21ed2502095b3bc73cd45c6a": 1,
-    "878e5d009eb310a1e5574351c795dfa691449b162d027f7639220075957a5b18": 1,
-    "9f2da941345134a519a3be6744a11f5e6a1fcaa70ab3ac6ca40f8ddec52e172f": 1,
-    "ab5c523f935fc83dfa5acb5919ea34b578739a4703cf30de5382aaba06250af7": 1,
-    "fc819a8f00497253d2231099c726434b4ed85f9677af7d287111e52c09f005a7": 1,
-    "fd37ca50cf574f86f8640694f4e2bc7466e97e9d54869402a08cceab69dee52c": 1
-  },
   "packages/client/ui-settings/tests/schema.client.spec.ts": {
     "0584be4cde4cd33049ef7c02e9d1562a30ec48ef2176f2f22b328b5be2903407": 1
   },

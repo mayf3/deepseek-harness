@@ -33,6 +33,10 @@ Feature plugins use this package to store and edit their preferences without re-
 
 A feature calls `ctx.settingsScope.bind(spec)` with a per-namespace spec and gets a scope derived from the shared document mirror. The scope snapshot carries the resolved section, composition `base`, raw `user`, revision, writability, and host/memory mode; a field is overridden when it is present in `user`, even when its value equals `base`, and `unset` clears that override. Writes go through the scope: `set` and `unset` submit one operation, while `mutate` submits several ordered operations atomically. These methods return `true` for Host acceptance and `false` for refusal or skipped writes; transport failures reject. Each write is fenced by the namespace revision as `expectedRevision`, so a concurrent write from another surface is refused instead of silently overwritten. A staged editor can supply the revision where its draft began as a fixed fence; otherwise the scope uses the latest queued or mirrored revision.
 
+### Following served namespaces
+
+A page that edits a namespace another plugin owns registers through `ctx.settingsScope.whileServed(namespaces, register)`: `register` runs once any listed namespace is in the shared mirror and returns the registration's disposer, which runs when none of them is served any more or when the disposer `whileServed` returns runs. The caller owns that returned disposer and wraps it in `ctx.effect`; unlike `bind`, the service registers nothing on the caller's context. A deployment that never composed the owner therefore shows no trace of the page, and a namespace the Host stops serving withdraws it. The four official pages on the Plugins page ride it, one companion package each.
+
 ### Filling the settings slots
 
 A settings surface registers into the slot types this package declares. The shell (`sidebar.settings` occupant, navigation, chrome) lives in ui-settings-general; feature pages register `settings.section` contributions; the Plugins section hosts `settings.plugins.tab` pages; onboarding steps register `settings.onboarding`. Cross-namespace surfaces (schema introspection, the served-namespace directory, `hasDocument`) read the same mirror through `ctx.settingsScope.describe()`.
@@ -57,7 +61,7 @@ The Host half registers the `ui-developer-tools` schema and its default-on value
 
 ### Scope derivation
 
-`ctx.settingsScope.bind(spec)` returns a per-namespace scope derived from the mirror on the caller's context: the scope's disposer belongs to the calling fiber, binding adds no wire read, and a row's activation never blocks on the settings transport. Writes stay per-scope: `set` and `unset` are single-operation forms of `mutate`, which copies and queues several ordered field operations behind one namespace revision as `expectedRevision`. A committed mutation folds its answer in, a rejected or failed latest mutation triggers one recovery read, and a superseded one leaves recovery to its successor. The cold-boot read count is pinned by `../../../apps/web/tests/startup-rpc-budget.e2e.ts`; a new direct `settings.describe` caller in client code is a regression against it.
+`ctx.settingsScope.bind(spec)` returns a per-namespace scope derived from the mirror on the caller's context: the scope's disposer belongs to the calling fiber, binding adds no wire read, and a row's activation never blocks on the settings transport. Writes stay per-scope: `set` and `unset` are single-operation forms of `mutate`, which copies and queues several ordered field operations behind one namespace revision as `expectedRevision`. A committed mutation folds its answer in, a rejected or failed latest mutation triggers one recovery read, and a superseded one leaves recovery to its successor. The cold-boot read count is pinned by `../../../apps/web/tests/startup-rpc-budget.e2e.ts`; a new direct `settings.describe` caller in client code is a regression against it. `whileServed` subscribes to the same mirror and re-evaluates its served set on every snapshot, so a registration toggles with the describe view and needs no wire read beyond the mirror's `ensure`.
 
 ### Schema service
 
@@ -73,7 +77,8 @@ The Host half registers the `ui-developer-tools` schema and its default-on value
 These pages cover the settings surface family and the durable seam behind it.
 
 - [ui-settings-general](../ui-settings-general/README.md) — the settings shell: trigger chrome, navigation, General section, onboarding projection.
-- [ui-settings-plugins](../ui-settings-plugins/README.md) — the Plugins section and its configurable host-plane cards.
+- [ui-settings-plugins](../ui-settings-plugins/README.md) — the Built-in plugins section shell around the inventory tab.
+- [ui-settings-shell](../ui-settings-shell/README.md), [ui-settings-agent-loop](../ui-settings-agent-loop/README.md), [ui-settings-subagent](../ui-settings-subagent/README.md), [ui-settings-web-search](../ui-settings-web-search/README.md) — the official configuration pages on the Plugins page, each following its namespaces through `whileServed`.
 - [ui-settings-models](../ui-settings-models/README.md) — the Models page and DeepSeek onboarding over this base.
 - [settings](../../settings/README.md) — the durable user-settings seam and its file provider.
 - [ui-sidebar](../ui-sidebar/README.md) — the sidebar shell whose bottom seat hosts the settings trigger.
