@@ -30,14 +30,18 @@ import {
   type PluginManagerFace, type RegistryChoice,
 } from './manager-store.ts'
 import { managementText, noticeText, packageText, registryText, rowText, type Translate } from './presentation.ts'
-import type {} from './slot-contract.ts'
+import type { PluginPackageRef, PluginRowRef, PluginsSubject } from './slot-contract.ts'
+import type { ConfigPageForm } from './slot-contract.ts'
 import css from './PluginManagerPage.module.css'
 
 /** Full component props assembled by the main slot renderer. */
 export type PluginManagerPageProps =
   PropsRuntime<'main'>
   & PropsLocale<'pluginManager'>
-  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.activation'>
+  & PropsRenderSlots<
+    | 'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.activation'
+    | 'plugins.detail.actions' | 'plugins.detail.badge' | 'plugins.detail.section'
+  >
   & InjectFace<PluginManagerFace>
 
 /** The page's slot renderer, narrowed to the configuration slots. */
@@ -124,7 +128,7 @@ const ROW_ARTWORK_SIZE = 30
 
 /** The artwork of the official plugins that registered their configuration, by registration id. */
 const ITEM_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
-  ['bash', PluginArtworkTerminal],
+  ['shell', PluginArtworkTerminal],
   ['agent-loop', PluginArtworkLoop],
   ['subagent', PluginArtworkSubagent],
   ['web-search', PluginArtworkSearch],
@@ -401,24 +405,56 @@ function ItemCard({ item, t, onOpen, renderSlot }: {
   )
 }
 
-/** An official plugin's page: the crumb back to the cards, its icon, its title over its one-liner, and the form the entry renders. */
-function ItemDetail({ item, t, onBack, renderSlot }: {
+/** One row as the detail slots see it. */
+function rowRef(row: PackageRow): PluginRowRef {
+  return { rowId: row.rowId, moduleName: row.moduleName, enabled: row.enabled }
+}
+
+/** One bundle as the detail slots see it. */
+function packageRef(pkg: PackageView): PluginPackageRef {
+  return {
+    name: pkg.name,
+    ...pkg.version === undefined ? {} : { version: pkg.version },
+    installed: pkg.installed,
+    enabled: pkg.enabled,
+    rows: pkg.rows.map(rowRef),
+  }
+}
+
+/**
+ * An official plugin's page: the crumb back to the cards, its icon with the
+ * contributed actions, its title with the contributed badges over its
+ * one-liner, the form the entry renders, and the contributed sections.
+ */
+function ItemDetail({ item, t, onBack, renderSlot, form }: {
   readonly item: OfficialItem
   readonly t: Translate
   readonly onBack: () => void
   readonly renderSlot: RenderConfig
+  readonly form: ConfigPageForm | undefined
 }): ReactNode {
+  const subject: PluginsSubject = { kind: 'item', id: item.id }
   return (
     <div className={css.detail} data-plugin-item-detail={item.id}>
-      <DetailTop crumbLabel={t('backToList')} crumbText={t('crumbRoot')} onBack={onBack} icon={itemArtwork(item.id)} />
+      <DetailTop
+        crumbLabel={t('backToList')}
+        crumbText={t('crumbRoot')}
+        onBack={onBack}
+        icon={itemArtwork(item.id)}
+        actions={<div className={css.detailActions}>{renderSlot('plugins.detail.actions', { subject })}</div>}
+      />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{item.label}</h3>
+          {renderSlot('plugins.detail.badge', { subject })}
         </div>
         <p className={css.detailDesc}>{renderSlot('plugins.item', { view: 'summary' }, { only: item.id })}</p>
       </div>
-      <div className={css.detailSections} data-plugin-config>
-        {renderSlot('plugins.item', { view: 'page' }, { only: item.id })}
+      <div className={css.detailSections}>
+        <section className={css.detailSection} data-plugin-config>
+          {renderSlot('plugins.item', { view: 'page', form }, { only: item.id })}
+        </section>
+        {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
   )
@@ -428,23 +464,32 @@ function ItemDetail({ item, t, onBack, renderSlot }: {
  * A row's configuration page keeps its technical identity beside local package
  * text and the form supplied by its configuration entry.
  */
-function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot }: {
+function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot, form }: {
   readonly pkg: PackageView
   readonly row: PackageRow
   readonly t: Translate
   readonly resolveText: ResolveText
   readonly onBack: () => void
   readonly renderSlot: RenderConfig
+  readonly form: ConfigPageForm | undefined
 }): ReactNode {
   const { title } = packageText(pkg, resolveText)
   const { title: rowTitle, description } = rowText(row, resolveText)
   const key = rowConfigKey(pkg.name, row.rowId)
+  const subject: PluginsSubject = { kind: 'row', pkg: packageRef(pkg), row: rowRef(row) }
   return (
     <div className={css.detail} data-plugin-row-detail={key}>
-      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<PackageArtwork key={row.meta?.icon} src={row.meta?.icon} row size={CARD_ARTWORK_SIZE} />} />
+      <DetailTop
+        crumbLabel={t('backToPackage', { name: title })}
+        crumbText={title}
+        onBack={onBack}
+        icon={<PackageArtwork key={row.meta?.icon} src={row.meta?.icon} row size={CARD_ARTWORK_SIZE} />}
+        actions={<div className={css.detailActions}>{renderSlot('plugins.detail.actions', { subject })}</div>}
+      />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{rowTitle}</h3>
+          {renderSlot('plugins.detail.badge', { subject })}
         </div>
         {rowTitle === row.rowId ? null : <p className={css.detailName}><code>{row.rowId}</code></p>}
         <p className={css.detailName}><code>{row.moduleName}</code></p>
@@ -452,7 +497,8 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot }: {
       </div>
       <MetadataError error={row.meta?.error} t={t} />
       <div className={css.detailSections} data-plugin-config>
-        {renderSlot('plugins.row.config', { view: 'page' }, { entryKey: key })}
+        {renderSlot('plugins.row.config', { view: 'page', form }, { entryKey: key })}
+        {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
   )
@@ -487,6 +533,7 @@ function PackageDetail({
 }): ReactNode {
   const { title, description, beta } = packageText(pkg, resolveText)
   const status = packageStatus(pkg)
+  const subject: PluginsSubject = { kind: 'bundle', pkg: packageRef(pkg) }
   return (
     <div className={css.detail} data-plugin-detail={pkg.name}>
       <DetailTop
@@ -496,6 +543,7 @@ function PackageDetail({
         icon={<PackageArtwork key={pkg.meta?.icon} src={pkg.meta?.icon} />}
         actions={(
           <div className={css.detailActions}>
+            {renderSlot('plugins.detail.actions', { subject })}
             {pkg.installed
               ? (
                 <Button
@@ -521,6 +569,7 @@ function PackageDetail({
           {pkg.version === undefined ? null : <Tag className={css.versionTag} tone="neutral">{t('versionTag', { version: pkg.version })}</Tag>}
           {beta ? <Tag className={css.statusTag} tone="info">{t('statusBeta')}</Tag> : null}
           {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
+          {renderSlot('plugins.detail.badge', { subject })}
         </div>
         <p className={css.detailName}><code data-plugin-name>{pkg.name}</code></p>
         {description === undefined ? null : <p className={css.detailDesc}>{description}</p>}
@@ -543,6 +592,7 @@ function PackageDetail({
           toggle={pkg.enabled ? { busy: row => busy || rowBusy(row), onSetEnabled: onSetRowEnabled } : undefined}
           configure={configure}
         />
+        {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
   )
@@ -1068,6 +1118,12 @@ function ConfirmDialog({ name, t, onConfirm, onCancel }: {
 /** Render the plugin manager: the official plugins and installed bundles, their pages, the install dialog, and the confirmation. */
 export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const { t, ensure, renderSlot, resolveText } = props
+  const configurations = props.useConfigurations(snapshot => snapshot.view?.namespaces)
+  const formFor = (id: string): ConfigPageForm | undefined => {
+    if (!configurations?.some(view => view.ns === id)) return undefined
+    const form = props.configForm<Record<string, unknown>>(id)
+    return { state: form.getSnapshot(), mutate: (ops, revision) => form.mutate(ops, revision) }
+  }
   const state = props.usePluginManager(snapshot => snapshot)
   const ledger = props.useConfigLedger(snapshot => snapshot)
   // What is open; a package that leaves the list (uninstalled) drops back to the cards.
@@ -1194,6 +1250,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           <RowDetail
             pkg={openPkg}
             row={openRow}
+            form={formFor(openRow.rowId)}
             t={t}
             resolveText={resolveText}
             renderSlot={renderSlot}
@@ -1220,7 +1277,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         )
         : null}
       {loaded && openItem !== undefined
-        ? <ItemDetail item={openItem} t={t} renderSlot={renderSlot} onBack={() => { setView({ kind: 'list' }) }} />
+        ? <ItemDetail form={formFor(openItem.id)} item={openItem} t={t} renderSlot={renderSlot} onBack={() => { setView({ kind: 'list' }) }} />
         : null}
       {loaded && showsCards
         ? officialCards.length === 0 && mine.length === 0 && state.status !== 'error'

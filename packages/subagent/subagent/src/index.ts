@@ -28,10 +28,10 @@
  *
  * @module @deepseek-ai/dsh-subagent
  */
+import type { Volatile } from '@deepseek-ai/cordis'
 
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-attachment'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
@@ -190,18 +190,17 @@ interface BrowserPromptSource {
 /** Host configuration for continuable subagent capacity. */
 export interface Config {
   /** Maximum live children sharing uninterrupted continuable parent links; defaults to 8. */
-  maxActiveSubagents?: number
+  maxActiveSubagents: Volatile<number>
   /** Default delegation depth for tools without an explicit limit; defaults to 1. */
-  maxDepth?: number
+  maxDepth: Volatile<number>
 }
 
 /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
 export class SubagentRuntime extends TypertRemoteService {
-  static Config: z<Config> = z.object({
-    maxDepth: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(1),
-    maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(8),
+  static Config = z.object({
+    maxDepth: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(1).volatile(),
+    maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(8).volatile(),
   })
-  private settingsSource: () => Config
   private providers = new Map<string, SubagentProvider>()
   private continuations: SubagentContinuationManager | undefined
   /**
@@ -211,23 +210,14 @@ export class SubagentRuntime extends TypertRemoteService {
    */
   private readonly emitLifecycle: LifecycleEmitter
 
-  constructor(ctx: Context, config: Config) {
+  constructor(ctx: Context, private config: Config) {
     super(ctx, 'subagents')
-    assertSubagentMaxDepth(config.maxDepth)
-    this.settingsSource = () => config
-    ctx.inject(['settings'], (settingsCtx) => {
-      settingsCtx.settings.installSection(ctx, 'subagent', SubagentRuntime.Config, config, {
-        validate: (value) => { assertSubagentMaxDepth(value.maxDepth) },
-        setSource: (source) => { this.settingsSource = source },
-        onChange: () => {},
-      })
-    })
     this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
     ctx.inject(['agents'], (childCtx: Context) => {
       const manager = new SubagentContinuationManager(childCtx, {
         prepareContinuable: (name, request) => this.prepareContinuable(name, request),
         observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
-      }, () => (this.settingsSource() as Required<Config>).maxActiveSubagents)
+      }, () => this.config.maxActiveSubagents.get())
       this.continuations = manager
       childCtx.effect(() => () => {
         /* v8 ignore else -- one injected binding owns the slot until its fiber disposes. */
@@ -249,7 +239,10 @@ export class SubagentRuntime extends TypertRemoteService {
    */
   resolveMaxDepth(configured?: number | 'provider-managed'): number | undefined {
     if (configured === 'provider-managed') return undefined
-    return configured ?? (this.settingsSource() as Required<Config>).maxDepth
+    if (configured !== undefined) return configured
+    const depth = this.config.maxDepth.get()
+    assertSubagentMaxDepth(depth)
+    return depth
   }
 
   /**

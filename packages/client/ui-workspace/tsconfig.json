@@ -15,7 +15,7 @@
       "path": "../../api/workspace-controller/tsconfig.client.json"
     },
     {
-      "path": "../locale"
+      "path": "../locale/tsconfig.client.json"
     },
     {
       "path": "../../../vendor/cordis"
@@ -48,7 +48,7 @@
       "path": "../ui-sidebar"
     },
     {
-      "path": "../ui-conversation"
+      "path": "../ui-conversation/tsconfig.client.json"
     },
     {
       "path": "../ui-layout"

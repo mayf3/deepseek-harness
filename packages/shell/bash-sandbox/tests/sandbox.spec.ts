@@ -19,7 +19,6 @@ import { SandboxBashExecutor } from '@deepseek-ai/dsh-bash-sandbox'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 import { classifyDenial } from '../src/helpers.ts'
-import type { Config } from '@deepseek-ai/dsh-bash-sandbox'
 
 /** Historical foreground shorthand over the unified execute() seam. */
 async function run(x: { execute(spec: ShellExecSpec): Promise<ShellExecution> }, spec: ShellExecSpec): Promise<ShellRunResult> {
@@ -66,7 +65,7 @@ const passthrough = (argv: readonly string[]): ConfinedArgv =>
  * per test) and the executor under test on top of it.
  */
 async function setup(
-  config: { mode?: SandboxMode; workspaceRoot?: string } & Config = {},
+  config: { mode?: SandboxMode; workspaceRoot?: string } & NonNullable<Parameters<typeof SandboxBashExecutor.Config>[0]> = {},
   behavior: (argv: readonly string[], policy: SandboxPolicy, signal?: AbortSignal) => ConfinedArgv | Promise<ConfinedArgv> = passthrough,
 ) {
   const { mode, workspaceRoot, ...execConfig } = config
