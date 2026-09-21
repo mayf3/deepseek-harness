@@ -261,6 +261,25 @@
       }
     },
     {
+      "name": "mcp__fixture__inspect",
+      "description": "Read a fixed window snapshot.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "layout": {
+            "type": "string",
+            "enum": [
+              "ends",
+              "middle"
+            ]
+          }
+        },
+        "required": [
+          "layout"
+        ]
+      }
+    },
+    {
       "name": "read",
       "description": "Read a UTF-8 text file and return line-numbered content.",
       "parameters": {
