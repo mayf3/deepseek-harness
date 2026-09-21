@@ -39,6 +39,7 @@ EditorProps) {
   const recorder = useRef<HTMLButtonElement>(null)
   const mounted = useRef(true)
   const writing = useRef(false)
+  /* v8 ignore next -- The effect installs reset before the recorder is enabled. */
   const restart = useRef(() => {})
   const desktopChords = runtime === 'desktop' && (platform === 'macos' || platform === 'windows')
   const targetId = target.id

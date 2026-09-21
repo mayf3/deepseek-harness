@@ -53,12 +53,15 @@ export function apply(ctx: Context): void {
         'web:macos': { code: 'KeyT', modifiers: ['primary', 'alt'] },
         'web:windows': { code: 'KeyT', modifiers: ['primary', 'alt'] },
       },
+      // Each tab plugin owns its command's availability, localized refusal, and tab kind.
+      /* jscpd:ignore-start */
       regions: ['page', 'editable', 'terminal'], modals: [],
       resolve: ({ target: element }) => {
         const target = ctx.sidebarRight.commandTarget(element)
         if (target === undefined) return { status: 'blocked', reason: t('shortcut.noSession') }
         return { status: 'handled', run: () => { ctx.sidebarRight.openTabFromTarget('browser', target) } }
       },
+      /* jscpd:ignore-end */
     }), 'ui-sidebar-browser: shortcut')
   })
   const store = createBrowserStore()

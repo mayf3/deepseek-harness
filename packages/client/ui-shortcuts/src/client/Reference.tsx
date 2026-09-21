@@ -77,6 +77,7 @@ export function ShortcutReference({
   }
   const closeReference = (): void => {
     if (busy) return
+    /* v8 ignore next -- The confirmation modal blocks the reference's close control. */
     if (resetRevision !== null) setResetRevision(null)
     else if (target !== null) closeEditor()
     else actions.close()
@@ -94,6 +95,7 @@ export function ShortcutReference({
     notify(result.status === 'saved' ? t('saved') : shortcutFailure(result, catalog, t, runtime), result.status !== 'saved')
   }
   const resetAll = async (): Promise<void> => {
+    /* v8 ignore next -- The reset control is accessible only while its confirmation is open. */
     if (resetRevision === null) return
     const result = await persist({ type: 'reset-all' }, resetRevision)
     if (!mounted.current) return

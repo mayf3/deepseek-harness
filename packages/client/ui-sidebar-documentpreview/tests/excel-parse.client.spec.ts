@@ -4,7 +4,7 @@ import { parseExcel } from '../src/client/excel/parse.ts'
 import { Config } from '../src/config.ts'
 
 const limits = Config({}).excel
-const preview = { sheets: [{ name: 'Sheet', celldata: [] }], missingResults: 0 }
+const preview = { sheets: [{ name: 'Sheet', celldata: [] }], missingResults: 0, unsupportedFeatures: ['charts'] }
 let instance: ParserWorker
 const revokeUrl = vi.fn()
 
@@ -67,6 +67,9 @@ it('terminates a parser that exceeds its time budget', async () => {
 
 it.each([null, 7, {}, { ok: true, value: null }, { ok: true, value: { sheets: [], missingResults: 0 } },
   { ok: true, value: { sheets: [{}], missingResults: 0 } }, { ok: true, value: { ...preview, missingResults: -1 } },
+  { ok: true, value: { ...preview, unsupportedFeatures: undefined } },
+  { ok: true, value: { ...preview, unsupportedFeatures: ['unknown'] } },
+  { ok: true, value: { ...preview, unsupportedFeatures: [7] } },
   { ok: false, code: 'surprise' }, { ok: false, code: 'invalid' }])('rejects invalid Worker message %j', async (data) => {
   const result = parseExcel(new Uint8Array(), 'xlsx', limits, new AbortController().signal)
   instance.onmessage!({ data })

@@ -115,6 +115,8 @@ describe('ui-sidebar-right apply', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     close.run()
     await vi.waitFor(() => { expect(error).toHaveBeenCalledExactlyOnceWith('Window close failed', failure) })
+    vi.stubGlobal('window', {})
+    expect(() => { close.run() }).toThrow('Desktop keyboard bridge unavailable')
   })
 
   it('provides both faces, and registers the guide through the same two-stage path as any other type', async () => {
@@ -171,6 +173,10 @@ describe('ui-sidebar-right apply', () => {
     const handle = seat('rightbar.session').store as ReturnType<typeof createSidebarRightStore>
     const instance = handle.create()
     instance.clearPersisted()
+    vi.stubGlobal('document', { activeElement: null })
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    injected.toggleFullscreen()
+    expect(injectedOf(seat('conversation.session.header.corner'))).toHaveProperty('hooks.shortcuts')
     const release = injected.bindService({
       sessionId: SESSION, actions: instance.actions, surfaces: {},
       closeWithFocus: (_paneId, close) => { close() },
@@ -185,6 +191,7 @@ describe('ui-sidebar-right apply', () => {
     if (surface === undefined) throw new Error('expected a surface')
     ctx.sidebarRight.tabDomain.sync(SESSION, surface.layout)
     expect(resources.pin).toHaveBeenCalledWith('sidebar://guide', expect.any(AbortSignal))
+    injected.splitPane(surface.layout.activePaneId)
     release()
     expect(() => { ctx.sidebarRight.toggleExpanded() }).toThrow('no session surface is mounted')
   })

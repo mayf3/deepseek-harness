@@ -99,6 +99,23 @@ function mountShell({ collapsed = false, width = 300, shortcuts = [] }: {
 }
 
 describe('SidebarRoot shell', () => {
+  it('advertises the effective new-session binding', () => {
+    const shortcut: ShortcutCatalogEntry = { id: 'session.new' as ShortcutCommandId, label: 'New', aliases: [],
+      binding: null, modified: true, conflicts: [], issue: null, keys: ['Ctrl', 'N'], aria: 'Control+N' }
+    mountShell({ shortcuts: [shortcut] })
+    for (const button of screen.getAllByRole('button', { name: 'New session' })) {
+      expect(button.getAttribute('aria-keyshortcuts')).toBe('Control+N')
+    }
+    cleanup()
+    render(<HeaderLeadingControls toggleSidebar={vi.fn()} startSession={vi.fn()} selectPanel={vi.fn()} t={t}
+      usePanelInfo={neverHook} useSessions={neverHook} useSessionStatus={neverHook}
+      useSessionRetainInfo={neverHook} useResource={useResource} useWorkspaces={neverHook}
+      usePanels={select => select([])} useShortcuts={select => select([shortcut])} />)
+    const button = screen.getByRole('button', { name: 'New session' })
+    expect(button.getAttribute('aria-keyshortcuts')).toBe('Control+N')
+    fireEvent.focus(button)
+    expect(screen.getByRole('tooltip').textContent).toContain('Ctrl N')
+  })
   it('routes New Session (capsule + wordmark) and the column toggle', () => {
     const b = mountShell()
     expect(screen.getByTestId('custom-brand-mark')).toBeTruthy()

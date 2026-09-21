@@ -4,33 +4,55 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { TerminalLaunchShells } from '@deepseek-ai/dsh-api-terminal-controller/client'
-import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { GlobalStandardProps, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { PaneId, TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
+import type { ShortcutCommandId, ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { TerminalGuide, type TerminalGuideProps } from '../src/client/TerminalGuide.tsx'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
+const SESSION = 's-terminal-guide' as SessionId
+const unused = (): never => { throw new Error('This isolated component does not consume framework hooks') }
+const standard: GlobalStandardProps & SessionStandardProps = {
+  sessionId: SESSION, useSession: unused, useProjection: unused, useConversation: unused,
+  useInput: unused, useChat: unused, useTrajectory: unused,
+  usePanelInfo: unused, useSessions: unused, useSessionStatus: unused,
+  useSessionRetainInfo: unused, useResource: unused, useWorkspaces: unused,
+  inputActions: { captureInsertion: unused, insertText: unused, setDraft: unused,
+    addAttachments: unused, removeAttachment: unused, pruneAttachments: unused, submit: unused },
+}
 const choices: TerminalLaunchShells = {
   shells: [{ name: 'bash', path: '/bin/bash', args: ['-i'] }, { name: 'zsh', path: '/bin/zsh', args: ['-i'] }],
   selectedShell: '/bin/zsh',
 }
 
 type GuideShortcut = Pick<ShortcutCatalogEntry, 'keys' | 'aria'>
+const catalogEntry = (shortcut: GuideShortcut): ShortcutCatalogEntry => ({
+  id: 'terminal.new' as ShortcutCommandId, label: en.new, aliases: [], binding: null,
+  modified: false, conflicts: [], issue: null, ...shortcut,
+})
 
 function mount(description: string | undefined = en.description, shortcut?: GuideShortcut) {
   const loadShells = vi.fn<TerminalGuideProps['loadShells']>(async () => choices)
   const selectShell = vi.fn()
   const openTab = vi.fn()
-  let shortcuts = shortcut === undefined ? [] : [{ id: 'terminal.new', ...shortcut }]
-  // The fixture supplies only the guide's consumed owner and framework shares.
-  const props = {
-    useShortcuts: (selector: (entries: typeof shortcuts) => unknown) => selector(shortcuts),
+  let shortcuts = shortcut === undefined ? [] : [catalogEntry(shortcut)]
+  const props: TerminalGuideProps = {
+    ...standard,
+    useShortcuts: <T,>(selector: (entries: readonly ShortcutCatalogEntry[]) => T): T => selector(shortcuts),
     entryId: 'new', kind: 'terminal', title: en.new, description, t: makeTranslate(en),
-    useTabInfo: () => ({ tab: { actions: { openTab } } }), loadShells, selectShell,
-  } as unknown as TerminalGuideProps
+    useTabInfo: () => ({ sidebar: { expanded: true, fullscreen: false }, panel: { id: 'pane-guide' as PaneId },
+      tab: { id: 'tab-guide' as TabId, kind: 'guide', contentId: 'sidebar://guide', title: 'Start',
+        visible: true, signal: new AbortController().signal,
+        navigation: { address: 'sidebar://guide', params: undefined, revision: 0 },
+        actions: { openTab, bindCommands: vi.fn(() => vi.fn()), openResource: vi.fn(), close: vi.fn() } } }),
+    loadShells, selectShell,
+  }
   const view = render(<TerminalGuide {...props} />)
   const open = () => fireEvent.click(view.getByRole('button', { name: en.shell }))
   const setShortcut = (next: GuideShortcut) => {
-    shortcuts = [{ id: 'terminal.new', ...next }]
+    shortcuts = [catalogEntry(next)]
     view.rerender(<TerminalGuide {...props} />)
   }
   return { view, props, open, loadShells, selectShell, openTab, setShortcut }

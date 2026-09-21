@@ -1,7 +1,7 @@
 /** Validated preference documents and deterministic conflict resolution, without browser dependencies. */
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { bindingKey, isWebBindingAllowed, normalizeBinding } from './binding.ts'
-import type { NormalizedBinding, ShortcutBinding, ShortcutCommandId, ShortcutPlatform, ShortcutProfile, ShortcutRuntime } from './binding.ts'
+import type { NormalizedBinding, ShortcutBinding, ShortcutCommandId, ShortcutModifier, ShortcutPlatform, ShortcutProfile, ShortcutRuntime } from './binding.ts'
 
 /** Overrides are platform-local; absent commands inherit defaults and null explicitly unbinds. */
 export interface ShortcutDocument {
@@ -42,10 +42,14 @@ export function parseBinding(value: unknown): ShortcutBinding | null {
   if (!record(value) || Object.keys(value).some(key => key !== 'code' && key !== 'secondCode' && key !== 'modifiers')
     || typeof value.code !== 'string' || !Array.isArray(value.modifiers)
     || (Object.hasOwn(value, 'secondCode') && typeof value.secondCode !== 'string')
-    || !value.modifiers.every(modifier => typeof modifier === 'string' && ['primary', 'control', 'alt', 'shift', 'meta'].includes(modifier))) {
+    || !value.modifiers.every((modifier: unknown): modifier is ShortcutModifier =>
+      typeof modifier === 'string' && ['primary', 'control', 'alt', 'shift', 'meta'].includes(modifier))) {
     throw new Error('Invalid shortcut binding')
   }
-  const binding = value as unknown as ShortcutBinding
+  const binding: ShortcutBinding = {
+    code: value.code, modifiers: value.modifiers,
+    ...(typeof value.secondCode === 'string' ? { secondCode: value.secondCode } : {}),
+  }
   normalizeBinding(binding, 'windows')
   return binding
 }
@@ -63,15 +67,19 @@ export function parseShortcutDocument(raw: string | null): ShortcutDocument | 'i
     if (typeof value.schemaVersion === 'number' && value.schemaVersion > 2) return 'future'
     if ((value.schemaVersion !== 1 && value.schemaVersion !== 2) || !record(value.profiles)
       || Object.keys(value).some(key => key !== 'schemaVersion' && key !== 'profiles')) return 'invalid'
+    const profiles: Record<string, Record<string, ShortcutBinding | null>> = {}
     for (const [profile, overrides] of Object.entries(value.profiles)) {
       if (!/^(desktop|web):(macos|windows|linux)$/u.test(profile) || !record(overrides)) return 'invalid'
+      const bindings: Record<string, ShortcutBinding | null> = {}
       for (const [id, binding] of Object.entries(overrides)) {
         if (!commandPattern.test(id)) return 'invalid'
         const parsed = parseBinding(binding)
         if (value.schemaVersion === 1 && parsed?.secondCode !== undefined) return 'invalid'
+        bindings[id] = parsed
       }
+      profiles[profile] = bindings
     }
-    return value as unknown as ShortcutDocument
+    return { schemaVersion: value.schemaVersion, profiles }
   } catch (_error) {
     // Invalid JSON and invalid binding fields both preserve the original document.
     return 'invalid'
@@ -176,6 +184,7 @@ export function editShortcutDocument(document: ShortcutDocument, edit: ShortcutE
       break
     }
     case 'reset-all': overrides = {}; break
+    /* v8 ignore next -- parseShortcutEdit validates this closed union before persistence. */
     default: return assertNever(edit, 'shortcut edit')
   }
   return { schemaVersion, profiles: { ...document.profiles, [profile]: overrides } }

@@ -730,7 +730,10 @@ describe('ConversationRoot resident composer', () => {
       // Dragging the right handle outward by 25px widens by 2×25 = 50 → 970,
       // inside both bounds (max = 1600 − 176 = 1424 keeps the handles on-column).
       fireEvent.pointerDown(handle, { pointerId: 1, clientX: 800, clientY: 300 })
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 825, clientY: 300 })
+      expect(handle.style.getPropertyValue('--dsh-width-handle-pointer-y')).toBe('300px')
       fireEvent.pointerUp(handle, { pointerId: 1, clientX: 825, clientY: 300 })
+      expect(handle.hasAttribute('data-dragging')).toBe(false)
       expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('970px')
       expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
       // Window shrinks: the displayed width re-clamps (900 − 176 = 724) but the
@@ -792,6 +795,28 @@ describe('ConversationRoot resident composer', () => {
     expect(nestedScrollBy).not.toHaveBeenCalled()
   })
 
+  it('does not check capture, measure, style, or schedule width-handle moves before dragging', () => {
+    const b = mount(sessionSnapshotOf())
+    const handle = b.view.container.querySelector('[data-width-handle="right"]') as HTMLElement
+    const capture = vi.fn(() => false)
+    Object.defineProperty(handle, 'hasPointerCapture', { value: capture })
+    const measure = vi.spyOn(handle, 'getBoundingClientRect')
+    const style = vi.spyOn(handle.style, 'setProperty')
+    const schedule = vi.spyOn(globalThis, 'requestAnimationFrame')
+    try {
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 800, clientY: 300 })
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 802, clientY: 302 })
+      expect(capture).not.toHaveBeenCalled()
+      expect(measure).not.toHaveBeenCalled()
+      expect(style).not.toHaveBeenCalled()
+      expect(schedule).not.toHaveBeenCalled()
+    } finally {
+      schedule.mockRestore()
+      style.mockRestore()
+      measure.mockRestore()
+    }
+  })
+
   it('starts width dragging only from the primary pointer button', () => {
     const b = mount(sessionSnapshotOf())
     const handle = b.view.container.querySelector('[data-width-handle="right"]') as HTMLElement
@@ -806,6 +831,9 @@ describe('ConversationRoot resident composer', () => {
     fireEvent.pointerDown(handle, { pointerId: 2, button: 0, clientX: 800, clientY: 300 })
     expect(handle.hasAttribute('data-dragging')).toBe(true)
     fireEvent.pointerCancel(handle, { pointerId: 2 })
+    expect(handle.hasAttribute('data-dragging')).toBe(false)
+    fireEvent.pointerMove(handle, { pointerId: 2, clientX: 825, clientY: 300 })
+    expect(handle.style.getPropertyValue('--dsh-width-handle-pointer-y')).toBe('')
   })
 
   it('hero phase renders no width handles (no transcript to size)', () => {

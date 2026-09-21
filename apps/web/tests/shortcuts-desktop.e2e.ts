@@ -10,11 +10,14 @@ import { initialShortcutConfig, parseShortcutDefinitions, parseShortcutEdit } fr
 import type { DesktopShortcutInput, DesktopShortcutsApi, ShortcutRevision } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import { desktopKeybindings } from '../../desktop/src/keybindings.ts'
 import { compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole, webSnapshotMode } from './scaffold.ts'
+import { writeComposerDraft } from './support.ts'
 
-type FixtureWindow = Window & {
-  desktopShortcutsGet: DesktopShortcutsApi['get']
-  desktopShortcutsEdit: DesktopShortcutsApi['edit']
-  shortcutFixture: { deliver(input: DesktopShortcutInput): void; recording: boolean; closedWindows: number }
+declare global {
+  interface Window {
+    desktopShortcutsGet: DesktopShortcutsApi['get']
+    desktopShortcutsEdit: DesktopShortcutsApi['edit']
+    shortcutFixture: { deliver(input: DesktopShortcutInput): void; recording: boolean; closedWindows: number }
+  }
 }
 
 const expected = fileURLToPath(new URL('./expected/shortcuts-desktop', import.meta.url))
@@ -42,7 +45,6 @@ it.each([
         await page.exposeFunction('desktopShortcutsEdit', (edit: unknown, revision: ShortcutRevision) => persistence.edit(parseShortcutEdit(edit), revision))
         // Only the Electron transport is substituted; preference storage and all Client plugins are real.
         await page.addInitScript((device) => {
-          const scope = window as unknown as FixtureWindow
           const mark = () => { document.documentElement.dataset.platform = device }
           if (document.documentElement === null) window.addEventListener('DOMContentLoaded', mark)
           else mark()
@@ -52,7 +54,7 @@ it.each([
           }
           Object.assign(window, { shortcutFixture: fixture, dshDesktop: { protocolVersion: 1,
             shortcuts: {
-              get: scope.desktopShortcutsGet, edit: scope.desktopShortcutsEdit,
+              get: window.desktopShortcutsGet, edit: window.desktopShortcutsEdit,
               recording: async (active: boolean) => { fixture.recording = active }, subscribe: () => () => {},
             },
             keyboard: { subscribe: (listener: (input: DesktopShortcutInput) => void) => {
@@ -63,7 +65,7 @@ it.each([
         const console = watchConsole(page)
         await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
         const deliverPrimary = (code: string) => page.evaluate((input) => {
-          (window as unknown as FixtureWindow).shortcutFixture.deliver(input)
+          window.shortcutFixture.deliver(input)
         }, {
           kind: 'keyboard', frameName: '', revision: snapshot.revision, code,
           control: platform === 'windows', meta: platform === 'macos', alt: false, shift: false, repeat: false,
@@ -96,10 +98,9 @@ it.each([
         expect(await page.evaluate(() => document.getSelection()?.toString())).toBe('Desktop')
         await deliverPrimary('KeyW')
         await expect.poll(() => page.locator('[data-sidebar-right-open]').count()).toBe(0)
-        expect(await page.evaluate(() => (window as unknown as FixtureWindow).shortcutFixture.closedWindows)).toBe(0)
+        expect(await page.evaluate(() => window.shortcutFixture.closedWindows)).toBe(0)
         expect(await composer.innerText()).toBe('Desktop focus draft')
-        await composer.focus()
-        await composer.fill('')
+        await writeComposerDraft(page, composer, '')
         await expect.poll(() => composer.textContent()).toBe('')
         await openReference()
         const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts', exact: true })
@@ -141,7 +142,7 @@ it.each([
         const heights = await rowHeights()
         expect(new Set(heights)).toEqual(new Set([42]))
         await dialog.getByRole('button', { name: 'Edit shortcut for New Session', exact: true }).click()
-        await expect.poll(() => page.evaluate(() => (window as unknown as FixtureWindow).shortcutFixture.recording)).toBe(true)
+        await expect.poll(() => page.evaluate(() => window.shortcutFixture.recording)).toBe(true)
         expect(await rowHeights()).toEqual(heights)
         const firstRecorder = dialog.getByRole('button', { name: 'Press a shortcut', exact: true })
         expect(await firstRecorder.evaluate(node => getComputedStyle(node).boxShadow)).toBe('none')
@@ -149,7 +150,7 @@ it.each([
         await compareOrRefreshGolden(join(expected, 'recording.expected.md'), await dialog.getByRole('group').ariaSnapshot(), mode)
         await page.keyboard.press(`${primary}+C`)
         await dialog.getByRole('group').waitFor({ state: 'hidden' })
-        const saved = JSON.parse(await readFile(join(userData, 'keybindings.json'), 'utf8')) as unknown
+        const saved: unknown = JSON.parse(await readFile(join(userData, 'keybindings.json'), 'utf8'))
         expect(saved).toMatchObject({ schemaVersion: 2, profiles: { [`desktop:${platform}`]: {
           'session.new': { code: 'KeyC', modifiers: [platform === 'macos' ? 'meta' : 'control'] },
         } } })
@@ -163,7 +164,7 @@ it.each([
         await page.keyboard.press('Escape')
         await dialog.waitFor({ state: 'hidden' })
         await composer.focus()
-        await page.evaluate((input) => { (window as unknown as FixtureWindow).shortcutFixture.deliver(input) }, {
+        await page.evaluate((input) => { window.shortcutFixture.deliver(input) }, {
           kind: 'keyboard', frameName: '', revision: snapshot.revision, code: 'KeyC',
           control: platform === 'windows', meta: platform === 'macos', alt: false, shift: false, repeat: false,
         } satisfies DesktopShortcutInput)
@@ -239,7 +240,7 @@ it.each([
         await expect.poll(() => page.getByText('DONE', { exact: true }).isVisible()).toBe(true)
         await page.keyboard.down('a')
         await expect.poll(() => composer.textContent()).toBe('aba')
-        await page.evaluate((input) => { (window as unknown as FixtureWindow).shortcutFixture.deliver(input) }, {
+        await page.evaluate((input) => { window.shortcutFixture.deliver(input) }, {
           kind: 'keyboard', frameName: '', revision: snapshot.revision, code: 'KeyA', secondCode: 'KeyB',
           control: false, meta: false, alt: false, shift: false, repeat: false,
         } satisfies DesktopShortcutInput)

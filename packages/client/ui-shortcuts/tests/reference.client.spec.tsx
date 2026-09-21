@@ -19,6 +19,31 @@ const describeBinding: Parameters<typeof ShortcutReference>[0]['describeBinding'
     issue: normalized === null ? null : bindingIssue(normalized, 'web', 'macos'), conflicts: [] }
 }
 afterEach(cleanup)
+it('ignores reset completion after the reference unmounts', async () => {
+  const f = referenceFixture()
+  act(() => { f.config.set({ ...f.config.getSnapshot(), document: {
+    schemaVersion: 1, profiles: { 'web:macos': { 'settings.open': null } },
+  } }) })
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof f.edit>>>()
+  f.edit.mockReturnValueOnce(pending.promise)
+  fireEvent.click(screen.getByRole('button', { name: en['reset-all'] }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: en['reset-title'] })).getByRole('button', { name: en.reset }))
+  expect(f.edit).toHaveBeenCalledOnce()
+  f.view.unmount()
+  await act(async () => { pending.resolve({ status: 'saved', snapshot: f.config.getSnapshot() }); await pending.promise })
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it('keeps a reference open while a clear operation is pending', async () => {
+  const f = referenceFixture()
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof f.edit>>>()
+  f.edit.mockReturnValueOnce(pending.promise)
+  fireEvent.click(screen.getByRole('button', { name: 'Remove shortcut for Open settings' }))
+  fireEvent.click(screen.getByRole('button', { name: en.close }))
+  expect(f.store.getSnapshot().open).toBe(true)
+  await act(async () => { pending.resolve({ status: 'saved', snapshot: f.config.getSnapshot() }); await pending.promise })
+  expect(screen.getByRole('alert').textContent).toBe(en.saved)
+})
 it.each(['macos', 'windows'] as const)('shows the reference, filters labels and keys, and clears its query on close (%s)', (platform) => {
   hostApply()
   const store = createShortcutsStore().create()

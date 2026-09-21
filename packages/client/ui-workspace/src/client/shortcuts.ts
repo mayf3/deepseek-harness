@@ -58,13 +58,13 @@ export function createWorkspaceShortcutControls(): WorkspaceShortcutControls {
 /**
  * Register navigation commands against the existing workspace owner.
  * @param ctx - plugin context with the shortcut, locale, and model services.
- * @param navigation - the same navigation service used by pointer controls.
+ * @param navigation - session creation and forking from the pointer controls' navigation service.
  * @param controls - browser-owned opening requests.
  * @param archiveSession - shared archive action, including running-work confirmation and notices.
  */
 export function installWorkspaceShortcuts(
   ctx: Context,
-  navigation: UiWorkspace,
+  navigation: Pick<UiWorkspace, 'startSession' | 'forkSession'>,
   controls: ReturnType<typeof createWorkspaceShortcutControls>,
   archiveSession: (sessionId: SessionId) => void,
 ): void {

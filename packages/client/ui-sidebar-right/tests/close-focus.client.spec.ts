@@ -3,10 +3,16 @@
 import { afterEach, expect, it } from 'vitest'
 import type { PaneId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { closeWithPaneFocus } from '../src/client/shell/close-focus.ts'
+import { closeWithPaneFocus, openWithPaneFocus } from '../src/client/shell/close-focus.ts'
 
 const session = 'closing-session' as SessionId
 afterEach(() => { document.body.replaceChildren() })
+it('keeps focus when opening selects no pane', () => {
+  const first = pane('first')
+  first.focus()
+  openWithPaneFocus(document, session, () => undefined)
+  expect(document.activeElement).toBe(first)
+})
 
 function pane(id: string, floating = false, ownerSession = session) {
   const owner = document.createElement('div')

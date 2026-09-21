@@ -4,13 +4,13 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
-import type { BrowserWindow, IpcMainInvokeEvent, WebContents } from 'electron'
+import type { BrowserWindow, WebContents, WebFrameMain } from 'electron'
 import type { DesktopShortcutInput, ShortcutBinding, ShortcutCommandId, ShortcutConfigSnapshot,
   ShortcutDefinition, ShortcutSaveResult } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import { ShortcutRegistry } from '../../../packages/client/shortcuts/src/client/registry.ts'
 import { installKeyboard } from '../../../packages/client/shortcuts/src/client/dom.ts'
 import { installNativeKeyboard } from '../../../packages/client/shortcuts/src/client/native.ts'
-import type { DesktopBrowserLeaseId } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
+import type { DesktopBrowserLeaseId, DesktopBrowserReservation } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
 import { DESKTOP_IPC } from '../src/ipc.ts'
 
 const ipc = vi.hoisted(() => ({ handle: vi.fn(), removeHandler: vi.fn() }))
@@ -22,6 +22,31 @@ const { installDesktopShortcuts } = await import('../src/keyboard.ts')
 const { DesktopBrowserGuests } = await import('../src/browser-guests.ts')
 afterEach(() => { vi.clearAllMocks() })
 
+type FrameFixture = { url: WebFrameMain['url']; name: WebFrameMain['name']; parent: FrameFixture | null }
+type ContentsFixture = EventEmitter & Pick<WebContents,
+  'isDestroyed' | 'isFocused' | 'send' | 'setIgnoreMenuShortcuts' | 'focus' | 'sendInputEvent'> & {
+    mainFrame: FrameFixture
+    focusedFrame: FrameFixture | null
+  }
+type WindowFixture = EventEmitter & Pick<BrowserWindow, 'isDestroyed' | 'isFocused' | 'isEnabled' | 'close'> & {
+  webContents: ContentsFixture
+}
+type InvokeFixture = { sender: object; senderFrame: object | null }
+type KeyboardFixture = Omit<ReturnType<typeof installDesktopShortcuts>, 'attach' | 'attachGuest'> & {
+  attach(window: WindowFixture): void
+  attachGuest(window: WindowFixture, guest: ContentsFixture, name: DesktopBrowserLeaseId): () => void
+}
+// Electron is substituted at module load; fixtures implement the native members exercised by this installer.
+const installFixture = installDesktopShortcuts as (
+  getWindow: () => WindowFixture | undefined, userData: string,
+  platform: Parameters<typeof installDesktopShortcuts>[2], updateMenu: () => void,
+) => KeyboardFixture
+type GuestsFixture = {
+  acquire(owner: ContentsFixture, workspace: unknown): DesktopBrowserReservation
+  release(owner: ContentsFixture, id: unknown): Promise<void>
+  bind(window: WindowFixture, attachInput: (guest: ContentsFixture, name: DesktopBrowserLeaseId) => () => void): void
+}
+
 function desktopDefaults(binding: ShortcutBinding): ShortcutDefinition['defaults'] {
   return { 'desktop:macos': binding, 'desktop:windows': binding, 'desktop:linux': binding }
 }
@@ -29,19 +54,20 @@ function desktopDefaults(binding: ShortcutBinding): ShortcutDefinition['defaults
 async function fixture(platform: 'macos' | 'windows' | 'linux' = 'macos') {
   const root = await mkdtemp(join(tmpdir(), 'dsh-keyboard-'))
   onTestFinished(async () => { await rm(root, { recursive: true, force: true }) })
-  const frame = { url: 'dsh-app://app/' }
+  const frame: FrameFixture = { url: 'dsh-app://app/', name: '', parent: null }
   const contents = Object.assign(new EventEmitter(), { mainFrame: frame, focusedFrame: frame,
-    isDestroyed: () => false, send: vi.fn(), setIgnoreMenuShortcuts: vi.fn(), focus: vi.fn(), sendInputEvent: vi.fn() })
+    isDestroyed: () => false, isFocused: () => true, send: vi.fn(),
+    setIgnoreMenuShortcuts: vi.fn(), focus: vi.fn(), sendInputEvent: vi.fn() })
   const window = Object.assign(new EventEmitter(), { webContents: contents, isDestroyed: vi.fn(() => false),
     isFocused: vi.fn(() => true), isEnabled: vi.fn(() => true), close: vi.fn() })
-  let current: BrowserWindow | undefined = window as unknown as BrowserWindow
+  let current: WindowFixture | undefined = window
   const updateMenu = vi.fn()
-  const keyboard = installDesktopShortcuts(() => current, root, platform, updateMenu)
+  const keyboard = installFixture(() => current, root, platform, updateMenu)
   keyboard.attach(current)
   onTestFinished(() => { keyboard.dispose() })
-  const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>(
+  const handlers = new Map<string, (event: InvokeFixture, ...args: unknown[]) => unknown>(
     ipc.handle.mock.calls.map(([channel, handler]) => [channel, handler]))
-  const event = { sender: contents, senderFrame: frame } as unknown as IpcMainInvokeEvent
+  const event: InvokeFixture = { sender: contents, senderFrame: frame }
   const call = async <T>(channel: string, ...args: unknown[]): Promise<T> => await handlers.get(channel)!(event, ...args) as T
   const definitions: readonly ShortcutDefinition[] = [
     { id: 'sidebar.left.toggle' as ShortcutCommandId, defaults: desktopDefaults({ code: 'KeyB', modifiers: ['primary'] }) },
@@ -75,7 +101,7 @@ it('rejects other windows, subframes, remote/shell pages, and malformed edits', 
   const f = await fixture()
   const get = f.handlers.get(DESKTOP_IPC.shortcutsGet)!
   for (const event of [{ ...f.event, sender: {} }, { ...f.event, senderFrame: null }, { ...f.event, senderFrame: {} }]) {
-    await expect(get(event as IpcMainInvokeEvent, f.definitions)).rejects.toThrow('rejected sender')
+    await expect(get(event, f.definitions)).rejects.toThrow('rejected sender')
   }
   for (const url of ['dsh-app://shell/', 'https://example.com/', 'http://localhost/']) {
     f.frame.url = url
@@ -533,14 +559,15 @@ it.each(['macos', 'windows', 'linux'] as const)('routes approved %s browser gues
   const f = await fixture(platform)
   const snapshot = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet,
     [{ id: 'browser.new', defaults: desktopDefaults({ code: 'KeyT', modifiers: ['primary'] }) }])
-  const guests = new DesktopBrowserGuests(() => undefined)
-  const attach = vi.fn((guest: WebContents, name: DesktopBrowserLeaseId) => f.keyboard.attachGuest(f.window as never, guest, name))
-  guests.bind(f.window as never, attach)
-  const reservation = guests.acquire(f.contents as never, 'session:test')
-  const frame = { url: `about:blank#${reservation.lease}`, parent: null }
+  const guests = new DesktopBrowserGuests(() => undefined) as GuestsFixture
+  const attach = vi.fn((guest: ContentsFixture, name: DesktopBrowserLeaseId) => f.keyboard.attachGuest(f.window, guest, name))
+  guests.bind(f.window, attach)
+  const reservation = guests.acquire(f.contents, 'session:test')
+  const frame: FrameFixture = { url: `about:blank#${reservation.lease}`, name: '', parent: null }
   const guest = Object.assign(new EventEmitter(), { mainFrame: frame, focusedFrame: frame,
     getURL: () => frame.url, isDestroyed: () => false, isFocused: vi.fn(() => true),
-    setWindowOpenHandler: vi.fn(), setIgnoreMenuShortcuts: vi.fn(), send: vi.fn(), close: vi.fn() })
+    setWindowOpenHandler: vi.fn(), setIgnoreMenuShortcuts: vi.fn(), send: vi.fn(), close: vi.fn(),
+    focus: vi.fn(), sendInputEvent: vi.fn() })
   onTestFinished(() => { guest.emit('destroyed') })
   const rejected = { preventDefault: vi.fn() }
   f.contents.emit('will-attach-webview', rejected, {}, { src: 'about:blank#unknown', partition: reservation.partition })
@@ -572,7 +599,7 @@ it.each(['macos', 'windows', 'linux'] as const)('routes approved %s browser gues
   guest.emit('before-input-event', { preventDefault }, input)
   expect(f.contents.send).toHaveBeenCalledOnce()
   guest.isFocused.mockReturnValue(true)
-  const release = guests.release(f.contents as never, reservation.lease)
+  const release = guests.release(f.contents, reservation.lease)
   expect(guest.close).toHaveBeenCalledExactlyOnceWith({ waitForBeforeUnload: false })
   expect(guest.listenerCount('before-input-event')).toBe(0)
   guest.emit('before-input-event', { preventDefault }, input)
@@ -586,12 +613,13 @@ it('keeps browser guest chord state local and leaves accepted bindings active th
   const initial = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet, f.definitions)
   await f.call(DESKTOP_IPC.shortcutsEdit, { type: 'set', id: 'sidebar.left.toggle',
     binding: { code: 'KeyF', secondCode: 'KeyG', modifiers: [] } }, initial.revision)
-  const frame = { url: 'https://example.test/', parent: null }
+  const frame: FrameFixture = { url: 'https://example.test/', name: '', parent: null }
   const guest = Object.assign(new EventEmitter(), { mainFrame: frame, focusedFrame: frame,
-    isDestroyed: () => false, isFocused: () => true, setIgnoreMenuShortcuts: vi.fn() })
+    isDestroyed: () => false, isFocused: () => true, setIgnoreMenuShortcuts: vi.fn(),
+    send: vi.fn(), focus: vi.fn(), sendInputEvent: vi.fn() })
   const blurListeners = f.window.listenerCount('blur')
   const closedListeners = f.window.listenerCount('closed')
-  const dispose = f.keyboard.attachGuest(f.window as never, guest as never, 'guest' as DesktopBrowserLeaseId)
+  const dispose = f.keyboard.attachGuest(f.window, guest, 'guest' as DesktopBrowserLeaseId)
   onTestFinished(dispose)
   expect(f.window.listenerCount('blur')).toBe(blurListeners)
   expect(f.window.listenerCount('closed')).toBe(closedListeners)
@@ -626,10 +654,11 @@ it('delivers Windows Edit actions to the focused browser guest without invoking 
   const initial = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet, f.definitions)
   await f.call(DESKTOP_IPC.shortcutsEdit, { type: 'set', id: 'sidebar.left.toggle',
     binding: { code: 'KeyC', modifiers: ['control'] } }, initial.revision)
-  const frame = { url: 'https://example.test/', parent: null }
+  const frame: FrameFixture = { url: 'https://example.test/', name: '', parent: null }
   const guest = Object.assign(new EventEmitter(), { mainFrame: frame, focusedFrame: frame,
-    isDestroyed: () => false, isFocused: () => true, setIgnoreMenuShortcuts: vi.fn(), focus: vi.fn(), sendInputEvent: vi.fn() })
-  const dispose = f.keyboard.attachGuest(f.window as never, guest as never, 'guest' as DesktopBrowserLeaseId)
+    isDestroyed: () => false, isFocused: () => true, setIgnoreMenuShortcuts: vi.fn(),
+    send: vi.fn(), focus: vi.fn(), sendInputEvent: vi.fn() })
+  const dispose = f.keyboard.attachGuest(f.window, guest, 'guest' as DesktopBrowserLeaseId)
   onTestFinished(dispose)
   const events: string[] = []
   guest.sendInputEvent.mockImplementation((input: { type: 'keyDown' | 'keyUp' }) => {

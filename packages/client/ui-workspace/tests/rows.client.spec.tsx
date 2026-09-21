@@ -162,9 +162,12 @@ describe('workspace browser rows', () => {
       key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
       sessionCount: 1, expanded: true, containsCurrent: true, sessions: [],
     }
-    render(<ProjectRowItem group={group} onToggle={onToggle} onCreate={onCreate} t={t} />)
+    render(<ProjectRowItem group={group} onToggle={onToggle} onCreate={onCreate} t={t}
+      newShortcut={{ id: 'session.new' as never, label: 'New', aliases: [], binding: null,
+        keys: ['Ctrl', 'N'], aria: 'Control+N', modified: true, conflicts: [], issue: null }} />)
 
     expect(screen.getByRole('treeitem').getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('button', { name: '在“Project”中新建会话' }).getAttribute('aria-keyshortcuts')).toBe('Control+N')
     fireEvent.click(screen.getByRole('button', { name: '在“Project”中新建会话' }))
     expect(onCreate).toHaveBeenCalledOnce()
     expect(onToggle).not.toHaveBeenCalled()

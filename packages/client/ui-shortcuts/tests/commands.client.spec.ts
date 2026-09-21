@@ -15,7 +15,11 @@ describe('assembled shortcut command owners', () => {
     const client = await start()
     const shortcuts = client.ctx.shortcuts
     const overlay = client.ctx.slots.entries('shell.overlay').find(entry => entry.options.id === 'shortcuts')!
-    const injected = (overlay.inject as unknown as () => ReferenceInjected)()
+    const injected: Partial<ReferenceInjected> | undefined = overlay.inject?.()
+    if (injected?.hooks === undefined || injected.describeBinding === undefined
+      || injected.recording === undefined || injected.edit === undefined) {
+      throw new Error('expected the shortcut reference actions')
+    }
     expect(injected.hooks.catalog).toBe(shortcuts.catalog)
     await vi.waitFor(() => { expect(shortcuts.config.getSnapshot().status).toBe('ready') })
     expect(injected.describeBinding(null).keys).toEqual([])
@@ -23,7 +27,8 @@ describe('assembled shortcut command owners', () => {
     const shortcut = shortcuts.catalog.getSnapshot().find(row => row.id === 'shortcuts.open')!
     expect((await injected.edit({ type: 'reset', id: shortcut.id }, shortcuts.config.getSnapshot().revision)).status).toBe('saved')
     const row = client.ctx.slots.entries('settings.general.item').find(entry => entry.options.id === 'shortcuts')!
-    expect((row.inject as unknown as () => ReferenceInjected)().hooks.catalog).toBe(shortcuts.catalog)
+    const rowInjected: Partial<ReferenceInjected> | undefined = row.inject?.()
+    expect(rowInjected?.hooks?.catalog).toBe(shortcuts.catalog)
     const ownerIds = ['settings.open', 'shortcuts.open', 'sidebar.left.toggle']
     const ownedRows = () => shortcuts.catalog.getSnapshot().filter(row => ownerIds.includes(row.id))
     expect(ownedRows().map(row => row.id).sort()).toEqual(ownerIds)

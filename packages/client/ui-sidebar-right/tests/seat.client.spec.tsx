@@ -772,6 +772,20 @@ describe('slot-owned useTabInfo', () => {
     expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Two panes is the limit')
   })
 
+  it('advertises configured pane and page-close controls', async () => {
+    const h = await mountSeat()
+    const entry = (id: string): ShortcutCatalogEntry => ({ id: id as ShortcutCommandId,
+      label: id, aliases: [], binding: null, modified: true, conflicts: [], issue: null,
+      keys: ['Ctrl', 'G'], aria: 'Control+G' })
+    act(() => {
+      h.catalog.set(['page.close', 'pane.fullscreen.toggle', 'sidebar.right.toggle'].map(entry))
+      h.controller.toggleExpanded()
+    })
+    for (const selector of ['[data-sidebar-right-mode]', '[data-sidebar-right-toggle]']) {
+      expect(element(h.view.container, selector).getAttribute('aria-keyshortcuts')).toBe('Control+G')
+    }
+  })
+
   it('explains the two-pane limit and adds a guide only to a pane without one', async () => {
     const h = await mountSeat()
     // Expanding first seeds the left pane's guide; only the right pane will lack one.

@@ -74,6 +74,27 @@ function headerEntryIds(ctx: Context): (string | undefined)[] {
 }
 
 describe('open-in-app browser half', () => {
+  it('refuses absent workspaces and reports failed keyboard launches', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => String(input) === 'open-in-app/apps'
+      ? new Response(JSON.stringify({ apps: ['finder'] })) : new Response('failed', { status: 500 })))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { fiber, list, commands } = await bench()
+    try {
+      const command = commands.get('workspace.openLocal')!
+      const context = { region: 'page', modal: null, target: null } as const
+      expect(command.resolve(context).status).toBe('blocked')
+      const id = 'main' as SessionId
+      const row = { id, displayTitle: 'Main', cwd: '/workspace', running: false, blank: false, updatedAt: 0, retainedBy: {} }
+      list.set({ ...list.getSnapshot(), ids: [id], byId: { [id]: row } })
+      expect(command.resolve(context).status).toBe('blocked')
+      list.set({ ...list.getSnapshot(), byId: { [id]: { ...row, retainedBy: { mainView: 1 } } } })
+      await vi.waitFor(() => { expect(command.resolve(context).status).toBe('handled') })
+      const result = command.resolve(context)
+      if (result.status !== 'handled') throw new Error('Expected an available workspace')
+      result.run()
+      await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('workspace open rejected:', expect.any(Error)) })
+    } finally { await fiber.dispose(); warn.mockRestore() }
+  })
   it('captures the main directory and remembered app before dispatch and shares pointer launch occupancy', async () => {
     let finish!: (response: Response) => void
     const fetcher = vi.fn((input: string | URL, _init?: RequestInit) => String(input) === 'open-in-app/apps'
@@ -194,15 +215,20 @@ describe('open-in-app browser half', () => {
     vi.stubGlobal('fetch', fetcher)
     const { ctx, fiber } = await bench()
     const entry = ctx.slots.entries('conversation.session.header.utilities')[0]
-    const injected = (entry?.inject as unknown as () => OpenInAppActionInjected)()
+    const injected: Partial<OpenInAppActionInjected> | undefined = entry?.inject?.()
+    if (injected?.hooks === undefined || injected.iconUrl === undefined
+      || injected.choose === undefined || injected.launch === undefined) {
+      throw new Error('expected the injected open-in-app actions')
+    }
+    const { hooks } = injected
 
     await vi.waitFor(() => {
-      expect(injected.hooks.openInAppApps.getSnapshot()).toEqual(['finder', 'cursor'])
+      expect(hooks.openInAppApps.getSnapshot()).toEqual(['finder', 'cursor'])
     })
     expect(injected.iconUrl('cursor')).toBe('open-in-app/icon/cursor')
 
     injected.choose('cursor')
-    expect(injected.hooks.openInAppChoice.getSnapshot()).toBe('cursor')
+    expect(hooks.openInAppChoice.getSnapshot()).toBe('cursor')
 
     await injected.launch('cursor', '/w/dir')
     const openCall = fetcher.mock.calls.find(call => call[0] === 'open-in-app/open')
@@ -221,9 +247,11 @@ describe('open-in-app browser half', () => {
     }))
     const { ctx, fiber } = await bench()
     const entry = ctx.slots.entries('conversation.session.header.utilities')[0]
-    const injected = (entry?.inject as unknown as () => OpenInAppActionInjected)()
+    const injected: Partial<OpenInAppActionInjected> | undefined = entry?.inject?.()
+    if (injected?.hooks === undefined || injected.launch === undefined) throw new Error('expected the injected launch action')
+    const { hooks } = injected
     await vi.waitFor(() => {
-      expect(injected.hooks.openInAppApps.getSnapshot()).toEqual([])
+      expect(hooks.openInAppApps.getSnapshot()).toEqual([])
     })
     await expect(injected.launch('finder', '/w/dir')).rejects.toThrow('open failed: HTTP 502')
     await fiber.dispose()

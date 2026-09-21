@@ -15,6 +15,7 @@ describe('OpenInAppController availability', () => {
   it('starts without a platform-specific choice', () => {
     const controller = new OpenInAppController(async () => jsonResponse({ apps: [] }))
     expect(controller.choice.getSnapshot()).toBe('')
+    expect(controller.currentApp()).toBeUndefined()
   })
 
   it('shares one availability read across concurrent loads', async () => {

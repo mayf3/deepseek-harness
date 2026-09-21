@@ -58,6 +58,33 @@ function harness() {
 }
 
 describe('sidebar focus targets', () => {
+  it('ignores floating pane markup outside a Session owner', () => {
+    const pane = document.createElement('section')
+    pane.tabIndex = -1
+    pane.dataset.dockkitFloat = 'orphan'
+    document.body.append(pane)
+    releases.push(observeSidebarFocus(document))
+    pane.focus()
+    expect(document.activeElement).toBe(pane)
+  })
+
+  it('does not restore a removed editor over focus captured by another component', async () => {
+    const h = harness(), pane = h.paneElement()
+    pane.parentElement!.setAttribute('data-sidebar-right-open', '')
+    const input = document.createElement('input'), outside = document.createElement('button')
+    pane.append(input)
+    document.body.append(outside)
+    releases.push(observeSidebarFocus(document))
+    input.focus()
+    pane.append(document.createElement('span'))
+    await Promise.resolve()
+    expect(document.activeElement).toBe(input)
+    input.remove()
+    document.addEventListener('focusin', (event) => { event.stopImmediatePropagation() }, { capture: true, once: true })
+    outside.focus()
+    await Promise.resolve()
+    expect(document.activeElement).toBe(outside)
+  })
   it('uses keyboard-focused inactive tabs and iframe ownership instead of the last selected pane', () => {
     const h = harness()
     const left = activeDockPaneId(h.layout())
@@ -185,6 +212,7 @@ describe('sidebar focus targets', () => {
     const empty = h.controller.commandTarget(null)!
     expect(empty.tabId).toBeUndefined()
     expect(h.controller.isTargetCurrent(empty)).toBe(true)
+    expect(h.controller.closeTarget(empty)).toBe('unavailable')
     const surface = h.store.getSnapshot().bySession[SESSION]!
     h.store.store.set({ bySession: { [SESSION]: { ...surface, layout: { ...surface.layout, expanded: true } } } })
     expect(sidebarTargetFromElement(pane, SESSION, h.layout(), vi.fn())?.tabId).toBeUndefined()
@@ -328,6 +356,44 @@ describe('sidebar focus targets', () => {
 
 
 describe('sidebar keyboard commands', () => {
+  it('refuses Web close without focus and drops a refresh captured before replacement', () => {
+    const h = harness(), commands = new Map<string, ShortcutCommand>()
+    releases.push(registerSidebarShortcuts({ runtime: 'web', register: (command) => {
+      commands.set(command.id, command); return () => { commands.delete(command.id) }
+    } }, h.controller, makeTranslate(en), vi.fn()))
+    const context = { target: null, region: 'page', modal: null } as const
+    expect(commands.get('page.close')!.resolve(context)).toMatchObject({ status: 'blocked', reason: en['command.noFocus'] })
+    h.controller.openTab('files')
+    const id = h.controller.active()!.id
+    const target = h.tabElement(id), refresh = vi.fn()
+    const occurrence = h.controller.tabDomain.occurrence(SESSION, { id })
+    const off = occurrence.tabActions.bindCommands({ refresh })
+    const pending = commands.get('page.refresh')!.resolve({ ...context, target })
+    off()
+    if (pending.status !== 'handled') throw new Error('Expected refresh command')
+    pending.run()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('closes the Desktop window only while its captured empty pane remains current', () => {
+    const h = harness(), commands = new Map<string, ShortcutCommand>(), closeWindow = vi.fn()
+    releases.push(registerSidebarShortcuts({ runtime: 'desktop', register: (command) => {
+      commands.set(command.id, command); return () => { commands.delete(command.id) }
+    } }, h.controller, makeTranslate(en), closeWindow))
+    h.controller.openTabFromTarget('files', h.controller.commandTarget(null)!)
+    h.controller.close(h.controller.active()!.id)
+    const surface = h.store.getSnapshot().bySession[SESSION]!
+    h.store.store.set({ bySession: { [SESSION]: { ...surface, layout: { ...surface.layout, expanded: true } } } })
+    const target = h.paneElement()
+    const context = { target, region: 'page', modal: null } as const
+    const pending = commands.get('page.close')!.resolve(context)
+    if (pending.status !== 'handled') throw new Error('Expected window-close command')
+    pending.run()
+    expect(closeWindow).toHaveBeenCalledOnce()
+    h.controller.openTab('files')
+    pending.run()
+    expect(closeWindow).toHaveBeenCalledOnce()
+  })
   it.each(['macos', 'windows'] as const)('uses the effective %s binding, blocks collapsed splits and consumes repeats', (platform) => {
     const h = harness()
     const registry = new ShortcutRegistry('desktop', platform)

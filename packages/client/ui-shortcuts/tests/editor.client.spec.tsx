@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
-import { bindingIssue, normalizeBinding, overlappingBindings, presentBinding, ShortcutPersistence } from '@deepseek-ai/dsh-client-shortcuts/protocol'
+import { bindingIssue, initialShortcutConfig, normalizeBinding, overlappingBindings, presentBinding, ShortcutPersistence } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { ShortcutCommandId, ShortcutSaveResult } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import { ShortcutEditor } from '../src/client/Editor.tsx'
 import type {} from '../src/client/index.ts'
@@ -11,19 +11,75 @@ import { en } from '../src/client/locales.ts'
 import { fixedCommands } from '../src/client/fixed.ts'
 
 afterEach(cleanup)
+it('ignores repeated Escape and drops a pending Desktop key after focus leaves', async () => {
+  const f = await mount()
+  const recorder = screen.getByRole('button', { name: en.record })
+  recorder.blur()
+  fireEvent.keyDown(document, { code: 'Escape', key: 'Escape', repeat: true })
+  expect(f.onClose).not.toHaveBeenCalled()
+  recorder.focus()
+  fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j' })
+  recorder.blur()
+  fireEvent.keyUp(document, { code: 'KeyJ' })
+  expect(f.storage.write).not.toHaveBeenCalled()
+})
+it('clears a pending Desktop key when a modifier changes', async () => {
+  const f = await mount()
+  const recorder = screen.getByRole('button', { name: en.record })
+  recorder.focus()
+  fireEvent.keyDown(recorder, { code: 'KeyA', key: 'a' })
+  fireEvent.keyDown(recorder, { code: 'ControlLeft', key: 'Control', ctrlKey: true })
+  fireEvent.keyUp(recorder, { code: 'KeyA' })
+  expect(f.storage.write).not.toHaveBeenCalled()
+})
+
+it.each(['web', 'desktop'] as const)('describes Linux recording constraints in %s', async (runtime) => {
+  const f = await mount({ runtime, platform: 'linux' })
+  expect(f.view.container.textContent).toContain(en[runtime === 'web' ? 'web-help' : 'record-help'])
+})
+
+it('ignores a Web dead-key composition before capturing another combination', async () => {
+  const f = await mount({ runtime: 'web' })
+  const recorder = screen.getByRole('button', { name: en.record })
+  recorder.focus()
+  fireEvent.keyDown(recorder, { code: 'KeyE', key: 'Dead', altKey: true })
+  fireEvent.keyDown(recorder, { code: 'KeyE', key: 'é' })
+  fireEvent.keyUp(recorder, { code: 'KeyE' })
+  expect(f.storage.write).not.toHaveBeenCalled()
+})
+
+it('identifies a conflicting command that has left the displayed catalog', async () => {
+  const missing = 'unloaded.command' as ShortcutCommandId
+  const f = await mount({ describe: binding => ({ binding: binding === null ? null : normalizeBinding(binding, 'macos'),
+    keys: [], issue: null, conflicts: [missing] }) })
+  press('KeyJ')
+  expect(f.onError).toHaveBeenCalledWith(expect.stringContaining(missing))
+  expect(f.storage.write).not.toHaveBeenCalled()
+})
+
+it('explains an unreadable preference result returned while saving', async () => {
+  const f = await mount({ result: async () => ({ status: 'unreadable', snapshot: {
+    ...initialShortcutConfig(), status: 'unreadable', error: 'invalid',
+  } }) })
+  press('KeyJ')
+  await waitFor(() => { expect(f.onError).toHaveBeenCalledWith(expect.stringContaining('keybindings.json')) })
+})
 const id = 'test.toggle' as ShortcutCommandId
 async function mount(options: {
   recording?: (active: boolean) => Promise<void>
   result?: () => Promise<ShortcutSaveResult>
   runtime?: 'web' | 'desktop'
-  platform?: 'macos' | 'windows'
+  platform?: 'macos' | 'windows' | 'linux'
+  describe?: Parameters<typeof ShortcutEditor>[0]['describeBinding']
   setup?: (registry: ShortcutRegistry) => void
 } = {}) {
   const platform = options.platform ?? 'macos'
   const runtime = options.runtime ?? 'desktop'
   const registry = new ShortcutRegistry(runtime, platform)
   registry.register({ id, label: () => 'Toggle sidebar', aliases: [], defaults: {
-    [`${runtime}:${platform}`]: { code: 'KeyB', modifiers: runtime === 'desktop' ? ['primary'] : ['primary', 'alt'] },
+    [`${runtime}:${platform}`]: platform === 'linux' && runtime === 'web'
+      ? { code: 'Slash', modifiers: ['primary'] }
+      : { code: 'KeyB', modifiers: runtime === 'desktop' ? ['primary'] : ['primary', 'alt'] },
   },
   regions: ['page'], modals: [], resolve: () => ({ status: 'handled', run() {} }) })
   const describeBinding: Parameters<typeof ShortcutEditor>[0]['describeBinding'] = (binding) => {
@@ -51,7 +107,7 @@ async function mount(options: {
     useCatalog={bindSnapshotSelector(registry.catalog)} useConfig={bindSnapshotSelector(registry.config)}
     runtime={runtime} platform={platform}
     edit={(edit, revision) => options.result?.() ?? persistence.edit(edit, revision)}
-    describeBinding={describeBinding}
+    describeBinding={options.describe ?? describeBinding}
     recording={recording} t={makeTranslate(en)}
     onClose={onClose} onSaved={onSaved} onError={onError} />)
   if (options.recording === undefined) await waitFor(() => { expect((screen.getByRole('button', { name: 'Press a shortcut' })).hasAttribute('disabled')).toBe(false) })

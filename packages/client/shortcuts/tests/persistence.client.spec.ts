@@ -3,6 +3,15 @@ import { ShortcutPersistence } from '../src/protocol.ts'
 import type { ShortcutCommandId, ShortcutConfigSnapshot, ShortcutDefinition, ShortcutEdit } from '../src/protocol.ts'
 
 const one = 'test.one' as ShortcutCommandId
+it('rejects an unsupported Web binding without writing preferences', async () => {
+  const storage = { read: () => null, write: vi.fn() }
+  const store = new ShortcutPersistence(storage, 'web', 'linux', false, () => {})
+  store.setDefinitions([{ id: one, defaults: {} }])
+  const snapshot = await store.readCurrent()
+  expect(await store.edit({ type: 'set', id: one, binding: { code: 'KeyB', modifiers: ['control'] } }, snapshot.revision))
+    .toMatchObject({ status: 'conflict', issue: 'unsupported-browser', conflicts: [] })
+  expect(storage.write).not.toHaveBeenCalled()
+})
 const two = 'test.two' as ShortcutCommandId
 const binding = { code: 'KeyJ', modifiers: ['primary'] as const }
 const definitions: readonly ShortcutDefinition[] = [{ id: one, defaults: {
@@ -56,7 +65,8 @@ describe('serialized preference persistence', () => {
     expect(f.state()).toBe(initial)
     expect(f.raw()).toBeNull()
     expect((await f.store.edit(edit, initial.revision)).status).toBe('saved')
-    expect(JSON.parse(f.raw()!) as unknown).toMatchObject({ profiles: { 'desktop:windows': { [one]: binding } } })
+    const stored: unknown = JSON.parse(f.raw()!)
+    expect(stored).toMatchObject({ profiles: { 'desktop:windows': { [one]: binding } } })
     const restarted = fixture(); restarted.external(f.raw()!)
     expect((await restarted.store.readCurrent()).document).toEqual(f.state().document)
   })

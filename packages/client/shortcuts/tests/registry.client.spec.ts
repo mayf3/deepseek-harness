@@ -2,9 +2,50 @@ import { describe, expect, it, vi } from 'vitest'
 import { bindingKey, initialShortcutConfig, normalizeBinding, presentBinding } from '../src/protocol.ts'
 import type { ShortcutCommandId } from '../src/protocol.ts'
 import { ShortcutRegistry } from '../src/client/registry.ts'
+import { isWebBindingAllowed } from '../src/binding.ts'
 import type { ShortcutCommand, ShortcutGesture } from '../src/client/types.ts'
 
 const context = { region: 'page', modal: null, target: null } as const
+it('admits modified Web combinations and refuses two-key chords', () => {
+  expect(isWebBindingAllowed({ code: 'KeyB', modifiers: ['control', 'alt', 'shift'] }, 'windows')).toBe(true)
+  expect(isWebBindingAllowed({ code: 'KeyB', secondCode: 'KeyJ', modifiers: [] }, 'macos')).toBe(false)
+})
+
+it('leaves Linux terminal control-W and control-R with the terminal while dispatching other bindings', () => {
+  for (const [code, modifiers, status] of [
+    ['KeyW', ['control'], 'pass'], ['KeyR', ['control'], 'pass'], ['KeyB', ['control'], 'handled'],
+    ['KeyB', ['alt'], 'handled'],
+    ['KeyB', ['control', 'alt'], 'handled'], ['KeyB', ['control', 'shift'], 'handled'],
+  ] as const) {
+    const registry = new ShortcutRegistry('desktop', 'linux')
+    const run = vi.fn(), consume = vi.fn()
+    registry.register(command({ defaults: { 'desktop:linux': { code, modifiers } }, regions: ['terminal'],
+      resolve: () => ({ status: 'handled', run }) }))
+    expect(registry.dispatch({ ...gesture, code, control: modifiers.some(value => value === 'control'),
+      meta: false, alt: modifiers.some(value => value === 'alt'),
+      shift: modifiers.some(value => value === 'shift') }, { ...context, region: 'terminal' }, consume).status).toBe(status)
+    expect(run).toHaveBeenCalledTimes(status === 'handled' ? 1 : 0)
+    expect(consume).toHaveBeenCalledTimes(status === 'handled' ? 1 : 0)
+  }
+})
+
+it('dispatches a Windows Web terminal binding with Control, Meta, and Shift', () => {
+  const registry = new ShortcutRegistry('web', 'windows')
+  const run = vi.fn(), consume = vi.fn()
+  registry.register(command({ defaults: { 'web:windows': { code: 'KeyB', modifiers: ['control', 'meta', 'shift'] } },
+    regions: ['terminal'], resolve: () => ({ status: 'handled', run }) }))
+  expect(registry.dispatch({ ...gesture, control: true, shift: true }, { ...context, region: 'terminal' }, consume).status).toBe('handled')
+  expect(run).toHaveBeenCalledOnce()
+  expect(consume).toHaveBeenCalledOnce()
+})
+
+it.each(['pass', 'blocked'] as const)('does not execute a menu command whose owner returns %s', (status) => {
+  const registry = new ShortcutRegistry('desktop', 'macos')
+  const resolve = vi.fn<ShortcutCommand['resolve']>(() => status === 'pass' ? { status } : { status, reason: 'unavailable' })
+  registry.register(command({ resolve }))
+  registry.invoke('test.toggle' as ShortcutCommandId, context)
+  expect(resolve).toHaveBeenCalledWith({ ...context, source: 'menu' })
+})
 const gesture: ShortcutGesture = { code: 'KeyB', control: false, alt: false, shift: false, meta: true,
   repeat: false, composing: false, defaultPrevented: false }
 function command(overrides: Partial<ShortcutCommand> = {}): ShortcutCommand {

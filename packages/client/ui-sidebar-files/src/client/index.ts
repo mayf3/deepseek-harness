@@ -53,12 +53,15 @@ export function apply(ctx: ClientContext): void {
         'web:macos': { code: 'KeyP', modifiers: ['primary', 'alt'] },
         'web:windows': { code: 'KeyP', modifiers: ['primary', 'alt'] },
       },
+      // Each tab plugin owns its command's availability, localized refusal, and tab kind.
+      /* jscpd:ignore-start */
       regions: ['page', 'editable', 'terminal'], modals: [],
       resolve: ({ target: element }) => {
         const target = ctx.sidebarRight.commandTarget(element)
         if (target === undefined) return { status: 'blocked', reason: t('shortcut.noSession') }
         return { status: 'handled', run: () => { ctx.sidebarRight.openTabFromTarget('files', target) } }
       },
+      /* jscpd:ignore-end */
     }), 'ui-sidebar-files: shortcut')
   })
   ctx.effect(() => ctx.sidebarRightTabs.register(filesDefinition(t)), 'ui-sidebar-files: files type')

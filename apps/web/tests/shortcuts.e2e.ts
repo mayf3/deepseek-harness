@@ -327,8 +327,9 @@ describe('web e2e: shortcut reference', () => {
       await page.keyboard.press('Escape')
       expect(await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).getAttribute('aria-keyshortcuts'))
         .toBe(defaultBinding)
-      const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('dsh.keybindings.v1')!) as unknown) as { profiles: Record<string, object> }
-      expect(Object.values(stored.profiles)).toEqual([{}])
+      const stored = await page.evaluate((): unknown => JSON.parse(localStorage.getItem('dsh.keybindings.v1')!))
+      const profile = platform === 'MacIntel' ? 'macos' : platform === 'Win32' ? 'windows' : 'linux'
+      expect(stored).toEqual({ schemaVersion: 1, profiles: { [`web:${profile}`]: {} } })
     } finally { await context.close() }
   })
 

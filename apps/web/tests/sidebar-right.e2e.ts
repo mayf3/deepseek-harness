@@ -1097,6 +1097,7 @@ describe('web e2e: shipped right Sidebar', () => {
     // depends on a sibling block's setup passes only in the right order.
     it('renders the shipped Chinese copy on a Chinese page', async () => {
       const zhPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+      await zhPage.addInitScript(() => { Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' }) })
       const zhTripwire = watchConsole(zhPage)
       onTestFailed(() => saveFailureShot(zhPage, 'web-e2e-sidebar-right-zh'))
       try {

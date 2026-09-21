@@ -4,6 +4,9 @@ import { bindingIssue, editShortcutDocument, effectiveShortcuts, normalizeBindin
 import type { ShortcutCommandId, ShortcutDefinition, ShortcutDocument } from '../src/protocol.ts'
 
 const id = (value: string) => value as ShortcutCommandId
+it('reserves the macOS Web control-command combination', () => {
+  expect(bindingIssue({ code: 'KeyB', modifiers: ['control', 'meta'] }, 'web', 'macos')).toBe('reserved')
+})
 const primary = (code: string) => ({ code, modifiers: ['primary'] as const })
 const definitions: readonly ShortcutDefinition[] = [
   { id: id('test.one'), defaults: {

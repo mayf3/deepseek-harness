@@ -46,6 +46,17 @@ function mount() {
   const service = new ShortcutsService(ctx)
   return { ctx, service, dispose }
 }
+
+it('describes registered binding conflicts on Linux Desktop', async () => {
+  desktop()
+  document.documentElement.dataset.platform = 'linux'
+  const { service } = mount()
+  const off = service.register(command)
+  await vi.waitFor(() => { expect(service.config.getSnapshot().status).toBe('ready') })
+  expect(service.describeBinding({ code: 'KeyB', modifiers: ['control'] }).conflicts).toEqual([command.id])
+  off()
+  expect(service.describeBinding({ code: 'KeyB', modifiers: ['control'] }).conflicts).toEqual([])
+})
 const command = { id: 'test.toggle' as ShortcutCommandId, label: () => 'Toggle', aliases: [],
   defaults: {
     'desktop:macos': { code: 'KeyB', modifiers: ['primary'] as const },

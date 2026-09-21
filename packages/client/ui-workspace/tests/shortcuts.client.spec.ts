@@ -10,7 +10,6 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ShortcutCommand, ShortcutGesture } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
 import { createWorkspaceShortcutControls, installWorkspaceShortcuts } from '../src/client/shortcuts.ts'
-import type { UiWorkspace } from '../src/client/navigation.ts'
 import { en, zh } from '../src/client/locales.ts'
 
 const sid = (value: string) => value as SessionId
@@ -53,7 +52,7 @@ async function bench(runtime: 'web' | 'desktop' = 'desktop') {
   }
   const controls = createWorkspaceShortcutControls()
   const fiber = ctx.plugin((scoped) => {
-    installWorkspaceShortcuts(scoped, navigation as unknown as UiWorkspace, controls, (id) => { void navigation.archiveSession(id) })
+    installWorkspaceShortcuts(scoped, navigation, controls, (id) => { void navigation.archiveSession(id) })
   })
   await fiber.await()
   const select = (id: string) => { list.set({ ...list.getSnapshot(), byId: {
@@ -65,6 +64,16 @@ async function bench(runtime: 'web' | 'desktop' = 'desktop') {
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('workspace shortcut ownership', () => {
+  it('refuses rename and archive without a selected Session and keeps a busy picker closed', async () => {
+    const b = await bench()
+    b.select('none')
+    for (const id of ['session.rename', 'session.archive']) {
+      expect(b.commands.get(id)!.resolve(context)).toMatchObject({ status: 'blocked', reason: en['shortcut.noSession'] })
+    }
+    b.controls.directoryBusy(true)
+    b.controls.add()
+    expect(b.controls.state.getSnapshot().addRequested).toBe(false)
+  })
   it('registers six commands with Desktop and Web defaults and removes registrations with the plugin', async () => {
     const b = await bench()
     expect(b.registry.catalog.getSnapshot().map(row => row.id)).toEqual([

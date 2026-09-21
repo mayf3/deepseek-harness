@@ -20,7 +20,7 @@ describe('web e2e: fixed approval rejection keys', () => {
     browser = undefined
     scaffold = undefined
     const failed = results.filter(result => result.status === 'rejected')
-    if (failed.length > 0) throw new AggregateError(failed.map(result => result.reason as unknown), 'fixed shortcut teardown failed')
+    if (failed.length > 0) throw new AggregateError(failed.map((result): unknown => result.reason), 'fixed shortcut teardown failed')
   })
 
   it.skipIf(webSnapshotMode() === 'record').each(['reject-button-enter', 'container-escape'] as const)(
