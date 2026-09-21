@@ -8,10 +8,24 @@
  */
 
 import type { SandboxEnforcement, SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import type { CollectedOutput, DshEnvironment } from '@deepseek-ai/dsh-subprocess'
+import type { CollectedOutput, DshEnvironment, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 
 export { DSH_ENV_PREFIX } from '@deepseek-ai/dsh-subprocess'
-export type { CollectedOutput, DshEnvironment, DshEnvironmentKey } from '@deepseek-ai/dsh-subprocess'
+export type { CollectedOutput, DshEnvironment, DshEnvironmentKey, SubprocessOutputRead, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
+
+/**
+ * Non-consuming offset readers over a background process's captured streams,
+ * for observers independent of the consuming {@link ShellProcess.readOutput}
+ * cursor. Every background process exposes both streams; a spawn that
+ * rejected produced no process output, so its stderr reader serves the
+ * `spawn failed: …` note as the whole stream.
+ */
+export interface ShellObservedStreams {
+  /** Offset reader over captured stdout. */
+  stdout: SubprocessOutputReader
+  /** Offset reader over captured stderr (the spawn-failure note after a rejected spawn). */
+  stderr: SubprocessOutputReader
+}
 
 /**
  * Sandbox facts for one run, present iff a sandboxing executor handled it.
@@ -178,6 +192,13 @@ export interface ShellProcess {
    * full-stream spill files when available.
    */
   readOutput(): ShellProcessRead
+  /**
+   * Non-consuming offset readers over the same captured streams the consuming
+   * {@link readOutput} cursor drains, including the provider-failure note a
+   * rejected spawn leaves on stderr. Independent observers read here at their
+   * own offsets without stealing bytes from `readOutput`.
+   */
+  observed: ShellObservedStreams
   /**
    * Terminate the provider-managed range. Returns false when it had already finished
    * (no-op); idempotent.

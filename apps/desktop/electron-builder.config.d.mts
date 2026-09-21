@@ -21,6 +21,7 @@ export interface DesktopElectronBuilderConfig {
     { readonly from: string, readonly to: 'icon.png' },
   ]
   readonly mac: {
+    readonly extendInfo: { readonly NSMicrophoneUsageDescription: string }
     readonly identity: string | undefined
     readonly forceCodeSigning: boolean
     readonly notarize: boolean

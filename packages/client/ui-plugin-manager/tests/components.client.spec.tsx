@@ -12,6 +12,7 @@ import type { PluginManagerPageProps } from '../src/client/index.ts'
 import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { rowKey, type InstallState, type PackageRow, type PackageView, type PluginManagerState } from '../src/client/manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
+import type { PluginActivationOwnerProps } from '../src/client/slot-contract.ts'
 
 afterEach(cleanup)
 
@@ -66,7 +67,7 @@ const READY: PluginManagerState = {
 }
 
 /** Configuration entries a test supplies: what each slot cell renders, by `<slot>:<cell>` and the view asked for. */
-type SlotBodies = Record<string, (view: 'summary' | 'page') => ReactNode>
+type SlotBodies = Record<string, (view: 'summary' | 'page' | 'activation', owner: unknown) => ReactNode>
 
 const NO_CONFIG: ConfigLedger = { items: [], bundles: new Set(), rows: new Set() }
 
@@ -120,10 +121,11 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     renderSlot: (name, owner, opts) => {
       const body = bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]
       if (body === undefined) return null
+      if (name === 'plugins.bundle.activation') return body('activation', owner)
       if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
         throw new Error('Plugin configuration fixture requires a summary or page view')
       }
-      return body(owner.view)
+      return body(owner.view, owner)
     },
   }
   const { rerender } = render(<PluginManagerPage {...props} />)
@@ -256,6 +258,7 @@ describe('PluginManagerPage', () => {
   it.each([
     '@deepseek-ai/dsh-experimental-agent-team-profile',
     '@deepseek-ai/dsh-experimental-auto-review',
+    '@deepseek-ai/dsh-experimental-fixture-input',
     '@acme/dsh-local-tools',
   ])('localizes Host metadata for %s across cards, details, switches, and uninstall confirmation', (name) => {
     const meta = {
@@ -272,6 +275,7 @@ describe('PluginManagerPage', () => {
       expect(document.getElementById(card.getAttribute('aria-describedby')!)?.textContent).toBe(description(dict))
       expect(screen.getByRole('switch', { name: dict.enableToggle.replace('{name}', title(dict)) })).toBeTruthy()
       expect(screen.queryByText('Original metadata.')).toBeNull()
+      expect(screen.queryByText(dict.statusBeta) !== null).toBe(name.startsWith('@deepseek-ai/dsh-experimental-'))
     }
     assertCard(en)
     setLanguage(zh)
@@ -1192,4 +1196,42 @@ describe('PluginManagerPage', () => {
     fireEvent.click(screen.getByRole('button', { name: en.installCloseCancels }))
     expect(actions.closeInstall).toHaveBeenCalledOnce()
   })
+})
+
+it('offers bundle-owned guidance only after explicit enablement and navigates to its detail page', () => {
+  const name = 'dsh-better-sidebar'
+  const { set, actions } = renderTab({ packages: [pkg({ enabled: false })] }, { bundles: new Set([name]) }, {
+    [`plugins.bundle.activation:${name}`]: (_view, owner) => <button onClick={(owner as PluginActivationOwnerProps).onOpenDetails}>Go to setup</button>,
+    [`plugins.bundle.config:${name}`]: () => <div>Bundle setup</div>,
+  })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg()] })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg({ enabled: false })] })
+  fireEvent.click(screen.getByRole('switch'))
+  expect(actions.setEnabled).toHaveBeenCalledWith(name, true)
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg()], busy: [name] })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ busy: [] })
+  fireEvent.click(screen.getByText('Go to setup'))
+  expect(screen.getByText('Bundle setup')).toBeTruthy()
+  expect(screen.queryByText('Go to setup')).toBeNull()
+})
+
+it('dismisses activation guidance until the user enables the bundle again', () => {
+  const name = 'dsh-better-sidebar'
+  const { set } = renderTab({ packages: [pkg({ enabled: false })] }, {}, {
+    [`plugins.bundle.activation:${name}`]: (_view, owner) => <button onClick={(owner as PluginActivationOwnerProps).onDismiss}>Later</button>,
+  })
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg()] })
+  fireEvent.click(screen.getByText('Later'))
+  set({ packages: [pkg()] })
+  expect(screen.queryByText('Later')).toBeNull()
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg({ enabled: false })] })
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg()] })
+  expect(screen.getByText('Later')).toBeTruthy()
 })
