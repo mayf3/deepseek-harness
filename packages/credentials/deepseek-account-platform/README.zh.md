@@ -68,6 +68,8 @@ inferenceOrigin 默认为 `https://api.deepseek.com`。私有部署 patch 可将
 [凭证子系统](../../../docs/subsystems/credentials.zh.md)定义存储接口；[架构](../../../docs/architecture.zh.md)说明应用组合。
 
 <a id="model-experience"></a>
+attemptTimeoutMs 包含初始化、等待浏览器和兑换的耗时。初始化不会延长绝对截止时间；服务端 TTL 只能缩短剩余时间。在到期前已获准的凭证持久化不再取消。
+
 ## 模型体验
 
 无，因为账号凭证只影响 HTTP 认证，不进入模型提示、Session 日志或工具结果。

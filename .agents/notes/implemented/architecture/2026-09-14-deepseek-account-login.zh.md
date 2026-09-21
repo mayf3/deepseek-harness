@@ -44,17 +44,9 @@ DSH 授权通过 x-dsh-auth-token 请求头鉴权 Platform、推理和 Files 请
 
 资料和充值钱包余额分别通过 getProfile 与 getBalance 查询。客户端在各自返回时立即更新，余额请求慢或失败不会延迟侧边栏用户名显示。账号变化使两种进行中的查询结果失效。
 
-## 验证
-
-提供者测试覆盖真实本机回调、错误 state、延迟兑换取消、凭证持久化、退出和官方来源限制。桌面测试覆盖原生操作桥接与本地化入口。手动开发联调使用平台 dev middleware Mock 和真实 Electron Host，包括在浏览器批准前取消。生产后端凭证及安装器 scheme 注册仍需发布环境验证。
-
-## 相关记录
-
-[凭证记录与流程](2026-08-13-credential-records-and-authorization-flows.zh.md)仍是通用凭证依据。[桌面外壳](2026-09-10-desktop-web-wrapper.zh.md)负责传输组合。
-
 开发环境认证通过配置的平台来源上的显式 Host 请求头 requestHeaders 完成。提供者拒绝重定向和保留请求头覆盖，防止开发环境 Cookie 替换账号授权或跟随浏览器跳转地址。特定环境的认证协议不属于账号提供者。
 
-Host 在 auth_init 中发送 client_type（desktop 或 web），供 Platform 选择完成页交互。Web 失败时关闭授权标签页，原标签页接收 Host 状态，不使用 Web UI 返回地址。后端接受 localhost 回调。DSH 保留浏览器提供的 localhost 主机名和端口，不做 DNS 解析或 IP 字面量转换。
+Host 在 auth_init 中发送 login_source（desktop 或 web），供 Platform 选择完成页交互。Web 失败时关闭授权标签页，原标签页接收 Host 状态，不使用 Web UI 返回地址。后端接受 localhost 回调。DSH 保留浏览器提供的 localhost 主机名和端口，不做 DNS 解析或 IP 字面量转换。
 
 macOS 开发启动器为 `dsh://open` 注册独立、经临时签名的应用包。该应用包保留工作区入口和开发路径，使 Launch Services 能够冷启动；凭证不会被复制，也不修改包管理器安装的 Electron 应用。协议注册指向最近启动的开发版或打包版应用。
 
@@ -63,3 +55,13 @@ exchange 的 user 数据在凭证提交后供首次资料读取使用，展示�
 内嵌 Platform 文档在加载期间保持隐藏，因为原生子视图会覆盖渲染层浮层。加载完成后仅当前文档可显示；返回或退登会使待执行的显示操作失效。应用文档刷新或替换、其渲染进程终止或窗口关闭时，原生视图的所有权也随之结束。仅依赖 React effect 清理不足以保证释放，因为文档销毁时可能不执行它。同文档导航和子框架导航保留视图。
 
 独立的 accountRequestHeaders 将账号资料及内嵌 Platform 流量与授权、退登分开路由。Cookie 覆盖按名称合并，保留部署认证。Host 通过私有进程 IPC 传递合并后的请求头；Electron 仅在配置来源注入，并从 bootstrap 排除。
+
+Host 将私有 Platform 会话绑定到账号提供者的生命周期。提供者移除或订阅结束时清空 Electron 会话；替换后订阅新的提供者，已释放的读取不得发布旧凭据。
+
+## 验证
+
+提供者测试覆盖真实本机回调、错误 state、延迟兑换取消、凭证持久化、退出和官方来源限制。桌面测试覆盖原生操作桥接与本地化入口。手动开发联调使用平台 dev middleware Mock 和真实 Electron Host，包括在浏览器批准前取消。生产后端凭证及安装器 scheme 注册仍需发布环境验证。
+
+## 相关记录
+
+[凭证记录与流程](2026-08-13-credential-records-and-authorization-flows.zh.md)仍是通用凭证依据。[桌面外壳](2026-09-10-desktop-web-wrapper.zh.md)负责传输组合。

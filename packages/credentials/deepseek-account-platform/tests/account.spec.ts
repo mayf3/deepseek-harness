@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -14,7 +14,10 @@ import { Config, PlatformAccount } from '../src/index.ts'
 import { browserUrl, platformHeaders, platformOrigin, loginOrigin } from '../src/protocol.ts'
 
 const cleanups: Array<() => Promise<unknown>> = []
-afterEach(async () => { while (cleanups.length) await cleanups.pop()!() })
+afterEach(async () => {
+  vi.useRealTimers()
+  while (cleanups.length) await cleanups.pop()!()
+})
 
 async function fixture(
   contact: { email: string; mobile?: string; mobile_number?: string } = {
@@ -42,6 +45,7 @@ async function fixture(
   let businessCode = 0
   let exchangeOverride: Record<string, unknown> = {}
   let initOverride: Record<string, unknown> = {}
+  let onInit = () => {}
   let origin = ''
   let detailsHold = false
   let balanceHold = false
@@ -105,6 +109,7 @@ async function fixture(
       value = null
     } else if (req.url?.endsWith('auth_init')) {
       init = body
+      onInit()
       value = { authorize_url: `${rewriteBrowserOrigin ? 'https://platform.deepseek.com' : origin}/dsh/authorize?authorize_id=test`, expires_in: 600, authorize_id: 'test', ...initOverride }
     } else {
       count++
@@ -158,11 +163,69 @@ async function fixture(
     redirect: () => { redirect = true },
     hold: () => { hold = true },
     initResponse: (value: Record<string, unknown>) => { initOverride = value },
+    onInit: (callback: () => void) => { onInit = callback },
     bonusWallets: (value: unknown) => { bonusWallets = value },
     exchangeResponse: (value: Record<string, unknown>) => { exchangeOverride = value },
     fail: (value: number) => { businessCode = value },
     init: () => init, count: () => count, callback: (state = init.state) => `${init.redirect_uri}?code=test&state=${state}` }
 }
+
+it.each([
+  { serverTtl: 600, expectedRemaining: 480_000 },
+  { serverTtl: 60, expectedRemaining: 60_000 },
+])('preserves the total sign-in deadline with a $serverTtl second server TTL', async ({ serverTtl, expectedRemaining }) => {
+  const f = await fixture()
+  const startedAt = 1_000_000
+  // Only the wall clock is fake; loopback transport and resource teardown retain real timers.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    vi.setSystemTime(startedAt)
+    f.onInit(() => { vi.setSystemTime(startedAt + 120_000) })
+    f.initResponse({ expires_in: serverTtl })
+    await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+    const state = await f.wait('waiting-browser')
+    expect(state.attempt?.expiresAt).toBe(startedAt + 120_000 + expectedRemaining)
+    await f.account.cancelSignIn(state.attempt!.id)
+  } finally { vi.useRealTimers() }
+})
+
+it('rejects initialization that completes after the total sign-in deadline', async () => {
+  const f = await fixture()
+  const startedAt = 1_000_000
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    vi.setSystemTime(startedAt)
+    f.onInit(() => { vi.setSystemTime(startedAt + 600_000) })
+    await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+    const state = await f.wait('expired')
+    expect(state.status).toBe('signed-out')
+    expect(state.attempt?.errorCode).toBe('expired')
+    expect(state.attempt?.authorizeUrl).toBeUndefined()
+    expect(f.count()).toBe(0)
+    await f.cancellationReceived.promise
+    expect(f.cancellations).toHaveLength(1)
+  } finally { vi.useRealTimers() }
+})
+
+it('does not store an exchange result received after the sign-in deadline', async () => {
+  const f = await fixture()
+  const startedAt = 1_000_000
+  f.hold()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    vi.setSystemTime(startedAt)
+    await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+    await f.wait('waiting-browser')
+    const callback = fetch(f.callback(), { redirect: 'manual' })
+    await f.exchanged.promise
+    vi.setSystemTime(startedAt + 600_000)
+    f.release.resolve(undefined)
+    await callback
+    const state = await f.wait('expired')
+    expect(state.status).toBe('signed-out')
+    expect(await f.account.getPlatformSession()).toBeNull()
+  } finally { vi.useRealTimers() }
+})
 
 it('stores a grant before redirecting, restores account presence, and signs out without deleting device identity', async () => {
   const f = await fixture()

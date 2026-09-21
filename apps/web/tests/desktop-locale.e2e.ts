@@ -8,7 +8,7 @@ import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { saveFailureShot } from './support.ts'
+import { openSettingsFromAccountMenu, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/desktop-locale', import.meta.url))
 const MODE = webSnapshotMode()
@@ -51,7 +51,7 @@ describe.skipIf(MODE === 'record')('web e2e: native and Client locale preference
   it('uses OS languages without saving them, then shares an explicit choice across reloads', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-desktop-locale'))
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openSettingsFromAccountMenu(page, 'zh')
     const zhDialog = page.getByRole('dialog', { name: '设置', exact: true })
     await zhDialog.getByRole('button', { name: '中文', exact: true }).waitFor()
     await expect.poll(() => reported).toEqual(['zh'])
@@ -71,7 +71,7 @@ describe.skipIf(MODE === 'record')('web e2e: native and Client locale preference
     reported.length = 0
     await page.reload({ waitUntil: 'load' })
     acknowledgeReloadConnectionLoss(tripwire, warningsBefore)
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await openSettingsFromAccountMenu(page, 'en')
     await enDialog.getByRole('button', { name: 'English', exact: true }).waitFor()
     await expect.poll(() => reported).toEqual(['en'])
     expect(await page.evaluate(() => document.documentElement.lang)).toBe('en')

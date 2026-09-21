@@ -70,15 +70,19 @@ export class DesktopPlatformView {
     browserSession.setPermissionRequestHandler((_contents, _permission, callback) => { callback(false) })
     browserSession.setPermissionCheckHandler(() => false)
     const deploymentHeaders = account.requestHeaders ?? {}
+    const injectedRequests = new Set<number>()
+    browserSession.webRequest.onCompleted((details) => { injectedRequests.delete(details.id) })
+    browserSession.webRequest.onErrorOccurred((details) => { injectedRequests.delete(details.id) })
     browserSession.webRequest.onBeforeSendHeaders((details, callback) => {
       let headers = Object.fromEntries(Object.entries(details.requestHeaders).map(([name, value]) => [name.toLowerCase(), value]))
       if (new URL(details.url).origin === account.origin) {
+        injectedRequests.add(details.id)
         const cookie = headers.cookie ?? ''
         Object.assign(headers, deploymentHeaders)
         if (deploymentHeaders.cookie !== undefined) headers.cookie = mergePlatformCookies(cookie, deploymentHeaders.cookie)
-      } else {
+      } else if (injectedRequests.has(details.id)) {
         // Redirected subresources must not carry deployment headers to another origin.
-        headers = Object.fromEntries(Object.entries(headers).filter(([name]) => !(name in deploymentHeaders)))
+        headers = Object.fromEntries(Object.entries(headers).filter(([name]) => !Object.hasOwn(deploymentHeaders, name)))
       }
       callback({ requestHeaders: headers })
     })

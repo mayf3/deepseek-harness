@@ -12,7 +12,7 @@ Status: implemented
 
 [Electron 欢迎窗口](../../../../apps/desktop/src/welcome-window.ts)负责原生材质和窗口控件。独立打包的 React 渲染器提供入口、账号登录状态和 API Key 表单。它与 Web UI 共用 `StateDot` 加载组件，不启动 Web 插件图。Desktop 构建将本地 JavaScript 和 CSS 输出到 `lib/welcome`，并纳入应用安装包；文档继续使用禁止网络访问的内容安全策略。窄接口 preload 提供强类型桌面文案、仅写密钥操作和跳过操作；IPC 拒绝其他窗口和子 frame。每个沙箱 preload 都独立打包，因为 Electron 受限的 require 无法加载同目录中的拆分模块。Electron 主进程通过共享 Web 启动 URL 认证，并通过现有设置和凭证 RPC 方法解析官方提供方的引用。[Web 薄壳](2026-09-10-desktop-web-wrapper.zh.md)负责 HTTP 服务；引导不增加 Host 端点或子进程 IPC 操作。响应只包含元数据或安全结果，不包含密钥或提供方的私有诊断。
 
-冷启动在没有已配置的模型 API Key 时打开入口。保存会在持久化成功后进入工作区；跳过会直接进入，不保存草稿或完成标记。下次进程启动时会重新检查凭证存储。Desktop preload 标记只抑制 Web 凭证步骤；设置和欢迎须知仍然挂载。其他原生壳可以通过 Models Host 插件设置 `credentialOnboarding`，由页面注入事件在注册弹窗前发布该布尔值。模块图传递的是包标识，而不是任意 Host 配置，因此单独配置 Host 行不会配置其 Client 半部。认证判断接受独立的账号与 API Key 状态，但账号登录和退登事件尚无已接入的提供方，因此启动传入当前未登录状态。
+冷启动在既无已存账号凭证、也无已配置的模型 API Key 时打开入口。保存会在持久化成功后进入工作区；跳过会直接进入，不保存草稿或完成标记。下次进程启动时会重新检查凭证存储。Desktop preload 标记只抑制 Web 凭证步骤；设置和欢迎须知仍然挂载。其他原生壳可以通过 Models Host 插件设置 `credentialOnboarding`，由页面注入事件在注册弹窗前发布该布尔值。模块图传递的是包标识，而不是任意 Host 配置，因此单独配置 Host 行不会配置其 Client 半部。启动分别读取账号凭证是否存在和 API Key 配置状态。账号登录后进入工作区；退登后仅在没有已配置的模型 API Key 时重新打开欢迎窗口。
 
 生成的开发项目沿已声明的 workspace 依赖建立链接，因为单独依赖 pnpm 的提升索引会漏掉配置插件。
 
@@ -34,4 +34,4 @@ Desktop 在打开欢迎窗口前读取共享的 `locale.preference`。Client 在
 
 ## 后果
 
-原生模糊强度和字体回退因系统而异。macOS 使用 menu vibrancy，叠加 onboarding 的窗口背景色：浅色模式为 40% 白色，深色模式为 50% rgb(24 25 28)。模糊强度由原生材质控制。Windows 合成效果需要平台验证。所属目录内的文本预期覆盖两页和两种语言，构建后 Host 的验收测试证明凭证可跨重启持久化。账号退登的接入仍依赖账号提供方；其判断必须保留独立的 API Key。引导展示不会生成 Session 事件。
+原生模糊强度和字体回退因系统而异。macOS 使用 menu vibrancy，叠加 onboarding 的窗口背景色：浅色模式为 40% 白色，深色模式为 50% rgb(24 25 28)。模糊强度由原生材质控制。Windows 合成效果需要平台验证。所属目录内的文本预期覆盖两页和两种语言，构建后 Host 的验收测试证明凭证可跨重启持久化。账号退登保留独立配置的 API Key。引导展示不会生成 Session 事件。

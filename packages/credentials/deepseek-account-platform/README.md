@@ -68,6 +68,8 @@ No runtime invariant companion is published: account presence reads the credenti
 The [credentials subsystem](../../../docs/subsystems/credentials.md) owns storage APIs; the [architecture](../../../docs/architecture.md) explains application composition.
 
 <a id="model-experience"></a>
+The attemptTimeoutMs limit includes initialization, browser waiting, and exchange. Initialization does not extend its absolute deadline; the server TTL may only shorten the remaining time. Credential persistence admitted before expiry completes without cancellation.
+
 ## Model Experience
 
 None, as account credentials affect HTTP authentication and never enter model prompts, Session logs, or tool results.

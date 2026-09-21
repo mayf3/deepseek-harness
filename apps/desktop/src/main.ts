@@ -228,15 +228,16 @@ async function main(): Promise<void> {
   const isQuitting = (): boolean => quitting
   const currentMainWindow = (): BrowserWindow | undefined => mainWindow
   const ordinaryDialogs = new Set<AbortController>()
-  const messages = locale.messages
-  const updateDialog = new DesktopUpdateDialog(fileURLToPath(new URL('./preload-update-dialog.cjs', import.meta.url)), locale)
+  const currentDialogWindow = (): BrowserWindow | undefined => welcomeWindow ?? mainWindow
+  const updateDialog = new DesktopUpdateDialog(fileURLToPath(new URL('./preload-update-dialog.cjs', import.meta.url)), () => locale)
   const isMandatory = (): boolean => mandatoryPolicy?.state.blocking === true
   const ordinaryMessageBox = async (options: UpdateDialogOptions): Promise<Electron.MessageBoxReturnValue> => {
     const controller = new AbortController()
     ordinaryDialogs.add(controller)
     try {
-      if (mainWindow === undefined) return { response: options.cancelId ?? 0, checkboxChecked: false }
-      return await updateDialog.show(mainWindow, { ...options, signal: controller.signal })
+      const parent = currentDialogWindow()
+      if (parent === undefined) return { response: options.cancelId ?? 0, checkboxChecked: false }
+      return await updateDialog.show(parent, { ...options, signal: controller.signal })
     }
     finally { ordinaryDialogs.delete(controller) }
   }
@@ -310,7 +311,7 @@ async function main(): Promise<void> {
           }
           previousAccountStatus = state.status
         }, () => {
-          if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, { status: 'signed-out', attempt: null })
+          // The stream reconnects; a transport failure does not change account state.
         })
       },
       stop: async () => {
@@ -333,8 +334,8 @@ async function main(): Promise<void> {
     if (isMandatory()) { mandatoryUI?.sync(); return Promise.resolve() }
     let shown = updateErrors.get(state)
     if (shown === undefined) {
-      shown = ordinaryMessageBox({ type: 'error', title: messages.updateFailedTitle,
-        message: desktopUpdateErrorSummary(state, messages),
+      shown = ordinaryMessageBox({ type: 'error', title: locale.messages.updateFailedTitle,
+        message: desktopUpdateErrorSummary(state, locale.messages),
         technicalDetails: state.technicalDetails ?? state.message ?? '' }).then(() => {})
       updateErrors.set(state, shown)
     }
@@ -402,27 +403,28 @@ async function main(): Promise<void> {
       await workspaceRecovery
       await startup?.catch(() => undefined)
       const host = backend.host
-      if (host === undefined) throw new DesktopUpdatePreparationError('tasks-unavailable', messages.updateTasksUnavailable)
+      if (host === undefined) throw new DesktopUpdatePreparationError('tasks-unavailable', locale.messages.updateTasksUnavailable)
       const active = await host.updateTasks('inspect')
       const confirmation: Electron.MessageBoxOptions = {
-        type: active ? 'warning' : 'info', title: messages.updateTitle,
-        message: active ? messages.updateActiveTasks : formatDesktopMessage(messages.updateDownloadedTitle, { version: updates.state.version ?? '' }),
-        detail: active ? messages.updateActiveTasksDetail
-          : messages.updateDownloadedDetail,
-        buttons: active ? [messages.updateStopTasks, messages.updateLater] : [messages.installAndRestart],
+        type: active ? 'warning' : 'info', title: locale.messages.updateTitle,
+        message: active ? locale.messages.updateActiveTasks : formatDesktopMessage(locale.messages.updateDownloadedTitle, { version: updates.state.version ?? '' }),
+        detail: active ? locale.messages.updateActiveTasksDetail
+          : locale.messages.updateDownloadedDetail,
+        buttons: active ? [locale.messages.updateStopTasks, locale.messages.updateLater] : [locale.messages.installAndRestart],
         defaultId: 1, cancelId: 1,
       }
       if (isMandatory()) {
         if (!await mandatoryUI?.confirm(updates.state.version ?? '', active)) return false
       } else {
-        if (mainWindow === undefined) return false
-        const result = await updateDialog.show(mainWindow, confirmation)
+        const parent = currentDialogWindow()
+        if (parent === undefined) return false
+        const result = await updateDialog.show(parent, confirmation)
         if (result.response !== 0 || isMandatory()) return false
       }
-      if (backend.host !== host) throw new DesktopUpdatePreparationError('tasks-unavailable', messages.updateTasksUnavailable)
+      if (backend.host !== host) throw new DesktopUpdatePreparationError('tasks-unavailable', locale.messages.updateTasksUnavailable)
       try {
         const stillActive = await host.updateTasks('lock')
-        if (stillActive && !active) throw new DesktopUpdatePreparationError('tasks-changed', messages.updateTasksChanged)
+        if (stillActive && !active) throw new DesktopUpdatePreparationError('tasks-changed', locale.messages.updateTasksChanged)
         mandatoryUI?.preparingRestart(stillActive)
         requireCleanStop = true
         updateStopFailure = undefined
@@ -430,7 +432,7 @@ async function main(): Promise<void> {
         updateStoppedHost = true
         // The backend's async cleanup callback can assign this after the reset above.
         const stopFailure = updateStopFailure as DesktopHostUncleanExitError | undefined
-        if (stopFailure !== undefined) throw new DesktopUpdatePreparationError('stop-failed', messages.updateStopFailed, stopFailure.message)
+        if (stopFailure !== undefined) throw new DesktopUpdatePreparationError('stop-failed', locale.messages.updateStopFailed, stopFailure.message)
         updateJournal?.action('install-confirmed')
         shellInstallerOwnsQuit = true
       } catch (error) {
@@ -531,8 +533,8 @@ async function main(): Promise<void> {
       || new URL(event.senderFrame.url).origin !== new URL(applicationUrl).origin) {
       throw new Error('desktop welcome: rejected locale request from an unowned frame')
     }
-    const current = await readWelcomeState()
-    return { languages: systemLanguages, preference: current.localePreference }
+    if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
+    return { languages: systemLanguages, preference: await welcomeBackend.readLocalePreference() }
   })
   ipcMain.on(DESKTOP_IPC.localeChanged, (event, next: unknown) => {
     const window = mainWindow
@@ -576,8 +578,9 @@ async function main(): Promise<void> {
         if (manual || state.phase === 'idle' || (state.phase === 'error' && state.failedOperation === 'check')) {
           controller = new AbortController()
           ordinaryDialogs.add(controller)
-          progress = mainWindow === undefined ? Promise.resolve() : updateDialog.show(mainWindow, { type: 'info', title: messages.updateCheckTitle,
-            message: messages.updateChecking, buttons: [messages.later], cancelId: 0, signal: controller.signal })
+          const parent = currentDialogWindow()
+          progress = parent === undefined ? Promise.resolve() : updateDialog.show(parent, { type: 'info', title: locale.messages.updateCheckTitle,
+            message: locale.messages.updateChecking, buttons: [locale.messages.later], cancelId: 0, signal: controller.signal })
           if (!joinedPolicyAuthentication) {
             void checkPolicyManually('deferred').catch((error: unknown) => { console.error(error) })
           }
@@ -586,8 +589,8 @@ async function main(): Promise<void> {
         if (isMandatory()) { mandatoryUI?.focus(); return }
         if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
         if (state.phase === 'idle') {
-          await ordinaryMessageBox({ type: 'info', title: messages.updateCheckTitle,
-            message: formatDesktopMessage(messages.updateCurrent, { version: app.getVersion() }) })
+          await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
+            message: formatDesktopMessage(locale.messages.updateCurrent, { version: app.getVersion() }) })
           return
         }
         if (state.phase === 'ready' || (state.phase === 'error' && state.failedOperation === 'install')) {
@@ -599,9 +602,9 @@ async function main(): Promise<void> {
         }
         if (state.phase !== 'available' && !(state.phase === 'error' && state.failedOperation === 'download')) return
         if (manual) {
-          const result = await ordinaryMessageBox({ title: messages.updateCheckTitle, message: messages.updateAvailable,
-            detail: formatDesktopMessage(messages.updateDetail, { version: state.version ?? '' }),
-            buttons: [messages.updateDownload], cancelId: 1 })
+          const result = await ordinaryMessageBox({ title: locale.messages.updateCheckTitle, message: locale.messages.updateAvailable,
+            detail: formatDesktopMessage(locale.messages.updateDetail, { version: state.version ?? '' }),
+            buttons: [locale.messages.updateDownload], cancelId: 1 })
           if (result.response !== 0) return
         }
         if (!isMandatory() && state.version !== undefined) {
@@ -642,16 +645,16 @@ async function main(): Promise<void> {
   }
   const runPolicyAuthentication = async () => {
     if (policyAuth === undefined || mandatoryPolicy === undefined || quitting) return undefined
-    const parent = mandatoryUI?.confirmationWindow ?? mainWindow
+    const parent = mandatoryUI?.confirmationWindow ?? currentDialogWindow()
     if (parent === undefined) return undefined
-    const consent = await updateDialog.show(parent, { type: 'info', title: messages.policyLoginTitle,
-      message: messages.policyLoginRequired, buttons: [messages.policyLogin, messages.later], cancelId: 1 })
+    const consent = await updateDialog.show(parent, { type: 'info', title: locale.messages.policyLoginTitle,
+      message: locale.messages.policyLoginRequired, buttons: [locale.messages.policyLogin, locale.messages.later], cancelId: 1 })
     if (consent.response !== 0 || isQuitting()) return undefined
     const outcome = await policyAuth.login()
     if (isQuitting() || outcome === 'cancelled') return undefined
     if (outcome === 'failed') {
-      await updateDialog.show(parent, { type: 'error', title: messages.policyLoginTitle,
-        message: messages.policyLoginFailed, buttons: [messages.updateAcknowledge], cancelId: 0 })
+      await updateDialog.show(parent, { type: 'error', title: locale.messages.policyLoginTitle,
+        message: locale.messages.policyLoginFailed, buttons: [locale.messages.updateAcknowledge], cancelId: 0 })
       return undefined
     }
     // Drain a pre-login request before asking the server to evaluate the new cookies.
@@ -798,7 +801,7 @@ async function main(): Promise<void> {
     const window = mainWindow ?? createMainWindow()
     await navigateMain(applicationUrl)
     // Window events can change startup state while navigation is pending.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Window events can change quitting during navigation.
     if (quitting || recovery.active || window.isDestroyed()) return
     window.show()
     enteredWorkspace = true
@@ -814,6 +817,11 @@ async function main(): Promise<void> {
   let openingWelcome: Promise<void> | undefined
   const showWelcome = (): Promise<void> => {
     if (quitting) return Promise.resolve()
+    if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) {
+      welcomeWindow.show()
+      welcomeWindow.focus()
+      return Promise.resolve()
+    }
     openingWelcome ??= (async () => {
       welcomeWindow = await openWelcomeWindow(locale, {
         startSignIn: async () => {
@@ -852,7 +860,7 @@ async function main(): Promise<void> {
         if (!enteredWorkspace && !recovery.active) mainWindow?.close()
       })
       // Quit and backend failure callbacks can run while the welcome document loads.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Quit can occur while the welcome document loads.
       if (quitting || recovery.active) window.close()
       else mainWindow?.hide()
     })().finally(() => { openingWelcome = undefined })
@@ -862,7 +870,7 @@ async function main(): Promise<void> {
     if (quitting || recovery.active) return
     const state = await readWelcomeState()
     // Quit or a backend failure can occur while the Host answers the preference request.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Quit can occur while the Host answers.
     if (quitting || backend.state.phase !== 'ready') return
     locale = resolveDesktopStartupLocale(state.localePreference, systemLanguages)
     windowsLanguage = locale.id
@@ -933,7 +941,7 @@ async function main(): Promise<void> {
   if (policyConfig !== undefined) {
     if (policyConfig.authentication === 'feishu-test') {
       policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, policyConfig.allowedAuthOrigins, locale,
-        () => mandatoryUI?.confirmationWindow ?? mainWindow,
+        () => mandatoryUI?.confirmationWindow ?? currentDialogWindow(),
         (event) => { console.info(`desktop policy authentication: ${event}`); updateJournal?.action(`policy-login-${event}`) })
     }
     const bundleId = app.isPackaged

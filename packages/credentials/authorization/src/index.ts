@@ -302,7 +302,10 @@ export class AuthorizationService extends Service {
     // not exist hears about it whether or not it also gave up.
     if (request.signal?.aborted === true) return { status: 'cancelled' }
     const controller = new AbortController()
-    const withdraw = (): void => { this.cancel(key) }
+    const withdraw = (): void => {
+      const running = this.running.get(key)
+      if (running !== undefined && !running.committing) controller.abort(request.signal?.reason)
+    }
     request.signal?.addEventListener('abort', withdraw, { once: true })
     this.running.set(key, { controller, committing: false })
     let settlement: AuthorizationSettlement = 'failed'

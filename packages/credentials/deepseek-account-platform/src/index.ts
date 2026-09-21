@@ -369,6 +369,7 @@ export class PlatformAccount extends DeepSeekAccount {
     // Callback requests may precede initialization settlement; the rejection is observed immediately.
     void code.promise.catch(() => undefined)
     const deadline = new AbortController()
+    let expiresAt = Date.now() + this.attemptTimeout
     const signal = AbortSignal.any([session.signal, deadline.signal])
     let timer = setTimeout(() =>{  deadline.abort() }, this.attemptTimeout)
     const abort = (): void => { code.reject(new PlatformAuthError('expired')) }
@@ -412,10 +413,13 @@ export class PlatformAccount extends DeepSeekAccount {
       const authorizeUrl = browserUrl(init.data.authorize_url, this.origin, '/dsh/authorize', this.rewriteBrowserOrigin)
       authorizeId = init.data.authorize_id
       signal.throwIfAborted()
-      const expires = Math.min(this.attemptTimeout, init.data.expires_in * 1000)
+      const now = Date.now()
+      expiresAt = Math.min(expiresAt, now + init.data.expires_in * 1000)
+      const remaining = expiresAt - now
+      if (remaining <= 0) { deadline.abort(); signal.throwIfAborted() }
       clearTimeout(timer)
-      timer = setTimeout(() =>{  deadline.abort() }, expires)
-      this.update(attempt, { phase: 'waiting-browser', authorizeUrl, expiresAt: Date.now() + expires })
+      timer = setTimeout(() =>{  deadline.abort() }, remaining)
+      this.update(attempt, { phase: 'waiting-browser', authorizeUrl, expiresAt })
       const receivedCode = await code.promise
       signal.throwIfAborted()
       this.update(attempt, { phase: 'exchanging' })
@@ -439,6 +443,7 @@ export class PlatformAccount extends DeepSeekAccount {
       const completionUrl = new URL(browserUrl(result.data.authorized_url, this.origin, '/dsh/authorized', this.rewriteBrowserOrigin))
       completionUrl.searchParams.set('login_source', attempt.loginSource)
       attempt.completionUrl = completionUrl.href
+      if (Date.now() >= expiresAt) deadline.abort()
       signal.throwIfAborted()
       if (result.data.user != null) {
         try { attempt.initialProfile = { token: result.data.token, value: { status: 'ready', value: profile(result.data.user) } } }

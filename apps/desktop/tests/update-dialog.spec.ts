@@ -191,3 +191,21 @@ it.runIf(process.platform === 'darwin')('blocks parent keyboard input and redire
   await pending
   expect(f.parent.webContents.listenerCount('before-input-event')).toBe(0)
 })
+
+it('reads the current locale for each presentation', async () => {
+  const parent = new fixture.FakeWindow({})
+  let locale = resolveDesktopLocale('en')
+  dialogs = new DesktopUpdateDialog('preload-update-dialog.cjs', () => locale)
+  for (const language of ['zh-CN', 'en']) {
+    locale = resolveDesktopLocale(language)
+    const pending = dialogs.show(parent as unknown as BrowserWindow, { message: locale.messages.updateChecking })
+    const window = fixture.windows.at(-1)!
+    const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    expect(fixture.handlers.get(UPDATE_DIALOG_IPC.status)!(event)).toMatchObject({
+      locale: locale.id, buttons: [locale.messages.updateAcknowledge], closeLabel: locale.messages.updateClose,
+      technicalDetailsLabel: locale.messages.updateTechnicalDetails,
+    })
+    dialogs.cancel()
+    await pending
+  }
+})

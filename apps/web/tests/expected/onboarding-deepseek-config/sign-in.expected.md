@@ -1,0 +1,6 @@
+- dialog "开始你的创作":
+  - heading "开始你的创作" [level=2]
+  - button "关闭"
+  - paragraph: 登录后即可创建、编辑和分享你的设计项目，所有内容在本地保存。
+  - button "添加 API Key"
+  - button "登录"

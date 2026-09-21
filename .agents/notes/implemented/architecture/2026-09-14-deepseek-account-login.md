@@ -44,17 +44,9 @@ DSH grants authenticate Platform, inference and Files requests with x-dsh-auth-t
 
 Profile and recharge-wallet queries use independent getProfile and getBalance operations. The client publishes each result as it arrives, so a slow or failed balance request cannot delay the sidebar username. Account changes invalidate both pending results.
 
-## Verification
-
-Provider tests exercise real loopback callbacks, invalid state, delayed exchange cancellation, credential persistence, sign-out, and official-origin restrictions. Desktop tests cover the native action bridge and localized entry. Manual development integration uses the platform dev middleware Mock and the real Electron Host, including cancellation before browser approval. Production backend credentials and installer scheme registration require release-environment validation.
-
-## Related
-
-[Credential records and flows](2026-08-13-credential-records-and-authorization-flows.md) remains the generic credential authority. [Desktop wrapper](2026-09-10-desktop-web-wrapper.md) owns the transport composition.
-
 Deployment authentication uses explicit Host-only requestHeaders on the configured Platform origin. The provider rejects redirects and reserved-header overrides so deployment cookies cannot replace account authorization or follow a browser destination. Environment-specific authentication protocols remain outside the account provider.
 
-The Host sends client_type (desktop or web) in auth_init so Platform can choose the completion experience. Web failures close the authorization tab while the original tab receives Host state; no Web UI return URL is used. The backend accepts localhost callbacks. DSH preserves the browser-supplied localhost hostname and port without DNS resolution or conversion to an IP literal.
+The Host sends login_source (desktop or web) in auth_init so Platform can choose the completion experience. Web failures close the authorization tab while the original tab receives Host state; no Web UI return URL is used. The backend accepts localhost callbacks. DSH preserves the browser-supplied localhost hostname and port without DNS resolution or conversion to an IP literal.
 
 The macOS development launcher registers an isolated, ad-hoc-signed application bundle for `dsh://open`. The bundle retains the workspace entry and development paths for Launch Services cold starts without copying credentials or changing the package-manager-owned Electron application. Protocol registration targets the latest launched development or packaged application.
 
@@ -63,3 +55,13 @@ Exchange user data supplies the first profile read after credential commit, avoi
 The embedded Platform document stays hidden during loading because native child views cover renderer overlays. Only the current document may become visible after loading; returning or signing out invalidates pending visibility changes. Native ownership also ends when the application document reloads or is replaced, its renderer terminates, or its window closes. React effect cleanup alone is insufficient because document teardown may never execute it. Same-document and subframe navigation preserve the view.
 
 Separate accountRequestHeaders route account data and embedded Platform traffic independently of authorization and logout. Cookie overrides merge by name, retaining deployment authentication. Host passes the resolved headers over private process IPC; Electron injects them only at the configured origin and omits them from bootstrap.
+
+The Host binds private Platform sessions to the account provider lifetime. Removal or watch termination clears Electron’s session; replacement subscribes to the new provider, and disposed reads cannot publish old credentials.
+
+## Verification
+
+Provider tests exercise real loopback callbacks, invalid state, delayed exchange cancellation, credential persistence, sign-out, and official-origin restrictions. Desktop tests cover the native action bridge and localized entry. Manual development integration uses the platform dev middleware Mock and the real Electron Host, including cancellation before browser approval. Production backend credentials and installer scheme registration require release-environment validation.
+
+## Related
+
+[Credential records and flows](2026-08-13-credential-records-and-authorization-flows.md) remains the generic credential authority. [Desktop wrapper](2026-09-10-desktop-web-wrapper.md) owns the transport composition.

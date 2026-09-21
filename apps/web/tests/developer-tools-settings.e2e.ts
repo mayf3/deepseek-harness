@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { expect, it, onTestFinished } from 'vitest'
 import { launchWebScaffold } from './scaffold.ts'
-import { newEnglishPage } from './support.ts'
+import { openSettingsFromAccountMenu, newEnglishPage } from './support.ts'
 
 it('persists developer tools in the Host settings document and restores the accepted choice', async () => {
   const scaffold = await launchWebScaffold({ developerTools: false })
@@ -13,7 +13,7 @@ it('persists developer tools in the Host settings document and restores the acce
   onTestFinished(() => browser.close())
   const page = await newEnglishPage(browser)
   await page.goto(scaffold.authenticatedUrl)
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await openSettingsFromAccountMenu(page, 'en')
   const toggle = page.getByRole('switch', { name: 'Developer tools' })
   expect(await toggle.getAttribute('aria-checked')).toBe('false')
   expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).not.toContain('ui-developer-tools:')
@@ -21,7 +21,7 @@ it('persists developer tools in the Host settings document and restores the acce
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
   expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).toContain('ui-developer-tools:\n  enabled: true')
   await page.reload()
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await openSettingsFromAccountMenu(page, 'en')
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
   await toggle.click()
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')

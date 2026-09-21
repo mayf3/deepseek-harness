@@ -9,7 +9,8 @@ vi.mock('electron', () => ({
   shell: { openExternal: state.openExternal },
   session: { fromPartition: vi.fn((partition: string) => {
     const value = {
-      partition, webRequest: { onBeforeSendHeaders: vi.fn() }, setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(),
+      partition, webRequest: { onBeforeSendHeaders: vi.fn(), onCompleted: vi.fn(), onErrorOccurred: vi.fn() },
+      setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(),
       clearStorageData: vi.fn(async () => {}),
     }
     state.sessions.push(value)
@@ -152,20 +153,22 @@ it('injects deployment headers only at the Platform origin and excludes them fro
   await manager.open(owner, 'usage', bounds)
   const browserSession = state.sessions.at(-1) as { webRequest: { onBeforeSendHeaders: ReturnType<typeof vi.fn> } }
   const intercept = browserSession.webRequest.onBeforeSendHeaders.mock.calls[0]![0] as (
-    details: { url: string; requestHeaders: Record<string, string> },
+    details: { id: number; url: string; requestHeaders: Record<string, string> },
     callback: (value: { requestHeaders: Record<string, string> }) => void,
   ) => void
   const callback = vi.fn()
   for (const path of ['/usage', '/top_up', '/api/v0/users/get_user_summary']) {
-    intercept({ url: `https://platform.deepseek.com${path}`, requestHeaders: { Cookie: 'route=old; browser=keep', Accept: 'application/json' } }, callback)
+    intercept({ id: 1, url: `https://platform.deepseek.com${path}`, requestHeaders: { Cookie: 'route=old; browser=keep', Accept: 'application/json' } }, callback)
     expect(callback).toHaveBeenLastCalledWith({ requestHeaders: {
       cookie: 'route=new; browser=keep; gate=private', accept: 'application/json', 'x-private-gate': 'private', 'x-client-platform': 'desktop-mac',
     } })
   }
-  intercept({ url: 'https://other.example/api', requestHeaders: {
+  intercept({ id: 1, url: 'https://other.example/api', requestHeaders: {
     cookie: 'route=new; gate=private', 'x-private-gate': 'private', 'x-client-platform': 'desktop-mac', accept: 'application/json',
   } }, callback)
   expect(callback).toHaveBeenLastCalledWith({ requestHeaders: { accept: 'application/json' } })
+  intercept({ id: 2, url: 'https://other.example/api', requestHeaders: { cookie: 'payment=session', constructor: 'keep' } }, callback)
+  expect(callback).toHaveBeenLastCalledWith({ requestHeaders: { cookie: 'payment=session', constructor: 'keep' } })
   const sender = view().webContents
   expect(manager.bootstrap({ sender, senderFrame: sender.mainFrame }))
     .toEqual({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })

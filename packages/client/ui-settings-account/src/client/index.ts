@@ -103,16 +103,16 @@ export function apply(ctx: Context): void {
       const transport = (globalThis as typeof globalThis & {
         __DSH_TRANSPORT__?: { streamBaseUrl?: string }
       }).__DSH_TRANSPORT__
-      const desktop = transport?.streamBaseUrl
+      const desktop = 'dshDesktop' in globalThis
       const request = async () => {
         const result = await ctx.remote.account.startSignIn(ctx.locale.getSnapshot().active,
-          desktop === undefined ? window.location.origin : new URL(desktop).origin,
-          desktop === undefined ? 'web' : 'desktop')
+          desktop && transport?.streamBaseUrl !== undefined ? new URL(transport.streamBaseUrl).origin : window.location.origin,
+          desktop ? 'desktop' : 'web')
         if (!result.ok) throw new Error('account start failed')
         return result.value
       }
       try {
-        if (desktop === undefined) await browser.start(request, () => snapshot.view)
+        if (!desktop) await browser.start(request, () => snapshot.view)
         else await request()
       } catch (error) {
         publish({ ...snapshot, loginFailed: true })

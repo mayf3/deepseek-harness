@@ -228,14 +228,17 @@ describe('AuthorizationService.begin', () => {
   it('reports a caller that withdraws mid-flight as cancelled', async () => {
     const ctx = await harness()
     const controller = new AbortController()
+    const reason = new Error('caller withdrew')
+    let received: unknown
     ctx.authorization.registerFlow(committingFlow(ctx, KEY, session =>
       new Promise((_resolve, reject) => {
-        session.signal.addEventListener('abort', () => { reject(new Error('aborted')) }, { once: true })
-        controller.abort()
+        session.signal.addEventListener('abort', () => { received = session.signal.reason; reject(reason) }, { once: true })
+        controller.abort(reason)
       })))
 
     await expect(ctx.authorization.begin({ key: KEY, interaction: surface(), signal: controller.signal }))
       .resolves.toEqual({ status: 'cancelled' })
+    expect(received).toBe(reason)
   })
 
   it('withdraws a running attempt through cancel(), and ignores cancel() for an idle key', async () => {
