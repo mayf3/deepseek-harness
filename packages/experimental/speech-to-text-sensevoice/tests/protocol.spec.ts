@@ -2,6 +2,7 @@
 import { PassThrough } from 'node:stream'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import { expect, it } from 'vitest'
+import { SpeechInputError } from '../src/input.ts'
 import { readReady, readTranscript } from '../src/recognizer.ts'
 
 function child() {
@@ -74,4 +75,10 @@ it('contains stdout failures and primitive cancellation reasons while waiting fo
   abort.abort('closed')
   await expect(pending).rejects.toThrow('Speech operation cancelled')
   cancelled.done.resolve({ exitCode: 0, signal: null }); cancelled.stdout.destroy()
+})
+
+it.each([400, 413, 500])('classifies marked input failures only on input status %s', async (status) => {
+  const error = await readTranscript(Response.json({ error: 'rejected', code: 'invalid-input' }, { status }), 100).catch((value: unknown) => value)
+  expect(error).toBeInstanceOf(Error)
+  expect(error instanceof SpeechInputError).toBe(status !== 500)
 })

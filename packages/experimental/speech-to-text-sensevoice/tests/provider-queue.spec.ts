@@ -29,7 +29,7 @@ it.each([false, true])('queues recordings during startup and honors waiting canc
     await writeFile(worker, `await fetch('http://127.0.0.1:${address.port}/');\nawait import(${JSON.stringify(fixtureUrl)});\n`)
     vi.mocked(inspectRuntime).mockResolvedValue({ tokens: root, model: root, vad: root, worker })
     await ctx.plugin(LocalSubprocess)
-    await ctx.plugin(SpeechToText)
+    await ctx.plugin(SpeechToText, { defaultProvider: 'sensevoice-local', language: 'auto' })
     const spawn = vi.spyOn(ctx.subprocess, 'spawn')
     const enqueue = vi.spyOn(SenseVoiceWorker.prototype, 'transcribe')
     await ctx.plugin(Provider, { dataRoot: root, idleTimeoutMs: 0, maxPending: 2 })

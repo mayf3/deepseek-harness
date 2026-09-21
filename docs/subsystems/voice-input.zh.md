@@ -6,7 +6,7 @@
 
 ## Provider 选择
 
-`SpeechProviderId` 为注册标识添加类型品牌。`SpeechProviderInfo` 携带显示名称及 `host-local` 或 `cloud` 处理位置。`SpeechRequest` 包含 WAV 字节和可选的 Provider、语言选择；`resolve()` 生成捕获一个 Provider 实例的 `SpeechSpec`。缺失的 Provider 会报错；替换或撤销会使已解析的任务失效。音频不会回退到其他 Provider。
+`SpeechProviderId` 为注册标识添加类型品牌。`SpeechProviderInfo` 携带显示名称、支持的 `languages` 语言提示及 `host-local` 或 `cloud` 处理位置。`SpeechRequest` 包含 WAV 字节和可选的 Provider、语言选择；`resolve()` 生成捕获一个 Provider 实例的 `SpeechSpec`。缺失的 Provider 或不支持的语言会报错；替换或撤销会使已解析的任务失效。音频不会回退到其他 Provider。
 
 `SpeechProvider.transcribe()` 接收完整的 `SpeechInput` 与 `AbortSignal`。`Transcript` 返回纯文本 `text`、`audioSeconds` 和 `inferenceSeconds`。Provider 响应取消，并在注销完成前结束其任务。本地 Provider 串行执行调用、限制队列，并独立于 Session 管理工作进程生命周期。
 
@@ -119,7 +119,7 @@ async *follow(caller: AbortSignal): AsyncIterable<SpeechSnapshot>
 snapshot(): SpeechSnapshot
 
 /**
- * Persist changed preference fields in the ordinary user-settings document.
+ * Persist changed preference fields; the resulting language must be accepted by the selected provider.
  * @param patch - explicit provider or language changes.
  * @returns after persistence and the resolved preference update.
  */
@@ -139,7 +139,7 @@ prepare(id: SpeechProviderId): void
 async cancelPreparation(id: SpeechProviderId): Promise<void>
 
 /**
- * Apply composition defaults and capture the selected provider. Missing providers fail explicitly.
+ * Apply composition defaults and capture the selected provider. Missing providers and unsupported languages fail explicitly.
  * @param request - complete recording and optional selection.
  * @returns provider-pinned input for transcribe().
  */

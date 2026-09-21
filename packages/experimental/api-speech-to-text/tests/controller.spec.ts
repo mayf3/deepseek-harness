@@ -12,7 +12,7 @@ function fixture(maxAudioBytes = 32044, maxDurationSeconds = 1) {
   const ctx = new Context(); roots.push(ctx)
   const speech = new SpeechToText(ctx, { defaultProvider: id, language: 'auto' })
   const recognize = vi.fn(async () => ({ text: '你好', audioSeconds: 1, inferenceSeconds: 0.1 }))
-  speech.register({ info: { id, name: 'test', location: 'host-local' }, transcribe: recognize })
+  speech.register({ info: { id, name: 'test', location: 'host-local', languages: ['auto', 'zh', 'en', 'ja'] }, transcribe: recognize })
   return { api: new SpeechController(ctx, { maxAudioBytes, maxDurationSeconds }), recognize }
 }
 function recording(): string {

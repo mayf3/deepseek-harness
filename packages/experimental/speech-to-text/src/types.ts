@@ -17,6 +17,8 @@ export interface SpeechProviderInfo {
   readonly id: SpeechProviderId
   readonly name: string
   readonly location: 'host-local' | 'cloud'
+  /** Accepted language hints, including automatic detection when supported. */
+  readonly languages: readonly string[]
   readonly setupEstimate?: SpeechSetupEstimate
 }
 
@@ -34,7 +36,7 @@ export interface SpeechPreparationStep {
 export type SpeechPreparationState = (
   | { readonly phase: 'unprepared' | 'ready' | 'standby' | 'cancelled' }
   | { readonly phase: 'downloading'; readonly resource: string; readonly completedBytes: number; readonly totalBytes?: number }
-  | { readonly phase: 'checking' | 'installing' | 'loading' | 'waking' | 'cancelling'; readonly startedAt: number }
+  | { readonly phase: 'checking' | 'loading' | 'waking' | 'cancelling'; readonly startedAt: number }
   | { readonly phase: 'failed'; readonly message: string }
 ) & {
   readonly step?: SpeechPreparationStepKind

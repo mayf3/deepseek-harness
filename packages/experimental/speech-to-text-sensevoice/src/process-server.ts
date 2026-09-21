@@ -2,6 +2,7 @@
 import { createServer, type Server } from 'node:http'
 import { timingSafeEqual } from 'node:crypto'
 import type { Transcript } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
+import { SpeechInputError } from './input.ts'
 
 /**
  * Bind an ephemeral loopback listener; model loading completes before readiness is published.
@@ -27,7 +28,7 @@ export async function startRecognitionServer(token: string, maxAudioBytes: numbe
     }
     const length = Number(request.headers['content-length'])
     if (!Number.isSafeInteger(length) || length < 46 || length > maxAudioBytes) {
-      request.resume(); reply(413, { error: 'Invalid speech audio size' }); return
+      request.resume(); reply(413, { error: 'Invalid speech audio size', code: 'invalid-input' }); return
     }
     void (async () => {
       try {
@@ -38,7 +39,10 @@ export async function startRecognitionServer(token: string, maxAudioBytes: numbe
         }
         reply(200, transcribe(Buffer.concat(chunks), url.searchParams.get('language') ?? 'auto'))
       } catch (error) {
-        reply(400, { error: error instanceof Error ? error.message : String(error) })
+        reply(error instanceof SpeechInputError ? 400 : 500, {
+          error: error instanceof Error ? error.message : String(error),
+          ...error instanceof SpeechInputError ? { code: 'invalid-input' } : {},
+        })
       }
     })()
   })

@@ -109,6 +109,9 @@ export function VoicePreparation({ useSpeechReadiness, ...props }: InjectFace<Vo
     finally { setSaving(false) }
   }
   const selected = catalog?.providers.find(provider => provider.id === catalog.selection.providerId)
+  const languageNames: Readonly<Record<string, string>> = {
+    auto: props.t('auto'), zh: props.t('zh'), en: props.t('en'), yue: props.t('yue'), ja: props.t('ja'), ko: props.t('ko'),
+  }
   return <div>
     {catalog && <div className={css.preferences}>
       <label>{props.t('provider')}<select value={catalog.selection.providerId} disabled={!readiness.connected || saving}
@@ -117,8 +120,8 @@ export function VoicePreparation({ useSpeechReadiness, ...props }: InjectFace<Vo
       </select></label>
       <label>{props.t('language')}<select value={catalog.selection.language} disabled={!readiness.connected || saving}
         onChange={(event) => { void configure({ language: event.target.value }) }}>
-        {(['auto', 'zh', 'en', 'yue', 'ja', 'ko'] as const).map(language =>
-          <option key={language} value={language}>{props.t(language)}</option>)}
+        {selected?.languages.map(language =>
+          <option key={language} value={language}>{languageNames[language] ?? language}</option>)}
       </select></label>
       <p>{props.t(selected?.location === 'cloud' ? 'cloud' : 'local')}</p>
       {error && <p role="alert">{props.t('failed', { message: error })}</p>}

@@ -25,7 +25,7 @@ This Service Definition selects named speech recognizers through `ctx.speechToTe
 <a id="use-this-package"></a>
 ## Use this package
 
-Load through the [voice input bundle](../voice-input-bundle/README.md), or compose the service with a provider and consumer. `defaultProvider` selects an exact registered id; `language` supplies the omitted language hint. A missing or duplicate provider fails explicitly.
+Load through the [voice input bundle](../voice-input-bundle/README.md), or compose the service with a provider and consumer. `defaultProvider` is required and selects an exact registered id; the bundle supplies `sensevoice-local`. `language` supplies the omitted language hint. A missing or duplicate provider fails explicitly.
 
 -----
 
@@ -37,7 +37,7 @@ Load through the [voice input bundle](../voice-input-bundle/README.md), or compo
 
 `resolve()` captures the provider instance, recording and language. `transcribe()` rejects a withdrawn or replaced registration. A registration disposer closes admission, aborts accepted requests and joins provider settlement; providers must honor cancellation. No fallback selects a different recognizer or uploads audio. No runtime invariant companion is published because the registry is the sole source of provider and preparation observations.
 
-When `settings` is present, the `voice-input` namespace persists provider and language choices; composition defaults apply before an override is saved. `configure()` updates only supplied fields. Provider-owned preparation is observed through complete `SpeechSnapshot` values; closing an observer never cancels preparation.
+When `settings` is present, the `voice-input` namespace persists provider and language choices; composition defaults apply before an override is saved. `configure()` updates only supplied fields and rejects a language unsupported by the selected provider before saving. Providers advertise accepted language hints through `languages`; `resolve()` validates the selected hint before transcription. Provider-owned preparation is observed through complete `SpeechSnapshot` values; closing an observer never cancels preparation.
 
 The `./wave` helper validates canonical 16 kHz mono PCM16 WAV for the Remote consumer and the native recognition process. Both reject inconsistent headers and lengths before decoding samples.
 

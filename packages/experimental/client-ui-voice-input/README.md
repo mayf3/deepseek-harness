@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This optional browser plugin adds a microphone between the model selector and Send. Clicking it opens a recording toolbar with measured audio levels, Cancel and Stop. The waveform stays shorter than the recording buttons. Stopping transcribes into the draft. Recognition preferences and model preparation live in plugin settings.
+This optional browser plugin adds a microphone between the model selector and Send. Clicking it opens a recording toolbar with measured audio levels, Cancel and Stop. The waveform stays shorter than the recording buttons. Stopping transcribes into the draft. Recognition preferences and model preparation live in plugin settings; language choices come from the selected provider.
 
 ## Table of Contents
 
@@ -35,7 +35,7 @@ Enable the [voice input bundle](../voice-input-bundle/README.md) from Plugins. A
 <details>
 <summary>Maintainer details — click to expand</summary>
 
-Native MediaRecorder captures audio and Web Audio converts it to the Host PCM format after flushing the final recorder chunks. Capture failures immediately end the recording UI and offer retry inside the toolbar. Cancellation, failure and plugin disposal share one resource-release promise; the plugin retains ownership until AudioContext closure settles. The original editor selection carries a draft revision: changed drafts retain the transcript for explicit insertion or discard beside the microphone. Session changes, hiding the page during capture and plugin disposal invalidate late results and release tracks. One plugin-owned readiness subscription serves the composer, installation prompt and details. These views use the existing Slot lifecycle and own no preparation tasks. No runtime invariant companion is published because readiness comes from one Host subscription and recording state belongs to one capture operation.
+Native MediaRecorder captures audio and Web Audio converts it to the Host PCM format after flushing the final recorder chunks. Window blur during the microphone permission request does not cancel capture; blur during recording does. Capture failures immediately end the recording UI and offer retry inside the toolbar. Cancellation, failure and plugin disposal share one resource-release promise; the plugin retains ownership until AudioContext closure settles. The original editor selection carries a draft revision: changed drafts retain the transcript for explicit insertion or discard beside the microphone. Session changes, hiding the page during capture and plugin disposal invalidate late results and release tracks. One plugin-owned readiness subscription serves the composer, installation prompt and details. These views use the existing Slot lifecycle and own no preparation tasks. No runtime invariant companion is published because readiness comes from one Host subscription and recording state belongs to one capture operation.
 
 </details>
 

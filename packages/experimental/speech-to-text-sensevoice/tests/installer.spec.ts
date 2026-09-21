@@ -42,7 +42,7 @@ it('restores verified cached models on every provider activation without downloa
   const ctx = new Context()
   try {
     await ctx.plugin(LocalSubprocess)
-    await ctx.plugin(SpeechToText)
+    await ctx.plugin(SpeechToText, { defaultProvider: 'sensevoice-local', language: 'auto' })
     const spawn = vi.spyOn(ctx.get('subprocess')!, 'spawn'), speech = ctx.get('speechToText')!
     for (let activation = 0; activation < 2; activation++) {
       const fiber = ctx.plugin(Provider, config)

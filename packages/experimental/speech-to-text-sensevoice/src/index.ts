@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-subprocess'
 import type { SpeechProviderId } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import { Config } from './config.ts'
 import { SenseVoiceWorker } from './recognizer.ts'
+import { languages } from './input.ts'
 
 export { Config } from './config.ts'
 export const name = 'experimental-speech-to-text-sensevoice'
@@ -22,10 +23,11 @@ export function apply(ctx: Context, config: Config): void {
   }
   new URL(config.modelOrigin)
   const worker = new SenseVoiceWorker(ctx, config)
+  const estimatedBytes = config.precision === 'int8' ? 1_000_000_000 : 2_000_000_000
   ctx.effect(() => {
     const unregister = ctx.speechToText.register({
-      info: { id: config.providerId as SpeechProviderId, name: `SenseVoiceSmall (${config.precision.toUpperCase()})`, location: 'host-local',
-        setupEstimate: { recommendedDiskBytes: config.precision === 'int8' ? 1_000_000_000 : 2_000_000_000, expectedMemoryBytes: config.precision === 'int8' ? 1_000_000_000 : 2_000_000_000,
+      info: { id: config.providerId as SpeechProviderId, name: `SenseVoiceSmall (${config.precision.toUpperCase()})`, location: 'host-local', languages,
+        setupEstimate: { recommendedDiskBytes: estimatedBytes, expectedMemoryBytes: estimatedBytes,
           minimumMinutes: 1, maximumMinutes: 10 } },
       preparation: worker,
       transcribe: async (input, signal) => await worker.transcribe(input, signal),

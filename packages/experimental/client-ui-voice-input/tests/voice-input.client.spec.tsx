@@ -24,7 +24,7 @@ function fixture(recording?: Recording) {
   const inputActions = { notify: vi.fn(), captureInsertion: vi.fn(() => ({ start: 3, end: 3, draftRev: 1 })), insertText: vi.fn(() => true),
     setDraft: vi.fn(), addAttachments: vi.fn(() => true), removeAttachment: vi.fn(), pruneAttachments: vi.fn(), submit: vi.fn() }
   const readiness = createSnapshotStore<SpeechReadiness>({ connected: true, error: null, catalog: {
-    providers: [{ id, name: 'SenseVoiceSmall', location: 'host-local', preparation: { phase: 'ready' } }],
+    providers: [{ id, name: 'SenseVoiceSmall', location: 'host-local', languages: ['auto', 'zh', 'en', 'ja'], preparation: { phase: 'ready' } }],
     selection: { providerId: id, language: 'auto' }, maxAudioBytes: 100, maxDurationSeconds: 120,
   } })
   const transcribe = vi.fn<(request: unknown, signal: AbortSignal) => Promise<RemoteResult<Transcript>>>(
@@ -44,7 +44,8 @@ function stop(): void { fireEvent.click(screen.getByRole('button', { name: zh.st
 
 it('clicks to record, shows measured audio, and stops to insert without sending or a popup', async () => {
   const b = fixture()
-  expect(screen.getByRole('button', { name: zh.start }).getAttribute('title')).toBe('听写')
+  fireEvent.mouseEnter(screen.getByRole('button', { name: zh.start }).parentElement!)
+  expect(screen.getByRole('tooltip').textContent).toBe('听写')
   fireEvent.mouseDown(screen.getByRole('button', { name: zh.start }))
   await start()
   expect(b.props.onActiveChange).toHaveBeenLastCalledWith(true)
@@ -257,4 +258,46 @@ it('allows recording while verified local resources are waking', async () => {
   await start()
   stop()
   await waitFor(() => { expect(b.inputActions.insertText).toHaveBeenCalledWith(transcript.text, expect.anything()) })
+})
+
+it('keeps the first recording after the permission prompt causes window blur', async () => {
+  const b = fixture(), permission = Promise.withResolvers<undefined>()
+  b.capture.start.mockReturnValueOnce(permission.promise)
+  fireEvent.click(screen.getByRole('button', { name: zh.start }))
+  fireEvent.blur(window)
+  expect(screen.getByRole('status').textContent).toBe(zh.requesting)
+  expect(b.capture.dispose).not.toHaveBeenCalled()
+  permission.resolve(undefined)
+  await screen.findByRole('button', { name: zh.stop })
+  stop()
+  await waitFor(() => { expect(b.inputActions.insertText).toHaveBeenCalledOnce() })
+})
+
+it.each(['escape', 'hidden', 'session'])('discards pending permission after %s', async (action) => {
+  const b = fixture(), permission = Promise.withResolvers<undefined>()
+  b.capture.start.mockReturnValueOnce(permission.promise)
+  fireEvent.click(screen.getByRole('button', { name: zh.start }))
+  if (action === 'escape') fireEvent.keyDown(document, { key: 'Escape' })
+  if (action === 'session') b.view.rerender(<VoiceInput {...b.props} sessionId={'two' as SessionId} />)
+  if (action === 'hidden') {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    try { fireEvent(document, new Event('visibilitychange')) } finally { delete (document as { hidden?: boolean }).hidden }
+  }
+  permission.resolve(undefined)
+  await act(async () => {})
+  expect(b.capture.dispose).toHaveBeenCalledOnce()
+  expect(screen.getByRole('button', { name: zh.start })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: zh.stop })).toBeNull()
+  expect(b.transcribe).not.toHaveBeenCalled()
+})
+
+it('explains preparation on hover even when the microphone is disabled', () => {
+  const b = fixture(), state = b.readiness.getSnapshot()
+  act(() => { b.readiness.set({ ...state, catalog: { ...state.catalog!, providers: [
+    { ...state.catalog!.providers[0]!, preparation: { phase: 'unprepared' } },
+  ] } }) })
+  const mic = screen.getByRole<HTMLButtonElement>('button', { name: zh.start })
+  expect(mic.disabled).toBe(true)
+  fireEvent.mouseEnter(mic.parentElement!)
+  expect(screen.getByRole('tooltip').textContent).toBe(zh.prepareRequired)
 })

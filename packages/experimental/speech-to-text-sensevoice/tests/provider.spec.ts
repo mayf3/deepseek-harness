@@ -12,13 +12,17 @@ it.each(['int8', 'fp32'] as const)('registers %s lazily and joins inference befo
   const ctx = new Context()
   try {
     await ctx.plugin(LocalSubprocess)
-    await ctx.plugin(SpeechToText)
+    await ctx.plugin(SpeechToText, { defaultProvider: 'sensevoice-local', language: 'auto' })
     const transcribe = vi.spyOn(SenseVoiceWorker.prototype, 'transcribe')
     const fiber = ctx.plugin(Provider, { dataRoot: process.cwd(), precision })
     await fiber
     expect(transcribe).not.toHaveBeenCalled()
     const speech = ctx.get('speechToText')!
-    expect(speech.listProviders()).toMatchObject([{ id: 'sensevoice-local', location: 'host-local' }])
+    expect(speech.listProviders()).toMatchObject([{ id: 'sensevoice-local', location: 'host-local', languages: ['auto', 'zh', 'en', 'yue', 'ja', 'ko'] }])
+    expect(speech.listProviders()[0]?.setupEstimate).toEqual({
+      recommendedDiskBytes: precision === 'int8' ? 1e9 : 2e9, expectedMemoryBytes: precision === 'int8' ? 1e9 : 2e9,
+      minimumMinutes: 1, maximumMinutes: 10,
+    })
     await expect(speech.transcribe(speech.resolve({ audio: new Uint8Array() }), new AbortController().signal)).rejects.toThrow('Prepare')
     transcribe.mockResolvedValue({ text: 'hello', audioSeconds: 1, inferenceSeconds: 0.1 })
     expect((await speech.transcribe(speech.resolve({ audio: new Uint8Array() }), new AbortController().signal)).text).toBe('hello')

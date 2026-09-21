@@ -1,5 +1,6 @@
 /** Provider routing, cancellation, and fiber-owned registration lifetimes. */
 import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { describe, expect, it, vi } from 'vitest'
 import SpeechToText from '../src/index.ts'
 import type { SpeechPreparationState, SpeechProvider, SpeechProviderId, Transcript } from '../src/types.ts'
@@ -9,11 +10,11 @@ const result: Transcript = { text: 'hello', audioSeconds: 1, inferenceSeconds: 0
 const audio = new Uint8Array([1, 2])
 const input = new AbortController().signal
 function provider(id: string, transcribe: SpeechProvider['transcribe'] = async () => result): SpeechProvider {
-  return { info: { id: id as SpeechProviderId, name: id, location: 'host-local' }, transcribe }
+  return { info: { id: id as SpeechProviderId, name: id, location: 'host-local', languages: ['auto', 'zh', 'en', 'ja'] }, transcribe }
 }
 
 it('shares Host preparation across observers and does not cancel work when observation ends', async () => {
-  const ctx = new Context(), base = ctx.plugin(SpeechToText)
+  const ctx = new Context(), base = ctx.plugin(SpeechToText, { defaultProvider: 'sensevoice-local', language: 'auto' })
   await base
   try {
     const service = ctx.get('speechToText')!, id = 'local' as SpeechProviderId
@@ -46,7 +47,7 @@ it('persists explicit provider and language changes and publishes them with read
   const ctx = new Context()
   const settings = ctx.plugin(MemorySettings)
   await settings
-  const base = ctx.plugin(SpeechToText)
+  const base = ctx.plugin(SpeechToText, { defaultProvider: 'sensevoice-local', language: 'auto' })
   await base
   try {
     const speech = ctx.get('speechToText')!
@@ -65,7 +66,7 @@ it('persists explicit provider and language changes and publishes them with read
 })
 
 it('ends waiting observers and rejects registration after service disposal', async () => {
-  const ctx = new Context(), base = ctx.plugin(SpeechToText)
+  const ctx = new Context(), base = ctx.plugin(SpeechToText, { defaultProvider: 'sensevoice-local', language: 'auto' })
   await base
   const service = ctx.get('speechToText')!, stream = service.follow(new AbortController().signal)[Symbol.asyncIterator]()
   await stream.next()
@@ -138,7 +139,7 @@ describe('speech providers', () => {
 
   it('removes a registration with its contributing fiber', async () => {
     const ctx = new Context()
-    const base = ctx.plugin(SpeechToText)
+    const base = ctx.plugin(SpeechToText, { defaultProvider: 'sensevoice-local', language: 'auto' })
     await base
     const fiber = ctx.inject(['speechToText'], (owner) => {
       owner.effect(() => owner.speechToText.register(provider('sensevoice-local')))
@@ -149,4 +150,45 @@ describe('speech providers', () => {
     expect(ctx.get('speechToText')!.listProviders()).toEqual([])
     await base.dispose()
   })
+})
+
+it('rejects unsupported language selections before persistence or transcription', async () => {
+  const ctx = new Context()
+  try {
+    await ctx.plugin(MemorySettings)
+    await ctx.plugin(SpeechToText, { defaultProvider: 'local', language: 'auto' })
+    const speech = ctx.get('speechToText')!, transcribe = vi.fn(async () => result)
+    speech.register(provider('local', transcribe))
+    const cloud = provider('cloud', transcribe)
+    speech.register({ ...cloud, info: { ...cloud.info, languages: ['fr'] } })
+    await expect(speech.configure({ language: 'fr' })).rejects.toThrow('does not support language')
+    await expect(speech.configure({ providerId: cloud.info.id })).rejects.toThrow('does not support language')
+    expect((ctx.get('settings') as MemorySettings).doc['voice-input']).toBeUndefined()
+    expect(() => speech.resolve({ audio, language: 'fr' })).toThrow('does not support language')
+    expect(transcribe).not.toHaveBeenCalled()
+    await speech.configure({ providerId: cloud.info.id, language: 'fr' })
+    expect(speech.resolve({ audio })).toMatchObject({ provider: { info: { id: 'cloud', languages: ['fr'] } }, language: 'fr' })
+  } finally { await ctx.fiber.dispose() }
+})
+
+it('requires the composition to choose its default provider', () => {
+  expect(() => z.resolve({}, SpeechToText.Config, {})).toThrow()
+  expect(SpeechToText.Config({ defaultProvider: 'custom', language: 'auto' })).toEqual({ defaultProvider: 'custom', language: 'auto' })
+})
+
+it('ends observers without fallback settings when the service unloads with Settings mounted', async () => {
+  const ctx = new Context()
+  try {
+    await ctx.plugin(MemorySettings)
+    const base = ctx.plugin(SpeechToText, { defaultProvider: 'local', language: 'auto' })
+    await base
+    const speech = ctx.get('speechToText')!
+    speech.register(provider('local'))
+    await speech.configure({ language: 'zh' })
+    const stream = speech.follow(new AbortController().signal)[Symbol.asyncIterator]()
+    expect((await stream.next()).value).toMatchObject({ selection: { language: 'zh' } })
+    const waiting = stream.next()
+    await base.dispose()
+    expect(await waiting).toEqual({ done: true, value: undefined })
+  } finally { await ctx.fiber.dispose() }
 })

@@ -42,7 +42,7 @@ it.skipIf(webSnapshotMode() === 'record')('records from cached standby and submi
   })
   await scaffold.ctx.plugin({ inject: ['speechToText'], apply(ctx) {
     ctx.effect(() => ctx.speechToText.register({
-      info: { id: 'sensevoice-local' as SpeechProviderId, name: 'Recorded recognizer', location: 'host-local' },
+      info: { id: 'sensevoice-local' as SpeechProviderId, name: 'Recorded recognizer', location: 'host-local', languages: ['auto'] },
       preparation: {
         snapshot: () => ({ phase: 'standby' }), subscribe: () => () => {},
         prepare: () => { throw new Error('Cached resources must allow recording without preparation') },
@@ -102,7 +102,8 @@ it.skipIf(webSnapshotMode() === 'record')('records from cached standby and submi
     await page.getByRole('dialog', { name: 'of context used', exact: true }).waitFor()
     await page.keyboard.press('Escape')
   }
-  expect(await mic.getAttribute('title')).toBe('Dictate')
+  await mic.hover()
+  await page.getByRole('tooltip', { name: 'Dictate', exact: true }).waitFor()
   const controlBackground = await page.getByRole('button', { name: 'Add files or run commands', exact: true })
     .evaluate(element => getComputedStyle(element).backgroundColor)
   await mic.click()

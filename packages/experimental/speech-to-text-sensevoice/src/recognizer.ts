@@ -7,6 +7,7 @@ import type { SpeechInput, SpeechPreparationState, SpeechPreparationStep, Speech
 import { deadline } from '@deepseek-ai/dsh-timeout'
 import { z } from 'zod'
 import type { Config } from './config.ts'
+import { SpeechInputError } from './input.ts'
 import { inspectRuntime, prepareRuntime, type RuntimePaths } from './runtime.ts'
 
 const transcriptSchema = z.object({
@@ -66,7 +67,7 @@ export async function readReady(handle: SubprocessHandle, limit: number, signal:
  * Decode a bounded worker HTTP response; malformed worker output fails the request.
  * @param response - private authenticated worker response.
  * @param limit - maximum bytes retained before JSON parsing.
- * @returns validated final transcript.
+ * @returns validated final transcript; marked input rejections throw SpeechInputError.
  */
 export async function readTranscript(response: Response, limit: number): Promise<Transcript> {
   if (!response.body) throw new Error('Speech worker returned no response')
@@ -87,7 +88,10 @@ export async function readTranscript(response: Response, limit: number): Promise
   }
   const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
   if (!response.ok) {
-    const failure = z.object({ error: z.string() }).parse(value)
+    const failure = z.object({ error: z.string(), code: z.literal('invalid-input').optional() }).parse(value)
+    if ((response.status === 400 || response.status === 413) && failure.code === 'invalid-input') {
+      throw new SpeechInputError(failure.error)
+    }
     throw new Error(failure.error)
   }
   return transcriptSchema.parse(value)
@@ -104,7 +108,7 @@ export class SenseVoiceWorker {
   private state: SpeechPreparationState & { readonly steps: readonly SpeechPreparationStep[] }
   private readonly listeners = new Set<() => void>()
   private lastProgressAt = 0
-  private preparing: { abort: AbortController; settled: Promise<void> } | undefined
+  private preparing: { abort: AbortController; settled: Promise<void>; completed: boolean } | undefined
 
   constructor(private readonly ctx: Context, private readonly config: Config) {
     const kinds: SpeechPreparationStepKind[] = ['check']
@@ -131,6 +135,9 @@ export class SenseVoiceWorker {
   }
 
   private publish(state: SpeechPreparationState): void {
+    if (this.preparing && ['ready', 'standby', 'unprepared', 'failed', 'cancelled'].includes(state.phase)) {
+      this.preparing.completed = true
+    }
     const previous = this.state
     const steps = state.steps ?? previous.steps.map((item): SpeechPreparationStep => {
       if (state.phase === 'ready') return { ...item, status: 'complete' }
@@ -173,7 +180,7 @@ export class SenseVoiceWorker {
     if (this.preparing || this.worker) return
     this.lifetime.signal.throwIfAborted()
     const abort = new AbortController()
-    const task = { abort, settled: Promise.resolve() }
+    const task = { abort, settled: Promise.resolve(), completed: false }
     this.preparing = task
     task.settled = this.enqueue(run, abort.signal)
       .catch((error: unknown) => {
@@ -183,12 +190,14 @@ export class SenseVoiceWorker {
       }).finally(() => { this.preparing = undefined })
   }
 
-  /** Cancel only preparation. @returns after its queued or active work settles. */
+  /** Cancel unfinished preparation; completed readiness is retained. @returns after its queued or active work settles. */
   async cancel(): Promise<void> {
     const task = this.preparing
     if (!task) return
-    this.publish({ phase: 'cancelling', startedAt: Date.now() })
-    task.abort.abort(new Error('Speech preparation cancelled'))
+    if (!task.completed) {
+      this.publish({ phase: 'cancelling', startedAt: Date.now() })
+      task.abort.abort(new Error('Speech preparation cancelled'))
+    }
     await task.settled
   }
 
@@ -270,10 +279,14 @@ export class SenseVoiceWorker {
         method: 'POST', headers: { authorization: `Bearer ${worker.token}`, 'content-type': 'audio/wav' },
         body: Buffer.from(input.audio), signal: call.signal,
       })
-      const result = await readTranscript(response, this.config.maxResponseBytes)
+      const result = await readTranscript(response, this.config.maxResponseBytes).catch((error: unknown) => {
+        call.signal.throwIfAborted()
+        throw error
+      })
       call.signal.throwIfAborted()
       return result
     } catch (error) {
+      if (error instanceof SpeechInputError) throw error
       await this.stop()
       this.publish({ phase: 'standby' })
       throw error

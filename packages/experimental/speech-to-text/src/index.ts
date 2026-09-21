@@ -32,7 +32,7 @@ interface Registration {
 /** Registry shared by all transcription consumers in one Host composition. */
 export default class SpeechToText extends Service {
   static Config: z<Config> = z.object({
-    defaultProvider: z.string().min(1).default('sensevoice-local'),
+    defaultProvider: z.string().min(1).required(),
     language: z.string().min(1).default('auto'),
   })
 
@@ -130,17 +130,26 @@ export default class SpeechToText extends Service {
   }
 
   /**
-   * Persist changed preference fields in the ordinary user-settings document.
+   * Persist changed preference fields; the resulting language must be accepted by the selected provider.
    * @param patch - explicit provider or language changes.
    * @returns after persistence and the resolved preference update.
    */
   async configure(patch: SpeechSelectionPatch): Promise<void> {
     if (!this.preferences) throw new Error('Speech preferences require the user-settings service')
-    if (patch.providerId !== undefined && !this.providers.has(patch.providerId)) {
-      throw new Error(`Speech provider is unavailable: ${patch.providerId}`)
-    }
+    const current = this.preferences.get()
+    const id = patch.providerId ?? current.defaultProvider as SpeechProviderId
+    this.selectedProvider(id, patch.language ?? current.language)
     await this.preferences.update({ ...patch.providerId === undefined ? {} : { defaultProvider: patch.providerId },
       ...patch.language === undefined ? {} : { language: patch.language } })
+  }
+
+  private selectedProvider(id: SpeechProviderId, language: string): SpeechProvider {
+    const registration = this.providers.get(id)
+    if (!registration) throw new Error(`Speech provider is unavailable: ${id}`)
+    if (!registration.provider.info.languages.includes(language)) {
+      throw new Error(`Speech provider ${id} does not support language: ${language}`)
+    }
+    return registration.provider
   }
 
   /**
@@ -165,16 +174,15 @@ export default class SpeechToText extends Service {
   }
 
   /**
-   * Apply composition defaults and capture the selected provider. Missing providers fail explicitly.
+   * Apply composition defaults and capture the selected provider. Missing providers and unsupported languages fail explicitly.
    * @param request - complete recording and optional selection.
    * @returns provider-pinned input for transcribe().
    */
   resolve(request: SpeechRequest): SpeechSpec {
     const config = this.preferences?.get() ?? this.config
     const id = request.providerId ?? config.defaultProvider as SpeechProviderId
-    const registration = this.providers.get(id)
-    if (!registration) throw new Error(`Speech provider is unavailable: ${id}`)
-    return { provider: registration.provider, audio: request.audio, language: request.language ?? config.language }
+    const language = request.language ?? config.language
+    return { provider: this.selectedProvider(id, language), audio: request.audio, language }
   }
 
   /**

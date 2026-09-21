@@ -9,7 +9,7 @@ import { RecordingError, audioBase64, type Recording } from './audio.ts'
 import type { SpeechReadiness } from './readiness.ts'
 import { Waveform } from './Waveform.tsx'
 import { NS } from './locales.ts'
-import { Button, IconCloseOutlineRegular, IconStopFillRegular, IconMicrophoneOutlineRegular, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseOutlineRegular, IconStopFillRegular, IconMicrophoneOutlineRegular, StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './VoiceInput.module.css'
 
 /** Host calls injected without exposing a Cordis Context to React. */
@@ -39,7 +39,7 @@ interface ActiveRecording {
   readonly selection: SpeechSelection
   readonly maxDurationSeconds: number
   readonly maxAudioBytes: number
-  finishing: boolean
+  phase: 'requesting' | 'recording' | 'transcribing'
   timer?: ReturnType<typeof setTimeout> | undefined
 }
 
@@ -70,8 +70,10 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
   }
   useEffect(() => {
     setPending(''); setMessage(''); setPhase('idle')
-    const blur = (): void => { if (current.current && !current.current.finishing) cancel() }
-    const visibility = (): void => { if (document.hidden) blur() }
+    const blur = (): void => { if (current.current?.phase === 'recording') cancel() }
+    const visibility = (): void => {
+      if (document.hidden && current.current && current.current.phase !== 'transcribing') cancel()
+    }
     const escape = (event: KeyboardEvent): void => {
       if (event.key === 'Escape' && current.current) { event.preventDefault(); cancel() }
     }
@@ -92,8 +94,8 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
     : t('failed', { message: failure instanceof Error ? failure.message : String(failure) })
   const finish = async (): Promise<void> => {
     const active = current.current
-    if (!active || active.finishing) return
-    active.finishing = true
+    if (!active || active.phase !== 'recording') return
+    active.phase = 'transcribing'
     const run = generation.current
     clearTimeout(active.timer); setPhase('transcribing')
     try {
@@ -116,17 +118,18 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
     const run = ++generation.current
     const active: ActiveRecording = { capture: createRecording(), abort: new AbortController(),
       span: inputActions.captureInsertion(), selection: catalog.selection,
-      maxDurationSeconds: catalog.maxDurationSeconds, maxAudioBytes: catalog.maxAudioBytes, finishing: false }
+      maxDurationSeconds: catalog.maxDurationSeconds, maxAudioBytes: catalog.maxAudioBytes, phase: 'requesting' }
     current.current = active
     setMessage(''); setPending(''); setPhase('requesting')
     try {
       await active.capture.start((failure) => {
-        if (run !== generation.current || current.current !== active || active.finishing) return
+        if (run !== generation.current || current.current !== active || active.phase === 'transcribing') return
         current.current = undefined
         clearTimeout(active.timer); active.abort.abort()
         feedback(failureText(failure))
       })
       if (run !== generation.current || current.current !== active) return
+      active.phase = 'recording'
       setPhase('recording')
       active.timer = setTimeout(() => { void finish() }, active.maxDurationSeconds * 1000)
     } catch (failure) {
@@ -134,9 +137,11 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
       if (run === generation.current) { current.current = undefined; feedback(failureText(failure)) }
     }
   }
-  if (!expanded) return <Button className={css.trigger} size="sm" disabled={!usable || locked}
-    aria-label={t('start')} title={t(usable ? 'dictate' : 'prepareRequired')}
-    onMouseDown={(event) =>{  event.preventDefault() }} onClick={() => { void start() }}><IconMicrophoneOutlineRegular size={18} /></Button>
+  if (!expanded) return <Tooltip label={t(usable ? 'dictate' : 'prepareRequired')} side="top" portal>
+    <span className={css.triggerAnchor}><Button className={css.trigger} size="sm" disabled={!usable || locked}
+      aria-label={t('start')} onMouseDown={(event) => { event.preventDefault() }}
+      onClick={() => { void start() }}><IconMicrophoneOutlineRegular size={18} /></Button></span>
+  </Tooltip>
   return <div className={css.captureRow} data-voice-activity={phase}>
     <Button type="button" className={css.roundButton} size="sm" aria-label={t(pending ? 'discard' : 'cancel')}
       onClick={cancel}><IconCloseOutlineRegular size={14} /></Button>

@@ -1,8 +1,8 @@
 /** CPU SenseVoice inference and Silero segmentation, confined to the recognition process. */
 import { createRequire } from 'node:module'
 import type { Transcript } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
-import { validateWave } from '@deepseek-ai/dsh-experimental-speech-to-text/wave'
 import type { Config } from './config.ts'
+import { validateInput } from './input.ts'
 
 /** Verified files and validated inference settings sent by the Host. */
 export interface InferenceConfig extends Config {
@@ -51,9 +51,7 @@ export function createTranscriber(config: InferenceConfig): (audio: Uint8Array, 
     sampleRate: 16000, numThreads: config.threads, provider: 'cpu', debug: 0,
   }, config.segmentSeconds + config.minSilenceSeconds + 1)
   return (audio, language) => {
-    if (!['auto', 'zh', 'en', 'yue', 'ja', 'ko'].includes(language)) throw new Error('Unsupported SenseVoice language')
-    if (audio.byteLength > config.maxAudioBytes) throw new Error('Speech audio exceeds the worker byte limit')
-    const audioSeconds = validateWave(audio, config.maxAudioBytes / 32000)
+    const audioSeconds = validateInput(audio, language, config.maxAudioBytes)
     const pcm = new DataView(audio.buffer, audio.byteOffset + 44, audio.byteLength - 44)
     const samples = Float32Array.from({ length: pcm.byteLength / 2 }, (_, i) => pcm.getInt16(i * 2, true) / 32768)
     nativeConfig.modelConfig.senseVoice.language = language

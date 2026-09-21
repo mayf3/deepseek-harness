@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Collapsed progress summaries and Host-owned steps survive view remounts. */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -19,13 +19,13 @@ const steps: SpeechPreparationStep[] = [
 ]
 function fixture(preparation: SpeechPreparationState, connected = true) {
   const prepare = vi.fn(async (_id: SpeechProviderId) => {}), cancelPreparation = vi.fn(async (_id: SpeechProviderId) => {})
-  const props = { provider: { id, name: 'SenseVoiceSmall', location: 'host-local' as const, preparation },
+  const props = { provider: { id, name: 'SenseVoiceSmall', location: 'host-local' as const, languages: ['auto', 'zh', 'en', 'ja'], preparation },
     connected, prepare, cancelPreparation, t }
   return { ...render(<PreparationCard {...props} />), prepare, cancelPreparation, props }
 }
 it('collapses by default, expands all steps, and shows details only for the active step', async () => {
   vi.useFakeTimers(); vi.setSystemTime(5000)
-  const b = fixture({ phase: 'installing', step: 'verify', startedAt: 0, steps })
+  const b = fixture({ phase: 'checking', step: 'verify', startedAt: 0, steps })
   expect(screen.queryByRole('list')).toBeNull()
   expect(screen.getByText('已等待 5 秒')).toBeTruthy()
   expect(screen.queryByRole('progressbar')).toBeNull()
@@ -37,7 +37,7 @@ it('collapses by default, expands all steps, and shows details only for the acti
   await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
   expect(screen.getByText('已等待 6 秒')).toBeTruthy()
   b.unmount()
-  fixture({ phase: 'installing', step: 'verify', startedAt: 0, steps })
+  fixture({ phase: 'checking', step: 'verify', startedAt: 0, steps })
   expect(screen.getByText('已等待 6 秒')).toBeTruthy()
   expect(screen.queryByRole('list')).toBeNull()
 })
@@ -87,8 +87,8 @@ it('shows waking without an explicit preparation cancellation control', () => {
 it('persists settings and reports disconnection in the detail card', async () => {
   const store = createSnapshotStore<SpeechReadiness>({ connected: true, error: null, catalog: {
     selection: { providerId: id, language: 'auto' }, maxAudioBytes: 100, maxDurationSeconds: 120,
-    providers: [{ id, name: 'SenseVoiceSmall', location: 'host-local', preparation: { phase: 'ready' } },
-      { id: 'cloud' as SpeechProviderId, name: 'Cloud', location: 'cloud', preparation: { phase: 'ready' } }],
+    providers: [{ id, name: 'SenseVoiceSmall', location: 'host-local', languages: ['auto', 'zh', 'en', 'ja'], preparation: { phase: 'ready' } },
+      { id: 'cloud' as SpeechProviderId, name: 'Cloud', location: 'cloud', languages: ['auto', 'en', 'zh', 'ja', 'fr'], preparation: { phase: 'ready' } }],
   } })
   const configure = vi.fn<VoiceInputProps['configure']>(async () => {})
   const props = { useSpeechReadiness: bindSnapshotSelector(store), configure, t,
@@ -99,6 +99,9 @@ it('persists settings and reports disconnection in the detail card', async () =>
   const current = store.getSnapshot()
   act(() => { store.set({ ...current, catalog: { ...current.catalog!, selection: { providerId: 'cloud' as SpeechProviderId, language: 'en' } } }) })
   expect(screen.getByText(zh.cloud)).toBeTruthy()
+  expect(within(screen.getByLabelText(zh.language)).getAllByRole<HTMLOptionElement>('option').map(item => item.value))
+    .toEqual(['auto', 'en', 'zh', 'ja', 'fr'])
+  expect(within(screen.getByLabelText(zh.language)).getByRole('option', { name: 'fr' })).toBeTruthy()
   configure.mockRejectedValueOnce(new Error('settings are read-only'))
   fireEvent.change(screen.getByLabelText(zh.language), { target: { value: 'zh' } })
   await screen.findByText('语音识别失败：settings are read-only')
@@ -125,6 +128,6 @@ it('shows provider-specific installation estimates before preparation and remove
   expect(screen.getByText(/建议预留约 5 GB/)).toBeTruthy()
   expect(screen.getByText(/模型加载后约 2 GB/)).toBeTruthy()
   expect(screen.getByText(/参考 5–30 分钟/)).toBeTruthy()
-  b.rerender(<PreparationCard {...b.props} provider={{ ...provider, preparation: { phase: 'installing', startedAt: Date.now() } }} />)
+  b.rerender(<PreparationCard {...b.props} provider={{ ...provider, preparation: { phase: 'checking', startedAt: Date.now() } }} />)
   expect(screen.queryByText(zh['setup.local'])).toBeNull()
 })

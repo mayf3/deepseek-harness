@@ -6,7 +6,7 @@ Experimental speech recognition has three roles: the [Service Definition](../../
 
 ## Provider selection
 
-`SpeechProviderId` brands the registration identity. `SpeechProviderInfo` carries a display name and `host-local` or `cloud` processing location. `SpeechRequest` contains WAV bytes and optional provider/language selection; `resolve()` produces `SpeechSpec` with one captured provider instance. A missing provider fails; replacement or withdrawal invalidates resolved work. Audio never falls back to a different provider.
+`SpeechProviderId` brands the registration identity. `SpeechProviderInfo` carries a display name, accepted `languages` hints and `host-local` or `cloud` processing location. `SpeechRequest` contains WAV bytes and optional provider/language selection; `resolve()` produces `SpeechSpec` with one captured provider instance. A missing provider or unsupported language fails; replacement or withdrawal invalidates resolved work. Audio never falls back to a different provider.
 
 `SpeechProvider.transcribe()` accepts one complete `SpeechInput` and an `AbortSignal`. `Transcript` returns plain `text`, `audioSeconds` and `inferenceSeconds`. Providers honor cancellation and settle their work before deregistration completes. The local provider serializes calls, bounds its queue and manages its worker lifetime independently of Sessions.
 
@@ -119,7 +119,7 @@ async *follow(caller: AbortSignal): AsyncIterable<SpeechSnapshot>
 snapshot(): SpeechSnapshot
 
 /**
- * Persist changed preference fields in the ordinary user-settings document.
+ * Persist changed preference fields; the resulting language must be accepted by the selected provider.
  * @param patch - explicit provider or language changes.
  * @returns after persistence and the resolved preference update.
  */
@@ -139,7 +139,7 @@ prepare(id: SpeechProviderId): void
 async cancelPreparation(id: SpeechProviderId): Promise<void>
 
 /**
- * Apply composition defaults and capture the selected provider. Missing providers fail explicitly.
+ * Apply composition defaults and capture the selected provider. Missing providers and unsupported languages fail explicitly.
  * @param request - complete recording and optional selection.
  * @returns provider-pinned input for transcribe().
  */

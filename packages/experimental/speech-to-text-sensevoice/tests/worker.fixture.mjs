@@ -14,6 +14,7 @@ const server = createServer((request, response) => {
   request.on('end', () => {
     if (language === 'hold') return
     if (language === 'crash') { process.exit(1); return }
+    if (language === 'invalid-input') { response.writeHead(400).end(JSON.stringify({ error: 'invalid input', code: 'invalid-input' })); return }
     if (language === 'error') { response.writeHead(400).end(JSON.stringify({ error: 'provider failed' })); return }
     response.setHeader('content-type', 'application/json')
     response.end(JSON.stringify({ text: language, audioSeconds: 1, inferenceSeconds: 0.1 }))

@@ -299,9 +299,10 @@ it('retains a worker whose idle cleanup cannot observe exit until that range is 
 it('retains completed preparation steps when cancellation settles the active step', async () => {
   const { worker } = await fixture(), entered = Promise.withResolvers<undefined>()
   vi.mocked(prepareRuntime).mockImplementationOnce(async (_ctx, _config, signal, report) => {
-    for (const step of ['model', 'vad', 'verify'] as const) report!({ phase: 'installing', step, startedAt: Date.now() })
+    for (const step of ['model', 'vad'] as const) report!({ phase: 'downloading', step, resource: step, completedBytes: 1, totalBytes: 1 })
+    report!({ phase: 'checking', step: 'verify', startedAt: Date.now() })
     const before = worker.snapshot().steps?.find(step => step.kind === 'verify')?.startedAt
-    report!({ phase: 'installing', step: 'verify', startedAt: Date.now() })
+    report!({ phase: 'checking', step: 'verify', startedAt: Date.now() })
     expect(worker.snapshot().steps?.find(step => step.kind === 'verify')?.startedAt).toBe(before)
     entered.resolve(undefined)
     return await new Promise((_resolve, reject) => {
@@ -370,4 +371,55 @@ it('rechecks readiness after a queued cache inspection without implicitly downlo
   expect(worker.snapshot().phase).toBe('unprepared')
   expect(prepareRuntime).not.toHaveBeenCalled()
   expect(spawn).not.toHaveBeenCalled()
+})
+
+it.each(['ready', 'standby', 'unprepared', 'failed'] as const)('joins cancellation at committed %s without replacing its result', async (phase) => {
+  const { worker, root, spawn } = await fixture()
+  const cancellation = Promise.withResolvers<Promise<void>>()
+  const unsubscribe = worker.subscribe(() => {
+    if (worker.snapshot().phase === phase) cancellation.resolve(worker.cancel())
+  })
+  try {
+    if (phase === 'ready') worker.prepare()
+    else {
+      if (phase === 'failed') vi.mocked(inspectRuntime).mockRejectedValueOnce(new Error('cache unavailable'))
+      else vi.mocked(inspectRuntime).mockResolvedValueOnce(phase === 'standby'
+        ? { tokens: root, model: root, vad: root, worker: fileURLToPath(new URL('./worker.fixture.mjs', import.meta.url)) }
+        : undefined)
+      worker.inspect()
+    }
+    await cancellation.promise
+    expect(worker.snapshot().phase).toBe(phase)
+    if (phase === 'ready' || phase === 'standby') {
+      expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+      expect(spawn).toHaveBeenCalledOnce()
+    } else {
+      await expect(worker.transcribe({ audio, language: 'zh' }, signal())).rejects.toThrow('Prepare')
+      expect(spawn).not.toHaveBeenCalled()
+      await prepare(worker)
+      expect(worker.snapshot().phase).toBe('ready')
+    }
+  } finally { unsubscribe() }
+})
+
+it('cancels a queued preparation before any resources are acquired', async () => {
+  const { worker, spawn } = await fixture()
+  worker.prepare()
+  await worker.cancel()
+  expect(worker.snapshot().phase).toBe('cancelled')
+  expect(prepareRuntime).not.toHaveBeenCalled()
+  expect(spawn).not.toHaveBeenCalled()
+})
+
+it('reuses a loaded worker only after explicitly classified input rejection', async () => {
+  const { worker, spawn } = await fixture()
+  await prepare(worker)
+  await expect(worker.transcribe({ audio, language: 'invalid-input' }, signal())).rejects.toThrow('invalid input')
+  expect(worker.snapshot().phase).toBe('ready')
+  expect((await worker.transcribe({ audio, language: 'en' }, signal())).text).toBe('en')
+  expect(spawn).toHaveBeenCalledOnce()
+  await expect(worker.transcribe({ audio, language: 'error' }, signal())).rejects.toThrow('provider failed')
+  expect(worker.snapshot().phase).toBe('standby')
+  expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+  expect(spawn).toHaveBeenCalledTimes(2)
 })
