@@ -43,7 +43,7 @@ function rowProps(block: unknown): Parameters<typeof AskQuestionRow>[0] {
     openFile: vi.fn(),
     sessionId: 's1',
     useSessions: () => undefined,
-  } as unknown as Parameters<typeof AskQuestionRow>[0]
+  } as Parameters<typeof AskQuestionRow>[0]
 }
 
 const answers = (entries: unknown[]): string => JSON.stringify({ answers: entries })

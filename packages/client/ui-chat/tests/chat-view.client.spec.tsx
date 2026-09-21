@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect } from 'react'
 import type {
-  AssistantMessageNode, ChatNode, ChatNodeHookContext, ChatNodeOwnerProps, ChatNodeViewProps, ChatSnapshot,
+  AssistantMessageNode, ChatNode, ChatNodeHookContext, ChatNodeOwnerProps, ChatSnapshot,
   ChatViewSlotProps, CommandNode, CompactionSummaryNode, ContextMessageNode, ConversationNode,
   LegacyConversationSlice, ModelRetryNode, RunningToolCall, SteeringMessageNode,
   ToolCallBlock, ToolResultNode, TurnErrorNode, TurnMaxTokensNode, UseChatNodeTurnData,
@@ -331,50 +331,51 @@ function makeHarness(
     const { turnData, disclosureReset } = opts?.hookContext as ChatNodeHookContext
     const useTurnData: UseChatNodeTurnData = dataKey => useTurnDataValue(turnData, dataKey)
     const useDisclosure = bindDisclosure(disclosureReset)
-    const nodeProps = <Kind extends ChatNode['kind']>(): ChatNodeViewProps<Kind> => (
-      { ...props, ...nodeOwner, useTurnData, useDisclosure } as unknown as ChatNodeViewProps<Kind>
-    )
+    const nodeProps = { ...props, ...nodeOwner, useTurnData, useDisclosure, __renders: undefined }
     switch (nodeOwner.node.kind) {
       case 'user':
+        return <UserMessageNodeView {...nodeProps} node={nodeOwner.node} />
       case 'steering':
-        return <UserMessageNodeView {...nodeProps<'user' | 'steering'>()} />
+        return <UserMessageNodeView {...nodeProps} node={nodeOwner.node} />
       case 'context':
-        return <ContextMessageNodeView {...nodeProps<'context'>()} />
+        return <ContextMessageNodeView {...nodeProps} node={nodeOwner.node} />
       case 'assistant-step':
-        return <AssistantNodeView {...nodeProps<'assistant-step'>()} usePresentation={props.usePresentation} />
+        return <AssistantNodeView {...nodeProps} node={nodeOwner.node} usePresentation={props.usePresentation} />
       case 'command':
         return (
           <CommandNodeView
-            {...nodeProps<'command'>()}
+            {...nodeProps}
+            node={nodeOwner.node}
             renderSlot={renderCommandSlot}
             SessionProvider={props.SessionProvider}
           />
         )
       case 'manual-compaction':
-        return <ManualCompactionNodeView {...nodeProps<'manual-compaction'>()} />
+        return <ManualCompactionNodeView {...nodeProps} node={nodeOwner.node} />
       case 'compaction':
-        return <CompactionNodeView {...nodeProps<'compaction'>()} />
+        return <CompactionNodeView {...nodeProps} node={nodeOwner.node} />
       case 'model-retry':
-        return <RetryNodeView {...nodeProps<'model-retry'>()} />
+        return <RetryNodeView {...nodeProps} node={nodeOwner.node} />
       case 'turn-error':
-        return <TurnErrorNodeView {...nodeProps<'turn-error'>()} />
+        return <TurnErrorNodeView {...nodeProps} node={nodeOwner.node} />
       case 'turn-max-tokens':
-        return <TurnMaxTokensNodeView {...nodeProps<'turn-max-tokens'>()} />
+        return <TurnMaxTokensNodeView {...nodeProps} node={nodeOwner.node} />
       case 'turn-process':
-        return <TurnProcessNodeView {...nodeProps<'turn-process'>()} />
+        return <TurnProcessNodeView {...nodeProps} node={nodeOwner.node} />
       case 'system-prompt':
-        return <SystemPromptNodeView {...nodeProps<'system-prompt'>()} />
+        return <SystemPromptNodeView {...nodeProps} node={nodeOwner.node} />
       case 'turn-tail':
         return (
           <TurnTailNodeView
             usePerformanceUsage={bindSnapshotSelector(performanceUsage)}
-            {...nodeProps<'turn-tail'>()}
+            {...nodeProps}
+            node={nodeOwner.node}
             renderSlot={renderTurnTailSlot}
             SessionProvider={props.SessionProvider}
           />
         )
       case 'unknown':
-        return <UnknownNodeView {...nodeProps<'unknown'>()} />
+        return <UnknownNodeView {...nodeProps} node={nodeOwner.node} />
       case 'tool-call': {
         const block = nodeOwner.node.data.root
         const toolName = 'kind' in block ? block.call?.name ?? '' : block.name

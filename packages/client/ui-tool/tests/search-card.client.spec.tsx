@@ -228,7 +228,7 @@ describe('chat row search body (GenericToolCard fallback)', () => {
 describe('SearchRow keyed card', () => {
   const rowProps = (block: RunningToolCall | ToolResultNode, toolName: string): SearchRowProps => ({
     useDisclosure, callId: 'c1', toolName, block, openFile: vi.fn(), sessionId: SID, t,
-  } as unknown as SearchRowProps)
+  } as SearchRowProps)
 
   /** The whole summary row is the expand toggle (ToolRow's unified interaction). */
   const toggleRow = (view: { container: HTMLElement }) => {

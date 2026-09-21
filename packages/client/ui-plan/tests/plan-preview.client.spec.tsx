@@ -121,9 +121,9 @@ it('projects native and PTC submissions into their resolved turns without duplic
   expect(snapshot.order).toEqual([])
   expect(snapshot.nodes.values()).toHaveLength(3)
   const props = { turn: { turn: 1 },
-    usePlans: keyedObservableHook(turn => snapshot.nodes.turnDataSource(Number(turn), 'submitted-plan')),
+    usePlans: keyedObservableHook(turn => snapshot.nodes.turnDataSource(Number(turn), 'submitted-plan')) as Parameters<typeof PlanCards>[0]['usePlans'],
     t, openPlan: vi.fn(),
-  } as unknown as Parameters<typeof PlanCards>[0]
+  } as Parameters<typeof PlanCards>[0]
   const view = render(<PlanCards {...props} />)
   expect(view.container.querySelectorAll('[data-plan-card]')).toHaveLength(2)
   view.rerender(<PlanCards {...{ ...props, turn: { turn: 2 } } as unknown as Parameters<typeof PlanCards>[0]} />)
@@ -208,7 +208,7 @@ describe('plan entry points and document', () => {
       const openPlan = vi.fn()
       const props = { turn: { turn: 1 }, usePlans: planHook([plan]), seq: 30,
         t: makeTranslate(dictionary, commonEn), openPlan,
-      } as unknown as Parameters<typeof PlanCards>[0]
+      } as Parameters<typeof PlanCards>[0]
       const view = render(<PlanCards {...props} />)
       expect(openPlan).not.toHaveBeenCalled()
       expect(screen.getByText(dictionary['preview.action'])).toBeTruthy()

@@ -38,7 +38,7 @@ function bashProps(block: RunningToolCall | ToolResultNode): BashRowProps {
     useDisclosure, callId: 'c1', toolName: 'bash', block, openFile: vi.fn(),
     sessionId: SID, useSessions: bindSnapshotSelector(listStore()),
     t,
-  } as unknown as BashRowProps
+  } as BashRowProps
 }
 
 describe('Tool presentation tails', () => {

@@ -415,7 +415,7 @@ describe('BashRow terminal card', () => {
     useDisclosure, callId: 'c1', toolName: 'bash', block, openFile: vi.fn(),
     sessionId: SID, useSessions: bindSnapshotSelector(list()),
     t,
-  } as unknown as BashRowProps)
+  } as BashRowProps)
 
   it('collapses to the summary row; the whole row toggles the command output', () => {
     const view = render(<BashRow {...rowProps(settled())} />)

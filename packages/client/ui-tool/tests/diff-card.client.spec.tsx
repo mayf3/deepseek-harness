@@ -210,7 +210,7 @@ describe('FileMutationRow diff card', () => {
     useDisclosure, callId: 'c1', toolName, block, openFile: vi.fn(), cwd: '/w/app',
     sessionId: SID, useSessions: bindSnapshotSelector(list()),
     t,
-  } as unknown as FileMutationRowProps)
+  } as FileMutationRowProps)
 
   /** The whole summary row is the expand toggle (ToolRow's unified interaction). */
   const toggleRow = (view: { container: HTMLElement }) => {

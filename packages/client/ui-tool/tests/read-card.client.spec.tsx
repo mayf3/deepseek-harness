@@ -214,7 +214,7 @@ describe('ReadRow keyed toolview', () => {
     useDisclosure, callId: 'c1', toolName: 'read', block, openFile: vi.fn(),
     sessionId: SID, useSessions: bindSnapshotSelector(list()),
     t,
-  } as unknown as Parameters<typeof ReadRow>[0])
+  } as Parameters<typeof ReadRow>[0])
 
   /** The whole summary row is the expand toggle (ToolRow's unified interaction). */
   const toggleRow = (view: { container: HTMLElement }) => {

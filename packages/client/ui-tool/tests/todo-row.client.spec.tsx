@@ -75,7 +75,7 @@ function rowProps(block: unknown): TodoRowProps {
     useTodoHistory: () => undefined,
     useSession: () => true,
     t,
-  } as unknown as TodoRowProps
+  } as TodoRowProps
 }
 
 describe('TodoRow', () => {

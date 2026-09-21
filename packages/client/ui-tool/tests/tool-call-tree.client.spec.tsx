@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** ToolCallTree-owned root/subcall markers and selection projection. */
+/** ToolCallTree-owned root/subcall markers and keyed Tool dispatch. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -23,7 +23,6 @@ const root = (callId: string, call: ToolResultNode['call']): ToolResultNode => (
 
 function props(
   block: ToolCallBlock,
-  selectedCallId?: string,
   home?: string,
   owners?: ToolCallOwnerProps[],
 ): ToolTreeProps {
@@ -33,8 +32,9 @@ function props(
     owners?.push(owner)
     return options?.fallback ?? null
   }) as unknown as ToolTreeProps['renderSlot']
-  return {
+  const fixture: Partial<ToolTreeProps> = {
     useDisclosure,
+    useTurnData: () => undefined,
     useSession,
     renderSlot,
     node: {
@@ -47,15 +47,17 @@ function props(
       visibility: 'visible',
       data: { root: block },
     },
-    selectedCallId,
     openFile: vi.fn(),
+    openSkill: vi.fn(),
+    renderMessageImages: () => null,
     inspectCall: vi.fn(),
     forkAt: vi.fn(),
     loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
     fileMentions: vi.fn(),
     useHostInfo: ((selector: (info: { home: string | undefined }) => unknown) => selector({ home })) as ToolTreeProps['useHostInfo'],
     t,
-  } as unknown as ToolTreeProps
+  }
+  return fixture as ToolTreeProps
 }
 
 describe('ToolCallTree', () => {
@@ -71,7 +73,7 @@ describe('ToolCallTree', () => {
         content: [{ type: 'text' as const, text: 'Child output' }],
       }],
     }
-    const view = render(<ToolCallTree {...props(block, undefined, undefined, owners)} useDisclosure={useDisclosure} />)
+    const view = render(<ToolCallTree {...props(block, undefined, owners)} useDisclosure={useDisclosure} />)
     const rows = [...view.container.querySelectorAll<HTMLElement>('[data-expandable]')]
     expect(rows).toHaveLength(2)
     expect(owners.map(owner => owner.useDisclosure)).toEqual([useDisclosure, useDisclosure])
@@ -93,7 +95,7 @@ describe('ToolCallTree', () => {
 
   it('owns the root marker and the generic fallback for a window-truncated call', () => {
     const block = root('w1', null)
-    const view = render(<ToolCallTree {...props(block, 'w1')} />)
+    const view = render(<ToolCallTree {...props(block)} />)
     const row = view.container.querySelector('[data-chat-call-id="w1"]')
     expect(row?.getAttribute('data-chat-anchor-key')).toBe('call:w1')
     expect(view.container.querySelector('[data-variant="others"]')).not.toBeNull()
@@ -115,7 +117,7 @@ describe('ToolCallTree', () => {
       ...root('parent', { name: 'run_code', argsRaw: '{"code":"return 1"}' }),
       subCalls: [child],
     }
-    const view = render(<ToolCallTree {...props(block, leaf.callId, undefined, owners)} />)
+    const view = render(<ToolCallTree {...props(block, undefined, owners)} />)
     const nests = view.container.querySelectorAll('[data-subcalls]')
     expect(nests[0]?.parentElement).toBe(view.container.querySelector('[data-chat-call-id="parent"]'))
     expect(nests[1]?.parentElement).toBe(view.container.querySelector('[data-chat-call-id="parent:code:1"]'))
@@ -130,7 +132,7 @@ describe('ToolCallTree', () => {
 
   it('omits Inspect from tool owners when the target view is unavailable', () => {
     const owners: ToolCallOwnerProps[] = []
-    render(<ToolCallTree {...props(root('a', null), undefined, undefined, owners)} inspectCall={undefined} />)
+    render(<ToolCallTree {...props(root('a', null), undefined, owners)} inspectCall={undefined} />)
     expect(owners[0]?.inspect).toBeUndefined()
   })
 
@@ -140,7 +142,7 @@ describe('ToolCallTree', () => {
       callId: 'running', name: 'bash', argsRaw: '{"command":"pwd"}',
       turn: 1, step: 0, time: 1_000, subCalls: [],
     }
-    const treeProps = props(block, undefined, undefined, owners)
+    const treeProps = props(block, undefined, owners)
     render(<ToolCallTree {...treeProps} />)
 
     expect(owners[0]?.toolName).toBe('bash')
@@ -152,7 +154,7 @@ describe('ToolCallTree', () => {
 
   it('abbreviates a POSIX home path in the generic tool summary', () => {
     const block = root('w1', { name: 'read', argsRaw: '{"path":"/h/docs/a.ts"}' })
-    const view = render(<ToolCallTree {...props(block, 'w1', '/h')} />)
+    const view = render(<ToolCallTree {...props(block, '/h')} />)
     expect(view.getByText('~/docs/a.ts')).toBeTruthy()
   })
 
