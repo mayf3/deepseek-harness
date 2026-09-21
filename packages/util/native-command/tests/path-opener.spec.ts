@@ -56,15 +56,7 @@ describe('native path opener', () => {
     })
     expect(run.mock.calls).toEqual([
       ['wslpath', ['-w', '/home/test user/settings.yaml'], requestSignal],
-      [
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-Command',
-          "Invoke-Item -LiteralPath '\\\\wsl.localhost\\Ubuntu\\home\\test user\\settings.yaml'",
-        ],
-        requestSignal,
-      ],
+      ['explorer.exe', ['\\\\wsl.localhost\\Ubuntu\\home\\test user\\settings.yaml'], requestSignal],
     ])
   })
 
@@ -88,12 +80,14 @@ describe('native path opener', () => {
     expect(run).toHaveBeenCalledOnce()
   })
 
-  it('opens with Windows Invoke-Item and escapes single quotes', async () => {
+  it('hands Windows one argv path with no command string to escape', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
-    await openNativePath("C:\\work\\o'reilly.txt", signal(), { platform: 'win32', run })
+    // Quotes, commas, a percent, and an ampersand reach Explorer as a single
+    // argument: there is no PowerShell literal and no shell to interpret them.
+    await openNativePath("C:\\work\\o'reilly, & 100%.txt", signal(), { platform: 'win32', run })
     expect(run).toHaveBeenCalledWith(
-      'powershell.exe',
-      ['-NoProfile', '-Command', "Invoke-Item -LiteralPath 'C:\\work\\o''reilly.txt'"],
+      'explorer.exe',
+      ["C:\\work\\o'reilly, & 100%.txt"],
       expect.any(AbortSignal),
     )
   })
@@ -102,8 +96,8 @@ describe('native path opener', () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
     await openNativeTextFile('C:\\work\\settings.yaml', signal(), { platform: 'win32', run })
     expect(run).toHaveBeenCalledWith(
-      'powershell.exe',
-      ['-NoProfile', '-Command', "Invoke-Item -LiteralPath 'C:\\work\\settings.yaml'"],
+      'explorer.exe',
+      ['C:\\work\\settings.yaml'],
       expect.any(AbortSignal),
     )
   })
@@ -128,7 +122,7 @@ describe('native path opener', () => {
       osRelease: '6.8.0-generic', env: {}, run,
     })
     const expected = process.platform === 'win32'
-      ? 'powershell.exe'
+      ? 'explorer.exe'
       : process.platform === 'linux'
         ? 'xdg-open'
         : 'open'
@@ -260,7 +254,7 @@ describe('browser-renderable documents', () => {
       platform: 'win32',
       run: async (command, args) => { win.push([command, ...args]); return { stdout: '', stderr: '' } },
     })
-    expect(win[0]?.[0]).toBe('powershell.exe')
+    expect(win[0]?.[0]).toBe('explorer.exe')
   })
 
   it('hands browser-renderable WSL paths to the Windows desktop', async () => {
@@ -279,12 +273,7 @@ describe('browser-renderable documents', () => {
     })
     expect(calls).toEqual([
       ['wslpath', '-w', '/home/test/page.html'],
-      [
-        'powershell.exe',
-        '-NoProfile',
-        '-Command',
-        "Invoke-Item -LiteralPath 'C:\\workspace\\page.html'",
-      ],
+      ['explorer.exe', 'C:\\workspace\\page.html'],
     ])
   })
 })
@@ -403,6 +392,24 @@ it('preserves cancellation even when Explorer returns delegate exit 1', async ()
     throw Object.assign(new Error('delegated'), { code: 1 })
   })
   await expect(revealNativePath('C:\\file.txt', abort.signal, { platform: 'win32', run })).rejects.toBe(reason)
+})
+
+it.each(['win32', 'linux'] as const)('accepts the Explorer delegate exit 1 when opening on %s', async (platform) => {
+  // The settings sheet's open gesture must survive the same handoff reveal does.
+  const run = vi.fn<PathOpenerRunner>(async (command) => {
+    if (command === 'wslpath') return { stdout: 'C:\\work\\settings.yaml', stderr: '' }
+    throw Object.assign(new Error('delegated'), { code: 1 })
+  })
+  await expect(openNativePath(
+    platform === 'win32' ? 'C:\\work\\settings.yaml' : '/mnt/c/work/settings.yaml', signal(),
+    { platform, env: { WSL_DISTRO_NAME: 'Ubuntu' }, run },
+  )).resolves.toBeUndefined()
+})
+
+it('preserves a non-delegate Explorer failure when opening', async () => {
+  const failure = Object.assign(new Error('launch failed'), { code: 2 })
+  const run = vi.fn<PathOpenerRunner>().mockRejectedValue(failure)
+  await expect(openNativePath('C:\\file.txt', signal(), { platform: 'win32', run })).rejects.toBe(failure)
 })
 
 it.each([

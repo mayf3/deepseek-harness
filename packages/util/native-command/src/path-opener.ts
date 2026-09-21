@@ -5,7 +5,10 @@
  * The default intent prefers the default browser for documents it renders when
  * the platform can name one, then falls back to the default application. WSL
  * translates every path for the Windows desktop instead of assuming a Linux
- * GUI. The text-editor intent never consults the browser.
+ * GUI. The text-editor intent never consults the browser. Windows hands every
+ * intent to Explorer: the shell's own default-application resolution, the one
+ * a double-click uses, selects the application, while a process that resolves
+ * the association itself reads a narrower record and reports none.
  * @module @deepseek-ai/dsh-native-command/path-opener
  */
 
@@ -82,11 +85,6 @@ async function openInBrowser(
 /** Native path-open intent; macOS distinguishes text editing from file association. */
 type PathOpenIntent = 'default' | 'association' | 'text-editor'
 
-/** PowerShell single-quoted literal (doubles embedded quotes). */
-function powershellLiteral(path: string): string {
-  return `'${path.replace(/'/g, "''")}'`
-}
-
 /** Whether one environment marker is set to a non-empty value. */
 function present(value: string | undefined): boolean {
   return value !== undefined && value !== ''
@@ -99,13 +97,36 @@ function isWsl(internals: PathOpenerInternals): boolean {
   return (internals.osRelease ?? osRelease()).toLowerCase().includes('microsoft')
 }
 
-/** Open one Windows-resolvable path through its registered desktop application. */
+/**
+ * Hand one target to Explorer, accepting its delegated-handoff exit code.
+ *
+ * Explorer exits 1 after handing the request to the desktop process already
+ * running, so exit 1 means the shell took it. Every other failure still
+ * rejects, and cancellation wins over a delegate's exit 1.
+ * @param args - Explorer argv: the target path alone to open it, or `/select,<target>` to reveal it.
+ * @param signal - caller lifetime; abort terminates the command.
+ * @param run - shell-free command runner.
+ * @throws The runner's failure unless it is Explorer's delegate exit 1.
+ */
+async function runExplorer(args: readonly string[], signal: AbortSignal, run: PathOpenerRunner): Promise<void> {
+  try {
+    await run('explorer.exe', args, signal)
+  } catch (error: unknown) {
+    signal.throwIfAborted()
+    // Explorer can exit 1 after delegating to the existing desktop process.
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 1) throw error
+  }
+}
+
+/**
+ * Open one Windows-resolvable path through Explorer, the shell that owns the
+ * default-application resolution a double-click uses.
+ * @param path - Windows-resolvable path; passed as one argv element, never a command string.
+ * @param signal - caller lifetime; abort terminates the command.
+ * @param run - shell-free command runner.
+ */
 async function openWindowsPath(path: string, signal: AbortSignal, run: PathOpenerRunner): Promise<void> {
-  await run('powershell.exe', [
-    '-NoProfile',
-    '-Command',
-    `Invoke-Item -LiteralPath ${powershellLiteral(path)}`,
-  ], signal)
+  await runExplorer([path], signal, run)
 }
 
 /** Translate a WSL path before handing it to the Windows desktop. */
@@ -259,13 +280,7 @@ export async function revealNativePath(
     }
     // Explorer parses commas itself; a file URI preserves commas and whitespace in the path.
     const target = pathToFileURL(windowsPath, { windows: true }).href.replaceAll(',', '%2C')
-    try {
-      await run('explorer.exe', ['/select,', target], signal)
-    } catch (error) {
-      signal.throwIfAborted()
-      // Explorer can exit 1 after delegating to the existing desktop process.
-      if (!(error instanceof Error) || !('code' in error) || error.code !== 1) throw error
-    }
+    await runExplorer(['/select,', target], signal, run)
     return
   }
   if (manager === 'directory') {
