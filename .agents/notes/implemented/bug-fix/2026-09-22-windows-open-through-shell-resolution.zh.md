@@ -1,4 +1,4 @@
-# Agent Note: Windows 打开走 shell 自身的默认应用解析
+# Agent Note: Windows 打开经 explorer.exe 完成
 
 Status: implemented
 

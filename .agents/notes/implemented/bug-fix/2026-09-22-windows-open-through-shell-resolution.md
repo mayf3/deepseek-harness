@@ -1,4 +1,4 @@
-# Agent Note: Windows opens use the shell's own application resolution
+# Agent Note: Windows opens go through explorer.exe
 
 Status: implemented
 
