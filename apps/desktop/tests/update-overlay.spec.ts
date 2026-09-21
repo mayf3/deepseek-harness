@@ -20,8 +20,8 @@ it('keeps the macOS mandatory overlay stationary and blocks parent keyboard inpu
   native.create.mockReturnValue(window)
   try {
     createUpdateOverlay(parent as unknown as BrowserWindow, 'owned', 'Update required', false)
-    expect(native.create).toHaveBeenLastCalledWith(expect.objectContaining({ modal: false, transparent: true, frame: false,
-      webPreferences: expect.objectContaining({ devTools: false }) }))
+    expect(native.create).toHaveBeenLastCalledWith(expect.objectContaining({ modal: false, transparent: true, frame: false }))
+    expect(native.create.mock.lastCall?.[0].webPreferences?.devTools).toBe(false)
     const event = { preventDefault: vi.fn() }
     parent.webContents.emit('before-input-event', event)
     expect(event.preventDefault).toHaveBeenCalledOnce()
