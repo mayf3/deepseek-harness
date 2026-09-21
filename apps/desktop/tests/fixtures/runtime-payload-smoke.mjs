@@ -47,21 +47,6 @@ console.log('desktop-node-script-ok')
   assert.match(output, /desktop-node-script-ok/u)
 }
 
-/** Exercise grep and glob operations with the search tool's resolved native executable. */
-async function checkSearch() {
-  const { resolveRgPath } = await import(pathToFileURL(requireRuntime.resolve('@deepseek-ai/dsh-tool-fs-search')).href)
-  const executable = await resolveRgPath()
-  const name = 'ripgrep-smoke.txt'
-  const marker = 'desktop-ripgrep-smoke'
-  writeFileSync(join(scratch, name), `${marker}\n`, { flag: 'wx', mode: 0o600 })
-  const run = args => execFileSync(executable, ['--no-config', ...args], {
-    cwd: scratch, encoding: 'utf8', timeout: 45_000, windowsHide: true,
-    env: Object.fromEntries(Object.entries(process.env).filter(([name]) => /^(?:systemroot|windir)$/iu.test(name))),
-  }).trim().replaceAll('\\', '/')
-  assert.equal(run(['--no-heading', '--no-filename', '--line-number', '--fixed-strings', '--', marker, name]), `1:${marker}`)
-  assert.equal(run(['--files', '--glob', name, '.']), `./${name}`)
-}
-
 /** Spawn only a fixed Node program and await the terminal's drained exit event. */
 async function checkPty() {
   const pty = requireRuntime('node-pty')
@@ -112,6 +97,21 @@ async function checkPty() {
       exitSubscription.dispose()
     }
   }
+}
+
+/** Exercise grep and glob operations with the search tool's resolved native executable. */
+async function checkSearch() {
+  const { resolveRgPath } = await import(pathToFileURL(requireRuntime.resolve('@deepseek-ai/dsh-tool-fs-search')).href)
+  const executable = await resolveRgPath()
+  const name = 'ripgrep-smoke.txt'
+  const marker = 'desktop-ripgrep-smoke'
+  writeFileSync(join(scratch, name), `${marker}\n`, { flag: 'wx', mode: 0o600 })
+  const run = args => execFileSync(executable, ['--no-config', ...args], {
+    cwd: scratch, encoding: 'utf8', timeout: 45_000, windowsHide: true,
+    env: Object.fromEntries(Object.entries(process.env).filter(([name]) => /^(?:systemroot|windir)$/iu.test(name))),
+  }).trim().replaceAll('\\', '/')
+  assert.equal(run(['--no-heading', '--no-filename', '--line-number', '--fixed-strings', '--', marker, name]), `1:${marker}`)
+  assert.equal(run(['--files', '--glob', name, '.']), `./${name}`)
 }
 
 /** Resolve one system function through Koffi's packaged native module. */

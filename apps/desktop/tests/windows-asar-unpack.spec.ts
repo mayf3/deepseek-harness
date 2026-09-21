@@ -46,6 +46,14 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 
+function unsignedWindowsConfig(appId: string, source: string) {
+  return createElectronBuilderConfig({
+    DSH_DESKTOP_APP_ID: appId, DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
+    DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
+    DSH_DESKTOP_UNSIGNED: '1',
+  }, 'win32', 'x64', source)
+}
+
 async function fixture(external: boolean) {
   const root = await mkdtemp(join(tmpdir(), 'windows-asar-'))
   roots.push(root)
@@ -190,17 +198,14 @@ it.each([true, false])('validates the real builder hook for unsigned=%s', async 
 
 it.each([false, true])('unpacks platform ripgrep executables with external source=%s', async (external) => {
   const input = await fixture(external)
+  // Windows rg.exe uses the general executable rule; macOS rg uses the platform-package rule.
   const files = ['ripgrep-darwin-arm64/bin/rg', 'ripgrep-darwin-x64/bin/rg', 'ripgrep-win32-x64/bin/rg.exe']
   for (const file of [...files, 'ripgrep/lib/index.js']) {
     const path = join(input.source, 'node_modules', '@vscode', file)
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, 'ripgrep fixture')
   }
-  const config = createElectronBuilderConfig({
-    DSH_DESKTOP_APP_ID: 'com.example.ripgrep', DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
-    DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
-    DSH_DESKTOP_UNSIGNED: '1',
-  }, 'win32', 'x64', input.source)
+  const config = unsignedWindowsConfig('com.example.ripgrep', input.source)
   input.config.asarUnpack = [...config.asarUnpack]
   await packageFixture(input)
   const archive = await readAsar(join(input.resources, 'app.asar'))
@@ -224,11 +229,7 @@ it.each([false, true])('keeps the complete Office engine outside ASAR with exter
   const wasm = join(input.source, 'node_modules/@deepseek-ai/libreoffice-kit-wasm/package.json')
   await mkdir(dirname(wasm), { recursive: true })
   await writeFile(wasm, '{}')
-  const config = createElectronBuilderConfig({
-    DSH_DESKTOP_APP_ID: 'com.example.office', DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
-    DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
-    DSH_DESKTOP_UNSIGNED: '1',
-  }, 'win32', 'x64', input.source)
+  const config = unsignedWindowsConfig('com.example.office', input.source)
   input.config.asarUnpack = [...config.asarUnpack]
   await config.beforePack(input.context)
   await packageFixture(input)
