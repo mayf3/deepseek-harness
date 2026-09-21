@@ -21,8 +21,9 @@ const { getMakeNsisPath } = require('app-builder-lib/out/toolsets/windows.js')
 const guid = randomUUID()
 const id = guid.replaceAll('-', '')
 const productName = `Harness Installer Test ${id.slice(0, 8)}`
-// Scoped like the shipped package so Electron user data nests under the scope directory.
-const packageName = `@harness-installer-test/app-${id}`
+// Scoped like the shipped package so Electron user data nests under a scope directory; the scope is unique per run.
+const packageName = `@harness-installer-test-${id.slice(0, 8)}/app-${id}`
+const uninstallOnly = process.argv.includes('--uninstall-only')
 const outputRoot = join(appRoot, '.desktop-build', 'installer-tests')
 await mkdir(outputRoot, { recursive: true })
 const output = await mkdtemp(join(outputRoot, 'run-'))
@@ -57,16 +58,19 @@ try {
     join(appRoot, 'scripts', 'prepare-windows-installer.ps1'), '-OutputDirectory', join(output, 'ui'), '-CompileProgressOnly'], childOptions)
   const progressTest = join(output, 'ui', 'progress-test.exe')
   const presentationTest = join(output, 'ui', 'presentation-test.exe')
+  const cleanupTest = join(output, 'ui', 'data-cleanup-test.exe')
   if (sign) {
     await sign({ path: progressTest, hash: 'sha256', isNest: false })
     await sign({ path: presentationTest, hash: 'sha256', isNest: false })
+    await sign({ path: cleanupTest, hash: 'sha256', isNest: false })
     await sign({ path: join(output, 'ui', 'window-frame.dll'), hash: 'sha256', isNest: false })
     installWindowsNsisBootstrapSigner({ sign })
   }
-  if (!process.argv.includes('--uninstall-only')) {
+  if (!uninstallOnly) {
     await execute(progressTest, [], childOptions)
     await execute(presentationTest, [], childOptions)
   }
+  await execute(cleanupTest, [join(output, 'ui', `cleanup-${id}`)], childOptions)
   const payloadSource = join(output, 'payload.nsi')
   await writeFile(payloadSource, `Unicode true
 RequestExecutionLevel user
@@ -106,10 +110,10 @@ SectionEnd
     })
     if (process.argv.includes('--compile-only')) continue
     const result = await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-      join(appRoot, 'tests', process.argv.includes('--uninstall-only') ? 'windows-uninstall-smoke.ps1' : 'windows-installer-smoke.ps1'),
+      join(appRoot, 'tests', uninstallOnly ? 'windows-uninstall-smoke.ps1' : 'windows-installer-smoke.ps1'),
       '-Installer', join(languageOutput, 'installer-test.exe'),
       '-ProductName', productName, '-RegistryKey', guid, '-OutputDirectory', languageOutput,
-      ...process.argv.includes('--uninstall-only') ? ['-Language', languageId, '-PackageName', packageName] : []], childOptions)
+      ...uninstallOnly ? ['-Language', languageId, '-PackageName', packageName] : []], childOptions)
     process.stdout.write(`${language}\n${result.stdout}`)
   }
   succeeded = true

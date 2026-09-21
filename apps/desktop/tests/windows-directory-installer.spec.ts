@@ -9,13 +9,15 @@ const require = createRequire(import.meta.url)
 const section = readFileSync(join(dirname(require.resolve('app-builder-lib/package.json')),
   'templates/nsis/installSection.nsh'), 'utf8')
 
-it('leaves data cleanup to the interactive page while retaining application removal and registration cleanup', () => {
+it('keeps data cleanup out of the upstream template while retaining application removal and registration cleanup', () => {
   const source = readFileSync(join(dirname(require.resolve('app-builder-lib/package.json')), 'templates/nsis/uninstaller.nsh'), 'utf8')
   const adapted = directoryUninstaller(source)
   expect(adapted).not.toContain('--delete-app-data')
   expect(adapted).not.toContain('RMDir /r "$APPDATA')
   expect(adapted).toContain('!insertmacro customUnInstall')
   expect(adapted).toContain('DeleteRegKey SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}"')
+  expect(adapted).toContain('DeleteRegKey SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}"')
+  expect(directoryUninstaller(source.replaceAll('\n', '\r\n'))).toBe(adapted)
   expect(adapted).toContain('RMDir /r "\\\\?\\$INSTDIR"')
   expect(() => directoryUninstaller(source.replace('  Var /GLOBAL isDeleteAppData\n', ''))).toThrow('template changed')
   expect(() => directoryUninstaller(source.replace('  DeleteRegKey SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}"', ''))).toThrow('template changed')

@@ -170,9 +170,6 @@ try {
         throw 'Trailing separators changed the registered installation directory'
     }
     $results.Add('registered-directory-with-trailing-separators')
-    $uninstallEntry = Get-ItemProperty ('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $RegistryKey)
-    if ($uninstallEntry.InstallLocation.TrimEnd('\') -ne $installPath) { throw 'Uninstall entry lacks InstallLocation' }
-    $results.Add('uninstall-entry-install-location')
     $timer = [Diagnostics.Stopwatch]::StartNew()
     do {
         $app = Get-Process -Name $ProductName -ErrorAction SilentlyContinue

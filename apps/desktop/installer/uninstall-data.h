@@ -7,6 +7,9 @@
 namespace uninstall_data {
 struct Handles {
     std::vector<HANDLE> values;
+    Handles() = default;
+    Handles(const Handles&) = delete;
+    Handles& operator=(const Handles&) = delete;
     ~Handles() { for (HANDLE value : values) CloseHandle(value); }
 };
 
@@ -36,8 +39,9 @@ inline bool Normalize(LPCWSTR input, std::wstring& result) {
     return true;
 }
 
+// Listing access takes part in share checks, so the open handle refuses the DELETE access a rename or removal needs.
 inline DWORD Pin(const std::wstring& path, Handles& handles) {
-    HANDLE handle = CreateFileW((L"\\\\?\\" + path).c_str(), FILE_READ_ATTRIBUTES,
+    HANDLE handle = CreateFileW((L"\\\\?\\" + path).c_str(), FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES,
         FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
         FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
     if (handle == INVALID_HANDLE_VALUE) return GetLastError();
@@ -49,6 +53,14 @@ inline DWORD Pin(const std::wstring& path, Handles& handles) {
     return ERROR_SUCCESS;
 }
 
+inline DWORD Unlink(const std::wstring& extended, DWORD attributes) {
+    if (attributes & FILE_ATTRIBUTE_READONLY) SetFileAttributesW(extended.c_str(), FILE_ATTRIBUTE_NORMAL);
+    const BOOL removed = (attributes & FILE_ATTRIBUTE_DIRECTORY)
+        ? RemoveDirectoryW(extended.c_str()) : DeleteFileW(extended.c_str());
+    return removed ? ERROR_SUCCESS : GetLastError();
+}
+
+// Every sibling is attempted; the first error is returned after the whole tree has been visited.
 inline DWORD RemoveTree(const std::wstring& path) {
     const std::wstring extended = L"\\\\?\\" + path;
     DWORD attributes = GetFileAttributesW(extended.c_str());
@@ -56,10 +68,8 @@ inline DWORD RemoveTree(const std::wstring& path) {
         DWORD error = GetLastError();
         return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ? ERROR_SUCCESS : error;
     }
-    if (!(attributes & FILE_ATTRIBUTE_DIRECTORY)) {
-        return DeleteFileW(extended.c_str()) ? ERROR_SUCCESS : GetLastError();
-    }
-    if (!(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+    DWORD first = ERROR_SUCCESS;
+    if ((attributes & FILE_ATTRIBUTE_DIRECTORY) && !(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
         Handles pinned;
         DWORD error = Pin(path, pinned);
         if (error) return error;
@@ -72,22 +82,30 @@ inline DWORD RemoveTree(const std::wstring& path) {
             do {
                 if (wcscmp(entry.cFileName, L".") == 0 || wcscmp(entry.cFileName, L"..") == 0) continue;
                 error = RemoveTree(path + L"\\" + entry.cFileName);
-                if (error) { FindClose(search); return error; }
+                if (error && !first) first = error;
             } while (FindNextFileW(search, &entry));
             error = GetLastError();
             FindClose(search);
-            if (error != ERROR_NO_MORE_FILES) return error;
+            if (error != ERROR_NO_MORE_FILES && !first) first = error;
         }
     }
-    return RemoveDirectoryW(extended.c_str()) ? ERROR_SUCCESS : GetLastError();
+    DWORD error = Unlink(extended, attributes);
+    return first ? first : error;
 }
 
 // Never select a shell folder, its ancestor, Windows/Program Files descendants,
-// or a path overlapping the installation. Linked descendants are unlinked only.
-inline DWORD Remove(LPCWSTR input, LPCWSTR installation) {
+// a path overlapping the installation, or a path overlapping the protected root
+// (the configured Harness home). Linked descendants are unlinked only.
+inline DWORD Remove(LPCWSTR input, LPCWSTR installation, LPCWSTR protectedRoot) {
     std::wstring path, install;
     if (!Normalize(input, path) || !Normalize(installation, install)) return ERROR_INVALID_NAME;
     if (Contains(path, install) || Contains(install, path)) return ERROR_ACCESS_DENIED;
+    if (protectedRoot && *protectedRoot) {
+        std::wstring home;
+        // An unusable protected root cannot establish separation from retained data.
+        if (!Normalize(protectedRoot, home)) return ERROR_INVALID_NAME;
+        if (Contains(path, home) || Contains(home, path)) return ERROR_ACCESS_DENIED;
+    }
     struct ComScope {
         HRESULT result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
         ~ComScope() { if (SUCCEEDED(result)) CoUninitialize(); }
@@ -108,6 +126,7 @@ inline DWORD Remove(LPCWSTR input, LPCWSTR installation) {
         PWSTR value = nullptr;
         HRESULT result = SHGetKnownFolderPath(*id, KF_FLAG_DONT_VERIFY, nullptr, &value);
         if (FAILED(result)) return ERROR_ACCESS_DENIED;
+        // Known-folder paths are already full paths; a redirected folder on another volume must stay protected.
         const std::wstring folder(value);
         CoTaskMemFree(value);
         if (Contains(path, folder)) return ERROR_ACCESS_DENIED;
@@ -128,5 +147,21 @@ inline DWORD Remove(LPCWSTR input, LPCWSTR installation) {
         if (error) return error;
     }
     return RemoveTree(path);
+}
+
+// Remove the ordinary, empty directories between a removed path and its stop ancestor.
+// A linked or populated parent ends the walk; the stop directory itself is never removed.
+inline DWORD RemoveEmptyParents(LPCWSTR input, LPCWSTR stopInput) {
+    std::wstring path, stop;
+    if (!Normalize(input, path) || !Normalize(stopInput, stop)) return ERROR_INVALID_NAME;
+    if (!Contains(stop, path) || _wcsicmp(stop.c_str(), path.c_str()) == 0) return ERROR_ACCESS_DENIED;
+    for (size_t end = path.rfind(L'\\'); end != std::wstring::npos && end > stop.size(); end = path.rfind(L'\\', end - 1)) {
+        const std::wstring parent = L"\\\\?\\" + path.substr(0, end);
+        const DWORD attributes = GetFileAttributesW(parent.c_str());
+        if (attributes == INVALID_FILE_ATTRIBUTES) return GetLastError();
+        if (!(attributes & FILE_ATTRIBUTE_DIRECTORY) || (attributes & FILE_ATTRIBUTE_REPARSE_POINT)) return ERROR_ACCESS_DENIED;
+        if (!RemoveDirectoryW(parent.c_str())) return GetLastError();
+    }
+    return ERROR_SUCCESS;
 }
 }

@@ -82,10 +82,6 @@ ManifestDPIAware true
   Page custom InstallerWelcome InstallerWelcomeLeave
 !macroend
 
-!macro customUnInit
-  Call un.DataInit
-!macroend
-
 !macro customUnInstall
   Call un.CleanData
 !macroend
