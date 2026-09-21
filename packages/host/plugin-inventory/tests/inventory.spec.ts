@@ -51,7 +51,7 @@ function metadataFixture(mode: 'native' | 'runtime') {
     ? join(root, 'installation', 'node_modules', 'local-plugin')
     : join(root, 'node_modules', 'local-plugin')
   const resolution: RuntimeResolution = {
-    profilesDir, profileDir, localPackageNames: [],
+    profilesDir, profileDir, localPackageNames: [], linkedRoots: [],
     entries: [{ name: 'local-plugin', packageDir: dir, version: undefined,
       declarer: join(dir, 'package.json'), scope: 'installation' }],
   }

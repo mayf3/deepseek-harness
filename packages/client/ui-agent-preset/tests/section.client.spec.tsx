@@ -17,6 +17,8 @@ import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
+const translations: ReadonlyMap<string, string> = new Map(Object.entries(en))
+
 const READY: AgentPresetSectionState = {
   status: 'ready',
   error: null,
@@ -35,6 +37,10 @@ const READY: AgentPresetSectionState = {
   revealedPaths: {},
 }
 
+function unusedHook(): never {
+  throw new Error('This section does not read global slot sources')
+}
+
 /**
  * Render the section over a fixed snapshot, with every action a spy.
  * @param state - the snapshot to render.
@@ -42,7 +48,7 @@ const READY: AgentPresetSectionState = {
  */
 function renderSection(
   state: Partial<AgentPresetSectionState> = {},
-  options: { creator?: boolean } = {},
+  options: { creator?: boolean; developerTools?: boolean } = {},
 ) {
   const store = createSnapshotStore<AgentPresetSectionState>({ ...READY, ...state })
   const actions = {
@@ -63,11 +69,18 @@ function renderSection(
     makeDefault: vi.fn(() => Promise.resolve()),
     setPickerVisible: vi.fn(() => Promise.resolve()),
   }
-  const props = {
+  const props: AgentPresetSectionProps = {
     ...actions,
+    usePanelInfo: unusedHook,
+    useSessions: unusedHook,
+    useSessionStatus: unusedHook,
+    useSessionRetainInfo: unusedHook,
+    useWorkspaces: unusedHook,
+    useResource: unusedHook,
     useAgentPresetSection: bindSnapshotSelector(store),
-    t: (key: keyof typeof en) => en[key],
-  } as unknown as AgentPresetSectionProps
+    useDeveloperTools: bindSnapshotSelector(createSnapshotStore(options.developerTools ?? true)),
+    t: key => translations.get(key) ?? key,
+  }
   render(<AgentPresetSection {...props} />)
   return actions
 }
@@ -82,6 +95,13 @@ function rowFor(id: string): HTMLElement {
 }
 
 describe('the preset list', () => {
+  it('hides the complete picker-policy row while developer tools are off', () => {
+    renderSection({}, { developerTools: false })
+    expect(screen.queryByRole('switch', { name: en.showPicker })).toBeNull()
+    expect(screen.queryByText(en.showPickerDescription)).toBeNull()
+    expect(screen.queryByText(en.showPickerBeta)).toBeNull()
+  })
+
   it('reads the roster once when it first renders', async () => {
     const actions = renderSection()
 
@@ -100,11 +120,11 @@ describe('the preset list', () => {
     expect(within(mine).getByText(en.noDescription)).toBeTruthy()
   })
 
-  it('marks trust and the one in use, and offers no "set default" on it', () => {
+  it('replaces the default preset trust tag with its new-task default status', () => {
     renderSection()
 
     const standard = rowFor('standard')
-    expect(within(standard).getByText(en.builtIn)).toBeTruthy()
+    expect(within(standard).queryByText(en.builtIn)).toBeNull()
     expect(within(standard).getByText(en.inUse)).toBeTruthy()
     expect(within(standard).queryByText(en.setDefault)).toBeNull()
     expect(within(rowFor('mine')).getByText(en.userTrust)).toBeTruthy()
@@ -348,14 +368,8 @@ describe('the preset list', () => {
   })
 
   it('renders nothing when the deployment composes no presets', () => {
-    const { container } = render(<AgentPresetSection {...({
-      useAgentPresetSection: bindSnapshotSelector(
-        createSnapshotStore<AgentPresetSectionState>({ ...READY, status: 'unavailable', rows: [] })),
-      t: (key: keyof typeof en) => en[key],
-      load: vi.fn(() => Promise.resolve()),
-    } as unknown as AgentPresetSectionProps)} />)
-
-    expect(container.firstChild).toBeNull()
+    renderSection({ status: 'unavailable', rows: [] })
+    expect(screen.queryByRole('heading')).toBeNull()
   })
 
   it('offers a retry when the roster could not be read', () => {
@@ -365,6 +379,108 @@ describe('the preset list', () => {
     fireEvent.click(screen.getByText(en.retry))
 
     expect(actions.load).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('preset help', () => {
+  it.each([
+    ['standard', en.presetStandardName, 'How it works', 'Fix a bug'],
+    ['ptc', en.presetPtcName, 'How tools are called', 'Check a set of configuration files'],
+    ['minimal', en.presetMinimalName, 'What is included', 'Compare performance on a small bug fix'],
+    ['cordis', en.presetCordisName, 'What you can create', 'Add a UI'],
+  ])('opens both help sections for %s without changing the default', (id, name, heading, exampleTitle) => {
+    const actions = renderSection({ rows: [{ id, trust: 'system', isDefault: false }] })
+    const trigger = within(rowFor(id)).getByRole('button', { name: `${en.modeExplanation}: ${name}` })
+    trigger.focus()
+    fireEvent.click(trigger)
+
+    const dialog = screen.getByRole('dialog', { name })
+    expect(within(dialog).getByRole('heading', { name: heading })).toBeTruthy()
+    const usage = within(dialog).getByRole('tab', { name: en.howToUse })
+    fireEvent.click(usage)
+    expect(usage.getAttribute('aria-selected')).toBe('true')
+    expect(within(dialog).getByRole('heading', { name: exampleTitle })).toBeTruthy()
+    expect(within(dialog).getAllByText(en.guideExampleTask).length).toBeGreaterThan(0)
+    fireEvent.click(within(dialog).getByRole('tab', { name: en.modeExplanation }))
+    expect(within(dialog).getByRole('heading', { name: heading })).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: en.close }))
+    expect(document.activeElement).toBe(trigger)
+
+    fireEvent.click(within(rowFor(id)).getByRole('button', { name: `${en.howToUse}: ${name}` }))
+    expect(within(screen.getByRole('dialog')).getByRole('tab', { name: en.howToUse }).getAttribute('aria-selected')).toBe('true')
+    expect(actions.makeDefault).not.toHaveBeenCalled()
+    expect(actions.view).not.toHaveBeenCalled()
+    expect(actions.startCreatorDraft).not.toHaveBeenCalled()
+  })
+
+  it('keeps keyboard focus in help and dismisses only the reader on Escape', () => {
+    const actions = renderSection()
+    const trigger = within(rowFor('standard')).getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const dialog = screen.getByRole('dialog')
+    const details = within(dialog).getByRole('tab', { name: en.modeExplanation })
+    const panel = within(dialog).getByRole('tabpanel', { name: en.modeExplanation })
+    const close = within(dialog).getByRole('button', { name: en.close })
+    expect(document.activeElement).toBe(details)
+    expect(fireEvent.keyDown(details, { key: 'Tab' })).toBe(true)
+    panel.focus()
+    fireEvent.keyDown(panel, { key: 'Tab' })
+    expect(document.activeElement).toBe(close)
+    fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(panel)
+    fireEvent.keyDown(panel, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    expect(actions.close).not.toHaveBeenCalled()
+  })
+
+  it('closes even when the browser reports no previously focused element', () => {
+    const activeElement = vi.spyOn(document, 'activeElement', 'get').mockReturnValue(null)
+    try {
+      renderSection()
+      fireEvent.click(within(rowFor('standard')).getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` }))
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: en.close }))
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      activeElement.mockRestore()
+    }
+  })
+
+  it('connects keyboard selection to the visible guide panel', () => {
+    renderSection()
+    fireEvent.click(within(rowFor('standard')).getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` }))
+    const dialog = screen.getByRole('dialog')
+    const details = within(dialog).getByRole('tab', { name: en.modeExplanation })
+    const usage = within(dialog).getByRole('tab', { name: en.howToUse })
+    expect(details.tabIndex).toBe(0)
+    expect(usage.tabIndex).toBe(-1)
+    fireEvent.keyDown(details, { key: 'ArrowRight' })
+    const panel = within(dialog).getByRole('tabpanel', { name: en.howToUse })
+    expect(panel.id).toBe(usage.getAttribute('aria-controls'))
+    expect(document.activeElement).toBe(usage)
+    expect(usage.getAttribute('aria-selected')).toBe('true')
+    expect(details.tabIndex).toBe(-1)
+    expect(usage.tabIndex).toBe(0)
+    expect(within(dialog).queryByRole('tabpanel', { name: en.modeExplanation })).toBeNull()
+  })
+
+  it('does not attach built-in claims to custom or unknown presets', () => {
+    renderSection({
+      rows: [
+        { id: 'ptc', trust: 'user', isDefault: false },
+        { id: 'third-party', trust: 'system', isDefault: false },
+      ],
+    })
+    expect(screen.queryByRole('button', { name: new RegExp(en.modeExplanation) })).toBeNull()
+    expect(screen.queryByRole('button', { name: new RegExp(en.howToUse) })).toBeNull()
+  })
+
+  it('leaves help usable when mode selection is disabled', () => {
+    const actions = renderSection({ showPicker: false })
+    fireEvent.click(within(rowFor('standard')).getByRole('button', { name: `${en.howToUse}: ${en.presetStandardName}` }))
+    expect(screen.getByRole('dialog', { name: en.presetStandardName })).toBeTruthy()
+    expect(actions.setPickerVisible).not.toHaveBeenCalled()
   })
 })
 

@@ -194,10 +194,30 @@ Requires: `typert`
 export interface Config {
   /** WebSocket Ping interval from 1 through 2,147,483,647 milliseconds. @default 2000 */
   readonly websocketHeartbeatIntervalMs?: number
+  /** Buffered uplink frame bytes one logical stream may hold before it fails with `gateway/uplink-overflow`. @default 262144 */
+  readonly streamInboxBytes?: number
 }
 ```
 
-Source: [`packages/api/gateway/src/index.ts:119`](../packages/api/gateway/src/index.ts)
+Source: [`packages/api/gateway/src/index.ts:144`](../packages/api/gateway/src/index.ts)
+
+<a id="deepseek-aidsh-api-job-controller"></a>
+
+## `@deepseek-ai/dsh-api-job-controller`
+
+Requires: `jobs` · `typert`
+
+```ts config-catalog
+/** Job Controller deployment policy. */
+export interface Config {
+  /** Coalescing window after a registry commit before the next rows or output read, in milliseconds (default 100). */
+  readonly observeFlushMs?: number
+  /** Soft byte budget per observation output frame (default 65536); one larger chunk ships whole. */
+  readonly observeMaxFrameBytes?: number
+}
+```
+
+Source: [`packages/api/job-controller/src/index.ts:33`](../packages/api/job-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
@@ -213,7 +233,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/session-controller/src/index.ts:77`](../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts:78`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 
@@ -274,6 +294,24 @@ export interface Config {
 
 Source: [`packages/api/terminal-controller/src/index.ts:26`](../packages/api/terminal-controller/src/index.ts)
 
+<a id="deepseek-aidsh-api-workspace-controller"></a>
+
+## `@deepseek-ai/dsh-api-workspace-controller`
+
+Requires: `typert` · `workspaceRegistry`
+
+```ts config-catalog
+/** First-use directory policy for the Host account. */
+export interface Config {
+  /** Override the system Documents directory with a fully qualified path. */
+  documentsDirectory?: string
+  /** Maximum duration of the operating system's Documents lookup. */
+  documentsLookupTimeoutMs?: number
+}
+```
+
+Source: [`packages/api/workspace-controller/src/index.ts:34`](../packages/api/workspace-controller/src/index.ts)
+
 <a id="deepseek-aidsh-api-workspace-files"></a>
 
 ## `@deepseek-ai/dsh-api-workspace-files`
@@ -300,7 +338,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/workspace-files/src/index.ts:69`](../packages/api/workspace-files/src/index.ts)
+Source: [`packages/api/workspace-files/src/index.ts:70`](../packages/api/workspace-files/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 
@@ -428,7 +466,7 @@ export interface ConnectionRecoveryConfig {
 }
 ```
 
-Source: [`packages/client/connection/src/index.ts:87`](../packages/client/connection/src/index.ts)
+Source: [`packages/client/connection/src/index.ts:92`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -1140,10 +1178,20 @@ export interface Config {
    * omission defaults to 10.
    */
   maxConcurrentJobsPerOwner?: number
+  /** Live ring retention per job in UTF-8 bytes; omission defaults to 262144. */
+  retainBytes?: number
+  /**
+   * Ring retention kept after a job settles, in UTF-8 bytes; omission defaults to 16384.
+   * Settlement keeps every byte the model cursor has not consumed on top of
+   * this cap; the first terminal model read then trims to it.
+   */
+  settledRetainBytes?: number
+  /** Poll interval for a job's pull sources, in milliseconds; omission defaults to 150. */
+  pumpPollMs?: number
 }
 ```
 
-Source: [`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
+Source: [`packages/jobs/jobs-local/src/index.ts:45`](../packages/jobs/jobs-local/src/index.ts)
 
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
@@ -1161,8 +1209,6 @@ Requires: `llm`
  * reasoning effort resolves to `high`.
  */
 export interface Config {
-  /** Wire protocol; defaults to messages. Configure through Cordis YAML. */
-  protocol?: DeepSeekProtocol
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
@@ -1202,9 +1248,6 @@ export interface Config {
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
-
-/** Supported wire implementations; Responses is not yet implemented. */
-export type DeepSeekProtocol = 'chat-completions' | 'messages'
 
 /** One optional model entry advertised by the direct-fetch adapter. */
 export interface DeepSeekCatalogModel {
@@ -2923,7 +2966,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/core/system-prompt/src/index.ts:248`](../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts:247`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -3158,14 +3201,14 @@ export interface Config {
 }
 
 /**
- * How an unreported completion reaches an owner that is already idle: `wakeup`
+ * How an uncollected completion reaches an owner that is already idle: `wakeup`
  * opens a turn for it, `quiet` leaves it pending until something else wakes the
  * owner. A busy owner is injected either way.
  */
 export type CompletionDelivery = 'quiet' | 'wakeup'
 ```
 
-Source: [`packages/jobs/tool-jobs/src/index.ts:37`](../packages/jobs/tool-jobs/src/index.ts)
+Source: [`packages/jobs/tool-jobs/src/index.ts:52`](../packages/jobs/tool-jobs/src/index.ts)
 
 <a id="deepseek-aidsh-tool-lsp"></a>
 
@@ -3217,7 +3260,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/shell/tool-pwsh/src/index.ts:51`](../packages/shell/tool-pwsh/src/index.ts)
+Source: [`packages/shell/tool-pwsh/src/index.ts:52`](../packages/shell/tool-pwsh/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh-persistent"></a>
 
@@ -3402,7 +3445,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/terminal/tool-terminal/src/index.ts:35`](../packages/terminal/tool-terminal/src/index.ts)
+Source: [`packages/terminal/tool-terminal/src/index.ts:36`](../packages/terminal/tool-terminal/src/index.ts)
 
 <a id="deepseek-aidsh-tool-todo"></a>
 
@@ -3471,6 +3514,28 @@ export interface Config {
 ```
 
 Source: [`packages/workflow/tool-workflow/src/index.ts:32`](../packages/workflow/tool-workflow/src/index.ts)
+
+<a id="deepseek-aidsh-tool-workspace-dependencies"></a>
+
+## `@deepseek-ai/dsh-tool-workspace-dependencies`
+
+Requires: `tools`
+
+```ts config-catalog
+/** Payload location and optional installation directory. */
+export interface Config {
+  /** Payload directory carrying `runtime.json` and `dependencies/`. */
+  readonly source: string
+  /**
+   * Installation directory under the Harness home. When set, the payload is copied there on the
+   * first call (the Desktop behavior); when omitted, the payload is used in place without copying,
+   * which suits read-only carriers such as container image layers.
+   */
+  readonly root?: string
+}
+```
+
+Source: [`packages/skill/tool-workspace-dependencies/src/index.ts:15`](../packages/skill/tool-workspace-dependencies/src/index.ts)
 
 <a id="deepseek-aidsh-tools"></a>
 
@@ -3783,7 +3848,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-acp-app` — requires `cmdlineArgs` ([`packages/bundle/acp-app/src/index.ts`](../packages/bundle/acp-app/src/index.ts))
 - `@deepseek-ai/dsh-agent` ([`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts))
 - `@deepseek-ai/dsh-api-remotes` — requires `typertGateway` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
-- `@deepseek-ai/dsh-api-workspace-controller` — requires `typert` · `workspaceRegistry` ([`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts))
 - `@deepseek-ai/dsh-authorization` — requires `credentials` ([`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts))
 - `@deepseek-ai/dsh-browser-use` ([`packages/browser-use/browser-use/src/index.ts`](../packages/browser-use/browser-use/src/index.ts))
 - `@deepseek-ai/dsh-client-file-upload` — requires `agents` · `attachments` · `commands` · `connection` ([`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts))
@@ -3867,7 +3931,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-terminal` ([`packages/terminal/terminal/src/index.ts`](../packages/terminal/terminal/src/index.ts))
 - `@deepseek-ai/dsh-tool-ask-user` — requires `tools` · `userQuestions` ([`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts))
 - `@deepseek-ai/dsh-tool-call-timeout-policy` — requires `tools` ([`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts))
-- `@deepseek-ai/dsh-tool-cordis` — requires `tools` · `systemPrompt` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
+- `@deepseek-ai/dsh-tool-cordis` — requires `tools` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
 - `@deepseek-ai/dsh-tool-subagent-control` — requires `tools` · `subagents` ([`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts))
 - `@deepseek-ai/dsh-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
 - `@deepseek-ai/dsh-webhook` — requires `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` ([`packages/webhook/webhook/src/index.ts`](../packages/webhook/webhook/src/index.ts))

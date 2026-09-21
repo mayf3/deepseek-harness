@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo } from 'react'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
+import type { ChatNodeOwnerProps, ChatViewSlotProps, UsePresentation } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
@@ -12,8 +12,7 @@ interface ChatNodeSeatProps extends ChatNodeOwnerProps {
   readonly nodeKey: string
   readonly useChatNode: ChatViewSlotProps['useChatNode']
   readonly useChatNodeProcess: ChatViewSlotProps['useChatNodeProcess']
-  readonly historyIncomplete: boolean
-  readonly compactTranscript: boolean
+  readonly usePresentation: UsePresentation
   readonly useStore: ChatViewSlotProps['useStore']
   readonly actions: ChatViewSlotProps['actions']
   readonly renderSlot: ChatViewSlotProps['renderSlot']
@@ -34,9 +33,13 @@ function turnOf(node: ChatNode | undefined): number | undefined {
   return location?.kind === 'turn' || location?.kind === 'step' ? location.turn.turn : undefined
 }
 
-/** Subscribe, apply Turn-process visibility, and dispatch one stable Context key. */
+/**
+ * Subscribe, apply Turn-process visibility, and dispatch one stable Context key.
+ * Policy reads select this seat's own conclusion, so a mode change re-renders
+ * only seats whose visibility actually changes.
+ */
 export const ChatNodeSeat = memo(function ChatNodeSeat({
-  nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
+  nodeKey, useChatNode, useChatNodeProcess, usePresentation,
   cwd, openFile, openSkill, inspectCall, forkAt,
   loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
 }: ChatNodeSeatProps) {
@@ -59,13 +62,15 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       actions.setTurnProcessOpen(processSpec.turn, processSpec.answerStep, open)
     }
   }, [actions, processSpec])
+  const foldCompleted = usePresentation(policy => policy.foldCompletedTurns)
+  // Folding is decided per Turn: the Turn is closed and its start is loaded.
   const processWindowReady = processSpec !== undefined
     && processPresentation !== undefined
-    && compactTranscript
+    && foldCompleted
     && processSpec.answerAnchorSeq !== null
     && processPresentation.turn === processSpec.turn
     && processPresentation.turnClosed
-    && !historyIncomplete
+    && processPresentation.turnStarted
   const processMember = routedNode !== undefined
     && processWindowReady
     && !TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind)

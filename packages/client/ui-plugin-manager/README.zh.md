@@ -27,7 +27,7 @@ kind: "package-reference"
 
 在侧栏选择**插件**。页面首次打开时通过 `api-remotes` 读取清单与组合包；没有受管 profile 的 Host 上页面显示为不可用。**官方**排在前面，列出安装随附、供开启的组合包——开启前保持关闭、没有卸载、属于 beta 功能的带 **Beta** 标签——其后是注册了配置页的官方插件；**已安装**列出 profile 持有的组合包。卡片按名称排序，启停组合包不会挪动它的卡片。没有组合包 patch 的依赖不是插件，除非 profile 选中了它才会带异常标签列出。全局配置仍在设置的**插件**分区中编辑。
 
-已安装的组合包及其插件行在卡片和详情页中，按当前界面语言显示各自的标题与描述。每个字段先读取导出的 locale `meta`，缺失时回退到该插件地址下可访问的 `package.json`；标题最终使用完整包名或模块名，两处都没有描述时不提供包描述。作者格式见[插件展示元信息](../../../docs/cookbook/adding-a-package.zh.md#plugin-display-metadata)。安装预览仍使用注册表或 manifest 信息。
+已安装的组合包及其插件行在卡片和详情页中，按当前界面语言显示各自的标题与描述。每个字段先读取导出的 locale `meta`，缺失时回退到该插件地址下可访问的 `package.json`；标题最终使用完整包名或模块名，两处都没有描述时不提供包描述。作者格式见[插件展示元信息](../../../docs/cookbook/adding-a-package.zh.md#plugin-display-metadata)。组合包卡片、详情和组件行显示各自 `package.json.icon` 声明的图片；未声明或无法解码时保留默认插画。安装预览仍使用注册表或 manifest 信息。
 
 ### 安装一个组合包
 
@@ -77,7 +77,9 @@ ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
 
 ### 配置 slot
 
-页面的 `main` 注册把 `plugins.item`、`plugins.bundle.config` 与 `plugins.row.config` 声明为子 slot，因此它们与页面同生，注册方的 `ctx.slots.inject` 会等到它们出现。`configLedgerSource` 把三份账本投影成一个可观察对象——按账本顺序排列、标签按当前语言解析的官方条目，以及组合包与行的键——在账本或语言变化前保持缓存；页面把它作为 `useConfigLedger` 绑在 store 旁边，自身从不点名任何可配置插件。打开的是哪一页是页面本地状态：卡片、某个组合包、某个官方插件，或组合包的某一行。注册与做出它的浏览器半侧同生共死。`dsh-client-modules` 只把一个包的浏览器半侧挂在说明符恰为包名的那一行 Loader 行上，所以组合包为自己或任一行注册的页面，都会在那一行被关闭时一起消失；需要在其他行关闭时仍保留页面的子插件，应作为独立的包发布。
+页面的 `main` 注册把 `plugins.item`、`plugins.bundle.config` 与 `plugins.row.config` 声明为子 slot，因此它们与页面同生，注册方的 `ctx.slots.inject` 会等到它们出现。`configLedgerSource` 把三份账本投影成一个可观察对象——按账本顺序排列、标签按当前语言解析的官方条目，以及组合包与行的键——在账本或语言变化前保持缓存；页面把它作为 `useConfigLedger` 绑在 store 旁边，自身从不点名任何可配置插件。打开的是哪一页是页面本地状态：卡片、某个组合包、某个官方插件，或组合包的某一行。注册与做出它的浏览器半侧同生共死。`dsh-client-modules` 只把一个包的浏览器半侧挂在说明符恰为包名的那一行 Loader 行上，所以组合包为自己或任一行注册的页面，都会在那一行被关闭时一起消失；需要在其他行关闭时仍保留页面的子插件，应作为独立的包发布。 名称以 `@deepseek-ai/dsh-experimental-` 开头的官方包显示 Beta 标记。
+
+`plugins.bundle.config` 以 npm 包名为 key，提供 Bundle 详情配置。`plugins.bundle.activation` 在用户从列表显式启用后提供 Bundle 自有引导，并传入关闭引导和打开详情的回调。仅列出已启用的 Bundle 不会触发引导。
 
 </details>
 

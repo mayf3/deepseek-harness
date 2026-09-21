@@ -8,21 +8,21 @@ This guide assumes you started the Web UI through the [root README](../../../REA
 
 Open **Settings → Models**. The DeepSeek card exposes one API-key field; enter the key and save it.
 
-![The Models page: the DeepSeek card, with Add provider and Add a custom provider below it](providers-models-page.png)
+![The Models page: the DeepSeek card, with Add model provider below it](providers-models-page.png)
 
 Keys are write-only. The page receives a redacted descriptor after saving, never the literal secret. The key is stored in `$DSH_HOME/.credentials.yaml`, while settings retain only its credential reference.
 
-## Add a built-in provider
+## Add a third-party provider
 
-Choose **Add provider** and pick a provider dsh ships with; the list shows provider ids such as `anthropic`, `openai`, `moonshotai` for Kimi, or `zai` for GLM. Enter its API key and save. The installed catalog supplies the endpoint, protocol, and model list.
+Choose **Add model provider**. The card opens on **Third-party model provider**: pick a provider dsh ships with — the list shows provider ids such as `anthropic`, `openai`, `moonshotai` for Kimi, or `zai` for GLM — enter its API key, and save. The installed catalog supplies the endpoint, protocol, and model list.
 
 Providers that sign in with OAuth, such as Codex, are not supported here yet.
 
-## Add a custom provider
+## Add a custom model API
 
-Choose **Add a custom provider** for a company gateway, self-hosted server, or provider absent from the installed catalog. Supply a lowercase Provider ID, base URL, API protocol, credential, and at least one model. The **API protocol** must be the one your gateway speaks, and the form offers three: `openai-completions` for OpenAI Chat Completions, `openai-responses` for the OpenAI Responses API, and `anthropic-messages` for the Anthropic Messages API. A provider speaks one protocol, so a gateway that serves two needs two providers.
+Switch the card to **Custom model API** for a relay, a company gateway, a self-hosted server, or any provider absent from the installed catalog. Supply a lowercase Provider ID, base URL, API protocol, credential, and at least one model. The **API protocol** must be the one your gateway speaks, and the picker offers three: OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, stored in `settings.yaml` as `openai-completions`, `openai-responses`, and `anthropic-messages`. A provider speaks one protocol, so a gateway that serves two needs two providers.
 
-![The custom provider form: Provider ID, display name, base URL, API protocol, and API key](providers-custom-form.png)
+![The custom model API form: Provider ID, display name, base URL, API protocol, and API key](providers-custom-form.png)
 
 The Provider ID is permanent because requests, saved sessions, model defaults, and credential references use it. To rename a provider, add a new provider and delete the old one. The display name, base URL, protocol, credential, and models remain editable.
 

@@ -34,6 +34,7 @@ it('installs the inherited resolution', async () => {
     profilesDir: '/profiles',
     profileDir: '/profiles/test',
     localPackageNames: [],
+    linkedRoots: [],
     entries: [],
   }
   harness.data = { resolution }

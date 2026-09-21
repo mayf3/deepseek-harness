@@ -24,7 +24,6 @@ async function bench(options: {
   conflict?: boolean
   registrationFailure?: boolean
   remoteFailure?: 'view' | 'update'
-  refreshGate?: Promise<void>
   catalog?: 'missing' | 'empty'
 } = {}) {
   const ctx = new Context()
@@ -110,7 +109,7 @@ async function bench(options: {
       : undefined,
     refreshProjections: (id: SessionId) => {
       navigation.push(['refresh', id])
-      return options.refreshGate ?? Promise.resolve()
+      return Promise.resolve()
     },
     retainInfo: (id: SessionId) => ({
       getSnapshot: () => ({
@@ -185,7 +184,7 @@ describe('ui-team browser plugin', () => {
     ])
     expect(b.calls.at(-1)?.args[1]).toMatchObject({ owner: 'worker' })
 
-    await actions.openTeammate(SESSION, {
+    actions.openTeammate(SESSION, {
       id: SESSION,
       name: 'lead',
       role: 'lead',
@@ -238,7 +237,7 @@ describe('ui-team browser plugin', () => {
     })
   })
 
-  it('refreshes the descriptor catalog before opening a continuable teammate address', async () => {
+  it('opens a continuable teammate address without refreshing the parent catalog', async () => {
     const b = await bench()
     const actions = (b.entry()!.inject as unknown as () => TeamActionInjected)()
     const member: TeamRosterMember = {
@@ -248,9 +247,8 @@ describe('ui-team browser plugin', () => {
       status: 'inactive',
       diagnostics: [],
     }
-    await actions.openTeammate(SESSION, member)
+    actions.openTeammate(SESSION, member)
     expect(b.navigation).toEqual([
-      ['refresh', SESSION],
       ['open', {
         parentSessionId: SESSION,
         childSessionId: CHILD,
@@ -263,7 +261,7 @@ describe('ui-team browser plugin', () => {
     const b = await bench({ addressed: true })
     const actions = (b.entry()!.inject as unknown as () => TeamActionInjected)()
     await actions.load(CHILD)
-    await actions.openTeammate(CHILD, {
+    actions.openTeammate(CHILD, {
       id: CHILD,
       name: 'worker',
       role: 'teammate',
@@ -272,7 +270,6 @@ describe('ui-team browser plugin', () => {
     })
     expect(b.calls[0]).toEqual({ method: 'agentTeams/view', args: [SESSION] })
     expect(b.navigation).toEqual([
-      ['refresh', SESSION],
       ['open', {
         parentSessionId: SESSION,
         childSessionId: CHILD,
@@ -281,36 +278,34 @@ describe('ui-team browser plugin', () => {
     ])
   })
 
-  it('does not open a teammate after navigation switches during catalog refresh', async () => {
-    const refresh = Promise.withResolvers<undefined>()
-    const b = await bench({ refreshGate: refresh.promise })
+  it('does not open a teammate from a conversation outside the main view', async () => {
+    const b = await bench()
     const actions = (b.entry()!.inject as unknown as () => TeamActionInjected)()
-    const opening = actions.openTeammate(SESSION, {
+    b.select('other-session' as SessionId)
+    actions.openTeammate(SESSION, {
       id: CHILD,
       name: 'worker',
       role: 'teammate',
       status: 'inactive',
       diagnostics: [],
     })
-    expect(b.navigation).toEqual([['refresh', SESSION]])
-    b.select('other-session' as SessionId)
-    refresh.resolve(undefined)
-    await opening
-    expect(b.navigation).toEqual([['refresh', SESSION]])
+    expect(b.navigation).toEqual([])
   })
 
-  it('does not open a teammate missing from the parent catalog', async () => {
+  it('opens a teammate when the parent catalog is missing or empty', async () => {
     for (const catalog of ['missing', 'empty'] as const) {
       const b = await bench({ catalog })
       const actions = (b.entry()!.inject as unknown as () => TeamActionInjected)()
-      await actions.openTeammate(SESSION, {
+      actions.openTeammate(SESSION, {
         id: CHILD,
         name: 'worker',
         role: 'teammate',
         status: 'inactive',
         diagnostics: [],
       })
-      expect(b.navigation).toEqual([['refresh', SESSION]])
+      expect(b.navigation).toEqual([
+        ['open', { parentSessionId: SESSION, childSessionId: CHILD, mode: 'continuable' }],
+      ])
       await b.fiber.dispose()
     }
   })

@@ -144,17 +144,17 @@ V3 未知内容标签变为 `plugin:<original-type>`，其他字段原样保留�
 |---|---|
 | 一个 version 1 descriptor | 要求字符串 provider 与 label；导出 `mode: 'continuable'`。 |
 | 一个 version 2 或 3 descriptor | 要求字符串 provider；按目录规则使用其 mode 和可选 label。 |
-| 没有 descriptor，或 descriptor 版本不受支持 | 可以保留已有父目录项；不能创建缺失项。 |
-| 多个自身 descriptor | 保留已有父目录项，不比较 mode／label；不创建缺失项。 |
+| 没有 descriptor，或 descriptor 版本不受支持 | 保留已有父目录项；否则追加模式未知的目录项。 |
+| 多个自身 descriptor | 保留已有父目录项，不比较 mode／label；否则追加模式未知的目录项。 |
 | 已有自身父目录项 | 保留条目及其扩展；要求子创建时间一致，并在恰好一个受支持的自身 descriptor 可用时比较其 mode／label。 |
 | 缺少自身父目录项，且受支持证据完整 | 追加带 child id、创建时间、mode 和可选 label 的 version-0 目录事实。 |
-| 缺少自身父目录项，且证据不完整 | 保留父 Session，不凭空创建目录项。 |
+| 缺少自身父目录项，且证据不完整 | 追加 version-1 `subagent/catalog`，记录 header 身份和未知模式，不编造标签。 |
 
-Catalog version 0 要求字符串 `childId`、非负安全整数 `childCreatedAt`、`continuable` 或 `one-shot` mode，以及 continuable mode 下的字符串 label；存在的 one-shot label 也必须是字符串。重复的自身 child id 被拒绝。没有对应保留子日志的已有条目仍保留在父日志中。Descriptor 收集不恢复子级的旧 continuation composition，也不从工具参数恢复已删除子级。
+Catalog version 0 和 1 要求字符串 `childId`、非负安全整数 `childCreatedAt`、`continuable` 或 `one-shot` mode（version 1 还接受 `unknown`），以及 continuable mode 下的字符串 label；任何 mode 下存在的 label 都必须是字符串。重复的自身 child id 被拒绝。没有对应保留子日志的已有条目仍保留在父日志中。Descriptor 收集不恢复子级的旧 continuation composition，也不从工具参数恢复已删除子级。未知模式条目保留 header 身份信息，不声明子 descriptor 受支持。
 
 Stage 只把最终继承截点之后的父目录记录作为候选。每个 inherited marker 都会丢弃更早的目录候选，不解释其载荷。缺失项追加在所有源事件之后，按创建时间、child id 排序，并使用连续的新序号。时间取最后一个源事件的 time；空日志则取 header 创建时间。这些记录既不进入模型表面，也不改变继承计数。
 
-存储层提供其根目录内完整的可识别子级集合，并在准备、复用 memo 与发布时复查成员及物理版本。不完整的 descriptor 证据只阻止补填对应子 Session 的目录项。无法据此判断成员关系的不可读 header、不受支持的所选代际或源变化都会拒绝操作。本包不读取文件；[持久化层](../session-persistence-jsonl/README.zh.md)负责编码、锁、取消与发布。
+存储提供可识别的直属子证据，并在准备、memo 复用与发布时重新检查成员集合和物理修订。JSONL 提供方隔离不可读子 header、子日志解码失败和无效 descriptor 字段，同时保留其他目录项；准备父目录时不会迁移子目录。转换器仍拒绝冲突的已提供事实和发生变化的父历史。[JSONL 持久化](../session-persistence-jsonl/README.zh.md)拥有警告、来源检查与子会话错误隔离。当前 V4 读取不调用本转换器，直接校验原生目录字段、唯一性及投递归属。
 
 <a id="sequence-references"></a>
 ### 序号引用与继承
@@ -243,7 +243,7 @@ System image 接纳要求非空 attachment id、PNG／JPEG／WebP／GIF MIME 类
 | `compaction/start`、`compaction/summary`、`compaction/end` | 匹配 compaction id、源 command 和活动 turn 上下文。Summary 区间引用精确的当前表面节点且排除 protected head；成功完成需要一个 summary。继承的未完成 compaction 在 end-seed marker 处过期。 |
 | `compaction/prune` | 其区间引用精确的当前表面节点且排除 protected head；它不要求存在 compaction 事务或其所有者字段。 |
 | Compact checkpoint 替换 | 其 `compact-checkpoint` 来源标识活动 compaction。 |
-| 原生 `subagent/catalog` | 检查继承截点之后的自身 version-0 载荷字段与 child id 唯一性。原生读取既不收集子日志，也不比较其物理事实；继承项不建立自身成员关系。 |
+| 原生 `subagent/catalog` | 检查继承截点之后的自身 version-0/version-1 载荷字段与 child id 唯一性。原生读取既不收集子日志，也不比较其物理事实；继承项不建立自身成员关系。 |
 | 继承截点与 delivery | 应用上文的 marker、坐标及代际归属规则。 |
 
 这些检查由 [relationships.ts](src/relationships.ts) 按代际拥有。完整的通用消息／信封接纳与插件拥有的消息投影还使用已安装 Session；单独的导出 V4 恢复器不能替代完整 catalog 恢复。
@@ -334,7 +334,7 @@ Fork 种子构造归核心 Session 所有，不属于此迁移。原生 V4 接�
 - **历史嵌套工具结果**——当前迁移拒绝包含另一个 tool-result wrapper 的结果。原始代际保持完整，且不发布 V4 successor。后续转换器可以支持有证据的源数据场景，而不改变既定 V4 格式；[迁移 cookbook](../../../docs/cookbook/adding-a-session-format-version.zh.md#stages-and-validation) 定义了这一区别。
 - **历史扩展消费者**——带前缀的消息与结果字段保留 JSON 数据，不激活核心字段。消费者必须明确理解这些字段后才能解释它们。
 - **依赖保留的子日志**——仅凭父日志无法恢复未记录的子 id、创建时间或 descriptor。删除的子 Session 无法从工具参数恢复；已存在的父目录记录仍保留。
-- **历史目录项缺失**——没有恰好一个受支持的自身 descriptor 时，不补填父目录缺失项。子日志仍可按 id 读取；当前 V4 读取不会重新扫描子日志来补齐该条目。
+- **历史模式未知**——没有恰好一个受支持的自身 descriptor 时，缺失的父目录项记录未知模式。当前读取不重写该项；打开子会话时解析可用的 descriptor 信息，或报告该子会话的错误。
 - **存储范围**——事实只覆盖同一持久化根目录内可识别的子 Session。跨根目录导入和损坏日志修复不属于此迁移。
 
 <a id="dev-note"></a>

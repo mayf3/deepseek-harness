@@ -40,7 +40,7 @@ import {
   buildVfsExampleFiles,
 } from '../../../packages/experimental/webworker-runtime/tests/vfs-example-fixture.ts'
 import { captureStableAria, compareOrRefreshGolden, webSnapshotMode } from './scaffold.ts'
-import { newEnglishPage, REPO_ROOT, saveFailureShot } from './support.ts'
+import { expandOwningTurnProcess, newEnglishPage, REPO_ROOT, saveFailureShot } from './support.ts'
 
 const DIST_ROOT = fileURLToPath(new URL('../dist', import.meta.url))
 
@@ -418,12 +418,17 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     await page.getByText(SHOWCASE_TAIL, { exact: true }).waitFor({ timeout: 30_000 })
 
     expect(await page.getByText(SHOWCASE_OLDEST, { exact: true }).count()).toBe(0)
+    // Complete Turns can fold while earlier history is still unloaded.
+    const readTool = page.locator('[data-chat-call-id="preview-read"]')
+    await readTool.waitFor({ state: 'attached' })
+    expect(await readTool.isVisible()).toBe(false)
+    await expandOwningTurnProcess(page, readTool)
     await page.getByRole('button', { name: 'PREVIEW.md', exact: true }).waitFor()
     await page.getByRole('button', { name: 'src/preview.ts', exact: true }).waitFor()
     await page.getByText('Update to-do list', { exact: true }).waitFor()
     await page.getByText('Error: ENOENT: no such file, open missing.txt', { exact: true }).waitFor()
 
-    const subagents = page.getByRole('button', { name: '2 subagents' })
+    const subagents = page.getByRole('button', { name: '2 subagents', exact: true })
     await subagents.waitFor({ timeout: 15_000 })
     await subagents.hover()
     const catalog = page.getByRole('tree', { name: 'Subagent sessions' })

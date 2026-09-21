@@ -34,6 +34,7 @@ import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
 import { deriveKeyRef, protocolChoices } from './store.ts'
+import { protocolLabel } from './protocol-label.ts'
 import type { ModelsOperations } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
@@ -86,6 +87,12 @@ export interface ProviderEditorProps {
   submitBusyLabelKey?: keyof typeof en
   /** Close the editor; `changed` reports whether an Apply committed. */
   onClose: (changed: boolean) => void
+  /**
+   * Called once per change with whether the apply or the model list's
+   * endpoint interrogation is in flight, so the owner can hold its surface
+   * still.
+   */
+  onBusyChange?: (busy: boolean) => void
 }
 
 /** A user-section subtree as a plain draft object (absent → empty). */
@@ -160,6 +167,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const [keyDraft, setKeyDraft] = useState('')
   const [keyState, setKeyState] = useState<CredentialInfo | undefined>(undefined)
   const [busy, setBusy] = useState(false)
+  const [listBusy, setListBusy] = useState(false)
+  const { onBusyChange } = props
+  useEffect(() => { onBusyChange?.(busy || listBusy) }, [busy, listBusy, onBusyChange])
   const [failure, setFailure] = useState<string | undefined>(undefined)
   // A settings success advances both retry baselines immediately. Keeping the
   // derived fields in the draft prevents a pushed namespace refresh from
@@ -414,7 +424,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 type="text"
                 value={stringAt(draft, 'baseURL') ?? ''}
                 placeholder={family === 'deepseek'
-                  ? t(stringAt(fallback, 'protocol') === 'messages' ? 'deepSeekMessagesBaseUrl' : 'deepSeekChatBaseUrl')
+                  ? t('deepSeekBaseUrl')
                   : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
                 aria-describedby={family === 'deepseek' ? `${props.provider}-endpoint-hint` : undefined}
                 aria-label={t('baseUrl')}
@@ -445,7 +455,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                         reader announces it either way, and an empty one is
                         announced as a choice with no identity. */}
                     {probeApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
-                    {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
+                    {protocols.map(choice => <option key={choice} value={choice}>{protocolLabel(t, choice)}</option>)}
                   </select>
                 </div>
               )
@@ -471,6 +481,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                   probe={probe}
                   probeBlocked={keyFailure}
                   operations={operations}
+                  onBusyChange={setListBusy}
                 />
               )}
           </div>

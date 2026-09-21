@@ -44,18 +44,18 @@ function entry(
 }
 
 describe('target-neutral Conversation apply wiring', () => {
-  it('offers only Chat while developer tools are disabled and restores registered views when enabled', async () => {
+  it('hides only the Trajectory View while developer tools are disabled and restores it when enabled', async () => {
     const b = await bench()
     const header = b.runtime.slots.entries('conversation.session.header')[0]!
     const source = (header.inject!() as { hooks: { conversationViews: ObservableSnapshot<readonly ViewTab[]> } }).hooks.conversationViews
-    for (const id of ['chat', 'trajectory']) {
+    for (const id of ['chat', 'trajectory', 'probe']) {
       b.runtime.slots.register({ name: 'conversation.view', id, label: id }, (() => null) as never)
     }
-    await vi.waitFor(() => { expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'trajectory']) })
+    await vi.waitFor(() => { expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'trajectory', 'probe']) })
     b.developerTools.set(false)
-    expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat'])
+    expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'probe'])
     b.developerTools.set(true)
-    expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'trajectory'])
+    expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'trajectory', 'probe'])
     await b.runtime.dispose()
   })
   it('waits for the layout-owned conversation declaration before registering its subtree', async () => {

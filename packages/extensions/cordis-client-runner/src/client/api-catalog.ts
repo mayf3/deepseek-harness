@@ -345,6 +345,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Connect a Workspace and open its Session unless a later navigation supersedes it.',
         parameters: [{ name: 'workspaceId', description: 'target Workspace.' }, { name: 'beforeOpen', description: 'optional synchronous preparation for the selected Session, skipped after supersession.' }],
         returns: 'completion; a superseded request may create a Session but does not open it.',
+        throws: ['on failure; a refused creation is also shown through the Workspace notice unless a later navigation or disposal superseded the request.'],
       },
       {
         signature: 'forkSession(sessionId: SessionId): Promise<void>',
@@ -360,7 +361,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'startSession(workspaceId?: WorkspaceId): void',
-        description: 'Start a New Session flow and navigate to its Session.',
+        description: 'Start a New Session flow and navigate to its Session; a creation the Host refuses is shown through the Workspace notice and leaves the selection as it was.',
         parameters: [{ name: 'workspaceId', description: 'explicit target; absent inherits the current or most recent Workspace.' }],
       },
       {
@@ -515,7 +516,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ClientConnectionRpc',
-    declaration: 'export interface ClientConnectionRpc {\n    call(channel: string, endpoint: string, payload: unknown, signal?: AbortSignal): Promise<ConnectionRpcResult<unknown>>;\n    readonly open?: (channel: string, endpoint: string, payload: unknown, signal: AbortSignal) => AsyncIterable<unknown>;\n}',
+    declaration: 'export interface ClientConnectionRpc {\n    call(channel: string, endpoint: string, payload: unknown, signal?: AbortSignal): Promise<ConnectionRpcResult<unknown>>;\n    readonly open?: (channel: string, endpoint: string, payload: unknown, signal: AbortSignal, uplink?: AsyncIterable<unknown>) => AsyncIterable<unknown>;\n}',
   },
   {
     name: 'ClientRemote',

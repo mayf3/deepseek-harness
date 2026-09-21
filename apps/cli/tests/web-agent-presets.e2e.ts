@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, stat, symlink, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -369,6 +369,23 @@ describe('the shipped Web composition', () => {
       expect(tools).not.toContain('str_replace_editor')
       expect(ctx.commands.find(handle.agent, 'goal')).toBeDefined()
 
+      // The persona is `standard`'s, pinned verbatim so the two composition
+      // files cannot drift apart: tool descriptions and the skill catalog
+      // carry every creation-mode instruction.
+      const standard = await ctx.agents.create({
+        sessionId: SessionId('preset-cordis-standard-persona'),
+        setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+      })
+      try {
+        const persona = async (agent: Agent) => (await ctx.systemPrompt.assemble({ scope: agent })).sections
+          .filter(section => section.name.startsWith('deployment:persona-'))
+        const cordisPersona = await persona(handle.agent)
+        expect(cordisPersona.map(section => section.name)).toEqual(['deployment:persona-prefix', 'deployment:persona-suffix'])
+        expect(cordisPersona).toEqual(await persona(standard.agent))
+      } finally {
+        await standard.dispose()
+      }
+
       // The preset's own authoring skill registers into ITS layer of the host
       // registry: the cordis agent's view carries it, the global view does not.
       const scoped = (await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)
@@ -647,6 +664,80 @@ describe('product Bundle and user-preset intersection', () => {
       await existing.dispose()
       await writeFile(preset.path, original)
       await productCtx.fiber.dispose()
+    }
+  }, 120_000)
+})
+
+describe('a user preset copied from a shipped one', () => {
+  /** The JSON text a `cordis_inspect_*` result renders. */
+  function resultText(result: { content: ReadonlyArray<{ type: string; text?: string }> }): string {
+    return result.content.filter(part => part.type === 'text').map(part => part.text ?? '').join('')
+  }
+
+  it('mounts beside the shipped `cordis` preset and reads the shared Host inspect providers', async () => {
+    // The Host inspect providers are one process-global set registered by the
+    // host composition (`@deepseek-ai/dsh-tool-cordis/host`); each preset's
+    // `tool-cordis` row only registers the tools. Before that split the copy
+    // failed to mount: its row re-registered provider "Service".
+    const root = await mkdtemp(join(tmpdir(), 'dsh-copied-preset-'))
+    const userRoot = join(root, 'presets')
+    await cp(join(SHIPPED_PRESET_ROOT, 'cordis'), join(userRoot, 'cordis-copy'), { recursive: true })
+    const settingsFile = join(root, 'settings.yaml')
+    await writeFile(settingsFile, '{}\n')
+    const copyCtx = await bootWeb(settingsFile, [{
+      id: 'agent-presets',
+      config: { default: 'standard', roots: [{ path: userRoot, trust: 'user' }], includeUserRoot: false },
+    }])
+    try {
+      const shipped = await copyCtx.agents.create({
+        sessionId: SessionId(`preset-cordis-shipped-${randomUUID()}`),
+        setup: agentCtx => copyCtx.agentPresets.mount(agentCtx, 'cordis').then(() => undefined),
+      })
+      const copied = await copyCtx.agents.create({
+        sessionId: SessionId(`preset-cordis-copy-${randomUUID()}`),
+        setup: agentCtx => copyCtx.agentPresets.mount(agentCtx, 'cordis-copy').then(() => undefined),
+      })
+      try {
+        for (const handle of [shipped, copied]) {
+          expect(toolNames(copyCtx, handle.agent)).toEqual(expect.arrayContaining([
+            'cordis_inspect_list', 'cordis_inspect_query', 'plugin_manager',
+          ]))
+        }
+        const signal = new AbortController().signal
+        const listed = await copyCtx.tools.execute({
+          callId: ToolCallId('copied-preset-inspect-list'),
+          name: 'cordis_inspect_list',
+          arguments: {},
+          signal,
+          agent: copied.agent,
+        })
+        expect(listed.isError).toBe(false)
+        const providers = (JSON.parse(resultText(listed)) as { providers: Array<{ id: string; platform: string }> }).providers
+        expect(providers.filter(provider => provider.platform === 'host').map(provider => provider.id))
+          .toEqual(['Service', 'Event', 'Builtin', 'Tool'])
+
+        // The `Tool` provider is the one built over the host context: it
+        // answers with the shared registry's view of the REQUESTING agent,
+        // so the copy sees its own preset's tools, not the host's empty set.
+        const queried = await copyCtx.tools.execute({
+          callId: ToolCallId('copied-preset-inspect-tools'),
+          name: 'cordis_inspect_query',
+          arguments: { platform: 'host', provider: 'Tool', method: 'listTools' },
+          signal,
+          agent: copied.agent,
+        })
+        expect(queried.isError).toBe(false)
+        const tools = (JSON.parse(resultText(queried)) as { data: { tools: Array<{ name: string }> } }).data.tools
+        expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+          'bash', 'cordis_inspect_list', 'cordis_inspect_query', 'plugin_manager',
+        ]))
+      } finally {
+        await copied.dispose()
+        await shipped.dispose()
+      }
+    } finally {
+      await copyCtx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
     }
   }, 120_000)
 })

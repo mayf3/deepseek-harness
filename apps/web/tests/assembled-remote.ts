@@ -60,7 +60,6 @@ interface ControlBaseline {
   readonly type: 'baseline'
   readonly value: {
     readonly queues: Readonly<Record<string, readonly unknown[]>>
-    readonly jobs: Readonly<Record<string, readonly unknown[]>>
     readonly approvals: readonly unknown[]
     readonly questions: readonly unknown[]
     readonly projections: Readonly<Record<string, {
@@ -99,7 +98,7 @@ interface CapturedFixture {
 }
 
 export interface AssembledRemoteOptions {
-  /** Supply an enabled Host preference for diagnostic View scenarios. */
+  /** Override the schema-resolved Host preference for developer-tool scenarios. */
   readonly developerTools?: boolean
   /** Return the fixture's image-dimension admission error from Session prompt. */
   readonly rejectPrompt?: boolean
@@ -142,16 +141,14 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
   const mock = RemoteMock.create().load(remoteDefaultResponses)
   mock.load({
     unary: {
-      'settings/describe': options.developerTools === true
-        ? ok({
-          ...fixture.settingsDescribe.value,
-          namespaces: [...fixture.settingsDescribe.value.namespaces, {
-            ns: 'ui-developer-tools',
-            schema: { type: 'object', dict: { enabled: { type: 'boolean' } } },
-            value: { enabled: true }, applies: 'live', secrets: [], revision: 0,
-          }],
-        })
-        : structuredClone(fixture.settingsDescribe),
+      'settings/describe': ok({
+        ...fixture.settingsDescribe.value,
+        namespaces: [...fixture.settingsDescribe.value.namespaces, {
+          ns: 'ui-developer-tools',
+          schema: { type: 'object', dict: { enabled: { type: 'boolean' } } },
+          value: { enabled: options.developerTools ?? true }, applies: 'live', secrets: [], revision: 0,
+        }],
+      }),
       'credentials/describe': structuredClone(fixture.credentialsDescribe),
       'session/modelCatalog': structuredClone(fixture.modelCatalog),
       'agentPresets/list': structuredClone(fixture.agentPresets),
@@ -180,6 +177,9 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
   })
   mock.stream('session/control', (_args, stream) => {
     stream.push(structuredClone(fixture.control))
+  })
+  mock.stream('job/list', (_args, stream) => {
+    stream.push({ type: 'rows', jobs: [] })
   })
   mock.stream('workspace/follow', (_args, stream) => {
     stream.push({

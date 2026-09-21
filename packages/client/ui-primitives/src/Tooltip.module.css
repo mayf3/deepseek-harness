@@ -19,6 +19,8 @@
   animation: tooltip-in 150ms var(--ds-ease-in-out);
 }
 
+.bubble[data-portal] { z-index: 1100; }
+
 .bubble[data-side='right'] {
   transform: translateY(-50%);
 }

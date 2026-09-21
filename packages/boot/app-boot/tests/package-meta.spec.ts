@@ -1,6 +1,6 @@
 /** Plugin locale resources resolve independently of entry execution and package display fields. */
 
-import fs, { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import fs, { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -161,13 +161,120 @@ describe('plugin locale display metadata', () => {
     expect(readPluginMeta('localized', parentURL)?.error).toContain('meta.title must be a non-empty string')
   })
 
-  it('does not inspect package fallback when both English fields are supplied', () => {
-    manifest({ './locale/*.json': './locale/*.json', './package.json': './fallback.json' })
-    file(join(dir, 'fallback.json'), '{')
+  it('reads the manifest icon even when both English fields are supplied', () => {
+    manifest({ './locale/*.json': './locale/*.json', './package.json': './package.json' }, { icon: './art/team.svg' })
+    file(join(dir, 'art', 'team.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
     dictionary('en', { meta: { title: 'Plugin', description: 'Locale introduction' } })
     expect(readPluginMeta('localized', parentURL)).toEqual({
       title: { en: 'Plugin' }, description: { en: 'Locale introduction' },
+      icon: `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64')}`,
     })
+  })
+
+  it.each([
+    ['svg', 'image/svg+xml'], ['png', 'image/png'], ['jpg', 'image/jpeg'],
+    ['jpeg', 'image/jpeg'], ['webp', 'image/webp'], ['SVG', 'image/svg+xml'],
+  ])('encodes a package-local %s icon without executing the plugin', (extension, mediaType) => {
+    manifest({ '.': './index.js', './package.json': './package.json' }, { icon: `./icon.${extension}` })
+    const bytes = Buffer.from([0, 1, 127, 128, 255])
+    writeFileSync(join(dir, `icon.${extension}`), bytes)
+    expect(readPluginMeta('localized', parentURL)).toEqual({
+      title: 'localized', icon: `data:${mediaType};base64,${bytes.toString('base64')}`,
+    })
+  })
+
+  it('reads an icon-only subexport relative to its own manifest without inheriting the package icon', () => {
+    manifest({ './package.json': './package.json', './search/package.json': './search/manifest.json' }, { icon: './root.png' })
+    file(join(dir, 'root.png'), 'root')
+    file(join(dir, 'search', 'manifest.json'), JSON.stringify({ icon: './icon.webp' }))
+    file(join(dir, 'search', 'icon.webp'), 'search')
+    expect(readPluginMeta('localized/search', parentURL)).toEqual({
+      icon: `data:image/webp;base64,${Buffer.from('search').toString('base64')}`,
+    })
+    expect(readPluginMeta('localized/review', parentURL)).toBeUndefined()
+  })
+
+  it.each([null, false, 1, {}, [], '', '  '])('retains localized text while rejecting malformed icon %j', (icon) => {
+    manifest({ './locale/*.json': './locale/*.json', './package.json': './package.json' }, { icon })
+    dictionary('en', { meta: { title: 'Plugin', description: 'Introduction' } })
+    dictionary('zh', { meta: { title: '插件' } })
+    const { error, ...meta } = readPluginMeta('localized', parentURL)!
+    expect(meta).toEqual({ title: { en: 'Plugin', zh: '插件' }, description: { en: 'Introduction' } })
+    expect(error).toContain('icon must be a non-empty string')
+  })
+
+  it.each(['/tmp/icon.svg', 'C:\\icon.png', 'C:icon.png', '\\\\server\\share\\icon.png', 'https://example.test/icon.svg', 'data:image/svg+xml,<svg/>'])('rejects non-relative icon %s', (icon) => {
+    manifest({ './package.json': './package.json' }, { icon, description: 'Introduction' })
+    const { error, ...meta } = readPluginMeta('localized', parentURL)!
+    expect(meta).toEqual({ title: 'localized', description: 'Introduction' })
+    expect(error).toContain('icon must be a relative file path')
+  })
+
+  it.each(['icon.gif', 'icon.html', 'icon', 'icon.svg?query'])('rejects unsupported icon file %s', (icon) => {
+    manifest({ './package.json': './package.json' }, { icon })
+    expect(readPluginMeta('localized', parentURL)?.error).toContain('icon must be SVG, PNG, JPEG, or WebP')
+  })
+
+  it('reports missing files, directories, and paths outside the manifest directory', () => {
+    manifest({ './package.json': './package.json' }, { icon: './missing.svg' })
+    expect(readPluginMeta('localized', parentURL)?.error).toContain('missing.svg')
+    mkdirSync(join(dir, 'missing.svg'))
+    expect(readPluginMeta('localized', parentURL)?.error).toContain('icon must be a regular file')
+    manifest({ './package.json': './package.json' }, { icon: '../localized-other/icon.svg' })
+    file(join(root, 'node_modules', 'localized-other', 'icon.svg'), 'outside')
+    expect(readPluginMeta('localized', parentURL)?.error).toContain('icon must remain inside its manifest directory')
+  })
+
+  it('accepts an icon at the byte limit and rejects one byte more', () => {
+    manifest({ './package.json': './package.json' }, { icon: './icon.png' })
+    const bytes = Buffer.alloc(256 * 1024)
+    writeFileSync(join(dir, 'icon.png'), bytes)
+    expect(readPluginMeta('localized', parentURL)?.icon).toBe(`data:image/png;base64,${bytes.toString('base64')}`)
+    writeFileSync(join(dir, 'icon.png'), Buffer.alloc(bytes.length + 1))
+    expect(readPluginMeta('localized', parentURL)?.error).toContain('icon exceeds 256 KiB')
+  })
+
+  it('rejects an icon that grows beyond the limit after its size check', () => {
+    manifest({ './package.json': './package.json' }, { icon: './icon.png' })
+    const icon = join(dir, 'icon.png')
+    file(icon, 'small')
+    const original = fs.statSync
+    const stat = vi.spyOn(fs, 'statSync')
+    try {
+      stat.mockImplementation(new Proxy(original, {
+        apply(target, receiver: unknown, args: unknown[]): unknown {
+          const result: unknown = Reflect.apply(target, receiver, args)
+          if (String(args[0]).endsWith(join('localized', 'icon.png'))) writeFileSync(icon, Buffer.alloc(256 * 1024 + 1))
+          return result
+        },
+      }))
+      syncBuiltinESMExports()
+      expect(readPluginMeta('localized', parentURL)?.error).toContain('icon exceeds 256 KiB')
+    } finally {
+      stat.mockRestore()
+      syncBuiltinESMExports()
+    }
+  })
+
+  it('rejects icons reached through an external directory link and accepts internal links', () => {
+    manifest({ './package.json': './package.json' }, { icon: './art/icon.svg' })
+    const outside = join(root, 'outside')
+    file(join(outside, 'icon.svg'), 'outside')
+    const link = join(dir, 'art')
+    symlinkSync(outside, link, 'junction')
+    try {
+      expect(readPluginMeta('localized', parentURL)?.error).toContain('icon must remain inside its manifest directory')
+    } finally {
+      unlinkSync(link)
+    }
+    const inside = join(dir, 'images')
+    file(join(inside, 'icon.svg'), 'inside')
+    symlinkSync(inside, link, 'junction')
+    try {
+      expect(readPluginMeta('localized', parentURL)?.icon).toBe(`data:image/svg+xml;base64,${Buffer.from('inside').toString('base64')}`)
+    } finally {
+      unlinkSync(link)
+    }
   })
 
   it('keeps separate plugin exports independent even when their JavaScript entries share a directory', () => {
@@ -285,8 +392,9 @@ describe('plugin locale display metadata', () => {
     })
     const specifier = 'localized/locale/en.json'
     expect(resolveSync.mock.calls).toEqual(version === 'v1'
-      ? [[specifier, parentURL, {}], [specifier, parentURL, {}]]
-      : [[parentURL, { specifier, attributes: {} }], [parentURL, { specifier, attributes: {} }]])
+      ? [[specifier, parentURL, {}], [specifier, parentURL, {}], ['localized/package.json', parentURL, {}]]
+      : [[parentURL, { specifier, attributes: {} }], [parentURL, { specifier, attributes: {} }],
+        [parentURL, { specifier: 'localized/package.json', attributes: {} }]])
   })
 
   it('rejects case-equivalent language names in a directory listing', () => {

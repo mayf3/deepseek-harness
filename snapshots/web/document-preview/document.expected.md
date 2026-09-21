@@ -17,7 +17,7 @@
 
 ## Basic HTML
 
-- Developer tools: off by default on Web and desktop
+- Developer tools: disabled for this scenario
 - Sandbox: no permissions
 - Inline script: pending
 - Local script: pending
@@ -67,10 +67,15 @@
 
 ## Office unavailable
 
-- DOC, DOCX, XLS, XLSX, PPT, PPTX viewer menus: 0 | 0 | 0 | 0 | 0 | 0
+- DOC, DOCX, PPT, PPTX viewer menus: 0 | 0 | 0 | 0
 - Guidance: Read failed: Office previews are unavailable. Enable the document preview service on the computer running DeepSeek Harness.
 - Binary text shown: false
 - Plain-text option and viewer picker: hidden
+
+## Spreadsheet preview
+
+- XLS: unsupported / Open in default app
+- XLSX: unsupported / Open in default app
 
 ## Unknown suffix
 
@@ -81,5 +86,5 @@
 
 - State: unsupported
 - Line: Preview is not available for this file type yet.
-- Header control: Open
-- Empty-state control: Open in default app
+- Header control has no text: true
+- Empty-state control has text: true

@@ -782,7 +782,7 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     expect((await readAll(ctx.sessionPersistence, header.id)).events).toEqual([...oneTurnLog(), ...secondTurn])
   })
 
-  it('skips empty, incomplete, and non-header compressed artifacts while rejecting malformed header frames', async () => {
+  it('skips unreadable compressed headers during discovery while rejecting targeted reads', async () => {
     const root = await freshRoot()
     for (const [id, content] of [
       ['empty', Buffer.alloc(0)],
@@ -803,7 +803,7 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
       JSON.stringify({ type: 'turn/start' }),
       '',
     ].join('\n')))
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/first frame is not exactly one header line/)
+    expect(await ctx.sessionPersistence.list()).toEqual([])
     await expect(ctx.sessionPersistence.open(twoLinesId, 'read'))
       .rejects.toThrow(/first frame is not exactly one header line/)
   })
@@ -824,7 +824,11 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
       .rejects.toThrow(/empty or header-less Zstandard session log/)
     await expect(ctx.sessionPersistence.open(SessionId('empty-header'), 'read'))
       .rejects.toThrow(/first frame is not exactly one header line/)
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/header frame failed validation/)
+    expect(await ctx.sessionPersistence.list()).toEqual([])
+    await expect(ctx.sessionPersistence.stat(SessionId('bad-checksum')))
+      .rejects.toThrow(/header frame failed validation/)
+    await expect(ctx.sessionPersistence.open(SessionId('bad-checksum'), 'read'))
+      .rejects.toThrow(/frame at byte 0 failed validation/)
   })
 })
 

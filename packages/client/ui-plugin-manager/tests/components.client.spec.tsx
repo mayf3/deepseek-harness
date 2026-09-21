@@ -12,6 +12,7 @@ import type { PluginManagerPageProps } from '../src/client/index.ts'
 import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { rowKey, type InstallState, type PackageRow, type PackageView, type PluginManagerState } from '../src/client/manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
+import type { PluginActivationOwnerProps } from '../src/client/slot-contract.ts'
 
 afterEach(cleanup)
 
@@ -66,7 +67,7 @@ const READY: PluginManagerState = {
 }
 
 /** Configuration entries a test supplies: what each slot cell renders, by `<slot>:<cell>` and the view asked for. */
-type SlotBodies = Record<string, (view: 'summary' | 'page') => ReactNode>
+type SlotBodies = Record<string, (view: 'summary' | 'page' | 'activation', owner: unknown) => ReactNode>
 
 const NO_CONFIG: ConfigLedger = { items: [], bundles: new Set(), rows: new Set() }
 
@@ -101,20 +102,32 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     setRowEnabled: vi.fn(),
     dismissNotice: vi.fn(),
   }
-  const renderSlot: PluginManagerPageProps['renderSlot'] = (name, owner, opts) => {
-    if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
-      throw new Error('Configuration slot requires a summary or page view')
-    }
-    return bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]?.(owner.view) ?? null
+  const unusedStandardHook = (): never => { throw new Error('Plugin manager fixture does not provide global state') }
+  const standard = {
+    usePanelInfo: unusedStandardHook,
+    useWorkspaces: unusedStandardHook,
+    useSessions: unusedStandardHook,
+    useSessionStatus: unusedStandardHook,
+    useSessionRetainInfo: unusedStandardHook,
+    useResource: unusedStandardHook,
   }
-  const props = {
+  const props: PluginManagerPageProps = {
+    ...standard,
     t,
     resolveText,
     ...actions,
     usePluginManager: bindSnapshotSelector(store),
     useConfigLedger: bindSnapshotSelector(ledger),
-    renderSlot,
-  } as PluginManagerPageProps
+    renderSlot: (name, owner, opts) => {
+      const body = bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]
+      if (body === undefined) return null
+      if (name === 'plugins.bundle.activation') return body('activation', owner)
+      if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
+        throw new Error('Plugin configuration fixture requires a summary or page view')
+      }
+      return body(owner.view, owner)
+    },
+  }
   const { rerender } = render(<PluginManagerPage {...props} />)
   return {
     store,
@@ -245,6 +258,7 @@ describe('PluginManagerPage', () => {
   it.each([
     '@deepseek-ai/dsh-experimental-agent-team-profile',
     '@deepseek-ai/dsh-experimental-auto-review',
+    '@deepseek-ai/dsh-experimental-fixture-input',
     '@acme/dsh-local-tools',
   ])('localizes Host metadata for %s across cards, details, switches, and uninstall confirmation', (name) => {
     const meta = {
@@ -261,6 +275,7 @@ describe('PluginManagerPage', () => {
       expect(document.getElementById(card.getAttribute('aria-describedby')!)?.textContent).toBe(description(dict))
       expect(screen.getByRole('switch', { name: dict.enableToggle.replace('{name}', title(dict)) })).toBeTruthy()
       expect(screen.queryByText('Original metadata.')).toBeNull()
+      expect(screen.queryByText(dict.statusBeta) !== null).toBe(name.startsWith('@deepseek-ai/dsh-experimental-'))
     }
     assertCard(en)
     setLanguage(zh)
@@ -283,6 +298,38 @@ describe('PluginManagerPage', () => {
       setLanguage(dict)
       expect(screen.getByRole('dialog', { name: dict.confirmUninstallTitle.replace('{name}', title(dict)) })).toBeTruthy()
     }
+  })
+
+  it('renders manifest icons for arbitrary bundles and rows, with decode fallback and source recovery', () => {
+    const icon = 'data:image/svg+xml;base64,PHN2Zy8+'
+    const updatedIcon = 'data:image/png;base64,cG5n'
+    const bundle = pkg({ meta: { icon }, rows: [row({ meta: { icon } }), row({ entryId: 'plain' as PluginEntryId, rowId: 'plain', moduleName: 'plain' })] })
+    const { set } = renderTab({ packages: [bundle] }, { rows: new Set(['dsh-better-sidebar#sidebar']) })
+    const image = () => document.querySelector<HTMLImageElement>('[data-plugin-package] img, [data-plugin-detail] img')!
+    expect(image().getAttribute('src')).toBe(icon)
+    expect(image().getAttribute('alt')).toBe('')
+    expect(image().width).toBe(36)
+    fireEvent.error(image())
+    expect(document.querySelector('[data-plugin-package] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-package] svg')).not.toBeNull()
+    set({ packages: [{ ...bundle, meta: { icon: updatedIcon } }] })
+    expect(image().getAttribute('src')).toBe(updatedIcon)
+    set({ packages: [bundle] })
+    expect(image().getAttribute('src')).toBe(icon)
+    fireEvent.click(screen.getByRole('button', { name: 'View dsh-better-sidebar' }))
+    expect(image().getAttribute('src')).toBe(icon)
+    const rowImage = document.querySelector<HTMLImageElement>('[data-plugin-row] img')!
+    expect(rowImage.getAttribute('src')).toBe(icon)
+    expect(rowImage.width).toBe(30)
+    expect(document.querySelector('[data-plugin-row="plain"] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row="plain"] svg')).not.toBeNull()
+    fireEvent.error(rowImage)
+    expect(document.querySelector('[data-plugin-row] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row] svg')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Configure dsh-better-sidebar' }))
+    const detailImage = document.querySelector<HTMLImageElement>('[data-plugin-row-detail] img')!
+    expect(detailImage.getAttribute('src')).toBe(icon)
+    expect(detailImage.width).toBe(36)
   })
 
   it('shows metadata diagnostics without blocking management or displaying legacy descriptions', () => {
@@ -1149,4 +1196,42 @@ describe('PluginManagerPage', () => {
     fireEvent.click(screen.getByRole('button', { name: en.installCloseCancels }))
     expect(actions.closeInstall).toHaveBeenCalledOnce()
   })
+})
+
+it('offers bundle-owned guidance only after explicit enablement and navigates to its detail page', () => {
+  const name = 'dsh-better-sidebar'
+  const { set, actions } = renderTab({ packages: [pkg({ enabled: false })] }, { bundles: new Set([name]) }, {
+    [`plugins.bundle.activation:${name}`]: (_view, owner) => <button onClick={(owner as PluginActivationOwnerProps).onOpenDetails}>Go to setup</button>,
+    [`plugins.bundle.config:${name}`]: () => <div>Bundle setup</div>,
+  })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg()] })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg({ enabled: false })] })
+  fireEvent.click(screen.getByRole('switch'))
+  expect(actions.setEnabled).toHaveBeenCalledWith(name, true)
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg()], busy: [name] })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ busy: [] })
+  fireEvent.click(screen.getByText('Go to setup'))
+  expect(screen.getByText('Bundle setup')).toBeTruthy()
+  expect(screen.queryByText('Go to setup')).toBeNull()
+})
+
+it('dismisses activation guidance until the user enables the bundle again', () => {
+  const name = 'dsh-better-sidebar'
+  const { set } = renderTab({ packages: [pkg({ enabled: false })] }, {}, {
+    [`plugins.bundle.activation:${name}`]: (_view, owner) => <button onClick={(owner as PluginActivationOwnerProps).onDismiss}>Later</button>,
+  })
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg()] })
+  fireEvent.click(screen.getByText('Later'))
+  set({ packages: [pkg()] })
+  expect(screen.queryByText('Later')).toBeNull()
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg({ enabled: false })] })
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg()] })
+  expect(screen.getByText('Later')).toBeTruthy()
 })
