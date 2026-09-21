@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
+import type { ConfigPageForm } from '../src/client/slot-contract.ts'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PluginEntryId, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
+import type { ConfigForm, ConfigFormSnapshot, SettingsMirrorSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ReactNode } from 'react'
 import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
@@ -71,7 +73,7 @@ const READY: PluginManagerState = {
  * (a list slot's cell is empty), the view asked for — `detail` for a detail
  * contribution — and the owner props.
  */
-type SlotBodies = Record<string, (view: 'summary' | 'page' | 'activation' | 'detail', owner: unknown) => ReactNode>
+type SlotBodies = Record<string, (view: 'summary' | 'page' | 'activation' | 'detail', owner: unknown, form?: ConfigPageForm) => ReactNode>
 
 /** The subject a detail contribution was rendered with. */
 function subjectOf(owner: unknown): PluginsSubject | undefined {
@@ -80,7 +82,10 @@ function subjectOf(owner: unknown): PluginsSubject | undefined {
 
 const NO_CONFIG: ConfigLedger = { items: [], bundles: new Set(), rows: new Set() }
 
-function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<ConfigLedger> = {}, bodies: SlotBodies = {}) {
+function renderTab(
+  state: Partial<PluginManagerState> = {}, config: Partial<ConfigLedger> = {},
+  bodies: SlotBodies = {}, forms: Record<string, ConfigPageForm> = {},
+) {
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose() })
   const locale = new LocaleRuntime(ctx)
@@ -127,6 +132,17 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     ...actions,
     usePluginManager: bindSnapshotSelector(store),
     useConfigLedger: bindSnapshotSelector(ledger),
+    useConfigurations: bindSnapshotSelector(createSnapshotStore<SettingsMirrorSnapshot>({
+      status: 'ready', error: null,
+      view: { writable: true, hasDocument: true, namespaces: Object.keys(forms).map(ns => ({
+        ns, schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0, autoGenerate: true,
+      })) },
+    })),
+    configForm: <T,>(id: string): ConfigForm<T> => {
+      const stub = stubConfigForm<T>()
+      stub.publish(forms[id]!.state as ConfigFormSnapshot<T>)
+      return { ...stub.scope, mutate: forms[id]!.mutate }
+    },
     renderSlot: (name, owner, opts) => {
       const body = bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]
       if (body === undefined) return null
@@ -135,7 +151,7 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
       if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
         throw new Error('Plugin configuration fixture requires a summary or page view')
       }
-      return body(owner.view, owner)
+      return body(owner.view, owner, 'form' in owner ? owner.form as ConfigPageForm | undefined : undefined)
     },
   }
   const { rerender } = render(<PluginManagerPage {...props} />)
@@ -1312,4 +1328,18 @@ it('dismisses activation guidance until the user enables the bundle again', () =
   fireEvent.click(screen.getByRole('switch'))
   set({ packages: [pkg()] })
   expect(screen.getByText('Later')).toBeTruthy()
+})
+
+it('supplies the accepted entry values and atomic mutation action to a custom plugin page', () => {
+  const mutate = vi.fn(async () => true)
+  const form: ConfigPageForm = {
+    state: { status: 'ready', value: { count: 2 }, base: {}, user: {}, revision: 7, writable: true, mode: 'host' }, mutate,
+  }
+  renderTab({}, { items: [{ id: 'custom', label: 'Custom' }] }, {
+    'plugins.item:custom': (view, _owner, supplied) => view === 'summary' ? 'Custom summary'
+      : <button onClick={() => { void supplied!.mutate([{ op: 'set', path: ['count'], value: 3 }], supplied!.state.revision) }}>Save custom</button>,
+  }, { custom: form })
+  fireEvent.click(screen.getByText('Custom'))
+  fireEvent.click(screen.getByText('Save custom'))
+  expect(mutate).toHaveBeenCalledWith([{ op: 'set', path: ['count'], value: 3 }], 7)
 })

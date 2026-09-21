@@ -43,7 +43,7 @@ kind: "package-reference"
 |---|---|---|
 | `default` | 必填 | 未显式指定时使用的 preset ID |
 
-Web 内置定义来自 `dsh-web-app` bundle。定义使用普通插件行；注册表不扫描目录，也不接受 preset 路径。`agent-presets` settings 命名空间保留用户默认值和 `modeSelectionEnabled`；隐藏选择器时使用部署默认值。
+Web 内置定义来自 `dsh-web-app` bundle。定义使用普通插件行；注册表不扫描目录，也不接受 preset 路径。`agent-preset-registry` 条目的 volatile 字段 `selectedDefault` 与 `modeSelectionEnabled` 保留用户默认值和选择器可见性；隐藏选择器时使用部署 `default`。
 
 注册表不写入任何声明。新建 preset 或覆盖内置 preset 都是 bundle 补丁：插入一行 `@deepseek-ai/dsh-agent-preset`，或按该行 id 写覆盖补丁，再用 `plugin_manager` 安装到 profile；创造模式在对话中编写这类 bundle。
 

@@ -10,7 +10,7 @@ import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-co
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import {
-  SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
+  SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runtime'
 import {
@@ -53,12 +53,12 @@ async function bench() {
     return upload(...args)
   }
   const developerTools = createSnapshotStore(true)
-  runtime.ctx.provide('settingsScope', {
+  runtime.ctx.provide('configForms', {
     developerTools: {
       enabled: developerTools,
       setEnabled: async (enabled: boolean) => { developerTools.set(enabled) },
     },
-    bind: () => stubSettingsScope().scope,
+    get: () => stubConfigForm().scope,
   } as never)
   const connectWorkspace = vi.fn(async () => ROOT)
   const references = new Map<SessionId, SessionReference>()
@@ -219,9 +219,9 @@ describe('Conversation inject API', () => {
     expect(source.getSnapshot()).toBe(inspect)
     inspect('call-1')
     expect(body.instance.store.getSnapshot().viewRequest).toEqual({ view: 'trajectory', focus: 'tool:call-1' })
-    await b.runtime.ctx.settingsScope.developerTools.setEnabled(false)
+    await b.runtime.ctx.configForms.developerTools.setEnabled(false)
     expect(source.getSnapshot()).toBeUndefined()
-    await b.runtime.ctx.settingsScope.developerTools.setEnabled(true)
+    await b.runtime.ctx.configForms.developerTools.setEnabled(true)
     expect(source.getSnapshot()).toBe(inspect)
     // Trajectory still owns inspection while both Views are visible; hiding
     // it must leave a third-party View's inspection capability reachable.
@@ -235,12 +235,12 @@ describe('Conversation inject API', () => {
     )
     await b.runtime.flush()
     expect(source.getSnapshot()).toBe(inspect)
-    await b.runtime.ctx.settingsScope.developerTools.setEnabled(false)
+    await b.runtime.ctx.configForms.developerTools.setEnabled(false)
     const pipelineInspect = source.getSnapshot()!
     expect(pipelineInspect).toBeTypeOf('function')
     pipelineInspect('call-2')
     expect(body.instance.store.getSnapshot().viewRequest).toEqual({ view: 'pipeline', focus: 'stage:call-2' })
-    await b.runtime.ctx.settingsScope.developerTools.setEnabled(true)
+    await b.runtime.ctx.configForms.developerTools.setEnabled(true)
     removePipelineView()
     removePipelineDefinition()
     await b.runtime.flush()

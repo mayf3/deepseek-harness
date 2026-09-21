@@ -51,7 +51,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Services required by the Conversation plugin. */
 export const inject = [
-  'slots', 'sessions', 'fileUpload', 'uiSession', 'uiWorkspace', 'locale', 'settingsScope',
+  'slots', 'sessions', 'fileUpload', 'uiSession', 'uiWorkspace', 'locale', 'configForms',
 ]
 
 /** Conversation runtime configuration. */
@@ -158,8 +158,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const t = ctx.locale.bind(NS)
   const conversationStore = createConversationStore()
   const submissionPolicy = new ComposerSubmissionPolicy(
-    ctx.settingsScope.bind<ConversationSettings>({ namespace: CONVERSATION_SETTINGS_NAMESPACE }),
+    ctx.configForms.get<ConversationSettings>(CONVERSATION_SETTINGS_NAMESPACE),
   )
+
+  ctx.effect(() => () => { submissionPolicy.dispose() })
 
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item',
@@ -177,7 +179,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     for (const entry of slots.entries('conversation.view')) {
       /* v8 ignore next -- list registration validates id at load. */
       if (entry.options.id === undefined) continue
-      if (!ctx.settingsScope.developerTools.enabled.getSnapshot() && entry.options.id === DEVELOPER_TOOLS_VIEW_ID) continue
+      if (!ctx.configForms.developerTools.enabled.getSnapshot() && entry.options.id === DEVELOPER_TOOLS_VIEW_ID) continue
       tabs.push({
         id: entry.options.id,
         label: resolveSlotLabel(entry.options.label) ?? entry.options.id,
@@ -215,7 +217,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   ctx.effect(() => {
     const disposeViews = slots.subscribe('conversation.view', refreshViews)
     const disposeLocale = ctx.locale.subscribe(refreshViews)
-    const disposeDeveloperTools = ctx.settingsScope.developerTools.enabled.subscribe(refreshViews)
+    const disposeDeveloperTools = ctx.configForms.developerTools.enabled.subscribe(refreshViews)
     return () => {
       disposeDeveloperTools()
       disposeLocale()

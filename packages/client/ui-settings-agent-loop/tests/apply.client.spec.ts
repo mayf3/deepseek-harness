@@ -45,7 +45,7 @@ describe('ui-settings-agent-loop apply', () => {
   })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'configForms'])
   })
 
   it('registers the page while the Host serves the namespace, titled in the active locale', async () => {

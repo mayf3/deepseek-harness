@@ -6,7 +6,7 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import {
-  SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
+  SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
@@ -58,13 +58,11 @@ function sessionFakeFor() {
 
 async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true) {
   const runtime = await SlotTestRuntime.create()
-  const chatSettings = stubSettingsScope<ChatSettings>()
+  const chatSettings = stubConfigForm<ChatSettings>()
   if (initialSettings !== undefined) chatSettings.publish({ value: initialSettings })
-  runtime.ctx.provide('settingsScope', {
+  runtime.ctx.provide('configForms', {
     developerTools: { enabled: createSnapshotStore(true) },
-    bind: ({ namespace }: { namespace: string }) => namespace === CHAT_SETTINGS_NAMESPACE
-      ? chatSettings.scope
-      : stubSettingsScope().scope,
+    get: (id: string) => id === CHAT_SETTINGS_NAMESPACE ? chatSettings.scope : stubConfigForm().scope,
   } as never)
   const layout = { closeRightbar: vi.fn(), openRightbar: vi.fn() }
   runtime.ctx.provide('layout', layout as never)

@@ -8,7 +8,7 @@
 
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-// Type-only: the ctx.settingsScope Context merge. Cross-plugin collaboration
+// Type-only: the ctx.configForms Context merge. Cross-plugin collaboration
 // goes through the service, never a value import (client bundle purity gate).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: the Plugins page's SlotMap merge (the 'plugins.item' entry).
@@ -50,7 +50,7 @@ export const NS = 'settings.subagent'
 export const SUBAGENT_NS = 'subagent'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'remote', 'remote.session', 'settingsScope']
+export const inject = ['slots', 'locale', 'remote', 'remote.session', 'configForms']
 
 /**
  * Mount the Subagent settings page while the Host serves either of its namespaces.
@@ -59,9 +59,10 @@ export const inject = ['slots', 'locale', 'remote', 'remote.session', 'settingsS
 export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-subagent: dictionaries')
-  const limits = new SubagentLimitsCardController(ctx.settingsScope.bind({ namespace: SUBAGENT_NS }))
+  const limits = new SubagentLimitsCardController(ctx.configForms.get(SUBAGENT_NS))
+  ctx.effect(() => () => { limits.dispose() }, 'ui-settings-subagent: limits form subscription')
   const models = new SubagentModelSelectionCardController(
-    ctx.settingsScope.bind({ namespace: SUBAGENT_MODEL_SELECTION_NS }),
+    ctx.configForms.get(SUBAGENT_MODEL_SELECTION_NS),
     ctx,
   )
   const limitsFace = limits.inject()
@@ -81,7 +82,7 @@ export function apply(ctx: ClientContext): void {
     'ui-settings-subagent: connection generation',
   )
   ctx.effect(() => () => { models.dispose() }, 'ui-settings-subagent: model preference')
-  ctx.effect(() => ctx.settingsScope.whileServed([SUBAGENT_NS, SUBAGENT_MODEL_SELECTION_NS], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
+  ctx.effect(() => ctx.configForms.whileServed([SUBAGENT_NS, SUBAGENT_MODEL_SELECTION_NS], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
     name: 'plugins.item',
     id: 'subagent',
     order: 30,

@@ -1,18 +1,30 @@
-/**
- * The web-search page's form over a scripted settings scope and credentials
- * domain: what it projects, where the key goes, and what a save writes.
- */
-
 import { describe, expect, it, vi } from 'vitest'
-import { RemoteError, stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+import { RemoteError, stubConfigForm, type StubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
 
 /** Make the stub behave like a Host that accepts every write. */
-function acceptWrites<T>(host: StubSettingsScope<T>): void {
+function acceptWrites<T>(host: StubConfigForm<T>): void {
   const section = (): Record<string, unknown> => ({ ...host.scope.getSnapshot().value as object })
   const layer = (): Record<string, unknown> => ({ ...host.scope.getSnapshot().user as object })
   host.set.mockImplementation((field: string, value: unknown) => {
     host.publish({ value: { ...section(), [field]: value } as T, user: { ...layer(), [field]: value } })
+  })
+  host.mutate.mockImplementation((ops: readonly SettingsPathOpView[]) => {
+    const value = { ...section() }
+    const user = { ...layer() }
+    for (const op of ops) {
+      const field = op.path[0]!
+      if (op.op === 'set') {
+        value[field] = op.value
+        user[field] = op.value
+      } else {
+        Reflect.deleteProperty(user, field)
+        value[field] = (host.scope.getSnapshot().base as Record<string, unknown> | undefined)?.[field]
+      }
+    }
+    host.publish({ value: value as T, user })
+    return Promise.resolve(true)
   })
   host.unset.mockImplementation((field: string) => {
     const user = Object.fromEntries(Object.entries(layer()).filter(([key]) => key !== field))
@@ -21,7 +33,7 @@ function acceptWrites<T>(host: StubSettingsScope<T>): void {
   })
 }
 
-/** The page plugin's context, scripted down to the namespaces the page reaches. */
+/** The card plugin's context, scripted down to the namespaces a card reaches. */
 function ctxWith(namespaces: object) {
   return { remote: namespaces } as never
 }
@@ -37,7 +49,7 @@ function credentialsApi(configured: boolean) {
 
 describe('WebSearchCardController', () => {
   it('reads the credential state for the reference the tab names', async () => {
-    const host = stubSettingsScope<WebSearchSettings>()
+    const host = stubConfigForm<WebSearchSettings>()
     const credentials = credentialsApi(true)
     const controller = new WebSearchCardController(host.scope, credentials.ctx)
     const state = () => controller.inject().hooks.webSearchCard.getSnapshot()
@@ -53,7 +65,7 @@ describe('WebSearchCardController', () => {
   })
 
   it('writes the staged key through the credentials domain, never the settings section', async () => {
-    const host = stubSettingsScope<WebSearchSettings>()
+    const host = stubConfigForm<WebSearchSettings>()
     const credentials = credentialsApi(false)
     const controller = new WebSearchCardController(host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
@@ -78,7 +90,7 @@ describe('WebSearchCardController', () => {
   })
 
   it('keeps the stored key when the draft is left blank', () => {
-    const host = stubSettingsScope<WebSearchSettings>()
+    const host = stubConfigForm<WebSearchSettings>()
     const credentials = credentialsApi(true)
     const controller = new WebSearchCardController(host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
@@ -93,7 +105,7 @@ describe('WebSearchCardController', () => {
   })
 
   it('re-reads when the Host reports the watched reference changed', async () => {
-    const host = stubSettingsScope<WebSearchSettings>()
+    const host = stubConfigForm<WebSearchSettings>()
     const credentials = credentialsApi(false)
     const controller = new WebSearchCardController(host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
@@ -117,7 +129,7 @@ describe('WebSearchCardController', () => {
   })
 
   it('addresses the reference the tab declares rather than the default', async () => {
-    const host = stubSettingsScope<WebSearchSettings>()
+    const host = stubConfigForm<WebSearchSettings>()
     const credentials = credentialsApi(false)
     const controller = new WebSearchCardController(host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: { apiKeyEnv: 'SEARCH_KEY' }, user: {} })
@@ -131,7 +143,7 @@ describe('WebSearchCardController', () => {
   })
 
   it('reports a key the Host did not store as a failed save', async () => {
-    const host = stubSettingsScope<WebSearchSettings>()
+    const host = stubConfigForm<WebSearchSettings>()
     const credentials = credentialsApi(false)
     const controller = new WebSearchCardController(host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
@@ -146,7 +158,7 @@ describe('WebSearchCardController', () => {
   })
 
   it('keeps the card usable when the credential read is refused', async () => {
-    const host = stubSettingsScope<WebSearchSettings>()
+    const host = stubConfigForm<WebSearchSettings>()
     const refusal = () => Promise.resolve({
       ok: false as const,
       error: new RemoteError('credential/rejected', 'offline', { ref: 'DEEPSEEK_API_KEY' }),
@@ -170,7 +182,7 @@ describe('WebSearchCardController', () => {
   })
 
   it('ignores a credential read the Host refused', async () => {
-    const host = stubSettingsScope<WebSearchSettings>()
+    const host = stubConfigForm<WebSearchSettings>()
     const describe = vi.fn(() => Promise.resolve({
       ok: false as const,
       error: new RemoteError('gateway/internal', 'no credential provider', {}),
@@ -184,7 +196,7 @@ describe('WebSearchCardController', () => {
   })
 
   it('saves the endpoint and the search budget together', async () => {
-    const host = stubSettingsScope<WebSearchSettings>()
+    const host = stubConfigForm<WebSearchSettings>()
     acceptWrites(host)
     const credentials = credentialsApi(true)
     const controller = new WebSearchCardController(host.scope, credentials.ctx)
@@ -194,9 +206,9 @@ describe('WebSearchCardController', () => {
     face.edit('baseURL', 'https://other.test')
     face.edit('maxUses', '3')
     face.save()
-    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledTimes(2) })
+    await vi.waitFor(() => { expect(host.mutate).toHaveBeenCalledTimes(1) })
 
-    expect(host.set.mock.calls).toEqual([['baseURL', 'https://other.test'], ['maxUses', 3]])
+    expect(host.mutate.mock.calls.map(([ops]) => ops)).toEqual([[['baseURL', 'https://other.test'], ['maxUses', 3]].map(([field, value]) => ({ op: 'set', path: [field], value }))])
     expect(credentials.set).not.toHaveBeenCalled()
   })
 })

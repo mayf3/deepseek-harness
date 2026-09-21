@@ -13,10 +13,9 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: pulls the ctx.remote merge into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   SettingsFormModel, settingsNumberField, settingsTextField,
-  type SettingsFieldState, type SettingsFormActions, type SettingsFormShell,
+  type SettingsFieldState, type SettingsFormActions, type SettingsFormShell, type SettingsFormScope, type SettingsFormScopeSnapshot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /**
@@ -77,6 +76,7 @@ export interface WebSearchCardFace extends SettingsFormActions {
 export class WebSearchCardController {
   private readonly form: SettingsFormModel<WebSearchSettings>
   private readonly store: SnapshotStore<WebSearchCardState>
+  private readonly unsubscribe: () => void
   private credential: CredentialState = { ref: '', configured: false, writable: true }
 
   /**
@@ -85,7 +85,7 @@ export class WebSearchCardController {
    * answers for the credential the section references.
    */
   constructor(
-    private readonly scope: SettingsScope<WebSearchSettings>,
+    private readonly scope: SettingsFormScope<WebSearchSettings>,
     private readonly ctx: ClientContext,
   ) {
     this.form = new SettingsFormModel(
@@ -94,7 +94,7 @@ export class WebSearchCardController {
       [{ field: API_KEY_FIELD, write: text => this.writeKey(text) }],
     )
     this.store = this.form.bind(() => this.projection())
-    scope.subscribe(() => { void this.readCredential() })
+    this.unsubscribe = scope.subscribe(() => { void this.readCredential() })
     void this.readCredential()
   }
 
@@ -173,6 +173,9 @@ export class WebSearchCardController {
     await this.readCredential()
     return this.credential.configured
   }
+  /** Release configuration subscriptions. */
+  dispose(): void { this.unsubscribe(); this.form.dispose() }
+
 }
 
 /**
@@ -180,7 +183,8 @@ export class WebSearchCardController {
  * @param snapshot - the current scope snapshot.
  * @returns the reference to address.
  */
-function refOf(snapshot: SettingsScopeSnapshot<WebSearchSettings>): string {
+function refOf(snapshot: SettingsFormScopeSnapshot<WebSearchSettings>): string {
   const declared = snapshot.value?.apiKeyEnv
   return declared !== undefined && declared.length > 0 ? declared : DEFAULT_API_KEY_REF
+
 }
