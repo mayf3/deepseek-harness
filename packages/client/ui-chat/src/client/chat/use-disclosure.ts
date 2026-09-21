@@ -26,8 +26,10 @@ export function useDisclosure(version = 0): ReturnType<UseDisclosure> {
  * @returns a Hook with independent open state for each invocation.
  */
 export function bindDisclosure(reset: ObservableSnapshot<number>): UseDisclosure {
+  const subscribe = (listener: () => void) => reset.subscribe(listener)
+  const getSnapshot = () => reset.getSnapshot()
   return function useBoundDisclosure() {
-    const version = useSyncExternalStore(reset.subscribe, reset.getSnapshot)
+    const version = useSyncExternalStore(subscribe, getSnapshot)
     return useDisclosure(version)
   }
 }

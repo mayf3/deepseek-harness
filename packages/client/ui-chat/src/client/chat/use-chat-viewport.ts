@@ -304,10 +304,10 @@ export class ChatViewport {
     this.retain(row, position)
   }
 
-  private retain(row: HTMLElement, position?: ChatScrollPosition, groupTop?: number): void {
+  private retain(row: HTMLElement, position?: ChatScrollPosition, groupTop?: number): PagingPosition | null {
     const elements = this.elements
     const key = row.dataset.chatAnchorKey
-    if (elements === null || key === undefined) return
+    if (elements === null || key === undefined) return null
     const previous = this.paging?.group
     if (previous != null) this.observer?.unobserve(previous.content)
     const top = row.getBoundingClientRect().top
@@ -324,6 +324,7 @@ export class ChatViewport {
       },
     }
     if (group !== null) this.observer?.observe(group.content)
+    return this.paging
   }
 
   /** Release paging ownership and its content-size observation. */
@@ -354,8 +355,8 @@ export class ChatViewport {
         this.stopPreserving()
         return null
       }
-      this.retain(replacement, paging.position, paging.group?.top)
-      paging = this.paging as PagingPosition
+      paging = this.retain(replacement, paging.position, paging.group?.top)
+      if (paging === null) return null
     }
     const { row, group, position } = paging
     if (row.closest('[hidden]') !== null || row.matches(':empty')) {

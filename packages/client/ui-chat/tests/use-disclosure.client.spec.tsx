@@ -40,17 +40,18 @@ describe('injected disclosure state', () => {
   it('subscribes only where the forwarded Hook is called and releases those subscriptions', () => {
     const reset = createSnapshotStore(0)
     const release = vi.fn()
+    const subscribe = vi.fn((listener: () => void) => {
+      const off = reset.subscribe(listener)
+      return () => { off(); release() }
+    })
     const source: ObservableSnapshot<number> = {
-      getSnapshot: reset.getSnapshot,
-      subscribe: vi.fn((listener) => {
-        const off = reset.subscribe(listener)
-        return () => { off(); release() }
-      }),
+      getSnapshot: () => reset.getSnapshot(),
+      subscribe,
     }
     const useDisclosure = bindDisclosure(source)
-    expect(source.subscribe).not.toHaveBeenCalled()
+    expect(subscribe).not.toHaveBeenCalled()
     const view = render(<Forward useDisclosure={useDisclosure} label="Details" />)
-    expect(source.subscribe).toHaveBeenCalledTimes(1)
+    expect(subscribe).toHaveBeenCalledTimes(1)
     const button = view.getByRole('button', { name: 'Details' })
 
     fireEvent.click(button)
@@ -58,7 +59,7 @@ describe('injected disclosure state', () => {
     act(() => { reset.set(1) })
     expect(button.getAttribute('aria-expanded')).toBe('false')
     expect(view.getByRole('button', { name: 'Details' })).toBe(button)
-    expect(source.subscribe).toHaveBeenCalledTimes(1)
+    expect(subscribe).toHaveBeenCalledTimes(1)
 
     view.unmount()
     expect(release).toHaveBeenCalledTimes(1)

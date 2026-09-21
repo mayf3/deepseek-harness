@@ -66,7 +66,7 @@ it.each([64, 4096])('locates the reading Turn with logarithmic outer-row measure
   expect(h.viewport.readVisibleTurn()).toBe(selected + 1)
   expect(hitTest).not.toHaveBeenCalled()
   expect(query).not.toHaveBeenCalled()
-  const measurements = rows.reduce((sum, row) => sum + vi.mocked(row.getBoundingClientRect).mock.calls.length, 0)
+  const measurements = rows.reduce((sum, row) => sum + vi.spyOn(row, 'getBoundingClientRect').mock.calls.length, 0)
   expect(measurements).toBeLessThanOrEqual(Math.ceil(Math.log2(count)) + 1)
 })
 
@@ -79,15 +79,15 @@ it('uses outer group geometry and keeps the preceding Turn in a gap', () => {
   const body = document.createElement('div')
   group.append(body)
   const member = h.row(body, 'member', -500)
-  vi.mocked(member.getBoundingClientRect).mockImplementation(() => { throw new Error('measured inside a group') })
+  vi.spyOn(member, 'getBoundingClientRect').mockImplementation(() => { throw new Error('measured inside a group') })
   const empty = h.row(h.column, 'empty', 180)
   empty.textContent = ''
   empty.dataset.chatTurn = '2'
-  vi.mocked(empty.getBoundingClientRect).mockImplementation(() => new DOMRect(0, 180 - h.column.scrollTop, 500, 0))
+  vi.spyOn(empty, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 180 - h.column.scrollTop, 500, 0))
   const hidden = h.row(h.column, 'hidden-control', 180)
   hidden.dataset.chatTurn = '2'
   hidden.setAttribute('hidden', 'until-found')
-  vi.mocked(hidden.getBoundingClientRect).mockImplementation(() => new DOMRect(0, 180 - h.column.scrollTop, 500, 0))
+  vi.spyOn(hidden, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 180 - h.column.scrollTop, 500, 0))
   const next = h.row(h.column, 'next', 300)
   next.dataset.chatTurn = '3'
   h.viewport.updateTurns([1, 2, 3].map(turn => ({ turn, anchorKey: String(turn), prompt: '', response: '' })))
@@ -101,7 +101,7 @@ it('uses outer group geometry and keeps the preceding Turn in a gap', () => {
     h.column.scrollTop = 240
     expect(h.viewport.readVisibleTurn()).toBe(3)
   }
-  expect(member.getBoundingClientRect).not.toHaveBeenCalled()
+  expect(vi.spyOn(member, 'getBoundingClientRect')).not.toHaveBeenCalled()
   const inserted = h.row(h.column, 'prepended', -100)
   inserted.dataset.chatTurn = '0'
   h.column.prepend(inserted)
@@ -128,9 +128,9 @@ it('reads only the supplied column and reuses a known Turn landing', () => {
   vi.spyOn(rail, 'getBoundingClientRect').mockImplementation(() => { throw new Error('measured the rail') })
   expect(h.viewport.readVisibleTurn()).toBe(7)
   expect(h.viewport.scrollToTurn(7)?.turn).toBe(7)
-  vi.mocked(row.getBoundingClientRect).mockClear()
+  vi.spyOn(row, 'getBoundingClientRect').mockClear()
   expect(h.viewport.readVisibleTurn()).toBe(7)
-  expect(row.getBoundingClientRect).not.toHaveBeenCalled()
+  expect(vi.spyOn(row, 'getBoundingClientRect')).not.toHaveBeenCalled()
   h.viewport.detach()
   expect(h.viewport.readVisibleTurn()).toBeNull()
 })
@@ -142,7 +142,7 @@ it.each([1, 1000])('selects the first paging marker without measuring other rows
   const first = h.row(h.column, 'first', -100)
   const later = Array.from({ length: count }, (_, index) => h.row(h.column, `later-${index}`, 10 + index * 60))
   for (const row of [unmarked, ...later]) {
-    vi.mocked(row.getBoundingClientRect).mockImplementation(() => { throw new Error('measured an unselected row') })
+    vi.spyOn(row, 'getBoundingClientRect').mockImplementation(() => { throw new Error('measured an unselected row') })
   }
   const hitTest = vi.fn(() => { throw new Error('paging used a visual hit test') })
   Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: hitTest })
@@ -152,8 +152,8 @@ it.each([1, 1000])('selects the first paging marker without measuring other rows
 
   expect(hitTest).not.toHaveBeenCalled()
   expect(candidates).not.toHaveBeenCalled()
-  expect(first.getBoundingClientRect).toHaveBeenCalledTimes(1)
-  expect(h.column.getBoundingClientRect).toHaveBeenCalledTimes(1)
+  expect(vi.spyOn(first, 'getBoundingClientRect')).toHaveBeenCalledTimes(1)
+  expect(vi.spyOn(h.column, 'getBoundingClientRect')).toHaveBeenCalledTimes(1)
   expect(h.viewport.preserve()?.position).toMatchObject({ anchorKey: 'first', anchorTop: -100 })
 })
 
@@ -168,12 +168,12 @@ it('skips hidden and empty paging markers without reading their geometry', () =>
   empty.textContent = ''
   const visible = h.row(h.column, 'visible', 60)
   for (const row of [hidden, child, empty]) {
-    vi.mocked(row.getBoundingClientRect).mockImplementation(() => { throw new Error('measured an ineligible row') })
+    vi.spyOn(row, 'getBoundingClientRect').mockImplementation(() => { throw new Error('measured an ineligible row') })
   }
 
   h.viewport.beginPaging()
 
-  expect(visible.getBoundingClientRect).toHaveBeenCalledTimes(1)
+  expect(vi.spyOn(visible, 'getBoundingClientRect')).toHaveBeenCalledTimes(1)
   expect(h.viewport.preserve()?.position?.anchorKey).toBe('visible')
 })
 
@@ -181,7 +181,7 @@ it('does not measure the viewport when no paging marker is available', () => {
   const h = fixture()
   h.viewport.beginPaging()
   expect(h.viewport.preserving).toBe(false)
-  expect(h.column.getBoundingClientRect).not.toHaveBeenCalled()
+  expect(vi.spyOn(h.column, 'getBoundingClientRect')).not.toHaveBeenCalled()
 })
 
 it('keeps a collapsed header stationary for hidden growth and content inserted before it', () => {
@@ -248,7 +248,7 @@ it.each([false, true])('ignores a relocating Turn control when paging reveals a 
   const h = fixture()
   const control = h.row(h.column, 'turn-control', 0)
   control.dataset.chatFlowKind = 'turn-process'
-  vi.mocked(control.getBoundingClientRect).mockImplementation(() => new DOMRect(0, -h.column.scrollTop, 500, 24))
+  vi.spyOn(control, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, -h.column.scrollTop, 500, 24))
   const group = h.group()
   group.dataset.chatAnchorKey = 'group'
   const old = h.row(group, 'old-message', 60)
@@ -406,11 +406,11 @@ function nestedFixture(height: number, cap: number, trailing = 1000, viewportHei
 it('measures only the selected member and its inner and outer containers once when paging starts', () => {
   const h = nestedFixture(600, 400)
   h.viewport.beginPaging()
-  expect(h.row.getBoundingClientRect).toHaveBeenCalledTimes(1)
-  expect(h.body.getBoundingClientRect).toHaveBeenCalledTimes(1)
-  expect(h.scroller.getBoundingClientRect).toHaveBeenCalledTimes(1)
-  expect(h.column.getBoundingClientRect).not.toHaveBeenCalled()
-  expect(h.content.getBoundingClientRect).not.toHaveBeenCalled()
+  expect(vi.spyOn(h.row, 'getBoundingClientRect')).toHaveBeenCalledTimes(1)
+  expect(vi.spyOn(h.body, 'getBoundingClientRect')).toHaveBeenCalledTimes(1)
+  expect(vi.spyOn(h.scroller, 'getBoundingClientRect')).toHaveBeenCalledTimes(1)
+  expect(vi.spyOn(h.column, 'getBoundingClientRect')).not.toHaveBeenCalled()
+  expect(vi.spyOn(h.content, 'getBoundingClientRect')).not.toHaveBeenCalled()
 })
 
 it.each([
