@@ -5,6 +5,8 @@ import { act, fireEvent } from '@testing-library/react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ShortcutCatalogEntry, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { PaneId, SplitId, TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -29,8 +31,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'sidebar-right.test.opener': { kind: 'single'; scope: 'session'; owner: { armed: boolean } }
   }
 }
-
-const SHORTCUT_CATALOG: readonly never[] = []
 
 const SESSION = 's-test' as SessionId
 const OTHER = 's-other' as SessionId
@@ -77,7 +77,8 @@ async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0, o
   runtime.ctx.provide('resources', { pin } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
-  runtime.ctx.provide('shortcuts', { register: () => () => {}, catalog: { getSnapshot: () => SHORTCUT_CATALOG, subscribe: () => () => {} } } as never)
+  const catalog = createSnapshotStore<readonly ShortcutCatalogEntry[]>([])
+  runtime.ctx.provide('shortcuts', { register: () => () => {}, catalog } as never)
   runtime.slots.installLocale(locale)
   await runtime.declare({
     'sidebar-right.test.opener': { kind: 'single', scope: 'session' },
@@ -160,7 +161,7 @@ async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0, o
   }
   return {
     runtime, feature, controller, instance, actions: instance.actions, layout,
-    open, selectSession, frame, pin, bodies, titles, hooks, view, arm, opened, registerPage,
+    open, selectSession, frame, pin, bodies, titles, hooks, view, arm, opened, registerPage, catalog,
   }
 }
 
@@ -746,6 +747,29 @@ describe('slot-owned useTabInfo', () => {
     expect(menu?.tab.id).toBe(chip.getAttribute('data-dockkit-tab'))
     act(() => { menu?.dismiss() })
     expect(document.querySelector('[data-dockkit-tab-menu]')).toBeNull()
+  })
+
+  it('keeps the current binding in the disabled split tooltip when it changes or is cleared', async () => {
+    const h = await mountSeat()
+    const split: ShortcutCatalogEntry = {
+      id: 'pane.split' as ShortcutCommandId, label: 'Split', aliases: [],
+      binding: { code: 'Backslash', modifiers: ['meta'] }, modified: false, conflicts: [], issue: null,
+      keys: ['⌘', '\\'], aria: 'Meta+\\',
+    }
+    act(() => {
+      h.runtime.ctx.locale.setLocale('en')
+      h.catalog.set([split])
+      h.controller.toggleExpanded()
+      h.controller.split()
+    })
+    const anchor = element(h.view.container, '[data-dockkit-split-button]').parentElement!
+    fireEvent.focus(anchor)
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Two panes is the limit ⌘ \\')
+    act(() => { h.catalog.set([{ ...split, binding: { code: 'KeyG', modifiers: ['control'] },
+      keys: ['Ctrl', '+', 'G'], aria: 'Control+G' }]) })
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Two panes is the limit Ctrl + G')
+    act(() => { h.catalog.set([{ ...split, binding: null, keys: [], aria: undefined }]) })
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Two panes is the limit')
   })
 
   it('explains the two-pane limit and adds a guide only to a pane without one', async () => {

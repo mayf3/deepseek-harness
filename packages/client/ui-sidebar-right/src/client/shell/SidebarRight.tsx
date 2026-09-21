@@ -106,8 +106,6 @@ export interface SidebarRightInjected {
   readonly openTab: (kind: string, options?: SidebarRightOpenTabOptions) => void
   /** Close through the resource owner's cleanup handler. */
   readonly closeTab: (tabId: TabId) => void
-  /** Publish updated room measurements for command availability. */
-  readonly refreshInteraction: () => void
   /** Split through the same controller as keyboard commands. */
   readonly splitPane: (paneId: PaneId) => void
   /** Toggle the dock panel using its current display mode. */
@@ -357,7 +355,7 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
  */
 export function RightbarSeat({
   sessionId, width, viewportWidth, canShow, useStore, actions, t, renderSlot, syncPresentation, bindService, openTab, closeTab,
-  useTabTypes, useTabNavigation, occurrence, retainTab, active, useShortcuts, splitPane, toggleFullscreen, refreshInteraction,
+  useTabTypes, useTabNavigation, occurrence, retainTab, active, useShortcuts, splitPane, toggleFullscreen,
 }: RightbarSeatProps): ReactNode {
   // One store instance per session, so this map holds this session's surface.
   // The binding published below serves the public face's commands on the
@@ -373,10 +371,7 @@ export function RightbarSeat({
   // The kit's room-rule readings, kept in a ref: the service reads them at
   // call time through the binding, and a reading never re-renders anything.
   const room = useRef<ReadonlyMap<PaneId, HalvesFit>>(new Map())
-  const reportRoom = useCallback((fits: ReadonlyMap<PaneId, HalvesFit>): void => {
-    room.current = fits
-    refreshInteraction()
-  }, [refreshInteraction])
+  const reportRoom = useCallback((fits: ReadonlyMap<PaneId, HalvesFit>): void => { room.current = fits }, [])
   const track = shown && !autoFullscreen
 
   useEffect(() => {

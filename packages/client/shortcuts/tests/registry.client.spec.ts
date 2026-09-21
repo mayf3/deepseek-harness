@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindingKey, initialShortcutConfig, normalizeBinding, presentBinding } from '../src/protocol.ts'
 import type { ShortcutCommandId } from '../src/protocol.ts'
 import { ShortcutRegistry } from '../src/client/registry.ts'
@@ -19,37 +18,6 @@ function command(overrides: Partial<ShortcutCommand> = {}): ShortcutCommand {
 }
 
 describe('physical key registry', () => {
-  it('publishes owner availability without changing saved bindings and releases its subscription', () => {
-    const registry = new ShortcutRegistry('desktop', 'macos')
-    const availability = createSnapshotStore<string | null>('No completed turn')
-    const unsubscribe = vi.fn()
-    let announce = (): void => {}
-    const source = { getSnapshot: () => availability.getSnapshot(), subscribe: (listener: () => void) => {
-      announce = listener
-      listener()
-      const off = availability.subscribe(listener)
-      return () => { unsubscribe(); off() }
-    } }
-    const off = registry.register(command({ availability: source }))
-    const offOther = registry.register(command({ id: 'other.unbound' as ShortcutCommandId, defaults: {} }))
-    const other = registry.catalog.getSnapshot()[1]
-    const config = registry.config.getSnapshot()
-    expect(registry.catalog.getSnapshot()[0]).toMatchObject({ unavailableReason: 'No completed turn', keys: ['⌘', 'B'] })
-    availability.set(null)
-    expect(registry.catalog.getSnapshot()[0]?.unavailableReason).toBeNull()
-    expect(registry.catalog.getSnapshot()[1]).toBe(other)
-    const rows = registry.catalog.getSnapshot()
-    announce()
-    expect(registry.catalog.getSnapshot()).toBe(rows)
-    expect(registry.config.getSnapshot()).toBe(config)
-    off(); off(); offOther()
-    const changed = vi.fn()
-    registry.catalog.subscribe(changed)
-    availability.set('No session')
-    expect(unsubscribe).toHaveBeenCalledOnce()
-    expect(changed).not.toHaveBeenCalled()
-    expect(registry.catalog.getSnapshot()).toEqual([])
-  })
   it('normalizes primary/control together on Windows and presents platform-specific keys', () => {
     const binding = { code: 'KeyB', modifiers: ['primary', 'control', 'shift'] as const }
     expect(bindingKey(normalizeBinding(binding, 'windows'))).toBe('control+shift+KeyB')

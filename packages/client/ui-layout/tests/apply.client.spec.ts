@@ -111,6 +111,7 @@ describe('ui-layout client apply', () => {
     const host = rendererHost()
     expect(host.storeOf(entry, undefined)).toBe(instance)
     const panelInfo = host.root.getSnapshot().hooks.panelInfo!
+    expect(panelInfo).toBe(layout.panelInfo)
     expect(panelInfo.getSnapshot()).toBe(instance.getSnapshot().panelInfo)
     const panelId = 'panel-a' as MainPanelId
     const disposePanel = slots.register({ name: 'main', key: panelId }, () => null)

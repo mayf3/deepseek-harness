@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { ShortcutRegistry } from './registry.ts'
 import { detectEnvironment, installKeyboard } from './dom.ts'
-import { bindingIssue, bindingKey, initialShortcutConfig, normalizeBinding, overlappingBindings, presentBinding } from '../protocol.ts'
+import { bindingIssue, initialShortcutConfig, normalizeBinding, overlappingBindings, presentBinding } from '../protocol.ts'
 import type { DesktopKeyboardApi, DesktopShortcutsApi, ShortcutSaveResult } from '../protocol.ts'
 import { desktopShortcutStorage, webShortcutStorage } from './storage.ts'
 import type { Shortcuts } from './types.ts'
@@ -12,7 +12,7 @@ import type { ShortcutFixedInput } from './types.ts'
 import { installNativeKeyboard } from './native.ts'
 import { Config } from '../config.ts'
 
-export type { ShortcutCatalogEntry, ShortcutCommand, ShortcutContext, ShortcutDispatch, ShortcutGesture, Shortcuts } from './types.ts'
+export type { ShortcutCatalogEntry, ShortcutCommand, ShortcutContext, ShortcutGesture, Shortcuts } from './types.ts'
 export type { ShortcutFixedInput, ShortcutFixedCommand, ShortcutFixedCatalogEntry } from './types.ts'
 export type { ShortcutBinding, ShortcutCommandId, ShortcutPlatform, ShortcutRuntime } from '../protocol.ts'
 
@@ -23,7 +23,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Cordis provider for the physical-key registry and its main-document adapter. */
+/** Cordis keyboard provider; Desktop startup requires its native keyboard bridge. */
 export default class ShortcutsService extends Service implements Shortcuts {
   static inject = ['locale']
   readonly runtime: Shortcuts['runtime']
@@ -40,8 +40,11 @@ export default class ShortcutsService extends Service implements Shortcuts {
   private readonly registry: ShortcutRegistry
 
   constructor(ctx: Context) {
-    super(ctx, 'shortcuts')
     const environment = detectEnvironment(document, navigator)
+    const keyboard = environment.runtime === 'desktop'
+      ? (window as Window & { dshDesktop?: { keyboard?: DesktopKeyboardApi } }).dshDesktop?.keyboard : undefined
+    if (environment.runtime === 'desktop' && keyboard === undefined) throw new Error('Desktop keyboard bridge unavailable')
+    super(ctx, 'shortcuts')
     this.runtime = environment.runtime
     this.platform = environment.platform
     const config = Config((globalThis as { __DSH_SHORTCUTS_CONFIG__?: unknown }).__DSH_SHORTCUTS_CONFIG__ ?? {})
@@ -55,9 +58,7 @@ export default class ShortcutsService extends Service implements Shortcuts {
     }
     const web = this.runtime === 'web' ? webShortcutStorage(window, this.platform, publish) : undefined
     this.adapter = web ?? desktopShortcutStorage(window)
-    this.keyboard = this.runtime === 'desktop'
-      ? (window as Window & { dshDesktop?: { keyboard?: DesktopKeyboardApi } }).dshDesktop?.keyboard : undefined
-    const keyboard = this.keyboard
+    this.keyboard = keyboard
     if (keyboard !== undefined) ctx.effect(() => installNativeKeyboard(window, keyboard, this.registry,
       () => this.config.getSnapshot(), () => { this.fixedInput({ type: 'reset' }) }), 'shortcuts: native keyboard')
     ctx.effect(() => {
@@ -111,7 +112,7 @@ export default class ShortcutsService extends Service implements Shortcuts {
 
   describeBinding(binding: Parameters<Shortcuts['describeBinding']>[0]): ReturnType<Shortcuts['describeBinding']> {
     const normalized = binding === null ? null : normalizeBinding(binding, this.platform)
-    return { binding: normalized, index: normalized === null ? null : bindingKey(normalized),
+    return { binding: normalized,
       keys: presentBinding(normalized, this.platform).keys,
       issue: normalized === null ? null : bindingIssue(normalized, this.runtime, this.platform),
       conflicts: normalized === null ? [] : [...this.catalog.getSnapshot().filter(row => row.binding !== null
@@ -154,14 +155,5 @@ export default class ShortcutsService extends Service implements Shortcuts {
   async recording(active: boolean): Promise<void> {
     if (this.adapter === undefined) throw new Error('Desktop shortcuts bridge unavailable')
     await this.adapter.recording(active)
-  }
-
-  /**
-   * Dispatch input through the window registry.
-   * @param args - gesture, current input owner, and synchronous consumer.
-   * @returns the command consumption result.
-   */
-  dispatch(...args: Parameters<Shortcuts['dispatch']>): ReturnType<Shortcuts['dispatch']> {
-    return this.registry.dispatch(...args)
   }
 }

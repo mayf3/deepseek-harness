@@ -85,7 +85,6 @@ export function createSidebarRightController(tabs: SidebarRightTabRegistry, pin:
         const surface = store.getSnapshot().bySession[sessionId]
         inventory.update(sessionId, Object.values(surface?.layout.tabs ?? {}))
         if (surface !== undefined) controller.tabDomain.sync(sessionId, surface.layout)
-        controller.refreshInteraction()
       }
       const adoption: Adoption = { store, unsubscribe: store.subscribe(sync) }
       adopted.set(sessionId, adoption)
@@ -241,11 +240,6 @@ export class SidebarRightController implements ISidebarRight {
   /** The mounted seat's session; see {@link ISidebarRight.mounted}. */
   readonly mounted: ObservableSnapshot<SessionId | undefined> = this.mountedSession
   private binding: SidebarRightBinding | undefined
-  /** Invalidates owner-derived command availability after layout or focus changes. */
-  readonly interaction = createSnapshotStore(0)
-
-  /** Notify subscribers that live input ownership or measured room changed. */
-  refreshInteraction(): void { this.interaction.set(this.interaction.getSnapshot() + 1) }
   private readonly closeHandlers = new Map<string, SidebarRightCloseHandler>()
 
   /**
@@ -301,14 +295,12 @@ export class SidebarRightController implements ISidebarRight {
   bind(binding: SidebarRightBinding): () => void {
     this.binding = binding
     this.publishMounted()
-    this.refreshInteraction()
     return () => {
       // A newer seat may already have taken over; only the binding that is
       // still ours may be cleared.
       if (this.binding !== binding) return
       this.binding = undefined
       this.publishMounted()
-      this.refreshInteraction()
     }
   }
 

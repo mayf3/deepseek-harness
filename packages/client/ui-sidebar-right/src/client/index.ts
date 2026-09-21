@@ -135,7 +135,7 @@ export function apply(ctx: ClientContext): void {
   ctx.inject(['shortcuts'], (ctx) => {
     ctx.effect(() => registerSidebarShortcuts(ctx.shortcuts, controller, t), 'ui-sidebar-right: shortcuts')
   })
-  if (typeof document !== 'undefined') ctx.effect(() => observeSidebarFocus(document, () => { controller.refreshInteraction() }), 'ui-sidebar-right: focus')
+  if (typeof document !== 'undefined') ctx.effect(() => observeSidebarFocus(document), 'ui-sidebar-right: focus')
 
   ctx.effect(() => {
     const handle = createSidebarRightStore(() => defaultSeed(tabs))
@@ -164,7 +164,6 @@ export function apply(ctx: ClientContext): void {
         else layout.closeRightbar()
       },
       bindService: binding => controller.bind(binding),
-      refreshInteraction: () => { controller.refreshInteraction() },
       splitPane: (paneId) => { controller.split(paneId) },
       toggleFullscreen: () => { const target = controller.commandTarget(); if (target !== undefined) controller.toggleFullscreen(target) },
       openTab: (kind, options) => { controller.openTab(kind, options) },

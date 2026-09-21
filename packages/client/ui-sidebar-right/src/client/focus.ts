@@ -68,10 +68,9 @@ export function visibleSidebarPane(document: Document, sessionId: SessionId, pan
 /**
  * Observe pane focus and retain it when its DOM node is replaced, preserving text selections.
  * @param document - product document whose sidebar owns the listener lifetime.
- * @param changed - refresh command availability from live focus and layout.
  * @returns disposer for every document/window listener.
  */
-export function observeSidebarFocus(document: Document, changed: () => void): () => void {
+export function observeSidebarFocus(document: Document): () => void {
   let active = true
   let focused: { element: Element; sessionId: SessionId; paneId: PaneId; occurrence: string | undefined } | undefined
   const removal = new MutationObserver(() => {
@@ -106,10 +105,8 @@ export function observeSidebarFocus(document: Document, changed: () => void): ()
     // Observe removal of the whole Session seat as well as its tab bodies.
     if (owner.parentElement !== null) removal.observe(owner.parentElement, { childList: true })
   }
-  const focus = (): void => { capture(); changed() }
   const focusout = (event: FocusEvent): void => {
     if (event.relatedTarget === null && focused?.element.isConnected) { focused = undefined; removal.disconnect() }
-    changed()
   }
   const pointer = (event: PointerEvent): void => {
     const element = event.composedPath().find(value => value instanceof Element)
@@ -120,22 +117,21 @@ export function observeSidebarFocus(document: Document, changed: () => void): ()
     if (pane !== null && (control === null || control === pane)) {
       pane.focus({ preventScroll: true })
     }
-    changed()
   }
-  const blur = (): void => { queueMicrotask(() => { if (active) focus() }) }
-  document.addEventListener('focusin', focus)
+  const blur = (): void => { queueMicrotask(() => { if (active) capture() }) }
+  document.addEventListener('focusin', capture)
   document.addEventListener('focusout', focusout)
   document.addEventListener('pointerdown', pointer, true)
   document.defaultView?.addEventListener('blur', blur)
-  document.defaultView?.addEventListener('focus', focus)
+  document.defaultView?.addEventListener('focus', capture)
   capture()
   return () => {
     active = false
     removal.disconnect()
-    document.removeEventListener('focusin', focus)
+    document.removeEventListener('focusin', capture)
     document.removeEventListener('focusout', focusout)
     document.removeEventListener('pointerdown', pointer, true)
     document.defaultView?.removeEventListener('blur', blur)
-    document.defaultView?.removeEventListener('focus', focus)
+    document.defaultView?.removeEventListener('focus', capture)
   }
 }

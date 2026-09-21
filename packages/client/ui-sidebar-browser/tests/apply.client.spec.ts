@@ -56,7 +56,7 @@ async function boot(platform: ShortcutPlatform = 'macos', runtime: 'desktop' | '
   const openTabs = createSnapshotStore<readonly { sessionId: string; tabId: TabId }[]>([])
   const target = { sessionId: 'session', paneId: 'pane' }
   const sidebar = { openTabs, commandTarget: vi.fn<() => typeof target | undefined>(() => target),
-    openTabFromTarget: vi.fn(), interaction: { subscribe: vi.fn<(listener: () => void) => () => void>(() => () => {}) } }
+    openTabFromTarget: vi.fn() }
   const registry = new ShortcutRegistry(runtime, platform)
   ctx.provide('sidebarRight', sidebar as never)
   ctx.provide('shortcuts', { register: (command: ShortcutCommand) => registry.register(command) } as never)
@@ -156,9 +156,7 @@ describe('ui-sidebar-browser apply', () => {
       h.registry.dispatch({ ...gesture, repeat: true }, context, consume)
       expect(h.sidebar.openTabFromTarget).toHaveBeenCalledOnce()
       h.sidebar.commandTarget.mockReturnValue(undefined)
-      h.sidebar.interaction.subscribe.mock.calls[0]?.[0]()
       expect(h.registry.dispatch(gesture, context, consume).status).toBe('blocked')
-      expect(h.registry.catalog.getSnapshot()[0]?.unavailableReason).toBe('shortcut.noSession')
     } finally { await h.fiber.dispose() }
     expect(h.registry.catalog.getSnapshot()).toEqual([])
   })

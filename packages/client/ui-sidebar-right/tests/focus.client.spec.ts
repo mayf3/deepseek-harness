@@ -207,16 +207,14 @@ describe('sidebar focus targets', () => {
     expect(h.controller.splitBlock(floating)).toBe('stale')
   })
 
-  it('focuses pointer-activated pane contents and releases delayed blur notifications', async () => {
+  it('focuses pointer-activated pane contents and releases document listeners', async () => {
     const h = harness()
     const pane = h.paneElement()
     const body = document.createElement('div')
     pane.append(body)
-    const changed = vi.fn()
-    const release = observeSidebarFocus(document, changed)
+    const release = observeSidebarFocus(document)
     body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
     expect(document.activeElement).toBe(pane)
-    expect(changed).toHaveBeenCalled()
     const button = document.createElement('button')
     pane.append(button)
     button.focus()
@@ -225,13 +223,12 @@ describe('sidebar focus targets', () => {
     document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
     window.dispatchEvent(new Event('blur'))
     await Promise.resolve()
-    const before = changed.mock.calls.length
     window.dispatchEvent(new Event('blur'))
     release()
     await Promise.resolve()
-    expect(changed).toHaveBeenCalledTimes(before)
+    expect(document.activeElement).toBe(button)
     body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
-    expect(changed).toHaveBeenCalledTimes(before)
+    expect(document.activeElement).toBe(button)
   })
 
   it.each([
@@ -247,7 +244,7 @@ describe('sidebar focus targets', () => {
     selected.setAttribute('contenteditable', String(editable))
     selected.textContent = 'preserved text'
     ;(inside ? pane : document.body).append(selected)
-    releases.push(observeSidebarFocus(document, vi.fn()))
+    releases.push(observeSidebarFocus(document))
     pane.focus()
     const selection = document.getSelection()!
     // Chromium retains the departing editor selection on focus; jsdom moves it to the pane.
@@ -278,7 +275,7 @@ describe('sidebar focus targets', () => {
     const first = tab('first', false)
     const selected = tab('selected', true)
     pane.append(first, selected)
-    releases.push(observeSidebarFocus(document, vi.fn()))
+    releases.push(observeSidebarFocus(document))
     pane.focus()
     const firstPane = pane.cloneNode() as HTMLElement
     firstPane.dataset.dockkitPane = 'first-destination'
@@ -297,7 +294,7 @@ describe('sidebar focus targets', () => {
     pane.parentElement!.setAttribute('data-sidebar-right-open', '')
     const input = document.createElement(kind)
     pane.append(input)
-    const release = observeSidebarFocus(document, vi.fn())
+    const release = observeSidebarFocus(document)
     releases.push(release)
     input.focus()
     input.replaceWith(document.createElement(kind))
@@ -314,7 +311,7 @@ describe('sidebar focus targets', () => {
     pane.append(input)
     const outside = document.createElement('button')
     document.body.append(outside)
-    const release = observeSidebarFocus(document, vi.fn())
+    const release = observeSidebarFocus(document)
     releases.push(release)
     input.focus()
     if (reason === 'outside-pointer') outside.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
@@ -377,7 +374,7 @@ describe('sidebar keyboard commands', () => {
     expect(h.layout().expanded).toBe(true)
   })
 
-  it('publishes focus restrictions and refuses captured commands after Session replacement', () => {
+  it('refuses commands without a current eligible pane and captured commands after Session replacement', () => {
     const h = harness()
     const commands = new Map<string, ShortcutCommand>()
     releases.push(registerSidebarShortcuts({ runtime: 'desktop', closeWindow: vi.fn(), register: (command) => {
@@ -390,10 +387,8 @@ describe('sidebar keyboard commands', () => {
     const pane = h.paneElement()
     pane.focus()
     const context = { target: pane, region: 'page' as const, modal: null }
-    expect(split.availability!.getSnapshot()).toBeNull()
     h.room.allowed = false
-    expect(split.availability!.getSnapshot()).toBe(en['command.width'])
-    expect(split.resolve(context).status).toBe('blocked')
+    expect(split.resolve(context)).toMatchObject({ status: 'blocked', reason: en['command.width'] })
     h.room.allowed = true
     const pendingSplit = split.resolve(context)
     const pendingFullscreen = fullscreen.resolve(context)
@@ -406,7 +401,6 @@ describe('sidebar keyboard commands', () => {
     expect(h.layout().mode).toBe('push')
     expect(h.layout().expanded).toBe(true)
     expect(toggle.resolve(context).status).toBe('blocked')
-    expect(toggle.availability!.getSnapshot()).toBe(en['command.noSession'])
     releases.push(h.bind())
     const splitNow = split.resolve(context)
     if (splitNow.status === 'handled') splitNow.run()
@@ -416,8 +410,7 @@ describe('sidebar keyboard commands', () => {
     h.controller.float(files)
     const floated = h.tabElement(files)
     floated.focus()
-    expect(fullscreen.availability!.getSnapshot()).toBe(en['command.float'])
-    expect(fullscreen.resolve({ ...context, target: floated }).status).toBe('blocked')
+    expect(fullscreen.resolve({ ...context, target: floated })).toMatchObject({ status: 'blocked', reason: en['command.float'] })
   })
 
   it.each([

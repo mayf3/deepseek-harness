@@ -1,4 +1,4 @@
-/** Sidebar-owned commands and live availability from the mounted surface. */
+/** Sidebar-owned commands resolved against the currently mounted page. */
 import type { Shortcuts, ShortcutBinding, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { SidebarRightController } from './service.ts'
@@ -10,12 +10,10 @@ import type {} from './locales.ts'
  * @param shortcuts - effective-binding registry for this window.
  * @param sidebar - current Session and page owner.
  * @param t - current localized command and unavailable labels.
- * @returns release callback for the commands and their availability subscriptions.
+ * @returns release callback for the commands.
  */
 export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' | 'runtime' | 'closeWindow'>, sidebar: SidebarRightController, t: TranslateNS<'sidebarRight'>): () => void {
-  const missing = (): string | null => sidebar.commandTarget(null) === undefined ? t('command.noSession') : null
-  const reason = (kind: 'split' | 'fullscreen', target: SidebarRightTarget | undefined): string | null => {
-    if (target === undefined) return t('command.noFocus')
+  const reason = (kind: 'split' | 'fullscreen', target: SidebarRightTarget): string | null => {
     if (kind === 'split') {
       const block = sidebar.splitBlock(target)
       return block === undefined ? null : t(`command.${block}`)
@@ -23,9 +21,6 @@ export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' |
     if (target.host === 'float') return t('command.float')
     return null
   }
-  const status = (read: () => string | null) => ({
-    getSnapshot: read, subscribe: (listener: () => void) => sidebar.interaction.subscribe(listener),
-  })
   const disposers = [shortcuts.register({
     id: 'sidebar.right.toggle' as ShortcutCommandId, label: () => t('command.toggle'), aliases: ['right sidebar', 'toggle right panel'],
     defaults: {
@@ -35,7 +30,7 @@ export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' |
       'web:macos': { code: 'KeyB', modifiers: ['primary', 'shift'] },
       'web:windows': { code: 'KeyB', modifiers: ['primary', 'shift'] },
     },
-    regions: ['page', 'editable', 'terminal'], modals: [], availability: status(missing),
+    regions: ['page', 'editable', 'terminal'], modals: [],
     resolve: () => {
       const target = sidebar.commandTarget(null)
       if (target === undefined) return { status: 'blocked', reason: t('command.noSession') }
@@ -50,7 +45,7 @@ export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' |
       label: () => t(kind === 'split' ? 'dock.splitPane' : 'command.fullscreen'), aliases: [kind, 'panel'],
       defaults: { 'desktop:macos': binding, 'desktop:windows': binding, 'desktop:linux': binding,
         'web:macos': binding, 'web:windows': binding },
-      regions: ['page', 'editable', 'terminal'], modals: [], availability: status(() => reason(kind, sidebar.focusedTarget())),
+      regions: ['page', 'editable', 'terminal'], modals: [],
       resolve: ({ target: element }) => {
         const target = sidebar.focusedTarget(element)
         if (target === undefined) return { status: 'blocked', reason: t('command.noFocus') }

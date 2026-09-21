@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 /**
  * Browser-half lifecycle over the real SlotRegistry: the dictionary,
@@ -12,6 +13,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { LayoutController, type MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { apply, inject, type OpenInAppActionInjected, type OpenPathInjected } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
@@ -50,6 +53,12 @@ async function bench() {
   } as never, () => null)
   const list = createSnapshotStore<SessionListState>({ ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
   const commands = new Map<string, ShortcutCommand>()
+  const layoutStore = createLayoutStore().create()
+  const layout = new LayoutController(layoutStore.actions, id => id === 'plugins', {
+    getSnapshot: () => layoutStore.getSnapshot().panelInfo,
+    subscribe: listener => layoutStore.subscribe(listener),
+  })
+  ctx.provide('layout', layout)
   ctx.provide('sessions', { list })
   ctx.provide('shortcuts', { register: (command: ShortcutCommand) => { commands.set(command.id, command); return () => { commands.delete(command.id) } }, catalog: createSnapshotStore([]) })
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -57,7 +66,7 @@ async function bench() {
   ctx.provide('remote.session', remote.session as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, list, commands }
+  return { ctx, fiber, list, commands, layout }
 }
 
 function headerEntryIds(ctx: Context): (string | undefined)[] {
@@ -100,7 +109,39 @@ describe('open-in-app browser half', () => {
   })
 
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['sessions', 'slots', 'locale', 'remote', 'remote.session', 'shortcuts'])
+    expect(inject).toEqual(['sessions', 'slots', 'locale', 'remote', 'remote.session', 'shortcuts', 'layout'])
+  })
+
+  it('does not open a retained workspace while a global panel hides the Session header', async () => {
+    const fetcher = vi.fn(async (input: string | URL) => new Response(
+      String(input) === 'open-in-app/apps' ? JSON.stringify({ apps: ['finder'] }) : '{}',
+    ))
+    vi.stubGlobal('fetch', fetcher)
+    const { ctx, fiber, list, commands, layout } = await bench()
+    try {
+      const id = 'main' as SessionId
+      list.set({ ...list.getSnapshot(), ids: [id], byId: {
+        [id]: { id, displayTitle: 'Main', cwd: '/workspace', running: false, blank: false, updatedAt: 0, retainedBy: { mainView: 1 } },
+      } })
+      const entry = ctx.slots.entries('conversation.session.header.utilities')[0]
+      const face = (entry?.inject as unknown as () => OpenInAppActionInjected)()
+      await vi.waitFor(() => { expect(face.hooks.openInAppApps.getSnapshot()).toEqual(['finder']) })
+      const command = commands.get('workspace.openLocal')!
+      const context = { region: 'page', modal: null, target: null } as const
+      expect(command.resolve(context).status).toBe('handled')
+
+      layout.selectPanel('plugins' as MainPanelId)
+      expect(list.getSnapshot().byId[id]?.retainedBy.mainView).toBe(1)
+      expect(command.resolve(context).status).toBe('blocked')
+      expect(fetcher.mock.calls.filter(([input]) => input === 'open-in-app/open')).toEqual([])
+
+      layout.selectPanel(null)
+      const resolution = command.resolve(context)
+      if (resolution.status !== 'handled') throw new Error('visible Session header was blocked')
+      resolution.run()
+      await vi.waitFor(() => { expect(face.hooks.openInAppLaunch.getSnapshot().phase).toBe('idle') })
+      expect(fetcher.mock.calls.filter(([input]) => input === 'open-in-app/open')).toHaveLength(1)
+    } finally { await fiber.dispose() }
   })
 
   it('registers both document-preview path controls behind one desktop answer, and fiber teardown removes them', async () => {

@@ -112,7 +112,7 @@ it.each([
         const firstRecorder = dialog.getByRole('button', { name: 'Press a shortcut', exact: true })
         expect(await firstRecorder.evaluate(node => getComputedStyle(node).boxShadow)).toBe('none')
         expect(await dialog.getByRole('button', { name: 'Cancel recording', exact: true }).count()).toBe(0)
-        await compareOrRefreshGolden(join(expected, `${platform}-recording.expected.md`), await dialog.getByRole('group').ariaSnapshot(), mode)
+        await compareOrRefreshGolden(join(expected, 'recording.expected.md'), await dialog.getByRole('group').ariaSnapshot(), mode)
         await page.keyboard.press(`${primary}+C`)
         await dialog.getByRole('group').waitFor({ state: 'hidden' })
         const saved = JSON.parse(await readFile(join(userData, 'keybindings.json'), 'utf8')) as unknown
@@ -171,7 +171,7 @@ it.each([
           expect(await dialog.getByRole('listitem').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height)))
             .toEqual([42])
         }
-        await compareOrRefreshGolden(join(expected, `${platform}-fixed-conflict.expected.md`), await dialog.getByRole('group').ariaSnapshot(), mode)
+        await compareOrRefreshGolden(join(expected, 'fixed-conflict.expected.md'), await dialog.getByRole('group').ariaSnapshot(), mode)
         const preferencePath = join(userData, 'keybindings.json')
         const savedPreferencePath = join(userData, 'keybindings.saved.json')
         await rename(preferencePath, savedPreferencePath)
@@ -196,7 +196,7 @@ it.each([
         await page.keyboard.up('b')
         await dialog.getByRole('group').waitFor({ state: 'hidden' })
         expect(snapshot.document.profiles[`desktop:${platform}`]?.['session.new']).toEqual({ code: 'KeyA', secondCode: 'KeyB', modifiers: [] })
-        await compareOrRefreshGolden(join(expected, `${platform}-chord.expected.md`), await dialog.getByRole('listitem').ariaSnapshot(), mode)
+        await compareOrRefreshGolden(join(expected, 'chord.expected.md'), await dialog.getByRole('listitem').ariaSnapshot(), mode)
         await page.reload({ waitUntil: 'load' })
         await page.getByText('DONE', { exact: true }).waitFor()
         await composer.focus()

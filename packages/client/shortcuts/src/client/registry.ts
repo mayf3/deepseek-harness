@@ -2,8 +2,13 @@
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindingIssue, bindingKey, effectiveShortcuts, initialShortcutConfig, isWebBindingAllowed, normalizeBinding, presentBinding, resolveShortcutDefault } from '../protocol.ts'
 import type { ShortcutCommandId, ShortcutConfigSnapshot, ShortcutDefinition, ShortcutPlatform, ShortcutRuntime } from '../protocol.ts'
-import type { ShortcutCatalogEntry, ShortcutCommand, ShortcutContext, ShortcutDispatch, ShortcutGesture,
+import type { ShortcutCatalogEntry, ShortcutCommand, ShortcutContext, ShortcutGesture,
   ShortcutFixedCommand, ShortcutFixedCatalogEntry } from './types.ts'
+
+/** Dispatch consumption is independent of later business-operation success. */
+type ShortcutDispatch = { status: 'handled'; commandId: ShortcutCommandId }
+  | { status: 'blocked'; commandId: ShortcutCommandId; reason: string }
+  | { status: 'pass' }
 
 /** Application command registry; adapters own event listeners, feature plugins own actions. */
 export class ShortcutRegistry {
@@ -96,19 +101,9 @@ export class ShortcutRegistry {
       }
     }
     this.commands.set(command.id, command)
-    const availability = command.availability
-    const unsubscribe = availability?.subscribe(() => {
-      const previous = this.catalog.getSnapshot()
-      const row = previous.find(value => value.id === command.id)
-      const unavailableReason = availability.getSnapshot()
-      if (row === undefined || row.unavailableReason === unavailableReason) return
-      this.state.set({ config: this.config.getSnapshot(),
-        catalog: previous.map(value => value === row ? { ...value, unavailableReason } : value) })
-    })
     this.refreshLabels()
     return () => {
       if (this.commands.get(command.id) !== command) return
-      unsubscribe?.()
       this.commands.delete(command.id)
       this.refreshLabels()
     }
@@ -130,7 +125,6 @@ export class ShortcutRegistry {
         this.conflicts.set(bindingKey(row.binding), command)
       }
       return { ...row, label: command.label(), aliases: command.aliases,
-        unavailableReason: command.availability?.getSnapshot() ?? null,
         ...presentBinding(row.binding, this.platform),
         aria: enabled ? presentBinding(row.binding, this.platform).aria : undefined }
     })

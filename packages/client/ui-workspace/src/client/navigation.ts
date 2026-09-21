@@ -46,10 +46,9 @@ export interface UiWorkspace {
   /**
    * Fork a Session without changing the current selection.
    * @param sessionId - source Session.
-   * @param atSeq - captured completed-turn sequence; absent selects the latest completed turn.
    * @returns completion after child creation and inherited-title increment.
    */
-  forkSession(sessionId: SessionId, atSeq?: number): Promise<void>
+  forkSession(sessionId: SessionId): Promise<void>
   /**
    * Resolve the reusable or newly created blank Session for a Workspace.
    * @param workspaceId - target Workspace.
@@ -217,8 +216,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
   }
 
-  async forkSession(sessionId: SessionId, atSeq?: number): Promise<void> {
-    await this.sessions.fork({ sessionId, increaseTitle: true, ...(atSeq === undefined ? {} : { atSeq }) })
+  async forkSession(sessionId: SessionId): Promise<void> {
+    await this.sessions.fork({ sessionId, increaseTitle: true })
   }
 
   startSession(workspaceId?: WorkspaceId): void {

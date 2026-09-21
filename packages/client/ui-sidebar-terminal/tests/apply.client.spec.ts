@@ -54,7 +54,7 @@ async function mountPlugin() {
   const openTabs = createSnapshotStore<readonly SidebarRightOpenTab[]>([])
   ctx.provide('webTerminals', terminals as never)
   ctx.provide('sidebarRight', {
-    tabDomain: { occurrence }, openTabIn, tabsIn, openTabs, interaction: { subscribe: () => () => {} },
+    tabDomain: { occurrence }, openTabIn, tabsIn, openTabs,
     registerCloseHandler: (kind: string, handler: SidebarRightCloseHandler) => { expect(kind).toBe('terminal'); closeHandler = handler; return () => { closeHandler = undefined } },
   } as never)
   ctx.provide('slots', {

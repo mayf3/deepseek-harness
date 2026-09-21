@@ -1,5 +1,6 @@
 /** Main-document keyboard adapter; local controls arbitrate before window bubbling. */
-import type { Shortcuts, ShortcutContext, ShortcutFixedInput } from './types.ts'
+import type { ShortcutContext, ShortcutFixedInput } from './types.ts'
+import type { ShortcutRegistry } from './registry.ts'
 import type { ShortcutPlatform, ShortcutRuntime } from '../protocol.ts'
 
 /**
@@ -26,26 +27,18 @@ export function detectEnvironment(document: Document, navigator: Navigator): {
  * @param native - native input owns configurable bindings; DOM delivery only feeds fixed actions.
  * @returns disposer releasing every listener.
  */
-export function installKeyboard(window: Window, shortcuts: Pick<Shortcuts, 'dispatch' | 'runtime' | 'platform'> & Partial<Pick<Shortcuts, 'config'>>,
+export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry, 'dispatch' | 'runtime' | 'platform'>,
   fixed?: (input: ShortcutFixedInput) => void, native = false): () => void {
   const document = window.document
   let pending = false
   let pendingTimer: number | undefined
-  const chords = !native && shortcuts.runtime === 'desktop' && (shortcuts.platform === 'macos' || shortcuts.platform === 'windows')
-  const held = new Set<string>()
-  const reset = (): void => { held.clear(); fixed?.({ type: 'reset' }) }
-  const offConfig = chords ? shortcuts.config?.subscribe(reset) : undefined
+  const reset = (): void => { fixed?.({ type: 'reset' }) }
   let composing = false
   let compositionEnded = false
   let deadKey = false
   const start = (): void => { composing = true; reset() }
   const end = (): void => { composing = false; compositionEnded = true; reset() }
-  const release = (event: KeyboardEvent): void => {
-    compositionEnded = false
-    held.delete(event.code)
-    // Command can suppress character keyup delivery on macOS.
-    if (/^(Control|Alt|Shift|Meta)(Left|Right)$/u.test(event.code)) held.clear()
-  }
+  const release = (): void => { compositionEnded = false }
   const blur = (): void => { composing = false; compositionEnded = false; deadKey = false; reset() }
   const modalSelector = '[role="dialog"][aria-modal="true"], [role="menu"]'
   const containsModal = (node: Node): boolean => node instanceof Element
@@ -55,7 +48,7 @@ export function installKeyboard(window: Window, shortcuts: Pick<Shortcuts, 'disp
       ? record.oldValue === 'dialog' || record.oldValue === 'true' || containsModal(record.target)
       : [...record.addedNodes, ...record.removedNodes].some(containsModal))) reset()
   }
-  const observer = fixed === undefined && !chords ? undefined : new MutationObserver(changedModals)
+  const observer = fixed === undefined ? undefined : new MutationObserver(changedModals)
   observer?.observe(document.documentElement, { childList: true, subtree: true,
     attributes: true, attributeFilter: ['role', 'aria-modal'], attributeOldValue: true })
   const capture = (): void => {
@@ -98,20 +91,7 @@ export function installKeyboard(window: Window, shortcuts: Pick<Shortcuts, 'disp
     }
     fixed?.({ type: 'keydown', gesture, context, consume })
     if (native) return
-    let secondCode: string | undefined
-    const code = event.code
-    if (chords) {
-      if (gesture.composing || event.defaultPrevented || /^(Control|Alt|Shift|Meta)(Left|Right)$/u.test(code)) {
-        held.clear()
-        return
-      }
-      // A repeated key after focus/composition reset cannot restore an abandoned chord.
-      if (event.repeat && !held.has(code)) return
-      held.add(code)
-      if (held.size === 2) secondCode = [...held].find(value => value !== event.code)
-    }
     shortcuts.dispatch({ ...gesture, composing: guarded || (isDead && !commandDeadKey),
-      code, ...(secondCode === undefined ? {} : { secondCode }),
       defaultPrevented: event.defaultPrevented }, context, consume)
   }
   document.addEventListener('compositionstart', start, true)
@@ -120,12 +100,10 @@ export function installKeyboard(window: Window, shortcuts: Pick<Shortcuts, 'disp
   document.addEventListener('pointerdown', reset, true)
   window.addEventListener('keydown', capture, true)
   window.addEventListener('keydown', keydown)
-  window.addEventListener('keyup', release, chords)
+  window.addEventListener('keyup', release)
   window.addEventListener('blur', blur)
   return () => {
     pending = false
-    offConfig?.()
-    held.clear()
     window.clearTimeout(pendingTimer)
     observer?.disconnect()
     document.removeEventListener('compositionstart', start, true)
@@ -134,7 +112,7 @@ export function installKeyboard(window: Window, shortcuts: Pick<Shortcuts, 'disp
     document.removeEventListener('pointerdown', reset, true)
     window.removeEventListener('keydown', capture, true)
     window.removeEventListener('keydown', keydown)
-    window.removeEventListener('keyup', release, chords)
+    window.removeEventListener('keyup', release)
     window.removeEventListener('blur', blur)
   }
 }

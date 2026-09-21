@@ -25,8 +25,6 @@ export interface ShortcutCommand {
   readonly regions: readonly ShortcutRegion[]
   /** Modal identifiers in which this command may resolve; others block it. */
   readonly modals: readonly string[]
-  /** Current localized refusal reason; resolving an action still rechecks its target. */
-  readonly availability?: ObservableSnapshot<string | null>
   resolve(context: ShortcutContext): ShortcutResolution
 }
 /** JSON-compatible catalog row, shared by reference, tooltips, and controls. */
@@ -40,7 +38,6 @@ export interface ShortcutCatalogEntry {
   readonly modified: boolean
   readonly conflicts: readonly ShortcutCommandId[]
   readonly issue: BindingIssue | null
-  readonly unavailableReason: string | null
 }
 /** Keyboard adapter input, with composition and local consumption already resolved. */
 export interface ShortcutGesture {
@@ -79,10 +76,6 @@ export interface ShortcutFixedCatalogEntry {
   readonly bindings: readonly NormalizedBinding[]
   readonly group: ShortcutFixedCommand['group']
 }
-/** Dispatch consumption is independent of later business-operation success. */
-export type ShortcutDispatch = { status: 'handled'; commandId: ShortcutCommandId }
-  | { status: 'blocked'; commandId: ShortcutCommandId; reason: string }
-  | { status: 'pass' }
 /** Feature-facing keyboard registry. */
 export interface Shortcuts {
   /** Request native close after the page owner resolves a desktop fallback. */
@@ -108,11 +101,10 @@ export interface Shortcuts {
   /**
    * Describe a candidate using the device's physical-key and reservation rules; invalid codes throw.
    * @param binding - candidate combination, or null for an unbound command.
-   * @returns canonical binding, matching index, visible keys, rejection reason, and overlapping editable/fixed command IDs.
+   * @returns canonical binding, visible keys, rejection reason, and overlapping editable/fixed command IDs.
    */
   describeBinding(binding: ShortcutBinding | null): {
     binding: NormalizedBinding | null
-    index: string | null
     keys: readonly string[]
     issue: BindingIssue | null
     conflicts: readonly ShortcutCommandId[]
@@ -137,12 +129,4 @@ export interface Shortcuts {
    * @returns disposer removing the binding and catalog entry.
    */
   register(command: ShortcutCommand): () => void
-  /**
-   * Resolve and consume synchronously; call consume before executing an action.
-   * @param gesture - key, modifiers, repeat, and local input guards.
-   * @param context - current input and modal owner.
-   * @param consume - adapter callback consuming the original event.
-   * @returns handled, blocked with an owner reason, or pass for local input.
-   */
-  dispatch(gesture: ShortcutGesture, context: ShortcutContext, consume: () => void): ShortcutDispatch
 }

@@ -45,9 +45,9 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
   afterAll(async () => { await browser?.close() })
 
   it.each([
-    { platform: 'MacIntel', primary: 'Meta', aria: 'Shift+Meta+,', file: 'macos' },
-    { platform: 'Win32', primary: 'Control', aria: 'Control+Shift+,', file: 'windows-labels' },
-  ].flatMap(platform => (['left', 'right'] as const).map(closeFirst => ({ ...platform, closeFirst }))))('targets panes and closes $closeFirst first with $file bindings', async ({ platform, primary, aria, file, closeFirst }) => {
+    { platform: 'MacIntel', primary: 'Meta', aria: 'Shift+Meta+,' },
+    { platform: 'Win32', primary: 'Control', aria: 'Control+Shift+,' },
+  ].flatMap(platform => (['left', 'right'] as const).map(closeFirst => ({ ...platform, closeFirst }))))('targets panes and closes $closeFirst first with $platform bindings', async ({ platform, primary, aria, closeFirst }) => {
     const scaffold: WebScaffold = await launchWebScaffold({ extraOverlayPath: fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url)) })
     const context = await browser.newContext({ locale: 'en-US', timezoneId: 'Asia/Shanghai', viewport: { width: 1680, height: 1000 } })
     try {
@@ -121,7 +121,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await page.keyboard.press(`${primary}+Shift+,`)
       await expect.poll(() => panel.getByRole('tab', { name: /Browser/ }).count()).toBe(2)
       await expect.poll(() => panel.getByRole('button', { name: 'Disable sandbox restrictions', exact: true }).isEnabled()).toBe(true)
-      await compareOrRefreshGolden(join(expected, `${file}-browser.expected.md`),
+      await compareOrRefreshGolden(join(expected, 'browser.expected.md'),
         await captureStableAria(page, '[data-sidebar-right-panel]', scaffold.workspaceCwd), mode)
       await panel.locator('[data-dockkit-tab-close]').last().click()
       await panel.locator('[data-dockkit-tab-close]').click()
@@ -157,7 +157,8 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       const disabled = right.locator('[data-dockkit-split-button]')
       expect(await disabled.isDisabled()).toBe(true)
       await disabled.locator('..').focus()
-      await page.getByRole('tooltip', { name: 'Two panes is the limit', exact: true }).waitFor()
+      const splitKeys = primary === 'Meta' ? '⇧ ⌘ ,' : 'Ctrl + Shift + ,'
+      await page.getByRole('tooltip', { name: `Two panes is the limit ${splitKeys}`, exact: true }).waitFor()
 
       await bind(page, primary, 'Workspace files', 'Split')
       await right.getByRole('tab').focus()
@@ -176,7 +177,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await expect.poll(() => right.getByRole('tab').count()).toBe(3)
       await expect.poll(() => right.locator('.xterm-rows').innerText()).toContain('bash-')
       expect(await left.getByRole('tab').count()).toBe(1)
-      await compareOrRefreshGolden(join(expected, `${file}.expected.md`),
+      await compareOrRefreshGolden(join(expected, 'panels.expected.md'),
         await captureStableAria(page, '[data-sidebar-right-panel]', scaffold.workspaceCwd), mode)
       await bind(page, primary, 'Refresh current page', 'New terminal')
       await right.locator('.xterm-helper-textarea').focus()
@@ -197,7 +198,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await composer.click()
       await page.keyboard.press(`${primary}+Shift+,`)
       expect(await right.getByRole('tab').count()).toBe(2)
-      await compareOrRefreshGolden(join(expected, `${file}-page-actions.expected.md`),
+      await compareOrRefreshGolden(join(expected, 'page-actions.expected.md'),
         await captureStableAria(page, '[data-sidebar-right-panel]', scaffold.workspaceCwd), mode)
       const menuTab = left.getByRole('tab', { name: /Files/ })
       await menuTab.locator('[data-dockkit-tab-close]').focus()
@@ -208,7 +209,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
         expect(await page.getByRole('tooltip').count()).toBe(0)
         expect(await page.getByRole('menuitem').getAttribute('aria-keyshortcuts')).toBeNull()
         if (attempt === 0) {
-          await compareOrRefreshGolden(join(expected, `${file}-tab-menu.expected.md`),
+          await compareOrRefreshGolden(join(expected, 'tab-menu.expected.md'),
             await captureStableAria(page, '[data-dockkit-tab-menu]', scaffold.workspaceCwd), mode)
         } else {
           await page.getByRole('menuitem').focus()
@@ -236,7 +237,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await page.keyboard.press(`${primary}+Shift+,`)
       await expect.poll(() => panel.getByRole('tab').count()).toBe(1)
       expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => pane === document.activeElement)).toBe(true)
-      await compareOrRefreshGolden(join(expected, `${file}-guide-close.expected.md`),
+      await compareOrRefreshGolden(join(expected, 'guide-close.expected.md'),
         await captureStableAria(page, '[data-sidebar-right-panel]', scaffold.workspaceCwd), mode)
       await page.keyboard.press(`${primary}+Shift+,`)
       await expect.poll(() => page.locator('[data-sidebar-right-open]').count()).toBe(0)

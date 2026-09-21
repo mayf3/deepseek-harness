@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionPendingInteractionBase } from '@deepseek-ai/dsh-client-ui-session/client'
-import type { Shortcuts } from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { Shortcuts, ShortcutContext, ShortcutGesture } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { MutableSessionEventSource } from '@deepseek-ai/dsh-api-session-controller/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
@@ -56,8 +56,8 @@ async function bench() {
   input.dataset.conversationRegion = 'composer'
   root.append(input)
   input.focus()
-  const press = (overrides: Partial<Parameters<Shortcuts['dispatch']>[0]> = {}, target: Element = input,
-    context: Partial<Parameters<Shortcuts['dispatch']>[1]> = {}) => {
+  const press = (overrides: Partial<ShortcutGesture> = {}, target: Element = input,
+    context: Partial<ShortcutContext> = {}) => {
     const consume = vi.fn()
     listener?.({ type: 'keydown', gesture: { code: 'Escape', control: false, alt: false, shift: false,
       meta: false, repeat: false, composing: false, defaultPrevented: false, ...overrides },

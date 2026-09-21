@@ -71,30 +71,17 @@ export function installWorkspaceShortcuts(
   const t = ctx.locale.bind('workspace')
   const current = () => Object.values(ctx.sessions.list.getSnapshot().byId)
     .find(row => (row.retainedBy.mainView ?? 0) > 0)
-  const reasons = {
-    main: () => current() === undefined ? t('shortcut.noSession') : null,
-    add: () => ctx.slots.entries('sidebar.workspaces.directoryFlow').length === 0
-      ? t('shortcut.noPicker')
-      : controls.state.getSnapshot().directoryBusy ? t('shortcut.directoryBusy') : null,
-  }
-  const availability = (read: () => string | null) => ({
-    getSnapshot: read,
-    subscribe: (listener: () => void) => {
-      const disposers = [ctx.sessions.list.subscribe(listener), controls.state.subscribe(listener),
-        ctx.locale.subscribe(listener), ctx.slots.subscribe('sidebar.workspaces.directoryFlow', listener)]
-      return () => { for (const dispose of disposers) dispose() }
-    },
-  })
+  const addReason = () => ctx.slots.entries('sidebar.workspaces.directoryFlow').length === 0
+    ? t('shortcut.noPicker')
+    : controls.state.getSnapshot().directoryBusy ? t('shortcut.directoryBusy') : null
   const register = (id: string, label: () => string, aliases: string[], code: string,
-    modifiers: ('primary' | 'alt' | 'shift')[], webModifiers: ('primary' | 'alt' | 'shift')[], resolve: ShortcutCommand['resolve'],
-    reason?: () => string | null): void => {
+    modifiers: ('primary' | 'alt' | 'shift')[], webModifiers: ('primary' | 'alt' | 'shift')[], resolve: ShortcutCommand['resolve']): void => {
     ctx.effect(() => ctx.shortcuts.register({
       id: id as ShortcutCommandId, label, aliases, defaults: {
         'desktop:macos': { code, modifiers }, 'desktop:windows': { code, modifiers }, 'desktop:linux': { code, modifiers },
         'web:macos': { code, modifiers: webModifiers }, 'web:windows': { code, modifiers: webModifiers },
       },
       regions: ['page', 'editable'], modals: [], resolve,
-      ...(reason === undefined ? {} : { availability: availability(reason) }),
     }), `ui-workspace: ${id}`)
   }
   register('session.new', () => t('session.new'), ['new session', 'new chat'], 'KeyN', ['primary'], ['primary', 'alt'],
@@ -103,22 +90,18 @@ export function installWorkspaceShortcuts(
     () => ({ status: 'handled', run: controls.search }))
   register('workspace.add', () => t('workspace.add'), ['add workspace', 'open folder'], 'KeyO', ['primary'], ['primary', 'alt'],
     () => {
-      const reason = reasons.add()
+      const reason = addReason()
       return reason === null ? { status: 'handled', run: controls.add } : { status: 'blocked', reason }
-    }, reasons.add)
+    })
   register('session.rename', () => t('rename.session.title'), ['rename session'], 'KeyR', ['primary', 'alt'], ['primary', 'shift'], () => {
     const target = current()
     return target === undefined ? { status: 'blocked', reason: t('shortcut.noSession') }
       : { status: 'handled', run: () => { controls.rename(target.id, target.displayTitle) } }
-  }, reasons.main)
-  const forkReason = () => {
-    const target = current()
-    return target === undefined ? t('shortcut.noSession') : target.blank ? t('shortcut.noCompletedTurn') : null
-  }
+  })
   register('session.fork', () => t('menu.fork'), ['fork session'], 'KeyF', ['primary', 'alt'], ['primary', 'shift'], () => {
     const target = current()
-    const reason = forkReason()
-    if (target === undefined || reason !== null) return { status: 'blocked', reason: reason ?? t('shortcut.noSession') }
+    if (target === undefined) return { status: 'blocked', reason: t('shortcut.noSession') }
+    if (target.blank) return { status: 'blocked', reason: t('shortcut.noCompletedTurn') }
     return { status: 'handled', run: () => {
       void navigation.forkSession(target.id).catch((error: unknown) => {
         // Client plugin bundles do not share error-class identity.
@@ -128,12 +111,12 @@ export function installWorkspaceShortcuts(
         if (!unavailable) console.warn('session fork rejected:', error)
       })
     } }
-  }, forkReason)
+  })
   register('session.archive', () => t('menu.archiveSession'), ['archive session'], 'KeyA', ['primary', 'shift'], ['primary', 'alt'], () => {
     const target = current()
     return target === undefined ? { status: 'blocked', reason: t('shortcut.noSession') }
       : { status: 'handled', run: () => {
         archiveSession(target.id)
       } }
-  }, reasons.main)
+  })
 }

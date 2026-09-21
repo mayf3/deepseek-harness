@@ -7,13 +7,15 @@ import type { ShortcutCatalogEntry, ShortcutCommandId, ShortcutFixedCatalogEntry
 import { ShortcutReference, ShortcutsRow } from '../src/client/Reference.tsx'
 import { createShortcutsStore } from '../src/client/store.ts'
 import { en, zh } from '../src/client/locales.ts'
-import { initialShortcutConfig, bindingIssue, bindingKey, normalizeBinding, presentBinding } from '@deepseek-ai/dsh-client-shortcuts/protocol'
+import { initialShortcutConfig, bindingIssue, normalizeBinding, presentBinding } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { ShortcutConfigSnapshot } from '@deepseek-ai/dsh-client-shortcuts/protocol'
+import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
 import { apply as hostApply } from '../src/index.ts'
+import { fixedCommands } from '../src/client/fixed.ts'
 
 const describeBinding: Parameters<typeof ShortcutReference>[0]['describeBinding'] = (binding) => {
   const normalized = binding === null ? null : normalizeBinding(binding, 'macos')
-  return { binding: normalized, index: normalized === null ? null : bindingKey(normalized), keys: presentBinding(normalized, 'macos').keys,
+  return { binding: normalized, keys: presentBinding(normalized, 'macos').keys,
     issue: normalized === null ? null : bindingIssue(normalized, 'web', 'macos'), conflicts: [] }
 }
 afterEach(cleanup)
@@ -21,20 +23,23 @@ it.each(['macos', 'windows'] as const)('shows the reference, filters labels and 
   hostApply()
   const store = createShortcutsStore().create()
   const catalog = createSnapshotStore<readonly ShortcutCatalogEntry[]>([
-    { id: 'shortcuts.open' as ShortcutCommandId, label: 'Open shortcuts', aliases: ['shortcuts'], binding: { code: 'Slash', modifiers: [platform === 'macos' ? 'meta' : 'control'] }, modified: false, conflicts: [], issue: null, unavailableReason: null,
+    { id: 'shortcuts.open' as ShortcutCommandId, label: 'Open shortcuts', aliases: ['shortcuts'], binding: { code: 'Slash', modifiers: [platform === 'macos' ? 'meta' : 'control'] }, modified: false, conflicts: [], issue: null,
       keys: platform === 'macos' ? ['⌘', '/'] : ['Ctrl', '+', '/'], aria: platform === 'macos' ? 'Meta+/' : 'Control+/' },
-    { id: 'settings.open' as ShortcutCommandId, label: 'Open settings', aliases: ['preferences'], binding: null, modified: false, conflicts: [], issue: null, unavailableReason: null, keys: [], aria: undefined },
+    { id: 'settings.open' as ShortcutCommandId, label: 'Open settings', aliases: ['preferences'], binding: null, modified: false, conflicts: [], issue: null, keys: [], aria: undefined },
     { id: 'sidebar.left.toggle' as ShortcutCommandId, label: 'Toggle left sidebar', aliases: ['sidebar', 'toggle left sidebar'],
-      binding: { code: 'KeyB', modifiers: [platform === 'macos' ? 'meta' : 'control'] }, modified: false, conflicts: [], issue: null, unavailableReason: null,
+      binding: { code: 'KeyB', modifiers: [platform === 'macos' ? 'meta' : 'control'] }, modified: false, conflicts: [], issue: null,
       keys: platform === 'macos' ? ['⌘', 'B'] : ['Ctrl', '+', 'B'], aria: platform === 'macos' ? 'Meta+B' : 'Control+B' },
   ])
   const config = createSnapshotStore({ ...initialShortcutConfig(), status: 'ready' as const })
+  const describe: typeof describeBinding = (binding) => {
+    const normalized = binding === null ? null : normalizeBinding(binding, platform)
+    return { ...describeBinding(binding), keys: presentBinding(normalized, platform).keys }
+  }
+  const registry = new ShortcutRegistry('web', platform)
+  for (const command of fixedCommands(makeTranslate(en), describe)) registry.registerFixed(command)
   const props = { actions: store.actions, useStore: bindSnapshotSelector(store), useCatalog: bindSnapshotSelector(catalog),
-    useConfig: bindSnapshotSelector(config), useFixedCatalog: bindSnapshotSelector(createSnapshotStore([])), runtime: 'web', edit: async () => ({ status: 'saved', snapshot: config.getSnapshot() }), recording: async () => {},
-    describeBinding: (binding: Parameters<typeof describeBinding>[0]) => {
-      const normalized = binding === null ? null : normalizeBinding(binding, platform)
-      return { ...describeBinding(binding), keys: presentBinding(normalized, platform).keys }
-    }, platform, t: makeTranslate(en) } as unknown as Parameters<typeof ShortcutReference>[0]
+    useConfig: bindSnapshotSelector(config), useFixedCatalog: bindSnapshotSelector(registry.fixedCatalog), runtime: 'web', edit: async () => ({ status: 'saved', snapshot: config.getSnapshot() }), recording: async () => {},
+    describeBinding: describe, platform, t: makeTranslate(en) } as Parameters<typeof ShortcutReference>[0]
   render(<><ShortcutsRow {...props} /><ShortcutReference {...props} /></>)
   expect(screen.queryByRole('dialog')).toBeNull()
   const opener = screen.getByRole('button', { name: 'View shortcuts' }); opener.focus(); fireEvent.click(opener)
@@ -83,9 +88,9 @@ it('saves individual edits and disables changes when configuration cannot be rea
   const store = createShortcutsStore().create()
   const catalog = createSnapshotStore<readonly ShortcutCatalogEntry[]>([
     { id: 'shortcuts.open' as ShortcutCommandId, label: 'Open shortcuts', aliases: [], binding: null, modified: true,
-      conflicts: ['other.action' as ShortcutCommandId], issue: null, unavailableReason: null, keys: [], aria: undefined },
+      conflicts: ['other.action' as ShortcutCommandId], issue: null, keys: [], aria: undefined },
     { id: 'settings.open' as ShortcutCommandId, label: 'Open settings', aliases: [], binding: null, modified: true,
-      conflicts: [], issue: 'reserved', unavailableReason: null, keys: [], aria: undefined },
+      conflicts: [], issue: 'reserved', keys: [], aria: undefined },
   ])
   const config = createSnapshotStore<ShortcutConfigSnapshot>(initialShortcutConfig())
   const edit = vi.fn(async () => ({ status: 'saved' as const, snapshot: config.getSnapshot() }))
@@ -119,7 +124,7 @@ function referenceFixture() {
   const catalog = createSnapshotStore<readonly ShortcutCatalogEntry[]>([
     { id: 'settings.open' as ShortcutCommandId, label: 'Open settings', aliases: [],
       binding: { code: 'Comma', modifiers: ['shift', 'meta'] }, modified: false,
-      conflicts: [], issue: null, unavailableReason: null, keys: ['⇧', '⌘', ','], aria: 'Shift+Meta+,' },
+      conflicts: [], issue: null, keys: ['⇧', '⌘', ','], aria: 'Shift+Meta+,' },
   ])
   const config = createSnapshotStore<ShortcutConfigSnapshot>({ ...initialShortcutConfig(), status: 'ready' })
   const fixedCatalog = createSnapshotStore<readonly ShortcutFixedCatalogEntry[]>([])
@@ -134,9 +139,12 @@ function referenceFixture() {
 
 it('shows mounted fixed actions as searchable read-only rows and follows their label and lifetime', () => {
   const { fixedCatalog, store } = referenceFixture()
+  const send = { id: 'fixed.send' as ShortcutCommandId, label: 'Send from catalog', keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'input' as const }
   const stop = { id: 'response.stop' as ShortcutCommandId, label: 'Stop reply', keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input' as const }
   const approve = { id: 'approval.accept' as ShortcutCommandId, label: 'Approve', keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'approval' as const }
-  act(() => { fixedCatalog.set([stop, approve]) })
+  expect(screen.queryByText(en.send)).toBeNull()
+  act(() => { fixedCatalog.set([send, stop, approve]) })
+  expect(screen.getByRole('button', { name: 'Send from catalog Enter' }).hasAttribute('disabled')).toBe(true)
   expect(screen.getByRole('region', { name: 'Approval area' }).textContent).toContain('Approve')
   expect(screen.getByRole('button', { name: 'Stop reply Esc Esc' }).hasAttribute('disabled')).toBe(true)
   expect(screen.queryByRole('button', { name: 'Edit shortcut for Stop reply' })).toBeNull()
@@ -149,12 +157,10 @@ it('shows mounted fixed actions as searchable read-only rows and follows their l
   expect(screen.queryAllByRole('listitem')).toHaveLength(0)
 })
 
-it('keeps action conditions out of labels and tooltips while retaining binding edits', () => {
-  const f = referenceFixture()
-  act(() => { f.catalog.set(f.catalog.getSnapshot().map(row => ({ ...row, unavailableReason: 'Select a session' }))) })
+it('keeps command labels free of tooltips while retaining binding edits', () => {
+  referenceFixture()
   const label = screen.getByText('Open settings', { selector: 'span' })
   expect(label.textContent).toBe('Open settings')
-  expect(screen.queryByText('Select a session')).toBeNull()
   expect(screen.queryByText('Unavailable')).toBeNull()
   fireEvent.mouseEnter(label)
   expect(screen.queryByRole('tooltip')).toBeNull()
@@ -163,19 +169,15 @@ it('keeps action conditions out of labels and tooltips while retaining binding e
   expect(screen.queryByRole('tooltip')).toBeNull()
   expect(label.hasAttribute('tabindex')).toBe(false)
   expect(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }).hasAttribute('disabled')).toBe(false)
-  act(() => { f.catalog.set(f.catalog.getSnapshot().map(row => ({ ...row, unavailableReason: null }))) })
-  expect(label.textContent).toBe('Open settings')
 })
 
 it.each(['conflict', 'reserved'] as const)('omits status labels for a %s binding', (failure) => {
   const f = referenceFixture()
   act(() => { f.catalog.set(f.catalog.getSnapshot().map(row => ({ ...row,
-    unavailableReason: 'Focus a right sidebar pane first',
     conflicts: failure === 'conflict' ? ['pane.split' as ShortcutCommandId] : [],
     issue: failure === 'reserved' ? 'reserved' : null,
   }))) })
   expect(screen.queryByText('Unavailable')).toBeNull()
-  expect(screen.queryByText('Focus a right sidebar pane first')).toBeNull()
   expect(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }).hasAttribute('disabled')).toBe(false)
 })
 
@@ -245,7 +247,7 @@ it('coalesces repeated recording errors without extending the toast and immediat
   } finally { cleanup(); vi.useRealTimers() }
 })
 
-it('keeps failed edits open and returns cancelled and saved edits to the dialog', async () => {
+it('keeps failed edits open and returns cancelled edits to the dialog', () => {
   referenceFixture()
   fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
   const recorder = screen.getByRole('button', { name: en.record }); recorder.focus()
@@ -256,16 +258,6 @@ it('keeps failed edits open and returns cancelled and saved edits to the dialog'
   fireEvent.click(screen.getByRole('button', { name: en.close }))
   expect(screen.queryByRole('group')).toBeNull()
   expect(screen.getByRole('dialog')).toBeTruthy()
-  expect(document.activeElement).toBe(screen.getByRole('dialog'))
-  fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
-  const retryRecorder = screen.getByRole('button', { name: en.record }); retryRecorder.focus()
-  fireEvent.keyDown(retryRecorder, { key: 'i', code: 'KeyI' })
-  fireEvent.keyUp(retryRecorder, { code: 'KeyI' })
-  expect(screen.getByRole('alert').textContent).toBe(en['modifier-required'])
-  fireEvent.keyDown(retryRecorder, { key: '.', code: 'Period', metaKey: true, shiftKey: true })
-  fireEvent.keyUp(retryRecorder, { code: 'Period' })
-  await screen.findByText(en.saved)
-  expect(screen.queryByRole('group')).toBeNull()
   expect(document.activeElement).toBe(screen.getByRole('dialog'))
 })
 

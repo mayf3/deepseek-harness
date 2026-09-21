@@ -2,15 +2,13 @@
 import { describe, expect, onTestFinished, vi } from 'vitest'
 import { createClientTest, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import type {} from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { DesktopKeyboardApi, DesktopShortcutInput } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { createSettingsShellStore } from '../../ui-settings-general/src/client/shell-store.ts'
 import type { createLayoutStore } from '../../ui-layout/src/client/stores.ts'
 import type { ReferenceInjected } from '../src/client/Reference.tsx'
 import type { createShortcutsStore } from '../src/client/store.ts'
 
 const it = createClientTest({ roster: webApp })
-const gesture = { code: 'Comma', control: false, alt: false, shift: false, meta: true, repeat: false,
-  composing: false, defaultPrevented: false }
-const context = { region: 'page', modal: null, target: null } as const
 
 describe('assembled shortcut command owners', () => {
   it('keeps desktop defaults out of Web and removes commands on owner unload', async ({ start }) => {
@@ -37,8 +35,21 @@ describe('assembled shortcut command owners', () => {
 
   it('shares the settings/reference stores and gives desktop bindings priority over modals without repeating actions', async ({ start }) => {
     const previous = document.documentElement.dataset.platform
+    const previousBridge = Object.getOwnPropertyDescriptor(window, 'dshDesktop')
+    const listeners = new Set<(input: DesktopShortcutInput) => void>()
+    const keyboard: DesktopKeyboardApi = {
+      subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+      closeWindow: async () => {},
+    }
+    Object.defineProperty(window, 'dshDesktop', { configurable: true, value: { keyboard } })
     document.documentElement.dataset.platform = 'darwin'
+    const modal = document.createElement('div')
+    modal.setAttribute('role', 'dialog')
+    modal.setAttribute('aria-modal', 'true')
     onTestFinished(() => {
+      modal.remove()
+      if (previousBridge === undefined) Reflect.deleteProperty(window, 'dshDesktop')
+      else Object.defineProperty(window, 'dshDesktop', previousBridge)
       if (previous === undefined) delete document.documentElement.dataset.platform
       else document.documentElement.dataset.platform = previous
     })
@@ -47,19 +58,27 @@ describe('assembled shortcut command owners', () => {
     const settings = (client.ctx.slots.entries('sidebar.settings')[0]!.store as ReturnType<typeof createSettingsShellStore>).create()
     const reference = (client.ctx.slots.entries('shell.overlay').find(entry => entry.options.id === 'shortcuts')!.store as ReturnType<typeof createShortcutsStore>).create()
     const layout = (client.ctx.slots.entries('root')[0]!.store as ReturnType<typeof createLayoutStore>).create()
-    expect(shortcuts.dispatch(gesture, context, () => {}).status).toBe('handled')
+    const press = (code: string, repeat = false): void => {
+      for (const listener of listeners) listener({ kind: 'keyboard', revision: shortcuts.config.getSnapshot().revision,
+        frameName: '', code, control: false, alt: false, shift: false, meta: true, repeat })
+    }
+    press('Comma')
     expect(settings.getSnapshot().open).toBe(true)
     const opened = settings.getSnapshot()
-    shortcuts.dispatch(gesture, { ...context, modal: 'settings' }, () => {})
+    modal.dataset.shortcutModal = 'settings'
+    document.body.append(modal)
+    press('Comma')
     expect(settings.getSnapshot()).toBe(opened)
-    shortcuts.dispatch({ ...gesture, code: 'Slash' }, { ...context, modal: 'settings' }, () => {})
+    press('Slash')
     expect(reference.getSnapshot().open).toBe(true)
+    modal.dataset.shortcutModal = 'shortcuts'
     const sidebar = layout.getSnapshot().layoutInfo.sidebar
-    expect(shortcuts.dispatch({ ...gesture, code: 'KeyB' }, { ...context, modal: 'shortcuts' }, () => {}).status).toBe('handled')
+    press('KeyB')
     expect(layout.getSnapshot().layoutInfo.sidebar).not.toBe(sidebar)
-    shortcuts.dispatch({ ...gesture, code: 'KeyB' }, context, () => {})
+    modal.remove()
+    press('KeyB')
     expect(layout.getSnapshot().layoutInfo.sidebar).toBe(sidebar)
-    shortcuts.dispatch({ ...gesture, code: 'KeyB', repeat: true }, context, () => {})
+    press('KeyB', true)
     expect(layout.getSnapshot().layoutInfo.sidebar).toBe(sidebar)
   })
 })

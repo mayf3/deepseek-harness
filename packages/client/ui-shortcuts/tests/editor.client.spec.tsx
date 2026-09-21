@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
-import { bindingIssue, bindingKey, normalizeBinding, overlappingBindings, presentBinding, ShortcutPersistence } from '@deepseek-ai/dsh-client-shortcuts/protocol'
+import { bindingIssue, normalizeBinding, overlappingBindings, presentBinding, ShortcutPersistence } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { ShortcutCommandId, ShortcutSaveResult } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import { ShortcutEditor } from '../src/client/Editor.tsx'
 import type {} from '../src/client/index.ts'
@@ -28,7 +28,7 @@ async function mount(options: {
   regions: ['page'], modals: [], resolve: () => ({ status: 'handled', run() {} }) })
   const describeBinding: Parameters<typeof ShortcutEditor>[0]['describeBinding'] = (binding) => {
     const normalized = binding === null ? null : normalizeBinding(binding, platform)
-    return { binding: normalized, index: normalized === null ? null : bindingKey(normalized),
+    return { binding: normalized,
       keys: presentBinding(normalized, platform).keys,
       issue: normalized === null ? null : bindingIssue(normalized, runtime, platform),
       conflicts: normalized === null ? [] : [...registry.catalog.getSnapshot().filter(row => row.binding !== null

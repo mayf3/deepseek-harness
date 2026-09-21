@@ -7,7 +7,6 @@ import type { ShortcutCatalogEntry, ShortcutPlatform, Shortcuts } from '@deepsee
 import { ShortcutEditor } from './Editor.tsx'
 import { ShortcutIcon } from './Icons.tsx'
 import { shortcutFailure } from './feedback.ts'
-import { fixedCommands } from './fixed.ts'
 import type { createShortcutsStore } from './store.ts'
 import css from './Reference.module.css'
 
@@ -43,7 +42,7 @@ export function ShortcutsRow({ actions, t, useCatalog }: PropsRuntime<'settings.
 }
 
 /**
- * Render implemented commands and fixed local input actions. A query matches within one label, alias, or key field.
+ * Render registered commands and fixed local input actions. A query matches within one label, alias, or key field.
  * @param props - root store, effective catalog, and localized copy.
  * @returns the single reference dialog when open.
  */
@@ -54,7 +53,7 @@ export function ShortcutReference({
   const { open, query, focusRequest } = useStore(state => state)
   const catalog = useCatalog(value => value)
   const config = useConfig(value => value)
-  const contributedFixed = useFixedCatalog(value => value)
+  const fixedCatalog = useFixedCatalog(value => value)
   const [target, setTarget] = useState<ShortcutCatalogEntry | null>(null)
   const [resetRevision, setResetRevision] = useState<typeof config.revision | null>(null)
   const [busy, setBusy] = useState(false)
@@ -107,15 +106,13 @@ export function ShortcutReference({
     onSaved: () => { notify(t('saved')); closeEditor() },
     onError: (message: string) => { notify(message, true) } }
   useLayoutEffect(() => { if (open && !isBehindModal(search.current)) search.current?.focus() }, [open, focusRequest])
-  const fixed = fixedCommands(t, describeBinding).map(({ id, label, keys, group }) => ({ id, label: label(), keys, group }))
   const entries = [
     ...catalog.map(row => ({
       ...row,
       names: [...row.aliases, row.keys.filter(key => key !== '+').join('+'), row.keys.filter(key => key !== '+').join(''), row.aria ?? '', row.aria?.replace('Meta', 'Cmd') ?? ''],
       group: 'application' as const,
     })),
-    ...[...fixed, ...contributedFixed.filter(row => !fixed.some(value => value.id === row.id))]
-      .map(row => ({ ...row, names: [row.id, row.keys.join(' ')] })),
+    ...fixedCatalog.map(row => ({ ...row, names: [row.id, row.keys.join(' ')] })),
   ]
   const ranked = rankByName(entries.flatMap(row => row.names.map(name => ({ name, label: row.label, row }))), query.trim())
   const matches = [...new Set(ranked.map(match => match.row))]

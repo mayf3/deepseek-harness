@@ -62,10 +62,6 @@ export function apply(ctx: Context): void {
         'web:windows': { code: 'Backquote', modifiers: ['control'] },
       },
       regions: ['page', 'editable', 'terminal'], modals: [],
-      availability: {
-        getSnapshot: () => ctx.sidebarRight.commandTarget() === undefined ? t('shortcut.noSession') : null,
-        subscribe: listener => ctx.sidebarRight.interaction.subscribe(listener),
-      },
       resolve: ({ target: element }) => {
         const target = ctx.sidebarRight.commandTarget(element)
         if (target === undefined) return { status: 'blocked', reason: t('shortcut.noSession') }

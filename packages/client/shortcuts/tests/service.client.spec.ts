@@ -4,7 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import ShortcutsService from '../src/client/index.ts'
 import { initialShortcutConfig } from '../src/protocol.ts'
-import type { DesktopShortcutsApi, ShortcutConfigSnapshot, ShortcutCommandId } from '../src/protocol.ts'
+import type { DesktopKeyboardApi, DesktopShortcutsApi, ShortcutConfigSnapshot, ShortcutCommandId } from '../src/protocol.ts'
 
 const disposers: (() => Promise<void>)[] = []
 afterEach(async () => {
@@ -31,15 +31,19 @@ function desktop() {
     recording: vi.fn<DesktopShortcutsApi['recording']>().mockResolvedValue(),
     subscribe: vi.fn<DesktopShortcutsApi['subscribe']>((listener) => { publish = listener; return unsubscribe }),
   }
-  Object.defineProperty(window, 'dshDesktop', { configurable: true, value: { shortcuts: api } })
-  return { api, publish: (value: ShortcutConfigSnapshot) => { publish(value) }, unsubscribe }
+  const keyboard = {
+    closeWindow: vi.fn<DesktopKeyboardApi['closeWindow']>().mockResolvedValue(),
+    subscribe: vi.fn<DesktopKeyboardApi['subscribe']>(() => () => {}),
+  }
+  Object.defineProperty(window, 'dshDesktop', { configurable: true, value: { shortcuts: api, keyboard } })
+  return { api, keyboard, publish: (value: ShortcutConfigSnapshot) => { publish(value) }, unsubscribe }
 }
 function mount() {
   const ctx = new Context()
   ctx.provide('locale', new LocaleRuntime(ctx))
-  const service = new ShortcutsService(ctx)
   const dispose = async () => { await ctx.fiber.dispose() }
   disposers.push(dispose)
+  const service = new ShortcutsService(ctx)
   return { ctx, service, dispose }
 }
 const command = { id: 'test.toggle' as ShortcutCommandId, label: () => 'Toggle', aliases: [],
@@ -71,8 +75,19 @@ it('waits for the Desktop handshake and ignores older get, edit, and broadcast r
   expect(f.api.get).toHaveBeenLastCalledWith([])
 })
 
+it.each(['darwin', 'win32', 'linux'])('rejects %s Desktop startup without its native keyboard bridge', (platform) => {
+  const { api } = desktop()
+  document.documentElement.dataset.platform = platform
+  Object.defineProperty(window, 'dshDesktop', { configurable: true, value: { shortcuts: api } })
+  const read = vi.spyOn(Storage.prototype, 'getItem'), write = vi.spyOn(Storage.prototype, 'setItem')
+  expect(() => mount()).toThrow('Desktop keyboard bridge unavailable')
+  expect(api.get).not.toHaveBeenCalled()
+  expect(read).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled()
+})
+
 it('reports unavailable Desktop storage without reading or writing localStorage', async () => {
-  document.documentElement.dataset.platform = 'darwin'
+  const { keyboard } = desktop()
+  Object.defineProperty(window, 'dshDesktop', { configurable: true, value: { keyboard } })
   const read = vi.spyOn(Storage.prototype, 'getItem'), write = vi.spyOn(Storage.prototype, 'setItem')
   const { service } = mount()
   expect(service.config.getSnapshot().status).toBe('unreadable')
@@ -114,8 +129,9 @@ it.each(['resolve', 'reject'] as const)('suppresses %s completions after disposa
 it('persists Web edits and presents normalized bindings through the public service', async () => {
   const { service, ctx } = mount()
   await vi.waitFor(() => { expect(service.config.getSnapshot().status).toBe('ready') })
-  expect(service.describeBinding(null)).toEqual({ binding: null, index: null, keys: [], issue: null, conflicts: [] })
-  expect(service.describeBinding({ code: 'Slash', modifiers: ['primary'] })).toMatchObject({ issue: null, index: 'control+Slash' })
+  expect(service.describeBinding(null)).toEqual({ binding: null, keys: [], issue: null, conflicts: [] })
+  expect(service.describeBinding({ code: 'Slash', modifiers: ['primary'] }))
+    .toMatchObject({ issue: null, binding: { code: 'Slash', modifiers: ['control'] } })
   const off = service.register({ ...command, defaults: {
     'web:macos': { code: 'Slash', modifiers: ['primary'] },
     'web:windows': { code: 'Slash', modifiers: ['primary'] },

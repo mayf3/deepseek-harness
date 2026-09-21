@@ -41,7 +41,7 @@ Hover an application row or focus it with the keyboard to reveal its actions. Th
 
 The General Settings entry and shell overlay share one declared interaction store. Catalog and configuration updates arrive through injected observable hooks; recording and persistence use injected service callbacks. The shared modal primitive owns top-layer Escape, Tab traversal, and restoration to the invoking control.
 
-Feature-owned fixed sequences come from the service's observable fixed catalog. They appear in the input or approval group while their owning plugin is mounted, follow locale updates, and use the same search and read-only keycap presentation as built-in local operations.
+All fixed actions come from the service's observable fixed catalog. Their owning plugins register the labels, keys, and group; rows follow locale updates and disappear when the registration is disposed.
 
 </details>
 
