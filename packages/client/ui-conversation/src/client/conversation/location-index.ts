@@ -494,7 +494,7 @@ export class ConversationLocationIndex {
       ? [...this.timeline.turnOrder, turnNumber]
       : this.timeline.turnOrder
     this.timeline = { turnOrder, turns }
-    this.changedTurns.add(turnNumber)
+    if (turn !== previousTurn) this.changedTurns.add(turnNumber)
 
     const changed = new Set<number>()
     for (const seq of this.seqsByTurn.get(turnNumber) ?? []) {

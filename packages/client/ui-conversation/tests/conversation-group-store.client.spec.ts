@@ -124,7 +124,7 @@ describe('ConversationGroupStore', () => {
     const initial = group('a', [node('a')])
     const entries = [reference('a'), node('b')]
     replace(store, entries, [initial])
-    expect(() =>{  store.prepareAndInstall({ entries, groups: { kind: 'replace', snapshots: [initial] } }, () => undefined) })
+    expect(() => { store.prepareAndInstall({ entries, groups: { kind: 'replace', snapshots: [initial] } }, () => undefined) })
       .toThrow('missing Node')
     expect(store.entries).toBe(entries)
     expect(store.groupSource(key('a')).getSnapshot()).toBe(initial)
@@ -139,7 +139,7 @@ describe('ConversationGroupStore', () => {
     const store = new ConversationGroupStore<number>()
     replace(store, [node('before')], [])
     const root = store.entries
-    expect(() =>{  replace(store, [first, reference('a')], [group('a', [second])]) }).toThrow('overlapping')
+    expect(() => { replace(store, [first, reference('a')], [group('a', [second])]) }).toThrow('overlapping')
     expect(store.entries).toBe(root)
     replace(store, [reference('a')], [group('a', [first])])
     expect(store.groupSource(key('a')).getSnapshot()?.members).toEqual([first])
@@ -163,7 +163,7 @@ describe('ConversationGroupStore', () => {
     store.publish()
     const root = store.entries
     const source = store.groupSource(key('a'))
-    expect(() =>{  store.prepareAndInstall(update, readNode) }).toThrow(error)
+    expect(() => { store.prepareAndInstall(update, readNode) }).toThrow(error)
     expect(store.entries).toBe(root)
     expect(source.getSnapshot()).toBe(initial)
   })
