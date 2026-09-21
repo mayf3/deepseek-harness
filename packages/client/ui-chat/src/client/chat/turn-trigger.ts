@@ -24,7 +24,6 @@ export function turnTriggerDetails(node: ContextMessageNode): {
 } {
   const source = record(node.source)
   const kind = field(source, 'kind')
-  const plugin = field(source, 'plugin')
   let title: ChatKey = 'message.trigger.request'
   let icon: TurnTriggerIcon = 'request'
   switch (kind) {
@@ -52,17 +51,17 @@ export function turnTriggerDetails(node: ContextMessageNode): {
       icon = github ? 'github' : 'webhook'
       break
     }
-    case 'plugin':
-      if (plugin === 'schedule') {
-        title = 'message.trigger.schedule'
-        icon = 'schedule'
-      } else if (plugin === 'tool-jobs') {
-        title = 'message.trigger.job'
-        icon = 'job'
-      } else if (plugin === 'cordis-host-runner') {
-        title = 'message.trigger.plugin'
-        icon = 'plugin'
-      }
+    case 'schedule':
+      title = 'message.trigger.schedule'
+      icon = 'schedule'
+      break
+    case 'tool-jobs':
+      title = 'message.trigger.job'
+      icon = 'job'
+      break
+    case 'cordis-host-runner':
+      title = 'message.trigger.plugin'
+      icon = 'plugin'
       break
     default:
       // Custom sources remain visible without attributing unrecorded identity or success.

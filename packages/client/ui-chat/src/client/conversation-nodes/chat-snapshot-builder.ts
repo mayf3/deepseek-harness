@@ -411,7 +411,7 @@ function processPresentationInputChanged(
 
 interface TurnProcessPresentation {
   readonly control?: ChatNode<'turn-process'>
-  readonly openingHumanAnchor?: number
+  readonly openingInputAnchor?: number
   readonly earliestProcessAnchor?: number
 }
 
@@ -430,11 +430,13 @@ function turnProcessPresentations(
     const location = node.location
     if (location.kind !== 'turn' && location.kind !== 'step') continue
     const current: TurnProcessPresentation = presentations.get(location.turn.turn) ?? {}
-    if (node.kind === 'user' || (node.kind === 'steering' && current.control !== undefined
-      && node.anchorSeq < current.control.data.controlAnchorSeq)) {
+    const controlAnchor = current.control?.data.controlAnchorSeq
+    if (node.kind === 'user' || node.kind === 'turn-trigger'
+      || (node.kind === 'steering' && controlAnchor !== undefined
+        && (controlAnchor === location.turn.start?.seq || node.anchorSeq < controlAnchor))) {
       presentations.set(location.turn.turn, {
         ...current,
-        openingHumanAnchor: Math.min(current.openingHumanAnchor ?? node.anchorSeq, node.anchorSeq),
+        openingInputAnchor: Math.max(current.openingInputAnchor ?? node.anchorSeq, node.anchorSeq),
       })
       continue
     }
@@ -466,27 +468,27 @@ function presentationPosition(
   if (presentation === undefined) {
     return { anchor: node.anchorSeq, rank: 0, originalAnchor: node.anchorSeq }
   }
-  const openingHumanAnchor = presentation.openingHumanAnchor
-  if (openingHumanAnchor !== undefined
-    && node.anchorSeq < openingHumanAnchor
+  const openingInputAnchor = presentation.openingInputAnchor
+  if (openingInputAnchor !== undefined
+    && node.anchorSeq < openingInputAnchor
     && !TURN_PROCESS_INDEPENDENT_KINDS.has(node.kind)) {
-    return { anchor: openingHumanAnchor, rank: 2, originalAnchor: node.anchorSeq }
+    return { anchor: openingInputAnchor, rank: 2, originalAnchor: node.anchorSeq }
   }
   if (presentation.control !== undefined && node.key === presentation.control.key) {
-    return openingHumanAnchor === undefined
+    return openingInputAnchor === undefined
       ? {
         anchor: presentation.earliestProcessAnchor ?? node.anchorSeq,
         rank: -1,
         originalAnchor: node.anchorSeq,
       }
-      : { anchor: openingHumanAnchor, rank: 1, originalAnchor: node.anchorSeq }
+      : { anchor: openingInputAnchor, rank: 1, originalAnchor: node.anchorSeq }
   }
   return { anchor: node.anchorSeq, rank: 0, originalAnchor: node.anchorSeq }
 }
 
 /**
  * Order visible Chat Nodes without changing existing relative order as process
- * eligibility changes. Opening human input precedes process candidates, while
+ * eligibility changes. Opening input precedes process candidates, while
  * each synthetic process control sits between them.
  * @param nodes - currently materialized Chat Nodes.
  * @returns visible Nodes in presentation order.

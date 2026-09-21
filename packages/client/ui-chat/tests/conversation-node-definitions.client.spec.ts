@@ -21,7 +21,7 @@ import { chatViewDefinition } from '../src/client/conversation-nodes/chat-snapsh
 import { commandDefinition } from '../src/client/conversation-nodes/command.ts'
 import { compactionDefinition } from '../src/client/conversation-nodes/compaction.ts'
 import { unknownFallbackDefinition } from '../src/client/conversation-nodes/fallback.ts'
-import { nextStepInboxDefinition } from '../src/client/conversation-nodes/inbox.ts'
+import { nextStepInboxDefinition, nextTurnInboxDefinition } from '../src/client/conversation-nodes/inbox.ts'
 import { messageDefinition } from '../src/client/conversation-nodes/message.ts'
 import { inspectRequestPrompt } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { requestPromptDefinition, systemMessageDefinition } from '../src/client/conversation-nodes/request-prompt.ts'
@@ -37,6 +37,7 @@ import type {
 
 const DEFINITIONS: readonly ConversationNodeDefinition[] = [
   nextStepInboxDefinition,
+  nextTurnInboxDefinition,
   messageDefinition,
   systemMessageDefinition(inspectSystemPrompt),
   requestPromptDefinition(inspectRequestPrompt),
@@ -543,6 +544,78 @@ describe('built-in conversation node Definitions', () => {
     expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual([
       'user', 'turn-process', 'steering', 'assistant-step', 'assistant-step', 'turn-tail',
     ])
+  })
+
+  it.each(['next-turn', 'idle-notice', 'idle-human'] as const)(
+    'keeps the %s opening input before its control from admission through first output', (route) => {
+      const target = route === 'next-turn' ? 'next-turn' : 'next-step'
+      const input = {
+        ...textMessage('opening-input', 'start this work'),
+        source: { kind: route === 'idle-human' ? 'user' : 'schedule' },
+      }
+      const kind = route === 'idle-human' ? 'steering' : 'turn-trigger'
+      const value = assembler([
+        at(1, 'agent/inbox/spliced', { target, start: 0, inserted: [input] }),
+        at(2, 'turn/start', { turn: 1 }),
+        at(3, 'agent/inbox/spliced', { target, start: 0, removedCount: 1, inserted: [] }),
+        at(4, 'step/start', { turn: 1, step: 1 }),
+        at(5, 'user/message', input, { surfaceOp: 'append' }),
+      ])
+      const opening = snapshot(value)
+      expect(opening.order.map(key => opening.nodes.get(key)?.kind)).toEqual([kind, 'turn-process'])
+      value.append(at(6, 'assistant/live-chunk', {
+        turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'thinking' },
+      }))
+      value.flush()
+      const running = snapshot(value)
+      expect(running.order.slice(0, 2)).toEqual(opening.order)
+      expect(running.order.map(key => running.nodes.get(key)?.kind)).toEqual([kind, 'turn-process', 'assistant-step'])
+    },
+  )
+
+  it.each(['replay', 'live', 'prepend'] as const)('classifies waking Inbox messages through %s', (mode) => {
+    const notice = { ...textMessage('notice', 'scheduled work'), source: { kind: 'schedule' } }
+    const human = textMessage('human', 'user task')
+    const insertion = (target: 'next-step' | 'next-turn', messages = [notice]) =>
+      at(1, 'agent/inbox/spliced', { target, start: 0, inserted: messages })
+    const claim = (target: 'next-step' | 'next-turn', count = 1) =>
+      at(3, 'agent/inbox/spliced', { target, start: 0, removedCount: count, inserted: [] })
+    const start = at(2, 'turn/start', { turn: 1 })
+    const step = at(8, 'step/start', { turn: 1, step: 1 })
+    const cases: { name: string; before: SessionLiveEventEntry[]; waking: boolean }[] = [
+      { name: 'next-turn claim', before: [insertion('next-turn'), start, claim('next-turn'), step], waking: true },
+      { name: 'idle non-human steer', before: [insertion('next-step'), start, claim('next-step'), step], waking: true },
+      { name: 'unclaimed input', before: [insertion('next-turn'), start, step], waking: false },
+      { name: 'canceled input', before: [insertion('next-turn'), start, at(3, 'agent/inbox/spliced', {
+        target: 'next-turn', start: 0, removedCount: 1, inserted: [], outcome: 'canceled',
+      }), step], waking: false },
+      { name: 'requeued claim', before: [insertion('next-turn'), start, claim('next-turn'),
+        at(4, 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [notice] }), step], waking: false },
+      { name: 'human steer in the same batch', before: [insertion('next-step', [notice, human]),
+        start, claim('next-step', 2), step], waking: false },
+      { name: 'a queued message starts this Turn', before: [insertion('next-step'), start, claim('next-step'),
+        at(4, 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [human] }),
+        at(5, 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] }), step], waking: false },
+      { name: 'later step', before: [insertion('next-step'), start, claim('next-step'), step,
+        at(9, 'step/end', { turn: 1, step: 1 }), at(10, 'step/start', { turn: 1, step: 2 })], waking: false },
+      { name: 'missing Turn start', before: [insertion('next-step'), claim('next-step'), step], waking: false },
+      { name: 'missing Step', before: [insertion('next-step'), start, claim('next-step')], waking: false },
+      { name: 'claim before the Turn', before: [insertion('next-step'), claim('next-step'),
+        at(4, 'turn/start', { turn: 1 }), step], waking: false },
+      { name: 'not a member of the claim', before: [insertion('next-step', [{ ...notice, id: 'other' }]),
+        start, claim('next-step'), step], waking: false },
+    ]
+    for (const test of cases) {
+      const message = at(11, 'user/message', notice, { surfaceOp: 'append' })
+      const value = assembler(mode === 'replay' ? [...test.before, message] : mode === 'prepend' ? [message] : [], mode === 'prepend')
+      if (mode === 'live') for (const entry of [...test.before, message]) value.append(entry)
+      if (mode === 'prepend') value.prepend(test.before, false)
+      value.flush()
+      const current = snapshot(value)
+      const input = node(current, test.waking ? 'turn-trigger' : 'context')
+      expect(input, test.name).toMatchObject({ data: { waking: test.waking, source: { kind: 'schedule' } } })
+      expect(current.order.includes(input!.key), test.name).toBe(test.waking)
+    }
   })
 
   it('replays pending splice chains and scopes steering to the current claim', () => {

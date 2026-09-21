@@ -35,7 +35,7 @@ function fixture() {
     const element = document.createElement('div')
     element.textContent = nodeKey
     element.dataset.chatNodeKey = nodeKey
-    element.dataset.chatAnchorKey = part === undefined ? nodeKey : JSON.stringify([nodeKey, part])
+    element.dataset.chatAnchorKey = part === undefined || part === 'response' ? nodeKey : JSON.stringify([nodeKey, part])
     element.dataset.chatFlowKey = element.dataset.chatAnchorKey
     element.dataset.chatPagingAnchor = ''
     element.dataset.chatTurn = '1'
@@ -441,7 +441,9 @@ it.each(['wheel', 'touchstart', 'pointerdown', 'keydown', 'beforematch'])(
       h.resize()
       expect(h.row.getBoundingClientRect().top).toBe(top)
     }
-    h.body.dispatchEvent(new Event(intent, { bubbles: true }))
+    h.body.dispatchEvent(intent === 'keydown'
+      ? new KeyboardEvent('keydown', { key: 'PageUp', bubbles: true })
+      : new Event(intent, { bubbles: true }))
     expect(h.viewport.preserving).toBe(false)
     expect(h.observed.has(h.content)).toBe(false)
     const previousTop = h.scroller.scrollTop
@@ -449,6 +451,40 @@ it.each(['wheel', 'touchstart', 'pointerdown', 'keydown', 'beforematch'])(
     h.resize()
     expect(h.scroller.scrollTop).toBe(previousTop)
   })
+
+it.each(['typing', 'space', 'arrow', 'pointer'])(
+  'keeps the paging anchor when the composer receives %s', (interaction) => {
+    const h = nestedFixture(200, 400)
+    const composer = document.createElement('div')
+    composer.dataset.composerSeat = ''
+    const input = document.createElement('textarea')
+    composer.append(input)
+    h.scroller.append(composer)
+    h.scroller.scrollTop = 80
+    const top = h.begin()
+    const interact = vi.fn()
+    h.viewport.connect({ scroll: () => {}, scrollEnd: () => {}, resize: () => { h.viewport.preserve() }, interact })
+    input.dispatchEvent(interaction === 'pointer' ? new Event('pointerdown', { bubbles: true })
+      : new KeyboardEvent('keydown', { key: interaction === 'space' ? ' ' : interaction === 'arrow' ? 'ArrowUp' : 'a', bubbles: true }))
+    expect(h.viewport.preserving).toBe(true)
+    expect(interact).not.toHaveBeenCalled()
+    h.prepend(200)
+    h.resize()
+    expect(h.row.getBoundingClientRect().top).toBe(top)
+  },
+)
+
+it.each(['a', 'Tab', 'Escape', 'Enter'])(
+  'keeps the paging anchor for the non-scrolling key %s in the transcript', (key) => {
+    const h = nestedFixture(200, 400)
+    const top = h.begin()
+    h.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    expect(h.viewport.preserving).toBe(true)
+    h.prepend(100)
+    h.resize()
+    expect(h.row.getBoundingClientRect().top).toBe(top)
+  },
+)
 
 it('does not compensate twice when native inner anchoring already held the old row', () => {
   const h = nestedFixture(600, 400)

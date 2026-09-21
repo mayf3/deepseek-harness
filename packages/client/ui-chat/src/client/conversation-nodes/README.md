@@ -67,7 +67,16 @@ Visibility applies from outside inward: whole Turn → secondary group → indiv
 
 Whole-Turn folding controls the loaded process range, independently of secondary groups. A recorded Turn end makes that range eligible even when paging has not loaded the Turn start.
 
-The Turn control follows its opening human input, including while waiting for the first Assistant output.
+The Turn control follows all its opening inputs, including human steering and non-human trigger notices, while waiting for the first Assistant output and after that output arrives.
+
+| Admitted input | Chat presentation |
+|---|---|
+| Human message claimed from `next-step` | Steering message, outside process folding. |
+| Non-human message in the current `next-turn` claim | Independent, initially collapsed Turn-trigger notice. |
+| Non-human message in an idle `next-step` claim | Turn-trigger notice only in Step 1, with a loaded Turn start, a claim after that start, no `next-turn` claim in this Turn, and no human in the same `next-step` batch. |
+| Other non-human input | Ordinary Context, retained in the Node Store but omitted from Chat. Unclaimed, canceled, or requeued messages do not establish a waking claim. |
+
+Trigger titles and icons use the recorded `source.kind`: `schedule`, `tool-jobs`, and `cordis-host-runner` identify scheduled work, background work, and plugin updates. Goal, agent, team, subagent, and webhook sources have their own titles; a webhook with `provider: github` uses the GitHub title. Unknown sources use the generic execution-request title. Expanding the notice shows its recorded body; it does not imply successful execution.
 
 | Turn condition | Current behavior |
 |---|---|
@@ -85,7 +94,7 @@ Loading an older page does not itself change the reader's opening choice. Newly 
 
 Clicking Load older anchors the first visible content item below that button in transcript order, regardless of its position in the viewport. A collapsed group anchors its header; an expanded group skips its header and anchors its first visible member. The whole-Turn process control is excluded because paging can move it ahead of newly loaded work and steering. When a whole Turn is collapsed, the anchor is its first remaining visible message, such as steering or the final answer. Ordinary messages and steering anchor themselves; hidden and empty rows are skipped. Loading more content inside a collapsed group keeps its header stationary; adding earlier groups or rows preserves that same group header while they appear above it.
 
-Paging adds older content above the retained anchor without jumping to the new top. A capped group absorbs the displacement within its scroll range; the outer transcript absorbs the remainder, including when the group first reaches its cap. If the available scroll range is insufficient, compensation stops at the actual limit without adding bottom space. Later content growth keeps the same anchor until reader input or explicit navigation releases it. If the reader scrolls while a page is loading, scrolling takes priority and its settled reading position becomes the new paging anchor.
+Paging adds older content above the retained anchor without jumping to the new top. A capped group absorbs the displacement within its scroll range; the outer transcript absorbs the remainder, including when the group first reaches its cap. If the available scroll range is insufficient, compensation stops at the actual limit without adding bottom space. Later content growth keeps the same anchor until a reading gesture or explicit navigation releases it. Typing or clicking within the composer and non-scrolling transcript keys retain the anchor. If the reader scrolls while a page is loading, scrolling takes priority and its settled reading position becomes the new paging anchor.
 
 A running clock updates in whole seconds, starts at one second, and uses hours from 60 minutes. Completion fixes the duration; cancellation and failure replace it with their status. Lifecycle changes have a polite announcement; clock ticks do not. This control is Chat's only Turn-level running indicator.
 

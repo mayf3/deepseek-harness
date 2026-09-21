@@ -64,6 +64,8 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
       const nextStep = reader.previous<InboxState>('inbox-next-step')?.state
       const location = match.location
       const turnStart = location.kind === 'step' ? location.turn.start?.seq : undefined
+      // An idle steer opens Step 1 without a next-turn claim in this Turn.
+      // A human in that same next-step claim owns the opening instead of its notices.
       const idleSteer = location.kind === 'step' && location.step.step === 1
         && turnStart !== undefined && (nextStep?.claimSeq ?? -1) > turnStart
         && (nextTurn?.claimSeq ?? -1) < turnStart && nextStep?.claimedHuman === false

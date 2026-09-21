@@ -26,7 +26,7 @@ const TRIGGER_ICONS: Record<TurnTriggerIcon, ComponentType<IconProps>> = {
 }
 
 /** Render recorded trigger attribution above the whole-Turn disclosure. */
-export function TurnTriggerNodeView({ node, t }: ChatNodeViewProps<'turn-trigger'>) {
+export function TurnTriggerNodeView({ node, t }: Pick<ChatNodeViewProps<'turn-trigger'>, 'node' | 't'>) {
   const [open, setOpen] = useState(false)
   const bodyId = useId()
   const details = turnTriggerDetails(node.data)

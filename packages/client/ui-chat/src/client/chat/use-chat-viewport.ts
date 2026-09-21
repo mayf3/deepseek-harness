@@ -44,6 +44,7 @@ interface PagingPosition {
 }
 
 const READING_INTENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown', 'beforematch'] as const
+const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '])
 
 /** Owns one Chat scrollport's DOM operations, event listeners, and size observer. */
 export class ChatViewport {
@@ -153,12 +154,12 @@ export class ChatViewport {
     return { top: scroller.scrollTop, height, floor: Math.max(0, scroller.scrollHeight - height) }
   }
 
-  private anchor(key: string): HTMLElement | null {
+  private anchor(key: string, identity: 'position' | 'node' = 'position'): HTMLElement | null {
     if (this.elements === null) return null
     // Reading anchors name exact parts; Turn navigation names the original Node.
     let nodePart: HTMLElement | null = null
     for (const row of this.elements.list.querySelectorAll<HTMLElement>('[data-chat-anchor-key]:not([hidden]):not([hidden] *)')) {
-      if (row.dataset.chatAnchorKey === key) return row
+      if (row.dataset.chatAnchorKey === key || (identity === 'node' && row.dataset.chatNodeKey === key)) return row
       if (nodePart === null && row.dataset.chatNodeKey === key) nodePart = row
     }
     return nodePart
@@ -253,7 +254,7 @@ export class ChatViewport {
   scrollToTurn(turn: number): ViewportLanding | null {
     const item = this.turns.find(candidate => candidate.turn === turn)
     if (item === undefined) return null
-    const row = this.anchor(item.anchorKey)
+    const row = this.anchor(item.anchorKey, 'node')
     return row === null ? null : this.align(row, 24, turn)
   }
 
@@ -430,7 +431,11 @@ export class ChatViewport {
       || (event.target instanceof HTMLElement && event.target.hasAttribute('data-step-process-body'))) this.events?.scrollEnd()
   }
 
-  private readonly onIntent = (): void => {
+  private readonly onIntent = (event: Event): void => {
+    if (event.type === 'keydown' || event.type === 'pointerdown') {
+      if (event.target instanceof Element && event.target.closest('[data-composer-seat]') !== null) return
+      if (event.type === 'keydown' && (!(event instanceof KeyboardEvent) || !SCROLL_KEYS.has(event.key))) return
+    }
     if (this.paging === null) return
     this.stopPreserving()
     this.events?.interact()

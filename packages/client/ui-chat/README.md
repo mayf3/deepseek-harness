@@ -58,6 +58,8 @@ Settings → General → Performance & usage stores `ui-chat.performanceUsage` a
 
 On non-loopback browsers, the preference remains process-local because the settings scope cannot persist writes. Explicit selections update every consumer immediately; accepted Host settings reconcile the live value on loopback browsers.
 
+Preference menus restore focus to their trigger without scrolling before publishing a new selection.
+
 <a id="completed-turn-footer"></a>
 ## Completed-turn footer
 
@@ -69,8 +71,6 @@ The completed-turn action footer follows the recorded Turn end. Its action row s
 
 <a id="turn-process-folding"></a>
 ## Turn Process Folding
-
-Preference menus restore focus to their trigger without scrolling before publishing a new selection.
 
 Local steering echoes remain mounted through Inbox acceptance and claim until the durable message arrives. Matching Host-pending rows stay hidden during this handoff, and the same request does not trigger tail following twice.
 
@@ -109,7 +109,7 @@ While the pointer is outside the rail, automatic follow keeps the rail still whe
 
 `useChatViewport` owns turn-aware DOM reads, clamped writes, native events, and one retained paging anchor. For Load older, Node and Group seats mark eligible anchors from their existing disclosure state. The viewport selects the first nonempty, unhidden marker in transcript order without hit testing or geometry-based search, then measures that element and its scroll containers. It compensates the anchor's capped group first, then gives the remaining displacement to the transcript scrollport. Commits and later content resizes reuse that anchor; a remounted row is resolved by the same semantic key. Compensation stays within the actual scroll ranges without adding bottom space.
 
-`useChatReading` owns follow policy, sampled reader input, and semantic memory; `useChatNavigation` owns turn jumps and requests preservation from the viewport. Reader input releases the paging anchor; while a page is still loading, `scrollend` captures the reader's new position. `useChatScroll` coordinates their committed inputs. Explicit navigation carries its measured landing into reading policy, so it does not rediscover the known target with a hit test.
+`useChatReading` owns follow policy, sampled reader input, and semantic memory; `useChatNavigation` owns turn jumps and requests preservation from the viewport. Reading gestures release the paging anchor, but composer clicks, typing, and non-scrolling keys retain it; while a page is still loading, `scrollend` captures the reader's new position. `useChatScroll` coordinates their committed inputs. Explicit navigation carries its measured landing into reading policy, so it does not rediscover the known target with a hit test.
 
 Active-Turn highlighting is approximate: `readVisibleTurn` binary-searches the content column's direct Node/Group boxes and retains the preceding candidate in gaps. It neither hit-tests the document nor searches Group members or all Turn markers. Empty Seats retain zero-height in-flow boxes so outer positions remain ordered without extra spacing. This lookup does not change semantic position capture or paging compensation.
 
