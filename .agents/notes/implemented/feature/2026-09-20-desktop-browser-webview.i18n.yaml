@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-20-desktop-browser-webview.md
-2026-09-20-desktop-browser-webview.md: 63e1d94213aeac5a0fb1cc14192dbb92428d04cf
-2026-09-20-desktop-browser-webview.zh.md: 5b2e1ee033825152a6dca53bd173687bbe26b7f5
+2026-09-20-desktop-browser-webview.md: e69114a90f50d51542e9b6a0d40daef05a93001f
+2026-09-20-desktop-browser-webview.zh.md: b0ab8b1a7058ae9cbb1258977cb4c4e2d8c40614

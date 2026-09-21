@@ -6,13 +6,13 @@ Status: implemented
 
 ## Problem
 
-iframe 无法提供跨域导航状态，也无法显示拒绝嵌入的站点。Sidebar tab body 在 tab 失去活动状态或更换容器时还会卸载。直接在 body 内创建 Electron guest，会让页面状态依赖呈现组件，丢失表单、滚动位置与原生 history。
+iframe 无法提供跨域导航状态, 也无法显示拒绝嵌入的站点. 如果 Tab Body 因选中项或容器变化而卸载, Electron guest 就会丢失表单、滚动位置与原生 history. 页面生命周期因此必须独立于可见性和布局变化.
 
 独立的 per-tab 存储也会阻止同一 Workspace 内相关页面共享站点登录态。页面生命周期与存储需要不同的所有者。
 
 ## Decision
 
-Desktop 通过 `ElectronWebViewImpl` 使用 `<webview>`；Web 保留显式启用的 iframe 载体。[Sidebar Browser 决策](2026-09-16-sidebar-browser.zh.md)继续负责共享 tab 行为与 iframe 限制。本文替代其中延期的 Desktop 挂载与 per-tab 分区设计。
+Desktop 通过 `ElectronWebViewImpl` 使用 `<webview>`; Web 保留显式启用的 iframe 载体. [Sidebar Browser 决策](2026-09-16-sidebar-browser.zh.md)负责共享 Tab 行为与 iframe 限制; 本文负责 Desktop 载体和按 Workspace 共享的分区.
 
 [Sidebar 稳定挂载决策](../architecture/2026-09-20-sidebar-retained-tab-layout.zh.md)负责真实 CSS 布局中的保活会话与 Tab 容器。Workspace 存储所有权与 guest 基础安全配置仍由本文负责。
 

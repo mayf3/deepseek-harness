@@ -6,13 +6,13 @@ English | [中文](2026-09-20-desktop-browser-webview.zh.md)
 
 ## Problem
 
-An iframe cannot expose cross-origin navigation or render sites that refuse embedding. Sidebar tab bodies also unmount when their tab becomes inactive or changes containers. Creating an Electron guest inside that body couples page state to presentation and discards forms, scroll position and native history.
+An iframe cannot expose cross-origin navigation or render sites that refuse embedding. An Electron guest loses forms, scroll position and native history if its tab body unmounts on selection or container changes. Page lifetime must therefore remain independent of visibility and layout changes.
 
 Independent per-tab storage also prevents related pages in one Workspace from sharing site login state. Page lifetime and storage ownership need different owners.
 
 ## Decision
 
-Desktop uses `<webview>` through `ElectronWebViewImpl`; Web retains its opt-in iframe carrier. The [Sidebar Browser decision](2026-09-16-sidebar-browser.md) continues to own shared tab behavior and iframe limitations. This note replaces its deferred Desktop mounting and per-tab partition design.
+Desktop uses `<webview>` through `ElectronWebViewImpl`; Web retains its opt-in iframe carrier. The [Sidebar Browser decision](2026-09-16-sidebar-browser.md) owns shared tab behavior and iframe limitations; this note owns the Desktop carrier and Workspace-keyed partitions.
 
 The [stable Sidebar mounting decision](../architecture/2026-09-20-sidebar-retained-tab-layout.md) owns retained Session and tab containers in real CSS layout. Workspace storage ownership and baseline guest security remain with this note.
 

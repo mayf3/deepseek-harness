@@ -6,9 +6,7 @@ Status: implemented
 
 ## Problem
 
-恢复各会话的 Tab 记录和 URL，并不能保留活的浏览上下文。递归停靠渲染只挂载活动 Body，独立浮动 Portal 会创建另一个 Body，切换会话绑定还会重挂载会话级 slot。Electron 44 的 `WebViewElement.disconnectedCallback` 会 detach 并重置 guest，因此保持 React key 或缓存元素引用不能抵消祖先断开。
-
-首版 [Desktop Browser 实现](../feature/2026-09-20-desktop-browser-webview.zh.md)把 guest 留在 body 下的固定父节点中，通过 RAF 测量跟随占位元素。用户试用该实现时报告浮动、收起和切会话均可工作；本次替换的是其几何处理方式，并非这些交互已被证实存在故障。内容尺寸、裁剪与重叠必须由真实父节点布局负责。
+恢复各会话的 Tab 记录和 URL, 并不能保留活的浏览上下文. 在 Tab、Pane 或会话切换期间卸载 Body 或改变其 DOM 祖先, 都会断开页面. Electron 44 的 `WebViewElement.disconnectedCallback` 会 detach 并重置 guest, 因此保持 React key 或缓存元素引用不能抵消祖先断开. 内容尺寸、裁剪与重叠也必须遵循真实父节点布局.
 
 ## Decision
 
@@ -59,13 +57,13 @@ Tab 提供 Body 保活持有，而不独立申请会话引用。View 的稳定 `
 
 **只隐藏 Pane。** 可以覆盖收起，但跨 Pane 移动或进入独立浮动 Portal 仍会改变内容祖先。
 
-**只保留前台会话的 Body。** 会话 slot 重挂载仍会断开页面，无法保留现有的切会话体验。
+**只保留前台会话的 Body.** 会话 slot 重挂载会断开页面, 导致切会话时丢失页面运行状态.
 
 **每个 Tab 独立持有会话引用。** 同一视图的 Tab 共用一个 `SessionProvider`，它的引用必须先于这些 Body 渲染而存在。按视图持有即可覆盖父级及其子节点，无须再为每个 Tab 管理一份引用生命周期。
 
 **缓存并搬移 DOM。** 普通 reparent 会触发 Electron 断开处理；实现不依赖原子搬移、私有挂载 API 或生命周期补丁。
 
-**保留固定 Browser 浮层，改为事件驱动测量或 CSS 锚点定位。** 内容仍然与它模拟的布局分离，而内容本身必须参与 Grid/Flex。
+**把 Browser 内容放在独立浮层中.** 测量或 CSS 锚点可以对齐浮层, 但内容仍处于负责其尺寸与裁剪的父级 Grid/Flex 布局之外.
 
 **使用原生 popover。** 普通 Portal 内容无法通过 `z-index` 覆盖 top layer 元素。把菜单、对话框迁移到另一套层叠体系会扩大 Sidebar 之外的改动；实现保留既有 Portal 和层级模型。
 
@@ -77,7 +75,7 @@ Tab 提供 Body 保活持有，而不独立申请会话引用。View 的稳定 `
 
 布局正确性由 Sidebar/DockKit 负责，而不是 Browser。代价是稳定的内容容器与显式会话引用所有权：后台保活不仅持有页面内存，也持有会话 scope 和订阅。没有隐式 LRU 或空闲超时，未来回收需要明确的暂停与恢复策略；其他 Tab 类型不会自动承担这些成本。
 
-变更涉及 Sidebar 控件、浮窗层级、焦点和平台样式，不仅是 Browser 包。[停靠基础设施](../feature/2026-09-04-right-sidebar-docking-infrastructure.zh.md)和 Desktop Browser 记录的引擎、导航、存储与安全决策仍独立有效，因此保留为活动记录；其中的分离内容呈现由本文替代，布局持久化和 Tab 类型导航继续适用。
+Sidebar/DockKit 除了负责保活内容布局, 还负责控件、浮窗层级、焦点和平台样式. [停靠基础设施](../feature/2026-09-04-right-sidebar-docking-infrastructure.zh.md)负责布局引擎、持久化和 Tab 类型导航; [Desktop Browser 决策](../feature/2026-09-20-desktop-browser-webview.zh.md)负责 guest 导航、存储和安全.
 
 ## Verification
 

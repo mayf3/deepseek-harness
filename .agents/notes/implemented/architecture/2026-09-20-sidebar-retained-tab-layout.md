@@ -6,9 +6,7 @@ English | [中文](2026-09-20-sidebar-retained-tab-layout.zh.md)
 
 ## Problem
 
-Restoring Session-specific tab records and URLs does not preserve a live browsing context. The recursive docked renderer mounts only an active body, a separate floating portal creates another body, and changing a Session binding remounts Session-scoped slots. Electron 44's `WebViewElement.disconnectedCallback` detaches and resets its guest, so preserving a React key or caching an element reference cannot compensate for disconnected ancestors.
-
-The first [Desktop Browser implementation](../feature/2026-09-20-desktop-browser-webview.md) keeps its guest under a fixed body-level parent and follows a placeholder with RAF measurements. User trials report working float, collapse and Session switches with that implementation; this change replaces its geometry mechanism, not a demonstrated failure of those interactions. Real parent layout must own content size, clipping and overlap.
+Restoring Session-specific tab records and URLs does not preserve a live browsing context. Unmounting a body or changing its DOM ancestors during tab, pane or Session transitions disconnects its page. Electron 44's `WebViewElement.disconnectedCallback` detaches and resets its guest, so preserving a React key or caching an element reference cannot compensate for disconnected ancestors. Content size, clipping and overlap must also follow the actual parent layout.
 
 ## Decision
 
@@ -59,13 +57,13 @@ The [Desktop Browser decision](../feature/2026-09-20-desktop-browser-webview.md)
 
 **Hide panes only.** Collapse works, but moving between panes or into another floating portal still changes content ancestors.
 
-**Retain bodies only in the foreground Session.** Session-slot remounting still disconnects the page and fails to preserve the existing Session-switch experience.
+**Retain bodies only in the foreground Session.** Session-slot remounting disconnects the page and loses its live state on Session switches.
 
 **Give each tab its own Session reference.** A view's tabs share one `SessionProvider`, whose reference must exist before their bodies render. Per-view ownership covers that parent and its children without an additional reference lifecycle for each tab.
 
 **Cache and reparent DOM.** Ordinary reparenting invokes Electron disconnection. Atomic-move dependencies, private attachment APIs and lifecycle monkey-patches are not used.
 
-**Keep the fixed Browser overlay with event-driven measurement or CSS anchor positioning.** Content remains separate from the layout it imitates; the content itself must participate in Grid/Flex.
+**Position Browser content in a separate overlay.** Measurement or CSS anchors can align an overlay, but its content remains outside the parent Grid/Flex layout that must own its sizing and clipping.
 
 **Use native popovers.** Top-layer elements cannot be covered by ordinary Portal content through `z-index`. Migrating menus and dialogs into another stacking system expands the work beyond Sidebar; the implementation preserves the existing Portal and layer model.
 
@@ -77,7 +75,7 @@ The [Desktop Browser decision](../feature/2026-09-20-desktop-browser-webview.md)
 
 Layout correctness belongs to Sidebar/DockKit rather than Browser. The cost is stable content containers and explicit Session-reference ownership: background retention holds Session scopes and subscriptions as well as page memory. There is no implicit LRU or idle timeout; future reclamation requires an explicit suspension/recovery policy. Other tab types do not automatically acquire these costs.
 
-The change affects Sidebar chrome, float stacking, focus and platform styles, not just the Browser package. The owning [docking infrastructure](../feature/2026-09-04-right-sidebar-docking-infrastructure.md) and Desktop Browser notes remain active for their independent engine, navigation, storage and security decisions. Their separated-content presentation is superseded here; layout persistence and tab-type navigation remain applicable.
+Sidebar/DockKit own chrome, float stacking, focus and platform styles as well as retained content placement. The [docking infrastructure](../feature/2026-09-04-right-sidebar-docking-infrastructure.md) owns the layout engine, persistence and tab-type navigation; the [Desktop Browser decision](../feature/2026-09-20-desktop-browser-webview.md) owns guest navigation, storage and security.
 
 ## Verification
 
