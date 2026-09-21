@@ -300,7 +300,7 @@ Abstract filesystem provider. Targets must preserve identity across aliases; rea
  * @returns a promise resolving once observation is active, with an asynchronous close function.
  * @throws when the provider does not support watching or cannot initialize the watcher.
  */
-abstract watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>
+watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>
 
 /**
  * Resolve a model/plugin-supplied path into a stable {@link FsTarget}. May perform I/O (a

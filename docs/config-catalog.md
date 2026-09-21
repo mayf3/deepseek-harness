@@ -199,7 +199,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/gateway/src/index.ts:140`](../packages/api/gateway/src/index.ts)
+Source: [`packages/api/gateway/src/index.ts:144`](../packages/api/gateway/src/index.ts)
 
 <a id="deepseek-aidsh-api-job-controller"></a>
 
@@ -338,7 +338,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/workspace-files/src/index.ts:69`](../packages/api/workspace-files/src/index.ts)
+Source: [`packages/api/workspace-files/src/index.ts:70`](../packages/api/workspace-files/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 
@@ -466,7 +466,7 @@ export interface ConnectionRecoveryConfig {
 }
 ```
 
-Source: [`packages/client/connection/src/index.ts:90`](../packages/client/connection/src/index.ts)
+Source: [`packages/client/connection/src/index.ts:92`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -2122,7 +2122,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/sandbox/sandbox-local/src/index.ts:44`](../packages/sandbox/sandbox-local/src/index.ts)
+Source: [`packages/sandbox/sandbox-local/src/index.ts:45`](../packages/sandbox/sandbox-local/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-policy"></a>
 

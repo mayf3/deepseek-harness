@@ -987,7 +987,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Abstract filesystem provider. Targets must preserve identity across aliases; reads expose regular UTF-8 text or typed errors, listings are stable and content-free, and mutations are atomic. Optional guards add stale protection without changing the unguarded provider contract.',
     methods: [
       {
-        signature: 'abstract watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>',
+        signature: 'watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>',
         description: 'Observe one file or a directory\'s direct entries in this provider\'s execution world.',
         parameters: [{ name: 'target', description: 'resolved file or directory, including an absent path to observe for creation.' }, { name: 'changed', description: 'invalidation callback; errors can be reported during or after initialization.' }, { name: 'signal', description: 'cancels watcher initialization; the caller closes an initialized watcher.' }],
         returns: 'a promise resolving once observation is active, with an asynchronous close function.',
@@ -3365,22 +3365,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the page, the file\'s version at the stat before it, and whether it reaches the last line.',
       },
       {
-        signature: '@Remote async readBytes( workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceByteRange, signal: AbortSignal, ): Promise<WorkspaceFileBytes>',
-        description: 'Read one byte window of a regular file readable by the filesystem backend: raw bytes, no text decoding and no binary rejection.',
-        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'absolute path or path relative to the workspace root; files outside it are allowed.' }, { name: 'range', description: 'the byte window; omitted fields take the window defaults.' }, { name: 'signal', description: 'caller cancellation.' }],
-        returns: 'the window in base64, the file\'s version and size at the stat before it, and whether it reaches the last byte.',
-      },
-      {
-        signature: '@Remote async readAll(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>',
-        description: 'Read a complete regular file as bytes, subject to the configured full-file cap.',
-        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'absolute or workspace-relative file path.' }, { name: 'signal', description: 'caller cancellation.' }],
-        returns: 'one complete base64 window with offset zero and eof true; oversized files fail with too-large.',
-      },
-      {
-        signature: '@Remote async readRelated( workspaceFileScope: WorkspaceFileScope, path: string, relativePath: string, signal: AbortSignal, ): Promise<WorkspaceFileBytes>',
-        description: 'Read a complete file relative to another file\'s directory, including outside the workspace.',
-        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'base file, absolute or workspace-relative.' }, { name: 'relativePath', description: 'relative filesystem path, not a URL or absolute path.' }, { name: 'signal', description: 'caller cancellation.' }],
-        returns: 'the complete related file using the ordinary file-size and access checks.',
+        signature: '@Remote async readBytes( workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceByteReadOptions, signal: AbortSignal, ): Promise<WorkspaceFileBytes>',
+        description: 'Read a complete regular file or one byte range without text decoding.',
+        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'target path, absolute or workspace-relative; relative to the base file\'s directory when provided.' }, { name: 'options', description: 'optional base file and range; without a range the complete-file cap applies.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'native bytes with the file\'s version and size at the preceding stat, byte offset, and EOF marker.',
       },
       {
         signature: '@Remote async stat(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileStat>',
@@ -4453,6 +4441,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ConnectionRequestRejection = 401 | 403 | undefined;',
   },
   {
+    name: 'ConnectionRpcAttachment',
+    declaration: 'export interface ConnectionRpcAttachment {\n    readonly path: readonly (string | number)[];\n    readonly bytes: Uint8Array;\n}',
+  },
+  {
     name: 'ConnectionRpcEndpointMatcher',
     declaration: 'export type ConnectionRpcEndpointMatcher = (endpoint: string) => boolean;',
   },
@@ -4462,7 +4454,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectionRpcHandler',
-    declaration: 'export type ConnectionRpcHandler = (endpoint: string, payload: unknown, signal: AbortSignal, peer: PeerScope) => Promise<ConnectionRpcResult<unknown>>;',
+    declaration: 'export type ConnectionRpcHandler = (endpoint: string, payload: unknown, signal: AbortSignal, peer: PeerScope) => Promise<ConnectionRpcHandlerResult>;',
+  },
+  {
+    name: 'ConnectionRpcHandlerResult',
+    declaration: 'export type ConnectionRpcHandlerResult = {\n    readonly ok: true;\n    readonly value: unknown;\n    readonly attachments?: readonly ConnectionRpcAttachment[];\n} | {\n    readonly ok: false;\n    readonly error: ConnectionRpcFailure;\n};',
   },
   {
     name: 'ConnectionRpcResult',
@@ -5702,7 +5698,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RenderedDocumentBytes',
-    declaration: 'export interface RenderedDocumentBytes extends WorkspaceFileBytes {\n    readonly missingFonts: string[];\n    readonly generation: OfficeToPdfGeneration;\n}',
+    declaration: 'export interface RenderedDocumentBytes extends Omit<WorkspaceFileBytes, \'data\'> {\n    readonly data: string;\n    readonly missingFonts: string[];\n    readonly generation: OfficeToPdfGeneration;\n}',
   },
   {
     name: 'ReplayEnvelope',
@@ -7034,7 +7030,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TypertCodec',
-    declaration: 'export type TypertCodec = {\n    readonly mode: \'strict\';\n    readonly typeSymbol: string;\n    readonly create: () => TypertSchema;\n} | {\n    readonly mode: \'src-json\';\n};',
+    declaration: 'export type TypertCodec = {\n    readonly mode: \'strict\';\n    readonly typeSymbol: string;\n    readonly create: () => TypertSchema;\n    readonly decode?: (value: unknown) => unknown;\n    readonly encode?: (value: unknown, writeBytes: (bytes: Uint8Array, path: readonly (string | number)[]) => null) => unknown;\n} | {\n    readonly mode: \'src-json\';\n};',
   },
   {
     name: 'TypertContribution',
@@ -7333,6 +7329,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceByteRange {\n    readonly offset?: number;\n    readonly length?: number;\n}',
   },
   {
+    name: 'WorkspaceByteReadOptions',
+    declaration: 'export interface WorkspaceByteReadOptions {\n    readonly range?: WorkspaceByteRange;\n    readonly baseFile?: string;\n}',
+  },
+  {
     name: 'WorkspaceChangedFile',
     declaration: 'export interface WorkspaceChangedFile {\n    path: string;\n    display: string;\n    added: number;\n    deleted: number;\n    binary?: true;\n    oversized?: true;\n}',
   },
@@ -7370,7 +7370,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceFileBytes',
-    declaration: 'export interface WorkspaceFileBytes extends WorkspaceFileStat {\n    readonly offset: number;\n    readonly data: string;\n    readonly eof: boolean;\n}',
+    declaration: 'export interface WorkspaceFileBytes<Data extends Uint8Array = Uint8Array> extends WorkspaceFileStat {\n    readonly offset: number;\n    readonly data: Data;\n    readonly eof: boolean;\n}',
   },
   {
     name: 'WorkspaceFileChange',

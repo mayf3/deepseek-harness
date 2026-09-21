@@ -25,7 +25,7 @@ Inspect Host and Client runtime APIs before writing plugin code. Creator mode pr
 <a id="use-this-package"></a>
 ## Use this package
 
-Creator mode includes this toolset. Other compositions mount `@deepseek-ai/dsh-tool-cordis` alongside the host runner that provides `cordisInspect`. Call `cordis_inspect_list` to discover providers, then `cordis_inspect_query` for a provider's exact methods and types. Use [Plugin Manager](../../boot/plugin-manager/README.md) to install bundles containing plugin code or MCP configuration.
+Creator mode includes this toolset. Other compositions mount `@deepseek-ai/dsh-tool-cordis/host` once in the host composition beside the host runner that provides `cordisInspect`, and `@deepseek-ai/dsh-tool-cordis` in each agent preset that exposes the tools; a preset row alone registers no Host providers. Call `cordis_inspect_list` to discover providers, then `cordis_inspect_query` for a provider's exact methods and types. Use [Plugin Manager](../../boot/plugin-manager/README.md) to install bundles containing plugin code or MCP configuration.
 
 -----
 
@@ -35,7 +35,7 @@ Creator mode includes this toolset. Other compositions mount `@deepseek-ai/dsh-t
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Host providers combine generated Service/Event catalogs and the requesting agent's tool registry. Client providers synchronize their manifests through the existing inspection registry and answer queries from a connected page. The tool plugin owns its registrations through Cordis effects; disposal removes the two tools and the Host inspect providers. No invariant companion is published because inspection reads its providers directly and maintains no independent runtime projection.
+Host providers combine generated Service/Event catalogs and the requesting agent's tool registry. Client providers synchronize their manifests through the existing inspection registry and answer queries from a connected page. The host entry owns the Host provider registrations and the preset row owns the two tools, each through Cordis effects; the registry rejects a duplicate provider id, which is why the providers register once per process rather than per preset. No invariant companion is published because inspection reads its providers directly and maintains no independent runtime projection.
 
 </details>
 

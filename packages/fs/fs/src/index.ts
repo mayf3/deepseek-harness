@@ -10,6 +10,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
+import { FsError } from './types.ts'
 import type {
   FsDirEntry,
   FsEditOutcome,
@@ -96,7 +97,12 @@ export abstract class FileSystem extends Service {
    * @returns a promise resolving once observation is active, with an asynchronous close function.
    * @throws when the provider does not support watching or cannot initialize the watcher.
    */
-  abstract watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>
+  watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>> {
+    void target
+    void changed
+    signal.throwIfAborted()
+    return Promise.reject(new FsError('Filesystem watching is not supported by this provider.', 'FS_IO_ERROR'))
+  }
 
   /**
    * The sandbox mode this backend enforces on mutations BY DEFAULT, or

@@ -1,7 +1,6 @@
-/** Adapt a Remote relative read without changing its Session or Host path authority. */
+/** Adapt a relative workspace read without changing its Session or Host path authority. */
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
-import type { WorkspaceFileBytes } from '@deepseek-ai/dsh-api-workspace-files/types'
-import { documentFileBytes } from '../rpc.ts'
+import type { DocumentFileBytes } from '../rpc.ts'
 import type { ReadHtmlRelative } from './pack.ts'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { hostFileOf } from '../rpc.ts'
@@ -11,13 +10,13 @@ import { hostFileOf } from '../rpc.ts'
  * @param address - root HTML file address.
  * @param relativePath - decoded dependency path, resolved only by the Host.
  * @param signal - cancellation shared by the tab and packing operation.
- * @returns the Remote complete-byte result, including declared failures.
+ * @returns the complete-byte result, including declared failures.
  */
-export type ReadHtmlRelated = (address: string, relativePath: string, signal: AbortSignal) => Promise<RemoteResult<WorkspaceFileBytes>>
+export type ReadHtmlRelated = (address: string, relativePath: string, signal: AbortSignal) => Promise<RemoteResult<DocumentFileBytes>>
 
 /**
  * Bind a package reader to the original HTML file's address.
- * @param readRelated - Remote reader using the Session in the root HTML address.
+ * @param readRelated - workspace reader using the Session in the root HTML address.
  * @param address - root HTML file address.
  * @param lifetime - tab lifetime.
  * @param addResource - subscribes to the dependency path reported by the Host.
@@ -47,6 +46,6 @@ export function createReadHtmlRelative(
       throw new Error(result.error.message)
     }
     addResource(sessionFileAddress(file.sessionId, result.value.absolutePath))
-    return documentFileBytes(result.value)
+    return result.value
   }
 }
