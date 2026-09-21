@@ -17,7 +17,7 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
 }) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
-  const [copyResult, setCopyResult] = useState<{ label: 'copiedLink' | 'copyFailed' } | null>(null)
+  const [copyResult, setCopyResult] = useState<{ messageKey: 'copiedLink' | 'copyFailed' } | null>(null)
   const attempt = account.view?.attempt
   useEffect(() => { setCopyResult(null) }, [attempt?.id, attempt?.authorizeUrl])
   useEffect(() => {
@@ -45,8 +45,8 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
     if (!attempt?.authorizeUrl) return
     try {
       await navigator.clipboard.writeText(attempt.authorizeUrl)
-      setCopyResult({ label: 'copiedLink' })
-    } catch { setCopyResult({ label: 'copyFailed' }) }
+      setCopyResult({ messageKey: 'copiedLink' })
+    } catch { setCopyResult({ messageKey: 'copyFailed' }) }
   }
   const title = active ? t('browserTitle') : expired ? t('timeoutTitle') : error ? t('failureTitle') : t('loginTitle')
   return <Modal open headless title={title} onClose={dismiss} className={css.dialog as string}>
@@ -60,7 +60,7 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
       {active ? <p className={css.description}>
         {t('browserPrompt')}<button type="button" className={css.link} disabled={!attempt?.authorizeUrl}
           onClick={() => { void copyLink() }}>
-          {t(copyResult?.label ?? 'copyLink')}
+          {t(copyResult?.messageKey ?? 'copyLink')}
         </button>{t('browserDescription')}
       </p> : <p className={css.description}>
         {expired ? t('timeoutDescription') : error ? t('failed') : t('loginDescription')}

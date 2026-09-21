@@ -2,6 +2,8 @@ vi.mock('../src/web-document.ts', () => ({ authenticateWebHost: async () => 'tes
 /** Welcome startup uses the Host before transitioning to the workspace. */
 
 import { afterEach, expect, it, vi } from 'vitest'
+import type { BrowserWindowConstructorOptions } from 'electron'
+import type { DesktopLocale } from '../src/locale.ts'
 import type { AccountView } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { WelcomeOperations } from '../src/welcome-api.ts'
 import { DESKTOP_IPC } from '../src/ipc.ts'
@@ -20,12 +22,12 @@ const state = vi.hoisted(() => ({
   loadWorkspace: vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined),
   showWorkspace: vi.fn(),
   closeWelcome: vi.fn(),
-  welcomeLocale: undefined as unknown,
+  welcomeLocale: undefined as DesktopLocale | undefined,
   preference: 'zh',
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   listeners: new Map<string, (...args: unknown[]) => void>(),
-  contents: undefined as unknown,
-  windowOptions: undefined as unknown,
+  contents: undefined as { mainFrame: { url: string } } | undefined,
+  windowOptions: undefined as BrowserWindowConstructorOptions | undefined,
   menu: vi.fn(),
   operations: undefined as WelcomeOperations | undefined,
 }))
@@ -49,7 +51,7 @@ vi.mock('electron', () => ({
   },
   powerMonitor: { on: vi.fn(), off: vi.fn() },
   BrowserWindow: class {
-    constructor(options: unknown) { state.windowOptions = options }
+    constructor(options: BrowserWindowConstructorOptions) { state.windowOptions = options }
     private ready: (() => void) | undefined
     webContents = { mainFrame: { url: 'dsh-app://app/' }, setWindowOpenHandler: vi.fn(), on: vi.fn(), send: vi.fn(), openDevTools: vi.fn() }
     static getAllWindows() { return [] }
@@ -110,7 +112,7 @@ vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: class
   dispose = vi.fn()
 } }))
 vi.mock('../src/welcome-window.ts', () => ({
-  openWelcomeWindow: async (locale: unknown, operations: WelcomeOperations) => {
+  openWelcomeWindow: async (locale: DesktopLocale, operations: WelcomeOperations) => {
     state.welcomeLocale = locale
     state.operations = operations
     await state.beforeWelcome()

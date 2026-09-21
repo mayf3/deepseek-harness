@@ -1,6 +1,7 @@
 /** Isolated Platform documents owned by the desktop account lifetime. */
+import type { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import { WebContentsView, session, shell, type BrowserWindow, type IpcMainEvent } from 'electron'
+import { WebContentsView, session, shell, type View, type WebFrameMain } from 'electron'
 import { mergePlatformCookies, type PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 
 export { PLATFORM_IPC } from './platform-ipc.ts'
@@ -16,20 +17,28 @@ export interface PlatformBounds { x: number; y: number; width: number; height: n
 export function platformBounds(value: unknown): PlatformBounds {
   if (typeof value !== 'object' || value === null) throw new Error('Invalid Platform bounds')
   const row = value as Record<string, unknown>
-  const result: Record<string, number> = {}
+  const result: PlatformBounds = { x: 0, y: 0, width: 0, height: 0 }
   for (const key of ['x', 'y', 'width', 'height'] as const) {
     const n = row[key]
     if (typeof n !== 'number' || !Number.isFinite(n) || n < 0 || n > 100_000) throw new Error('Invalid Platform bounds')
     result[key] = Math.round(n)
   }
-  return result as unknown as PlatformBounds
+  return result
 }
+
+type PlatformOwner = Pick<EventEmitter, 'on' | 'removeListener'> & {
+  webContents: Pick<EventEmitter, 'on' | 'removeListener'>
+  contentView: Pick<View, 'addChildView' | 'removeChildView'>
+  isDestroyed(): boolean
+}
+
+type PlatformSender = { sender: object; senderFrame: Pick<WebFrameMain, 'url'> | null }
 
 /** Native view and its credential snapshot are discarded together. */
 export class DesktopPlatformView {
   private account: PlatformSession | null = null
   private view: WebContentsView | undefined
-  private owner: BrowserWindow | undefined
+  private owner: PlatformOwner | undefined
   private releaseOwner: (() => void) | undefined
   private generation = 0
 
@@ -52,7 +61,7 @@ export class DesktopPlatformView {
    * @param bounds - owned renderer rectangle.
    * @returns when the document finishes loading.
    */
-  async open(owner: BrowserWindow, page: 'usage' | 'top-up', bounds: PlatformBounds): Promise<void> {
+  async open(owner: PlatformOwner, page: 'usage' | 'top-up', bounds: PlatformBounds): Promise<void> {
     this.close()
     const account = this.account
     if (account === null) throw new Error('Platform account unavailable')
@@ -144,7 +153,7 @@ export class DesktopPlatformView {
    * @param event - Electron-provided sender identity.
    * @returns credentials copied once into the isolated preload.
    */
-  bootstrap(event: IpcMainEvent): Pick<PlatformSession, 'origin' | 'token'> {
+  bootstrap(event: PlatformSender): Pick<PlatformSession, 'origin' | 'token'> {
     const view = this.view
     const account = this.account
     if (view === undefined || account === null || event.sender !== view.webContents

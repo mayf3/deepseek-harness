@@ -1,10 +1,9 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { BrowserWindow, IpcMainEvent } from 'electron'
 import { DesktopPlatformView, platformBounds } from '../src/platform-view.ts'
 
 const state = vi.hoisted(() => ({
-  views: [] as unknown[], sessions: [] as unknown[], openExternal: vi.fn(async () => {}), loadFailure: undefined as unknown,
+  views: [] as unknown[], sessions: [] as unknown[], openExternal: vi.fn(async () => {}), loadFailure: undefined as Error | undefined,
 }))
 vi.mock('electron', () => ({
   shell: { openExternal: state.openExternal },
@@ -35,7 +34,7 @@ function setup() {
   const removeChildView = vi.fn()
   const owner = Object.assign(new EventEmitter(), {
     webContents: new EventEmitter(), contentView: { addChildView: vi.fn(), removeChildView }, isDestroyed: () => false,
-  }) as unknown as BrowserWindow
+  })
   const manager = new DesktopPlatformView('/bundled/preload.cjs')
   manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
   return { manager, owner, removeChildView }
@@ -56,11 +55,11 @@ it('bootstraps only the owned main frame and never puts the token in a URL', asy
   const { manager, owner } = setup()
   await manager.open(owner, 'usage', bounds)
   const sender = view().webContents
-  const event = { sender, senderFrame: sender.mainFrame } as unknown as IpcMainEvent
+  const event = { sender, senderFrame: sender.mainFrame }
   expect(manager.bootstrap(event)).toEqual({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
   expect(sender.loadURL).toHaveBeenCalledWith('https://platform.deepseek.com/usage')
-  expect(() => manager.bootstrap({ ...event, senderFrame: { url: sender.mainFrame.url } } as IpcMainEvent)).toThrow()
-  expect(() => manager.bootstrap({ ...event, sender: {} } as IpcMainEvent)).toThrow()
+  expect(() => manager.bootstrap({ ...event, senderFrame: { url: sender.mainFrame.url } })).toThrow()
+  expect(() => manager.bootstrap({ ...event, sender: {} })).toThrow()
   sender.mainFrame.url = 'https://other.example/usage'
   expect(() => manager.bootstrap(event)).toThrow()
   manager.close()
@@ -72,7 +71,7 @@ it('destroys old documents on sign-out or credential replacement', async () => {
   const first = view().webContents
   manager.setSession({ origin: 'https://platform.deepseek.com', token: 'replacement' })
   expect(first.close).toHaveBeenCalledOnce()
-  expect(() => manager.bootstrap({ sender: first, senderFrame: first.mainFrame } as unknown as IpcMainEvent)).toThrow()
+  expect(() => manager.bootstrap({ sender: first, senderFrame: first.mainFrame })).toThrow()
   await manager.open(owner, 'top-up', bounds)
   expect(view().webContents.loadURL).toHaveBeenCalledWith('https://platform.deepseek.com/top_up')
   const second = view().webContents
@@ -168,7 +167,7 @@ it('injects deployment headers only at the Platform origin and excludes them fro
   } }, callback)
   expect(callback).toHaveBeenLastCalledWith({ requestHeaders: { accept: 'application/json' } })
   const sender = view().webContents
-  expect(manager.bootstrap({ sender, senderFrame: sender.mainFrame } as unknown as IpcMainEvent))
+  expect(manager.bootstrap({ sender, senderFrame: sender.mainFrame }))
     .toEqual({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
   manager.close()
 })

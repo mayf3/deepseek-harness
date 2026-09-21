@@ -62,7 +62,7 @@ export async function connectDesktopWelcome(
   const settingsAndReference = async () => {
     const settings = await invoke({ namespace: 'settings', method: 'describe', args: {} })
     if (!record(settings) || !Array.isArray(settings.namespaces)) throw new Error('desktop welcome: missing settings namespaces')
-    const official = settings.namespaces.find((item: unknown) => record(item) && item.ns === 'llm-deepseek') as unknown
+    const official: unknown = settings.namespaces.find((item: unknown) => record(item) && item.ns === 'llm-deepseek')
     if (!record(official) || !record(official.value) || typeof official.value.apiKeyEnv !== 'string') {
       throw new Error('desktop welcome: missing official DeepSeek credential reference')
     }
@@ -77,7 +77,7 @@ export async function connectDesktopWelcome(
       if (!record(provider) || typeof provider.settingsNs !== 'string' || !Array.isArray(provider.settingsPath)) {
         throw new Error('desktop welcome: invalid provider settings address')
       }
-      const namespace = namespaces.find((item: unknown) => record(item) && item.ns === provider.settingsNs) as unknown
+      const namespace: unknown = namespaces.find((item: unknown) => record(item) && item.ns === provider.settingsNs)
       let value: unknown = record(namespace) ? namespace.value : undefined
       for (const key of provider.settingsPath as unknown[]) {
         if (typeof key !== 'string') throw new Error('desktop welcome: invalid provider settings path')
@@ -94,7 +94,7 @@ export async function connectDesktopWelcome(
       Object.assign(states, batch)
     }
     if (!record(states[ref])) throw new Error('desktop welcome: missing credential metadata')
-    const locale = namespaces.find((item: unknown) => record(item) && item.ns === 'locale') as unknown
+    const locale: unknown = namespaces.find((item: unknown) => record(item) && item.ns === 'locale')
     if (!record(locale) || !record(locale.value)
       || (locale.value.preference !== undefined && typeof locale.value.preference !== 'string')) {
       throw new Error('desktop welcome: invalid locale preference')

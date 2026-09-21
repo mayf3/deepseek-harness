@@ -13,7 +13,19 @@ function setup() {
   const close = vi.fn()
   const replace = vi.fn()
   const popup = { closed: false, opener: window, close, location: { replace } }
-  vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window)
+  vi.spyOn(window, 'open').mockReturnValue(new Proxy(window, {
+    get(target, property, receiver) {
+      if (property === 'closed') return popup.closed
+      if (property === 'opener') return popup.opener
+      if (property === 'close') return popup.close
+      if (property === 'location') return popup.location
+      return Reflect.get(target, property, receiver)
+    },
+    set(target, property, value, receiver) {
+      if (property === 'opener') { popup.opener = value; return true }
+      return Reflect.set(target, property, value, receiver)
+    },
+  }))
   const browser = new BrowserLogin()
   browser.begin()
   return { browser, popup, close, replace }
