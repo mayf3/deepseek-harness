@@ -67,6 +67,8 @@ Visibility applies from outside inward: whole Turn → secondary group → indiv
 
 Whole-Turn folding controls the loaded process range, independently of secondary groups. A recorded Turn end makes that range eligible even when paging has not loaded the Turn start.
 
+The Turn control follows its opening human input, including while waiting for the first Assistant output.
+
 | Turn condition | Current behavior |
 |---|---|
 | Not closed | Keep process content open; whole-Turn collapse is unavailable. Secondary groups still follow the mode table. |

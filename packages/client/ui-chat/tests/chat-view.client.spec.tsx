@@ -504,14 +504,16 @@ function turnProcessControl(container: HTMLElement): HTMLButtonElement | null {
   return container.querySelector<HTMLButtonElement>('[data-turn-process]')
 }
 
-function withClock(time: number, run: () => void): void {
-  vi.useFakeTimers()
-  try {
-    vi.setSystemTime(time)
-    run()
-  } finally {
-    cleanup()
-    vi.useRealTimers()
+function withClock(time: number, run: () => void): () => void {
+  return () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(time)
+      run()
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
   }
 }
 
@@ -1436,7 +1438,7 @@ describe('ChatView', () => {
       ])
   })
 
-  it('renders Host-pending steering at the flow tail and hands off to the durable node', () => withClock(2_000, () => {
+  it('renders Host-pending steering at the flow tail and hands off to the durable node', withClock(2_000, () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -1909,7 +1911,7 @@ describe('ChatView', () => {
     expect(view.container.querySelector('[data-chat-flow-kind="context"]')).toBeNull()
   })
 
-  it('omits the System prompt through Turn completion and process expansion', () => withClock(4_000, () => {
+  it('omits the System prompt through Turn completion and process expansion', withClock(4_000, () => {
     const builder = new ChatSnapshotBuilder()
     const initial = withSystemPrompt(chatSnapshotFixture({
       nodes: [userInTurn(2, 'question', 1), context(3, 'runtime policy', 1)],
@@ -1917,7 +1919,7 @@ describe('ChatView', () => {
     }), builder)
     const h = makeHarness({ chat: initial }, { running: true })
     const view = render(<h.ChatView {...h.props} />)
-    expect(renderedFlowKinds(view.container).filter(kind => kind !== 'turn-process')).toEqual(['user'])
+    expect(renderedFlowKinds(view.container)).toEqual(['user', 'turn-process'])
     expect(turnProcessControl(view.container)?.textContent).toBe('深度求索中，用时4秒')
     expect(view.container.querySelector('[data-chat-flow-kind="system-prompt"]')).toBeNull()
 
@@ -2028,7 +2030,7 @@ describe('ChatView', () => {
     expect(answer?.hasAttribute('data-turn-process-answer')).toBe(false)
   })
 
-  it('keeps a live Turn expanded and folds it once at turn/end', () => withClock(3_000, () => {
+  it('keeps a live Turn expanded and folds it once at turn/end', withClock(3_000, () => {
     const process = assistant(2, 'inspect', 1, 1)
     const h = makeHarness({
       nodes: [user(1, 'question'), process],
@@ -2177,7 +2179,7 @@ describe('ChatView', () => {
     expect(view.getByLabelText('回到底部')).toBeTruthy()
   })
 
-  it('keeps a focused process row visible when a live Turn completes', () => withClock(2_000, () => {
+  it('keeps a focused process row visible when a live Turn completes', withClock(2_000, () => {
     const process = reasoningAssistant(2, 'inspect the repository', 1, 1)
     const h = makeHarness({
       nodes: [user(1, 'question'), process],
@@ -2779,7 +2781,7 @@ describe('ChatView', () => {
     expect(rowRenders).toBe(afterMount)
   })
 
-  it('hands running calls to a live Tool group', () => withClock(2_000, () => {
+  it('hands running calls to a live Tool group', withClock(2_000, () => {
     const h = makeHarness({
       runningCalls: [runningCall('r1')],
       turnTimings: new Map([[2, { startTime: 0 }]]),
@@ -2840,7 +2842,7 @@ describe('ChatView', () => {
     expect(unmounted).not.toHaveBeenCalled()
   })
 
-  it('the running clock uses turn/start, ignores steering, and stays out of the live region', () => withClock(126_000, () => {
+  it('the running clock uses turn/start, ignores steering, and stays out of the live region', withClock(126_000, () => {
     const startTime = 1_000
     const trigger = { ...userInTurn(1, 'go', 1), time: 120_000 }
     const h = makeHarness(
@@ -2884,7 +2886,7 @@ describe('ChatView', () => {
     expect(vi.getTimerCount()).toBe(0)
   }))
 
-  it('the running clock reads hours once the turn passes an hour', () => withClock(3_600_000, () => {
+  it('the running clock reads hours once the turn passes an hour', withClock(3_600_000, () => {
     const startTime = 1_000
     const trigger = { ...userInTurn(1, 'go', 1), time: startTime + 1 }
     const h = makeHarness(

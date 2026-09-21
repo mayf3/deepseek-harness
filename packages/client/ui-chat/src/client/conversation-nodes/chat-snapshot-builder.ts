@@ -430,8 +430,8 @@ function turnProcessPresentations(
     const location = node.location
     if (location.kind !== 'turn' && location.kind !== 'step') continue
     const current: TurnProcessPresentation = presentations.get(location.turn.turn) ?? {}
-    if ((node.kind === 'user' || (node.kind === 'steering' && current.control !== undefined))
-      && node.anchorSeq < (current.control?.data.controlAnchorSeq ?? Number.POSITIVE_INFINITY)) {
+    if (node.kind === 'user' || (node.kind === 'steering' && current.control !== undefined
+      && node.anchorSeq < current.control.data.controlAnchorSeq)) {
       presentations.set(location.turn.turn, {
         ...current,
         openingHumanAnchor: Math.min(current.openingHumanAnchor ?? node.anchorSeq, node.anchorSeq),

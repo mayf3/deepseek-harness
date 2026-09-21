@@ -325,7 +325,7 @@ describe('built-in conversation node Definitions', () => {
     expect(hasAssistantReplyContent([{ kind: 'other', block: { type: 'future' } }])).toBe(true)
   })
 
-  it.each(['replay', 'live', 'prepend'] as const)('hides permission commands but retains their data and ordinary Context (%s)', (mode) => {
+  it.each(['replay', 'live', 'prepend'] as const)('retains permission and Context data outside visible Chat order (%s)', (mode) => {
     const entries = [
       at(1, 'command/run', { commandId: 'permission-1', name: 'permission', source: { kind: 'user' } }),
       at(2, 'command/done', { commandId: 'permission-1', kind: 'success', text: 'Granted' }),
@@ -353,12 +353,13 @@ describe('built-in conversation node Definitions', () => {
     }
     const current = snapshot(value)
     const visible = current.order.map(key => current.nodes.get(key))
-    expect(visible.map(candidate => candidate?.kind)).toEqual(['command', 'context'])
+    expect(visible.map(candidate => candidate?.kind)).toEqual(['command', 'turn-process'])
     expect(visible[0]?.data).toMatchObject({ name: 'plan' })
     expect(current.nodes.values().filter(candidate => candidate.kind === 'command')).toHaveLength(2)
     expect(node(current, 'command')?.data).toMatchObject({
       name: 'permission', outcome: { kind: 'success', text: 'Granted' },
     })
+    expect(node(current, 'context')?.data).toMatchObject({ content: [{ type: 'text', text: 'workspace context' }] })
   })
 
   it('projects one reversible process window before the finalized answer', () => {
@@ -509,8 +510,9 @@ describe('built-in conversation node Definitions', () => {
     ])
     const opening = snapshot(value)
     expect(opening.order.map(key => opening.nodes.get(key)?.kind)).toEqual([
-      'user', 'context',
+      'user', 'turn-process',
     ])
+    expect(node(opening, 'context')?.data).toMatchObject({ content: [{ type: 'text', text: 'runtime context' }] })
 
     value.append(at(5, 'assistant/live-chunk', {
       turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'thinking' },
@@ -518,7 +520,7 @@ describe('built-in conversation node Definitions', () => {
     value.flush()
     const running = snapshot(value)
     expect(running.order.map(key => running.nodes.get(key)?.kind)).toEqual([
-      'user', 'turn-process', 'context', 'assistant-step',
+      'user', 'turn-process', 'assistant-step',
     ])
 
     value.append(at(6, 'agent/inbox/spliced', {
@@ -539,7 +541,7 @@ describe('built-in conversation node Definitions', () => {
     const current = snapshot(value)
 
     expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual([
-      'user', 'turn-process', 'context', 'steering', 'assistant-step', 'assistant-step', 'turn-tail',
+      'user', 'turn-process', 'steering', 'assistant-step', 'assistant-step', 'turn-tail',
     ])
   })
 
@@ -663,7 +665,7 @@ describe('built-in conversation node Definitions', () => {
     ])
   })
 
-  it('keeps Process before pre-User Context as answer eligibility changes', () => {
+  it('keeps Process before Assistant work and retains excluded Context as answer eligibility changes', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'user/message', {
@@ -677,8 +679,9 @@ describe('built-in conversation node Definitions', () => {
     ])
     const running = snapshot(value)
     expect(running.order.map(key => running.nodes.get(key)?.kind)).toEqual([
-      'turn-process', 'context', 'assistant-step',
+      'turn-process', 'assistant-step',
     ])
+    expect(node(running, 'context')?.data).toMatchObject({ content: [{ type: 'text', text: 'runtime context' }] })
 
     value.append(at(5, 'step/end', { turn: 1, step: 1 }))
     value.append(at(6, 'step/start', { turn: 1, step: 2 }))
@@ -688,8 +691,9 @@ describe('built-in conversation node Definitions', () => {
     value.flush()
     const answered = snapshot(value)
     expect(answered.order.map(key => answered.nodes.get(key)?.kind)).toEqual([
-      'turn-process', 'context', 'assistant-step', 'assistant-step',
+      'turn-process', 'assistant-step', 'assistant-step',
     ])
+    expect(node(answered, 'context')?.data).toMatchObject({ content: [{ type: 'text', text: 'runtime context' }] })
 
     value.append(at(8, 'llm/retry', {
       retryId: 'retry-tail', turn: 1, step: 2, provider: 'fake', mode: 'normal',
@@ -699,8 +703,9 @@ describe('built-in conversation node Definitions', () => {
     value.flush()
     const retried = snapshot(value)
     expect(retried.order.map(key => retried.nodes.get(key)?.kind)).toEqual([
-      'turn-process', 'context', 'assistant-step', 'model-retry',
+      'turn-process', 'assistant-step', 'model-retry',
     ])
+    expect(node(retried, 'context')?.data).toMatchObject({ content: [{ type: 'text', text: 'runtime context' }] })
   })
 
   it('establishes the answer boundary only when a streamed answer finalizes', () => {
@@ -924,7 +929,7 @@ describe('built-in conversation node Definitions', () => {
       }, { surfaceOp: 'append' }),
     ])
     const toolOnlySnapshot = snapshot(toolOnlyValue)
-    expect(toolOnlySnapshot.order).toEqual([])
+    expect(toolOnlySnapshot.order.map(key => toolOnlySnapshot.nodes.get(key)?.kind)).toEqual(['turn-process'])
     expect(node(toolOnlySnapshot, 'assistant-step')?.visibility).toBe('hidden')
     expect(toolOnlySnapshot.legacy.nodes).toMatchObject([{
       kind: 'assistant',
@@ -1399,7 +1404,7 @@ describe('built-in conversation node Definitions', () => {
     expect(after.order.slice(0, oldOrder.length)).toEqual(oldOrder)
     expect(oldOrder.map(key => after.nodes.get(key))).toEqual(oldNodes)
     expect(after.order.map(key => after.nodes.get(key)?.kind)).toEqual([
-      'user', 'turn-process', 'assistant-step', 'turn-tail', 'user',
+      'user', 'turn-process', 'assistant-step', 'turn-tail', 'user', 'turn-process',
     ])
   })
 
@@ -1493,7 +1498,7 @@ describe('built-in conversation node Definitions', () => {
     expect(node(snapshot(value), 'user')).toBeUndefined()
   })
 
-  it('orders claimed steering after the finalized Turn tail', () => {
+  it('keeps claimed steering after the closing Assistant and before the Turn tail', () => {
     const steering = textMessage('steer-after-answer', 'change direction')
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
@@ -1521,8 +1526,14 @@ describe('built-in conversation node Definitions', () => {
 
     const current = snapshot(value)
     const steeringNode = node(current, 'steering')
-    expect(steeringNode).toBeDefined()
-    expect(current.locations.getTurn(1).at(-1)).toBe(steeringNode?.key)
+    const tail = node(current, 'turn-tail')
+    expect(steeringNode?.data).toMatchObject({ messageId: 'steer-after-answer', seq: 6 })
+    expect(steeringNode?.location.kind === 'step' ? steeringNode.location.turn.turn : undefined).toBe(1)
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual([
+      'turn-process', 'assistant-step', 'steering', 'turn-tail',
+    ])
+    expect(current.locations.getTurn(1).at(-1)).toBe(tail?.key)
+    expect(tail?.data).toMatchObject({ seq: 8, closing: { finalNode: { seq: 3 } } })
   })
 
   it('classifies appended producer context from durable source metadata', () => {
@@ -1666,8 +1677,9 @@ describe('built-in conversation node Definitions', () => {
     const current = snapshot(value)
     expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual([
       'user',
-      'context',
+      'turn-process',
     ])
+    expect(node(current, 'context')?.data).toMatchObject({ content: [{ type: 'text', text: 'runtime facts' }] })
     expect(node(current, 'system-prompt')?.anchorSeq).toBe(1)
     expect(node(current, 'system-prompt')?.data).toEqual({ text: '# System\n\nFollow instructions.' })
   })
@@ -1741,12 +1753,14 @@ describe('built-in conversation node Definitions', () => {
     ])
 
     const current = snapshot(value)
-    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['user'])
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['user', 'turn-process'])
+    expect(promptNodes(current).map(candidate => candidate.data)).toEqual([{ text: '# System' }])
 
     value.append(systemAt(5, '# Replaced', 3))
     value.flush()
     const replaced = snapshot(value)
-    expect(replaced.order.map(key => replaced.nodes.get(key)?.kind)).toEqual(['user'])
+    expect(replaced.order.map(key => replaced.nodes.get(key)?.kind)).toEqual(['user', 'turn-process'])
+    expect(promptNodes(replaced).map(candidate => candidate.data)).toEqual([{ text: '# System' }])
   })
 
   it('retains an in-history prompt update without duplicating it at the same-step header', () => {
@@ -1815,7 +1829,7 @@ describe('built-in conversation node Definitions', () => {
     ])
 
     const current = snapshot(value)
-    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['user'])
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['user', 'turn-process'])
     expect(promptNodes(current).map(candidate => candidate.data)).toEqual([{ text: '# System' }])
   })
 
@@ -1840,14 +1854,14 @@ describe('built-in conversation node Definitions', () => {
     }
     const promptKey = node(snapshot(value), 'system-prompt')?.key
 
-    expect(kinds()).toEqual(['user', 'context'])
+    expect(kinds()).toEqual(['user', 'turn-process'])
 
     value.append(at(7, 'assistant/live-chunk', {
       turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'thinking' },
     }))
     value.flush()
     expect(kinds()).toEqual([
-      'user', 'turn-process', 'context', 'assistant-step',
+      'user', 'turn-process', 'assistant-step',
     ])
 
     value.append(at(8, 'step/end', { turn: 1, step: 1 }))
@@ -1860,9 +1874,10 @@ describe('built-in conversation node Definitions', () => {
     value.flush()
 
     expect(kinds()).toEqual([
-      'user', 'turn-process', 'context', 'assistant-step', 'assistant-step', 'turn-tail',
+      'user', 'turn-process', 'assistant-step', 'assistant-step', 'turn-tail',
     ])
     expect(node(snapshot(value), 'system-prompt')?.key).toBe(promptKey)
+    expect(node(snapshot(value), 'context')?.data).toMatchObject({ content: [{ type: 'text', text: 'runtime facts' }] })
   })
 
   it('keeps an append-only later user turn in the existing system-prompt series', () => {
