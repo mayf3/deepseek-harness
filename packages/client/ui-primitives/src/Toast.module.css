@@ -27,7 +27,7 @@
      light / bluish-750 dark), so the label and the action text below stay
      fixed instead of flipping with the theme. */
   background: var(--dsw-alias-toast-bg);
-  color: var(--dsw-static-neutral-bluish-00);
+  color: var(--dsw-alias-toast-label);
   font-size: 14px;
   line-height: 22px;
   box-shadow: var(--dsw-shadow-lv3);
