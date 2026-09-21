@@ -33,6 +33,28 @@ async function seedRepository(cwd: string): Promise<void> {
   git('commit', '-q', '-m', 'seed')
 }
 
+/** Sample the real opacity transition at its midpoint without depending on wall-clock scheduling. */
+function hoverOpacityTransition(page: Page, closing: boolean): Promise<{ duration: number; opacity: number }> {
+  return page.evaluate(closing => new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      const card = document.querySelector('[data-changes-hover-preview]')?.parentElement
+      if (card === undefined || card === null || card.hasAttribute('data-closing') !== closing) return
+      const initialOpacity = Number(getComputedStyle(card).opacity)
+      const animation = card.getAnimations().find(animation => animation instanceof CSSTransition && animation.transitionProperty === 'opacity')
+      observer.disconnect()
+      if (animation === undefined) { resolve({ duration: 0, opacity: initialOpacity }); return }
+      animation.pause()
+      animation.currentTime = 50
+      const opacity = Number(getComputedStyle(card).opacity)
+      const duration = Number(animation.effect!.getTiming().duration)
+      animation.finish()
+      resolve({ duration, opacity })
+    })
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-closing'] })
+    if (closing) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  }), closing)
+}
+
 describe('web e2e: a git workspace turn ends with its changed files', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -178,6 +200,76 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       rowFontSize: '11px',
       pathFontSize: '12px',
     })
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  })
+
+  it('previews a single column with a scrollable path and no file notes or hunk headers', async () => {
+    const card = page.locator('[data-changed-files]')
+    const row = card.getByRole('button', { name: '查看 notes.txt 的改动' })
+    const preview = page.locator('[data-changes-hover-preview]')
+    const entrance = hoverOpacityTransition(page, false)
+    await row.hover()
+    expect(await entrance).toEqual({ duration: 100, opacity: 0.5 })
+    await preview.locator('[data-review-view="unified"]').waitFor({ state: 'visible' })
+    expect(await preview.locator('[data-diff-side]').count()).toBe(0)
+    expect(await preview.locator('[data-diff-hunk-header]').isVisible()).toBe(false)
+    const geometry = await preview.evaluate((element) => {
+      const popup = element.parentElement!.getBoundingClientRect()
+      const card = document.querySelector('[data-changed-files]')!.getBoundingClientRect()
+      return { inset: popup.left - card.left, width: popup.width, cardWidth: card.width, height: popup.height }
+    })
+    expect(geometry.inset).toBe(24)
+    expect(geometry.width).toBe(geometry.cardWidth - 48)
+    expect(geometry.height).toBeLessThanOrEqual(420)
+    const path = preview.locator('[data-changes-preview-path]')
+    expect(await row.evaluate(element => document.getElementById(element.getAttribute('aria-describedby')!)?.textContent)).toBe(await path.textContent())
+    expect(await path.getAttribute('tabindex')).toBeNull()
+    const pathStyle = await path.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { family: style.fontFamily, overflow: style.overflowX, whiteSpace: style.whiteSpace, ellipsis: style.textOverflow }
+    })
+    expect(pathStyle.family).toMatch(/mono/i)
+    expect(pathStyle).toMatchObject({ overflow: 'auto', whiteSpace: 'nowrap', ellipsis: 'clip' })
+    await path.evaluate((element) => { element.style.maxWidth = '160px'; element.scrollLeft = 50 })
+    expect(await path.evaluate(element => element.scrollLeft)).toBe(50)
+    await path.evaluate((element) => { element.style.removeProperty('max-width') })
+    await compareOrRefreshGolden(join(DIR, 'hover.expected.md'), await preview.locator('[data-review-view]').ariaSnapshot(), MODE)
+    await preview.hover()
+    await preview.locator('[data-review-view]').evaluate((element) => {
+      const line = element.querySelector('[data-diff-line]')!
+      for (let index = 0; index < 40; index++) element.appendChild(line.cloneNode(true))
+    })
+    await expect.poll(() => preview.evaluate(element => element.parentElement!.getBoundingClientRect().height)).toBe(420)
+    const scroll = preview.locator('[data-review-view]')
+    await scroll.evaluate((element) => { element.scrollTop = 80 })
+    await expect.poll(() => scroll.evaluate(element => element.scrollTop)).toBe(80)
+    await row.click()
+    await preview.waitFor({ state: 'detached' })
+    const review = page.locator('[data-changes-review]')
+    await review.locator('[data-review-file="notes.txt"]').waitFor({ state: 'visible' })
+    await review.locator('[data-review-view="split"]').waitFor({ state: 'visible' })
+    await card.getByRole('button', { name: '查看 src/util.ts 的改动' }).hover()
+    await preview.locator('[data-diff-code]').first().waitFor({ state: 'visible' })
+    expect(await preview.locator('[data-review-view="unified"]').count()).toBe(1)
+    expect(await preview.locator('[data-diff-note]').isVisible()).toBe(false)
+    // Empty comparisons keep their status; only metadata accompanying code is hidden.
+    await preview.locator('[data-diff-note]').evaluate((element) => { element.setAttribute('data-diff-note', 'empty') })
+    expect(await preview.locator('[data-diff-note]').isVisible()).toBe(true)
+    await preview.locator('[data-diff-note]').evaluate((element) => { element.setAttribute('data-diff-note', 'metadata') })
+    expect(await preview.locator('[data-diff-hunk-header]').isVisible()).toBe(false)
+    await expect.poll(() => preview.evaluate(element => Number(getComputedStyle(element.parentElement!).opacity))).toBe(1)
+    expect(await hoverOpacityTransition(page, true)).toEqual({ duration: 100, opacity: 0.5 })
+    await preview.waitFor({ state: 'detached' })
+    for (const key of ['Enter', 'Space']) {
+      await page.mouse.move(0, 0)
+      await row.focus()
+      await row.hover()
+      await preview.locator('[data-review-view="unified"]').waitFor({ state: 'visible' })
+      await row.press(key)
+      await preview.waitFor({ state: 'detached' })
+      await review.locator('[data-review-file="notes.txt"]').waitFor({ state: 'visible' })
+    }
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })
