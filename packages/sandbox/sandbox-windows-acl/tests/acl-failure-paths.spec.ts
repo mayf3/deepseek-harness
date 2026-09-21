@@ -49,7 +49,7 @@ function aclApi(overrides: Partial<Win32Bindings> = {}): Win32Bindings {
     getLastError: vi.fn(() => 5),
     formatMessageW: vi.fn(() => 0),
     ...overrides,
-  } as unknown as Win32Bindings
+  } as Win32Bindings
 }
 
 /** One SID allocation: revision@0, subAuthorityCount@1, identifierAuthority@2 (6 bytes), subauthorities@8. */

@@ -44,7 +44,7 @@ function props(
   function useJobs<T>(select: (value: JobsSnapshot) => T): T {
     return select(jobsState)
   }
-  return { sessionId: SESSION, useJobs, watchRows, observe, t } as unknown as JobListActionProps
+  return { sessionId: SESSION, useJobs, watchRows, observe, t } as JobListActionProps
 }
 
 function openList(): void {

@@ -391,7 +391,7 @@ describe('LocalJobRegistry reads and settlement', () => {
     p.settle({ status: 'completed', detail: 'exit code: 0' })
     await tick()
 
-    expect(seen).toEqual([{ type: 'settled', cause: 'producer', job: expect.objectContaining({ id, status: 'completed', detail: 'exit code: 0' }) as unknown }])
+    expect(seen).toMatchObject([{ type: 'settled', cause: 'producer', job: { id, status: 'completed', detail: 'exit code: 0' } }])
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('listener boom'))
   })
 
@@ -436,14 +436,14 @@ describe('LocalJobRegistry.kill', () => {
     expect(ctx.jobs.kill(id, undefined, 'no longer needed')).toBe('requested')
     expect(p.cancels).toEqual(['no longer needed'])
     expect(ctx.jobs.list()[0]).toMatchObject({ status: 'stopping' })
-    expect(seen).toEqual([{ type: 'stopping', job: expect.objectContaining({ id, status: 'stopping' }) as unknown }])
+    expect(seen).toMatchObject([{ type: 'stopping', job: { id, status: 'stopping' } }])
 
     p.settle({ status: 'killed', detail: 'signal: SIGTERM' })
     await tick()
-    expect(seen[1]).toEqual({
+    expect(seen[1]).toMatchObject({
       type: 'settled',
       cause: 'kill',
-      job: expect.objectContaining({ id, status: 'killed', detail: 'signal: SIGTERM; no longer needed' }) as unknown,
+      job: { id, status: 'killed', detail: 'signal: SIGTERM; no longer needed' },
     })
   })
 
@@ -491,7 +491,7 @@ describe('LocalJobRegistry.kill', () => {
     expect(seen).toEqual([])
     settle({ status: 'completed' })
     await tick()
-    expect(seen).toEqual([{ type: 'settled', cause: 'producer', job: expect.objectContaining({ id }) as unknown }])
+    expect(seen).toMatchObject([{ type: 'settled', cause: 'producer', job: { id } }])
 
     broken = false
     expect(ctx.jobs.kill(id)).toBe('already-finished')
@@ -583,7 +583,7 @@ describe('LocalJobRegistry.wait', () => {
     p.settle({ status: 'completed', detail: 'exit code: 0' })
     controller.abort()
     await expect(wait).rejects.toThrow('wait aborted')
-    expect(seen).toEqual([{ type: 'settled', cause: 'producer', job: expect.objectContaining({ id, status: 'completed' }) as unknown }])
+    expect(seen).toMatchObject([{ type: 'settled', cause: 'producer', job: { id, status: 'completed' } }])
   })
 
   it('an abort landing after settlement still delivers the terminal projection it owes', async () => {
@@ -747,7 +747,7 @@ describe('LocalJobRegistry owner cleanup', () => {
     })
 
     await disposeAgentScope(owner)
-    expect(seen).toEqual([{ type: 'settled', cause: 'teardown', job: expect.objectContaining({ status: 'killed' }) as unknown }])
+    expect(seen).toMatchObject([{ type: 'settled', cause: 'teardown', job: { status: 'killed' } }])
   })
 
   it('attaches one cleanup per owner and drains all owned jobs with the scope', async () => {
@@ -929,7 +929,7 @@ describe('LocalJobRegistry disposal', () => {
 
     expect(disposedWithoutProducerDone).toBe(true)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('work may be orphaned'))
-    expect(seen).toEqual([{ type: 'settled', cause: 'teardown', job: expect.objectContaining({ status: 'failed' }) as unknown }])
+    expect(seen).toMatchObject([{ type: 'settled', cause: 'teardown', job: { status: 'failed' } }])
   })
 
   it('detaches owner effects from still-live agent scopes when the service unloads', async () => {
@@ -1008,14 +1008,14 @@ describe('LocalJobRegistry events', () => {
     const p = producer({ owner })
     const id = ctx.jobs.start(p.spec)
     // Registration is announced only once the record is readable.
-    expect(seen).toEqual([{ type: 'registered', job: expect.objectContaining({ id, owner: 'alice', status: 'running' }) as unknown }])
+    expect(seen).toMatchObject([{ type: 'registered', job: { id, owner: 'alice', status: 'running' } }])
     expect(ctx.jobs.list(owner.id)).toHaveLength(1)
 
     p.job().updateProgress('3/10')
-    expect(seen[1]).toEqual({ type: 'progress', job: expect.objectContaining({ id, progress: '3/10' }) as unknown })
+    expect(seen[1]).toMatchObject({ type: 'progress', job: { id, progress: '3/10' } })
 
     expect(ctx.jobs.kill(id, owner.id)).toBe('requested')
-    expect(seen[2]).toEqual({ type: 'stopping', job: expect.objectContaining({ id, status: 'stopping', progress: '3/10' }) as unknown })
+    expect(seen[2]).toMatchObject({ type: 'stopping', job: { id, status: 'stopping', progress: '3/10' } })
 
     p.settle({ status: 'killed' })
     await tick()
@@ -1029,7 +1029,7 @@ describe('LocalJobRegistry events', () => {
     const ctx = await harness()
     const seen = collect(ctx, { owner: SessionId('anyone') }, ['registered'])
     ctx.jobs.start(producer().spec)
-    expect(seen).toEqual([{ type: 'registered', job: expect.objectContaining({ id: 'bash-1' }) as unknown }])
+    expect(seen).toMatchObject([{ type: 'registered', job: { id: 'bash-1' } }])
     expect((seen[0] as { job: JobView }).job.owner).toBeUndefined()
   })
 

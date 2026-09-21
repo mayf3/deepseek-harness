@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-随附的 Web 与 Desktop composition 已挂载本包。可以从右侧 Sidebar guide 打开 **浏览器**、输入 HTTP(S) URL，或点击 Assistant Markdown 中的 HTTP(S) 链接。不带 scheme 的主机名会补全为 HTTPS。公共目标与 loopback 目标使用相同的默认 sandbox。每次 guide 操作或消息链接操作都会创建一个新的 Browser tab。
+Browser 在 Web profile 中默认禁用，在 Desktop 中默认启用。Web 用户可通过 profile patch 启用随附条目。可以从右侧 Sidebar guide 打开 **浏览器**并输入 HTTP(S) URL。Chat 的[链接偏好](../ui-chat/README.zh.md)选择内置浏览器时，HTTP(S) 链接会在此打开。不带 scheme 的主机名会补全为 HTTPS。公共目标与 loopback 目标使用相同的默认 sandbox。每次 guide 操作或委托到此的消息链接操作都会创建一个新的 Browser tab。
 
 ### 何时选择
 
@@ -33,11 +33,11 @@ kind: "package-reference"
 
 ### 最小配置
 
-本包没有配置字段。自定义 Web composition 挂载 Host companion；随后 Client loader 会发现 package manifest 声明的浏览器入口：
+本包没有插件配置字段。Web profile 通过其 profile patch 启用随附条目：
 
 ```yaml
 - id: ui-sidebar-browser
-  name: '@deepseek-ai/dsh-client-ui-sidebar-browser'
+  disabled: false
 ```
 
 Client 插件可以调用 `ctx.sidebarRight.openTab('browser', { params: { url } })` 打开 tab。可选 URL 会在导航前接受与地址栏输入相同的校验。

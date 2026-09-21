@@ -4,11 +4,13 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session/types'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import type { JobId } from '@deepseek-ai/dsh-jobs'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
@@ -152,10 +154,10 @@ describe('processSources', () => {
 
   it('forwards each read to the matching stream reader at its own offset once the process exists', () => {
     const reads: { channel: string; from: number }[] = []
-    const reader = (channel: string, text: string) => ({
+    const reader = (channel: string, text: string): ShellProcess['observed']['stdout'] => ({
       readFrom: (from: number) => { reads.push({ channel, from }); return { text, nextOffset: from + text.length, lossy: false } },
     })
-    const proc = { observed: { stdout: reader('stdout', 'out'), stderr: reader('stderr', 'err!') } } as unknown as ShellProcess
+    const proc: Pick<ShellProcess, 'observed'> = { observed: { stdout: reader('stdout', 'out'), stderr: reader('stderr', 'err!') } }
     const [stdout, stderr] = processSources(() => proc)
     expect(stdout!.read(2)).toEqual({ text: 'out', nextOffset: 5, lossy: false })
     expect(stderr!.read(7)).toEqual({ text: 'err!', nextOffset: 11, lossy: false })
@@ -163,11 +165,12 @@ describe('processSources', () => {
   })
 
   it("passes a lossy read's spill file through, so the model's notice can name it", () => {
-    const proc = {
+    const proc: Pick<ShellProcess, 'observed'> = {
       observed: {
+        stdout: { readFrom: (from: number) => ({ text: '', nextOffset: from, lossy: false }) },
         stderr: { readFrom: (from: number) => ({ text: 'tail', nextOffset: from + 4, lossy: true, spillPath: '/spill/err.log' }) },
       },
-    } as unknown as ShellProcess
+    }
     const [, stderr] = processSources(() => proc)
     expect(stderr!.read(0)).toEqual({ text: 'tail', nextOffset: 4, lossy: true, spillPath: '/spill/err.log' })
   })
@@ -176,12 +179,24 @@ describe('processSources', () => {
 describe('owned background output', () => {
   it('fences an owned background run under the owning session', async () => {
     const ctx = await setup()
-    const owner = {
-      id: SessionId('background-owner'),
-      session: { id: SessionId('background-owner'), header: { cwd: process.cwd() } },
+    const ownerId = SessionId('background-owner')
+    const owner: Agent = {
+      id: ownerId,
+      options: {},
+      session: Session.create(ownerId, undefined, {
+        version: SESSION_FORMAT_VERSION, id: ownerId, createdAt: 0, cwd: process.cwd(), isSeeded: false,
+      }),
+      inbox: unsupportedInbox(),
       status: 'idle',
       ctx,
-    } as unknown as Agent
+      send: () => {},
+      followup: () => {},
+      steer: () => {},
+      inject: () => {},
+      cancel: () => {},
+      runMaintenance: task => task(new AbortController().signal),
+      whenIdle: () => Promise.resolve(),
+    }
     ctx.agents.register(owner)
     await ctx.tools.execute({
       signal: testToolSignal,

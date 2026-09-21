@@ -5,11 +5,14 @@
  */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context } from '@deepseek-ai/cordis'
+import { JobId } from '@deepseek-ai/dsh-jobs/brand'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { describe, expect, it } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
+import type { JobListInjected } from '../src/client/JobListAction.tsx'
 import { apply as applyNode } from '../src/index.ts'
 import { en, NS, zh } from '../src/client/locales.ts'
 
@@ -71,18 +74,14 @@ describe('ui-jobs browser half', () => {
     const entry = ctx.slots
       .entries('conversation.session.header.actions')
       .find(candidate => candidate.options.id === 'job-list')
-    const face = (entry as unknown as {
-      inject: () => {
-        hooks: { jobs: unknown }
-        watchRows: (sessionId: string) => () => void
-        observe: (sessionId: string | undefined, id: string) => () => void
-      }
-    }).inject()
+    const inject = entry?.inject as (() => JobListInjected) | undefined
+    if (inject === undefined) throw new Error('job-list entry registered no inject face')
+    const face = inject()
     expect(face.hooks.jobs).toBeDefined()
-    const release = face.watchRows('session')
+    const release = face.watchRows(SessionId('session'))
     expect(watched).toEqual(['session'])
     release()
-    const stopper = face.observe('session', 'bash-1')
+    const stopper = face.observe(SessionId('session'), JobId('bash-1'))
     expect(observed).toEqual([['session', 'bash-1']])
     stopper()
   })

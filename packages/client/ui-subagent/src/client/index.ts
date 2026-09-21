@@ -37,10 +37,10 @@ export const inject = ['sessions', 'uiWorkspace', 'slots', 'locale', 'sidebarRig
 function selectReadOnlySubagent(owner: ComposerChainProps): SubagentReadOnlyMatch | null {
   const subagent = owner.session?.subagent
   if (subagent === undefined || subagent === null) return null
+  if (subagent.address.mode === 'unknown') return { reason: 'unknown' }
   if (subagent.address.mode === 'one-shot') return { reason: 'one-shot' }
-  // The parent catalog is fetched ahead of the selected Session. Until it
-  // resolves, leave the normal disabled composer in place instead of briefly
-  // claiming that the parent is offline.
+  // Until a Host summary establishes parent availability, keep the normal
+  // disabled composer instead of claiming that the parent is offline.
   if (subagent.parentAvailable !== false) return null
   // A RUNNING parent-offline continuable child keeps the default composer:
   // its input is disabled there, but the same primary Stop stays available so
@@ -57,7 +57,6 @@ export function apply(ctx: ClientContext): void {
   ctx.inject(['resources', 'sidebarRightTabs'], (scope) => {
     registerSidebarChat(scope, ctx.locale.bind(NS))
   })
-  const sessions = ctx.sessions
   const catalogActions = (_parentSessionId: SessionId): SubagentCatalogInjected => ({
     openChild(address: SubagentAddress) {
       ctx.uiWorkspace.openSession(address)
@@ -68,11 +67,8 @@ export function apply(ctx: ClientContext): void {
         preferNewPane: true,
       })
     },
-    refresh(parentSessionId: SessionId) {
-      void sessions.refreshSubagents(parentSessionId)
-    },
-    setCatalogOpen(parentSessionId: SessionId, open: boolean) {
-      sessions.setSubagentCatalogOpen(parentSessionId, open)
+    refreshProjection(parentSessionId: SessionId) {
+      void ctx.sessions.refreshProjections(parentSessionId)
     },
   })
   ctx.slots.inject(

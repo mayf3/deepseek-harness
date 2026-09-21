@@ -20,28 +20,28 @@ describe('TranscriptViewPolicy', () => {
     current = () => policy.mode.getSnapshot()
 
     expect(policy.mode.getSnapshot()).toBe('compact')
-    policy.setMode('normal')
-    expect(policy.mode.getSnapshot()).toBe('normal')
-    expect(observed).toEqual(['transcriptView=normal:normal'])
-    expect(host.set).toHaveBeenCalledWith('transcriptView', 'normal')
+    policy.setMode('detailed')
+    expect(policy.mode.getSnapshot()).toBe('detailed')
+    expect(observed).toEqual(['transcriptView=detailed:detailed'])
+    expect(host.set).toHaveBeenCalledWith('transcriptView', 'detailed')
   })
 
-  it('adopts Host state and ignores identical writes', () => {
+  it('adopts Host state, reads the legacy value as Detailed, and ignores identical writes', () => {
     const host = stubSettingsScope<ChatSettings>()
     const policy = new TranscriptViewPolicy(host.scope)
 
-    host.publish({ status: 'ready', value: { transcriptView: 'normal', performanceUsage: 'detailed' }, revision: 1, writable: true })
-    expect(policy.mode.getSnapshot()).toBe('normal')
-    policy.setMode('normal')
+    host.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'normal', performanceUsage: 'detailed' }, revision: 1, writable: true })
+    expect(policy.mode.getSnapshot()).toBe('detailed')
+    policy.setMode('detailed')
     expect(host.set).not.toHaveBeenCalled()
 
-    host.publish({ value: { transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 2 })
+    host.publish({ value: { linkOpening: 'sidebar', transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 2 })
     expect(policy.mode.getSnapshot()).toBe('compact')
   })
 
   it('adopts an accepted section standing at construction', () => {
     const host = stubSettingsScope<ChatSettings>()
-    host.publish({ status: 'ready', value: { transcriptView: 'normal', performanceUsage: 'detailed' }, revision: 1, writable: true })
-    expect(new TranscriptViewPolicy(host.scope).mode.getSnapshot()).toBe('normal')
+    host.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'expanded', performanceUsage: 'detailed' }, revision: 1, writable: true })
+    expect(new TranscriptViewPolicy(host.scope).mode.getSnapshot()).toBe('expanded')
   })
 })

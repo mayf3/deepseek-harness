@@ -2,9 +2,10 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation } from './ipc.ts'
-import { markDocumentPlatform } from './preload-platform.ts'
+import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.ts'
 import { syncNativeTheme } from './preload-theme.ts'
 import { syncWindowsAppearance } from './preload-windows.ts'
+import { installMandatoryUpdateOverlay } from './preload-mandatory-overlay.ts'
 
 const product: DshDesktopProductApi = {
   protocolVersion: 1,
@@ -21,6 +22,7 @@ const product: DshDesktopProductApi = {
 
 if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
   syncWindowsAppearance()
+  if (process.platform === 'win32') installMandatoryUpdateOverlay()
   contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
     pick: () => ipcRenderer.invoke(DESKTOP_IPC.directoryPick) as Promise<string | null>,
   })
@@ -31,6 +33,7 @@ if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
 }
 
 markDocumentPlatform()
+syncWindowFullscreen()
 syncNativeTheme()
 // Main-process IPC also verifies the owning window and top frame.
 contextBridge.exposeInMainWorld('dshDesktop', location.protocol === `${SCHEME}:` && location.hostname === 'app' ? product : { protocolVersion: 1 })

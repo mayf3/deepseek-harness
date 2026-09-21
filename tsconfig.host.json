@@ -8,7 +8,8 @@
     "rewriteRelativeImportExtensions": false
   },
   "files": [
-    "packages/client/ui-settings-general/src/client/desktop-update-bridge.ts"
+    "packages/client/ui-settings-general/src/client/desktop-update-bridge.ts",
+    "packages/client/ui-sidebar-browser/src/index.ts"
   ],
   "include": [
     "apps/web/product-isolation.ts",
@@ -41,6 +42,7 @@
     "apps/web/tests/chat-scroll-fixture.ts",
     "apps/web/tests/trajectory-virtualization.e2e.ts",
     "apps/web/tests/lifecycle-chrome.e2e.ts",
+    "apps/web/tests/reasoning-preview.e2e.ts",
     "apps/web/tests/details-session-lifecycle.e2e.ts",
     "apps/web/tests/sessionless-header.e2e.ts",
     "apps/web/tests/document-preview.e2e.ts",
@@ -63,6 +65,8 @@
     "apps/web/tests/public-mount.e2e.ts",
     "apps/web/tests/workspace-new-session-folding.e2e.ts",
     "apps/web/tests/workspace-management.e2e.ts",
+    "apps/web/tests/default-workspace.e2e.ts",
+    "apps/web/tests/new-session-refused.e2e.ts",
     "apps/web/tests/workspace-recency.e2e.ts",
     "apps/web/tests/session-unarchive.e2e.ts",
     "apps/web/tests/replay-round-trip.e2e.ts",
@@ -88,6 +92,7 @@
     "apps/web/tests/file-upload-round.e2e.ts",
     "apps/web/tests/message-actions.e2e.ts",
     "apps/web/tests/open-in-app-ssh.e2e.ts",
+    "apps/web/tests/fork-mid-turn.e2e.ts",
     "apps/web/tests/message-feedback.e2e.ts",
     "apps/web/tests/markdown-images.e2e.ts",
     "apps/web/tests/markdown-file-links.e2e.ts",
@@ -169,6 +174,7 @@
   "references": [
     { "path": "./packages/client/connection/tsconfig.host.json" },
     { "path": "./packages/skill/skill-office" },
+    { "path": "./packages/skill/tool-workspace-dependencies" },
     { "path": "./packages/browser-use/browser-use" },
     { "path": "./packages/experimental/browser-use-runtime" },
     { "path": "./packages/experimental/browser-use-playwright-mcp" },
@@ -230,6 +236,7 @@
     { "path": "./packages/session/session-format-v0-to-v1" },
     { "path": "./packages/session/session-format-v1-to-v2" },
     { "path": "./packages/session/session-format-v2-to-v3" },
+    { "path": "./packages/session/session-format-v3-to-v4" },
     { "path": "./packages/session/session-format-catalog" },
     { "path": "./packages/session/session-checkpoint-policy" },
     { "path": "./packages/session/session-log-deepseek" },

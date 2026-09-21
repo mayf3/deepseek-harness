@@ -1,13 +1,11 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "/user-invoke-demo @\"meeting notes.md\" an" [disabled]
+  - navigation "Session hierarchy": /user-invoke-demo @"meeting notes.md" an
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - button "/user-invoke-demo"
 - button "meeting notes.md"
 - text: and confirm the fixture wiring {{clock}}

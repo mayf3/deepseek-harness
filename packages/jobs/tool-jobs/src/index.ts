@@ -11,6 +11,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { boundContextSummary, createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import { TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -20,6 +21,11 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent'
 import { publicJob, renderModelDelta, statusLine } from './render.ts'
 import type { PublicJobSnapshot } from './render.ts'
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'tool-jobs': { kind: 'tool-jobs' } & ContextFormed
+  }
+}
 
 export const name = 'tool-jobs'
 export const inject = ['tools', 'jobs', 'systemPrompt']
@@ -313,8 +319,7 @@ export function apply(ctx: Context, config: Config): void {
         text: fitCompletionNotice(event.job),
       }],
       source: {
-        kind: 'plugin',
-        plugin: 'tool-jobs',
+        kind: 'tool-jobs',
         form: 'notice',
         summary: completionSummary(event.job),
       },

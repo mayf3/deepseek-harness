@@ -1,4 +1,4 @@
-/** Opt-in Web Messages configuration, credential reuse, and recovery from a saved Chat Completions selection. */
+/** Web DeepSeek configuration, credential reuse, and saved model selection. */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,14 +12,14 @@ import { connectFreshWorkspaceZh, saveFailureShot, ZH_BROWSER_LOCALE } from './s
 
 const EXPECTED = fileURLToPath(new URL('./expected/deepseek-messages-settings/', import.meta.url))
 
-describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages opt-in', () => {
+describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages settings', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ deepSeekMissingCredential: true, deepSeekMessages: true })
+    scaffold = await launchWebScaffold({ deepSeekMissingCredential: true })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
@@ -68,7 +68,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages opt-
     await expect(scaffold.ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-flash')).resolves.toMatchObject({
       name: 'Messages Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
     })
-    expect(scaffold.ctx.settings.get('llm-deepseek')).toMatchObject({ protocol: 'messages' })
+    expect(scaffold.ctx.settings.get('llm-deepseek')).not.toHaveProperty('protocol')
     expect(settings).not.toContain('sk-e2e-')
     const credentials = await readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8')
     expect(credentials).toContain('DEEPSEEK_API_KEY: sk-e2e-messages')
@@ -84,7 +84,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages opt-
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('keeps a saved Chat Completions selection available after the YAML protocol switch', async () => {
+  it('keeps a saved DeepSeek selection available after editing provider settings', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-deepseek-messages-default'))
     await page.keyboard.press('Escape')
     await scaffold.ctx.agentDefaultModel.saveSelection({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })

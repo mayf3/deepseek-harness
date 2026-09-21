@@ -20,14 +20,22 @@ export async function registerAgent(ctx: Context, rawId: string): Promise<Agent 
   const scopeFiber = ctx.plugin(() => {})
   const id = SessionId(rawId)
   const session = Session.create(id)
-  const agent = {
+  const agent: Agent & { disposeScope: () => Promise<void> } = {
     id,
+    options: {},
     session,
     inbox: unsupportedInbox(),
     status: 'idle',
     ctx: scopeFiber.ctx,
+    send: () => {},
+    followup: () => {},
+    steer: () => {},
+    inject: () => {},
+    cancel: () => {},
+    runMaintenance: task => task(new AbortController().signal),
+    whenIdle: () => Promise.resolve(),
     disposeScope: () => scopeFiber.dispose(),
-  } as unknown as Agent & { disposeScope: () => Promise<void> }
+  }
   await ctx.agents.register(agent)
   return agent
 }

@@ -21,13 +21,19 @@ describe('ui-chat Host settings', () => {
     await fiber.await()
     const ns = CHAT_SETTINGS_NAMESPACE
 
-    expect(ctx.settings.get(ns)).toEqual({ transcriptView: DEFAULT_TRANSCRIPT_VIEW_MODE, performanceUsage: 'detailed' })
+    expect(ctx.settings.get(ns)).toEqual({ transcriptView: DEFAULT_TRANSCRIPT_VIEW_MODE, performanceUsage: 'detailed', linkOpening: 'sidebar' })
     await ctx.settings.update(ns, { transcriptView: 'normal' })
-    expect(ctx.settings.get(ns)).toEqual({ transcriptView: 'normal', performanceUsage: 'detailed' })
+    expect(ctx.settings.get(ns)).toEqual({ transcriptView: 'normal', performanceUsage: 'detailed', linkOpening: 'sidebar' })
     await expect(ctx.settings.update(ns, { transcriptView: 'dense' })).rejects.toThrow()
     await ctx.settings.update(ns, { performanceUsage: 'compact' })
     expect(ctx.settings.get(ns)).toMatchObject({ performanceUsage: 'compact' })
     await expect(ctx.settings.update(ns, { performanceUsage: 'hidden' })).rejects.toThrow()
+
+    await ctx.settings.update(ns, { linkOpening: 'new-tab' })
+    expect(ctx.settings.get(ns)).toMatchObject({ linkOpening: 'new-tab' })
+    await ctx.settings.update(ns, { linkOpening: 'sidebar' })
+    expect(ctx.settings.get(ns)).toMatchObject({ linkOpening: 'sidebar' })
+    await expect(ctx.settings.update(ns, { linkOpening: 'popup' })).rejects.toThrow()
 
     await fiber.dispose()
     expect(ctx.settings.describe().map(row => row.ns)).not.toContain(ns)

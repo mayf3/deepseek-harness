@@ -20,11 +20,19 @@ function agentIn(ctx: Context, rawId: string, presetScope?: ScopeKey): Agent {
   const session = Session.create(id)
   return {
     id,
+    options: {},
     session,
     inbox: unsupportedInbox(),
     status: 'idle',
     ctx: agentCtx,
-  } as unknown as Agent
+    send: () => {},
+    followup: () => {},
+    steer: () => {},
+    inject: () => {},
+    cancel: () => {},
+    runMaintenance: task => task(new AbortController().signal),
+    whenIdle: () => Promise.resolve(),
+  }
 }
 
 function view(owner: Agent | undefined): JobView {

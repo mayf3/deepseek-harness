@@ -84,7 +84,7 @@ afterEach(async () => {
 function onceEvent<T>(watcher: import('chokidar').FSWatcher, event: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timeout = setTimeout(() => { reject(new Error(`timed out waiting for chokidar ${event}`)) }, 2_000)
-    const emitter = watcher as unknown as {
+    const emitter = watcher as {
       once(name: string, listener: (...args: unknown[]) => void): void
     }
     emitter.once(event, (...args: unknown[]) => {

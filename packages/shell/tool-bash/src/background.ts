@@ -59,10 +59,10 @@ export function processOutcome(proc: ShellProcess, escalationModes: readonly San
  * registry admitted the job; a read before the spawn yields nothing, and the
  * pump keeps the model's consuming cursor untouched. A rejected spawn's
  * stderr reader carries the provider's `spawn failed: …` note.
- * @param proc - the started process, once the starter has spawned it.
+ * @param proc - the started process's observed streams, once the starter has spawned it.
  * @returns one source per stream, stdout first.
  */
-export function processSources(proc: () => ShellProcess | undefined): JobOutputSource[] {
+export function processSources(proc: () => Pick<ShellProcess, 'observed'> | undefined): JobOutputSource[] {
   const source = (channel: 'stdout' | 'stderr'): JobOutputSource => ({
     channel,
     read: (fromByte) => {

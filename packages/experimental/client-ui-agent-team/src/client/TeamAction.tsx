@@ -44,7 +44,7 @@ export interface TeamActionInjected {
     writeScopes?: string[]
     owner?: string
   }) => Promise<TeamTaskActionResult>
-  openTeammate: (sessionId: SessionId, member: TeamRosterMember) => Promise<void>
+  openTeammate: (sessionId: SessionId, member: TeamRosterMember) => void
 }
 
 /** Full props of the Team conversation-header action. */
@@ -312,7 +312,11 @@ export function TeamAction({
                       disabled={member.role === 'lead' || member.status === 'failed' || member.status === 'provisioning'}
                       title={member.role === 'teammate' ? t('open') : undefined}
                       onClick={() => {
-                        void openTeammate(sessionId, member).catch((reason: unknown) => { setError(String(reason)) })
+                        try {
+                          openTeammate(sessionId, member)
+                        } catch (reason) {
+                          setError(String(reason))
+                        }
                       }}
                     >
                       <StateDot state={memberDotState(member.status)} />

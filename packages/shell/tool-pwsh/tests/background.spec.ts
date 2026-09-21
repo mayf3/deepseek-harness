@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session/types'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import { ShellExecutor } from '@deepseek-ai/dsh-shell'
@@ -192,12 +194,24 @@ describe('background pwsh output', () => {
 describe('owned background output (pwsh)', () => {
   it('keeps an owned background run under the owning session', async () => {
     const { ctx, pwsh } = await setup()
-    const owner = {
-      id: SessionId('pwsh-background-owner'),
-      session: { id: SessionId('pwsh-background-owner'), header: { cwd: process.cwd() } },
+    const ownerId = SessionId('pwsh-background-owner')
+    const owner: Agent = {
+      id: ownerId,
+      options: {},
+      session: Session.create(ownerId, undefined, {
+        version: SESSION_FORMAT_VERSION, id: ownerId, createdAt: 0, cwd: process.cwd(), isSeeded: false,
+      }),
+      inbox: unsupportedInbox(),
       status: 'idle',
       ctx,
-    } as unknown as Agent
+      send: () => {},
+      followup: () => {},
+      steer: () => {},
+      inject: () => {},
+      cancel: () => {},
+      runMaintenance: task => task(new AbortController().signal),
+      whenIdle: () => Promise.resolve(),
+    }
     ctx.agents.register(owner)
     const scripted = observableProcess()
     pwsh.backgroundHandler = () => scripted.proc

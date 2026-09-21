@@ -36,19 +36,24 @@ declare module '../contract/chat-nodes.ts' {
 
 function isCompactionCheckpoint(event: Parameters<ConversationNodeDefinition['match']>[0]): boolean {
   if (event.type !== 'user/message' || !isReplacementSurfaceEvent(event)) return false
-  const source = event.data.source
-  return source.kind === 'plugin' && source.plugin === 'compact'
+  const source = event.data.source as { kind?: unknown }
+  return source.kind === 'compact-checkpoint'
 }
 
 /** User, steering, and injected-context message classification Definition. */
 export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
   kind: 'input-message',
   target: 'chat',
-  match: event => event.type === 'user/message'
-    && isAppendSurfaceEvent(event)
-    && !isCompactionCheckpoint(event)
-    ? { id: String(event.data.id), role: 'start' }
-    : null,
+  match: (event) => {
+    if (event.type === 'user/message') {
+      return isAppendSurfaceEvent(event) && !isCompactionCheckpoint(event)
+        ? { id: String(event.data.id), role: 'start' }
+        : null
+    }
+    // Developer history is persisted for V4; presentation is intentionally deferred.
+    if (event.type === 'developer/message') throw new Error('Chat developer messages are not supported yet')
+    return null
+  },
   start: (_context, match, reader) => {
     if (match.event.type !== 'user/message') throw new Error('input-message start requires user/message')
     const event = match.event

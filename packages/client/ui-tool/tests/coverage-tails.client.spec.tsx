@@ -28,7 +28,7 @@ function listStore() {
       [SID]: { id: SID, title: 'r', displayTitle: 'r', running: false, retainedBy: {}, blank: false, updatedAt: 0 },
     },
     phase: 'ready',
-    subagentsByParent: {},
+    projectionsBySession: {},
   })
 }
 
@@ -48,7 +48,7 @@ describe('Tool presentation tails', () => {
     )
     expect(view.queryByTestId('icon')).not.toBeNull()
     const summary = view.getByText('s')
-    expect(summary.className).toContain('stoppedSummary')
+    expect(summary.parentElement?.className).toContain('stoppedSummary')
   })
 
   it('a settled others-variant row renders the sparkle icon in the leading slot', () => {
@@ -76,7 +76,7 @@ describe('Tool presentation tails', () => {
     }
     const view = render(<BashRow {...bashProps(settled)} />)
     const row = view.container.querySelector('[data-sample="bash"]')!
-    expect(row.textContent).toContain('Bash')
+    expect(row.textContent).toContain('运行命令')
     expect(row.textContent).toContain('Build')
     expect(row.getAttribute('data-clickable')).toBeNull()
   })
@@ -99,7 +99,7 @@ describe('Tool presentation tails', () => {
 
     const runningView = render(<BashRow {...bashProps(running)} />)
     expect(runningView.container.querySelector('[data-state="running"]')).not.toBeNull()
-    expect(runningView.getByText('Bash')).toBeTruthy()
+    expect(runningView.getByText('运行命令')).toBeTruthy()
     expect(runningView.getByText('List')).toBeTruthy()
     runningView.unmount()
 
@@ -107,14 +107,15 @@ describe('Tool presentation tails', () => {
     expect(errorView.container.querySelector('[data-sample="bash"]')).not.toBeNull()
     expect(errorView.container.querySelector('[data-state="error"]')).not.toBeNull()
     expect(errorView.container.querySelector('[data-state="error"] svg')).not.toBeNull()
-    expect(errorView.getByText('Bash')).toBeTruthy()
+    expect(errorView.getByText('运行命令')).toBeTruthy()
     expect(errorView.container.querySelector('[class*="_errorSummary_"]')).not.toBeNull()
     errorView.unmount()
 
     const stoppedView = render(<BashRow {...bashProps(stoppedResult)} />)
     expect(stoppedView.container.querySelector('[data-state="stopped"]')).not.toBeNull()
     expect(stoppedView.container.querySelector('[data-state="stopped"] svg')).not.toBeNull()
-    const stoppedSummary = stoppedView.getByText('已停止')
-    expect(stoppedSummary.className).toContain('stoppedSummary')
+    const stoppedSummary = stoppedView.getByRole('button').querySelector('[class*="_stoppedSummary_"]')
+    expect(stoppedSummary?.textContent).toBe('已停止')
+    expect(stoppedView.getAllByText('已停止')).toHaveLength(2)
   })
 })

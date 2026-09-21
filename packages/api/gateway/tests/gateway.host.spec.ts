@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
-import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
+import type { HostConnectionHandle, PeerId, PeerScope } from '@deepseek-ai/dsh-client-connection'
 import type { WebServer, WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import {
   bindTypertRemote,
@@ -112,9 +112,12 @@ class FakeConnectionService extends Service {
   channel: string | undefined
   matches: ((endpoint: string) => boolean) | undefined
   handler: FakeRpcHandler | undefined
+  /** The operator Peer every call this fake dispatches speaks for. */
+  readonly operator: PeerScope
 
   constructor(ctx: Context) {
     super(ctx, 'connection')
+    this.operator = { id: 'fake-operator' as PeerId, ctx, dispose: () => Promise.resolve() }
   }
 
   get rpc() {
@@ -1223,7 +1226,7 @@ describe('TypertGatewayService', () => {
         }),
       })
       expect(invalid.status).toBe(200)
-      const invalidBody = await invalid.json() as unknown
+      const invalidBody: unknown = await invalid.json()
       expect(invalidBody).toMatchObject({
         type: 'server-response',
         rpcId: 'rpc-invalid',
@@ -1247,7 +1250,7 @@ describe('TypertGatewayService', () => {
         }),
       })
       expect(withdrawn.status).toBe(200)
-      const withdrawnBody = await withdrawn.json() as unknown
+      const withdrawnBody: unknown = await withdrawn.json()
       expect(withdrawnBody).toMatchObject({
         type: 'server-response',
         rpcId: 'rpc-withdrawn',

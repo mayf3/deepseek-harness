@@ -80,7 +80,8 @@ export interface SidebarRightInjected {
    * Publish this seat's session, actions, and the store's surfaces to `ctx.sidebarRight`.
    *
    * The service is root-scoped and cannot read a per-entry store, so the only
-   * honest source is the mounted seat. Held for as long as the seat is mounted.
+   * honest source is the mounted seat. Held for as long as the seat is mounted;
+   * the service publishes the bound session through `ctx.sidebarRight.mounted`.
    * @param binding - what a command needs to act on this session, and what a tab's own action needs to act on its.
    * @returns a release callback.
    */
@@ -373,6 +374,37 @@ export function RightbarSeat({
   useLayoutEffect(() => {
     if (shown && !fullscreen && !canShow) actions.setExpanded(sessionId, false)
   }, [actions, sessionId, shown, fullscreen, canShow])
+
+  // Electron rebuilds the window's -webkit-app-region rects only when a style
+  // or layout pass dirties an app-region value (electron#32341), and Blink
+  // skips hidden boxes when it collects them. The open/close slide flips only
+  // transform and visibility — neither dirties the rects — so the strip's
+  // no-drag boxes (ui-dockkit) are missing right after the first open, leaving
+  // the tabs under the window drag band (ui-layout .leadingBand) swallowed by
+  // it, and they would linger after a close. Pulsing an app-region rule
+  // (SidebarRight.module.css) on the panel forces a recollection at both edges
+  // of the gesture: once at the flip, once after the slide settles and the
+  // stylesheet's delayed visibility flip (0.3s) has landed.
+  useEffect(() => {
+    if (document.documentElement.dataset.platform !== 'darwin') return
+    const panel = panelRef.current
+    if (panel === null) return
+    let raf: number | null = null
+    const nudge = (): void => {
+      panel.setAttribute('data-sidebar-right-region-nudge', '')
+      raf = requestAnimationFrame(() => {
+        raf = null
+        panel.removeAttribute('data-sidebar-right-region-nudge')
+      })
+    }
+    nudge()
+    const settle = setTimeout(nudge, 400)
+    return () => {
+      clearTimeout(settle)
+      if (raf !== null) cancelAnimationFrame(raf)
+      panel.removeAttribute('data-sidebar-right-region-nudge')
+    }
+  }, [shown])
 
   // Fullscreen leaves the previous column report in force until its own slide
   // completes. Normal presentation and zero-duration transitions report before paint.

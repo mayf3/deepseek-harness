@@ -5,7 +5,6 @@
     - button "模型"
     - button "内置插件"
     - button "Agent 预设"
-    - button "已归档会话"
   - button "打开配置文件"
   - button "关闭"
   - heading "模型" [level=2]
@@ -22,7 +21,7 @@
         - text: 自定义设置 API 地址
         - textbox "API 地址":
           - /placeholder: https://api.deepseek.com/anthropic
-        - text: 请填写与当前连接配置兼容的 API 地址。
+        - text: 请填写兼容 Anthropic Messages 协议的 API 地址。
         - region "模型目录":
           - text: 模型目录 正在使用适配器默认模型
           - textbox "模型 ID 1":

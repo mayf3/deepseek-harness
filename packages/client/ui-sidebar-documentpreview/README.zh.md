@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在右侧 Sidebar 预览文件，并切换已注册的渲染器。Markdown 和代码支持分页文本；PDF、HTML 和常见图片接收完整字节；未知扩展名使用纯文本。Office 文档在本地转换为 PDF。tab 提供文件状态、渲染器选择、换行以及自动或手动重新载入。插件可在头部和不支持预览的空态中添加本地打开控件。
+在右侧 Sidebar 预览文件，并切换已注册的渲染器。Markdown 和代码支持分页文本；PDF、HTML 和常见图片接收完整字节；未知扩展名使用纯文本。Word 与 PowerPoint 文档在本地转换为 PDF；Excel 工作簿使用不支持预览的空态。tab 提供文件状态、渲染器选择、换行以及自动或手动重新载入。插件可在头部和不支持预览的空态中添加本地打开控件。
 
 ## 目录
 
@@ -40,6 +40,8 @@ kind: "package-reference"
 
 tab 使用 `fileAddressFor` 构造的 Session 地址，携带相对或绝对路径。`hostFileOf(address)` 仅从地址取得 Session，不接收外部 Session 参数，也不借用当前或 Tab Session。Host 通过 Session 文件系统解析文件及关联路径，由该后端控制读取权限。任何 UI（包括 Global 组件）都共享同一完整地址的元数据。[Workspace Files README](../../api/workspace-files/README.zh.md) 定义这些规则；渲染器选择不改变导航地址。
 
+全部文本分页加载完成后，Markdown 图片通过已鉴权的 `/api/file` 路由读取绝对文件路径，以及相对于源文档所在目录的路径。相对图片等待 Host 返回文档绝对路径。URL 转义只解码一次；查询参数与片段后缀不计入文件名。HTTP(S) 图片保留原始 URL，加载失败的图片显示 alt 文本。本地图片要求应用基址为 HTTP(S) URL；图片文件不加入自动刷新依赖。
+
 <a id="how-it-reads"></a>
 ## 怎么读
 
@@ -63,7 +65,7 @@ PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态�
 <a id="office-preview"></a>
 ## Office 预览
 
-将 `.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt` 和 `.pptx` 打开为 PDF 预览，使用与 PDF 文件相同的加载状态、控件、取消和文本选择能力。[Host 提供方](../../document/office-to-pdf/README.zh.md)负责本地转换；无效文件、转换失败和超时会显示本地化消息。缺少 Host 服务时显示配置引导。
+将 `.doc`、`.docx`、`.ppt` 和 `.pptx` 打开为 PDF 预览，使用与 PDF 文件相同的加载状态、控件、取消和文本选择能力。`.xls` 与 `.xlsx` 不注册 Sidebar 渲染器：它们不请求转换，直接显示不支持预览的提示；Host 报告存在桌面时，还提供用系统默认应用打开的控件。[Host 提供方](../../document/office-to-pdf/README.zh.md)仍为其他消费者保留电子表格转换 API。受支持的无效文件、转换失败和超时会显示本地化消息。缺少 Host 服务时显示配置引导。
 
 [Web bundle](../../bundle/web-app/README.zh.md) 以 `ui-sidebar-documentpreview` 挂载本包。通过该条目的 `office` 设置配置临时 Office 缓存；[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-client-ui-sidebar-documentpreview)定义可接受的值。设置注入到每个页面；修改 YAML 后重新加载浏览器页面。
 
@@ -106,7 +108,7 @@ Office 注册、加载、缓存和字体提示位于 `src/client/office/`。Offi
 
 <a id="known-limitations-and-deferred-work"></a>
 - **预览而非编辑。** 查看器不提供文件编辑或共享搜索接口；目录地址以 `not-regular-file` 失败。未知扩展名使用纯文本读取，仍受其 UTF-8/NUL 检查限制。
-- **Office 转换限制。** 预览不启动原生 Office 编辑器，也不下载引擎。二进制 `.doc`、`.xls` 和 `.ppt` 文件不返回缺失字体诊断。转换保真度与资源限制由 [LibreOffice 提供方](../../document/office-to-pdf/README.zh.md)负责。
+- **Office 转换限制。** 预览不启动原生 Office 编辑器，也不下载引擎。Excel 工作簿不提供预览，在桌面 Host 上改为提供用系统默认应用打开的控件。二进制 `.doc` 和 `.ppt` 文件不返回缺失字体诊断。转换保真度与资源限制由 [LibreOffice 提供方](../../document/office-to-pdf/README.zh.md)负责。
 - **文本顺序分页，完整文件受限。** 定位到较深处的源码行需要先加载此前各页；PDF、HTML 和图片必须取得 Host `maxFileBytes` 上限内的完整结果。
 - **字节视图不恢复滚动位置。** PDF、HTML 与图片的渲染器重新挂载或重新载入时可能回到顶部；图片适配面板宽度、不产生横向滚动，HTML iframe 的滚动属于其不透明浏览上下文。
 - **本地 HTML 依赖集合有限。** 只打包直接引用的经典 `.js` 脚本和 `.css` 样式表。浏览器解析的资源仍受浏览器源与网络规则限制；iframe 不获得运行时文件读取桥接。

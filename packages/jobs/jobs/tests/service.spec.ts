@@ -89,7 +89,7 @@ describe('JobRegistry seam', () => {
     expect(jobs.list(caller)).toHaveLength(1)
     expect(jobs.get(id, caller).status).toBe('running')
     expect(jobs.get(id, caller).owner).toBe(caller)
-    expect(jobs.read(id, caller)).toEqual({ chunks: [], lossy: false, job: expect.objectContaining({ id }) as unknown })
+    expect(jobs.read(id, caller)).toMatchObject({ chunks: [], lossy: false, job: { id } })
     expect(jobs.readAt(id, 7, caller)).toEqual({ chunks: [], next: 7, lossy: false })
     expect(jobs.kill(id, caller, 'seam test')).toBe('requested')
     await expect(jobs.wait(id, 5, caller)).resolves.toMatchObject({ id })
@@ -144,7 +144,7 @@ describe('JobRegistry seam', () => {
 
   it('mounting the abstract seam directly fails loudly at load (stale-composition fence)', async () => {
     const ctx = new Context()
-    await expect(ctx.plugin(JobRegistry as unknown as typeof StubJobRegistry))
+    await expect(ctx.plugin(JobRegistry as typeof StubJobRegistry))
       .rejects.toThrow(/abstract job registry seam; load an implementation such as @deepseek-ai\/dsh-jobs-local/)
   })
 })

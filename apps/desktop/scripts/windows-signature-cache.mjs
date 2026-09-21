@@ -125,7 +125,7 @@ export async function maintainSignatureCache(root, clear = false) {
 /**
  * Wrap a supervised signer with immutable entries keyed by unsigned bytes and signing policy.
  * @param {import('./windows-signature-cache.mjs').WindowsSignatureCacheOptions} options Cache policy and existing supervised operations.
- * @returns {import('./windows-signature-cache.mjs').WindowsCachedSigner} Serial, fail-stop callback with counters; cache hits still verify trust and timestamp.
+ * @returns {import('./windows-signature-cache.mjs').WindowsCachedSigner} Serial, fail-stop signer plus hardware-free restores; cache hits still verify trust and timestamp.
  */
 export function createCachedSigner(options) {
   let pending = Promise.resolve()
@@ -142,7 +142,7 @@ export function createCachedSigner(options) {
     if (record.inputDigest !== inputDigest || record.identity !== options.identity) throw new Error('signature cache: invalid input record')
     return record
   }
-  async function sign(configuration) {
+  async function sign(configuration, restoreOnly = false) {
     if (configuration.hash !== 'sha256' || configuration.isNest) throw new Error('signature cache: only unsigned SHA-256 runtime files are supported')
     const inputDigest = digest(await regularFile(configuration.path))
     const key = digest(JSON.stringify({ version: 1, inputDigest, identity: options.identity }))
@@ -173,8 +173,9 @@ export function createCachedSigner(options) {
       } finally { statistics.restoreMs += performance.now() - start }
       statistics.hits++
       options.record({ type: 'signature-cache-hit', key, path: configuration.path })
-      return
+      return true
     }
+    if (restoreOnly) return false
     statistics.misses++
     options.record({ type: 'signature-cache-miss', key, path: configuration.path })
     const start = performance.now()
@@ -210,9 +211,10 @@ export function createCachedSigner(options) {
     } finally { await rm(staging, { recursive: true, force: true }) }
   }
   const signer = configuration => {
-    pending = pending.then(() => sign(configuration))
+    pending = pending.then(async () => { await sign(configuration) })
     return pending
   }
+  signer.restore = configuration => sign(configuration, true)
   signer.summary = () => ({ root: options.root, identity: options.identity, ...statistics, avoidedSigningCalls: statistics.hits })
   return signer
 }

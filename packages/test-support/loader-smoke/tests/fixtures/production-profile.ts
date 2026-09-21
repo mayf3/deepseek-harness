@@ -9,7 +9,7 @@ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   boot,
-  healProfilesModuleFallback,
+  createRuntimeResolution,
   loadOverlayPatches,
   loadProfile,
   PluginPackages,
@@ -45,7 +45,7 @@ function overlayModuleLayers(path: string, patches: readonly PatchOptions[]): Pr
   return [...packages].map(([name, packageDir], index) => ({
     packageName: `test-overlay:${index}:${name}`,
     packageDir,
-    patchPath: path,
+    patchPaths: [path],
     patches: [],
   }))
 }
@@ -86,7 +86,7 @@ export async function bootProductionProfile(options: ProductionProfileOptions): 
   const moduleLayers = options.overlayPaths.flatMap((path, index) => (
     overlayModuleLayers(path, overlays[index] ?? [])
   ))
-  await healProfilesModuleFallback({
+  const resolution = await createRuntimeResolution({
     installAnchor,
     profile: { ...profile, layers: [...profile.layers, ...moduleLayers] },
   })
@@ -98,7 +98,7 @@ export async function bootProductionProfile(options: ProductionProfileOptions): 
       ...overlays.flat(),
     ],
     async (ctx) => {
-      await ctx.plugin(PluginPackages, {})
+      await ctx.plugin(PluginPackages, { resolution })
       await options.prepare?.(ctx)
     },
   )

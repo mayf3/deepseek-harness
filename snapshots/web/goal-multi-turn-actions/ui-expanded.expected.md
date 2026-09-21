@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "workspace" [disabled]
+  - navigation "Session hierarchy": workspace
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
@@ -12,22 +11,21 @@
   - button "Jump to turn 2"
 - group "Command input": /goal 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的
 - 'button "goal Goal created Status: active Objective: 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的 Rounds: 0/256 Activation: armed Commands: /goal edit <objective>, /goal pause, /goal clear"'
-- button "System prompt"
 - button "6 tool calls" [expanded]
 - button "Context injection goal"
-- button "Context injection @deepseek-ai/dsh-system-prompt"
-- 'button "Think The user''s goal is: \"做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的\" — which translates to: \"Do two turns, each turn output the file structure of a random package. Note that after you finish one turn, directly output the content and stop; our system will help you open another turn, and you just do something similar.\""'
+- button "Context injection runtime-context"
+- button "Think"
 - button "Bash List package directories deterministically"
 - button "View goal 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的"
-- 'button "Think There''s a `packages` directory. Let me look inside to see what packages are available."'
+- button "Think"
 - button "Bash List packages directory contents"
-- button "Think There are 4 packages:"
+- button "Think"
 - button "Failed Bash Randomly pick one package directory"
-- 'button "Think shuf is not available on macOS. I''ll use a different approach for random selection. Let me use $RANDOM in bash or use `sort -R` or Python."'
+- button "Think"
 - button "Bash Randomly select one package with Python"
-- 'button "Think The random pick for turn 1 is `packages/context/session-reference`. Now I''ll output its file structure. Let me get the file tree."'
+- button "Think"
 - button "Bash List all files in session-reference package"
-- 'button "Think Turn 1 is done. Per the objective: \"你做完一个turn之后，直接输出内容，停止\" — after finishing a turn, directly output the content and stop. The system will open another turn."'
+- button "Think"
 - paragraph:
   - strong: Turn 1 / 2
   - text: — 随机选中的包：
@@ -43,15 +41,14 @@
 - button "Bad response"
 - button "Branch into a new conversation"
 - text: {{clock}}
-- button "System prompt"
 - button "5 tool calls · 2 messages" [expanded]
 - button "Context injection goal"
-- 'button "Think This is turn 2 of 2. I need to randomly pick another package and output its file structure. In the first turn I picked `packages/context/session-reference`. Let me pick a different one randomly this time."'
+- button "Think"
 - button "Bash Randomly select another package with Python"
-- 'button "Think The random pick returned the same package as turn 1. Since turn 1 already covered `session-reference`, it would be better to pick a different one for variety. Let me re-roll, excluding the already-covered package."'
+- button "Think"
 - button "Bash Re-roll excluding the package from turn 1"
 - button "Bash List all files in token-meter package"
-- 'button "Think This is turn 2 of 2. I''ve output the file structure for `packages/llm/token-meter`. Both turns are done. I should output the content, stop, and then mark the goal as complete since both turns are finished."'
+- button "Think"
 - paragraph:
   - strong: Turn 2 / 2
   - text: — 随机选中的包：

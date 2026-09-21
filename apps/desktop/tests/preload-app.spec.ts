@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { installMandatoryUpdateOverlay } from '../src/preload-mandatory-overlay.ts'
 import { syncWindowsAppearance } from '../src/preload-windows.ts'
 import { DESKTOP_IPC, type DshDesktopProductApi } from '../src/ipc.ts'
 
@@ -7,11 +8,12 @@ const electron = vi.hoisted(() => ({
   ipcRenderer: { invoke: vi.fn(), on: vi.fn(), off: vi.fn(), send: vi.fn() },
 }))
 vi.mock('electron', () => electron)
-vi.mock('../src/preload-platform.ts', () => ({ markDocumentPlatform: vi.fn() }))
+vi.mock('../src/preload-platform.ts', () => ({ markDocumentPlatform: vi.fn(), syncWindowFullscreen: vi.fn() }))
 vi.mock('../src/preload-theme.ts', () => ({ syncNativeTheme: vi.fn() }))
 vi.mock('../src/preload-windows.ts', () => ({ syncWindowsAppearance: vi.fn() }))
+vi.mock('../src/preload-mandatory-overlay.ts', () => ({ installMandatoryUpdateOverlay: vi.fn() }))
 
-afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); vi.resetModules() })
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks(); vi.resetModules() })
 
 it('limits product documents to update status and a native confirmation action', async () => {
   vi.stubGlobal('location', new URL('dsh-app://app/index.html'))
@@ -76,3 +78,14 @@ it.each(['dsh-app://app/', 'dsh-app://shell/plugin-manager.html', 'https://examp
     expect(syncWindowsAppearance).toHaveBeenCalledTimes(url === 'dsh-app://app/' ? 1 : 0)
   },
 )
+
+it.each(['win32', 'darwin'] as const)('installs the embedded mandatory UI only in the Windows app document (%s)', async (platform) => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+  for (const url of ['dsh-app://app/', 'dsh-app://shell/mandatory-update.html', 'https://example.com/']) {
+    vi.resetModules()
+    vi.mocked(installMandatoryUpdateOverlay).mockClear()
+    vi.stubGlobal('location', new URL(url))
+    await import('../src/preload-app.ts')
+    expect(installMandatoryUpdateOverlay).toHaveBeenCalledTimes(platform === 'win32' && url === 'dsh-app://app/' ? 1 : 0)
+  }
+})

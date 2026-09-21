@@ -122,12 +122,15 @@ describe('startPump', () => {
       let subscriptions = 0
       let settle!: () => void
       const settled = new Promise<void>((resolve) => { settle = resolve })
-      const counting = (promise: Promise<unknown>): Promise<unknown> => ({
-        then(onFulfilled?: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) {
+      const counting = (promise: PromiseLike<unknown>): PromiseLike<unknown> => ({
+        then<Fulfilled = unknown, Rejected = never>(
+          onFulfilled?: ((value: unknown) => Fulfilled | PromiseLike<Fulfilled>) | null,
+          onRejected?: ((reason: unknown) => Rejected | PromiseLike<Rejected>) | null,
+        ): PromiseLike<Fulfilled | Rejected> {
           subscriptions += 1
-          return counting(promise.then(onFulfilled, onRejected))
+          return counting(promise.then(onFulfilled, onRejected)) as PromiseLike<Fulfilled | Rejected>
         },
-      }) as unknown as Promise<unknown>
+      })
       const { source, offsets } = scriptedSource([])
       const pump = startPump([source], sink, 50, counting(settled))
 

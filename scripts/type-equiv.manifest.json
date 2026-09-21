@@ -103,6 +103,16 @@
     },
     {
       "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "RequestUserInput",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "RequestMessage",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
       "symbol": "GenerateOptions",
       "source": "packages/llm/llm/src/types.ts"
     },
@@ -1939,6 +1949,26 @@
     {
       "doc": "docs/subsystems/typert.md",
       "symbol": "InvocationDescriptor",
+      "source": "packages/typert/protocol/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
+      "symbol": "RemoteStream",
+      "source": "packages/typert/protocol/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
+      "symbol": "RemoteStreamHandle",
+      "source": "packages/typert/protocol/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
+      "symbol": "PeerScope",
+      "source": "packages/typert/protocol/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
+      "symbol": "RemoteInvocation",
       "source": "packages/typert/protocol/src/types.ts"
     },
     {

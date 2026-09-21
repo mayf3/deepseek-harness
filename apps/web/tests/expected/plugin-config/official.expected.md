@@ -25,5 +25,5 @@
 - text: "1"
 - list:
   - listitem:
-    - button "查看 live-client": live-client
-    - switch "启用 live-client"
+    - button "查看 @fixture/live-client": "@fixture/live-client"
+    - switch "启用 @fixture/live-client"

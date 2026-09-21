@@ -20,11 +20,12 @@ vi.mock(desktopIpc.electron, () => ({
   ipcRenderer: { invoke: desktopIpc.invoke },
   contextBridge: { exposeInMainWorld: (name: string, value: unknown) => { vi.stubGlobal(name, value) } },
 }))
-vi.mock('../../../../apps/desktop/src/preload-platform.ts', () => ({ markDocumentPlatform: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/preload-platform.ts', () => ({ markDocumentPlatform: vi.fn(), syncWindowFullscreen: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/preload-theme.ts', () => ({ syncNativeTheme: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/preload-windows.ts', () => ({ syncWindowsAppearance: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/preload-mandatory-overlay.ts', () => ({ installMandatoryUpdateOverlay: vi.fn() }))
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); desktopIpc.invoke.mockReset() })
 
 const HOLES = ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.directoryFlow'] as const
 
@@ -164,7 +165,9 @@ describe('directory-picker-native client half', () => {
     expect(b.pickDirectory).toHaveBeenCalledOnce()
   })
 
-  it('consumes the actual Desktop preload bridge and sends its directory-pick IPC', async () => {
+  it.each(['win32', 'darwin'] as const)('consumes the actual Desktop preload directory bridge on %s', async (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    vi.resetModules()
     vi.stubGlobal('location', new URL('dsh-app://app/'))
     // Desktop's preload is typechecked by its own compiler program.
     const preload = '../../../../apps/desktop/src/preload-app.ts'

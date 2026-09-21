@@ -169,7 +169,11 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       '# Markdown smoke', '', 'Rendered from the workspace.', '',
       ...Array.from({ length: (PAGE_LINES - 4) / 2 }, (_, index) => [`Paragraph ${index + 1}: ${'visible prefix '.repeat(20)}`, '']).flat(),
       '# Markdown tail',
+      '', '![relative image](preview-images/local%20image.png)',
+      '', `![absolute image](<${join(cwd, 'tiny.png').replaceAll('\\', '/')}>)`,
+      '', '![reference image][local-image]', '', '[local-image]: preview-images/local%20image.png',
     ].join('\n')
+    await mkdir(join(cwd, 'preview-images'))
     const codeLines = [
       ...Array.from({ length: PAGE_LINES }, (_, index) => index === 0 ? 'const prefix = "CODE_PREFIX";' : `// prefix line ${index + 1}`),
       'const tail = "CODE_TAIL";',
@@ -204,6 +208,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       writeFile(join(cwd, 'local.css'), '#local-result { color: rgb(12, 34, 56); }'),
       writeFile(outsideScript, 'document.getElementById("outside-result").textContent="OUTSIDE_JS_OK";'),
       writeFile(join(cwd, 'tiny.png'), TINY_PNG),
+      writeFile(join(cwd, 'preview-images', 'local image.png'), TINY_PNG),
       writeFile(join(cwd, 'large.svg'), [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">',
         '<script>parent.document.documentElement.setAttribute("data-image-preview-escape","true")</script>',
@@ -255,7 +260,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     const restoredAdd = await addTab.count()
     expect(restoredFilesClose).toBe(1)
     expect(restoredAdd).toBe(1)
-    const preview = column.locator('[data-document-preview]')
+    const preview = column.locator('[data-textpreview-url]')
     const openFile = openPreviewFile.bind(undefined, column, filesTab, preview)
     const viewer = preview.locator('[data-document-viewer-menu]')
     const body = preview.locator('[data-textpreview-body]')
@@ -282,6 +287,15 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     expect(await preview.getByRole('heading', { name: heading, exact: true }).count()).toBe(1)
     expect(await preview.getByText('Rendered from the workspace.', { exact: true }).count()).toBe(1)
     const tailHeading = await markdownTail.innerText()
+    const markdownImages: string[] = []
+    for (const alt of ['relative image', 'absolute image', 'reference image']) {
+      const image = preview.getByRole('img', { name: alt, exact: true })
+      await image.scrollIntoViewIfNeeded()
+      await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0)).toBe(true)
+      const source = new URL(await image.getAttribute('src') ?? '')
+      expect(source.pathname).toBe('/api/file')
+      markdownImages.push(alt)
+    }
     await preview.getByRole('heading', { name: heading, exact: true }).scrollIntoViewIfNeeded()
     await successShot(page, 'markdown')
     const markdownTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('smoke.md', { exact: true }) })
@@ -314,6 +328,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       '## Markdown', '',
       `- Heading: ${heading}`,
       `- Tail loaded by scrolling: ${tailHeading}`,
+      `- Loaded images: ${markdownImages.join(' | ')}`,
       `- Viewers: ${markdownViewers.join(' -> ')}`,
       `- Same tab: ${String(await markdownTab.getAttribute('data-dockkit-tab') === markdownTabId)}`,
     ].join('\n'))
@@ -350,7 +365,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await successShot(page, 'html-basic')
     sections.push([
       '## Basic HTML', '',
-      '- Developer tools: off by default on Web and desktop',
+      '- Developer tools: disabled for this scenario',
       '- Sandbox: no permissions',
       `- Inline script: ${await basicHtml.locator('#result').innerText()}`,
       `- Local script: ${await basicHtml.locator('#local-result').innerText()}`,
@@ -681,7 +696,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
 
     const officeMenus: number[] = []
     const configurationGuide = 'Read failed: Office previews are unavailable. Enable the document preview service on the computer running DeepSeek Harness.'
-    for (const extension of ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']) {
+    for (const extension of ['doc', 'docx', 'ppt', 'pptx']) {
       await openFile(`unavailable.${extension}`)
       expect(await preview.locator('[data-document-viewer-menu]').count()).toBe(0)
       await preview.getByText(configurationGuide, { exact: true }).waitFor({ timeout: 15_000 })
@@ -692,11 +707,22 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await successShot(page, 'office-unavailable')
     sections.push([
       '## Office unavailable', '',
-      `- DOC, DOCX, XLS, XLSX, PPT, PPTX viewer menus: ${officeMenus.join(' | ')}`,
+      `- DOC, DOCX, PPT, PPTX viewer menus: ${officeMenus.join(' | ')}`,
       `- Guidance: ${configurationGuide}`,
       '- Binary text shown: false',
       '- Plain-text option and viewer picker: hidden',
     ].join('\n'))
+
+    const spreadsheetStates: string[] = []
+    for (const extension of ['xls', 'xlsx']) {
+      await openFile(`unavailable.${extension}`)
+      const spreadsheet = column.locator('[data-textpreview-state="unsupported"]')
+      await spreadsheet.waitFor({ timeout: 15_000 })
+      expect(await spreadsheet.getByText('Preview is not available for this file type yet.', { exact: true }).count()).toBe(1)
+      await spreadsheet.locator('[data-open-path-unpreviewable]').waitFor({ timeout: 15_000 })
+      spreadsheetStates.push(`${extension.toUpperCase()}: unsupported / Open in default app`)
+    }
+    sections.push(['## Spreadsheet preview', '', `- ${spreadsheetStates.join('\n- ')}`].join('\n'))
 
     await openFile('notes.unknown')
     const plainLines = preview.locator('[data-textpreview-line]')
@@ -795,7 +821,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       await column.locator('[data-files-state="tree"]').waitFor({ state: 'visible' })
       await column.locator('[data-files-reload]').click()
       const filesTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('Files', { exact: true }) })
-      const preview = column.locator('[data-document-preview]')
+      const preview = column.locator('[data-textpreview-url]')
       await column.locator('[data-files-entry="file"]').getByRole('button', { name: 'chinese.docx', exact: true }).click()
       expect(await preview.locator('[data-document-viewer-menu]').count()).toBe(0)
       const canvas = preview.getByRole('img', { name: 'PDF page 1', exact: true })
@@ -870,30 +896,36 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
         `- Document top inset: ${topInset}px`,
       ].join('\n'), MODE)
       await successShot(page, 'office-docx')
-      for (const extension of ['doc', 'xls', 'xlsx', 'ppt', 'pptx']) {
+      for (const extension of ['doc', 'ppt', 'pptx']) {
         await openPreviewFile(column, filesTab, preview, `chinese.${extension}`)
         await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible', timeout: 60_000 })
         await expect.poll(async () => (await preview.locator('[data-pdf-text]').allTextContents()).join(''), { timeout: 30_000 }).toContain('中文文档')
-        if (['doc', 'xls', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
+        if (['doc', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
         await successShot(page, `office-${extension}`)
       }
-      expect(convert).toHaveBeenCalledTimes(6)
+      expect(convert).toHaveBeenCalledTimes(4)
+      for (const extension of ['xls', 'xlsx']) {
+        await openPreviewFile(column, filesTab, preview, `chinese.${extension}`)
+        await preview.getByText('Preview is not available for this file type yet.', { exact: true }).waitFor({ timeout: 15_000 })
+        expect(await preview.getByRole('img', { name: 'PDF page 1', exact: true }).count()).toBe(0)
+      }
+      expect(convert).toHaveBeenCalledTimes(4)
       await openPreviewFile(column, filesTab, preview, 'chinese.docx')
       await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible' })
       await preview.getByRole('button', { name: 'Read the file again', exact: true }).click()
-      await expect.poll(() => convert.mock.calls.length).toBe(7)
+      await expect.poll(() => convert.mock.calls.length).toBe(5)
       await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible' })
       await openPreviewFile(column, filesTab, preview, 'renamed.docx')
       await preview.getByText('Read failed: This Office file cannot be previewed. It may be damaged, password protected, or have the wrong extension.', { exact: true }).waitFor({ timeout: 30_000 })
       expect(await preview.locator('[data-textpreview-line]').count()).toBe(0)
       await successShot(page, 'office-invalid')
-      expect(convert).toHaveBeenCalledTimes(8)
-      for (const extension of ['doc', 'xls', 'ppt']) {
+      expect(convert).toHaveBeenCalledTimes(6)
+      for (const extension of ['doc', 'ppt']) {
         await openPreviewFile(column, filesTab, preview, `renamed.${extension}`)
         await preview.getByText('Read failed: This Office file cannot be previewed. It may be damaged, password protected, or have the wrong extension.', { exact: true }).waitFor({ timeout: 30_000 })
         expect(await preview.locator('[data-textpreview-line]').count()).toBe(0)
       }
-      expect(convert).toHaveBeenCalledTimes(11)
+      expect(convert).toHaveBeenCalledTimes(8)
       expect(tripwire.pageErrors).toEqual([])
     } finally { convert.mockRestore() }
   })

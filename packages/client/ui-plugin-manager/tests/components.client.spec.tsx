@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PluginEntryId, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ReactNode } from 'react'
 import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
-import type { PluginManagerPageProps } from '../src/client/PluginManagerPage.tsx'
+import type { PluginManagerPageProps } from '../src/client/index.ts'
 import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { rowKey, type InstallState, type PackageRow, type PackageView, type PluginManagerState } from '../src/client/manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
@@ -69,6 +71,11 @@ type SlotBodies = Record<string, (view: 'summary' | 'page') => ReactNode>
 const NO_CONFIG: ConfigLedger = { items: [], bundles: new Set(), rows: new Set() }
 
 function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<ConfigLedger> = {}, bodies: SlotBodies = {}) {
+  const ctx = new Context()
+  onTestFinished(async () => { await ctx.fiber.dispose() })
+  const locale = new LocaleRuntime(ctx)
+  locale.setLocale('en')
+  const resolveText: PluginManagerPageProps['resolveText'] = text => locale.resolveText(text)
   const store = createSnapshotStore<PluginManagerState>({ ...READY, ...state })
   const ledger = createSnapshotStore<ConfigLedger>({ ...NO_CONFIG, ...config })
   const actions = {
@@ -94,20 +101,40 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     setRowEnabled: vi.fn(),
     dismissNotice: vi.fn(),
   }
-  const props = {
+  const unusedStandardHook = (): never => { throw new Error('Plugin manager fixture does not provide global state') }
+  const standard = {
+    usePanelInfo: unusedStandardHook,
+    useWorkspaces: unusedStandardHook,
+    useSessions: unusedStandardHook,
+    useSessionStatus: unusedStandardHook,
+    useSessionRetainInfo: unusedStandardHook,
+    useResource: unusedStandardHook,
+  }
+  const props: PluginManagerPageProps = {
+    ...standard,
     t,
+    resolveText,
     ...actions,
     usePluginManager: bindSnapshotSelector(store),
     useConfigLedger: bindSnapshotSelector(ledger),
-    renderSlot: (name: string, owner: { view: 'summary' | 'page' }, opts: { only?: string; entryKey?: string }) =>
-      bodies[`${name}:${opts.only ?? opts.entryKey ?? ''}`]?.(owner.view) ?? null,
-  } as unknown as PluginManagerPageProps
+    renderSlot: (name, owner, opts) => {
+      const body = bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]
+      if (body === undefined) return null
+      if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
+        throw new Error('Plugin configuration fixture requires a summary or page view')
+      }
+      return body(owner.view)
+    },
+  }
   const { rerender } = render(<PluginManagerPage {...props} />)
   return {
     store,
     actions,
     set: (next: Partial<PluginManagerState>) => { act(() => { store.set({ ...store.getSnapshot(), ...next }) }) },
-    setLanguage: (dict: typeof en) => { rerender(<PluginManagerPage {...props} t={translate(dict)} />) },
+    setLanguage: (dict: typeof en) => {
+      locale.setLocale(dict === zh ? 'zh' : 'en')
+      rerender(<PluginManagerPage {...props} t={translate(dict)} />)
+    },
   }
 }
 
@@ -133,7 +160,7 @@ describe('PluginManagerPage', () => {
 
   it('keeps the read failure and its retry visible while a detail page is open', () => {
     const { actions, set } = renderTab({ packages: [pkg()] })
-    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
     expect(screen.queryByRole('alert')).toBeNull()
     set({ status: 'error' })
     expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
@@ -146,7 +173,7 @@ describe('PluginManagerPage', () => {
   it('lists the installed bundles as cards, the installation\'s offered ones as official, and tags a problem the Host reports', () => {
     const { actions } = renderTab({
       packages: [
-        pkg({ description: 'A sidebar.' }),
+        pkg({ meta: { description: { en: 'A sidebar.' } } }),
         pkg({ name: 'dsh-broken', enabled: false, error: { code: 'not-bundle' } }),
         pkg({ name: '@deepseek-ai/dsh-web-app', installed: false }),
         pkg({ name: 'dsh-protected', readOnlyReason: 'management-required' }),
@@ -168,15 +195,14 @@ describe('PluginManagerPage', () => {
     expect(screen.getByRole('heading', { name: en.officialTitle })).toBeTruthy()
     expect([...document.querySelectorAll('[data-plugin-count]')].map(count => count.textContent)).toEqual(['1', '5'])
     expect(screen.getAllByText(en.statusBeta)).toHaveLength(1)
-    // A scoped name reads without its scope and harness prefix.
-    expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'tool') })).toHaveProperty('disabled', false)
+    expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', '@acme/dsh-tool') })).toHaveProperty('disabled', false)
     expect(screen.getByText('A sidebar.')).toBeTruthy()
     expect(screen.getAllByText(en.statusProblem)).toHaveLength(2)
     // The switch acts on the bundle; a bundle the Host cannot read stays off, a protected one stays as it is.
-    fireEvent.click(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'better-sidebar') }))
+    fireEvent.click(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-better-sidebar') }))
     expect(actions.setEnabled).toHaveBeenCalledWith('dsh-better-sidebar', false)
-    expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'broken') })).toHaveProperty('disabled', true)
-    const locked = screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'protected') })
+    expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-broken') })).toHaveProperty('disabled', true)
+    const locked = screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-protected') })
     expect(locked).toHaveProperty('disabled', true)
     expect(locked.getAttribute('title')).toBe(en.reasonManagementRequired)
   })
@@ -215,50 +241,288 @@ describe('PluginManagerPage', () => {
   })
 
   it('opens an official bundle\'s page with its beta tag and no uninstall, and switches it on', () => {
+    const title = 'Agent Teams'
     const { actions } = renderTab({
-      packages: [pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-profile', installed: false, optional: true, enabled: false })],
+      packages: [pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-profile', meta: { title }, installed: false, optional: true, enabled: false })],
     })
-    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', en.builtinAgentTeamTitle) }))
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', title) }))
     const detail = document.querySelector('[data-plugin-detail]') as HTMLElement
     expect(within(detail).getByText(en.statusBeta)).toBeTruthy()
-    expect(within(detail).queryByRole('button', { name: en.uninstallLabel.replace('{name}', en.builtinAgentTeamTitle) })).toBeNull()
-    fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', en.builtinAgentTeamTitle) }))
+    expect(within(detail).queryByRole('button', { name: en.uninstallLabel.replace('{name}', title) })).toBeNull()
+    fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', title) }))
     expect(actions.setEnabled).toHaveBeenCalledExactlyOnceWith('@deepseek-ai/dsh-experimental-agent-team-profile', true)
   })
 
   it.each([
-    ['agent-team-profile', 'builtinAgentTeamTitle', 'builtinAgentTeamDescription'],
-    ['auto-review', 'builtinAutoReviewTitle', 'builtinAutoReviewDescription'],
-  ] as const)('localizes %s across cards, details, switches, and uninstall confirmation', (suffix, titleKey, descriptionKey) => {
-    const name = `@deepseek-ai/dsh-experimental-${suffix}`
-    const { actions, set, setLanguage } = renderTab({ packages: [pkg({ name, description: 'Original metadata.' })] })
+    '@deepseek-ai/dsh-experimental-agent-team-profile',
+    '@deepseek-ai/dsh-experimental-auto-review',
+    '@acme/dsh-local-tools',
+  ])('localizes Host metadata for %s across cards, details, switches, and uninstall confirmation', (name) => {
+    const meta = {
+      title: { en: 'Installed tools', zh: '已安装工具' },
+      description: { en: 'Tools on this host.', zh: '本机工具。' },
+    }
+    const title = (dict: typeof en): string => dict === zh ? meta.title.zh : meta.title.en
+    const description = (dict: typeof en): string => dict === zh ? meta.description.zh : meta.description.en
+    const { actions, set, setLanguage } = renderTab({ packages: [pkg({ name, meta, description: 'Original metadata.' })] })
     const assertCard = (dict: typeof en) => {
-      expect(screen.getByRole('button', { name: dict.openDetail.replace('{name}', dict[titleKey]) }).textContent).toBe(dict[titleKey])
-      expect(screen.getByText(dict[descriptionKey])).toBeTruthy()
-      expect(screen.getByRole('switch', { name: dict.enableToggle.replace('{name}', dict[titleKey]) })).toBeTruthy()
+      const card = screen.getByRole('button', { name: dict.openDetail.replace('{name}', title(dict)) })
+      expect(card.textContent).toBe(title(dict))
+      expect(screen.getByText(description(dict))).toBeTruthy()
+      expect(document.getElementById(card.getAttribute('aria-describedby')!)?.textContent).toBe(description(dict))
+      expect(screen.getByRole('switch', { name: dict.enableToggle.replace('{name}', title(dict)) })).toBeTruthy()
       expect(screen.queryByText('Original metadata.')).toBeNull()
     }
     assertCard(en)
     setLanguage(zh)
     assertCard(zh)
-    fireEvent.click(screen.getByRole('switch', { name: zh.enableToggle.replace('{name}', zh[titleKey]) }))
+    fireEvent.click(screen.getByRole('switch', { name: zh.enableToggle.replace('{name}', title(zh)) }))
     expect(actions.setEnabled).toHaveBeenCalledExactlyOnceWith(name, false)
-    fireEvent.click(screen.getByRole('button', { name: zh.openDetail.replace('{name}', zh[titleKey]) }))
+    fireEvent.click(screen.getByRole('button', { name: zh.openDetail.replace('{name}', title(zh)) }))
     for (const dict of [zh, en]) {
       setLanguage(dict)
-      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe(dict[titleKey])
-      expect(screen.getByText(dict[descriptionKey])).toBeTruthy()
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe(title(dict))
+      expect(screen.getByText(description(dict))).toBeTruthy()
       expect(document.querySelector('[data-plugin-name]')?.textContent).toBe(name)
-      expect(screen.getByRole('switch', { name: dict.enableToggle.replace('{name}', dict[titleKey]) })).toBeTruthy()
-      expect(screen.getByRole('button', { name: dict.uninstallLabel.replace('{name}', dict[titleKey]) })).toBeTruthy()
+      expect(screen.getByRole('switch', { name: dict.enableToggle.replace('{name}', title(dict)) })).toBeTruthy()
+      expect(screen.getByRole('button', { name: dict.uninstallLabel.replace('{name}', title(dict)) })).toBeTruthy()
     }
-    fireEvent.click(screen.getByRole('button', { name: en.uninstallLabel.replace('{name}', en[titleKey]) }))
+    fireEvent.click(screen.getByRole('button', { name: en.uninstallLabel.replace('{name}', title(en)) }))
     expect(actions.uninstall).toHaveBeenCalledExactlyOnceWith(name)
     set({ confirm: { action: 'uninstall', packageName: name } })
     for (const dict of [en, zh]) {
       setLanguage(dict)
-      expect(screen.getByRole('dialog', { name: dict.confirmUninstallTitle.replace('{name}', dict[titleKey]) })).toBeTruthy()
+      expect(screen.getByRole('dialog', { name: dict.confirmUninstallTitle.replace('{name}', title(dict)) })).toBeTruthy()
     }
+  })
+
+  it('renders manifest icons for arbitrary bundles and rows, with decode fallback and source recovery', () => {
+    const icon = 'data:image/svg+xml;base64,PHN2Zy8+'
+    const updatedIcon = 'data:image/png;base64,cG5n'
+    const bundle = pkg({ meta: { icon }, rows: [row({ meta: { icon } }), row({ entryId: 'plain' as PluginEntryId, rowId: 'plain', moduleName: 'plain' })] })
+    const { set } = renderTab({ packages: [bundle] }, { rows: new Set(['dsh-better-sidebar#sidebar']) })
+    const image = () => document.querySelector<HTMLImageElement>('[data-plugin-package] img, [data-plugin-detail] img')!
+    expect(image().getAttribute('src')).toBe(icon)
+    expect(image().getAttribute('alt')).toBe('')
+    expect(image().width).toBe(36)
+    fireEvent.error(image())
+    expect(document.querySelector('[data-plugin-package] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-package] svg')).not.toBeNull()
+    set({ packages: [{ ...bundle, meta: { icon: updatedIcon } }] })
+    expect(image().getAttribute('src')).toBe(updatedIcon)
+    set({ packages: [bundle] })
+    expect(image().getAttribute('src')).toBe(icon)
+    fireEvent.click(screen.getByRole('button', { name: 'View dsh-better-sidebar' }))
+    expect(image().getAttribute('src')).toBe(icon)
+    const rowImage = document.querySelector<HTMLImageElement>('[data-plugin-row] img')!
+    expect(rowImage.getAttribute('src')).toBe(icon)
+    expect(rowImage.width).toBe(30)
+    expect(document.querySelector('[data-plugin-row="plain"] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row="plain"] svg')).not.toBeNull()
+    fireEvent.error(rowImage)
+    expect(document.querySelector('[data-plugin-row] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row] svg')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Configure dsh-better-sidebar' }))
+    const detailImage = document.querySelector<HTMLImageElement>('[data-plugin-row-detail] img')!
+    expect(detailImage.getAttribute('src')).toBe(icon)
+    expect(detailImage.width).toBe(36)
+  })
+
+  it('shows metadata diagnostics without blocking management or displaying legacy descriptions', () => {
+    const error = 'locale/zh.json: invalid title'
+    const { actions, set, setLanguage } = renderTab({
+      packages: [pkg({ enabled: false, description: 'Legacy description.', meta: { error } })],
+    })
+    expect(screen.getByText(en.metadataError.replace('{error}', error))).toBeTruthy()
+    expect(screen.queryByText('Legacy description.')).toBeNull()
+    const enable = screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-better-sidebar') })
+    expect(enable).toHaveProperty('disabled', false)
+    fireEvent.click(enable)
+    expect(actions.setEnabled).toHaveBeenCalledExactlyOnceWith('dsh-better-sidebar', true)
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
+    expect(screen.getByText(en.metadataError.replace('{error}', error))).toBeTruthy()
+    const uninstall = screen.getByRole('button', { name: en.uninstallLabel.replace('{name}', 'dsh-better-sidebar') })
+    expect(uninstall).toHaveProperty('disabled', false)
+    fireEvent.click(uninstall)
+    expect(actions.uninstall).toHaveBeenCalledExactlyOnceWith('dsh-better-sidebar')
+
+    setLanguage(zh)
+    expect(screen.getByText(zh.metadataError.replace('{error}', error))).toBeTruthy()
+    set({ packages: [pkg({ meta: { title: 'Literal title', description: { en: 'English fallback.' } } })] })
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Literal title')
+    expect(screen.getByText('English fallback.')).toBeTruthy()
+    expect(document.querySelector('[data-package-meta-error]')).toBeNull()
+  })
+
+  it.each<{
+    field: string
+    meta: NonNullable<PackageView['meta']>
+    englishTitle: string
+    chineseTitle: string
+    englishDescription?: string
+    chineseDescription: string
+  }>([
+    {
+      field: 'title',
+      meta: { title: { en: '@acme/dsh-sidebar', zh: '侧栏套件' }, description: 'Package description.' },
+      englishTitle: '@acme/dsh-sidebar', chineseTitle: '侧栏套件',
+      englishDescription: 'Package description.', chineseDescription: 'Package description.',
+    },
+    {
+      field: 'description',
+      meta: { title: { en: 'English title' }, description: { en: '', zh: '中文套件说明。' } },
+      englishTitle: 'English title', chineseTitle: 'English title', chineseDescription: '中文套件说明。',
+    },
+  ])('resolves bundle $field independently and hides empty descriptions on cards and details', ({ meta, englishTitle, chineseTitle, englishDescription, chineseDescription }) => {
+    const { setLanguage } = renderTab({ packages: [pkg({ name: '@acme/dsh-sidebar', meta })] })
+    const languages = [
+      { dict: en, title: englishTitle, description: englishDescription },
+      { dict: zh, title: chineseTitle, description: chineseDescription },
+      { dict: en, title: englishTitle, description: englishDescription },
+    ]
+    for (const { dict, title, description } of languages) {
+      setLanguage(dict)
+      const card = screen.getByRole('button', { name: dict.openDetail.replace('{name}', title) })
+      expect(card.textContent).toBe(title)
+      if (description === undefined) {
+        expect(card.getAttribute('aria-describedby')).toBeNull()
+        expect(screen.queryByText(chineseDescription)).toBeNull()
+      } else {
+        expect(screen.getByText(description)).toBeTruthy()
+        expect(document.getElementById(card.getAttribute('aria-describedby')!)?.textContent).toBe(description)
+      }
+    }
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', englishTitle) }))
+    for (const { dict, title, description } of languages) {
+      setLanguage(dict)
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe(title)
+      if (description === undefined) {
+        expect(screen.queryByText(chineseDescription)).toBeNull()
+        expect(screen.queryByText(dict === zh ? '暂无描述。' : 'No description.')).toBeNull()
+      } else {
+        expect(screen.getByText(description)).toBeTruthy()
+      }
+    }
+  })
+
+  it('resolves row fields independently from bundle metadata and preserves subpath specifiers', () => {
+    const rows = [
+      row({ moduleName: '@acme/dsh-sidebar/navigation', meta: { description: { en: 'Navigation description.' } } }),
+      row({
+        rowId: 'theme', entryId: 'include:theme' as PluginEntryId, moduleName: '@acme/dsh-theme/client',
+        meta: { title: { en: '@acme/dsh-theme', zh: '主题插件' }, description: { en: '', zh: '中文主题说明。' } },
+      }),
+    ]
+    const { actions, setLanguage } = renderTab(
+      { packages: [pkg({ meta: { title: 'Bundle title', description: 'Bundle description.' }, rows })] },
+      { rows: new Set(['dsh-better-sidebar#theme']) },
+      { 'plugins.row.config:dsh-better-sidebar#theme': view => view === 'page' ? <form aria-label="theme settings" /> : null },
+    )
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Bundle title') }))
+    expect(screen.getByRole('switch', { name: en.partToggle.replace('{name}', '@acme/dsh-sidebar/navigation') })).toBeTruthy()
+    expect(screen.getByRole('switch', { name: en.partToggle.replace('{name}', '@acme/dsh-theme') })).toBeTruthy()
+    expect(screen.queryByText('中文主题说明。')).toBeNull()
+    setLanguage(zh)
+    const navigation = document.querySelector('[data-plugin-row="include:sidebar"]') as HTMLElement
+    expect(within(navigation).getByText('Navigation description.')).toBeTruthy()
+    expect(within(navigation).queryByText('Bundle title')).toBeNull()
+    expect(within(navigation).queryByText('Bundle description.')).toBeNull()
+    fireEvent.click(within(navigation).getByRole('switch', { name: zh.partToggle.replace('{name}', '@acme/dsh-sidebar/navigation') }))
+    expect(actions.setRowEnabled).toHaveBeenCalledExactlyOnceWith('include:sidebar', false)
+    expect(screen.getByText('中文主题说明。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh.configureRow.replace('{name}', '主题插件') }))
+    expect(document.querySelector('[data-plugin-row-detail]')?.getAttribute('data-plugin-row-detail')).toBe('dsh-better-sidebar#theme')
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('主题插件')
+    expect(screen.getByText('中文主题说明。')).toBeTruthy()
+    setLanguage(en)
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('@acme/dsh-theme')
+    expect(screen.getByText('@acme/dsh-theme/client')).toBeTruthy()
+    expect(screen.getByText('theme')).toBeTruthy()
+    expect(screen.queryByText('中文主题说明。')).toBeNull()
+    expect(screen.getByRole('form', { name: 'theme settings' })).toBeTruthy()
+  })
+
+  it('shows a row id only once when it is the localized title in lists and configuration pages', () => {
+    const moduleName = '@acme/dsh-sidebar/navigation'
+    const { setLanguage } = renderTab(
+      { packages: [pkg({ rows: [row({ moduleName, meta: { title: { en: 'Sidebar component', zh: 'sidebar' } } })] })] },
+      { rows: new Set(['dsh-better-sidebar#sidebar']) },
+      { 'plugins.row.config:dsh-better-sidebar#sidebar': view => view === 'page' ? <form aria-label="sidebar settings" /> : null },
+    )
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
+    const listed = document.querySelector('[data-plugin-row="include:sidebar"]') as HTMLElement
+    expect(within(listed).getByText('Sidebar component')).toBeTruthy()
+    expect(within(listed).getByText('sidebar', { selector: 'code' })).toBeTruthy()
+    setLanguage(zh)
+    expect(within(listed).getAllByText('sidebar')).toHaveLength(1)
+    expect(within(listed).queryByText('sidebar', { selector: 'code' })).toBeNull()
+    expect(within(listed).getByText(moduleName, { selector: 'code' })).toBeTruthy()
+
+    fireEvent.click(within(listed).getByRole('button', { name: zh.configureRow.replace('{name}', 'sidebar') }))
+    const detail = document.querySelector('[data-plugin-row-detail="dsh-better-sidebar#sidebar"]') as HTMLElement
+    expect(within(detail).getByRole('heading', { level: 3 }).textContent).toBe('sidebar')
+    expect(within(detail).getAllByText('sidebar')).toHaveLength(1)
+    expect(within(detail).queryByText('sidebar', { selector: 'code' })).toBeNull()
+    expect(within(detail).getByText(moduleName, { selector: 'code' })).toBeTruthy()
+    expect(within(detail).getByRole('form', { name: 'sidebar settings' })).toBeTruthy()
+    setLanguage(en)
+    expect(within(detail).getByRole('heading', { level: 3 }).textContent).toBe('Sidebar component')
+    expect(within(detail).getByText('sidebar', { selector: 'code' })).toBeTruthy()
+  })
+
+  it('translates row text, searches current copy and technical identities, and keeps configuration keys unchanged', () => {
+    const error = 'locale/zh.json: invalid description'
+    const localized = row({
+      moduleName: '@acme/dsh-sidebar-widget',
+      meta: {
+        title: { en: 'Sidebar component', zh: '导航组件' },
+        description: { en: 'Sidebar navigation', zh: '侧边导航' },
+        error,
+      },
+    })
+    const rows = [localized, ...Array.from({ length: 10 }, (_, index) => row({
+      rowId: `extra-${String(index)}`, entryId: `include:extra-${String(index)}` as PluginEntryId, moduleName: '@acme/other',
+    }))]
+    const { actions, setLanguage } = renderTab(
+      { packages: [pkg({ meta: { title: { en: 'Personal tools', zh: '个人工具' } }, rows })] },
+      { rows: new Set(['dsh-better-sidebar#sidebar']) },
+      { 'plugins.row.config:dsh-better-sidebar#sidebar': view => view === 'summary' ? 'Config summary' : <form aria-label="row settings" /> },
+    )
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Personal tools') }))
+    setLanguage(zh)
+    const search = screen.getByRole('searchbox', { name: zh.partsFilter })
+    for (const query of ['导航组件', '侧边导航', 'sidebar', '@acme/dsh-sidebar-widget']) {
+      fireEvent.change(search, { target: { value: query } })
+      expect(document.querySelectorAll('[data-plugin-row]')).toHaveLength(1)
+      expect(screen.getByRole('button', { name: zh.configureRow.replace('{name}', '导航组件') })).toBeTruthy()
+    }
+    expect(screen.getByText('sidebar')).toBeTruthy()
+    expect(screen.getByText('@acme/dsh-sidebar-widget')).toBeTruthy()
+    expect(screen.getByText('侧边导航')).toBeTruthy()
+    expect(screen.getByText(zh.metadataError.replace('{error}', error))).toBeTruthy()
+    const toggle = screen.getByRole('switch', { name: zh.partToggle.replace('{name}', '导航组件') })
+    expect(toggle).toHaveProperty('disabled', false)
+    fireEvent.click(toggle)
+    expect(actions.setRowEnabled).toHaveBeenCalledExactlyOnceWith('include:sidebar', false)
+
+    fireEvent.change(search, { target: { value: 'Sidebar component' } })
+    expect(screen.getByText(zh.partsFilterEmpty)).toBeTruthy()
+    setLanguage(en)
+    expect(screen.getByRole('button', { name: en.configureRow.replace('{name}', 'Sidebar component') })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.configureRow.replace('{name}', 'Sidebar component') }))
+    expect(document.querySelector('[data-plugin-row-detail]')?.getAttribute('data-plugin-row-detail')).toBe('dsh-better-sidebar#sidebar')
+    expect(screen.getByRole('form', { name: 'row settings' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Sidebar component')
+    expect(screen.getByText('Sidebar navigation')).toBeTruthy()
+    expect(screen.queryByText('Config summary')).toBeNull()
+    setLanguage(zh)
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('导航组件')
+    expect(screen.getByText('侧边导航')).toBeTruthy()
+    expect(screen.getByText('sidebar')).toBeTruthy()
+    expect(screen.getByText('@acme/dsh-sidebar-widget')).toBeTruthy()
+    expect(screen.getByText(zh.metadataError.replace('{error}', error))).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh.backToPackage.replace('{name}', '个人工具') }))
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('个人工具')
   })
 
   describe('configuration pages', () => {
@@ -306,35 +570,36 @@ describe('PluginManagerPage', () => {
 
     it('renders a bundle\'s own configuration on its page, and no configure control on a row without one', () => {
       renderTab({ packages: [pkg({ rows: [row()] })] }, { bundles: new Set(['dsh-better-sidebar']) }, bodies)
-      fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
+      fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
       const detail = document.querySelector('[data-plugin-detail]') as HTMLElement
       expect(within(detail).getByRole('form', { name: 'sidebar form' })).toBeTruthy()
-      expect(within(detail).queryByRole('button', { name: en.configureRow.replace('{name}', 'sidebar') })).toBeNull()
+      expect(within(detail).queryByRole('button', { name: en.configureRow.replace('{name}', 'dsh-better-sidebar') })).toBeNull()
     })
 
     it('opens a row\'s configuration page from its configure control and leads back to the bundle', () => {
       const theme = row({ rowId: 'theme', moduleName: 'dsh-better-sidebar/theme', entryId: 'include:theme' as PluginEntryId })
       renderTab({ packages: [pkg({ rows: [row(), theme] })] }, { rows: new Set(['dsh-better-sidebar#sidebar']) }, bodies)
-      fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
-      expect(screen.queryByRole('button', { name: en.configureRow.replace('{name}', 'theme') })).toBeNull()
-      fireEvent.click(screen.getByRole('button', { name: en.configureRow.replace('{name}', 'sidebar') }))
+      fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
+      expect(screen.queryByRole('button', { name: en.configureRow.replace('{name}', 'dsh-better-sidebar/theme') })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: en.configureRow.replace('{name}', 'dsh-better-sidebar') }))
       const page = document.querySelector('[data-plugin-row-detail="dsh-better-sidebar#sidebar"]') as HTMLElement
-      expect(within(page).getByRole('heading', { level: 3 }).textContent).toBe('sidebar')
-      expect(within(page).getByText('dsh-better-sidebar')).toBeTruthy()
+      expect(within(page).getByRole('heading', { level: 3 }).textContent).toBe('dsh-better-sidebar')
+      expect(within(page).getByText('dsh-better-sidebar', { selector: 'code' })).toBeTruthy()
+      expect(within(page).getByText('sidebar', { selector: 'code' })).toBeTruthy()
       expect(within(page).getByText('The sidebar row.')).toBeTruthy()
       expect(within(page).getByRole('form', { name: 'row form' })).toBeTruthy()
-      fireEvent.click(within(page).getByRole('button', { name: en.backToPackage.replace('{name}', 'better-sidebar') }))
+      fireEvent.click(within(page).getByRole('button', { name: en.backToPackage.replace('{name}', 'dsh-better-sidebar') }))
       expect(document.querySelector('[data-plugin-row-detail]')).toBeNull()
       expect(document.querySelector('[data-plugin-detail="dsh-better-sidebar"]')).toBeTruthy()
     })
   })
 
-  it('preserves metadata for another scope with the same short name', () => {
+  it('preserves the full package name and description for a third-party scope', () => {
     const name = '@acme/dsh-experimental-agent-team-profile'
-    const { setLanguage } = renderTab({ packages: [pkg({ name, description: 'Third-party description.' })] })
+    const { setLanguage } = renderTab({ packages: [pkg({ name, meta: { description: { en: 'Third-party description.' } } })] })
     setLanguage(zh)
-    fireEvent.click(screen.getByRole('button', { name: zh.openDetail.replace('{name}', 'experimental-agent-team-profile') }))
-    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('experimental-agent-team-profile')
+    fireEvent.click(screen.getByRole('button', { name: zh.openDetail.replace('{name}', name) }))
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe(name)
     expect(screen.getByText('Third-party description.')).toBeTruthy()
     expect(document.querySelector('[data-plugin-name]')?.textContent).toBe(name)
   })
@@ -357,16 +622,15 @@ describe('PluginManagerPage', () => {
   it('opens a bundle\'s page with its facts and rows, and uninstalls from it', () => {
     const { actions, set } = renderTab({
       packages: [pkg({
-        description: 'A sidebar.',
+        meta: { description: { en: 'A sidebar.' } },
         rows: [row(), row({ rowId: 'theme', moduleName: 'dsh-better-sidebar/theme', entryId: 'include:theme' as PluginEntryId, enabled: false, phase: null })],
       })],
     })
-    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
     const detail = document.querySelector('[data-plugin-detail="dsh-better-sidebar"]') as HTMLElement
-    expect(within(detail).getByRole('heading', { level: 3 }).textContent).toBe('better-sidebar')
+    expect(within(detail).getByRole('heading', { level: 3 }).textContent).toBe('dsh-better-sidebar')
     // The version sits beside the name as a tag; the crumb only leads back.
     expect(within(detail).getByText('v0.16.0')).toBeTruthy()
-    // The full package name stays visible under the short name.
     expect(document.querySelector('[data-plugin-name]')?.textContent).toBe('dsh-better-sidebar')
     expect(within(detail).getByRole('button', { name: en.backToList }).textContent).toBe(en.crumbRoot)
     expect(within(detail).getByText('A sidebar.')).toBeTruthy()
@@ -375,18 +639,18 @@ describe('PluginManagerPage', () => {
     expect(rows.map(item => item.getAttribute('data-plugin-row'))).toEqual(['include:sidebar', 'include:theme'])
     expect(rows[1]?.getAttribute('data-state')).toBe('off')
     expect(within(detail).getByText(en.partsCountTotal.replace('{count}', '2'), { exact: false })).toBeTruthy()
-    expect(within(detail).getByText('dsh-better-sidebar/theme')).toBeTruthy()
+    expect(within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'dsh-better-sidebar/theme') })).toBeTruthy()
     expect(within(detail).getByText(en.rowPhaseActive)).toBeTruthy()
     expect(within(detail).getByText(en.partOff)).toBeTruthy()
-    fireEvent.click(within(detail).getByRole('button', { name: en.uninstallLabel.replace('{name}', 'better-sidebar') }))
+    fireEvent.click(within(detail).getByRole('button', { name: en.uninstallLabel.replace('{name}', 'dsh-better-sidebar') }))
     expect(actions.uninstall).toHaveBeenCalledWith('dsh-better-sidebar')
-    fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'better-sidebar') }))
+    fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-better-sidebar') }))
     expect(actions.setEnabled).toHaveBeenCalledWith('dsh-better-sidebar', false)
     // A problem and a protection the Host reports read on the page in the dictionary's words; the page leaves with the crumb.
     set({ packages: [pkg({ error: { code: 'operation-error', diagnostic: 'unreadable' }, readOnlyReason: 'management-required' })] })
     expect(within(detail).getByText(`${en.reasonLabel}: unreadable`)).toBeTruthy()
     expect(within(detail).getByText(en.reasonManagementRequired)).toBeTruthy()
-    expect(within(detail).getByRole('button', { name: en.uninstallLabel.replace('{name}', 'better-sidebar') })).toHaveProperty('disabled', true)
+    expect(within(detail).getByRole('button', { name: en.uninstallLabel.replace('{name}', 'dsh-better-sidebar') })).toHaveProperty('disabled', true)
     expect(within(detail).getByText(en.partsEmpty)).toBeTruthy()
     set({ packages: [pkg({ error: { code: 'not-bundle' } })] })
     expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonNotBundle}`)).toBeTruthy()
@@ -394,11 +658,11 @@ describe('PluginManagerPage', () => {
     expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonOperationError}`)).toBeTruthy()
     fireEvent.click(within(detail).getByRole('button', { name: en.backToList }))
     expect(document.querySelector('[data-plugin-detail]')).toBeNull()
-    // A bundle without a description or a version says so; one that leaves the list drops back to the cards.
+    // A bundle that leaves the list drops back to the cards.
     const { version: _version, ...unversioned } = pkg()
     set({ packages: [unversioned] })
-    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
-    expect(screen.getByText(en.noDescription)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
+    expect(screen.queryByText('No description.')).toBeNull()
     expect(screen.queryByText(en.versionTag.replace('{version}', '0.16.0'))).toBeNull()
     set({ packages: [] })
     expect(document.querySelector('[data-plugin-detail]')).toBeNull()
@@ -420,19 +684,21 @@ describe('PluginManagerPage', () => {
       return { ...unmounted, enabled: false, phase: null }
     })
     const { actions, set } = renderTab({ packages: [pkg({ rows })], busy: [rowKey('include:row-5')] })
-    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
     const detail = document.querySelector('[data-plugin-detail]') as HTMLElement
+    const toggle = (id: string): HTMLElement => within(detail.querySelector<HTMLElement>(`[data-plugin-row="${id}"]`)!)
+      .getByRole('switch', { name: en.partToggle.replace('{name}', 'dsh-better-sidebar') })
     expect(within(detail).getByText(`${en.partsCountTotal.replace('{count}', '12')} · ${en.partsCountRunning.replace('{count}', '8')} · ${en.partsCountOff.replace('{count}', '1')} · ${en.partsCountFailed.replace('{count}', '1')}`)).toBeTruthy()
-    fireEvent.click(within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-0') }))
+    fireEvent.click(toggle('include:row-0'))
     expect(actions.setRowEnabled).toHaveBeenCalledWith('include:row-0', false)
     // A protected row, a row without a live entry, and a row with a write in flight cannot be switched.
-    const locked = within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-1') })
+    const locked = toggle('include:row-1')
     expect(locked).toHaveProperty('disabled', true)
     expect(locked.getAttribute('title')).toBe(en.reasonUnaddressable)
-    expect(within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-2') })).toHaveProperty('disabled', true)
-    fireEvent.click(within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-2') }))
+    expect(toggle('row-2')).toHaveProperty('disabled', true)
+    fireEvent.click(toggle('row-2'))
     expect(actions.setRowEnabled).toHaveBeenCalledTimes(1)
-    expect(within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-5') })).toHaveProperty('disabled', true)
+    expect(toggle('include:row-5')).toHaveProperty('disabled', true)
     expect(within(detail).getByText(en.rowPhaseFailed)).toBeTruthy()
     expect(within(detail).getByText(en.rowPhaseLoading)).toBeTruthy()
     expect(within(detail).getByText(en.rowPhaseUnloading)).toBeTruthy()
@@ -448,7 +714,7 @@ describe('PluginManagerPage', () => {
     fireEvent.change(filter, { target: { value: '' } })
     // A bundle that is off shows its rows without switches.
     set({ packages: [pkg({ enabled: false, rows: rows.slice(0, 2).map(item => ({ ...item, enabled: false, phase: null })) })] })
-    expect(within(detail).queryByRole('switch', { name: en.partToggle.replace('{name}', 'row-0') })).toBeNull()
+    expect(within(detail).queryByRole('switch', { name: en.partToggle.replace('{name}', 'dsh-better-sidebar') })).toBeNull()
     expect(within(detail).getAllByText(en.partOff)).toHaveLength(2)
     // A row without a fiber, on a bundle that is on, reads idle.
     set({ packages: [pkg({ rows: [row({ phase: null })] })] })
@@ -841,12 +1107,14 @@ describe('PluginManagerPage', () => {
       packages: [pkg(), pkg({ name: 'dsh-other' })],
       confirm: { action: 'uninstall', packageName: 'dsh-better-sidebar' },
     })
-    expect(screen.getByRole('dialog', { name: en.confirmUninstallTitle.replace('{name}', 'better-sidebar') })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: en.confirmUninstallTitle.replace('{name}', 'dsh-better-sidebar') })).toBeTruthy()
     expect(screen.getByText(en.confirmUninstallDescription)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.cancel }))
     expect(actions.cancelConfirm).toHaveBeenCalledTimes(1)
     set({ confirm: { action: 'uninstall', packageName: 'dsh-other' } })
-    expect(screen.getByRole('dialog', { name: en.confirmUninstallTitle.replace('{name}', 'other') })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: en.confirmUninstallTitle.replace('{name}', 'dsh-other') })).toBeTruthy()
+    set({ packages: [] })
+    expect(screen.getByRole('dialog', { name: en.confirmUninstallTitle.replace('{name}', 'dsh-other') })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.confirmUninstall }))
     expect(actions.confirm).toHaveBeenCalledTimes(1)
   })

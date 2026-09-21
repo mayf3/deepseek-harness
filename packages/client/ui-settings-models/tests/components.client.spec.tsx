@@ -618,7 +618,7 @@ describe('ModelsSection', () => {
     const baseURL = screen.getByLabelText<HTMLInputElement>(en.baseUrl)
     // The deepseek placeholder is pinned to the public endpoint, not the
     // effective value (which may reflect a launch-environment override).
-    expect(baseURL.placeholder).toBe('https://api.deepseek.com')
+    expect(baseURL.placeholder).toBe('https://api.deepseek.com/anthropic')
     fireEvent.change(baseURL, { target: { value: 'https://next2' } })
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
@@ -666,11 +666,11 @@ describe('ModelsSection', () => {
     ])
   })
 
-  it('edits the shared DeepSeek card while preserving the YAML protocol selection', async () => {
+  it('edits the DeepSeek endpoint and credential without a protocol selection', async () => {
     const namespace: SettingsNamespaceView = {
       ...wireNamespaces()[0]!,
       ns: 'llm-deepseek',
-      value: { protocol: 'messages', apiKeyEnv: 'DEEPSEEK_API_KEY', models: DEFAULT_DEEPSEEK_MODELS },
+      value: { apiKeyEnv: 'DEEPSEEK_API_KEY', models: DEFAULT_DEEPSEEK_MODELS },
       user: {},
     }
     const { face, mutate, set } = scriptedFace({
@@ -1102,7 +1102,7 @@ describe('ModelsSection', () => {
     />)
     fireEvent.click(screen.getByText(en.customized))
     const baseURL = screen.getByLabelText<HTMLInputElement>(en.baseUrl)
-    expect(baseURL.placeholder).toBe('https://api.deepseek.com')
+    expect(baseURL.placeholder).toBe('https://api.deepseek.com/anthropic')
     fireEvent.change(baseURL, { target: { value: 'https://x' } })
     expect(baseURL.value).toBe('https://x')
     fireEvent.change(baseURL, { target: { value: '' } })
