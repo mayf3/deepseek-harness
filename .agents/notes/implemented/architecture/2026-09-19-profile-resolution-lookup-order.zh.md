@@ -50,6 +50,8 @@ Node 仍然负责 `exports`、`imports`、conditions、`main`、子路径、扩�
 
 `<profile>/node_modules/<包名>` 链接到 profiles 树外的真实目录 R 时，R 是一个 linked root。R 不必包含 `package.json` 或 `node_modules`，可以是包目录、monorepo 中的单个包，也可以是 `src` 目录。R 之下的 importer 沿 Node 的真实祖先链查询。记录的根目录决定哪些 importer 参与拦截，不会把它们的查找限制在 R 内。
 
+linked 拦截排除 installation 作用域包目录内的 importer，同时识别配置路径和真实路径。因此，链接整个 checkout 不会接管宿主自身的依赖查询。重叠的 linked root 共同描述参与范围：祖先链由 importer 决定，root 顺序和链接名称都不会选择另一套 peer 集合。
+
 在每个候选 `D/node_modules`，当前 `D/package.json` 的 peer 声明命中且运行时表提供该包名时，就使用运行时包。这只占据该包的位置，即使 `D/node_modules` 在磁盘上不存在也成立。声明和运行时条目缺少任一项，Node 就尝试物理候选。缺少 manifest 不会终止查找。`dependencies` 与 `devDependencies` 不启用拦截，peer 的版本范围也不是额外的解析筛选条件。运行时表提供 React 等第三方 peer 时，同样适用这条规则。
 
 更近的物理候选先于后续祖先的 peer 声明。选中包的 `exports` 拒绝请求时，Node 的错误是终局。旧式 CommonJS 子路径缺失可以继续到下一位置，再应用那个目录的 peer 规则；不会重试已被占据位置上的物理副本。每次新的 linked 解析读取所访问位置的 manifest，不缓存选中的路由。不可读的 manifest 不提供 peer，Node 保留其原生 manifest 诊断。这不清除 Node 缓存，也不自动重新加载已加载的模块。
@@ -63,7 +65,7 @@ runtime resolution 在 profile 启动时一次算出，由四部分组成。
 - installation 闭包：从当前运行的 dsh 包的 `package.json` 出发，沿 `dependencies` 与 `peerDependencies` 做广度优先遍历，每条边从声明它的 manifest 按 Node 规则解析，同一个包名由第一次找到的已安装包占有。闭包有数百条，约一半在 `@deepseek-ai/` 作用域，一半是第三方库。这些条目对所有 profile 生效。
 - bundle-only 条目：profile 选中的、不属于闭包的 bundle，从它的 manifest 出发做同样的遍历，闭包已占有的包名不覆盖。这些条目只对选中该 bundle 的 profile 生效，用于让 Loader 从 profile 根按裸名导入 bundle 内嵌的插件。
 - 本地包名：profile 直接依赖中已经安装在 `$DSH_HOME/profiles/<name>/node_modules` 的包名。它们本来就在主线 ② 上，记录下来只为免去一次目录探测。
-- linked root：`$DSH_HOME/profiles/<name>/node_modules` 顶层与 `@scope/*` 里目标为 profiles 树外目录的链接，记录真实目录与 link 位置。目录自身的 manifest 可缺省。目标缺失、为文件或位于 profiles 树内的链接都排除。
+- linked root：`$DSH_HOME/profiles/<name>/node_modules` 顶层与 `@scope/*` 里目标同时位于共享 profiles 树和当前 profile 目录之外的目录链接，记录链接名称与真实目录。目录自身的 manifest 可缺省。目标缺失或为文件的链接都排除。位于共享树外的应用自有 profile，不会把内部 pnpm store 链接登记为外部 root。
 
 CLI 的安装锚点来自 `import.meta.url`，Node 已对它做过 realpath；Desktop Host 从其运行时目录拼出锚点，该目录不是软链接。两者的安装根目录都等于真实目录，bundle 发现与依赖遍历使用同一个位置。遍历中每一层依赖都以所属包的真实目录作为下一层的查找锚点，并记录声明它的 manifest 位置。命中后 Node 从这个声明位置解析，得到与该包自己内部 import 相同的结果。每个条目记录包名、包目录、版本、声明位置与作用域。已声明但未安装的依赖跳过；bundle 包根自身不成为条目。
 
@@ -118,6 +120,7 @@ ESM 与 CommonJS 两个适配器调用同一个路由函数，主线程与 Harne
 | R 内传递依赖 → 任何包名 | 参与 | 每个位置使用自己的 manifest 的 peer；更近的物理候选先于后续 peer 声明 |
 | link 目标 R 无 manifest → 祖先声明的 peer | 参与 | 从 R 开始查；更近的物理候选优先，否则祖先 peer 可以选中运行时包，即使那里没有物理 `node_modules` |
 | 真实目录在所有 linked root 外的提升依赖 → 任何包名 | 不参与 | 从该依赖真实目录进行原生 Node 查询 |
+| 位于宽链接目录内的 installation 作用域包 → 任何包名 | 不参与 linked 拦截 | 原生查询保留宿主包自身的依赖 |
 | 任意 importer → `require.resolve(pkg, { paths })` | 不参与 | 使用指定路径进行原生 Node 查询 |
 
 ### 三、开发者接入指引
@@ -166,7 +169,7 @@ manifest 的写法与 harness 自身的包相同：需要与宿主共享实例�
 - 同一文件内的 linked root 用例：`<profile>/node_modules` 的软链接指向树外仓库，仓库 `node_modules` 里放同名 devDependency 副本；包名取声明为 peer 的 installation 条目、声明为 dependency 的 installation 条目、仓库自己的第三方 dependency、未声明的包名，importer 取仓库自身文件与仓库内传递依赖；断言四种解析方式一致、devDependency 副本不被读到，以及改写 `peerDependencies` 后下一次解析立即按新声明进行。
 - [差分矩阵](../../../../packages/boot/app-boot/tests/linked-resolution-matrix.spec.ts)构造独立的原生、拦截与参考目录。只有参考副本把合格 peer 位置替换为运行时包的链接，再让 Node 解析文件。单包与 pnpm monorepo 用例对比入口、文件、目录、import/require、`import.meta.resolve` 与显式路径的结果，覆盖 manifest 缺失、`node_modules` 缺失、错误 peer 声明、React、作用域外 helper 和旧式子路径继续查询。断言比较选包、现存路径、错误码与模块实例；显式 paths 使用未投射的原生参考。
 - 同一文件内的专项用例覆盖表 1 各行：有无 `exports` 的裸包名与子路径、`#alias`、显式 `paths`、包自引用、命中 runtime resolution 后 CommonJS 子路径缺失时跳过 ③ 直接到 ④，以及树外 profile 的拦截位置。
-- [CLI 真启动测试](../../../../apps/cli/tests/profiles/headless/tests/profile-resolution.ts)覆盖 src 与 lib 启动、普通与 npm-link 布局，以及指向无 manifest 的 `src` 目录且其父目录声明 peer 的链接。测试检查 Tools/AgentLoop 共享实例、原生显式路径选中开发者副本、依赖沿真实路径解析，以及文件和链接目标保持不变。
+- [CLI 真启动测试](../../../../apps/cli/tests/profiles/headless/tests/profile-resolution.ts)覆盖 src 与 lib 启动、普通与 npm-link 布局，以及指向无 manifest 的 `src` 目录且其父目录声明 peer 的链接。测试检查 Tools/AgentLoop 共享实例、原生显式路径选中开发者副本、依赖沿真实路径解析，以及文件和链接目标保持不变。源码模式的 CommonJS 检查使用具备现存 JavaScript 入口的 fixture 包；安装中真实的 CommonJS 入口需要相应构建产物。
 
 ## Consequences
 

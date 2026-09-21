@@ -62,6 +62,8 @@ The [source launcher](2026-07-29-dsh-source-launch-tsx-esm.md) uses tsx's ESM-on
 
 For example, `@deepseek-ai/dsh-tools` creates its scheduler key with `Symbol()`. A Tools instance loaded from `lib/` cannot expose that scheduler through a key imported from the separate `src/` module instance. Source launches keep Tools and AgentLoop in `src/`; plain Node launches keep them in `lib/`. The scheduler retains its local Symbol; correct imports share one module instance.
 
+The source launcher does not install a CommonJS TypeScript hook. `createRequire().resolve()` still selects the package's published JavaScript entry and requires that file to exist. Source-mode resolution tests therefore use fixture-provided CommonJS files; checks of real installation CommonJS entries run with build outputs present.
+
 ### Immutable generations
 
 A runtime interception holds one `current` generation. Each synchronous resolution captures that reference once. Generation construction reads every required dependency-graph manifest before publication; an error leaves the current generation unchanged. Successful publication replaces one reference, and in-flight calls may finish against the generation they captured.
@@ -104,7 +106,7 @@ Replacing, upgrading, or removing an already loaded package requires process res
 
 ### Filesystem and runtime carriers
 
-The resolver does not create, update, or remove fallback symlinks and proxy packages. Runtime resolution entries occupy their package names at `$DSH_HOME/profiles/node_modules`; every other name sees that directory as an ordinary ancestor. Construction also records profile links to real directories outside the profiles tree, including directories without their own manifest. Linked importers retain native ancestor order and apply peer mappings at the matching manifest's position, even without a physical `node_modules` there. Profile-local package metadata and bundle dependency discovery follow the same Node lookup. The [lookup-order Note](2026-09-19-profile-resolution-lookup-order.md) records precedence and scope. Writable profile state and package-manager transactions remain outside the resolver.
+The resolver does not create, update, or remove fallback symlinks and proxy packages. Runtime resolution entries occupy their package names at `$DSH_HOME/profiles/node_modules`; every other name sees that directory as an ordinary ancestor. Construction records links to directories outside the shared profiles tree and the active profile itself, including targets without their own manifest. Installation-scope package directories stay outside linked interception even when a broader linked root contains them. Eligible linked importers retain native ancestor order and per-position peer mappings. The [lookup-order Note](2026-09-19-profile-resolution-lookup-order.md) records precedence and scope. Writable profile state and package-manager transactions remain outside the resolver.
 
 Runtime resolution requires a supported Node Internal loader interface. The Electron Host runs through the Electron executable with `ELECTRON_RUN_AS_NODE=1`; packaged builds read the dsh tree from ASAR and map executable ASAR entries to electron-builder's unpacked tree. Pkg and Electron use the same runtime resolution mechanism as ordinary Node launches.
 

@@ -115,12 +115,12 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 
 - **Profile 启动数据。** `ctx.profileContext` 只包含 profile 位置、启动时组合包名称、已解析的调用级 overlay 与遥测退出值。`readProfilePatches()` 组合传入的启动 profile，或读取这些位置上的当前文件；调用方负责调度和应用结果。
 - **进程内模块解析。** launcher 在挂载 profile 条目前，将 runtime resolution 安装到 Node 的 ESM 与 CommonJS 内部 resolver。exports、conditions、子路径、模块缓存和错误码仍由 Node 负责；路由后的 ESM 失败报告原始 importer。显式 CommonJS `paths` 始终保留原生查询，包括指向 profile 内的路径。
-- **链接目录。** profile 链接到树外目录时，其下的 importer 参与逐层 peer 查询，即使目标没有自身的 `package.json`。在每个 `D/node_modules` 位置，当前 `D/package.json` 的 peer 包名若存在于运行时表，就使用运行时包；其他包名查询物理候选。更近的物理包先于后续 peer 声明，peer 位置无需物理 `node_modules`（[规则](../../../.agents/notes/implemented/architecture/2026-09-19-profile-resolution-lookup-order.zh.md)）。
+- **链接目录。** profile 链接到树外目录时，其下的 importer 参与逐层 peer 查询，即使目标没有自身的 `package.json`。在每个 `D/node_modules` 位置，当前 `D/package.json` 的 peer 包名若存在于运行时表，就使用运行时包；其他包名查询物理候选。更近的物理包先于后续 peer 声明，peer 位置无需物理 `node_modules`。installation 作用域包目录不参与 linked 拦截，重叠 root 不改变 importer 的查询顺序（[规则](../../../.agents/notes/implemented/architecture/2026-09-19-profile-resolution-lookup-order.zh.md)）。
 - **包元数据。** `ctx.pluginPackages.packageOf` 定位所属包，不加载代码，也不要求导出 `package.json`；子路径选择其所属包，不校验该文件。安装 runtime resolution 后，即使查询未命中也以其选包规则为准。仅安装服务而不提供 runtime resolution 的底层嵌入方保留原生查询。展示元数据使用上文另述的入口感知读取器。
 - **两个 Loader builtin。** `mountRootInclude` 把 `cordis:include` 与 `cordis:group` 注册为 Loader builtin：group 行能把一个提供方与它的消费方放进同一个 `isolate` realm，而位于本工作区之外的 agent preset 无法按名称解析 `@deepseek-ai/cordis-plugin-group`。两者都通过宿主的模块管线加载，而非被包含树自身的说明符解析。
 - **由 consumer 持有严格语义。** 普通 Loader group 保留成功 sibling。App-boot 在首次结算后应用全局 required-entry policy；agent preset 与动态多 entry 组合在需要 all-or-nothing setup 时，持有并拆卸各自的独立 Loader 子树。App-boot 读取 failed fiber 来报告已记录的错误，并在一个进程检查点内合并 Loader 重复的 rejection 通知。
 - **唯一 runtime resolution。** 安装优先、有序 bundle 逐根 breadth-first 遍历生成运行时表。runtime 解析不创建链接；runtime resolution 条目占据 `$DSH_HOME/profiles/node_modules` 上各自的包名位置，其余包名把该目录当作普通祖先。profile 加载时删除 Link 后端发布版写进 profile 的 `.dsh-module-fallback` 投影；pnpm 安装的包保留。package `imports` 选中的外部 bare target 使用相同的选包顺序，映射、conditions 和精确 target 解析仍由 Node 负责。完整后继 runtime resolution 可以在既有包映射和本地包名约束内原子增加 package name、更新 linked root 集合；修改或删除既有映射，或把既有 linked root 指向另一个目录，则要求重启。
-- **应用自有 profile。** 应用自有 profile 使用相同的 runtime resolution。解析过程不修改其 `node_modules`；已安装包由 pnpm 管理。
+- **应用自有 profile。** 应用自有 profile 使用相同的 runtime resolution。目标位于当前 profile 目录内的链接（包括 pnpm store 链接）不算外部 root，即使 profile 位于共享 profiles 树外。解析过程不修改其 `node_modules`；已安装包由 pnpm 管理。
 - **自有 Worker。** Worker 构建 banner 会在业务 bundle 前导入 `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap`。每个 Worker 在自己的 isolate 中安装结构化克隆的 runtime resolution。bootstrap bundle 不静态导入任何包。源码 Worker 入口保留自包含依赖，第三方 Worker 不接受注入。
 - **更新完成。** App boot 通过 `internal/update` waterfall 观察重启失败。实时 patch 重载在检查激活状态前等待配置树中的 fiber；单独调用 `Fiber.update()` 或 `Entry.update()` 不能确定重启成功。
 - **单一 rejection 检查点。** `inactiveEntries` 把折入启动诊断的确切原因保持到下一个进程级 rejection 检查点可见，使 `installFailLoud` 能合并 Loader 的重复通知，而所有无关的未处理 rejection 仍然致命。
@@ -182,6 +182,7 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 - **运行时解析依赖 Node 内部机制**——受支持的 Node 版本需要 native builtin access addon 和可执行兼容验证。只有构建后的 Harness 自有 Worker 接收 runtime resolution bootstrap；第三方 Worker 与自定义 `vm` linker 保持原生解析。
 - **重新链接 profile 包需要重启**——Node 缓存真实路径，因此改变 profile 链接或依赖链接的目标需要重启进程。
 - **链接作用域以记录的真实目录为准**——提升后的依赖若在所有 linked root 之外，就使用原生 Node。实时读取 peer 不会使 Node 缓存失效、监视文件或校验 peer 版本范围。
+- **源码启动只安装 ESM 钩子**——CommonJS 请求仍需要 package exports 选中的 JavaScript 文件，解析器不会补出缺失的构建产物。
 - **快照回放替换仅识别特定 basename**——只有以 `cordis.yml` 或 `cordis.yaml` 结尾的配置会映射到同级 `cordis.snapshot.yml`；自定义配置名称需要调用方自行选择。
 - **环境发现以启动为界**——`loadLayeredEnv` 只读取一次调用目录与 harness home 中的 `.env`；它不搜索父目录，也不跟随之后选择的 workspace。`loadEnv` 仍是非产品 bin 使用的单目录 helper。
 - **用户 patch 会替换匹配到的整个配置**——按 id 定位的 patch 不做深度合并，因此 profile 覆盖必须重述需要保留的组合包字段。

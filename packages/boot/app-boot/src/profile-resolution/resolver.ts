@@ -89,12 +89,11 @@ interface LayerPositions {
  */
 type InterceptionLayer =
   | LayerPositions & { readonly kind: 'profile'; readonly active: boolean }
-  | { readonly kind: 'linked'; readonly root: LinkedRoot }
+  | { readonly kind: 'linked' }
 
 interface CompiledLinkedRoot {
   readonly root: LinkedRoot
   readonly paths: readonly string[]
-  readonly layer: InterceptionLayer
 }
 
 interface ParentRoutes {
@@ -112,6 +111,7 @@ interface CompiledResolution {
   readonly profileDir: string | undefined
   readonly profilePaths: readonly string[]
   readonly profile: readonly string[]
+  readonly installationPaths: readonly string[]
   readonly linkedRoots: readonly CompiledLinkedRoot[]
   readonly localPackageNames: ReadonlySet<string>
   readonly esmRoutes: ResolutionRoutes
@@ -175,7 +175,10 @@ function compileResolution(resolution: RuntimeResolution): CompiledResolution {
     profileDir: resolution.profileDir,
     profilePaths: prefixes(resolution.profilesDir),
     profile: resolution.profileDir === undefined ? [] : prefixes(resolution.profileDir),
-    linkedRoots: resolution.linkedRoots.map(root => ({ root, paths: prefixes(root.realPath), layer: computeLinkedLayer(root) })),
+    installationPaths: [...new Set(resolution.entries
+      .filter(entry => entry.scope === 'installation')
+      .flatMap(entry => prefixes(entry.packageDir)))],
+    linkedRoots: resolution.linkedRoots.map(root => ({ root, paths: prefixes(root.realPath) })),
     localPackageNames: new Set(resolution.localPackageNames),
     esmRoutes: new Map(),
     cjsRoutes: new Map(),
@@ -196,22 +199,15 @@ function computeProfileLayer(dir: string, active: boolean): InterceptionLayer {
   }
 }
 
-/**
- * A linked directory admits its importers to peer-aware lookup along Node's real ancestor chain.
- */
-function computeLinkedLayer(root: LinkedRoot): InterceptionLayer {
-  return {
-    kind: 'linked', root,
-  }
-}
-
 /** The interception layer of a module path: from its profile directory inside a profiles tree, or its linked root. */
 function findInterceptionLayer(path: string, resolution: CompiledResolution): InterceptionLayer | undefined {
   const treeRoot = resolution.profilePaths.find(prefix => path.startsWith(prefix))
   const activeProfile = resolution.profile.find(prefix => path.startsWith(prefix))
   const dir = treeRoot !== undefined ? profileChild(path, treeRoot) : activeProfile?.slice(0, -1)
   if (dir !== undefined) return computeProfileLayer(dir, activeProfile !== undefined)
-  return resolution.linkedRoots.find(candidate => startsWithin(path, candidate.paths))?.layer
+  if (!resolution.linkedRoots.some(candidate => startsWithin(path, candidate.paths))) return undefined
+  if (startsWithin(path, resolution.installationPaths)) return undefined
+  return { kind: 'linked' }
 }
 
 /** Package names a directory's current manifest lists as peers; an unreadable manifest lists none. */

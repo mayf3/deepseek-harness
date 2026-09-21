@@ -36,9 +36,10 @@ interface ResolutionEvidence {
   toolsInstance: boolean
   pluginToolsInstance: boolean
   sourceToolsInstance: boolean
-  profileToolsCjs: string
-  sourceToolsCjs: string
-  sourceToolsExplicitCjs: string
+  profileToolsCjs: string | null
+  sourceToolsCjs: string | null
+  sourceLeafCjs: string
+  sourceLeafExplicitCjs: string
   scheduler: boolean
   modules: string[]
 }
@@ -70,6 +71,8 @@ export function testProfileResolution(mode: ExampleMode): void {
       const bridgeDir = layout === 'npm-link' ? join(root, 'dependencies', bridgeName) : installedBridge
       const logicalLeaf = join(bundleDir, 'node_modules', leafName)
       const realLeaf = join(root, 'dependencies', 'node_modules', leafName)
+      const sourcePackageDir = join(root, 'work', 'source-package')
+      const sourceDevLeaf = join(sourcePackageDir, 'node_modules', leafName)
       const exports = { import: './index.mjs', require: './index.cjs' }
       await writePackage(bundleDir, {
         name: bundleName, version: '1.0.0', dependencies: { [bridgeName]: '*' },
@@ -81,7 +84,9 @@ export function testProfileResolution(mode: ExampleMode): void {
         'index.mjs': `export { leaf } from '${leafName}'`,
         'index.cjs': `module.exports = require('${leafName}')`,
       })
-      for (const [dir, version] of [[logicalLeaf, '1.0.0'], [realLeaf, '2.0.0']] as const) {
+      for (const [dir, version] of [
+        [logicalLeaf, '1.0.0'], [realLeaf, '2.0.0'], [sourceDevLeaf, '0.0.0'],
+      ] as const) {
         await writePackage(dir, { name: leafName, version, exports }, {
           'index.mjs': `export const leaf = { version: '${version}', url: import.meta.url }`,
           'index.cjs': `exports.leaf = { version: '${version}', filename: __filename }`,
@@ -137,19 +142,21 @@ export function testProfileResolution(mode: ExampleMode): void {
         'index.mjs': "export default class Tools {}\nexport const TOOL_RUNTIME_SCHEDULER = Symbol()\nthrow new Error('STALE_DSH_TOOLS')",
         'index.cjs': "throw new Error('STALE_DSH_TOOLS')",
       })
-      const sourcePackageDir = join(root, 'work', 'source-package')
       const sourceDir = join(sourcePackageDir, 'src')
+      const toolsCjsExpression = mode === 'lib' ? "require.resolve('@deepseek-ai/dsh-tools')" : 'null'
       await mkdir(sourceDir, { recursive: true })
+      // The ESM-only source hook does not map CommonJS exports to source, so its CJS probe uses a fixture-owned peer.
       await writePackage(sourcePackageDir, {
-        name: 'source-package', version: '1.0.0', peerDependencies: { '@deepseek-ai/dsh-tools': '*' },
+        name: 'source-package', version: '1.0.0', peerDependencies: { '@deepseek-ai/dsh-tools': '*', [leafName]: '*' },
       }, {
         'src/query.mjs': [
           "import { createRequire } from 'node:module'",
           "import Tools from '@deepseek-ai/dsh-tools'",
           'export { Tools as SourceTools }',
           'const require = createRequire(import.meta.url)',
-          "export const sourceToolsCjs = require.resolve('@deepseek-ai/dsh-tools')",
-          `export const sourceToolsExplicitCjs = require.resolve('@deepseek-ai/dsh-tools', { paths: [${JSON.stringify(sourceDir)}] })`,
+          `export const sourceToolsCjs = ${toolsCjsExpression}`,
+          `export const sourceLeafCjs = require.resolve('${leafName}')`,
+          `export const sourceLeafExplicitCjs = require.resolve('${leafName}', { paths: [${JSON.stringify(sourceDir)}] })`,
         ].join('\n'),
       })
       for (const [target, link] of [
@@ -181,7 +188,7 @@ export function testProfileResolution(mode: ExampleMode): void {
           `import { leaf as bridgeLeaf } from '${bridgeName}'`,
           `import { external } from '${externalName}'`,
           `import { external as pluginExternal, PluginTools } from '${pluginName}'`,
-          `import { SourceTools, sourceToolsCjs, sourceToolsExplicitCjs } from '${sourceProbeName}/query.mjs'`,
+          `import { SourceTools, sourceToolsCjs, sourceLeafCjs, sourceLeafExplicitCjs } from '${sourceProbeName}/query.mjs'`,
           `import { leaf as externalLeaf } from ${JSON.stringify(pathToFileURL(join(externalLeaf, 'index.mjs')).href)}`,
           'const require = createRequire(import.meta.url)',
           "export const inject = ['tools', 'agentLoop', 'loader']",
@@ -205,8 +212,8 @@ export function testProfileResolution(mode: ExampleMode): void {
           '      toolsInstance: ctx.tools instanceof Tools,',
           '      pluginToolsInstance: ctx.tools instanceof PluginTools,',
           '      sourceToolsInstance: ctx.tools instanceof SourceTools,',
-          "      profileToolsCjs: require.resolve('@deepseek-ai/dsh-tools'),",
-          '      sourceToolsCjs, sourceToolsExplicitCjs,',
+          `      profileToolsCjs: ${toolsCjsExpression},`,
+          '      sourceToolsCjs, sourceLeafCjs, sourceLeafExplicitCjs,',
           "      scheduler: typeof ctx.tools[TOOL_RUNTIME_SCHEDULER]?.prepare === 'function',",
           '      modules: [...ctx.loader.internal.loadCache.keys()]',
           '        .filter(url => /\\/packages\\/core\\/(?:tools|agent-loop)\\//.test(url)),',
@@ -227,7 +234,7 @@ export function testProfileResolution(mode: ExampleMode): void {
         ]),
       })
       const packageDirs = [
-        bundleDir, bridgeDir, logicalLeaf, realLeaf, pluginDir, externalDir, externalLeaf,
+        bundleDir, bridgeDir, logicalLeaf, realLeaf, sourceDevLeaf, pluginDir, externalDir, externalLeaf,
         sharedLeaf, ancestorExternal, ancestorLeaf, staleTools, sourcePackageDir, sourceDir, profileDir,
       ]
       const packageFiles = (await Promise.all(packageDirs.map(async dir =>
@@ -278,8 +285,12 @@ export function testProfileResolution(mode: ExampleMode): void {
       expect(evidence.pluginToolsInstance).toBe(true)
       expect(evidence.sourceToolsInstance).toBe(true)
       expect(evidence.sourceToolsCjs).toBe(evidence.profileToolsCjs)
-      expect(evidence.sourceToolsExplicitCjs).toBe(realpathSync.native(join(staleTools, 'index.cjs')))
-      expect(evidence.sourceToolsCjs).not.toBe(evidence.sourceToolsExplicitCjs)
+      expect(evidence.profileToolsCjs).toBe(mode === 'lib'
+        ? realpathSync.native(join(repoRoot, 'packages/core/tools/lib/index.js'))
+        : null)
+      expect(evidence.sourceLeafCjs).toBe(evidence.cjs.filename)
+      expect(evidence.sourceLeafExplicitCjs).toBe(realpathSync.native(join(sourceDevLeaf, 'index.cjs')))
+      expect(evidence.sourceLeafCjs).not.toBe(evidence.sourceLeafExplicitCjs)
       expect(evidence.scheduler).toBe(true)
       expect(evidence.execArgv).toEqual(mode === 'src' ? launch.args.slice(0, 2) : [])
       for (const name of ['tools', 'agent-loop']) {

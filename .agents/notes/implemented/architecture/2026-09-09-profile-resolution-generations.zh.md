@@ -62,6 +62,8 @@ ESM `import` 和 CommonJS `require` 都选中这些版本。在每种模块格�
 
 例如，`@deepseek-ai/dsh-tools` 使用 `Symbol()` 创建 scheduler 键。从 `lib/` 加载的 Tools 实例，无法通过另一个 `src/` 模块实例导入的键暴露该 scheduler。源码启动让 Tools 与 AgentLoop 都位于 `src/`；普通 Node 启动让两者都位于 `lib/`。scheduler 保留模块本地的 Symbol；正确的 import 共享同一个模块实例。
 
+源码启动器不安装 CommonJS TypeScript 钩子。`createRequire().resolve()` 仍选择包发布的 JavaScript 入口，并要求该文件存在。因此，源码模式的解析测试使用 fixture 提供的 CommonJS 文件，真实安装包的 CommonJS 入口检查则在构建产物存在时运行。
+
 ### 不可变 generation
 
 一个 runtime interception 持有一个 `current` generation。每个同步 resolve 在入口只捕获一次该引用，完整调用只读该引用。generation 构造在发布前读取依赖图所需的全部 manifest；失败时当前 generation 不变。发布成功只替换一个引用，执行中的调用可以继续使用它已捕获的 generation。
@@ -104,7 +106,7 @@ runtime resolution 列出它提供的包；Loader entries 组成活动插件列�
 
 ### 文件系统与运行时载体
 
-解析器不创建、更新或删除 fallback 软链接与代理包。runtime resolution 条目占据 `$DSH_HOME/profiles/node_modules` 上各自的包名位置；其余包名把该目录当作普通祖先。构造时还会记录指向 profiles 树外真实目录的 profile 链接，包括没有自身 manifest 的目录。linked importer 保留原生祖先顺序，在匹配 manifest 对应的位置应用 peer 映射，即使那里没有物理 `node_modules`。profile 本地包元数据与 bundle 依赖展开遵循同一套 Node 查找。优先级和范围见[查找顺序 Note](2026-09-19-profile-resolution-lookup-order.zh.md)。可写 profile 状态和包管理器事务不属于解析器。
+解析器不创建、更新或删除 fallback 软链接与代理包。runtime resolution 条目占据 `$DSH_HOME/profiles/node_modules` 上各自的包名位置；其余包名把该目录当作普通祖先。构造时记录目标同时位于共享 profiles 树和当前 profile 自身之外的目录链接，包括没有自身 manifest 的目标。installation 作用域包目录不参与 linked 拦截，即使更宽的 linked root 包含它们。符合条件的 linked importer 保留原生祖先顺序与逐位置的 peer 映射。优先级和范围见[查找顺序 Note](2026-09-19-profile-resolution-lookup-order.zh.md)。可写 profile 状态和包管理器事务不属于解析器。
 
 运行时解析要求受支持的 Node Internal loader 接口。Electron Host 通过设置 `ELECTRON_RUN_AS_NODE=1` 的 Electron 可执行文件运行；打包构建从 ASAR 读取 dsh 依赖树，并把 ASAR 中的可执行条目映射到 electron-builder 的 unpacked 目录。pkg 与 Electron 使用和普通 Node 启动相同的 runtime resolution 机制。
 

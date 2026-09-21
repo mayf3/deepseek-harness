@@ -113,15 +113,13 @@ export interface RuntimeResolutionEntry {
 }
 
 /**
- * A profile node_modules entry linked to a directory outside the profiles tree.
+ * A profile node_modules entry linked to a directory outside the shared profiles tree and the active profile.
  * Importers below `realPath` use Node's real ancestor chain, with peer mappings read at each node_modules position.
  */
 export interface LinkedRoot {
   /** Package name of the profile `node_modules` entry, including its scope. */
   readonly name: string
-  /** The symlink or junction path under the active profile's node_modules. */
-  readonly linkPath: string
-  /** Real directory the link resolves to; it lies outside the profiles tree and need not hold a package.json. */
+  /** Real directory outside the shared profiles tree and active profile; a package.json is optional. */
   readonly realPath: string
 }
 
@@ -135,7 +133,7 @@ export interface RuntimeResolution {
   readonly localPackageNames: readonly string[]
   /** Installation-scope entries followed by profile-scope entries in precedence order. */
   readonly entries: readonly RuntimeResolutionEntry[]
-  /** Active profile packages linked to directories outside the profiles tree, sorted by name. */
+  /** Active profile links to external directories, sorted by name. */
   readonly linkedRoots: readonly LinkedRoot[]
 }
 
@@ -274,33 +272,35 @@ function symlinksUnder(modules: string): string[] {
 }
 
 /**
- * Active profile `node_modules` entries linked to directories outside the profiles tree.
- * Missing targets, files, and directories inside the profiles tree are not linked roots.
+ * Active profile `node_modules` entries linked outside the shared profiles tree and the active profile.
+ * Missing targets and files are not linked roots; invalid link chains retain Node's diagnostic.
  */
 function linkedProfileRoots(profile: Profile, profilesDir: string): LinkedRoot[] {
   const modules = join(profile.dir, 'node_modules')
+  const links = symlinksUnder(modules)
+  if (links.length === 0) return []
   let tree: string
   try {
     tree = realModuleDirectory(profilesDir) + sep
   } catch (error) {
     // A profiles tree that is not materialized yet holds no links.
-    /* v8 ignore next -- a non-ENOENT realpath failure requires a host filesystem fault */
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     tree = resolve(profilesDir) + sep
   }
+  const excludedTrees = [tree, realModuleDirectory(profile.dir) + sep]
   const roots: LinkedRoot[] = []
-  for (const linkPath of symlinksUnder(modules)) {
+  for (const linkPath of links) {
     let realPath: string
     try {
       realPath = realModuleDirectory(linkPath)
     } catch (error) {
       // A dangling link is not a package Node can load from the profile.
-      /* v8 ignore next -- a non-ENOENT realpath failure requires a host filesystem fault */
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       continue
     }
-    if (realPath + sep === tree || realPath.startsWith(tree) || !statSync(realPath).isDirectory()) continue
-    roots.push({ name: relative(modules, linkPath).split(sep).join('/'), linkPath, realPath })
+    if (excludedTrees.some(prefix => realPath + sep === prefix || realPath.startsWith(prefix))
+      || !statSync(realPath).isDirectory()) continue
+    roots.push({ name: relative(modules, linkPath).split(sep).join('/'), realPath })
   }
   return roots.sort((left, right) => left.name.localeCompare(right.name))
 }
