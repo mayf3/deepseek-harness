@@ -38,7 +38,7 @@ Settings → General → Open chat links in selects the destination for ordinary
 <a id="system-prompt-row"></a>
 ## Hidden Chat rows
 
-Chat omits system-prompt and `permission` command rows in every work-details mode. The filter changes neither recorded Session events nor Trajectory inspection. Ordinary Context injection and other command rows remain in Chat; Context injection can fold with the owning Turn's process content.
+Chat omits system-prompt, ordinary Context injection, and `permission` command rows in every work-details mode. The filter changes neither recorded Session events nor Trajectory inspection. Non-human Turn triggers remain independent notices; other command rows remain in Chat.
 
 <a id="command-and-failure-rows"></a>
 ## Command and failure rows
@@ -59,7 +59,7 @@ On non-loopback browsers, the preference remains process-local because the setti
 <a id="completed-turn-footer"></a>
 ## Completed-turn footer
 
-The completed-turn action footer starts 20px below the preceding prose or extension content.
+The completed-turn action footer follows the recorded Turn end. Its action row starts 20px below preceding prose or extension content. Actions remain visible only on the latest Turn when its final visible content is a reply; other endings and historical Turns reveal actions on hover or keyboard focus. Devices without hover keep actions visible.
 
 -----
 
@@ -78,11 +78,13 @@ Settings → General → Work details stores `ui-chat.transcriptView` as `compac
 | Individual reasoning and tool bodies | Manual expansion | Manual expansion | Manual expansion |
 | Eligible completed-Turn process | Folded by default | Folded by default | Folded by default |
 
-While a Turn is open, its process rows remain in the transcript; individual reasoning and tool disclosures retain their own expansion state. At `turn/end`, its latest Step becomes the final-answer boundary only when it contains non-blank text, an image, or an unknown visible block—and no Tool-call block. If that Turn's `turn/start` is loaded, preceding Context injection, reasoning, earlier Assistant material, Tool rows, and Retry rows fold by default. Folding eligibility is per Turn: a complete Turn can fold while Load earlier remains available, and a Turn whose start is missing keeps its process content visible until that start arrives. A closed Turn with no final answer also keeps all process evidence visible.
+While a Turn is open, its process rows remain in the transcript; individual reasoning and tool disclosures retain their own expansion state. At `turn/end`, its latest Step becomes the final-answer boundary only when it contains non-blank text, an image, or an unknown visible block—and no Tool-call block. If that Turn's `turn/start` is loaded, preceding reasoning, earlier Assistant material, Tool rows, and Retry rows fold by default. Folding eligibility is per Turn: a complete Turn can fold while Load earlier remains available, and a Turn whose start is missing keeps its process content visible until that start arrives. A closed Turn with no final answer also keeps all process evidence visible.
 
-The control reports Turn-wide durable counts for non-subagent Tool calls, reply-bearing Assistant messages before the final answer, and subagent delegation calls. Zero-valued segments are omitted; the Tool and subagent figures are mutually exclusive, and Context injection contributes no count. When all three counts are zero, the process still folds and the control reads `Thought for a while`. A full-width divider below the summary separates it from the answer or expanded process rows. User and steering messages, error, max-token, and turn-tail rows stay outside. A newly available process control preserves existing row order, with opening human input before the control and process rows.
+The control reports Turn-wide durable counts for non-subagent Tool calls, reply-bearing Assistant messages before the final answer, and subagent delegation calls. Zero-valued segments are omitted; the Tool and subagent figures are mutually exclusive, and Context injection contributes no count. When all three counts are zero, the process still folds and the control reads `Thought for a while`. A full-width divider below the summary separates it from the answer or expanded process rows. User and steering messages, trigger notices, error, max-token, and turn-tail rows stay outside. A newly available process control preserves existing row order, with opening human input before the control and process rows.
 
 Stable Chat Node Seats keep every renderer mounted, hidden members add no flow spacing, and a closed control sits 8px above its answer only when no independent input intervenes. Completion collapse does not depend on tail-follow position, so a reader above the tail may see the transcript reflow. An automatic collapse that would hide keyboard focus keeps the process open and leaves focus in place; a manual close focuses the process control before hiding its members. The session-scoped store records only manually expanded Turn-and-answer-Step generations; a different answer generation starts collapsed. Switching work-details modes preserves manual expansion.
+
+Non-human Turn triggers are independent notices classified from durable Inbox claims and source fields. Their expanded bodies retain original content, and whole-Turn folding does not hide them.
 
 -----
 

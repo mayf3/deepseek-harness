@@ -9,5 +9,6 @@ import type { ChatNode } from './chat-nodes.ts'
 export function isVisibleChatNode(node: ChatNode): boolean {
   return node.visibility === 'visible'
     && node.kind !== 'system-prompt'
+    && node.kind !== 'context'
     && !(node.kind === 'command' && node.data.name === 'permission')
 }

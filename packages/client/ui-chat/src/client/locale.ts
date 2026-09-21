@@ -5,6 +5,17 @@ export const NS = 'chat'
 
 /** Simplified Chinese dictionary and key-set source of truth. */
 export const zh = {
+  'message.trigger.request': '收到执行请求',
+  'message.trigger.goal': '继续执行目标',
+  'message.trigger.agent': '收到任务消息',
+  'message.trigger.team': '收到团队消息',
+  'message.trigger.subagent': '子任务状态更新',
+  'message.trigger.github': '收到 GitHub 事件',
+  'message.trigger.webhook': '收到外部事件',
+  'message.trigger.schedule': '定时任务',
+  'message.trigger.job': '后台任务状态更新',
+  'message.trigger.plugin': '插件状态更新',
+  'message.trigger.explanation': '这条通知触发了本轮回复。',
   'view.chat': '对话',
   'number.groupSeparator': ',',
   'duration.compactSeconds': '{seconds}秒',
@@ -120,6 +131,17 @@ export type ChatKey = keyof typeof zh
 
 /** English dictionary, checked against the Chinese key set. */
 export const en = {
+  'message.trigger.request': 'Execution requested',
+  'message.trigger.goal': 'Continuing goal',
+  'message.trigger.agent': 'Task message received',
+  'message.trigger.team': 'Team message received',
+  'message.trigger.subagent': 'Subtask status updated',
+  'message.trigger.github': 'GitHub event received',
+  'message.trigger.webhook': 'External event received',
+  'message.trigger.schedule': 'Scheduled task',
+  'message.trigger.job': 'Background task updated',
+  'message.trigger.plugin': 'Plugin status updated',
+  'message.trigger.explanation': 'This notification triggered this response.',
   'view.chat': 'Chat',
   'number.groupSeparator': ',',
   'duration.compactSeconds': '{seconds}s',

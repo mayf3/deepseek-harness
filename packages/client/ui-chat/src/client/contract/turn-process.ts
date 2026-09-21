@@ -21,6 +21,7 @@ const TURN_PROCESS_INDEPENDENT_KIND_LIST = [
   'system-prompt',
   'user',
   'steering',
+  'turn-trigger',
   'turn-process',
   'turn-error',
   'turn-max-tokens',
