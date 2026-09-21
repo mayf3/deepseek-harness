@@ -14,10 +14,55 @@ describe('native file associations', () => {
     expect(run).toHaveBeenCalledWith('osascript', ['-l', 'JavaScript', '-e', expect.any(String), path, 'icons'], signal)
   })
 
-  it.each(['{}', '[null]', '[{"id":1}]', JSON.stringify([{ ...application, icon: 'javascript:alert(1)' }])])('rejects malformed native output %s', async (stdout) => {
+  it.each(['{}', '[null]', '[{"id":1}]', '[{"id":"/a.app","default":false,"icon":null,"bundle":"b"}]', JSON.stringify([{ ...application, icon: 'javascript:alert(1)' }])])('rejects malformed native output %s', async (stdout) => {
     await expect(nativeFileApplications('/file.mp3', signal, {
       platform: 'darwin', run: async () => ({ stdout, stderr: '' }),
     })).rejects.toThrow()
+  })
+
+  it('collapses duplicate copies of one application to its default or newest install', async () => {
+    const copy = (id: string, name: string, extra: object) => ({ id, name, default: false, icon: null, ...extra })
+    const stdout = JSON.stringify([
+      copy('/Applications/Quark.app', '夸克', { default: true, bundle: 'com.quark.desktop', version: '7.1.5' }),
+      copy('/Applications/Doubao.app', '豆包', { bundle: 'com.bot.pc.doubao', version: '2.18.12' }),
+      copy('/Applications/Xcode.app', 'Xcode', { bundle: 'com.apple.dt.Xcode', version: '26.2' }),
+      copy('/Applications/Xcode-26.0.0.app', 'Xcode-26.0.0', { bundle: 'com.apple.dt.Xcode', version: '26.0' }),
+      copy('/stale/WeChat.app', 'WeChat', { bundle: 'com.tencent.xinWeChat', version: '4.0' }),
+      copy('/updates/Quark.app', '夸克', { bundle: 'com.quark.desktop', version: '9.9' }),
+      copy('/versions/Doubao.app', '豆包', { bundle: 'com.bot.pc.doubao', version: '2.25.16' }),
+      copy('/Applications/WeChat.app', 'WeChat', { default: true, bundle: 'com.tencent.xinWeChat', version: '3.9' }),
+      copy('/script-a.app', 'Script', {}),
+      copy('/script-b.app', 'Script', { bundle: null, version: null }),
+    ])
+    const apps = await nativeFileApplications('/file.txt', signal, { platform: 'darwin', run: async () => ({ stdout, stderr: '' }) })
+    expect(apps.map(app => app.id)).toEqual([
+      // The system default beats the newer staged update copy.
+      '/Applications/Quark.app',
+      // The newest copy wins and holds the group's first menu position.
+      '/versions/Doubao.app',
+      // Side-by-side installs carry distinct display names and both stay.
+      '/Applications/Xcode.app',
+      '/Applications/Xcode-26.0.0.app',
+      // A later default replaces a newer stale copy.
+      '/Applications/WeChat.app',
+      // Entries without a bundle identifier never group.
+      '/script-a.app',
+      '/script-b.app',
+    ])
+    expect(apps[4]!.default).toBe(true)
+    expect(apps.every(app => !('bundle' in app) && !('version' in app))).toBe(true)
+  })
+
+  it('keeps the first copy on version ties and prefers any version over none', async () => {
+    const copy = (id: string, bundle: string, version?: string) => ({ id, name: bundle, default: false, icon: null, bundle, version })
+    const stdout = JSON.stringify([
+      copy('/a/H.app', 'h', '1.0'), copy('/b/H.app', 'h', '1.0.0'),
+      copy('/a/N.app', 'n'), copy('/b/N.app', 'n'),
+      copy('/a/V.app', 'v'), copy('/b/V.app', 'v', '0.1'),
+      copy('/a/W.app', 'w', '0.1'), copy('/b/W.app', 'w'),
+    ])
+    const apps = await nativeFileApplications('/file.txt', signal, { platform: 'darwin', run: async () => ({ stdout, stderr: '' }) })
+    expect(apps.map(app => app.id)).toEqual(['/a/H.app', '/a/N.app', '/b/V.app', '/a/W.app'])
   })
 
   it('launches only a currently registered application with argv', async () => {

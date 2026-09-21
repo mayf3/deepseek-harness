@@ -30,11 +30,16 @@ function run(argv) {
       var png = bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({}));
       image = png.isNil() ? null : 'data:image/png;base64,' + ObjC.unwrap(png.base64EncodedStringWithOptions(0));
     }
+    var bundle = $.NSBundle.bundleWithURL(url);
+    var bundleId = bundle.isNil() || bundle.bundleIdentifier.isNil() ? null : ObjC.unwrap(bundle.bundleIdentifier);
+    var version = bundle.isNil() ? null : bundle.objectForInfoDictionaryKey('CFBundleShortVersionString');
     apps.push({
       id: path,
       name: ObjC.unwrap($.NSFileManager.defaultManager.displayNameAtPath(path)),
       default: path === preferredPath,
-      icon: image
+      icon: image,
+      bundle: bundleId,
+      version: version === null || version.isNil() ? null : String(ObjC.unwrap(version))
     });
   }
   return JSON.stringify(apps);
@@ -61,13 +66,80 @@ async function queryFileApplications(
   const target = await desktopTarget(path, signal, internals)
   const run = internals.run ?? runNativeCommand
   if (target.platform === 'linux') return linuxFileApplications(path, signal, run, internals.env ?? process.env)
-  let stdout: string
   if (target.platform === 'darwin') {
-    stdout = (await run('osascript', ['-l', 'JavaScript', '-e', MAC_APPLICATIONS, target.path, icons ? 'icons' : 'handlers'], signal)).stdout
-  } else if (target.platform === 'win32') {
-    stdout = await windowsFileApplications(target.path, null, signal, run)
-  } else return []
+    const { stdout } = await run('osascript', ['-l', 'JavaScript', '-e', MAC_APPLICATIONS, target.path, icons ? 'icons' : 'handlers'], signal)
+    return dedupeMacApplications(JSON.parse(stdout))
+  }
+  if (target.platform !== 'win32') return []
+  const stdout = await windowsFileApplications(target.path, null, signal, run)
   return parseNativeFileApplications(JSON.parse(stdout))
+}
+
+/**
+ * Collapse duplicate registrations of the same application. Self-updating apps
+ * leave extra copies on disk (an update staged under Application Support, an
+ * embedded helper inside each copy) and LaunchServices registers every one, so
+ * the raw handler list repeats the app. Finder shows one entry per app and
+ * splits only deliberate side-by-side installs, which carry distinct display
+ * names; matching that, copies sharing a bundle identifier and display name
+ * collapse to the system default, else the highest version, at the group's
+ * first position.
+ * @param value - decoded application list from the macOS query.
+ * @returns validated application metadata with one entry per application.
+ */
+function dedupeMacApplications(value: unknown): readonly NativeFileApplication[] {
+  if (!Array.isArray(value)) throw new Error('Invalid native application list')
+  const entries: readonly unknown[] = value
+  interface Slot { winner: unknown; version: string | null; defaulted: boolean }
+  const slots: Slot[] = []
+  const groups = new Map<string, Slot>()
+  for (const entry of entries) {
+    const bundle = stringField(entry, 'bundle')
+    const version = stringField(entry, 'version')
+    const defaulted = fieldOf(entry, 'default') === true
+    if (bundle === null) {
+      slots.push({ winner: entry, version, defaulted })
+      continue
+    }
+    const key = `${bundle}\u0000${stringField(entry, 'name') ?? ''}`
+    const held = groups.get(key)
+    if (held === undefined) {
+      const slot: Slot = { winner: entry, version, defaulted }
+      groups.set(key, slot)
+      slots.push(slot)
+      continue
+    }
+    if (held.defaulted) continue
+    if (defaulted || compareVersions(version, held.version) > 0) {
+      held.winner = entry
+      held.version = version
+      held.defaulted = defaulted
+    }
+  }
+  return parseNativeFileApplications(slots.map(slot => slot.winner))
+}
+
+/** Read one field of a decoded native entry without assuming the entry's structure. */
+function fieldOf(entry: unknown, key: string): unknown {
+  return typeof entry === 'object' && entry !== null ? Reflect.get(entry, key) : undefined
+}
+
+/** Read one non-empty string field of a decoded native entry, or null when absent or not a string. */
+function stringField(entry: unknown, key: string): string | null {
+  const field = fieldOf(entry, key)
+  return typeof field === 'string' && field.length > 0 ? field : null
+}
+
+/** Order two dotted version strings numerically; a missing version sorts lowest. */
+function compareVersions(left: string | null, right: string | null): number {
+  if (left === null || right === null) return left === right ? 0 : left === null ? -1 : 1
+  const a = left.split('.')
+  const b = right.split('.')
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const difference = (Number(a[i]) || 0) - (Number(b[i]) || 0)
+    if (difference !== 0) return difference
+  }
+  return 0
 }
 
 /**
