@@ -35,7 +35,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { openSettingsFromAccountMenu, newEnglishPage, saveFailureShot } from './support.ts'
+import { openSettingsFromAccountMenu, expandTurnProcesses, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/clickable-links-gallery', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('./expected/clickable-links-gallery/ui.expected.md', import.meta.url))
@@ -373,11 +373,9 @@ describe('web e2e: clickable links gallery', () => {
     // no openable path even though its create still joins the produced chips.
     expect(await page.locator('button[class*="fileLink"]').count()).toBe(7)
 
-    // Expanded cards. The turn-process group collapses a multi-call turn, so
-    // it opens first. Rows expand via a right-edge click: the row center can
-    // land on the nested fileLink button, which would hand the path to the
-    // Host's opener.
-    await page.getByRole('button', { name: `${String(CALLS.length)} tool calls` }).click()
+    // A row-center click can hit the nested fileLink button and invoke the
+    // Host opener; right-edge clicks expand the card itself.
+    await expandTurnProcesses(page)
     for (const row of [
       /^Search clickable link styles/,
       /^Fetch /,
