@@ -12,6 +12,8 @@ A Chat Builder aggregates one target's Nodes and indexes. Hardcoding a Chat proc
 
 Process groups are orthogonal to Steps: one Assistant Node can contribute reasoning inside a group and a reply outside it; tools after that reply enter a later group. Step-number ranges cannot describe membership. Existing event Definitions interpret one event at a time, whereas grouping needs the Nodes those Definitions have already interpreted.
 
+The reverted PR #4565 showed why broad benchmark budgets are insufficient: its recorded comparison reported pagination +27%, DOM nodes +23%, heap +14%, and Trajectory switching +10%, all within those budgets, while the streaming-to-group update path was not covered. Those historical measurements do not measure this implementation. Component updates, browser layout, and retained memory need separate evidence.
+
 ## Decision
 
 The grouping foundation provides a separate, Node-input `ConversationGroupDefinition`, its registry and Session-local context, generic Builder input/publication, keyed Group storage, and the two React branches. Chat owns its registered segmentation and presentation in the [business-rule reference](../../../../packages/client/ui-chat/src/client/conversation-nodes/README.md). The [subsystem reference](../../../../docs/subsystems/conversation.md#group-definitions) and [source types](../../../../packages/client/ui-conversation/src/client/contract/groups.ts) own the current API details.
@@ -22,20 +24,19 @@ The grouping foundation provides a separate, Node-input `ConversationGroupDefini
 |---|---|
 | Business grouping belongs to a registered Definition | Membership, segmentation, replies, steering, retries, summaries, and cache invalidation stay together. |
 | Builder and assembler do generic work | Supply inputs, dispatch Definitions, validate references, reuse identities, and publish; never construct a concrete grouping class. |
-| PR #4565 defines product behavior | Preserve its behavior without copying its invasive implementation. |
+| PR #4565 supplies the product reference | The Chat business-rule reference owns the current behavior and its agreed adjustments. |
 | React has two root kinds | The ordered root contains NodeReference and GroupReference, not another layout object model. |
 | All modes share grouping | Mode is absent from Definition input, keys, and parent selection. |
 | No buildLayout | ConversationViewDefinition keeps its existing responsibilities. |
-| Foundation precedes business | No production Chat grouping, summaries, notifications, or footer changes in the foundation PR. |
+| Business remains target-owned | Chat owns process grouping, summaries, notifications, and footer behavior; generic assembly does not interpret them. |
 
 ### Related decisions
 
 | Record | Relationship |
 |---|---|
 | [Business Node assembly](2026-08-09-client-conversation-node-assembly.md) | Retains event matching, Contexts, Locations, one business Node per Context, and target Builders; grouping adds another input category. |
-| [Presentation policy and grouping](../../proposed/architecture/2026-09-20-chat-presentation-policy-and-step-groups.md) | Retains Definition ownership, local subscriptions, and mode independence; replaces event folding and Step-range membership as the grouping mechanism. |
 
-These records retain independent rationale and remain active. Cross-View navigation and `toolCallFocus` are outside this change; no View handles, Label Slots, or resource-navigation architecture is introduced.
+Grouping preserves the independent Node-assembly decisions. Cross-View navigation and `toolCallFocus` remain separate responsibilities; Group references carry no View handles or resource-navigation policy.
 
 ## Definition input, state, and registration
 
@@ -115,7 +116,9 @@ The root selects `views.grouped('chat')?.entries` through the existing useConver
 
 React keys derive from reference kind, NodeKey/groupPart or GroupKey, using unambiguous tuples. No separate RenderKey type or renderer dispatch field is needed. Compact, Detailed, and Expanded keep the same group container and member parents; presentation changes do not rerun the Group Definition or select a different root branch.
 
-The stable Group parent is a `div` with `display: contents`, without its own layout box. CSS inheritance remains available; business styles adapt child/sibling selectors and own measurable body containers. Neither CSS variables nor geometry enter the Definition. Reading-position capture measures member Nodes and retains part-specific anchors; existing Turn navigation resolves the original NodeKey to its first visible part.
+The stable Group parent is a measurable `div`; its body owns capped inner scrolling and its content box reports growth. CSS inheritance remains available, and business styles adapt child/sibling selectors. Neither CSS variables nor geometry enter the Definition. Reading-position capture measures member Nodes and retains part-specific anchors; existing Turn navigation resolves the original NodeKey to its first visible part.
+
+The presentation channel maps each stored mode to a stable policy object. Seats and renderers select the fields they consume instead of receiving a mode prop through every renderer. Mode changes do not register Definitions or replay Contexts. Whole-Turn eligibility uses that Turn's loaded lifecycle facts rather than Session-wide pagination completion; the business-rule reference defines partial-history folding. Local group disclosure remains component state, while explicit whole-Turn closing resets participating disclosures through the injected Hook without replacing keys.
 
 ## Alternatives considered
 
@@ -137,12 +140,29 @@ The stable Group parent is a `div` with `display: contents`, without its own lay
 
 **Remove the group wrapper in Expanded.** Rejected: changing the parent remounts members even when their keys survive.
 
+**Attach a header to the first member or to a per-Step Context.** A first-member header couples group UI to an arbitrary business row. Per-Step identity cannot distinguish multiple groups in one Step; sharing aggregate Turn data also refreshes unrelated headers or leaves later Step reads stale.
+
+**Emit multiple Nodes from one event Context or derive child Contexts.** Most event Contexts own one Node; arrays add indirection without solving cross-Node grouping. Parent-derived Contexts require forwarding, replay, and removal lifecycles. A separate framework decision is warranted only if derived entities need those lifecycles independently of grouping.
+
+**Keep all Markdown mounted or reset renderers by remounting.** Retaining lightweight seats is not a reason to retain every full Markdown body. Full bodies remain disclosure-owned, and explicit resets avoid destroying unrelated renderer state. Importing all of #4565 at once would also mix independent visual changes with grouping costs and obscure which behavior caused a regression.
+
 ## Verification
 
 - [Group store tests](../../../../packages/client/ui-conversation/tests/conversation-group-store.client.spec.ts) cover atomic reference validation, root/member identity reuse, local publication, and removal without deleting source Nodes.
 - [Grouping dispatch tests](../../../../packages/client/ui-conversation/tests/conversation-groups.client.spec.ts) cover first activation, lifecycle-only input, registry replacement, View removal/recovery, and complete replacement output. [Assembler tests](../../../../packages/client/ui-conversation/tests/conversation-assembler.client.spec.ts) cover changed-Turn reporting and Location data sources.
 - [Node source tests](../../../../packages/client/ui-chat/tests/chat-node-source.client.spec.ts) cover projected grouping inputs, indexed readers, and empty change batches.
 - [Chat rendering tests](../../../../packages/client/ui-chat/tests/chat-view.client.spec.tsx) retain component state across modes, rebind replacement Node stores, pass independent parts, and omit unreferenced Nodes. [Viewport tests](../../../../packages/client/ui-chat/tests/chat-viewport.client.spec.ts) cover grouped reading anchors, history prepend, and part-aware Turn navigation.
+
+Business verification has separate owners; a passing unit suite does not complete browser or performance acceptance.
+
+| Evidence | Required observation |
+|---|---|
+| Keyed notifications and React updates | Content growth affects the owning Node and affected Group; unchanged historical rows and unrelated Turns receive no extra notifications. Mode changes preserve keys and member parents. |
+| Recorded Web replay | Current accessible titles, group disclosure, hidden ordinary Context, trigger notices, and footer placement match the committed expected output. |
+| Real-model GUI recording | The PR demonstrates the changed interaction through its real server and model flow. |
+| Long-session performance | Initial opening, mode changes, pagination across steering, streaming reasoning/tool updates, layout, and heap are measured separately. |
+
+The complete grouped-product Web snapshot refresh, real-model GUI recording, and repeatable long-session performance comparison remain outstanding. Local traces and focused regressions do not close those gaps.
 
 ## Consequences
 
@@ -151,4 +171,5 @@ The stable Group parent is a `div` with `display: contents`, without its own lay
 - Node order and visibility have one owner: the Builder. Grouping must not independently sort raw events or infer membership again in infrastructure.
 - Stable mounting does not eliminate layout, paint, or retained-memory costs. No measured latency or optimal-performance claim is made.
 - Real group splits, merges, first-member changes, and pagination repairs can change identity. The mode-switch guarantee does not prohibit those legitimate changes.
-- Revealing hidden parts, selection/copy, interruption notices, group disclosure, and outer Turn interaction require business adaptation. Foundation tests exercise mixed references without enabling production groups.
+- Revealing hidden parts, selection/copy, interruption notices, group disclosure, and outer Turn interaction belong to Chat's business adaptation; generic reference tests alone do not establish those behaviors.
+- Turn status/duration replaces the old tool/message-count title, so status, accessible names, and empty-process Turns require explicit presentation coverage. Hiding ordinary Context retains non-human waking notices and original Session/Trajectory inspection; footer placement depends on the real Turn end rather than group membership.
