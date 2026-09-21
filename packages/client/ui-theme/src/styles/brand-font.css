@@ -1,8 +1,16 @@
-/* Montserrat Regular; SIL Open Font License in Montserrat-OFL.txt. */
+/* Montserrat Light and Regular; SIL Open Font License in Montserrat-OFL.txt. */
 @font-face {
   font-family: 'Montserrat';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
   src: url(./montserrat-regular.ttf) format('truetype');
+}
+
+@font-face {
+  font-family: 'Montserrat';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url(./montserrat-light.ttf) format('truetype');
 }

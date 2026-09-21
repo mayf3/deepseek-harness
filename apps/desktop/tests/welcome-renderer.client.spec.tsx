@@ -177,6 +177,7 @@ it.each(['zh-CN', 'en'])('renders %s browser fallback and copies only the active
   fireEvent.click(view.button('#auth-copy'))
   await vi.waitFor(() => { expect(view.button('#auth-copy').textContent).toBe(view.api.messages.welcomeAuthCopied) })
   expect(view.api.copySignInLink).toHaveBeenCalledWith('waiting')
+  await vi.waitFor(() => { expect(view.button('#auth-copy').disabled).toBe(false) }, { timeout: 3000 })
   view.api.copySignInLink.mockRejectedValueOnce(new Error('clipboard unavailable'))
   fireEvent.click(view.button('#auth-copy'))
   await vi.waitFor(() => { expect(view.button('#auth-copy').textContent).toBe(view.api.messages.welcomeAuthCopyFailed) })
@@ -227,4 +228,35 @@ it('keeps the key draft while account notifications arrive and releases the subs
   expect(view.input.value).toBe('sk-draft')
   view.unmount()
   expect(view.stopAccount).toHaveBeenCalledOnce()
+})
+
+it.each(['copied', 'failed'] as const)('restores the copy action after %s feedback and cleans up on unmount', async (result) => {
+  vi.useFakeTimers()
+  try {
+    const view = mount('en')
+    if (result === 'failed') view.api.copySignInLink.mockRejectedValue(new Error('clipboard unavailable'))
+    const waiting: AccountView = { status: 'signed-out', links: { usageUrl: '', topUpUrl: '' },
+      attempt: { id: 'waiting' as NonNullable<AccountView['attempt']>['id'], phase: 'waiting-browser' } }
+    act(() => { view.api.onAccountState.mock.calls[0]![0](waiting) })
+    const feedback = result === 'copied' ? view.api.messages.welcomeAuthCopied : view.api.messages.welcomeAuthCopyFailed
+    const copy = async () => { await act(async () => { fireEvent.click(view.button('#auth-copy')) }) }
+    await copy()
+    expect(view.button('#auth-copy').textContent).toBe(feedback)
+    expect(view.button('#auth-copy').disabled).toBe(result === 'copied')
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
+    await copy()
+    expect(view.api.copySignInLink).toHaveBeenCalledTimes(result === 'copied' ? 1 : 2)
+    await act(async () => { await vi.advanceTimersByTimeAsync(result === 'copied' ? 499 : 1999) })
+    expect(view.button('#auth-copy').textContent).toBe(feedback)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(view.button('#auth-copy').textContent).toBe(view.api.messages.welcomeAuthCopyLink)
+    expect(view.button('#auth-copy').disabled).toBe(false)
+    await copy()
+    expect(view.api.copySignInLink).toHaveBeenCalledTimes(result === 'copied' ? 2 : 3)
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    cleanup()
+    vi.useRealTimers()
+  }
 })

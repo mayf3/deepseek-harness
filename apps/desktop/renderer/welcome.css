@@ -63,7 +63,8 @@ body {
   padding: 6px 16px;
   background: var(--welcome-tint);
   color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-font-family);
+  font-family: var(--dsw-font-family-brand);
+  font-weight: 300;
   user-select: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -101,10 +102,10 @@ body {
 
 .tagline {
   margin: 0;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font-size: 24px;
   font-weight: 300;
-  line-height: 44px;
+  line-height: 40px;
   text-align: center;
   white-space: nowrap;
 }
@@ -115,17 +116,16 @@ body {
   font: inherit;
 }
 
-.tagline p {
-  margin-top: 8px;
-}
-
 .tagline em {
   color: var(--dsw-alias-label-primary);
   font-family: var(--dsw-font-family-brand);
   font-size: 26px;
   font-style: normal;
-  font-weight: 400;
-  letter-spacing: 0.02em;
+  font-weight: 300;
+}
+
+:lang(en) .tagline em {
+  font-size: inherit;
 }
 
 .actions {
@@ -148,7 +148,7 @@ body {
   padding: 8px 16px;
   border: 1px solid transparent;
   border-radius: 10px;
-  font-family: inherit;
+  font-family: var(--dsw-font-family);
   font-size: 14px;
   font-weight: 500;
   line-height: 22px;
@@ -200,6 +200,8 @@ body {
   corner-shape: round;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-family-brand);
+  font-weight: 300;
   font-size: 14px;
   line-height: 20px;
 }
@@ -243,16 +245,16 @@ body {
 .key-heading h1 {
   margin: 0;
   font-size: 20px;
-  font-weight: 500;
+  font-weight: 300;
   line-height: 32px;
   letter-spacing: 0.01em;
 }
 
 .key-heading p {
   margin: 0;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font-size: 16px;
-  font-weight: 400;
+  font-weight: 300;
   line-height: 22px;
   letter-spacing: 0.02em;
 }
@@ -274,6 +276,7 @@ body {
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font-family: inherit;
+  font-weight: inherit;
   font-size: 14px;
   line-height: 24px;
   user-select: text;
@@ -322,8 +325,9 @@ body {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font-family: inherit;
+  font-weight: inherit;
   font-size: 14px;
   line-height: 20px;
   cursor: pointer;
@@ -332,3 +336,5 @@ body {
 }
 #auth-loading:disabled { opacity: 1; }
 .actions .welcome-loading { color: inherit; }
+
+.auth-waiting .copy-link:disabled { cursor: default; }

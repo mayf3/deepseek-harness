@@ -20,7 +20,8 @@ export function Welcome({ api }: { api: WelcomeApi }) {
   const attemptRef = useRef<AccountView['attempt']>(null)
   const [starting, setStarting] = useState(false)
   const [cancelling, setCancelling] = useState(false)
-  const [copyState, setCopyState] = useState<'idle' | 'busy' | 'copied' | 'failed'>('idle')
+  const [copyFeedback, setCopyFeedback] = useState<{ status: 'idle' | 'busy' | 'copied' | 'failed' }>({ status: 'idle' })
+  const copyState = copyFeedback.status
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -40,7 +41,7 @@ export function Welcome({ api }: { api: WelcomeApi }) {
     attemptRef.current = state.attempt
     setAttempt(state.attempt)
     setStarting(false)
-    setCopyState('idle')
+    setCopyFeedback({ status: 'idle' })
     navigate(state.attempt?.phase === 'cancelled' ? 'entry' : 'account')
   }
 
@@ -62,6 +63,12 @@ export function Welcome({ api }: { api: WelcomeApi }) {
       keyButton.current?.focus()
     }
   }, [page])
+
+  useEffect(() => {
+    if (copyState !== 'copied' && copyState !== 'failed') return
+    const timer = setTimeout(() => { setCopyFeedback({ status: 'idle' }) }, 2000)
+    return () => { clearTimeout(timer) }
+  }, [copyFeedback])
 
   async function saveKey(event: FormEvent) {
     event.preventDefault()
@@ -130,13 +137,13 @@ export function Welcome({ api }: { api: WelcomeApi }) {
   }
   async function copyLink() {
     const current = attemptRef.current
-    if (current?.phase !== 'waiting-browser' || copyState === 'busy') return
-    setCopyState('busy')
+    if (current?.phase !== 'waiting-browser' || (copyState === 'busy' || copyState === 'copied')) return
+    setCopyFeedback({ status: 'busy' })
     try {
       await api.copySignInLink(current.id)
-      if (mounted.current && attemptRef.current === current) setCopyState('copied')
+      if (mounted.current && attemptRef.current === current) setCopyFeedback({ status: 'copied' })
     } catch {
-      if (mounted.current && attemptRef.current === current) setCopyState('failed')
+      if (mounted.current && attemptRef.current === current) setCopyFeedback({ status: 'failed' })
     }
   }
 
@@ -170,7 +177,7 @@ export function Welcome({ api }: { api: WelcomeApi }) {
         hidden={page !== 'account'} aria-live="polite">
         <h1 id="auth-status">{title}</h1>
         <p id="auth-description" hidden={!waiting && phase !== 'expired'}>{waiting ? m.welcomeAuthWaitingDescription : m.welcomeAuthExpiredDescription}</p>
-        <button id="auth-copy" className="copy-link" type="button" hidden={!waiting} disabled={!waiting || copyState === 'busy'} onClick={() => { void copyLink() }}>
+        <button id="auth-copy" className="copy-link" type="button" hidden={!waiting} disabled={!waiting || (copyState === 'busy' || copyState === 'copied')} onClick={() => { void copyLink() }}>
           {copyState === 'copied' ? m.welcomeAuthCopied : copyState === 'failed' ? m.welcomeAuthCopyFailed : m.welcomeAuthCopyLink}
         </button>
       </section>
