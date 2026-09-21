@@ -69,6 +69,8 @@ class StubJobRegistry extends JobRegistry {
     return Promise.resolve(this.view(id, caller))
   }
 
+  remove(_id: JobId, _caller?: SessionId): void {}
+
   attachController(_name: string): () => void {
     return () => {}
   }

@@ -34,9 +34,12 @@ describe('Excel conversion', () => {
     expect(secondCell(0, 2)).toMatchObject({ v: '富文本 示例', ct: { t: 'inlineStr' } })
     expect(secondCell(0, 2).ct?.s).toBeInstanceOf(Array)
     expect(secondCell(0, 3)).toMatchObject({ v: 'Link text' })
+    expect(secondCell(1, 3)).toMatchObject({ v: 'Rich link', ct: { t: 'inlineStr' } })
     expect(secondCell(2, 0)).toMatchObject({ f: '=SUM(1,2)', v: 3 })
     expect(secondCell(3, 0)).toMatchObject({ v: true })
     expect(secondCell(4, 0)).toMatchObject({ v: '#DIV/0!' })
+    expect(secondCell(0, 5)).toMatchObject({ f: '=1-1', v: 0, m: '0' })
+    expect(secondCell(1, 5)).toMatchObject({ f: '=1=2', v: false, m: 'false' })
     expect(second.config).toMatchObject({ rowhidden: { 6: 0 }, colhidden: { 4: 0 }, rowlen: { 6: 40 * 96 / 72 } })
     expect(sheets[2]).toMatchObject({ hide: 1, status: 0 })
     expect(missingResults).toBe(1)
@@ -57,9 +60,16 @@ describe('Excel conversion', () => {
     await expect(convertExcel(new Uint8Array([1, 2, 3]), 'xlsx', limits)).rejects.toMatchObject({ code: 'invalid' })
     const input = await excelFixture()
     await expect(convertExcel(input, 'xlsx', { ...limits, maxBytes: input.byteLength - 1 })).rejects.toMatchObject({ code: 'tooLarge' })
+    const framed = new Uint8Array(input.byteLength + 2)
+    framed.set(input, 1)
+    await expect(convertExcel(framed.subarray(1, -1), 'xlsx', limits)).resolves.toMatchObject({ missingResults: 1 })
     const workbook = new ExcelJS.Workbook()
     workbook.addWorksheet('Sparse').getCell('Z1000').value = 1
     await expect(convertExcel(new Uint8Array(await workbook.xlsx.writeBuffer()), 'xlsx', { ...limits, maxCells: 25_000 })).rejects.toMatchObject({ code: 'tooLarge' })
+    const styled = new ExcelJS.Workbook()
+    styled.addWorksheet('Styled').getCell('A1').value = 1
+    styled.getWorksheet('Styled')!.getCell('XFD1000').font = { bold: true }
+    await expect(convertExcel(new Uint8Array(await styled.xlsx.writeBuffer()), 'xlsx', limits)).rejects.toMatchObject({ code: 'tooLarge' })
   })
 
   it('opens an empty worksheet and rejects workbooks with no visible sheet', async () => {
@@ -69,6 +79,18 @@ describe('Excel conversion', () => {
     expect(result.sheets[0]).toMatchObject({ name: 'Empty', row: 1, column: 1, status: 1 })
     workbook.getWorksheet('Empty')!.state = 'veryHidden'
     await expect(convertExcel(new Uint8Array(await workbook.xlsx.writeBuffer()), 'xlsx', limits)).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  it('ignores row and column layout outside emitted cell bounds', async () => {
+    const workbook = new ExcelJS.Workbook()
+    const sheet = workbook.addWorksheet('Layout')
+    for (let row = 1; row <= 30; row += 1) sheet.getCell(row, 1).value = row
+    sheet.getColumn(16_384).width = 20
+    sheet.getRow(1000).height = 40
+    const result = await convertExcel(new Uint8Array(await workbook.xlsx.writeBuffer()), 'xlsx', limits)
+    expect(result.sheets[0]).toMatchObject({ row: 30, column: 1 })
+    expect(result.sheets[0]!.config!.columnlen).not.toHaveProperty('16383')
+    expect(result.sheets[0]!.config!.rowlen).not.toHaveProperty('999')
   })
 
   it.each([false, true])('retains dates for the 1904 epoch flag %s', async (date1904) => {
@@ -103,6 +125,8 @@ describe('Excel conversion', () => {
     sheet.getCell('E1').font = { color: { argb: 'FFFF0000', tint: 0 } as Partial<ExcelJS.Color> }
     sheet.getCell('F1').value = 42
     sheet.getCell('F1').alignment = { vertical: 'middle' }
+    sheet.getCell('G1').value = 'No underline'
+    sheet.getCell('G1').font = { underline: 'none' }
     const result = await convertExcel(new Uint8Array(await workbook.xlsx.writeBuffer()), 'xlsx', limits)
     expect(result.sheets[0]).toMatchObject({ defaultColWidth: 89, config: { columnlen: { 0: 6 } } })
     const cells = result.sheets[0]!.celldata!
@@ -112,6 +136,7 @@ describe('Excel conversion', () => {
     expect(cells[3]!.v).not.toHaveProperty('fc')
     expect(cells[4]!.v).toMatchObject({ fc: '#FF0000' })
     expect(cells[5]!.v).toMatchObject({ v: 42, ht: 2, vt: 0, ct: { t: 'n' } })
+    expect(cells[6]!.v).toMatchObject({ v: 'No underline', un: 0 })
   })
 
   it.each([{ ySplit: 2 }, { xSplit: 1 }, {}])('maps one-axis or empty freeze settings %j', async (freeze) => {
