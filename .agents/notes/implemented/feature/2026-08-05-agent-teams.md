@@ -54,6 +54,10 @@ All members use the same cwd and observe writes immediately. The policy tells me
 
 Worktree isolation is not a harness runtime behavior. A deployment or prompt may arrange separate worktrees, but the Team domain does not infer branches, merge changes, or silently change cwd. This preserves the existing same-world subagent and sandbox contracts.
 
+## Web projection
+
+The Web panel reads the Lead Session's `agentTeam` wire projection instead of polling a Remote read, because the projection registry already broadcasts one Host-wide frame per changed client view to every connected browser, and the subagent catalog panel proves that path needs no refresh control. The wire view carries durable facts only: roster rows with their durable phase, non-deleted task views with the same owner-name, readiness, and write-overlap derivation the task board returns to agents, and the projection `failure` beside the last valid state so a rejected persisted record is visible instead of appearing as a stale but healthy board. Live turn activity and the model stay out of the view because they are process-local; the browser overlays Session status and the member Session's `modelSelection` projection, and shows no model before a durable selection or request exists. Publication requires the projection `apply` to return a new state object per applied Team event and to replace only the touched collection, so mailbox-only events keep the previous view reference and publish nothing. The `agentTeams/view` Remote method remains for callers that need live availability and the configured model.
+
 ## Alternatives considered
 
 **Extend direct-child subagent tools with peer ids.** Rejected because parent/child authority and Team peer membership are different domains. Adding peer access to the continuation seam would weaken its exact-parent authorization and still leave roster and tasks without a persistence owner.

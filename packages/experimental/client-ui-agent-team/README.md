@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package adds an Agent Teams action to the Web conversation header, where a user can inspect the current roster, inspect the shared task board, and navigate into a teammate's conversation. It reads authoritative Team state through the generated `ctx.remote.agentTeams` contribution and keeps ordinary child-history navigation on the stable addressed-subagent path. Choose it through the published experimental Agent Teams bundle. The browser projection does not extend the stable API Proxy, store Team state, or register model-facing input.
+This package adds an Agent Teams action to the Web conversation header, where a user can inspect the current roster, inspect the shared task board, and navigate into a teammate's conversation. It reads the Lead Session's `agentTeam` projection from the shared Session store, where Host projection frames keep it current without a refresh control, and keeps ordinary child-history navigation on the stable addressed-subagent path. Choose it through the published experimental Agent Teams bundle. The browser projection does not extend the stable API Proxy, store Team state, or register model-facing input.
 
 ## Table of Contents
 
@@ -29,13 +29,13 @@ Enable this package through [`@deepseek-ai/dsh-experimental-agent-team-profile`]
 
 ### Inspect and navigate the roster
 
-Opening the panel calls `agentTeams/view`. Roster rows show durable names, turn availability, model, and diagnostics. Provisioning and running members use the shared ongoing loader, inactive members use idle, and failed members use error. Selecting a healthy teammate opens the ordinary `{ parentSessionId, childSessionId, mode: 'continuable' }` address from its Lead and roster identity without refreshing or checking the parent catalog. The Host validates the parent, child, and mode when history opens. History and later human prompts continue through the stable addressed-subagent conversation path; this package adds no Team-specific address field.
+The trigger shows the teammate count, and the panel shows the roster and task board of the Lead Session's `agentTeam` projection, so a task created by an agent or a teammate reaching `active` appears while the panel is open. Opening the panel requests the Lead's projection baseline when the shared store has none; a failed read shows the failure with a retry control, and a reconnect reloads it. Roster rows show durable names and a status: `failed` and `provisioning` come from the durable member phase, and `running` or `inactive` comes from the member Session's live status. A model appears when the member Session's `modelSelection` projection records a durable selection or request. Provisioning and running members use the shared ongoing loader, inactive members use idle, and failed members use error. Selecting a healthy teammate opens the ordinary `{ parentSessionId, childSessionId, mode: 'continuable' }` address from its Lead and roster identity without refreshing or checking the parent catalog. The Host validates the parent, child, and mode when history opens. History and later human prompts continue through the stable addressed-subagent conversation path; this package adds no Team-specific address field.
 
 ### Inspect the task board
 
 Ready pending tasks use idle, blocked pending tasks use warning, in-progress tasks use ongoing, and completed tasks use done.
 
-The read-only task board shows task identity, owner, blockers, readiness, advisory write scopes, and overlap warnings. Team agents create and update tasks through their tools; the panel provides no task mutation controls.
+The read-only task board shows task identity, owner, blockers, readiness, advisory write scopes, and overlap warnings. Team agents create and update tasks through their tools; the panel provides no task mutation controls. When the projection reports a rejected persisted Team record, the panel shows that failure above the last valid roster and tasks.
 
 -----
 
@@ -45,14 +45,14 @@ The read-only task board shows task identity, owner, blockers, readiness, adviso
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Client export mounts the generated `ctx.remote.agentTeams` contribution from [`@deepseek-ai/dsh-experimental-agent-team/remote`](../agent-team/README.md), then registers its locale dictionaries and one conversation-header slot through Cordis effects. Disposing the plugin fiber removes both registrations.
+The Client export registers its locale dictionaries and one conversation-header slot through Cordis effects; it mounts no Remote namespace. Disposing the plugin fiber removes both registrations.
 
-The panel renders outside the conversation container and stays within the viewport. Opening moves focus into the panel; Escape or Close returns focus to its trigger. Clicking outside or moving focus outside the panel and trigger closes it without moving focus back. Opening or refreshing the panel reads the complete Team view. Overlapping refreshes keep the newest response, and responses for a previous conversation are ignored.
+The panel renders outside the conversation container and stays within the viewport. Opening moves focus into the panel; Escape or Close returns focus to its trigger. Clicking outside or moving focus outside the panel and trigger closes it without moving focus back. The component derives every row from the `useSessions`, `useSessionStatus`, and `useSession` seats: the Lead identity comes from the current Session's subagent address, the Team view from `projectionsBySession[lead].values.agentTeam`, member activity from Session status with the list summary as fallback, and the model from `projectionsBySession[member].values.modelSelection.next`. Its only injected callbacks read the Lead's projection baseline and open a teammate. Switching conversations closes the panel and clears a navigation failure.
 
 | File | Role |
 |---|---|
-| [`src/client/mount.ts`](src/client/mount.ts) | Generated Remote, locale, navigation, and slot registrations |
-| [`src/client/TeamAction.tsx`](src/client/TeamAction.tsx) | Roster and task-board interaction state |
+| [`src/client/mount.ts`](src/client/mount.ts) | Locale, projection-read, navigation, and slot registrations |
+| [`src/client/TeamAction.tsx`](src/client/TeamAction.tsx) | Projection-derived roster and task board with panel interaction state |
 | [`src/client/locales.ts`](src/client/locales.ts) | English and Chinese panel copy |
 | [`src/index.ts`](src/index.ts) | Inert Host entry |
 
@@ -64,7 +64,7 @@ The panel renders outside the conversation container and stays within the viewpo
 ## Further Exploration
 
 - [Agent Teams bundle](../agent-team-profile/README.md) — the published opt-in bundle that mounts this Client plugin.
-- [Agent Teams service](../agent-team/README.md) — authoritative roster, task, and Remote behavior.
+- [Agent Teams service](../agent-team/README.md) — authoritative roster, task, projection, and Remote behavior.
 - [Conversation UI](../../client/ui-conversation/README.md) — the stable header slot and addressed-subagent navigation surface.
 - [Experimental packages](../README.md) — incubation status and publication policy.
 
@@ -83,7 +83,8 @@ No direct effect; the Team tools and ordinary conversation submission own any la
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Snapshot refresh** — the panel refreshes on open and explicit refresh; it has no live event subscription or mailbox timeline.
+- **No mailbox timeline** — the projection view carries roster and tasks only; peer messages are not shown.
+- **Model before the first request** — a member without a durable model selection or request shows no model, and a teammate Session that is not loaded on the Host shows no model or activity until its projections arrive.
 - **Ordinary child continuation** — a human message sent after navigation uses the stable addressed-subagent prompt path, not the Team peer mailbox.
 - **No lifecycle or workspace controls** — the panel cannot spawn, rename, delete, or interrupt teammates, and write scopes remain advisory metadata.
 
@@ -97,4 +98,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. RPC is authoritative and the package owns only one disposable slot registration.
+**Runtime invariant:** No companion is published. The Host projection is authoritative and the package owns only one disposable slot registration.

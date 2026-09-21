@@ -6,9 +6,10 @@ export const NS = 'agent-team'
 /** Simplified Chinese dictionary and key source. */
 export const zh = {
   trigger: 'Agent Team',
-  refresh: '刷新 Team',
   close: '关闭',
+  retry: '重试读取 Team',
   loading: '正在加载 Team…',
+  failure: 'Team 持久记录无效：{message}',
   empty: '还没有共享任务',
   roster: '成员',
   tasks: '共享任务',
@@ -35,9 +36,10 @@ export type TeamKey = keyof typeof zh
 /** English dictionary checked against the Chinese key set. */
 export const en = {
   trigger: 'Agent Team',
-  refresh: 'Refresh Team',
   close: 'Close',
+  retry: 'Retry reading Team',
   loading: 'Loading Team…',
+  failure: 'Invalid persisted Team record: {message}',
   empty: 'No shared tasks yet',
   roster: 'Members',
   tasks: 'Shared tasks',

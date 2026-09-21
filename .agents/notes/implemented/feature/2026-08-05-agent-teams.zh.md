@@ -54,6 +54,10 @@ Peer 通讯使用 Lead 日志 mailbox。投递前先追加并 flush `team/messag
 
 Worktree isolation 不是 harness runtime 行为。deployment 或 prompt 可以安排独立 worktree，但 Team 领域不会推断 branch、merge 变更或静默改变 cwd。这样保留既有 same-world subagent 与 sandbox 契约。
 
+## Web projection
+
+Web panel 读取 Lead Session 的 `agentTeam` wire projection 而不是轮询 Remote 读取，因为 projection registry 已经向每个已连接浏览器广播每次客户端视图变化的一帧 Host 级 frame，而 subagent catalog panel 证明这条路径不需要刷新控件。wire 视图只承载持久事实：带持久 phase 的 roster row、与任务板返回给 agent 相同的 owner 名称、就绪状态与写入范围重叠派生的未删除任务视图，以及与最后有效状态并列的 projection `failure`，使被拒绝的持久记录可见而不是表现为陈旧但健康的任务板。实时轮次活动与模型不进入视图，因为它们是进程本地的；浏览器叠加 Session 状态与成员 Session 的 `modelSelection` projection，并在持久选择或请求存在之前不显示模型。发布要求 projection `apply` 对每个已应用的 Team 事件返回新的 state 对象并只替换被触及的集合，因此仅邮箱事件保留上一个视图引用且不发布。`agentTeams/view` Remote method 保留给需要实时可用性与配置模型的调用方。
+
 ## Alternatives considered
 
 **用 peer id 扩展 direct-child subagent tool。** 拒绝，因为 parent／child 权限与 Team peer membership 是不同领域。向 continuation seam 增加 peer access 会削弱 exact-parent authorization，仍无法为 roster 与 task 提供持久 owner。

@@ -102,6 +102,37 @@ export interface TeamView {
   readonly tasks: TeamTaskView[]
 }
 
+/** One durable roster row published through the `agentTeam` Session projection. */
+export interface TeamMemberProjection {
+  readonly id: SessionId
+  readonly name: string
+  readonly role: 'lead' | 'teammate'
+  /** Durable lifecycle; the Lead row is always `active`. Turn activity comes from Session status. */
+  readonly phase: TeamMemberPhase
+  readonly description?: string
+  readonly provider?: string
+  readonly context?: 'fresh' | 'fork'
+  readonly error?: string
+}
+
+/**
+ * Durable Team state published to browser clients through the Lead Session's
+ * `agentTeam` projection. `failure` names the first rejected persisted Team
+ * record; members and tasks then stay at the last valid state.
+ */
+export interface TeamProjection {
+  readonly members: TeamMemberProjection[]
+  readonly tasks: TeamTaskView[]
+  readonly failure?: string
+}
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionMap {
+    /** Durable roster and non-deleted task board of the Team rooted at the projected Session. */
+    agentTeam: TeamProjection
+  }
+}
+
 /** One peer message retained until its target Session records it. */
 export interface TeamMessageSnapshot {
   readonly id: TeamMessageId

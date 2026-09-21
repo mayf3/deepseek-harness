@@ -118,7 +118,8 @@ Lead 可以停止 teammate 的当前轮次，而不会删除其排队的消息�
 | [`src/mailbox.ts`](src/mailbox.ts) | 持久队列、目标本地投递、确认与恢复 |
 | [`src/task-board.ts`](src/task-board.ts) | 任务 CAS 命令、DAG 校验与派生视图 |
 | [`src/journal.ts`](src/journal.ts) | 串行化的 Lead 日志事务与提交通知 |
-| [`src/projection.ts`](src/projection.ts) | 解码并校验 Team 事件的严格回放投影 |
+| [`src/projection.ts`](src/projection.ts) | 解码并校验 Team 事件、发布 `agentTeam` 客户端视图的严格回放投影 |
+| [`src/task-view.ts`](src/task-view.ts) | 任务板与客户端视图共用的纯任务派生：就绪状态、owner 名称与写入范围重叠 |
 | [`src/activity.ts`](src/activity.ts) | 一次性变更等待者与 dispose（资源释放）时的等待解除 |
 | [`src/lifecycle.ts`](src/lifecycle.ts) | 共享准入截止与有界结算 |
 | [`src/invariant.ts`](src/invariant.ts) | 在 append 前回放候选事件的不变式伴生插件 |
@@ -171,9 +172,9 @@ dispose 会关闭准入、中止并等待已获准的创建与 mailbox dispatch 
 
 <a id="model-experience"></a>
 
-### 浏览器 Remote
+### 浏览器投影与 Remote
 
-`TeamService` 向浏览器客户端公开只读的 `agentTeams/view` Remote method。任务创建与更新由 Team agent 通过服务和模型工具执行。`./remote` 导出由 Web UI 挂载的 Client contribution，`./client` 导出可供浏览器使用的成员与任务视图。
+`agentTeam` Session 投影发布 Lead Session 的持久客户端视图：带每个成员持久 phase 的 roster、带 owner 名称、就绪状态与写入范围重叠警告的未删除任务板，以及在某条持久 Team 记录被拒绝时的 `failure`，此后 roster 与任务停留在最后有效状态。每个已应用的 Team 事件都会替换投影 state 对象，且只替换它触及的集合，因此投影注册表对每次 roster 或任务变化发布一帧 Host 级 frame，对仅邮箱的变化不发布。实时轮次活动与所选模型不在视图内；Web UI 从 Session 状态和成员 Session 的 `modelSelection` 投影叠加它们。`TeamService` 同时公开只读的 `agentTeams/view` Remote method，它额外提供实时可用性与配置的模型；任务创建与更新由 Team agent 通过服务和模型工具执行。`./remote` 导出生成的 Client contribution，`./client` 导出可供浏览器使用的 roster、任务与投影类型。
 
 ## 模型体验
 

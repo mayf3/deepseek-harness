@@ -118,7 +118,8 @@ The [Agent Teams Agent Note](../../../.agents/notes/implemented/feature/2026-08-
 | [`src/mailbox.ts`](src/mailbox.ts) | Durable queue, target-local dispatch, acknowledgement, and recovery |
 | [`src/task-board.ts`](src/task-board.ts) | Task CAS commands, DAG validation, and derived views |
 | [`src/journal.ts`](src/journal.ts) | Serialized Lead-log transactions and commit notification |
-| [`src/projection.ts`](src/projection.ts) | Strict replay projection that decodes and validates Team events |
+| [`src/projection.ts`](src/projection.ts) | Strict replay projection that decodes and validates Team events and publishes the `agentTeam` client view |
+| [`src/task-view.ts`](src/task-view.ts) | Pure task readiness, owner-name, and write-overlap derivation shared by the task board and the client view |
 | [`src/activity.ts`](src/activity.ts) | One-shot change waiters and disposal release |
 | [`src/lifecycle.ts`](src/lifecycle.ts) | Shared admission cutoff and bounded settlement |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion that replays candidate events before append |
@@ -171,9 +172,9 @@ Read these pages when the package-level contract is not enough. They move from t
 
 <a id="model-experience"></a>
 
-### Browser Remote
+### Browser projection and Remote
 
-`TeamService` exposes the read-only `agentTeams/view` Remote method for browser clients. Task creation and updates belong to Team agents through the service and model tools. The `./remote` export supplies the Client contribution mounted by the Web UI, while `./client` exports browser-safe roster and task views.
+The `agentTeam` Session projection publishes a durable client view of the Lead Session: the roster with each member's durable phase, the non-deleted task board with owner names, readiness, and write-scope overlap warnings, and `failure` when a persisted Team record was rejected, after which the roster and tasks stay at the last valid state. Every applied Team event replaces the projection state object and only the collection it touched, so the projection registry publishes one Host-wide frame per roster or task change and none for mailbox-only changes. Live turn activity and the selected model are not part of the view; the Web UI overlays them from Session status and the member Session's `modelSelection` projection. `TeamService` also exposes the read-only `agentTeams/view` Remote method, which adds live availability and the configured model; task creation and updates belong to Team agents through the service and model tools. The `./remote` export supplies the generated Client contribution, and `./client` exports the browser-safe roster, task, and projection types.
 
 ## Model Experience
 

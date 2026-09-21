@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包向 Web 会话页头添加 Agent Teams action，让用户检查当前 roster、查看共享任务板并导航到 teammate 会话。它通过生成的 `ctx.remote.agentTeams` contribution 读取权威 Team 状态，并让普通 child history 导航继续使用稳定的 addressed-subagent 路径。通过公开发布的实验性 Agent Teams bundle 选择本包。这个浏览器 projection 不扩展稳定 API Proxy、不存储 Team 状态，也不注册面向模型的输入。
+本包向 Web 会话页头添加 Agent Teams action，让用户检查当前 roster、查看共享任务板并导航到 teammate 会话。它从共享 Session store 读取 Lead Session 的 `agentTeam` 投影，Host 投影 frame 使其保持最新而无需刷新控件，并让普通 child history 导航继续使用稳定的 addressed-subagent 路径。通过公开发布的实验性 Agent Teams bundle 选择本包。这个浏览器 projection 不扩展稳定 API Proxy、不存储 Team 状态，也不注册面向模型的输入。
 
 ## 目录
 
@@ -29,13 +29,13 @@ kind: "package-reference"
 
 ### 检查并导航 roster
 
-打开 panel 会调用 `agentTeams/view`。Roster row 展示持久 name、轮次可用状态、model 与 diagnostics。provisioning 和 running 成员使用共享 ongoing loading，inactive 成员使用 idle 灰点，failed 成员使用 error 红点。选择健康 teammate 时，系统直接根据其 Lead 与 roster 身份打开普通的 `{ parentSessionId, childSessionId, mode: 'continuable' }` address，不刷新或检查 parent catalog。Host 在打开历史时校验 parent、child 与 mode。History 与后续人类提示词继续使用稳定 addressed-subagent 会话路径；本包不会添加 Team 专用 address 字段。
+触发按钮显示 teammate 数量，panel 显示 Lead Session `agentTeam` 投影中的 roster 与任务板，因此 agent 创建的任务或进入 `active` 的 teammate 会在 panel 打开期间直接出现。打开 panel 时，若共享 store 尚无 Lead 的投影基线则请求一次；读取失败会显示失败原因与重试控件，重连后会重新加载。Roster row 展示持久 name 与状态：`failed` 与 `provisioning` 来自持久成员 phase，`running` 或 `inactive` 来自成员 Session 的实时状态。当成员 Session 的 `modelSelection` 投影记录了持久选择或请求时显示 model。provisioning 和 running 成员使用共享 ongoing loading，inactive 成员使用 idle 灰点，failed 成员使用 error 红点。选择健康 teammate 时，系统直接根据其 Lead 与 roster 身份打开普通的 `{ parentSessionId, childSessionId, mode: 'continuable' }` address，不刷新或检查 parent catalog。Host 在打开历史时校验 parent、child 与 mode。History 与后续人类提示词继续使用稳定 addressed-subagent 会话路径；本包不会添加 Team 专用 address 字段。
 
 ### 查看任务板
 
 可开始的 pending 任务使用 idle 灰点，被依赖阻塞的 pending 任务使用 warning 橙点，in-progress 任务使用 ongoing loading，completed 任务使用 done 绿点。
 
-只读任务板展示任务标识、负责人、依赖、就绪状态、提示性写入范围与重叠警告。Team agent 通过工具创建和更新任务；面板不提供任务修改控件。
+只读任务板展示任务标识、负责人、依赖、就绪状态、提示性写入范围与重叠警告。Team agent 通过工具创建和更新任务；面板不提供任务修改控件。当投影报告某条持久 Team 记录被拒绝时，面板在最后有效的 roster 与任务上方显示该失败。
 
 -----
 
@@ -45,14 +45,14 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-Client export 挂载来自 [`@deepseek-ai/dsh-experimental-agent-team/remote`](../agent-team/README.zh.md) 的生成的 `ctx.remote.agentTeams` contribution，然后通过 Cordis effect 注册 locale dictionary 与一个 conversation-header slot。Dispose plugin fiber 会移除这两项 registration。
+Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversation-header slot；它不挂载任何 Remote namespace。Dispose plugin fiber 会移除这两项 registration。
 
-面板渲染在会话容器外，并保持在视口范围内。打开时焦点移入面板；按 Escape 或选择关闭按钮时，焦点返回触发按钮。点击外部或将焦点移出面板与触发按钮时，面板关闭，但不会将焦点移回。打开或刷新面板会读取完整 Team view。并行刷新只保留最新响应，属于上一个会话的响应会被忽略。
+面板渲染在会话容器外，并保持在视口范围内。打开时焦点移入面板；按 Escape 或选择关闭按钮时，焦点返回触发按钮。点击外部或将焦点移出面板与触发按钮时，面板关闭，但不会将焦点移回。组件从 `useSessions`、`useSessionStatus` 与 `useSession` 座位派生每一行：Lead 身份来自当前 Session 的 subagent address，Team 视图来自 `projectionsBySession[lead].values.agentTeam`，成员活动来自 Session 状态并以列表摘要为后备，model 来自 `projectionsBySession[member].values.modelSelection.next`。它仅有的注入回调是读取 Lead 的投影基线与打开 teammate。切换会话会关闭面板并清除导航失败。
 
 | 文件 | 职责 |
 |---|---|
-| [`src/client/mount.ts`](src/client/mount.ts) | 生成的 Remote、locale、导航与 slot registration |
-| [`src/client/TeamAction.tsx`](src/client/TeamAction.tsx) | Roster 与任务板交互状态 |
+| [`src/client/mount.ts`](src/client/mount.ts) | locale、投影读取、导航与 slot registration |
+| [`src/client/TeamAction.tsx`](src/client/TeamAction.tsx) | 由投影派生的 roster 与任务板及面板交互状态 |
 | [`src/client/locales.ts`](src/client/locales.ts) | 中英文 panel 文案 |
 | [`src/index.ts`](src/index.ts) | 不执行行为的 Host entry |
 
@@ -64,7 +64,7 @@ Client export 挂载来自 [`@deepseek-ai/dsh-experimental-agent-team/remote`](.
 ## 进一步探索
 
 - [Agent Teams bundle](../agent-team-profile/README.zh.md)——挂载本 Client plugin 的公开 opt-in bundle。
-- [Agent Teams service](../agent-team/README.zh.md)——权威 roster、task 与 Remote 行为。
+- [Agent Teams service](../agent-team/README.zh.md)——权威 roster、task、投影与 Remote 行为。
 - [会话 UI](../../client/ui-conversation/README.zh.md)——稳定 header slot 与 addressed-subagent 导航表层。
 - [实验性包](../README.zh.md)——孵化状态与发布规则。
 
@@ -83,7 +83,8 @@ Client export 挂载来自 [`@deepseek-ai/dsh-experimental-agent-team/remote`](.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Snapshot refresh**——panel 会在打开和显式 refresh 时刷新；它没有实时事件订阅或 mailbox timeline。
+- **没有 mailbox timeline**——投影视图只承载 roster 与任务；不显示 peer 消息。
+- **首次请求前没有 model**——没有持久模型选择或请求的成员不显示 model；未在 Host 加载的 teammate Session 在其投影到达前不显示 model 与活动。
 - **普通 child continuation**——导航后发送的人类消息使用稳定 addressed-subagent 提示词路径，而不是 Team peer mailbox。
 - **没有 lifecycle 或 workspace control**——panel 不能 spawn、rename、delete 或 interrupt teammate，write scope 仍只是提示性 metadata。
 
@@ -97,4 +98,4 @@ Client export 挂载来自 [`@deepseek-ai/dsh-experimental-agent-team/remote`](.
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。RPC 是权威来源，本包只持有一个可释放的 slot 注册。
+**运行时不变式：** 不发布伴生入口。Host 投影是权威来源，本包只持有一个可释放的 slot 注册。
