@@ -115,7 +115,7 @@ function open(): HTMLDialogElement {
 }
 
 function enlarged(dialog: HTMLElement): HTMLImageElement {
-  return required(dialog.querySelector('.dsh-diagram-paper')?.shadowRoot?.querySelector('img'))
+  return required(dialog.querySelector('.dsh-media-paper')?.shadowRoot?.querySelector('img'))
 }
 
 describe('documentation image viewer', () => {
@@ -167,7 +167,7 @@ describe('documentation image viewer', () => {
 
   it.each([
     { locale: 'en-US', title: 'DeepSeek API settings', name: 'View image fullscreen: DeepSeek API settings', trigger: 'image' },
-    { locale: 'zh-CN', title: 'DeepSeek API 配置', name: '全屏查看图片: DeepSeek API 配置', trigger: 'button' },
+    { locale: 'zh-CN', title: 'DeepSeek API 配置', name: '全屏查看图片：DeepSeek API 配置', trigger: 'button' },
   ])('opens the loaded image with accessible controls in $locale', async ({ locale, title, name, trigger }) => {
     const { image, state } = render()
     language = locale
@@ -200,16 +200,18 @@ describe('documentation image viewer', () => {
     render()
     install()
     const dialog = open()
-    const original = getByRole(dialog, 'button', { name: 'Original size (100%)' })
+    const original = getByRole(dialog, 'button', { name: /^Original size \(100%\), currently / })
     expect(original.textContent).toBe('63%')
+    expect(original.getAttribute('aria-label')).toBe('Original size (100%), currently 63%')
     original.click()
     const current = required(controllers[0])
     expect(current.zoom).toHaveBeenCalledWith(1, { animate: false })
     expect(current.pan).toHaveBeenCalledWith(0, 0, { animate: false })
     current.getScale.mockReturnValue(1)
-    required(dialog.querySelector('.dsh-diagram-paper')).dispatchEvent(new Event('panzoomchange'))
+    required(dialog.querySelector('.dsh-media-paper')).dispatchEvent(new Event('panzoomchange'))
     expect(original.textContent).toBe('100%')
-    const controls = ['Zoom out', 'Original size (100%)', 'Zoom in', 'Fit view', 'Viewer help', 'Close']
+    expect(original.getAttribute('aria-label')).toBe('Original size (100%), currently 100%')
+    const controls = ['Zoom out', 'Original size (100%), currently 100%', 'Zoom in', 'Fit view', 'Viewer help', 'Close']
     expect(document.activeElement).toBe(getByRole(dialog, 'button', { name: 'Close' }))
     for (const name of controls) {
       const event = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true })
@@ -248,7 +250,7 @@ describe('documentation image viewer', () => {
     else required(mermaid).refresh()
     expect(getByRole(document.body, 'dialog')).toBe(dialog)
     expect(document.body.style.overflow).toBe('hidden')
-    expect(queryByRole(dialog, 'button', { name: 'Original size (100%)' }) === null).toBe(first === 'image')
+    expect(queryByRole(dialog, 'button', { name: /^Original size \(100%\), currently / }) === null).toBe(first === 'image')
     getByRole(dialog, 'button', { name: 'Close' }).click()
     expect(document.activeElement).toBe(newTrigger)
     expect(document.body.style.overflow).toBe('auto')
@@ -270,6 +272,29 @@ describe('documentation image viewer', () => {
     oldTrigger.click()
     expect(queryByRole(document.body, 'dialog')).toBeNull()
     expect(entry()).not.toBe(oldTrigger)
+    expect(enlarged(open()).src).toBe(replacement)
+  })
+
+  it('closes stale content when currentSrc changes after the srcset mutation', async () => {
+    const { image, state } = render()
+    state.currentSrc = image.src
+    install()
+    const oldTrigger = entry()
+    const dialog = open()
+    const replacement = 'https://docs.example/provider@2x.png'
+    image.srcset = `${replacement} 2x`
+    await new Promise<void>((resolve) => { queueMicrotask(resolve) })
+    expect(getByRole(document.body, 'dialog')).toBe(dialog)
+    expect(enlarged(dialog).src).toBe(state.currentSrc)
+
+    state.currentSrc = replacement
+    image.dispatchEvent(new Event('load'))
+    expect(queryByRole(document.body, 'dialog')).toBeNull()
+    expect(document.body.style.overflow).toBe('auto')
+    expect(required(controllers[0]).destroy).toHaveBeenCalledOnce()
+    expect(entry()).not.toBe(oldTrigger)
+    oldTrigger.click()
+    expect(queryByRole(document.body, 'dialog')).toBeNull()
     expect(enlarged(open()).src).toBe(replacement)
   })
 
@@ -310,7 +335,7 @@ describe('documentation image viewer', () => {
     language = 'zh-CN'
     ready.image.alt = 'API 配置'
     required(viewer).refresh()
-    expect(getByRole(document.body, 'button', { name: '全屏查看图片: API 配置' })).toBe(trigger)
+    expect(getByRole(document.body, 'button', { name: '全屏查看图片：API 配置' })).toBe(trigger)
     required(viewer).dispose()
     pending.state.complete = true
     pending.image.dispatchEvent(new Event('load'))

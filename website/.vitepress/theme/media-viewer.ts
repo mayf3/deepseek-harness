@@ -3,12 +3,12 @@ import Panzoom from '@panzoom/panzoom'
 
 const messages = {
   en: {
-    zoomIn: 'Zoom in', zoomOut: 'Zoom out', fit: 'Fit view', original: 'Original size (100%)',
+    zoomIn: 'Zoom in', zoomOut: 'Zoom out', fit: 'Fit view', original: 'Original size (100%), currently {scale}',
     close: 'Close', helpLabel: 'Viewer help',
     help: 'Scroll or pinch to zoom · Drag or use arrow keys to pan · Esc to close',
   },
   zh: {
-    zoomIn: '放大', zoomOut: '缩小', fit: '适应窗口', original: '原始尺寸（100%）',
+    zoomIn: '放大', zoomOut: '缩小', fit: '适应窗口', original: '原始尺寸（100%），当前{scale}',
     close: '关闭', helpLabel: '查看器帮助',
     help: '滚轮或双指缩放 · 拖动或方向键平移 · Esc 关闭',
   },
@@ -44,7 +44,7 @@ export function viewerButton(doc: Document, label: string, icon: keyof typeof ic
   element.type = 'button'
   labelButton(element, label)
   const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.classList.add('dsh-diagram-icon')
+  svg.classList.add('dsh-media-icon')
   svg.setAttribute('viewBox', '0 0 24 24')
   svg.setAttribute('aria-hidden', 'true')
   svg.setAttribute('focusable', 'false')
@@ -91,44 +91,41 @@ export class MediaViewer {
     const doc = this.doc
     const copy = this.language().startsWith('zh') ? messages.zh : messages.en
     const dialog = doc.createElement('dialog')
-    dialog.className = 'dsh-diagram-viewer'
-    dialog.setAttribute('aria-labelledby', 'dsh-diagram-title')
+    dialog.className = 'dsh-media-viewer'
+    dialog.setAttribute('aria-labelledby', 'dsh-media-title')
     const toolbar = doc.createElement('div')
-    toolbar.className = 'dsh-diagram-toolbar'
+    toolbar.className = 'dsh-media-toolbar'
     const title = doc.createElement('span')
-    title.className = 'dsh-diagram-title'
-    title.id = 'dsh-diagram-title'
+    title.className = 'dsh-media-title'
+    title.id = 'dsh-media-title'
     title.textContent = content.title
     const zoomOut = viewerButton(doc, copy.zoomOut, 'zoomOut')
     const zoomIn = viewerButton(doc, copy.zoomIn, 'zoomIn')
     const original = content.originalSize ? doc.createElement('button') : undefined
-    if (original) {
-      original.type = 'button'
-      labelButton(original, copy.original)
-    }
+    if (original) original.type = 'button'
     const scaleLabel = original ?? doc.createElement('span')
-    scaleLabel.className = 'dsh-diagram-scale'
+    scaleLabel.className = 'dsh-media-scale'
     const fit = viewerButton(doc, copy.fit, 'fit')
-    fit.className = 'dsh-diagram-fit'
+    fit.className = 'dsh-media-fit'
     const close = viewerButton(doc, copy.close, 'close')
-    close.className = 'dsh-diagram-close'
+    close.className = 'dsh-media-close'
     close.autofocus = true
     toolbar.append(zoomOut, scaleLabel, zoomIn, fit)
     const helpToggle = viewerButton(doc, copy.helpLabel, 'help')
-    helpToggle.className = 'dsh-diagram-help-toggle'
+    helpToggle.className = 'dsh-media-help-toggle'
     helpToggle.setAttribute('aria-expanded', 'false')
-    helpToggle.setAttribute('aria-controls', 'dsh-diagram-help-text')
+    helpToggle.setAttribute('aria-controls', 'dsh-media-help-text')
     const help = doc.createElement('p')
-    help.className = 'dsh-diagram-help'
-    help.id = 'dsh-diagram-help-text'
+    help.className = 'dsh-media-help'
+    help.id = 'dsh-media-help-text'
     help.hidden = true
     help.textContent = copy.help
     const viewport = doc.createElement('div')
-    viewport.className = 'dsh-diagram-viewport'
+    viewport.className = 'dsh-media-viewport'
     const paper = doc.createElement('div')
-    paper.className = 'dsh-diagram-paper'
-    // Each Mermaid SVG embeds ID-scoped styles and fragment references. A shadow root
-    // keeps the enlarged copy's IDs and styles separate from the original diagram.
+    paper.className = 'dsh-media-paper'
+    // Shared content lives in a shadow root so Mermaid copies cannot resolve their
+    // embedded styles and fragment IDs against the original diagram.
     const shadow = paper.attachShadow({ mode: 'open' })
     const clone = content.element
     Object.assign(clone.style, {
@@ -178,7 +175,11 @@ export class MediaViewer {
         controller.pan(0, 0, { animate: false })
       }
       const options = { signal: listeners.signal }
-      const updateScale = (): void => { scaleLabel.textContent = `${Math.round(controller.getScale() * 100)}%` }
+      const updateScale = (): void => {
+        const scale = `${Math.round(controller.getScale() * 100)}%`
+        scaleLabel.textContent = scale
+        if (original) labelButton(original, copy.original.replace('{scale}', scale))
+      }
       updateScale()
       paper.addEventListener('panzoomchange', updateScale, options)
       helpToggle.addEventListener('click', () => {

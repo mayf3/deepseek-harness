@@ -2,8 +2,8 @@
 import { labelButton, type MediaViewer, viewerButton } from './media-viewer.ts'
 
 const messages = {
-  en: 'View image fullscreen',
-  zh: '全屏查看图片',
+  en: 'View image fullscreen: {alt}',
+  zh: '全屏查看图片：{alt}',
 }
 
 interface ImageEntry {
@@ -89,7 +89,7 @@ export class ImageViewer {
     }
     const copy = this.language().startsWith('zh') ? messages.zh : messages.en
     for (const image of images) {
-      const label = `${copy}: ${image.alt}`
+      const label = copy.replace('{alt}', () => image.alt)
       const existing = this.#entries.get(image)
       if (existing) {
         if (existing.button.getAttribute('aria-label') !== label) labelButton(existing.button, label)
