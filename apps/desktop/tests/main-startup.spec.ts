@@ -368,6 +368,16 @@ describe('desktop main startup', () => {
     expect((await handler(new Request('dsh-app://unknown/update-dialog.html'))).status).toBe(404)
   })
 
+  it('installs hidden native DevTools shortcuts in the macOS application menu', async () => {
+    vi.stubGlobal('process', { ...process, platform: 'darwin' })
+    await readyForUpdate()
+    expect(applicationMenuItems().slice(-2)).toEqual([
+      { role: 'toggleDevTools', visible: false },
+      { role: 'toggleDevTools', visible: false, accelerator: 'F12' },
+    ])
+    expect(harness.windows[0]!.options).toMatchObject({ webPreferences: { devTools: true } })
+  })
+
   it.each([
     ['darwin', true, 'en-US'],
     ['darwin', false, 'zh-CN'],
@@ -557,7 +567,10 @@ describe('desktop main startup', () => {
     } else if (platform === 'win32') {
       expect(window.options).toMatchObject({ titleBarStyle: 'hidden', titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT } })
       expect(window.options).not.toHaveProperty('vibrancy')
-      expect(harness.menu.setApplicationMenu).toHaveBeenCalledWith(null)
+      expect(harness.menu.mock.calls[0]![0]).toEqual([
+        { role: 'toggleDevTools', visible: false },
+        { role: 'toggleDevTools', visible: false, accelerator: 'F12' },
+      ])
     } else {
       expect(window.options).not.toHaveProperty('titleBarStyle')
       expect(window.options).not.toHaveProperty('vibrancy')
@@ -665,7 +678,7 @@ describe('desktop main startup', () => {
     window.webContents.mainFrame.url = 'dsh-app://unowned/index.html'
     listener(event, 'zh-CN', '#fff', '#000')
     expect(window.setTitleBarOverlay).not.toHaveBeenCalled()
-    expect(harness.menu.setApplicationMenu).toHaveBeenCalledExactlyOnceWith(null)
+    expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
   })
 
   it('maps Windows caption menus to localized native commands and rejects foreign popup requests', async () => {
@@ -719,7 +732,7 @@ describe('desktop main startup', () => {
       ? ['Desktop test', 'fileMenu', 'editMenu', 'windowMenu']
       : ['Application', 'editMenu'])
     const application = template[0]!.submenu as MenuItemConstructorOptions[]
-    expect(application.map(describeItem)).toEqual(platform === 'darwin'
+    expect(application.filter(item => item.visible !== false).map(describeItem)).toEqual(platform === 'darwin'
       ? ['about', 'separator', en.checkUpdatesMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
       : ['about', 'separator', en.checkUpdatesMenu, 'separator', 'quit'])
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
