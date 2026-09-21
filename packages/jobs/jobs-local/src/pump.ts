@@ -47,14 +47,14 @@ export interface PumpSink {
  * @param sources - producer streams, each pumped at its own offset.
  * @param sink - receives each copied chunk and each source's current spill file.
  * @param pollMs - poll interval in milliseconds; a positive finite number.
- * @param until - settles (or rejects, which counts as settlement) when the producer finished.
+ * @param until - settles (or rejects, which counts as settlement) when the producer finished; only its `then` is used.
  * @returns the handle whose `done` resolves after the final drain.
  */
 export function startPump(
   sources: readonly JobOutputSource[],
   sink: PumpSink,
   pollMs: number,
-  until: Promise<unknown>,
+  until: PromiseLike<unknown>,
 ): PumpHandle {
   if (!Number.isFinite(pollMs) || pollMs <= 0) {
     throw new Error(`invalid pump pollMs: expected a positive finite number of milliseconds, got ${JSON.stringify(pollMs)}`)

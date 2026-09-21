@@ -1198,7 +1198,17 @@ class FaceAnalyzer {
     }
 
     const mode = invocation.kind === 'direct' ? invocation.mode : undefined
-    const resultType = this.remoteResultType(method, mode)
+    const { result: resultType, uplink: uplinkType } = this.remoteResultType(method, mode)
+    const uplink: InvocationModel['uplink'] = uplinkType === undefined
+      ? undefined
+      : {
+        boundary: this.remoteBoundary(
+          uplinkType,
+          `${registration.name}#${binding.namespace}/${exportedMethod}:uplink`,
+          false,
+          'undefined',
+        ),
+      }
     return {
       id: `${registration.name}#${binding.namespace}/${exportedMethod}`,
       service: binding.service,
@@ -1209,6 +1219,7 @@ class FaceAnalyzer {
       invocation: receiver,
       ...(scope === undefined ? {} : { scope }),
       parameters,
+      ...(uplink === undefined ? {} : { uplink }),
       ...(cancellation === undefined ? {} : { cancellation }),
       result: this.remoteBoundary(
         resultType,
@@ -1337,12 +1348,11 @@ class FaceAnalyzer {
           }
           const [property] = argument.properties
           if (property === undefined) this.fail(argument, 'Remote() options must contain exactly mode: "stream"')
-          if (!ts.isPropertyAssignment(property)
-            || memberName(property.name) !== 'mode'
-            || stringLiteralValue(property.initializer) !== 'stream') {
-            this.fail(property, 'Remote() options must contain exactly mode: "stream"')
-          }
-          marker = { kind: 'direct', mode: 'stream' }
+          const mode = ts.isPropertyAssignment(property) && memberName(property.name) === 'mode'
+            ? stringLiteralValue(property.initializer)
+            : undefined
+          if (mode !== 'stream') this.fail(property, 'Remote() options must contain exactly mode: "stream"')
+          marker = { kind: 'direct', mode }
         }
       } else if (ts.isCallExpression(expression)
         && this.isTypeMetaSymbol(expression.expression, 'RemoteScope')) {
@@ -1368,27 +1378,43 @@ class FaceAnalyzer {
     return found
   }
 
-  private remoteResultType(method: ts.MethodDeclaration, mode?: 'stream'): ts.TypeNode {
+  /**
+   * The item types a Remote method's authored return type declares. Unary
+   * methods unwrap `Promise<T>`; stream methods unwrap `Iterable<Out>`,
+   * `AsyncIterable<Out>`, or the protocol's `RemoteStream<Out, In>`, whose
+   * second type argument is the uplink item type unless it is `never`.
+   */
+  private remoteResultType(
+    method: ts.MethodDeclaration,
+    mode?: 'stream',
+  ): { readonly result: ts.TypeNode; readonly uplink?: ts.TypeNode } {
     const authored = this.requiredType(method, method.type, 'return')
     if (ts.isTypeReferenceNode(authored)) {
       const symbol = this.checker.getSymbolAtLocation(authored.typeName)
       const resolved = symbol === undefined ? undefined : this.resolveSymbol(symbol)
-      const resultType = authored.typeArguments?.[0]
-      const wrappers = mode === 'stream' ? ['Iterable', 'AsyncIterable'] : ['Promise']
       const declaration = resolved === undefined ? undefined : preferredDeclaration(resolved)
-      if (resolved !== undefined
-        && wrappers.includes(resolved.name)
-        && resultType !== undefined
-        && authored.typeArguments?.length === 1
-        && declaration !== undefined
-        && isStandardLibraryFile(declaration.getSourceFile().fileName)) {
-        return resultType
+      const [result, uplink] = authored.typeArguments ?? []
+      const arity = authored.typeArguments?.length ?? 0
+      if (resolved !== undefined && declaration !== undefined && result !== undefined) {
+        const standard = isStandardLibraryFile(declaration.getSourceFile().fileName)
+        const wrappers = mode === undefined ? ['Promise'] : ['Iterable', 'AsyncIterable']
+        if (standard && wrappers.includes(resolved.name) && arity === 1) return { result }
+        if (mode !== undefined
+          && resolved.name === 'RemoteStream'
+          && this.isTypeMetaSymbol(authored.typeName, 'RemoteStream')
+          && arity <= 2) {
+          return uplink === undefined || this.isNeverType(uplink) ? { result } : { result, uplink }
+        }
       }
     }
-    if (mode === 'stream') {
-      this.fail(method, 'stream Remote methods must return Iterable<T> or AsyncIterable<T>')
+    if (mode !== undefined) {
+      this.fail(method, 'stream Remote methods must return Iterable<Out>, AsyncIterable<Out>, or RemoteStream<Out, In>')
     }
-    return authored
+    return { result: authored }
+  }
+
+  private isNeverType(type: ts.TypeNode): boolean {
+    return (this.checker.getTypeFromTypeNode(type).flags & ts.TypeFlags.Never) !== 0
   }
 
   private isGlobalAbortSignal(type: ts.TypeNode): boolean {

@@ -8,9 +8,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-job-controller/remote'
 import { ClientJobsModel } from './model.ts'
 import { ClientJobs } from './service.ts'
-import type { JobsRemote } from './service.ts'
 
 export type { JobsSnapshot, ObservedJob } from './model.ts'
 // The `ctx.jobs` contract. Its module also carries the Context augmentation
@@ -29,9 +29,8 @@ export const inject = ['remote', 'remote.job']
  * @param ctx - Client root Context.
  */
 export function apply(ctx: Context): void {
-  const remotes = ctx.remote as unknown as JobsRemote
-  new ClientJobs(ctx, {
-    $stream: options => remotes.$stream(options),
-    job: remotes.job,
-  }, new ClientJobsModel())
+  // Read the namespace now, not inside `open`: see the module JSDoc.
+  const { remote } = ctx
+  const { job } = remote
+  new ClientJobs(ctx, { $stream: options => remote.$stream(options), job }, new ClientJobsModel())
 }

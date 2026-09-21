@@ -57,7 +57,7 @@ import {
   writesCurrentSessionFixtures,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
-import type { Profile, ProfileContext, ProfileResolutionMode } from '@deepseek-ai/dsh-app-boot'
+import type { Profile, ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
@@ -196,7 +196,7 @@ export function recordedSessionFixturePath(path: string, version: number): strin
 /** The shipped composition under test: the dsh-base and dsh-web-app bundle patches over the empty profile root. */
 const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
-/** The installation anchor whose dependency surface the profile module fallback mirrors. */
+/** The installation anchor whose dependency surface the runtime resolution mirrors. */
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 
 // Replay publishes the provider catalog the gateway routes to (providers
@@ -261,10 +261,9 @@ class RouteOnlyAdapter extends LlmAdapter {
   }
 }
 
-function replayProviders(contextWindow: number | undefined, messages: boolean): typeof REPLAY_PROVIDERS {
+function replayProviders(contextWindow: number | undefined): typeof REPLAY_PROVIDERS {
   return REPLAY_PROVIDERS.map(provider => ({
     ...provider,
-    id: messages ? 'deepseek-messages' : provider.id,
     models: provider.models.map(model => ({
       ...model,
       ...contextWindow === undefined ? {} : { contextWindow },
@@ -302,14 +301,12 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
-  /** The scaffold enables developer tools unless false preserves the shipped default. */
+  /** Override the developer-tools preference; omitted uses the shipped default. */
   developerTools?: boolean
-  /** Profile resolver backend used by this test Host; defaults to runtime coverage. */
-  profileResolutionMode?: Extract<ProfileResolutionMode, 'dual' | 'runtime'>
   /** Enable the real Open In rows with deterministic launch-environment facts. */
   openInAppEnvironment?: LaunchEnvironmentSnapshot
-  /** Compare the replayed root session with `replayFixture`; defaults on for a manifest-owned canonical recording. */
-  compareReplaySession?: boolean
+  /** Compare the replayed root Session; `read-only` also forbids refresh writes to a borrowed fixture. */
+  compareReplaySession?: boolean | 'read-only'
   /**
    * Optional product overlay applied after the shipped Web surface and before
    * the scaffold's hermetic test patches, matching the launcher's `--patch`
@@ -393,10 +390,10 @@ export interface LaunchOptions {
    * keyless first-run configuration lane; the default disables the adapter.
    */
   deepSeekMissingCredential?: boolean
-  /** Record or replay a Messages scenario; older scenarios explicitly retain their recorded Chat Completions route. */
-  deepSeekMessages?: boolean
   /** Leave the current welcome notice pending; ordinary scenarios pre-acknowledge it before browser boot. */
   welcomeNoticePending?: boolean
+  /** Leave first-use Workspace initialization eligible; ordinary scenarios start after the default was removed. */
+  firstUse?: boolean
   /**
    * Patch the shipped DeepSeek search row to a deterministic endpoint and
    * credential reference. Browser search scenarios keep the real provider and
@@ -467,7 +464,7 @@ async function cleanupScaffoldWorld(ctx: Context, workspaceCwd: string, persiste
 export async function launchWebScaffold(options: LaunchOptions = {}): Promise<WebScaffold> {
   requireDist()
   const {
-    auditStartupEntries, composeEntries, createProfileResolutionGeneration, healProfilesModuleFallback, initProfile,
+    auditStartupEntries, composeEntries, createRuntimeResolution, initProfile,
     mountRootInclude, readProfileManifest, readProfilePatches, loadProfileDirectory, loadOverlayPatches, PluginPackages,
   } = appBoot()
   const mode = webSnapshotMode()
@@ -496,7 +493,6 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     throw new Error('deepSeekMissingCredential is a keyless replay/refresh option')
   }
   const maskDeepSeekCredential = mode !== 'record' && options.deepSeekMissingCredential === true
-  const messages = options.deepSeekMessages === true
   const originalDeepSeekCredential = process.env.DEEPSEEK_API_KEY
   let credentialEnvironmentRestored = false
   const restoreCredentialEnvironment = (): void => {
@@ -573,13 +569,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // Without HMR the profile applies configuration changes at its next start.
     ...options.profile?.hmr === false ? [{ id: 'hmr', disabled: true }] : [],
     { id: 'session-log-deepseek', config: { enabled: false } },
-    // The historical Messages fixture retains its recorded route during replay;
-    // live configuration uses the shared DeepSeek route. Explicit overlays win.
-    ...messages
-      ? [{ id: 'agent-default-model', config: { provider: mode === 'record' || maskDeepSeekCredential ? 'deepseek-official' : 'deepseek-messages', model: maskDeepSeekCredential ? 'deepseek-flash' : 'deepseek-v4-flash' } }]
-      : mode === 'record' || options.deepSeekMissingCredential === true
-        ? []
-        : [{ id: 'agent-default-model', config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }],
+    ...mode === 'record' || options.deepSeekMissingCredential === true
+      ? []
+      : [{ id: 'agent-default-model', config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }],
     ...extraOverlayPatches,
     // The roster's shipped presets are the plugin's own, bundled inside
     // `dsh-agent-presets` and prepended by it. Pin only the machine-local
@@ -602,6 +594,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // to an absolute temp root (removed with the workspace at close) so tests
     // never write the user's harness home.
     { id: 'storage-json', config: { root: join(workspaceCwd, '.dsh-storages') } },
+    // First-use initialization must create directories only inside this scaffold's temporary world.
+    { id: 'workspace-controller', config: { documentsDirectory: join(workspaceCwd, 'Documents') } },
     // Skill discovery is model-visible input. Pin every host-level root inside
     // the owned temp world so ~/.dsh, ~/.agents, and a bundled-root env setting
     // cannot change replay requests or conversation goldens. Project roots stay
@@ -695,10 +689,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
           baseURL: options.deepSeekSearch.baseURL,
         },
       }],
-    ...maskDeepSeekCredential && !messages ? [] : [
-      { id: 'llm-deepseek', disabled: mode !== 'record' && !maskDeepSeekCredential,
-        config: messages ? {} : { protocol: 'chat-completions' } },
-    ],
+    { id: 'llm-deepseek', disabled: mode !== 'record' && !maskDeepSeekCredential },
   ]
   const patches: PatchOptions[] = [...basePatches, ...surfacePatches, ...overlayPatches]
 
@@ -739,7 +730,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       return {
         packageName: manifest.name,
         packageDir,
-        patchPath: join(packageDir, 'cordis.patch.yml'),
+        patchPaths: [join(packageDir, 'cordis.patch.yml')],
         patches: [],
       }
     }))
@@ -750,11 +741,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       patchPath: join(profileDir, 'cordis.patch.yml'),
       patches: [],
     }
-    const profileResolutionMode = options.profileResolutionMode ?? 'runtime'
     const resolutionOptions = { installAnchor: INSTALL_ANCHOR, home: harnessHome, profile }
-    const resolution = profileResolutionMode === 'runtime'
-      ? await createProfileResolutionGeneration(resolutionOptions)
-      : await healProfilesModuleFallback(resolutionOptions)
+    const resolution = await createRuntimeResolution(resolutionOptions)
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
@@ -801,8 +789,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       },
     })
     await ctx.plugin(PluginPackages, {
-      generation: resolution,
-      behavior: profileResolutionMode === 'dual' ? 'verify' : 'enforce',
+      resolution,
     })
     await ctx.plugin(Loader)
     if (profileContext === undefined) {
@@ -819,18 +806,22 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     } else {
       // The launcher's own mount, so the manager's reloads find the root Include
       // and compose the same layers the profile files name; bare names still
-      // resolve through the resolution generation above, as in the direct mount.
+      // resolve through the runtime resolution above, as in the direct mount.
       await mountRootInclude(ctx, rootConfig, readProfilePatches('dsh', profileContext))
     }
     await ctx.loader.await()
     await auditStartupEntries(ctx, 'web e2e scaffold')
-    if (options.developerTools !== false) {
-      await ctx.settings.update('ui-developer-tools', { enabled: true })
+    if (options.developerTools !== undefined) {
+      await ctx.settings.update('ui-developer-tools', { enabled: options.developerTools })
     }
     if (options.welcomeNoticePending !== true) {
       await ctx.settings.mutate(WELCOME_NOTICE_SETTINGS_NAMESPACE, [{
         op: 'set', path: [WELCOME_NOTICE_ACK_FIELD], value: WELCOME_NOTICE_VERSION,
       }])
+    }
+    if (options.firstUse !== true && ctx.workspaceRegistry.list().length === 0) {
+      const initial = await ctx.workspaceRegistry.initializeDefault(async () => ({ path: workspaceCwd, title: 'Workspace' }))
+      if (initial !== undefined) await ctx.workspaceRegistry.delete(initial.id)
     }
     const boundPort = ctx.get('webServer')?.port
     if (boundPort === undefined) {
@@ -876,7 +867,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     if (mode !== 'record' && replayFixture !== undefined) {
       replayHandle = installLlmReplay(ctx, {
         file: replayFixture,
-        providers: (options.replayProviders ?? replayProviders(options.replayContextWindow, messages)).map(provider => ({
+        providers: (options.replayProviders ?? replayProviders(options.replayContextWindow)).map(provider => ({
           ...provider,
           ...(options.replayRetryPolicy === undefined ? {} : { retryPolicy: options.replayRetryPolicy }),
         })),
@@ -891,8 +882,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // a fixture would, with streaming that still fails loud: the scenario
       // issues no model calls, and one that slipped in must not pass quietly.
       ctx.effect(() => ctx.llm.registerAdapter(
-        replayProviders(options.replayContextWindow, messages).map(provider => provider.id),
-        new RouteOnlyAdapter(replayProviders(options.replayContextWindow, messages)),
+        replayProviders(options.replayContextWindow).map(provider => provider.id),
+        new RouteOnlyAdapter(replayProviders(options.replayContextWindow)),
       ), 'web e2e scaffold: route-only adapter')
     }
     if (publicProxy === undefined || publicHost === undefined || publicPrefix === undefined) {
@@ -974,7 +965,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
           await assertReplaySession(
             [...observedSessions.values()],
             replayFixture,
-            mode,
+            compareReplaySession === 'read-only' ? 'replay' : mode,
             `http://${browserHost}:${port}`,
             harnessHome,
           )
@@ -1307,12 +1298,7 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
   }).join('\n')
 }
 
-/**
- * Parse a committed web seed fixture through the replay reader.
- * @param fixtureText - session JSONL fixture contents.
- * @returns the current header line, parsed header, and logical events.
- */
-/** Give a migrated fixture stream positive relative timing before its final wall-clock rebase. */
+/** Give reconstructed V0/V1 chunk streams positive intervals before the final wall-clock rebase. */
 function spreadMigratedSeedStream(
   stream: SessionEvent<'assistant/message'>['data']['stream'],
 ): SessionEvent<'assistant/message'>['data']['stream'] {
@@ -1329,6 +1315,12 @@ function spreadMigratedSeedStream(
   })
 }
 
+/**
+ * Parse a committed web seed fixture through the replay reader.
+ * Embedded streams retain their recorded timing; V0/V1 chunk streams receive positive relative intervals.
+ * @param fixtureText - session JSONL fixture contents.
+ * @returns the current header line, parsed header, and logical events.
+ */
 export function parseSeedFixture(fixtureText: string): {
   headerLine: string
   header: Record<string, unknown>
@@ -1343,7 +1335,7 @@ export function parseSeedFixture(fixtureText: string): {
   const header = JSON.parse(headerLine) as Record<string, unknown>
   if (header.type !== 'session') throw new Error('seed fixture must start with a session header')
   const events = parseSessionLog(current).map((event) => {
-    if (sourceHeader.version === SESSION_FORMAT_VERSION) return event
+    if (sourceHeader.version !== 0 && sourceHeader.version !== 1) return event
     if (event.type === 'assistant/message') {
       return { ...event, data: { ...event.data, stream: spreadMigratedSeedStream(event.data.stream) } }
     }

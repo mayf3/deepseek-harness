@@ -1,4 +1,4 @@
-import type { AssistantBlock } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { AssistantBlock } from '../contract/snapshot.ts'
 
 /**
  * Collect visible prose from one Assistant lifecycle.

@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { PlanChip } from '../src/client/PlanModeControl.tsx'
 import { PlanCards, PlanReviewOpen, type PlanOpenInjected, type PlanReviewOpenInjected } from '../src/client/PlanCard.tsx'
@@ -19,21 +20,26 @@ import { submittedPlan } from '../src/client/plan.ts'
 import type { PlanChipInjected } from '../src/client/index.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
+import { createSidebarRightController } from '@deepseek-ai/dsh-client-ui-sidebar-right/src/client/service.ts'
+import { SidebarRightTabRegistry } from '@deepseek-ai/dsh-client-ui-sidebar-right/src/client/tab-registry.ts'
+import { createSidebarRightStore } from '@deepseek-ai/dsh-client-ui-sidebar-right/src/client/stores.ts'
 
 function providePreview(ctx: Context) {
   const events = new ConversationEventRegistry(ctx)
   ctx.provide('uiConversation', { events })
   const removeResources = vi.fn()
   const removeType = vi.fn()
-  const registerType = vi.fn((_definition: Parameters<Context['sidebarRightTabs']['register']>[0]) => removeType)
+  const registerType = vi.fn<Context['sidebarRightTabs']['register']>(() => removeType)
   const openResourceIn = vi.fn<Context['sidebarRight']['openResourceIn']>()
+  const openResource = vi.fn<Context['sidebarRight']['openResource']>()
+  const mounted = createSnapshotStore<SessionId | undefined>(undefined)
   const subagentAddress = vi.fn<Context['sessions']['subagentAddress']>(() => undefined)
   ctx.provide('sessions', { subagentAddress })
   ctx.provide('resources', { register: vi.fn(() => removeResources) })
   ctx.provide('sidebarRightTabs', { register: registerType })
-  ctx.provide('sidebarRight', { openResourceIn })
+  ctx.provide('sidebarRight', { openResourceIn, openResource, mounted })
   ctx.provide('remote.session', {})
-  return { events, removeResources, removeType, registerType, openResourceIn, subagentAddress }
+  return { events, removeResources, removeType, registerType, openResourceIn, openResource, mounted, subagentAddress }
 }
 
 const SID = 's-plan' as SessionId
@@ -63,6 +69,45 @@ async function bench() {
 }
 
 describe('ui-plan browser apply', () => {
+  it('opens an embedded child plan in the visible parent sidebar without adopting a child store', async () => {
+    const b = await bench()
+    const parent = 'visible-parent' as SessionId
+    const child = 'embedded-child' as SessionId
+    const tabs = new SidebarRightTabRegistry(b.ctx)
+    b.registerType.mockImplementation(definition => tabs.register(definition))
+    const store = createSidebarRightStore(() => ({ kind: 'guide', title: 'Guide' })).create()
+    const { controller, adopt } = createSidebarRightController(tabs, vi.fn())
+    const release = adopt(parent, store)
+    store.actions.open(parent)
+    const unbind = controller.bind({
+      sessionId: parent, actions: store.actions, surfaces: store.getSnapshot().bySession, canSplitPane: () => true,
+    })
+    b.openResource.mockImplementation(controller.openResource.bind(controller))
+    b.openResourceIn.mockImplementation(controller.openResourceIn.bind(controller))
+    b.subagentAddress.mockReturnValue({ parentSessionId: parent, childSessionId: child, mode: 'continuable' })
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    try {
+      await fiber.await()
+      const card = b.slots.entries('conversation.chat.turnTail')[0]!
+      const opener = (card.inject as unknown as (sessionId: SessionId) => PlanOpenInjected)(child)
+      const plan = submittedPlan({ type: 'tool/call', data: { callId: 'child-plan', name: 'exit_plan_mode', arguments: '{"plan":"# Child plan"}' } })!
+      opener.openPlan(plan.callId)
+      const resources = () => Object.values(store.getSnapshot().bySession[parent]!.layout.tabs).map(tab => tab.contentId)
+      expect(resources()).toContain('dsh-resource://plan/subagent/visible-parent/embedded-child/continuable/child-plan')
+      expect(store.getSnapshot().bySession[child]).toBeUndefined()
+      const review = b.slots.entries('conversation.plan-review.actions')[0]!
+      const reviewOpener = (review.inject as unknown as (sessionId: SessionId) => PlanReviewOpenInjected)(child)
+      reviewOpener.openReview({ id: 'pending', question: 'Approve?', plan: '# Temporary child plan', approve: { label: 'Approve' } }, 'child-question')
+      expect(resources().some(address => address.startsWith('dsh-resource://plan-review/embedded-child/'))).toBe(true)
+      expect(store.getSnapshot().bySession[child]).toBeUndefined()
+    } finally {
+      await fiber.dispose()
+      unbind()
+      release()
+      controller.tabDomain.dispose()
+    }
+  })
+
   it('declares every service it binds', () => {
     expect(inject).toEqual(['slots', 'remote', 'remote.commands', 'remote.session', 'sessions', 'locale', 'uiConversation', 'resources', 'sidebarRight', 'sidebarRightTabs'])
   })
@@ -136,29 +181,31 @@ describe('ui-plan browser apply', () => {
       expect(card.component).toBe(PlanCards)
       const injected = (card.inject as unknown as (sessionId: SessionId) => PlanOpenInjected)(SID)
       injected.openPlan(plan.callId)
-      expect(b.openResourceIn).toHaveBeenLastCalledWith(SID, address)
+      expect(b.openResource).toHaveBeenLastCalledWith(address)
       const review = b.slots.entries('conversation.plan-review.actions')[0]!
       expect(review.component).toBe(PlanReviewOpen)
       const reviewInjected = (review.inject as unknown as (sessionId: SessionId) => PlanReviewOpenInjected)(SID)
+      // The automatic open reads the service's mounted-seat source, not a copy.
+      expect(reviewInjected.hooks.sidebarMounted).toBe(b.mounted)
       const pending = { id: 'review', question: 'Approve?', plan: plan.markdown, callId: plan.callId, approve: { label: 'Approve' } }
       reviewInjected.openReview(pending, 'question:1')
-      expect(b.openResourceIn).toHaveBeenLastCalledWith(SID, address)
+      expect(b.openResource).toHaveBeenLastCalledWith(address)
       b.subagentAddress.mockReturnValue({ parentSessionId: 'parent' as SessionId, childSessionId: SID, mode: 'continuable' })
       injected.openPlan(plan.callId)
-      expect(b.openResourceIn).toHaveBeenLastCalledWith(SID, 'dsh-resource://plan/subagent/parent/s-plan/continuable/call')
+      expect(b.openResource).toHaveBeenLastCalledWith('dsh-resource://plan/subagent/parent/s-plan/continuable/call')
       reviewInjected.openReview(pending, 'question:1')
-      expect(b.openResourceIn).toHaveBeenLastCalledWith(SID, 'dsh-resource://plan/subagent/parent/s-plan/continuable/call')
+      expect(b.openResource).toHaveBeenLastCalledWith('dsh-resource://plan/subagent/parent/s-plan/continuable/call')
       const temporary = { id: 'review', question: 'Approve?', plan: '# Temporary\n\nComplete body', approve: { label: 'Approve' } }
       reviewInjected.openReview(temporary, 'question:2')
-      const first = b.openResourceIn.mock.calls.at(-1)!
-      expect(type.canOpen!(first[1])).toBe(true)
-      expect(first).toEqual([SID, expect.stringMatching(/^dsh-resource:\/\/plan-review\/s-plan\//), {
+      const first = b.openResource.mock.calls.at(-1)!
+      expect(type.canOpen!(first[0])).toBe(true)
+      expect(first).toEqual([expect.stringMatching(/^dsh-resource:\/\/plan-review\/s-plan\//), {
         params: { planReview: { title: 'Temporary', markdown: temporary.plan } },
       }])
       reviewInjected.openReview(temporary, 'question:2')
-      expect(b.openResourceIn).toHaveBeenLastCalledWith(...first)
+      expect(b.openResource).toHaveBeenLastCalledWith(...first)
       reviewInjected.openReview(temporary, 'question:3')
-      expect(b.openResourceIn.mock.calls.at(-1)![1]).not.toBe(first[1])
+      expect(b.openResource.mock.calls.at(-1)![0]).not.toBe(first[0])
       expect(b.slots.entries('sidebar.right.pane.tab')[0]!.component).toBe(PlanPreview)
       expect(b.slots.entries('sidebar.right.pane.tab.title')[0]!.component).toBe(PlanTitle)
       await fiber.dispose()

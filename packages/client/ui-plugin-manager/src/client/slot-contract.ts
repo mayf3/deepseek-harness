@@ -5,9 +5,10 @@
  * that row. A registrant merges this contract with `import type` and registers
  * through `ctx.slots`; it never imports this package at runtime.
  *
- * Every entry is rendered in two views the owner asks for: `summary` for the
- * one-liner the page places under the title, `page` for the form with its own
- * save control. The page draws the title, the icon, and the crumb itself.
+ * Entries accept `page` for the form with its own save control and `summary`
+ * for an official card's one-liner or a row's missing-description fallback.
+ * Bundle configuration renders only `page`. The page draws the title, icon,
+ * and crumb itself.
  */
 
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
@@ -18,8 +19,19 @@ export interface PluginConfigViewProps {
   readonly view: 'summary' | 'page'
 }
 
+/** One user-requested bundle activation and navigation to its configuration page. */
+export interface PluginActivationOwnerProps {
+  readonly packageName: string
+  /** Dismiss guidance for this activation. */
+  readonly onDismiss: () => void
+  /** Dismiss guidance and open this bundle's detail page. */
+  readonly onOpenDetails: () => void
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    /** Optional guidance after the user enables a bundle from the list, keyed by npm package name. */
+    'plugins.bundle.activation': { kind: 'keyed'; scope: 'root'; owner: PluginActivationOwnerProps }
     /**
      * One official plugin the Plugins page lists in its Official group after
      * the official bundles: `label` is the card's title and `order` its place.
@@ -40,7 +52,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * The configuration of one row a bundle declares, keyed by
      * `<package name>#<row id>` with the row id as the bundle's patch declares
      * it: the row on the bundle's page gains a configure control that opens
-     * the entry's page, headed by the row id and the entry's summary.
+     * the entry's page, headed by the plugin's display title and description.
+     * An absent description falls back to the entry's `view: 'summary'`.
      */
     'plugins.row.config': { kind: 'keyed'; scope: 'root'; owner: PluginConfigViewProps }
   }

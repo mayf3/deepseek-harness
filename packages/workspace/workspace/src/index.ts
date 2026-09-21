@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { stat } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -15,7 +15,7 @@ import { WorkspaceEntity } from './entity.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
 export { WorkspaceMoveInvalidError } from './entity.ts'
-import { defaultWorkspaceTitle, realpathNormalize } from './paths.ts'
+import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 import type { Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
@@ -38,16 +38,29 @@ export function WorkspaceId(id: string): WorkspaceId {
 }
 
 /**
- * An archiveSession request named a session neither live nor in session
- * persistence — a definite miss only; storage faults propagate as themselves.
+ * An archiveSession or pinSession request named a session neither live nor in
+ * session persistence — a definite miss only; storage faults propagate as
+ * themselves.
  */
 export class WorkspaceUnknownSessionError extends Error {
   /**
    * @param sessionId - The unknown session id.
+   * @param verb - The registry operation that named the session.
+   */
+  constructor(readonly sessionId: SessionId, verb: 'archive' | 'pin') {
+    super(`cannot ${verb} session '${sessionId}': live sessions and session persistence hold no such session`)
+    this.name = 'WorkspaceUnknownSessionError'
+  }
+}
+
+/** A pinSession request named a session currently in the archive set; pinning and archival are mutually exclusive. */
+export class WorkspaceArchivedSessionPinError extends Error {
+  /**
+   * @param sessionId - The archived session id.
    */
   constructor(readonly sessionId: SessionId) {
-    super(`cannot archive session '${sessionId}': live sessions and session persistence hold no such session`)
-    this.name = 'WorkspaceUnknownSessionError'
+    super(`cannot pin session '${sessionId}': the session is archived`)
+    this.name = 'WorkspaceArchivedSessionPinError'
   }
 }
 
@@ -163,6 +176,35 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Initialize the default Workspace only while both the registry and Session
+   * history are empty. Repeated requests reuse its durable identity; deleting
+   * that registration permanently disables automatic creation.
+   * @param resolveDirectory - resolve the absolute directory and initial title;
+   * called only for eligible creation, inside the registry mutation queue.
+   * Missing directories are created recursively before registration.
+   * After resolution, caller cancellation does not roll back creation or registration.
+   * @returns the initialized Workspace, or undefined when automatic creation is ineligible.
+   */
+  initializeDefault(resolveDirectory: () => Promise<{ path: string; title: string }>): Promise<Workspace | undefined> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (state.defaultWorkspaceId !== undefined) return this.entities.get(state.defaultWorkspaceId)
+      const sessions = this.ctx.get('sessions')
+      if (sessions === undefined) throw new Error('default Workspace initialization requires the Session store')
+      if (state.workspaceIds.length > 0 || state.archivedSessionIds.length > 0
+        || sessions.list().length > 0 || (await this.listStoredHeaders()).length > 0) return undefined
+
+      const { path, title } = await resolveDirectory()
+      if (!fullyQualifiedWorkspacePath(path)) throw new TypeError(`Workspace path is not fully qualified: '${path}'`)
+      await mkdir(path, { recursive: true })
+      const canonical = await realpathNormalize(path)
+      // A Session can start outside the registry queue while directory preparation awaits I/O.
+      if ((await this.listStoredHeaders()).length > 0 || sessions.list().length > 0) return undefined
+      return this.createCanonical(canonical, title, true)
+    })
+  }
+
+  /**
    * Look up a workspace by id.
    * @param id - Workspace id.
    * @returns the workspace, or `undefined` when unknown.
@@ -236,7 +278,9 @@ export class WorkspaceRegistry extends Service {
   /**
    * Archive one session durably. The session must exist (live or in session
    * persistence); its workspace accounting — or lack of one — is irrelevant.
-   * An already archived id resolves without writing.
+   * Archiving drops the session's pin in the same durable write (pinning and
+   * archival are mutually exclusive). An already archived id resolves without
+   * writing.
    * @param sessionId - The session to archive.
    * @returns resolution after durability.
    */
@@ -246,10 +290,14 @@ export class WorkspaceRegistry extends Service {
       // check-then-write pair cannot interleave with another archive.
       if (this.requireState().archivedSessionIds.includes(sessionId)) return
       if (!(await this.sessionKnown(sessionId))) {
-        throw new WorkspaceUnknownSessionError(sessionId)
+        throw new WorkspaceUnknownSessionError(sessionId, 'archive')
       }
       const state = this.requireState()
-      await this.setState({ ...state, archivedSessionIds: [...state.archivedSessionIds, sessionId] })
+      await this.setState({
+        ...state,
+        archivedSessionIds: [...state.archivedSessionIds, sessionId],
+        pinnedSessionIds: state.pinnedSessionIds.filter(id => id !== sessionId),
+      })
     })
   }
 
@@ -272,6 +320,62 @@ export class WorkspaceRegistry extends Service {
       await this.setState({
         ...state,
         archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+      })
+    })
+  }
+
+  /**
+   * The registry-global pin set: sessions surfaced ahead of every unpinned
+   * session on grouping surfaces. Pinning never touches workspace accounting.
+   * @returns Session ids in pin order (most recently pinned first).
+   */
+  get pinnedSessionIds(): readonly SessionId[] {
+    return this.requireState().pinnedSessionIds
+  }
+
+  /**
+   * Pin one session durably, prepending it to the registry-global pin set.
+   * The session must exist (live or in session persistence) and must not be
+   * archived. An already pinned id resolves without writing or reordering.
+   * @param sessionId - The session to pin.
+   * @returns resolution after durability.
+   */
+  pinSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      // The chain slot serializes against every other registry write, so this
+      // check-then-write pair cannot interleave with another pin or archive.
+      if (this.requireState().pinnedSessionIds.includes(sessionId)) return
+      if (this.requireState().archivedSessionIds.includes(sessionId)) {
+        throw new WorkspaceArchivedSessionPinError(sessionId)
+      }
+      if (!(await this.sessionKnown(sessionId))) {
+        throw new WorkspaceUnknownSessionError(sessionId, 'pin')
+      }
+      const state = this.requireState()
+      await this.setState({
+        ...state,
+        pinnedSessionIds: [sessionId, ...state.pinnedSessionIds],
+      })
+    })
+  }
+
+  /**
+   * Unpin one session durably by dropping it from the registry-global pin
+   * set. Unpinning runs no session-existence check because removing an id
+   * cannot introduce an unknown one, so an entry whose session is gone still
+   * resolves. An id that is not pinned resolves without writing.
+   * @param sessionId - The session to unpin.
+   * @returns resolution after durability.
+   */
+  unpinSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      // The chain slot serializes against every other registry write, so this
+      // check-then-write pair cannot interleave with a concurrent pin.
+      const state = this.requireState()
+      if (!state.pinnedSessionIds.includes(sessionId)) return
+      await this.setState({
+        ...state,
+        pinnedSessionIds: state.pinnedSessionIds.filter(id => id !== sessionId),
       })
     })
   }
@@ -304,7 +408,7 @@ export class WorkspaceRegistry extends Service {
     return undefined
   }
 
-  private async createCanonical(canonical: string, title?: string): Promise<WorkspaceEntity> {
+  private async createCanonical(canonical: string, title?: string, firstUse = false): Promise<WorkspaceEntity> {
     for (const entity of this.entities.values()) {
       if (entity.path === canonical) return entity
     }
@@ -350,9 +454,11 @@ export class WorkspaceRegistry extends Service {
 
     try {
       await this.setState({
+        ...state,
+        pendingMutation: undefined,
         initialized: true,
+        ...(firstUse ? { defaultWorkspaceId: id } : {}),
         workspaceIds: [id, ...state.workspaceIds],
-        archivedSessionIds: state.archivedSessionIds,
       })
     } catch (error) {
       this.entities.delete(id)
@@ -382,9 +488,10 @@ export class WorkspaceRegistry extends Service {
     if (entity === undefined) return false
     const state = this.requireState()
     const nextState = {
+      ...state,
+      pendingMutation: undefined,
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
-      archivedSessionIds: state.archivedSessionIds,
     }
     await this.setState({
       ...nextState,
@@ -438,11 +545,7 @@ export class WorkspaceRegistry extends Service {
       )
     }
     await this.requireTable().delete(pending.workspaceId)
-    await this.setState({
-      initialized: state.initialized,
-      workspaceIds: state.workspaceIds,
-      archivedSessionIds: state.archivedSessionIds,
-    })
+    await this.setState({ ...state, pendingMutation: undefined })
   }
 
   private async bootstrap(headers: readonly SessionHeader[]): Promise<void> {
@@ -524,9 +627,19 @@ export class WorkspaceRegistry extends Service {
       .map(([id]) => id)
 
     if (!sameIds(state.workspaceIds, workspaceIds)) {
-      await this.setState({ initialized: false, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+      await this.setState({
+        initialized: false,
+        workspaceIds,
+        archivedSessionIds: state.archivedSessionIds,
+        pinnedSessionIds: state.pinnedSessionIds,
+      })
     }
-    await this.setState({ initialized: true, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+    await this.setState({
+      initialized: true,
+      workspaceIds,
+      archivedSessionIds: state.archivedSessionIds,
+      pinnedSessionIds: state.pinnedSessionIds,
+    })
   }
 
   private validateStoredState(state: WorkspaceDomainState): void {

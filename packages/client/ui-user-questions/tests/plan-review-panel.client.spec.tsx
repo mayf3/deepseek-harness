@@ -52,12 +52,13 @@ const sessionList = {
   ids: [SID],
   byId: { [SID]: { id: SID, displayTitle: 'Session', running: false, retainedBy: {}, blank: false, updatedAt: 0 } },
   phase: 'ready' as const,
-  subagentsByParent: {},
+  projectionsBySession: {},
 }
 const attentionState: AttentionState = new Map()
 const workspaceState = {
   items: [],
   archivedSessionIds: [],
+  pinnedSessionIds: [],
   state: 'idle' as const,
   phase: 'ready' as const,
   error: null,
@@ -125,6 +126,8 @@ const kit: Omit<QuestionComposerProps, 'matched'> = {
   useProjection: (() => undefined),
   useInput: selector => selector(inputState),
   inputActions: {
+    captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),
+    insertText: () => false,
     setDraft: () => { throw new Error('unused') },
     addAttachments: () => { throw new Error('unused') },
     removeAttachment: () => { throw new Error('unused') },

@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Reply with a one-sentence description" [disabled]
+  - navigation "Session hierarchy": Reply with a one-sentence description
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
@@ -11,7 +10,6 @@
   - button "Jump to turn 1"
   - button "Jump to turn 2"
   - button "Jump to turn 3"
-- button "System prompt"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
 - button "Thought for a while"

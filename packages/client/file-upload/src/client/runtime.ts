@@ -298,7 +298,7 @@ function workerTransport(): FileUploadTransport {
 }
 
 function parseFileUploadResult(body: string): RemoteResult<FileUploadValue> {
-  const value = JSON.parse(body) as unknown
+  const value: unknown = JSON.parse(body)
   if (!isRecord(value) || typeof value.ok !== 'boolean') {
     throw new TypeError('file upload transport returned an invalid result')
   }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import JobRegistry, { JobId } from '@deepseek-ai/dsh-jobs'
-import type { JobEvent, JobEventListener, JobView } from '@deepseek-ai/dsh-jobs'
+import type { JobEvent, JobEventFilter, JobEventListener, JobView } from '@deepseek-ai/dsh-jobs'
 import * as JobsInvariant from '@deepseek-ai/dsh-jobs/invariant'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 
@@ -27,24 +27,29 @@ async function setup() {
   const ctx = new Context()
   const reads = new Map<string, JobView>()
   let listener: JobEventListener | undefined
-  const probe = {
-    get: (id: JobId, caller?: SessionId) => {
-      const view = reads.get(String(id))
-      if (view === undefined || view.owner !== caller) throw new Error(`unknown job ${String(id)}`)
-      return view
-    },
-    events: {
-      subscribe(_filter: unknown, value: JobEventListener) {
+  /** A registry serving only the reads and the subscription the companion uses. */
+  class ProbeRegistry extends JobRegistry {
+    readonly events = {
+      subscribe: (_filter: JobEventFilter, value: JobEventListener): (() => void) => {
         listener = value
         return () => { listener = undefined }
       },
-    },
-  } as unknown as JobRegistry
+    }
+    get(id: JobId, caller?: SessionId): JobView {
+      const view = reads.get(String(id))
+      if (view === undefined || view.owner !== caller) throw new Error(`unknown job ${String(id)}`)
+      return view
+    }
+    start(): never { throw new Error('unsupported') }
+    list(): never { throw new Error('unsupported') }
+    read(): never { throw new Error('unsupported') }
+    readAt(): never { throw new Error('unsupported') }
+    kill(): never { throw new Error('unsupported') }
+    wait(): never { throw new Error('unsupported') }
+    attachController(): never { throw new Error('unsupported') }
+  }
   await ctx.plugin(InvariantRegistry)
-  await ctx.plugin({
-    name: 'job-invariant-probe',
-    apply(child: Context) { child.provide('jobs', probe) },
-  })
+  await ctx.plugin(ProbeRegistry)
   await ctx.plugin(JobsInvariant)
   if (listener === undefined) throw new Error('job invariant did not subscribe to the event stream')
   const emit = (event: JobEvent): void => { listener!(event) }

@@ -68,7 +68,7 @@ export interface ObservedOffsets {
  * @param proc - the running process.
  * @returns the per-stream end offsets.
  */
-export function observedOffsets(proc: ShellProcess): ObservedOffsets {
+export function observedOffsets(proc: Pick<ShellProcess, 'observed'>): ObservedOffsets {
   const end = (channel: 'stdout' | 'stderr'): number => proc.observed[channel].readFrom(0).nextOffset
   return { stdout: end('stdout'), stderr: end('stderr') }
 }
@@ -81,12 +81,12 @@ export function observedOffsets(proc: ShellProcess): ObservedOffsets {
  * a read before the spawn yields nothing, and the pump keeps the model's
  * consuming cursor untouched. A rejected spawn's stderr reader carries the
  * provider's `subprocess failed before reporting an outcome: …` note.
- * @param proc - the started process, once the starter has spawned it.
+ * @param proc - the started process's observed streams, once the starter has spawned it.
  * @param from - per-stream offsets the sources start pulling at.
  * @returns one source per stream, stdout first.
  */
 export function processSources(
-  proc: () => ShellProcess | undefined,
+  proc: () => Pick<ShellProcess, 'observed'> | undefined,
   from: ObservedOffsets = { stdout: 0, stderr: 0 },
 ): JobOutputSource[] {
   const source = (channel: 'stdout' | 'stderr'): JobOutputSource => ({

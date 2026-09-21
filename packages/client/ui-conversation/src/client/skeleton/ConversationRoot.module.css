@@ -47,14 +47,13 @@
   min-height: 0;
 }
 
-/* macOS hiddenInset titlebar: the title row doubles as the window drag
-   region; interactive children opt out. */
-:global([data-platform='darwin']) .titleRow {
-  -webkit-app-region: drag;
-}
-
-:global([data-platform='darwin']) .titleRow button,
-:global([data-platform='darwin']) .titleRow a,
+/* macOS hiddenInset titlebar: window dragging comes from ui-layout's
+   .leadingBand (the frame's first child), never from this header. Electron
+   composes app-regions in document order ignoring stacking, so a drag rule
+   here would keep eating clicks through overlays mounted earlier in the DOM
+   (the settings modal lives in the sidebar column). The title-row clusters
+   overlap the band and subtract their whole boxes; individual controls are
+   covered by the base.css interactive-element rule. */
 :global([data-platform='darwin']) .headerLeading,
 :global([data-platform='darwin']) .headerActions,
 :global([data-platform='darwin']) .headerUtilities,
@@ -68,6 +67,11 @@
   align-items: center;
   gap: 0;
   min-height: 30px;
+  /* Clears the frame's window-chrome band (traffic lights + shell.leading
+     controls, ui-layout AppFrame) when it is published; the header already
+     pads 20px of it. Zero everywhere else (the fallback makes the max
+     negative). */
+  padding-inline-start: max(0px, calc(var(--dsh-frame-leading-clearance, 0px) - 20px));
 }
 
 .titleCluster {
@@ -113,6 +117,7 @@
 }
 
 .crumb {
+  display: inline-block;
   max-width: 220px;
   overflow: hidden;
   padding: 4px 8px;
@@ -132,7 +137,7 @@
   line-height: 18px;
 }
 
-.crumb:hover:not(:disabled) {
+button.crumb:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 

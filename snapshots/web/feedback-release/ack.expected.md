@@ -1,13 +1,11 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Reply with the single word" [disabled]
+  - navigation "Session hierarchy": Reply with the single word
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
 - button "Copy"
 - button "Thought for a while"

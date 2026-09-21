@@ -136,8 +136,7 @@ function contextTexts(session: Session): string[] {
   const texts: string[] = []
   for (const event of session.snapshotEvents()) {
     if (event.type === 'user/message'
-      && event.data.source.kind === 'plugin'
-      && event.data.source.plugin === 'tmux-context') {
+      && event.data.source.kind === 'tmux-context') {
       texts.push(event.data.content.find(block => block.type === 'text')?.text ?? '')
     }
   }
@@ -187,8 +186,7 @@ describe('tmux-context injection', () => {
     // `snapshot` form: one named contribution carrying exactly the reading the
     // model saw, so a consumer attributes it without re-splitting prose.
     expect(event.data.source).toMatchObject({
-      kind: 'plugin',
-      plugin: 'tmux-context',
+      kind: 'tmux-context',
       form: 'snapshot',
       sections: [{ name: 'tmux-context' }],
     })
@@ -286,7 +284,7 @@ describe('tmux-context prior-reading resilience', () => {
     openMessageTurn(session, 1)
     session.append('user/message', createUserMessage({
       content: [{ type: 'reasoning', text: 'not a location' }],
-      source: { kind: 'plugin', plugin: 'tmux-context' },
+      source: { kind: 'tmux-context' },
     }), { surfaceOp: 'append' })
 
     await fire(ctx, agent, 1, 1)
@@ -302,7 +300,7 @@ describe('tmux-context prior-reading resilience', () => {
     openMessageTurn(session, 1)
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'single line, no newline' }],
-      source: { kind: 'plugin', plugin: 'tmux-context' },
+      source: { kind: 'tmux-context' },
     }), { surfaceOp: 'append' })
 
     await fire(ctx, agent, 1, 1)

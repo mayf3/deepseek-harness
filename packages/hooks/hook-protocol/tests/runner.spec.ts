@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import type { ShellExecRequest, ShellExecSpec, ShellExecutor, ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { ShellExecRequest, ShellExecSpec, ShellExecution, ShellExecutor, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import { DEFAULT_HOOK_TIMEOUT_MS, runHook } from '@deepseek-ai/dsh-hook-protocol'
 import type { RunHookOptions } from '@deepseek-ai/dsh-hook-protocol'
 
@@ -11,11 +11,12 @@ import type { RunHookOptions } from '@deepseek-ai/dsh-hook-protocol'
  * hook-bridge plugins that consume this library, not here.
  */
 function recordingBash(run: (spec: ShellExecSpec) => Promise<ShellRunResult>): {
-  bash: ShellExecutor
+  bash: Pick<ShellExecutor, 'resolve' | 'execute'>
   specs: ShellExecSpec[]
 } {
   const specs: ShellExecSpec[] = []
-  const bash = {
+  const reader = { readFrom: (from: number) => ({ text: '', nextOffset: from, lossy: false }) }
+  const bash: Pick<ShellExecutor, 'resolve' | 'execute'> = {
     resolve(request: ShellExecRequest): ShellExecSpec {
       // Carry the request through verbatim, defaulting the required spec fields —
       // exactly what dsh-bash-local's resolve does for the fields runHook sets.
@@ -31,11 +32,22 @@ function recordingBash(run: (spec: ShellExecSpec) => Promise<ShellRunResult>): {
         sandboxPolicy: request.sandboxPolicy,
       }
     },
-    async execute(spec: ShellExecSpec): Promise<{ result(): Promise<ShellRunResult> }> {
+    async execute(spec: ShellExecSpec): Promise<ShellExecution> {
       specs.push(spec)
-      return { result: () => run(spec) }
+      // Only `result()` is consulted; the live-handle members are inert.
+      return {
+        status: 'completed',
+        exitCode: 0,
+        signal: null,
+        done: Promise.resolve(),
+        readOutput: () => ({ delta: '', lossy: false }),
+        observed: { stdout: reader, stderr: reader },
+        kill: () => false,
+        promotion: Promise.resolve(undefined),
+        result: () => run(spec),
+      }
     },
-  } as unknown as ShellExecutor
+  }
   return { bash, specs }
 }
 

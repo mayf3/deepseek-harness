@@ -40,7 +40,7 @@ The shared image slot props keep display choices separate from durable reference
 
 The context-occupancy button shows a ring and percentage below the input card, after the Session statistics. Clicking it opens the token breakdown in a panel kept inside the viewport, including when no statistics are shown; the button stays hidden until context usage and capacity are available.
 
-With Developer tools off, the shell exposes only Chat and hides the View tab bar. Turning it off while another View is active returns to Chat; stored View preferences and recorded Session data remain intact. Turning it on makes registered Views available again. View owners receive the available roster so their navigation actions can follow the same visibility.
+With Developer tools off, the shell hides only Trajectory; other plugin-contributed Views remain available. The View tab bar is hidden when fewer than two Views are available. Turning Developer tools off while Trajectory is active returns to Chat; stored View preferences and recorded Session data remain intact. Turning it on makes Trajectory available again. View owners receive the available roster so their navigation actions can follow the same visibility.
 
 The composer registers the File command action and owns its label, availability, and native file-dialog callback. Menu availability and invocation both consult the mounted composer's current attachment-intake policy. Unmounting or locking the composer disables that action; disposing the plugin removes its registration. The callback binding stays inside the input module.
 
@@ -119,6 +119,10 @@ try {
 ```
 
 The selector must be a pure function of the owner currency. Its non-null return is delivered to the component as `matched`; `PropsRuntime<'conversation.composer'>` supplies the standard Session and global props. Chain order remains ascending `priority`, then registration order, and the first non-null selector wins. The shell keeps the default composer mounted beneath a takeover. Request state, listeners, response encoding, and any request-specific child slots belong to the business package; they are not carried by `SessionSnapshot` or declared by this core package.
+
+`InputActions.captureInsertion()` captures the draft selection and revision; `insertText(text, span)` inserts one undoable plain-text edit only while that revision is current and the editor permits editing. Asynchronous consumers retain rejected results for user action.
+
+`conversation.input.activity` hosts one control between the model selector and Send. Its `onActiveChange` callback expands that control across the toolbar and hides ordinary accessory controls and the context meter while preserving the editor and submit action. Closing the activity restores those controls with context details closed. The empty hero dock remains collapsed when it has no content. The occupant releases expansion on unmount and owns any activity-specific feedback.
 
 <a id="model-experience"></a>
 ## Model Experience

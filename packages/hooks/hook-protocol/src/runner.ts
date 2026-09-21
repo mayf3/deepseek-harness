@@ -65,7 +65,7 @@ export interface RunHookResult {
  * @returns the decoded output plus the run's wall-clock duration.
  */
 export async function runHook(
-  bash: ShellExecutor,
+  bash: Pick<ShellExecutor, 'resolve' | 'execute'>,
   hook: CommandHook,
   options: RunHookOptions,
   now: () => number,

@@ -247,11 +247,11 @@ describe('webhook Session creation', () => {
       reasoningEffort: ReasoningEffortId('other-model-effort'),
     }))).resolves.toMatchObject({ reasoningEffort: 'other-model-effort' })
 
-    const routed = await request(undefined, async () => ({
+    const routed: unknown = await request(undefined, async () => ({
       provider: 'default-provider',
       model: 'default-model',
       reasoningEffort: ReasoningEffortId('inherited'),
-    })) as unknown
+    }))
     expect(routed).toEqual({
       provider: 'default-provider',
       model: 'default-model',

@@ -13,6 +13,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import type { ReplayEntry, ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { createChatScrollFixture, type ChatScrollFixture } from './chat-scroll-fixture.ts'
 import {
   launchWebScaffold,
@@ -291,7 +292,7 @@ async function openSeed(page: Page, fixture: ChatScrollFixture, tailMarker?: str
   // Search collapsed into a header action; expand it before filling.
   const searchButton = page.getByRole('button', { name: 'Search sessions' })
   if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()
-  const search = page.getByRole('textbox', { name: 'Search sessions...', exact: true })
+  const search = page.getByRole('textbox', { name: 'Search session names', exact: true })
   // Cold summaries initially show the temporary workspace basename, so the
   // persisted first-prompt marker is the stable user-facing identity. The
   // query itself triggers lazy content-index reconciliation; no transient
@@ -489,9 +490,9 @@ function assertClean(world: ScrollWorld): void {
   expect(world.tripwire.warnings).toEqual([])
 }
 
-it('generates a native V3 scroll seed with a protected system head and intact references', () => {
+it('generates a current-format scroll seed with a protected system head and intact references', () => {
   const { header, events } = parseSeedFixture(HISTORY_FIXTURE.log)
-  expect(header.version).toBe(3)
+  expect(header.version).toBe(SESSION_FORMAT_VERSION)
   expect(events.slice(0, 5).map(event => event.type)).toEqual([
     'turn/start', 'step/start', 'system/message', 'user/message', 'session/title',
   ])

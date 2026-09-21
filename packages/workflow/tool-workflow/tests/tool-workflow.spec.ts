@@ -5,6 +5,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionResult, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { WorkflowRunId, WorkflowEngine } from '@deepseek-ai/dsh-workflow'
 import type {
   WorkflowAgentEndInfo, WorkflowAgentInfo, WorkflowResult, WorkflowRun,
@@ -453,7 +454,11 @@ describe('dsh-tool-workflow', () => {
       await ctx.plugin(toolWorkflow, config ?? {})
       const engine = ctx.workflowEngine as StubEngine
       const session = Session.create(SessionId('caller'))
-      const parent = { id: session.id, options: {}, session, status: 'idle', ctx } as unknown as Agent
+      const parent: Agent = {
+        id: session.id, options: {}, session, inbox: unsupportedInbox(), status: 'idle', ctx,
+        send: () => {}, followup: () => {}, steer: () => {}, inject: () => {}, cancel: () => {},
+        runMaintenance: task => task(new AbortController().signal), whenIdle: () => Promise.resolve(),
+      }
       await ctx.agents.register(parent)
       return { ctx, engine, parent, session }
     }
@@ -662,7 +667,11 @@ describe('dsh-tool-workflow', () => {
       await ctx.plugin(PtcWorkflowEngine, {})
       await ctx.plugin(toolWorkflow, {})
       const session = Session.create(SessionId('caller'))
-      const parent = { id: session.id, options: {}, session, status: 'idle', ctx } as unknown as Agent
+      const parent: Agent = {
+        id: session.id, options: {}, session, inbox: unsupportedInbox(), status: 'idle', ctx,
+        send: () => {}, followup: () => {}, steer: () => {}, inject: () => {}, cancel: () => {},
+        runMaintenance: task => task(new AbortController().signal), whenIdle: () => Promise.resolve(),
+      }
       await ctx.agents.register(parent)
 
       const result = await execute(ctx, {

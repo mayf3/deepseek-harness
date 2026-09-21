@@ -1,23 +1,21 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use the ask_user_question tool to" [disabled]
+  - navigation "Session hierarchy": Use the ask_user_question tool to
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: "Use the ask_user_question tool to ask me exactly one multi-select question with id \"color\", question \"Which color do you prefer?\", header \"Pick one\", and two options: label \"Blue\" with description \"A cool recessive hue that reads as calm and trustworthy in long reading sessions and dense dashboards.\", and label \"Green\" with description \"A restful mid-spectrum hue with the highest perceived brightness, easiest on the eye over long sessions.\" Set multi_select to true. After I answer, reply with the single word DONE and stop. {{clock}}"
 - button "Copy"
 - button "1 tool call" [expanded]
-- button "Context injection @deepseek-ai/dsh-system-prompt"
-- button "Think The user wants me to use the ask_user_question tool with specific parameters. Let me do exactly that."
+- button "Context injection runtime-context"
+- button "Think"
 - button "Ask question 1/1 answered" [expanded]
 - term: Which color do you prefer?
 - definition: Blue Include accessibility notes
 - button "Inspect"
-- button "Think The user answered \"Blue\". I should now reply with the single word DONE and stop."
+- button "Think"
 - paragraph: DONE
 - button "Copy"
 - button "Good response"

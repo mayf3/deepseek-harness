@@ -22,6 +22,13 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  box-sizing: border-box;
+}
+
+/* macOS hiddenInset titlebar: the frame's top clearance keeps the head below
+   the window's top strip in both sidebar states so it never jumps. */
+:global([data-platform='darwin']) .pageHead {
+  padding-top: var(--dsh-frame-top-clearance, 0px);
 }
 
 .pageTitle {
@@ -193,6 +200,10 @@
   border: 0.5px solid var(--dsw-alias-border-l3);
   border-radius: 10px;
   color: var(--dsw-alias-label-secondary);
+}
+
+.packageImage {
+  object-fit: contain;
 }
 
 .cardMain {
@@ -395,10 +406,11 @@
 }
 
 /* Wider than the default dialog: pnpm's lines are long, and the terminal keeps them unwrapped. The card never
-   outgrows the viewport; the running screens scroll inside it so the head's controls stay reachable. */
+   outgrows the Modal's padding box and shares the settings panel's 800px height cap; the running screens
+   scroll inside it so the head's controls stay reachable. */
 .installDialog {
   width: min(560px, 100%);
-  max-height: calc(100vh - 48px);
+  max-height: min(800px, 100%);
 }
 
 /* The spec screen's content scrolls inside the card when the guide is open on a short viewport; the footer stays put. */
@@ -1035,6 +1047,12 @@ label.registryOption {
   flex-direction: column;
 }
 
+/* Same top clearance as .pageHead: the crumb is the detail views' leading
+   content and otherwise lands under the traffic lights. */
+:global([data-platform='darwin']) .detail {
+  padding-top: var(--dsh-frame-top-clearance, 0px);
+}
+
 .crumb {
   display: inline-flex;
   align-items: center;
@@ -1098,13 +1116,13 @@ label.registryOption {
   line-height: 22px;
 }
 
-/* The package name under the title: the exact spec that installs the package
-   elsewhere, where a title of its own or a shortened name hides it. */
+/* The package or row identity under the title: the exact spec that installs the
+   package elsewhere, where a title of its own or a shortened name hides it. */
 .detailName {
   margin: 0;
   font-size: 12px;
   line-height: 18px;
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-tertiary);
   overflow-wrap: anywhere;
 }
 

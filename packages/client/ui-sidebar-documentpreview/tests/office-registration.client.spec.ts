@@ -81,17 +81,18 @@ async function harness(config: Partial<Config['office']> = {}, missing?: 'remote
   }
 }
 
-it.each(['remote', 'render', 'files'] as const)('keeps Office registration and guidance when %s is absent', async (missing) => {
+it.each(['remote', 'render', 'files'] as const)('keeps Word and PowerPoint registration and guidance when %s is absent', async (missing) => {
   const h = await harness(undefined, missing)
   try {
     expect(h.locale.register).toHaveBeenCalledWith('sidebarOffice', { zh, en })
-    for (const path of ['a.DOC', 'b.DOCX', 'c.XLS', 'd.xlsx', 'e.PPT', 'f.pptx']) {
-      expect(h.registry.candidates(path)[0]!.binaryExtensions).toEqual(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'])
+    for (const path of ['a.DOC', 'b.DOCX', 'c.PPT', 'd.pptx']) {
+      expect(h.registry.candidates(path)[0]!.binaryExtensions).toEqual(['doc', 'docx', 'ppt', 'pptx'])
       expect(h.registry.candidates(path)[0]!.title()).toBe(en.title)
       expect(h.registry.candidates(path)[0]!.loading).toBe('renderer')
       expect(h.registry.candidates(path)[0]).not.toHaveProperty('read')
       await expect(h.read(undefined, path)).rejects.toThrow(en.unavailable)
     }
+    for (const path of ['sheet.XLS', 'sheet.xlsx']) expect(h.registry.candidates(path)).toEqual([])
     expect(h.render).not.toHaveBeenCalled()
   } finally { await h.close() }
   expect(h.registry.getSnapshot()).toEqual([])

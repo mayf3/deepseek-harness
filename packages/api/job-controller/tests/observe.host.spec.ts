@@ -225,13 +225,21 @@ describe('JobController', () => {
 
   async function liveOwner(ctx: Context, rawId: string): Promise<Agent> {
     const session = ctx.sessions.create(SessionId(rawId))
-    const owner = {
+    const owner: Agent = {
       id: session.id,
+      options: {},
       session,
       inbox: unsupportedInbox(),
       status: 'idle',
       ctx,
-    } as unknown as Agent
+      send: () => {},
+      followup: () => {},
+      steer: () => {},
+      inject: () => {},
+      cancel: () => {},
+      runMaintenance: task => task(new AbortController().signal),
+      whenIdle: () => Promise.resolve(),
+    }
     await ctx.agents.register(owner)
     return owner
   }
