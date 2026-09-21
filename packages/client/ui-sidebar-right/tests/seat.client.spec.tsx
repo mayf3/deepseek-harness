@@ -64,7 +64,7 @@ function transition(property = 'transform') {
   }
 }
 
-async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0, opener = false) {
+async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0, opener = false, keepMounted = false) {
   const runtime = await SlotTestRuntime.create()
   runtimes.push(runtime)
   const frame = { openRightbar: vi.fn(), closeRightbar: vi.fn() }
@@ -130,6 +130,7 @@ async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0, o
     runtime.ctx.sidebarRightTabs.register({
       id: 'test/text', kind: 'text', priority: 'builtin', patterns: ['dsh-resource://file/**'],
       title: address => address.slice(address.lastIndexOf('/') + 1),
+      keepMounted,
       guide: Array.from({ length: entryCount }, (_, order) => ({ id: String(order), order, title: () => 'Test', description: () => 'Test page' })),
     })
     runtime.slots.register({ name: 'sidebar.right.pane.tab', key: 'test/text' }, Body)
@@ -161,12 +162,34 @@ function element(container: HTMLElement, selector: string): HTMLElement {
 }
 
 describe('RightbarSeat presentation', () => {
+  it('keeps a background retained body through standard-source registration and removal', async () => {
+    const h = await mountSeat(1440, true, 0, false, true)
+    const tab = h.open('retained.txt')
+    const body = element(h.view.container, `[data-tab-body="${tab.id}"]`)
+    await act(async () => { await h.runtime.sessions.add({ id: OTHER }) })
+    act(() => { h.selectSession(OTHER) })
+    expect(body.isConnected).toBe(true)
+    let withdraw = () => {}
+    act(() => {
+      withdraw = h.runtime.ctx.uiSession.provide({
+        props: ['sidebarRetentionProbe'],
+        resolve: () => ({ props: { sidebarRetentionProbe: true } }),
+      })
+    })
+    expect(element(h.view.container, `[data-tab-body="${tab.id}"]`)).toBe(body)
+    act(withdraw)
+    expect(element(h.view.container, `[data-tab-body="${tab.id}"]`)).toBe(body)
+    act(() => { h.selectSession(SESSION) })
+    expect(element(h.view.container, `[data-tab-body="${tab.id}"]`)).toBe(body)
+    expect(h.bodies.get(tab.id)?.tab.signal.aborted).toBe(false)
+  })
+
   it('hides for a global main panel and retains the Session sidebar state', async () => {
     const h = await mountSeat()
     h.open('retained.txt')
     const retained = h.layout()
     act(() => { h.runtime.panelInfo.set({ activePanelId: 'other-panel' as MainPanelId }) })
-    expect(h.view.container.querySelector('[data-sidebar-right-panel]')).toBeNull()
+    expect(element(h.view.container, '[data-sidebar-right-session]').hidden).toBe(true)
     expect(h.frame.closeRightbar).toHaveBeenCalled()
     expect(h.layout()).toBe(retained)
     act(() => { h.runtime.panelInfo.set({ activePanelId: null }) })
@@ -182,12 +205,11 @@ describe('RightbarSeat presentation', () => {
     act(() => { h.arm(true) })
     expect(h.opened).toHaveLength(1)
     expect(Object.values(h.layout().tabs).map(tab => tab.contentId)).toEqual(h.opened)
-    // A global panel unmounts both columns and the mounted seat with them.
+    // A global panel hides the Sidebar and releases its public navigation binding.
     act(() => { h.runtime.panelInfo.set({ activePanelId: 'other-panel' as MainPanelId }) })
-    expect(h.view.container.querySelector('[data-sidebar-right-panel]')).toBeNull()
+    expect(element(h.view.container, '[data-sidebar-right-session]').hidden).toBe(true)
     expect(h.controller.mounted.getSnapshot()).toBeUndefined()
-    // Returning mounts both in one commit, the Conversation's effects first; the
-    // opener sees no seat, then the seat's own effect binds and it opens.
+    // The opener waits until the foreground seat republishes its navigation binding.
     act(() => { h.runtime.panelInfo.set({ activePanelId: null }) })
     expect(h.controller.mounted.getSnapshot()).toBe(SESSION)
     expect(h.opened).toHaveLength(2)
@@ -258,7 +280,7 @@ describe('RightbarSeat presentation', () => {
   it('keeps the panel mounted while collapsed and releases the frame on unmount', async () => {
     const h = await mountSeat()
     const panel = element(h.view.container, '[data-sidebar-right-panel]')
-    expect(panel.getAttribute('aria-hidden')).toBe('true')
+    expect(panel.hasAttribute('data-sidebar-right-open')).toBe(false)
     expect(h.frame.closeRightbar).toHaveBeenCalled()
     h.open()
     expect(element(h.view.container, '[data-sidebar-right-panel]')).toBe(panel)
@@ -317,7 +339,7 @@ describe('RightbarSeat presentation', () => {
     expect(panel.style.width).toBe('420px')
     fireEvent.click(element(h.view.container, '[data-sidebar-right-mode]'))
     expect(h.layout().mode).toBe('fullscreen')
-    expect(panel.style.width).toBe('100%')
+    expect(panel.style.width).toBe('100vw')
     expect(panel.dataset['sidebarRightPanel']).toBe('fullscreen')
     expect(element(h.view.container, '[data-tab-body]')).toBe(body)
     expect(h.frame.openRightbar).toHaveBeenLastCalledWith(true, true)

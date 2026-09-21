@@ -90,7 +90,7 @@
       "path": "../ui-session"
     },
     {
-      "path": "../ui-sidebar-browser"
+      "path": "../ui-sidebar-browser/tsconfig.client.json"
     },
     {
       "path": "../ui-sidebar-right"

@@ -1,4 +1,4 @@
-/** Optional Electron preload declarations consumed by the settings row. */
+/** Type-only Electron update declarations shared by the settings UI and Desktop compatibility checks. */
 
 /** Classified failure copy selected by the Web locale without exposing raw updater diagnostics. */
 export type DesktopUpdateFailureKind =

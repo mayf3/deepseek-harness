@@ -7,10 +7,7 @@
     "noEmit": true,
     "rewriteRelativeImportExtensions": false
   },
-  "files": [
-    "packages/client/ui-settings-general/src/client/desktop-update-bridge.ts",
-    "packages/client/ui-sidebar-browser/src/index.ts"
-  ],
+  "files": [],
   "include": [
     "apps/web/product-isolation.ts",
     "apps/web/tests/default-product-isolation.e2e.ts",
@@ -185,6 +182,8 @@
     { "path": "./packages/experimental/computer-use-cua-driver-mcp" },
     { "path": "./packages/experimental/computer-use-cua-driver-native" },
     { "path": "./packages/client/ui-sidebar-documentpreview/tsconfig.host.json" },
+    { "path": "./packages/client/ui-sidebar-browser/tsconfig.host.json" },
+    { "path": "./packages/client/ui-settings-general/tsconfig.host.json" },
     { "path": "./packages/document/office-to-pdf" },
     { "path": "./packages/client/ui-deliverables/tsconfig.host.json" },
     { "path": "./vendor/cosmokit" },

@@ -193,6 +193,7 @@
       "@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client": ["./packages/client/ui-sidebar-documentpreview/src/client"],
       "@deepseek-ai/dsh-client-ui-sidebar-browser": ["./packages/client/ui-sidebar-browser/src"],
       "@deepseek-ai/dsh-client-ui-sidebar-browser/client": ["./packages/client/ui-sidebar-browser/src/client"],
+      "@deepseek-ai/dsh-client-ui-sidebar-browser/types": ["./packages/client/ui-sidebar-browser/src/types.ts"],
       "@deepseek-ai/dsh-api-workspace-files": ["./packages/api/workspace-files/src"],
       "@deepseek-ai/dsh-api-workspace-files/types": ["./packages/api/workspace-files/src/types.ts"],
       "@deepseek-ai/dsh-api-workspace-files/client": ["./packages/api/workspace-files/src/client/index.ts"],
@@ -254,6 +255,7 @@
       "@deepseek-ai/dsh-client-ui-theme": ["./packages/client/ui-theme/src"],
       "@deepseek-ai/dsh-client-ui-settings": ["./packages/client/ui-settings/src"],
       "@deepseek-ai/dsh-client-ui-settings-general": ["./packages/client/ui-settings-general/src"],
+      "@deepseek-ai/dsh-client-ui-settings-general/types": ["./packages/client/ui-settings-general/src/types.ts"],
       "@deepseek-ai/dsh-client-ui-settings-models": ["./packages/client/ui-settings-models/src"],
       "@deepseek-ai/dsh-client-ui-plugin-manager": ["./packages/client/ui-plugin-manager/src"],
       "@deepseek-ai/dsh-client-ui-settings-plugin-inventory": ["./packages/client/ui-settings-plugin-inventory/src"],
@@ -289,6 +291,7 @@
       "@deepseek-ai/dsh-session-log-export/client": ["./packages/session-query/session-log-export/src/client"],
       "@deepseek-ai/dsh-compaction-image-offload/projection": ["./packages/compaction/compaction-image-offload/src/projection.ts"],
       "@deepseek-ai/dsh-session-format-catalog/message-projections": ["./packages/session/session-format-catalog/src/message-projections.ts"],
+      "@deepseek-ai/dsh-native-command/types": ["./packages/util/native-command/src/types.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

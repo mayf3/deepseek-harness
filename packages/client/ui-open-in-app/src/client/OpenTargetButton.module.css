@@ -1,4 +1,4 @@
-/* Sized to sit in the document header's 28px control row beside its round
+/* Sized to sit in the document header's 24px control row beside its round
    icon buttons: a hairline pill with a 12px label and a narrow chevron half. */
 
 .menuAnchor {
@@ -11,10 +11,10 @@
   display: inline-flex;
   align-items: stretch;
   box-sizing: border-box;
-  height: 28px;
+  height: 24px;
   overflow: hidden;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 14px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 9px;
   font-family: var(--dsw-font-family);
 }
 
@@ -26,19 +26,20 @@
   border: 0;
   background: none;
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 16px;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .main {
-  padding: 5px 8px 5px 10px;
+  gap: 4px;
+  padding: 3px 5px;
 }
 
 .chevron {
-  padding: 5px 6px 5px 4px;
-  border-left: 0.5px solid var(--dsw-alias-border-l3);
+  padding: 3px 4px 3px 3px;
+  border-left: 0.5px solid var(--dsw-alias-border-l4);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -54,3 +55,26 @@
 .chevron:disabled {
   cursor: default;
 }
+
+.appIcon {
+  object-fit: contain;
+}
+
+/* The unavailable preview emphasizes the same actions with a labeled button. */
+.split[data-size='large'] {
+  height: 40px;
+  border-radius: 14px;
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.split[data-size='large'] .main {
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.split[data-size='large'] .chevron {
+  padding: 8px 10px;
+}
+
+.skeleton { display: inline-block; flex: none; border-radius: 3px; background: var(--dsw-alias-interactive-bg-hover); }
