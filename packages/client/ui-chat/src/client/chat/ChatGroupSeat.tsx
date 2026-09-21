@@ -113,7 +113,7 @@ const ProcessGroupHeader = memo(function ProcessGroupHeader({ groupKey, useChatG
     detail: data?.summary.runningDetail ?? '',
   }, data !== undefined && !data.closed)
   if (data === undefined) return null
-  const label = data.closed ? processTitle(data.summary, true, t) : t(`message.stepProcess.${live.activity}`)
+  const label = data.closed ? processTitle(data.summary, t) : t(`message.stepProcess.${live.activity}`)
   const detail = detailed && !data.closed ? live.detail : ''
   const title = detail === '' ? label : `${label}${t('message.turnProcess.separator')}${detail}`
   const activity = data.closed ? data.summary.counts[0]?.kind ?? 'thinking' : live.activity

@@ -3,18 +3,15 @@ import type { ChatViewSlotProps } from '../contract/slots.ts'
 import type { ProcessActivitySummary } from '../contract/process-groups.ts'
 
 /**
- * Compose localized abstract status or the top three completed categories without counts.
+ * Compose a closed group's localized title from its top three categories without counts.
  * @param summary - ranked work and phase evidence for this range.
- * @param closed - whether a following reply or turn boundary closed the range.
  * @param t - Chat namespace translator.
  * @returns the secondary disclosure title.
  */
 export function processTitle(
   summary: ProcessActivitySummary,
-  closed: boolean,
   t: ChatViewSlotProps['t'],
 ): string {
-  if (!closed) return t(`message.stepProcess.${summary.running ?? 'thinking'}`)
   const labels = summary.counts.slice(0, 3).map(({ kind }) => t(`message.stepProcess.done.${kind}`))
   const first = labels[0]
   if (first === undefined) return t('message.stepProcess.done.thinking')

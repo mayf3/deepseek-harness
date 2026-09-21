@@ -215,7 +215,7 @@ export class ChatViewport {
 
   /**
    * Approximate the active Turn by binary-searching outer Node/Group boxes.
-   * Gaps retain the preceding Turn; group contents need no further lookup.
+   * Gaps retain the last visited Turn candidate, not necessarily the immediate predecessor.
    * A known landing bypasses measurement while its position is unchanged.
    * @param metrics - reusable scroll metrics; omitted callers request a fresh read.
    * @returns the Turn near the reading line, or null while detached or empty.

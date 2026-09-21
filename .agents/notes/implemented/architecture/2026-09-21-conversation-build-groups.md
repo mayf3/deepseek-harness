@@ -12,7 +12,7 @@ A Chat Builder aggregates one target's Nodes and indexes. Hardcoding a Chat proc
 
 Process groups are orthogonal to Steps: one Assistant Node can contribute reasoning inside a group and a reply outside it; tools after that reply enter a later group. Step-number ranges cannot describe membership. Existing event Definitions interpret one event at a time, whereas grouping needs the Nodes those Definitions have already interpreted.
 
-The reverted PR #4565 showed why broad benchmark budgets are insufficient: its recorded comparison reported pagination +27%, DOM nodes +23%, heap +14%, and Trajectory switching +10%, all within those budgets, while the streaming-to-group update path was not covered. Those historical measurements do not measure this implementation. Component updates, browser layout, and retained memory need separate evidence.
+Broad benchmark budgets do not establish that grouping updates are local. Keyed notifications, component identity, browser layout, and retained memory are distinct properties; passing one check does not establish the others.
 
 ## Decision
 
@@ -153,16 +153,14 @@ The presentation channel maps each stored mode to a stable policy object. Seats 
 - [Node source tests](../../../../packages/client/ui-chat/tests/chat-node-source.client.spec.ts) cover projected grouping inputs, indexed readers, and empty change batches.
 - [Chat rendering tests](../../../../packages/client/ui-chat/tests/chat-view.client.spec.tsx) retain component state across modes, rebind replacement Node stores, pass independent parts, and omit unreferenced Nodes. [Viewport tests](../../../../packages/client/ui-chat/tests/chat-viewport.client.spec.ts) cover grouped reading anchors, history prepend, and part-aware Turn navigation.
 
-Business verification has separate owners; a passing unit suite does not complete browser or performance acceptance.
+Business behavior is verified through keyed-update regressions and recorded Web replay.
 
 | Evidence | Required observation |
 |---|---|
 | Keyed notifications and React updates | Content growth affects the owning Node and affected Group; unchanged historical rows and unrelated Turns receive no extra notifications. Mode changes preserve keys and member parents. |
 | Recorded Web replay | Current accessible titles, group disclosure, hidden ordinary Context, trigger notices, and footer placement match the committed expected output. |
-| Real-model GUI recording | The PR demonstrates the changed interaction through its real server and model flow. |
-| Long-session performance | Initial opening, mode changes, pagination across steering, streaming reasoning/tool updates, layout, and heap are measured separately. |
 
-The complete grouped-product Web snapshot refresh, real-model GUI recording, and repeatable long-session performance comparison remain outstanding. Local traces and focused regressions do not close those gaps.
+[Recorded Web scenarios](../../../../apps/web/tests/steering.e2e.ts) cover online steering, reconnect handoff, and grouped presentation through the shipped Web profile. These behavior checks do not establish a quantified latency or memory improvement.
 
 ## Consequences
 

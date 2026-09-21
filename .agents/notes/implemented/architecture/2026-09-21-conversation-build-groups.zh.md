@@ -12,7 +12,7 @@ Chat Builder 汇总整个目标的节点及索引。在其中固定创建 Chat �
 
 过程组与 Step 正交：同一个 Assistant Node 可以把推理放在组内、回复放在组外，回复后的工具进入后面的组。Step 编号范围无法描述这种成员归属。现有事件 Definition 逐个解释事件，分组则需要这些 Definition 已经解释完成的节点。
 
-被撤回的 PR #4565 说明了通用基准预算的不足：当时记录的对比为分页 +27%、DOM 节点 +23%、堆内存 +14%、Trajectory 切换 +10%，均未超出预算，但未覆盖流式输入到分组更新的路径。这些历史测量不代表当前实现。组件更新、浏览器布局及常驻内存需要分别验证。
+宽松的基准预算不能证明分组更新具有局部性。按键通知、组件身份、浏览器布局与常驻内存是不同的性质，通过其中一项检查不能证明其他性质。
 
 ## Decision
 
@@ -153,16 +153,14 @@ React key 由引用 kind、NodeKey/groupPart 或 GroupKey 的无歧义元组派�
 - [Node 来源测试](../../../../packages/client/ui-chat/tests/chat-node-source.client.spec.ts)覆盖投影后的分组输入、索引读取器和空变化批次。
 - [Chat 渲染测试](../../../../packages/client/ui-chat/tests/chat-view.client.spec.tsx)保留模式切换时的组件状态，重绑定替换后的 Node 存储，传递独立部分，并省略未引用 Node。[视口测试](../../../../packages/client/ui-chat/tests/chat-viewport.client.spec.ts)覆盖组内阅读锚点、历史前插及部分感知的轮次导航。
 
-业务验证由不同证据分别负责，单元测试通过不代表浏览器或性能验收完成。
+业务行为通过按键更新回归与已录制的 Web 回放验证。
 
 | 证据 | 必须观察到的结果 |
 |---|---|
 | 按键通知与 React 更新 | 正文增长影响所属 Node 和相关 Group；未变化历史行及其他 Turn 没有额外通知。模式变化保留 key 与成员父级。 |
 | 已录制的 Web 回放 | 当前可访问标题、组开合、普通 Context 隐藏、触发通知及页脚位置与提交的预期输出一致。 |
-| 真实模型 GUI 录制 | PR 通过真实服务端与模型流程演示变化后的交互。 |
-| 长会话性能 | 分别测量首次打开、模式切换、跨 steering 分页、流式推理与工具更新、布局和堆内存。 |
 
-完整分组产品的 Web 快照刷新、真实模型 GUI 录制及可重复的长会话性能对比仍未完成。局部 trace 和定向回归不能替代这些证据。
+[已录制的 Web 场景](../../../../apps/web/tests/steering.e2e.ts)通过正式 Web profile 覆盖在线 steering、重连接续与分组展示。这些行为检查不构成量化延迟或内存改善的证明。
 
 ## Consequences
 
