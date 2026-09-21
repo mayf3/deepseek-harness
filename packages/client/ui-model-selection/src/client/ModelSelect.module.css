@@ -162,7 +162,7 @@
   margin: 6px;
   padding: 0 10px;
   border: none;
-  border-radius: 10px;
+  border-radius: 9999px;
   background: var(--dsw-alias-bg-module-platform);
 }
 
