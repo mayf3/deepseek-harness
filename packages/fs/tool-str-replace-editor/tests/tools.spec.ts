@@ -347,6 +347,21 @@ describe('tool-str-replace-editor', () => {
       .toContain('<response clipped>')
   })
 
+  it('clips a view at a code-unit boundary without splitting a surrogate pair', async () => {
+    const wide = await setup({ maxOutputChars: 10_000 })
+    const file = join(wide.root, 'emoji.txt')
+    await writeFile(file, `${'😀'.repeat(4)}tail`)
+    const untruncated = text(await call(wide.ctx, wide.owner, { command: 'view', path: file }))
+    // The cap lands on the high surrogate of the first emoji.
+    const splitAt = untruncated.indexOf('😀') + 1
+
+    const clipped = await setup({ maxOutputChars: splitAt })
+    const rendered = text(await call(clipped.ctx, clipped.owner, { command: 'view', path: file }))
+
+    expect(rendered.startsWith(`${untruncated.slice(0, splitAt - 1)}<response clipped>`)).toBe(true)
+    expect(rendered).not.toContain('\uD83D')
+  })
+
   it('matches canonical empty-line, range, and end-insert behavior', async () => {
     const { ctx, root, owner } = await setup()
     const empty = join(root, 'empty.txt')

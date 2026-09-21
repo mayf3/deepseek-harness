@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-使用 `dsh-output-retention` 限制工具返回给模型的项或文本量，并报告省略了什么。`ItemRetainer` 保留有序的头部窗口，并可报告精确的省略项数；`TextRetainer` 保留 head、tail 或 head-and-tail 字节窗口，且不会返回因切割而无效的 UTF-8。`formatRetentionNotice` 添加一致的省略子句，各工具则提供自己的恢复指引。分组、行号、spill 文件与提供方错误仍归工具负责；消费方直接导入本库，而不通过 `cordis.yml` 加载。
+使用 `dsh-output-retention` 限制工具返回给模型的项或文本量，并报告省略了什么。`ItemRetainer` 保留有序的头部窗口，并可报告精确的省略项数；`TextRetainer` 保留 head、tail 或 head-and-tail 字节窗口，且不会返回因切割而无效的 UTF-8。`formatRetentionNotice` 添加一致的省略子句，各工具则提供自己的恢复指引。`truncateWithoutSplittingSurrogatePair` 按字符预算截断预览时，不会在切口留下孤立的高位代理项。分组、行号、spill 文件与提供方错误仍归工具负责；消费方直接导入本库，而不通过 `cordis.yml` 加载。
 
 ## 目录
 
@@ -104,7 +104,7 @@ const footer = formatRetentionNotice(
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `ItemRetainer`、`TextRetainer`、`describeOmitted` 与 `formatRetentionNotice` |
+| [`src/index.ts`](src/index.ts) | `ItemRetainer`、`TextRetainer`、`describeOmitted`、`formatRetentionNotice` 与 `truncateWithoutSplittingSurrogatePair` |
 | — | 不发布运行时不变式伴生入口；这个纯工具不拥有事件流或可变运行时数据；其值代数由单元测试保证。 |
 
 ### 两个 retainer，两种资源模型
