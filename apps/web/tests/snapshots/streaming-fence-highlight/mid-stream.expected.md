@@ -10,6 +10,7 @@
 - button "Copy"
 - button "Context injection runtime-context"
 - text: ts
+- button "Wrap lines" [pressed]
 - button "Copy"
 - code: "const first: number = 1 const second = \"two\" let tail"
 - status: Deep diving...

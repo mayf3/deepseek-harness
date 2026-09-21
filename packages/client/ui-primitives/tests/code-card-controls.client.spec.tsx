@@ -37,10 +37,11 @@ describe('code-card controls', () => {
       : kind === 'read'
         ? <ReadBlock lines={[{ number: 24, text: code }]} totalLines={30} lang="ts" labels={{ ...readBlockLabels, ...toolbarLabels }} />
         : <DiffBlock diffs={[{ path: 'example.ts', oldText: 'old', newText: code }]} labels={{ ...diffBlockLabels, ...toolbarLabels }} />)
-    const button = screen.getByRole('button', { name: kind === 'code' ? 'Do not wrap lines' : 'Wrap lines' })
+    const button = screen.getByRole('button', { name: 'Wrap lines' })
     const wasWrapped = button.getAttribute('aria-pressed') === 'true'
     fireEvent.click(button)
     expect(button.getAttribute('aria-pressed')).toBe(String(!wasWrapped))
+    expect(button.getAttribute('aria-label')).toBe('Wrap lines')
     expect(view.container.textContent).toContain(code)
     fireEvent.click(button)
     expect(button.getAttribute('aria-pressed')).toBe(String(wasWrapped))
@@ -52,7 +53,7 @@ describe('code-card controls', () => {
     fireEvent.mouseEnter(copy)
     expect(screen.getByRole('tooltip').textContent).toBe('Copy')
     fireEvent.mouseLeave(copy)
-    const wrap = screen.getByRole('button', { name: 'Do not wrap lines' })
+    const wrap = screen.getByRole('button', { name: 'Wrap lines' })
     fireEvent.mouseEnter(wrap)
     expect(screen.getByRole('tooltip').textContent).toBe('Do not wrap lines')
     fireEvent.click(wrap)

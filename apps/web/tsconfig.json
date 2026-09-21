@@ -24,6 +24,7 @@
   "exclude": [
     "tests/default-product-isolation.e2e.ts",
     "tests/diff-context.e2e.ts",
+    "tests/code-card-layout.e2e.ts",
     "tests/scaffold.ts",
     "tests/voice-input.e2e.ts",
     "tests/voice-setup.e2e.ts",

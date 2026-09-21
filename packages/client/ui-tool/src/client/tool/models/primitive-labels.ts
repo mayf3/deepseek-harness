@@ -1,7 +1,7 @@
 /** Localized copy adapters for Cordis-free UI primitives used by Tool cards. */
 
 import type {
-  CodeBlockProps,
+  CodeToolbarLabels,
   DiffBlockLabels,
   MarkdownLabels,
   ReadBlockLabels,
@@ -17,7 +17,7 @@ type T = TranslateNS<'conversation'>
  * @param t - Conversation locale seat.
  * @returns Language fallback and wrapping actions.
  */
-export function codeToolbarLabels(t: T): NonNullable<CodeBlockProps['toolbarLabels']> {
+export function codeToolbarLabels(t: T): CodeToolbarLabels {
   return { codeLabel: t('codeBlock.title'), wrapLabel: t('codeBlock.wrap'), unwrapLabel: t('codeBlock.unwrap') }
 }
 

@@ -3,6 +3,8 @@
 }
 
 .body {
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr);
   padding: 6px 0 16px;
   font: var(--dsw-font-markdown-code-block);
   overflow-x: auto;
@@ -13,6 +15,10 @@
   min-height: 1lh;
   padding: 0 18px;
   white-space: pre;
+}
+
+.block[data-code-wrap='true'] .body {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .block[data-code-wrap='true'] .line {

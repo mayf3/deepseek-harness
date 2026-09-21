@@ -104,10 +104,6 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.card {
-  --dsl-code-block-content-font: var(--dsw-font-markdown-code-block);
-}
-
 .card :where(pre) {
   padding: 6px 18px 16px;
   word-break: normal;

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import clsx from 'clsx'
 import { FoldToggle } from './FoldToggle.tsx'
 import { writeClipboard } from './clipboard.ts'
@@ -119,14 +119,18 @@ export function ReadBlock({
       </div>
     ))
 
+  const gutterDigits = lines.reduce((digits, line) => Math.max(digits, String(line.number).length), 3)
+  const gutterStyle = { '--dsl-read-gutter': `${gutterDigits}ch` } as CSSProperties
+
   const paired = lines.map((line, index): readonly [ReadBlockLine, readonly HighlightSpan[] | undefined] =>
     [line, highlighted?.[index]])
 
   return (
-    <div ref={rootRef} className={clsx(cardCss.card, css.block, className)} data-read="" data-code-wrap={wrapped}>
+    <div ref={rootRef} className={clsx(cardCss.card, css.block, className)} data-read="" data-code-wrap={wrapped} style={gutterStyle}>
       <CodeToolbar
         lang={lang} title={label} status={windowed ? labels.window(lines.length, totalLines) : undefined}
         labels={labels} copyLabel={labels.copy} copiedLabel={labels.copied} copied={copied} wrapped={wrapped}
+        // Empty files must not replace the clipboard with empty text.
         onCopy={lines.length > 0 ? onCopy : undefined} onWrap={() => { setWrapped(value => !value) }}
       />
       <div className={cardCss.body}>

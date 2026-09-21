@@ -47,7 +47,7 @@ export function CodeToolbar({ lang, title, status, labels, copyLabel, copiedLabe
       <div className={css.actions}>
         {status !== undefined && <span className={css.status}>{status}</span>}
         {onWrap !== undefined && <Tooltip label={wrapLabel} side="top" portal>
-          <button type="button" className={css.action} aria-label={wrapLabel} aria-pressed={wrapped} onClick={onWrap}>
+          <button type="button" className={css.action} aria-label={labels.wrapLabel} aria-pressed={wrapped} onClick={onWrap}>
             {wrapped ? <IconNowrapFillRegular size={14} /> : <IconWrapFillRegular size={14} />}
           </button>
         </Tooltip>}

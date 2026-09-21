@@ -137,7 +137,7 @@
 - paragraph:
   - img "Token preview"
 - text: css
-- button "Do not wrap lines" [pressed]
+- button "Wrap lines" [pressed]
 - button "Copy"
 - code: "--inline-code: #F5F5F5;"
 - paragraph: LINK_GALLERY_DONE

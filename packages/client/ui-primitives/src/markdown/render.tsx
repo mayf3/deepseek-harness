@@ -22,6 +22,7 @@ import clsx from 'clsx'
 import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
+import type { CodeToolbarLabels } from '../CodeToolbar.tsx'
 import { CodeBlock } from './CodeBlock.tsx'
 import { parseFileLink } from './file-link.ts'
 import { renderTexToReact } from './katex.tsx'
@@ -37,7 +38,7 @@ export interface MarkdownCodeLabels {
   /** Copy-button label during the post-copy confirmation window. */
   copiedLabel: string
   /** Shared card controls; omitted in compact and owner-styled source views. */
-  toolbarLabels?: import('../CodeToolbar.tsx').CodeToolbarLabels | undefined
+  toolbarLabels?: CodeToolbarLabels | undefined
 }
 
 /** Localized chrome for a Markdown document. */

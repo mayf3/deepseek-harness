@@ -1,7 +1,3 @@
-.block {
-  --dsl-read-gutter: 3ch;
-}
-
 .line {
   display: flex;
   min-height: 1lh;

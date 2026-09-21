@@ -27,7 +27,8 @@ const TRAJECTORY_EXPECTED = join(SNAPSHOT_DIR, 'trajectory.expected.md')
 const TIMING_EXPECTED = join(SNAPSHOT_DIR, 'timing.expected.md')
 const SEARCH_EXPECTED = join(SNAPSHOT_DIR, 'search-results.expected.md')
 const TERMINAL_EXPECTED = join(SNAPSHOT_DIR, 'terminal-card.expected.md')
-const CODE_CARD_EXPECTED = fileURLToPath(new URL('./expected/navigation-panes/code-card.expected.md', import.meta.url))
+const CODE_CARD_DIR = fileURLToPath(new URL('./expected/navigation-panes', import.meta.url))
+const CODE_CARD_EXPECTED = join(CODE_CARD_DIR, 'code-card.expected.md')
 const MODE = webSnapshotMode()
 const SEED_ID = 'navigation-panes-web-e2e'
 const EXPORTED_LOG_FILE = `session.v${SESSION_FORMAT_VERSION}.jsonl`
@@ -231,7 +232,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     const copy = block.getByRole('button', { name: 'Copy', exact: true })
     await copy.hover()
     await page.getByRole('tooltip', { name: 'Copy', exact: true }).waitFor()
-    const unwrap = block.getByRole('button', { name: 'Do not wrap lines', exact: true })
+    const unwrap = block.getByRole('button', { name: 'Wrap lines', exact: true })
     await unwrap.hover()
     await page.getByRole('tooltip', { name: 'Do not wrap lines', exact: true }).waitFor()
     await unwrap.click()
@@ -544,6 +545,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
   }, 60_000)
 
   it.skipIf(MODE === 'record')('keeps the recorded fixture inventory exact', async () => {
+    await assertFixtureInventory(CODE_CARD_DIR, ['code-card.expected.md'])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'session.v3.jsonl', 'search-results.expected.md', 'trajectory.expected.md',
       'terminal-card.expected.md', 'timing.expected.md',

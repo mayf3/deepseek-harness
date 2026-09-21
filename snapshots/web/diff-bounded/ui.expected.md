@@ -2,6 +2,8 @@
   - text: Edit
   - button "large.txt"
   - text: +130 -130
+- text: Code block
+- button "Wrap lines"
 - button "Copy"
 - text: large.txt - shared heading - old setting 0 - old setting 1 - old setting 2
 - button "Expand 252 more diff lines": … 252 more lines
