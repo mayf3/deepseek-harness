@@ -654,6 +654,7 @@ describe('client bundle activation', () => {
     const packageName = '@fixture/batch-rebuild-race'
     const clientPath = writePackage(packageName)
     mkdirSync(dirname(clientPath), { recursive: true })
+    // Distinct sizes keep all three revisions distinct even within one filesystem clock tick.
     writeFileSync(clientPath, 'module.exports = { generation: 1 }\n')
     const { service, route } = constructWithRoute([packageName])
     const first = service.graph().batches[0]!.url
@@ -662,14 +663,18 @@ describe('client bundle activation', () => {
     writeFileSync(clientPath, 'module.exports = { generation: 200 }\n')
     service.rebuilt(packageName)
     const second = service.graph().batches[0]!.url
+    const secondSize = service.artifactBaseline(packageName)!.size
     expect(second).not.toBe(first)
-    expect(service.artifactBaseline(packageName)!.size).toBeGreaterThan(firstSize)
+    expect(secondSize).toBeGreaterThan(firstSize)
     expect((await routeRequest(route, first)).status).toBe(200)
     expect((await routeRequest(route, second)).status).toBe(200)
 
-    writeFileSync(clientPath, 'module.exports = { generation: 3 }\n')
+    writeFileSync(clientPath, 'module.exports = { generation: 30000 }\n')
     service.rebuilt(packageName)
     const third = service.graph().batches[0]!.url
+    expect(third).not.toBe(first)
+    expect(third).not.toBe(second)
+    expect(service.artifactBaseline(packageName)!.size).toBeGreaterThan(secondSize)
     expect((await routeRequest(route, first)).status).toBe(404)
     expect((await routeRequest(route, second)).status).toBe(200)
     expect((await routeRequest(route, third)).status).toBe(200)
@@ -723,8 +728,11 @@ describe('client bundle activation', () => {
     const update = vi.spyOn(Hash.prototype, 'update')
     try {
       const service = construct([packageName])
+      const first = service.graph().entries[0]!.rev
+      const before = statSync(clientPath)
       writeFileSync(clientPath, `module.exports = ${JSON.stringify('y'.repeat(64 * 1024))}\n`)
-      service.rebuilt(packageName)
+      utimesSync(clientPath, before.atime, new Date(before.mtimeMs + 1_000))
+      expect(service.rebuilt(packageName)).not.toBe(first)
       const inputBytes = update.mock.calls.map(([input]) => Buffer.byteLength(input))
       expect(inputBytes.length).toBeGreaterThan(0)
       expect(inputBytes.reduce((total, bytes) => total + bytes, 0)).toBeLessThan(4 * 1024)
