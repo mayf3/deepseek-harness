@@ -15,7 +15,7 @@ import { estimateContent } from '@deepseek-ai/dsh-token-meter/estimate'
 import { createMcpToolDefinition } from '@deepseek-ai/dsh-mcp-client'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import LocalSpillStore from '@deepseek-ai/dsh-spill-local'
 import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
 import type { PtcRunRequest, PtcRunSpec, PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
@@ -69,7 +69,7 @@ async function setup(content: JsonValue[], maxInlineTokens: number) {
   })
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime, { mode: 'both' })
-  await ctx.plugin(FileSystem, { cwd: root })
+  const fsFiber = await ctx.plugin(FileSystem, { cwd: root })
   await ctx.plugin(TestAttachments, root)
   await ctx.plugin(LocalSpillStore, { root: join(root, 'spill'), cleanupPeriodDays: 0 })
   await ctx.plugin(LlmRuntime)
@@ -85,7 +85,7 @@ async function setup(content: JsonValue[], maxInlineTokens: number) {
     signal: new AbortController().signal, callId: ToolCallId('mixed-call'), name,
     arguments: name === 'run_code' ? { code: 'return await tools.inspect({})', description: 'Inspect a window' } : {}, agent,
   })
-  return { ctx, execute, session }
+  return { ctx, execute, session, fsFiber }
 }
 
 const image = (): JsonValue => ({ type: 'image', data: PNG.toString('base64'), mimeType: 'image/png' })
@@ -142,6 +142,38 @@ describe('multimodal spill', () => {
     const result = await execute()
     expect(result.content.some(block => block.type === 'image')).toBe(true)
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('no image token calculator'))
+  })
+
+  it('preserves images after the execution filesystem is unmounted', async () => {
+    const { ctx, execute, fsFiber } = await setup([text('A'.repeat(4000)), image()], 200)
+    await fsFiber.dispose()
+    const warning = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    const result = await execute()
+    expect(result.content.some(block => block.type === 'image')).toBe(true)
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('no readable attachment path'))
+  })
+
+  it('preserves direct programmatic image results without an active model route', async () => {
+    const { ctx } = await setup([], 200)
+    const attachment = await ctx.attachments.saveImage({ data: PNG, mediaType: 'image/png' })
+    ctx.tools.register(defineContentToolFixture({
+      name: 'offline_image', description: 'Read a durable image', parameters: {},
+      async execute() { return [{ type: 'image', attachment }] },
+    }))
+    const warning = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    const result = await ctx.tools.execute({ signal: new AbortController().signal,
+      callId: ToolCallId('offline'), name: 'offline_image', arguments: {} })
+    expect(result.content).toEqual([{ type: 'image', attachment }])
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('no image token calculator'))
+  })
+
+  it('preserves content when the image calculator loses an occurrence', async () => {
+    const { ctx, execute } = await setup([text('A'.repeat(4000)), image()], 200)
+    vi.spyOn(ctx.llm, 'imageRequestPricing').mockReturnValue({ priceImages: () => [] })
+    const warning = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    const result = await execute()
+    expect(result.content.some(block => block.type === 'image')).toBe(true)
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('inconsistent occurrence count'))
   })
 
   it('preserves the complete PTC value and forwards recovery text when every image is omitted', async () => {
