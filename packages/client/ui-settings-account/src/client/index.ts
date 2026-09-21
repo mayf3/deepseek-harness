@@ -67,7 +67,8 @@ export function apply(ctx: Context): void {
   const stream = ctx.remote.$stream<AccountView>({
     name: 'account', open: signal => ctx.remote.account.watch(signal), ended: () => new Error('account stream ended'),
   })
-  ctx.effect(() => () => stream.dispose(), 'account: state stream')
+  let disposed = false
+  ctx.effect(() => () => { disposed = true; return stream.dispose() }, 'account: state stream')
   void (async () => {
     for await (const frame of stream) {
       revision++
@@ -77,7 +78,7 @@ export function apply(ctx: Context): void {
       frame.accept()
       void refresh()
     }
-  })().catch(() => { if (!stream.signal.aborted) publish({ ...snapshot, failed: true }) })
+  })().catch(() => { if (!disposed) publish({ ...snapshot, failed: true }) })
   const nativePlatform = (globalThis as typeof globalThis & { dshPlatform?: PlatformBridge }).dshPlatform
   const operations: AccountSectionInjected = {
     ...nativePlatform === undefined ? {} : { platform: nativePlatform },

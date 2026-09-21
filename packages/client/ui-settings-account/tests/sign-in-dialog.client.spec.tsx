@@ -132,3 +132,27 @@ it('does not start another attempt when cancellation fails', async () => {
   expect(screen.getByRole('dialog', { name: en.failureTitle })).toBeTruthy()
   expect(screen.getByRole('button', { name: en.retry }).hasAttribute('disabled')).toBe(false)
 })
+
+it('dismisses an idle dialog and closes after the account becomes signed in', () => {
+  const props = mount(null)
+  fireEvent.keyDown(document, { key: 'Enter' })
+  expect(props.close).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: en.close }))
+  expect(props.close).toHaveBeenCalledOnce()
+  cleanup()
+  render(<SignInDialog {...props} account={{ ...props.account, view: { ...props.account.view, status: 'credential-stored' } }} />)
+  expect(props.close).toHaveBeenCalledTimes(2)
+})
+
+it('keeps an outstanding start open until the request settles', async () => {
+  const props = mount(null)
+  cleanup()
+  const pending = Promise.withResolvers<undefined>()
+  props.start.mockReturnValueOnce(pending.promise)
+  render(<SignInDialog {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: en.signIn }))
+  fireEvent.click(screen.getByRole('button', { name: en.close }))
+  expect(props.close).not.toHaveBeenCalled()
+  await act(async () => { pending.resolve(undefined); await pending.promise })
+  expect(screen.getByRole('button', { name: en.signIn }).hasAttribute('disabled')).toBe(false)
+})

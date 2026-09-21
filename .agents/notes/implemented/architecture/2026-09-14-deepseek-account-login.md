@@ -58,6 +58,8 @@ Separate accountRequestHeaders route account data and embedded Platform traffic 
 
 The Host binds private Platform sessions to the account provider lifetime. Removal or watch termination clears Electron’s session; replacement subscribes to the new provider, and disposed reads cannot publish old credentials.
 
+The client distinguishes plugin disposal from terminal account-stream failure. RemoteStream aborts its signal after either outcome, so the plugin owns a separate disposal flag to preserve failure feedback while suppressing reports after unload.
+
 ## Verification
 
 Provider tests exercise real loopback callbacks, invalid state, delayed exchange cancellation, credential persistence, sign-out, and official-origin restrictions. Desktop tests cover the native action bridge and localized entry. Manual development integration uses the platform dev middleware Mock and the real Electron Host, including cancellation before browser approval. Production backend credentials and installer scheme registration require release-environment validation.

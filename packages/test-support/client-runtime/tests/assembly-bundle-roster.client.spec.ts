@@ -305,3 +305,16 @@ describe('bundleRoster on a scratch installation', () => {
     expect(() => scratch.roster(['@t/misnamed'])).toThrow('names "@t/real", expected @t/alias')
   })
 })
+
+
+it('exhausts uneven linked-bundle search paths before reporting a missing plugin', () => {
+  const scratch = new Scratch()
+  onTestFinished(() => { rmSync(scratch.root, { recursive: true, force: true }) })
+  const bundle = join(scratch.root, 'workspace', 'nested', 'deeper', 'bundle')
+  mkdirSync(bundle, { recursive: true })
+  writeFileSync(join(bundle, 'package.json'), JSON.stringify({ name: '@t/deep', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+  writeFileSync(join(bundle, 'cordis.patch.yml'), "- insert:\n    - id: missing\n      name: '@t/absent'\n")
+  scratch.bundle('@t/base', '- insert: []\n')
+  symlinkSync(bundle, join(scratch.root, 'app', 'node_modules', '@t', 'deep'), 'junction')
+  expect(() => scratch.roster(['@t/base', '@t/deep'])).toThrow('cannot resolve plugin package @t/absent')
+})

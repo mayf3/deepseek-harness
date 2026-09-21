@@ -485,7 +485,7 @@ it('rejects a commit attempted after local cancellation', async () => {
   } finally { finish.resolve(undefined) }
 })
 
-it('finishes an admitted commit without reporting cancellation during storage', async () => {
+it.each(['local', 'caller'] as const)('finishes an admitted commit during %s cancellation', async (source) => {
   const ctx = await harness()
   const admitted = Promise.withResolvers<undefined>()
   const release = Promise.withResolvers<undefined>()
@@ -499,12 +499,50 @@ it('finishes an admitted commit without reporting cancellation during storage', 
     key: KEY, label: 'Account', methods: [{ id: 'browser', label: 'Browser' }],
     run: session => session.commit({ kind: 'grant', payload: { token: 'saved' } }),
   })
-  const running = ctx.authorization.begin({ key: KEY, interaction: surface() })
+  const controller = new AbortController()
+  const running = ctx.authorization.begin({ key: KEY, interaction: surface(), signal: controller.signal })
   try {
     await admitted.promise
-    ctx.authorization.cancel(KEY)
+    if (source === 'local') ctx.authorization.cancel(KEY)
+    else controller.abort()
     release.resolve(undefined)
     await expect(running).resolves.toEqual({ status: 'authorized' })
     expect(await ctx.credentials.readRecord(KEY)).toMatchObject({ payload: { token: 'saved' } })
   } finally { release.resolve(undefined); write.mockRestore() }
+})
+
+it('rejects a settled session commit before and during the next attempt', async () => {
+  const ctx = await harness()
+  const first = Promise.withResolvers<AuthorizationSession>()
+  const second = Promise.withResolvers<AuthorizationSession>()
+  const release = Promise.withResolvers<undefined>()
+  let attempts = 0
+  ctx.authorization.registerFlow({
+    key: KEY, label: 'Account', methods: [{ id: 'browser', label: 'Browser' }],
+    async run(session) {
+      attempts += 1
+      if (attempts === 1) first.resolve(session)
+      else {
+        second.resolve(session)
+        await release.promise
+      }
+      await session.commit({ kind: 'grant', payload: { token: `grant-${String(attempts)}` } })
+    },
+  })
+  await expect(ctx.authorization.begin({ key: KEY, interaction: surface() }))
+    .resolves.toEqual({ status: 'authorized' })
+  const settled = await first.promise
+  const late = { kind: 'grant' as const, payload: { token: 'late' } }
+  await expect(settled.commit(late)).rejects.toMatchObject({ code: 'CANCELLED' })
+
+  const running = ctx.authorization.begin({ key: KEY, interaction: surface() })
+  try {
+    await second.promise
+    await expect(settled.commit(late)).rejects.toMatchObject({ code: 'CANCELLED' })
+    expect(await ctx.credentials.readRecord(KEY)).toMatchObject({ payload: { token: 'grant-1' } })
+  } finally {
+    release.resolve(undefined)
+    await running
+  }
+  expect(await ctx.credentials.readRecord(KEY)).toMatchObject({ payload: { token: 'grant-2' } })
 })

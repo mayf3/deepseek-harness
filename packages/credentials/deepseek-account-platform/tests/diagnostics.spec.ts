@@ -91,3 +91,25 @@ it('reports browser URL rejection rules without exposing the destination', () =>
     output.mockRestore()
   }
 })
+
+it.each([
+  { name: 'HTTP failure', response: () => new Response('private-error', { status: 503 }), code: 'network' },
+  { name: 'missing body', response: () => new Response(null), code: 'network' },
+  { name: 'oversized body', response: () => new Response('x'.repeat(65_537)), code: 'protocol' },
+  { name: 'invalid JSON', response: () => new Response('{private-invalid'), code: 'protocol' },
+  { name: 'missing envelope data', response: () => new Response('{"code":0}'), code: 'protocol' },
+  { name: 'broken response stream', response: () => new Response(new ReadableStream({
+    start(controller) { controller.error(new Error('private-stream-error')) },
+  })), code: 'protocol' },
+])('rejects $name without exposing response data', async ({ response, code }) => {
+  const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response())
+  try {
+    await expect(requestPlatform('https://platform.deepseek.com', 'auth_init', {},
+      new AbortController().signal, {})).rejects.toThrow(`account: ${code}`)
+    expect(JSON.stringify(output.mock.calls)).not.toContain('private-')
+  } finally {
+    fetcher.mockRestore()
+    output.mockRestore()
+  }
+})

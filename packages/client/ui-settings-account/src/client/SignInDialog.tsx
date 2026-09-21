@@ -25,6 +25,7 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
     const timer = setTimeout(() => { setCopyResult(null) }, 2000)
     return () => { clearTimeout(timer) }
   }, [copyResult])
+  const authorizeUrl = attempt?.authorizeUrl
   const phase = attempt?.phase
   const active = busy || phase === 'initializing' || phase === 'waiting-browser' || phase === 'exchanging' || phase === 'committing'
   const expired = phase === 'expired'
@@ -46,10 +47,9 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
     if (active && attempt) await cancel(attempt.id)
     await start()
   }
-  const copyLink = async () => {
-    if (!attempt?.authorizeUrl) return
+  const copyLink = async (authorizeUrl: string) => {
     try {
-      await navigator.clipboard.writeText(attempt.authorizeUrl)
+      await navigator.clipboard.writeText(authorizeUrl)
       setCopyResult({ messageKey: 'copiedLink' })
     } catch { setCopyResult({ messageKey: 'copyFailed' }) }
   }
@@ -63,8 +63,8 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
         </button>
       </div>
       {waiting ? <p className={css.description}>
-        {t('browserPrompt')}<button type="button" className={css.link} disabled={!attempt?.authorizeUrl}
-          onClick={() => { void copyLink() }}>
+        {t('browserPrompt')}<button type="button" className={css.link} disabled={!authorizeUrl}
+          onClick={authorizeUrl ? () => { void copyLink(authorizeUrl) } : undefined}>
           {t(copyResult?.messageKey ?? 'copyLink')}
         </button>{t('browserDescription')}
       </p> : <p className={css.description}>

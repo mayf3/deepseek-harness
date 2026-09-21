@@ -30,8 +30,7 @@ export function PlatformOverlay({ bridge, page, backLabel, loadingLabel, failure
   const [attempt, setAttempt] = useState(0)
   const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>('loading')
   useEffect(() => {
-    const element = viewport.current
-    if (element === null) return
+    const element = viewport.current as HTMLDivElement
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const background = Array.from(document.body.children).filter((element): element is HTMLElement =>
       element instanceof HTMLElement && element !== layer.current).map(element => ({ element, inert: element.inert }))

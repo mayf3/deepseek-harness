@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { createServer as createTcpServer, connect, type Socket } from 'node:net'
+import { createServer as createTcpServer, connect, Socket } from 'node:net'
 import { join } from 'node:path'
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer, IncomingMessage, ServerResponse } from 'node:http'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import AuthorizationService from '@deepseek-ai/dsh-authorization'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
@@ -145,7 +145,7 @@ async function fixture(
   })
   await provider
   cleanups.push(async () => { await provider.dispose(); await authorization.dispose(); await credentials.dispose(); await web.dispose() })
-  const account = ctx.deepseekAccount
+  const account = ctx.deepseekAccount as PlatformAccount
   const states = new AbortController()
   cleanups.push(async () => { states.abort() })
   async function wait(phase: string) {
@@ -852,3 +852,341 @@ it.each([undefined, [{ currency: 'EUR', balance: '1' }], [{ currency: 'CNY', bal
     expect(await f.account.getBalance()).toEqual({ status: 'failed' })
   },
 )
+
+it.each([{ kind: 'api-key' as const, key: 'wrong-kind' }, { kind: 'grant' as const, payload: { version: 0 } }])(
+  'rejects invalid stored account records across account consumers: $kind', async (record) => {
+    const f = await fixture()
+    const key = credentialKey('deepseek-account-platform', 'default')
+    await f.ctx.credentials.modifyRecord(key, () => Promise.resolve(record))
+    await expect(f.account.getState()).rejects.toThrow('account: storage')
+    await expect(f.account.getProfile()).rejects.toThrow('account: storage')
+    await expect(f.account.getPlatformSession()).rejects.toThrow('account: storage')
+    await expect(f.account.resolveToken('https://api.deepseek.com')).rejects.toThrow('account: storage')
+    await expect(f.account.signOut()).rejects.toThrow('account: storage')
+  },
+)
+
+it('returns no credentials when signed out or disposed', async () => {
+  const f = await fixture()
+  expect(await f.account.resolveToken('https://api.deepseek.com')).toBeUndefined()
+  expect(await f.account.getPlatformSession()).toBeNull()
+  await f.account.cancelSignIn('missing' as import('@deepseek-ai/dsh-deepseek-account').SignInAttemptId)
+  await f.dispose()
+  expect(await f.account.getProfile()).toBeNull()
+  expect(await f.account.getPlatformSession()).toBeNull()
+  await expect(f.account.startSignIn('en', f.callbackOrigin, 'web')).rejects.toThrow('account: protocol')
+  await expect(f.account.signOut()).rejects.toThrow('account: protocol')
+})
+
+it('rejects sign-out and inference grants issued by another environment', async () => {
+  const f = await fixture(undefined, {}, false, {}, 'https://private.example')
+  await f.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'default'), () => Promise.resolve({
+    kind: 'grant', payload: { version: 1, token: 'real-token', issuer: 'https://other.example' },
+  }))
+  expect(await f.account.resolveToken('https://private.example')).toBeUndefined()
+  await expect(f.account.signOut()).rejects.toThrow('account: protocol')
+})
+
+it('never sends a development issuer grant to official inference', async () => {
+  const f = await fixture()
+  await f.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'default'), () => Promise.resolve({
+    kind: 'grant', payload: { version: 1, token: 'real-token', issuer: f.origin },
+  }))
+  expect(await f.account.resolveToken('https://api.deepseek.com')).toBeUndefined()
+})
+
+it('merges account cookies when there are no base cookies', async () => {
+  const f = await fixture(undefined, {}, false, { cookie: 'account=value' })
+  await storeAccount(f)
+  expect(await f.account.getPlatformSession()).toMatchObject({ requestHeaders: { cookie: 'account=value' } })
+})
+
+it.each([null, []])('rejects invalid initialization and exchange payload fields: %j', async (value) => {
+  const f = await fixture()
+  f.initResponse({ authorize_id: value })
+  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.wait('failed')
+  f.initResponse({})
+  f.exchangeResponse({ token: value })
+  await f.account.startSignIn('zh', f.callbackOrigin, 'web')
+  await f.wait('waiting-browser')
+  const callback = await fetch(f.callback(), { redirect: 'manual' })
+  expect(callback.status).toBe(200)
+  expect(await callback.text()).toContain('登录失败')
+  expect((await f.wait('failed')).status).toBe('signed-out')
+})
+
+it.each([{ kind: 'api-key' as const, key: 'wrong-kind' }, { kind: 'grant' as const, payload: null }])(
+  'rejects invalid durable grants during service initialization: $kind', async (record) => {
+    const f = await fixture()
+    await f.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'default'), () => Promise.resolve(record))
+    await expect(f.account[Service.init]()).rejects.toThrow('account: storage')
+  },
+)
+
+it.each(['ftp://api.example', 'https://user:password@api.example', 'https://api.example/path',
+  'https://api.example/?query=1', 'https://api.example/#fragment'])('rejects invalid inference origin %s', async (inferenceOrigin) => {
+  expect(() => new PlatformAccount(new Context(), { inferenceOrigin })).toThrow('account: inferenceOrigin')
+})
+
+it('rejects authorization begun without a local account attempt', async () => {
+  const f = await fixture()
+  await expect(f.ctx.authorization.begin({ key: credentialKey('deepseek-account-platform', 'default'),
+    interaction: { notify: () => undefined, prompt: () => Promise.resolve('') },
+  })).rejects.toThrow('account: protocol')
+})
+
+it('fails sign-in when its shared callback server is absent', async () => {
+  const f = await fixture()
+  const get = vi.spyOn(f.ctx, 'get').mockImplementation(() => undefined)
+  try {
+    await f.account.startSignIn('en', f.callbackOrigin, 'web')
+    expect((await f.wait('failed')).attempt?.errorCode).toBe('protocol')
+  } finally { get.mockRestore() }
+})
+
+it('reports a credential commit failure without redirecting to success', async () => {
+  const f = await fixture()
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  const original = f.ctx.credentials.modifyRecord.bind(f.ctx.credentials)
+  const modify = vi.spyOn(f.ctx.credentials, 'modifyRecord').mockImplementation((key, mutate) =>
+    key === credentialKey('deepseek-account-platform', 'default') ? Promise.reject(new Error('store unavailable')) : original(key, mutate))
+  try {
+    const callback = await fetch(f.callback(), { redirect: 'manual' })
+    expect(callback.status).toBe(204)
+    expect((await f.wait('failed')).attempt?.errorCode).toBe('storage')
+  } finally { modify.mockRestore() }
+})
+
+it('rejects a device record of the wrong kind before exchanging', async () => {
+  const f = await fixture()
+  await f.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'device'), () => Promise.resolve({ kind: 'api-key', key: 'wrong' }))
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  expect((await fetch(f.callback(), { redirect: 'manual' })).status).toBe(204)
+  expect((await f.wait('failed')).attempt?.errorCode).toBe('storage')
+  expect(f.count()).toBe(0)
+})
+
+it('rejects callbacks with missing state and callbacks arriving during exchange', async () => {
+  const f = await fixture()
+  f.hold()
+  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.wait('waiting-browser')
+  expect((await fetch(`${f.init().redirect_uri}?code=test`)).status).toBe(400)
+  const callback = fetch(f.callback(), { redirect: 'manual' })
+  await f.exchanged.promise
+  expect((await fetch(f.callback())).status).toBe(410)
+  f.release.resolve(undefined)
+  expect((await callback).status).toBe(302)
+})
+
+it.each(['initializing', 'waiting-browser'])('expires the attempt while %s', async (phase) => {
+  const f = await fixture()
+  const timeout = vi.spyOn(globalThis, 'setTimeout')
+  if (phase === 'initializing') f.onInit(() => {
+    const timer = timeout.mock.calls.find(([, delay]) => delay === 600_000)?.[0]
+    if (typeof timer !== 'function') throw new Error('missing initial deadline')
+    timer()
+  })
+  try {
+    await f.account.startSignIn('en', f.callbackOrigin, 'web')
+    if (phase === 'waiting-browser') {
+      await f.wait('waiting-browser')
+      const timer = timeout.mock.calls.filter(([, delay]) => typeof delay === 'number' && delay > 590_000).at(-1)?.[0]
+      if (typeof timer !== 'function') throw new Error('missing browser deadline')
+      timer()
+    }
+    expect((await f.wait('expired')).status).toBe('signed-out')
+  } finally { timeout.mockRestore() }
+})
+
+it('holds cancellation and disposal until an admitted account write completes', async () => {
+  const f = await fixture()
+  const admitted = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const original = f.ctx.credentials.modifyRecord.bind(f.ctx.credentials)
+  const modify = vi.spyOn(f.ctx.credentials, 'modifyRecord').mockImplementation(async (key, mutate) => {
+    if (key === credentialKey('deepseek-account-platform', 'default')) {
+      admitted.resolve(undefined)
+      await release.promise
+    }
+    return original(key, mutate)
+  })
+  let callback: Promise<Response> | undefined
+  try {
+    await f.account.startSignIn('en', f.callbackOrigin, 'web')
+    const state = await f.wait('waiting-browser')
+    callback = fetch(f.callback(), { redirect: 'manual' })
+    await admitted.promise
+    const cancelled = f.account.cancelSignIn(state.attempt!.id)
+    const disposed = f.dispose()
+    release.resolve(undefined)
+    expect((await callback).status).toBe(302)
+    expect((await cancelled).status).toBe('credential-stored')
+    await disposed
+  } finally {
+    release.resolve(undefined)
+    await callback
+    modify.mockRestore()
+  }
+})
+
+it('waits for local sign-out before beginning a new authorization', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  const admitted = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const original = f.ctx.credentials.deleteRecord.bind(f.ctx.credentials)
+  const remove = vi.spyOn(f.ctx.credentials, 'deleteRecord').mockImplementation(async (key) => {
+    admitted.resolve(undefined)
+    await release.promise
+    return original(key)
+  })
+  try {
+    const out = f.account.signOut()
+    await admitted.promise
+    const login = f.account.startSignIn('en', f.callbackOrigin, 'web')
+    release.resolve(undefined)
+    expect((await out).status).toBe('signed-out')
+    expect((await login).attempt?.phase).toBe('initializing')
+    await f.wait('waiting-browser')
+  } finally { release.resolve(undefined); remove.mockRestore() }
+})
+
+it('does not begin a remote logout after disposal starts during local removal', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  const admitted = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const original = f.ctx.credentials.deleteRecord.bind(f.ctx.credentials)
+  const remove = vi.spyOn(f.ctx.credentials, 'deleteRecord').mockImplementation(async (key) => {
+    admitted.resolve(undefined)
+    await release.promise
+    return original(key)
+  })
+  try {
+    const out = f.account.signOut()
+    await admitted.promise
+    const disposed = f.dispose()
+    release.resolve(undefined)
+    expect((await out).status).toBe('signed-out')
+    await disposed
+    expect(f.logoutCount()).toBe(0)
+  } finally { release.resolve(undefined); remove.mockRestore() }
+})
+
+it.each([false, true])('settles a previous attempt before concurrent restart or disposal: %s', async (dispose) => {
+  const f = await fixture()
+  f.hold()
+  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.wait('waiting-browser')
+  const callback = fetch(f.callback(), { redirect: 'manual' })
+  await f.exchanged.promise
+  const cancel = f.account.cancelSignIn((await f.account.getState()).attempt!.id)
+  await f.wait('cancelled')
+  const first = f.account.startSignIn('en', f.callbackOrigin, 'web')
+  if (dispose) {
+    const rejected = expect(first).rejects.toThrow('account: protocol')
+    const disposed = f.dispose()
+    f.release.resolve(undefined)
+    await rejected
+    await disposed
+  } else {
+    const second = f.account.startSignIn('zh', f.callbackOrigin, 'web')
+    f.release.resolve(undefined)
+    expect((await first).attempt?.id).toBe((await second).attempt?.id)
+    await f.wait('waiting-browser')
+  }
+  await cancel
+  expect((await callback).status).toBe(204)
+})
+
+it('rejects unsupported interaction and projects unexpected authorization failures safely', async () => {
+  const f = await fixture()
+  const begin = vi.spyOn(f.ctx.authorization, 'begin').mockImplementation(async (request) => {
+    request.interaction.notify({ message: 'ignored' })
+    await expect(request.interaction.prompt({ kind: 'text', message: 'unsupported' })).rejects.toThrow('account: protocol')
+    throw new Error('private implementation failure')
+  })
+  try {
+    await f.account.startSignIn('en', f.callbackOrigin, 'web')
+    expect((await f.wait('failed')).attempt?.errorCode).toBe('protocol')
+  } finally { begin.mockRestore() }
+})
+
+it('rejects callback requests whose raw URL is absent or malformed', async () => {
+  const f = await fixture()
+  const register = vi.spyOn(f.ctx.webServer, 'register')
+  try {
+    await f.account.startSignIn('en', f.callbackOrigin, 'web')
+    await f.wait('waiting-browser')
+    const route = register.mock.calls.find(([route]) => route.path === '/oauth/callback')?.[0]
+    if (route === undefined) throw new Error('missing callback route')
+    for (const url of [undefined, 'http://[']) {
+      const socket = new Socket()
+      const req = new IncomingMessage(socket)
+      req.method = 'GET'
+      req.url = url
+      const res = new ServerResponse(req)
+      try {
+        await route.handler(req, res)
+        expect(res.statusCode).toBe(400)
+        expect(res.writableEnded).toBe(true)
+      } finally { res.destroy(); socket.destroy() }
+    }
+  } finally { register.mockRestore() }
+})
+
+it('settles an attempt after its browser callback connection closes during exchange', async () => {
+  const f = await fixture()
+  f.hold()
+  const response = Promise.withResolvers<ServerResponse>()
+  const serverClosed = Promise.withResolvers<undefined>()
+  const original = f.ctx.webServer.register.bind(f.ctx.webServer)
+  const register = vi.spyOn(f.ctx.webServer, 'register').mockImplementation(route => original({
+    ...route, handler: (req, res) => {
+      response.resolve(res)
+      res.once('error', () => undefined)
+      res.once('close', () => { serverClosed.resolve(undefined) })
+      return route.handler(req, res)
+    },
+  }))
+  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.wait('waiting-browser')
+  const socket = connect(Number(new URL(f.callbackOrigin).port), '127.0.0.1')
+  const closed = new Promise<void>(resolve => socket.once('close', () => { resolve() }))
+  try {
+    await new Promise<void>(resolve => socket.once('connect', resolve))
+    socket.write(`GET ${new URL(f.callback()).pathname}${new URL(f.callback()).search} HTTP/1.1\r\nHost: localhost\r\n\r\n`)
+    await f.exchanged.promise
+    const callbackResponse = await response.promise
+    vi.spyOn(callbackResponse, 'end').mockImplementation(() => callbackResponse)
+    callbackResponse.destroy(new Error('callback transport failed'))
+    socket.destroy()
+    await closed
+    await serverClosed.promise
+    f.release.resolve(undefined)
+    await f.wait('succeeded')
+    expect((await f.account.signOut()).status).toBe('signed-out')
+  } finally { socket.destroy(); f.release.resolve(undefined); await closed; register.mockRestore() }
+})
+
+it('invalidates account reads before the shared grant lookup returns to its caller', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  const key = credentialKey('deepseek-account-platform', 'default')
+  const original = f.ctx.credentials.readRecord.bind(f.ctx.credentials)
+  const read = vi.spyOn(f.ctx.credentials, 'readRecord').mockImplementation(async (requested) => {
+    const record = await original(requested)
+    // The first checkpoint lets grant validation finish; the second invalidates its consumer.
+    queueMicrotask(() => { queueMicrotask(() => { f.ctx.emit('credentials/record-updated', key) }) })
+    return record
+  })
+  try {
+    expect(await f.account.getPlatformSession()).toBeNull()
+    expect(await f.account.getProfile()).toBeNull()
+    expect(f.detailRequests).toEqual([])
+  } finally { read.mockRestore() }
+})

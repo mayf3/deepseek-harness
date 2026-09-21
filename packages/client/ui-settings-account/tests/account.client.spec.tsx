@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, act } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { PlatformBridge } from '../src/client/PlatformOverlay.tsx'
@@ -320,4 +320,93 @@ it('opens more account information externally without invoking the embedded Plat
   expect(link.getAttribute('rel')).toBe('noopener noreferrer')
   fireEvent.click(link)
   expect(platform.open).not.toHaveBeenCalled()
+})
+
+it.each(['initializing', 'waiting-browser', 'exchanging'] as const)('shows %s and lets the user cancel the active attempt', async (phase) => {
+  const operations = mount({ status: 'signed-out', attempt: { id: 'attempt' as SignInAttemptId, phase, authorizeUrl: 'https://example.test/authorize' } })
+  expect(screen.getByRole('link', { name: en.open }).getAttribute('href')).toBe('https://example.test/authorize')
+  expect(screen.getByRole('status').textContent).toBe(phase === 'initializing' ? en.initializing : phase === 'waiting-browser' ? en.waiting : en.completing)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.cancel })) })
+  expect(operations.cancel).toHaveBeenCalledExactlyOnceWith('attempt')
+})
+
+it.each(['failed', 'expired'] as const)('allows a new sign-in after the attempt is %s', (phase) => {
+  mount({ status: 'signed-out', attempt: { id: 'attempt' as SignInAttemptId, phase } })
+  expect(screen.getByRole('button', { name: en.signIn }).hasAttribute('disabled')).toBe(false)
+})
+
+it('shows unavailable details and keeps external Platform links usable in a browser', () => {
+  mount({ status: 'credential-stored', attempt: null }, en, {
+    profile: { status: 'failed' }, balance: { status: 'failed' },
+  })
+  expect(screen.getByText(en.profileUnavailable)).toBeTruthy()
+  expect(screen.getByText(en.balanceUnavailable)).toBeTruthy()
+  for (const name of [en.usage, en.topUp]) {
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    screen.getByRole('link', { name }).dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+  }
+})
+
+it('reports a rejected settings login and disables login while initial state is unavailable', async () => {
+  const operations = mount({ status: 'signed-out', attempt: null })
+  cleanup()
+  let snapshot: AccountSnapshot = { view: undefined, details: undefined, failed: true }
+  const props = { ...({} as GlobalStandardProps), ...operations,
+    start: vi.fn(async () => { throw new Error('unavailable') }),
+    useAccount: <T,>(select: (value: AccountSnapshot) => T) => select(snapshot), close: () => {},
+    t: (key: string) => en[key as AccountKey],
+  }
+  const view = render(<AccountSection {...props} />)
+  expect(screen.getByRole('button', { name: en.signIn }).hasAttribute('disabled')).toBe(true)
+  expect(screen.getByRole('status').textContent).toBe(en.failed)
+  snapshot = operations.hooks.account.getSnapshot()
+  view.rerender(<AccountSection {...props} />)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.signIn })) })
+  expect(screen.getByRole('status').textContent).toBe(en.failed)
+})
+
+it('dismisses a collapsed menu and hands its login dialog to the API-key onboarding step', async () => {
+  const operations = mount({ status: 'credential-stored', attempt: null }, en, { profile: { status: 'failed' } })
+  cleanup()
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  const openOnboarding = vi.fn()
+  let snapshot = operations.hooks.account.getSnapshot()
+  const props = { ...({} as GlobalStandardProps), ...operations, wide: false, openSettings: vi.fn(), openOnboarding,
+    useAccount: <T,>(select: (value: AccountSnapshot) => T) => select(snapshot), t: (key: string) => en[key as AccountKey] }
+  const view = render(<AccountMenu {...props} />)
+  expect(screen.getByRole('button', { name: en.menu }).textContent).toBe('')
+  fireEvent.click(screen.getByRole('button', { name: en.menu }))
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.queryByRole('menu')).toBeNull()
+  snapshot = { ...snapshot, view: { ...snapshot.view!, status: 'signed-out' }, loginVisible: true }
+  view.rerender(<AccountMenu {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: en.close }))
+  expect(operations.showLogin).toHaveBeenLastCalledWith(false)
+  fireEvent.click(screen.getByRole('button', { name: en.addApiKey }))
+  expect(openOnboarding).toHaveBeenCalledExactlyOnceWith('deepseek-official')
+  snapshot = { ...snapshot, onboarding: true }
+  view.rerender(<AccountMenu {...props} />)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('reports resize failure, ignores late native failures, and tolerates a removed IPC receiver', async () => {
+  let resize: (() => void) | undefined
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resize = callback } observe() {} disconnect() {} })
+  const loaded = Promise.withResolvers<undefined>()
+  const platform: PlatformBridge = { open: () => loaded.promise,
+    setBounds: vi.fn(async () => { throw new Error('resize failed') }), close: vi.fn(async () => { throw new Error('window gone') }) }
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('tabindex', '0')
+  document.body.append(svg)
+  onTestFinished(() => { svg.remove() })
+  svg.focus()
+  mount({ status: 'credential-stored', attempt: null }, en, undefined, platform)
+  await act(async () => { fireEvent.click(screen.getByRole('link', { name: en.usage })) })
+  await act(async () => { resize!() })
+  expect(platform.setBounds).toHaveBeenCalled()
+  expect(screen.getByText(en.platformFailed)).toBeTruthy()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.backToHarness })) })
+  await act(async () => { loaded.reject(new Error('late failure')); await loaded.promise.catch(() => {}) })
+  expect(screen.queryByRole('dialog')).toBeNull()
 })

@@ -53,7 +53,7 @@ export function AccountMenu({
         if (id === 'settings') { setOpen(false); openSettings() }
         else if (id === 'contact') { setOpen(false); contactUs() }
         else if (id === 'signin') beginSignIn()
-        else if (id === 'signout') void logout()
+        else void logout()
       }} />
     {account.loginVisible && !account.onboarding && <SignInDialog account={account} start={start} cancel={cancel} t={t}
       close={() => { showLogin(false) }} useApiKey={() => { showLogin(false); openOnboarding('deepseek-official') }} />}
