@@ -1,5 +1,5 @@
 import { runInNewContext } from 'node:vm'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   assertObjectJsonSchema,
   assertSupportedJsonSchema,
@@ -240,6 +240,32 @@ describe('the enforced raw JSON Schema subset', () => {
     })`)
 
     expect(() => { assertSupportedJsonSchema(schema) }).not.toThrow()
+  })
+
+  it('accepts schema records and lists with WebKit native constructor formatting', () => {
+    const schema = { type: 'object', properties: { value: { type: 'string', enum: ['x'] } }, required: ['value'] }
+    const originalDescriptor = Object.getOwnPropertyDescriptor(Function.prototype, 'toString')!
+    const originalToString = originalDescriptor.value as (this: unknown) => string
+    const foreign = runInNewContext(`({ Object, Array, schema: ${JSON.stringify(schema)} })`) as {
+      Object: ObjectConstructor
+      Array: ArrayConstructor
+      schema: unknown
+    }
+    const toString = vi.spyOn(Function.prototype, 'toString').mockImplementation(function (this: unknown) {
+      if (this === Object || this === foreign.Object) return 'function Object() {\n    [native code]\n}'
+      if (this === Array || this === foreign.Array) return 'function Array() {\n    [native code]\n}'
+      return originalToString.call(this)
+    })
+    try {
+      for (const candidate of [schema, foreign.schema]) {
+        expect(() => { assertObjectJsonSchema(candidate) }).not.toThrow()
+      }
+      expect(violationsOf(recordWithForgedIntrinsicPrototype({ type: 'object' })))
+        .toEqual(['schema must be a schema object'])
+    } finally {
+      toString.mockRestore()
+    }
+    expect(Object.getOwnPropertyDescriptor(Function.prototype, 'toString')).toEqual(originalDescriptor)
   })
 
   it('rejects cyclic/exotic schema structure but permits sibling reuse', () => {

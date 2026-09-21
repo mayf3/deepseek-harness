@@ -45,6 +45,8 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 Programmatic callers use `define`, `run`, `stop`, and `undefine`; the browser panel operates existing definitions. Host-only packages activate in this process. A package with a browser half waits for approval or cancellation, then loads Host before Client. `mode: "run"` starts the current version; `mode: "update"` replaces it. Stop disposes the live effects and retains the definition; undefine also forgets it.
 
+Dynamic tool schemas and JSON return values recognize intrinsic containers across realms using the current engine’s native constructor representation; return values are copied into the Host realm, and class instances and forged prototypes are rejected.
+
 ### What happens to definitions
 
 Definitions are session-scoped and process-local: other sessions read them as absent, and restart clears them. Historical logs retain tool arguments and receipts but do not restore the registry. Reloading a browser page requires another explicit run to load its Client half.

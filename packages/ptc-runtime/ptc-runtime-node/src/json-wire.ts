@@ -79,7 +79,7 @@ function setDelete<T>(target: Set<T>, value: T): void {
   intrinsicReflectApply(intrinsicSetDelete, target, [value])
 }
 
-/** Whether a realm-owned intrinsic prototype is backed by its native constructor. */
+/** Check Node/V8's native constructor text through intrinsics captured before model code runs. */
 function hasIntrinsicConstructor(prototype: object, name: 'Array' | 'Object'): boolean {
   const descriptor = intrinsicObjectGetOwnPropertyDescriptor(prototype, 'constructor')
   const constructor: unknown = descriptor?.value
