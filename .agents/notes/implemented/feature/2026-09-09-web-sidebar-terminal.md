@@ -49,3 +49,7 @@ A kept-open terminal retains a process and bounded screen memory. Reload restore
 The implementation retains the Agent-terminal and portable-execution notes because their ownership and provider decisions remain independently useful; neither is superseded by browser terminals.
 
 The [two-hour unattended-terminal reclamation](2026-09-14-unattended-browser-terminal-reclamation.md) adds an idle grace period after all frontend holders disconnect, preserving busy or uncertain work.
+
+## Related
+
+- [Remote duplex stream](../architecture/2026-09-19-remote-duplex-stream.md): the transport-layer uplink under which one `attach` stream replaces the unary `write` and `resize` calls and the `attachmentId` correlation; that terminal change is listed under its Deferred section.

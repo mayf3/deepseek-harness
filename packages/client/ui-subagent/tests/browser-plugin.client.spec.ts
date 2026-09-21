@@ -35,7 +35,7 @@ const sid = (id: string) => id as SessionId
 function sessionsWith(sessions: SessionSummary[]) {
   const byId: Record<string, SessionSummary> = {}
   for (const s of sessions) byId[s.id] = s
-  const snapshot: SessionListState = { ids: sessions.map(s => s.id), byId, phase: 'ready', projectionsBySession: {}, jobsBySession: {} }
+  const snapshot: SessionListState = { ids: sessions.map(s => s.id), byId, phase: 'ready', projectionsBySession: {} }
   const actionCalls: { method: string; args: unknown[] }[] = []
   const address: SubagentAddress = {
     parentSessionId: sid('parent'),
@@ -64,6 +64,7 @@ async function provideSlotFaces(ctx: Context): Promise<void> {
     name: 'root',
     children: {
       'conversation.session.header.lineage': { kind: 'single', scope: 'session' },
+      'conversation.session.header.actions': { kind: 'list', scope: 'session' },
       'conversation.composer': { kind: 'chain', scope: 'session' },
     },
   } as never, () => null)
@@ -119,7 +120,7 @@ describe('apply', () => {
     }
     actions.openChild(address)
     actions.openChildAside(address)
-    actions.refresh(sid('parent'))
+    actions.refreshProjection(sid('parent'))
     expect(face.actionCalls).toEqual([
       { method: 'openSession', args: [address] },
       {
@@ -131,6 +132,13 @@ describe('apply', () => {
       },
       { method: 'refreshProjections', args: [sid('parent')] },
     ])
+
+    // The root-session catalog seat registers in the actions band with the
+    // same business face, ordered after the task list.
+    const actionEntry = ctx.slots.entries('conversation.session.header.actions')
+      .find(entry => entry.options.id === 'subagent-catalog')!
+    expect(actionEntry.options.order).toBe(30)
+    expect(actionEntry.inject).toBe(catalogEntry.inject)
 
     const composerEntry = ctx.slots.entries('conversation.composer')
       .find(entry => entry.component === SubagentReadOnlyComposer)!
@@ -152,6 +160,8 @@ describe('apply', () => {
     // One-shot stays read-only even while running: it has no stop action.
     expect(select(owner({ address: { ...address, mode: 'one-shot' }, parentAvailable: true }, true)))
       .toEqual({ reason: 'one-shot' })
+    expect(select(owner({ address: { ...address, mode: 'unknown' }, parentAvailable: true })))
+      .toEqual({ reason: 'unknown' })
     expect(select(owner({ address }))).toBeNull()
     expect(select(owner({ address, parentAvailable: true }))).toBeNull()
     expect(select(owner({ address, parentAvailable: false })))

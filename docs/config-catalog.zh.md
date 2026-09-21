@@ -196,10 +196,32 @@ Depends on: [`ToolPresentationMode`](subsystems/tools.zh.md)
 export interface Config {
   /** WebSocket Ping interval from 1 through 2,147,483,647 milliseconds. @default 2000 */
   readonly websocketHeartbeatIntervalMs?: number
+  /** Buffered uplink frame bytes one logical stream may hold before it fails with `gateway/uplink-overflow`. @default 262144 */
+  readonly streamInboxBytes?: number
 }
 ```
 
-来源：[`packages/api/gateway/src/index.ts:119`](../packages/api/gateway/src/index.ts)
+来源：[`packages/api/gateway/src/index.ts:144`](../packages/api/gateway/src/index.ts)
+
+<a id="deepseek-aidsh-api-job-controller"></a>
+
+## `@deepseek-ai/dsh-api-job-controller`
+
+需要：`jobs` · `typert`
+
+```ts config-catalog
+/** Job Controller deployment policy. */
+export interface Config {
+  /** Coalescing window after a registry commit before the next rows or output read, in milliseconds (default 100). */
+  readonly observeFlushMs?: number
+  /** Soft byte budget per observation output frame (default 65536); one larger chunk ships whole. */
+  readonly observeMaxFrameBytes?: number
+}
+```
+
+来源：[`packages/api/job-controller/src/index.ts:33`](../packages/api/job-controller/src/index.ts)
+
+<a id="deepseek-aidsh-api-session-controller"></a>
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
@@ -215,7 +237,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/session-controller/src/index.ts:77`](../packages/api/session-controller/src/index.ts)
+来源：[`packages/api/session-controller/src/index.ts:78`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 
@@ -276,6 +298,24 @@ export interface Config {
 
 来源： [`packages/api/terminal-controller/src/index.ts:26`](../packages/api/terminal-controller/src/index.ts)
 
+<a id="deepseek-aidsh-api-workspace-controller"></a>
+
+## `@deepseek-ai/dsh-api-workspace-controller`
+
+需要：`typert` · `workspaceRegistry`
+
+```ts config-catalog
+/** First-use directory policy for the Host account. */
+export interface Config {
+  /** Override the system Documents directory with a fully qualified path. */
+  documentsDirectory?: string
+  /** Maximum duration of the operating system's Documents lookup. */
+  documentsLookupTimeoutMs?: number
+}
+```
+
+源码：[`packages/api/workspace-controller/src/index.ts:34`](../packages/api/workspace-controller/src/index.ts)
+
 <a id="deepseek-aidsh-api-workspace-files"></a>
 
 ## `@deepseek-ai/dsh-api-workspace-files`
@@ -302,7 +342,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/workspace-files/src/index.ts:69`](../packages/api/workspace-files/src/index.ts)
+来源：[`packages/api/workspace-files/src/index.ts:70`](../packages/api/workspace-files/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 
@@ -430,7 +470,7 @@ export interface ConnectionRecoveryConfig {
 }
 ```
 
-来源： [`packages/client/connection/src/index.ts:87`](../packages/client/connection/src/index.ts)
+来源： [`packages/client/connection/src/index.ts:92`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -1142,10 +1182,20 @@ export interface Config {
    * omission defaults to 10.
    */
   maxConcurrentJobsPerOwner?: number
+  /** Live ring retention per job in UTF-8 bytes; omission defaults to 262144. */
+  retainBytes?: number
+  /**
+   * Ring retention kept after a job settles, in UTF-8 bytes; omission defaults to 16384.
+   * Settlement keeps every byte the model cursor has not consumed on top of
+   * this cap; the first terminal model read then trims to it.
+   */
+  settledRetainBytes?: number
+  /** Poll interval for a job's pull sources, in milliseconds; omission defaults to 150. */
+  pumpPollMs?: number
 }
 ```
 
-来源：[`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
+来源：[`packages/jobs/jobs-local/src/index.ts:45`](../packages/jobs/jobs-local/src/index.ts)
 
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
@@ -1163,8 +1213,6 @@ export interface Config {
  * reasoning effort resolves to `high`.
  */
 export interface Config {
-  /** Wire protocol; defaults to messages. Configure through Cordis YAML. */
-  protocol?: DeepSeekProtocol
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
@@ -1204,9 +1252,6 @@ export interface Config {
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
-
-/** Supported wire implementations; Responses is not yet implemented. */
-export type DeepSeekProtocol = 'chat-completions' | 'messages'
 
 /** One optional model entry advertised by the direct-fetch adapter. */
 export interface DeepSeekCatalogModel {
@@ -2925,7 +2970,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/core/system-prompt/src/index.ts:248`](../packages/core/system-prompt/src/index.ts)
+来源：[`packages/core/system-prompt/src/index.ts:247`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -3160,7 +3205,7 @@ export interface Config {
 }
 
 /**
- * How an unreported completion reaches an owner that is already idle: `wakeup`
+ * How an uncollected completion reaches an owner that is already idle: `wakeup`
  * opens a turn for it, `quiet` leaves it pending until something else wakes the
  * owner. A busy owner is injected either way.
  */
@@ -3219,7 +3264,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/shell/tool-pwsh/src/index.ts:51`](../packages/shell/tool-pwsh/src/index.ts)
+来源：[`packages/shell/tool-pwsh/src/index.ts:52`](../packages/shell/tool-pwsh/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh-persistent"></a>
 
@@ -3404,7 +3449,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/terminal/tool-terminal/src/index.ts:35`](../packages/terminal/tool-terminal/src/index.ts)
+来源：[`packages/terminal/tool-terminal/src/index.ts:36`](../packages/terminal/tool-terminal/src/index.ts)
 
 <a id="deepseek-aidsh-tool-todo"></a>
 
@@ -3473,6 +3518,28 @@ export interface Config {
 ```
 
 来源：[`packages/workflow/tool-workflow/src/index.ts:32`](../packages/workflow/tool-workflow/src/index.ts)
+
+<a id="deepseek-aidsh-tool-workspace-dependencies"></a>
+
+## `@deepseek-ai/dsh-tool-workspace-dependencies`
+
+依赖：`tools`
+
+```ts config-catalog
+/** Payload location and optional installation directory. */
+export interface Config {
+  /** Payload directory carrying `runtime.json` and `dependencies/`. */
+  readonly source: string
+  /**
+   * Installation directory under the Harness home. When set, the payload is copied there on the
+   * first call (the Desktop behavior); when omitted, the payload is used in place without copying,
+   * which suits read-only carriers such as container image layers.
+   */
+  readonly root?: string
+}
+```
+
+来源：[`packages/skill/tool-workspace-dependencies/src/index.ts:15`](../packages/skill/tool-workspace-dependencies/src/index.ts)
 
 <a id="deepseek-aidsh-tools"></a>
 
@@ -3785,7 +3852,6 @@ export interface Config {
 - `@deepseek-ai/dsh-acp-app` — 需要 `cmdlineArgs`（[`packages/bundle/acp-app/src/index.ts`](../packages/bundle/acp-app/src/index.ts)）
 - `@deepseek-ai/dsh-agent`（[`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts)）
 - `@deepseek-ai/dsh-api-remotes` — 需要 `typertGateway`（[`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts)）
-- `@deepseek-ai/dsh-api-workspace-controller` — 需要 `typert` · `workspaceRegistry`（[`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts)）
 - `@deepseek-ai/dsh-authorization` — 需要 `credentials`（[`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts)）
 - `@deepseek-ai/dsh-browser-use` ([`packages/browser-use/browser-use/src/index.ts`](../packages/browser-use/browser-use/src/index.ts))
 - `@deepseek-ai/dsh-client-file-upload` — 需要 `agents` · `attachments` · `commands` · `connection`（[`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts)）

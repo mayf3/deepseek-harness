@@ -26,9 +26,6 @@
   "apps/desktop-host/tests/office.spec.ts": {
     "3f8653cd87f99ebd70765379dae51ab308ed9c280e831d39e1abd469bfcdc6e3": 1
   },
-  "apps/desktop-host/tests/primary-runtime.spec.ts": {
-    "3f8653cd87f99ebd70765379dae51ab308ed9c280e831d39e1abd469bfcdc6e3": 1
-  },
   "apps/desktop/scripts/installed-update-qualification.ts": {
     "5a8270cf9b1e554ae0cff6eaf7086e44c22f61a08e5f91dc7e1397eccaa726a5": 2
   },
@@ -53,7 +50,6 @@
   },
   "apps/desktop/tests/host-update-tasks.spec.ts": {
     "46197efe57255c9d92d64476470c89d0602c7333bf98ad75509bf43c1b357a3b": 1,
-    "4c5672583f1c38f4fb7dd757e94f8424866a00aa5c9a9d3dfc07d45718fa04c4": 1,
     "f6c86f29edc554d5fda72589a77b006468b174a428a5345ce7e88dec698b9829": 1
   },
   "apps/desktop/tests/main-startup.spec.ts": {
@@ -203,7 +199,6 @@
     "fc16f363fc891dac66e0be8c042da4b1d3f45c35af2d31a03f2214a6c3698379": 1
   },
   "packages/api/gateway/tests/stream-server.host.spec.ts": {
-    "53253a9a650abe4678a5eb411720231ef4a387ed2de78dde44054ff3d72efbbe": 1,
     "c7136804a6f7b829f525135643cb93cc8b3176b1d0036b2ebde5d7b668411658": 1,
     "dd244515f22ccbc14e5872126c3fc405ed6a63bb0390940976e234e3c06fcc2b": 1
   },
@@ -590,10 +585,6 @@
   "packages/client/ui-deliverables/tests/present-open.host.spec.ts": {
     "556e0d31b686cc80ef5c9562dad5534556f1b55ce1ce20491aa39eda98255364": 1
   },
-  "packages/client/ui-deliverables/tests/review-tab.client.spec.tsx": {
-    "52e0f8e51efd9a65974af6ad6868c7e01fff0d6faeb669e9da1bf91de8a2d422": 1,
-    "56f9870142343b23a01725140b72d040d1b9071dd30227271518f50cfa614b6c": 1
-  },
   "packages/client/ui-goal/tests/browser-plugin.client.spec.tsx": {
     "04984a2ce1486250236e638e0197da0a1a840855ed3975c59130a85358c7e5fe": 1,
     "5f1a0867b42cf35dac7fdf5839e3a39c2384c5b3b03142e799a36733ad96b9da": 1,
@@ -606,9 +597,6 @@
   },
   "packages/client/ui-input-trigger/tests/apply.client.spec.ts": {
     "fc590cb703f599e5bb15f23909cedddeb2a77cb2cad0d4b9b8e664a62c46f44e": 1
-  },
-  "packages/client/ui-jobs/tests/job-list-action.client.spec.tsx": {
-    "0a7212cab13eacbb983b226949951fc76bad9e2d93dab9fad4639f7c541c2547": 1
   },
   "packages/client/ui-message-feedback/tests/browser-plugin.client.spec.tsx": {
     "04984a2ce1486250236e638e0197da0a1a840855ed3975c59130a85358c7e5fe": 2
@@ -623,13 +611,6 @@
     "7fdf7245d961ef29ffa74eb31e45825ca3c61bd7f5791f453acfd802184ee355": 1,
     "eee35b4d8641824c6eaacfe03ed60d353d81d5257d1111132f34d46a7b13ef35": 2,
     "ff65b54ee69109a8b059fc2a2136c71a5476b47115120c7c92a01171d517f3d7": 1
-  },
-  "packages/client/ui-open-in-app/tests/open-in-app-action.client.spec.tsx": {
-    "d6ca469f487b05b19564776f9a8f8288b1f0d9fb5b7fb6681e68f063fb021f38": 1,
-    "fdc0ec545dc17a50bdc1c64102915706cfbfdbb65a2165ae4691f29d577063cd": 1
-  },
-  "packages/client/ui-open-in-app/tests/open-path-action.client.spec.tsx": {
-    "362d9206df82a6d4563c2e5c19457342207b02b246c91656dec01a4b2033fd8e": 1
   },
   "packages/client/ui-permission-presets/tests/browser-plugin.client.spec.ts": {
     "dc36dd8f678695e3b84ce0573968470941c5b6fc5efe529cba17acb1f2799d1c": 1
@@ -732,9 +713,6 @@
     "14a0dc9ccde2879c016f779e0e43f3aa71792759126530b418c9a31a5a2e7a53": 1,
     "ad8886dedfafd8e5f4bf7cb55525bb961822ad0c4fb0ff4a643bfb336fb9d94b": 1
   },
-  "packages/client/ui-sidebar-browser/tests/browser-body.client.spec.tsx": {
-    "dac38a9cc792ab6f3a345802975995e35a48d5a706c26d67cb7dba1c906ee3d5": 1
-  },
   "packages/client/ui-sidebar-documentpreview/tests/document-toolbar.client.spec.tsx": {
     "fb9804cc2774409af6935d5a1369497b433c34cd9305cac88e3400eae0f70936": 1
   },
@@ -826,9 +804,6 @@
   },
   "packages/client/ui-subagent/tests/browser-plugin.client.spec.ts": {
     "810a8e63d34628d25866491b3c6455a51b2d114261b67e62b42728b765370993": 1
-  },
-  "packages/client/ui-subagent/tests/conversation-ui.client.spec.tsx": {
-    "92d757187bb2dba986b160c2417c7b4a8b199784d441bfa0777d8077774b932b": 1
   },
   "packages/client/ui-subagent/tests/sidebar-chat.client.spec.tsx": {
     "024f8748e8908a495117a23a7673046a871f0d8187f8fe561aceba1269aefa31": 1,
@@ -1494,62 +1469,16 @@
   "packages/jobs/jobs-local/tests/loader-composition.spec.ts": {
     "6dc45d44a978dd86bb9ac2c9baf5d31aed699055698709e09bb34e99150e239d": 1
   },
-  "packages/jobs/jobs/tests/invariant.spec.ts": {
-    "2c66826d784c113eaf3f8ae7ac490920b0a9a5a0c8c3540743927379bebdddc9": 1
-  },
   "packages/jobs/tool-jobs/src/index.ts": {
     "64ab5463fdb068e88a33f022baff473b7a0da77854c4ecf8e26412763d6dccf6": 1
   },
   "packages/jobs/tool-jobs/tests/tool-jobs.spec.ts": {
     "0683cfd7f792f1b6333bc8c419d8ce32a7a630179280a31083a8f664e26e0ec0": 1,
     "0cf18056bb99a9f7435d55db31bed426d69b9973f7e15ebbca466f9e08ac9ee3": 1,
-    "284e4fe44c92b2f7e60f312649a22debe743ec6640e3b7b0ff8c9c35b02c24f2": 1,
     "52faf4558fcd91bd27dbdfa7e497843e8eeb75ea5f68ee231335018d5b3f2053": 2
   },
   "packages/llm/deepseek-llm-api-extensions/src/index.ts": {
     "1f519aabb00553384bc9c1c57064a1ed6fcd757032061e1b14e0718d91dd4817": 1
-  },
-  "packages/llm/llm-deepseek/src/protocols/chat-completions/adapter.ts": {
-    "598014dcfe77101781e3c6a02709097e3b0151a335e909c44719fac08fdea433": 1
-  },
-  "packages/llm/llm-deepseek/src/protocols/messages/adapter.ts": {
-    "598014dcfe77101781e3c6a02709097e3b0151a335e909c44719fac08fdea433": 1
-  },
-  "packages/llm/llm-deepseek/src/protocols/messages/replay.ts": {
-    "9ebdedf03d9d83739a3d01d1c579242aceca09ea5be1be17f96eacf29e07cdea": 1
-  },
-  "packages/llm/llm-deepseek/tests/adapter.spec.ts": {
-    "34a631902f39d3a40e1baabacdccb986c3a2205cf2a6c8c1880061b87f39609d": 1,
-    "3f65e71f59e11feed30a6ca5bf870cad688d0bd161f6d52fe263a7aaf01bdb19": 2,
-    "b744a3b1ea1021e620ae97ba95bab540b731d7df9634e06fa3830ea7d9e5ebac": 1,
-    "cf2695bf7b16a8d315df73d326e926645d03499422d39f6b97bc569dda04137e": 1,
-    "d09a59b309ad22650abede4b87a64dc6afaf18c08e4313635a22f0121c0a6a92": 1,
-    "eea7d67f2cd0210a9a2d81bce690d485033ea7f120396b8a8b7f2016ea7ae396": 1
-  },
-  "packages/llm/llm-deepseek/tests/loader-composition.spec.ts": {
-    "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
-  },
-  "packages/llm/llm-deepseek/tests/messages/adapter.e2e.ts": {
-    "0dd149237441659d6dc629eb4e30914ac604236cbe023d90693e512b7e300a49": 1
-  },
-  "packages/llm/llm-deepseek/tests/messages/adapter.spec.ts": {
-    "ae6cc7d948e6e78f72fcd1764acabc731e7498c880b7d709710f8bfeee113ef8": 1,
-    "f1f72ca0a6b4cc00365db8c58c0477975b87b4293f0751815e1e971a7191c34d": 1
-  },
-  "packages/llm/llm-deepseek/tests/messages/files.spec.ts": {
-    "65121d4bf51b358c794748d5895b388149f6883d4ae88f6c16b39802813c223f": 1,
-    "eea7d67f2cd0210a9a2d81bce690d485033ea7f120396b8a8b7f2016ea7ae396": 1
-  },
-  "packages/llm/llm-deepseek/tests/messages/serialize.spec.ts": {
-    "02285954262e9d3346a33f080c4aeb89b7f6349014fd23d64e5aeb28a52f1ced": 1,
-    "8c7e2bcfcb534160c7df81de8490cfe4e9891e913c7c429a3f47f603d1129da3": 2,
-    "a394f4cff3c3d3755ffce930afc5cbee43f92de4ae2112a2325b64bdceb74ad2": 1,
-    "ab74fe25dbefba4c45ffa5bab2729b4bb372df0b946711e5d463686e4a0edc02": 2
-  },
-  "packages/llm/llm-deepseek/tests/serialize.spec.ts": {
-    "12712253c43410ab721190981c8b815d102f799ce6942bee3975b035c203dfa8": 1,
-    "98bef9260e144cee077af05112a07d3e9626caa43f06c66ad08f9c024f5469b1": 1,
-    "a394f4cff3c3d3755ffce930afc5cbee43f92de4ae2112a2325b64bdceb74ad2": 1
   },
   "packages/llm/llm-pi-ai/src/catalog.ts": {
     "5b1064d0195802d24eaa5155c66eb381da6046a8ccd0cacc3d852336475da7ef": 1
@@ -2127,9 +2056,7 @@
     "b50b6842b3565ea7f1441afb3214ab0ccf027df0e44bb485005935849c46f8ea": 1
   },
   "packages/subagent/subagent/src/catalog.ts": {
-    "29a67bf48723006b65c652af8a0ff30a4385bb14d651d91ca3059e1ddcb44fcf": 1,
     "3e704e331ed2fc5d4c0855e2455b31b82924c525f2e267416e393cdbd36c251b": 1,
-    "c3a7c8abe19131a8d98f4fb6a495b590e67a56cbf2e741caccfe730f8261edb0": 1,
     "fdc5fcade0ba1abbc426ccccb07a1ad4998253799b8561815047d95178441cdf": 1
   },
   "packages/subagent/subagent/src/internal.ts": {

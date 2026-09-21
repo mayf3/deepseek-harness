@@ -29,7 +29,7 @@ The provider admits the deferred read before allocating source bytes, shares con
 
 ## Preview reads
 
-`RenderedDocumentBytes` extends the workspace byte response with `missingFonts` and `generation`; the original source identity accompanies the converted PDF.
+`RenderedDocumentBytes` carries workspace file metadata, base64 PDF `data`, `missingFonts`, and `generation`; the original source identity accompanies the converted PDF.
 
 The `officeToPdf.render` Remote method checks source authorization and versions through the Session's [Workspace Files](../../packages/api/workspace-files/README.md) service. After conversion admission, `fs.readBytes` supplies raw input within the reserved byte capacity; Office input limits govern this read. The response carries base64 PDF bytes with the source absolute path and freshness version. Source access failures pass through; size and engine failures expose a classified reason without diagnostics. Conversion does not activate an Agent or append events.
 

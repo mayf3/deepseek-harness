@@ -202,6 +202,10 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+.packageImage {
+  object-fit: contain;
+}
+
 .cardMain {
   flex: 1;
   min-width: 0;

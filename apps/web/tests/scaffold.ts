@@ -261,10 +261,9 @@ class RouteOnlyAdapter extends LlmAdapter {
   }
 }
 
-function replayProviders(contextWindow: number | undefined, messages: boolean): typeof REPLAY_PROVIDERS {
+function replayProviders(contextWindow: number | undefined): typeof REPLAY_PROVIDERS {
   return REPLAY_PROVIDERS.map(provider => ({
     ...provider,
-    id: messages ? 'deepseek-messages' : provider.id,
     models: provider.models.map(model => ({
       ...model,
       ...contextWindow === undefined ? {} : { contextWindow },
@@ -306,8 +305,8 @@ export interface LaunchOptions {
   developerTools?: boolean
   /** Enable the real Open In rows with deterministic launch-environment facts. */
   openInAppEnvironment?: LaunchEnvironmentSnapshot
-  /** Compare the replayed root session with `replayFixture`; defaults on for a manifest-owned canonical recording. */
-  compareReplaySession?: boolean
+  /** Compare the replayed root Session; `read-only` also forbids refresh writes to a borrowed fixture. */
+  compareReplaySession?: boolean | 'read-only'
   /**
    * Optional product overlay applied after the shipped Web surface and before
    * the scaffold's hermetic test patches, matching the launcher's `--patch`
@@ -391,10 +390,10 @@ export interface LaunchOptions {
    * keyless first-run configuration lane; the default disables the adapter.
    */
   deepSeekMissingCredential?: boolean
-  /** Record or replay a Messages scenario; older scenarios explicitly retain their recorded Chat Completions route. */
-  deepSeekMessages?: boolean
   /** Leave the current welcome notice pending; ordinary scenarios pre-acknowledge it before browser boot. */
   welcomeNoticePending?: boolean
+  /** Leave first-use Workspace initialization eligible; ordinary scenarios start after the default was removed. */
+  firstUse?: boolean
   /**
    * Patch the shipped DeepSeek search row to a deterministic endpoint and
    * credential reference. Browser search scenarios keep the real provider and
@@ -494,7 +493,6 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     throw new Error('deepSeekMissingCredential is a keyless replay/refresh option')
   }
   const maskDeepSeekCredential = mode !== 'record' && options.deepSeekMissingCredential === true
-  const messages = options.deepSeekMessages === true
   const originalDeepSeekCredential = process.env.DEEPSEEK_API_KEY
   let credentialEnvironmentRestored = false
   const restoreCredentialEnvironment = (): void => {
@@ -571,13 +569,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // Without HMR the profile applies configuration changes at its next start.
     ...options.profile?.hmr === false ? [{ id: 'hmr', disabled: true }] : [],
     { id: 'session-log-deepseek', config: { enabled: false } },
-    // The historical Messages fixture retains its recorded route during replay;
-    // live configuration uses the shared DeepSeek route. Explicit overlays win.
-    ...messages
-      ? [{ id: 'agent-default-model', config: { provider: mode === 'record' || maskDeepSeekCredential ? 'deepseek-official' : 'deepseek-messages', model: maskDeepSeekCredential ? 'deepseek-flash' : 'deepseek-v4-flash' } }]
-      : mode === 'record' || options.deepSeekMissingCredential === true
-        ? []
-        : [{ id: 'agent-default-model', config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }],
+    ...mode === 'record' || options.deepSeekMissingCredential === true
+      ? []
+      : [{ id: 'agent-default-model', config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }],
     ...extraOverlayPatches,
     // The roster's shipped presets are the plugin's own, bundled inside
     // `dsh-agent-presets` and prepended by it. Pin only the machine-local
@@ -600,6 +594,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // to an absolute temp root (removed with the workspace at close) so tests
     // never write the user's harness home.
     { id: 'storage-json', config: { root: join(workspaceCwd, '.dsh-storages') } },
+    // First-use initialization must create directories only inside this scaffold's temporary world.
+    { id: 'workspace-controller', config: { documentsDirectory: join(workspaceCwd, 'Documents') } },
     // Skill discovery is model-visible input. Pin every host-level root inside
     // the owned temp world so ~/.dsh, ~/.agents, and a bundled-root env setting
     // cannot change replay requests or conversation goldens. Project roots stay
@@ -693,10 +689,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
           baseURL: options.deepSeekSearch.baseURL,
         },
       }],
-    ...maskDeepSeekCredential && !messages ? [] : [
-      { id: 'llm-deepseek', disabled: mode !== 'record' && !maskDeepSeekCredential,
-        config: messages ? {} : { protocol: 'chat-completions' } },
-    ],
+    { id: 'llm-deepseek', disabled: mode !== 'record' && !maskDeepSeekCredential },
   ]
   const patches: PatchOptions[] = [...basePatches, ...surfacePatches, ...overlayPatches]
 
@@ -737,7 +730,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       return {
         packageName: manifest.name,
         packageDir,
-        patchPath: join(packageDir, 'cordis.patch.yml'),
+        patchPaths: [join(packageDir, 'cordis.patch.yml')],
         patches: [],
       }
     }))
@@ -826,6 +819,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         op: 'set', path: [WELCOME_NOTICE_ACK_FIELD], value: WELCOME_NOTICE_VERSION,
       }])
     }
+    if (options.firstUse !== true && ctx.workspaceRegistry.list().length === 0) {
+      const initial = await ctx.workspaceRegistry.initializeDefault(async () => ({ path: workspaceCwd, title: 'Workspace' }))
+      if (initial !== undefined) await ctx.workspaceRegistry.delete(initial.id)
+    }
     const boundPort = ctx.get('webServer')?.port
     if (boundPort === undefined) {
       throw new Error('web e2e scaffold: webServer service missing after settled boot')
@@ -870,7 +867,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     if (mode !== 'record' && replayFixture !== undefined) {
       replayHandle = installLlmReplay(ctx, {
         file: replayFixture,
-        providers: (options.replayProviders ?? replayProviders(options.replayContextWindow, messages)).map(provider => ({
+        providers: (options.replayProviders ?? replayProviders(options.replayContextWindow)).map(provider => ({
           ...provider,
           ...(options.replayRetryPolicy === undefined ? {} : { retryPolicy: options.replayRetryPolicy }),
         })),
@@ -885,8 +882,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // a fixture would, with streaming that still fails loud: the scenario
       // issues no model calls, and one that slipped in must not pass quietly.
       ctx.effect(() => ctx.llm.registerAdapter(
-        replayProviders(options.replayContextWindow, messages).map(provider => provider.id),
-        new RouteOnlyAdapter(replayProviders(options.replayContextWindow, messages)),
+        replayProviders(options.replayContextWindow).map(provider => provider.id),
+        new RouteOnlyAdapter(replayProviders(options.replayContextWindow)),
       ), 'web e2e scaffold: route-only adapter')
     }
     if (publicProxy === undefined || publicHost === undefined || publicPrefix === undefined) {
@@ -968,7 +965,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
           await assertReplaySession(
             [...observedSessions.values()],
             replayFixture,
-            mode,
+            compareReplaySession === 'read-only' ? 'replay' : mode,
             `http://${browserHost}:${port}`,
             harnessHome,
           )

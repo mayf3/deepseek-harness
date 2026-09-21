@@ -8,12 +8,6 @@ import type { FailedAction, ManagerNotice, PackageRow, PackageView, PluginManage
 /** The translate seat of the manager's dictionary. */
 export type Translate = PropsLocale<'pluginManager'>['t']
 
-/** Official packages whose release status the page identifies as beta. */
-const BETA_PACKAGES = new Set([
-  '@deepseek-ai/dsh-experimental-agent-team-profile',
-  '@deepseek-ai/dsh-experimental-auto-review',
-])
-
 /** The registries with a name of their own, by host. */
 const REGISTRY_COPY = new Map<string, PluginManagerLocaleKey>([
   ['registry.npmmirror.com', 'registryNpmmirror'],
@@ -105,7 +99,7 @@ export function packageText(
   return {
     title: pkg.meta?.title === undefined ? pkg.name : resolveText(pkg.meta.title),
     description: pkg.meta?.description === undefined ? undefined : resolveText(pkg.meta.description) || undefined,
-    beta: BETA_PACKAGES.has(pkg.name),
+    beta: pkg.name.startsWith('@deepseek-ai/dsh-experimental-'),
   }
 }
 

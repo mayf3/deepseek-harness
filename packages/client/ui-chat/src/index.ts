@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { CHAT_SETTINGS_NAMESPACE, ChatSettingsSchema } from './chat-settings.ts'
 
 export {
-  CHAT_SETTINGS_NAMESPACE, DEFAULT_TRANSCRIPT_VIEW_MODE, TRANSCRIPT_VIEW_FIELD,
+  CHAT_SETTINGS_NAMESPACE, DEFAULT_TRANSCRIPT_VIEW_MODE, LEGACY_TRANSCRIPT_VIEW_MODE, TRANSCRIPT_VIEW_FIELD,
   TRANSCRIPT_VIEW_MODES, type ChatSettings, type TranscriptViewMode,
 } from './chat-settings.ts'
 

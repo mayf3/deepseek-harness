@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../../api/job-controller/tsconfig.client.json"
+    },
+    {
       "path": "../../api/session-controller/tsconfig.client.json"
     },
     {

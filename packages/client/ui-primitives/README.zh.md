@@ -42,14 +42,15 @@ kind: "package-library"
 | `Input` | 单行文本输入，用于搜索框与行内表单。 |
 | `Menu`, `MenuItemButton` | 由 `items` 数据行、分隔线与分组标题构成的下拉菜单，支持嵌套子菜单；`children` 在同一列表中加入组件行，每行一个 `MenuItemButton`（`separatorBefore` 开启新分组）。所有行共享样式、键盘走位与焦点归还；两类行的关闭都是 owner 状态的改变。打开期间 `↑`／`↓`（以及 Home、End）在列表中走位，Tab 选定聚焦行，Escape 或 Shift+Tab 关闭并把焦点还给锚点；选定一行同样把键盘还给锚点——除非拥有者自己移动了焦点。只拦截位于锚点或列表内的键盘，`autoFocus` 仅决定打开时是否聚焦首行。 |
 | `Pill` | 可选中的胶囊按钮，用于视图切换与筛选器；接受 `active` 与 `onClick`。 |
+| `SegmentedTabs` | 受控的等宽分段标签，支持滑动指示条及左／右方向键、Home、End 导航。调用方提供文案、标签与面板 id，以及面板内容。 |
 | `Tag` | 只读胶囊徽章；`tone` 选择八种配色之一。 |
-| `StateDot` | 10px 槽内的绿色 `done`、琥珀色 `warning`、红色 `error`、中性灰色 `idle` 圆点，以及 tertiary 灰色 14px 旋转 `ongoing` loading。它是 `aria-hidden` 的，名称由渲染点提供。 |
+| `StateDot` | 10px 槽内的绿色 `done`、琥珀色 `warning`、红色 `error`、中性灰色 `idle` 圆点，以及 tertiary 灰色 14px 旋转 `ongoing` loading，其动画固定到文档时间零点，所以所有可见 loading 同相旋转。它是 `aria-hidden` 的，名称由渲染点提供。 `appearance="step"` 以实心勾表示完成、空心圆表示等待。 |
 | `ConnectionIndicator` | 行内连接恢复控件，覆盖断线、重试与已恢复三种状态。 |
-| `DisclosureRow` | 24px 紧凑折叠行，标题与内容左右排列。 |
+| `DisclosureRow` | 24px 紧凑折叠行，标题与内容左右排列。使用浅层 prop 比较进行 memo；内容未变时，保持回调与 React 节点 prop 的引用稳定。 |
 | `Modal` | 页面遮罩之上的居中对话框。 |
 | `RiskConfirmation` | 以显式复选框把关的敏感操作确认。 |
 | `OnboardingSurface` | 首次运行的引导舞台，期间保持应用根节点 inert。 |
-| `Tooltip` | 克隆锚点上的悬停文本，可置于右、下、上三个方向。 |
+| `Tooltip` | 锚定在克隆子元素上的悬停文本；可通过 `portal` 渲染到外层，避免被容器裁剪。 |
 | `HoverCard` | 指针可停留、可选中的悬停预览；可选带复制按钮。 |
 | `Toast` | 顶部居中的瞬时横幅，保持时长由所有者的 `holdMs` 决定。 |
 | `JsonTree`、`JsonBlock` | 只读 JSON 查看。 |
@@ -57,7 +58,7 @@ kind: "package-library"
 | `TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock`、`WebBlock` | 与各类工具结果意图对应的 agent 输出卡片。 |
 | `icons/*`、`FishLogo`、`BrandWordmark`、`ReferenceIconRegular`/`ReferenceIconMedium`、`LinkIconRegular`/`LinkIconMedium` | 字形与品牌标识。`LinkIconMedium` 用于 14px 的可点击链接分类及已知站点标记。 |
 | `PermissionIconReadOnlyRegular`/`Medium`、`PermissionIconWorkspaceWriteRegular`/`Medium`、`PermissionIconFullAccessRegular`/`Medium` | 只读、工作区写入与完全访问选项使用的权限模式图形。 |
-| `PluginArtworkTeam`/`Terminal`/`Loop`/`Subagent`/`Search`/`Default` | 插件管理界面使用的固定配色 36×36 插件插画；`Default` 用于没有自有插画的插件。def id 按实例生成，同一插画可在一页中安全重复。 |
+| `PluginArtworkTerminal`/`Loop`/`Subagent`/`Search`/`Default` | 插件管理界面使用的固定配色 36×36 插件插画；`Default` 用于没有自有插画的插件。def id 按实例生成，同一插画可在一页中安全重复。 |
 | `FileTypeIcon`、`classifyFileType`、`fileExtension` | 按类别着色的 28px 文件或文件夹图形，以及它背后共享的不区分大小写文件名映射。代码与配置文件使用细分的全彩技术图形；链接前置图形使用 `LinkIconMedium`，图片内容使用图片预览。 |
 | `languageForPath`、`CODE_HIGHLIGHT_EXTENSIONS`、`useCodeHighlighter` | 代码预览与 diff review 共用的文件名 grammar 选择和惰性逐行 token 高亮。 |
 
@@ -119,7 +120,7 @@ kind: "package-library"
 
 ### 几何与溢出
 
-输出卡片共享同一套几何模型：`white-space: pre` 并横向滚动，让按列对齐的内容保持对齐；超过 `maxLines`（默认 16）时折叠为头部切片加尾部切片，由展开按钮控制，长正文不会撑高卡片。`TerminalBlock` 把 ANSI 解析为 React span，并带逐行列缓冲处理光标移动，遵循行内擦除、制表位与字符宽度。
+输出卡片共享同一套几何模型：`white-space: pre` 并横向滚动，让按列对齐的内容保持对齐；超过 `maxLines`（默认 16）时折叠为头部切片加尾部切片，由展开按钮控制，长正文不会撑高卡片。`TerminalBlock` 把 ANSI 解析为 React span，并带逐行列缓冲处理光标移动，遵循行内擦除、制表位与字符宽度。宿主可按表层选择退出共享几何：把 `--dsl-terminal-command-whitespace` / `--dsl-terminal-line-whitespace` 重绑为 `pre-wrap` 让命令与输出完整换行且不横向滚动；`maxLines: Infinity` 为改用 `--dsl-terminal-output-max-height` 限高滚动的宿主禁用折叠；`copyText` 覆盖复制载荷（并让控件在任何输出出现之前就保持渲染）；`runStateDot: false` 在外围行已携带同一状态时省去状态点，并经 `--dsl-terminal-gutter` 收回其落区。横幅分割线跟随渲染出的正文：正在流式输出的 running 卡片像已结束卡片一样把命令与文本分隔开。
 
 </details>
 

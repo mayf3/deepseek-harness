@@ -35,7 +35,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-Host provider 结合生成的 Service/Event 目录与请求 agent 的工具注册表。Client provider 通过现有检查注册表同步清单，并从已连接页面回答查询。工具插件通过 Cordis effect 持有注册；释放时移除工具和提示词贡献。检查直接读取 provider，不维护独立运行时投影，因此不发布不变式配套插件。
+Host provider 结合生成的 Service/Event 目录与请求 agent 的工具注册表。Client provider 通过现有检查注册表同步清单，并从已连接页面回答查询。工具插件通过 Cordis effect 持有注册；释放时移除两个工具和 Host inspect provider。检查直接读取 provider，不维护独立运行时投影，因此不发布不变式配套插件。
 
 </details>
 
@@ -54,15 +54,15 @@ Host provider 结合生成的 Service/Event 目录与请求 agent 的工具注�
 
 #### 模型所见
 
-[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-cordis) 描述两个只读检查工具。[提示词](src/prompt.ts) 指引模型通过 Plugin Manager 进行持久化变更并说明 MCP 设置方式。创造模式的视觉请求默认通过已安装的 UI 插件显示在当前 Web 页面；开发技能说明 Client 打包和 slot 注册方法。查询结果包含所请求的 API 声明或当前工具 schema。
+[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-cordis) 描述两个只读检查工具。插件不贡献 system prompt 段落：工具描述已说明何时调用每个工具以及查询不会调用业务方法。在 `cordis` preset 中，首轮 skill catalog 携带两个随附技能的描述，把插件、MCP、组合编辑和未指定去向的视觉请求路由到覆盖 Plugin Manager、MCP 设置、Client 打包和 slot 注册的技能。查询结果包含所请求的 API 声明或当前工具 schema。
 
 #### Token 影响
 
-插件可见时，两个工具 schema 和指导段落进入模型请求。查询结果追加到转录中；精确查询避免加载无关声明。
+插件可见时，只有两个工具 schema 进入模型请求。查询结果追加到转录中；精确查询避免加载无关声明。
 
 #### KV Cache 影响
 
-未改变的 schema 和指导保持前缀稳定。查询结果追加到历史中；启用其他插件可能改变后续工具 schema。
+未改变的工具 schema 保持前缀稳定。查询结果追加到历史中；启用其他插件可能改变后续工具 schema。
 
 ## 已知限制与待办
 

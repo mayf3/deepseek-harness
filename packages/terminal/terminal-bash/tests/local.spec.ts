@@ -235,7 +235,7 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
     const pid = Number(child)
     expect(processIsRunning(pid)).toBe(true)
     await ctx.terminals.kill(agent, created.sessionId)
-    // Linux can retain an exited descendant's PID until its parent reaps it.
+    // Linux can retain a stopped descendant as a zombie until its parent reaps it.
     expect(processIsRunning(pid)).toBe(false)
   }, 10_000)
 

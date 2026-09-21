@@ -1,7 +1,7 @@
-/** Read plugin display metadata through exported locale resources without evaluating plugin code. */
+/** Read plugin display text and icons through exported resources without evaluating plugin code. */
 
-import { readdirSync, readFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { dirname, extname, isAbsolute, relative, resolve, sep, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ModuleLoader } from '@deepseek-ai/cordis-plugin-loader'
 import type { LocalizedText, PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
@@ -10,6 +10,35 @@ import { barePackageName } from './profile-resolution/resolver.ts'
 const LANGUAGE_ID = /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/u
 
 type DisplayFields = Record<'title' | 'description', string | undefined>
+
+/** Maximum raw icon bytes admitted to plugin metadata. */
+const MAX_ICON_BYTES = 256 * 1024
+const ICON_MEDIA_TYPES = new Map([
+  ['.svg', 'image/svg+xml'], ['.png', 'image/png'], ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'], ['.webp', 'image/webp'],
+])
+
+function iconOf(value: unknown, manifestPath: string): string | undefined {
+  const icon = textOf(value, `${manifestPath}: icon`)
+  if (icon === undefined) return undefined
+  if (isAbsolute(icon) || win32.isAbsolute(icon) || /^[A-Za-z][A-Za-z\d+.-]*:/u.test(icon)) {
+    throw new Error(`${manifestPath}: icon must be a relative file path`)
+  }
+  const mediaType = ICON_MEDIA_TYPES.get(extname(icon).toLowerCase())
+  if (mediaType === undefined) throw new Error(`${manifestPath}: icon must be SVG, PNG, JPEG, or WebP`)
+  const directory = realpathSync(dirname(manifestPath))
+  const file = realpathSync(resolve(directory, icon))
+  const local = relative(directory, file)
+  if (local === '..' || local.startsWith(`..${sep}`) || isAbsolute(local)) {
+    throw new Error(`${manifestPath}: icon must remain inside its manifest directory`)
+  }
+  const stat = statSync(file)
+  if (!stat.isFile()) throw new Error(`${manifestPath}: icon must be a regular file`)
+  if (stat.size > MAX_ICON_BYTES) throw new Error(`${manifestPath}: icon exceeds 256 KiB`)
+  const bytes = readFileSync(file)
+  if (bytes.length > MAX_ICON_BYTES) throw new Error(`${manifestPath}: icon exceeds 256 KiB`)
+  return `data:${mediaType};base64,${bytes.toString('base64')}`
+}
 
 /**
  * Resolve a plugin resource through the active Node ESM resolver without evaluating it.
@@ -104,7 +133,9 @@ function localizedText(
 }
 
 /**
- * Read meta.title and meta.description from a plugin's exported locale JSON files.
+ * Read localized display text and the icon declared in a plugin's exported package.json.
+ * Icons are manifest-relative SVG, PNG, JPEG, or WebP files of at most 256 KiB,
+ * contained in the manifest directory after realpath resolution. Icon failures retain display text.
  * Non-package specifiers are skipped without invoking the resource resolver.
  * Language files share the directory containing the resolved English resource;
  * each file is resolved through the complete plugin specifier before reading.
@@ -112,25 +143,29 @@ function localizedText(
  * maps retain an English fallback, ultimately the full module specifier for titles and empty for descriptions.
  * @param specifier - configured plugin module name, including any package subpath.
  * @param parentURL - owning Loader tree's module-resolution base.
- * @returns translated or fallback fields, a diagnostic, or undefined for non-package specifiers or absent display text.
+ * @returns display fields and any icon diagnostic, or undefined for non-package specifiers or absent metadata.
  */
 export function readPluginMeta(specifier: string, parentURL: string): PluginLocalizedMeta | undefined {
   if (barePackageName(specifier) === undefined) return undefined
   try {
     const englishPath = optionalResourcePath(`${specifier}/locale/en.json`, parentURL)
     const dictionaries = englishPath === undefined ? new Map<string, DisplayFields>() : dictionariesOf(englishPath, specifier, parentURL)
-    const english = dictionaries.get('en')
-    const manifestPath = english?.title === undefined || english.description === undefined
-      ? optionalResourcePath(`${specifier}/package.json`, parentURL)
-      : undefined
+    const manifestPath = optionalResourcePath(`${specifier}/package.json`, parentURL)
     const manifest = manifestPath === undefined ? undefined : readObject(manifestPath)
     const title = localizedText('title', dictionaries, fallbackText(manifest?.name), specifier)
     const description = localizedText('description', dictionaries, fallbackText(manifest?.description), '')
-    if (title === undefined && description === undefined) return undefined
-    return {
+    const text = {
       ...title === undefined ? {} : { title },
       ...description === undefined ? {} : { description },
     }
+    let icon: string | undefined
+    try {
+      icon = manifestPath === undefined ? undefined : iconOf(manifest?.icon, manifestPath)
+    } catch (error) {
+      return { ...text, error: `Plugin metadata for ${specifier}: ${String(error)}` }
+    }
+    if (title === undefined && description === undefined && icon === undefined) return undefined
+    return { ...text, ...icon === undefined ? {} : { icon } }
   } catch (error) {
     return { error: `Plugin metadata for ${specifier}: ${String(error)}` }
   }

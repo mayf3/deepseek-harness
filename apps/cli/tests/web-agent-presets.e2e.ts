@@ -369,6 +369,23 @@ describe('the shipped Web composition', () => {
       expect(tools).not.toContain('str_replace_editor')
       expect(ctx.commands.find(handle.agent, 'goal')).toBeDefined()
 
+      // The persona is `standard`'s, pinned verbatim so the two composition
+      // files cannot drift apart: tool descriptions and the skill catalog
+      // carry every creation-mode instruction.
+      const standard = await ctx.agents.create({
+        sessionId: SessionId('preset-cordis-standard-persona'),
+        setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+      })
+      try {
+        const persona = async (agent: Agent) => (await ctx.systemPrompt.assemble({ scope: agent })).sections
+          .filter(section => section.name.startsWith('deployment:persona-'))
+        const cordisPersona = await persona(handle.agent)
+        expect(cordisPersona.map(section => section.name)).toEqual(['deployment:persona-prefix', 'deployment:persona-suffix'])
+        expect(cordisPersona).toEqual(await persona(standard.agent))
+      } finally {
+        await standard.dispose()
+      }
+
       // The preset's own authoring skill registers into ITS layer of the host
       // registry: the cordis agent's view carries it, the global view does not.
       const scoped = (await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)

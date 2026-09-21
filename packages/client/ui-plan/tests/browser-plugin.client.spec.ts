@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { PlanChip } from '../src/client/PlanModeControl.tsx'
 import { PlanCards, PlanReviewOpen, type PlanOpenInjected, type PlanReviewOpenInjected } from '../src/client/PlanCard.tsx'
@@ -31,13 +32,14 @@ function providePreview(ctx: Context) {
   const registerType = vi.fn<Context['sidebarRightTabs']['register']>(() => removeType)
   const openResourceIn = vi.fn<Context['sidebarRight']['openResourceIn']>()
   const openResource = vi.fn<Context['sidebarRight']['openResource']>()
+  const mounted = createSnapshotStore<SessionId | undefined>(undefined)
   const subagentAddress = vi.fn<Context['sessions']['subagentAddress']>(() => undefined)
   ctx.provide('sessions', { subagentAddress })
   ctx.provide('resources', { register: vi.fn(() => removeResources) })
   ctx.provide('sidebarRightTabs', { register: registerType })
-  ctx.provide('sidebarRight', { openResourceIn, openResource })
+  ctx.provide('sidebarRight', { openResourceIn, openResource, mounted })
   ctx.provide('remote.session', {})
-  return { events, removeResources, removeType, registerType, openResourceIn, openResource, subagentAddress }
+  return { events, removeResources, removeType, registerType, openResourceIn, openResource, mounted, subagentAddress }
 }
 
 const SID = 's-plan' as SessionId
@@ -183,6 +185,8 @@ describe('ui-plan browser apply', () => {
       const review = b.slots.entries('conversation.plan-review.actions')[0]!
       expect(review.component).toBe(PlanReviewOpen)
       const reviewInjected = (review.inject as unknown as (sessionId: SessionId) => PlanReviewOpenInjected)(SID)
+      // The automatic open reads the service's mounted-seat source, not a copy.
+      expect(reviewInjected.hooks.sidebarMounted).toBe(b.mounted)
       const pending = { id: 'review', question: 'Approve?', plan: plan.markdown, callId: plan.callId, approve: { label: 'Approve' } }
       reviewInjected.openReview(pending, 'question:1')
       expect(b.openResource).toHaveBeenLastCalledWith(address)

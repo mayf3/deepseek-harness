@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type {
   SessionListState, SessionReference, SessionSummary,
 } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -34,7 +34,7 @@ const sessionState = (items: readonly SessionSummary[]): SessionListState => ({
   ids: items.map(item => item.id),
   byId: Object.fromEntries(items.map(item => [item.id, item])),
   phase: 'ready',
-  projectionsBySession: {}, jobsBySession: {},
+  projectionsBySession: {},
 })
 const workspace = (id: string, sessionIds: readonly string[]): WorkspaceView => ({
   workspaceId: id as WorkspaceId, path: `/projects/${id}`, title: id,
@@ -91,9 +91,11 @@ async function bench() {
   let sessionSnapshot = sessionState([])
   const subscribe = () => () => {}
   const workspacesSubscribe = vi.fn(subscribe)
+  const initializeDefault = vi.fn(async (): Promise<WorkspaceView | undefined> => undefined)
   ctx.provide('workspaces', {
     list: { getSnapshot: () => workspaceSnapshot, subscribe: workspacesSubscribe },
     create,
+    initializeDefault,
     rename,
     delete: vi.fn(async () => undefined),
     insertBefore: vi.fn(async () => undefined),
@@ -128,7 +130,7 @@ async function bench() {
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, rename,
     retain, using, selectPanel, search, renameSession, binding, fork, pickDirectory, pinSession, unpinSession,
-    workspacesSubscribe,
+    workspacesSubscribe, initializeDefault,
     setWorkspaces: (snapshot: WorkspaceSnapshot): void => { workspaceSnapshot = snapshot },
     setSessions: (snapshot: SessionListState): void => { sessionSnapshot = snapshot },
   }
@@ -180,6 +182,20 @@ describe('ui-workspace apply', () => {
     expect(inject).toEqual([
       'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout',
     ])
+  })
+
+  it('reports a default Workspace creation failure through the shared notice overlay', async () => {
+    const b = await bench()
+    onTestFinished(() => b.ctx.fiber.dispose())
+    b.initializeDefault.mockRejectedValueOnce(new Error('denied'))
+    declare(b.slots, 'shell.overlay')
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const face = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
+    await vi.waitFor(() => {
+      expect(face.hooks.toast.getSnapshot()).toMatchObject({ kind: 'defaultWorkspaceFailed' })
+    })
+    face.dismissToast()
+    expect(face.hooks.toast.getSnapshot()).toBeNull()
   })
 
   it('registers browser and pickers for declarations arriving before or after apply', async () => {
