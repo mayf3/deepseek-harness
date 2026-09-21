@@ -32,7 +32,8 @@
 }
 
 /* Ongoing is the sole non-dot state: a quiet full ring sits behind a centered
- * breathing arc while the complete glyph rotates continuously. */
+ * breathing arc while the complete glyph rotates continuously. Both animations
+ * share one 1.5s period so pinning their start times aligns them together. */
 .spinner {
   flex: none;
   color: var(--dsw-alias-label-tertiary);

@@ -26,6 +26,20 @@ The Host controller serializes mutations whose correctness depends on current re
 
 The Client entry provides `ClientWorkspaceModel` and `createWorkspaceStateStream()`. The model owns Workspace rows, registry order, archived and pinned Session identities, unary mutation echoes, and stream/unary race resolution. A newer Host row wins by `updatedAt`; a committed stream order outranks an older unary response; a removed Workspace id cannot be resurrected by delayed data. Pin snapshots change only when their identities or order change. The package exposes framework-neutral snapshots and subscriptions, leaving navigation policy and React hooks to the UI owner.
 
+<a id="first-use-workspace"></a>
+### First-use Workspace
+
+`workspace.initializeDefault({ directoryName, title })` returns the durable default Workspace; the Client service exposes the same request as `workspaces.initializeDefault(request, signal?)`. The [Workspace Client](../../client/ui-workspace/README.md) resolves these names from its startup language. The Host places the directory under its account's `<Documents>/deepseek-harness`, including on remote Web hosts. The directory name must be one non-blank segment without separators, colon, NUL, surrounding whitespace, or a trailing dot; the title must be non-blank. OS filename restrictions also apply. Linux system lookup requires `xdg-user-dir` with an enabled Documents directory; hosts without it must configure `documentsDirectory` or use the folder picker.
+
+The [Workspace registry](../../workspace/workspace/README.md#first-use-workspace) owns eligibility, directory creation, and durable initialization. An existing default Workspace is returned without another Documents lookup; request names do not rename it. Ineligible first use returns `undefined`, so startup can leave directory selection to the user. Invalid names reject with `gateway/bad-request`; lookup and creation failures use standard Remote error handling. Initialization creates no Session and sends no message.
+
+| Configuration | Default | Purpose |
+| --- | --- | --- |
+| `documentsDirectory` | System Documents directory | Fully qualified Host directory override |
+| `documentsLookupTimeoutMs` | `10000` | Positive maximum duration of OS directory lookup, in milliseconds |
+
+Documents lookup holds the registry mutation queue, so other Workspace mutations, including registration of a picked directory, can wait up to `documentsLookupTimeoutMs`. Cancellation can stop the lookup; after resolution succeeds, it does not roll back creation or registration.
+
 -----
 
 <a id="model-experience"></a>

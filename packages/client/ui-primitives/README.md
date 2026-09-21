@@ -44,9 +44,9 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `Pill` | Selectable capsule button for view switchers and filters; takes `active` and `onClick`. |
 | `SegmentedTabs` | Controlled equal-width tabs with a sliding indicator and Left/Right, Home, and End navigation. The caller supplies labels, tab/panel ids, and panel content. |
 | `Tag` | Read-only capsule badge; `tone` selects one of eight palettes. |
-| `StateDot` | Solid green `done`, amber `warning`, red `error`, and neutral-grey `idle` marks in a 10px slot, plus a tertiary-grey 14px rotating `ongoing` loader. `aria-hidden`, so the render site owns the name. |
+| `StateDot` | Solid green `done`, amber `warning`, red `error`, and neutral-grey `idle` marks in a 10px slot, plus a tertiary-grey 14px rotating `ongoing` loader whose animations pin to document time zero so every visible loader rotates in phase. `aria-hidden`, so the render site owns the name. |
 | `ConnectionIndicator` | Inline connection-recovery control across outage, retry, and recovered states. |
-| `DisclosureRow` | 24px compact disclosure that lays title and content side by side. |
+| `DisclosureRow` | 24px compact disclosure that lays title and content side by side. Memoized with shallow prop comparison; keep callbacks and React-node props stable when their content is unchanged. |
 | `Modal` | Centered dialog over a page mask. |
 | `RiskConfirmation` | Sensitive action gated behind an explicit checkbox. |
 | `OnboardingSurface` | First-run stage that holds the application root inert. |
