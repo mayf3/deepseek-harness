@@ -230,6 +230,12 @@ async function main(): Promise<void> {
     }
     finally { ordinaryDialogs.delete(controller) }
   }
+  const showAbout = (): Promise<unknown> => {
+    const current = currentDesktopLocale().messages
+    return ordinaryMessageBox({ type: 'info', title: current.aboutMenu, message: 'DeepSeek Harness',
+      detail: formatDesktopMessage(current.aboutVersion, { version: app.getVersion() }),
+      buttons: [current.updateAcknowledge], cancelId: 0 })
+  }
   const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
   const applicationUrl = `${SCHEME}://app/`
   let hostUrl: string | undefined
@@ -619,7 +625,11 @@ async function main(): Promise<void> {
       { role: 'unhide', label: currentDesktopLocale().messages.showAllApplications }, { type: 'separator' }]
     : []
   const applicationItems = (): MenuItemConstructorOptions[] => [
-    { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
+    // Windows has no system About panel; Electron's fallback is a plain
+    // message box, so the shell shows its own dimmed dialog instead.
+    process.platform === 'win32'
+      ? { label: currentDesktopLocale().messages.aboutMenu, click: () => { void showAbout() } }
+      : { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
     { type: 'separator' },
     { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
     { type: 'separator' },
