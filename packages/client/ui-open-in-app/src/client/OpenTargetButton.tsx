@@ -71,7 +71,8 @@ function ApplicationIcon({ source, size = 14 }: { source: string | null; size?: 
 }
 
 /**
- * Render identical split buttons for files and directories. File reveal always stays last and becomes the default when no app is selected.
+ * Render identical split buttons for files and directories. File reveal always
+ * stays last; it is the default only when no application is registered.
  * @param props - target applications, default selection, and operations.
  * @returns the control and its transient failure feedback.
  */
@@ -79,7 +80,13 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
   const { applications, defaultId, kind, t } = props
   const [menuOpen, setMenuOpen] = useState(false)
   const { pending, toast, act } = useOpenTargetGesture(props.execute, t)
-  const preferred = applications.find(app => app.id === defaultId)
+  // Files open through an application whenever one is registered: the OS-marked
+  // default when the Host reported one, else the first entry in the Shell's
+  // preference order. Reveal is only promoted with no registered application, so
+  // a missing default marker never hides the applications behind it.
+  const preferred = kind === 'file'
+    ? applications.find(app => app.id === defaultId) ?? applications[0]
+    : applications.find(app => app.id === defaultId)
   const disabled = pending || props.busy === true || props.loading === true
   const hasMenu = props.loading === true || props.failed || applications.length + (kind === 'file' ? 1 : 0) > 1
   const revealDefault = kind === 'file' && preferred === undefined && props.loading !== true
@@ -105,7 +112,7 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
           ...applications.map(app => ({
             id: `app:${app.id}`,
             icon: <ApplicationIcon key={app.icon} source={app.icon} />,
-            label: app.id === defaultId ? t('path.appDefault', { app: app.name }) : app.name,
+            label: app.id === preferred?.id ? t('path.appDefault', { app: app.name }) : app.name,
           })),
           ...(props.failed ? [{ id: 'unavailable', label: t('path.appsError'), disabled: true }] : []),
         ]}
