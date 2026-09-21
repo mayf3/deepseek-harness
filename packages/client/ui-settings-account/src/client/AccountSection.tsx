@@ -93,7 +93,7 @@ export function AccountSection({ t, useAccount, start, cancel, refresh, platform
     <section className={css.section} aria-label={t('nav')}>
       {platformPage !== undefined && platform !== undefined && signedIn && <PlatformOverlay
         bridge={platform} page={platformPage} backLabel={t('backToHarness')}
-        loadingLabel={t('loading')} failureLabel={t('failed')} onClose={() => { setPlatformPage(undefined) }} />}
+        loadingLabel={t('loading')} failureLabel={t('platformFailed')} retryLabel={t('platformRetry')} onClose={() => { setPlatformPage(undefined) }} />}
       <div className={css.card}>
         <div className={css.identity}>
           <span className={css.avatar}><AccountAvatar url={signedIn ? profile?.avatarUrl : null} /></span>

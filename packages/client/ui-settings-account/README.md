@@ -26,7 +26,7 @@ The section registers through settings.section and uses the account Remote names
 
 Balances use Platform Web currency formatting: two decimal places and digit grouping, positive amounts truncated to cents, positive sub-cent amounts shown as <0.01, and negative amounts rounded with a minimum displayed magnitude of 0.01. Raw Host balance strings remain unchanged.
 
-Desktop usage and top-up actions open an isolated native Platform view below a 48px return bar. Back destroys the view and preserves the Account settings page. Browser clients retain external links. Loading failures retain the return action and show the existing localized fallback; renderer commands never receive the account token.
+Desktop usage and top-up actions open an isolated native Platform view below a 48px return bar. Back destroys the view and preserves the Account settings page. Browser clients retain external links. Loading failures retain the return action and show a centered localized error with Retry. Retry reloads the same destination; renderer commands never receive the account token.
 
 Contact us opens the Feishu questionnaire in the system browser on Desktop or a new browser tab on Web. It supplies the available Platform UID, build version, UI locale and physical screen resolution as prefill_* parameters, with hide_*=1 for every context field; tokens and contact details are excluded. Configure contactFormUrl on the ui-settings-account plugin to select another HTTPS form. contactSource defaults to empty until the questionnaire supports a Harness source option; OS and device fields remain unfilled, matching the Web implementation.
 
