@@ -5,7 +5,6 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 import { presentInspectListCall, presentInspectQueryCall } from './present.ts'
-import { hostInspectProviders } from './providers.ts'
 
 export const name = 'tool-cordis'
 export const inject = ['tools', 'cordisInspect']
@@ -15,13 +14,11 @@ function requireAgent(exec: ToolExecution): Agent {
   return exec.agent
 }
 
-/** Register read-only runtime inspection tools.
+/** Register read-only runtime inspection tools over the Host providers that
+ * `@deepseek-ai/dsh-tool-cordis/host` registers once per process.
  * @param ctx Agent-scoped registration context.
  */
 export function apply(ctx: Context): void {
-  for (const provider of hostInspectProviders(ctx)) {
-    ctx.effect(() => ctx.cordisInspect.register(provider), `tool-cordis: inspect ${provider.manifest.id}`)
-  }
   ctx.tools.register(defineTool({
     name: 'cordis_inspect_list',
     description:
