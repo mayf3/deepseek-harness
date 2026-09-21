@@ -3620,6 +3620,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-conversation':
         specifier: workspace:^
         version: link:../ui-conversation
+      '@deepseek-ai/dsh-client-ui-deliverables':
+        specifier: workspace:^
+        version: link:../ui-deliverables
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: workspace:^
         version: link:../ui-primitives
@@ -3638,6 +3641,9 @@ importers:
       '@deepseek-ai/dsh-host-open-in-app':
         specifier: workspace:^
         version: link:../../host/open-in-app
+      '@deepseek-ai/dsh-native-command':
+        specifier: workspace:^
+        version: link:../../util/native-command
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
