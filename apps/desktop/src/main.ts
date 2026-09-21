@@ -208,6 +208,9 @@ async function main(): Promise<void> {
   const resources = runtimeResources()
   const paths = resolveDesktopPaths()
   const development = !app.isPackaged
+  const primaryRuntime = development
+    ? developmentPrimaryRuntime()
+    : join(process.resourcesPath, 'runtime', 'primary-runtime')
   const activeProject = paths.profile
   const manager = new DesktopProjectManager(paths, resources)
   let quitting = false
@@ -269,8 +272,7 @@ async function main(): Promise<void> {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
       hostInspectPort, process.env, onFailure,
-      development ? developmentPrimaryRuntime()
-        : join(process.resourcesPath, 'runtime', 'primary-runtime'),
+      primaryRuntime,
       resources)
     return {
       start: async () => {

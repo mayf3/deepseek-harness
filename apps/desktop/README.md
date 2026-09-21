@@ -344,13 +344,14 @@ The downloaded bytes are inert, and the installation call is recorded rather tha
 
 ## Low-level development overrides
 
-An unpackaged Electron process uses `.desktop-build/development/project` under its application directory as its development project. `DSH_DESKTOP_PNPM_ENTRY`, `DSH_DESKTOP_DSH_DIR`, and `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` select explicit runtime resources. The development launcher sets `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` to the primary-runtime directory of the target it prepared, because the Windows target is always x64. Packaged applications ignore these variables, resolve signed resources from `process.resourcesPath`, and use the managed Desktop profile.
+An unpackaged Electron process uses `.desktop-build/development/project` under its application directory as its development project. `DSH_DESKTOP_PNPM_ENTRY` and `DSH_DESKTOP_DSH_DIR` are optional overrides with application-path defaults. `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` is required for every unpackaged launch: the development launchers (`dev:desktop`, `start:desktop`, and the workspace-update qualification runner) set it to the primary-runtime directory of the target they prepared, and a launch without it fails with the fatal startup dialog. The launcher must set it because the shell cannot derive that directory from `process.arch`: the build target fixes Windows to x64 while the host may be arm64. Packaged applications ignore these variables, resolve signed resources from `process.resourcesPath`, and use the managed Desktop profile.
 
 ## Known limitations
 
 - Release signing, notarization, update hosting, and previous-version installed-artifact qualification require the production release environment.
 - Dependency lifecycle scripts follow pnpm’s build permissions; Desktop provides no separate approval dialog.
 - The desktop shell shares sessions, settings, credentials, workspaces, and storage under `$DSH_HOME` with CLI dsh, while executable packages, plugin activation, and lockfiles remain separate.
+- Unpackaged startup on an Electron win32-arm64 host now succeeds, but the payload remains x64: the architecture check in `apps/desktop-host/src/primary-runtime.ts` compares the recorded payload architecture against the host `process.arch`, so the `load_workspace_dependencies` tool can still reject the primary runtime.
 
 ## Dev Note
 

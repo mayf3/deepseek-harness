@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path'
 import { createDevelopmentProjectMetadata } from '../src/project-manager.ts'
 import type { DesktopRelease } from '../src/release.ts'
 import { DESKTOP_RUNTIME_FILE, type DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
+import { resolveDesktopBuildTarget } from './desktop-build-paths.mjs'
 
 interface PackageManifest {
   readonly name?: string
@@ -128,8 +129,10 @@ export function prepareDevelopmentProject(options: DevelopmentProjectOptions): s
     const manifest = readManifest(join(destinationModules, name, 'package.json'))
     return typeof manifest.version === 'string' ? [{ name, version: manifest.version, path: `node_modules/${name}` }] : []
   })
+  const target = resolveDesktopBuildTarget()
   const runtime: DesktopRuntimeDescriptor = { schemaVersion: 1, release: options.release,
-    platform: process.platform, arch: process.arch, sharedPackages, files: [] }
+    platform: target === 'win-x64' ? 'win32' : 'darwin',
+    arch: target === 'mac-arm64' ? 'arm64' : 'x64', sharedPackages, files: [] }
   writeFileSync(join(options.projectDir, DESKTOP_RUNTIME_FILE), `${JSON.stringify(runtime, undefined, 2)}\n`)
   return options.projectDir
 }
