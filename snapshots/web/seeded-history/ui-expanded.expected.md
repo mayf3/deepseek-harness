@@ -8,18 +8,17 @@
 - navigation "Turn navigation":
   - button "Jump to turn 1"
   - button "Jump to turn 2"
-- button "System prompt"
 - text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. {{clock}}"
 - button "Copy"
 - button "2 tool calls" [expanded]
-- button "Think The user wants me to read a.txt and b.txt, then reply with \"DONE\". Let me do both reads in parallel."
+- button "Think"
 - button "Read a.txt":
   - text: Read
   - button "a.txt"
 - button "Read b.txt":
   - text: Read
   - button "b.txt"
-- button "Think Both files have been read. a.txt contains \"alpha\" and b.txt contains \"beta\". I'll now reply with DONE as instructed."
+- button "Think"
 - paragraph: DONE
 - button "Copy"
 - button "Good response"
