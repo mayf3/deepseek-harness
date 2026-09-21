@@ -66,7 +66,7 @@ describe('ui-settings-shell apply', () => {
     expect(entry.options).toMatchObject({ id: 'shell', order: 10 })
     expect(resolveSlotLabel(entry.options.label)).toBe('终端')
     expect(entry.locale).toBe(NS)
-    const face = (entry.inject as unknown as () => ShellCardFace)()
+    const face = (entry.inject as () => Pick<ShellCardFace, 'hooks'>)()
     expect(Object.keys(face.hooks)).toEqual(['shellCard'])
     expect(face.hooks.shellCard.getSnapshot()).toMatchObject({ available: false, dirty: false })
   })

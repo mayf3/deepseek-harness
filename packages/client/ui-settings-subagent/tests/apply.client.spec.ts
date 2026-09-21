@@ -64,7 +64,7 @@ describe('ui-settings-subagent apply', () => {
     expect(entry.options).toMatchObject({ id: 'subagent', order: 30 })
     expect(resolveSlotLabel(entry.options.label)).toBe('Subagent')
     expect(entry.locale).toBe(NS)
-    const face = (entry.inject as unknown as () => SubagentCardFace)()
+    const face = (entry.inject as () => Pick<SubagentCardFace, 'hooks'>)()
     expect(Object.keys(face.hooks).sort()).toEqual(['subagentLimitsCard', 'subagentModelSelectionCard'])
   })
 

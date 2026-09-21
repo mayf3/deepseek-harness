@@ -36,7 +36,7 @@ describe('WebSearchCard', () => {
       ...state,
     })
     const actions = cardActions()
-    const props = { ...actions, view: 'page', t, useWebSearchCard: bindSnapshotSelector(store) } as unknown as WebSearchCardProps
+    const props = { ...actions, view: 'page', t, useWebSearchCard: bindSnapshotSelector(store) } as WebSearchCardProps
     render(<WebSearchCard {...props} />)
     return actions
   }
@@ -45,7 +45,7 @@ describe('WebSearchCard', () => {
     const store = createSnapshotStore<WebSearchCardState>({
       ...settled, baseURL: field(''), maxUses: field('5'), apiKey: field(''), apiKeyConfigured: false, apiKeyWritable: true,
     })
-    const props = { ...cardActions(), view: 'summary', t, useWebSearchCard: bindSnapshotSelector(store) } as unknown as WebSearchCardProps
+    const props = { ...cardActions(), view: 'summary', t, useWebSearchCard: bindSnapshotSelector(store) } as WebSearchCardProps
     render(<WebSearchCard {...props} />)
 
     expect(document.body.textContent).toBe(en.description)

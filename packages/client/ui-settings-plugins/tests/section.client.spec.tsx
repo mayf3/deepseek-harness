@@ -18,7 +18,7 @@ function renderSection(rows: readonly PluginsSettingsTabEntry[]) {
     renderSlot: (_name: string, _owner: unknown, options: { only?: string }) => (
       <span>{options.only}</span>
     ),
-  } as unknown as PluginsSettingsSectionProps
+  } as PluginsSettingsSectionProps
   render(<PluginsSettingsSection {...props} />)
 }
 

@@ -541,9 +541,9 @@ describe('PluginManagerPage', () => {
 
   describe('configuration pages', () => {
     const bodies: SlotBodies = {
-      'plugins.item:bash': ({ view }) => view === 'summary' ? 'Limits every command.' : <form aria-label="bash form" />,
-      'plugins.bundle.config:dsh-better-sidebar': ({ view }) => view === 'page' ? <form aria-label="sidebar form" /> : null,
-      'plugins.row.config:dsh-better-sidebar#sidebar': ({ view }) => view === 'summary' ? 'The sidebar row.' : <form aria-label="row form" />,
+      'plugins.item:bash': view => view === 'summary' ? 'Limits every command.' : <form aria-label="bash form" />,
+      'plugins.bundle.config:dsh-better-sidebar': view => view === 'page' ? <form aria-label="sidebar form" /> : null,
+      'plugins.row.config:dsh-better-sidebar#sidebar': view => view === 'summary' ? 'The sidebar row.' : <form aria-label="row form" />,
     }
 
     it('lists an official plugin after the official bundles with its summary, and opens its page', () => {

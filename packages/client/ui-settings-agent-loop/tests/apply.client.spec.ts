@@ -59,7 +59,7 @@ describe('ui-settings-agent-loop apply', () => {
     expect(entry.options).toMatchObject({ id: 'agent-loop', order: 20 })
     expect(resolveSlotLabel(entry.options.label)).toBe('Agent 循环')
     expect(entry.locale).toBe(NS)
-    const face = (entry.inject as unknown as () => AgentLoopCardFace)()
+    const face = (entry.inject as () => Pick<AgentLoopCardFace, 'hooks'>)()
     expect(Object.keys(face.hooks)).toEqual(['agentLoopCard'])
   })
 
