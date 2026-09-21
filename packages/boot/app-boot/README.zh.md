@@ -68,7 +68,7 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 ### 检查插件配置 schema
 
-`generateConfigSchema` 接收用于诊断的 bin 名称、已准备好的磁盘 profile、有序 patch 列表和安装锚点，返回 `ConfigSchemaDump`。App-boot 负责组合、运行时解析和收集诊断。调用方负责 profile 准备、home/argv 层选择、进程流及退出策略。
+`generateConfigSchema` 接收用于诊断的 bin 名称、已准备好的磁盘 profile、有序 patch 列表和安装锚点，返回 `ConfigSchemaDump`。App-boot 负责组合、运行时解析和收集诊断。调用方负责 profile 准备、home/argv 层选择、进程流及退出策略。`createConfigProjector`、`isNativeConfigSchema` 与 `LOADER_EXPRESSION_SCHEMA` 供不经 profile 收集、只投影单个运行中插件 Config 的调用方使用；投影后的取值位置会引用 `#/$defs/loaderExpression`，外层文档必须定义它。
 
 生成的 JSON Schema 2020-12 描述组合后的 entry list，以 `$defs.patchList` 描述根树 overlay，并从插件 Config 图投影共享定义。它包含禁用项、原生 group 和字面量 YAML/JSON include；内置与规范原生包导出按每棵树的模块解析基准匹配，包括 profile 本地副本。不会根据 config 字段猜测自定义承载插件。include 缺失但有字面量 `initial` 条目时，只在内存中展开，不写文件。发现和投影诊断保留在 `x-cordis` 中，包括未知 Config 和部分约束。[CLI schema dump 参考](../../../apps/cli/reference/README.zh.md#config-schema-dump)负责说明输出字段和编辑语义。
 
