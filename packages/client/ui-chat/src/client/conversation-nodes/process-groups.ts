@@ -285,7 +285,10 @@ export class ProcessState {
     })
   }
 
-  /** Read pending output without advancing State. @returns the repeatable update for the last input batch. */
+  /**
+   * Read pending output without advancing State.
+   * @returns the repeatable update for the last input batch.
+   */
   output(): GroupUpdate<ProcessGroupData> | null { return this.pending }
 }
 

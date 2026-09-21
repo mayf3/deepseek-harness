@@ -333,7 +333,10 @@ export class ChatViewport {
     this.paging = null
   }
 
-  /** @returns whether a paging row is retained for subsequent layout changes. */
+  /**
+   * Expose retained paging ownership to navigation and resize policy.
+   * @returns whether a paging row is retained for subsequent layout changes.
+   */
   get preserving(): boolean { return this.paging !== null }
 
   /**
