@@ -28,6 +28,8 @@ import { GuideTitle } from '../src/client/tabs/guide/GuideTitle.tsx'
 import { GUIDE_ID } from '../src/client/tabs/guide/definition.ts'
 import { en, zh } from '../src/client/locales.ts'
 
+const SHORTCUT_CATALOG: readonly never[] = []
+
 const SESSION = 's-test' as SessionId
 
 interface Recorded {
@@ -64,6 +66,7 @@ async function boot() {
   const resources = { pin: vi.fn<(address: string, signal: AbortSignal) => void>() }
   ctx.provide('slots', slots as never)
   ctx.provide('locale', locale as never)
+  ctx.provide('shortcuts', { register: () => () => {}, catalog: { getSnapshot: () => SHORTCUT_CATALOG, subscribe: () => () => {} } } as never)
   ctx.provide('layout', layout as never)
   ctx.provide('resources', resources as never)
   ctx.provide('sessions', { retain: vi.fn() } as never)
@@ -141,7 +144,11 @@ describe('ui-sidebar-right apply', () => {
     const handle = seat('rightbar.session').store as ReturnType<typeof createSidebarRightStore>
     const instance = handle.create()
     instance.clearPersisted()
-    const release = injected.bindService({ sessionId: SESSION, actions: instance.actions, surfaces: {}, canSplitPane: () => true })
+    const release = injected.bindService({
+      sessionId: SESSION, actions: instance.actions, surfaces: {},
+      closeWithFocus: (_paneId, close) => { close() },
+      canSplitPane: () => true,
+    })
     injected.openTab('guide', { revealIfOpened: false })
     const surface = instance.getSnapshot().bySession[SESSION]
     expect(surface?.layout.expanded).toBe(true)
@@ -243,7 +250,11 @@ describe('ui-sidebar-right apply', () => {
     const handle = seat('rightbar.session').store as ReturnType<typeof createSidebarRightStore>
     // Minted under the session key, so the instance is adopted and the teardown releases it.
     const instance = handle.create(SESSION)
-    injected.bindService({ sessionId: SESSION, actions: instance.actions, surfaces: {}, canSplitPane: () => true })
+    injected.bindService({
+      sessionId: SESSION, actions: instance.actions, surfaces: {},
+      closeWithFocus: (_paneId, close) => { close() },
+      canSplitPane: () => true,
+    })
     injected.openTab('guide')
     const surface = instance.getSnapshot().bySession[SESSION]
     const guide = Object.values(surface?.layout.tabs ?? {})[0]

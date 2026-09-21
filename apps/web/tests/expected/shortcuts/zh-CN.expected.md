@@ -17,6 +17,35 @@
         - button "修改展开／收起左侧栏快捷键"
         - button "展开／收起左侧栏 ⌥ ⌘ B": ⌥ ⌘ B
       - listitem:
+        - text: 展开／收起右侧栏
+        - button "移除展开／收起右侧栏快捷键"
+        - button "修改展开／收起右侧栏快捷键"
+        - button "展开／收起右侧栏 ⇧ ⌘ B": ⇧ ⌘ B
+      - listitem:
+        - text: 分栏
+        - button "移除分栏快捷键"
+        - button "修改分栏快捷键"
+        - button "分栏 ⌘ \\": ⌘ \
+      - listitem:
+        - text: 面板全屏／退出全屏
+        - button "移除面板全屏／退出全屏快捷键"
+        - button "修改面板全屏／退出全屏快捷键"
+        - button "面板全屏／退出全屏 ⌥ ⌘ Enter": ⌥ ⌘ Enter
+      - listitem:
+        - text: 关闭当前页面／窗口
+        - button "移除关闭当前页面／窗口快捷键"
+        - button "修改关闭当前页面／窗口快捷键"
+        - button "关闭当前页面／窗口 ⌥ ⌘ W": ⌥ ⌘ W
+      - listitem:
+        - text: 刷新当前页面
+        - button "修改刷新当前页面快捷键"
+        - button "刷新当前页面 暂无快捷键": 暂无快捷键
+      - listitem:
+        - text: 浏览器
+        - button "移除浏览器快捷键"
+        - button "修改浏览器快捷键"
+        - button "浏览器 ⌥ ⌘ T": ⌥ ⌘ T
+      - listitem:
         - text: 打开设置
         - button "移除打开设置快捷键"
         - button "修改打开设置快捷键"
@@ -51,6 +80,16 @@
         - button "移除归档会话快捷键"
         - button "修改归档会话快捷键"
         - button "归档会话 ⌥ ⌘ A": ⌥ ⌘ A
+      - listitem:
+        - text: 工作区文件
+        - button "移除工作区文件快捷键"
+        - button "修改工作区文件快捷键"
+        - button "工作区文件 ⌥ ⌘ P": ⌥ ⌘ P
+      - listitem:
+        - text: 新建终端
+        - button "移除新建终端快捷键"
+        - button "修改新建终端快捷键"
+        - 'button "新建终端 ⌃ `"': "⌃ `"
   - region "消息输入":
     - heading "消息输入" [level=3]
     - list:

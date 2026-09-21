@@ -4905,6 +4905,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
+      '@deepseek-ai/dsh-client-shortcuts':
+        specifier: workspace:^
+        version: link:../shortcuts
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:^
         version: link:../store
@@ -5071,6 +5074,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
+      '@deepseek-ai/dsh-client-shortcuts':
+        specifier: workspace:^
+        version: link:../shortcuts
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:^
         version: link:../store
@@ -5131,12 +5137,18 @@ importers:
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:^
         version: link:../../api/session-controller
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
       '@deepseek-ai/dsh-client-resources':
         specifier: workspace:^
         version: link:../resources
+      '@deepseek-ai/dsh-client-shortcuts':
+        specifier: workspace:^
+        version: link:../shortcuts
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:^
         version: link:../store
@@ -5212,6 +5224,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
+      '@deepseek-ai/dsh-client-shortcuts':
+        specifier: workspace:^
+        version: link:../shortcuts
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:^
         version: link:../store

@@ -17,6 +17,36 @@
         - button "Edit shortcut for Toggle left sidebar"
         - button "Toggle left sidebar Ctrl + Alt + B": Ctrl + Alt + B
       - listitem:
+        - text: Toggle right sidebar
+        - button "Remove shortcut for Toggle right sidebar"
+        - button "Edit shortcut for Toggle right sidebar"
+        - button "Toggle right sidebar Ctrl + Shift + B": Ctrl + Shift + B
+      - listitem:
+        - text: Split
+        - button "Remove shortcut for Split"
+        - button "Edit shortcut for Split"
+        - button "Split Ctrl + \\": Ctrl + \
+      - listitem:
+        - text: Toggle panel fullscreen
+        - button "Remove shortcut for Toggle panel fullscreen"
+        - button "Edit shortcut for Toggle panel fullscreen"
+        - button "Toggle panel fullscreen Ctrl + Alt + Enter": Ctrl + Alt + Enter
+      - listitem:
+        - text: Close current page or window
+        - button "Remove shortcut for Close current page or window"
+        - button "Edit shortcut for Close current page or window"
+        - button "Close current page or window Ctrl + Alt + W": Ctrl + Alt + W
+      - listitem:
+        - text: Refresh current page
+        - button "Remove shortcut for Refresh current page"
+        - button "Edit shortcut for Refresh current page"
+        - button "Refresh current page Ctrl + Alt + R": Ctrl + Alt + R
+      - listitem:
+        - text: Browser
+        - button "Remove shortcut for Browser"
+        - button "Edit shortcut for Browser"
+        - button "Browser Ctrl + Alt + T": Ctrl + Alt + T
+      - listitem:
         - text: Open settings
         - button "Remove shortcut for Open settings"
         - button "Edit shortcut for Open settings"
@@ -51,6 +81,16 @@
         - button "Remove shortcut for Archive session"
         - button "Edit shortcut for Archive session"
         - button "Archive session Ctrl + Alt + A": Ctrl + Alt + A
+      - listitem:
+        - text: Workspace files
+        - button "Remove shortcut for Workspace files"
+        - button "Edit shortcut for Workspace files"
+        - button "Workspace files Ctrl + Alt + P": Ctrl + Alt + P
+      - listitem:
+        - text: New terminal
+        - button "Remove shortcut for New terminal"
+        - button "Edit shortcut for New terminal"
+        - 'button "New terminal Ctrl + `"': "Ctrl + `"
   - region "Message input":
     - heading "Message input" [level=3]
     - list:

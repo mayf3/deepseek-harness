@@ -48,6 +48,7 @@ async function boot() {
     }),
   }
   const workspaceFiles = { list: vi.fn() }
+  ctx.provide('sidebarRight', {} as never)
   ctx.provide('sidebarRightTabs', tabs as never)
   ctx.provide('slots', slots as never)
   ctx.provide('locale', locale as never)

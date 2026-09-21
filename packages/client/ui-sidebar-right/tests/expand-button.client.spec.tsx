@@ -29,6 +29,7 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
 function mountButton() {
   const instance = createSidebarRightStore(() => ({ kind: 'guide', title: 'Start' })).create()
   const props = {
+    useShortcuts: (selector: (entries: never[]) => unknown) => selector([]),
     sessionId: SESSION,
     useStore: hookOf(instance),
     actions: instance.actions,

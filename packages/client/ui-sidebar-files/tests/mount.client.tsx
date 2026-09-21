@@ -40,6 +40,7 @@ type FilesStoreInstance = ReturnType<ReturnType<typeof createFilesStore>['create
 
 /** The owner's tab actions as recording mocks. */
 interface MockedTabActions {
+  readonly bindCommands: Mock<SidebarRightTabActions['bindCommands']>
   readonly openResource: Mock<SidebarRightTabActions['openResource']>
   readonly openTab: Mock<SidebarRightTabActions['openTab']>
   readonly close: Mock<SidebarRightTabActions['close']>
@@ -68,6 +69,7 @@ function harness(cwd: string | null) {
     await script.dispose()
   })
   const tabActions: MockedTabActions = {
+    bindCommands: vi.fn(() => vi.fn()),
     openResource: vi.fn<SidebarRightTabActions['openResource']>(),
     openTab: vi.fn<SidebarRightTabActions['openTab']>(),
     close: vi.fn<SidebarRightTabActions['close']>(),

@@ -47,7 +47,9 @@ function mountGuide(entries: readonly SidebarRightGuideBox[], custom?: (key: str
   const openTab = vi.fn()
   const renderSlot = vi.fn((_seat: string, _owner: unknown, options: { fallback: ReactNode }) => options.fallback)
   const props = {
-    useTabInfo: () => ({ tab: { ...TAB, actions: { openResource: vi.fn(), openTab, close: vi.fn() } } }),
+    useShortcuts: (selector: (entries: never[]) => unknown) => selector([]),
+    useTabInfo: () => ({ tab: { ...TAB,
+      actions: { bindCommands: vi.fn(() => vi.fn()), openResource: vi.fn(), openTab, close: vi.fn() } } }),
     useGuideEntries: bindSnapshotSelector(guideEntries),
     renderSlotChain: renderSlot,
     renderSlot: vi.fn((_slot: string, _owner: unknown, options: { entryKey: string; fallback: ReactNode }) =>

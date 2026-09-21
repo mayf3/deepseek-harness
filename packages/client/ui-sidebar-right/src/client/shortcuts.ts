@@ -1,0 +1,86 @@
+/** Sidebar-owned commands and live availability from the mounted surface. */
+import type { Shortcuts, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
+import type { SidebarRightController } from './service.ts'
+import type { SidebarRightTarget } from './focus.ts'
+import type {} from './locales.ts'
+
+/**
+ * Register the sidebar commands over the controller used by its visible controls.
+ * @param shortcuts - effective-binding registry for this window.
+ * @param sidebar - current Session and page owner.
+ * @param t - current localized command and unavailable labels.
+ * @returns release callback for the commands and their availability subscriptions.
+ */
+export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' | 'runtime' | 'closeWindow'>, sidebar: SidebarRightController, t: TranslateNS<'sidebarRight'>): () => void {
+  const missing = (): string | null => sidebar.commandTarget(null) === undefined ? t('command.noSession') : null
+  const reason = (kind: 'split' | 'fullscreen', target: SidebarRightTarget | undefined): string | null => {
+    if (target === undefined) return t('command.noFocus')
+    if (kind === 'split') {
+      const block = sidebar.splitBlock(target)
+      return block === undefined ? null : t(`command.${block}`)
+    }
+    if (target.host === 'float') return t('command.float')
+    return null
+  }
+  const status = (read: () => string | null) => ({
+    getSnapshot: read, subscribe: (listener: () => void) => sidebar.interaction.subscribe(listener),
+  })
+  const disposers = [shortcuts.register({
+    id: 'sidebar.right.toggle' as ShortcutCommandId, label: () => t('command.toggle'), aliases: ['right sidebar', 'toggle right panel'],
+    defaults: { desktop: { code: 'KeyB', modifiers: ['primary', 'alt'] } },
+    regions: ['page', 'editable', 'terminal'], modals: [], availability: status(missing),
+    resolve: () => {
+      const target = sidebar.commandTarget(null)
+      if (target === undefined) return { status: 'blocked', reason: t('command.noSession') }
+      return { status: 'handled', run: () => { if (sidebar.isTargetCurrent(target)) sidebar.toggleExpanded() } }
+    },
+  })]
+  for (const kind of ['split', 'fullscreen'] as const) {
+    disposers.push(shortcuts.register({
+      id: (kind === 'split' ? 'pane.split' : 'pane.fullscreen.toggle') as ShortcutCommandId,
+      label: () => t(kind === 'split' ? 'dock.splitPane' : 'command.fullscreen'), aliases: [kind, 'panel'],
+      defaults: { desktop: kind === 'split' ? { code: 'Backslash', modifiers: ['primary'] } : { code: 'Enter', modifiers: ['primary', 'alt'] } },
+      regions: ['page', 'editable', 'terminal'], modals: [], availability: status(() => reason(kind, sidebar.focusedTarget())),
+      resolve: ({ target: element }) => {
+        const target = sidebar.focusedTarget(element)
+        if (target === undefined) return { status: 'blocked', reason: t('command.noFocus') }
+        const unavailable = reason(kind, target)
+        if (unavailable !== null) return { status: 'blocked', reason: unavailable }
+        return { status: 'handled', run: () => {
+          if (!sidebar.isTargetCurrent(target)) return
+          if (kind === 'split') sidebar.split(target.paneId)
+          else sidebar.toggleFullscreen(target)
+        } }
+      },
+    }))
+  }
+  for (const kind of ['close', 'refresh'] as const) {
+    disposers.push(shortcuts.register({
+      id: `page.${kind}` as ShortcutCommandId, label: () => t(`command.${kind}`), aliases: [kind, 'page'],
+      defaults: { desktop: { code: kind === 'close' ? 'KeyW' : 'KeyR', modifiers: ['primary'] } },
+      regions: ['page', 'editable', 'terminal'], modals: [],
+      resolve: ({ target: element, source }) => {
+        const target = sidebar.focusedTarget(element)
+        if (target === undefined && (source === 'iframe' || element?.closest('[data-sidebar-right-session]'))) {
+          return { status: 'blocked', reason: t('command.stale') }
+        }
+        if (kind === 'refresh') {
+          const refresh = target?.occurrence?.commands.refresh
+          if (target === undefined || refresh === undefined) return { status: 'blocked', reason: t('command.noRefresh') }
+          return { status: 'handled', run: () => {
+            if (sidebar.isTargetCurrent(target) && target.occurrence?.commands.refresh === refresh) refresh()
+          } }
+        }
+        if (target !== undefined && sidebar.canCloseTarget(target)) {
+          return { status: 'handled', run: () => { sidebar.closeTarget(target) } }
+        }
+        if (shortcuts.runtime !== 'desktop') return { status: 'blocked', reason: t('command.noFocus') }
+        return { status: 'handled', run: () => {
+          if (target === undefined || sidebar.isTargetCurrent(target)) shortcuts.closeWindow()
+        } }
+      },
+    }))
+  }
+  return () => { for (const dispose of disposers.reverse()) dispose() }
+}

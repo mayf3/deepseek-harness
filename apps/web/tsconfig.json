@@ -24,6 +24,7 @@
   "exclude": [
     "tests/shortcuts-desktop.e2e.ts",
     "tests/shortcuts-workspace.e2e.ts",
+    "tests/shortcuts-panels.e2e.ts",
     "tests/shortcuts.e2e.ts",
     "tests/composer-shortcuts.e2e.ts",
     "tests/default-product-isolation.e2e.ts",

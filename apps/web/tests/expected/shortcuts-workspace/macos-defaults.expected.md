@@ -17,6 +17,35 @@
         - button "Edit shortcut for Toggle left sidebar"
         - button "Toggle left sidebar ⌥ ⌘ B": ⌥ ⌘ B
       - listitem:
+        - text: Toggle right sidebar
+        - button "Remove shortcut for Toggle right sidebar"
+        - button "Edit shortcut for Toggle right sidebar"
+        - button "Toggle right sidebar ⇧ ⌘ B": ⇧ ⌘ B
+      - listitem:
+        - text: Split
+        - button "Remove shortcut for Split"
+        - button "Edit shortcut for Split"
+        - button "Split ⌘ \\": ⌘ \
+      - listitem:
+        - text: Toggle panel fullscreen
+        - button "Remove shortcut for Toggle panel fullscreen"
+        - button "Edit shortcut for Toggle panel fullscreen"
+        - button "Toggle panel fullscreen ⌥ ⌘ Enter": ⌥ ⌘ Enter
+      - listitem:
+        - text: Close current page or window
+        - button "Remove shortcut for Close current page or window"
+        - button "Edit shortcut for Close current page or window"
+        - button "Close current page or window ⌥ ⌘ W": ⌥ ⌘ W
+      - listitem:
+        - text: Refresh current page
+        - button "Edit shortcut for Refresh current page"
+        - button "Refresh current page No shortcut": No shortcut
+      - listitem:
+        - text: Browser
+        - button "Remove shortcut for Browser"
+        - button "Edit shortcut for Browser"
+        - button "Browser ⌥ ⌘ T": ⌥ ⌘ T
+      - listitem:
         - text: Open settings
         - button "Remove shortcut for Open settings"
         - button "Edit shortcut for Open settings"
@@ -51,6 +80,16 @@
         - button "Remove shortcut for Archive session"
         - button "Edit shortcut for Archive session"
         - button "Archive session ⌥ ⌘ A": ⌥ ⌘ A
+      - listitem:
+        - text: Workspace files
+        - button "Remove shortcut for Workspace files"
+        - button "Edit shortcut for Workspace files"
+        - button "Workspace files ⌥ ⌘ P": ⌥ ⌘ P
+      - listitem:
+        - text: New terminal
+        - button "Remove shortcut for New terminal"
+        - button "Edit shortcut for New terminal"
+        - 'button "New terminal ⌃ `"': "⌃ `"
   - region "Message input":
     - heading "Message input" [level=3]
     - list:

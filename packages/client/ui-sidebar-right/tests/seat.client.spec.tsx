@@ -28,6 +28,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+const SHORTCUT_CATALOG: readonly never[] = []
+
 const SESSION = 's-test' as SessionId
 const OTHER = 's-other' as SessionId
 const runtimes: SlotTestRuntime[] = []
@@ -73,6 +75,7 @@ async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0, o
   runtime.ctx.provide('resources', { pin } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
+  runtime.ctx.provide('shortcuts', { register: () => () => {}, catalog: { getSnapshot: () => SHORTCUT_CATALOG, subscribe: () => () => {} } } as never)
   runtime.slots.installLocale(locale)
   await runtime.declare({
     'sidebar-right.test.opener': { kind: 'single', scope: 'session' },
@@ -644,7 +647,7 @@ describe('slot-owned useTabInfo', () => {
     expect(document.querySelector('[data-dockkit-tab-menu]')).toBeNull()
   })
 
-  it('hides split controls at two panes and adds a guide only to a pane without one', async () => {
+  it('explains the two-pane limit and adds a guide only to a pane without one', async () => {
     const h = await mountSeat()
     // Expanding first seeds the left pane's guide; only the right pane will lack one.
     act(() => { h.controller.toggleExpanded() })
@@ -656,7 +659,8 @@ describe('slot-owned useTabInfo', () => {
     const stored = h.instance.getSnapshot()
     act(() => { expect(h.controller.split()).toBeUndefined() })
     expect(h.instance.getSnapshot()).toBe(stored)
-    expect(splitButtons()).toHaveLength(0)
+    expect(splitButtons()).toHaveLength(2)
+    expect([...splitButtons()].every(button => button.hasAttribute('disabled'))).toBe(true)
     const right = dockPaneIds(h.layout())[1]!
     h.open('right.txt', { paneId: right })
     const guide = getPane(h.layout(), right).tabs.find(id => h.layout().tabs[id]?.kind === 'guide')!

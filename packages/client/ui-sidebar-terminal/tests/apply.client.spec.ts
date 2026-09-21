@@ -20,6 +20,8 @@ import type { TerminalBodyInjected } from '../src/client/face.ts'
 import { en, zh } from '../src/client/locales.ts'
 
 vi.mock('@xterm/xterm', () => ({ Terminal: vi.fn() }))
+const SHORTCUT_CATALOG: readonly never[] = []
+
 const renderedTerminal = vi.hoisted(() => vi.fn(() => null))
 vi.mock('../src/client/terminal.tsx', () => ({ TerminalBody: renderedTerminal }))
 
@@ -52,13 +54,14 @@ async function mountPlugin() {
   const openTabs = createSnapshotStore<readonly SidebarRightOpenTab[]>([])
   ctx.provide('webTerminals', terminals as never)
   ctx.provide('sidebarRight', {
-    tabDomain: { occurrence }, openTabIn, tabsIn, openTabs,
+    tabDomain: { occurrence }, openTabIn, tabsIn, openTabs, interaction: { subscribe: () => () => {} },
     registerCloseHandler: (kind: string, handler: SidebarRightCloseHandler) => { expect(kind).toBe('terminal'); closeHandler = handler; return () => { closeHandler = undefined } },
   } as never)
   ctx.provide('slots', {
     inject: (_name: string, register: () => () => void) => register(),
     register: (options: Omit<typeof entries[number], 'component'>, component: unknown) => { const entry = { ...options, component }; entries.push(entry); return () => { entries.splice(entries.indexOf(entry), 1) } },
   } as never)
+  ctx.provide('shortcuts', { register: () => () => {}, catalog: { getSnapshot: () => SHORTCUT_CATALOG, subscribe: () => () => {} } } as never)
   ctx.provide('locale', {
     bind: () => (key: string) => key,
     register: (name: string, values: unknown) => { dictionaries.set(name, values); return () => { dictionaries.delete(name) } },
