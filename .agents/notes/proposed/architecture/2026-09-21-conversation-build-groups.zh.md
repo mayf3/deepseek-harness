@@ -36,7 +36,7 @@ Chat Builder 汇总整个目标的节点及索引。在其中固定创建 Chat �
 | [展示策略与过程分组](2026-09-20-chat-presentation-policy-and-step-groups.zh.md) | 保留 Definition 归属、局部订阅和模式无关要求，以新分组机制替代事件 fold 及 Step 范围成员推断。 |
 | [工作过程展示迁移](../feature/2026-09-20-chat-work-details-migration.zh.md) | 保留产品范围及迁移跟踪，基础机制本身不代表这些功能完成。 |
 
-这些记录仍有独立理由，保留有效状态。导航与 `toolCallFocus` 不属于本次改动；不引入 View 句柄、Label Slot 或资源导航架构。
+这些记录仍有独立理由，保留有效状态。跨 View 导航与 `toolCallFocus` 不属于本次改动；不引入 View 句柄、Label Slot 或资源导航架构。
 
 ## Definition 输入、状态与注册
 
@@ -88,6 +88,8 @@ GroupStore 按 GroupKey 索引记录和来源，不反复查找数组。等价�
 
 首次激活的 replaceView 与普通 flush 使用同一目标更新函数。未激活目标不创建 Builder 或 Group 上下文。注册重建一并采纳 View 和 Group Definition，丢弃被替换或删除的 Group 上下文并清空旧观察结果。未替换的 Definition 复用按键存储。React 接收 Node Store 身份，让存储替换时重新绑定按键钩子，不替换 key 或 DOM 实例。
 
+已注册的 View Definition 被移除后，分组计算暂停并清空派生结果，Group Definition 注册仍保留。View 恢复时沿现有替换流程，从当前已加载时间线重建。首次注册 Group 时仍拒绝缺失的 View 目标；切换页签不会注销 View。
+
 分组不重放原始事件。Node Definition 先处理重放，分组消费其最终目标替换或变化。prepend 可以修正边界并真实移动成员。Definition 处理新旧 Location 和变化轮次，不把分页或每个正文分片都当作完整历史重新分组。
 
 ## 具体实现落点
@@ -131,6 +133,8 @@ GroupStore 按 GroupKey 索引记录和来源，不反复查找数组。等价�
 根层通过既有 useConversation 来源选择 `views.grouped('chat')?.entries`。按键 Group 钩子沿用现有注入，Group 容器选择 members，后续组头独立选择 data。成员使用既有按键 Node 来源。根列表移除组件前，已删除 Group 来源可能先返回 undefined，因此选择器允许不存在，并保持钩子顺序稳定。
 
 React key 由引用 kind、NodeKey/groupPart 或 GroupKey 的无歧义元组派生，不另设 RenderKey 类型或 renderer 分发字段。Compact、Detailed、Expanded 保留同一组容器及成员父级，模式只改变组头、正文显隐及样式。
+
+稳定 Group 父级使用 `div` 与 `display: contents`，自身不产生布局盒子。CSS 继承仍然可用，业务样式适配子级／兄弟选择器并拥有可测量的正文容器。CSS 变量和几何信息都不进入 Definition。阅读位置采样测量成员 Node，保留部分专属锚点；既有轮次导航将原 NodeKey 解析到它的第一个可见部分。
 
 | 模式 | 组头 | 正文 |
 |---|---|---|
@@ -182,4 +186,4 @@ React key 由引用 kind、NodeKey/groupPart 或 GroupKey 的无歧义元组派�
 - Node 顺序及可见性只有 Builder 一个所有者，分组不独立排序原始事件，也不在通用层再次推断成员。
 - 稳定挂载不消除布局、绘制或保留内存的成本，不宣称实测延迟或最优性能。
 - 真实组拆并、首成员变化及分页修正可以改变身份，模式切换保证不禁止这些正常变化。
-- 部分导航锚点、选择复制、中断提示、组开合与外层 Turn 联动需要业务适配。基础测试使用混合引用，不启用真实分组。
+- 隐藏部分的揭示、选择复制、中断提示、组开合与外层 Turn 联动需要业务适配。基础测试使用混合引用，不启用真实分组。

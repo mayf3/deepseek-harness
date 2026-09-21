@@ -4,6 +4,7 @@ import type { GroupKey } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { chatRenderKey } from './render-entry.ts'
+import css from './ChatGroupSeat.module.css'
 
 type ChatGroupSeatProps = Omit<ComponentProps<typeof ChatNodeSeat>, 'nodeKey' | 'groupPart'> & {
   readonly groupKey: GroupKey
@@ -15,7 +16,7 @@ export const ChatGroupSeat = memo(function ChatGroupSeat({ groupKey, useChatGrou
   const members = useChatGroup(groupKey, group => group?.members)
   if (members === undefined) return null
   return (
-    <section data-chat-group-key={groupKey}>
+    <div className={css.root} data-chat-group-key={groupKey}>
       {members.map(member => (
         <ChatNodeSeat
           {...props}
@@ -24,6 +25,6 @@ export const ChatGroupSeat = memo(function ChatGroupSeat({ groupKey, useChatGrou
           {...member.groupPart === undefined ? {} : { groupPart: member.groupPart }}
         />
       ))}
-    </section>
+    </div>
   )
 })

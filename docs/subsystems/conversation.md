@@ -40,7 +40,7 @@ The [group types](../../packages/client/ui-conversation/src/client/contract/grou
 | `ConversationGroupInput<Node>` | `replace` supplies the ordered target Node keys, synchronous `readNode`, and timeline. `apply` also supplies projected `previous/current` Node changes and `changedTurns`, including lifecycle-only changes. Do not retain the reader in State. |
 | `NodeReference` / `GroupReference` | Branded `NodeKey` or `GroupKey`, distinguished by `kind`. A Node reference may select a renderer-owned `groupPart`; omission selects the whole Node. |
 | `GroupSnapshot<Data>` | Immutable group key, business data, and ordered Node references. Groups cannot contain other groups or own source Node data. |
-| `GroupUpdate<Data>` | Optional `entries` replaces the complete root sequence; omission preserves it. `groups.replace.snapshots` replaces all groups; `groups.apply.upserts/removes` updates only named group records. Removal does not delete Nodes. |
+| `GroupUpdate<Data>` | `entries` replaces the complete root sequence; only apply input may omit it to preserve the sequence. Replacement input requires both `entries` and `groups.replace`. `groups.replace.snapshots` replaces all groups; `groups.apply.upserts/removes` updates only named group records. Removal does not delete Nodes. |
 | `ConversationGroupDataMap` | Declaration-merged target-to-data association shared by registration and `views.grouped(target)`. Undeclared targets have no group payload type. |
 | `ConversationGroupedView<Data>` | Stable root `entries` and keyed `groupSource(key)` readers; a removed group reads as `undefined`. |
 
@@ -48,7 +48,7 @@ The Builder exposes `groupInput()` when grouping is registered; missing input fa
 
 The Group store validates the whole submitted result before installation: root Group references and records correspond one-to-one, all referenced Nodes exist, and each `(NodeKey, groupPart)` occupies at most one root or member position. A whole Node cannot coexist with one of its parts. Duplicate upserts, duplicate removals, and simultaneous upsert/removal of a group fail. Data-only upserts retain root and member arrays, do not read Nodes, and notify only changed group sources; full replacement revalidates every reference.
 
-Renderers switch on the two reference kinds and choose components in the owning View, not through a renderer field in group data. The group body reads members separately from summary data. Presentation modes must retain component types, keys, and member parents; changing data membership may legitimately remount a moved member. The framework does not interpret part completeness, segmentation, or presentation policies.
+Renderers switch on the two reference kinds and choose components in the owning View, not through a renderer field in group data. Root Node references and referenced group members form the complete render list; unreferenced target Nodes remain stored but do not render. The group body reads members separately from summary data. Presentation modes must retain component types, keys, and member parents; changing data membership may legitimately remount a moved member. The framework does not interpret part completeness, segmentation, or presentation policies.
 
 ## Replayable event families
 

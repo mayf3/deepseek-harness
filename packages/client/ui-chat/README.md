@@ -89,7 +89,9 @@ Stable Chat Node Seats keep every renderer mounted, hidden members add no flow s
 <a id="grouped-rendering"></a>
 ## Grouped rendering
 
-Chat can render optional Conversation Group Definition output as a mixed `node`/`group` root list. A group seat subscribes only to its member array; each member retains the existing keyed Node source and renderer. `groupPart` reaches that renderer as a business-owned part selector, with distinct DOM anchors for different parts. Presentation modes do not select the root branch or alter member parents. No process Group Definition is registered by this package yet; the default transcript remains ungrouped.
+Chat can render optional Conversation Group Definition output as a mixed `node`/`group` root list. A group seat subscribes only to its member array; each member retains the existing keyed Node source and renderer. `groupPart` reaches that renderer as a business-owned part selector, with distinct DOM anchors for reading-position restoration; Turn navigation can still address the original Node key and land on its first visible part. Presentation modes do not select the root branch or alter member parents. No process Group Definition is registered by this package yet; the default transcript remains ungrouped.
+
+The group seat uses `div` with `display: contents`: it retains the DOM parent without creating a layout box. CSS inheritance remains available, but child and sibling selectors still follow the DOM tree. The existing direct-child spacing selectors do not reach group members. Business styles must adapt spacing within and across groups, including hidden or empty members and the answer-spacing exception, and own any measurable body or scroll container. CSS variables do not belong in the Group Definition.
 
 -----
 

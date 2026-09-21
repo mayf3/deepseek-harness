@@ -994,11 +994,6 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
   private resetViewBuilders(): void {
     const definitions = this.viewDefinitions.entries()
     const targets = new Set(definitions.map(definition => definition.target))
-    for (const definition of this.groupDefinitions.entries()) {
-      if (!targets.has(definition.target)) {
-        throw new Error(`conversation group target "${definition.target}" is not registered`)
-      }
-    }
     for (const [target, group] of this.groups) {
       if (!targets.has(target) || this.groupDefinitions.forTarget(target) !== group.definition) {
         group.store.clear()

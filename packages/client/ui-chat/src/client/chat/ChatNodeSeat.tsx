@@ -138,6 +138,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       className={css.flowItem}
       data-chat-anchor-key={flowKey}
       data-chat-flow-key={flowKey}
+      data-chat-node-key={routedNode.key}
       data-chat-group-part={groupPart}
       data-chat-flow-kind={routedNode.kind}
       data-chat-turn={turn}

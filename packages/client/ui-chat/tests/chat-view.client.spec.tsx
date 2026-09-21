@@ -609,6 +609,24 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('renders only referenced Nodes without deleting unreferenced Node data', () => {
+    const snapshot = chatSnapshotFixture({ nodes: [user(1, 'included'), user(2, 'omitted')] })
+    const h = makeHarness({}, {}, snapshot)
+    const [included, omitted] = snapshot.order
+    if (included === undefined || omitted === undefined) throw new Error('expected two Nodes')
+    const groupStore = new ConversationGroupStore<number>()
+    groupStore.prepareAndInstall({
+      entries: [{ kind: 'node', key: included as NodeKey }],
+      groups: { kind: 'replace', snapshots: [] },
+    }, id => snapshot.nodes.get(id))
+    h.setGrouped(groupStore)
+
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByText('included')).toBeTruthy()
+    expect(view.queryByText('omitted')).toBeNull()
+    expect(snapshot.nodes.get(omitted)).toBeDefined()
+  })
+
   it('keeps grouped Node instances mounted across presentation modes and group data updates', () => {
     const snapshot = chatSnapshotFixture({ nodes: [user(1, 'outside'), user(2, 'inside')] })
     const h = makeHarness({}, {}, snapshot)
@@ -632,6 +650,7 @@ describe('ChatView', () => {
     const input = view.getByRole('textbox', { name: inside.key }) as HTMLInputElement
     const parent = input.closest('[data-chat-group-key]')
     expect(parent).not.toBeNull()
+    expect(parent?.tagName).toBe('DIV')
     fireEvent.change(input, { target: { value: 'retained local input' } })
     for (const mode of ['detailed', 'expanded', 'compact'] as const) {
       act(() => { h.setTranscriptView(mode) })
@@ -675,6 +694,8 @@ describe('ChatView', () => {
     const anchors = [...view.container.querySelectorAll('[data-chat-group-part]')]
       .map(element => element.getAttribute('data-chat-flow-key'))
     expect(new Set(anchors).size).toBe(2)
+    expect([...view.container.querySelectorAll('[data-chat-group-part]')]
+      .map(element => element.getAttribute('data-chat-node-key'))).toEqual([nodeKey, nodeKey])
   })
 
   it('rebinds grouped members when registry rebuilding replaces the Node store', () => {

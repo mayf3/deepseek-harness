@@ -40,7 +40,7 @@ shell 拥有 View 选择，并在 binding 创建、被选为 current 或 View ro
 | `ConversationGroupInput<Node>` | `replace` 提供目标节点的有序键、同步 `readNode` 及时间线。`apply` 还提供投影后的 `previous/current` 节点变化和 `changedTurns`，覆盖仅生命周期变化。不要把读取函数留在 State 中。 |
 | `NodeReference` / `GroupReference` | 以 `kind` 区分的品牌类型 `NodeKey` 或 `GroupKey`。Node 引用可选择渲染器拥有的 `groupPart`，省略表示整个 Node。 |
 | `GroupSnapshot<Data>` | 不可变的组键、业务数据和有序 Node 引用。Group 不包含其他 Group，也不拥有原 Node 数据。 |
-| `GroupUpdate<Data>` | 可选的 `entries` 替换完整根序列，省略则保留。`groups.replace.snapshots` 替换全部组；`groups.apply.upserts/removes` 只更新具名组记录。删除组不删除 Node。 |
+| `GroupUpdate<Data>` | `entries` 替换完整根序列，仅 apply 输入允许省略它以保留原序列。替换输入必须同时提供 `entries` 与 `groups.replace`。`groups.replace.snapshots` 替换全部组；`groups.apply.upserts/removes` 只更新具名组记录。删除组不删除 Node。 |
 | `ConversationGroupDataMap` | 通过声明合并关联目标与数据类型，注册及 `views.grouped(target)` 共用。未声明的目标没有组载荷类型。 |
 | `ConversationGroupedView<Data>` | 稳定的根 `entries` 与按键 `groupSource(key)` 读取器；已删除的组返回 `undefined`。 |
 
@@ -48,7 +48,7 @@ shell 拥有 View 选择，并在 binding 创建、被选为 current 或 View ro
 
 Group 存储在安装前校验完整提交结果：根 Group 引用与记录一一对应，引用的 Node 全部存在，每个 `(NodeKey, groupPart)` 在根和成员位置中最多占位一次。整 Node 不能与自身任一部分共存。重复 upsert、重复删除以及同时 upsert 和删除一个组都会报错。仅数据 upsert 保留根及成员数组、不读取 Node，并只通知变化组的来源；完整替换重新校验全部引用。
 
-渲染器按两种引用 kind 切换，由所属 View 选择组件，不通过组数据中的 renderer 字段选择。组 body 将成员与摘要数据分开读取。展示模式必须保留组件类型、key 和成员父级；业务数据改变成员归属时，移动成员可以正常重挂载。框架不解释部分内容完备性、分段或展示策略。
+渲染器按两种引用 kind 切换，由所属 View 选择组件，不通过组数据中的 renderer 字段选择。根 Node 引用与被引用组的成员构成完整渲染列表；未被引用的目标 Node 仍保留在存储中，但不渲染。组 body 将成员与摘要数据分开读取。展示模式必须保留组件类型、key 和成员父级；业务数据改变成员归属时，移动成员可以正常重挂载。框架不解释部分内容完备性、分段或展示策略。
 
 ## 可回放 event family
 

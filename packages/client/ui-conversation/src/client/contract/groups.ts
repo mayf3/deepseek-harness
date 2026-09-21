@@ -33,10 +33,12 @@ export interface GroupSnapshot<Data> {
 }
 
 /**
- * One atomic grouping update. Omitted entries preserve the root list;
- * supplied entries replace it. Group removal never deletes source Nodes.
+ * One atomic grouping update. Replacement input requires entries and a complete
+ * group replacement; apply input may omit entries to preserve the root list.
+ * Group removal never deletes source Nodes.
  */
 export interface GroupUpdate<Data> {
+  /** Complete root sequence; only its Node references and referenced group members render. */
   readonly entries?: readonly RenderEntry[]
   readonly groups:
     | { readonly kind: 'replace'; readonly snapshots: readonly GroupSnapshot<Data>[] }

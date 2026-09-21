@@ -89,7 +89,9 @@ Chat 在所有工作过程展示模式下都不显示系统提示词行和 `perm
 <a id="grouped-rendering"></a>
 ## 分组渲染
 
-Chat 可以把可选的 Conversation Group Definition 输出渲染为混合 `node`/`group` 根列表。组容器只订阅成员数组，每个成员保留既有的按键 Node 来源与渲染器。`groupPart` 作为业务拥有的部分选择器传给渲染器，不同部分具有不同 DOM 锚点。展示模式不选择根分支，也不改变成员父级。本包尚未注册过程 Group Definition，默认文本记录仍未分组。
+Chat 可以把可选的 Conversation Group Definition 输出渲染为混合 `node`/`group` 根列表。组容器只订阅成员数组，每个成员保留既有的按键 Node 来源与渲染器。`groupPart` 作为业务拥有的部分选择器传给渲染器，不同部分具有独立的 DOM 锚点用于恢复阅读位置；轮次导航仍可使用原 Node key，落到它的第一个可见部分。展示模式不选择根分支，也不改变成员父级。本包尚未注册过程 Group Definition，默认文本记录仍未分组。
+
+组容器使用 `div` 与 `display: contents`，保留 DOM 父级但不产生布局盒子。CSS 继承仍然可用，子级和兄弟选择器仍遵循 DOM 树。原有直接子级间距选择器不会匹配组内成员。业务样式必须适配组内及组边界间距，处理隐藏或空成员以及回答前的间距特例，并拥有需要测量的正文或滚动容器。CSS 变量不属于 Group Definition。
 
 -----
 

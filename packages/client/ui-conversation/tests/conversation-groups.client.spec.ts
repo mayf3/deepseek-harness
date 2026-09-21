@@ -6,7 +6,7 @@ import type {
   ConversationTimelineSnapshot, ConversationViewBuilder, ConversationViewDefinition, ConversationViewNode,
 } from '../src/client/contract/conversation.ts'
 import type {
-  ConversationGroupDefinition, ConversationGroupInput, GroupKey, NodeKey,
+  ConversationGroupDefinition, ConversationGroupInput, GroupKey, GroupUpdate, NodeKey,
 } from '../src/client/contract/groups.ts'
 import { ConversationNodeAssembler } from '../src/client/conversation/assembler.ts'
 import { ConversationGroupRegistry } from '../src/client/conversation/group-registry.ts'
@@ -214,11 +214,8 @@ describe('group Definition dispatch', () => {
     expect(() => assembler.activateTarget('group-test')).toThrow('requires builder.groupInput()')
   })
 
-  it('rejects missing targets and incomplete initial output', () => {
+  it('requires complete grouping for replacement input', () => {
     const definition = grouping()
-    expect(() => new ConversationNodeAssembler(noEvents, { entries: () => [] }, {
-      entries: () => [definition], forTarget: () => definition,
-    })).toThrow('is not registered')
     const missing = setup({ ...definition, buildGroups: () => null })
     expect(() => missing.assembler.activateTarget('group-test')).toThrow('complete grouping for replacement input')
     const retained = grouping()
@@ -228,6 +225,46 @@ describe('group Definition dispatch', () => {
     build.mockReturnValueOnce(null)
     assembler.replaceWindow([], false)
     expect(() => assembler.flush()).toThrow('complete grouping for replacement input')
+  })
+
+  it.each<GroupUpdate<number>>([
+    { groups: { kind: 'replace', snapshots: [] } },
+    { entries: [], groups: { kind: 'apply', upserts: [], removes: [] } },
+  ])('rejects incomplete grouping for replacement input: %j', (update) => {
+    const { assembler } = setup({ ...grouping(), buildGroups: () => update })
+    expect(() => assembler.activateTarget('group-test')).toThrow('complete grouping for replacement input')
+  })
+
+  it('pauses grouping when its View disappears and rebuilds when the View returns', () => {
+    const seen: ConversationGroupInput<ConversationViewNode>[] = []
+    const definition = grouping(seen)
+    const createGroup = vi.spyOn(definition, 'create')
+    const { assembler, views, create } = setup(definition)
+    assembler.activateTarget('group-test')
+    const source = assembler.grouped('group-test')!.groupSource(groupKey)
+    const changed = vi.fn()
+    source.subscribe(changed)
+
+    const view = views.pop()!
+    assembler.rebuildRegistry()
+    expect(assembler.flush()).toBe(true)
+    expect(assembler.snapshot('group-test')).toBeUndefined()
+    expect(assembler.grouped('group-test')).toBeUndefined()
+    expect(source.getSnapshot()).toBeUndefined()
+    expect(changed).toHaveBeenCalledOnce()
+
+    assembler.append({ type: 'event', event: start(1) })
+    assembler.flush()
+    expect(seen).toHaveLength(1)
+    expect(createGroup).toHaveBeenCalledOnce()
+    views.push(view)
+    assembler.rebuildRegistry()
+    assembler.flush()
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(createGroup).toHaveBeenCalledTimes(2)
+    expect(seen.map(input => input.kind)).toEqual(['replace', 'replace'])
+    expect(seen.at(-1)?.timeline.turns.has(1)).toBe(true)
+    expect(assembler.grouped('group-test')!.groupSource(groupKey).getSnapshot()?.data).toBe(0)
   })
 
   it('registers grouping without creating its Builder and disposes it with its effect', async () => {

@@ -3,7 +3,6 @@
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import {
@@ -23,6 +22,12 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { createChatStore } from '../src/client/stores.ts'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
 import type { LinkOpeningRowInjected } from '../src/client/settings/LinkOpeningRow.tsx'
+
+declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+  interface ConversationGroupDataMap {
+    chat: number
+  }
+}
 
 usePinnedBrowserLanguages('zh-CN')
 
@@ -133,7 +138,7 @@ describe('Chat inject API', () => {
     const b = await bench()
     try {
       const { injected } = b.chatViewApi(b.rootReference)
-      const key = brandString<GroupKey>('injected-group')
+      const key = 'injected-group' as GroupKey
       expect(injected.keyedHooks.chatGroup(key)).toBeUndefined()
       const conversation = b.runtime.ctx.uiConversation
       const remove = conversation.groups.register({

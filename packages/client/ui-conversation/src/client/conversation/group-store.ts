@@ -174,8 +174,11 @@ export class ConversationGroupStore<Data> implements ConversationGroupedView<Dat
 
   /** Remove grouping without deleting its source Nodes; publication remains deferred. */
   clear(): void {
-    /* v8 ignore next -- an empty replacement never reads a Node reference. */
-    this.prepareAndInstall({ entries: [], groups: { kind: 'replace', snapshots: [] } }, () => undefined)
+    this.prepareAndInstall(
+      { entries: [], groups: { kind: 'replace', snapshots: [] } },
+      /* v8 ignore next -- an empty replacement never reads a Node reference. */
+      () => undefined,
+    )
   }
 
   private collectRootGroups(entries: readonly RenderEntry[]): Set<GroupKey> {

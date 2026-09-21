@@ -99,7 +99,7 @@ function TurnStatus({ startTime, t }: {
   )
 }
 
-type ChatNodeListProps = Omit<ComponentProps<typeof ChatNodeSeat>, 'nodeKey'> & {
+type ChatNodeListProps = Omit<ComponentProps<typeof ChatNodeSeat>, 'nodeKey' | 'groupPart'> & {
   readonly entries: readonly RenderEntry[]
   readonly useChatGroup: ChatViewSlotProps['useChatGroup']
 }

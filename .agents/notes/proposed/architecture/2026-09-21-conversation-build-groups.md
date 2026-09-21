@@ -36,7 +36,7 @@ The foundation implements a separate, Node-input `ConversationGroupDefinition`, 
 | [Presentation policy and grouping](2026-09-20-chat-presentation-policy-and-step-groups.md) | Retains Definition ownership, local subscriptions, and mode independence; replaces event folding and Step-range membership as the grouping mechanism. |
 | [Work-details migration](../feature/2026-09-20-chat-work-details-migration.md) | Retains product scope and migration tracking; infrastructure alone does not complete those features. |
 
-These records retain independent rationale and remain active. Navigation and `toolCallFocus` are outside this change; no View handles, Label Slots, or resource-navigation architecture is introduced.
+These records retain independent rationale and remain active. Cross-View navigation and `toolCallFocus` are outside this change; no View handles, Label Slots, or resource-navigation architecture is introduced.
 
 ## Definition input, state, and registration
 
@@ -88,6 +88,8 @@ GroupStore indexes records and sources by GroupKey, not repeated array searches.
 
 First activation's replaceView uses the same target update function as ordinary flush. Inactive targets create neither Builder nor Group context. Registration rebuild takes the View and Group Definitions together, discards replaced/removed Group contexts, and clears old observed output. Surviving Definitions reuse keyed stores. React receives the Node Store identity so replacement rebinds keyed hooks without replacing keys or DOM instances.
 
+Removing a registered View Definition pauses its grouping and clears derived output, while retaining the Group Definition registration. Restoring the View uses the existing replacement flow to rebuild from the current loaded timeline. Initial Group registration still rejects a missing View target; switching tabs does not unregister a View.
+
 Grouping never replays raw events. Node Definitions handle replay first; grouping consumes the resulting target replacement or changes. Prepend may repair boundaries and legitimately move members. Definition handles old/new Locations and changed Turns instead of treating pagination or every content chunk as a complete-history regroup.
 
 ## Concrete implementation locations
@@ -131,6 +133,8 @@ Content growth with unchanged classification does not resegment history; it may 
 The root selects `views.grouped('chat')?.entries` through the existing useConversation source. Keyed Group hooks use existing injection; each Group seat selects members, while its future header independently selects data. Members use existing keyed Node sources. Removed Group sources can read undefined before the root removes their components, so selectors tolerate absence and keep Hook order stable.
 
 React keys derive from reference kind, NodeKey/groupPart or GroupKey, using unambiguous tuples. No separate RenderKey type or renderer dispatch field is needed. Compact, Detailed, and Expanded keep the same group container and member parents; modes change header visibility, body visibility, and styles only.
+
+The stable Group parent is a `div` with `display: contents`, without its own layout box. CSS inheritance remains available; business styles adapt child/sibling selectors and own measurable body containers. Neither CSS variables nor geometry enter the Definition. Reading-position capture measures member Nodes and retains part-specific anchors; existing Turn navigation resolves the original NodeKey to its first visible part.
 
 | Mode | Group header | Body |
 |---|---|---|
@@ -182,4 +186,4 @@ This assumes the outer Turn process is open. Expanded retains whole-Turn folding
 - Node order and visibility have one owner: the Builder. Grouping must not independently sort raw events or infer membership again in infrastructure.
 - Stable mounting does not eliminate layout, paint, or retained-memory costs. No measured latency or optimal-performance claim is made.
 - Real group splits, merges, first-member changes, and pagination repairs can change identity. The mode-switch guarantee does not prohibit those legitimate changes.
-- Part-specific navigation anchors, selection/copy, interruption notices, group disclosure, and outer Turn interaction require business adaptation. Foundation tests exercise mixed references without enabling production groups.
+- Revealing hidden parts, selection/copy, interruption notices, group disclosure, and outer Turn interaction require business adaptation. Foundation tests exercise mixed references without enabling production groups.
