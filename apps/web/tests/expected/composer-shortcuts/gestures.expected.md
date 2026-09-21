@@ -1,0 +1,14 @@
+- Plain draft / Alt+Enter: draft unchanged
+- Plain draft / Meta+Alt+Enter: draft unchanged
+- Plain draft / Control+Alt+Enter: draft unchanged
+- Plain draft / Control+Meta+Enter: draft unchanged
+- Plain draft / Meta+Shift+Enter: draft unchanged
+- Plain draft / Control+Shift+Enter: draft unchanged
+- Command menu / Alt+Enter: draft unchanged
+- Command menu / Meta+Alt+Enter: draft unchanged
+- Command menu / Control+Alt+Enter: draft unchanged
+- Command menu / Control+Meta+Enter: draft unchanged
+- Command menu / Meta+Shift+Enter: draft unchanged
+- Command menu / Control+Shift+Enter: draft unchanged
+- Shift+Enter: two draft lines
+- Persisted user messages: 0

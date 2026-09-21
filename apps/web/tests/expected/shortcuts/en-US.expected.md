@@ -1,0 +1,53 @@
+- dialog "Keyboard shortcuts":
+  - banner:
+    - heading "Keyboard shortcuts" [level=2]
+    - button "Close keyboard shortcuts"
+  - search "Search shortcuts":
+    - searchbox "Search shortcuts"
+  - region "Application":
+    - list:
+      - listitem:
+        - text: Open keyboard shortcuts
+        - button "Remove shortcut for Open keyboard shortcuts"
+        - button "Edit shortcut for Open keyboard shortcuts"
+        - button "Open keyboard shortcuts Ctrl + /": Ctrl + /
+      - listitem:
+        - text: Toggle left sidebar
+        - button "Remove shortcut for Toggle left sidebar"
+        - button "Edit shortcut for Toggle left sidebar"
+        - button "Toggle left sidebar Ctrl + Alt + B": Ctrl + Alt + B
+      - listitem:
+        - text: Open settings
+        - button "Remove shortcut for Open settings"
+        - button "Edit shortcut for Open settings"
+        - button "Open settings Ctrl + ,": Ctrl + ,
+  - region "Message input":
+    - heading "Message input" [level=3]
+    - list:
+      - listitem:
+        - text: Send message
+        - button "Send message Enter" [disabled]: Enter
+      - listitem:
+        - text: New line
+        - button "New line Shift + Enter" [disabled]: Shift + Enter
+      - listitem:
+        - text: Use the complementary Queue / Steer action
+        - button "Use the complementary Queue / Steer action Ctrl + Enter" [disabled]: Ctrl + Enter
+      - listitem:
+        - text: Open command menu
+        - button "Open command menu /" [disabled]: /
+      - listitem:
+        - text: Open reference menu
+        - button "Open reference menu @" [disabled]: "@"
+  - region "Menus and dialogs":
+    - heading "Menus and dialogs" [level=3]
+    - list:
+      - listitem:
+        - text: Move menu selection
+        - button "Move menu selection ↑ ↓" [disabled]: ↑ ↓
+      - listitem:
+        - text: Select menu item
+        - button "Select menu item Enter" [disabled]: Enter
+      - listitem:
+        - text: Close menu or top dialog
+        - button "Close menu or top dialog Esc" [disabled]: Esc

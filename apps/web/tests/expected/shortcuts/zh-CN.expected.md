@@ -1,0 +1,53 @@
+- dialog "快捷键":
+  - banner:
+    - heading "快捷键" [level=2]
+    - button "关闭快捷键"
+  - search "搜索快捷键":
+    - searchbox "搜索快捷键"
+  - region "应用操作":
+    - list:
+      - listitem:
+        - text: 快捷键速查
+        - button "移除快捷键速查快捷键"
+        - button "修改快捷键速查快捷键"
+        - button "快捷键速查 ⌘ /": ⌘ /
+      - listitem:
+        - text: 展开／收起左侧栏
+        - button "移除展开／收起左侧栏快捷键"
+        - button "修改展开／收起左侧栏快捷键"
+        - button "展开／收起左侧栏 ⌥ ⌘ B": ⌥ ⌘ B
+      - listitem:
+        - text: 打开设置
+        - button "移除打开设置快捷键"
+        - button "修改打开设置快捷键"
+        - button "打开设置 ⌘ ,": ⌘ ,
+  - region "消息输入":
+    - heading "消息输入" [level=3]
+    - list:
+      - listitem:
+        - text: 发送消息
+        - button "发送消息 Enter" [disabled]: Enter
+      - listitem:
+        - text: 换行
+        - button "换行 ⇧ Enter" [disabled]: ⇧ Enter
+      - listitem:
+        - text: 使用互补的 Queue／Steer 方式
+        - button "使用互补的 Queue／Steer 方式 ⌘ Enter" [disabled]: ⌘ Enter
+      - listitem:
+        - text: 打开命令菜单
+        - button "打开命令菜单 /" [disabled]: /
+      - listitem:
+        - text: 打开引用菜单
+        - button "打开引用菜单 @" [disabled]: "@"
+  - region "菜单与弹层":
+    - heading "菜单与弹层" [level=3]
+    - list:
+      - listitem:
+        - text: 移动菜单选择
+        - button "移动菜单选择 ↑ ↓" [disabled]: ↑ ↓
+      - listitem:
+        - text: 选择菜单项
+        - button "选择菜单项 Enter" [disabled]: Enter
+      - listitem:
+        - text: 关闭菜单或顶层弹窗
+        - button "关闭菜单或顶层弹窗 Esc" [disabled]: Esc

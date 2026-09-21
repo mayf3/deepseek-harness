@@ -1,0 +1,283 @@
+/** Real Web composition: keyboard routing, inline editing, and localized system feedback. */
+import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
+import { chromium, type Browser } from 'playwright'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { captureStableAria, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
+
+const expected = fileURLToPath(new URL('./expected/shortcuts', import.meta.url))
+const mode = webSnapshotMode()
+
+describe('web e2e: shortcut reference', () => {
+  let scaffold: WebScaffold
+  let browser: Browser
+  beforeAll(async () => {
+    scaffold = await launchWebScaffold({ developerTools: false })
+    browser = await chromium.launch()
+  }, 120_000)
+  afterAll(async () => { await browser?.close(); await scaffold?.close() })
+
+  it.each([
+    { locale: 'zh-CN', platform: 'MacIntel', title: '快捷键', settings: '设置', view: '查看快捷键', search: '搜索快捷键', key: 'Meta' },
+    { locale: 'en-US', platform: 'Win32', title: 'Keyboard shortcuts', settings: 'Settings', view: 'View shortcuts', search: 'Search shortcuts', key: 'Control' },
+  ])('opens, searches, and restores nested focus in $locale', async ({ locale, platform, title, settings, view, search, key }) => {
+    const referenceKey = platform === 'Win32' ? 'Control+Slash' : 'Meta+Slash'
+    const context = await browser.newContext({ locale, colorScheme: 'light', viewport: { width: 1440, height: 1000 } })
+    try {
+      // Branch coverage for device labels; native Windows input is separately verified on Windows.
+      await context.addInitScript((value) => { Object.defineProperty(navigator, 'platform', { value }) }, platform)
+      const page = await context.newPage()
+      const console = watchConsole(page)
+      await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      const trigger = page.getByRole('button', { name: settings, exact: true })
+      await trigger.click()
+      await page.getByRole('button', { name: view, exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: title, exact: true })
+      await dialog.waitFor()
+      const referenceNode = await dialog.elementHandle()
+      expect(await page.getByRole('dialog').count()).toBe(2)
+      expect(await dialog.locator('footer').count()).toBe(0)
+      expect(await dialog.boundingBox()).toMatchObject({ width: 480, height: 600 })
+      expect(await dialog.getByRole('search').boundingBox()).toMatchObject({ width: 432, height: 36 })
+      const rows = dialog.getByRole('listitem')
+      expect(new Set(await rows.evaluateAll(items => items.map(row => row.getBoundingClientRect().height))))
+        .toEqual(new Set([42]))
+      expect(await rows.evaluateAll(items => items.every(row => row.getBoundingClientRect().height >= 42
+        && row.scrollWidth <= row.clientWidth))).toBe(true)
+      expect(await page.getByRole('searchbox', { name: search }).evaluate(element => element === document.activeElement)).toBe(true)
+      await compareOrRefreshGolden(join(expected, `${locale}.expected.md`),
+        await captureStableAria(page, '[data-shortcut-modal="shortcuts"]', scaffold.workspaceCwd), mode)
+      const fixedButtons = dialog.getByRole('button', { disabled: true })
+      const fixedButton = fixedButtons.first()
+      expect(await fixedButton.evaluate(element => getComputedStyle(element).opacity)).toBe('0.45')
+      const fixedBackground = await fixedButton.locator('span').evaluate(element => getComputedStyle(element).backgroundColor)
+      await fixedButton.hover()
+      expect(await fixedButton.locator('span').evaluate(element => getComputedStyle(element).backgroundColor)).toBe(fixedBackground)
+      const editLabel = locale === 'zh-CN' ? '修改展开／收起左侧栏快捷键' : 'Edit shortcut for Toggle left sidebar'
+      const removeLabel = locale === 'zh-CN' ? '移除展开／收起左侧栏快捷键' : 'Remove shortcut for Toggle left sidebar'
+      const row = dialog.getByRole('listitem').filter({ has: page.getByRole('button', { name: editLabel, exact: true }) })
+      const editButton = page.getByRole('button', { name: editLabel, exact: true })
+      expect(await editButton.evaluate(element => getComputedStyle(element.parentElement!).opacity)).toBe('0')
+      const boundRow = dialog.getByRole('listitem').filter({ has: page.getByText(
+        locale === 'zh-CN' ? '快捷键速查' : 'Open keyboard shortcuts', { exact: true },
+      ) })
+      const badge = boundRow.getByRole('button').last()
+      const badgeColor = () => badge.locator('span').evaluate(element => getComputedStyle(element).backgroundColor)
+      const restingColor = await badgeColor()
+      await boundRow.locator(':scope > span').first().hover()
+      expect(await badgeColor()).toBe(restingColor)
+      await badge.hover()
+      expect(await badgeColor()).toBe('rgba(38, 49, 72, 0.14)')
+      await boundRow.getByRole('button').first().hover()
+      expect(await badgeColor()).toBe(restingColor)
+      await badge.click()
+      await boundRow.getByRole('group').waitFor()
+      expect(new Set(await rows.evaluateAll(items => items.map(row => row.getBoundingClientRect().height))))
+        .toEqual(new Set([42]))
+      expect(await boundRow.getByRole('button', { name: locale === 'zh-CN' ? '移除' : 'Remove', exact: true }).count()).toBe(1)
+      await page.keyboard.press('Escape')
+      await boundRow.getByRole('group').waitFor({ state: 'hidden' })
+      await dialog.getByRole('heading', { name: title, exact: true }).hover()
+      const boundActionsOpacity = () => boundRow.getByRole('button').first().evaluate(element => getComputedStyle(element.parentElement!).opacity)
+      expect(await boundActionsOpacity()).toBe('0')
+      expect(await dialog.evaluate(element => element === document.activeElement)).toBe(true)
+      await badge.click()
+      await boundRow.getByRole('button', { name: locale === 'zh-CN' ? '恢复默认' : 'Restore default', exact: true }).click()
+      await boundRow.getByRole('group').waitFor({ state: 'hidden' })
+      await dialog.getByRole('heading', { name: title, exact: true }).hover()
+      expect(await boundActionsOpacity()).toBe('0')
+      await row.hover()
+      expect(await editButton.evaluate(element => getComputedStyle(element.parentElement!).opacity)).toBe('1')
+      expect(await row.getByRole('button', { name: removeLabel, exact: true }).count()).toBe(1)
+      await editButton.click()
+      const inline = dialog.getByRole('group', { name: locale === 'zh-CN' ? '展开／收起左侧栏' : 'Toggle left sidebar', exact: true })
+      const recorder = inline.getByRole('button', { name: locale === 'zh-CN' ? '按下快捷键' : 'Press a shortcut', exact: true })
+      expect(await inline.getByRole('button', { name: locale === 'zh-CN' ? '移除' : 'Remove', exact: true }).count()).toBe(1)
+      expect(await page.getByRole('dialog').count()).toBe(2)
+      expect(await recorder.evaluate(element => getComputedStyle(element).color)).toBe('rgb(129, 133, 140)')
+      await compareOrRefreshGolden(join(expected, `${locale}-inline.expected.md`),
+        await captureStableAria(page, '[data-shortcut-modal="shortcut-edit"]', scaffold.workspaceCwd), mode)
+      await page.keyboard.press(referenceKey)
+      const errorToast = page.getByRole('alert').filter({ hasText: locale === 'zh-CN' ? '已被「快捷键速查」占用' : 'Already used by “Open keyboard shortcuts”' })
+      await errorToast.waitFor()
+      expect(await errorToast.evaluate(element => ({
+        background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color,
+      })))
+        .toEqual({ background: 'rgb(53, 54, 56)', color: 'rgb(255, 255, 255)' })
+      expect(await errorToast.evaluate(element => element.closest('[role="dialog"]') === null)).toBe(true)
+      expect(await recorder.evaluate(element => ({
+        color: getComputedStyle(element).borderColor, width: getComputedStyle(element).borderWidth,
+      })))
+        .toEqual({ color: 'rgb(236, 19, 19)', width: '1px' })
+      await compareOrRefreshGolden(join(expected, `${locale}-conflict.expected.md`), await errorToast.ariaSnapshot(), mode)
+      await page.keyboard.press('i')
+      await page.getByRole('alert').filter({ hasText: locale === 'zh-CN'
+        ? '请同时按下 Command、Ctrl 或 Alt 修饰键。' : 'Include Command, Ctrl, or Alt in the combination.' }).waitFor()
+      await page.keyboard.press(`${key}+Shift+.`)
+      await inline.waitFor({ state: 'hidden' })
+      expect(await dialog.evaluate(element => element === document.activeElement)).toBe(true)
+      expect(await editButton.evaluate(element => element.matches(':focus-visible'))).toBe(false)
+      await dialog.getByRole('heading', { name: title, exact: true }).hover()
+      expect(await editButton.evaluate(element => getComputedStyle(element.parentElement!).opacity)).toBe('0')
+      const successToast = page.getByRole('alert').filter({ hasText: locale === 'zh-CN' ? '已修改' : 'Modified' })
+      await successToast.waitFor()
+      await compareOrRefreshGolden(join(expected, `${locale}-saved.expected.md`), await successToast.ariaSnapshot(), mode)
+      await page.emulateMedia({ colorScheme: 'dark' })
+      await expect.poll(() => successToast.evaluate(element => ({
+        background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color,
+      }))).toEqual({ background: 'rgb(67, 69, 74)', color: 'rgb(255, 255, 255)' })
+      await page.emulateMedia({ colorScheme: 'light' })
+      await expect.poll(() => successToast.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(53, 54, 56)')
+      await page.getByRole('button', { name: removeLabel, exact: true }).click()
+      const unbound = row.getByText(locale === 'zh-CN' ? '暂无快捷键' : 'No shortcut', { exact: true })
+      await unbound.waitFor()
+      expect(await unbound.evaluate(element => getComputedStyle(element).color)).toBe('rgb(129, 133, 140)')
+      expect(await row.getByRole('button', { name: removeLabel, exact: true }).count()).toBe(0)
+      await unbound.click()
+      await inline.waitFor()
+      expect(await inline.getByRole('button', { name: locale === 'zh-CN' ? '移除' : 'Remove', exact: true }).count()).toBe(0)
+      await page.keyboard.press('Escape')
+      await inline.waitFor({ state: 'hidden' })
+      expect(await dialog.evaluate(element => element === document.activeElement)).toBe(true)
+      await dialog.getByRole('heading', { name: title, exact: true }).hover()
+      expect(await editButton.evaluate(element => getComputedStyle(element.parentElement!).opacity)).toBe('0')
+      expect(await page.getByRole('dialog').count()).toBe(2)
+      for (const query of ['abc', 'sendEnter']) {
+        await page.getByRole('searchbox').fill(query)
+        expect(await dialog.getByRole('listitem').count()).toBe(0)
+        expect(await dialog.getByRole('status').textContent()).toBe(locale === 'zh-CN' ? '没有匹配的快捷键' : 'No matching shortcuts')
+        if (query === 'abc') await compareOrRefreshGolden(join(expected, `${locale}-empty.expected.md`),
+          await captureStableAria(page, '[data-shortcut-modal="shortcuts"]', scaffold.workspaceCwd), mode)
+      }
+      for (const query of [locale === 'zh-CN' ? '左侧栏' : 'toggle left', 'tgllft', 'toggle left sidebar']) {
+        await page.getByRole('searchbox').fill(query)
+        expect(await dialog.getByRole('listitem').count()).toBe(1)
+        expect(await dialog.getByRole('listitem').textContent()).toContain(locale === 'zh-CN' ? '展开／收起左侧栏' : 'Toggle left sidebar')
+      }
+      await page.keyboard.press(referenceKey)
+      expect(await referenceNode!.evaluate(element => element.isConnected)).toBe(true)
+      expect(await page.getByRole('dialog').count()).toBe(2)
+      expect(await page.getByRole('searchbox').inputValue()).toBe('toggle left sidebar')
+      await page.keyboard.press('Escape')
+      expect(await page.getByRole('dialog').count()).toBe(1)
+      expect(await page.getByRole('button', { name: view, exact: true }).evaluate(element => element === document.activeElement)).toBe(true)
+      await page.keyboard.press('Escape')
+      expect(await page.getByRole('dialog').count()).toBe(0)
+      expect(await trigger.evaluate(element => element === document.activeElement)).toBe(true)
+      await page.keyboard.press(referenceKey)
+      await dialog.waitFor()
+      await page.keyboard.press(`${key}+/`)
+      expect(await page.getByRole('dialog').count()).toBe(1)
+      expect(await page.getByRole('searchbox').inputValue()).toBe('')
+      await page.setViewportSize({ width: 420, height: 500 })
+      const compactBounds = (await dialog.boundingBox())!
+      expect(compactBounds.x).toBeGreaterThanOrEqual(24)
+      expect(compactBounds.x + compactBounds.width).toBeLessThanOrEqual(396)
+      expect(compactBounds.y + compactBounds.height).toBeLessThanOrEqual(476)
+      await dialog.getByRole('region').last().scrollIntoViewIfNeeded()
+      expect(await dialog.getByRole('heading', { name: title }).isVisible()).toBe(true)
+      await page.keyboard.press('Escape')
+      // Observe preventDefault without invoking destructive browser defaults in the test runner.
+      expect(await page.evaluate(modifier => ['KeyN', 'KeyP', 'KeyO', 'KeyR', 'KeyW', 'KeyB'].map((code) => {
+        const event = new KeyboardEvent('keydown', { code, ctrlKey: modifier === 'Control', metaKey: modifier === 'Meta', bubbles: true, cancelable: true })
+        document.body.dispatchEvent(event)
+        return event.defaultPrevented
+      }), key)).toEqual(Array<boolean>(6).fill(false))
+      await page.setViewportSize({ width: 1440, height: 1000 })
+      await trigger.click()
+      const viewButton = page.getByRole('button', { name: view, exact: true })
+      const viewHint = `${view} ${key === 'Meta' ? '⌘ /' : 'Ctrl + /'}`
+      await viewButton.hover()
+      expect(await page.getByRole('tooltip').textContent()).toBe(viewHint)
+      await viewButton.click()
+      await boundRow.getByRole('button').first().click()
+      await boundRow.getByText(locale === 'zh-CN' ? '暂无快捷键' : 'No shortcut', { exact: true }).waitFor()
+      await page.keyboard.press('Escape')
+      await dialog.waitFor({ state: 'hidden' })
+      await viewButton.hover()
+      expect(await page.getByRole('tooltip').count()).toBe(0)
+      expect(await viewButton.getAttribute('aria-keyshortcuts')).toBeNull()
+      await viewButton.click()
+      await badge.click()
+      await boundRow.getByRole('button', { name: locale === 'zh-CN' ? '恢复默认' : 'Restore default', exact: true }).click()
+      await boundRow.getByRole('group').waitFor({ state: 'hidden' })
+      await page.keyboard.press('Escape')
+      await dialog.waitFor({ state: 'hidden' })
+      await viewButton.hover()
+      expect(await page.getByRole('tooltip').textContent()).toBe(viewHint)
+      expect(console.pageErrors).toEqual([])
+      expect(console.warnings).toEqual([])
+    } finally { await context.close() }
+  })
+
+  it.each([
+    { platform: 'Win32', modifier: 'Control', defaultBinding: 'Control+Alt+B' },
+    { platform: 'MacIntel', modifier: 'Meta', defaultBinding: 'Alt+Meta+B' },
+    { platform: 'Linux x86_64', modifier: 'Control', defaultBinding: null },
+  ])('records, rejects conflicts, persists across reload, and synchronizes stale drafts between tabs on $platform', async ({ platform, modifier, defaultBinding }) => {
+    const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 1000 } })
+    try {
+      await context.addInitScript((value) => { Object.defineProperty(navigator, 'platform', { value }) }, platform)
+      const page = await context.newPage()
+      await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await page.getByRole('button', { name: 'Settings', exact: true }).waitFor()
+      const referenceKey = `${modifier}+Slash`
+      const open = async () => {
+        await page.keyboard.press(referenceKey)
+        await page.getByRole('dialog', { name: 'Keyboard shortcuts', exact: true }).waitFor()
+      }
+      await open()
+      await page.getByRole('button', { name: 'Edit shortcut for Toggle left sidebar', exact: true }).click()
+      const editor = page.getByRole('group', { name: 'Toggle left sidebar', exact: true })
+      await editor.getByRole('button', { name: 'Press a shortcut', exact: true }).focus()
+      await page.keyboard.press(referenceKey)
+      await page.getByRole('alert').filter({ hasText: 'Already used by “Open keyboard shortcuts”' }).waitFor()
+      expect(await editor.getByRole('button', { name: 'Press a shortcut', exact: true }).getAttribute('aria-invalid')).toBe('true')
+      await page.keyboard.press(`${modifier}+Shift+.`)
+      await editor.waitFor({ state: 'hidden' })
+      await page.keyboard.press('Escape')
+      const sidebarKey = `${modifier}+Shift+.`
+      expect(await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).getAttribute('aria-keyshortcuts'))
+        .toBe(modifier === 'Meta' ? 'Shift+Meta+.' : 'Control+Shift+.')
+      await page.keyboard.press(sidebarKey)
+      await page.getByRole('button', { name: 'Open sidebar', exact: true }).waitFor()
+      await page.reload({ waitUntil: 'load' })
+      await page.getByRole('button', { name: 'Settings', exact: true }).waitFor()
+      const toggleAfterReload = page.getByRole('button', { name: /^(Open|Collapse) sidebar$/ })
+      await expect.poll(() => toggleAfterReload.getAttribute('aria-keyshortcuts'))
+        .toBe(modifier === 'Meta' ? 'Shift+Meta+.' : 'Control+Shift+.')
+      const wasOpen = await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).isVisible()
+      await page.keyboard.press(sidebarKey)
+      await page.getByRole('button', { name: wasOpen ? 'Open sidebar' : 'Collapse sidebar', exact: true }).waitFor()
+      if (wasOpen) await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
+      await open()
+      await page.getByRole('button', { name: 'Edit shortcut for Toggle left sidebar', exact: true }).click()
+      await editor.getByRole('button', { name: 'Press a shortcut', exact: true }).focus()
+      const other = await context.newPage()
+      await other.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await other.getByRole('button', { name: 'Settings', exact: true }).waitFor()
+      await other.keyboard.press(referenceKey)
+      await other.getByRole('button', { name: 'Remove shortcut for Toggle left sidebar', exact: true }).click()
+      await editor.getByText('Configuration changed in another page or window. Review the latest bindings before saving.', { exact: true }).waitFor()
+      await page.bringToFront()
+      await editor.getByRole('button', { name: 'Press a shortcut', exact: true }).focus()
+      await page.keyboard.press(`${modifier}+Shift+,`)
+      expect(await editor.getByRole('button', { name: 'Retry save', exact: true }).count()).toBe(0)
+      await compareOrRefreshGolden(join(expected, 'edit-stale.expected.md'),
+        await captureStableAria(page, '[data-shortcut-modal="shortcut-edit"]', scaffold.workspaceCwd), mode)
+      await editor.getByRole('button', { name: 'I have reviewed the latest configuration', exact: true }).click()
+      await editor.getByRole('button', { name: 'Retry save', exact: true }).click()
+      await editor.waitFor({ state: 'hidden' })
+      await page.getByRole('button', { name: 'Edit shortcut for Toggle left sidebar', exact: true }).click()
+      await editor.getByRole('button', { name: 'Restore default', exact: true }).click()
+      await editor.waitFor({ state: 'hidden' })
+      await page.keyboard.press('Escape')
+      expect(await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).getAttribute('aria-keyshortcuts'))
+        .toBe(defaultBinding)
+      const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('dsh.keybindings.v1')!) as unknown) as { profiles: Record<string, object> }
+      expect(Object.values(stored.profiles)).toEqual([{}])
+    } finally { await context.close() }
+  })
+
+})

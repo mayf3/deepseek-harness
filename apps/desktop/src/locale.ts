@@ -2,6 +2,8 @@
 
 export const en = {
   application: 'Application',
+  fileMenu: 'File',
+  closePage: 'Close Page or Window',
   aboutMenu: 'About DeepSeek Harness',
   hideApplication: 'Hide DeepSeek Harness',
   hideOtherApplications: 'Hide Others',
@@ -129,6 +131,8 @@ export type DesktopMessages = { readonly [Key in keyof typeof en]: string }
 
 export const zh = {
   application: '应用',
+  fileMenu: '文件',
+  closePage: '关闭页面或窗口',
   aboutMenu: '关于 DeepSeek Harness',
   hideApplication: '隐藏 DeepSeek Harness',
   hideOtherApplications: '隐藏其他',

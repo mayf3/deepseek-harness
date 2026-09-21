@@ -438,7 +438,7 @@ describe('Menu', () => {
             id: 'new',
             label: 'New Workspace',
             submenu: [
-              { id: 'ok', label: 'Create ok', icon: <svg data-testid="sub-ic" /> },
+              { id: 'ok', label: 'Create ok', icon: <svg data-testid="sub-ic" />, shortcut: { keys: ['⌘', 'N'], aria: 'Meta+N' } },
             ],
           },
         ]}
@@ -455,6 +455,8 @@ describe('Menu', () => {
     fireEvent.focus(parent)
     fireEvent.mouseEnter(wrap)
     expect(screen.getByTestId('sub-ic')).toBeDefined()
+    expect(screen.getByRole('menuitem', { name: 'Create ok' }).getAttribute('aria-keyshortcuts')).toBe('Meta+N')
+    expect(screen.getByRole('menuitem', { name: 'Create ok' }).querySelectorAll('kbd')).toHaveLength(2)
     fireEvent.click(screen.getByRole('menuitem', { name: 'Create ok' }))
     expect(onSelect).toHaveBeenCalledWith('ok')
     fireEvent.mouseLeave(wrap)

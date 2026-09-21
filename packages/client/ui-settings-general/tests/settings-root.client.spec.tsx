@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
+import type { ShortcutCatalogEntry, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { createSettingsShellStore } from '../src/client/shell-store.ts'
+import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
@@ -37,6 +39,7 @@ const noAttention: AttentionSnapshot = new Map()
 const useSessionStatus: SettingsRootComponentProps['useSessionStatus'] = selector => selector(noAttention)
 
 function mount({
+  shortcuts = [],
   wide = true,
   dictionary = en,
   connectionState = 'connected',
@@ -53,6 +56,7 @@ function mount({
     { id: 'credential', order: 0 },
   ],
 }: {
+  shortcuts?: readonly ShortcutCatalogEntry[]
   wide?: boolean
   dictionary?: typeof en | typeof zh
   connectionState?: ConnectionSnapshot
@@ -91,7 +95,10 @@ function mount({
     phase: 'ready', projectionsBySession: {},
   }
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
+  const shell = createSettingsShellStore().create()
   const props: SettingsRootComponentProps = {
+    useStore: bindSnapshotSelector(shell), actions: shell.actions,
+    useShortcuts: select => select(shortcuts),
     useSessions: select => select(sessions),
     useSessionStatus,
     usePanelInfo, useSessionRetainInfo: () => undefined, useResource,
@@ -452,4 +459,12 @@ it('opens Account from the contributed sidebar launcher', () => {
   act(() => { (launcher[1] as { openSettings: () => void }).openSettings() })
   expect(screen.getByTestId('section-account')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Account' }).querySelector('svg')).not.toBeNull()
+})
+
+it('shows the effective settings binding on focus and exposes it to assistive technology', () => {
+  mount({ shortcuts: [{ id: 'settings.open' as ShortcutCommandId, label: 'Open settings', aliases: [], keys: ['⌘', ','], aria: 'Meta+,', binding: { code: 'Comma', modifiers: ['meta'] }, modified: false, conflicts: [], issue: null, unavailableReason: null }] })
+  const trigger = screen.getByRole('button', { name: 'Settings' })
+  expect(trigger.getAttribute('aria-keyshortcuts')).toBe('Meta+,')
+  fireEvent.focus(trigger)
+  expect(screen.getByRole('tooltip').textContent).toBe('Settings ⌘ ,')
 })

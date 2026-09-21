@@ -23,6 +23,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
   SettingsOnboardingStep, SettingsRootInjected, SettingsSectionRow,
 } from './shell-contract.ts'
+import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
+import { createSettingsShellStore } from './shell-store.ts'
 import { SettingsRoot } from './SettingsRoot.tsx'
 import { DesktopUpdateBadge } from './DesktopUpdateIndicator.tsx'
 import type { DesktopUpdateBridge } from '../types.ts'
@@ -62,7 +64,7 @@ const NS = 'settings'
  * ui-settings' apply, whose activation order relative to this one is NOT
  * constrained; registrations depend on their slots through `slots.inject()`.
  */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms', 'shortcuts']
 
 /**
  * Register the `settings` dictionaries, the chrome content, and the General
@@ -120,6 +122,7 @@ export function apply(ctx: ClientContext): void {
     openDesktopUpdate: () => { desktopUpdate.open() },
     reconnect: () => { connection.reconnect() },
     hooks: {
+      shortcuts: ctx.shortcuts.catalog,
       desktopUpdate: desktopUpdate.store,
       connectionState: connection.state,
       sections: {
@@ -168,20 +171,34 @@ export function apply(ctx: ClientContext): void {
       },
     },
   })
-  ctx.slots.inject('sidebar.settings', () => ctx.slots.register({
-    name: 'sidebar.settings',
-    locale: NS,
-    children: {
-      'settings.launcher': { kind: 'single', scope: 'root' },
-      'settings.trigger': { kind: 'single', scope: 'root' },
-      'settings.header': { kind: 'single', scope: 'root' },
-      'settings.action': { kind: 'list', scope: 'root' },
-      'settings.close': { kind: 'single', scope: 'root' },
-      'settings.section': { kind: 'list', scope: 'root' },
-      'settings.onboarding': { kind: 'list', scope: 'root' },
-    },
-    inject: shellInjected,
-  }, SettingsRoot))
+  ctx.slots.inject('sidebar.settings', () => {
+    const shellHandle = createSettingsShellStore()
+    const shellInstance = shellHandle.create()
+    const shellStore: typeof shellHandle = { ...shellHandle, create: () => shellInstance }
+    const disposeCommand = ctx.shortcuts.register({
+      id: 'settings.open' as ShortcutCommandId, label: () => t('shortcut.open'), aliases: ['settings', 'preferences'],
+      defaults: { desktop: { code: 'Comma', modifiers: ['primary'] } },
+      regions: ['page', 'editable', 'terminal'], modals: ['settings'],
+      resolve: () => ({ status: 'handled', run: () => { shellInstance.actions.open() } }),
+    })
+
+    const disposeSlot = ctx.slots.register({
+      name: 'sidebar.settings',
+      locale: NS,
+      store: shellStore,
+      children: {
+        'settings.launcher': { kind: 'single', scope: 'root' },
+        'settings.trigger': { kind: 'single', scope: 'root' },
+        'settings.header': { kind: 'single', scope: 'root' },
+        'settings.action': { kind: 'list', scope: 'root' },
+        'settings.close': { kind: 'single', scope: 'root' },
+        'settings.section': { kind: 'list', scope: 'root' },
+        'settings.onboarding': { kind: 'list', scope: 'root' },
+      },
+      inject: shellInjected,
+    }, SettingsRoot)
+    return () => { disposeCommand(); disposeSlot() }
+  })
 
   ctx.slots.inject('settings.trigger', () =>
     ctx.slots.register({ name: 'settings.trigger', locale: NS }, TriggerContent))
