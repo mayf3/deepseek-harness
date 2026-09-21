@@ -38,7 +38,7 @@ function observedRpcIds(
   order: readonly string[],
   nodes: ChatSnapshot['nodes'],
   inbox: InboxState | undefined,
-): ReadonlySet<string> {
+): { readonly durable: ReadonlySet<string>; readonly pending: ReadonlySet<string> } {
   const observed = new Set<string>()
   for (const key of order) {
     const node = nodes.get(key)
@@ -48,10 +48,11 @@ function observedRpcIds(
       | undefined
     if (source?.kind === 'user' && typeof source.rpcId === 'string') observed.add(source.rpcId)
   }
+  const pending = new Set<string>()
   for (const { source } of [...inbox?.['next-turn'] ?? [], ...inbox?.['next-step'] ?? []]) {
-    if (source.kind === 'user' && 'rpcId' in source) observed.add(source.rpcId)
+    if (source.kind === 'user' && 'rpcId' in source) pending.add(source.rpcId)
   }
-  return observed
+  return { durable: observed, pending }
 }
 
 type ChatNodeListProps = Omit<ComponentProps<typeof ChatNodeSeat>, 'nodeKey' | 'groupPart'> & {
@@ -141,7 +142,7 @@ export function ChatView({
     setFileOpenBusy(false)
   }, [])
 
-  const pendingSteering = useMemo(
+  const inboxSteering = useMemo(
     () => inbox?.['next-step'].filter(message => message.source.kind === 'user') ?? [],
     [inbox],
   )
@@ -153,9 +154,15 @@ export function ChatView({
     if (pendingSubmissions.length === 0) return pendingSubmissions
     const observed = observedRpcIds(order, nodeStore, inbox)
     return pendingSubmissions.filter(submission => (
-      submission.placement !== 'queued' && !observed.has(submission.requestId)
+      submission.placement !== 'queued' && !observed.durable.has(submission.requestId)
+      && (submission.placement === 'steering' || !observed.pending.has(submission.requestId))
     ))
   }, [pendingSubmissions, order, nodeStore, inbox])
+  const pendingSteering = useMemo(() => {
+    const local = new Set(visibleSubmissions.filter(submission => submission.placement === 'steering')
+      .map(submission => submission.requestId))
+    return inboxSteering.filter(({ source }) => source.kind !== 'user' || !('rpcId' in source) || !local.has(source.rpcId))
+  }, [inboxSteering, visibleSubmissions])
   const renderMessageImages = useCallback<RenderMessageImages>(
     owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
     [loadImage, renderSlot],
@@ -164,11 +171,14 @@ export function ChatView({
   const firstKey = order[0]
   const firstSeq = firstKey === undefined ? null : nodeStore.get(firstKey)?.anchorSeq ?? null
   const lastKey = order.at(-1) ?? null
+  const latestSteering = pendingSteering.at(-1)
+  const steeringId = latestSteering?.source.kind === 'user' && 'rpcId' in latestSteering.source
+    ? latestSteering.source.rpcId : latestSteering?.id ?? null
   const scroll = useChatScroll({
     ready: openState === 'open',
     order, firstSeq, lastKey, running, loadingOlder, hasMore, chatScroll, loadOlder, loadThrough,
     lastIsUser: lastKey !== null && nodeStore.get(lastKey)?.kind === 'user',
-    steeringId: pendingSteering.at(-1)?.id ?? null,
+    steeringId,
     submissionId: visibleSubmissions.at(-1)?.requestId ?? null,
     loadedTurns: turnNavigationItems,
   })

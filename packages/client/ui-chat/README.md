@@ -40,6 +40,8 @@ Settings → General → Open chat links in selects the destination for ordinary
 
 Chat omits system-prompt, ordinary Context injection, and `permission` command rows in every work-details mode. The filter changes neither recorded Session events nor Trajectory inspection. Non-human Turn triggers remain independent notices; other command rows remain in Chat.
 
+When an Assistant attempt retires without a visible message, Chat hides its already-published Node instead of removing its key. A retry in the same Step reuses that key when visible content returns. This also applies when the loaded window lacks the Step start.
+
 <a id="command-and-failure-rows"></a>
 ## Command and failure rows
 
@@ -69,6 +71,8 @@ The completed-turn action footer follows the recorded Turn end. Its action row s
 ## Turn Process Folding
 
 Preference menus restore focus to their trigger without scrolling before publishing a new selection.
+
+Local steering echoes remain mounted through Inbox acceptance and claim until the durable message arrives. Matching Host-pending rows stay hidden during this handoff, and the same request does not trigger tail following twice.
 
 Work-details modes control process-group display and reasoning previews; eligible completed Turns fold their process without hiding the final answer. The [business-rule reference](src/client/conversation-nodes/README.md#display-modes) contains the mode table, title behavior, whole-Turn eligibility, clocks, and disclosure resets.
 

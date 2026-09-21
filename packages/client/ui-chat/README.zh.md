@@ -40,6 +40,8 @@ Chat 在节点列表外通过一个 `MarkdownDelegateProvider` 提供文件及 H
 
 Chat 在所有工作过程展示模式下都不显示系统提示词行、普通上下文注入和 `permission` 命令行。该过滤不改变已记录的 Session 事件或 Trajectory 查看能力。非人工轮次触发仍作为独立通知显示，其他命令行仍保留在 Chat 中。
 
+Assistant 尝试结束且没有可见消息时，Chat 隐藏已发布的 Node，不移除其 key。同一 Step 的重试再次产生可见内容时，复用该 key。已加载窗口缺少 Step 起点时也遵循此规则。
+
 <a id="command-and-failure-rows"></a>
 ## 指令与失败行
 
@@ -69,6 +71,8 @@ Chat 在所有工作过程展示模式下都不显示系统提示词行、普通
 ## 轮次过程折叠
 
 偏好菜单在发布新选择之前，先将焦点还给触发按钮，且不引起滚动。
+
+本地 steering 回显在 Inbox 接受与领取期间保持挂载，直到持久消息到达。交接期间隐藏同请求的 Host 待处理行，同一请求不会重复触发跟随底部。
 
 工作过程展示模式控制过程组显示与推理预览；符合条件的已完成轮次折叠过程，但不隐藏最终答案。[业务规则明细](src/client/conversation-nodes/README.zh.md#display-modes) 统一说明模式表、组头行为、整轮折叠资格、时钟与开合重置。
 

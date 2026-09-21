@@ -53,8 +53,10 @@ export function useChatScroll(input: ChatScrollInput): ChatScrollState {
     const current = content.current.input
     const previous = content.current.applied
     const ownInput = (current.lastIsUser && current.lastKey !== previous?.lastKey)
-      || (current.steeringId !== null && current.steeringId !== previous?.steeringId)
-      || (current.submissionId !== null && current.submissionId !== previous?.submissionId)
+      || (current.steeringId !== null && current.steeringId !== previous?.steeringId
+        && current.steeringId !== previous?.submissionId)
+      || (current.submissionId !== null && current.submissionId !== previous?.submissionId
+        && current.submissionId !== previous?.steeringId)
     if (reading.pending && !ownInput) return
     content.current.applied = current
     if (current.ready && !content.current.opened) {

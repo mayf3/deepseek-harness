@@ -993,6 +993,73 @@ describe('built-in conversation node Definitions', () => {
     })
   })
 
+  it.each([
+    { outcome: 'attempt', startLoaded: true },
+    { outcome: 'attempt', startLoaded: false },
+    { outcome: 'abandoned', startLoaded: true },
+    { outcome: 'abandoned', startLoaded: false },
+  ])('retains the Assistant key after $outcome retirement (startLoaded=$startLoaded)', ({ outcome, startLoaded }) => {
+    const attemptId = LlmAttemptId('retired-chat-attempt')
+    const chunk = { type: 'text-delta' as const, index: 0, text: 'Discarded reply' }
+    const stream = new AssistantStreamAccumulator()
+    stream.push({ time: 1_030, chunk })
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      ...startLoaded ? [at(2, 'step/start', { turn: 1, step: 1 })] : [],
+    ], !startLoaded)
+    value.append({
+      type: 'transient',
+      event: {
+        type: 'assistant/live-chunk', seq: 2.5, time: 1_030,
+        data: { attemptId, turn: 1, step: 1, chunk },
+      },
+    })
+    // The Step end can publish while the matching Assistant end frame still holds its settlement.
+    if (!startLoaded) value.append(at(4, 'step/end', { turn: 1, step: 1 }))
+    value.flush()
+    const visible = node(snapshot(value), 'assistant-step')
+    expect(visible?.visibility).toBe('visible')
+
+    if (outcome === 'attempt') {
+      const event = at(3, 'assistant/attempt', { turn: 1, step: 1, stream: stream.snapshot() }).event
+      if (event.type !== 'assistant/attempt') throw new Error('expected Assistant attempt')
+      value.settleAssistant(attemptId, { type: 'event', event })
+    } else value.settleAssistant(attemptId)
+    expect(() => value.flush()).not.toThrow()
+    const hidden = node(snapshot(value), 'assistant-step')
+    expect(hidden?.key).toBe(visible?.key)
+    expect(hidden?.visibility).toBe('hidden')
+    expect(snapshot(value).order).not.toContain(hidden?.key)
+
+    if (!startLoaded) {
+      value.append(at(5, 'turn/end', { turn: 1, reason: { kind: 'completed' } }))
+      expect(() => value.flush()).not.toThrow()
+      expect(node(snapshot(value), 'assistant-step')?.visibility).toBe('hidden')
+      return
+    }
+    value.append(at(4, 'llm/retry', {
+      retryId: 'retired-chat-retry', turn: 1, step: 1, provider: 'fake', mode: 'normal',
+      policyKey: 'fake-normal', retry: 1, maxRetries: 2, delayMs: 10,
+      failure: { code: 'TRANSPORT', message: 'temporary' },
+    }))
+    expect(() => value.flush()).not.toThrow()
+    value.append({
+      type: 'transient',
+      event: {
+        type: 'assistant/live-chunk', seq: 4.5, time: 1_050,
+        data: {
+          attemptId: LlmAttemptId('replacement-chat-attempt'), turn: 1, step: 1,
+          chunk: { type: 'text-delta', index: 0, text: 'Replacement reply' },
+        },
+      },
+    })
+    value.flush()
+    const replacement = node(snapshot(value), 'assistant-step')
+    expect(replacement?.key).toBe(visible?.key)
+    expect(replacement?.visibility).toBe('visible')
+    expect(replacement?.data).toMatchObject({ blocks: [{ kind: 'text', text: 'Replacement reply' }] })
+  })
+
   it('omits first-token metrics after live settlement and after reopening the same history', () => {
     const attemptId = LlmAttemptId('settled-chat-timing')
     const starts = [

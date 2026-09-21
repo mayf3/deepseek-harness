@@ -6,6 +6,7 @@ import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { AttachmentIdType, FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { UserMessage } from '@deepseek-ai/dsh-llm/types'
 import { SessionLogOffset, SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import { SessionEventStream } from '../transport.ts'
 import type { SessionJournalChange } from '../transport.ts'
@@ -25,7 +26,7 @@ import type {
 } from '../contract/snapshot.ts'
 import { MutableSessionEventSource } from '../contract/events.ts'
 import type {
-  SessionEventLikeEntry, SessionLiveEventEntry,
+  SessionEventLike, SessionEventLikeEntry, SessionLiveEventEntry,
 } from '../contract/events.ts'
 import { Notifier } from './notifier.ts'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
@@ -124,6 +125,9 @@ export class Session implements SessionFace {
   /** Per-echo settlement state; `retiring` latches the first observation so a
    *  Inbox projection and its durable event cannot both retire one echo. */
   private readonly submissionSettlements = new Map<SessionRequestId, {
+    readonly placement: PendingSubmission['placement']
+    /** Latest received next-step position; null means claimed but not yet admitted. */
+    receipt?: { readonly seq: number; readonly index: number | null }
     readonly onRetire?: ((retirement: PendingSubmissionRetirement) => void) | undefined
     retiring: boolean
   }>()
@@ -209,16 +213,15 @@ export class Session implements SessionFace {
    */
   beginSubmission(input: BeginSubmissionInput): SubmissionHandle {
     const requestId = randomUUID() as SessionRequestId
+    const placement = this.running ? input.mode === 'steer' ? 'steering' : 'queued' : 'transcript'
     this.pendingSubmissions = [...this.pendingSubmissions, {
       requestId,
-      placement: this.running
-        ? input.mode === 'steer' ? 'steering' : 'queued'
-        : 'transcript',
+      placement,
       time: Date.now(),
       text: input.text,
       attachments: input.attachments,
     }]
-    this.submissionSettlements.set(requestId, { onRetire: input.onRetire, retiring: false })
+    this.submissionSettlements.set(requestId, { placement, onRetire: input.onRetire, retiring: false })
     // The blank → engaging edge flips here, ahead of prompt(): the composer
     // docks and the echo renders on the click's own frame.
     this.promptAttempted = true
@@ -666,6 +669,10 @@ export class Session implements SessionFace {
     if (projections !== undefined) this.projections.seed(projections)
     this.eventSource.replace(visible, hasMore)
     for (const entry of visible) this.observeSubmissionEvent(entry.event)
+    if (projections !== undefined) {
+      const inbox = projections.values.inbox as InboxState | undefined
+      this.observeSteeringInsertions(inbox?.['next-step'] ?? [], 0, projections.asOfSeq)
+    }
     this.notifier.markDirty()
   }
 
@@ -724,36 +731,58 @@ export class Session implements SessionFace {
   }
 
   /** Observe durable acceptance even when insertion and claim share one projection notification. */
-  private observeSubmissionEvent(event: { readonly type: string; readonly data?: unknown }): void {
+  private observeSubmissionEvent(event: SessionEventLike): void {
     if (this.submissionSettlements.size === 0) return
     if (event.type === 'agent/inbox/spliced') {
-      const splice = event.data as { readonly inserted?: unknown } | undefined
-      if (Array.isArray(splice?.inserted)) {
-        for (const message of splice.inserted) this.observeSubmissionEvent({ type: 'user/message', data: message })
+      const { target, start, removedCount = 0, inserted, outcome } = event.data
+      if (target === 'next-step') {
+        for (const [requestId, settlement] of this.submissionSettlements) {
+          const receipt = settlement.receipt
+          if (receipt === undefined || receipt.index === null || receipt.seq >= event.seq) continue
+          const removed = receipt.index >= start && receipt.index < start + removedCount
+          if (removed && outcome === 'canceled') this.retireFailedSubmission(requestId)
+          else settlement.receipt = {
+            seq: event.seq,
+            index: removed ? null : receipt.index < start ? receipt.index : receipt.index + inserted.length - removedCount,
+          }
+        }
+        this.observeSteeringInsertions(inserted, start, event.seq)
+      }
+      for (const message of inserted) this.observeSubmissionMessage(message, false)
+      return
+    }
+    if (event.type === 'request/context' || event.type === 'turn/end') {
+      for (const [requestId, settlement] of this.submissionSettlements) {
+        if (settlement.receipt?.index === null && settlement.receipt.seq < event.seq) this.retireFailedSubmission(requestId)
       }
       return
     }
-    if (event.type !== 'user/message') return
-    // Structural read: window entries may be compact history records, so the
-    // fields are narrowed rather than trusted (same posture as Conversation
-    // assembly matchers).
-    const data = event.data as { readonly source?: unknown; readonly content?: unknown } | undefined
-    const source = data?.source as { readonly kind?: unknown; readonly rpcId?: unknown } | undefined
-    if (source?.kind !== 'user' || typeof source.rpcId !== 'string') return
-    this.scheduleObservedRetirement(source.rpcId as SessionRequestId, attachmentRefsIn(data?.content))
+    if (event.type === 'user/message') this.observeSubmissionMessage(event.data, true)
   }
 
-  /** Retire local echoes when their accepted messages appear in the durable Inbox projection. */
+  private observeSteeringInsertions(messages: readonly UserMessage[], start: number, seq: number): void {
+    for (const [index, message] of messages.entries()) {
+      const source = message.source
+      if (source.kind !== 'user' || !('rpcId' in source)) continue
+      const settlement = this.submissionSettlements.get(source.rpcId)
+      if (settlement?.placement !== 'steering' || settlement.retiring || (settlement.receipt?.seq ?? -1) > seq) continue
+      settlement.receipt = { seq, index: start + index }
+    }
+  }
+
+  private observeSubmissionMessage(message: UserMessage, admitted: boolean): void {
+    const source = message.source
+    if (source.kind !== 'user' || !('rpcId' in source)) return
+    if (!admitted && this.submissionSettlements.get(source.rpcId)?.placement === 'steering') return
+    this.scheduleObservedRetirement(source.rpcId, attachmentRefsIn(message.content))
+  }
+
+  /** Retire non-steering echoes when the Inbox accepts their queue occurrences. */
   private observeSubmissionInbox(): void {
     if (this.submissionSettlements.size === 0) return
     const inbox = this.projections.get('inbox') as InboxState | undefined
     if (inbox === undefined) return
-    for (const message of [...inbox['next-turn'], ...inbox['next-step']]) {
-      const source = message.source
-      if (source.kind === 'user' && 'rpcId' in source) {
-        this.scheduleObservedRetirement(source.rpcId, attachmentRefsIn(message.content))
-      }
-    }
+    for (const message of [...inbox['next-turn'], ...inbox['next-step']]) this.observeSubmissionMessage(message, false)
   }
 
   /**

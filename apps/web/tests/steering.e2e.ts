@@ -235,9 +235,28 @@ describe('web e2e: composer shortcut steers directly', () => {
     await composer.waitFor({ timeout: 30_000 })
     const pendingSteering = page.locator('[data-pending-steering]').filter({ hasText: STEER })
     await pendingSteering.waitFor({ timeout: 10_000 })
-    await composer.getByRole('radio', { name: 'Yes' }).click()
-    await composer.getByRole('radio', { name: 'Yes' }).press('Enter')
-    await settled
+    const admission = Promise.withResolvers<undefined>()
+    let claimed = false
+    const stopHolding = scaffold.ctx.on('agent/pre-step', async (payload, next) => {
+      if (payload.messages.some(message => message.content.some(block => block.type === 'text' && block.text === STEER))) {
+        claimed = true
+        await admission.promise
+      }
+      return next()
+    })
+    try {
+      await composer.getByRole('radio', { name: 'Yes' }).click()
+      await composer.getByRole('radio', { name: 'Yes' }).press('Enter')
+      await expect.poll(() => claimed, { timeout: 10_000 }).toBe(true)
+      await page.evaluate(() => new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => { resolve() }))
+      }))
+      expect(await page.getByText(STEER, { exact: true }).count()).toBe(1)
+    } finally {
+      admission.resolve(undefined)
+      stopHolding()
+      await settled
+    }
 
     const steerEvents = claimedMessages(sessionEvents, STEER)
     expect(steerEvents).toHaveLength(1)

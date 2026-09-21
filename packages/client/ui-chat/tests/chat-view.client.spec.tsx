@@ -1573,7 +1573,27 @@ describe('ChatView', () => {
     expect(view.getAllByText('即发即显')).toHaveLength(1)
   })
 
-  it('renders a local steer echo as pending steering before Host image admission completes', () => {
+  it('does not pull the reader back to the tail when a local steer becomes Host-pending', () => {
+    const h = makeHarness({ nodes: [assistant(1, 'working')] }, { running: true })
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector<HTMLElement>('[class*="scroll"]')!
+    installScrollMetrics(scroller, 1_000, 300)
+    act(() => { h.setSession({ pendingSubmissions: [{
+      requestId: 'req-steer' as never, placement: 'steering', time: 5_000, text: 'continue here', attachments: [],
+    }] }) })
+    expect(scroller.scrollTop).toBe(700)
+    readerScroll(scroller, 100)
+
+    act(() => { h.setSession({ testInbox: { 'next-turn': [], 'next-step': [{
+      id: 'steer-occurrence' as never, role: 'user', source: { kind: 'user', rpcId: 'req-steer' as never },
+      content: [{ type: 'text', text: 'continue here' }],
+    }] } }) })
+    expect(view.getAllByText('continue here')).toHaveLength(1)
+    expect(scroller.scrollTop).toBe(100)
+    expect(view.getByLabelText('回到底部')).toBeTruthy()
+  })
+
+  it('retains the same local steer bubble through Host acceptance and claim until its durable node arrives', () => {
     const h = makeHarness(
       { nodes: [assistant(1, 'working')] },
       {
@@ -1604,8 +1624,20 @@ describe('ChatView', () => {
       })
     })
     expect(view.getAllByText('带图纠偏')).toHaveLength(1)
+    expect(view.container.querySelector('[data-submission-echo]')).toBe(local)
+    expect(view.container.querySelectorAll('[data-pending-steering]')).toHaveLength(1)
+
+    act(() => { h.setSession({ testInbox: { 'next-turn': [], 'next-step': [] } }) })
+    expect(view.container.querySelector('[data-submission-echo]')).toBe(local)
+    expect(view.getAllByText('带图纠偏')).toHaveLength(1)
+
+    act(() => { h.setChat({ nodes: [assistant(1, 'working'), {
+      ...steering(2, '带图纠偏', 1), source: { kind: 'user', rpcId: 'req-steer' as never },
+    }] }) })
+    expect(view.getAllByText('带图纠偏')).toHaveLength(1)
     expect(view.container.querySelector('[data-submission-echo]')).toBeNull()
-    expect(view.container.querySelector('[data-pending-steering]')).not.toBeNull()
+    act(() => { h.setSession({ pendingSubmissions: [] }) })
+    expect(view.getAllByText('带图纠偏')).toHaveLength(1)
   })
 
   it('keeps a queued echo out of the Chat flow before and after Host admission', () => {
