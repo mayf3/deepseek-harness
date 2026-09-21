@@ -990,7 +990,24 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       await column.locator('[data-files-reload]').click()
       const filesTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('Files', { exact: true }) })
       const preview = column.locator('[data-textpreview-url]')
+      const pdfResponse = page.waitForResponse(
+        response => new URL(response.url()).pathname === '/api/officeToPdf/render',
+        { timeout: 60_000 },
+      )
       await column.locator('[data-files-entry="file"]').getByRole('button', { name: 'chinese.docx', exact: true }).click()
+      const officeTransfer = await pdfResponse
+      expect(officeTransfer.headers()['content-type']).toMatch(/^multipart\/form-data;/)
+      const officeBody = await new Response(new Uint8Array(await officeTransfer.body()), { headers: officeTransfer.headers() }).formData()
+      const officeMetadata = officeBody.get('metadata')
+      if (typeof officeMetadata !== 'string') throw new Error('missing Office PDF metadata')
+      const { attachments } = JSON.parse(officeMetadata) as { attachments: { path: (string | number)[]; codec: string; part: string }[] }
+      expect(attachments).toHaveLength(1)
+      expect(attachments[0]).toMatchObject({ path: ['data'], codec: 'bytes' })
+      const officeFile = officeBody.get(attachments[0]!.part)
+      if (officeFile === null || typeof officeFile === 'string') throw new Error('missing Office PDF payload')
+      const officePdf = Buffer.from(await officeFile.arrayBuffer())
+      expect(officePdf.subarray(0, 5).toString('ascii')).toBe('%PDF-')
+      expect(officePdf.subarray(-1024).toString('ascii').trimEnd()).toMatch(/%%EOF$/u)
       expect(await preview.locator('[data-document-viewer-menu]').count()).toBe(0)
       const canvas = preview.getByRole('img', { name: 'PDF page 1', exact: true })
       await canvas.waitFor({ state: 'visible', timeout: 60_000 })

@@ -24,7 +24,7 @@ DSH 按可配置分辨率导出栅格图片，默认 192 DPI，对应共享 PDF 
 
 [Office 查看器](../../../../packages/client/ui-sidebar-documentpreview/README.zh.md#office-preview)位于文档预览的 `client/office/` 目录，与其使用的加载生命周期、PDF 正文和读取器类型同属一个包。这些组件放在同一包中，既减少一个独立 UI 启动入口，也无需跨插件运行时导入。其有界缓存校验已授权的源元数据，在读取方之间共享待完成转换，仅在最后一个读取方离开时取消，不缓存失败，并在连接重置时清空。用户打开预览时才开始转换。缺失的已声明字体族随 PDF 返回，可通过文档工具栏的警告图标查看；字体表清单与无关的引擎默认字体不构成警告。共享预览入口的 `office` 缓存设置复用页面全局注入通道，因为模块启动图携带包标识而不传递 Loader 配置。重新加载页面后采用更新的 YAML 值。
 
-Office 响应使用 `documentFileBytes()`，解码使用一个类型化字节缓冲区，不将二进制字符串物化为 JavaScript 元素数组。即使 PDF 符合 Host 配置的大小限制，元素数组展开也可能耗尽浏览器堆内存。子进程回归测试在固定堆容量内检查字节一致性，构建后的浏览器场景则一起验证传输和 PDF Worker。缓存字节限制不约束临时传输或查看器内存。
+Office 响应使用 Typert 二进制结果投影和 Connection multipart 封装。Client 直接收到一个由 `ArrayBuffer` 支撑的 `Uint8Array`，不会生成 base64 字符串或单独的解码缓冲区。构建后的浏览器场景会同时验证 multipart 附件和 PDF Worker。缓存字节限制不约束临时传输或查看器内存。
 
 [kit 归属决策](2026-09-14-independent-libreoffice-kit.zh.md)定义 npm 分发和随应用打包的离线转换。
 
