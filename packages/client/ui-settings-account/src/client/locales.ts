@@ -2,7 +2,7 @@
 export const en = {
   close: 'Close', addApiKey: 'Add API Key', retry: 'Sign in again',
   loginTitle: 'Start creating', loginDescription: 'Sign in to create, edit, and share your design projects. Everything is saved locally.',
-  browserTitle: 'Waiting for sign in', browserPrompt: 'Page did not open automatically? ', copyLink: 'Copy sign-in link', copiedLink: 'Link copied',
+  browserTitle: 'Waiting for sign in', browserPrompt: 'Page did not open automatically? ', copyLink: 'Copy sign-in link', copiedLink: 'Link copied', copyFailed: 'Copy failed',
   browserDescription: ', then open it in your browser to finish signing in.',
   timeoutTitle: 'Sign in timed out', timeoutDescription: 'Sign in again to continue.',
   failureTitle: 'Could not sign in',
@@ -26,7 +26,7 @@ export type AccountKey = keyof typeof en
 export const zh: Record<AccountKey, string> = {
   close: '关闭', addApiKey: '添加 API Key', retry: '重新登录',
   loginTitle: '开始你的创作', loginDescription: '登录后即可创建、编辑和分享你的设计项目，所有内容在本地保存。',
-  browserTitle: '等待登录', browserPrompt: '没有自动打开新页面？', copyLink: '复制登录链接', copiedLink: '链接已复制',
+  browserTitle: '等待登录', browserPrompt: '没有自动打开新页面？', copyLink: '复制登录链接', copiedLink: '链接已复制', copyFailed: '复制失败',
   browserDescription: '，手动打开登录页完成登录。',
   timeoutTitle: '登录已超时', timeoutDescription: '请重新登录后继续操作。',
   failureTitle: '登录失败',

@@ -73,3 +73,32 @@ it.each([en, zh])('restores the copy label two seconds after the latest successf
     else Reflect.deleteProperty(navigator, 'clipboard')
   }
 })
+
+it.each([en, zh])('shows a temporary copy failure without interrupting sign-in', async (copy) => {
+  const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  vi.useFakeTimers()
+  try {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: vi.fn(async () => { throw new Error('Clipboard denied') }),
+    } })
+    const props = mount({ id, phase: 'waiting-browser', authorizeUrl: 'https://platform.deepseek.com/dsh/authorize?state=example' }, copy)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copyLink })) })
+    expect(screen.getByRole('dialog', { name: copy.browserTitle })).toBeTruthy()
+    expect(screen.getByRole('button', { name: copy.copyFailed })).toBeTruthy()
+    await expect(`${screen.getByRole('dialog').textContent}\n`).toMatchFileSnapshot(`./expected/login-copy-failed-${copy === en ? 'en' : 'zh'}.txt`)
+    act(() => { vi.advanceTimersByTime(1000) })
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copyFailed })) })
+    act(() => { vi.advanceTimersByTime(1999) })
+    expect(screen.getByRole('button', { name: copy.copyFailed })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screen.getByRole('button', { name: copy.copyLink })).toBeTruthy()
+    expect(props.cancel).not.toHaveBeenCalled()
+    expect(props.start).not.toHaveBeenCalled()
+  } finally {
+    cleanup()
+    vi.useRealTimers()
+    if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
+    else Reflect.deleteProperty(navigator, 'clipboard')
+  }
+})

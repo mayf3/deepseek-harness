@@ -17,14 +17,14 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
 }) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
-  const [copyCount, setCopyCount] = useState(0)
+  const [copyResult, setCopyResult] = useState<{ label: 'copiedLink' | 'copyFailed' } | null>(null)
   const attempt = account.view?.attempt
-  useEffect(() => { setCopyCount(0) }, [attempt?.id, attempt?.authorizeUrl])
+  useEffect(() => { setCopyResult(null) }, [attempt?.id, attempt?.authorizeUrl])
   useEffect(() => {
-    if (copyCount === 0) return
-    const timer = setTimeout(() => { setCopyCount(0) }, 2000)
+    if (copyResult === null) return
+    const timer = setTimeout(() => { setCopyResult(null) }, 2000)
     return () => { clearTimeout(timer) }
-  }, [copyCount])
+  }, [copyResult])
   const phase = attempt?.phase
   const active = busy || phase === 'initializing' || phase === 'waiting-browser' || phase === 'exchanging' || phase === 'committing'
   const expired = phase === 'expired'
@@ -41,6 +41,13 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
     if (active && attempt) void run(async () => { await cancel(attempt.id); close() })
     else close()
   }
+  const copyLink = async () => {
+    if (!attempt?.authorizeUrl) return
+    try {
+      await navigator.clipboard.writeText(attempt.authorizeUrl)
+      setCopyResult({ label: 'copiedLink' })
+    } catch { setCopyResult({ label: 'copyFailed' }) }
+  }
   const title = active ? t('browserTitle') : expired ? t('timeoutTitle') : error ? t('failureTitle') : t('loginTitle')
   return <Modal open headless title={title} onClose={dismiss} className={css.dialog as string}>
     <div className={css.content}>
@@ -52,11 +59,8 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
       </div>
       {active ? <p className={css.description}>
         {t('browserPrompt')}<button type="button" className={css.link} disabled={!attempt?.authorizeUrl}
-          onClick={() => {
-            if (attempt?.authorizeUrl) void navigator.clipboard.writeText(attempt.authorizeUrl)
-              .then(() => { setCopyCount(count => count + 1) }, () => { setFailed(true) })
-          }}>
-          {t(copyCount > 0 ? 'copiedLink' : 'copyLink')}
+          onClick={() => { void copyLink() }}>
+          {t(copyResult?.label ?? 'copyLink')}
         </button>{t('browserDescription')}
       </p> : <p className={css.description}>
         {expired ? t('timeoutDescription') : error ? t('failed') : t('loginDescription')}
