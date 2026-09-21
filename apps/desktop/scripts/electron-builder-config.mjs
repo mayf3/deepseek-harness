@@ -1,4 +1,5 @@
 import { X509Certificate } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,6 +19,8 @@ import {
   scrubWindowsSigningEnvironment,
 } from './windows-sign.mjs'
 import { resolveDesktopAutoUpdateConfig } from './desktop-auto-update-environment.mjs'
+import { resolveDesktopBuildProvenance } from './desktop-build-provenance.mjs'
+import { resolveDesktopBuildVersion } from './desktop-build-version.mjs'
 import { resolveDesktopPolicyEnvironment } from './desktop-policy-environment.mjs'
 import { desktopTargetBuildPaths, resolveDesktopBuildTarget } from './desktop-build-paths.mjs'
 import { installWindowsDirectoryInstaller } from './windows-directory-installer.mjs'
@@ -85,9 +88,19 @@ export function createElectronBuilderConfig(
   }
   const update = unsigned ? undefined : resolveDesktopAutoUpdateConfig(env, resolvedPlatform, resolvedArch)
   if (preparedRuntime !== undefined) buildPaths.dsh = preparedRuntime
+  // electron-builder merges extraMetadata into the packaged manifest, so a build identifier here reaches
+  // the artifact names, the update feed, and the installed app.getVersion() the updater compares against.
+  const productVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version
+  const releaseId = resolveDesktopBuildVersion(env, productVersion)
+  const provenance = resolveDesktopBuildProvenance(env)
   return {
     appId,
-    extraMetadata: { dshDesktopAppId: appId, dshMandatoryUpdatePolicy: policy },
+    extraMetadata: {
+      dshDesktopAppId: appId,
+      dshMandatoryUpdatePolicy: policy,
+      ...releaseId === productVersion ? {} : { version: releaseId },
+      ...provenance === undefined ? {} : { dshBuildCommit: provenance.commit, dshBuildDirty: provenance.dirty },
+    },
     productName: 'DeepSeek Harness',
     artifactName: 'deepseek-harness-${version}-${os}-${arch}.${ext}',
     directories: { output: unsigned ? join(buildPaths.root, 'unsigned-artifacts') : buildPaths.artifacts },

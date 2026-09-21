@@ -13,6 +13,7 @@ import {
   resolveDesktopUploadConfig,
 } from './desktop-auto-update-environment.mjs'
 import { desktopTargetBuildPaths } from './desktop-build-paths.mjs'
+import { resolveDesktopBuildVersion } from './desktop-build-version.mjs'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
@@ -47,6 +48,10 @@ export interface DesktopUploadPlan {
   readonly secretIdEnvName: string
   readonly secretKeyEnvName: string
   readonly artifacts: readonly DesktopUploadArtifact[]
+  /** Commit the artifacts were packaged from, absent for a package built before builds recorded it. */
+  readonly commit?: string
+  /** Whether that checkout carried uncommitted changes. */
+  readonly dirty?: boolean
 }
 
 /** Filesystem and environment inputs used to validate one upload. */
@@ -185,6 +190,8 @@ export async function createDesktopUploadPlan(
   if (dshVersion !== desktopVersion) {
     throw new Error(`desktop upload: desktop version ${desktopVersion} does not match current dsh version ${dshVersion}`)
   }
+  // A test or hand-delivered build publishes an identifier extending the product version; a release publishes the version itself.
+  const buildVersion = resolveDesktopBuildVersion(environment, dshVersion)
 
   const update = resolveDesktopUploadConfig(environment, target.platform, target.arch)
   const buildRecord = await jsonFile(
@@ -193,13 +200,13 @@ export async function createDesktopUploadPlan(
   )
   if (buildRecord.schemaVersion !== 1
     || buildRecord.target !== targetName
-    || buildRecord.version !== dshVersion
+    || buildRecord.version !== buildVersion
     || buildRecord.environment !== update.environment
     || buildRecord.publicUrl !== update.publicUrl) {
-    throw new Error(`desktop upload: ${targetName} package completion record does not match dsh ${dshVersion} and ${update.environment} update destination`)
+    throw new Error(`desktop upload: ${targetName} package completion record does not match ${buildVersion} and ${update.environment} update destination`)
   }
 
-  const metadataFilename = desktopUpdateMetadataFilename(dshVersion, target.platform)
+  const metadataFilename = desktopUpdateMetadataFilename(buildVersion, target.platform)
   const metadataPath = join(artifactsRoot, metadataFilename)
   let metadataValue: unknown
   try {
@@ -210,14 +217,14 @@ export async function createDesktopUploadPlan(
   }
   const metadata = object(metadataValue, metadataFilename)
   const metadataVersion = stringField(metadata.version, `${metadataFilename}.version`)
-  if (metadataVersion !== dshVersion) {
-    throw new Error(`desktop upload: ${metadataFilename} version ${metadataVersion} does not match current dsh version ${dshVersion}`)
+  if (metadataVersion !== buildVersion) {
+    throw new Error(`desktop upload: ${metadataFilename} version ${metadataVersion} does not match published version ${buildVersion}`)
   }
   if (!Array.isArray(metadata.files) || metadata.files.length !== 1) {
     throw new Error(`desktop upload: ${metadataFilename}.files must contain exactly one target update file`)
   }
 
-  const base = `deepseek-harness-${dshVersion}-${target.os}-${target.arch}`
+  const base = `deepseek-harness-${buildVersion}-${target.os}-${target.arch}`
   const updaterExtension = target.platform === 'darwin' ? 'zip' : 'exe'
   const updaterInfo = updateFileInfo(metadata.files[0], `${metadataFilename}.files[0]`, `${base}.${updaterExtension}`)
   const updaterPath = await verifyChecksummedArtifact(artifactsRoot, updaterInfo)
@@ -254,18 +261,20 @@ export async function createDesktopUploadPlan(
     contents: dump(published),
   }
   artifacts.push(channelArtifact)
-  if (prerelease(dshVersion) === null) {
+  if (prerelease(buildVersion) === null) {
     const stableFilename = metadataFilename.replace('nightly', 'latest')
     artifacts.push({ ...channelArtifact, filename: stableFilename, key: `${update.keyPrefix}/${stableFilename}` })
   }
   return {
     environment: update.environment,
     target: targetName,
-    version: dshVersion,
+    version: buildVersion,
     publicUrl: update.publicUrl,
     bucket: update.bucket,
     secretIdEnvName: update.secretIdEnvName,
     secretKeyEnvName: update.secretKeyEnvName,
     artifacts,
+    ...typeof buildRecord.commit === 'string' ? { commit: buildRecord.commit } : {},
+    ...typeof buildRecord.dirty === 'boolean' ? { dirty: buildRecord.dirty } : {},
   }
 }
