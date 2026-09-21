@@ -1,6 +1,6 @@
 # Agent Note: Definition 拥有分组业务，框架统一调度 Node／Group 输出
 
-Status: proposed
+Status: implemented
 
 [English](2026-09-21-conversation-build-groups.md) | 中文
 
@@ -12,11 +12,11 @@ Chat Builder 汇总整个目标的节点及索引。在其中固定创建 Chat �
 
 过程组与 Step 正交：同一个 Assistant Node 可以把推理放在组内、回复放在组外，回复后的工具进入后面的组。Step 编号范围无法描述这种成员归属。现有事件 Definition 逐个解释事件，分组则需要这些 Definition 已经解释完成的节点。
 
-## Proposal
+## Decision
 
-基础阶段实现独立的节点输入 `ConversationGroupDefinition`、注册表及 Session 内上下文、Builder 通用输入与发布、按键 Group 存储及两种 React 分支。真实 Chat 分段及 PR #4565 展示仍属于独立业务阶段；该阶段完成前，本记录保留 proposed 状态。[子系统参考](../../../../docs/subsystems/conversation.zh.md#group-definitions)与[源码类型](../../../../packages/client/ui-conversation/src/client/contract/groups.ts)拥有当前 API 细节。
+分组基础机制提供独立的节点输入 `ConversationGroupDefinition`、注册表及 Session 内上下文、Builder 通用输入与发布、按键 Group 存储及两种 React 分支。基础机制不注册真实 Chat 分段及 PR #4565 展示，[业务迁移提案](../../proposed/feature/2026-09-20-chat-work-details-migration.zh.md)保留这些需求。[子系统参考](../../../../docs/subsystems/conversation.zh.md#group-definitions)与[源码类型](../../../../packages/client/ui-conversation/src/client/contract/groups.ts)拥有当前 API 细节。
 
-### 已确认的职责
+### 职责
 
 | 要求 | 含义 |
 |---|---|
@@ -32,9 +32,9 @@ Chat Builder 汇总整个目标的节点及索引。在其中固定创建 Chat �
 
 | 记录 | 关系 |
 |---|---|
-| [业务节点组装](../../implemented/architecture/2026-08-09-client-conversation-node-assembly.zh.md) | 保留事件匹配、Context、Location、每个 Context 一个业务 Node 及目标 Builder，分组增加另一种输入类别。 |
-| [展示策略与过程分组](2026-09-20-chat-presentation-policy-and-step-groups.zh.md) | 保留 Definition 归属、局部订阅和模式无关要求，以新分组机制替代事件 fold 及 Step 范围成员推断。 |
-| [工作过程展示迁移](../feature/2026-09-20-chat-work-details-migration.zh.md) | 保留产品范围及迁移跟踪，基础机制本身不代表这些功能完成。 |
+| [业务节点组装](2026-08-09-client-conversation-node-assembly.zh.md) | 保留事件匹配、Context、Location、每个 Context 一个业务 Node 及目标 Builder，分组增加另一种输入类别。 |
+| [展示策略与过程分组](../../proposed/architecture/2026-09-20-chat-presentation-policy-and-step-groups.zh.md) | 保留 Definition 归属、局部订阅和模式无关要求，以新分组机制替代事件 fold 及 Step 范围成员推断。 |
+| [工作过程展示迁移](../../proposed/feature/2026-09-20-chat-work-details-migration.zh.md) | 保留产品范围及迁移跟踪，基础机制本身不代表这些功能完成。 |
 
 这些记录仍有独立理由，保留有效状态。跨 View 导航与 `toolCallFocus` 不属于本次改动；不引入 View 句柄、Label Slot 或资源导航架构。
 
@@ -59,7 +59,7 @@ Chat Builder 汇总整个目标的节点及索引。在其中固定创建 Chat �
 
 | 更新 | 含义 |
 |---|---|
-| 省略 `entries` | 保留根顺序。 |
+| apply 输入省略 `entries` | 保留根顺序；替换输入必须提供完整序列。 |
 | 提供 `entries`，包括 `[]` | 替换完整根序列，空数组清空根序列。 |
 | `groups: { kind: 'replace', snapshots }` | 替换完整组记录，移除未包含的旧组。 |
 | `groups: { kind: 'apply', upserts, removes }` | upsert 完整快照，只按具名 GroupKey 删除组。 |
@@ -108,41 +108,14 @@ GroupStore 按 GroupKey 索引记录和来源，不反复查找数组。等价�
 | [ChatGroupSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx) | 稳定组父级、仅成员订阅及嵌套 Node 容器。 |
 | [ChatNodeSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatNodeSeat.tsx) | 既有 Node 来源及渲染器、groupPart 传递、独立部分锚点及 Store 替换时重绑定。 |
 | [slots.ts](../../../../packages/client/ui-chat/src/client/contract/slots.ts) 与 [apply.ts](../../../../packages/client/ui-chat/src/client/apply.ts) | 使用现有按键钩子注入 Group 来源，不改 Slot 引擎。 |
-| 业务阶段：process-groups.ts 与 register.ts | Definition 拥有分段、成员、缓存、摘要及注册。 |
-| 业务阶段：AssistantNodeView、Group 容器、stores、navigation | 解释部分内容，组头和正文展示，本地开合状态，Turn/Group 揭示、选择复制及中断提示归属。 |
-
-## 业务阶段：分段与增量
-
-业务 State 接受输入、清空待输出变化并返回可重复读取的结果。replace 构建已加载窗口；apply 区分结构变化和正文更新，维护受影响段或轮次内索引。它拥有开组、关组、稳定 key、摘要和失效规则；通用层不按 Node kind 或 Step 编号再次修正业务结论。
-
-| 有序可见输入 | 业务动作 |
-|---|---|
-| 所属 Turn 改变 | 关闭待完成组。 |
-| 没有 Turn 归属 | 关闭组并输出独立 Node，不跨越它合并。 |
-| turn-process 控件 | 独立输出，不关闭待完成过程。 |
-| 用户、steering、触发、重试、错误、最大 token 或尾部 | 关闭组并独立输出。 |
-| Assistant 推理 | 把 reasoning 部分加入待完成组。 |
-| Assistant 可见回复 | 关闭组，独立输出 response 部分；后续工具进入后面的组。 |
-| 其他过程 Node | 加入待完成组，普通 Step 边界不关闭组。 |
-| Turn 结束 | 即使没有节点 upsert，也关闭该轮次待完成的组。 |
-
-分类未变的正文增长不重新分段历史，必要时只更新当前摘要。首次回复、新工具、steering 或重试可以改变结构。可见性或位置修正同时处理旧、新归属。真实结构变化允许线性合并根引用，接口不承诺全部操作常数时间。
 
 ## React 读取与展示
 
-根层通过既有 useConversation 来源选择 `views.grouped('chat')?.entries`。按键 Group 钩子沿用现有注入，Group 容器选择 members，后续组头独立选择 data。成员使用既有按键 Node 来源。根列表移除组件前，已删除 Group 来源可能先返回 undefined，因此选择器允许不存在，并保持钩子顺序稳定。
+根层通过既有 useConversation 来源选择 `views.grouped('chat')?.entries`。按键 Group 钩子沿用现有注入，Group 容器选择 members。成员使用既有按键 Node 来源。根列表移除组件前，已删除 Group 来源可能先返回 undefined，因此选择器允许不存在，并保持钩子顺序稳定。
 
-React key 由引用 kind、NodeKey/groupPart 或 GroupKey 的无歧义元组派生，不另设 RenderKey 类型或 renderer 分发字段。Compact、Detailed、Expanded 保留同一组容器及成员父级，模式只改变组头、正文显隐及样式。
+React key 由引用 kind、NodeKey/groupPart 或 GroupKey 的无歧义元组派生，不另设 RenderKey 类型或 renderer 分发字段。Compact、Detailed、Expanded 保留同一组容器及成员父级，展示变化不重新运行 Group Definition，也不选择不同的根分支。
 
 稳定 Group 父级使用 `div` 与 `display: contents`，自身不产生布局盒子。CSS 继承仍然可用，业务样式适配子级／兄弟选择器并拥有可测量的正文容器。CSS 变量和几何信息都不进入 Definition。阅读位置采样测量成员 Node，保留部分专属锚点；既有轮次导航将原 NodeKey 解析到它的第一个可见部分。
-
-| 模式 | 组头 | 正文 |
-|---|---|---|
-| Compact | 简短活动摘要 | 按组开合状态显隐。 |
-| Detailed | 摘要及实时命令、路径、查询详情 | 使用同一组开合状态。 |
-| Expanded | 隐藏 | 显示，取消组级折叠及限高，容器保留。 |
-
-以上以外层 Turn 过程已展开为前提。Expanded 保留整轮折叠和单个工具、推理行开合，不能提前挂载全部完整 Markdown。Turn 收起时的内部状态重置是明确业务动作，不通过更换 key 实现。组头、滚动渐隐及整轮联动属于业务阶段。
 
 ## Alternatives considered
 
@@ -164,22 +137,13 @@ React key 由引用 kind、NodeKey/groupPart 或 GroupKey 的无歧义元组派�
 
 **Expanded 移除组容器。** 不采用，即使 key 不变，父级改变仍会重挂载成员。
 
-## Acceptance criteria
+## Verification
 
-1. Builder、assembler 和 GroupStore 不含 Chat 分段或类别规则，不固定创建具体分组类。
-2. Group State 拥有成员、分段、摘要和业务失效规则。
-3. 未分组目标保持原路径；重复注册及缺少输入报错，不提前构造 Builder。
-4. 分组输入包含投影后的最终节点、前后值、稳定顺序及仅生命周期的轮次变化。
-5. 仅数据 upsert 保留 entries 和 members，不扫描无关内容，只通知变化组来源。
-6. 相关 Node、Group 和 Location 数据先全部安装再发布；无效及重叠引用在 Group 安装前报错。
-7. 首次激活、append、settlement、replace、prepend 和注册重建使用统一分组路径。
-8. 注册替换或删除不遗留旧 Group 上下文及观察结果；Node 存储替换时重绑定已挂载成员。
-9. React 根层只有 node/group，模式切换保留 key、父级及局部状态。
-10. Definition、存储、按键读取及业务渲染贯穿同一 Data 类型。
-11. 空与省略 entries、删除 Group 与保留 Node、已删除组返回 undefined 均保持协议规定的区别。
-12. 独立业务阶段覆盖回复、steering、重试、无 Turn 行、Turn 结束、摘要和三档展示后，才能宣称 PR #4565 产品行为完成。
+- [Group 存储测试](../../../../packages/client/ui-conversation/tests/conversation-group-store.client.spec.ts)覆盖原子引用校验、根与成员身份复用、局部发布，以及删除组但保留原 Node。
+- [分组调度测试](../../../../packages/client/ui-conversation/tests/conversation-groups.client.spec.ts)覆盖首次激活、仅生命周期输入、注册替换、View 移除与恢复，以及完整替换输出。[Assembler 测试](../../../../packages/client/ui-conversation/tests/conversation-assembler.client.spec.ts)覆盖变化轮次报告和 Location 数据来源。
+- [Chat 渲染测试](../../../../packages/client/ui-chat/tests/chat-view.client.spec.tsx)保留模式切换时的组件状态，重绑定替换后的 Node 存储，传递独立部分，并省略未引用 Node。[视口测试](../../../../packages/client/ui-chat/tests/chat-viewport.client.spec.ts)覆盖组内阅读锚点、历史前插及部分感知的轮次导航。
 
-## Risks
+## Consequences
 
 - 这是明确的框架扩展，包含新输入协议、注册表、上下文、发布阶段及读取器，不只是增加一个回调。
 - 目标内 State 不会自动让业务更新局部化，Definition 必须区分正文增长与结构变化，并索引受影响范围。

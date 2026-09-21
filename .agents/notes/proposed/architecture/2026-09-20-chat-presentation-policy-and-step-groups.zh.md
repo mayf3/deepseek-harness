@@ -25,7 +25,7 @@ Chat 的「对话显示」设置在本提案开始时只有两档：`normal` 不
 
 ## 目标与约束
 
-[Definition 拥有分组的 Build Group 提案](2026-09-21-conversation-build-groups.zh.md)取代本记录中的事件 fold、Builder 物化组头、Step 范围成员推断及 changedLocationData 提案。本记录保留展示策略与按轮折叠资格的理由；下文分组实现记录已被取代的路线，不是当前实施方案。
+[已实现的 Definition 分组基础机制](../../implemented/architecture/2026-09-21-conversation-build-groups.zh.md)取代本记录中的事件 fold、Builder 物化组头、Step 范围成员推断及 changedLocationData 提案。本记录保留展示策略与按轮折叠资格的理由；下文分组实现记录已被取代的路线，不是当前实施方案。
 
 下表是评审阶段已经确认的裁决，本方案不再重新讨论它们。
 

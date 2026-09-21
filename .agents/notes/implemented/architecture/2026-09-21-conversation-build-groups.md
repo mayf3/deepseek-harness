@@ -1,6 +1,6 @@
 # Agent Note: Definition-owned grouping with generic Node/Group assembly
 
-Status: proposed
+Status: implemented
 
 English | [中文](2026-09-21-conversation-build-groups.zh.md)
 
@@ -12,11 +12,11 @@ A Chat Builder aggregates one target's Nodes and indexes. Hardcoding a Chat proc
 
 Process groups are orthogonal to Steps: one Assistant Node can contribute reasoning inside a group and a reply outside it; tools after that reply enter a later group. Step-number ranges cannot describe membership. Existing event Definitions interpret one event at a time, whereas grouping needs the Nodes those Definitions have already interpreted.
 
-## Proposal
+## Decision
 
-The foundation implements a separate, Node-input `ConversationGroupDefinition`, its registry and Session-local context, generic Builder input/publication, keyed Group storage, and the two React branches. Production Chat segmentation and PR #4565 presentation remain a separate business phase; this note stays proposed until that phase is complete. The [subsystem reference](../../../../docs/subsystems/conversation.md#group-definitions) and [source types](../../../../packages/client/ui-conversation/src/client/contract/groups.ts) own the current API details.
+The grouping foundation provides a separate, Node-input `ConversationGroupDefinition`, its registry and Session-local context, generic Builder input/publication, keyed Group storage, and the two React branches. Production Chat segmentation and PR #4565 presentation are not registered by this foundation; the [business migration proposal](../../proposed/feature/2026-09-20-chat-work-details-migration.md) retains their requirements. The [subsystem reference](../../../../docs/subsystems/conversation.md#group-definitions) and [source types](../../../../packages/client/ui-conversation/src/client/contract/groups.ts) own the current API details.
 
-### Agreed responsibilities
+### Responsibilities
 
 | Requirement | Consequence |
 |---|---|
@@ -32,9 +32,9 @@ The foundation implements a separate, Node-input `ConversationGroupDefinition`, 
 
 | Record | Relationship |
 |---|---|
-| [Business Node assembly](../../implemented/architecture/2026-08-09-client-conversation-node-assembly.md) | Retains event matching, Contexts, Locations, one business Node per Context, and target Builders; grouping adds another input category. |
-| [Presentation policy and grouping](2026-09-20-chat-presentation-policy-and-step-groups.md) | Retains Definition ownership, local subscriptions, and mode independence; replaces event folding and Step-range membership as the grouping mechanism. |
-| [Work-details migration](../feature/2026-09-20-chat-work-details-migration.md) | Retains product scope and migration tracking; infrastructure alone does not complete those features. |
+| [Business Node assembly](2026-08-09-client-conversation-node-assembly.md) | Retains event matching, Contexts, Locations, one business Node per Context, and target Builders; grouping adds another input category. |
+| [Presentation policy and grouping](../../proposed/architecture/2026-09-20-chat-presentation-policy-and-step-groups.md) | Retains Definition ownership, local subscriptions, and mode independence; replaces event folding and Step-range membership as the grouping mechanism. |
+| [Work-details migration](../../proposed/feature/2026-09-20-chat-work-details-migration.md) | Retains product scope and migration tracking; infrastructure alone does not complete those features. |
 
 These records retain independent rationale and remain active. Cross-View navigation and `toolCallFocus` are outside this change; no View handles, Label Slots, or resource-navigation architecture is introduced.
 
@@ -59,7 +59,7 @@ These records retain independent rationale and remain active. Cross-View navigat
 
 | Update | Meaning |
 |---|---|
-| Omit `entries` | Keep root order. |
+| Omit `entries` on apply input | Keep root order; replacement input requires the complete sequence. |
 | Supply `entries`, including `[]` | Replace the complete root sequence; an empty array clears it. |
 | `groups: { kind: 'replace', snapshots }` | Replace complete group records, removing omitted groups. |
 | `groups: { kind: 'apply', upserts, removes }` | Upsert complete snapshots and remove named GroupKeys only. |
@@ -108,41 +108,14 @@ Grouping never replays raw events. Node Definitions handle replay first; groupin
 | [ChatGroupSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx) | Stable group parent, member-only subscription, nested Node seats. |
 | [ChatNodeSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatNodeSeat.tsx) | Existing Node sources/renderers, groupPart forwarding, distinct part anchors, Store-replacement rebind. |
 | [slots.ts](../../../../packages/client/ui-chat/src/client/contract/slots.ts) and [apply.ts](../../../../packages/client/ui-chat/src/client/apply.ts) | Existing keyed-hook injection for Group sources; no Slot-engine change. |
-| Business phase: process-groups.ts and register.ts | Definition-owned segmentation, membership, caches, summaries, and registration. |
-| Business phase: AssistantNodeView, Group seat, stores, navigation | Interpret parts; group header/body presentation; local open state; Turn/group reveal, selection/copy and interruption ownership. |
-
-## Business phase: segmentation and incremental work
-
-Business State accepts each input, clears pending changes, and returns repeatable output. Replace builds the loaded window; apply separates structural changes from content updates and maintains affected segments or Turn-local indexes. It owns group opening/closing, stable keys, summaries, and invalidation; generic infrastructure never corrects those decisions by Node kind or Step number.
-
-| Ordered visible input | Business action |
-|---|---|
-| Owning Turn changes | Close the pending group. |
-| No Turn ownership | Close the group and emit an independent Node; never merge across it. |
-| turn-process control | Emit independently without closing the pending process. |
-| User, steering, trigger, retry, error, max-tokens, or tail | Close the group and emit independently. |
-| Assistant reasoning | Append the reasoning part to the pending group. |
-| Assistant visible reply | Close the group and emit the response part independently. Later tools enter a later group. |
-| Other process Nodes | Append the Node to the pending group; an ordinary Step boundary does not close it. |
-| Turn end | Close that Turn's pending groups even without Node upserts. |
-
-Content growth with unchanged classification does not resegment history; it may update only the current summary. A first reply, new tool, steering, or retry can change structure. Visibility/location repair handles both old and new ownership. Real structural changes may linearly merge root references; the interface does not promise all operations are constant-time.
 
 ## React reading and presentation
 
-The root selects `views.grouped('chat')?.entries` through the existing useConversation source. Keyed Group hooks use existing injection; each Group seat selects members, while its future header independently selects data. Members use existing keyed Node sources. Removed Group sources can read undefined before the root removes their components, so selectors tolerate absence and keep Hook order stable.
+The root selects `views.grouped('chat')?.entries` through the existing useConversation source. Keyed Group hooks use existing injection; each Group seat selects members. Members use existing keyed Node sources. Removed Group sources can read undefined before the root removes their components, so selectors tolerate absence and keep Hook order stable.
 
-React keys derive from reference kind, NodeKey/groupPart or GroupKey, using unambiguous tuples. No separate RenderKey type or renderer dispatch field is needed. Compact, Detailed, and Expanded keep the same group container and member parents; modes change header visibility, body visibility, and styles only.
+React keys derive from reference kind, NodeKey/groupPart or GroupKey, using unambiguous tuples. No separate RenderKey type or renderer dispatch field is needed. Compact, Detailed, and Expanded keep the same group container and member parents; presentation changes do not rerun the Group Definition or select a different root branch.
 
 The stable Group parent is a `div` with `display: contents`, without its own layout box. CSS inheritance remains available; business styles adapt child/sibling selectors and own measurable body containers. Neither CSS variables nor geometry enter the Definition. Reading-position capture measures member Nodes and retains part-specific anchors; existing Turn navigation resolves the original NodeKey to its first visible part.
-
-| Mode | Group header | Body |
-|---|---|---|
-| Compact | Short activity summary | Group open/closed state controls visibility. |
-| Detailed | Summary plus live command/path/query details | Same group open/closed state. |
-| Expanded | Hidden | Visible without group-level collapse or height cap; wrapper remains. |
-
-This assumes the outer Turn process is open. Expanded retains whole-Turn folding and individual tool/reasoning disclosure; it must not eagerly mount all full Markdown. Turn-close resets of internal state are explicit business actions, not key changes. Group headers, scrolling/fades, and Turn interaction belong to the business phase.
 
 ## Alternatives considered
 
@@ -164,22 +137,13 @@ This assumes the outer Turn process is open. Expanded retains whole-Turn folding
 
 **Remove the group wrapper in Expanded.** Rejected: changing the parent remounts members even when their keys survive.
 
-## Acceptance criteria
+## Verification
 
-1. Builder, assembler, and GroupStore contain no Chat segmentation/category rules or concrete grouping class construction.
-2. Group State owns membership, segmentation, summaries, and business invalidation.
-3. Ungrouped targets retain their path; duplicate registration and missing input fail without eager Builder construction.
-4. Group input carries final projected Nodes, previous/current values, stable order, and lifecycle-only Turn changes.
-5. Data-only upserts preserve entries and members, avoid unrelated scans, and notify only changed group sources.
-6. All related Nodes, Groups, and Location data are installed before publication; invalid or overlapping references fail before Group installation.
-7. First activation, append, settlement, replacement, prepend, and registry reconstruction use the common grouping path.
-8. Registration replacement/removal leaves no old Group context or observed output; replacement Node stores rebind mounted members.
-9. React renders only node/group root kinds and retains keys and parents across modes; local state survives mode changes.
-10. Data types remain correlated through Definition, store, keyed reading, and business rendering.
-11. Empty versus omitted entries, Group removal versus Node retention, and undefined removed-group sources retain their documented distinctions.
-12. The separate business phase covers replies, steering, retries, no-Turn rows, Turn closure, summaries, and all three modes before claiming PR #4565 behavior complete.
+- [Group store tests](../../../../packages/client/ui-conversation/tests/conversation-group-store.client.spec.ts) cover atomic reference validation, root/member identity reuse, local publication, and removal without deleting source Nodes.
+- [Grouping dispatch tests](../../../../packages/client/ui-conversation/tests/conversation-groups.client.spec.ts) cover first activation, lifecycle-only input, registry replacement, View removal/recovery, and complete replacement output. [Assembler tests](../../../../packages/client/ui-conversation/tests/conversation-assembler.client.spec.ts) cover changed-Turn reporting and Location data sources.
+- [Chat rendering tests](../../../../packages/client/ui-chat/tests/chat-view.client.spec.tsx) retain component state across modes, rebind replacement Node stores, pass independent parts, and omit unreferenced Nodes. [Viewport tests](../../../../packages/client/ui-chat/tests/chat-viewport.client.spec.ts) cover grouped reading anchors, history prepend, and part-aware Turn navigation.
 
-## Risks
+## Consequences
 
 - This is an explicit framework extension: a new input protocol, registry, context, publication phase, and reader. It is not merely another callback.
 - Target-local State does not automatically make business updates local. The Definition must distinguish content growth from structural changes and index the affected ranges.

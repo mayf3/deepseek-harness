@@ -45,7 +45,7 @@ Verify staging against the feature's diff hunks, not whole files. Inspect the wo
 | Local reasoning-preview subscription | `ReasoningRow` selects its own visibility | Same | Same | Complete | Existing capability | Committed | Pending |
 | Stable disclosure-row references | Callbacks, icons, and unchanged summaries retain references; full Markdown mounts only on expansion | Same | Same | Complete | Existing capability | Committed | Pending |
 
-All three modes retain whole-Turn folding. `expanded` means removing secondary process groups, not disabling whole-Turn folding or automatically expanding reasoning and tool-card bodies. Until grouping is connected, Chat presents `detailed` and `expanded` identically.
+All three modes retain whole-Turn folding. `expanded` removes group-level folding, headers, and height limits while retaining group identity and member parents; it does not disable whole-Turn folding or automatically expand reasoning and tool-card bodies. Until grouping is connected, Chat presents `detailed` and `expanded` identically.
 
 ### Migration inventory without grouping dependencies
 
@@ -82,11 +82,11 @@ Review batches are independent of implementation and staging status. Review rema
 
 ### Requirements retained for the grouping phase
 
-All items below remain incomplete and retain their full requirements for the turn/step and grouping phase. Neither this channel nor the transferred drafts introduce step-group. Experimental code in `feat/chat-step-groups` does not establish completion of these product behaviors or performance requirements.
+All items below remain incomplete and retain their full requirements for the turn/step and grouping phase. The [Definition-owned grouping foundation](../../implemented/architecture/2026-09-21-conversation-build-groups.md) is implemented; that does not establish completion of these product behaviors or performance requirements.
 
 | Feature | compact | detailed | expanded | Current state |
 |---|---|---|---|---|
-| Consecutive process groups between replies | Group tools and reasoning, initially collapsed | Same | Show process rows directly without secondary wrappers | Incomplete (grouping phase) |
+| Consecutive process groups between replies | Group tools and reasoning, initially collapsed | Same | Show process rows without group-level folding; retain member parents | Incomplete (grouping phase) |
 | Independent reasoning/reply visibility within one Assistant | Reasoning may join the preceding group; reply stays visible | Same | No secondary group hiding | Incomplete; do not directly copy the original split into two render nodes |
 | Header category summary | Current category while running; aggregate main categories after completion | Same | No header | Incomplete (grouping phase) |
 | Running header details | Hidden | Show command, path, query, etc.; reasoning summary when no tool is running | No header | Incomplete (grouping phase) |
@@ -96,6 +96,38 @@ All items below remain incomplete and retain their full requirements for the tur
 | Pagination, streaming settlement, and group identity | Stable existing headers and members; handle partial Turns separately | Same | Show the same business nodes directly | Incomplete (grouping phase) |
 
 Grouping details to verify: completed summaries aggregate at most three categories and use “etc.” beyond three; call counts determine category ordering rather than appearing as header numbers. Detailed-mode live details collapse whitespace and are capped at 160 characters. Titles remain for at least 150ms; retain only the latest update without replaying queued updates. Expanded height is at most the smaller of 400px and half the viewport. Scrollable edges use a 24px fade and preserve interaction with outer scrolling. Retry rows are outside secondary groups. These values describe the original PR's reference behavior, not completed grouping experiments.
+
+### Definition-owned segmentation and presentation
+
+Business State accepts each input, clears pending changes, and returns repeatable output. Replace builds the loaded window; apply separates structural changes from content updates and maintains affected segments or Turn-local indexes. It owns group opening/closing, stable keys, summaries, and invalidation; generic infrastructure never corrects those decisions by Node kind or Step number.
+
+| Ordered visible input | Business action |
+|---|---|
+| Owning Turn changes | Close the pending group. |
+| No Turn ownership | Close the group and emit an independent Node; never merge across it. |
+| turn-process control | Emit independently without closing the pending process. |
+| User, steering, trigger, retry, error, max-tokens, or tail | Close the group and emit independently. |
+| Assistant reasoning | Append the reasoning part to the pending group. |
+| Assistant visible reply | Close the group and emit the response part independently. Later tools enter a later group. |
+| Other process Nodes | Append the Node to the pending group; an ordinary Step boundary does not close it. |
+| Turn end | Close that Turn's pending groups even without Node upserts. |
+
+Content growth with unchanged classification does not resegment history; it may update only the current summary. A first reply, new tool, steering, or retry can change structure. Visibility/location repair handles both old and new ownership. Real structural changes may linearly merge root references; the interface does not promise all operations are constant-time.
+
+Group headers select data independently from member arrays. All modes retain the same Group container and member parents:
+
+| Mode | Group header | Body |
+|---|---|---|
+| Compact | Short activity summary | Group open/closed state controls visibility. |
+| Detailed | Summary plus live command/path/query details | Same group open/closed state. |
+| Expanded | Hidden | Visible without group-level collapse or height cap; wrapper remains. |
+
+This assumes the outer Turn process is open. Expanded retains whole-Turn folding and individual tool/reasoning disclosure; it must not eagerly mount all full Markdown. Turn-close resets of internal state are explicit business actions, not key changes. Group headers, scrolling/fades, and Turn interaction belong to this business integration.
+
+| Business implementation | Responsibility |
+|---|---|
+| process-groups.ts and register.ts | Definition-owned segmentation, membership, caches, summaries, and registration. |
+| AssistantNodeView, Group seat, stores, navigation | Interpret parts; group header/body presentation; local open state; Turn/group reveal, selection/copy and interruption ownership. |
 
 ## Performance constraints
 

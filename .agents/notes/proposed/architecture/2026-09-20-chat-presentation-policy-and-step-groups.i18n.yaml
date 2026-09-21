@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-20-chat-presentation-policy-and-step-groups.md
-2026-09-20-chat-presentation-policy-and-step-groups.md: 3057403c8c9055f4fbc631ba0b4ca0bae2fcd2de
-2026-09-20-chat-presentation-policy-and-step-groups.zh.md: f5b30bf96e9ca78b1f9eaacee1a62dd7cb3ec3da
+2026-09-20-chat-presentation-policy-and-step-groups.md: 65fbb313d57a34a792ed2ec08d0adfb2fdd5f03d
+2026-09-20-chat-presentation-policy-and-step-groups.zh.md: 7ac3442476ea34d5127376cfc40d42892403ce47
