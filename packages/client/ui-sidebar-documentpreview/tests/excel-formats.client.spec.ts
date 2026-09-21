@@ -54,12 +54,11 @@ it('maps optional row metadata, empty formula caches, errors, and Date values', 
   sheet['B5'] = { t: 'd', v: new Date('2024-03-01T00:00:00Z'), z: 'yyyy-mm-dd' }
   sheet['C5'] = { t: 'e', v: 7, w: '#DIV/0!' }
   const { sheets, missingResults } = mapXlsWorkbook(workbook, limits)
+  const cell = (r: number, c: number) => sheets[0]!.celldata!.find(value => value.r === r && value.c === c)!.v!
   expect(sheets[0]!.config).toMatchObject({ rowlen: { 0: 40, 1: 18 }, rowhidden: { 2: 0 }, columnlen: { 0: 130 }, colhidden: { 1: 0 } })
-  expect(sheets[0]!.celldata).toEqual(expect.arrayContaining([
-    { r: 3, c: 1, v: expect.objectContaining({ f: '=1+2', m: '' }) },
-    { r: 4, c: 1, v: expect.objectContaining({ m: '2024-03-01' }) },
-    { r: 4, c: 2, v: expect.objectContaining({ v: '#DIV/0!' }) },
-  ]))
+  expect(cell(3, 1)).toMatchObject({ f: '=1+2', m: '' })
+  expect(cell(4, 1)).toMatchObject({ m: '2024-03-01' })
+  expect(cell(4, 2)).toMatchObject({ v: '#DIV/0!' })
   expect(missingResults).toBe(1)
 })
 

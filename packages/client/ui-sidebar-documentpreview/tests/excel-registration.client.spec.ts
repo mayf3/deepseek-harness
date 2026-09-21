@@ -29,8 +29,11 @@ it('registers complete binary reads and removes the slot and locale on disposal'
       expect(binaryDocumentPath(registry.getSnapshot(), path)).toBe(/\.(xlsx|xls)$/iu.test(path))
     }
     expect(registerLocale).toHaveBeenCalledWith('sidebarExcel', { zh, en })
-    expect(register).toHaveBeenCalledWith(expect.objectContaining({ locale: 'sidebarExcel', inject: expect.any(Function) }), LazyExcelBody)
+    expect(register).toHaveBeenCalledOnce()
+    expect(register.mock.calls[0]![1]).toBe(LazyExcelBody)
     const options = register.mock.calls[0]![0] as { inject: () => unknown }
+    expect(options).toMatchObject({ locale: 'sidebarExcel' })
+    expect(options.inject).toBeTypeOf('function')
     expect(options.inject()).toEqual({ limits })
   } finally { await fiber.dispose() }
   expect(registry.getSnapshot()).toEqual([])

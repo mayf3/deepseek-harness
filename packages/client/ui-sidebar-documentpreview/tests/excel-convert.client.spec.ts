@@ -26,17 +26,17 @@ describe('Excel conversion', () => {
     expect(first.frozen).toEqual({ type: 'rangeBoth', range: { row_focus: 1, column_focus: 0 } })
     expect(first.luckysheet_select_save).toEqual([{ row: [0, 0], column: [0, 3], row_focus: 0, column_focus: 0 }])
     const second = sheets[1]!
+    const secondCell = (r: number, c: number) => second.celldata!.find(value => value.r === r && value.c === c)!.v!
     expect(second.luckysheet_select_save).toEqual([{ row: [0, 0], column: [0, 0], row_focus: 0, column_focus: 0 }])
-    expect(second.celldata).toEqual(expect.arrayContaining([
-      expect.objectContaining({ r: 0, c: 0, v: expect.objectContaining({ f: '=_xlfn.XLOOKUP(1,{1},{42})', v: 42, m: '42' }) }),
-      expect.objectContaining({ r: 1, c: 0, v: expect.objectContaining({ f: '=SUM(1,2)', m: '' }) }),
-      expect.objectContaining({ r: 0, c: 1, v: expect.objectContaining({ m: '2026-09-16' }) }),
-      expect.objectContaining({ r: 0, c: 2, v: expect.objectContaining({ v: '富文本 示例', ct: { t: 'inlineStr', s: expect.any(Array) } }) }),
-      expect.objectContaining({ r: 0, c: 3, v: expect.objectContaining({ v: 'Link text' }) }),
-      expect.objectContaining({ r: 2, c: 0, v: expect.objectContaining({ f: '=SUM(1,2)', v: 3 }) }),
-      expect.objectContaining({ r: 3, c: 0, v: expect.objectContaining({ v: true }) }),
-      expect.objectContaining({ r: 4, c: 0, v: expect.objectContaining({ v: '#DIV/0!' }) }),
-    ]))
+    expect(secondCell(0, 0)).toMatchObject({ f: '=_xlfn.XLOOKUP(1,{1},{42})', v: 42, m: '42' })
+    expect(secondCell(1, 0)).toMatchObject({ f: '=SUM(1,2)', m: '' })
+    expect(secondCell(0, 1)).toMatchObject({ m: '2026-09-16' })
+    expect(secondCell(0, 2)).toMatchObject({ v: '富文本 示例', ct: { t: 'inlineStr' } })
+    expect(secondCell(0, 2).ct?.s).toBeInstanceOf(Array)
+    expect(secondCell(0, 3)).toMatchObject({ v: 'Link text' })
+    expect(secondCell(2, 0)).toMatchObject({ f: '=SUM(1,2)', v: 3 })
+    expect(secondCell(3, 0)).toMatchObject({ v: true })
+    expect(secondCell(4, 0)).toMatchObject({ v: '#DIV/0!' })
     expect(second.config).toMatchObject({ rowhidden: { 6: 0 }, colhidden: { 4: 0 }, rowlen: { 6: 40 * 96 / 72 } })
     expect(sheets[2]).toMatchObject({ hide: 1, status: 0 })
     expect(missingResults).toBe(1)

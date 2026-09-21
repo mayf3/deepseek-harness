@@ -7,7 +7,8 @@ import { formatCell, initialSelection, type ExcelLimits, type ExcelPreview } fro
 
 set_cptable(codepages)
 // SheetJS publishes SSF as `any`; this is the one formatter capability used by the adapter.
-const isDateFormat: (format: string) => boolean = SSF.is_date
+const spreadsheetFormatter = SSF as { is_date(format: string): boolean }
+const isDateFormat = (format: string) => spreadsheetFormatter.is_date(format)
 
 /**
  * Decode a binary XLS workbook without accepting renamed text or HTML files.
