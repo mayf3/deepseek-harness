@@ -1,8 +1,42 @@
 import { defineConfig } from 'tsdown'
+import { build } from 'vite'
+import { fileURLToPath } from 'node:url'
+import { readFile } from 'node:fs/promises'
 
 export default defineConfig([
   {
     entry: ['lib/types/main.js'],
+    onSuccess: async () => {
+      await build({
+        configFile: false,
+        plugins: [{
+          name: 'desktop-brand-font',
+          async generateBundle() {
+            for (const name of ['brand-font.css', 'montserrat-regular.ttf', 'Montserrat-OFL.txt']) {
+              this.emitFile({
+                type: 'asset',
+                fileName: name,
+                source: await readFile(new URL(`../../packages/client/ui-theme/src/styles/${name}`, import.meta.url)),
+              })
+            }
+          },
+        }],
+        root: fileURLToPath(new URL('.', import.meta.url)),
+        esbuild: { jsx: 'automatic' },
+        define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+        build: {
+          outDir: 'lib/welcome',
+          emptyOutDir: true,
+          lib: {
+            entry: 'src/client/welcome.tsx',
+            formats: ['iife'],
+            name: 'DesktopWelcome',
+            fileName: () => 'welcome.js',
+            cssFileName: 'welcome',
+          },
+        },
+      })
+    },
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

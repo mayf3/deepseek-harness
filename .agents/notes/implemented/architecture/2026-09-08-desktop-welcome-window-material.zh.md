@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-[Electron 欢迎窗口](../../../../apps/desktop/src/welcome-window.ts)负责原生材质和窗口控件。本地渲染器提供入口和 API Key 表单。窄接口 preload 提供强类型桌面文案、仅写密钥操作和跳过操作；IPC 拒绝其他窗口和子 frame。每个沙箱 preload 都独立打包，因为 Electron 受限的 require 无法加载同目录中的拆分模块。Electron 主进程通过共享 Web 启动 URL 认证，并通过现有设置和凭证 RPC 方法解析官方提供方的引用。[Web 薄壳](2026-09-10-desktop-web-wrapper.zh.md)负责 HTTP 服务；引导不增加 Host 端点或子进程 IPC 操作。响应只包含元数据或安全结果，不包含密钥或提供方的私有诊断。
+[Electron 欢迎窗口](../../../../apps/desktop/src/welcome-window.ts)负责原生材质和窗口控件。独立打包的 React 渲染器提供入口、账号登录状态和 API Key 表单。它与 Web UI 共用 `StateDot` 加载组件，不启动 Web 插件图。Desktop 构建将本地 JavaScript 和 CSS 输出到 `lib/welcome`，并纳入应用安装包；文档继续使用禁止网络访问的内容安全策略。窄接口 preload 提供强类型桌面文案、仅写密钥操作和跳过操作；IPC 拒绝其他窗口和子 frame。每个沙箱 preload 都独立打包，因为 Electron 受限的 require 无法加载同目录中的拆分模块。Electron 主进程通过共享 Web 启动 URL 认证，并通过现有设置和凭证 RPC 方法解析官方提供方的引用。[Web 薄壳](2026-09-10-desktop-web-wrapper.zh.md)负责 HTTP 服务；引导不增加 Host 端点或子进程 IPC 操作。响应只包含元数据或安全结果，不包含密钥或提供方的私有诊断。
 
 冷启动在没有已配置的模型 API Key 时打开入口。保存会在持久化成功后进入工作区；跳过会直接进入，不保存草稿或完成标记。下次进程启动时会重新检查凭证存储。Desktop preload 标记只抑制 Web 凭证步骤；设置和欢迎须知仍然挂载。其他原生壳可以通过 Models Host 插件设置 `credentialOnboarding`，由页面注入事件在注册弹窗前发布该布尔值。模块图传递的是包标识，而不是任意 Host 配置，因此单独配置 Host 行不会配置其 Client 半部。认证判断接受独立的账号与 API Key 状态，但账号登录和退登事件尚无已接入的提供方，因此启动传入当前未登录状态。
 
