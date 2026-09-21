@@ -4,6 +4,7 @@
 }
 
 .vp-doc .dsh-diagram-open,
+.vp-doc .dsh-image-open,
 .dsh-diagram-viewer button {
   display: inline-flex;
   align-items: center;
@@ -36,6 +37,7 @@
 }
 
 .dsh-diagram-open:hover,
+.dsh-image-open:hover,
 .dsh-diagram-viewer button:hover,
 .dsh-diagram-viewer button[aria-expanded="true"] {
   color: var(--vp-c-brand-1);
@@ -43,6 +45,7 @@
 }
 
 .dsh-diagram-open:focus-visible,
+.dsh-image-open:focus-visible,
 .dsh-diagram-viewer button:focus-visible {
   outline: 2px solid var(--vp-c-brand-1);
   outline-offset: 2px;
@@ -140,3 +143,7 @@
   .dsh-diagram-toolbar { bottom: 12px; }
   .dsh-diagram-help-toggle { right: 8px; bottom: 17px; }
 }
+
+.vp-doc .dsh-image-container { position: relative; width: fit-content; max-width: 100%; }
+.vp-doc .dsh-image-zoomable { cursor: zoom-in; }
+.vp-doc .dsh-image-open { position: absolute; bottom: 8px; right: 8px; }
