@@ -24,6 +24,7 @@ afterEach(() => {
 /** The Session Remote slice the path controls call; answers a desktop and acknowledges every gesture. */
 const remote = {
   session: {
+    workspacePathApplications: vi.fn(async () => ({ ok: true as const, value: [] })),
     canOpenWorkspacePath: vi.fn(async () => ({ ok: true as const, value: true })),
     openWorkspacePath: vi.fn(async () => ({ ok: true as const, value: { opened: true as const } })),
   },
@@ -39,6 +40,8 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'sidebar.right.tab.document.actions': { kind: 'list', scope: 'session' },
       'sidebar.right.tab.document.unpreviewable': { kind: 'list', scope: 'session' },
+      'deliverables.file.actions': { kind: 'list', scope: 'session' },
+      'deliverables.review.file.actions': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
   ctx.provide('sessions', {})
@@ -66,19 +69,25 @@ describe('open-in-app browser half', () => {
     const empty = ctx.slots.entries('sidebar.right.tab.document.unpreviewable')[0]
     expect(header?.component).toBe(OpenPathAction)
     expect(empty?.component).toBe(OpenPathEmptyAction)
+    expect(ctx.slots.entries('deliverables.file.actions')).toHaveLength(1)
     expect(header?.options).toMatchObject({ id: 'open-in-app' })
     const face = (header?.inject as unknown as () => OpenPathInjected)()
     const emptyFace = (empty?.inject as unknown as () => OpenPathInjected)()
     expect(emptyFace.hooks.openInAppDesktop).toBe(face.hooks.openInAppDesktop)
+    expect(emptyFace.applications).toBe(face.applications)
     expect(face.hooks.openInAppDesktop.getSnapshot()).toBeNull()
     await Promise.all([face.loadDesktop(), emptyFace.loadDesktop()])
     expect(remote.session.canOpenWorkspacePath).toHaveBeenCalledOnce()
+    const signal = new AbortController().signal
+    await expect(face.applications('/w/clip.mp4', signal)).resolves.toEqual([])
+    expect(remote.session.workspacePathApplications).toHaveBeenCalledWith({ path: '/w/clip.mp4' }, signal)
     expect(face.hooks.openInAppDesktop.getSnapshot()).toBe(true)
     expect(await face.openPath('/w/clip.mp4', 'reveal')).toBeNull()
     expect(remote.session.openWorkspacePath).toHaveBeenLastCalledWith({ path: '/w/clip.mp4', action: 'reveal' })
     await fiber.dispose()
     expect(ctx.slots.entries('sidebar.right.tab.document.actions').map(entry => entry.options.id)).not.toContain('open-in-app')
     expect(ctx.slots.entries('sidebar.right.tab.document.unpreviewable').map(entry => entry.options.id)).not.toContain('open-in-app')
+    expect(ctx.slots.entries('deliverables.file.actions')).toHaveLength(0)
   })
 
   it('registers the header split button, and fiber teardown removes it (HMR safety)', async () => {
@@ -143,11 +152,11 @@ describe('open-in-app browser half', () => {
     const { ctx, fiber } = await bench()
     ctx.locale.setLocale('zh')
     const translate = ctx.locale.bind(NS)
-    expect(translate('menu.aria')).toBe(zh['menu.aria'])
+    expect(translate('path.more')).toBe(zh['path.more'])
     ctx.locale.setLocale('en')
-    expect(translate('menu.aria')).toBe(en['menu.aria'])
+    expect(translate('path.more')).toBe(en['path.more'])
     await fiber.dispose()
-    expect(translate('menu.aria')).not.toBe(en['menu.aria'])
+    expect(translate('path.more')).not.toBe(en['path.more'])
   })
 
   it('keeps the English dictionary key-identical to the Chinese source of truth', () => {

@@ -10,6 +10,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
@@ -65,6 +66,8 @@ async function boot() {
   ctx.provide('locale', locale as never)
   ctx.provide('layout', layout as never)
   ctx.provide('resources', resources as never)
+  ctx.provide('sessions', { retain: vi.fn() } as never)
+  ctx.provide('uiSession', { adapter: { current: createSnapshotStore({ key: undefined }) } } as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   const seat = (name: string): Recorded => {

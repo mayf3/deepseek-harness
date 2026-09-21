@@ -1,11 +1,10 @@
 /**
- * Default-application actions on one Host file path, over the Session Remote:
- * whether this Host can hand a path to a desktop, and the open or reveal call.
+ * Host desktop availability, file associations, and open/reveal actions over the Session Remote.
  * The desktop answer is read once per page; a failed read renders no control.
  */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SessionOpenWorkspacePathRequest } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SessionOpenWorkspacePathRequest, SessionWorkspacePathApplication } from '@deepseek-ai/dsh-api-session-controller/types'
 
 /** What a path gesture asks of the Host desktop: the default application, or the file manager showing the file. */
 export type OpenInAppPathAction = 'open' | 'reveal'
@@ -18,6 +17,10 @@ export interface OpenInAppPathRemote {
   readonly session: {
     /** Whether the Host can hand a workspace path to a native desktop. */
     canOpenWorkspacePath(): Promise<RemoteResult<boolean>>
+    /** Current registered file handlers and their default selection. */
+    workspacePathApplications(
+      request: { path: string }, signal?: AbortSignal,
+    ): Promise<RemoteResult<readonly SessionWorkspacePathApplication[]>>
     /** Open one Host path in its default application, or reveal it in the file manager. */
     openWorkspacePath(request: SessionOpenWorkspacePathRequest, signal?: AbortSignal): Promise<RemoteResult<unknown>>
   }
@@ -47,10 +50,11 @@ export class OpenInAppPathController {
    * Open one Host path in its default application, or reveal it in the file manager.
    * @param path - absolute path on the Host, as the file's metadata reports it.
    * @param action - default application open, or file-manager reveal.
+   * @param application - registered application path for an explicit open.
    * @returns the failure kind to announce, or `null` once the Host acknowledged.
    */
-  async openPath(path: string, action: OpenInAppPathAction): Promise<OpenInAppPathFailure | null> {
-    const request: SessionOpenWorkspacePathRequest = action === 'reveal' ? { path, action } : { path }
+  async openPath(path: string, action: OpenInAppPathAction, application?: string): Promise<OpenInAppPathFailure | null> {
+    const request: SessionOpenWorkspacePathRequest = action === 'reveal' ? { path, action } : { path, ...(application === undefined ? {} : { application }) }
     let ok = false
     try {
       ok = (await this.remote.session.openWorkspacePath(request)).ok
@@ -59,6 +63,23 @@ export class OpenInAppPathController {
       // gesture like a Host that refused it, and the control announces that.
     }
     return ok ? null : action === 'open' ? 'openError' : 'revealError'
+  }
+
+  /**
+   * Refresh the file's OS associations; failures remain distinct from an empty handler list.
+   * @param path - file path reported by the Host.
+   * @param signal - lifetime of the requesting preview.
+   * @returns application metadata, or null when the query fails.
+   */
+  async applications(path: string, signal: AbortSignal): Promise<readonly SessionWorkspacePathApplication[] | null> {
+    let result: RemoteResult<readonly SessionWorkspacePathApplication[]>
+    try {
+      result = await this.remote.session.workspacePathApplications({ path }, signal)
+    } catch (_error) {
+      // The control reports query failure and keeps file reveal available.
+      return null
+    }
+    return result.ok ? result.value : null
   }
 
   private async run(): Promise<void> {

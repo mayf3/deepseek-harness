@@ -72,6 +72,8 @@ Fork 复制 `atSeq` 所选的精确事件前缀，包含切点事件，允许在
 
 当 `connection`、`fs` 与 `attachments` 均被组合时，`SessionMediaReferences` 在鉴权 `connection.fetch` 通道上挂载 `GET|HEAD /api/file?path=<绝对路径>`。它通过 `ctx.fs` 读取普通文件，包括已注册工作区之外的临时路径与远程提供方中的文件。目录包含关系与 MIME 类别均不限制访问；`mime-types` 提供响应类型，未知扩展名使用 `application/octet-stream`。GET 复用 `readBytes` 执行读取前及读取中的字节限制；HEAD 只读取元数据。所有文件均使用 `ctx.attachments.imageLimits.maxImageBytes`（通常为 20 MiB）；超过此上限返回 413。响应包含完整文件，忽略 Range，并携带 `private, no-store`、`nosniff` 与沙箱 CSP，使直接打开的 HTML/SVG 无法以 API 源身份执行脚本。客户端重写位于 `ui-chat`（`AssistantMarkdown`）；音视频文件响应已可用，Markdown 音视频播放器节点仍是独立工作。
 
+`workspacePathApplications({ path })` 使用与 `openWorkspacePath` 相同的文件系统映射校验，返回服务端桌面上该文件的关联应用。打开请求中的可选 `application` 指定当前关联的应用，不修改系统默认应用。应用名称、默认项、图标和平台支持范围由 [native-command](../../util/native-command/README.zh.md) 提供。这些操作不激活 Agent，也不追加会话事件。原生操作失败时返回简短消息，原始命令异常作为 Host 端原因保留。
+
 -----
 
 <a id="configuration"></a>

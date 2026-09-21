@@ -10,6 +10,7 @@ type SessionRemote = OpenInAppPathRemote['session']
 function remoteOf(over: Partial<SessionRemote> = {}): OpenInAppPathRemote {
   return {
     session: {
+      workspacePathApplications: async () => ({ ok: true, value: [] }),
       canOpenWorkspacePath: async () => ({ ok: true, value: true }),
       openWorkspacePath: async () => ({ ok: true, value: { opened: true } }),
       ...over,
@@ -68,4 +69,28 @@ describe('OpenInAppPathController gestures', () => {
     const rejecting = new OpenInAppPathController(remoteOf({ openWorkspacePath: () => Promise.reject(new Error('down')) }))
     expect(await rejecting.openPath('/w/clip.mp4', 'open')).toBe('openError')
   })
+})
+
+
+it('queries current handlers and carries an explicit application without changing the default gesture', async () => {
+  const applications = [{ id: '/Applications/Music.app', name: 'Music', default: true, icon: null }]
+  const query = vi.fn(async () => ({ ok: true as const, value: applications }))
+  const open = vi.fn(async () => ({ ok: true as const, value: { opened: true } }))
+  const controller = new OpenInAppPathController(remoteOf({ workspacePathApplications: query, openWorkspacePath: open }))
+  const signal = new AbortController().signal
+  expect(await controller.applications('/file.mp3', signal)).toEqual(applications)
+  expect(query).toHaveBeenCalledWith({ path: '/file.mp3' }, signal)
+  await controller.openPath('/file.mp3', 'open', '/Applications/Music.app')
+  expect(open).toHaveBeenLastCalledWith({ path: '/file.mp3', application: '/Applications/Music.app' })
+  await controller.openPath('/file.mp3', 'open')
+  expect(open).toHaveBeenLastCalledWith({ path: '/file.mp3' })
+})
+
+
+it('distinguishes failed association queries from an empty application list', async () => {
+  const remote = remoteOf({ workspacePathApplications: async () => ({ ok: false, error: new RemoteError('gateway/internal', 'unavailable', {}) }) })
+  const controller = new OpenInAppPathController(remote)
+  expect(await controller.applications('/file.mp3', new AbortController().signal)).toBeNull()
+  const rejecting = new OpenInAppPathController(remoteOf({ workspacePathApplications: async () => { throw new Error('disconnected') } }))
+  expect(await rejecting.applications('/file.mp3', new AbortController().signal)).toBeNull()
 })

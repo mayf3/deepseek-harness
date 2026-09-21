@@ -228,6 +228,13 @@ describe('web e2e: seeded history renders through cold resume', () => {
       ],
       openInAppEnvironment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { SSH_CONNECTION: '10.0.0.2 55000 10.0.0.9 22' } }]),
     })
+    // Application registrations belong to the host desktop, not to the recorded Session.
+    const controller = scaffold.ctx.get('sessionController')
+    if (controller === undefined) throw new Error('seeded-history requires Session Controller')
+    const nativeQuery: unknown = Reflect.get(controller, 'fileApplications')
+    if (typeof nativeQuery !== 'function') throw new Error('seeded-history requires the native file-association adapter')
+    Reflect.set(controller, 'fileApplications', async () => [])
+    scaffold.ctx.effect(() => () => { Reflect.set(controller, 'fileApplications', nativeQuery) }, 'seeded-history: native association fixture')
     // Composer recording uses a child workspace; seedSession owns the scaffold root.
     const sessionCwd = MODE === 'record' ? join(scaffold.workspaceCwd, 'workspace') : scaffold.workspaceCwd
     await mkdir(sessionCwd, { recursive: true })
@@ -518,7 +525,8 @@ describe('web e2e: seeded history renders through cold resume', () => {
       await expect.poll(() => path.textContent()).toBe(absolutePath)
       expect(await path.getAttribute('title')).toBe(absolutePath)
       await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
-      await column.locator('[data-open-path-open]').waitFor({ timeout: 5_000 })
+      await column.getByRole('button', { name: 'Show file location', exact: true }).waitFor({ timeout: 5_000 })
+      await expect.poll(() => column.locator('[data-open-path-open]').isEnabled()).toBe(true)
       const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(FILE_PREVIEW_EXPECTED, preview, MODE)
     } finally {
