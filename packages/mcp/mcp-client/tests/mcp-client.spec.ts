@@ -676,6 +676,36 @@ describe('tool execution', () => {
     expect(textAt(result.content)).not.toContain('storage rejected')
   })
 
+  it('keeps admitted images when post-execute shortens only the text', async () => {
+    const rich = await mountRichRegistry()
+    const blocks = [
+      { type: 'text', text: 'long text'.repeat(1000) },
+      { type: 'image', mimeType: 'image/png', data: 'AQ==' },
+    ] satisfies JsonValue[]
+    const client = createMockClient([{ name: 'img', inputSchema: { type: 'object' } }], { content: blocks })
+    rich.ctx.on('tools/post-execute', async (_exec, result, next): Promise<PostToolDecision> => {
+      await next()
+      expect(result.content.map(block => block.type)).toEqual(['text', 'image'])
+      return { kind: 'accept', content: result.content.map(block => block.type === 'text'
+        ? { type: 'text', text: block.text.slice(0, 20) }
+        : block) }
+    })
+    try {
+      await syncTools(client as never, rich.ctx, defaultOpts, new Map())
+      const result = await rich.ctx.tools.execute({
+        signal: testToolSignal, callId: ToolCallId('shortened'), name: 'mcp__srv__img',
+        arguments: {}, agent: agentOn() as never,
+      })
+      expect(result.isError).toBe(false)
+      expect(result.content.map(block => block.type)).toEqual(['text', 'image'])
+      expect(textAt(result.content)).toBe(blocks[0].text?.slice(0, 20))
+      if (result.isError) throw new Error('expected MCP success')
+      expect(result.value).toEqual({ content: blocks })
+    } finally {
+      await rich.ctx.fiber.dispose()
+    }
+  })
+
   it('lets post-execute replacement win over a prepared image projection', async () => {
     const rich = await mountRichRegistry()
     rich.ctx.on('tools/post-execute', async (): Promise<PostToolDecision> => ({

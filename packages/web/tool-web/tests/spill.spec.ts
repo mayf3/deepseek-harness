@@ -55,7 +55,7 @@ beforeEach(async () => {
   // policy cap is what triggers the spill (the Agent Note's separation of concerns).
   await ctx.plugin(WebFetchLocal, { maxBodyChars: 500_000 })
   await ctx.plugin(LocalSpillStore, { root: spillRoot })
-  await ctx.plugin(SpillPolicy, { maxInlineBytes: MAX_INLINE_BYTES })
+  await ctx.plugin(SpillPolicy, { maxInlineTokens: MAX_INLINE_BYTES })
   await ctx.plugin(ToolWeb)
 })
 
