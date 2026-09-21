@@ -74,7 +74,7 @@ A session joins the project of the directory it runs in: create a session in a p
 
 ### Hiding and restoring sessions, and removing projects
 
-Hide a session from the grouping when it should stop appearing there: it disappears from the visible list, while its session, history, and place in the project stay intact. Restore a hidden session when it should appear again: it returns to its recorded position under its project, or to the ungrouped sessions when it belongs to none. Remove a project when it is no longer needed: it leaves the list, and its folder, files, and session histories are never touched — those sessions become ungrouped. Adding the same directory again afterwards starts a fresh project without the old sessions.
+Hide a session from the grouping when it should stop appearing there: it disappears from the visible list, while its session, history, and place in the project stay intact. A session with running work — its own turn, a running subagent, a background job, or an active reminder — is not hidden underneath that work: the registry refuses with the list of what runs, and a caller that asks to stop the work first has it stopped the way the user's own stop actions do, then hidden. Restore a hidden session when it should appear again: it returns to its recorded position under its project, or to the ungrouped sessions when it belongs to none, and continues the conversation from a regularly ended log. Remove a project when it is no longer needed: it leaves the list, and its folder, files, and session histories are never touched — those sessions become ungrouped. Adding the same directory again afterwards starts a fresh project without the old sessions.
 
 -----
 
@@ -97,6 +97,8 @@ This section explains the design decisions behind the feature and points at the 
 ### API behavior
 
 The API has two owners: `WorkspaceRegistry` creates, orders, and deletes projects, manages their Session accounting, and pins, unpins, archives, or restores Sessions; the `Workspace` entity exposes the display title, directory status, and Session projection. Pinning requires a known, unarchived Session; archiving clears its pin in the same durable write, and restoring does not restore that pin. Per-method contracts live in [src/index.ts](src/index.ts) and [src/entity.ts](src/entity.ts).
+
+Archive admission is a capability seam over two Host events this package declares and dispatches: `workspace/session-activity` (waterfall) asks the composed providers what still runs for a Session, and `workspace/session-stop` (parallel) asks them to stop it. `archiveSession(sessionId)` asks the activity waterfall once and rejects a non-empty answer with `WorkspaceActiveSessionError`, whose `activity` lists each family with its items — the keys are the providers' own, merged into `SessionActivityKindMap`, which this package leaves empty; `archiveSession(sessionId, { stopActivity: true })` skips the activity check, writes the archive, and then dispatches the stop event, so the durable archive set already gates every wake the stops induce; a rejecting provider is logged and the archive stays. The call resolves once every provider's stop request was issued, while the stopped work settles on its own. Both questions come after the existence check and never for an already archived id. The shipped providers are the Agent registry (the running turn), the job registry seam (owned jobs), the Subagent runtime (running descendants), and the Schedule plugin (active reminders); a composition without providers archives freely.
 
 ### Source map
 
@@ -170,6 +172,7 @@ These limits define when the project list is a poor fit or needs special operati
 - **A session joins only with a recorded directory** — a session belongs to a project only when its record carries a directory that resolves to the project's path; sessions without one stay ungrouped, and a session from another directory cannot be moved in.
 - **External changes are seen late** — if another process deletes or damages a directory, the project reflects it only at the next refresh or restart.
 - **Archive and unarchive enforce different session checks** — a restore only drops an id from the archive set, so an entry whose session is gone still unarchives and leaves no unknown referent; a restore of an id that is not archived resolves without writing, while `archiveSession` rejects a session that is neither live nor persisted.
+- **The activity check and the archive write are not one atomic step** — a turn that starts between the providers' answer and the durable write is hidden while running, and every model step whose `agent/pre-step` precedes the write still runs with its tool calls; the API Session Controller's gate ends the first step proposed after the write as `blocked`, so the exposure is bounded by that write's latency, in practice one model step.
 - **Re-adding a directory starts fresh** — after removal, adding the same directory again creates a new project with an empty session list; the old sessions do not come back automatically.
 
 <a id="dev-note"></a>

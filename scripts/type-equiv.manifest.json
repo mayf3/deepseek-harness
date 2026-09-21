@@ -1827,6 +1827,16 @@
       "source": "packages/workspace/workspace/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "SessionActivityKindMap",
+      "source": "packages/workspace/workspace/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "SessionActivity",
+      "source": "packages/workspace/workspace/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/client-modules.md",
       "symbol": "WebBootEntry",
       "source": "packages/client/modules/src/client/manifest.ts"
