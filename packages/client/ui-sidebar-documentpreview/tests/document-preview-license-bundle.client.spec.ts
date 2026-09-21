@@ -1,3 +1,4 @@
+/** Published PDF and spreadsheet chunks retain their bundled license notices. */
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import type { JobsSnapshot, JobView, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  IconChevronDownOutlineRegular, StateDot, TerminalBlock, useDismissOnOutsidePointer,
+  IconChevronDownOutlineRegular, IconStopFillRegular, StateDot, TerminalBlock, useDismissOnOutsidePointer,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -29,6 +29,12 @@ export interface JobListInjected {
    * Reference-counted by the client service, so panels can overlap safely.
    */
   observe: (sessionId: SessionId | undefined, id: JobView['id']) => () => void
+  /**
+   * Kill one background job on the human's behalf. Resolves `true` when the
+   * registry admitted the request (`requested` or `already-finished`); row
+   * state itself converges through the jobs control frames.
+   */
+  killJob: (sessionId: SessionId, jobId: string) => Promise<boolean>
 }
 
 /** Full props for the session-header job-list action. */
@@ -42,6 +48,12 @@ const NO_JOBS: readonly JobView[] = []
 
 /** Minimum gap kept between the popover and the viewport edges (the Menu primitive's portal margin). */
 const VIEWPORT_MARGIN = 12
+
+/** How long an armed kill waits for its confirming press before disarming. */
+const KILL_ARM_MS = 3_000
+
+/** How long a failed kill keeps its hint before the button resets. */
+const KILL_FAILED_MS = 4_000
 
 
 function isLive(job: JobView): boolean {
@@ -153,14 +165,24 @@ function ordered(jobs: readonly JobView[]): JobView[] {
   })
 }
 
+/**
+ * Two-press kill affordance state: `armed` waits for the confirming second
+ * press (and disarms on a timer), `pending` covers the in-flight RPC until the
+ * row's own status flip removes the button, `failed` shows briefly after a
+ * rejected kill.
+ */
+type KillState = 'idle' | 'armed' | 'pending' | 'failed'
+
 /** One job row plus, when observable and expanded, its live output panel. */
-function JobItem({ job, view, expanded, now, onToggle, t }: {
+function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
   job: JobView
   view: ObservedJob | undefined
   expanded: boolean
   /** Clock sample live rows derive their running duration from. */
   now: number
   onToggle: () => void
+  /** Present on running rows: the human-kill button state and press handler. */
+  kill?: { state: KillState; onPress: () => void }
   t: TranslateNS<typeof NS>
 }) {
   const live = isLive(job)
@@ -185,15 +207,17 @@ function JobItem({ job, view, expanded, now, onToggle, t }: {
         <span className={css.main}>
           <span className={css.primary}>
             <span className={css.label} title={job.label}>{job.label}</span>
-            {durationCell}
           </span>
-          <span className={css.secondary}>
+          <span className={css.secondary} title={detail ?? status}>
             <span className={css.kind}>{job.kind}</span>
-            <span className={css.status} title={detail ?? status}>{detail ?? status}</span>
+            {detail !== undefined ? <span className={css.status}>{detail}</span> : null}
+            {durationCell}
           </span>
         </span>
         {/* A live row is always observable: its output may still arrive. */}
-        <IconChevronDownOutlineRegular size={14} className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+        <span className={css.chevronBox}>
+          <IconChevronDownOutlineRegular size={12} className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+        </span>
       </>
     )
     : (
@@ -203,28 +227,63 @@ function JobItem({ job, view, expanded, now, onToggle, t }: {
         <span className={css.label} title={job.label}>{job.label}</span>
         <span className={css.status} title={detail ?? status}>{detail ?? status}</span>
         {durationCell}
-        {observable ? <IconChevronDownOutlineRegular size={14} className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} /> : null}
+        {observable
+          ? (
+            <span className={css.chevronBox}>
+              <IconChevronDownOutlineRegular size={12} className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+            </span>
+          )
+          : null}
       </>
     )
+  const killTitle = kill === undefined
+    ? undefined
+    : kill.state === 'armed'
+      ? t('kill.confirm')
+      : kill.state === 'failed' ? t('kill.failed') : t('kill.stop', { label: job.label })
   return (
     <li className={css.item}>
-      {observable
-        ? (
-          <button
-            type="button"
-            className={live ? css.row : `${css.row} ${css.rowSettled}`}
-            aria-expanded={expanded}
-            aria-label={t(expanded ? 'row.collapseAria' : 'row.expandAria', { label: job.label })}
-            onClick={onToggle}
-          >
-            {body}
-          </button>
-        )
-        : (
-          <span className={`${css.row} ${css.rowSettled} ${css.rowStatic}`}>
-            {body}
-          </span>
-        )}
+      <div className={live ? `${css.rowLine} ${css.rowLineLive}` : css.rowLine}>
+        {observable
+          ? (
+            <button
+              type="button"
+              className={live ? css.row : `${css.row} ${css.rowSettled}`}
+              aria-expanded={expanded}
+              aria-label={t(expanded ? 'row.collapseAria' : 'row.expandAria', { label: job.label })}
+              onClick={onToggle}
+            >
+              {body}
+            </button>
+          )
+          : (
+            <span className={`${css.row} ${css.rowSettled} ${css.rowStatic}`}>
+              {body}
+            </span>
+          )}
+        {kill !== undefined
+          ? (
+            <button
+              type="button"
+              className={
+                kill.state === 'armed'
+                  ? `${css.stop} ${css.stopArmed}`
+                  : kill.state === 'failed' ? `${css.stop} ${css.stopFailed}` : css.stop
+              }
+              data-kill-state={kill.state}
+              disabled={kill.state === 'pending'}
+              aria-label={killTitle}
+              title={killTitle}
+              onClick={kill.onPress}
+            >
+              <IconStopFillRegular size={10} />
+              {/* The armed press must be legible without hover: the button
+                  widens into a labeled confirm pill instead of a tint only. */}
+              {kill.state === 'armed' ? <span className={css.stopLabel}>{t('kill.confirmAction')}</span> : null}
+            </button>
+          )
+          : null}
+      </div>
       {expanded && view !== undefined
         ? (
           <div className={css.panel}>
@@ -257,17 +316,26 @@ function JobItem({ job, view, expanded, now, onToggle, t }: {
  * session can see at least one job. Expanding an observable row (a live job,
  * or a settled one with retained output) starts its observation stream, and
  * collapsing (or closing the popover) stops it — output only flows while
- * someone is watching.
- * @param props - runtime slot currency, the jobs snapshot hook, the roster
- *   and observation controls, and the namespace translator.
+ * someone is watching. A running row carries a two-press stop button that
+ * requests a human kill through the job controller.
+ * @param props - runtime slot currency, the jobs snapshot hook, the roster,
+ *   observation, and kill controls, and the namespace translator.
  * @returns the trigger and its popover list, or null when there is nothing to show.
  */
-export function JobListAction({ sessionId, useJobs, watchRows, observe, t }: JobListActionProps) {
+export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob, t }: JobListActionProps) {
   const jobs = useJobs(state => state.rows[sessionId]) ?? NO_JOBS
   const observedViews = useJobs(state => state.observed)
   const [open, setOpen] = useState(false)
   const [expandedKey, setExpandedKey] = useState<string | undefined>(undefined)
   const [now, setNow] = useState(() => Date.now())
+  // Settled-section fold: an explicit user toggle wins; before one, the tail
+  // folds only while live work exists (a settled-only list opens expanded).
+  const [settledOpen, setSettledOpen] = useState<boolean | undefined>(undefined)
+  // Rows the user cleared from the settled tail (client-side hide only; the
+  // registry keeps its records and a later settlement reappears normally).
+  const [clearedKeys, setClearedKeys] = useState<ReadonlySet<string>>(() => new Set())
+  // One kill affordance advances at a time: arming a row disarms any other.
+  const [killPhase, setKillPhase] = useState<{ key: string; state: Exclude<KillState, 'idle'> } | undefined>(undefined)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLUListElement>(null)
@@ -277,7 +345,12 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, t }: Job
 
   const rows = useMemo(() => ordered(jobs), [jobs])
   const liveRows = useMemo(() => rows.filter(isLive), [rows])
-  const settledRows = useMemo(() => rows.filter(job => !isLive(job)), [rows])
+  const settledRows = useMemo(
+    () => rows.filter(job => !isLive(job) && !clearedKeys.has(String(job.id))),
+    [rows, clearedKeys],
+  )
+  const settledExpanded = settledOpen ?? liveRows.length === 0
+  const visibleCount = liveRows.length + settledRows.length
 
   useDismissOnOutsidePointer(rootRef, open, setOpen)
 
@@ -330,11 +403,11 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, t }: Job
     return observe(sessionId, activeJob)
   }, [sessionId, activeJob, observe])
 
-  // The last job disappearing removes this control; close first so focus
-  // does not vanish from an unmounting node.
+  // The last visible job disappearing removes this control; close first so
+  // focus does not vanish from an unmounting node.
   useEffect(() => {
-    if (rows.length === 0 && open) setOpen(false)
-  }, [rows.length, open])
+    if (visibleCount === 0 && open) setOpen(false)
+  }, [visibleCount, open])
 
   // An expanded row that left the list (owner disposal) folds its panel.
   useEffect(() => {
@@ -343,12 +416,64 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, t }: Job
     }
   }, [rows, expandedKey])
 
-  if (rows.length === 0) return null
+  // An armed kill disarms on a timer, and a failed one clears its hint; the
+  // pending phase instead waits for the RPC (or the row's own status flip).
+  // The cleanup clears the timer on every phase change, so a firing timer
+  // always describes the current phase and may reset unconditionally.
+  useEffect(() => {
+    if (killPhase === undefined || killPhase.state === 'pending') return
+    const timer = setTimeout(
+      () => { setKillPhase(undefined) },
+      killPhase.state === 'armed' ? KILL_ARM_MS : KILL_FAILED_MS,
+    )
+    return () => { clearTimeout(timer) }
+  }, [killPhase])
+
+  // A phase whose row stopped being killable (settled, stopping, removed)
+  // has no button to describe any more.
+  useEffect(() => {
+    if (killPhase !== undefined
+      && !rows.some(job => String(job.id) === killPhase.key && job.status === 'running')) {
+      setKillPhase(undefined)
+    }
+  }, [rows, killPhase])
+
+  const pressKill = (job: JobView): void => {
+    const key = String(job.id)
+    if (killPhase?.key !== key || killPhase.state !== 'armed') {
+      setKillPhase({ key, state: 'armed' })
+      return
+    }
+    setKillPhase({ key, state: 'pending' })
+    void killJob(sessionId, key).then((ok) => {
+      // An admitted kill stays pending: the unary response (HTTP) and the jobs
+      // frames (control stream) have no cross-carrier ordering, so re-enabling
+      // here could offer a duplicate kill while the row still reads `running`.
+      // The authoritative jobs frame flips the row to `stopping`, which removes
+      // the button and clears the phase through the killable-set effect above.
+      setKillPhase(current => current?.key === key && !ok
+        ? { key, state: 'failed' }
+        : current)
+    })
+  }
+
+  if (visibleCount === 0) return null
 
   const countKey = liveRows.length > 0
     ? (liveRows.length === 1 ? 'count.live.one' : 'count.live.other')
-    : (rows.length === 1 ? 'count.idle.one' : 'count.idle.other')
-  const countLabel = t(countKey, { count: liveRows.length > 0 ? liveRows.length : rows.length })
+    : (visibleCount === 1 ? 'count.idle.one' : 'count.idle.other')
+  const countLabel = t(countKey, { count: liveRows.length > 0 ? liveRows.length : visibleCount })
+
+  const clearSettled = (): void => {
+    setClearedKeys((current) => {
+      const next = new Set(current)
+      for (const job of settledRows) next.add(String(job.id))
+      return next
+    })
+    if (expandedKey !== undefined && settledRows.some(job => String(job.id) === expandedKey)) {
+      setExpandedKey(undefined)
+    }
+  }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== 'Escape' || !open) return
@@ -367,6 +492,14 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, t }: Job
       onToggle={() => {
         setExpandedKey(current => current === String(job.id) ? undefined : String(job.id))
       }}
+      {...job.status === 'running'
+        ? {
+          kill: {
+            state: killPhase?.key === String(job.id) ? killPhase.state : 'idle' as const,
+            onPress: () => { pressKill(job) },
+          },
+        }
+        : {}}
       t={t}
     />
   )
@@ -400,9 +533,24 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, t }: Job
               : null}
             {liveRows.map(item)}
             {settledRows.length > 0
-              ? <li className={css.sectionHeader} aria-hidden="true">{t('section.settled')}</li>
+              ? (
+                <li className={css.sectionHeader}>
+                  <button
+                    type="button"
+                    className={css.sectionToggle}
+                    aria-expanded={settledExpanded}
+                    onClick={() => { setSettledOpen(!settledExpanded) }}
+                  >
+                    <IconChevronDownOutlineRegular size={12} className={settledExpanded ? `${css.sectionChevron} ${css.sectionChevronOpen}` : css.sectionChevron} />
+                    {t('section.settledCount', { count: settledRows.length })}
+                  </button>
+                  <button type="button" className={css.sectionClear} onClick={clearSettled}>
+                    {t('section.clear')}
+                  </button>
+                </li>
+              )
               : null}
-            {settledRows.map(item)}
+            {settledExpanded ? settledRows.map(item) : null}
           </ul>
         )
         : null}

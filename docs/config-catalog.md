@@ -202,7 +202,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/job-controller/src/index.ts:33`](../packages/api/job-controller/src/index.ts)
+Source: [`packages/api/job-controller/src/index.ts:35`](../packages/api/job-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
@@ -3152,12 +3152,25 @@ Requires: `tools` · `shell` · `systemPrompt` · `shellEnv`
 ```ts config-catalog
 /** Configuration for the bash tool. */
 export interface Config {
-  /** Expose `run_in_background` (default true); disabled calls are also rejected. */
+  /**
+   * Expose `run_in_background` while a job registry is composed (default
+   * true); disabled calls are also rejected. Without a registry the tool is
+   * foreground-only regardless.
+   */
   enableRunInBackground?: boolean
+  /**
+   * Keep a foreground command that reaches its timeout running as a
+   * background job instead of killing it (default true). Applies only while
+   * background execution is available: with `enableRunInBackground` false or
+   * no job registry, the executor's deadline kills the command. A foreground
+   * command the registry refuses at its start (admission or a missing
+   * controller) also runs under the deadline kill.
+   */
+  promoteOnTimeout?: boolean
 }
 ```
 
-Source: [`packages/shell/tool-bash/src/index.ts:33`](../packages/shell/tool-bash/src/index.ts)
+Source: [`packages/shell/tool-bash/src/index.ts:37`](../packages/shell/tool-bash/src/index.ts)
 
 <a id="deepseek-aidsh-tool-bash-persistent"></a>
 
@@ -3286,7 +3299,7 @@ export interface Config {
 export type CompletionDelivery = 'quiet' | 'wakeup'
 ```
 
-Source: [`packages/jobs/tool-jobs/src/index.ts:52`](../packages/jobs/tool-jobs/src/index.ts)
+Source: [`packages/jobs/tool-jobs/src/index.ts:41`](../packages/jobs/tool-jobs/src/index.ts)
 
 <a id="deepseek-aidsh-tool-lsp"></a>
 
@@ -3333,12 +3346,25 @@ Requires: `tools` · `shell` · `systemPrompt` · `shellEnv`
 ```ts config-catalog
 /** Configuration for the pwsh tool. */
 export interface Config {
-  /** Expose `run_in_background` (default true); disabled calls are also rejected. */
+  /**
+   * Expose `run_in_background` while a job registry is composed (default
+   * true); disabled calls are also rejected. Without a registry the tool is
+   * foreground-only regardless.
+   */
   enableRunInBackground?: boolean
+  /**
+   * Keep a foreground command that reaches its timeout running as a
+   * background job instead of killing it (default true). Applies only while
+   * background execution is available: with `enableRunInBackground` false or
+   * no job registry, the executor's deadline kills the command. A foreground
+   * command the registry refuses at its start (admission or a missing
+   * controller) also runs under the deadline kill.
+   */
+  promoteOnTimeout?: boolean
 }
 ```
 
-Source: [`packages/shell/tool-pwsh/src/index.ts:52`](../packages/shell/tool-pwsh/src/index.ts)
+Source: [`packages/shell/tool-pwsh/src/index.ts:54`](../packages/shell/tool-pwsh/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh-persistent"></a>
 
@@ -3588,10 +3614,18 @@ export interface Config {
   toolName?: string
   /** Rendered-result ceiling, in characters: a longer JSON value is truncated with a notice (default 50000). */
   maxResultChars?: number
+  /**
+   * Expose `run_in_background` (default true); disabled calls are also
+   * rejected. A background run needs a live `ctx.jobs` registry with a
+   * controller serving the caller (`dsh-jobs-local` plus `dsh-tool-jobs` in
+   * the shipped composition); without one the call fails with the missing
+   * piece named.
+   */
+  enableRunInBackground?: boolean
 }
 ```
 
-Source: [`packages/workflow/tool-workflow/src/index.ts:32`](../packages/workflow/tool-workflow/src/index.ts)
+Source: [`packages/workflow/tool-workflow/src/index.ts:44`](../packages/workflow/tool-workflow/src/index.ts)
 
 <a id="deepseek-aidsh-tool-workspace-dependencies"></a>
 
