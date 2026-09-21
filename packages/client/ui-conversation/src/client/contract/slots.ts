@@ -60,8 +60,12 @@ export interface ComposerAttachmentsOwnerProps {
   attachments: readonly ComposerAttachment[]
   /** Whether a document-level file drop may add attachments now. */
   canAcceptDrop: boolean
-  /** Add one dropped batch through the composer's validation path. */
-  onAddFiles: (files: readonly File[]) => void
+  /**
+   * Add one dropped batch through the composer's validation path.
+   * @param files - dropped, pasted, or picked browser files in source order.
+   * @param directories - members of `files` the drop source identified as directories.
+   */
+  onAddFiles: (files: readonly File[], directories?: ReadonlySet<File>) => void
   /** Remove one draft attachment through the Conversation service. */
   onRemoveAttachment: (id: DraftAttachmentId) => void
   /** Current per-draft upload states for file-kind attachments. */
@@ -368,7 +372,14 @@ export interface ComposerBarOwnerProps {
 /** Package-private operations injected into the resident composer bar. */
 export interface ComposerBarInjected {
   keyboard: ComposerKeyboard | undefined
-  addFiles: ((files: readonly File[]) => string | null) | undefined
+  /**
+   * Register one picked batch; resolves to the rejection copy or null. Where
+   * the browser shell reports host paths (the Desktop application), files
+   * and folders with a real path become `@path` references in the draft
+   * instead of uploads; `directories` names the members the drop source
+   * identified as directories.
+   */
+  addFiles: ((files: readonly File[], directories?: ReadonlySet<File>) => string | null) | undefined
   removeAttachment: ((id: DraftAttachmentId) => void) | undefined
   resolveDraftAttachments: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
   /** Restart one failed file upload; absent without a session. */
