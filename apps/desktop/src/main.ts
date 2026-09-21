@@ -108,6 +108,17 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
   return port
 }
 
+/**
+ * Opaque chrome fallback matching the built-in sidebar palette (the resolved
+ * `--dsw-static-neutral-bluish-900` / `-50` tokens). An approximation for
+ * custom themes: Windows swaps in the renderer's measured palette over the
+ * windowsAppearance IPC, and macOS shows it only while minimized or hidden.
+ * @returns the sidebar fill hex for the active system color scheme.
+ */
+function chromeFallbackFill(): string {
+  return nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb'
+}
+
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
@@ -117,7 +128,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     show,
     ...(process.platform === 'win32' && primary ? {
       titleBarStyle: 'hidden' as const,
-      titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb',
+      titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: chromeFallbackFill(),
         symbolColor: nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115' },
     } : {}),
     // hiddenInset places traffic lights inside the sidebar; sidebar vibrancy
@@ -164,7 +175,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
       if (window.isDestroyed()) return
       if (window.isMinimized() || !window.isVisible()) {
         window.setVibrancy(null)
-        window.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb')
+        window.setBackgroundColor(chromeFallbackFill())
       } else {
         window.setVibrancy('sidebar')
         window.setBackgroundColor('#00000000')
