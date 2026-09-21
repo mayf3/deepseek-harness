@@ -47,7 +47,7 @@ The read-only task board shows task identity, owner, blockers, readiness, adviso
 
 The Client export mounts the generated `ctx.remote.agentTeams` contribution from [`@deepseek-ai/dsh-experimental-agent-team/remote`](../agent-team/README.md), then registers its locale dictionaries and one conversation-header slot through Cordis effects. Disposing the plugin fiber removes both registrations.
 
-The panel renders outside the conversation container and stays within the viewport. Clicking outside or pressing Escape closes it. Opening or refreshing the panel reads the complete Team view. Overlapping refreshes keep the newest response, and responses for a previous conversation are ignored.
+The panel renders outside the conversation container and stays within the viewport. Opening moves focus into the panel; Escape or Close returns focus to its trigger. Clicking outside or moving focus outside the panel and trigger closes it without moving focus back. Opening or refreshing the panel reads the complete Team view. Overlapping refreshes keep the newest response, and responses for a previous conversation are ignored.
 
 | File | Role |
 |---|---|

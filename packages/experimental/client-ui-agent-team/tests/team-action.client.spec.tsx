@@ -186,6 +186,7 @@ describe('TeamAction', () => {
     await screen.findByRole('dialog')
     fireEvent.click(screen.getByRole('button', { name: zh.close }))
     expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /Agent Team/u }))
   })
 
   it('shows load failures', async () => {
@@ -237,6 +238,7 @@ describe('TeamAction', () => {
     fireEvent.click(trigger)
     const panel = await screen.findByRole('dialog')
     expect(rendered.container.contains(panel)).toBe(false)
+    expect(document.activeElement).toBe(panel)
     fireEvent.pointerDown(panel)
     expect(screen.getByRole('dialog')).toBe(panel)
     fireEvent.pointerDown(trigger)
@@ -251,6 +253,21 @@ describe('TeamAction', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.activeElement).toBe(trigger)
     fireEvent.keyDown(trigger, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps focus within the trigger or panel and closes when focus moves elsewhere', async () => {
+    render(<><TeamAction {...props(actions())} /><button>Outside</button></>)
+    const trigger = screen.getByRole('button', { name: /Agent Team/u })
+    fireEvent.click(trigger)
+    const panel = await screen.findByRole('dialog')
+    fireEvent.blur(panel, { relatedTarget: screen.getByRole('button', { name: zh.refresh }) })
+    expect(screen.getByRole('dialog')).toBe(panel)
+    fireEvent.blur(panel, { relatedTarget: trigger })
+    expect(screen.getByRole('dialog')).toBe(panel)
+    fireEvent.blur(panel, { relatedTarget: null })
+    expect(screen.getByRole('dialog')).toBe(panel)
+    fireEvent.blur(panel, { relatedTarget: screen.getByRole('button', { name: 'Outside' }) })
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 

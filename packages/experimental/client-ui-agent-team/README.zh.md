@@ -47,7 +47,7 @@ kind: "package-reference"
 
 Client export 挂载来自 [`@deepseek-ai/dsh-experimental-agent-team/remote`](../agent-team/README.zh.md) 的生成的 `ctx.remote.agentTeams` contribution，然后通过 Cordis effect 注册 locale dictionary 与一个 conversation-header slot。Dispose plugin fiber 会移除这两项 registration。
 
-面板渲染在会话容器外，并保持在视口范围内。点击外部或按 Escape 会关闭面板。打开或刷新面板会读取完整 Team view。并行刷新只保留最新响应，属于上一个会话的响应会被忽略。
+面板渲染在会话容器外，并保持在视口范围内。打开时焦点移入面板；按 Escape 或选择关闭按钮时，焦点返回触发按钮。点击外部或将焦点移出面板与触发按钮时，面板关闭，但不会将焦点移回。打开或刷新面板会读取完整 Team view。并行刷新只保留最新响应，属于上一个会话的响应会被忽略。
 
 | 文件 | 职责 |
 |---|---|

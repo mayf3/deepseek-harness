@@ -85,6 +85,7 @@ export function TeamAction({
   const position = useAnchoredPosition({
     open, anchorRef: triggerRef, panelRef, gap: 5, margin: 16,
   })
+  const positioned = position !== null
   useDismissOnOutsidePointer(rootRef, open, setOpen, panelRef)
   const sessionRef = useRef(sessionId)
   const refreshGeneration = useRef(0)
@@ -97,6 +98,15 @@ export function TeamAction({
     setView(null)
     setError(null)
   }, [sessionId])
+
+  useEffect(() => {
+    if (open && positioned) panelRef.current?.focus()
+  }, [open, positioned])
+
+  const close = (): void => {
+    setOpen(false)
+    triggerRef.current?.focus()
+  }
 
   const refresh = useCallback(async (): Promise<void> => {
     const requestedSession = sessionId
@@ -119,8 +129,12 @@ export function TeamAction({
     <div ref={rootRef} className={css.root} data-team-action onKeyDown={(event) => {
       if (event.key !== 'Escape' || !open) return
       event.preventDefault()
-      setOpen(false)
-      triggerRef.current?.focus()
+      close()
+    }} onBlur={(event) => {
+      const target = event.relatedTarget
+      if (target instanceof Node && !event.currentTarget.contains(target) && !panelRef.current?.contains(target)) {
+        setOpen(false)
+      }
     }}>
       <button
         type="button"
@@ -144,6 +158,7 @@ export function TeamAction({
           className={css.panel}
           style={position ?? { visibility: 'hidden', left: 0, top: 0 }}
           role="dialog"
+          tabIndex={-1}
           aria-label={t('trigger')}
           data-team-panel
         >
@@ -156,7 +171,7 @@ export function TeamAction({
             <button type="button" className={css.iconButton} aria-label={t('refresh')} onClick={() => { void refresh() }}>
               <IconRefreshOutlineRegular size={14} />
             </button>
-            <button type="button" className={css.iconButton} aria-label={t('close')} onClick={() => { setOpen(false) }}>
+            <button type="button" className={css.iconButton} aria-label={t('close')} onClick={close}>
               <IconCloseOutlineRegular size={14} />
             </button>
           </div>
