@@ -17,9 +17,16 @@ let context: Context | undefined
 const servers: MockLlmServer[] = []
 
 afterEach(async () => {
-  await context?.fiber.dispose()
+  const ownedContext = context
   context = undefined
-  await Promise.all(servers.splice(0).map(server => server.close()))
+  // A failed transport can still await a stalled socket while its context disposes.
+  const results = await Promise.allSettled([
+    ownedContext?.fiber.dispose(),
+    ...servers.splice(0).map(server => server.close()),
+  ])
+  vi.unstubAllEnvs()
+  const failure = results.find(result => result.status === 'rejected')
+  if (failure?.status === 'rejected') throw failure.reason
 })
 
 async function start(
@@ -218,7 +225,7 @@ describe('bounded retry through the real DeepSeek HTTP/SSE adapter', () => {
     expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry').map(event => event.data.failure.code))
       .toEqual(['TIMEOUT'])
     expect(finalAssistantText(agent)).toBe('recovered after timeout')
-  }, 10_000)
+  })
 
   it('stops after the configured transport retry budget is exhausted', async () => {
     const server = await start(['connection_reset', 'connection_reset', 'connection_reset'], {
