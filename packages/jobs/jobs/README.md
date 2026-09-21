@@ -80,11 +80,14 @@ This section explains the design decisions behind the contract and points at the
 | [`src/types.ts`](src/types.ts) | Shared vocabulary: `JobSpec`, `JobHandle`, `JobHooks`, `JobOutcome`, `JobEvent`, and the read results |
 | [`src/view.ts`](src/view.ts) | Client-safe leaf: `JobView`, `JobChunk`, `JobStatus`, and the merge-extensible `JobKindMap` |
 | [`src/brand.ts`](src/brand.ts) | `JobId` branded identifier, importable without the agent dependency |
+| [`src/archive-admission.ts`](src/archive-admission.ts) | The `job` family of the Workspace registry's archive admission, installed by the seam's constructor for every implementation |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion: checks the announced event protocol per job (registered first, one settlement, removal last) and each announced projection against the registry's own read |
 
 ### Service operations
 
 Each read or control operation accepts an optional caller `SessionId`; omitting it permits only unowned jobs: `list` and `get` return fresh projections, `read` advances the model's cursor and hands out the producer's result once after settlement, `readAt` reads retained chunks at an absolute offset without consuming anything, `kill` invokes producer cancellation before changing status and records the reason for the terminal `detail`, `wait` blocks up to a timeout, `remove` drops a settled record a caller collected through its own wait and never handed out, and `start()` preflights access, validation, and admission before invoking the producer's `run()` once while refusing any owner no attached controller serves; `events.subscribe` delivers registration, progress, stopping, settlement, removal, and output commits at owner, scope, or process granularity.
+
+Every implementation also answers the Workspace registry's archive admission ([seam](../../workspace/workspace/README.md)), installed by the seam's constructor through the abstract `list` and `kill` alone: `workspace/session-activity` reports the running or stopping jobs the asked Session owns as the `job` family, one item per job with its label; `workspace/session-stop` kills each of them with the reason `session archived`, one at a time, so a producer that throws on cancel is logged while the Session's other jobs still stop. Unowned jobs belong to nobody and are never reported or killed for a Session.
 
 </details>
 

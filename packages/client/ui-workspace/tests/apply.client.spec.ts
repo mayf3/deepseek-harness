@@ -13,10 +13,11 @@ import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import {
   type ArchiveSessionInjected, type ForkSessionInjected, menuOpenStateFactory, type PinSessionInjected,
-  type RenameSessionInjected, type RowToastInjected, type SessionRenameDialogInjected, type WorkspaceViewStoreHandle,
+  type RenameSessionInjected, type RowToastInjected, type SessionArchiveConfirmInjected, type SessionRenameDialogInjected,
+  type WorkspaceViewStoreHandle,
 } from '../src/client/contract/slots.ts'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
-import { ArchiveSessionMenuItem, ArchiveSessionRowButton } from '../src/client/session-actions/ArchiveSession.tsx'
+import { ArchiveSessionMenuItem, ArchiveSessionRowButton, SessionArchiveConfirmDialog } from '../src/client/session-actions/ArchiveSession.tsx'
 import { ForkSessionMenuItem } from '../src/client/session-actions/ForkSession.tsx'
 import { PinSessionMenuItem, PinSessionRowButton } from '../src/client/session-actions/PinSession.tsx'
 import { RenameSessionMenuItem, SessionRenameDialog } from '../src/client/session-actions/RenameSession.tsx'
@@ -216,7 +217,7 @@ describe('ui-workspace apply', () => {
     // The row actions follow the browser's own declaration, whenever it lands.
     expect(after.slots.entries(MENU_ITEM)).toHaveLength(4)
     expect(after.slots.entries(ROW_ACTION)).toHaveLength(2)
-    expect(after.slots.entries('shell.overlay')).toHaveLength(2)
+    expect(after.slots.entries('shell.overlay')).toHaveLength(3)
   })
 
   it('declares the two Session row lists and registers the shipped actions and overlay surfaces into them', async () => {
@@ -244,6 +245,7 @@ describe('ui-workspace apply', () => {
     ])
     expect(rows('shell.overlay')).toEqual([
       ['workspace.session-rename', undefined, SessionRenameDialog, 'workspace'],
+      ['workspace.session-archive', undefined, SessionArchiveConfirmDialog, 'workspace'],
       ['workspace.row-toast', undefined, RowActionToast, 'workspace'],
     ])
     // Only the browser declares the viewing store; its handle hands out the
@@ -386,6 +388,44 @@ describe('ui-workspace apply', () => {
     }
     // A rejected archive raises no notice.
     expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'archived', sessionId: 'one', seq: 1 })
+  })
+
+  it('turns the Host\'s running-work refusal into the stop-and-archive confirmation, which archives with stopActivity', async () => {
+    const b = await bench()
+    b.setSessions(sessionState([{ ...summary('busy', 3), displayTitle: 'Busy session' }]))
+    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const activity = [{ kind: 'turn' as const }, { kind: 'job' as const, items: [{ id: 'bash-1', label: 'pnpm run build' }] }]
+    const refusal = Object.assign(new Error('workspace session archive failed: workspace/session-active: active'), {
+      name: 'WorkspaceArchiveError',
+      rpcError: new RemoteError('workspace/session-active', 'active', { sessionId: sid('busy'), activity }),
+    })
+    const archiveSession = vi.spyOn(b.ctx.uiWorkspace, 'archiveSession')
+      .mockRejectedValueOnce(refusal)
+      .mockResolvedValueOnce(undefined)
+    const archive = faceOf(entry(b.slots, ROW_ACTION, 'archive')) as ArchiveSessionInjected
+    const confirm = faceOf(entry(b.slots, 'shell.overlay', 'workspace.session-archive')) as SessionArchiveConfirmInjected
+    const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      archive.archiveSession(sid('busy'))
+      await vi.waitFor(() => {
+        expect(confirm.hooks.archiveRequest.getSnapshot()).toEqual({ sessionId: 'busy', displayTitle: 'Busy session', activity })
+      })
+      // The refusal is a question, not a diagnostic, and nothing is archived yet.
+      expect(warn).not.toHaveBeenCalled()
+      expect(toast.hooks.toast.getSnapshot()).toBeNull()
+      expect(archiveSession).toHaveBeenCalledWith('busy')
+
+      // Cancelling settles the request; confirming asks the Host to stop the work.
+      confirm.settleSessionArchive()
+      expect(confirm.hooks.archiveRequest.getSnapshot()).toBeNull()
+      await confirm.stopAndArchiveSession(sid('busy'))
+      expect(archiveSession).toHaveBeenLastCalledWith('busy', { stopActivity: true })
+      expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'stoppedAndArchived', sessionId: 'busy', seq: 1 })
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('the notice share takes the notice down, undoes an archive, and shows the archived rows', async () => {
@@ -551,7 +591,7 @@ describe('ui-workspace apply', () => {
     await fiber.await()
     expect(b.slots.entries(MENU_ITEM)).toHaveLength(4)
     expect(b.slots.entries(ROW_ACTION)).toHaveLength(2)
-    expect(b.slots.entries('shell.overlay')).toHaveLength(2)
+    expect(b.slots.entries('shell.overlay')).toHaveLength(3)
     await fiber.dispose()
     expect(b.slots.entries('sidebar.workspaces')).toHaveLength(0)
     expect(b.slots.entries('conversation.hero.workspace')).toHaveLength(0)

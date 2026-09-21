@@ -39,6 +39,8 @@
 - Viewer menu hidden: true
 - Worker: dsh-pdf
 - Continuous pages: 2
+- Zoom reveal: hidden -> bottom hover -> delayed hidden
+- Zoom modes: fit width -> 100% -> 150% -> fit width
 - Horizontal overflow: false
 - Canvas fills: red -> blue -> blue
 - Same tab: true
@@ -56,6 +58,12 @@
 
 - Table selection: forward and backward drags exclude later sections
 - Line-break highlight: transparent
+
+## Image zoom
+
+- Small PNG fit width remains at intrinsic size; 200% doubles it
+- SVG fit width -> 100% -> fit width toggles horizontal overflow: false -> true -> false
+- Image and Blob identities remain stable while zoom changes
 
 ## Code paging
 

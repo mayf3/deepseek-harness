@@ -13,6 +13,7 @@ import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-clie
 import {
   ClientWorkspaceModel,
   createWorkspaceStateStream,
+  WorkspaceArchiveError,
   WorkspaceController,
   WorkspaceCreateError,
   type WorkspaceFollowSink,
@@ -348,7 +349,8 @@ describe('WorkspaceController', () => {
     expect(mock.log.requests('workspace/rename')).toEqual([{ workspaceId: 'one', title: 'renamed' }])
     expect(mock.log.requests('workspace/insertBefore')).toEqual([{ workspaceId: 'one' }])
     expect(mock.log.requests('workspace/insertSessionBefore')).toEqual([{ workspaceId: 'one', sessionId: 'session' }])
-    expect(mock.log.requests('workspace/archiveSession')).toEqual([{ sessionId: 'session' }])
+    await expect(controller.archiveSession(sid('session'), { stopActivity: true })).resolves.toBeUndefined()
+    expect(mock.log.requests('workspace/archiveSession')).toEqual([{ sessionId: 'session' }, { sessionId: 'session', stopActivity: true }])
     expect(mock.log.requests('workspace/unarchiveSession')).toEqual([{ sessionId: 'session' }])
     expect(mock.log.requests('workspace/pinSession')).toEqual([{ sessionId: 'session' }])
     expect(mock.log.requests('workspace/unpinSession')).toEqual([{ sessionId: 'session' }])
@@ -376,8 +378,19 @@ describe('WorkspaceController', () => {
     mock.remote.workspace.insertBefore.mockResolvedValueOnce(err(missingWorkspace))
     await expect(controller.insertBefore(wid('missing'))).rejects.toThrow('workspace reorder failed: workspace/not-found: gone')
     mock.remote.workspace.archiveSession.mockResolvedValueOnce(err(missingSession))
-    await expect(controller.archiveSession(sid('session')))
-      .rejects.toThrow('workspace session archive failed: session/not-found: missing session')
+    const archiveMissing = controller.archiveSession(sid('session'))
+    await expect(archiveMissing).rejects.toBeInstanceOf(WorkspaceArchiveError)
+    await expect(archiveMissing).rejects.toThrow('workspace session archive failed: session/not-found: missing session')
+    // The active-session refusal keeps its structured details so a surface
+    // can name what still runs.
+    const active = new RemoteError('workspace/session-active', 'session is active', {
+      sessionId: sid('session'), activity: [{ kind: 'probe' }, { kind: 'probe-items', items: [{ id: 'item-1' }] }],
+    })
+    mock.remote.workspace.archiveSession.mockResolvedValueOnce(err(active))
+    await expect(controller.archiveSession(sid('session'))).rejects.toMatchObject({
+      name: 'WorkspaceArchiveError',
+      rpcError: { code: 'workspace/session-active', details: { activity: [{ kind: 'probe' }, { kind: 'probe-items', items: [{ id: 'item-1' }] }] } },
+    })
     mock.remote.workspace.unarchiveSession.mockResolvedValueOnce(err(missingSession))
     await expect(controller.unarchiveSession(sid('session')))
       .rejects.toThrow('workspace session unarchive failed: session/not-found: missing session')
@@ -407,3 +420,11 @@ describe('WorkspaceController', () => {
     expect(mock.log.calls('workspace/create').map(call => call.state)).toEqual(['failed'])
   })
 })
+
+// The wire relays whatever families the Host's providers report; this suite merges its own.
+declare module '@deepseek-ai/dsh-workspace/types' {
+  interface SessionActivityKindMap {
+    probe: true
+    'probe-items': true
+  }
+}

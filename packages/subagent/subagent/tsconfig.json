@@ -60,6 +60,9 @@
       "path": "../../session-query/session-query"
     },
     {
+      "path": "../../workspace/workspace"
+    },
+    {
       "path": "../../jobs/jobs"
     },
     {
