@@ -154,7 +154,7 @@ function writeReleaseRecord(
     version: buildVersion,
     environment: update.environment,
     publicUrl: update.publicUrl,
-    // Upload tags the commit a production release was packaged from, which is no longer discoverable from the build tree.
+    // Upload reads this to tag the commit a production release was packaged from.
     ...packaged === undefined ? {} : { commit: packaged.commit, dirty: packaged.dirty },
   }, null, 2)}\n`)
   renameSync(temporaryPath, recordPath)
@@ -220,9 +220,9 @@ export function parseDesktopPackageInvocation(
   hostArch: string = process.arch,
 ): DesktopPackageInvocation {
   const { values, positionals } = parseArgs({
-    // `pnpm run <script> -- --build-version x` forwards the separator itself, which would otherwise
-    // turn every following option into a positional and read as a second target.
-    args: argv[0] === '--' ? argv.slice(1) : [...argv],
+    // `pnpm run <script> -- --build-version x` forwards the separator itself, and the script's own
+    // preset arguments come first, so it can land anywhere; parseArgs would read the rest as targets.
+    args: argv.filter(argument => argument !== '--'),
     allowPositionals: true,
     options: {
       dir: { type: 'boolean', default: false },
@@ -306,17 +306,37 @@ function runPnpm(
   })
 }
 
+/**
+ * Resolve the version one run publishes from what its command line asked for.
+ * @param invocation - Validated packaging request.
+ * @param productVersion - Version the manifests declare.
+ * @param environment - Release settings, which name the bucket automatic numbering reads.
+ * @returns The product version, the requested version, or the next free index for today.
+ */
+async function resolveRequestedBuildVersion(
+  invocation: DesktopPackageInvocation,
+  productVersion: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<string> {
+  const requested = invocation.requestedBuildVersion
+  if (requested === undefined) return productVersion
+  if (requested !== AUTOMATIC_BUILD_VERSION) return validateDesktopBuildVersion(requested, productVersion)
+  const paths = desktopTargetBuildPaths(invocation.target.name)
+  return suggestDesktopBuildVersion({
+    productVersion, target: invocation.target.name, environment,
+    // Unsigned builds land beside the signed output, so numbering has to read the directory this run writes.
+    artifactsRoot: invocation.unsigned ? join(paths.root, 'unsigned-artifacts') : paths.artifacts,
+  })
+}
+
 async function main(): Promise<void> {
   const invocation = parseDesktopPackageInvocation(process.argv.slice(2))
   const { target } = invocation
   const environment = loadDesktopPackageEnvironment(target.platform)
   const productVersion = packageVersion(join(APP_ROOT, 'package.json'), 'desktop package')
-  // Resolving before any build step means a malformed version fails in seconds rather than after the packaging run.
-  const buildVersion = invocation.requestedBuildVersion === undefined
-    ? resolveDesktopBuildVersion(environment, productVersion)
-    : invocation.requestedBuildVersion === AUTOMATIC_BUILD_VERSION
-      ? await suggestDesktopBuildVersion({ productVersion, target: target.name, environment })
-      : validateDesktopBuildVersion(invocation.requestedBuildVersion, productVersion)
+  // Release settings come from the target dotenv file alone, so the version this run publishes is an
+  // argument; the environment variable below only carries it to the child processes that build.
+  const buildVersion = await resolveRequestedBuildVersion(invocation, productVersion, environment)
   environment[DESKTOP_BUILD_VERSION_ENV] = buildVersion
   if (invocation.check) {
     validateDesktopPackageEnvironment(environment, target, invocation)

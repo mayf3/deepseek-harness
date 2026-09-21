@@ -114,7 +114,8 @@ export function isEntry(moduleUrl: string): boolean {
  */
 export function pnpmCommand(): readonly [command: string, ...args: string[]] {
   const execpath = process.env.npm_execpath
-  if (execpath !== undefined && /\.[cm]?js$/u.test(execpath)) return [process.execPath, execpath]
+  // `npm run` and `yarn run` set this too, and handing pnpm's arguments to either would write a different lockfile.
+  if (execpath !== undefined && /[\\/]pnpm[\\/]/u.test(execpath) && /\.[cm]?js$/u.test(execpath)) return [process.execPath, execpath]
   for (let directory = dirname(fileURLToPath(import.meta.url)); ; directory = dirname(directory)) {
     const entry = join(directory, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs')
     if (existsSync(entry)) return [process.execPath, entry]

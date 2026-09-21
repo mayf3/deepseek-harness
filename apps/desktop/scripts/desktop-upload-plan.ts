@@ -13,7 +13,7 @@ import {
   resolveDesktopUploadConfig,
 } from './desktop-auto-update-environment.mjs'
 import { desktopTargetBuildPaths } from './desktop-build-paths.mjs'
-import { resolveDesktopBuildVersion } from './desktop-build-version.mjs'
+import { validateDesktopBuildVersion } from './desktop-build-version.mjs'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
@@ -190,20 +190,27 @@ export async function createDesktopUploadPlan(
   if (dshVersion !== desktopVersion) {
     throw new Error(`desktop upload: desktop version ${desktopVersion} does not match current dsh version ${dshVersion}`)
   }
-  // A test or hand-delivered build publishes an identifier extending the product version; a release publishes the version itself.
-  const buildVersion = resolveDesktopBuildVersion(environment, dshVersion)
 
   const update = resolveDesktopUploadConfig(environment, target.platform, target.arch)
   const buildRecord = await jsonFile(
     join(artifactsRoot, desktopBuildRecordFilename(targetName)),
     `${targetName} package completion record`,
   )
+  // Packaging wrote the version it published; reading it back keeps release settings out of shell variables.
+  const recordedVersion = stringField(buildRecord.version, `${targetName} package completion record.version`)
+  let buildVersion: string
+  try {
+    buildVersion = validateDesktopBuildVersion(recordedVersion, dshVersion)
+  }
+  catch (error) {
+    throw new Error(`desktop upload: ${targetName} package completion record holds ${recordedVersion}, which is not a build of dsh ${dshVersion}: ${
+      error instanceof Error ? error.message : String(error)}`)
+  }
   if (buildRecord.schemaVersion !== 1
     || buildRecord.target !== targetName
-    || buildRecord.version !== buildVersion
     || buildRecord.environment !== update.environment
     || buildRecord.publicUrl !== update.publicUrl) {
-    throw new Error(`desktop upload: ${targetName} package completion record does not match ${buildVersion} and ${update.environment} update destination`)
+    throw new Error(`desktop upload: ${targetName} package completion record for ${buildVersion} does not match the ${update.environment} update destination`)
   }
 
   const metadataFilename = desktopUpdateMetadataFilename(buildVersion, target.platform)
