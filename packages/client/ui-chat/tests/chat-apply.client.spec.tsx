@@ -88,6 +88,12 @@ function storeOf(runtime: SlotTestRuntime, key: 'conversation.session' | 'conver
 }
 
 describe('Chat apply wiring', () => {
+  it('keeps presentation-policy helpers out of the public browser entry', async () => {
+    const entry = await import('../src/client/index.ts')
+    expect(entry).not.toHaveProperty('derivePresentationPolicy')
+    expect(entry).not.toHaveProperty('presentationPolicyFor')
+  })
+
   it('contributes Chat View, node renderers, and stats', async () => {
     const b = await bench()
     const views = b.runtime.slots.entries('conversation.view')
@@ -109,9 +115,9 @@ describe('Chat apply wiring', () => {
     const face = (row.inject as unknown as () => TranscriptViewRowInjected)()
 
     expect(face.hooks.transcriptView.getSnapshot()).toBe('compact')
-    face.setTranscriptView('normal')
-    expect(face.hooks.transcriptView.getSnapshot()).toBe('normal')
-    expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', 'normal')
+    face.setTranscriptView('detailed')
+    expect(face.hooks.transcriptView.getSnapshot()).toBe('detailed')
+    expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', 'detailed')
 
     b.chatSettings.publish({
       status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 1, writable: true,

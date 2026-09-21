@@ -6,6 +6,8 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'defaultWorkspace.failed': '无法创建默认工作区，请通过“选择工作区”选择文件夹',
+  'defaultWorkspace.title': '默认工作区',
   'group.ungrouped': '未分组',
   'session.new': '新会话',
   'section.workspaces': '工作区',
@@ -60,6 +62,7 @@ export const zh = {
   'toast.archivedFilter': '筛选已归档会话',
   'toast.pinFailed': '置顶失败，请稍后重试',
   'toast.unpinFailed': '取消置顶失败，请稍后重试',
+  'toast.createFailed': '新建会话失败：{message}',
   'sessions.count.one': '{n} 个会话',
   'sessions.count.other': '{n} 个会话',
   'actions.workspace.aria': '工作区“{name}”的操作',
@@ -99,6 +102,8 @@ export type WorkspaceKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'defaultWorkspace.failed': 'Unable to create default workspace. Use Choose workspace to select a folder.',
+  'defaultWorkspace.title': 'Default workspace',
   'group.ungrouped': 'Ungrouped',
   'session.new': 'New Session',
   'section.workspaces': 'Workspaces',
@@ -153,6 +158,7 @@ export const en = {
   'toast.archivedFilter': 'filter archived sessions',
   'toast.pinFailed': 'Pin failed. Try again later.',
   'toast.unpinFailed': 'Unpin failed. Try again later.',
+  'toast.createFailed': 'New session failed: {message}',
   'sessions.count.one': '{n} session',
   'sessions.count.other': '{n} sessions',
   'actions.workspace.aria': 'Workspace actions for {name}',

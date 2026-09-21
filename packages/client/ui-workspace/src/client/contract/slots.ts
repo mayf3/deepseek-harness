@@ -238,12 +238,19 @@ export type SessionRowActionProps<Injected extends object = object> =
   & PropsLocale<'workspace'>
   & InjectFace<Injected>
 
-/** One transient notice a row action raises; the overlay toast entry renders it. */
+/** One transient Workspace notice rendered by the overlay toast entry. */
 export type RowToast =
   | { kind: 'archived'; sessionId: SessionId }
   | { kind: 'pinFailed' }
   | { kind: 'unpinFailed' }
   | { kind: 'archivedNotOpenable' }
+  | { kind: 'defaultWorkspaceFailed' }
+  /**
+   * An explicit New Session request that failed. `message` is untranslated:
+   * a Host refusal as `code: message` — the stable code stays in the copy so
+   * a report can be searched by it — and any other failure's own message.
+   */
+  | { kind: 'createFailed'; message: string }
 
 /** The notice on display; `seq` keys remounts so a repeated notice restarts its hold. */
 export type RowToastState = RowToast & { seq: number }
@@ -377,5 +384,5 @@ export type WorkspacePickerProps =
   PropsRuntime<'conversation.hero.workspace'>
   & PropsRenderSlots<'conversation.hero.workspace.directoryFlow'>
   & Omit<WorkspacePickerInjected, 'hooks'>
-  & DirectoryPickingHooks
+  & PropsHooks<WorkspacePickerInjected['hooks']>
   & PropsLocale<'workspace'>
