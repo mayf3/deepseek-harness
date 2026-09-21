@@ -990,9 +990,6 @@ importers:
 
   packages/api/job-controller:
     dependencies:
-      '@deepseek-ai/dsh-api-session-controller':
-        specifier: workspace:^
-        version: link:../session-controller
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:^
         version: link:../../typert/protocol

@@ -205,7 +205,7 @@ Source: [`packages/api/gateway/src/index.ts:144`](../packages/api/gateway/src/in
 
 ## `@deepseek-ai/dsh-api-job-controller`
 
-Requires: `agents` · `jobs` · `typert`
+Requires: `jobs` · `typert`
 
 ```ts config-catalog
 /** Job Controller deployment policy. */
@@ -217,7 +217,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/job-controller/src/index.ts:37`](../packages/api/job-controller/src/index.ts)
+Source: [`packages/api/job-controller/src/index.ts:35`](../packages/api/job-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 

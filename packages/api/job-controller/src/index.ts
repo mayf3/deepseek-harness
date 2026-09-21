@@ -10,9 +10,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-jobs'
-import { apiSessionSubagentOwnershipError, hasApiSessionSubagentOwner } from '@deepseek-ai/dsh-api-session-controller'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { observeJobOutput } from './observe.ts'
 import { streamJobRows } from './rows.ts'
@@ -43,7 +41,7 @@ export interface Config {
 
 /** Host service backing the generated `ctx.remote.job` namespace. */
 export class JobController extends TypertRemoteService {
-  static inject = ['agents', 'jobs', 'typert']
+  static inject = ['jobs', 'typert']
 
   static Config: z<Config> = z.object({
     observeFlushMs: z.natural().min(1).default(DEFAULT_OBSERVE_FLUSH_MS),
@@ -99,21 +97,17 @@ export class JobController extends TypertRemoteService {
 
   /**
    * Kill one background job on a human's behalf. The request's session is
-   * the fenced read's caller, so the job must be one that session can see;
-   * the subagent ownership fence applies exactly as it does to
-   * `session.cancel`. The kill records `cancelled by the user` as its reason;
-   * it is not one the model requested, so the owning agent still receives
-   * the completion notice, and a shell tool waiting on that job reads the
-   * reason in its own result.
+   * the fenced read's caller, so the job must be one that session can see:
+   * the registry's owner fence is the only access rule, and a child session's
+   * own jobs are killable from its list like any other. The kill records
+   * `cancelled by the user` as its reason; it is not one the model requested,
+   * so the owning agent still receives the completion notice, and a shell
+   * tool waiting on that job reads the reason in its own result.
    * @param request - Session whose job list carries the job, and the job id.
    * @returns the registry's admission of the kill request.
    */
   @Remote('kill')
   kill(request: JobKillRequest): JobKillValue {
-    const agent = this.ctx.agents.get(request.sessionId)
-    if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
-      throw apiSessionSubagentOwnershipError(request.sessionId)
-    }
     const jobs = this.ctx.jobs
     try {
       jobs.get(request.jobId, request.sessionId)

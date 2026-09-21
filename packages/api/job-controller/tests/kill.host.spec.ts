@@ -135,15 +135,15 @@ describe('JobController.kill', () => {
     expect(ctx.jobs.get(id, agent.id).status).toBe('running')
   })
 
-  it('rejects a subagent-owned live session with the ownership fence', async () => {
+  it('kills a child session\'s own job from its list: the owner fence is the only access rule', async () => {
     const { ctx, controller } = await harness()
     const child = ctx.sessions.create(undefined, { meta: { origin: 'subagent' } })
     const childAgent = await registerAgent(ctx, child)
     const task = producer('child work')
     const id = ctx.jobs.start({ ...task.spec, owner: childAgent.id })
 
-    expect(failureCode(() => controller.kill({ sessionId: child.id, jobId: id })))
-      .toBe('session/agent-busy')
-    expect(ctx.jobs.get(id, childAgent.id).status).toBe('running')
+    expect(controller.kill({ sessionId: child.id, jobId: id })).toEqual({ outcome: 'requested' })
+    expect(task.cancels).toEqual(['cancelled by the user'])
+    expect(ctx.jobs.get(id, childAgent.id).status).toBe('stopping')
   })
 })

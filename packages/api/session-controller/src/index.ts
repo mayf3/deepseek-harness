@@ -63,7 +63,7 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
-export { ApiSessionNotFound, apiSessionSubagentOwnershipError, hasApiSessionSubagentOwner } from './agent.ts'
+export { ApiSessionNotFound } from './agent.ts'
 export { SessionFileReferences } from './file-references.ts'
 export { SessionSkillCatalog } from './skill-catalog.ts'
 

@@ -219,7 +219,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/job-controller/src/index.ts:37`](../packages/api/job-controller/src/index.ts)
+来源：[`packages/api/job-controller/src/index.ts:35`](../packages/api/job-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
