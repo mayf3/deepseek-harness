@@ -72,7 +72,7 @@ The completed-turn action footer follows the recorded Turn end. Its action row s
 <a id="turn-process-folding"></a>
 ## Turn Process Folding
 
-Local steering echoes remain mounted through Inbox acceptance and claim until the durable message arrives. Matching Host-pending rows stay hidden during this handoff, and the same request does not trigger tail following twice.
+During uninterrupted following, local steering echoes remain mounted through Inbox acceptance and claim until the durable message arrives, without triggering tail following twice. Pending inputs follow Inbox order across clients, using matching local echoes in place. After reconnect, Host-owned rows replace receipt-confirmed local echoes; a claim awaiting admission may briefly have no bubble.
 
 Work-details modes control process-group display and reasoning previews; eligible completed Turns fold their process without hiding the final answer. The [business-rule reference](src/client/conversation-nodes/README.md#display-modes) contains the mode table, title behavior, whole-Turn eligibility, clocks, and disclosure resets.
 

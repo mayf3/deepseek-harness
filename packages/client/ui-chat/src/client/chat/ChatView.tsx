@@ -158,10 +158,17 @@ export function ChatView({
       && (submission.placement === 'steering' || !observed.pending.has(submission.requestId))
     ))
   }, [pendingSubmissions, order, nodeStore, inbox])
-  const pendingSteering = useMemo(() => {
-    const local = new Set(visibleSubmissions.filter(submission => submission.placement === 'steering')
-      .map(submission => submission.requestId))
-    return inboxSteering.filter(({ source }) => source.kind !== 'user' || !('rpcId' in source) || !local.has(source.rpcId))
+  const pendingInputs = useMemo(() => {
+    const local = new Map(visibleSubmissions.map(submission => [submission.requestId, submission]))
+    const pending = inboxSteering.map((item) => {
+      const source = item.source
+      if (source.kind !== 'user' || !('rpcId' in source)) return item
+      const submission = local.get(source.rpcId)
+      if (submission === undefined) return item
+      local.delete(source.rpcId)
+      return submission
+    })
+    return [...pending, ...local.values()]
   }, [inboxSteering, visibleSubmissions])
   const renderMessageImages = useCallback<RenderMessageImages>(
     owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
@@ -171,7 +178,7 @@ export function ChatView({
   const firstKey = order[0]
   const firstSeq = firstKey === undefined ? null : nodeStore.get(firstKey)?.anchorSeq ?? null
   const lastKey = order.at(-1) ?? null
-  const latestSteering = pendingSteering.at(-1)
+  const latestSteering = pendingInputs.findLast(item => 'source' in item)
   const steeringId = latestSteering?.source.kind === 'user' && 'rpcId' in latestSteering.source
     ? latestSteering.source.rpcId : latestSteering?.id ?? null
   const scroll = useChatScroll({
@@ -234,18 +241,17 @@ export function ChatView({
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would
               double-render the same wait. */}
-          {pendingSteering.map(item => (
-            <PendingSteeringBubble
-              key={item.id}
-              content={item.content}
+          {pendingInputs.map(item => 'requestId' in item ? (
+            <PendingSubmissionBubble
+              key={item.requestId}
+              submission={item}
               renderMessageImages={renderMessageImages}
               t={t}
             />
-          ))}
-          {visibleSubmissions.map(submission => (
-            <PendingSubmissionBubble
-              key={submission.requestId}
-              submission={submission}
+          ) : (
+            <PendingSteeringBubble
+              key={item.id}
+              content={item.content}
               renderMessageImages={renderMessageImages}
               t={t}
             />

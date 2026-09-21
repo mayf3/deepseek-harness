@@ -1640,6 +1640,40 @@ describe('ChatView', () => {
     expect(view.getAllByText('带图纠偏')).toHaveLength(1)
   })
 
+  it('keeps Host Inbox order across local and other-client steering without remounting the local echo', () => {
+    const h = makeHarness({ nodes: [assistant(1, 'working')] }, {
+      running: true,
+      pendingSubmissions: [{
+        requestId: 'local-steer' as never, placement: 'steering', time: 5_000, text: 'local A', attachments: [],
+      }],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const local = view.getByText('local A').closest('[data-submission-echo]')
+    const first = {
+      id: 'local-occurrence' as never, role: 'user' as const,
+      source: { kind: 'user' as const, rpcId: 'local-steer' as never },
+      content: [{ type: 'text' as const, text: 'local A' }],
+    }
+    const second = {
+      id: 'remote-occurrence' as never, role: 'user' as const,
+      source: { kind: 'user' as const, rpcId: 'remote-steer' as never },
+      content: [{ type: 'text' as const, text: 'remote B' }],
+    }
+    act(() => { h.setSession({ testInbox: { 'next-turn': [], 'next-step': [first, second] } }) })
+    const pendingText = () => [...view.container.querySelectorAll('[data-pending-steering]')]
+      .map(element => element.textContent)
+    expect(pendingText()).toEqual([expect.stringContaining('local A'), expect.stringContaining('remote B')])
+    expect(view.getByText('local A').closest('[data-submission-echo]')).toBe(local)
+
+    act(() => { h.setSession({ testInbox: { 'next-turn': [], 'next-step': [second, first] } }) })
+    expect(pendingText()).toEqual([expect.stringContaining('remote B'), expect.stringContaining('local A')])
+    expect(view.getByText('local A').closest('[data-submission-echo]')).toBe(local)
+
+    act(() => { h.setSession({ pendingSubmissions: [] }) })
+    expect(view.container.querySelector('[data-submission-echo]')).toBeNull()
+    expect(pendingText()).toEqual([expect.stringContaining('remote B'), expect.stringContaining('local A')])
+  })
+
   it('keeps a queued echo out of the Chat flow before and after Host admission', () => {
     const h = makeHarness(
       { nodes: [assistant(1, 'working')] },
