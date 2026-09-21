@@ -21,6 +21,36 @@
         - button "移除打开设置快捷键"
         - button "修改打开设置快捷键"
         - button "打开设置 ⌘ ,": ⌘ ,
+      - listitem:
+        - text: 新会话
+        - button "移除新会话快捷键"
+        - button "修改新会话快捷键"
+        - button "新会话 ⌥ ⌘ N": ⌥ ⌘ N
+      - listitem:
+        - text: 搜索会话
+        - button "移除搜索会话快捷键"
+        - button "修改搜索会话快捷键"
+        - button "搜索会话 ⌥ ⌘ K": ⌥ ⌘ K
+      - listitem:
+        - text: 添加工作区
+        - button "移除添加工作区快捷键"
+        - button "修改添加工作区快捷键"
+        - button "添加工作区 ⌥ ⌘ O": ⌥ ⌘ O
+      - listitem:
+        - text: 重命名会话
+        - button "移除重命名会话快捷键"
+        - button "修改重命名会话快捷键"
+        - button "重命名会话 ⇧ ⌘ R": ⇧ ⌘ R
+      - listitem:
+        - text: 分叉会话
+        - button "移除分叉会话快捷键"
+        - button "修改分叉会话快捷键"
+        - button "分叉会话 ⇧ ⌘ F": ⇧ ⌘ F
+      - listitem:
+        - text: 归档会话
+        - button "移除归档会话快捷键"
+        - button "修改归档会话快捷键"
+        - button "归档会话 ⌥ ⌘ A": ⌥ ⌘ A
   - region "消息输入":
     - heading "消息输入" [level=3]
     - list:

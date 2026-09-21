@@ -1,9 +1,13 @@
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 /**
  * Browser-half lifecycle over the real SlotRegistry: the dictionary,
  * header-slot, and document-preview path registrations with fiber teardown
  * proving removal (HMR safety) and the injected controller faces.
  */
 
+import type { ShortcutCommand } from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -31,7 +35,7 @@ const remote = {
 }
 
 /** Boot the browser half over a real slot tree that declares the header list and the document-preview seats. */
-async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugin']> }> {
+async function bench() {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   ctx.slots.register({
@@ -44,13 +48,16 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
       'deliverables.review.file.actions': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
-  ctx.provide('sessions', {})
+  const list = createSnapshotStore<SessionListState>({ ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
+  const commands = new Map<string, ShortcutCommand>()
+  ctx.provide('sessions', { list })
+  ctx.provide('shortcuts', { register: (command: ShortcutCommand) => { commands.set(command.id, command); return () => { commands.delete(command.id) } }, catalog: createSnapshotStore([]) })
   ctx.provide('locale', new LocaleRuntime(ctx))
   ctx.provide('remote', remote as never)
   ctx.provide('remote.session', remote.session as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber }
+  return { ctx, fiber, list, commands }
 }
 
 function headerEntryIds(ctx: Context): (string | undefined)[] {
@@ -58,8 +65,42 @@ function headerEntryIds(ctx: Context): (string | undefined)[] {
 }
 
 describe('open-in-app browser half', () => {
+  it('captures the main directory and remembered app before dispatch and shares pointer launch occupancy', async () => {
+    let finish!: (response: Response) => void
+    const fetcher = vi.fn((input: string | URL, _init?: RequestInit) => String(input) === 'open-in-app/apps'
+      ? Promise.resolve(new Response(JSON.stringify({ apps: ['finder', 'cursor'] })))
+      : new Promise<Response>((resolve) => { finish = resolve }))
+    vi.stubGlobal('fetch', fetcher)
+    const { ctx, fiber, list, commands } = await bench()
+    const id = 'main' as SessionId
+    const select = (cwd: string) => { list.set({ ...list.getSnapshot(), ids: [id], byId: {
+      [id]: { id, displayTitle: 'Main', cwd, running: false, blank: false, updatedAt: 0, retainedBy: { mainView: 1 } },
+    } }) }
+    const entry = ctx.slots.entries('conversation.session.header.utilities')[0]
+    const face = (entry?.inject as unknown as () => OpenInAppActionInjected)()
+    await vi.waitFor(() => { expect(face.hooks.openInAppApps.getSnapshot()).toEqual(['finder', 'cursor']) })
+    select('/first')
+    face.choose('cursor')
+    const command = commands.get('workspace.openLocal')!
+    const context = { region: 'page', modal: null, target: null } as const
+    const resolution = command.resolve(context)
+    select('/second')
+    face.choose('finder')
+    if (resolution.status !== 'handled') throw new Error('available workspace was blocked')
+    resolution.run()
+    expect(command.resolve(context).status).toBe('blocked')
+    await face.launch('finder', '/second')
+    const calls = fetcher.mock.calls.filter(call => call[0] === 'open-in-app/open')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.[1]?.body).toBe(JSON.stringify({ app: 'cursor', path: '/first' }))
+    finish(new Response('{}'))
+    await vi.waitFor(() => { expect(face.hooks.openInAppLaunch.getSnapshot().phase).toBe('idle') })
+    await fiber.dispose()
+    expect(commands.size).toBe(0)
+  })
+
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['sessions', 'slots', 'locale', 'remote', 'remote.session'])
+    expect(inject).toEqual(['sessions', 'slots', 'locale', 'remote', 'remote.session', 'shortcuts'])
   })
 
   it('registers both document-preview path controls behind one desktop answer, and fiber teardown removes them', async () => {

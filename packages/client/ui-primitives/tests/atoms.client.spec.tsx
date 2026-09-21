@@ -89,18 +89,19 @@ describe('Menu', () => {
           onSelect={() => {}}
           onClose={() => { setOpen(false) }}
         >
-          <MenuItemButton separatorBefore onSelect={() => { onAction(); setOpen(false) }}>Publish</MenuItemButton>
+          <MenuItemButton separatorBefore shortcut={{ keys: ['Ctrl', 'P'], aria: 'Control+P' }} onSelect={() => { onAction(); setOpen(false) }}>Publish</MenuItemButton>
         </Menu>
       )
     }
     render(<Harness />)
     const trigger = screen.getByRole('button', { name: 'trigger' })
-    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Alpha', 'Publish'])
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Alpha', 'PublishCtrlP'])
     // The component row starts a group: one hairline, between the data row and it.
     const publishWrap = screen.getByRole('menuitem', { name: 'Publish' }).parentElement
     expect(screen.getByRole('separator').nextElementSibling).toBe(screen.getByRole('menuitem', { name: 'Publish' }))
     expect(publishWrap?.contains(screen.getByRole('separator'))).toBe(true)
     const publish = screen.getByRole('menuitem', { name: 'Publish' })
+    expect(publish.getAttribute('aria-keyshortcuts')).toBe('Control+P')
     trigger.focus()
     fireEvent.keyDown(trigger, { key: 'End' })
     expect(document.activeElement).toBe(publish)

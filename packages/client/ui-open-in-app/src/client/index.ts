@@ -4,6 +4,7 @@
  * file defaults and application lists come from the serving Host desktop.
  */
 
+import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -34,7 +35,7 @@ export type { OpenPathActionProps, OpenPathInjected } from './OpenPathAction.tsx
 export type { OpenPathEmptyActionProps } from './OpenPathEmptyAction.tsx'
 
 /** Required services: sessions, the slot registry, copy, and the Remote carrier with its `session` namespace. */
-export const inject = ['sessions', 'slots', 'locale', 'remote', 'remote.session']
+export const inject = ['sessions', 'slots', 'locale', 'remote', 'remote.session', 'shortcuts']
 
 /**
  * Client plugin body: register the dictionaries, the header split button, and
@@ -46,6 +47,38 @@ export function apply(ctx: ClientContext): void {
   void controller.load()
   const paths = new OpenInAppPathController(ctx.remote)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'open-in-app: dictionaries')
+  const t = ctx.locale.bind(NS)
+  const target = () => {
+    const session = Object.values(ctx.sessions.list.getSnapshot().byId)
+      .find(row => (row.retainedBy.mainView ?? 0) > 0)
+    const appId = controller.currentApp()
+    return session?.cwd && appId !== undefined ? { appId, path: session.cwd } : undefined
+  }
+  const unavailable = () => controller.operation.getSnapshot().phase === 'busy'
+    ? t('shortcut.busy') : target() === undefined ? t('shortcut.unavailable') : null
+  ctx.effect(() => ctx.shortcuts.register({
+    id: 'workspace.openLocal' as ShortcutCommandId, label: () => t('open.tooltip'), aliases: ['open workspace locally', 'open in app'],
+    defaults: { desktop: { code: 'KeyO', modifiers: ['primary', 'alt'] } },
+    regions: ['page', 'editable'], modals: [],
+    availability: {
+      getSnapshot: unavailable,
+      subscribe: (listener) => {
+        const stops = [ctx.sessions.list.subscribe(listener), controller.apps.subscribe(listener),
+          controller.choice.subscribe(listener), controller.operation.subscribe(listener), ctx.locale.subscribe(listener)]
+        return () => { for (const stop of stops) stop() }
+      },
+    },
+    resolve: () => {
+      const selected = target()
+      const reason = unavailable()
+      if (selected === undefined || reason !== null) return { status: 'blocked', reason: reason ?? t('shortcut.unavailable') }
+      return { status: 'handled', run: () => {
+        void controller.launch(selected.appId, selected.path).catch((error: unknown) => {
+          console.warn('workspace open rejected:', error)
+        })
+      } }
+    },
+  }), 'open-in-app: workspace command')
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
     id: 'open-in-app',
@@ -55,6 +88,8 @@ export function apply(ctx: ClientContext): void {
       hooks: {
         openInAppApps: controller.apps,
         openInAppChoice: controller.choice,
+        openInAppLaunch: controller.operation,
+        shortcuts: ctx.shortcuts.catalog,
       },
       launch: (appId, path) => controller.launch(appId, path),
       choose: (appId) => { controller.choose(appId) },

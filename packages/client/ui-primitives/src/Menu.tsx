@@ -45,6 +45,8 @@ export type MenuEntry = MenuItem | MenuSeparator | MenuLabel
 export interface MenuItemButtonProps {
   /** Visible row label. */
   children: ReactNode
+  /** Effective binding supplied by the command owner; omitted for unbound actions. */
+  shortcut?: MenuItem['shortcut']
   /** Leading icon (figma .Menu_cell gap 8). */
   icon?: ReactNode
   /** Whether the row cannot be activated. */
@@ -69,6 +71,7 @@ export interface MenuItemButtonProps {
  * without any shared state. Closing the menu stays the owner's decision, as
  * it is for data rows.
  * @param props.children - visible row label.
+ * @param props.shortcut - effective key labels and accessible combination.
  * @param props.icon - optional leading icon.
  * @param props.disabled - whether the row cannot be activated.
  * @param props.danger - whether to use the destructive row colors.
@@ -77,7 +80,7 @@ export interface MenuItemButtonProps {
  * @returns one menu-item row.
  */
 export function MenuItemButton({
-  children, icon, disabled = false, danger = false, separatorBefore = false, onSelect,
+  children, shortcut, icon, disabled = false, danger = false, separatorBefore = false, onSelect,
 }: MenuItemButtonProps) {
   return (
     <div className={css.itemWrap}>
@@ -87,10 +90,12 @@ export function MenuItemButton({
         role="menuitem"
         className={clsx(css.item, danger && css.danger)}
         disabled={disabled}
+        aria-keyshortcuts={shortcut?.aria}
         onClick={onSelect}
       >
         {icon !== undefined && <span className={css.itemIcon}>{icon}</span>}
         <span className={css.itemLabel}>{children}</span>
+        {shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys keys={shortcut.keys} className={css.shortcutKeys} /></span>}
       </button>
     </div>
   )

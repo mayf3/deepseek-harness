@@ -12,6 +12,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { DirectoryFlowOwnerProps, WorkspaceBrowserProps } from '../src/client/contract/slots.ts'
+import { createWorkspaceShortcutControls } from '../src/client/shortcuts.ts'
 import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
 import { UNGROUPED_KEY } from '../src/client/tree.ts'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
@@ -102,8 +103,16 @@ const renderDirectoryFlowOnly: WorkspaceBrowserProps['renderSlot'] = (name: stri
     : null
 
 function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
+  const controls = createWorkspaceShortcutControls()
   const store = createWorkspaceViewStore().create()
   const props: WorkspaceBrowserProps = {
+    useShortcuts: select => select([]),
+    useWorkspaceShortcuts: bindSnapshotSelector(controls.state),
+    requestSearch: controls.search,
+    requestAddWorkspace: controls.add,
+    closeAddWorkspace: controls.closeAdd,
+    setDirectoryBusy: controls.directoryBusy,
+    requestSessionRename: controls.rename,
     wide: true,
     expandSidebar: vi.fn(),
     useSessions: hook(sessionState([])),
@@ -117,7 +126,6 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     open: vi.fn(),
     searchSessions: vi.fn(async () => ({ items: [], hasMore: false })),
     searchResultLimit: 20,
-    requestSessionRename: vi.fn(),
     notifyArchivedNotOpenable: vi.fn(),
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),

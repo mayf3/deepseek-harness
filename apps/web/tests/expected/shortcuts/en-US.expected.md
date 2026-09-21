@@ -21,6 +21,36 @@
         - button "Remove shortcut for Open settings"
         - button "Edit shortcut for Open settings"
         - button "Open settings Ctrl + ,": Ctrl + ,
+      - listitem:
+        - text: New Session
+        - button "Remove shortcut for New Session"
+        - button "Edit shortcut for New Session"
+        - button "New Session Ctrl + Alt + N": Ctrl + Alt + N
+      - listitem:
+        - text: Search sessions
+        - button "Remove shortcut for Search sessions"
+        - button "Edit shortcut for Search sessions"
+        - button "Search sessions Ctrl + Alt + K": Ctrl + Alt + K
+      - listitem:
+        - text: Add workspace
+        - button "Remove shortcut for Add workspace"
+        - button "Edit shortcut for Add workspace"
+        - button "Add workspace Ctrl + Alt + O": Ctrl + Alt + O
+      - listitem:
+        - text: Rename session
+        - button "Remove shortcut for Rename session"
+        - button "Edit shortcut for Rename session"
+        - button "Rename session Ctrl + Shift + R": Ctrl + Shift + R
+      - listitem:
+        - text: Fork session
+        - button "Remove shortcut for Fork session"
+        - button "Edit shortcut for Fork session"
+        - button "Fork session Ctrl + Shift + F": Ctrl + Shift + F
+      - listitem:
+        - text: Archive session
+        - button "Remove shortcut for Archive session"
+        - button "Edit shortcut for Archive session"
+        - button "Archive session Ctrl + Alt + A": Ctrl + Alt + A
   - region "Message input":
     - heading "Message input" [level=3]
     - list:

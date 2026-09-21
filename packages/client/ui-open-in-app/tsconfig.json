@@ -52,6 +52,9 @@
     },
     {
       "path": "../../util/native-command"
+    },
+    {
+      "path": "../shortcuts/tsconfig.client.json"
     }
   ]
 }
