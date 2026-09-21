@@ -187,7 +187,7 @@ export class OfficeToPdf extends TypertRemoteService {
       const files = this.ctx.get('workspaceFiles')
       const fs = this.ctx.get('fs')
       if (files === undefined || fs === undefined) throw new OfficeToPdfError('unavailable', 'Office file rendering requires workspaceFiles and fs.')
-      const authorized = await files.readBytes(scope, path, { offset: 0, length: 1 }, signal)
+      const authorized = await files.readBytes(scope, path, { range: { offset: 0, length: 1 } }, signal)
       const source = await files.stat(scope, path, signal)
       const assertUnchanged = (current: WorkspaceFileStat): void => {
         if (current.absolutePath !== source.absolutePath || current.version !== source.version) {

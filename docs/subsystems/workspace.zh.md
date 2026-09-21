@@ -397,34 +397,14 @@ Host Remote file reads and workspace directory observations over the composed fi
 @Remote async read( workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal, ): Promise<WorkspaceFileText>
 
 /**
- * Read one byte window of a regular file readable by the filesystem backend: raw
- * bytes, no text decoding and no binary rejection.
+ * Read a complete regular file or one byte range without text decoding.
  * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
- * @param range - the byte window; omitted fields take the window defaults.
+ * @param path - target path, absolute or workspace-relative; relative to the base file's directory when provided.
+ * @param options - optional base file and range; without a range the complete-file cap applies.
  * @param signal - caller cancellation.
- * @returns the window in base64, the file's version and size at the stat before it, and whether it reaches the last byte.
+ * @returns native bytes with the file's version and size at the preceding stat, byte offset, and EOF marker.
  */
-@Remote async readBytes( workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceByteRange, signal: AbortSignal, ): Promise<WorkspaceFileBytes>
-
-/**
- * Read a complete regular file as bytes, subject to the configured full-file cap.
- * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param path - absolute or workspace-relative file path.
- * @param signal - caller cancellation.
- * @returns one complete base64 window with offset zero and eof true; oversized files fail with too-large.
- */
-@Remote async readAll(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
-
-/**
- * Read a complete file relative to another file's directory, including outside the workspace.
- * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param path - base file, absolute or workspace-relative.
- * @param relativePath - relative filesystem path, not a URL or absolute path.
- * @param signal - caller cancellation.
- * @returns the complete related file using the ordinary file-size and access checks.
- */
-@Remote async readRelated( workspaceFileScope: WorkspaceFileScope, path: string, relativePath: string, signal: AbortSignal, ): Promise<WorkspaceFileBytes>
+@Remote async readBytes( workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceByteReadOptions, signal: AbortSignal, ): Promise<WorkspaceFileBytes>
 
 /**
  * Report one regular file's identity, version, and size without its content.
