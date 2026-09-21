@@ -274,6 +274,7 @@ interface ToolOutputMap {
     signal: string | null;
     timedOut: boolean;
     aborted: boolean;
+    stopped?: string;
     timeoutMs: number;
     stdout: {
       text: string;

@@ -219,7 +219,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/job-controller/src/index.ts:33`](../packages/api/job-controller/src/index.ts)
+来源：[`packages/api/job-controller/src/index.ts:37`](../packages/api/job-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
@@ -3078,19 +3078,25 @@ export type TokenMeterConfig = Record<string, never>
 ```ts config-catalog
 /** Configuration for the bash tool. */
 export interface Config {
-  /** Expose `run_in_background` (default true); disabled calls are also rejected. */
+  /**
+   * Expose `run_in_background` while a job registry is composed (default
+   * true); disabled calls are also rejected. Without a registry the tool is
+   * foreground-only regardless.
+   */
   enableRunInBackground?: boolean
   /**
-   * Move a foreground command that reaches its timeout into the background as
-   * a job instead of killing it (default true). Requires background execution:
-   * it is inert when `enableRunInBackground` is false or the composition has
-   * no job registry, and every promotion failure falls back to the timeout kill.
+   * Keep a foreground command that reaches its timeout running as a
+   * background job instead of killing it (default true). Applies only while
+   * background execution is available: with `enableRunInBackground` false or
+   * no job registry, the executor's deadline kills the command. A foreground
+   * command the registry refuses at its start (admission or a missing
+   * controller) also runs under the deadline kill.
    */
   promoteOnTimeout?: boolean
 }
 ```
 
-来源：[`packages/shell/tool-bash/src/index.ts:33`](../packages/shell/tool-bash/src/index.ts)
+来源：[`packages/shell/tool-bash/src/index.ts:37`](../packages/shell/tool-bash/src/index.ts)
 
 <a id="deepseek-aidsh-tool-bash-persistent"></a>
 
@@ -3219,7 +3225,7 @@ export interface Config {
 export type CompletionDelivery = 'quiet' | 'wakeup'
 ```
 
-来源：[`packages/jobs/tool-jobs/src/index.ts:37`](../packages/jobs/tool-jobs/src/index.ts)
+来源：[`packages/jobs/tool-jobs/src/index.ts:41`](../packages/jobs/tool-jobs/src/index.ts)
 
 <a id="deepseek-aidsh-tool-lsp"></a>
 
@@ -3266,19 +3272,25 @@ export interface Config {
 ```ts config-catalog
 /** Configuration for the pwsh tool. */
 export interface Config {
-  /** Expose `run_in_background` (default true); disabled calls are also rejected. */
+  /**
+   * Expose `run_in_background` while a job registry is composed (default
+   * true); disabled calls are also rejected. Without a registry the tool is
+   * foreground-only regardless.
+   */
   enableRunInBackground?: boolean
   /**
-   * Move a foreground command that reaches its timeout into the background as
-   * a job instead of killing it (default true). Requires background execution:
-   * it is inert when `enableRunInBackground` is false or the composition has
-   * no job registry, and every promotion failure falls back to the timeout kill.
+   * Keep a foreground command that reaches its timeout running as a
+   * background job instead of killing it (default true). Applies only while
+   * background execution is available: with `enableRunInBackground` false or
+   * no job registry, the executor's deadline kills the command. A foreground
+   * command the registry refuses at its start (admission or a missing
+   * controller) also runs under the deadline kill.
    */
   promoteOnTimeout?: boolean
 }
 ```
 
-来源：[`packages/shell/tool-pwsh/src/index.ts:52`](../packages/shell/tool-pwsh/src/index.ts)
+来源：[`packages/shell/tool-pwsh/src/index.ts:54`](../packages/shell/tool-pwsh/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh-persistent"></a>
 

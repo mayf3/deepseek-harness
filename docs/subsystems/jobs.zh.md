@@ -294,6 +294,14 @@ type JobEvent =
     readonly type: 'settled'
     readonly job: JobView
     readonly cause: JobSettleCause
+    /**
+     * Whether this settlement released a live {@link JobRegistry.wait}. That
+     * waiter's caller receives the terminal projection as its own result, so
+     * a completion reporter treats an awaited settlement as already delivered
+     * and reports only the unawaited ones. A wait that timed out or was
+     * aborted before the settlement does not count.
+     */
+    readonly awaited: boolean
   }
   | {
     readonly type: 'output'
@@ -363,9 +371,10 @@ Host service backing the generated `ctx.remote.job` namespace.
  * Kill one background job on a human's behalf. The request's session is
  * the fenced read's caller, so the job must be one that session can see;
  * the subagent ownership fence applies exactly as it does to
- * `session.cancel`. The kill records `cancelled by the user` as its reason
- * and claims nothing in the model-facing notice ledger, so the owning agent
- * still receives the completion notice.
+ * `session.cancel`. The kill records `cancelled by the user` as its reason;
+ * it is not one the model requested, so the owning agent still receives
+ * the completion notice, and a shell tool waiting on that job reads the
+ * reason in its own result.
  * @param request - Session whose job list carries the job, and the job id.
  * @returns the registry's admission of the kill request.
  */
@@ -384,7 +393,8 @@ Implementations must honor these semantics:
 
 - Registrations outlive producer and controller fibers. Owner and service disposal cancel live work and await compliant producers; a throwing teardown cancel force-fails only the record. Such settlements announce `cause: 'teardown'`, because a job whose owner is being destroyed has no reader left.
 - Owned-job access is fenced by the owner's session id. Ids are predictable, so authorization — not secrecy — is the boundary.
-- Settlement is first-wins: one terminal record, released waiters, then one round of contained event delivery, even against a late producer outcome. The `settled` event follows every released waiter, so a consumer that claims a settlement while waiting always claims before the event.
+- Settlement is first-wins: one terminal record, released waiters, then one round of contained event delivery, even against a late producer outcome. The `settled` event follows every released waiter and reports whether it released one (`awaited`), so a completion reporter can skip settlements a waiting caller already collected.
+- A settled record stays listed until its owner's disposal, service disposal, or an explicit remove by a caller that collected the terminal state itself and never handed the id out.
 - start refuses work while no attached job controller serves the spec's owner, so a producer cannot start work that owner cannot collect or stop. One registry serves every composition in the process, so this question — and event delivery under `{ owners: 'scope' }` — is owner-relative rather than process-wide: registrations made from an unscoped context serve every owner, and registrations made under an agent composition's scope serve exactly the agents composed under it.
 - Every job owns one output ring. Pull sources named by the spec are pumped by the registry and drained once more before settlement; pushed appends land whole. The model's consuming cursor and observers' absolute offsets read the same bytes and never disturb each other.
 - Ring retention is bounded. Appends past the live cap drop the oldest retained bytes; a reader below the retained window gets a lossy read, never an error. Settlement trims retention to the settled cap and ends the stream; the ring has no separate lifecycle.
@@ -462,6 +472,16 @@ abstract kill(id: JobId, caller?: SessionId, reason?: string): 'requested' | 'al
  * @returns projection at settlement or timeout.
  */
 abstract wait(id: JobId, timeoutMs: number, caller?: SessionId, signal?: AbortSignal): Promise<JobView>
+
+/**
+ * Drop one settled job's record from the visible set and announce
+ * `removed`. For a caller that collected the terminal state through its own
+ * {@link wait} and never handed the id to the model, such as a shell tool's
+ * foreground call. Throws for a job that is still live, unknown, or foreign.
+ * @param id - settled job to drop.
+ * @param caller - removing session checked against the owner.
+ */
+abstract remove(id: JobId, caller?: SessionId): void
 
 /**
  * Attach an effect-scoped controller that can read and stop jobs. It serves the

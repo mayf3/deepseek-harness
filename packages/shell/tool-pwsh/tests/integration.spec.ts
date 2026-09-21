@@ -65,8 +65,8 @@ describe.skipIf(!hasPwsh)('pwsh tool over the real pwsh executor', () => {
     await ctx.plugin(LocalSubprocessRuntime)
     await ctx.plugin(BashEnvPlugin)
     await ctx.plugin(PwshLocalExecutor, { timeoutMs: 20_000, graceMs: 200 })
-    // This suite pins the executor's own deadline behaviour; the timeout
-    // promotion into a job is pinned by background.spec.
+    // This suite pins the executor's own deadline behaviour; the job-backed
+    // foreground path is pinned by background.spec.
     await ctx.plugin(ToolPwsh, { promoteOnTimeout: false })
   })
 

@@ -43,7 +43,6 @@ function recordingBash(run: (spec: ShellExecSpec) => Promise<ShellRunResult>): {
         readOutput: () => ({ delta: '', lossy: false }),
         observed: { stdout: reader, stderr: reader },
         kill: () => false,
-        promotion: Promise.resolve(undefined),
         result: () => run(spec),
       }
     },

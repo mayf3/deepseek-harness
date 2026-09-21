@@ -248,13 +248,13 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 Abstract bash execution service. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis' standard duplicate-service behavior).
 
-execute resolves with the process handle after preparation. "Foreground" is a property of what the caller awaits, not of the spawn — a caller that awaits ShellExecution.result ran the command in the foreground; one that keeps the handle ran it in the background; one that awaits ShellExecution.promotion under `onExpiry: 'offer'` decides at the deadline.
+execute resolves with the process handle after preparation. "Foreground" is a property of what the caller awaits, not of the spawn — a caller that awaits ShellExecution.result ran the command in the foreground; one that keeps the handle ran it in the background. A caller that waits only for a while runs the command under `onExpiry: 'none'` and bounds its own wait; the handle stays valid after the caller stops waiting.
 
 Implementations must honor these semantics:
 
 - ShellExecution.result rejects only for infrastructure failures. Nonzero exits, timeout kills, and abort kills resolve with a descriptive result: first-cause `timedOut`/`aborted`, the spec's `timeoutMs` echoed.
 - The handle is published after preparation. `done` settles at process close and never rejects; spawn failures settle as `killed` with the error on the read path, while `result()` carries the same failure as its rejection.
-- `onExpiry: 'none'` arms no deadline; `'kill'` kills at expiry; `'offer'` resolves ShellExecution.promotion instead of killing, and an unanswered offer is treated as declined. Expiry during preparation returns a settled timed-out handle without output or a promotion offer.
+- `onExpiry: 'none'` arms no deadline; `'kill'` kills at expiry. Expiry during preparation returns a settled timed-out handle without output.
 - ShellProcess.readOutput is incremental: consecutive reads never repeat output. Lossy reads report truncation and available spill files.
 - A still-running process is stopped and awaited when its owning composition tears down. With the subprocess seam that boundary is `ctx.subprocess` disposal, so a process survives an executor-only reload.
 
@@ -270,7 +270,7 @@ abstract resolve(request: ShellExecRequest): ShellExecSpec
 /**
  * Prepare and spawn the command under its resolved deadline.
  * @param spec - a resolved spec from {@link resolve}, never a raw request.
- * @returns the prepared handle, including its result and promotion signal;
+ * @returns the prepared handle, including its result projection;
  *   preparation timeout yields an already-settled handle with no output.
  * @throws on preparation failure or caller cancellation before process publication.
  */

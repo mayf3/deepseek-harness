@@ -95,6 +95,7 @@ class BashOutput3(TypedDict):
     signal: str | None
     timedOut: bool
     aborted: bool
+    stopped: NotRequired[str]
     timeoutMs: float
     stdout: BashOutput3Stdout
     stderr: BashOutput3Stderr

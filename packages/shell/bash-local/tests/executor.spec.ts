@@ -505,7 +505,7 @@ describe('process lifecycle ownership (the subprocess service, not the executor)
   })
 })
 
-describe('offer arm cancellation against a hanging backend', () => {
+describe('cancellation against a hanging backend', () => {
   /** A subprocess service whose process runs until the test settles it and ignores the spawn signal. */
   class HangingSubprocessRuntime extends SubprocessRuntime {
     settle: (outcome: { exitCode: number | null; signal: NodeJS.Signals | null }) => void = () => {}
@@ -529,16 +529,16 @@ describe('offer arm cancellation against a hanging backend', () => {
     }
   }
 
-  it('a caller abort before the deadline yields no offer when the timer still fires', async () => {
+  it('a caller abort before the deadline stays the first cause when the process outlives the deadline', async () => {
     const ctx = new Context()
     const subprocess = new HangingSubprocessRuntime(ctx)
     await ctx.plugin(LocalBashExecutor)
     const controller = new AbortController()
-    const ex = (await ctx.shell.execute(ctx.shell.resolve({ command: 'sleep 30', timeoutMs: 20, signal: controller.signal, onExpiry: 'offer' })))
+    const ex = (await ctx.shell.execute(ctx.shell.resolve({ command: 'sleep 30', timeoutMs: 20, signal: controller.signal })))
     controller.abort()
     // The fake ignores the relayed abort, so the process outlives the deadline
-    // the way a real one does inside its termination grace: no offer.
-    await expect(ex.promotion).resolves.toBeUndefined()
+    // the way a real one does inside its termination grace.
+    await new Promise(resolve => setTimeout(resolve, 40))
     subprocess.settle({ exitCode: null, signal: 'SIGTERM' })
     const result = await ex.result()
     expect(result.aborted).toBe(true)
@@ -546,109 +546,7 @@ describe('offer arm cancellation against a hanging backend', () => {
   })
 })
 
-describe('execute() offer expiry', () => {
-  it('offers at the deadline; accept detaches the timer and the caller signal, and kill() still stops it', async () => {
-    const { bash } = await setup()
-    const controller = new AbortController()
-    const ex = (await bash.execute(bash.resolve({
-      command: 'echo early; sleep 30',
-      timeoutMs: 150,
-      signal: controller.signal,
-      onExpiry: 'offer',
-    })))
-    const offer = await ex.promotion
-    if (offer === undefined) throw new Error('expected a promotion offer, got settlement')
-    expect(ex.status).toBe('running')
-    offer.accept()
-
-    // The accepted execution ignores both the expired deadline and the
-    // caller's signal; only kill() stops it now.
-    controller.abort()
-    await new Promise(resolve => setTimeout(resolve, 100))
-    expect(ex.status).toBe('running')
-    const seen = await readUntil(ex, 'early')
-    expect(seen).toContain('early')
-    expect(ex.kill()).toBe(true)
-    await ex.done
-    expect(ex.status).toBe('killed')
-  })
-
-  it('decline kills now and classifies the result timedOut', async () => {
-    const { bash } = await setup()
-    const ex = (await bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' })))
-    const offer = await ex.promotion
-    if (offer === undefined) throw new Error('expected a promotion offer, got settlement')
-    offer.decline()
-    const result = await ex.result()
-    expect(result.timedOut).toBe(true)
-    expect(result.aborted).toBe(false)
-    expect(ex.status).toBe('killed')
-    // A second answer is ignored.
-    offer.accept()
-    expect(ex.status).toBe('killed')
-  })
-
-  it('resolves undefined when the process settles before the deadline', async () => {
-    const { bash } = await setup()
-    const ex = (await bash.execute(bash.resolve({ command: 'echo done', timeoutMs: 10_000, onExpiry: 'offer' })))
-    await expect(ex.promotion).resolves.toBeUndefined()
-    const result = await ex.result()
-    expect(result).toMatchObject({ exitCode: 0, timedOut: false, aborted: false })
-  })
-
-  it('treats an unanswered offer as declined', async () => {
-    const { bash } = await setup()
-    const ex = (await bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' })))
-    // Nobody awaits the promotion: the executor still falls back to the
-    // kill-on-timeout behavior instead of detaching the process.
-    const result = await ex.result()
-    expect(result.timedOut).toBe(true)
-    expect(ex.status).toBe('killed')
-  })
-
-  it('classifies a pre-offer caller abort as aborted and settles the promotion undefined', async () => {
-    const { bash } = await setup()
-    const controller = new AbortController()
-    const ex = (await bash.execute(bash.resolve({
-      command: 'sleep 30',
-      timeoutMs: 5_000,
-      signal: controller.signal,
-      onExpiry: 'offer',
-    })))
-    controller.abort()
-    await expect(ex.promotion).resolves.toBeUndefined()
-    const result = await ex.result()
-    expect(result.aborted).toBe(true)
-    expect(result.timedOut).toBe(false)
-  })
-
-  it('relays a caller signal that was already aborted: no offer, and the execution settles aborted', async () => {
-    const { bash } = await setup()
-    const controller = new AbortController()
-    controller.abort()
-    const ex = (await bash.execute(bash.resolve({
-      command: 'sleep 30',
-      timeoutMs: 50,
-      signal: controller.signal,
-      onExpiry: 'offer',
-    })))
-    await expect(ex.promotion).resolves.toBeUndefined()
-    await ex.done
-    expect(ex.status).toBe('killed')
-    // A spawn under an aborted signal is contained like every spawn failure:
-    // the projection rejects, and nothing reached the deadline to offer.
-    await expect(ex.result()).rejects.toThrow()
-  })
-
-  it('kill-policy executions settle the promotion undefined too', async () => {
-    const { bash } = await setup()
-    const ex = (await bash.execute(bash.resolve({ command: 'echo hi', timeoutMs: 5_000 })))
-    await expect(ex.promotion).resolves.toBeUndefined()
-    await ex.result()
-  })
-})
-
-describe('execute() projections under none policy and late answers', () => {
+describe('execute() projections under none policy', () => {
   it('classifies a no-deadline execution: clean settle, then an aborted one', async () => {
     const { bash } = await setup()
     const clean = (await start(bash, bash.resolve({ command: 'echo bg' })))
@@ -660,31 +558,5 @@ describe('execute() projections under none policy and late answers', () => {
     controller.abort()
     await killed.done
     await expect(killed.result()).resolves.toMatchObject({ timedOut: false, aborted: true })
-  })
-
-  it('ignores a decline after an accept', async () => {
-    const { bash } = await setup()
-    const ex = (await bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' })))
-    const offer = await ex.promotion
-    if (offer === undefined) throw new Error('expected a promotion offer')
-    offer.accept()
-    offer.decline()
-    expect(ex.status).toBe('running')
-    ex.kill()
-    await ex.done
-  })
-
-  it('auto-declines an offer not answered synchronously, and ignores the late answers', async () => {
-    const { bash } = await setup()
-    const ex = (await bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' })))
-    const offer = await ex.promotion
-    if (offer === undefined) throw new Error('expected a promotion offer')
-    // Break the synchronous-answer contract on purpose: the executor's
-    // auto-decline claims the answer, and the late ones are ignored.
-    await ex.done
-    expect(ex.status).toBe('killed')
-    offer.accept()
-    offer.decline()
-    await expect(ex.result()).resolves.toMatchObject({ timedOut: true, aborted: false })
   })
 })

@@ -56,9 +56,9 @@ async function setup() {
     if (spec.signal?.aborted) terminate()
     return handle
   })
-  const start = (timeoutMs = 10, signal?: AbortSignal, onExpiry: 'kill' | 'offer' = 'kill') => {
+  const start = (timeoutMs = 10, signal?: AbortSignal) => {
     const observed: { done: boolean; result?: ShellRunResult; error?: unknown } = { done: false }
-    const execution = ctx.shell.execute(ctx.shell.resolve({ command: 'fixture command', timeoutMs, signal, onExpiry }))
+    const execution = ctx.shell.execute(ctx.shell.resolve({ command: 'fixture command', timeoutMs, signal }))
     const promise = execution.then(process => process.result())
     runs.push(promise)
     void promise.then(
@@ -72,11 +72,10 @@ async function setup() {
 
 describe('pwsh preparation deadline', () => {
   it.each([
-    { late: 'success', onExpiry: 'kill' }, { late: 'rejection', onExpiry: 'kill' },
-    { late: 'success', onExpiry: 'offer' }, { late: 'rejection', onExpiry: 'offer' },
-  ] as const)('times out $onExpiry preparation and prevents late $late from spawning', async ({ late, onExpiry }) => {
+    { late: 'success' }, { late: 'rejection' },
+  ] as const)('times out preparation and prevents late $late from spawning', async ({ late }) => {
     const test = await setup()
-    const run = test.start(10, undefined, onExpiry)
+    const run = test.start(10)
     const signal = await test.entered.promise
     await vi.advanceTimersByTimeAsync(10)
     expect(run.observed.done).toBe(true)
@@ -87,7 +86,6 @@ describe('pwsh preparation deadline', () => {
       sandbox: { mode: 'read-only', denied: false },
     })
     expect(test.spawn).not.toHaveBeenCalled()
-    await expect((await run.execution).promotion).resolves.toBeUndefined()
     if (late === 'success') test.prepared.resolve(test.wrap)
     else test.prepared.reject(new Error('late preparation rejection'))
     await vi.advanceTimersByTimeAsync(0)

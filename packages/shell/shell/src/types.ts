@@ -44,12 +44,13 @@ export interface ShellSandboxInfo {
 }
 
 /**
- * What the executor does when a foreground deadline expires: `kill` stops the
- * command and classifies the result `timedOut` (the default), `offer` resolves
- * {@link ShellExecution.promotion} with a {@link ShellPromotionOffer} instead
- * of killing, and `none` arms no deadline at all (background semantics).
+ * What the executor does when the deadline expires: `kill` stops the command
+ * and classifies the result `timedOut` (the default), and `none` arms no
+ * deadline at all, leaving the caller's signal and {@link ShellProcess.kill}
+ * as the only ways to stop the command. A consumer that wants to keep waiting
+ * only for a while runs the command under `none` and bounds its own wait.
  */
-export type ShellExpiryPolicy = 'kill' | 'offer' | 'none'
+export type ShellExpiryPolicy = 'kill' | 'none'
 
 /**
  * A caller's execution REQUEST: `workdir` and `timeoutMs` are optional and
@@ -219,28 +220,8 @@ export interface ShellProcess {
 }
 
 /**
- * The choice handed out when an `onExpiry: 'offer'` deadline expires on a
- * still-running command. The consumer MUST answer synchronously upon the
- * offer's resolution; the executor treats an unanswered offer as declined, so
- * a consumer that forgets falls back to the kill-on-timeout behavior rather
- * than silently detaching the process. Both answers are no-ops on an
- * execution that settled in the meantime, and a second answer is ignored.
- */
-export interface ShellPromotionOffer {
-  /**
-   * Keep the command running with background semantics: the deadline
-   * obligation ends and the caller's abort signal detaches, so from here only
-   * {@link ShellProcess.kill} (or composition teardown) stops the process.
-   */
-  accept(): void
-  /** Kill now; {@link ShellExecution.result} classifies the run `timedOut`. */
-  decline(): void
-}
-
-/**
  * The one execution handle {@link ShellExecutor.execute} returns: the live
- * {@link ShellProcess} itself, plus two projections. `result()` is the
- * foreground view; `promotion` is the deadline's first-to-settle signal.
+ * {@link ShellProcess} itself plus the foreground projection `result()`.
  */
 export interface ShellExecution extends ShellProcess {
   /**
@@ -254,13 +235,4 @@ export interface ShellExecution extends ShellProcess {
    * @returns the settled foreground result for this execution.
    */
   result(): Promise<ShellRunResult>
-  /**
-   * The deadline's first-to-settle signal: resolves with a
-   * {@link ShellPromotionOffer} when an `onExpiry: 'offer'` deadline expires
-   * while the process still runs, and with `undefined` when the process
-   * settles first (every other `onExpiry` policy resolves `undefined` at
-   * settlement). Settles exactly once and never rejects, so
-   * `await execution.promotion` alone distinguishes the two outcomes.
-   */
-  promotion: Promise<ShellPromotionOffer | undefined>
 }

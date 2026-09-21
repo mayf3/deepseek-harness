@@ -4,7 +4,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session/types'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { TOOL_ABORTED } from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -15,7 +15,7 @@ import type { ShellExecRequest, ShellExecSpec, ShellExecution, ShellProcess } fr
 import { renderPwshPromoted } from '../src/render.ts'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
-import { processSources } from '../src/background.ts'
+import { processSources, ringDelta } from '../src/background.ts'
 
 const testToolSignal = new AbortController().signal
 
@@ -52,7 +52,9 @@ function observableProcess(streams: { stdout: { text: string }; stderr: { text: 
 }
 
 class FakePwsh extends ShellExecutor {
-  backgroundHandler: (spec: ShellExecSpec) => ShellProcess = () => { throw new Error('unscripted start') }
+  /** Scripts every `none` execution: a background start, or a foreground call registered as a job. */
+  backgroundHandler: (spec: ShellExecSpec) => ShellProcess | ShellExecution = () => { throw new Error('unscripted start') }
+  /** Scripts the deadline-killed foreground path (`kill`), which no job wraps. */
   foregroundHandler: (spec: ShellExecSpec) => ShellExecution = () => { throw new Error('foreground is not exercised here') }
 
   override resolve(request: ShellExecRequest): ShellExecSpec {
@@ -72,8 +74,8 @@ class FakePwsh extends ShellExecutor {
     if (spec.onExpiry !== 'none') return this.foregroundHandler(spec)
     // Augment the scripted handle in place: the scenarios mutate the original
     // object (finish()), so a spread copy would freeze its lifecycle.
-    return Object.assign(this.backgroundHandler(spec), {
-      promotion: Promise.resolve(undefined),
+    const proc = this.backgroundHandler(spec)
+    return 'result' in proc ? proc : Object.assign(proc, {
       result: () => Promise.reject(new Error('foreground projection unused')),
     })
   }
@@ -238,63 +240,166 @@ describe('owned background output (pwsh)', () => {
   })
 })
 
-describe('foreground timeout promotion (pwsh)', () => {
-  /** A scriptable still-running execution whose deadline already offered. */
-  function promotableExecution(partial: string) {
-    const offer = {
-      accepted: false,
-      declined: false,
-      accept() { this.accepted = true },
-      decline() { this.declined = true },
-    }
-    let settle: () => void = () => {}
-    let consumed = false
+describe('foreground commands as jobs (pwsh)', () => {
+  /** A scriptable running execution whose observed stdout already holds `partial`. */
+  function runningExecution(partial: string) {
+    let resolveDone: () => void = () => {}
+    let killed = false
     const proc: ShellExecution = {
       status: 'running',
       exitCode: null,
       signal: null,
-      done: new Promise<void>((resolve) => {
-        settle = () => {
-          proc.status = 'completed'
-          proc.exitCode = 0
-          resolve()
-        }
-      }),
-      readOutput: () => {
-        const delta = consumed ? '' : partial
-        consumed = true
-        return { delta, lossy: false }
+      done: new Promise<void>((resolve) => { resolveDone = resolve }),
+      readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: scriptedReader({ text: partial }), stderr: scriptedReader({ text: '' }) },
+      kill: () => {
+        if (proc.status !== 'running') return false
+        killed = true
+        proc.status = 'killed'
+        proc.signal = 'SIGTERM'
+        resolveDone()
+        return true
       },
-      observed: { stdout: scriptedReader({ text: '' }), stderr: scriptedReader({ text: '' }) },
-      kill: () => false,
-      promotion: Promise.resolve(offer),
-      result: () => Promise.reject(new Error('result projection unused after promotion')),
+      result: () => proc.done.then(() => ({
+        exitCode: proc.exitCode,
+        signal: proc.signal,
+        timedOut: false,
+        aborted: killed,
+        timeoutMs: 250,
+        stdout: { text: partial, truncated: false },
+        stderr: { text: '', truncated: false },
+      })),
     }
-    return { proc, offer, finish: () => { settle() } }
+    const finish = (): void => {
+      if (proc.status !== 'running') return
+      proc.status = 'completed'
+      proc.exitCode = 0
+      resolveDone()
+    }
+    return { proc, finish, killed: () => killed }
   }
 
-  it('moves a timed-out command into a pwsh record job carrying the output so far', async () => {
+  it('keeps a timed-out command running as its job, handing over the output so far', async () => {
     const { ctx, pwsh } = await setup()
-    const scripted = promotableExecution('early-output\n')
-    pwsh.foregroundHandler = () => scripted.proc
+    const scripted = runningExecution('early-output\n')
+    pwsh.backgroundHandler = () => scripted.proc
 
     const result = await call(ctx, { command: 'Get-Slow', description: 'test command', timeoutMs: 250 })
     const body = (result.content[0] as { text: string }).text
     expect(body).toContain('early-output')
     expect(body).toContain('moved to background job pwsh-1]')
     expect(body).toContain('read newer output with job_output, stop it with job_kill')
-    expect(scripted.offer.accepted).toBe(true)
 
     const jobs = ctx.jobs
     const job = jobs.list()[0]
     expect(job).toMatchObject({ id: 'pwsh-1', kind: 'pwsh', status: 'running' })
-    // The ring starts where the promoted result stopped: the next read repeats nothing.
+    // The hand-over was one consuming read: the next read repeats nothing.
     expect(jobs.read(job!.id).chunks).toEqual([])
     scripted.finish()
     await until(() => jobs.get(job!.id).status === 'completed' ? true : undefined)
   })
 
-  it('promotes under the calling agent and stops the promoted job through the registry kill', async () => {
+  it('a command that finishes within the wait returns the foreground result and leaves no job behind', async () => {
+    const { ctx, pwsh } = await setup()
+    const scripted = runningExecution('done\n')
+    pwsh.backgroundHandler = () => {
+      queueMicrotask(() => { scripted.finish() })
+      return scripted.proc
+    }
+    const seen: string[] = []
+    ctx.jobs.events.subscribe({ owners: 'all' }, (event) => { seen.push(event.type === 'settled' ? `settled:${String(event.awaited)}` : event.type) })
+    const result = await call(ctx, { command: 'Get-Quick', description: 'test command', timeoutMs: 5_000 })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected a foreground result')
+    expect(result.value).toMatchObject({ kind: 'foreground', exitCode: 0, stdout: { text: 'done\n' } })
+    expect((result.content[0] as { text: string }).text).toBe('done\n')
+    expect(ctx.jobs.list()).toEqual([])
+    expect(seen.filter(type => type !== 'output')).toEqual(['registered', 'settled:true', 'removed'])
+  })
+
+  it('a foreground command stopped from outside the call reports the reason instead of failing', async () => {
+    const { ctx, pwsh } = await setup()
+    const scripted = runningExecution('')
+    pwsh.backgroundHandler = () => scripted.proc
+    const pending = call(ctx, { command: 'Get-Slow', description: 'test command', timeoutMs: 5_000 })
+    const job = await until(() => ctx.jobs.list()[0])
+    expect(ctx.jobs.kill(job.id, undefined, 'cancelled by the user')).toBe('requested')
+    const result = await pending
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected a foreground result')
+    expect(scripted.killed()).toBe(true)
+    expect(result.value).toMatchObject({ kind: 'foreground', signal: 'SIGTERM', stopped: 'cancelled by the user' })
+    expect((result.content[0] as { text: string }).text).toBe('(no output)\n[stopped: cancelled by the user]\n[killed by signal: SIGTERM]')
+    expect(ctx.jobs.list()).toEqual([])
+  })
+
+  it('a command whose start fails reports the failure as an error result and leaves no job behind', async () => {
+    const { ctx, pwsh } = await setup()
+    pwsh.backgroundHandler = () => { throw new Error('spawn pwsh ENOENT') }
+    const result = await call(ctx, { command: 'Get-Missing', description: 'test command' })
+    expect(result.isError).toBe(true)
+    expect((result.content[0] as { text: string }).text).toBe('Error: spawn pwsh ENOENT')
+    expect(ctx.jobs.list()).toEqual([])
+  })
+
+  it('cancelling the call kills its job and reports the structured abort', async () => {
+    const { ctx, pwsh } = await setup()
+    const scripted = runningExecution('')
+    pwsh.backgroundHandler = () => scripted.proc
+    const controller = new AbortController()
+    const pending = ctx.tools.execute({
+      signal: controller.signal,
+      callId: ToolCallId('pwsh-call-aborted'),
+      name: 'pwsh',
+      arguments: { command: 'Get-Slow', description: 'test command', timeoutMs: 5_000 },
+    })
+    await until(() => ctx.jobs.list()[0])
+    controller.abort()
+    const result = await pending
+    expect(result.isError).toBe(true)
+    expect(result.error).toMatchObject({ message: 'tool call aborted', info: { name: 'AbortError', code: TOOL_ABORTED } })
+    expect(scripted.killed()).toBe(true)
+    // The kill is this call's own: the settlement was awaited and the record left.
+    expect(ctx.jobs.list()).toEqual([])
+  })
+
+  it('leaves the job listed when its process outlives the abort wait, so a later settlement still notifies', async () => {
+    const { ctx, pwsh } = await setup()
+    const scripted = runningExecution('')
+    // Acknowledge the kill without settling; the test settles it afterwards.
+    scripted.proc.kill = () => true
+    pwsh.backgroundHandler = () => scripted.proc
+    const controller = new AbortController()
+    const pending = ctx.tools.execute({
+      signal: controller.signal,
+      callId: ToolCallId('pwsh-call-aborted-slow-kill'),
+      name: 'pwsh',
+      arguments: { command: 'Get-Slow', description: 'test command', timeoutMs: 100 },
+    })
+    const job = await until(() => ctx.jobs.list()[0])
+    controller.abort()
+    const result = await pending
+    expect(result.isError).toBe(true)
+    expect(ctx.jobs.get(job.id).status).toBe('stopping')
+    scripted.finish()
+    await until(() => ctx.jobs.get(job.id).status === 'completed' ? true : undefined)
+  })
+
+  it('a wait that expires before the process spawned ends as the preparation timeout, not a hand-over', async () => {
+    const { ctx, pwsh } = await setup()
+    pwsh.backgroundHandler = () => { throw new Error('unreachable: preparation never finishes') }
+    vi.spyOn(pwsh, 'execute').mockImplementation(spec => new Promise((_resolve, reject) => {
+      spec.signal?.addEventListener('abort', () => { reject(new Error('fixture preparation aborted')) }, { once: true })
+    }))
+    const result = await call(ctx, { command: 'Get-Slow', description: 'test command', timeoutMs: 250 })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected a foreground result')
+    expect(result.value).toMatchObject({ kind: 'foreground', exitCode: null, signal: null, timedOut: true, aborted: false, timeoutMs: 250 })
+    expect((result.content[0] as { text: string }).text).toBe('(no output)\n[timed out after 250ms]\n[exit code: null]')
+    expect(ctx.jobs.list()).toEqual([])
+  })
+
+  it('registers the job under the calling agent and stops it through the registry kill', async () => {
     const { ctx, pwsh } = await setup()
     const ownerId = SessionId('pwsh-promote-owner')
     const owner: Agent = {
@@ -315,26 +420,8 @@ describe('foreground timeout promotion (pwsh)', () => {
       whenIdle: () => Promise.resolve(),
     }
     ctx.agents.register(owner)
-    let killed = false
-    let resolveDone: () => void = () => {}
-    const proc: ShellExecution = {
-      status: 'running',
-      exitCode: null,
-      signal: null,
-      done: new Promise<void>((resolve) => { resolveDone = resolve }),
-      readOutput: () => ({ delta: '', lossy: false }),
-      observed: { stdout: scriptedReader({ text: '' }), stderr: scriptedReader({ text: '' }) },
-      kill: () => {
-        killed = true
-        proc.status = 'killed'
-        proc.signal = 'SIGTERM'
-        resolveDone()
-        return true
-      },
-      promotion: Promise.resolve({ accepted: false, accept() { this.accepted = true }, decline() {} }),
-      result: () => Promise.reject(new Error('result projection unused after promotion')),
-    }
-    pwsh.foregroundHandler = () => proc
+    const scripted = runningExecution('')
+    pwsh.backgroundHandler = () => scripted.proc
 
     const result = await ctx.tools.execute({
       signal: testToolSignal,
@@ -350,7 +437,7 @@ describe('foreground timeout promotion (pwsh)', () => {
     expect(job!.owner).toBe(owner.id)
 
     expect(owned.kill(job!.id, owner.id, 'test cleanup')).toBe('requested')
-    await until(() => killed ? true : undefined)
+    await until(() => scripted.killed() ? true : undefined)
     const settled = await until(() => {
       const view = owned.get(job!.id, owner.id)
       return view.status === 'killed' ? view : undefined
@@ -358,9 +445,10 @@ describe('foreground timeout promotion (pwsh)', () => {
     expect(settled.detail).toBe('signal: SIGTERM; test cleanup')
   })
 
-  it('declines the offer and reports the timeout when no job controller serves the owner', async () => {
+  it('runs under the deadline kill when no job controller serves the owner', async () => {
     // The same composition minus dsh-tool-jobs: the registry exists, so the
-    // deadline still offers, but admission refuses and the tool falls back.
+    // job-backed variant is registered, but admission refuses at the start
+    // and the call runs under the executor's deadline instead.
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
@@ -371,29 +459,33 @@ describe('foreground timeout promotion (pwsh)', () => {
     await ctx.plugin(ToolPwsh)
     const pwsh = ctx.shell as FakePwsh
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
-    const scripted = promotableExecution('')
-    Object.assign(scripted.proc, {
-      result: () => Promise.resolve({
-        exitCode: 1,
-        signal: null,
-        timedOut: true,
-        aborted: false,
-        timeoutMs: 250,
-        stdout: { text: '', truncated: false },
-        stderr: { text: '', truncated: false },
-      }),
-    })
-    pwsh.foregroundHandler = () => scripted.proc
+    const specs: ShellExecSpec[] = []
+    pwsh.foregroundHandler = (spec) => {
+      specs.push(spec)
+      const scripted = runningExecution('')
+      return Object.assign(scripted.proc, {
+        result: () => Promise.resolve({
+          exitCode: 1,
+          signal: null,
+          timedOut: true,
+          aborted: false,
+          timeoutMs: 250,
+          stdout: { text: '', truncated: false },
+          stderr: { text: '', truncated: false },
+        }),
+      })
+    }
 
     const result = await call(ctx, { command: 'Get-Slow', description: 'test command', timeoutMs: 250 })
     const body = (result.content[0] as { text: string }).text
     expect(body).toContain('[timed out after 250ms]')
     expect(body).not.toContain('moved to background job')
-    expect(scripted.offer.declined).toBe(true)
-    expect(warn.mock.calls.map(args => String(args[0])).join('\n')).toContain('timeout promotion unavailable')
+    expect(specs[0]?.onExpiry).toBe('kill')
+    expect(warn.mock.calls.map(args => String(args[0])).join('\n')).toContain('job registration refused')
+    expect(ctx.jobs.list()).toEqual([])
   })
 
-  it('keeps the kill deadline and the plain description when promotion is off', async () => {
+  it('keeps the kill deadline and the plain description when keeping timed-out commands is off', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
@@ -407,9 +499,8 @@ describe('foreground timeout promotion (pwsh)', () => {
     const specs: ShellExecSpec[] = []
     pwsh.foregroundHandler = (spec) => {
       specs.push(spec)
-      const scripted = promotableExecution('')
-      Object.assign(scripted.proc, {
-        promotion: Promise.resolve(undefined),
+      const scripted = runningExecution('')
+      return Object.assign(scripted.proc, {
         result: () => Promise.resolve({
           exitCode: 1,
           signal: null,
@@ -420,16 +511,17 @@ describe('foreground timeout promotion (pwsh)', () => {
           stderr: { text: '', truncated: false },
         }),
       })
-      return scripted.proc
     }
     const result = await call(ctx, { command: 'Get-Slow', description: 'test command', timeoutMs: 250 })
     expect((result.content[0] as { text: string }).text).toContain('[timed out after 250ms]')
     expect(specs[0]?.onExpiry).toBe('kill')
+    expect(ctx.jobs.list()).toEqual([])
     const description = ctx.tools.get('pwsh')?.description ?? ''
     expect(description).not.toContain('moves to the background')
+    expect(description).toContain('run_in_background')
   })
 
-  it('advertises the promotion semantics in the description and the timeout parameter', async () => {
+  it('advertises the hand-over semantics in the description and the timeout parameter', async () => {
     const { ctx } = await setup()
     const tool = ctx.tools.get('pwsh')
     expect(tool?.description).toContain('A foreground command that reaches its timeout is not killed')
@@ -448,6 +540,18 @@ describe('renderPwshPromoted', () => {
       .toContain('partial\n[still running after 250ms; moved to background job pwsh-7]')
     expect(renderPwshPromoted({ jobId: 'pwsh-7', timeoutMs: 250, output: 'line\n' }))
       .toContain('line\n[still running after 250ms')
+  })
+})
+
+describe('ringDelta (pwsh)', () => {
+  it('renders stdout chunks in order and every stderr chunk in one trailing section', () => {
+    expect(ringDelta([])).toBe('')
+    expect(ringDelta([
+      { at: 0, text: 'a\n', channel: 'stdout' },
+      { at: 2, text: 'warn\n', channel: 'stderr' },
+      { at: 7, text: 'b', channel: 'stdout' },
+    ])).toBe('a\nb\n[stderr]\nwarn\n')
+    expect(ringDelta([{ at: 0, text: 'only\n', channel: 'stderr' }])).toBe('[stderr]\nonly\n')
   })
 })
 

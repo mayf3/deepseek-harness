@@ -1,6 +1,7 @@
 /**
- * Generic-job adaptation for background bash process handles: the terminal
- * outcome the registry records and the pull sources it pumps.
+ * Generic-job adaptation for bash process handles: the terminal outcome the
+ * registry records, the pull sources it pumps, and the ring read a foreground
+ * call renders when it stops waiting.
  *
  * @module @deepseek-ai/dsh-tool-bash/background
  */
@@ -8,7 +9,7 @@
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
 import type { ShellProcess, ShellSandboxInfo } from '@deepseek-ai/dsh-shell'
-import type { JobHooks, JobOutcome, JobOutputSource } from '@deepseek-ai/dsh-jobs'
+import type { JobChunk, JobHooks, JobOutcome, JobOutputSource } from '@deepseek-ai/dsh-jobs'
 
 /**
  * Sandbox facts worth the terminal detail: a runner that never ran the
@@ -53,48 +54,40 @@ export function processOutcome(proc: ShellProcess, escalationModes: readonly San
   return notes.length === 0 ? base : { ...base, detail: `${base.detail}; ${notes.join(' ')}` }
 }
 
-/** Whole-stream offsets of a process's observed streams. */
-export interface ObservedOffsets {
-  readonly stdout: number
-  readonly stderr: number
-}
-
 /**
- * The current end of each observed stream: where a pull source starts so the
- * ring holds only what the model has not already been handed.
- * @param proc - the running process.
- * @returns the per-stream end offsets.
- */
-export function observedOffsets(proc: Pick<ShellProcess, 'observed'>): ObservedOffsets {
-  const end = (channel: 'stdout' | 'stderr'): number => proc.observed[channel].readFrom(0).nextOffset
-  return { stdout: end('stdout'), stderr: end('stderr') }
-}
-
-/**
- * The process's non-consuming stream readers as registry pull sources, each
- * starting at `from`: 0 for a fresh background run, the offsets a promotion
- * already handed the model for a promoted one. They bind lazily because the
- * process is spawned inside the starter, after the registry admitted the job;
- * a read before the spawn yields nothing, and the pump keeps the model's
- * consuming cursor untouched. A rejected spawn's stderr reader carries the
- * provider's `subprocess failed before reporting an outcome: …` note.
+ * The process's non-consuming stream readers as registry pull sources. They
+ * bind lazily because the process is spawned inside the starter, after the
+ * registry admitted the job; a read before the spawn yields nothing, and the
+ * pump keeps the model's consuming cursor untouched. A rejected spawn's
+ * stderr reader carries the provider's `subprocess failed before reporting an
+ * outcome: …` note.
  * @param proc - the started process's observed streams, once the starter has spawned it.
- * @param from - per-stream offsets the sources start pulling at.
  * @returns one source per stream, stdout first.
  */
-export function processSources(
-  proc: () => Pick<ShellProcess, 'observed'> | undefined,
-  from: ObservedOffsets = { stdout: 0, stderr: 0 },
-): JobOutputSource[] {
+export function processSources(proc: () => Pick<ShellProcess, 'observed'> | undefined): JobOutputSource[] {
   const source = (channel: 'stdout' | 'stderr'): JobOutputSource => ({
     channel,
     read: (fromByte) => {
-      const start = Math.max(fromByte, from[channel])
       const live = proc()
-      return live === undefined ? { text: '', nextOffset: start, lossy: false } : live.observed[channel].readFrom(start)
+      return live === undefined ? { text: '', nextOffset: fromByte, lossy: false } : live.observed[channel].readFrom(fromByte)
     },
   })
   return [source('stdout'), source('stderr')]
+}
+
+/**
+ * The ring chunks of one consuming registry read as the shell tools render a
+ * process read: stdout chunks in order, then every stderr chunk in one
+ * `[stderr]` section, so the output a foreground call hands over when it
+ * stops waiting reads exactly like the `job_output` reads that follow it.
+ * @param chunks - the chunks since the model cursor, in offset order.
+ * @returns the delta text, possibly empty.
+ */
+export function ringDelta(chunks: readonly JobChunk[]): string {
+  const out = chunks.filter(chunk => chunk.channel !== 'stderr').map(chunk => chunk.text).join('')
+  const err = chunks.filter(chunk => chunk.channel === 'stderr').map(chunk => chunk.text).join('')
+  const separator = out.length > 0 && !out.endsWith('\n') ? '\n' : ''
+  return out + (err.length > 0 ? `${separator}[stderr]\n${err}` : '')
 }
 
 /**

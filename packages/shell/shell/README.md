@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use `ctx.shell` to run shell commands with bounded output or keep them running as background work. One execution handle supports foreground results, background reads, and timeout promotion. A profile can select local or sandboxed Bash or PowerShell execution without changing callers. Resolve requests before execution to make the working directory, timeout, and output limits explicit. Command exits, timeouts, and caller aborts return results; only infrastructure failures reject, while the `bash` and `pwsh` tools own model-visible rendering and sandbox guidance.
+Use `ctx.shell` to run shell commands with bounded output or keep them running as background work. One execution handle supports foreground results and background reads. A profile can select local or sandboxed Bash or PowerShell execution without changing callers. Resolve requests before execution to make the working directory, timeout, and output limits explicit. Command exits, timeouts, and caller aborts return results; only infrastructure failures reject, while the `bash` and `pwsh` tools own model-visible rendering and sandbox guidance.
 
 ## Table of Contents
 
@@ -41,11 +41,11 @@ console.log(result.exitCode, result.stdout.text)
 
 Resolve the request with `onExpiry: 'none'` and await `execute` for the prepared handle: no deadline is armed, and the process runs until killed or finished. Read output incrementally with `readOutput()` — consecutive reads never repeat output, and lossy reads point at full-stream spill files. Terminate the provider-managed range with `kill()` (returns `false` once the direct command has finished) and await `done` for direct-command settlement. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, where the tool layer registers the handle. `ShellProcess.observed` exposes non-consuming offset readers over the same captured streams — for observers independent of the consuming cursor, such as the job registry's pull sources — including the `spawn failed: …` note a rejected spawn leaves on stderr.
 
-### Timeout promotion offers
+### Deadlines and bounded waits
 
-The deadline includes asynchronous preparation. Expiry before a process starts returns a settled handle whose result is `timedOut: true`, with empty output and no promotion offer. Cancellation or preparation failure rejects `execute` before publication; late preparation cannot spawn a process.
+The deadline includes asynchronous preparation. Expiry before a process starts returns a settled handle whose result is `timedOut: true`, with empty output. Cancellation or preparation failure rejects `execute` before publication; late preparation cannot spawn a process.
 
-Resolve with `onExpiry: 'offer'` and the deadline stops meaning "kill": if it expires while the process still runs, `execution.promotion` resolves with a `ShellPromotionOffer` instead. `accept()` ends the deadline obligation and detaches the caller's abort signal — from then on only `kill()` (or composition teardown) stops the process — while `decline()` kills now and classifies the result `timedOut`. The promotion promise settles exactly once and never rejects: it resolves `undefined` when the process settles first (and under every other `onExpiry` policy), so `await execution.promotion` alone distinguishes the outcomes. The consumer must answer the offer synchronously upon its resolution; an unanswered offer is declined, so forgetting falls back to the kill-on-timeout behavior rather than detaching the process. The `bash`/`pwsh` tools use this to move a timed-out foreground command into a `ctx.jobs` background job.
+The seam has two expiry policies and no hand-over protocol. `'kill'` stops the command at the deadline and classifies the result `timedOut`; `'none'` arms no deadline, so only the caller's signal and `kill()` stop the command. A caller that wants to wait only for a while runs the command under `'none'` and bounds its own wait: the handle stays valid after the caller stops waiting, and nothing changes hands at that moment. The `bash`/`pwsh` tools do exactly this — with a job registry composed they register every command with `ctx.jobs` as it starts and wait on the job, so a foreground command that outlives its timeout simply keeps running as the job it already was.
 
 ### Requests and resolved specs
 
@@ -81,14 +81,14 @@ This section explains the design of the seam and points at the code that realize
 The package is one role of a standard capability seam: the Service Definition that names the executor contract, with Service Providers and Consumers split so each role evolves independently (see the [capability-seams note](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)). Two decisions anchor the contract:
 
 - **Explicit resolution at the boundary.** `resolve(request)` is the single place defaults and caps are applied; `execute` accepts only resolved specs and never re-defaults, so no hidden fallback lives inside an implementation.
-- **One execution, projected views.** `execute` resolves with the prepared handle; the foreground result, the background cursor reads, and the promotion offer are projections over the same spawned process, so foreground/background is the caller's choice, never a second spawn path. The handle carries no id or owner; job identity, ownership, and lifecycle belong to the generic `ctx.jobs` runtime, keeping executors independent of sessions.
+- **One execution, projected views.** `execute` resolves with the prepared handle; the foreground result and the background cursor reads are projections over the same spawned process, so foreground/background is the caller's choice, never a second spawn path. The handle carries no id or owner; job identity, ownership, and lifecycle belong to the generic `ctx.jobs` runtime, keeping executors independent of sessions.
 
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: abstract `ShellExecutor` service and the shared settings namespace |
-| [`src/types.ts`](src/types.ts) | Request/spec vocabulary, `ShellExecution`, `ShellPromotionOffer`, `ShellRunResult`, and sandbox facts |
+| [`src/types.ts`](src/types.ts) | Request/spec vocabulary, `ShellExecution`, `ShellRunResult`, and sandbox facts |
 | [`src/render.ts`](src/render.ts) | `parseExitStatus`: the exit-status marker contract the shell tools share |
 | — | No runtime invariant companion is published; this stateless Service Definition owns request/result types, while executors and policy own observations. |
 
@@ -98,7 +98,7 @@ The package is one role of a standard capability seam: the Service Definition th
 
 ### Background lifecycle and ownership
 
-A spawned process belongs to the subprocess service, not to the executor: it survives an executor-only reload and is killed and joined when the composition tears down. Implementations must honor the seam's semantics — `result()` rejects only for infrastructure failures; the handle is published after preparation and its `done` never rejects (provider rejections, synchronous or asynchronous, settle the handle as `killed` with a stage-neutral note on stderr while `result()` carries the same failure as its rejection; a live handle whose rejection follows the execution's own `kill()` or abort settles as its terminal outcome instead); `readOutput` is consuming and lossy reads report spill files; an unanswered promotion offer is declined.
+A spawned process belongs to the subprocess service, not to the executor: it survives an executor-only reload and is killed and joined when the composition tears down. Implementations must honor the seam's semantics — `result()` rejects only for infrastructure failures; the handle is published after preparation and its `done` never rejects (provider rejections, synchronous or asynchronous, settle the handle as `killed` with a stage-neutral note on stderr while `result()` carries the same failure as its rejection; a live handle whose rejection follows the execution's own `kill()` or abort settles as its terminal outcome instead); `readOutput` is consuming and lossy reads report spill files.
 
 </details>
 

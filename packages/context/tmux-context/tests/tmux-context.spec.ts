@@ -81,7 +81,6 @@ class FakeBash extends ShellExecutor {
       readOutput: () => ({ delta: '', lossy: false }),
       observed: { stdout: silentReader, stderr: silentReader },
       kill: () => false,
-      promotion: Promise.resolve(undefined),
       result: () => this.runError ? Promise.reject(this.runError) : Promise.resolve(this.result),
     }
   }

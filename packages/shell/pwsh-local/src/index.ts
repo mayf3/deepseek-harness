@@ -18,7 +18,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from '@deepseek-ai/dsh-shell'
-import type { CollectedOutput, ShellExecRequest, ShellExecSpec, ShellExecution, ShellProcess, ShellProcessRead, ShellPromotionOffer, ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { CollectedOutput, ShellExecRequest, ShellExecSpec, ShellExecution, ShellProcess, ShellProcessRead, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-settings'
 import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
@@ -274,20 +274,10 @@ export class PwshLocalExecutor extends ShellExecutor {
     argvOrPrepare: readonly string[] | ((signal: AbortSignal) => Promise<readonly string[]>),
     onStarted?: (process: ShellExecution) => void,
   ): Promise<ShellExecution> {
-    let published = false
-    let settlePromotion!: (offer: ShellPromotionOffer | undefined) => void
-    const promotion = new Promise<ShellPromotionOffer | undefined>((resolve) => {
-      let done = false
-      settlePromotion = (offer) => {
-        if (done) return
-        done = true
-        resolve(offer)
-      }
-    })
-
     // Deadline wiring by expiry policy. Each arm supplies the spawn signal,
     // the result projection's first-cause classification, and the disarm the
-    // settlement continuation runs.
+    // settlement continuation runs. `ShellExpiryPolicy` has exactly these two
+    // members, so the `else` arm is `'none'`.
     let spawnSignal: AbortSignal | undefined
     let classify: () => { timedOut: boolean; aborted: boolean }
     let disarm = (): void => {}
@@ -301,68 +291,10 @@ export class PwshLocalExecutor extends ShellExecutor {
         return { timedOut, aborted: d.signal.aborted && !timedOut }
       }
       disarm = () => { d[Symbol.dispose]() }
-    } else if (spec.onExpiry === 'none') {
+    } else {
       // No deadline: callers stop the process through kill() or spec.signal.
       spawnSignal = spec.signal
       classify = () => ({ timedOut: false, aborted: spec.signal?.aborted === true })
-    } else {
-      // 'offer': the caller's signal kills only until the offer is accepted;
-      // the timer hands out the offer instead of killing.
-      const relay = new AbortController()
-      spawnSignal = relay.signal
-      let cause: 'timedOut' | 'aborted' | undefined
-      const onCallerAbort = (): void => {
-        cause ??= 'aborted'
-        relay.abort(spec.signal?.reason)
-      }
-      // An already-aborted signal never fires again: relay it now, so the
-      // spawn sees the abort exactly as the kill arm's fused deadline would.
-      if (spec.signal?.aborted === true) onCallerAbort()
-      else spec.signal?.addEventListener('abort', onCallerAbort, { once: true })
-      const detachCaller = (): void => { spec.signal?.removeEventListener('abort', onCallerAbort) }
-      const timer = deadline(undefined, spec.timeoutMs, 'BASH_TIMEOUT')
-      timer.signal.addEventListener('abort', () => {
-        // A caller abort before the deadline may leave the process in its
-        // termination grace: cancelled work is never offered.
-        if (cause !== undefined) {
-          settlePromotion(undefined)
-          return
-        }
-        if (!published) {
-          cause = 'timedOut'
-          relay.abort(timer.signal.reason)
-          settlePromotion(undefined)
-          return
-        }
-        let answered = false
-        const offer: ShellPromotionOffer = {
-          accept: () => {
-            if (answered) return
-            answered = true
-            detachCaller()
-          },
-          decline: () => {
-            // A late decline cannot exist unanswered: the synchronous-answer
-            // contract plus the auto-decline below guarantee the first answer
-            // lands while the process still runs.
-            if (answered) return
-            answered = true
-            cause ??= 'timedOut'
-            relay.abort()
-          },
-        }
-        settlePromotion(offer)
-        // Offer consumers answer synchronously in the resolution's own
-        // microtask batch (their reactions were enqueued by the resolve
-        // above, this check runs after them); an unanswered offer falls back
-        // to the kill-on-timeout behavior rather than detaching the process.
-        queueMicrotask(() => { if (!answered) offer.decline() })
-      }, { once: true })
-      classify = () => ({ timedOut: cause === 'timedOut', aborted: cause === 'aborted' })
-      disarm = () => {
-        timer[Symbol.dispose]()
-        detachCaller()
-      }
     }
 
     let argv: readonly string[] = []
@@ -381,7 +313,6 @@ export class PwshLocalExecutor extends ShellExecutor {
       } catch (error) {
         if (!classify().timedOut) {
           disarm()
-          settlePromotion(undefined)
           throw error
         }
         preparationTimedOut = true
@@ -444,7 +375,6 @@ export class PwshLocalExecutor extends ShellExecutor {
       exitCode: null,
       signal: null,
       observed: { stdout: collected.stdout, stderr: observedStderr },
-      promotion,
       done: spawned.then((outcome) => {
         // Any signal termination is killed, including a command signaling itself.
         if (proc.status === 'running') {
@@ -454,7 +384,6 @@ export class PwshLocalExecutor extends ShellExecutor {
         proc.signal = outcome.signal
         this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
         disarm()
-        settlePromotion(undefined)
       }, (error: unknown) => {
         // A live handle whose rejection follows this execution's own
         // termination — kill() or the spawn signal's abort — reports its
@@ -467,7 +396,6 @@ export class PwshLocalExecutor extends ShellExecutor {
           proc.status = 'killed'
           this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
           disarm()
-          settlePromotion(undefined)
           return
         }
         // Provider failures settle the handle as killed and surface on stderr for every reader.
@@ -481,7 +409,6 @@ export class PwshLocalExecutor extends ShellExecutor {
         providerFailure = { error, note: `subprocess failed before reporting an outcome: ${detail}` }
         this.onProcessDone(proc, providerFailure.note, true, error)
         disarm()
-        settlePromotion(undefined)
       }),
       readOutput: (): ShellProcessRead => {
         const out = collected.stdout.readFrom(stdoutOffset)
@@ -528,7 +455,6 @@ export class PwshLocalExecutor extends ShellExecutor {
         return resultPromise
       },
     }
-    published = true
     if (!preparationTimedOut) onStarted?.(proc)
     return proc
   }

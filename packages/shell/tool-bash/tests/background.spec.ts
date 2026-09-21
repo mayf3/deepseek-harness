@@ -7,7 +7,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session/types'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { TOOL_ABORTED } from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -18,12 +18,15 @@ import type { ShellExecution, ShellProcess } from '@deepseek-ai/dsh-shell'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
-import { observedOffsets, processSources } from '../src/background.ts'
+import { processSources, ringDelta } from '../src/background.ts'
 import { renderPromoted } from '../src/render.ts'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 
 // Readiness polling stays on wall time while a test controls the execution deadline.
 const pollingTimeout = setTimeout
+
+/** Empty offset readers for fakes that never produce output. */
+const silentReader = { readFrom: (fromByte: number) => ({ text: '', nextOffset: fromByte, lossy: false }) }
 
 const testToolSignal = new AbortController().signal
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-background-spec-'))
@@ -179,26 +182,22 @@ describe('processSources', () => {
     expect(stderr!.read(0)).toEqual({ text: 'tail', nextOffset: 4, lossy: true, spillPath: '/spill/err.log' })
   })
 
-  it('starts a promoted process\'s sources at the offsets already handed to the model', () => {
-    const reads: number[] = []
-    const proc: Pick<ShellProcess, 'observed'> = {
-      observed: {
-        stdout: { readFrom: (from: number) => { reads.push(from); return { text: '', nextOffset: Math.max(from, 40), lossy: false } } },
-        stderr: { readFrom: (from: number) => ({ text: '', nextOffset: from, lossy: false }) },
-      },
-    }
-    const from = observedOffsets(proc)
-    expect(from).toEqual({ stdout: 40, stderr: 0 })
-    const [stdout, stderr] = processSources(() => proc, from)
-    // The pump's first read (offset 0) lands at the stream's end, never before it.
-    expect(stdout!.read(0)).toEqual({ text: '', nextOffset: 40, lossy: false })
-    expect(reads).toEqual([0, 40])
-    expect(stderr!.read(0)).toEqual({ text: '', nextOffset: 0, lossy: false })
+})
+
+describe('ringDelta', () => {
+  it('renders stdout chunks in order and every stderr chunk in one trailing section', () => {
+    expect(ringDelta([])).toBe('')
+    expect(ringDelta([
+      { at: 0, text: 'a\n', channel: 'stdout' },
+      { at: 2, text: 'warn\n', channel: 'stderr' },
+      { at: 7, text: 'b', channel: 'stdout' },
+    ])).toBe('a\nb\n[stderr]\nwarn\n')
+    expect(ringDelta([{ at: 0, text: 'only\n', channel: 'stderr' }])).toBe('[stderr]\nonly\n')
   })
 })
 
-describe('foreground timeout promotion', () => {
-  it('moves a timed-out foreground command into a job whose ring starts after the output so far', async ({ task }) => {
+describe('foreground commands as jobs', () => {
+  it('keeps a timed-out foreground command running as its job, handing over the output so far', async ({ task }) => {
     const ctx = await setup()
     const execute = ctx.shell.execute.bind(ctx.shell)
     let execution: ShellExecution | undefined
@@ -208,7 +207,7 @@ describe('foreground timeout promotion', () => {
     })
     try {
       // Process startup can exceed the deadline under load. Deliver the first
-      // line before advancing the deadline so this case proves the output split.
+      // line before advancing the wait so this case proves the output split.
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
       const pending = call(ctx, {
         command: 'printf "early-output\\n"; sleep 30',
@@ -216,6 +215,8 @@ describe('foreground timeout promotion', () => {
         timeoutMs: 250,
       })
       await until(() => execution?.observed.stdout.readFrom(0).text.includes('early-output') ? true : undefined, task.timeout)
+      // The job exists from the start: the command is listed while the call still waits.
+      expect(ctx.jobs.list()[0]).toMatchObject({ id: 'bash-1', kind: 'bash', status: 'running', label: 'printf "early-output\\n"; sleep 30' })
       await vi.advanceTimersByTimeAsync(250)
       const result = await pending
       vi.useRealTimers()
@@ -227,13 +228,13 @@ describe('foreground timeout promotion', () => {
 
       const jobs = ctx.jobs
       const job = jobs.list()[0]
-      expect(job).toMatchObject({ id: 'bash-1', kind: 'bash', status: 'running', label: 'printf "early-output\\n"; sleep 30' })
+      expect(job).toMatchObject({ id: 'bash-1', status: 'running' })
+      // The hand-over was one consuming read: the next read repeats nothing.
+      expect(jobs.read(job!.id).chunks).toEqual([])
       expect(jobs.kill(job!.id, undefined, 'test cleanup')).toBe('requested')
       await until(() => jobs.get(job!.id).status === 'killed' ? true : undefined)
-      // Settlement drains every source; even that last read cannot repeat the
-      // output already handed to the model before promotion.
-      expect(retainedText(ctx, job!.id)).not.toContain('early-output')
-      expect(jobs.read(job!.id).chunks).toEqual([])
+      // Observers still see the whole stream from offset 0.
+      expect(retainedText(ctx, job!.id)).toContain('early-output')
     } finally {
       vi.useRealTimers()
       capture.mockRestore()
@@ -241,7 +242,112 @@ describe('foreground timeout promotion', () => {
     }
   })
 
-  it('promotes under the calling agent so the job is fenced to its session', async () => {
+  it('a command that finishes within the wait returns the foreground result and leaves no job behind', async () => {
+    const ctx = await setup()
+    const seen: string[] = []
+    ctx.jobs.events.subscribe({ owners: 'all' }, (event) => { seen.push(event.type === 'settled' ? `settled:${String(event.awaited)}` : event.type) })
+    const result = await call(ctx, { command: 'printf "done\\n"; printf "warn\\n" >&2', description: 'test command' })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected a foreground result')
+    expect(result.value).toMatchObject({ kind: 'foreground', exitCode: 0, stdout: { text: 'done\n' }, stderr: { text: 'warn\n' } })
+    expect(text(result)).toBe('done\n[stderr]\nwarn\n')
+    expect(ctx.jobs.list()).toEqual([])
+    // Registered at the start, settled while awaited, removed with the result.
+    expect(seen.filter(type => type !== 'output')).toEqual(['registered', 'settled:true', 'removed'])
+  })
+
+  it('a foreground command stopped from outside the call reports the reason instead of failing', async ({ task }) => {
+    const ctx = await setup()
+    const pending = call(ctx, { command: 'sleep 30', description: 'test command' })
+    const job = await until(() => ctx.jobs.list()[0], task.timeout)
+    expect(ctx.jobs.kill(job.id, undefined, 'cancelled by the user')).toBe('requested')
+    const result = await pending
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected a foreground result')
+    expect(result.value).toMatchObject({ kind: 'foreground', signal: 'SIGTERM', stopped: 'cancelled by the user' })
+    expect(text(result)).toBe('(no output)\n[stopped: cancelled by the user]\n[killed by signal: SIGTERM]')
+    expect(ctx.jobs.list()).toEqual([])
+  })
+
+  it('a command whose start fails reports the failure as an error result and leaves no job behind', async () => {
+    const ctx = await setup()
+    vi.spyOn(ctx.shell, 'execute').mockRejectedValue(new Error('spawn bash ENOENT'))
+    const result = await call(ctx, { command: 'true', description: 'test command' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toBe('Error: spawn bash ENOENT')
+    expect(ctx.jobs.list()).toEqual([])
+  })
+
+  it('cancelling the call kills its job, waits for it to settle, and reports the structured abort', async ({ task }) => {
+    const ctx = await setup()
+    const seen: string[] = []
+    ctx.jobs.events.subscribe({ owners: 'all' }, (event) => {
+      if (event.type === 'settled') seen.push(`settled:${event.job.status}:${event.job.detail ?? ''}:${String(event.awaited)}`)
+      else if (event.type !== 'output') seen.push(event.type)
+    })
+    const controller = new AbortController()
+    const pending = ctx.tools.execute({
+      signal: controller.signal,
+      callId: ToolCallId('background-call-aborted'),
+      name: 'bash',
+      arguments: { command: 'sleep 30', description: 'test command' },
+    })
+    await until(() => ctx.jobs.list()[0], task.timeout)
+    controller.abort()
+    const result = await pending
+    expect(result.isError).toBe(true)
+    expect(result.error).toMatchObject({ message: 'tool call aborted', info: { name: 'AbortError', code: TOOL_ABORTED } })
+    // The kill is this call's own: the settlement was awaited (so no notice
+    // follows the abort the result already carries) and the record left.
+    expect(seen).toEqual(['registered', 'stopping', 'settled:killed:signal: SIGTERM; tool call aborted:true', 'removed'])
+    expect(ctx.jobs.list()).toEqual([])
+  })
+
+  it('leaves the job listed when its process outlives the abort wait, so a later settlement still notifies', async () => {
+    const ctx = await setup()
+    let finish: () => void = () => {}
+    const stubborn: ShellExecution = {
+      status: 'running',
+      exitCode: null,
+      signal: null,
+      done: new Promise<void>((resolve) => { finish = () => { stubborn.status = 'killed'; stubborn.signal = 'SIGKILL'; resolve() } }),
+      readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
+      kill: () => true, // acknowledges the request but takes its time
+      result: () => Promise.reject(new Error('foreground projection unused')),
+    }
+    vi.spyOn(ctx.shell, 'execute').mockResolvedValue(stubborn)
+    const controller = new AbortController()
+    const pending = ctx.tools.execute({
+      signal: controller.signal,
+      callId: ToolCallId('background-call-aborted-slow-kill'),
+      name: 'bash',
+      arguments: { command: 'sleep 30', description: 'test command', timeoutMs: 100 },
+    })
+    const job = await until(() => ctx.jobs.list()[0])
+    controller.abort()
+    const result = await pending
+    expect(result.isError).toBe(true)
+    expect(ctx.jobs.get(job.id).status).toBe('stopping')
+    finish()
+    await until(() => ctx.jobs.get(job.id).status === 'killed' ? true : undefined)
+  })
+
+  it('a wait that expires before the process spawned ends as the preparation timeout, not a hand-over', async () => {
+    const ctx = await setup()
+    // Preparation that only ends with the job's own cancellation.
+    vi.spyOn(ctx.shell, 'execute').mockImplementation(spec => new Promise((_resolve, reject) => {
+      spec.signal?.addEventListener('abort', () => { reject(new Error('fixture preparation aborted')) }, { once: true })
+    }))
+    const result = await call(ctx, { command: 'sleep 30', description: 'test command', timeoutMs: 250 })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected a foreground result')
+    expect(result.value).toMatchObject({ kind: 'foreground', exitCode: null, signal: null, timedOut: true, aborted: false, timeoutMs: 250 })
+    expect(text(result)).toBe('(no output)\n[timed out after 250ms]\n[exit code: null]')
+    expect(ctx.jobs.list()).toEqual([])
+  })
+
+  it('registers the job under the calling agent so it is fenced to its session', async () => {
     const ctx = await setup()
     const ownerId = SessionId('promote-owner')
     const owner: Agent = {
@@ -279,7 +385,7 @@ describe('foreground timeout promotion', () => {
     await until(() => owned.get(job!.id, owner.id).status === 'killed' ? true : undefined)
   })
 
-  it('falls back to the timeout kill when the job admission refuses the promotion', async () => {
+  it('runs under the deadline kill when the registry refuses the job at its start', async () => {
     const ctx = await setup()
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     // Saturate the per-owner admission budget with unowned running jobs.
@@ -305,11 +411,12 @@ describe('foreground timeout promotion', () => {
     const body = text(result)
     expect(body).toContain('[timed out after 250ms]')
     expect(body).not.toContain('moved to background job')
-    expect(warn.mock.calls.map(args => String(args[0])).join('\n')).toContain('timeout promotion unavailable')
+    expect(warn.mock.calls.map(args => String(args[0])).join('\n')).toContain('job registration refused')
+    expect(ctx.jobs.list()).toHaveLength(limit)
     for (const settle of settlers) settle({ status: 'killed' })
   })
 
-  it('keeps the plain timeout kill when promotion is configured off', async () => {
+  it('keeps the plain timeout kill when keeping timed-out commands is configured off', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
@@ -321,14 +428,18 @@ describe('foreground timeout promotion', () => {
     await ctx.plugin(BashEnvPlugin)
     await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
     await ctx.plugin(ToolBash, { promoteOnTimeout: false })
+    const seen: string[] = []
+    ctx.jobs.events.subscribe({ owners: 'all' }, (event) => { seen.push(event.type) })
     const result = await call(ctx, { command: 'sleep 30', description: 'test command', timeoutMs: 250 })
     expect(text(result)).toContain('[timed out after 250ms]')
     expect(ctx.jobs.list()).toEqual([])
+    expect(seen).toEqual([])
     const description = ctx.tools.get('bash')?.description ?? ''
     expect(description).not.toContain('moves to the background')
+    expect(description).toContain('run_in_background')
   })
 
-  it('advertises the promotion semantics in the description and the timeout parameter', async () => {
+  it('advertises the hand-over semantics in the description and the timeout parameter', async () => {
     const ctx = await setup()
     const tool = ctx.tools.get('bash')
     expect(tool?.description).toContain('A foreground command that reaches its timeout is not killed')

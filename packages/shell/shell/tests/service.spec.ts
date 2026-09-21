@@ -38,7 +38,6 @@ class StubExecutor extends ShellExecutor {
         proc.status = 'killed'
         return true
       },
-      promotion: Promise.resolve(undefined),
       result: () => Promise.resolve({
         exitCode: 0,
         signal: null,
@@ -65,7 +64,6 @@ describe('ShellExecutor service seam', () => {
     const result = await ex.result()
     expect(result.exitCode).toBe(0)
     expect(result.stdout.text).toBe('ok')
-    await expect(ex.promotion).resolves.toBeUndefined()
 
     // …and the live handle itself.
     const proc = (await ctx.shell.execute({ ...spec, onExpiry: 'none' }))

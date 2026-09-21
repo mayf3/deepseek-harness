@@ -3,7 +3,8 @@
  * see and one job's retained output to browsers over the generated `job`
  * namespace, and stops a job on a human's behalf. The streams are
  * projections of `ctx.jobs`; the model's consuming cursor and notice state
- * never observe them, and a human kill claims nothing in the notice ledger.
+ * never observe them, and a human kill is not the model's own, so the
+ * completion notice still reaches the owning agent.
  * @module @deepseek-ai/dsh-api-job-controller
  */
 
@@ -100,9 +101,10 @@ export class JobController extends TypertRemoteService {
    * Kill one background job on a human's behalf. The request's session is
    * the fenced read's caller, so the job must be one that session can see;
    * the subagent ownership fence applies exactly as it does to
-   * `session.cancel`. The kill records `cancelled by the user` as its reason
-   * and claims nothing in the model-facing notice ledger, so the owning agent
-   * still receives the completion notice.
+   * `session.cancel`. The kill records `cancelled by the user` as its reason;
+   * it is not one the model requested, so the owning agent still receives
+   * the completion notice, and a shell tool waiting on that job reads the
+   * reason in its own result.
    * @param request - Session whose job list carries the job, and the job id.
    * @returns the registry's admission of the kill request.
    */
