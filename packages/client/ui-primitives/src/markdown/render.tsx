@@ -36,6 +36,8 @@ export interface MarkdownCodeLabels {
   copyLabel: string
   /** Copy-button label during the post-copy confirmation window. */
   copiedLabel: string
+  /** Shared card controls; omitted in compact and owner-styled source views. */
+  toolbarLabels?: import('../CodeToolbar.tsx').CodeToolbarLabels | undefined
 }
 
 /** Localized chrome for a Markdown document. */
@@ -399,6 +401,7 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
       streaming={context.streaming}
       copyLabel={context.labels.code.copyLabel}
       copiedLabel={context.labels.code.copiedLabel}
+      toolbarLabels={context.labels.code.toolbarLabels}
     />
   )
 }

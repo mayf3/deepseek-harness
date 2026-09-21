@@ -4,6 +4,11 @@
    cascade as every other token sheet. Background/foreground deliberately
    alias the markdown code-block tokens so highlighted and plain blocks agree. */
 
+body {
+  --dsw-alias-code-diff-added: color-mix(in srgb, var(--dsw-alias-state-success-primary) 8%, transparent);
+  --dsw-alias-code-diff-deleted: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
+}
+
 :root {
   --shiki-foreground: var(--dsw-alias-label-primary);
   --shiki-background: var(--dsw-alias-markdown-code-block);
@@ -19,6 +24,8 @@
 }
 
 body[data-ds-dark-theme] {
+  --dsw-alias-code-diff-added: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
+  --dsw-alias-code-diff-deleted: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
   --shiki-token-constant: #4dabf7;
   --shiki-token-string: #69db7c;
   --shiki-token-comment: #adb5bd;

@@ -3,6 +3,9 @@ import clsx from 'clsx'
 import { structuredPatch } from 'diff'
 import { FoldToggle } from './FoldToggle.tsx'
 import { writeClipboard } from './clipboard.ts'
+import { CodeToolbar, type CodeToolbarLabels } from './CodeToolbar.tsx'
+import { languageForPath } from './code-highlighting.ts'
+import cardCss from './CodeCard.module.css'
 import css from './DiffBlock.module.css'
 
 /** Output lines shown before the height cap collapses the middle. */
@@ -33,7 +36,7 @@ export interface DiffBlockProps {
 }
 
 /** Localized chrome for {@link DiffBlock}. */
-export interface DiffBlockLabels {
+export interface DiffBlockLabels extends CodeToolbarLabels {
   copy: string
   copied: string
   collapseAria: string
@@ -174,6 +177,9 @@ export function DiffBlock({ diffs, labels, maxLines = DEFAULT_DIFF_MAX_LINES, cl
   const { rows, added, removed, files } = useMemo(() => buildRows(diffs), [diffs])
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [wrapped, setWrapped] = useState(false)
+  const firstLanguage = diffs[0] === undefined ? undefined : languageForPath(diffs[0].path)
+  const language = diffs.every(diff => languageForPath(diff.path) === firstLanguage) ? firstLanguage : undefined
 
   const onCopy = useCallback(() => {
     if (copied) return
@@ -198,10 +204,9 @@ export function DiffBlock({ diffs, labels, maxLines = DEFAULT_DIFF_MAX_LINES, cl
   const tail = capped ? rows.slice(rows.length - tailLines) : []
 
   return (
-    <div className={clsx(css.block, className)} data-diff="">
-      <button type="button" className={css.copyButton} onClick={onCopy}>
-        {copied ? labels.copied : labels.copy}
-      </button>
+    <div className={clsx(cardCss.card, css.block, className)} data-diff="" data-code-wrap={wrapped}>
+      <CodeToolbar lang={language} labels={labels} copyLabel={labels.copy} copiedLabel={labels.copied}
+        copied={copied} wrapped={wrapped} onCopy={onCopy} onWrap={() => { setWrapped(value => !value) }} />
       <div className={css.body}>
         {head.map((row, index) => (
           <div key={index} className={clsx(css.line, ROW_CLASS[row.kind])}>{row.text}</div>
