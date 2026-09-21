@@ -1,0 +1,15 @@
+<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="13" y="5" width="10" height="16" rx="5" fill="url(#voice)" />
+  <path d="M11 18V20C11 23.866 14.134 27 18 27C21.866 27 25 23.866 25 20V18M18 27V31M14 31H22" stroke="#5F83FF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M4 14V18M8 11V21M28 11V21M32 14V18" stroke="url(#wave)" stroke-width="2.5" stroke-linecap="round" />
+  <defs>
+    <linearGradient id="voice" x1="18" y1="5" x2="18" y2="21" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#45D9E7" />
+      <stop offset="1" stop-color="#5F83FF" />
+    </linearGradient>
+    <linearGradient id="wave" x1="18" y1="11" x2="18" y2="21" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#45D9E7" />
+      <stop offset="1" stop-color="#7C9AFF" />
+    </linearGradient>
+  </defs>
+</svg>
