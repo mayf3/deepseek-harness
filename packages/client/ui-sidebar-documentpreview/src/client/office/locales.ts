@@ -1,6 +1,6 @@
 /** Office preview copy and Host render configuration guidance. */
 export const zh = {
-  title: 'Office PDF',
+  title: 'Office 文档',
   loading: '正在读取…',
   retry: '重试',
   viewMissingFonts: '缺失 {count} 种字体，点击查看',
@@ -22,7 +22,7 @@ export type OfficePreviewKey = keyof typeof zh
 
 /** English translations checked against the Chinese key set. */
 export const en = {
-  title: 'Office PDF',
+  title: 'Office document',
   loading: 'Reading…',
   retry: 'Retry',
   viewMissingFonts: 'Missing fonts: {count}. Click to view.',
