@@ -121,7 +121,7 @@ body {
   font-family: var(--dsw-font-family-brand);
   font-size: 26px;
   font-style: normal;
-  font-weight: 300;
+  font-weight: 500;
 }
 
 :lang(en) .tagline em {
