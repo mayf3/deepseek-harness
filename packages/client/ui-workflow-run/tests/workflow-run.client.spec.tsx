@@ -307,7 +307,6 @@ const listState = (overrides: Partial<SessionListState> = {}): SessionListState 
   projectionsBySession: { [PARENT_ID]: { state: 'ready', error: null, values: { subagentCatalog: [
     { createdAt: 1, id: CHILD_ID, mode: 'one-shot' },
   ] } } },
-  jobsBySession: {},
   ...overrides,
 })
 
@@ -326,6 +325,8 @@ function panelProps(data: WorkflowRunChatData, sessions = listState(), openSessi
     useTrajectory: selector => selector(panelTrajectory),
     useInput: () => { throw new Error('unused') },
     inputActions: {
+      captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),
+      insertText: () => false,
       setDraft: () => {},
       addAttachments: () => false,
       removeAttachment: () => {},

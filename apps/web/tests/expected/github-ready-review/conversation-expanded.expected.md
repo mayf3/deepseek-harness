@@ -16,7 +16,6 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - button "Thought for a while" [expanded]
 - button "Context injection webhook github webhook handled by review-pr-when-ready"
 - button "Context injection runtime-context"

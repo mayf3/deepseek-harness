@@ -7,7 +7,11 @@
 
 import { randomUUID } from 'node:crypto'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
-import { OperatorPeer, type ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
+import {
+  OperatorPeer,
+  type ConnectionRpcAttachment,
+  type ConnectionRpcHandler,
+} from '@deepseek-ai/dsh-client-connection'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import type { WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -325,7 +329,10 @@ export class TypertGatewayService extends Service implements TypertGateway {
    * @throws {@link TypertGatewayError} for dispatch, provider, or boundary failures; lookup-policy and business errors retain identity.
    */
   async invoke(request: InvokeRemoteRequest): Promise<unknown> {
-    const prepared = await this.prepareInvocation(request, new AbortController())
+    return this.invokePrepared(await this.prepareInvocation(request, new AbortController()))
+  }
+
+  private async invokePrepared(prepared: PreparedInvocation): Promise<unknown> {
     if (prepared.descriptor.mode !== undefined) {
       throw new TypertGatewayError(
         'gateway/signature-invalid',
@@ -337,7 +344,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     try {
       return await Reflect.apply(prepared.method, prepared.receiver, prepared.args) as unknown
     } catch (error) {
-      if (request.signal?.aborted === true) throw remoteCancelled(prepared.endpoint, error)
+      if (prepared.invocation.signal.aborted) throw remoteCancelled(prepared.endpoint, error)
       throw error
     } finally {
       // A unary call's uplink is readable only while the method runs.
@@ -647,11 +654,15 @@ export class TypertGatewayService extends Service implements TypertGateway {
     peer: PeerScope,
   ): Promise<ConnectionRpcResult> {
     try {
-      const value = await this.invoke(remoteRequest(endpoint, payload, signal, peer))
+      const prepared = await this.prepareInvocation(
+        remoteRequest(endpoint, payload, signal, peer),
+        new AbortController(),
+      )
+      const value = await this.invokePrepared(prepared)
       // A void or explicitly absent business result carries no `value` field;
       // JSON has no `undefined`, and the envelope's optional slot is the one
       // representation of absence that both args and results already use.
-      return { ok: true, value }
+      return encodeRpcResult(value, prepared.descriptor.result)
     } catch (error) {
       return rpcFailure(error)
     }
@@ -961,6 +972,67 @@ export class TypertGatewayService extends Service implements TypertGateway {
     }
     return resolved
   }
+}
+
+function encodeRpcResult(value: unknown, codec: TypertCodec): ConnectionRpcResult {
+  const attachments: ConnectionRpcAttachment[] = []
+  const writeBytes = (bytes: Uint8Array, path: readonly (string | number)[]): null => {
+    attachments.push({ path: [...path], bytes })
+    return null
+  }
+  const encoded = codec.mode === 'strict'
+    ? codec.encode?.(value, writeBytes) ?? value
+    : encodeRuntimeResult(value, writeBytes)
+  return { ok: true, value: encoded, ...(attachments.length === 0 ? {} : { attachments }) }
+}
+
+function encodeRuntimeResult(
+  input: unknown,
+  writeBytes: (bytes: Uint8Array, path: readonly (string | number)[]) => null,
+): unknown {
+  const path: (string | number)[] = []
+  const ancestors = new Set<object>()
+  const extract = (input: unknown, key: string): unknown => {
+    // Capture accessors and toJSON once, before materializing the JSON metadata.
+    let value = input
+    if (input !== null && typeof input === 'object' && !(input instanceof Uint8Array)) {
+      const toJSON: unknown = Reflect.get(input, 'toJSON')
+      if (typeof toJSON === 'function') value = Reflect.apply(toJSON, input, [key])
+    }
+    if (value instanceof Uint8Array) return writeBytes(value, path)
+    if (typeof value !== 'object' || value === null) return value
+    if (value instanceof Number || value instanceof String || value instanceof Boolean) return value.valueOf()
+    if (ancestors.has(value)) throw new TypeError('gateway: circular RPC result')
+    ancestors.add(value)
+    let copy: object
+    if (Array.isArray(value)) {
+      const items: unknown[] = []
+      // JSON arrays include every index, even holes and non-enumerable elements.
+      for (let index = 0, length = value.length; index < length; index++) items.push(child(value[index], index))
+      copy = items
+    } else {
+      const fields: Record<string, unknown> = {}
+      for (const key of Object.keys(value)) {
+        const item: unknown = Reflect.get(value, key)
+        // A toJSON method on the projected object must not run a second time.
+        if (key === 'toJSON' && typeof item === 'function') continue
+        const extracted = child(item, key)
+        if (key === '__proto__') Object.defineProperty(fields, key, { value: extracted, enumerable: true })
+        else fields[key] = extracted
+      }
+      copy = fields
+    }
+    ancestors.delete(value)
+    return copy
+  }
+  const child = (value: unknown, key: string | number): unknown => {
+    if (typeof value !== 'object' || value === null) return value
+    path.push(key)
+    const extracted = extract(value, String(key))
+    path.pop()
+    return extracted
+  }
+  return extract(input, 'value')
 }
 
 type RemoteEventWireFrame =

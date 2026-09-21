@@ -18,9 +18,9 @@ export function PathLabel({ path, className, ...attributes }: {
   const textRef = useRef<HTMLSpanElement>(null)
   const { directory, name } = pathPartsOf(path)
   useLayoutEffect(() => {
-    const outer = boxRef.current
-    const inner = textRef.current
-    if (outer === null || inner === null) return undefined
+    // Both spans mount unconditionally before this layout effect runs.
+    const outer = boxRef.current as HTMLSpanElement
+    const inner = textRef.current as HTMLSpanElement
     const apply = (): void => {
       outer.toggleAttribute('data-path-clipped', inner.offsetWidth > outer.clientWidth)
     }

@@ -5,7 +5,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-office-to-pdf/remote'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
-import type {} from '@deepseek-ai/dsh-client-connection/client'
 import { documentFileBytes } from '../rpc.ts'
 import { failureLine } from '../failure-line.ts'
 import { documentTabInfoFactory } from '../document/contract.ts'
@@ -81,7 +80,9 @@ export function apply(ctx: Context, config: Config['office']): void {
     }
     const createCache = () => new OfficePreviewCache(
       async (file, signal) => {
-        const authorized = await scope.remote.workspaceFiles.readBytes(file.sessionId, file.path, { offset: 0, length: 1 }, signal)
+        const authorized = await scope.remote.workspaceFiles.readBytes(
+          file.sessionId, file.path, { range: { offset: 0, length: 1 } }, signal,
+        )
         signal.throwIfAborted()
         if (!authorized.ok) return authorized
         const metadata = await scope.remote.workspaceFiles.stat(file.sessionId, file.path, signal)

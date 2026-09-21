@@ -7,11 +7,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, UIEvent } from 'react'
 import {
   Button, IconChevronDownOutlineRegular, IconCompareSplitOutlineRegular, IconInspectOutlineRegular,
-  IconNowrapFillRegular, IconRightUpOutlineRegular, IconWrapFillRegular, Menu, PathLabel, Tooltip,
+  IconNowrapFillRegular, IconWrapFillRegular, Menu, PathLabel, Tooltip,
   languageForPath, useCodeHighlighter,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CodeHighlighter, HighlightSpan } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import type { WorkspaceChangedFile, WorkspaceDiffHunk } from '@deepseek-ai/dsh-workspace-changes/types'
@@ -45,7 +45,7 @@ export interface ReviewInjected {
 
 /** The body's composed props: the tab it draws, its store, its injected face, and its copy. */
 export type ReviewTabProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsStore<ReturnType<typeof createReviewStore>>
-  & InjectFace<ReviewInjected> & PropsLocale<typeof NS>
+  & InjectFace<ReviewInjected> & PropsLocale<typeof NS> & PropsRenderSlots<'deliverables.review.file.actions'>
 
 /** One drawn line of a hunk with its line numbers on each side. */
 export interface DiffRow {
@@ -189,7 +189,7 @@ function Counts({ file, t }: { file: WorkspaceChangedFile } & PropsLocale<typeof
  */
 export function ReviewTab({
   useTabInfo, sessionId, useSessions, useStore, actions, useChangesSummary, useChangesDiff, usePresentedOpen, usePresentedHost,
-  loadChangesSummary, loadChangesDiff, reloadPresentedHost, openChanged, t,
+  loadChangesSummary, loadChangesDiff, reloadPresentedHost, openChanged, t, renderSlot,
 }: ReviewTabProps): ReactNode {
   const { tab } = useTabInfo()
   const { navigation, signal } = tab
@@ -266,11 +266,11 @@ export function ReviewTab({
             <button type="button" className={css.tool} aria-label={t('review.openFileAria', { name: file.display })} data-review-tool="open-file"
               onClick={() => { tab.actions.openResource(fileAddressFor(sessionId, cwd, file.path)) }}><IconInspectOutlineRegular /></button>
           </Tooltip>}
-          {file !== undefined && native && <Tooltip label={t(phase === 'error' ? 'diff.openNativeError' : 'diff.openNative')} side="bottom" delayMs={500}>
-            <button type="button" className={css.tool} disabled={phase === 'opening'} data-review-tool="open-native"
-              aria-label={t('diff.openNativeAria', { name: file.display })} data-error={phase === 'error' || undefined}
-              onClick={() => { void openChanged(sessionId, seq, index) }}><IconRightUpOutlineRegular /></button>
-          </Tooltip>}
+          {file !== undefined && renderSlot('deliverables.review.file.actions', {
+            actionUrl: changedFileUrl(sessionId, seq, index), available: native,
+            pending: phase === 'opening' || phase === 'revealing',
+            onAction: (action, application) => openChanged(sessionId, seq, index, action, application),
+          })}
         </span>
       </div>
       {summaryState === 'loading' && <p className={css.status} role="status">{t('diff.loading')}</p>}

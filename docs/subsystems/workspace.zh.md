@@ -121,6 +121,10 @@ interface Workspace {
 
 会话的 cwd 在创建时由创建者赋予，而不是由本注册表赋予——API 网关从所选工作区的 `path` 解析新会话的 cwd（回退到显式或默认 cwd），先创建会话使 cwd 落入其不可变的 [`SessionHeader`](persistence.zh.md#sessionheader--metadata-beside-the-log)，再调用 `attachSession`，后者会把已存储的 header cwd 与工作区路径重新校验一遍。首次成功启动时，注册表仅凭已持久化的 header（`id`、`cwd`、`createdAt`——绝不读事件正文）引导历史：把规范 cwd 有效的会话按目录分组为工作区，最新的排在最前；「已初始化」标记最后写入，因此被中断的引导可以安全续跑。引导只发生这一次：没有 cwd 的历史遗留会话保持 Ungrouped，此后创建的会话只能通过 `attachSession` 加入工作区。
 
+## 默认工作区初始化
+
+控制器的[传输类型](../../packages/api/workspace-controller/src/types.ts)定义了 `WorkspaceInitializeDefaultRequest`，包含 Client 解析出的 `directoryName` 和初始 `title`。Host 解析 Documents 位置，并请求注册表执行一次初始化。语言选择由 Client 负责；注册表接收目录解析器，并将登记与持久化身份一起提交。[首次使用行为与配置](../../packages/api/workspace-controller/README.zh.md#first-use-workspace)说明复用和失败处理。
+
 ## 会话置顶
 
 控制器的[传输类型](../../packages/api/workspace-controller/src/types.ts)定义了 `WorkspacePinSessionRequest` 和 `WorkspaceUnpinSessionRequest`，两者都携带一个 `sessionId`。两个操作都返回 `WorkspacePinValue`：完整的会话 id 数组 `pinnedSessionIds`，最近置顶的会话排在前面。置顶要求会话已知且未归档；对未置顶的 id 取消置顶会成功，且不改变集合。归档在同一次持久化写入中移除该会话的置顶，取消归档不会恢复置顶。
@@ -302,6 +306,14 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('create') create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>
 
 /**
+ * Initialize or reuse the default Workspace during first-use startup.
+ * @param request - initial directory name and title; never rename an existing default.
+ * @param signal - caller lifetime; cancels native directory lookup.
+ * @returns the durable Workspace, or undefined when first-use initialization is ineligible; creates no Session or message.
+ */
+@Remote('initializeDefault') async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal: AbortSignal): Promise<WorkspaceValue | undefined>
+
+/**
  * Rename one Workspace to a unique non-blank title.
  * @param request - Workspace identity and proposed title.
  * @returns the updated Workspace projection.
@@ -385,34 +397,14 @@ Host Remote file reads and workspace directory observations over the composed fi
 @Remote async read( workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal, ): Promise<WorkspaceFileText>
 
 /**
- * Read one byte window of a regular file readable by the filesystem backend: raw
- * bytes, no text decoding and no binary rejection.
+ * Read a complete regular file or one byte range without text decoding.
  * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
- * @param range - the byte window; omitted fields take the window defaults.
+ * @param path - target path, absolute or workspace-relative; relative to the base file's directory when provided.
+ * @param options - optional base file and range; without a range the complete-file cap applies.
  * @param signal - caller cancellation.
- * @returns the window in base64, the file's version and size at the stat before it, and whether it reaches the last byte.
+ * @returns native bytes with the file's version and size at the preceding stat, byte offset, and EOF marker.
  */
-@Remote async readBytes( workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceByteRange, signal: AbortSignal, ): Promise<WorkspaceFileBytes>
-
-/**
- * Read a complete regular file as bytes, subject to the configured full-file cap.
- * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param path - absolute or workspace-relative file path.
- * @param signal - caller cancellation.
- * @returns one complete base64 window with offset zero and eof true; oversized files fail with too-large.
- */
-@Remote async readAll(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
-
-/**
- * Read a complete file relative to another file's directory, including outside the workspace.
- * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param path - base file, absolute or workspace-relative.
- * @param relativePath - relative filesystem path, not a URL or absolute path.
- * @param signal - caller cancellation.
- * @returns the complete related file using the ordinary file-size and access checks.
- */
-@Remote async readRelated( workspaceFileScope: WorkspaceFileScope, path: string, relativePath: string, signal: AbortSignal, ): Promise<WorkspaceFileBytes>
+@Remote async readBytes( workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceByteReadOptions, signal: AbortSignal, ): Promise<WorkspaceFileBytes>
 
 /**
  * Report one regular file's identity, version, and size without its content.
@@ -465,6 +457,18 @@ Durable workspace registry. Startup waits for `sessionPersistence`, builds one c
  * @returns the existing or newly durable workspace.
  */
 async create(path: string, title?: string): Promise<Workspace>
+
+/**
+ * Initialize the default Workspace only while both the registry and Session
+ * history are empty. Repeated requests reuse its durable identity; deleting
+ * that registration permanently disables automatic creation.
+ * @param resolveDirectory - resolve the absolute directory and initial title;
+ * called only for eligible creation, inside the registry mutation queue.
+ * Missing directories are created recursively before registration.
+ * After resolution, caller cancellation does not roll back creation or registration.
+ * @returns the initialized Workspace, or undefined when automatic creation is ineligible.
+ */
+initializeDefault(resolveDirectory: () => Promise<{ path: string; title: string }>): Promise<Workspace | undefined>
 
 /**
  * Look up a workspace by id.

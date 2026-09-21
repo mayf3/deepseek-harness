@@ -11,7 +11,6 @@
   - button "Jump to turn 2"
 - group "Command input": /goal 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的
 - 'button "goal Goal created Status: active Objective: 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的 Rounds: 0/256 Activation: armed Commands: /goal edit <objective>, /goal pause, /goal clear"'
-- button "System prompt"
 - button "6 tool calls"
 - paragraph:
   - strong: Turn 1 / 2
@@ -28,7 +27,6 @@
 - button "Bad response"
 - button "Branch into a new conversation"
 - text: {{clock}}
-- button "System prompt"
 - button "5 tool calls · 2 messages"
 - paragraph: 两个 turn 都完成了 ✅
 - paragraph:

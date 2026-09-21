@@ -6,6 +6,7 @@ import { DESKTOP_IPC, type DshDesktopProductApi } from '../src/ipc.ts'
 const electron = vi.hoisted(() => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
   ipcRenderer: { invoke: vi.fn(), on: vi.fn(), off: vi.fn(), send: vi.fn() },
+  webUtils: { getPathForFile: vi.fn() },
 }))
 vi.mock('electron', () => electron)
 vi.mock('../src/preload-platform.ts', () => ({ markDocumentPlatform: vi.fn(), syncWindowFullscreen: vi.fn() }))
@@ -27,7 +28,8 @@ it('limits product documents to update status and a native confirmation action',
   expect(api.updates).not.toHaveProperty('install')
   const listener = vi.fn()
   const dispose = api.updates.subscribe(listener)
-  const handler = electron.ipcRenderer.on.mock.calls[0]?.[1] as (event: unknown, state: unknown) => void
+  const handler = electron.ipcRenderer.on.mock.calls.find(([channel]) => channel === DESKTOP_IPC.updatesPresentation)?.[1] as
+    (event: unknown, state: unknown) => void
   handler({}, { visible: false })
   expect(listener).toHaveBeenCalledWith({ visible: false })
   dispose()
@@ -38,6 +40,7 @@ it.each(['dsh-app://shell/plugin-manager.html', 'dsh-app://other/index.html', 'h
   vi.stubGlobal('location', new URL(url))
   await import('../src/preload-app.ts')
   expect(electron.contextBridge.exposeInMainWorld).toHaveBeenCalledWith('dshDesktop', { protocolVersion: 1 })
+  expect(electron.ipcRenderer.on.mock.calls.some(([channel]) => channel === DESKTOP_IPC.browserOpenRequested)).toBe(false)
 })
 
 it('exposes asynchronous boot only to the local application document', async () => {
@@ -68,6 +71,23 @@ it('exposes a directory picker only to the local application document', async ()
     vi.stubGlobal('location', new URL(url))
     await import('../src/preload-app.ts')
     expect(electron.contextBridge.exposeInMainWorld.mock.calls.some(([name]) => name === '__DSH_DIRECTORY_PICKER__')).toBe(false)
+  }
+})
+
+it('reports host paths of picked files only to the local application document', async () => {
+  vi.stubGlobal('location', new URL('dsh-app://app/'))
+  await import('../src/preload-app.ts')
+  const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === '__DSH_HOST_PATHS__')?.[1] as { pathFor(file: File): string }
+  const picked = new File(['x'], 'notes.md')
+  electron.webUtils.getPathForFile.mockReturnValue('/Users/me/notes.md')
+  expect(api.pathFor(picked)).toBe('/Users/me/notes.md')
+  expect(electron.webUtils.getPathForFile).toHaveBeenCalledExactlyOnceWith(picked)
+  for (const url of ['dsh-app://shell/startup.html', 'https://example.com/']) {
+    vi.resetModules()
+    electron.contextBridge.exposeInMainWorld.mockClear()
+    vi.stubGlobal('location', new URL(url))
+    await import('../src/preload-app.ts')
+    expect(electron.contextBridge.exposeInMainWorld.mock.calls.some(([name]) => name === '__DSH_HOST_PATHS__')).toBe(false)
   }
 })
 

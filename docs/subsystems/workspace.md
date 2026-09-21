@@ -121,6 +121,10 @@ Ownership truth is the record's ordered `sessionIds`, never derived from session
 
 Sessions get their cwd at create time from whoever creates them, not from this registry — the API gateway resolves a new session's cwd from the chosen workspace's `path` (falling back to an explicit or default cwd), creates the session so the cwd lands in its immutable [`SessionHeader`](persistence.md#sessionheader--metadata-beside-the-log), then calls `attachSession`, which re-validates that stored header cwd against the workspace path. On the first successful start, the registry bootstraps history from persisted headers alone (`id`, `cwd`, `createdAt` — never event bodies), grouping sessions with a valid canonical cwd into per-directory workspaces, newest first; the initialized marker is written last so an interrupted bootstrap resumes safely. The bootstrap is one-time: cwd-less legacy sessions stay Ungrouped, and sessions created afterwards join a workspace only through `attachSession`.
 
+## Default Workspace initialization
+
+The controller's [transport types](../../packages/api/workspace-controller/src/types.ts) define `WorkspaceInitializeDefaultRequest`: a Client-resolved `directoryName` and initial `title`. The Host resolves the Documents location and asks the registry to initialize once. Locale selection belongs to the Client; the registry accepts a directory resolver and commits the registration with its durable identity. [First-use behavior and configuration](../../packages/api/workspace-controller/README.md#first-use-workspace) describe reuse and failure handling.
+
 ## Session pinning
 
 The controller's [transport types](../../packages/api/workspace-controller/src/types.ts) define `WorkspacePinSessionRequest` and `WorkspaceUnpinSessionRequest`, each carrying one `sessionId`. Both operations return `WorkspacePinValue`: the complete `pinnedSessionIds` array of Session ids, most recently pinned first. Pinning requires a known, unarchived Session; unpinning an id that is not pinned succeeds without changing the set. Archiving removes the Session's pin in the same durable write, and unarchiving does not restore it.
@@ -302,6 +306,14 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('create') create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>
 
 /**
+ * Initialize or reuse the default Workspace during first-use startup.
+ * @param request - initial directory name and title; never rename an existing default.
+ * @param signal - caller lifetime; cancels native directory lookup.
+ * @returns the durable Workspace, or undefined when first-use initialization is ineligible; creates no Session or message.
+ */
+@Remote('initializeDefault') async initializeDefault(request: WorkspaceInitializeDefaultRequest, signal: AbortSignal): Promise<WorkspaceValue | undefined>
+
+/**
  * Rename one Workspace to a unique non-blank title.
  * @param request - Workspace identity and proposed title.
  * @returns the updated Workspace projection.
@@ -385,34 +397,14 @@ Host Remote file reads and workspace directory observations over the composed fi
 @Remote async read( workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal, ): Promise<WorkspaceFileText>
 
 /**
- * Read one byte window of a regular file readable by the filesystem backend: raw
- * bytes, no text decoding and no binary rejection.
+ * Read a complete regular file or one byte range without text decoding.
  * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
- * @param range - the byte window; omitted fields take the window defaults.
+ * @param path - target path, absolute or workspace-relative; relative to the base file's directory when provided.
+ * @param options - optional base file and range; without a range the complete-file cap applies.
  * @param signal - caller cancellation.
- * @returns the window in base64, the file's version and size at the stat before it, and whether it reaches the last byte.
+ * @returns native bytes with the file's version and size at the preceding stat, byte offset, and EOF marker.
  */
-@Remote async readBytes( workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceByteRange, signal: AbortSignal, ): Promise<WorkspaceFileBytes>
-
-/**
- * Read a complete regular file as bytes, subject to the configured full-file cap.
- * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param path - absolute or workspace-relative file path.
- * @param signal - caller cancellation.
- * @returns one complete base64 window with offset zero and eof true; oversized files fail with too-large.
- */
-@Remote async readAll(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
-
-/**
- * Read a complete file relative to another file's directory, including outside the workspace.
- * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param path - base file, absolute or workspace-relative.
- * @param relativePath - relative filesystem path, not a URL or absolute path.
- * @param signal - caller cancellation.
- * @returns the complete related file using the ordinary file-size and access checks.
- */
-@Remote async readRelated( workspaceFileScope: WorkspaceFileScope, path: string, relativePath: string, signal: AbortSignal, ): Promise<WorkspaceFileBytes>
+@Remote async readBytes( workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceByteReadOptions, signal: AbortSignal, ): Promise<WorkspaceFileBytes>
 
 /**
  * Report one regular file's identity, version, and size without its content.
@@ -465,6 +457,18 @@ Durable workspace registry. Startup waits for `sessionPersistence`, builds one c
  * @returns the existing or newly durable workspace.
  */
 async create(path: string, title?: string): Promise<Workspace>
+
+/**
+ * Initialize the default Workspace only while both the registry and Session
+ * history are empty. Repeated requests reuse its durable identity; deleting
+ * that registration permanently disables automatic creation.
+ * @param resolveDirectory - resolve the absolute directory and initial title;
+ * called only for eligible creation, inside the registry mutation queue.
+ * Missing directories are created recursively before registration.
+ * After resolution, caller cancellation does not roll back creation or registration.
+ * @returns the initialized Workspace, or undefined when automatic creation is ineligible.
+ */
+initializeDefault(resolveDirectory: () => Promise<{ path: string; title: string }>): Promise<Workspace | undefined>
 
 /**
  * Look up a workspace by id.

@@ -55,12 +55,6 @@
   flex: none;
 }
 
-.separator {
-  color: var(--dsw-alias-label-caption);
-  font-size: 14px;
-  line-height: 20px;
-}
-
 .activitySlot {
   display: inline-flex;
   flex: none;

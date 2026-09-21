@@ -51,7 +51,7 @@ it('includes certificate, identifier and entitlement contents in the cache polic
   const create = macOSCachePolicy('probe')
   const original = create('com.example.file', identity).policy
   expect(create('com.other.file', identity).policy).not.toBe(original)
-  expect(create('com.example.file', identity, join(import.meta.dirname, '../scripts/node-entitlements.plist')).policy).not.toBe(original)
+  expect(create('com.example.file', identity, join(import.meta.dirname, '../scripts/jit-entitlements.plist')).policy).not.toBe(original)
   certificate = 'renewed-certificate'
   expect(macOSCachePolicy('probe')('com.example.file', identity).policy).not.toBe(original)
 })

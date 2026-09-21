@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/office-to-pdf.md
-office-to-pdf.md: 65f46ded856e81f9bcd7890c11c82f0a22f769c4
-office-to-pdf.zh.md: df46af01d78241bbc88f6b85a83c47551faf4bfe
+office-to-pdf.md: dd0f6392f264775f12c0f7612656f1c07366567d
+office-to-pdf.zh.md: 5c99f87681dd8d98da3717a311a7f858d4b52b32

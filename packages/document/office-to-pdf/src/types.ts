@@ -45,7 +45,9 @@ export type OfficeToPdfErrorCode =
   | 'invalid-output' | 'timeout' | 'unavailable' | 'failed' | 'busy' | 'source-changed'
 
 /** PDF content carries the original Office file's absolute path and version. */
-export interface RenderedDocumentBytes extends WorkspaceFileBytes {
+export interface RenderedDocumentBytes extends Omit<WorkspaceFileBytes, 'data'> {
+  /** Base64 PDF contents carried by the JSON Remote response. */
+  readonly data: string
   readonly missingFonts: string[]
   readonly generation: OfficeToPdfGeneration
 }

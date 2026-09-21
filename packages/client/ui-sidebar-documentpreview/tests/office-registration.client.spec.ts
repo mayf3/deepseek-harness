@@ -55,7 +55,7 @@ async function harness(config: Partial<Config['office']> = {}, missing?: 'remote
   const render = vi.fn<ClientRemote['officeToPdf']['render']>().mockResolvedValue(converted)
   const rendererGeneration = vi.fn<ClientRemote['officeToPdf']['generation']>().mockResolvedValue({ ok: true, value: generation })
   const stat = vi.fn<ClientRemote['workspaceFiles']['stat']>().mockResolvedValue({ ok: true, value: source })
-  const readBytes = vi.fn<ClientRemote['workspaceFiles']['readBytes']>().mockResolvedValue({ ok: true, value: source })
+  const readBytes = vi.fn<ClientRemote['workspaceFiles']['readBytes']>().mockResolvedValue({ ok: true, value: { ...source, data: pdf.subarray(0, 1), eof: false } })
   const removeNotice = vi.fn()
   const recorded: { options: { name: string; store: OfficeStore; inject: (id: SessionId, actions: ReturnType<OfficeStore['create']>['actions']) => OfficeBodyInjected }; component: unknown }[] = []
   const register = vi.fn((options: typeof recorded[number]['options'], component: unknown) => { recorded.push({ options, component }); return removeNotice })
@@ -112,7 +112,7 @@ it('requests a Host PDF with source identity and borrows the same binary cache r
     expect(await h.read()).toBe(result)
     expect(h.stat).toHaveBeenCalledTimes(2)
     expect(h.readBytes).toHaveBeenCalledTimes(2)
-    expect(h.readBytes).toHaveBeenCalledWith(file.sessionId, file.path, { offset: 0, length: 1 }, expect.any(AbortSignal))
+    expect(h.readBytes).toHaveBeenCalledWith(file.sessionId, file.path, { range: { offset: 0, length: 1 } }, expect.any(AbortSignal))
     expect(h.render).toHaveBeenCalledOnce()
   } finally { await h.close() }
 })
@@ -147,8 +147,8 @@ it('refuses Client cached bytes when metadata still succeeds but the read probe 
   try {
     await h.read()
     const failure = new Error('read denied')
-    h.readBytes.mockRejectedValueOnce(failure)
-    await expect(h.read()).rejects.toBe(failure)
+    h.readBytes.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', failure.message, {}) })
+    expect(await h.read()).toMatchObject({ ok: false, error: { code: 'gateway/internal', message: failure.message } })
     expect(h.render).toHaveBeenCalledOnce()
     expect(h.stat).toHaveBeenCalledOnce()
   } finally { await h.close() }
@@ -160,7 +160,7 @@ it('returns a declared authorization failure without consulting metadata or cach
     await h.read()
     const denied = { ok: false as const, error: new RemoteError('workspace-file/not-found', 'File missing', { path: file.path }) }
     h.readBytes.mockResolvedValueOnce(denied)
-    expect(await h.read()).toBe(denied)
+    expect(await h.read()).toMatchObject(denied)
     expect(h.stat).toHaveBeenCalledOnce()
     expect(h.render).toHaveBeenCalledOnce()
   } finally { await h.close() }

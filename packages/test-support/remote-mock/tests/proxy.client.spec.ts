@@ -3,7 +3,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { RemoteMock, frames, ok, openStream, streamHandle, type StreamHandle } from '../src/index.ts'
 
 const describeValue = (hasDocument: boolean) => ok({ writable: true, hasDocument, namespaces: [] })
-const baseline = { type: 'baseline' as const, value: { queues: {}, jobs: {}, projections: {} } }
+const baseline = { type: 'baseline' as const, value: { projections: {} } }
 
 async function drain(source: AsyncIterable<unknown>): Promise<unknown[]> {
   const values: unknown[] = []

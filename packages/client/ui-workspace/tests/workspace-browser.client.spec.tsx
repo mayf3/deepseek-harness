@@ -49,7 +49,7 @@ const sessionState = (
     ids: items.map(item => item.id),
     byId: Object.fromEntries(items.map(item => [item.id, item])),
     phase: 'ready',
-    projectionsBySession: {}, jobsBySession: {},
+    projectionsBySession: {},
     ...stateOverrides,
   }
   if (main === undefined) return state

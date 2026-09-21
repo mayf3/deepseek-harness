@@ -21,7 +21,6 @@ import type {
 
 /** A minimal in-memory fake implementing the provider primitives. */
 class FakeFileSystem extends FileSystem {
-  override watch(): never { throw new Error('Fixture does not support watching') }
   files = new Map<string, string>()
 
   override async resolve(path: string): Promise<FsTarget> {
@@ -143,6 +142,14 @@ describe('FileSystem provider seam', () => {
     const target = await fs.resolve('a.bin')
     expect(await fs.readBytes(target, undefined, 2)).toEqual(new TextEncoder().encode('hi'))
     await expect(fs.readBytes(target, undefined, 1)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  })
+
+  it('rejects watching when a provider does not implement observation', async () => {
+    const ctx = new Context()
+    await ctx.plugin(FakeFileSystem)
+    const fs = ctx.fs as FakeFileSystem
+    await expect(fs.watch(await fs.resolve('a.txt'), () => {}, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'FS_IO_ERROR' })
   })
 
   it('listDir returns child entry targets without reading file content', async () => {
