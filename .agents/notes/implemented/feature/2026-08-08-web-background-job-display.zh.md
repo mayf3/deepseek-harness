@@ -2,6 +2,10 @@
 
 Status: implemented
 
+Superseded：本文放在会话控制流上的名册（`jobsBySession`、`onJobsChanged`）现在从 job 控制器的 `job.list` 流入 `ctx.jobs`——见 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md)。下文的展示决策（单一名册、分组、时长、没有 kill 控件）仍然成立。
+
+Update：本文推迟的输出阶段现已作为 `ctx.jobs` 上的逐 job 观测 record 交付——见 [jobs 吸收 record](../architecture/2026-09-01-jobs-absorb-activity-record.zh.md)。
+
 [English](2026-08-08-web-background-job-display.md) | 中文
 
 ## 问题
@@ -64,7 +68,7 @@ abstract onJobsChanged(listener: JobsChangedListener): () => void
 
 `onJobDone` 不是它的子集。后者按 first-wins 语义投递终态记录和确切的 owner `Agent`，`dsh-tool-jobs` 把这套语义与 `reported` 绑在一起；`onJobsChanged` 是纯观察，不含任何投递含义，也不把任何东西标为已上报。监听器抛错被包住且从不 await，与 `onJobDone` 一致，每次注册都是调用方 fiber 上的 effect。
 
-服务销毁刻意什么都不通告。每个 `onJobsChanged` 注册都是注册表自身 fiber 上的 effect，等到 teardown 清空 store 时监听器早已消失；观察者通过自己的销毁而不是一份最终空集来得知注册表离开了。
+服务销毁逐条通告移除：注册表取消并等完自己的 job 之后，丢弃每条记录并对每个 job 发出一个 `removed` 事件，因此注册在更长命 fiber 上的订阅者看到名册逐条清空而不是留着陈旧集合（注册在注册表自身 fiber 上的订阅者此时早已消失）。
 
 ### Session Controller 载体
 
@@ -87,7 +91,7 @@ abstract onJobsChanged(listener: JobsChangedListener): () => void
 
 ### header 入口
 
-[`@deepseek-ai/dsh-client-ui-jobs`](../../../../packages/client/ui-jobs/README.zh.md) 在 `conversation.session.header.actions` 注册一个条目，排在 subagent 目录之后。呈现契约归它自己的 README；值得记在这里的决策是：会话没有任务时控件根本不渲染；活跃角标为零时省略，让只剩历史的会话保留一个安静的入口；终态行保持可见，因为失败任务的 `detail` 是其失败唯一可读之处。
+`@deepseek-ai/dsh-client-ui-jobs` 在 `conversation.session.header.actions` 注册一个条目，排在 preset 标签与 subagent 目录之间（`order: 20`，目录为 30）。呈现契约归它自己的 README；值得记在这里的决策是：会话没有任务时控件根本不渲染；活跃角标为零时省略，让只剩历史的会话保留一个安静的入口；终态行保持可见，因为失败任务的 `detail` 是其失败唯一可读之处。
 
 因此一个运行中的一次性后台 subagent 会同时出现在那里和 subagent 目录里。两者回答不同的问题——目录负责进入子会话的 transcript，而这个列表是中断能力唯一可能附着的句柄——在这里屏蔽 `kind: 'subagent'` 会让中断那一期恰好对这批任务没有入口。
 
@@ -117,7 +121,7 @@ abstract onJobsChanged(listener: JobsChangedListener): () => void
 
 [web e2e 场景](../../../../apps/web/tests/background-job-list.e2e.ts)是端到端的证据，且无需密钥：一次真实的 `run_in_background` bash 调用注册进 `ctx.jobs`，header 的计数与行在没有任何用户操作的情况下出现，通过注册表杀掉该任务后打开着的列表翻到生产者给出的 detail。它断言的是整条投递链路，而不是其中某一层。
 
-在它之下，[`jobs-local`](../../../../packages/jobs/jobs-local/tests/jobs.spec.ts) 钉住变更订阅的全部四个提交点、对抛错观察者的包容，以及显式销毁与 fiber 拆除两条路径上的注销；[`control-jobs`](../../../../packages/api/session-controller/tests/control-jobs.host.spec.ts) 钉住完整 baseline、三次变更推送、被丢弃的内部字段、无主扇出、不 resume 的保证、没有注册表的组合，以及不得消费模型输出；客户端各套件钉住 baseline 替换、last-wins 折叠、缺失键表示、移除清理，以及组件的排序、时长与关闭行为。
+在它之下，[`jobs-local`](../../../../packages/jobs/jobs-local/tests/jobs.spec.ts) 钉住变更订阅的全部四个提交点、对抛错观察者的包容，以及显式销毁与 fiber 拆除两条路径上的注销；[`rows`](../../../../packages/api/job-controller/tests/rows.host.spec.ts) 钉住取代控制流扇出的名册流：打开时的完整可见集、每次生命周期提交后刷新一次且追加不刷新、拥有者移除，以及干净的中止；客户端各套件钉住 baseline 替换、last-wins 折叠、缺失键表示、移除清理，以及组件的排序、时长与关闭行为。
 
 ## 影响
 

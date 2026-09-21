@@ -55,6 +55,8 @@ export const InputBar = memo(function InputBar({
   const busyEnter = useBusyEnter(s => s)
   void useLexicon // hook seat stays bound by the inject compartment; text-ref decoration rides the shell's editor transforms
   const commandMenuOpen = useMenuLauncher(source => source === 'command')
+  const [activity, setActivity] = useState(false)
+  useEffect(() => { setActivity(false) }, [sessionId])
   const promptError = useSession(s => s.promptError) ?? null
   const running = useSession(s => s.running) ?? false
   const subagent = useSession(s => s.subagent) ?? null
@@ -198,7 +200,7 @@ export const InputBar = memo(function InputBar({
   // client-side size or count limit and upload as soon as they are picked.
   // The host enforces the same image limits at submit for callers that bypass
   // this composer.
-  const intakeFiles = useCallback((files: readonly File[]): void => {
+  const intakeFiles = useCallback((files: readonly File[], directories?: ReadonlySet<File>): void => {
     if (subagent !== null || addFiles === undefined || files.length === 0) return
     const rejected = ((): string | null => {
       if (imageLimits !== undefined) {
@@ -217,7 +219,7 @@ export const InputBar = memo(function InputBar({
           return t('image.totalTooLarge', { size: imageSizeText(imageLimits.maxMessageImageBytes) })
         }
       }
-      return addFiles(files)
+      return addFiles(files, directories)
     })()
     if (rejected !== null) showToast(rejected)
   }, [subagent, addFiles, attachments, imageLimits, showToast, t])
@@ -406,7 +408,7 @@ export const InputBar = memo(function InputBar({
           showPlaceholder={draft === '' && attachments.length === 0 && !claimActive}
         />
         <div className={css.row}>
-          <div className={css.tools}>
+          <div className={css.tools} hidden={activity}>
             <Tooltip label={t('input.commands')} side="top" delayMs={500}>
               <button
                 type="button"
@@ -437,11 +439,16 @@ export const InputBar = memo(function InputBar({
               ? null
               : renderSlot('conversation.input.left', {})}
           </div>
-          <div className={css.trailing}>
-            {input === undefined || sessionId === undefined
-              ? null
-              : renderSlot('conversation.input.right', {})}
-            {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
+          <div className={clsx(css.trailing, activity && css.trailingActive)}>
+            <div className={css.standardControls} hidden={activity}>
+              {input === undefined || sessionId === undefined
+                ? null
+                : renderSlot('conversation.input.right', {})}
+              {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
+            </div>
+            {input === undefined || sessionId === undefined ? null : <div className={activity ? css.activityExpanded : css.activity}>
+              {renderSlot('conversation.input.activity', { locked, onActiveChange: setActivity })}
+            </div>}
             {interruptible && (
               <Tooltip label={t('input.stop')} side="top" delayMs={500} disabled={stop === undefined}>
                 <button
@@ -485,7 +492,7 @@ export const InputBar = memo(function InputBar({
         {variant === 'composer' && input !== undefined && sessionId !== undefined
           ? renderSlot('conversation.composer.dock', {})
           : null}
-        <ContextMeter useProjection={useProjection} t={t} />
+        {activity ? null : <ContextMeter useProjection={useProjection} t={t} />}
       </div>
     </div>
   )

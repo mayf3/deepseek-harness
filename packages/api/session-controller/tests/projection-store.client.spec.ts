@@ -241,7 +241,6 @@ describe('manager frame routing', () => {
     manager.handleControlFrame({
       type: 'baseline',
       value: {
-        jobs: {},
         projections: { [sid('s1')]: { asOfSeq: 2, values: {} } },
       },
     })
@@ -267,7 +266,6 @@ describe('manager frame routing', () => {
     manager.handleControlFrame({
       type: 'baseline',
       value: {
-        jobs: {},
         projections: { [sid('s1')]: { asOfSeq: 2, values: { title: 'Connected title' } } },
       },
     })
@@ -299,7 +297,6 @@ describe('manager frame routing', () => {
     manager.handleControlFrame({
       type: 'baseline',
       value: {
-        jobs: {},
         projections: { [sid('s1')]: { asOfSeq: 2, values: { title: 'Delayed baseline' } } },
       },
     })

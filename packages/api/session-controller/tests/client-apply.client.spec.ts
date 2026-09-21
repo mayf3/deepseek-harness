@@ -18,7 +18,7 @@ const ROSTER = webApp.closure([SELF])
 const it = createClientTest({ roster: ROSTER })
 const EVENTS = '$events'
 const CONTROL = 'session/control'
-const BASELINE = { type: 'baseline', value: { jobs: {}, projections: {} } }
+const BASELINE = { type: 'baseline', value: { projections: {} } }
 /** The first client boot pays the cold module transform of the cone. */
 const COLD_BOOT_TIMEOUT_MS = 60_000
 
@@ -88,7 +88,7 @@ describe('Session Controller Client apply', () => {
     }] }))
     let projection = { asOfSeq: 20, values: { title: 'Before restart' } }
     mock.stream(CONTROL, (_args, stream) => {
-      stream.push({ type: 'baseline', value: { jobs: {}, projections: { [sessionId]: projection } } })
+      stream.push({ type: 'baseline', value: { projections: { [sessionId]: projection } } })
     })
     const { client, sessions } = await bench(start)
     await vi.waitFor(() => {

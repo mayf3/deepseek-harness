@@ -1,23 +1,27 @@
-/** Origin-scoped boot, native directory selection, and update presentation with native confirmation actions. */
+/** Origin-scoped boot, native directory selection, host paths of picked files, and update presentation with native confirmation actions. */
 
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation } from './ipc.ts'
 import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.ts'
 import { syncNativeTheme } from './preload-theme.ts'
 import { syncWindowsAppearance } from './preload-windows.ts'
 import { installMandatoryUpdateOverlay } from './preload-mandatory-overlay.ts'
+import { createDesktopBrowserBridge } from './preload-browser.ts'
 
-const product: DshDesktopProductApi = {
-  protocolVersion: 1,
-  updates: {
-    status: () => ipcRenderer.invoke(DESKTOP_IPC.updatesStatus) as Promise<DesktopUpdatePresentation>,
-    open: () => ipcRenderer.invoke(DESKTOP_IPC.updatesOpen) as Promise<void>,
-    subscribe(listener) {
-      const handle = (_event: Electron.IpcRendererEvent, state: DesktopUpdatePresentation): void => { listener(state) }
-      ipcRenderer.on(DESKTOP_IPC.updatesPresentation, handle)
-      return () => { ipcRenderer.off(DESKTOP_IPC.updatesPresentation, handle) }
+function createProductApi(): DshDesktopProductApi {
+  return {
+    protocolVersion: 1,
+    browser: createDesktopBrowserBridge(),
+    updates: {
+      status: () => ipcRenderer.invoke(DESKTOP_IPC.updatesStatus) as Promise<DesktopUpdatePresentation>,
+      open: () => ipcRenderer.invoke(DESKTOP_IPC.updatesOpen) as Promise<void>,
+      subscribe(listener) {
+        const handle = (_event: Electron.IpcRendererEvent, state: DesktopUpdatePresentation): void => { listener(state) }
+        ipcRenderer.on(DESKTOP_IPC.updatesPresentation, handle)
+        return () => { ipcRenderer.off(DESKTOP_IPC.updatesPresentation, handle) }
+      },
     },
-  },
+  }
 }
 
 if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
@@ -25,6 +29,12 @@ if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
   if (process.platform === 'win32') installMandatoryUpdateOverlay()
   contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
     pick: () => ipcRenderer.invoke(DESKTOP_IPC.directoryPick) as Promise<string | null>,
+  })
+  // The composer cites dropped, picked, and pasted files and folders that
+  // have a real path as `@path` references instead of uploading them; a
+  // File without one (pasted bytes) answers '' and uploads as before.
+  contextBridge.exposeInMainWorld('__DSH_HOST_PATHS__', {
+    pathFor: (file: File) => webUtils.getPathForFile(file),
   })
   contextBridge.exposeInMainWorld('dshDesktopBoot', {
     ready: () => ipcRenderer.invoke(DESKTOP_IPC.boot) as Promise<unknown>,
@@ -36,4 +46,4 @@ markDocumentPlatform()
 syncWindowFullscreen()
 syncNativeTheme()
 // Main-process IPC also verifies the owning window and top frame.
-contextBridge.exposeInMainWorld('dshDesktop', location.protocol === `${SCHEME}:` && location.hostname === 'app' ? product : { protocolVersion: 1 })
+contextBridge.exposeInMainWorld('dshDesktop', location.protocol === `${SCHEME}:` && location.hostname === 'app' ? createProductApi() : { protocolVersion: 1 })
