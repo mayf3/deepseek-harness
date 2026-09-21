@@ -107,7 +107,7 @@ const ProcessGroupHeader = memo(function ProcessGroupHeader({ groupKey, useChatG
   readonly toggle: () => void
 }) {
   const data = useChatGroup(groupKey, group => group?.data)
-  const detailed = usePresentation(policy => policy.liveProcessDetail)
+  const detailed = usePresentation(policy => data?.closed === false && policy.liveProcessDetail)
   const live = useStableLiveProcessTitle({
     activity: data?.summary.running ?? 'thinking',
     detail: data?.summary.runningDetail ?? '',
@@ -172,7 +172,6 @@ export const ChatGroupSeat = memo(function ChatGroupSeat({ groupKey, useChatGrou
   }, [bodyRef])
   // The content box reports growth even when the scroll body remains height-capped.
   useLayoutEffect(() => {
-    sync()
     const body = bodyRef.current
     if (body === null || !open || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(sync)

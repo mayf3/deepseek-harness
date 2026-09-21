@@ -697,6 +697,102 @@ describe('ChatView', () => {
     expect(view.queryByRole('textbox', { name: outside.key })).toBeNull()
   })
 
+  it('waits for observed layout before measuring an opened process group', () => {
+    const observers = new Set<Observer>()
+    class Observer implements ResizeObserver {
+      readonly targets = new Set<Element>()
+      constructor(readonly callback: ResizeObserverCallback) { observers.add(this) }
+      observe(target: Element): void { this.targets.add(target) }
+      unobserve(target: Element): void { this.targets.delete(target) }
+      disconnect(): void { observers.delete(this) }
+    }
+    vi.stubGlobal('ResizeObserver', Observer)
+    const snapshot = chatSnapshotFixture({ nodes: [user(1, 'inside')] })
+    const h = makeHarness({}, {}, snapshot)
+    const key = 'observed-process' as GroupKey
+    const groups = new ConversationGroupStore<ProcessGroupData>()
+    groups.prepareAndInstall({
+      entries: [{ kind: 'group', key }],
+      groups: { kind: 'replace', snapshots: [{
+        key, members: [{ kind: 'node', key: snapshot.order[0] as NodeKey }],
+        data: { turn: 1, closed: true, summary: { counts: [], running: undefined, runningDetail: '' } },
+      }] },
+    }, key => snapshot.nodes.get(key))
+    h.setGrouped(groups)
+    const view = render(<h.ChatView {...h.props} />)
+    const header = view.container.querySelector<HTMLButtonElement>('[data-process-activity]')!
+    const body = view.container.querySelector<HTMLElement>('[data-step-process-body]')!
+    let reads = 0
+    let top = 0
+    Object.defineProperties(body, {
+      scrollTop: { get: () => { reads++; return top } },
+      clientHeight: { get: () => { reads++; return 200 } },
+      scrollHeight: { get: () => { reads++; return 600 } },
+    })
+
+    fireEvent.click(header)
+    expect(reads).toBe(0)
+    const observer = [...observers].find(observer => observer.targets.has(body))!
+    expect(observer).toBeDefined()
+    act(() => { observer.callback([], observer) })
+    expect(body.hasAttribute('data-scroll-up')).toBe(false)
+    expect(body.hasAttribute('data-scroll-down')).toBe(true)
+    top = 400
+    fireEvent.scroll(body)
+    expect(body.hasAttribute('data-scroll-up')).toBe(true)
+    expect(body.hasAttribute('data-scroll-down')).toBe(false)
+    const measured = reads
+    fireEvent.click(header)
+    expect(reads).toBe(measured)
+    expect(observers.has(observer)).toBe(false)
+  })
+
+  it('does not recalculate settled group titles when work-details mode changes', () => {
+    const snapshot = chatSnapshotFixture({ nodes: Array.from({ length: 41 }, (_, index) => user(index + 1, `member ${index}`)) })
+    const h = makeHarness({}, {}, snapshot)
+    const groupStore = new ConversationGroupStore<ProcessGroupData>()
+    const groups = snapshot.order.map((nodeKey, index): GroupSnapshot<ProcessGroupData> => ({
+      key: `settled-${index}` as GroupKey,
+      data: {
+        turn: 1, closed: index < 40,
+        summary: { counts: [], running: index < 40 ? undefined : 'commands', runningDetail: index < 40 ? '' : 'pwd' },
+      },
+      members: [{ kind: 'node', key: nodeKey as NodeKey }],
+    }))
+    groupStore.prepareAndInstall({
+      entries: groups.map(group => ({ kind: 'group', key: group.key })),
+      groups: { kind: 'replace', snapshots: groups },
+    }, key => snapshot.nodes.get(key))
+    h.setGrouped(groupStore)
+    const translate = vi.fn(h.props.t)
+    const view = render(<h.ChatView {...h.props} t={translate} />)
+    const allHeaders = [...view.container.querySelectorAll('[data-process-activity]')]
+    const headers = allHeaders.slice(0, 40)
+    expect(headers).toHaveLength(40)
+    const titles = headers.map(header => header.textContent)
+
+    for (const mode of ['detailed', 'expanded', 'compact'] as const) {
+      translate.mockClear()
+      act(() => { h.setTranscriptView(mode) })
+      expect(translate.mock.calls.filter(([key]) => key === 'message.stepProcess.thinking')).toHaveLength(0)
+      expect([...view.container.querySelectorAll('[data-process-activity]')]).toEqual(allHeaders)
+      expect(headers.map(header => header.textContent)).toEqual(titles)
+      const liveLabel = h.props.t('message.stepProcess.commands')
+      expect(allHeaders[40]?.textContent).toBe(mode === 'compact' ? liveLabel
+        : `${liveLabel}${h.props.t('message.turnProcess.separator')}pwd`)
+    }
+    const running = groups[40]!
+    act(() => {
+      groupStore.prepareAndInstall({ groups: { kind: 'apply', removes: [], upserts: [{
+        ...running, data: { ...running.data, closed: true },
+      }] } }, key => snapshot.nodes.get(key))
+      groupStore.publish()
+    })
+    translate.mockClear()
+    act(() => { h.setTranscriptView('detailed') })
+    expect(translate.mock.calls.filter(([key]) => key.startsWith('message.stepProcess.'))).toHaveLength(0)
+  })
+
   it('passes independently keyed group parts to business Node renderers', () => {
     const snapshot = chatSnapshotFixture({ nodes: [assistant(1, 'answer')] })
     const h = makeHarness({}, {}, snapshot)
