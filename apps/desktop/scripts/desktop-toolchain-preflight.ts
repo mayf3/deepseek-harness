@@ -70,7 +70,7 @@ async function probeWindowsInstallerToolchain(environment: NodeJS.ProcessEnv): P
 
 /**
  * Probe every external tool one packaging run needs.
- * @param platform - Target platform, which decides the installer toolchain probes.
+ * @param platform - Target platform; a Windows target already requires a Windows build host.
  * @param environment - Packaging environment used to locate Windows tooling.
  * @returns Every probe that failed, empty when the host can run the packaging sequence.
  */
@@ -87,7 +87,7 @@ export async function probeDesktopToolchain(
 
 /**
  * Probe the toolchain and fail with every problem the host has.
- * @param platform - Target platform, which decides the installer toolchain probes.
+ * @param platform - Target platform; a Windows target already requires a Windows build host.
  * @param environment - Packaging environment used to locate Windows tooling.
  * @returns Resolves when every probe passes.
  */

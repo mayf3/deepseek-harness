@@ -19,9 +19,9 @@ export const DESKTOP_BUILD_DIRTY_ENV = 'DSH_DESKTOP_BUILD_DIRTY'
 /**
  * Read the checkout's current commit and whether it carries uncommitted changes.
  * @param {string} repositoryRoot - Directory to inspect.
- * @returns {{ commit: string, dirty: boolean }} Provenance of the tree being packaged.
+ * @returns {{ commit: string, dirty: boolean }} The commit being packaged and whether its tree was modified.
  */
-export function readDesktopBuildProvenance(repositoryRoot) {
+export function readDesktopBuildCommit(repositoryRoot) {
   const git = (args) => execFileSync('git', args, { cwd: repositoryRoot, encoding: 'utf8' }).trim()
   return {
     commit: git(['rev-parse', 'HEAD']),
@@ -30,29 +30,29 @@ export function readDesktopBuildProvenance(repositoryRoot) {
 }
 
 /**
- * Resolve provenance a parent packaging process recorded.
+ * Resolve the commit a parent packaging process recorded.
  * @param {NodeJS.ProcessEnv} env - Packaging environment.
- * @returns {{ commit: string, dirty: boolean } | undefined} Provenance, or undefined outside a packaging run.
+ * @returns {{ commit: string, dirty: boolean } | undefined} The packaged commit, or undefined outside a packaging run.
  */
-export function resolveDesktopBuildProvenance(env) {
+export function resolveDesktopBuildCommit(env) {
   const commit = env[DESKTOP_BUILD_COMMIT_ENV]?.trim()
   if (commit === undefined || commit === '') return undefined
-  if (!/^[0-9a-f]{40}$/u.test(commit)) throw new Error(`desktop build provenance: ${DESKTOP_BUILD_COMMIT_ENV} must be a commit hash`)
+  if (!/^[0-9a-f]{40}$/u.test(commit)) throw new Error(`desktop build commit: ${DESKTOP_BUILD_COMMIT_ENV} must be a commit hash`)
   const dirty = env[DESKTOP_BUILD_DIRTY_ENV]?.trim()
   if (dirty !== undefined && dirty !== '' && dirty !== '0' && dirty !== '1') {
-    throw new Error(`desktop build provenance: ${DESKTOP_BUILD_DIRTY_ENV} must be 0 or 1`)
+    throw new Error(`desktop build commit: ${DESKTOP_BUILD_DIRTY_ENV} must be 0 or 1`)
   }
   return { commit, dirty: dirty === '1' }
 }
 
 /**
- * Describe provenance as the environment variables child processes read.
- * @param {{ commit: string, dirty: boolean }} provenance - Provenance to pass down.
+ * Describe the packaged commit as the environment variables child processes read.
+ * @param {{ commit: string, dirty: boolean }} packaged - Commit and tree state to pass down.
  * @returns {Record<string, string>} Variables to merge into a child environment.
  */
-export function desktopBuildProvenanceEnvironment(provenance) {
+export function desktopBuildCommitEnvironment(packaged) {
   return {
-    [DESKTOP_BUILD_COMMIT_ENV]: provenance.commit,
-    [DESKTOP_BUILD_DIRTY_ENV]: provenance.dirty ? '1' : '0',
+    [DESKTOP_BUILD_COMMIT_ENV]: packaged.commit,
+    [DESKTOP_BUILD_DIRTY_ENV]: packaged.dirty ? '1' : '0',
   }
 }

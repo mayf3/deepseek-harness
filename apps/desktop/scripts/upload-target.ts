@@ -96,7 +96,7 @@ async function main(): Promise<void> {
 function recordProductionRelease(plan: DesktopUploadPlan): void {
   const tag = desktopReleaseTag(plan.version)
   if (plan.commit === undefined) {
-    process.stdout.write(`desktop upload: this package predates recorded provenance; tag it by hand as ${tag}\n`)
+    process.stdout.write(`desktop upload: this package was built before builds recorded their commit; tag it by hand as ${tag}\n`)
     return
   }
   if (plan.dirty === true) {

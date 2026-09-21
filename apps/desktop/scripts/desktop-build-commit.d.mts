@@ -1,5 +1,5 @@
 /** Commit a build came from, and whether its checkout carried uncommitted changes. */
-export interface DesktopBuildProvenance {
+export interface DesktopBuildCommit {
   readonly commit: string
   readonly dirty: boolean
 }
@@ -13,20 +13,20 @@ export const DESKTOP_BUILD_DIRTY_ENV: 'DSH_DESKTOP_BUILD_DIRTY'
 /**
  * Read the checkout's current commit and whether it carries uncommitted changes.
  * @param repositoryRoot - Directory to inspect.
- * @returns Provenance of the tree being packaged.
+ * @returns The commit being packaged and whether its tree was modified.
  */
-export function readDesktopBuildProvenance(repositoryRoot: string): DesktopBuildProvenance
+export function readDesktopBuildCommit(repositoryRoot: string): DesktopBuildCommit
 
 /**
- * Resolve provenance a parent packaging process recorded.
+ * Resolve the commit a parent packaging process recorded.
  * @param env - Packaging environment.
- * @returns Provenance, or undefined outside a packaging run.
+ * @returns The packaged commit, or undefined outside a packaging run.
  */
-export function resolveDesktopBuildProvenance(env: NodeJS.ProcessEnv): DesktopBuildProvenance | undefined
+export function resolveDesktopBuildCommit(env: NodeJS.ProcessEnv): DesktopBuildCommit | undefined
 
 /**
- * Describe provenance as the environment variables child processes read.
- * @param provenance - Provenance to pass down.
+ * Describe the packaged commit as the environment variables child processes read.
+ * @param packaged - Commit and tree state to pass down.
  * @returns Variables to merge into a child environment.
  */
-export function desktopBuildProvenanceEnvironment(provenance: DesktopBuildProvenance): Record<string, string>
+export function desktopBuildCommitEnvironment(packaged: DesktopBuildCommit): Record<string, string>

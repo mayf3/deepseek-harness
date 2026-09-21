@@ -19,7 +19,7 @@ import {
   scrubWindowsSigningEnvironment,
 } from './windows-sign.mjs'
 import { resolveDesktopAutoUpdateConfig } from './desktop-auto-update-environment.mjs'
-import { resolveDesktopBuildProvenance } from './desktop-build-provenance.mjs'
+import { resolveDesktopBuildCommit } from './desktop-build-commit.mjs'
 import { resolveDesktopBuildVersion } from './desktop-build-version.mjs'
 import { resolveDesktopPolicyEnvironment } from './desktop-policy-environment.mjs'
 import { desktopTargetBuildPaths, resolveDesktopBuildTarget } from './desktop-build-paths.mjs'
@@ -88,18 +88,18 @@ export function createElectronBuilderConfig(
   }
   const update = unsigned ? undefined : resolveDesktopAutoUpdateConfig(env, resolvedPlatform, resolvedArch)
   if (preparedRuntime !== undefined) buildPaths.dsh = preparedRuntime
-  // electron-builder merges extraMetadata into the packaged manifest, so a build identifier here reaches
+  // electron-builder merges extraMetadata into the packaged manifest, so a build version here reaches
   // the artifact names, the update feed, and the installed app.getVersion() the updater compares against.
   const productVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version
-  const releaseId = resolveDesktopBuildVersion(env, productVersion)
-  const provenance = resolveDesktopBuildProvenance(env)
+  const buildVersion = resolveDesktopBuildVersion(env, productVersion)
+  const packaged = resolveDesktopBuildCommit(env)
   return {
     appId,
     extraMetadata: {
       dshDesktopAppId: appId,
       dshMandatoryUpdatePolicy: policy,
-      ...releaseId === productVersion ? {} : { version: releaseId },
-      ...provenance === undefined ? {} : { dshBuildCommit: provenance.commit, dshBuildDirty: provenance.dirty },
+      ...buildVersion === productVersion ? {} : { version: buildVersion },
+      ...packaged === undefined ? {} : { dshBuildCommit: packaged.commit, dshBuildDirty: packaged.dirty },
     },
     productName: 'DeepSeek Harness',
     artifactName: 'deepseek-harness-${version}-${os}-${arch}.${ext}',

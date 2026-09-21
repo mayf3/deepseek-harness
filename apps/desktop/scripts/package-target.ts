@@ -21,7 +21,7 @@ import { notarizeMacOS } from './notarize-macos.mjs'
 import { resolveMacOSNotarizationEnvironment } from './desktop-release-environment.mjs'
 import { DESKTOP_BUILD_VERSION_ENV, resolveDesktopBuildVersion, validateDesktopBuildVersion } from './desktop-build-version.mjs'
 import { suggestDesktopBuildVersion } from './desktop-build-version-discovery.ts'
-import { desktopBuildProvenanceEnvironment, readDesktopBuildProvenance, resolveDesktopBuildProvenance } from './desktop-build-provenance.mjs'
+import { desktopBuildCommitEnvironment, readDesktopBuildCommit, resolveDesktopBuildCommit } from './desktop-build-commit.mjs'
 import { requireDesktopToolchain } from './desktop-toolchain-preflight.ts'
 import { withMacOSNotarizationProxy } from './macos-notarization-proxy.ts'
 
@@ -144,7 +144,7 @@ function writeReleaseRecord(
     throw new Error(`desktop package: desktop version ${desktopVersion} does not match dsh version ${dshVersion}`)
   }
   const buildVersion = resolveDesktopBuildVersion(environment, dshVersion)
-  const provenance = resolveDesktopBuildProvenance(environment)
+  const packaged = resolveDesktopBuildCommit(environment)
   const update = resolveDesktopAutoUpdateConfig(environment, target.platform, target.arch)
   const recordPath = join(artifactsRoot, desktopBuildRecordFilename(target.name))
   const temporaryPath = `${recordPath}.tmp`
@@ -155,7 +155,7 @@ function writeReleaseRecord(
     environment: update.environment,
     publicUrl: update.publicUrl,
     // Upload tags the commit a production release was packaged from, which is no longer discoverable from the build tree.
-    ...provenance === undefined ? {} : { commit: provenance.commit, dirty: provenance.dirty },
+    ...packaged === undefined ? {} : { commit: packaged.commit, dirty: packaged.dirty },
   }, null, 2)}\n`)
   renameSync(temporaryPath, recordPath)
 }
@@ -325,14 +325,14 @@ async function main(): Promise<void> {
     return
   }
   process.stdout.write(`desktop package: ${target.name} publishes ${buildVersion}${buildVersion === productVersion ? '' : ` for product version ${productVersion}`}\n`)
-  const provenance = readDesktopBuildProvenance(REPOSITORY_ROOT)
-  Object.assign(environment, desktopBuildProvenanceEnvironment(provenance))
+  const packaged = readDesktopBuildCommit(REPOSITORY_ROOT)
+  Object.assign(environment, desktopBuildCommitEnvironment(packaged))
   const secrets = Object.entries(environment).filter(([name]) => /KEY|SECRET|TOKEN|PASSWORD|APPLE_ID/iu.test(name)).map(([, value]) => value ?? '')
   const run = createPackagingRun(join(APP_ROOT, '.desktop-build', 'packaging-runs'), {
     target: target.name, unsigned: invocation.unsigned, directory: invocation.directory, prepareOnly: invocation.prepareOnly,
     version: buildVersion, productVersion, node: process.version,
-    commit: provenance.commit,
-    dirty: provenance.dirty,
+    commit: packaged.commit,
+    dirty: packaged.dirty,
   }, { parallel: target.platform === 'darwin', secrets })
   console.log(`DESKTOP_PACKAGING_RECORD ${run.directory}`)
   const previousDirectory = process.env.DSH_DESKTOP_PACKAGING_RUN_DIR
