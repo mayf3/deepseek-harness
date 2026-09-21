@@ -15,9 +15,9 @@ import { dirname, relative, resolve } from 'node:path'
 import { Script } from 'node:vm'
 import ts from 'typescript'
 import type { DshBundleManifest } from '../packages/util/package-manifest/src/types.ts'
-import { bundlePatchPaths } from '../packages/boot/app-boot/src/profile.ts'
+import { bundlePatchFiles, bundlePatchPaths } from '../packages/boot/app-boot/src/profile.ts'
 import { cordisConfigFiles } from './cordis-config-files.ts'
-import { isCordisGroupEntry, isJsExpr, loadCordisYaml } from './cordis-yaml.ts'
+import { isAgentPresetEntry, presetDefinitions, isCordisGroupEntry, isJsExpr, loadCordisYaml } from './cordis-yaml.ts'
 
 export interface PackageManifest {
   name?: string
@@ -138,25 +138,28 @@ function validateClientHalvesDeclared(): string[] {
  */
 function validatePresetPlaneSeparation(): string[] {
   const problems: string[] = []
-  // The shipped Web surface is two bundle patch layers over an empty root.
+  // The shipped Web surface is two bundle layers over an empty root; the web
+  // layer is its host patch followed by one patch file per shipped preset.
   const hostFile = 'packages/bundle/base/cordis.patch.yml'
-  const overlayFile = 'packages/bundle/web-app/cordis.patch.yml'
-  const hostRows = rowIds(hostFile)
-  const overlay = loadEntries(overlayFile)
+  const overlayDir = 'packages/bundle/web-app'
+  const overlayManifest = JSON.parse(readFileSync(resolve(root, overlayDir, 'package.json'), 'utf8')) as { dsh: { bundle: DshBundleManifest } }
+  const overlayFiles = bundlePatchFiles(overlayManifest.dsh.bundle).map(file => `${overlayDir}/${file.replace(/^\.\//, '')}`)
   const disabled = new Set<string>()
-  for (const entry of overlay) {
-    if (!isRecord(entry)) continue
-    if (entry.disabled === true && typeof entry.id === 'string') disabled.add(entry.id)
+  const overlayRows = new Set<string>()
+  for (const file of overlayFiles) {
+    for (const entry of loadEntries(file)) {
+      if (!isRecord(entry)) continue
+      if (entry.disabled === true && typeof entry.id === 'string') disabled.add(entry.id)
+    }
+    for (const id of rowIds(file)) overlayRows.add(id)
   }
   // The overlay's own inserts are host-plane too; its disables take them back out.
-  const active = new Set([...hostRows, ...rowIds(overlayFile)].filter(id => !disabled.has(id)))
-  for (const file of globSync('packages/preset/agent-presets/presets/*/agent.cordis.yml', { cwd: root })) {
-    for (const id of rowIds(file)) {
-      if (!active.has(id)) continue
-      problems.push(
-        `${file}: row "${id}" is also active in the host composition; `
-        + 'a row belongs to exactly one plane',
-      )
+  const active = new Set([...rowIds(hostFile), ...overlayRows].filter(id => !disabled.has(id)))
+  for (const file of overlayFiles) {
+    for (const definition of presetDefinitions(loadEntries(file))) {
+      for (const id of collectRowIds(definition.plugins)) {
+        if (active.has(id)) problems.push(`${file}#${definition.id}: row "${id}" is also active in the host composition; a row belongs to exactly one plane`)
+      }
     }
   }
   return problems
@@ -175,6 +178,10 @@ function loadEntries(file: string): unknown[] {
  * @returns the declared ids.
  */
 function rowIds(file: string): Set<string> {
+  return collectRowIds(loadEntries(file))
+}
+
+function collectRowIds(rows: unknown): Set<string> {
   const ids = new Set<string>()
   const walk = (value: unknown): void => {
     if (isUnknownArray(value)) {
@@ -183,9 +190,10 @@ function rowIds(file: string): Set<string> {
     }
     if (!isRecord(value)) return
     if (typeof value.id === 'string' && typeof value.name === 'string') ids.add(value.id)
-    for (const child of Object.values(value)) walk(child)
+    walk(value.insert)
+    if (isCordisGroupEntry(value)) walk(value.config)
   }
-  walk(loadEntries(file))
+  walk(rows)
   return ids
 }
 
@@ -200,6 +208,9 @@ function validateEntry(value: unknown, file: string, path: string): void {
     for (let index = 0; index < value.config.length; index++) {
       validateEntry(value.config[index], file, `${path}.config[${index}]`)
     }
+  }
+  if (isAgentPresetEntry(value)) {
+    for (let index = 0; index < value.config.plugins.length; index++) validateEntry(value.config.plugins[index], file, `${path}.config.plugins[${index}]`)
   }
   if (isUnknownArray(value.insert)) {
     for (let index = 0; index < value.insert.length; index++) {

@@ -902,7 +902,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     kind: 'single',
     scope: 'session',
     summary: 'Model selector inside the composer tool row.',
-    doc: 'Model selector inside the composer tool row.',
+    doc: 'Model selector inside the composer tool row. When expanded controls cannot\nshare a line, the row sets --dsh-composer-model-text-display to none and\n--dsh-composer-model-icon-display to block for an occupant\'s compact display.',
     registerOptions: [],
     ownerProps: [
       '/** Owner share of the named plan, permission, and model controls. */\nexport interface InputControlOwnerProps {\n  /** Whether the composer currently refuses interaction. */\n  locked: boolean\n}',
@@ -934,7 +934,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.model\', () => ctx.slots.register(\n      { name: \'conversation.input.model\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:219',
+    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:223',
   },
   {
     key: 'conversation.input.overlay',
@@ -2959,6 +2959,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'sidebar.right.pane.tab\' (client-ui-sidebar-documentpreview), so it exists while that entry is mounted',
     occupants: [
       'client-ui-sidebar-documentpreview CodeBody',
+      'client-ui-sidebar-documentpreview LazyExcelBody',
       'client-ui-sidebar-documentpreview HtmlBody',
       'client-ui-sidebar-documentpreview ImageBody',
       'client-ui-sidebar-documentpreview MarkdownBody',
@@ -3120,7 +3121,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.office.pdf\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.office.pdf\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/office/OfficeBody.tsx:20',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/office/OfficeBody.tsx:19',
   },
   {
     key: 'sidebar.right.tab.document.unpreviewable',

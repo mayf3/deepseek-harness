@@ -198,7 +198,7 @@ Source: [`packages/core/agent/src/types.ts:87`](../packages/core/agent/src/types
 'agent-preset/selected': { agentPreset: string }
 ```
 
-Source: [`packages/preset/agent-presets/src/session.ts:28`](../packages/preset/agent-presets/src/session.ts)
+Source: [`packages/preset/agent-preset-registry/src/session.ts:28`](../packages/preset/agent-preset-registry/src/session.ts)
 
 ### `approval/*`
 
@@ -5501,7 +5501,7 @@ Sources: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/
 
 SHA-256: `6e52dd55a1d48954ed5464ec46fe34d9eb65f709baabc9561e7a279910b0c406`
 
-Sources: [`packages/preset/agent-presets/src/session.ts:28`](../packages/preset/agent-presets/src/session.ts)
+Sources: [`packages/preset/agent-preset-registry/src/session.ts:28`](../packages/preset/agent-preset-registry/src/session.ts)
 
 | Property | Presence | Type |
 |---|---|---|

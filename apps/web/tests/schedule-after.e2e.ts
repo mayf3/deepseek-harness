@@ -2,12 +2,13 @@
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
-import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
+import { bundlePatchPaths, composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { ToolCallId, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
@@ -67,7 +68,8 @@ const CATALOG_SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/sched
 const CATALOG_FIXTURE = join(CATALOG_SNAPSHOT_DIR, 'session.v3.jsonl')
 const CATALOG_EXPECTED = join(CATALOG_SNAPSHOT_DIR, 'catalog.expected.md')
 const BASE_PATCH = fileURLToPath(new URL('../../../packages/bundle/base/cordis.patch.yml', import.meta.url))
-const WEB_PATCH = fileURLToPath(new URL('../../../packages/bundle/web-app/cordis.patch.yml', import.meta.url))
+const WEB_BUNDLE = fileURLToPath(new URL('../../../packages/bundle/web-app/', import.meta.url))
+const WEB_PATCHES = bundlePatchPaths(WEB_BUNDLE, (JSON.parse(readFileSync(join(WEB_BUNDLE, 'package.json'), 'utf8')) as { dsh: { bundle: { patch: string[] } } }).dsh.bundle)
 const CATALOG_NOW = Date.parse('2099-08-25T12:00:00.000Z')
 const CATALOG_SESSION_ID = SessionId('schedule-catalog-web-e2e')
 const CATALOG_TITLE = 'Active schedule catalog'
@@ -667,11 +669,11 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-schedule-catalog'))
     const base = composeEntries([
       loadOverlayPatches('Schedule catalog base roster', BASE_PATCH),
-      loadOverlayPatches('Schedule catalog base roster', WEB_PATCH),
+      ...WEB_PATCHES.map(file => loadOverlayPatches('Schedule catalog base roster', file)),
     ])
     const scheduled = composeEntries([
       loadOverlayPatches('Schedule catalog overlay roster', BASE_PATCH),
-      loadOverlayPatches('Schedule catalog overlay roster', WEB_PATCH),
+      ...WEB_PATCHES.map(file => loadOverlayPatches('Schedule catalog overlay roster', file)),
       loadOverlayPatches('Schedule catalog overlay roster', OVERLAY),
     ])
     expect(base.find(entry => entry.id === 'ui-schedule')).toMatchObject({

@@ -113,51 +113,36 @@ Depends on: [`AgentOptions`](subsystems/core.md) · [`SessionId`](subsystems/cor
 
 Source: [`packages/core/agent-loop/src/index.ts:319`](../packages/core/agent-loop/src/index.ts)
 
-<a id="deepseek-aidsh-agent-presets"></a>
+<a id="deepseek-aidsh-agent-preset"></a>
 
-## `@deepseek-ai/dsh-agent-presets`
+## `@deepseek-ai/dsh-agent-preset`
+
+Requires: `agentPresets`
+
+```ts config-catalog
+/** Definition submitted to the preset registry. */
+export type Config = PresetDefinition
+```
+
+Depends on: [`PresetDefinition`](../packages/preset/agent-preset-registry/src/index.ts)
+
+Source: [`packages/preset/agent-preset/src/index.ts:9`](../packages/preset/agent-preset/src/index.ts)
+
+<a id="deepseek-aidsh-agent-preset-registry"></a>
+
+## `@deepseek-ai/dsh-agent-preset-registry`
 
 Requires: `loader` · `sessionProjections`
 
 ```ts config-catalog
-/** Plugin config: which preset is the default, and where presets live. */
+/** Registry selection policy. */
 export interface Config {
-  /** Preset id mounted when a caller names none. Missing at mount time fails loud. */
+  /** Deployment default when the caller omits a preset. */
   default: string
-  /** Scanned roots in precedence order; an earlier root wins a duplicate id. */
-  roots: PresetRoot[]
-  /**
-   * Prepend this package's bundled shipped presets as a `system` root, before
-   * every configured root, so the shipped set always mounts and wins a
-   * duplicate id. The default survives a whole-`config` patch replacement;
-   * only an explicit `false` — a deployment supplying purely its own presets,
-   * or an embedder using the roster as bare machinery — drops the set.
-   */
-  includeShippedRoot: boolean
-  /**
-   * Append the harness home's `USER_PRESET_DIR` as a `user` root, after every
-   * configured root. False mounts a roster without the derived writable root.
-   */
-  includeUserRoot: boolean
 }
-
-/** One directory scanned for preset subdirectories. */
-export interface PresetRoot {
-  /** Directory holding one subdirectory per preset; a leading `~` expands. */
-  path: string
-  /** Trust recorded on every preset discovered under this root. */
-  trust: PresetTrust
-}
-
-/**
- * Where a preset's composition came from. A `system` preset ships with the
- * deployment; a `user` preset was authored locally, by a person or by an
- * agent, and therefore carries the same trust as shell access.
- */
-export type PresetTrust = 'system' | 'user'
 ```
 
-Source: [`packages/preset/agent-presets/src/preset.ts:52`](../packages/preset/agent-presets/src/preset.ts)
+Source: [`packages/preset/agent-preset-registry/src/preset.ts:12`](../packages/preset/agent-preset-registry/src/preset.ts)
 
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
@@ -240,14 +225,14 @@ Source: [`packages/api/session-controller/src/index.ts:78`](../packages/api/sess
 ## `@deepseek-ai/dsh-api-settings-controller`
 
 ```ts config-catalog
-/** Native document-opening policy. */
-export interface Config {
-  /** Override platform desktop-opener detection. */
-  readonly nativeOpen?: boolean
+/** Host integrations replaceable by direct unit tests. */
+export interface SettingsControllerInternals {
+  /** Host text-editor integration used to open the settings document. */
+  readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
 }
 ```
 
-Source: [`packages/api/settings-controller/src/index.ts:36`](../packages/api/settings-controller/src/index.ts)
+Source: [`packages/api/settings-controller/src/index.ts:35`](../packages/api/settings-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-terminal-controller"></a>
 
@@ -501,6 +486,15 @@ export interface Config {
     maxPending: number
     /** Maximum readers including source and renderer metadata lookups. */
     maxReaders: number
+  }
+  /** Browser spreadsheet parser and dense cell allocation limits. */
+  excel: {
+    /** Maximum source file bytes. */
+    maxBytes: number
+    /** Maximum combined rectangular cell area across worksheets. */
+    maxCells: number
+    /** Maximum parser Worker lifetime in milliseconds. */
+    timeoutMs: number
   }
 }
 ```
