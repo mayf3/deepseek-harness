@@ -409,8 +409,8 @@
 }
 
 .standardControls { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.tools[hidden], .standardControls[hidden], .contextControl[hidden] { display: none; }
+.tools[hidden], .standardControls[hidden] { display: none; }
 .trailingActive { flex: 1; margin-left: 0; }
-.activity, .contextControl { display: flex; align-items: center; flex: none; }
-.activity:empty, .contextControl:empty { display: none; }
+.activity { display: flex; align-items: center; flex: none; }
+.activity:empty { display: none; }
 .activityExpanded { flex: 1; min-width: 0; }
