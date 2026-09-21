@@ -30,6 +30,8 @@ export const zh = {
   'error.sessionInUse': '当前会话已被占用，可能是其他正在运行的 DSH 导致的（如其他 dsh web、桌面端），请退出其他正在运行的 DSH 后重试。',
   'action.reload': '重新加载',
   'warning.groupLoad': '{name} 加载失败：{message}',
+  'search.placeholder': '搜索模型…',
+  'search.empty': '没有匹配的模型。',
   'empty.models': '没有可用的模型。',
   'empty.efforts': '当前模型未提供推理等级。',
 } satisfies Record<string, string>
@@ -59,6 +61,8 @@ export const en = {
   'error.sessionInUse': 'This session is already in use, possibly by another running DSH instance (such as dsh web or the desktop app). Quit other running DSH instances and try again.',
   'action.reload': 'Reload',
   'warning.groupLoad': '{name} failed to load: {message}',
+  'search.placeholder': 'Search models…',
+  'search.empty': 'No matching models.',
   'empty.models': 'No models available.',
   'empty.efforts': 'This model provides no reasoning effort levels.',
 } satisfies Record<ModelKey, string>

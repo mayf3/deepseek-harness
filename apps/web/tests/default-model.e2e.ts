@@ -107,6 +107,18 @@ describe('web e2e: the composer model switch is the default for later sessions',
     expect(await trigger.evaluate(element => getComputedStyle(element).fontWeight)).toBe('400')
     await trigger.click()
     await page.getByRole('menuitem', { name: /模型/ }).click()
+    const search = page.getByRole('searchbox', { name: '搜索模型…' })
+    await search.fill('zzzz')
+    await page.getByText('没有匹配的模型。', { exact: true }).waitFor()
+    await search.fill('  ACMLG  ')
+    expect(await page.getByRole('menuitemradio').allTextContents()).toEqual(['Acme Large'])
+    expect(await page.getByRole('group', { name: 'Origin Gateway', exact: true }).count()).toBe(0)
+    await compareOrRefreshGolden(
+      fileURLToPath(new URL('./expected/default-model/search.expected.md', import.meta.url)),
+      await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd),
+      webSnapshotMode(),
+    )
+    await search.press('ArrowDown')
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
     const blocked = scaffold.ctx.hmr.runExclusive(async () => {
@@ -115,7 +127,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
     })
     try {
       await entered.promise
-      await page.getByRole('menuitemradio', { name: 'Acme Large' }).click()
+      await page.getByRole('menuitemradio', { name: 'Acme Large' }).press('Enter')
       await expect.poll(() => trigger.getAttribute('aria-busy')).toBe('false')
       await expect.poll(() => trigger.textContent()).toContain('Acme Large')
       expect(scaffold.ctx.agentDefaultModel.currentSelection()).toEqual({ provider: START_ROUTE, model: START_MODEL })

@@ -469,9 +469,7 @@ describe('ModelSelect keyboard walk', () => {
     const trigger = screen.getByRole('button', { name: /选择模型/ })
     fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
-    // No rows to hand the keyboard to: the trigger keeps it, so the card's
-    // keys still reach the menu.
-    expect(document.activeElement).toBe(trigger)
+    expect(document.activeElement).toBe(screen.getByRole('searchbox'))
 
     const retry = screen.getByRole('button', { name: '重试' })
     expect(fireEvent.mouseDown(retry)).toBe(false)
@@ -489,12 +487,12 @@ describe('ModelSelect keyboard walk', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('drills into the model list on the selected model', () => {
+  it('focuses search while retaining the checked model', () => {
     mountOpen()
     fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
     const rows = screen.getAllByRole('menuitemradio')
     expect(rows[0]!.getAttribute('aria-checked')).toBe('true')
-    expect(document.activeElement).toBe(rows[0])
+    expect(document.activeElement).toBe(screen.getByRole('searchbox'))
   })
 
   it('Escape returns to the root pane with the keyboard on the cell that drilled in', () => {
@@ -520,7 +518,7 @@ describe('ModelSelect keyboard walk', () => {
     expect(document.activeElement).toBe(cells[0])
   })
 
-  it('a pane whose rows mark no current value opens on its first row', () => {
+  it('focuses search when no model is checked', () => {
     // The session runs a model the catalog no longer lists: no row is checked.
     render(<ModelSelect
       locked={false}
@@ -534,7 +532,47 @@ describe('ModelSelect keyboard walk', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
     const rows = screen.getAllByRole('menuitemradio')
     expect(rows.every(row => row.getAttribute('aria-checked') === 'false')).toBe(true)
-    expect(document.activeElement).toBe(rows[0])
+    expect(document.activeElement).toBe(screen.getByRole('searchbox'))
+  })
+})
+
+describe('ModelSelect search', () => {
+  it('filters model names fuzzily, hides empty groups, clears on reopening, and selects a result', async () => {
+    const directory = createSnapshotStore(state({ groups: [
+      ...state().groups,
+      { id: 'other', name: 'Other', models: [{ id: 'gemini', name: 'Gemini Flash' }] },
+    ] }))
+    const select = vi.fn().mockResolvedValue({ ok: true, value: undefined })
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={select} t={t} />)
+    const trigger = screen.getByRole('button', { name: /选择模型/ })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    const search = screen.getByRole('searchbox')
+    expect(document.activeElement).toBe(search)
+    expect(fireEvent.keyDown(search, { key: 'ArrowDown', isComposing: true })).toBe(true)
+    expect(document.activeElement).toBe(search)
+    fireEvent.change(search, { target: { value: '  GMFL  ' } })
+    expect(screen.getAllByRole('menuitemradio').map(row => row.textContent)).toEqual(['Gemini Flash'])
+    expect(screen.queryByRole('group', { name: 'DeepSeek' })).toBeNull()
+    expect(trigger.textContent).toContain('DeepSeek-V4-Flash')
+    fireEvent.change(search, { target: { value: 'zzzz' } })
+    expect(screen.getByRole('status').textContent).toBe('没有匹配的模型。')
+    expect(fireEvent.keyDown(search, { key: 'ArrowDown' })).toBe(false)
+    expect(document.activeElement).toBe(search)
+    fireEvent.change(search, { target: { value: '' } })
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(2)
+    fireEvent.change(search, { target: { value: 'gmfl' } })
+    fireEvent.keyDown(search, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    expect(screen.getByRole('searchbox').getAttribute('value')).toBe('')
+    const reopened = screen.getByRole('searchbox')
+    fireEvent.change(reopened, { target: { value: 'gmfl' } })
+    fireEvent.keyDown(reopened, { key: 'Tab' })
+    const row = screen.getByRole('menuitemradio', { name: 'Gemini Flash' })
+    expect(document.activeElement).toBe(row)
+    fireEvent.keyDown(row, { key: 'Tab' })
+    await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull() })
+    expect(select).toHaveBeenCalledWith({ provider: 'other', model: 'gemini' })
   })
 })
 

@@ -9,9 +9,10 @@
  * step taken while the trigger still holds focus enters at the near end), Tab
  * settles like Enter, and Escape and Shift+Tab leave a drilled pane first and
  * otherwise close back to the trigger. A drilled pane hands focus to the row
- * of the value in use, and returning to the root pane hands it back to the
- * cell that opened it. Data and submission ride the SAME per-session
- * ModelDirectory as the /model popup; exact-model reasoning metadata and the
+ * of the effort in use or the model search field. Model names match a
+ * case-insensitive ordered subsequence within each provider group. Returning
+ * to the root pane hands focus back to the cell that opened it. Data and
+ * submission ride the SAME per-session ModelDirectory as the /model popup; exact-model reasoning metadata and the
  * selected effort come from the Host rather than a client-owned vocabulary. A
  * rejected selection announces through the shared transient Toast anchored to
  * the composer card; the in-menu strip with Retry remains the catalog-load
@@ -29,7 +30,7 @@ import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular,
-  IconDataOutlineRegular, IconWarningOutlineRegular, StateDot, Toast,
+  IconDataOutlineRegular, IconWarningOutlineRegular, Input, rankByName, StateDot, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
@@ -64,6 +65,7 @@ export function ModelSelect(
   )
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<Pane>('root')
+  const [query, setQuery] = useState('')
   // The in-menu error strip serves catalog loads (its Retry re-runs the
   // load); a rejected SELECTION announces through the transient toast
   // instead, so the strip renders only while the latest failure-capable
@@ -93,6 +95,9 @@ export function ModelSelect(
           : { reasoningEffort: model.reasoning.defaultEffort },
       } satisfies ModelSelection,
     }))), [groups])
+  const filteredGroups = useMemo(() => groups.map(group => ({
+    ...group, models: rankByName(group.models, query.trim()),
+  })).filter(group => group.models.length > 0), [groups, query])
   const selectedIndex = state.current === null
     ? -1
     : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
@@ -136,17 +141,18 @@ export function ModelSelect(
     return () => { document.removeEventListener('mousedown', closeOutside) }
   }, [open])
 
-  // A pane switch unmounts the row that had focus, which drops focus onto the
-  // page body — outside the card's subtree, where its key handling no longer
-  // sees a keystroke. Every switch therefore names where the keyboard lands:
-  // drilling on the pane's current value, coming back on the cell that opened
-  // the pane left.
+  // Pane switches unmount the focused row; restore focus inside the menu so
+  // keyboard navigation remains available.
   const paneFocus = useRef<'drill' | 'model' | 'effort' | null>(null)
   useEffect(() => {
     const intent = paneFocus.current
     paneFocus.current = null
     if (!open || intent === null) return
     if (intent === 'drill') {
+      if (pane === 'model') {
+        menuRef.current?.querySelector('input')?.focus()
+        return
+      }
       // The checked row is the value in use; a pane without one opens on its
       // first row.
       const checked = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]:not([disabled])')
@@ -191,7 +197,7 @@ export function ModelSelect(
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
-  }, [open, pane, state])
+  }, [open, pane, state, query])
   /* jscpd:ignore-end */
 
   if (!available) return null
@@ -211,6 +217,7 @@ export function ModelSelect(
   }
 
   const drill = (next: Pane): void => {
+    setQuery('')
     paneFocus.current = 'drill'
     setPane(next)
   }
@@ -235,6 +242,7 @@ export function ModelSelect(
   }
 
   const onRootKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.nativeEvent.isComposing) return
     if (event.key === 'Escape' && open) {
       event.preventDefault()
       // Escape backs out of a drilled pane first, then closes.
@@ -243,6 +251,11 @@ export function ModelSelect(
       return
     }
     if (!open) return
+    if (event.key === 'Tab' && !event.shiftKey && event.target instanceof HTMLInputElement) {
+      event.preventDefault()
+      moveFocus(1)
+      return
+    }
     // Tab settles like Enter and Shift+Tab leaves like Escape, so the menu's
     // keys mean what they mean in the composer. Both are consumed: the card
     // keeps the browser's focus traversal out while it is open.
@@ -419,6 +432,14 @@ export function ModelSelect(
 
           {pane === 'model' && (
             <>
+              <Input
+                className={clsx(css.search)}
+                type="search"
+                aria-label={t('search.placeholder')}
+                placeholder={t('search.placeholder')}
+                value={query}
+                onChange={(event) => { setQuery(event.target.value) }}
+              />
               {state.status === 'loading' && (
                 <div className={css.status}>{t('status.loading')}</div>
               )}
@@ -435,7 +456,7 @@ export function ModelSelect(
                 </div>
               ))}
               <div className={clsx(css.groups, 'scrollable')}>
-                {groups.map((group) => {
+                {filteredGroups.map((group) => {
                   const headingId = `${id}-${group.id}`
                   return (
                     <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
@@ -469,8 +490,8 @@ export function ModelSelect(
                   )
                 })}
               </div>
-              {state.status === 'ready' && choices.length === 0 && (
-                <div className={css.empty}>{t('empty.models')}</div>
+              {state.status === 'ready' && filteredGroups.length === 0 && (
+                <div className={css.empty} role="status">{t(choices.length === 0 ? 'empty.models' : 'search.empty')}</div>
               )}
             </>
           )}
