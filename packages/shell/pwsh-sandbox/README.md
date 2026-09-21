@@ -75,20 +75,20 @@ This section explains the design of the executor and points at the code that rea
 
 ### Design concept
 
-The executor is the pwsh twin of `dsh-bash-sandbox`: it inherits `dsh-pwsh-local`'s process mechanics, consumes its argv-level seam (`argv()`/`runArgv()`/`startArgv()`/`onProcessDone()`), and awaits confinement of the exact pwsh invocation through `ctx.sandbox.confine()` before spawning. Foreground preparation uses the local executor’s shared command deadline; timeout before spawn carries no enforcement claim. Background preparation follows only the caller signal. Both paths recheck cancellation before spawn. The confinement substance is platform-neutral — the sandbox seam resolves to the platform's runner — while this package owns the pwsh side only: the selected mode, enforcement completeness, and denial classification on results.
+The executor is the pwsh twin of `dsh-bash-sandbox`: it inherits `dsh-pwsh-local`'s process mechanics, consumes its argv-level seam (`argv()`/`executeArgv()`/`onProcessDone()`), and wraps the exact pwsh invocation through `ctx.sandbox.confine()` before spawning. The confinement substance is platform-neutral — the sandbox seam resolves to the platform's runner — while this package owns the pwsh side only: the selected mode, enforcement completeness, and denial classification on results.
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: `SandboxPwshExecutor`, per-process fact retention, run/start wrapping |
+| [`src/index.ts`](src/index.ts) | Plugin entry: `SandboxPwshExecutor`, per-process fact retention, execution preparation |
 | [`src/helpers.ts`](src/helpers.ts) | Denial, runner-failure, and runner-spawn-failure classification |
 | — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seams. Classification is observable in results. |
 | `tests/` | Exercised behavior across the ACL and platform runners |
 
 ### Main flow
 
-For a confined mode, `resolve()` stamps the per-call policy; `run` and `start` wrap the pwsh argv through the provider and hand the confined argv to the inherited subprocess path. At settlement the executor classifies the outcome: a runner failure outranks a denial because the command never ran, a failed run whose stderr carries the runner's denial dialect is reported `denied: true`, and every confined run carries its mode and enforcement facts. `danger-full-access` bypasses the provider entirely and stamps `denied: false`.
+For a confined mode, `resolve()` stamps the per-call policy; `execute` awaits preparation of the pwsh argv through the provider and hands the confined argv to the inherited subprocess path. At settlement the executor classifies the outcome: a runner failure outranks a denial because the command never ran, a failed run whose stderr carries the runner's denial dialect is reported `denied: true`, and every confined run carries its mode and enforcement facts. `danger-full-access` bypasses the provider entirely and stamps `denied: false`.
 
 ### Invariants
 

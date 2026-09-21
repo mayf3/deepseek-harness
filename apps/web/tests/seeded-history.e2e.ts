@@ -295,11 +295,9 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // The seed carries a session/title event: the title unit is host-plane, so
     // it folds the detached log and serves the value with nothing composed.
     expect(typeof projections.values.title).toBe('string')
-    // `todos` is absent because its unit belongs to the agent preset and this
-    // directly seeded session never composed that preset. History computes
-    // the baseline through the standard projection registry without mounting
-    // an Agent composition as a read side effect.
-    expect(projections.values).not.toHaveProperty('todos')
+    // Eager preset activation registers the todo projection before any Agent
+    // opens this log. A log without todo events projects its empty value.
+    expect(projections.values.todos).toBeNull()
     // The session-stats unit is a shipped web-app bundle row: whole-log
     // turn/step counts ride the same tail block (the stats strip's source).
     const sessionStats = projections.values.sessionStats as { turns: number; steps: number } | undefined

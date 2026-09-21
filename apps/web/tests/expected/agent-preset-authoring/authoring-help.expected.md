@@ -1,0 +1,6 @@
+- dialog "创建和修改预设":
+  - heading "创建和修改预设" [level=2]
+  - button "关闭"
+  - paragraph: 预设由已安装的 bundle 声明，本页只负责选择。要创建或修改预设，请用「创造模式」开始一个任务：Agent 会编写一个声明或覆盖该预设的 bundle，并安装到当前 profile。
+  - button "关闭"
+  - button "让 Agent 帮我创建预设模式"
