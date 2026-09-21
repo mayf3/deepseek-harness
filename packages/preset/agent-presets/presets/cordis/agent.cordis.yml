@@ -263,5 +263,8 @@
 - id: present
   name: '@deepseek-ai/dsh-tool-present'
 
+# Enabled exactly when the host `plugin-manager` service is (`dsh-base` gates
+# it on a launched profile), so a profile-less embedding still mounts the preset.
 - id: tool-plugin-manager
   name: '@deepseek-ai/dsh-plugin-manager/tools'
+  disabled: !!js "!ctx.get('profileContext')"

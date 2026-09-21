@@ -3,12 +3,16 @@
 - button "刷新"
 - button "添加插件"
 - heading "官方" [level=3]
-- text: "5"
+- text: "6"
 - list:
   - listitem:
     - button "查看 智能体团队": 智能体团队
     - text: Beta 启用团队协作、团队工具、成员列表和共享任务看板。
     - switch "启用 智能体团队"
+  - listitem:
+    - button "查看 语音输入": 语音输入
+    - text: Beta 在本机使用 SenseVoice 转写录音；首次使用需安装依赖
+    - switch "启用 语音输入"
   - listitem:
     - button "查看 终端": 终端
     - text: 限制每条命令最多能跑多久、最多输出多少内容。
