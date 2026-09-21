@@ -1597,6 +1597,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'productTelemetry',
+    summary: 'Host analytics sender.',
+    description: 'Host analytics sender. Mounting alone sends nothing; the owning fiber drains it on unload.',
+    methods: [
+      {
+        signature: 'emit(record: ProductTelemetryRecord): void',
+        description: 'Enqueue one selected product event without waiting for network delivery. Queue admission and shutdown completion are not collector or warehouse acknowledgements.',
+        parameters: [{ name: 'record', description: 'caller-owned event containing only approved analytics fields.' }],
+      },
+    ],
+  },
+  {
     key: 'profileContext',
     summary: 'Current profile facts; scheduling and mutation belong to their callers.',
     description: 'Current profile facts; scheduling and mutation belong to their callers.',
@@ -5633,6 +5645,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreToolDecision',
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n    info?: ToolErrorInfo;\n} | {\n    kind: \'cancel\';\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
+  },
+  {
+    name: 'ProductTelemetryRecord',
+    declaration: 'export interface ProductTelemetryRecord {\n    eventName: string;\n    body: string;\n    timestamp: number;\n    severityNumber?: SeverityNumber;\n    attributes?: Record<string, ProductTelemetryScalar | Record<string, ProductTelemetryScalar>>;\n}',
+  },
+  {
+    name: 'ProductTelemetryScalar',
+    declaration: 'export type ProductTelemetryScalar = string | number | boolean;',
   },
   {
     name: 'ProfilePnpmInvocation',

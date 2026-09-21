@@ -56,6 +56,7 @@ export { REGION_BEGIN, REGION_END }
 export const SERVICE_PAGE: Record<string, string> = {
   speechToText: 'voice-input.md',
   speechController: 'voice-input.md',
+  productTelemetry: 'product-telemetry.md',
   connection: 'web-server.md',
   pluginManager: 'boot.md',
   profileContext: 'boot.md',
@@ -266,6 +267,8 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  ProductTelemetryRecord: 'product-telemetry.md',
+  ProductTelemetryScalar: 'product-telemetry.md',
   WorkspaceChangesSummary: 'deliverables.md',
   WorkspaceFileDiff: 'deliverables.md',
   Reload: 'boot.md',

@@ -177,6 +177,7 @@
     { "path": "./packages/experimental/api-speech-to-text" },
     { "path": "./packages/experimental/voice-input-bundle" },
 
+    { "path": "./packages/host/product-telemetry-otel" },
     { "path": "./packages/client/connection/tsconfig.host.json" },
     { "path": "./packages/skill/skill-office" },
     { "path": "./packages/skill/tool-workspace-dependencies" },
