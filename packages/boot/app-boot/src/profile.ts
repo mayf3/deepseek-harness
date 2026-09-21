@@ -22,8 +22,8 @@
  */
 
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -112,6 +112,17 @@ export interface RuntimeResolutionEntry {
   readonly scope: 'installation' | 'profile'
 }
 
+/**
+ * A profile node_modules entry linked to a directory outside the shared profiles tree and the active profile.
+ * Importers below `realPath` use Node's real ancestor chain, with peer mappings read at each node_modules position.
+ */
+export interface LinkedRoot {
+  /** Package name of the profile `node_modules` entry, including its scope. */
+  readonly name: string
+  /** Real directory outside the shared profiles tree and active profile; a package.json is optional. */
+  readonly realPath: string
+}
+
 /** Complete immutable package table for one profile launch. */
 export interface RuntimeResolution {
   /** Directory containing every profile; its node_modules is the interception layer. */
@@ -122,6 +133,8 @@ export interface RuntimeResolution {
   readonly localPackageNames: readonly string[]
   /** Installation-scope entries followed by profile-scope entries in precedence order. */
   readonly entries: readonly RuntimeResolutionEntry[]
+  /** Active profile links to external directories, sorted by name. */
+  readonly linkedRoots: readonly LinkedRoot[]
 }
 
 /**
@@ -173,6 +186,7 @@ export const DEFAULT_PROFILE_BUNDLES: readonly string[] = ['@deepseek-ai/dsh-bas
  * manager ([rationale](../../../../.agents/notes/implemented/process/2026-09-15-shipped-optional-bundles.md)).
  */
 export const OPTIONAL_BUNDLES: readonly string[] = [
+  '@deepseek-ai/dsh-experimental-voice-input-bundle',
   '@deepseek-ai/dsh-experimental-agent-team-profile',
 ]
 
@@ -256,6 +270,40 @@ function symlinksUnder(modules: string): string[] {
     }
   }
   return links
+}
+
+/**
+ * Active profile `node_modules` entries linked outside the shared profiles tree and the active profile.
+ * Missing targets and files are not linked roots; invalid link chains retain Node's diagnostic.
+ */
+function linkedProfileRoots(profile: Profile, profilesDir: string): LinkedRoot[] {
+  const modules = join(profile.dir, 'node_modules')
+  const links = symlinksUnder(modules)
+  if (links.length === 0) return []
+  let tree: string
+  try {
+    tree = realModuleDirectory(profilesDir) + sep
+  } catch (error) {
+    // A profiles tree that is not materialized yet holds no links.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    tree = resolve(profilesDir) + sep
+  }
+  const excludedTrees = [tree, realModuleDirectory(profile.dir) + sep]
+  const roots: LinkedRoot[] = []
+  for (const linkPath of links) {
+    let realPath: string
+    try {
+      realPath = realModuleDirectory(linkPath)
+    } catch (error) {
+      // A dangling link is not a package Node can load from the profile.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      continue
+    }
+    if (excludedTrees.some(prefix => realPath + sep === prefix || realPath.startsWith(prefix))
+      || !statSync(realPath).isDirectory()) continue
+    roots.push({ name: relative(modules, linkPath).split(sep).join('/'), realPath })
+  }
+  return roots.sort((left, right) => left.name.localeCompare(right.name))
 }
 
 /** Whether a symlink's target directory is `root` or lies below it. */
@@ -368,11 +416,13 @@ export async function createRuntimeResolution(
   const profilePackages: ReadonlyMap<string, string> = profile === undefined
     ? new Map<string, string>()
     : collectProfileScopePackages(profile, packageNames, profileDeclarers, profileVersions)
+  const linkedRoots = profile === undefined ? [] : linkedProfileRoots(profile, profilesDir)
   // The Promise return type is the pre-stable API; construction has no asynchronous step.
   return await Promise.resolve(Object.freeze({
     profilesDir,
     profileDir: profile?.dir,
     localPackageNames: Object.freeze(localPackageNames),
+    linkedRoots: Object.freeze(linkedRoots.map(root => Object.freeze(root))),
     entries: Object.freeze([
       ...[...packageDirs].map(([name, packageDir]) => Object.freeze({
         name, packageDir, version: versions.get(name),

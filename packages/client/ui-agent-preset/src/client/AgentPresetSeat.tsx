@@ -51,16 +51,7 @@ const INTRO_CHAR_STAGGER_MS = 40
 const INTRO_TEXT_REVEAL_MS = 200
 const INTRO_CHAR_FADE_MS = 400
 
-/**
- * How long a refused switch holds before fading.
- *
- * Longer than the primitive's default because this banner is the only place
- * the refusal appears. The chip's label has already snapped back to the
- * preset the session still runs, and a preset the host refuses to MOUNT is
- * one discovery reported healthy — its row on the settings page carries no
- * reason to go back and read, because there was nothing to see until the
- * rows actually ran.
- */
+/** Duration of a selection-refusal banner, including a revision becoming unavailable during a pick. */
 const REFUSAL_HOLD_MS = 8000
 
 /**

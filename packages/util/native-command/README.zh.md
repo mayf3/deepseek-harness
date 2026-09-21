@@ -85,7 +85,7 @@ const { stdout, stderr } = await runNativeCommand('osascript', ['-e', script], s
 
 - [原生目录选择器](../../host/directory-picker-native/README.zh.md)——本运行器执行的 OS 选择器命令。
 - [Session Controller](../../api/session-controller/README.zh.md)——打开前解析 Session 相对 workspace 路径。
-- [Settings Controller](../../api/settings-controller/README.zh.md)——选择 settings 文档与 agent-preset 目录。
+- [Settings Controller](../../api/settings-controller/README.zh.md)——选择 settings 文档。
 - [子进程能力](../../subprocess/subprocess/README.zh.md)——通用子进程 seam，本包并非其组成部分。
 
 -----

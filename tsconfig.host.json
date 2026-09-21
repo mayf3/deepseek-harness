@@ -13,6 +13,8 @@
     "apps/web/tests/default-product-isolation.e2e.ts",
     "apps/web/tests/diff-context.e2e.ts",
     "apps/web/tests/scaffold.ts",
+    "apps/web/tests/voice-input.e2e.ts",
+    "apps/web/tests/voice-setup.e2e.ts",
     "apps/web/tests/prefix-proxy.ts",
     "apps/web/tests/developer-tools-settings.e2e.ts",
     "apps/web/tests/auto-review-fixture.ts",
@@ -170,6 +172,11 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/experimental/speech-to-text" },
+    { "path": "./packages/experimental/speech-to-text-sensevoice" },
+    { "path": "./packages/experimental/api-speech-to-text" },
+    { "path": "./packages/experimental/voice-input-bundle" },
+
     { "path": "./packages/client/connection/tsconfig.host.json" },
     { "path": "./packages/skill/skill-office" },
     { "path": "./packages/skill/tool-workspace-dependencies" },
@@ -393,7 +400,8 @@
     { "path": "./packages/webhook/webhook-github" },
     { "path": "./packages/todo/tool-todo" },
     { "path": "./packages/plan/plan-mode" },
-    { "path": "./packages/preset/agent-presets" },
+    { "path": "./packages/preset/agent-preset-registry" },
+    { "path": "./packages/preset/agent-preset" },
     { "path": "./packages/preset/persona" },
     { "path": "./packages/guard/repeat-tool-reminder" },
     { "path": "./packages/extensions/cordis-host-runner" },
