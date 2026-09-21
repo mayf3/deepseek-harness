@@ -765,10 +765,12 @@ describe('client bundle activation', () => {
     const service = construct([packageName])
     const before = service.artifactBaseline(packageName)!
     const first = service.graph()
-    // ctime is OS-owned; cross its millisecond before the write on every supported filesystem.
-    await expect.poll(() => Date.now()).toBeGreaterThan(Math.ceil(before.ctimeMs))
-    writeFileSync(clientPath, 'module.exports = { generation: 2 }\n')
-    utimesSync(clientPath, timestamp, timestamp)
+    // Filesystem ctime can advance more coarsely than Date.now(); the fixture needs a distinct value.
+    await expect.poll(() => {
+      writeFileSync(clientPath, 'module.exports = { generation: 2 }\n')
+      utimesSync(clientPath, timestamp, timestamp)
+      return statSync(clientPath).ctimeMs
+    }).not.toBe(before.ctimeMs)
     expect(statSync(clientPath)).toMatchObject({ mtimeMs: before.mtimeMs, size: before.size })
 
     expect(service.rebuilt(packageName)).not.toBe(first.entries[0]!.rev)
