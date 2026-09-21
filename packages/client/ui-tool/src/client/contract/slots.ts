@@ -3,7 +3,7 @@ import type {
   HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
-import type { OpenFileOptions, ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { OpenFileOptions, ToolCallBlock, UseDisclosure } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { MessageImageLoader, MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 
@@ -48,6 +48,8 @@ export interface ToolImagesOwnerProps {
 
 /** Standard owner currency supplied to every atomic Tool view. */
 export interface ToolCallOwnerProps {
+  /** Stable injected Hook; each invocation owns its open state and subscribes to enclosing-Turn resets. */
+  useDisclosure: UseDisclosure
   /** Tool call identity, stable across running and settled forms. */
   callId: string
   /** Wire Tool name and keyed dispatch value. */

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -293,7 +294,7 @@ describe('terminalCardModel', () => {
 describe('chat row terminal body', () => {
   const ownerProps = (block: RunningToolCall | ToolResultNode): GenericToolCardProps => ({
     loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
-    callId: 'c1', toolName: 'bash', block, openFile: vi.fn(), t,
+    useDisclosure, callId: 'c1', toolName: 'bash', block, openFile: vi.fn(), t,
   })
 
   /** The whole summary row is the expand toggle (ToolRow's unified interaction). */
@@ -411,7 +412,7 @@ describe('BashRow terminal card', () => {
   })
 
   const rowProps = (block: RunningToolCall | ToolResultNode): BashRowProps => ({
-    callId: 'c1', toolName: 'bash', block, openFile: vi.fn(),
+    useDisclosure, callId: 'c1', toolName: 'bash', block, openFile: vi.fn(),
     sessionId: SID, useSessions: bindSnapshotSelector(list()),
     t,
   } as unknown as BashRowProps)

@@ -80,9 +80,30 @@ export type UseChatNodeTurnData = <Key extends Extract<keyof ConversationTurnDat
   key: Key,
 ) => Readonly<ConversationTurnDataMap[Key]> | undefined
 
-/** Slot-level Hook factory for keyed Chat renderers. */
-export interface ChatNodeTurnDataInjected {
-  hooks: { turnData: SlotHookFactory<'conversation.chat.node', UseChatNodeTurnData> }
+/**
+ * Subscribe to enclosing-Turn resets and own one initially collapsed disclosure.
+ * Each invocation has independent open state; display-mode changes do not reset it.
+ * @returns the current open state, explicit setter, and toggle action.
+ */
+export type UseDisclosure = () => {
+  readonly expanded: boolean
+  /** @param open - whether this disclosure is expanded. */
+  readonly setExpanded: (open: boolean) => void
+  readonly toggle: () => void
+}
+
+/** Stable sources bound to one rendered Chat Node. */
+export interface ChatNodeHookContext {
+  readonly turnData: ConversationLocationDataStore<ConversationTurnDataMap> | undefined
+  readonly disclosureReset: ObservableSnapshot<number>
+}
+
+/** Slot-level Hook factories for keyed Chat renderers. */
+export interface ChatNodeInjected {
+  hooks: {
+    turnData: SlotHookFactory<'conversation.chat.node', UseChatNodeTurnData>
+    disclosure: SlotHookFactory<'conversation.chat.node', UseDisclosure>
+  }
 }
 
 /** Stable owner currency delivered to a keyed Chat renderer. */
@@ -219,8 +240,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'session'
       owner: ChatNodeOwnerProps
       keyProps: { [Kind in ChatNodeKind]: { node: ChatNode<Kind> } }
-      hookContext: ConversationLocationDataStore<ConversationTurnDataMap> | undefined
-      inject: ChatNodeTurnDataInjected
+      hookContext: ChatNodeHookContext
+      inject: ChatNodeInjected
     }
     /**
      * Renderer for one consecutive group of durable message images. The owner

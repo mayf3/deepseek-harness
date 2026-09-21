@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 import { cleanup, render } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -34,7 +35,7 @@ function listStore() {
 
 function bashProps(block: RunningToolCall | ToolResultNode): BashRowProps {
   return {
-    callId: 'c1', toolName: 'bash', block, openFile: vi.fn(),
+    useDisclosure, callId: 'c1', toolName: 'bash', block, openFile: vi.fn(),
     sessionId: SID, useSessions: bindSnapshotSelector(listStore()),
     t,
   } as unknown as BashRowProps
@@ -43,7 +44,7 @@ function bashProps(block: RunningToolCall | ToolResultNode): BashRowProps {
 describe('Tool presentation tails', () => {
   it('ToolRow stopped state retains the business icon and shows a warning summary', () => {
     const view = render(
-      <ToolRow t={t} variant="bash" icon={<i data-testid="icon" />}
+      <ToolRow useDisclosure={useDisclosure} t={t} variant="bash" icon={<i data-testid="icon" />}
         title="Bash" summary="s" state="stopped" />,
     )
     expect(view.queryByTestId('icon')).not.toBeNull()
@@ -60,7 +61,7 @@ describe('Tool presentation tails', () => {
     }
     const props: GenericToolCardProps = {
       loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
-      callId: 'c5', toolName: 'todo_write', block: settled, openFile: vi.fn(), t,
+      useDisclosure, callId: 'c5', toolName: 'todo_write', block: settled, openFile: vi.fn(), t,
     }
     const view = render(<GenericToolCard {...props} />)
     expect(view.container.querySelector('[data-variant="others"] svg')).not.toBeNull()

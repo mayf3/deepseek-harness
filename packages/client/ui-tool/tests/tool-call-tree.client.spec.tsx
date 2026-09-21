@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 /** ToolCallTree-owned root/subcall markers and selection projection. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { bindDisclosure, useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -32,6 +34,7 @@ function props(
     return options?.fallback ?? null
   }) as unknown as ToolTreeProps['renderSlot']
   return {
+    useDisclosure,
     useSession,
     renderSlot,
     node: {
@@ -56,6 +59,38 @@ function props(
 }
 
 describe('ToolCallTree', () => {
+  it('forwards one stable disclosure Hook to nested calls and resets only their open state', () => {
+    const reset = createSnapshotStore(0)
+    const useDisclosure = bindDisclosure(reset)
+    const owners: ToolCallOwnerProps[] = []
+    const block = {
+      ...root('parent', { name: 'custom_parent', argsRaw: '{}' }),
+      content: [{ type: 'text' as const, text: 'Parent output' }],
+      subCalls: [{
+        ...root('child', { name: 'custom_child', argsRaw: '{}' }),
+        content: [{ type: 'text' as const, text: 'Child output' }],
+      }],
+    }
+    const view = render(<ToolCallTree {...props(block, undefined, undefined, owners)} useDisclosure={useDisclosure} />)
+    const rows = [...view.container.querySelectorAll<HTMLElement>('[data-expandable]')]
+    expect(rows).toHaveLength(2)
+    expect(owners.map(owner => owner.useDisclosure)).toEqual([useDisclosure, useDisclosure])
+    const dispatched = [...owners]
+    fireEvent.click(rows[0]!)
+    fireEvent.click(rows[1]!)
+    expect(view.getByText('Parent output')).toBeTruthy()
+    expect(view.getByText('Child output')).toBeTruthy()
+
+    act(() => { reset.set(1) })
+    expect(view.queryByText('Parent output')).toBeNull()
+    expect(view.queryByText('Child output')).toBeNull()
+    expect([...view.container.querySelectorAll('[data-expandable]')]).toEqual(rows)
+    expect(owners).toEqual(dispatched)
+    fireEvent.click(rows[1]!)
+    expect(view.getByText('Child output')).toBeTruthy()
+    expect(view.queryByText('Parent output')).toBeNull()
+  })
+
   it('owns the root marker and the generic fallback for a window-truncated call', () => {
     const block = root('w1', null)
     const view = render(<ToolCallTree {...props(block, 'w1')} />)
