@@ -1,5 +1,5 @@
 - banner:
-  - navigation "Session hierarchy": /user-invoke-demo @"meeting notes.md" an
+  - navigation "Session hierarchy": /user-invoke-demo @"this-is-a-very-long-
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
@@ -7,7 +7,7 @@
     - tab "Chat" [selected]
     - tab "Trajectory"
 - button "/user-invoke-demo"
-- button "meeting notes.md"
+- button "this-is-a-very-long-filename-for-testing-user-message-file-references-and-preview-layout.md"
 - text: and confirm the fixture wiring {{clock}}
 - button "Copy"
 - button "Thought for a while" [expanded]
