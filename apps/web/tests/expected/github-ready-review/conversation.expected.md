@@ -16,7 +16,6 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - button "Thought for a while"
 - paragraph: "Review complete: no actionable findings."
 - button "Copy"

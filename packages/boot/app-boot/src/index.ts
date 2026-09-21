@@ -20,6 +20,7 @@ import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from 
 export { readProfilePatches, resolveTelemetryPatch, type ProfileContext, type ProfilePnpmInvocation } from './profile-context.ts'
 export { sanitizeProfile } from './profile-sanitize.ts'
 export { readPluginMeta } from './package-meta.ts'
+export { generateConfigSchema, type ConfigSchemaDump } from './config-schema/index.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
 export {
@@ -55,6 +56,7 @@ export {
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
+  type LinkedRoot,
   type RuntimeResolutionOptions,
   type RuntimeResolutionEntry,
   type RuntimeResolution,

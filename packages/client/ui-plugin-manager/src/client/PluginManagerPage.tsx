@@ -30,14 +30,17 @@ import {
   type PluginManagerFace, type RegistryChoice,
 } from './manager-store.ts'
 import { managementText, noticeText, packageText, registryText, rowText, type Translate } from './presentation.ts'
-import type {} from './slot-contract.ts'
+import type { PluginPackageRef, PluginRowRef, PluginsSubject } from './slot-contract.ts'
 import css from './PluginManagerPage.module.css'
 
 /** Full component props assembled by the main slot renderer. */
 export type PluginManagerPageProps =
   PropsRuntime<'main'>
   & PropsLocale<'pluginManager'>
-  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config'>
+  & PropsRenderSlots<
+    | 'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.activation'
+    | 'plugins.detail.actions' | 'plugins.detail.badge' | 'plugins.detail.section'
+  >
   & InjectFace<PluginManagerFace>
 
 /** The page's slot renderer, narrowed to the configuration slots. */
@@ -124,7 +127,7 @@ const ROW_ARTWORK_SIZE = 30
 
 /** The artwork of the official plugins that registered their configuration, by registration id. */
 const ITEM_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
-  ['bash', PluginArtworkTerminal],
+  ['shell', PluginArtworkTerminal],
   ['agent-loop', PluginArtworkLoop],
   ['subagent', PluginArtworkSubagent],
   ['web-search', PluginArtworkSearch],
@@ -401,24 +404,55 @@ function ItemCard({ item, t, onOpen, renderSlot }: {
   )
 }
 
-/** An official plugin's page: the crumb back to the cards, its icon, its title over its one-liner, and the form the entry renders. */
+/** One row as the detail slots see it. */
+function rowRef(row: PackageRow): PluginRowRef {
+  return { rowId: row.rowId, moduleName: row.moduleName, enabled: row.enabled }
+}
+
+/** One bundle as the detail slots see it. */
+function packageRef(pkg: PackageView): PluginPackageRef {
+  return {
+    name: pkg.name,
+    ...pkg.version === undefined ? {} : { version: pkg.version },
+    installed: pkg.installed,
+    enabled: pkg.enabled,
+    rows: pkg.rows.map(rowRef),
+  }
+}
+
+/**
+ * An official plugin's page: the crumb back to the cards, its icon with the
+ * contributed actions, its title with the contributed badges over its
+ * one-liner, the form the entry renders, and the contributed sections.
+ */
 function ItemDetail({ item, t, onBack, renderSlot }: {
   readonly item: OfficialItem
   readonly t: Translate
   readonly onBack: () => void
   readonly renderSlot: RenderConfig
 }): ReactNode {
+  const subject: PluginsSubject = { kind: 'item', id: item.id }
   return (
     <div className={css.detail} data-plugin-item-detail={item.id}>
-      <DetailTop crumbLabel={t('backToList')} crumbText={t('crumbRoot')} onBack={onBack} icon={itemArtwork(item.id)} />
+      <DetailTop
+        crumbLabel={t('backToList')}
+        crumbText={t('crumbRoot')}
+        onBack={onBack}
+        icon={itemArtwork(item.id)}
+        actions={<div className={css.detailActions}>{renderSlot('plugins.detail.actions', { subject })}</div>}
+      />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{item.label}</h3>
+          {renderSlot('plugins.detail.badge', { subject })}
         </div>
         <p className={css.detailDesc}>{renderSlot('plugins.item', { view: 'summary' }, { only: item.id })}</p>
       </div>
-      <div className={css.detailSections} data-plugin-config>
-        {renderSlot('plugins.item', { view: 'page' }, { only: item.id })}
+      <div className={css.detailSections}>
+        <section className={css.detailSection} data-plugin-config>
+          {renderSlot('plugins.item', { view: 'page' }, { only: item.id })}
+        </section>
+        {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
   )
@@ -439,12 +473,20 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot }: {
   const { title } = packageText(pkg, resolveText)
   const { title: rowTitle, description } = rowText(row, resolveText)
   const key = rowConfigKey(pkg.name, row.rowId)
+  const subject: PluginsSubject = { kind: 'row', pkg: packageRef(pkg), row: rowRef(row) }
   return (
     <div className={css.detail} data-plugin-row-detail={key}>
-      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<PackageArtwork key={row.meta?.icon} src={row.meta?.icon} row size={CARD_ARTWORK_SIZE} />} />
+      <DetailTop
+        crumbLabel={t('backToPackage', { name: title })}
+        crumbText={title}
+        onBack={onBack}
+        icon={<PackageArtwork key={row.meta?.icon} src={row.meta?.icon} row size={CARD_ARTWORK_SIZE} />}
+        actions={<div className={css.detailActions}>{renderSlot('plugins.detail.actions', { subject })}</div>}
+      />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{rowTitle}</h3>
+          {renderSlot('plugins.detail.badge', { subject })}
         </div>
         {rowTitle === row.rowId ? null : <p className={css.detailName}><code>{row.rowId}</code></p>}
         <p className={css.detailName}><code>{row.moduleName}</code></p>
@@ -453,6 +495,7 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot }: {
       <MetadataError error={row.meta?.error} t={t} />
       <div className={css.detailSections} data-plugin-config>
         {renderSlot('plugins.row.config', { view: 'page' }, { entryKey: key })}
+        {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
   )
@@ -487,6 +530,7 @@ function PackageDetail({
 }): ReactNode {
   const { title, description, beta } = packageText(pkg, resolveText)
   const status = packageStatus(pkg)
+  const subject: PluginsSubject = { kind: 'bundle', pkg: packageRef(pkg) }
   return (
     <div className={css.detail} data-plugin-detail={pkg.name}>
       <DetailTop
@@ -496,6 +540,7 @@ function PackageDetail({
         icon={<PackageArtwork key={pkg.meta?.icon} src={pkg.meta?.icon} />}
         actions={(
           <div className={css.detailActions}>
+            {renderSlot('plugins.detail.actions', { subject })}
             {pkg.installed
               ? (
                 <Button
@@ -521,6 +566,7 @@ function PackageDetail({
           {pkg.version === undefined ? null : <Tag className={css.versionTag} tone="neutral">{t('versionTag', { version: pkg.version })}</Tag>}
           {beta ? <Tag className={css.statusTag} tone="info">{t('statusBeta')}</Tag> : null}
           {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
+          {renderSlot('plugins.detail.badge', { subject })}
         </div>
         <p className={css.detailName}><code data-plugin-name>{pkg.name}</code></p>
         {description === undefined ? null : <p className={css.detailDesc}>{description}</p>}
@@ -543,6 +589,7 @@ function PackageDetail({
           toggle={pkg.enabled ? { busy: row => busy || rowBusy(row), onSetEnabled: onSetRowEnabled } : undefined}
           configure={configure}
         />
+        {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
   )
@@ -1072,6 +1119,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const ledger = props.useConfigLedger(snapshot => snapshot)
   // What is open; a package that leaves the list (uninstalled) drops back to the cards.
   const [view, setView] = useState<View>({ kind: 'list' })
+  const [activation, setActivation] = useState<string | null>(null)
   useEffect(() => { ensure() }, [ensure])
   // A package an install just enabled: scroll it into view and mark it for a moment.
   const { highlight, clearHighlight } = { highlight: state.highlight, clearHighlight: props.clearHighlight }
@@ -1096,6 +1144,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const openItem = view.kind === 'item' ? ledger.items.find(item => item.id === view.id) : undefined
   const openRow = view.kind === 'row' && openPkg !== undefined ? openPkg.rows.find(row => row.rowId === view.rowId) : undefined
   const showsCards = openPkg === undefined && openItem === undefined
+  const activated = listed.find(pkg => pkg.name === activation && pkg.enabled && !state.busy.includes(pkg.name))
   const setRowEnabled = (row: PackageRow, enabled: boolean): void => {
     /* v8 ignore next -- a row without a live entry has its switch disabled */
     if (row.entryId !== undefined) props.setRowEnabled(row.entryId, enabled)
@@ -1112,8 +1161,8 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
       resolveText={resolveText}
       busy={state.busy.includes(pkg.name)}
       highlighted={state.highlight === pkg.name}
-      onOpen={() => { setView({ kind: 'package', name: pkg.name }) }}
-      onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
+      onOpen={() => { setActivation(null); setView({ kind: 'package', name: pkg.name }) }}
+      onSetEnabled={(enabled) => { setActivation(enabled ? pkg.name : null); props.setEnabled(pkg.name, enabled) }}
     />
   )
   // The Official group: the bundles the installation ships, then the plugins that registered their configuration.
@@ -1242,6 +1291,12 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             </>
           )
         : null}
+      {showsCards && activated !== undefined && !state.install.open
+        ? renderSlot('plugins.bundle.activation', {
+          packageName: activated.name,
+          onDismiss: () => { setActivation(null) },
+          onOpenDetails: () => { setActivation(null); setView({ kind: 'package', name: activated.name }) },
+        }, { entryKey: activated.name }) : null}
       <InstallDialog
         install={state.install}
         t={t}
@@ -1251,7 +1306,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         onCancel={props.cancelInstall}
         onReconcile={props.reconcileInstall}
         onToggleDetails={props.toggleInstallDetails}
-        onEnableNow={props.enableInstalled}
+        onEnableNow={() => { setActivation(state.install.installed); props.enableInstalled() }}
         onApproveBuilds={props.approveBuildsAndRetry}
         onToggleRegistry={props.toggleRegistryOptions}
         onChooseRegistry={props.chooseRegistry}

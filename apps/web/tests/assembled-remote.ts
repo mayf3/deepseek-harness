@@ -60,7 +60,6 @@ interface ControlBaseline {
   readonly type: 'baseline'
   readonly value: {
     readonly queues: Readonly<Record<string, readonly unknown[]>>
-    readonly jobs: Readonly<Record<string, readonly unknown[]>>
     readonly approvals: readonly unknown[]
     readonly questions: readonly unknown[]
     readonly projections: Readonly<Record<string, {
@@ -154,9 +153,8 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       'session/modelCatalog': structuredClone(fixture.modelCatalog),
       'agentPresets/list': structuredClone(fixture.agentPresets),
       'commands/list': structuredClone(fixture.commands),
-      'settings/canOpenAgentPresetDirectory': ok(true),
       'settings/openSettingsDocument': ok({ opened: true }),
-      'settings/openAgentPresetDirectory': ok({ opened: true }),
+      'subagents/list': ok({ entries: [], parentAvailable: true }),
       'terminal/list': ok([]),
       'skills/list': ok({ skills: [] }),
       'session/canOpenWorkspacePath': ok(true),
@@ -178,6 +176,9 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
   })
   mock.stream('session/control', (_args, stream) => {
     stream.push(structuredClone(fixture.control))
+  })
+  mock.stream('job/list', (_args, stream) => {
+    stream.push({ type: 'rows', jobs: [] })
   })
   mock.stream('workspace/follow', (_args, stream) => {
     stream.push({

@@ -54,19 +54,21 @@ describe('web e2e: repairs a stored provider after catalog drift', () => {
     }
   })
 
-  it('shows the failed provider beside healthy providers and keeps both add actions usable', async () => {
+  it('shows the failed provider beside healthy providers and keeps the add action usable', async () => {
     onTestFailed(() => saveFailureShot(page, 'models-settings-recovery'))
     const dialog = page.getByRole('dialog', { name: '设置' })
     expect(await dialog.getByRole('button', { name: '编辑 openrouter', exact: true }).count()).toBe(1)
     expect(await dialog.getByRole('button', { name: '编辑 zai', exact: true }).count()).toBe(1)
     expect(await dialog.getByRole('button', { name: '编辑 acme-gateway', exact: true }).count()).toBe(1)
     expect(await dialog.getByText(CUSTOM_FAILURE, { exact: true }).count()).toBe(1)
-    expect(await dialog.getByRole('button', { name: '添加提供方', exact: true }).isEnabled()).toBe(true)
-    expect(await dialog.getByRole('button', { name: '添加自定义提供方', exact: true }).isEnabled()).toBe(true)
+    expect(await dialog.getByRole('button', { name: '添加模型提供商', exact: true }).isEnabled()).toBe(true)
     await compareOrRefreshGolden(EXPECTED, await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd), webSnapshotMode())
 
-    await dialog.getByRole('button', { name: '添加提供方', exact: true }).click()
-    await dialog.getByLabel('提供方', { exact: true }).selectOption('minimax-cn')
+    await dialog.getByRole('button', { name: '添加模型提供商', exact: true }).click()
+    // Both modes stay offered beside a failed route: the card opens on the
+    // third-party mode with the custom-API segment enabled.
+    expect(await dialog.getByRole('tab', { name: '自定义模型 API' }).isEnabled()).toBe(true)
+    await dialog.getByLabel('提供商', { exact: true }).selectOption('minimax-cn')
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.getByText('已保存 minimax-cn。', { exact: true }).waitFor()
     expect(await readFile(join(home, 'settings.yaml'), 'utf8')).toContain('minimax-cn: {}')

@@ -100,8 +100,8 @@ describe('web e2e: settings modal and General preferences', () => {
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd, versionCapture)
     await compareOrRefreshGolden(DIALOG_EXPECTED, snapshot, MODE)
     // Section switch: aria-current moves (the Models page itself has its own scenario file).
-    await dialog.getByRole('button', { name: '模型' }).click()
-    await expect.poll(() => dialog.getByRole('button', { name: '模型' }).getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
+    await dialog.getByRole('button', { name: '模型', exact: true }).click()
+    await expect.poll(() => dialog.getByRole('button', { name: '模型', exact: true }).getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
     expect(await dialog.getByRole('button', { name: '通用设置' }).getAttribute('aria-current')).toBeNull()
     // Built-in plugins: the read-only Plugin list, a projection of the same
     // assembled Loader tree, shown as the section's one page; management and
@@ -143,7 +143,7 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(await dialog.getByRole('button', { name: '内置插件', exact: true }).getAttribute('aria-current')).toBe('true')
     // One contribution shows as the page itself, without a tab row.
     expect(await dialog.getByRole('tab').count()).toBe(0)
-    expect(await dialog.getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBeNull()
+    expect(await dialog.getByRole('button', { name: '模型', exact: true }).getAttribute('aria-current')).toBeNull()
     const pluginsSnapshot = await captureStableAria(
       page,
       PLUGIN_ROW_SELECTOR,
@@ -376,12 +376,15 @@ describe('web e2e: settings modal and General preferences', () => {
       legacy: string | null
       themeColor: string | null
       themeColorCount: number
+      faviconPaths: string[]
       token: string
     }
     const readState = async (target: Page = page): Promise<ThemeState> => await target.evaluate(() => {
       const metas = document.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
       const computed = getComputedStyle(document.body)
+      const icons = [...document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]')]
       return {
+        faviconPaths: icons.filter(icon => matchMedia(icon.media).matches).map(icon => new URL(icon.href).pathname),
         attr: document.body.hasAttribute('data-ds-dark-theme'),
         background: computed.backgroundColor,
         legacy: localStorage.getItem('dsh.theme'),
@@ -400,6 +403,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await page.emulateMedia({ colorScheme: 'light' })
     const light = await readState()
     expect(light.attr).toBe(false)
+    expect(light.faviconPaths).toEqual(['/favicon.svg'])
     expectThemeColorSynchronized(light)
 
     await page.getByRole('button', { name: '设置', exact: true }).click()
@@ -413,6 +417,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(() => darkCube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
     const dark = await readState()
     expect(dark.attr).toBe(true)
+    expect(dark.faviconPaths).toEqual(['/favicon.svg'])
     expect(dark.legacy).toBeNull()
     expect(dark.token).not.toBe(light.token)
     expectThemeColorSynchronized(dark)
@@ -429,6 +434,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(async () => (await readState()).attr, { timeout: 5_000 }).toBe(true)
     const reloaded = await readState()
     expect(reloaded.legacy).toBeNull()
+    expect(reloaded.faviconPaths).toEqual(['/favicon.svg'])
     expectThemeColorSynchronized(reloaded)
 
     // A second live Host binds another ephemeral port but shares the same
@@ -462,11 +468,15 @@ describe('web e2e: settings modal and General preferences', () => {
     expectThemeColorSynchronized(await readState())
     await page.emulateMedia({ colorScheme: 'dark' })
     await expect.poll(async () => (await readState()).attr, { timeout: 5_000 }).toBe(true)
+    await expect.poll(async () => (await readState()).faviconPaths).toEqual(['/favicon-dark.svg'])
     expectThemeColorSynchronized(await readState())
     // Restore for the specs that follow: light preference beats the emulated
     // dark OS scheme, leaving the shared page in the light default.
     await selectTheme(page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '浅色' }), 'light')
     await expect.poll(async () => (await readState()).attr, { timeout: 5_000 }).toBe(false)
+    expect((await readState()).faviconPaths).toEqual(['/favicon-dark.svg'])
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect.poll(async () => (await readState()).faviconPaths).toEqual(['/favicon.svg'])
     expectThemeColorSynchronized(await readState())
     await page.keyboard.press('Escape')
     expect(tripwire.pageErrors).toEqual([])
@@ -548,17 +558,20 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
-  it('persists the completed-Turn transcript mode across reload', async () => {
+  it.each([
+    ['detailed', '详细'], ['expanded', '完全展开'],
+  ] as const)('persists the %s work-details mode across reload', async (mode, label) => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-transcript-view'))
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.waitFor({ timeout: 10_000 })
-    await dialog.getByText('对话显示', { exact: true }).waitFor({ timeout: 10_000 })
-    await dialog.getByRole('button', { name: '紧凑', exact: true }).click()
-    await page.getByRole('menuitem', { name: '标准', exact: true }).click()
-    await dialog.getByRole('button', { name: '标准', exact: true }).waitFor({ timeout: 10_000 })
+    await dialog.getByText('工作过程展示', { exact: true }).waitFor({ timeout: 10_000 })
+    const details = dialog.getByText('工作过程展示', { exact: true }).locator('../..')
+    await details.getByRole('button', { name: '简洁', exact: true }).click()
+    await page.getByRole('menuitem', { name: label, exact: true }).click()
+    await details.getByRole('button', { name: label, exact: true }).waitFor({ timeout: 10_000 })
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
-      .toMatch(/ui-chat:\n\s+transcriptView: normal/)
+      .toContain(`transcriptView: ${mode}`)
     await page.keyboard.press('Escape')
 
     const warningStart = tripwire.warnings.length
@@ -567,11 +580,12 @@ describe('web e2e: settings modal and General preferences', () => {
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const reloaded = page.getByRole('dialog', { name: '设置' })
-    await reloaded.getByRole('button', { name: '标准', exact: true }).waitFor({ timeout: 10_000 })
+    const restoredDetails = reloaded.getByText('工作过程展示', { exact: true }).locator('../..')
+    await restoredDetails.getByRole('button', { name: label, exact: true }).waitFor({ timeout: 10_000 })
 
-    await reloaded.getByRole('button', { name: '标准', exact: true }).click()
-    await page.getByRole('menuitem', { name: '紧凑', exact: true }).click()
-    await reloaded.getByRole('button', { name: '紧凑', exact: true }).waitFor({ timeout: 10_000 })
+    await restoredDetails.getByRole('button', { name: label, exact: true }).click()
+    await page.getByRole('menuitem', { name: '简洁', exact: true }).click()
+    await restoredDetails.getByRole('button', { name: '简洁', exact: true }).waitFor({ timeout: 10_000 })
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
       .toMatch(/ui-chat:\n\s+transcriptView: compact/)
     await page.keyboard.press('Escape')
@@ -713,7 +727,7 @@ describe('web e2e: settings modal and General preferences', () => {
       await dialog.waitFor({ timeout: 10_000 })
       await dialog.getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
       // The plugin list resolves shipped preset names through the en
-      // dictionaries instead of echoing the preset files' Chinese metadata.
+      // dictionaries instead of echoing the preset declarations' Chinese metadata.
       await dialog.getByRole('button', { name: 'Built-in plugins', exact: true }).click()
       const presetSwitcher = dialog.getByRole('button', { name: 'Choose the agent preset to inspect' })
       await presetSwitcher.waitFor({ timeout: 10_000 })

@@ -48,7 +48,7 @@ const one: SessionSummary = {
   id: ROW.sessionId, displayTitle: ROW.displayTitle, running: false, blank: false, updatedAt: 1, retainedBy: {},
 }
 const sessions: SessionListState = {
-  ids: [one.id], byId: { [one.id]: one }, phase: 'ready', projectionsBySession: {}, jobsBySession: {},
+  ids: [one.id], byId: { [one.id]: one }, phase: 'ready', projectionsBySession: {},
 }
 // The Workspace snapshot lists no pins or archives: an action's membership
 // arrives through its injected Set hooks, never through this seat.
@@ -397,6 +397,24 @@ describe('RowActionToast', () => {
       expect(alert.textContent).toBe(text)
       expect(alert.querySelector('button')).toBeNull()
       act(() => { vi.advanceTimersByTime(4000) })
+      expect(dismissToast).toHaveBeenCalledOnce()
+      expect(screen.queryByRole('alert')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows a refused creation with the Host reason and holds it as long as the archived notice', () => {
+    vi.useFakeTimers()
+    try {
+      const { dismissToast, notify } = toastSurface()
+      notify({ kind: 'createFailed', message: 'agent-preset/invalid: agent-presets: preset "broken" failed to mount' })
+      const alert = screen.getByRole('alert')
+      expect(alert.textContent).toBe('新建会话失败：agent-preset/invalid: agent-presets: preset "broken" failed to mount')
+      expect(alert.querySelector('button')).toBeNull()
+      act(() => { vi.advanceTimersByTime(4000) })
+      expect(dismissToast).not.toHaveBeenCalled()
+      act(() => { vi.advanceTimersByTime(3000) })
       expect(dismissToast).toHaveBeenCalledOnce()
       expect(screen.queryByRole('alert')).toBeNull()
     } finally {

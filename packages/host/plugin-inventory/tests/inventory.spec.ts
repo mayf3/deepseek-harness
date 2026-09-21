@@ -7,7 +7,7 @@ import { Context, FiberState, type Plugin } from '@deepseek-ai/cordis'
 import { PluginPackages, readPluginMeta, type RuntimeResolution } from '@deepseek-ai/dsh-app-boot'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
-import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
+import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry'
 import PluginInventoryGateway from '../src/index.ts'
 
 const contexts: Context[] = []
@@ -51,7 +51,7 @@ function metadataFixture(mode: 'native' | 'runtime') {
     ? join(root, 'installation', 'node_modules', 'local-plugin')
     : join(root, 'node_modules', 'local-plugin')
   const resolution: RuntimeResolution = {
-    profilesDir, profileDir, localPackageNames: [],
+    profilesDir, profileDir, localPackageNames: [], linkedRoots: [],
     entries: [{ name: 'local-plugin', packageDir: dir, version: undefined,
       declarer: join(dir, 'package.json'), scope: 'installation' }],
   }
@@ -109,18 +109,18 @@ describe('PluginInventoryGateway', () => {
     await ctx.plugin(PluginPackages, mode === 'runtime' ? { resolution } : {})
     ctx.provide('agentPresets', {
       compositionInventory: async () => [{
-        id: 'local', trust: 'system', isDefault: true,
+        id: 'local', isDefault: true,
         rows: [
           { entryId: 'feature', moduleName: 'local-plugin/feature', enabled: false },
           { entryId: null, moduleName: 'local-plugin/private', enabled: false },
         ],
       }],
-    } as Partial<AgentPresets> as never)
+    } as Partial<AgentPresetRegistry> as never)
 
     expect(await inventory.list()).toEqual({
       entries: [],
       agentPresets: [{
-        id: 'local', trust: 'system', isDefault: true,
+        id: 'local', isDefault: true,
         rows: [
           {
             entryId: 'feature', moduleName: 'local-plugin/feature', enabled: false, fiberPhase: null,
@@ -202,7 +202,6 @@ describe('PluginInventoryGateway', () => {
       compositionInventory: async () => [
         {
           id: 'standard',
-          trust: 'system',
           name: '标准模式',
           isDefault: true,
           rows: [
@@ -210,15 +209,14 @@ describe('PluginInventoryGateway', () => {
             { entryId: null, moduleName: 'pkg-file', enabled: 'conditional', condition: 'x' },
           ],
         },
-        { id: 'damaged', trust: 'user', isDefault: false, broken: 'the composition file is missing', rows: [] },
+        { id: 'damaged', isDefault: false, broken: 'the composition file is missing', rows: [] },
       ],
-    } as Partial<AgentPresets> as never)
+    } as Partial<AgentPresetRegistry> as never)
 
     const snapshot = await inventory.list()
     expect(snapshot.agentPresets).toEqual([
       {
         id: 'standard',
-        trust: 'system',
         name: '标准模式',
         isDefault: true,
         rows: [
@@ -226,7 +224,7 @@ describe('PluginInventoryGateway', () => {
           { entryId: null, moduleName: 'pkg-file', enabled: 'conditional', condition: 'x', fiberPhase: null },
         ],
       },
-      { id: 'damaged', trust: 'user', isDefault: false, broken: 'the composition file is missing', rows: [] },
+      { id: 'damaged', isDefault: false, broken: 'the composition file is missing', rows: [] },
     ])
   })
 })

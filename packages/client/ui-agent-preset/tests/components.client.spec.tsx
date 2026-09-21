@@ -25,15 +25,15 @@ afterEach(cleanup)
 const ROSTER_READY: AgentPresetSettingsState = {
   status: 'ready',
   error: null,
-  options: [{ id: 'standard', trust: 'system', name: '标准模式' }, { id: 'mine', trust: 'user' }],
+  options: [{ id: 'standard' }, { id: 'mine' }],
 }
 
 const SEAT_READY: AgentPresetSeatState = {
   showPicker: true,
   current: 'standard',
   options: [
-    { id: 'standard', trust: 'system', name: '标准模式', description: '完整的编码 agent。' },
-    { id: 'mine', trust: 'user' },
+    { id: 'standard' },
+    { id: 'mine' },
   ],
   busy: false,
   error: null,
@@ -253,7 +253,7 @@ describe('the chip introduce cue', () => {
     vi.useFakeTimers()
     const actions = renderSeat({
       current: 'creator',
-      options: [{ id: 'creator', trust: 'user', name: 'CreatorMode' }],
+      options: [{ id: 'creator', name: 'CreatorMode' }],
       introduce: true,
     })
 
@@ -279,7 +279,7 @@ describe('the chip introduce cue', () => {
     vi.useFakeTimers()
     renderSeat({
       current: 'creator',
-      options: [{ id: 'creator', trust: 'user', name: '创造模式' }],
+      options: [{ id: 'creator', name: '创造模式' }],
       introduce: true,
     })
 
@@ -295,7 +295,7 @@ describe('the chip introduce cue', () => {
     vi.useFakeTimers()
     const actions = renderSeat({
       current: 'creator',
-      options: [{ id: 'creator', trust: 'user', name: 'C' }],
+      options: [{ id: 'creator', name: 'C' }],
       introduce: true,
     })
 
@@ -316,7 +316,7 @@ describe('the chip introduce cue', () => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })))
     const actions = renderSeat({
       current: 'creator',
-      options: [{ id: 'creator', trust: 'user', name: '' }],
+      options: [{ id: 'creator', name: '' }],
       introduce: true,
     })
 

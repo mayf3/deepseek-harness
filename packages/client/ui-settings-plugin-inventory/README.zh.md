@@ -33,7 +33,7 @@ kind: "package-reference"
 
 每张收起的卡片使用插件可用的本地化标题与描述。设置页会缩短字面的包名或模块名回退值，移除 npm scope 以及 `cordis:`、`cordis-plugin-` 或 `dsh-`/`dsh-host-`/`dsh-client-` 前缀；locale 标题保持原样。Host 在 `meta` 中提供 locale 与包字段的回退结果，Client 选择当前语言。详情与搜索仍保留完整模块标识。缺失的描述不显示，元信息诊断随卡片展示。这种短名显示仅用于设置页，不影响侧栏的插件页。
 
-稳定的条目 id 显示在标题下方，卡片带有表示启停状态的小标签；彩色根 fiber 状态圆点只标记标签无法表达的阶段：`pending` 映射为 idle，`loading` 与 `unloading` 映射为 ongoing。`active` 或 `failed` fiber 只显示标签，不显示圆点。组合生成的次标题省略开头的 `include:` 标记；悬停、搜索、无障碍名称与展开详情仍保留完整 id。长条目 id 会在行内截断，悬停时仍可查看完整值。展开卡片后会显示声明的条目 id、完整模块标识与状态事实：预设行说明它来自哪个预设、组合存活时的运行状态，以及它携带的禁用条件；被预设提供的全局行说明它由 Agent 预设按会话提供、列出启用它的预设，并提供跳转到预设组的入口。预设名经共享的 `presetDisplayText` 纯函数（`dsh-agent-presets/display`）叠在 [`ui-agent-preset`](../ui-agent-preset/README.zh.md) 的字典上解析：内置预设走当前语言，用户自建预设保留自己的元数据，因此英文界面不会回显预设文件里的中文名。搜索按本地化标题与描述、模块名称及条目 id 过滤两组。
+稳定的条目 id 显示在标题下方，卡片带有表示启停状态的小标签；彩色根 fiber 状态圆点只标记标签无法表达的阶段：`pending` 映射为 idle，`loading` 与 `unloading` 映射为 ongoing。`active` 或 `failed` fiber 只显示标签，不显示圆点。组合生成的次标题省略开头的 `include:` 标记；悬停、搜索、无障碍名称与展开详情仍保留完整 id。长条目 id 会在行内截断，悬停时仍可查看完整值。展开卡片后会显示声明的条目 id、完整模块标识与状态事实：预设行说明它来自哪个预设、组合存活时的运行状态，以及它携带的禁用条件；被预设提供的全局行说明它由 Agent 预设按会话提供、列出启用它的预设，并提供跳转到预设组的入口。预设名经共享的 `presetDisplayText` 纯函数（`dsh-agent-preset-registry/display`）叠在 [`ui-agent-preset`](../ui-agent-preset/README.zh.md) 的字典上解析：内置预设走当前语言，用户自建预设保留自己的元数据，因此英文界面不会回显预设声明里的中文名。搜索按本地化标题与描述、模块名称及条目 id 过滤两组。
 
 ### 预设切换器
 

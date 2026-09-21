@@ -16,6 +16,7 @@ import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { RowToast } from '../src/client/contract/slots.ts'
 import { DirectoryBrowseError, UiWorkspaceService } from '../src/client/navigation.ts'
 import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
 import { UNGROUPED_KEY } from '../src/client/tree.ts'
@@ -80,7 +81,6 @@ function sessionState(
     byId: Object.fromEntries(summaries.map(item => [item.id, item])),
     phase,
     projectionsBySession: {},
-    jobsBySession: {},
   }
 }
 
@@ -294,16 +294,16 @@ function bench(options: BenchOptions = {}) {
   options.configureWorkspaces?.(workspaces)
   options.configureSessions?.(sessions)
   const view = createWorkspaceViewStore().create()
-  const notifyDefaultFailure = vi.fn()
+  const notify = vi.fn<(toast: RowToast) => void>()
   const uiWorkspace = new UiWorkspaceService(
     ctx,
     directoryPicker.remote,
     workspaces,
     sessions,
     view.actions,
-    notifyDefaultFailure,
+    notify,
   )
-  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notifyDefaultFailure }
+  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notify }
 }
 
 describe('UiWorkspaceService', () => {
@@ -328,7 +328,7 @@ describe('UiWorkspaceService', () => {
     })
     expect(b.workspaces.initializeDefault).toHaveBeenCalledExactlyOnceWith({ directoryName, title }, expect.any(AbortSignal))
     expect(b.sessions.create).toHaveBeenCalledWith({ workspaceId: wid('default') })
-    expect(b.notifyDefaultFailure).not.toHaveBeenCalled()
+    expect(b.notify).not.toHaveBeenCalled()
   })
 
   it('leaves an ineligible empty installation without a Session or failure notice', async () => {
@@ -339,7 +339,7 @@ describe('UiWorkspaceService', () => {
     await setImmediate()
     expect(b.workspaces.initializeDefault).toHaveBeenCalledOnce()
     expect(b.sessions.create).not.toHaveBeenCalled()
-    expect(b.notifyDefaultFailure).not.toHaveBeenCalled()
+    expect(b.notify).not.toHaveBeenCalled()
   })
 
   it('requires explicit selection when the startup Session list contains history', async () => {
@@ -353,12 +353,12 @@ describe('UiWorkspaceService', () => {
     const b = bench({ workspaces: workspaceState(), sessions: sessionState(), configureWorkspaces: (workspaces) => {
       workspaces.initializeDefault.mockRejectedValueOnce(new Error('denied'))
     } })
-    await vi.waitFor(() => { expect(b.notifyDefaultFailure).toHaveBeenCalledOnce() })
+    await vi.waitFor(() => { expect(b.notify).toHaveBeenCalledExactlyOnceWith({ kind: 'defaultWorkspaceFailed' }) })
     b.workspaces.list.set(workspaceState())
     await setImmediate()
     expect(b.workspaces.initializeDefault).toHaveBeenCalledOnce()
     expect(b.sessions.create).not.toHaveBeenCalled()
-    expect(b.notifyDefaultFailure).toHaveBeenCalledOnce()
+    expect(b.notify).toHaveBeenCalledExactlyOnceWith({ kind: 'defaultWorkspaceFailed' })
   })
 
   it.each(['session', 'panel', 'disposal'] as const)('cancels startup directory preparation after %s navigation', async (kind) => {
@@ -374,7 +374,7 @@ describe('UiWorkspaceService', () => {
     await setImmediate()
     expect(b.sessions.create).not.toHaveBeenCalled()
     expect(b.sessions.retain.mock.calls.map(args => args[0])).toEqual(kind === 'session' ? [sid('manual')] : [])
-    expect(b.notifyDefaultFailure).not.toHaveBeenCalled()
+    expect(b.notify).not.toHaveBeenCalled()
   })
 
   it.each(['session', 'panel', 'disposal'] as const)('suppresses a startup directory failure after %s navigation', async (kind) => {
@@ -388,7 +388,7 @@ describe('UiWorkspaceService', () => {
     pending.reject(new Error('late failure'))
     await setImmediate()
     expect(b.sessions.create).not.toHaveBeenCalled()
-    expect(b.notifyDefaultFailure).not.toHaveBeenCalled()
+    expect(b.notify).not.toHaveBeenCalled()
   })
 
   it.each([false, true])('reports Session failure without a directory error and retains the Workspace (superseded: %s)', async (superseded) => {
@@ -409,7 +409,7 @@ describe('UiWorkspaceService', () => {
       expect(warning).toHaveBeenCalledExactlyOnceWith('initial Session restoration failed:', failure)
     })
     expect(b.workspaces.list.getSnapshot().items).toEqual([workspace('default')])
-    expect(b.notifyDefaultFailure).not.toHaveBeenCalled()
+    expect(b.notify).not.toHaveBeenCalled()
     expect(b.sessions.retain).not.toHaveBeenCalled()
   })
 
@@ -487,6 +487,18 @@ describe('UiWorkspaceService', () => {
       await pending
       expect(b.sessions.retain).not.toHaveBeenCalled()
     }
+  })
+
+  it.each(['disposal', 'a later navigation'] as const)('keeps a creation refused after %s silent', async (kind) => {
+    const b = bench({ workspaces: workspaceState([workspace('a')]) })
+    const created = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValueOnce(created.promise)
+    const pending = b.uiWorkspace.openWorkspace(wid('a'))
+    if (kind === 'disposal') await b.ctx.fiber.dispose()
+    else b.uiWorkspace.openSession(sid('elsewhere'))
+    created.reject(new Error('late refusal'))
+    await expect(pending).rejects.toThrow('late refusal')
+    expect(b.notify).not.toHaveBeenCalled()
   })
 
   it('ignores a rejected startup selection and stale catalog callbacks after disposal', async () => {
@@ -639,6 +651,40 @@ describe('UiWorkspaceService', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([sid('new'), sid('new')])
     await expect(b.uiWorkspace.connectWorkspace(wid('missing'))).rejects.toThrow('unknown workspace')
     expect(b.sessions.retain).not.toHaveBeenCalled()
+  })
+
+  it('reports a refused explicit Session creation through the Workspace notice', async () => {
+    const b = bench({ workspaces: workspaceState([workspace('a')]), sessions: sessionState() })
+    // Startup restoration creates its own Session first and stays quiet on failure (pinned above).
+    await vi.waitFor(() => { expect(b.sessions.retain).toHaveBeenCalledOnce() })
+    b.sessions.retain.mockClear()
+    expect(b.notify).not.toHaveBeenCalled()
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const refused = new SessionCreateError(new RemoteError(
+      'agent-preset/invalid',
+      'agent-presets: preset "broken" failed to mount: row "workflow-ptc" names a plugin that cannot be resolved',
+      { agentPreset: 'broken', reason: 'row "workflow-ptc" names a plugin that cannot be resolved' },
+    ), undefined)
+    b.sessions.create.mockRejectedValueOnce(refused)
+    b.uiWorkspace.startSession(wid('a'))
+    await vi.waitFor(() => {
+      expect(b.notify).toHaveBeenCalledExactlyOnceWith({
+        kind: 'createFailed',
+        message: 'agent-preset/invalid: agent-presets: preset "broken" failed to mount: row "workflow-ptc" names a plugin that cannot be resolved',
+      })
+    })
+    expect(warning).toHaveBeenCalledExactlyOnceWith('new session failed:', refused)
+    expect(b.sessions.retain).not.toHaveBeenCalled()
+
+    // The hero picker reaches the same creation through openWorkspace; a
+    // failure that is not a Host refusal keeps its own message.
+    b.sessions.create.mockRejectedValueOnce(new Error('create failed'))
+    await expect(b.uiWorkspace.openWorkspace(wid('a'))).rejects.toThrow('create failed')
+    expect(b.notify).toHaveBeenLastCalledWith({ kind: 'createFailed', message: 'create failed' })
+    b.sessions.create.mockRejectedValueOnce('rejected without an Error')
+    await expect(b.uiWorkspace.openWorkspace(wid('a'))).rejects.toBe('rejected without an Error')
+    expect(b.notify).toHaveBeenLastCalledWith({ kind: 'createFailed', message: 'rejected without an Error' })
+    expect(b.notify).toHaveBeenCalledTimes(3)
   })
 
   it('uses only an explicit Workspace or the recent-Workspace policy for new Sessions', async () => {

@@ -42,6 +42,7 @@ describe('desktop macOS release signature', () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
     const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
     expect(portablePath(config.directories.output)).toContain('/.desktop-build/targets/mac-arm64/artifacts')
+    expect(config.mac.extendInfo.NSMicrophoneUsageDescription).toContain('microphone')
     expect(config.extraResources).toHaveLength(2)
     expect(config.extraResources[0]?.to).toBe('runtime')
     expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
@@ -55,7 +56,7 @@ describe('desktop macOS release signature', () => {
     expect(dshNodeModules.to).toBe('dsh/node_modules')
     expect(config.asarUnpack).toEqual(expect.arrayContaining([
       '**/*.{node,dylib,dll,so,exe}',
-      '**/@vscode/ripgrep/bin/rg',
+      '**/@vscode/ripgrep-*/bin/rg',
     ]))
     expect(config).toMatchObject({
       appId: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,

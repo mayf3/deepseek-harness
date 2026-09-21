@@ -25,7 +25,7 @@ function derivedDocumentStore(remote: object) {
 import { en, zh } from '../src/client/locales.ts'
 import { CurrentVersionRow } from '../src/client/CurrentVersionRow.tsx'
 import { DesktopUpdateBadge } from '../src/client/DesktopUpdateIndicator.tsx'
-import type { DesktopUpdateView } from '../src/client/desktop-update-bridge.ts'
+import type { DesktopUpdateView } from '../src/types.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllEnvs() })
 
