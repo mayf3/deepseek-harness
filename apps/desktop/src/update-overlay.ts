@@ -13,7 +13,7 @@ export function createUpdateOverlay(parent: BrowserWindow, preload: string, titl
     parent, modal: nativeModal || process.platform !== 'darwin', show: false, frame: false, transparent: true,
     ...parent.getContentBounds(), resizable: false, minimizable: false, maximizable: false,
     skipTaskbar: true, hasShadow: false, title,
-    webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, devTools: false },
+    webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true },
   })
   // macOS native modals animate the entire viewport as a sheet.
   const focus = (): void => { if (!window.isDestroyed()) window.focus() }
