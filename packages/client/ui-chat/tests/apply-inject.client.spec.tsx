@@ -23,12 +23,6 @@ import { createChatStore } from '../src/client/stores.ts'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
 import type { LinkOpeningRowInjected } from '../src/client/settings/LinkOpeningRow.tsx'
 
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
-  interface ConversationGroupDataMap {
-    chat: number
-  }
-}
-
 usePinnedBrowserLanguages('zh-CN')
 
 const ROOT = 'root-1' as SessionId
@@ -56,7 +50,7 @@ function sessionFakeFor() {
   } satisfies SessionBehaviorOverrides
 }
 
-async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true) {
+async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true, withProcessGroups = true) {
   const runtime = await SlotTestRuntime.create()
   const chatSettings = stubConfigForm<ChatSettings>()
   if (initialSettings !== undefined) chatSettings.publish({ value: initialSettings })
@@ -107,7 +101,10 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true)
     'settings.general.item': { kind: 'list', scope: 'root' },
   }, (_props: { renderSlot?: unknown }) => null)
   await runtime.mount({ inject: [...injectConversation], apply: applyConversation })
+  const registerGroups = withProcessGroups ? undefined
+    : vi.spyOn(runtime.ctx.uiConversation.groups, 'register').mockImplementation(() => () => {})
   const chat = await runtime.mount({ inject: [...injectChat], apply: applyChat })
+  registerGroups?.mockRestore()
   runtime.renderRoot()
 
   const chatViewApi = (reference: SessionReference) => {
@@ -133,7 +130,7 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true)
 
 describe('Chat inject API', () => {
   it('resolves keyed Group sources across registration, activation, and removal', async () => {
-    const b = await bench()
+    const b = await bench(undefined, true, false)
     try {
       const { injected } = b.chatViewApi(b.rootReference)
       const key = 'injected-group' as GroupKey
@@ -145,13 +142,15 @@ describe('Chat inject API', () => {
         update: () => null,
         buildGroups: () => ({
           entries: [{ kind: 'group', key }],
-          groups: { kind: 'replace', snapshots: [{ key, data: 1, members: [] }] },
+          groups: { kind: 'replace', snapshots: [{
+            key, data: { turn: 1, closed: true, summary: { counts: [], running: undefined, runningDetail: '' } }, members: [],
+          }] },
         }),
       })
       await Promise.resolve()
       conversation.binding(b.rootReference.binding).activate('chat')
       const source = injected.keyedHooks.chatGroup(key)
-      expect(source?.getSnapshot()?.data).toBe(1)
+      expect(source?.getSnapshot()?.data.turn).toBe(1)
       expect(injected.keyedHooks.chatGroup(key)).toBe(source)
       remove()
       await Promise.resolve()

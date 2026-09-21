@@ -66,34 +66,20 @@ The completed-turn action footer follows the recorded Turn end. Its action row s
 <a id="turn-process-folding"></a>
 ## Turn Process Folding
 
-Each reasoning row starts collapsed, including during streaming and in reasoning-only replies. Clicking the row opens or closes its complete Markdown; incoming answer text, Tool calls, and stream completion preserve that choice unless the enclosing Turn hides the row. Expanded reasoning uses compact secondary typography: headings add bold weight without changing text size, line height, or color. While streaming, all modes preview the latest paragraph whose first line ends with a newline. Further text in that paragraph does not change the preview; an unfinished single line has no preview. One or more blank lines separate paragraphs. The one-line preview fades at the right edge. After settlement, Compact hides the preview, while Detailed and Expanded show the full text's first line.
-
-Reasoning rows retain the disclosure's callback, icon, and unchanged content references. Each reasoning row selects its preview visibility from the display policy; mode changes toggle CSS display without unmounting the collapsed summary or updating its parent Assistant renderer. Full Markdown elements are created only while expanded.
-
-Settings → General → Work details stores `ui-chat.transcriptView` as `compact` (default), `detailed`, or `expanded`. A saved legacy `normal` value reads as `detailed` without being written back; it is not offered as an option.
-
-| Behavior | Compact | Detailed | Expanded |
-|---|---|---|---|
-| Settled reasoning preview | Think title only | First line | First line |
-| Individual reasoning and tool bodies | Manual expansion | Manual expansion | Manual expansion |
-| Eligible completed-Turn process | Folded by default | Folded by default | Folded by default |
-
-While a Turn is open, its process rows remain in the transcript; individual reasoning and tool disclosures retain their own expansion state. At `turn/end`, its latest Step becomes the final-answer boundary only when it contains non-blank text, an image, or an unknown visible block—and no Tool-call block. If that Turn's `turn/start` is loaded, preceding reasoning, earlier Assistant material, Tool rows, and Retry rows fold by default. Folding eligibility is per Turn: a complete Turn can fold while Load earlier remains available, and a Turn whose start is missing keeps its process content visible until that start arrives. A closed Turn with no final answer also keeps all process evidence visible.
-
-The control reports Turn-wide durable counts for non-subagent Tool calls, reply-bearing Assistant messages before the final answer, and subagent delegation calls. Zero-valued segments are omitted; the Tool and subagent figures are mutually exclusive, and Context injection contributes no count. When all three counts are zero, the process still folds and the control reads `Thought for a while`. A full-width divider below the summary separates it from the answer or expanded process rows. User and steering messages, trigger notices, error, max-token, and turn-tail rows stay outside. A newly available process control preserves existing row order, with opening human input before the control and process rows.
-
-Stable Chat Node Seats keep every renderer mounted, hidden members add no flow spacing, and a closed control sits 8px above its answer only when no independent input intervenes. Completion collapse does not depend on tail-follow position, so a reader above the tail may see the transcript reflow. An automatic collapse that would hide keyboard focus keeps the process open and leaves focus in place; a manual close focuses the process control before hiding its members. The session-scoped store records only manually expanded Turn-and-answer-Step generations; a different answer generation starts collapsed. Switching work-details modes preserves manual expansion.
-
-Non-human Turn triggers are independent notices classified from durable Inbox claims and source fields. Their expanded bodies retain original content, and whole-Turn folding does not hide them.
+Work-details modes control process-group display and reasoning previews; eligible completed Turns fold their process without hiding the final answer. The [business-rule reference](src/client/conversation-nodes/README.md#display-modes) contains the mode table, title behavior, whole-Turn eligibility, clocks, and disclosure resets.
 
 -----
 
 <a id="grouped-rendering"></a>
 ## Grouped rendering
 
-Chat can render optional Conversation Group Definition output as a mixed `node`/`group` root list. A group seat subscribes only to its member array; each member retains the existing keyed Node source and renderer. `groupPart` reaches that renderer as a business-owned part selector, with distinct DOM anchors for reading-position restoration; Turn navigation can still address the original Node key and land on its first visible part. Presentation modes do not select the root branch or alter member parents. No process Group Definition is registered by this package yet; the default transcript remains ungrouped.
+Chat registers its process Group Definition through `uiConversation.groups`. React renders the mixed `node`/`group` root sequence through stable Group and Node seats; group headers subscribe to data separately from member arrays. [Process-group business rules](src/client/conversation-nodes/README.md#process-grouping) define segmentation and activity summaries.
 
-The group seat uses `div` with `display: contents`: it retains the DOM parent without creating a layout box. CSS inheritance remains available, but child and sibling selectors still follow the DOM tree. The existing direct-child spacing selectors do not reach group members. Business styles must adapt spacing within and across groups, including hidden or empty members and the answer-spacing exception, and own any measurable body or scroll container. CSS variables do not belong in the Group Definition.
+`groupPart` selects reasoning or response in the Assistant renderer without copying Node payloads. Each part has a distinct DOM anchor for reading-position restoration; Turn navigation addresses the original Node key and lands on its first visible part. Group sources, member parents, and keys survive display-mode changes and newly loaded prefixes that extend an intact group. The source Node Store remains the only Node-data owner, and a replaced Builder rebinds keyed subscriptions without remounting seats. Mode changes retain size observers and reuse the Turn-state selector.
+
+The process group uses a stable `div` layout box, a scroll body, and an uncapped content box that reports growth inside the body. Business styles must adapt spacing within and across groups, including hidden or empty members and the answer-spacing exception. CSS variables do not belong in the Group Definition.
+
+Each group owns local `useDisclosure` state that survives mode changes while its component stays mounted.
 
 The Chat-node slot injects a reset-bound `useDisclosure` Hook for reasoning and tools. Intermediate renderers forward it without subscribing; each invocation owns independent open state. When an enclosing Turn actually hides a process member, its seat resets those disclosures without replacing component keys or changing the Hook reference. Display-mode changes preserve their open state.
 
@@ -111,7 +97,9 @@ While the pointer is outside the rail, automatic follow keeps the rail still whe
 <details>
 <summary>Scroll implementation — click to expand</summary>
 
-`useChatViewport` owns turn-aware DOM reads, clamped writes, and native events. `useChatReading` owns follow policy, sampled reader input, and semantic memory; `useChatNavigation` owns turn jumps and history-prepend preservation. `useChatScroll` coordinates their committed inputs. Explicit navigation carries its measured landing into reading policy, so it does not rediscover the known target with a hit test.
+`useChatViewport` owns turn-aware DOM reads, clamped writes, native events, and one retained paging anchor. For Load older, Node and Group seats mark eligible anchors from their existing disclosure state. The viewport selects the first nonempty, unhidden marker in transcript order without hit testing or geometry-based search, then measures that element and its scroll containers. It compensates the anchor's capped group first, then gives the remaining displacement to the transcript scrollport. Commits and later content resizes reuse that anchor; a remounted row is resolved by the same semantic key. Compensation stays within the actual scroll ranges without adding bottom space.
+
+`useChatReading` owns follow policy, sampled reader input, and semantic memory; `useChatNavigation` owns turn jumps and requests preservation from the viewport. Reader input releases the paging anchor; while a page is still loading, `scrollend` captures the reader's new position. `useChatScroll` coordinates their committed inputs. Explicit navigation carries its measured landing into reading policy, so it does not rediscover the known target with a hit test.
 
 </details>
 
@@ -130,7 +118,6 @@ None; Chat presentation does not assemble or mutate provider requests.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Secondary process grouping is not implemented** — Detailed and Expanded currently display the same Chat content. Expanded retains whole-Turn folding and does not automatically open individual reasoning or tool bodies.
 
 - **Developer messages are not displayed** — presentation is intentionally deferred; encountering `developer/message` throws instead of rendering a fallback row.
 

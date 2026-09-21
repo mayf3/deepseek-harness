@@ -41,7 +41,7 @@ function derivePresentation(
   for (const key of keys) {
     const node = nodes.get(key) as ChatNode | undefined
     if ((node?.kind === 'user' || node?.kind === 'steering' || node?.kind === 'turn-trigger')
-      && node.anchorSeq < spec.controlAnchorSeq) {
+      && (spec.controlAnchorSeq === location.turn.start?.seq || node.anchorSeq < spec.controlAnchorSeq)) {
       openingHumanAnchor = Math.min(openingHumanAnchor ?? node.anchorSeq, node.anchorSeq)
     }
   }

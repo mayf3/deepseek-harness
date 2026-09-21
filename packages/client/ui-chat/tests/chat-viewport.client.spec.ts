@@ -37,6 +37,7 @@ function fixture() {
     element.dataset.chatNodeKey = nodeKey
     element.dataset.chatAnchorKey = part === undefined ? nodeKey : JSON.stringify([nodeKey, part])
     element.dataset.chatFlowKey = element.dataset.chatAnchorKey
+    element.dataset.chatPagingAnchor = ''
     element.dataset.chatTurn = '1'
     parent.append(element)
     vi.spyOn(element, 'getBoundingClientRect').mockImplementation(() =>
@@ -45,6 +46,73 @@ function fixture() {
   }
   return { column, viewport, group, row, prepend: (height: number) => { prependedHeight += height } }
 }
+
+it.each([1, 1000])('selects the first paging marker without measuring other rows (%s later rows)', (count) => {
+  const h = fixture()
+  const unmarked = h.row(h.column, 'expanded-control', 0)
+  delete unmarked.dataset.chatPagingAnchor
+  const first = h.row(h.column, 'first', -100)
+  const later = Array.from({ length: count }, (_, index) => h.row(h.column, `later-${index}`, 10 + index * 60))
+  for (const row of [unmarked, ...later]) {
+    vi.mocked(row.getBoundingClientRect).mockImplementation(() => { throw new Error('measured an unselected row') })
+  }
+  const hitTest = vi.fn(() => { throw new Error('paging used a visual hit test') })
+  Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: hitTest })
+  const candidates = vi.spyOn(h.column, 'querySelectorAll')
+
+  h.viewport.beginPaging()
+
+  expect(hitTest).not.toHaveBeenCalled()
+  expect(candidates).not.toHaveBeenCalled()
+  expect(first.getBoundingClientRect).toHaveBeenCalledTimes(1)
+  expect(h.column.getBoundingClientRect).toHaveBeenCalledTimes(1)
+  expect(h.viewport.preserve()?.position).toMatchObject({ anchorKey: 'first', anchorTop: -100 })
+})
+
+it('skips hidden and empty paging markers without reading their geometry', () => {
+  const h = fixture()
+  const hidden = h.row(h.column, 'hidden', 0)
+  hidden.setAttribute('hidden', 'until-found')
+  const parent = h.group()
+  parent.setAttribute('hidden', 'until-found')
+  const child = h.row(parent, 'hidden-child', 20)
+  const empty = h.row(h.column, 'empty', 40)
+  empty.textContent = ''
+  const visible = h.row(h.column, 'visible', 60)
+  for (const row of [hidden, child, empty]) {
+    vi.mocked(row.getBoundingClientRect).mockImplementation(() => { throw new Error('measured an ineligible row') })
+  }
+
+  h.viewport.beginPaging()
+
+  expect(visible.getBoundingClientRect).toHaveBeenCalledTimes(1)
+  expect(h.viewport.preserve()?.position?.anchorKey).toBe('visible')
+})
+
+it('does not measure the viewport when no paging marker is available', () => {
+  const h = fixture()
+  h.viewport.beginPaging()
+  expect(h.viewport.preserving).toBe(false)
+  expect(h.column.getBoundingClientRect).not.toHaveBeenCalled()
+})
+
+it('keeps a collapsed header stationary for hidden growth and content inserted before it', () => {
+  const h = fixture()
+  const header = h.row(h.column, 'collapsed-header', 40)
+  const body = document.createElement('div')
+  body.setAttribute('hidden', 'until-found')
+  header.append(body)
+  h.row(body, 'hidden-member', 70)
+  h.viewport.beginPaging()
+
+  h.row(body, 'older-hidden-member', 50)
+  expect(h.viewport.preserve()?.metrics.top).toBe(0)
+  expect(header.getBoundingClientRect().top).toBe(40)
+
+  h.prepend(200)
+  expect(h.viewport.preserve()?.metrics.top).toBe(200)
+  expect(header.getBoundingClientRect().top).toBe(40)
+})
 
 it('captures a grouped member and preserves its reading position after history grows above it', () => {
   const h = fixture()
@@ -56,10 +124,57 @@ it('captures a grouped member and preserves its reading position after history g
   const position = h.viewport.capturePosition()
   expect(position).toEqual({ anchorKey: 'second', anchorTop: 30, scrollTop: 100 })
   if (position === null) throw new Error('expected a grouped reading anchor')
+  h.viewport.beginPreserving(position)
   h.prepend(200)
-  const landing = h.viewport.preserve(position)
+  const landing = h.viewport.preserve()
   expect(landing?.metrics.top).toBe(300)
   expect(landing?.position).toEqual({ anchorKey: 'second', anchorTop: 30, scrollTop: 300 })
+})
+
+it('anchors an open group to its old content even when the pointer ray hits its header', () => {
+  const h = fixture()
+  const group = h.group()
+  group.dataset.chatAnchorKey = 'group'
+  const header = document.createElement('button')
+  group.append(header)
+  const body = document.createElement('div')
+  body.dataset.stepProcessBody = ''
+  group.append(body)
+  const content = document.createElement('div')
+  content.dataset.stepProcessContent = ''
+  body.append(content)
+  h.row(content, 'old-member', 40)
+  Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: () => [header] })
+
+  const position = h.viewport.capturePosition()
+  expect(position?.anchorKey).toBe('old-member')
+  if (position === null) throw new Error('expected a member anchor')
+  h.viewport.beginPreserving(position)
+  h.prepend(120)
+  expect(h.viewport.preserve()?.metrics.top).toBe(120)
+  body.setAttribute('hidden', 'until-found')
+  expect(h.viewport.capturePosition()?.anchorKey).toBe('group')
+})
+
+it.each([false, true])('ignores a relocating Turn control when paging reveals a steering boundary (hit=%s)', (hit) => {
+  const h = fixture()
+  const control = h.row(h.column, 'turn-control', 0)
+  control.dataset.chatFlowKind = 'turn-process'
+  vi.mocked(control.getBoundingClientRect).mockImplementation(() => new DOMRect(0, -h.column.scrollTop, 500, 24))
+  const group = h.group()
+  group.dataset.chatAnchorKey = 'group'
+  const old = h.row(group, 'old-message', 60)
+  if (hit) Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: () => [control] })
+
+  const position = h.viewport.capturePosition()
+  h.viewport.beginPreserving(position)
+  const steering = h.row(h.column, 'steering', 30)
+  h.column.insertBefore(steering, group)
+  h.prepend(200)
+  h.viewport.preserve()
+  expect(old.getBoundingClientRect().top).toBe(60)
+  expect(h.column.scrollTop).toBe(200)
+  expect(position?.anchorKey).toBe('old-message')
 })
 
 it('navigates by Node identity while retaining a distinct visible part anchor', () => {
@@ -111,4 +226,177 @@ it('retains the original capture and Turn navigation path for ungrouped Nodes', 
   h.viewport.updateTurns([{ turn: 1, anchorKey: 'whole', prompt: '', response: '' }])
   expect(h.viewport.capturePosition()?.anchorKey).toBe('whole')
   expect(h.viewport.scrollToTurn(1)?.metrics.top).toBe(66)
+})
+
+it('retains a semantic paging row when segmentation remounts its DOM', () => {
+  const h = fixture()
+  const original = h.row(h.group(), 'retained', 90)
+  h.viewport.beginPreserving()
+  original.remove()
+  const replacement = h.row(h.group(), 'retained', 290)
+
+  expect(h.viewport.preserve()?.metrics.top).toBe(200)
+  expect(replacement.getBoundingClientRect().top).toBe(90)
+  h.prepend(100)
+  expect(h.viewport.preserve()?.metrics.top).toBe(300)
+  expect(replacement.getBoundingClientRect().top).toBe(90)
+})
+
+function nestedFixture(height: number, cap: number, trailing = 1000, viewportHeight = 300) {
+  const scroller = document.createElement('div')
+  scroller.dataset.conversationScroll = ''
+  const column = document.createElement('div')
+  const body = document.createElement('div')
+  body.dataset.stepProcessBody = ''
+  const content = document.createElement('div')
+  content.dataset.stepProcessContent = ''
+  const row = document.createElement('div')
+  row.dataset.chatAnchorKey = 'retained'
+  row.dataset.chatPagingAnchor = ''
+  row.textContent = 'retained content'
+  content.append(row)
+  body.append(content)
+  column.append(body)
+  scroller.append(column)
+  document.body.append(scroller)
+  let outerTop = 0
+  let innerTop = 0
+  let prefix = 0
+  const bodyHeight = () => Math.min(height + prefix, cap)
+  const columnHeight = () => 100 + bodyHeight() + trailing
+  Object.defineProperties(scroller, {
+    clientHeight: { value: viewportHeight },
+    scrollHeight: { get: () => Math.max(viewportHeight, columnHeight()) },
+    scrollTop: {
+      get: () => outerTop,
+      set: (value: number) => { outerTop = Math.max(0, Math.min(value, scroller.scrollHeight - viewportHeight)) },
+    },
+  })
+  Object.defineProperties(body, {
+    clientHeight: { get: bodyHeight },
+    scrollHeight: { get: () => height + prefix },
+    scrollTop: {
+      get: () => innerTop,
+      set: (value: number) => { innerTop = Math.max(0, Math.min(value, body.scrollHeight - bodyHeight())) },
+    },
+  })
+  vi.spyOn(scroller, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 0, 500, viewportHeight))
+  vi.spyOn(column, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, -outerTop, 500, columnHeight()))
+  vi.spyOn(body, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 100 - outerTop, 500, bodyHeight()))
+  vi.spyOn(content, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 100 - outerTop - innerTop, 500, height + prefix))
+  vi.spyOn(row, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 200 + prefix - outerTop - innerTop, 500, 40))
+  const observed = new Set<Element>()
+  let notifyResize = () => {}
+  class Observer implements ResizeObserver {
+    constructor(callback: ResizeObserverCallback) { notifyResize = () => { callback([], this) } }
+    observe(target: Element): void { observed.add(target) }
+    unobserve(target: Element): void { observed.delete(target) }
+    disconnect(): void { observed.clear() }
+  }
+  vi.stubGlobal('ResizeObserver', Observer)
+  const viewport = new ChatViewport()
+  viewport.attach(column, column)
+  viewport.connect({ scroll: () => {}, scrollEnd: () => {}, resize: () => { viewport.preserve() }, interact: () => {} })
+  onTestFinished(() => {
+    viewport.detach()
+    scroller.remove()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+  const begin = () => {
+    const top = row.getBoundingClientRect().top
+    viewport.beginPreserving({ anchorKey: 'retained', anchorTop: top, scrollTop: scroller.scrollTop })
+    return top
+  }
+  return {
+    scroller, column, body, content, row, viewport, observed, begin,
+    prepend: (amount: number) => { prefix += amount },
+    resize: () => { notifyResize() },
+  }
+}
+
+it('measures only the selected member and its inner and outer containers once when paging starts', () => {
+  const h = nestedFixture(600, 400)
+  h.viewport.beginPaging()
+  expect(h.row.getBoundingClientRect).toHaveBeenCalledTimes(1)
+  expect(h.body.getBoundingClientRect).toHaveBeenCalledTimes(1)
+  expect(h.scroller.getBoundingClientRect).toHaveBeenCalledTimes(1)
+  expect(h.column.getBoundingClientRect).not.toHaveBeenCalled()
+  expect(h.content.getBoundingClientRect).not.toHaveBeenCalled()
+})
+
+it.each([
+  { height: 200, cap: 400, prefix: 100, inner: 0, expectedInner: 0, expectedOuter: 180 },
+  { height: 300, cap: 400, prefix: 200, inner: 0, expectedInner: 100, expectedOuter: 180 },
+  { height: 600, cap: 400, prefix: 200, inner: 40, expectedInner: 240, expectedOuter: 80 },
+  { height: 600, cap: Infinity, prefix: 200, inner: 0, expectedInner: 0, expectedOuter: 280 },
+])('preserves one anchor across inner and outer scrolling (height=$height, cap=$cap)', (test) => {
+  const h = nestedFixture(test.height, test.cap)
+  h.scroller.scrollTop = 80
+  h.body.scrollTop = test.inner
+  const top = h.begin()
+  h.prepend(test.prefix)
+  h.viewport.preserve()
+  expect(h.body.scrollTop).toBe(test.expectedInner)
+  expect(h.scroller.scrollTop).toBe(test.expectedOuter)
+  expect(h.row.getBoundingClientRect().top).toBe(top)
+})
+
+it.each(['wheel', 'touchstart', 'pointerdown', 'keydown', 'beforematch'])(
+  'retains the same paging anchor through later content resizes until %s', (intent) => {
+    const h = nestedFixture(200, 400)
+    h.scroller.scrollTop = 80
+    const top = h.begin()
+    expect(h.observed.has(h.content)).toBe(true)
+    for (const amount of [100, 100, 100]) {
+      h.prepend(amount)
+      h.resize()
+      expect(h.row.getBoundingClientRect().top).toBe(top)
+    }
+    h.body.dispatchEvent(new Event(intent, { bubbles: true }))
+    expect(h.viewport.preserving).toBe(false)
+    expect(h.observed.has(h.content)).toBe(false)
+    const previousTop = h.scroller.scrollTop
+    h.prepend(100)
+    h.resize()
+    expect(h.scroller.scrollTop).toBe(previousTop)
+  })
+
+it('does not compensate twice when native inner anchoring already held the old row', () => {
+  const h = nestedFixture(600, 400)
+  h.scroller.scrollTop = 80
+  h.body.scrollTop = 40
+  const top = h.begin()
+  h.prepend(200)
+  h.body.scrollTop = 240
+  h.viewport.preserve()
+  expect(h.body.scrollTop).toBe(240)
+  expect(h.scroller.scrollTop).toBe(80)
+  expect(h.row.getBoundingClientRect().top).toBe(top)
+})
+
+it.each([
+  { viewportHeight: 800, prefix: 100, outer: 0 },
+  { viewportHeight: 450, prefix: 200, outer: 50 },
+])('clamps paging to the natural scroll range without adding space (viewport=$viewportHeight)', ({ viewportHeight, prefix, outer }) => {
+  const h = nestedFixture(200, 400, 0, viewportHeight)
+  h.begin()
+  h.prepend(prefix)
+  const landing = h.viewport.preserve()
+  expect(h.scroller.scrollTop).toBe(outer)
+  expect(h.row.getBoundingClientRect().top).toBe(200 + prefix - outer)
+  expect(landing?.position?.anchorTop).toBe(h.row.getBoundingClientRect().top)
+  expect(h.column.getAttribute('style')).toBeNull()
+  h.resize()
+  expect(h.scroller.scrollTop).toBe(outer)
+})
+
+it('releases a removed paging row without navigating to unrelated content', () => {
+  const h = nestedFixture(600, 400)
+  h.scroller.scrollTop = 80
+  h.begin()
+  h.row.remove()
+  expect(h.viewport.preserve()).toBeNull()
+  expect(h.viewport.preserving).toBe(false)
+  expect(h.scroller.scrollTop).toBe(80)
 })

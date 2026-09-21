@@ -63,6 +63,11 @@ export function useChatScroll(input: ChatScrollInput): ChatScrollState {
       reading.restore()
       return
     }
+    if (ownInput) {
+      navigation.cancel()
+      reading.followTail()
+      return
+    }
     if (navigation.contentCommitted()) {
       navigation.reconcile()
       return
@@ -71,7 +76,7 @@ export function useChatScroll(input: ChatScrollInput): ChatScrollState {
       || current.firstSeq !== previous.firstSeq || current.lastKey !== previous.lastKey
       || current.order.length !== previous.order.length || current.running !== previous.running
       || current.steeringId !== previous.steeringId || current.submissionId !== previous.submissionId
-    if (ownInput || (tipChanged && reading.followingTail)) {
+    if (tipChanged && reading.followingTail) {
       navigation.cancel()
       reading.followTail()
     } else navigation.reconcile()
@@ -80,9 +85,13 @@ export function useChatScroll(input: ChatScrollInput): ChatScrollState {
   useLayoutEffect(() => {
     const disconnectViewport = viewport.connect({
       scroll: reading.onScroll,
-      scrollEnd: reading.onScrollEnd,
+      scrollEnd: () => {
+        reading.onScrollEnd()
+        navigation.readerSettled()
+      },
+      interact: () => { navigation.cancel() },
       resize: () => {
-        reading.onResize()
+        if (!navigation.contentCommitted()) reading.onResize()
         navigation.reconcile()
       },
     })

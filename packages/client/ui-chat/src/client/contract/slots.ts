@@ -131,6 +131,7 @@ export interface ChatNodeOwnerProps {
 
 /** Shared presentation state for one Turn-process answer generation. */
 export interface TurnProcessOwnerProps {
+  readonly hasContent: boolean
   readonly spec: TurnProcessSpec
   readonly foldable: boolean
   readonly open: boolean
