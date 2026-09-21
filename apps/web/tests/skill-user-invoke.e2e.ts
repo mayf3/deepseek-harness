@@ -30,7 +30,7 @@ const UI_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'ui-expanded.expected.md')
 const MODE = webSnapshotMode()
 
 const SKILL_NAME = 'user-invoke-demo'
-const FILE_NAME = 'this-is-a-very-long-filename-for-testing-user-message-file-references-and-preview-layout.md'
+const FILE_NAME = 'meeting notes-this-is-a-very-long-filename-for-testing-user-message-file-references-and-preview-layout.md'
 const ARGS_TEXT = `@"${FILE_NAME}" and confirm the fixture wiring`
 const REPLY = 'USER_INVOKE_REPLY acknowledged; following the injected skill.'
 
