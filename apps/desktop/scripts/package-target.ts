@@ -43,8 +43,8 @@ const DESKTOP_UPLOAD_CREDENTIAL_ENV_NAMES = new Set([
   'DOWNLOAD_PROD_COS_SECRET_KEY',
 ])
 
-/** `--release-id` value that numbers a build after the ones already taken. */
-const AUTOMATIC_RELEASE_ID = 'auto'
+/** `--build-version` value that numbers a build after the ones already taken. */
+const AUTOMATIC_BUILD_VERSION = 'auto'
 
 /** Fixed platform and architecture identifiers exposed by package scripts. */
 export type DesktopPackageTargetName = 'mac-arm64' | 'mac-x64' | 'win-x64'
@@ -198,7 +198,7 @@ interface DesktopPackageInvocation {
   readonly unsigned: boolean
   readonly check: boolean
   /** Build identifier to publish under, when this build does not publish the product version. */
-  readonly releaseId: string | undefined
+  readonly requestedBuildVersion: string | undefined
 }
 
 function hostTargetName(platform: NodeJS.Platform, arch: string): DesktopPackageTargetName {
@@ -220,23 +220,25 @@ export function parseDesktopPackageInvocation(
   hostArch: string = process.arch,
 ): DesktopPackageInvocation {
   const { values, positionals } = parseArgs({
-    args: [...argv],
+    // `pnpm run <script> -- --build-version x` forwards the separator itself, which would otherwise
+    // turn every following option into a positional and read as a second target.
+    args: argv[0] === '--' ? argv.slice(1) : [...argv],
     allowPositionals: true,
     options: {
       dir: { type: 'boolean', default: false },
       'prepare-only': { type: 'boolean', default: false },
       unsigned: { type: 'boolean', default: false },
       check: { type: 'boolean', default: false },
-      'release-id': { type: 'string' },
+      'build-version': { type: 'string' },
     },
   })
   if (positionals.length > 1) throw new Error('desktop package: expected at most one target')
   const name = positionals[0] ?? hostTargetName(hostPlatform, hostArch)
   if (values.unsigned && name !== 'win-x64') throw new Error('desktop package: --unsigned requires win-x64')
   if (values.unsigned && values['prepare-only']) throw new Error('desktop package: --unsigned cannot use --prepare-only')
-  const releaseId = values['release-id']?.trim()
-  if (values['release-id'] !== undefined && (releaseId === undefined || releaseId === '')) {
-    throw new Error('desktop package: --release-id requires a value')
+  const requestedBuildVersion = values['build-version']?.trim()
+  if (values['build-version'] !== undefined && (requestedBuildVersion === undefined || requestedBuildVersion === '')) {
+    throw new Error('desktop package: --build-version requires a value')
   }
   return {
     target: resolveDesktopPackageTarget(name, hostPlatform, hostArch),
@@ -244,7 +246,7 @@ export function parseDesktopPackageInvocation(
     prepareOnly: values['prepare-only'],
     unsigned: values.unsigned,
     check: values.check,
-    releaseId,
+    requestedBuildVersion,
   }
 }
 
@@ -310,11 +312,11 @@ async function main(): Promise<void> {
   const environment = loadDesktopPackageEnvironment(target.platform)
   const productVersion = packageVersion(join(APP_ROOT, 'package.json'), 'desktop package')
   // Resolving before any build step means a malformed version fails in seconds rather than after the packaging run.
-  const buildVersion = invocation.releaseId === undefined
+  const buildVersion = invocation.requestedBuildVersion === undefined
     ? resolveDesktopBuildVersion(environment, productVersion)
-    : invocation.releaseId === AUTOMATIC_RELEASE_ID
+    : invocation.requestedBuildVersion === AUTOMATIC_BUILD_VERSION
       ? await suggestDesktopBuildVersion({ productVersion, target: target.name, environment })
-      : validateDesktopBuildVersion(invocation.releaseId, productVersion)
+      : validateDesktopBuildVersion(invocation.requestedBuildVersion, productVersion)
   environment[DESKTOP_BUILD_VERSION_ENV] = buildVersion
   if (invocation.check) {
     validateDesktopPackageEnvironment(environment, target, invocation)

@@ -170,8 +170,10 @@ export function createElectronBuilderConfig(
         await writeMacOSAppUpdateConfig(resourcesDir, resolveMacOSAppUpdateFeed(context.packager.config.publish),
           context.packager.appInfo.updaterCacheDirName)
       }
+      // The bundled runtime is the dsh package at the product version; a build version extends that
+      // on the shell alone, which is why the app reports the two separately to the update policy.
       await verifyDesktopRuntime(buildPaths.dsh,
-        context.packager.appInfo.version, { platform: resolvedPlatform, arch: resolvedArch })
+        productVersion, { platform: resolvedPlatform, arch: resolvedArch })
       // Unsigned Windows builds skip electron-builder's afterSign hook.
       if (packagesWindows && unsigned) await verifyWindowsAsarUnpack(buildPaths.dsh, resourcesDir, windowsCode)
     },
