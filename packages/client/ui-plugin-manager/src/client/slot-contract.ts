@@ -19,8 +19,19 @@ export interface PluginConfigViewProps {
   readonly view: 'summary' | 'page'
 }
 
+/** One user-requested bundle activation and navigation to its configuration page. */
+export interface PluginActivationOwnerProps {
+  readonly packageName: string
+  /** Dismiss guidance for this activation. */
+  readonly onDismiss: () => void
+  /** Dismiss guidance and open this bundle's detail page. */
+  readonly onOpenDetails: () => void
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    /** Optional guidance after the user enables a bundle from the list, keyed by npm package name. */
+    'plugins.bundle.activation': { kind: 'keyed'; scope: 'root'; owner: PluginActivationOwnerProps }
     /**
      * One official plugin the Plugins page lists in its Official group after
      * the official bundles: `label` is the card's title and `order` its place.

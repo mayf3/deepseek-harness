@@ -12,6 +12,7 @@ import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runt
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   apply as applyConversation, inject as injectConversation,
+  type GroupKey,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
   apply as applyChat, inject as injectChat, type ChatViewInjected,
@@ -21,6 +22,12 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { createChatStore } from '../src/client/stores.ts'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
 import type { LinkOpeningRowInjected } from '../src/client/settings/LinkOpeningRow.tsx'
+
+declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+  interface ConversationGroupDataMap {
+    chat: number
+  }
+}
 
 usePinnedBrowserLanguages('zh-CN')
 
@@ -127,6 +134,36 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true)
 }
 
 describe('Chat inject API', () => {
+  it('resolves keyed Group sources across registration, activation, and removal', async () => {
+    const b = await bench()
+    try {
+      const { injected } = b.chatViewApi(b.rootReference)
+      const key = 'injected-group' as GroupKey
+      expect(injected.keyedHooks.chatGroup(key)).toBeUndefined()
+      const conversation = b.runtime.ctx.uiConversation
+      const remove = conversation.groups.register({
+        kind: 'test-group', target: 'chat',
+        create: () => null,
+        update: () => null,
+        buildGroups: () => ({
+          entries: [{ kind: 'group', key }],
+          groups: { kind: 'replace', snapshots: [{ key, data: 1, members: [] }] },
+        }),
+      })
+      await Promise.resolve()
+      conversation.binding(b.rootReference.binding).activate('chat')
+      const source = injected.keyedHooks.chatGroup(key)
+      expect(source?.getSnapshot()?.data).toBe(1)
+      expect(injected.keyedHooks.chatGroup(key)).toBe(source)
+      remove()
+      await Promise.resolve()
+      expect(source?.getSnapshot()).toBeUndefined()
+      expect(injected.keyedHooks.chatGroup(key)).toBeUndefined()
+    } finally {
+      await b.runtime.dispose()
+    }
+  })
+
   it('loads older history and forks through the Session Controller', async () => {
     const b = await bench()
     const { injected } = b.chatViewApi(b.rootReference)

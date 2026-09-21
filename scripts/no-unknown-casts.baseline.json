@@ -50,7 +50,6 @@
   },
   "apps/desktop/tests/host-update-tasks.spec.ts": {
     "46197efe57255c9d92d64476470c89d0602c7333bf98ad75509bf43c1b357a3b": 1,
-    "4c5672583f1c38f4fb7dd757e94f8424866a00aa5c9a9d3dfc07d45718fa04c4": 1,
     "f6c86f29edc554d5fda72589a77b006468b174a428a5345ce7e88dec698b9829": 1
   },
   "apps/desktop/tests/main-startup.spec.ts": {
@@ -586,10 +585,6 @@
   "packages/client/ui-deliverables/tests/present-open.host.spec.ts": {
     "556e0d31b686cc80ef5c9562dad5534556f1b55ce1ce20491aa39eda98255364": 1
   },
-  "packages/client/ui-deliverables/tests/review-tab.client.spec.tsx": {
-    "52e0f8e51efd9a65974af6ad6868c7e01fff0d6faeb669e9da1bf91de8a2d422": 1,
-    "56f9870142343b23a01725140b72d040d1b9071dd30227271518f50cfa614b6c": 1
-  },
   "packages/client/ui-goal/tests/browser-plugin.client.spec.tsx": {
     "04984a2ce1486250236e638e0197da0a1a840855ed3975c59130a85358c7e5fe": 1,
     "5f1a0867b42cf35dac7fdf5839e3a39c2384c5b3b03142e799a36733ad96b9da": 1,
@@ -602,9 +597,6 @@
   },
   "packages/client/ui-input-trigger/tests/apply.client.spec.ts": {
     "fc590cb703f599e5bb15f23909cedddeb2a77cb2cad0d4b9b8e664a62c46f44e": 1
-  },
-  "packages/client/ui-jobs/tests/job-list-action.client.spec.tsx": {
-    "0a7212cab13eacbb983b226949951fc76bad9e2d93dab9fad4639f7c541c2547": 1
   },
   "packages/client/ui-message-feedback/tests/browser-plugin.client.spec.tsx": {
     "04984a2ce1486250236e638e0197da0a1a840855ed3975c59130a85358c7e5fe": 2
@@ -619,13 +611,6 @@
     "7fdf7245d961ef29ffa74eb31e45825ca3c61bd7f5791f453acfd802184ee355": 1,
     "eee35b4d8641824c6eaacfe03ed60d353d81d5257d1111132f34d46a7b13ef35": 2,
     "ff65b54ee69109a8b059fc2a2136c71a5476b47115120c7c92a01171d517f3d7": 1
-  },
-  "packages/client/ui-open-in-app/tests/open-in-app-action.client.spec.tsx": {
-    "d6ca469f487b05b19564776f9a8f8288b1f0d9fb5b7fb6681e68f063fb021f38": 1,
-    "fdc0ec545dc17a50bdc1c64102915706cfbfdbb65a2165ae4691f29d577063cd": 1
-  },
-  "packages/client/ui-open-in-app/tests/open-path-action.client.spec.tsx": {
-    "362d9206df82a6d4563c2e5c19457342207b02b246c91656dec01a4b2033fd8e": 1
   },
   "packages/client/ui-permission-presets/tests/browser-plugin.client.spec.ts": {
     "dc36dd8f678695e3b84ce0573968470941c5b6fc5efe529cba17acb1f2799d1c": 1
@@ -758,11 +743,6 @@
   "packages/client/ui-sidebar-documentpreview/tests/pdf-smoke.client.spec.ts": {
     "193e777770c611bf1005e2d5ce574b13e1469926c169812107cf091c73772c0b": 1,
     "ed59d2814914c377dda69ab030e0b51de776a34205ab85e6364fda6fbe903de5": 1
-  },
-  "packages/client/ui-sidebar-documentpreview/tests/renderer-loading.client.spec.tsx": {
-    "3729313792d93c55cad1437e7ca1c5f9d5d6d4e02ab0000b0a3b01246504f898": 1,
-    "98dcb2e285933d18a1bc95899f5a46d545e3dba0873640e1920e711a254082dc": 1,
-    "a3a3404b2792d2353dc869625840b3166064d6f34100f366940ac686376783f8": 1
   },
   "packages/client/ui-sidebar-documentpreview/tests/store.client.spec.ts": {
     "9173285d1c600b0eeb00bc3f852d2e3c8c46ea83cd36488a422d5fd05194935a": 1
@@ -1215,8 +1195,7 @@
   },
   "packages/experimental/client-ui-agent-team/tests/browser-plugin.client.spec.ts": {
     "22baf2573ca146a7904b9ffc8b34a43692c4e042f01f43016d85443828bc88b1": 1,
-    "87ef7d60538b938bd8b5748cf4c0a5956ecedb860826c57d9ec789daea2f0355": 6,
-    "f1958372d07fa49fe88e9a25dd46b28fbf771fc4a15f8fbb7612745132757eaa": 1
+    "87ef7d60538b938bd8b5748cf4c0a5956ecedb860826c57d9ec789daea2f0355": 5
   },
   "packages/experimental/client-ui-agent-team/tests/team-action.client.spec.tsx": {
     "032fa1f91833ea216b76d2724f073741e70ad3eafebe4fbfcb166b950618e415": 1
@@ -1484,16 +1463,12 @@
   "packages/jobs/jobs-local/tests/loader-composition.spec.ts": {
     "6dc45d44a978dd86bb9ac2c9baf5d31aed699055698709e09bb34e99150e239d": 1
   },
-  "packages/jobs/jobs/tests/invariant.spec.ts": {
-    "2c66826d784c113eaf3f8ae7ac490920b0a9a5a0c8c3540743927379bebdddc9": 1
-  },
   "packages/jobs/tool-jobs/src/index.ts": {
     "64ab5463fdb068e88a33f022baff473b7a0da77854c4ecf8e26412763d6dccf6": 1
   },
   "packages/jobs/tool-jobs/tests/tool-jobs.spec.ts": {
     "0683cfd7f792f1b6333bc8c419d8ce32a7a630179280a31083a8f664e26e0ec0": 1,
     "0cf18056bb99a9f7435d55db31bed426d69b9973f7e15ebbca466f9e08ac9ee3": 1,
-    "284e4fe44c92b2f7e60f312649a22debe743ec6640e3b7b0ff8c9c35b02c24f2": 1,
     "52faf4558fcd91bd27dbdfa7e497843e8eeb75ea5f68ee231335018d5b3f2053": 2
   },
   "packages/llm/deepseek-llm-api-extensions/src/index.ts": {
@@ -1646,13 +1621,8 @@
     "9c749359b9458267505dc9d87b2b4e2a73e874c0e3908d7fa06e4fd4fd11cad4": 1
   },
   "packages/sandbox/sandbox-windows-acl/tests/grant-failure-paths.spec.ts": {
-    "0ee37bb1bf169e1de1030cd3449529c550283dccba4ea2d9d2af967b9ac51895": 1,
     "24defbb8f6adc4ec8ebd3443b233aceadae85ab486413320de0967eaf7d43032": 1,
-    "d7b28f469106e3e88d52c1742fe001ac7807bc1bc21c0fd4ddcb5bd9b97bf31b": 1,
     "ff7b125eae197db9cb8866293613a5de2a984d42b4487b2cc37eeacc8c300783": 1
-  },
-  "packages/sandbox/sandbox-windows-acl/tests/index-failure-paths.spec.ts": {
-    "916c26b0b6721f519ca6c95b93446c1b16b174f9bfb067e79f9cb03cec8fc87c": 1
   },
   "packages/sandbox/sandbox-windows-acl/tests/probe.spec.ts": {
     "d187b3ab8af0b780660e2b764b553ccff82e3af3254598ee18a059e5bd0381f5": 1

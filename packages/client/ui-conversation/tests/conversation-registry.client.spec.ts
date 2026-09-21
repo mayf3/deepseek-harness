@@ -72,7 +72,6 @@ function fakeSessions(ctx: Context): { sessions: ISessions; binding: SessionBind
     byId: {},
     phase: 'ready',
     projectionsBySession: {},
-    jobsBySession: {},
   })
   const reference = {
     sessionId: SESSION_ID,

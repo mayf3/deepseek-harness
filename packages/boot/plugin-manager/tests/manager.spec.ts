@@ -217,6 +217,7 @@ it.each(['native', 'runtime'] as const)('reads a disabled bundle and its indepen
   const resolution: RuntimeResolution = {
     profilesDir: join(profile.home, 'profiles'), profileDir: dir,
     localPackageNames: Object.keys(manifest.dependencies),
+    linkedRoots: [],
     entries: [{ name: 'local-child', packageDir: child, version: undefined,
       declarer: join(child, 'package.json'), scope: 'installation' }],
   }

@@ -25,6 +25,8 @@ The three settings, presentation policy channel, and per-Turn folding eligibilit
 
 ## Goals and constraints
 
+The [implemented Definition-owned Build Group foundation](../../implemented/architecture/2026-09-21-conversation-build-groups.md) supersedes this note's event fold, Builder-materialized group headers, Step-range membership, and changedLocationData proposal. This note retains the presentation-policy and per-Turn eligibility rationale; the grouping implementation below records the superseded route, not the current implementation plan.
+
 The following decisions were confirmed during design review and are inputs to this proposal.
 
 | Number | Decision | Meaning |

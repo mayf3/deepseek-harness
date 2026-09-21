@@ -22575,7 +22575,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:227"
+        "packages/experimental/agent-team/src/types.ts:216"
       ]
     },
     {
@@ -44608,7 +44608,7 @@
         "packages/workflow/workflow/src/types.ts#WorkflowRunId"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:394",
+        "packages/api/session-controller/src/types.ts:396",
         "packages/attachment/attachment/src/brand.ts:6",
         "packages/compaction/compaction/src/brand.ts:4",
         "packages/core/session/src/types.ts:20",
@@ -58191,7 +58191,7 @@
       },
       "names": [],
       "sources": [
-        "packages/api/session-controller/src/types.ts:399"
+        "packages/api/session-controller/src/types.ts:401"
       ]
     },
     {
@@ -69181,7 +69181,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:223"
+        "packages/experimental/agent-team/src/types.ts:212"
       ]
     },
     {
@@ -71163,7 +71163,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:221"
+        "packages/experimental/agent-team/src/types.ts:210"
       ]
     },
     {
@@ -83593,7 +83593,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:225"
+        "packages/experimental/agent-team/src/types.ts:214"
       ]
     },
     {

@@ -72,13 +72,18 @@ const harness = await vi.hoisted(async () => {
     readonly restore = vi.fn()
     readonly setSize = vi.fn()
     readonly setTitleBarOverlay = vi.fn()
+    readonly setVibrancy = vi.fn()
+    readonly setBackgroundColor = vi.fn()
     constructor(readonly options: { show: boolean; modal?: boolean }) {
       super(); if (windowFailure !== undefined) throw windowFailure; windows.push(this)
     }
     isDestroyed() { return this.destroyed }
     fullscreen = false
     isFullScreen() { return this.fullscreen }
-    isMinimized() { return false }
+    minimized = false
+    isMinimized() { return this.minimized }
+    visible = true
+    isVisible() { return this.visible }
     isFocused() { return true }
     async loadURL(url: string) {
       this.urls.push(url)
@@ -136,9 +141,10 @@ const harness = await vi.hoisted(async () => {
       }
     }),
   })
+  const nativeTheme = { themeSource: 'system', shouldUseDarkColors: false }
   return {
     failWindow(error: Error) { windowFailure = error },
-    windows, hosts, handlers, app, FakeWindow, FakeHost, powerMonitor,
+    windows, hosts, handlers, app, FakeWindow, FakeHost, powerMonitor, nativeTheme,
     menu, popup, socketHeaders: vi.fn(), updateCheck, updateDownload, updateInstall,
     ipcOn: vi.fn<(channel: string, listener: (event: { sender: unknown; senderFrame: unknown }, ...args: unknown[]) => void) => void>(),
     get updateState() { return updateState },
@@ -179,6 +185,7 @@ const harness = await vi.hoisted(async () => {
       updateCheck.mockReset().mockImplementation(async () => updateState)
       updateDownload.mockReset().mockImplementation(async () => updateState)
       updateInstall.mockReset().mockImplementation(async () => updateState)
+      nativeTheme.themeSource = 'system'; nativeTheme.shouldUseDarkColors = false
       preparing = deferred(); prepared = deferred(); hostStarted = deferred()
       navigated = deferred(); dialogShown = deferred(); quitCompleted = deferred()
       policyBlocked = deferred()
@@ -201,7 +208,7 @@ vi.mock('electron', () => ({
   BrowserWindow: harness.FakeWindow,
   dialog: harness.dialog,
   shell: { openExternal: harness.openExternal },
-  nativeTheme: { themeSource: 'system' },
+  nativeTheme: harness.nativeTheme,
   ipcMain: {
     on: harness.ipcOn,
     handle: (channel: string, handler: InvokeHandler) => {
@@ -211,7 +218,9 @@ vi.mock('electron', () => ({
     removeHandler: (channel: string) => { harness.handlers.delete(channel) },
   },
   Menu: { setApplicationMenu: harness.menu.setApplicationMenu, buildFromTemplate: harness.menu },
-  session: { defaultSession: { webRequest: { onBeforeSendHeaders: harness.socketHeaders } } },
+  session: { defaultSession: {
+    setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeSendHeaders: harness.socketHeaders },
+  } },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: harness.protocolHandle },
   powerMonitor: harness.powerMonitor,
 }))
@@ -587,6 +596,48 @@ describe('desktop main startup', () => {
     window.emit('enter-full-screen')
     window.webContents.emit('did-finish-load')
     expect(window.webContents.send.mock.calls.filter(([channel]) => channel === DESKTOP_IPC.windowFullscreen)).toHaveLength(0)
+  })
+
+  it('covers the macOS vibrancy reattach gap with an opaque base while minimized or hidden', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    // Minimizing drops the vibrancy material and paints the theme's opaque fill.
+    window.minimized = true
+    window.emit('minimize')
+    expect(window.setVibrancy).toHaveBeenLastCalledWith(null)
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#f9fafb')
+    // Restoring re-requests the material and returns to the transparent base.
+    window.minimized = false
+    window.emit('restore')
+    expect(window.setVibrancy).toHaveBeenLastCalledWith('sidebar')
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#00000000')
+    // Hiding under the dark palette picks the dark opaque fill.
+    harness.nativeTheme.shouldUseDarkColors = true
+    window.visible = false
+    window.emit('hide')
+    expect(window.setVibrancy).toHaveBeenLastCalledWith(null)
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#1b1b1c')
+    window.visible = true
+    window.emit('show')
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#00000000')
+    // A destroyed window ends the backdrop updates.
+    const applied = window.setVibrancy.mock.calls.length
+    window.destroyed = true
+    window.emit('minimize')
+    expect(window.setVibrancy.mock.calls).toHaveLength(applied)
+  })
+
+  it.each(['win32', 'linux'] as const)('registers no backdrop swap on %s', async (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    window.minimized = true
+    window.emit('minimize')
+    expect(window.setVibrancy).not.toHaveBeenCalled()
+    expect(window.setBackgroundColor).not.toHaveBeenCalled()
   })
 
   it('follows the Windows primary document language and palette without trusting other frames', async () => {

@@ -93,6 +93,9 @@
       "path": "../../util/values"
     },
     {
+      "path": "../../context/file-reference"
+    },
+    {
       "path": "../../util/workspace-path"
     }
   ],

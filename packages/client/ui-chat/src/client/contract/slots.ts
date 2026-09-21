@@ -3,6 +3,7 @@ import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type {
   CommandNode, CompactionSummaryNode, ConversationLocationDataStore, ConversationTurnDataMap,
+  ConversationGroupData, GroupSnapshot,
   MessageImageLoader, MessageImagesOwnerProps, RenderMessageImages, TurnLocation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
@@ -86,6 +87,8 @@ export interface ChatNodeTurnDataInjected {
 
 /** Stable owner currency delivered to a keyed Chat renderer. */
 export interface ChatNodeOwnerProps {
+  /** Renderer-owned Node portion selected by the grouping Definition. */
+  groupPart?: string
   cwd?: string | undefined
   /** Open the current source file of a skill referenced by a sent message. */
   openSkill: (name: string) => void
@@ -163,6 +166,8 @@ export interface ChatViewInjected {
     chatNode: (key: string) => ChatNodeSource
     /** Resolve the stable Turn-process source for one Chat Node key. */
     chatNodeProcess: (key: string) => ChatNodeProcessSource
+    /** Resolve one optional group without subscribing the root View to its data. */
+    chatGroup: (key: string) => ObservableSnapshot<GroupSnapshot<ConversationGroupData<'chat'>> | undefined> | undefined
   }
   /** Open the current source file of a skill referenced by a sent message. */
   openSkill: (name: string) => void

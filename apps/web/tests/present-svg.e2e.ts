@@ -128,7 +128,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
 
   it.skipIf(MODE === 'record')('replays the delivered file and Chinese conversation', async () => {
     await assertFinalWorkspaceSnapshot(DIR, cwd)
-    await expect.poll(() => page.getByRole('button', { name: `${FILE} 的更多文件操作`, exact: true }).isDisabled()).toBe(true)
+    expect(await page.locator('[data-presented-file] [data-open-target]').count()).toBe(0)
     // Delivery owns the transcript; navigation and composer chrome have separate scenarios.
     const aria = await captureExpandedTurnProcessAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(DIR, 'ui.expected.md'), aria, MODE)

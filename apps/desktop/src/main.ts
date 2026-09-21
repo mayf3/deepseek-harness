@@ -22,6 +22,7 @@ import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager } from './project-manager.ts'
 import { DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
+import { installMicrophonePermissions } from './microphone-permissions.ts'
 import { DesktopBackendController } from './backend-controller.ts'
 import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
@@ -109,6 +110,17 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
   return port
 }
 
+/**
+ * Opaque chrome fallback matching the built-in sidebar palette (the resolved
+ * `--dsw-static-neutral-bluish-900` / `-50` tokens). An approximation for
+ * custom themes: Windows swaps in the renderer's measured palette over the
+ * windowsAppearance IPC, and macOS shows it only while minimized or hidden.
+ * @returns the sidebar fill hex for the active system color scheme.
+ */
+function chromeFallbackFill(): string {
+  return nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb'
+}
+
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
@@ -118,7 +130,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     show,
     ...(process.platform === 'win32' && primary ? {
       titleBarStyle: 'hidden' as const,
-      titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb',
+      titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: chromeFallbackFill(),
         symbolColor: nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115' },
     } : {}),
     // hiddenInset places traffic lights inside the sidebar; sidebar vibrancy
@@ -156,6 +168,26 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     // Reloads and navigations re-register the preload listener; resend the
     // current state so a fullscreen reload does not fall back to windowed CSS.
     window.webContents.on('did-finish-load', sendFullscreen)
+    // Deminiaturize reattaches the NSVisualEffectView material late
+    // (electron/electron#25368), so a transparent window shows the desktop
+    // through the sidebar until then. Paint an opaque base while minimized or
+    // hidden so the deminiaturize animation and the reattachment gap show a
+    // solid fill; restoring flips back, and the null -> 'sidebar' transition
+    // forces the material to reattach.
+    const applyBackdrop = (): void => {
+      if (window.isDestroyed()) return
+      if (window.isMinimized() || !window.isVisible()) {
+        window.setVibrancy(null)
+        window.setBackgroundColor(chromeFallbackFill())
+      } else {
+        window.setVibrancy('sidebar')
+        window.setBackgroundColor('#00000000')
+      }
+    }
+    window.on('minimize', applyBackdrop)
+    window.on('hide', applyBackdrop)
+    window.on('restore', applyBackdrop)
+    window.on('show', applyBackdrop)
   }
   window.webContents.on('context-menu', (_event, { isEditable, selectionText, editFlags }) => {
     const items: MenuItemConstructorOptions[] = []
@@ -429,6 +461,7 @@ async function main(): Promise<void> {
   })
 
   installDesktopDirectoryPicker(() => mainWindow)
+  installMicrophonePermissions(session.defaultSession, () => mainWindow?.webContents)
 
   ipcMain.handle(DESKTOP_IPC.boot, async (event) => {
     assertDesktopSender(event, ['app'])

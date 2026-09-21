@@ -69,15 +69,23 @@ export interface WorkspaceByteRange {
   readonly length?: number
 }
 
+/** Target resolution and optional byte range for one binary file read. */
+export interface WorkspaceByteReadOptions {
+  /** Byte window; omit to read the complete file under the configured `maxFileBytes` cap. */
+  readonly range?: WorkspaceByteRange
+  /** Base file, absolute or workspace-relative; resolve the relative target from its directory. */
+  readonly baseFile?: string
+}
+
 /**
  * One byte window of a workspace file as a Client reads it: raw bytes, no text
  * decoding and no binary rejection. `bytes` is the complete file's size.
  */
-export interface WorkspaceFileBytes extends WorkspaceFileStat {
+export interface WorkspaceFileBytes<Data extends Uint8Array = Uint8Array> extends WorkspaceFileStat {
   /** First byte of the window, as requested. */
   readonly offset: number
-  /** The window's bytes in base64; empty when `offset` lies at or past the file's end. */
-  readonly data: string
+  /** Native file bytes; empty at or past EOF. */
+  readonly data: Data
   /** Whether the window includes the file's last byte. */
   readonly eof: boolean
 }

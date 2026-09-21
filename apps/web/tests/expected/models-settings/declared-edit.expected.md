@@ -8,7 +8,7 @@
   - button "打开配置文件"
   - button "关闭"
   - heading "模型" [level=2]
-  - paragraph: 填入各提供方的 API 密钥即可使用其模型。
+  - paragraph: 填入各提供商的 API 密钥即可使用其模型。
   - list:
     - listitem:
       - text: minimax-cn
@@ -33,9 +33,9 @@
           - text: https://gateway.acme.example/v1
         - text: API 协议
         - combobox "API 协议":
-          - option "openai-completions" [selected]
-          - option "openai-responses"
-          - option "anthropic-messages"
+          - option "OpenAI Chat Completions" [selected]
+          - option "OpenAI Responses"
+          - option "Anthropic Messages"
         - region "模型目录":
           - text: 模型目录 已自定义模型目录
           - button "恢复默认模型"
@@ -62,5 +62,4 @@
           - button "添加模型"
       - button "取消"
       - button "保存"
-  - button "添加提供方"
-  - button "添加自定义提供方"
+  - button "添加模型提供商"

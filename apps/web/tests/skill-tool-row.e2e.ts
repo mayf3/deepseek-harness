@@ -8,11 +8,12 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
-  launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
+  launchWebScaffold, seedSession, selectedSessionFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/session/skill-load/session.v3.jsonl', import.meta.url))
+// Any generation path names the role; the owner's highest committed generation replays.
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/session/skill-load/session.v4.jsonl', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/skill-tool-row', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/skill-tool-row/ui.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
@@ -26,7 +27,7 @@ describe.skipIf(MODE === 'record')('web e2e: dedicated Skill tool row', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    const fixture = await readFile(FIXTURE, 'utf8')
+    const fixture = await readFile(await selectedSessionFixture(FIXTURE), 'utf8')
     expect(fixtureUserPrompts(fixture)).toEqual([PROMPT])
     scaffold = await launchWebScaffold({})
     await seedSession(scaffold, fixture, SEED_ID)

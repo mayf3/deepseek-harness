@@ -32,10 +32,10 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
-import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { ShellRunResult, ShellProcess } from '@deepseek-ai/dsh-shell'
 import { parseExitStatus } from '@deepseek-ai/dsh-shell'
-import { processJob } from './background.ts'
-import { renderPwshProcessRead, renderPwshResult } from './render.ts'
+import { processJob, processOutcome, processSources } from './background.ts'
+import { renderPwshResult } from './render.ts'
 import type { RenderablePwshResult } from './render.ts'
 
 declare module '@deepseek-ai/dsh-jobs' {
@@ -47,6 +47,7 @@ declare module '@deepseek-ai/dsh-jobs' {
 export const name = 'tool-pwsh'
 export const inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']
 
+/* jscpd:ignore-start -- the pwsh Config mirrors tool-bash's by design, like render/background. */
 /** Configuration for the pwsh tool. */
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
@@ -57,6 +58,7 @@ export interface Config {
 export const Config: z<Config> = z.object({
   enableRunInBackground: z.boolean().default(true),
 })
+/* jscpd:ignore-end */
 
 /** Parsed tool args; execute validates value constraints absent from ParameterSchemaSpec. */
 interface PwshToolArgs {
@@ -376,14 +378,21 @@ export function apply(ctx: Context, config: Config = {}): void {
           error.name = 'AbortError'
           throw error
         }
-        // Task preflight finishes before the starter can spawn a process.
+        // The registry pumps the process's non-consuming readers into the
+        // job's ring; the sources bind lazily because the process is spawned
+        // only once admission has passed.
+        let proc: ShellProcess | undefined
         const id = jobs.start({
           kind: 'pwsh',
           label: args.command,
-          ...exec.agent ? { owner: exec.agent } : {},
+          ...exec.agent ? { owner: exec.agent.id } : {},
+          output: processSources(() => proc),
           run: () => processJob(
-            signal => ctx.shell.start(ctx.shell.resolve({ ...request, signal })),
-            proc => renderPwshProcessRead(proc.readOutput(), proc.sandbox, escalationModes),
+            async (signal) => {
+              proc = await ctx.shell.start(ctx.shell.resolve({ ...request, signal }))
+              return proc
+            },
+            started => processOutcome(started, escalationModes),
           ),
         })
         return { kind: 'background' as const, jobId: id }

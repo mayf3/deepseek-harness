@@ -401,8 +401,6 @@ function CatalogRows({
 interface CatalogDropdownSharedProps extends SubagentCatalogInjected {
   /** Session whose direct catalog roots the tree. */
   rootSessionId: SessionId
-  /** Whether an ordinary title needs a breadcrumb separator before its count. */
-  separator?: boolean
   useSessions: SubagentHeaderLineageProps['useSessions']
   useSessionStatus: SubagentHeaderLineageProps['useSessionStatus']
   t: TranslateNS<typeof NS>
@@ -445,7 +443,7 @@ function catalogMenuPosition(trigger: HTMLButtonElement): CSSProperties {
 
 /** One trigger-plus-tree dropdown over the catalog rooted at `rootSessionId`. */
 function CatalogDropdown({
-  rootSessionId, currentSessionId, displayTitle, openTitle, variant, separator = false,
+  rootSessionId, currentSessionId, displayTitle, openTitle, variant,
   useSessions, useSessionStatus, openChild, openChildAside, refreshProjection, t,
 }: CatalogDropdownProps) {
   const ancestorSwitcher = variant === 'switcher' && openTitle !== undefined
@@ -645,7 +643,6 @@ function CatalogDropdown({
       onMouseEnter={scheduleHoverOpen}
       onMouseLeave={scheduleHoverClose}
     >
-      {separator && <span className={css.separator}>/</span>}
       <button
         ref={triggerRef}
         type="button"
@@ -721,10 +718,42 @@ function CatalogDropdown({
   )
 }
 
+/** Full props for the root-session catalog entry in the header actions band. */
+export type SubagentCatalogActionProps =
+  PropsRuntime<'conversation.session.header.actions'> & SubagentCatalogInjected & PropsLocale<typeof NS>
+
+/**
+ * Session-header catalog action for root sessions: the descendant count and
+ * its dropdown, ordered after the task list. Child sessions render nothing
+ * here — their breadcrumb switcher in the lineage slot owns the same
+ * navigation.
+ * @param props - Session standard props plus the catalog actions and translator.
+ * @returns The count dropdown, or null on a child session.
+ */
+export function SubagentCatalogAction({
+  sessionId, useSessions, useSessionStatus, openChild, openChildAside, refreshProjection, t,
+}: SubagentCatalogActionProps) {
+  const isChild = useSessions(state => state.byId[sessionId]?.origin === 'subagent')
+  if (isChild) return null
+  return (
+    <CatalogDropdown
+      key={sessionId}
+      rootSessionId={sessionId}
+      variant="count"
+      useSessions={useSessions}
+      useSessionStatus={useSessionStatus}
+      openChild={openChild}
+      openChildAside={openChildAside}
+      refreshProjection={refreshProjection}
+      t={t}
+    />
+  )
+}
+
 /**
  * Render one breadcrumb title together with its subagent navigation.
  * @param props - Breadcrumb title, session standard props, and catalog actions.
- * @returns An ordinary-title direct-child count, or a title-and-chevron sibling switcher.
+ * @returns A title-and-chevron sibling switcher, or nothing on a root session.
  */
 export function SubagentHeaderLineage({
   lineageSessionId, displayTitle, openTitle,
@@ -739,17 +768,9 @@ export function SubagentHeaderLineage({
     return undefined
   })
   const shared = { useSessions, useSessionStatus, openChild, openChildAside, refreshProjection, t }
-  if (parentId === undefined) {
-    return (
-      <CatalogDropdown
-        key={lineageSessionId}
-        rootSessionId={lineageSessionId}
-        variant="count"
-        separator
-        {...shared}
-      />
-    )
-  }
+  // Root sessions carry no breadcrumb; their descendant count lives in the
+  // header actions band (SubagentCatalogAction), after the task list.
+  if (parentId === undefined) return null
   return (
     <>
       <CatalogDropdown
