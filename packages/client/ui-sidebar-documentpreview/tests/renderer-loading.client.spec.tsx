@@ -11,10 +11,11 @@ import type { DocumentContent } from '../src/client/document/contract.ts'
 import { TextPreview, type TextPreviewProps } from '../src/client/TextPreview.tsx'
 import { OfficeFontAction, type OfficeFontActionProps } from '../src/client/office/OfficeFontAction.tsx'
 import { OfficeBody, type OfficeBodyProps } from '../src/client/office/OfficeBody.tsx'
+import { officeFace } from '../src/client/office/face.ts'
 import { createOfficeStore, type OfficeState } from '../src/client/office/store.ts'
 import type { ReadOfficeDocument } from '../src/client/office/cache.ts'
 import { en } from '../src/client/office/locales.ts'
-import { harness, ABSOLUTE_PATH, TAB_ID, settle } from './fixtures.client.ts'
+import { harness, ABSOLUTE_PATH, ADDRESS, TAB_ID, SESSION, settle } from './fixtures.client.ts'
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
@@ -100,12 +101,12 @@ function setup() {
   function useOffice<T>(selector: (state: OfficeState) => T): T {
     return selector(useSyncExternalStore(subscribe, snapshot))
   }
-  const describeFailure: OfficeBodyProps['describeFailure'] = error => error.message
+  const injected = officeFace(read, error => error.message)(SESSION, office.actions)
   let request: Extract<DocumentContent, { kind: 'renderer' }> | undefined
   const slots: TextPreviewProps['renderSlot'] = (key: string, input: unknown, options?: { hookContext?: unknown }) => {
     if (key === 'sidebar.right.tab.document.action') {
       return <OfficeFontAction {...{ ...input as OwnerOf<'sidebar.right.tab.document.action'>, useTabInfo: options?.hookContext, useStore: useOffice,
-        actions: office.actions, t: makeTranslate(en) } as unknown as OfficeFontActionProps} />
+        actions: office.actions, t: makeTranslate(en) } as OfficeFontActionProps} />
     }
     if (key !== 'sidebar.right.tab.document') return null
     const owner = input as OwnerOf<'sidebar.right.tab.document'>
@@ -113,16 +114,16 @@ function setup() {
     request = owner.content
     // The component fixture supplies the standard seats used by Office; the real slot binding is exercised by the browser scenario.
     const props = { ...h.props(), ...owner, useTabInfo: options?.hookContext, useStore: useOffice,
-      actions: office.actions, read, retainTab, describeFailure,
+      actions: office.actions, ...injected, retainTab,
       t: makeTranslate(en), renderSlot: (_name: string, child: { content: DocumentContent }) => (
         <p data-test-pdf>{child.content.kind === 'bytes' ? new TextDecoder().decode(child.content.data) : ''}</p>
       ),
-    } as unknown as OfficeBodyProps
+    } as OfficeBodyProps
     return <OfficeBody {...props} />
   }
-  function View({ renderer = true }: { renderer?: boolean }) {
+  function View({ renderer = true, implementation = definition.id }: { renderer?: boolean; implementation?: string }) {
     return <TextPreview {...h.props()} renderSlot={slots}
-      useDocumentPreviews={selector => selector([renderer ? definition : { ...definition, id: 'raw', loading: 'bytes-complete' }])} />
+      useDocumentPreviews={selector => selector([renderer ? { ...definition, id: implementation } : { ...definition, id: 'raw', loading: 'bytes-complete' }])} />
   }
   onTestFinished(async () => {
     h.controller.abort()
@@ -240,8 +241,10 @@ it.each(['declared', 'exception', 'foreign'] as const)('shows %s conversion fail
 it('starts no conversion when a body receives ordinary shared content', () => {
   const h = setup()
   const props = { ...h.h.props(), content: { kind: 'bytes', data: new Uint8Array() },
-    useStore: () => undefined, read: h.read, retainTab: vi.fn(), describeFailure: vi.fn(),
-  } as unknown as OfficeBodyProps
+    resourceAddress: ADDRESS, wrap: false, scrollportRef: vi.fn(),
+    addResource: vi.fn(), setResources: vi.fn(),
+    useStore: () => undefined, actions: h.office.actions, load: vi.fn(), retainTab: vi.fn(), t: makeTranslate(en),
+  } as OfficeBodyProps
   const view = render(<OfficeBody {...props} />)
   expect(view.container.childElementCount).toBe(0)
   expect(h.read).not.toHaveBeenCalled()
@@ -268,4 +271,46 @@ it('shows the current revision’s missing fonts in the toolbar and clears stale
   await settle()
   expect(screen.queryByRole('button', { name: /Missing fonts:/ })).toBeNull()
   expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('isolates a replacement implementation with the same renderer-owned loading mode', async () => {
+  const h = setup()
+  const view = render(<h.View />)
+  const previous = h.request()
+  view.rerender(<h.View implementation="alternative" />)
+  expect(h.pending[0]!.signal.aborted).toBe(true)
+  expect(h.pending).toHaveLength(2)
+  await act(async () => { h.pending[1]!.deferred.resolve(result('v2')) })
+  await act(async () => { h.pending[0]!.deferred.resolve(result('v1')); previous.loaded('v1') })
+  expect(screen.getByText('PDF v2')).toBeTruthy()
+  expect(h.h.instance.getSnapshot().byTab[TAB_ID]?.contentRendererId).toBe('alternative')
+  expect(h.h.instance.getSnapshot().byTab[TAB_ID]?.version).toBe('v2')
+})
+
+it('starts no conversion or store write for an already closed request', () => {
+  const read = vi.fn<ReadOfficeDocument>()
+  const store = createOfficeStore().create()
+  const face = officeFace(read, error => error.message)(SESSION, store.actions)
+  const controller = new AbortController()
+  controller.abort()
+  const loaded = vi.fn()
+  const failed = vi.fn()
+  face.load(TAB_ID, 1, { sessionId: SESSION, path: ABSOLUTE_PATH }, controller.signal, loaded, failed)
+  expect(read).not.toHaveBeenCalled()
+  expect(loaded).not.toHaveBeenCalled()
+  expect(failed).not.toHaveBeenCalled()
+  expect(store.getSnapshot().byTab[TAB_ID]).toBeUndefined()
+})
+
+it('keeps a pending conversion when metadata changes while automatic refresh is paused', async () => {
+  const h = setup()
+  const view = render(<h.View />)
+  act(() => { h.h.instance.actions.toggledAutoRefresh(TAB_ID) })
+  h.h.setVersion('v2')
+  view.rerender(<h.View />)
+  expect(h.read).toHaveBeenCalledTimes(1)
+  expect(h.pending[0]!.signal.aborted).toBe(false)
+  await act(async () => { h.pending[0]!.deferred.resolve(result('v1')) })
+  expect(screen.getByText('PDF v1')).toBeTruthy()
+  expect(screen.getByText('changed')).toBeTruthy()
 })
