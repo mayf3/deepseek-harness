@@ -1,6 +1,6 @@
 /**
- * Generic-job adaptation for background pwsh process handles — the
- * shell-agnostic twin of `dsh-tool-bash`'s background adaptation: the terminal
+ * Generic-job adaptation for pwsh process handles — the shell-agnostic twin
+ * of `dsh-tool-bash`'s background adaptation: the terminal
  * outcome the registry records and the pull sources it pumps.
  *
  * @module @deepseek-ai/dsh-tool-pwsh/background
@@ -9,7 +9,7 @@
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
 import type { ShellProcess, ShellSandboxInfo } from '@deepseek-ai/dsh-shell'
-import type { JobHooks, JobOutcome, JobOutputSource } from '@deepseek-ai/dsh-jobs'
+import type { JobChunk, JobHooks, JobOutcome, JobOutputSource } from '@deepseek-ai/dsh-jobs'
 
 /* jscpd:ignore-start -- deliberate twin of dsh-tool-bash/background.ts (Agent Note). */
 
@@ -61,7 +61,8 @@ export function processOutcome(proc: ShellProcess, escalationModes: readonly San
  * bind lazily because the process is spawned inside the starter, after the
  * registry admitted the job; a read before the spawn yields nothing, and the
  * pump keeps the model's consuming cursor untouched. A rejected spawn's
- * stderr reader carries the provider's `spawn failed: …` note.
+ * stderr reader carries the provider's `subprocess failed before reporting an
+ * outcome: …` note.
  * @param proc - the started process's observed streams, once the starter has spawned it.
  * @returns one source per stream, stdout first.
  */
@@ -74,6 +75,21 @@ export function processSources(proc: () => Pick<ShellProcess, 'observed'> | unde
     },
   })
   return [source('stdout'), source('stderr')]
+}
+
+/**
+ * The ring chunks of one consuming registry read as the shell tools render a
+ * process read: stdout chunks in order, then every stderr chunk in one
+ * `[stderr]` section, so the output a foreground call hands over when it
+ * stops waiting reads exactly like the `job_output` reads that follow it.
+ * @param chunks - the chunks since the model cursor, in offset order.
+ * @returns the delta text, possibly empty.
+ */
+export function ringDelta(chunks: readonly JobChunk[]): string {
+  const out = chunks.filter(chunk => chunk.channel !== 'stderr').map(chunk => chunk.text).join('')
+  const err = chunks.filter(chunk => chunk.channel === 'stderr').map(chunk => chunk.text).join('')
+  const separator = out.length > 0 && !out.endsWith('\n') ? '\n' : ''
+  return out + (err.length > 0 ? `${separator}[stderr]\n${err}` : '')
 }
 
 /**

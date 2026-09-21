@@ -46,6 +46,7 @@ async function setup() {
     readAt(): never { throw new Error('unsupported') }
     kill(): never { throw new Error('unsupported') }
     wait(): never { throw new Error('unsupported') }
+    remove(): never { throw new Error('unsupported') }
     attachController(): never { throw new Error('unsupported') }
   }
   await ctx.plugin(InvariantRegistry)
@@ -72,7 +73,7 @@ describe('job-registry invariants', () => {
     read({ ...RUNNING, status: 'stopping', output: { total: 4, earliest: 0 } })
     emit({ type: 'stopping', job: { ...RUNNING, status: 'stopping', output: { total: 4, earliest: 0 } } })
     read({ ...DONE, status: 'killed', output: { total: 4, earliest: 0 } })
-    emit({ type: 'settled', job: { ...DONE, status: 'killed', output: { total: 4, earliest: 0 } }, cause: 'kill' })
+    emit({ type: 'settled', job: { ...DONE, status: 'killed', output: { total: 4, earliest: 0 } }, cause: 'kill', awaited: false })
     emit({ type: 'output', id: ID, total: 4 })
     read(undefined)
     expect(() => { emit({ type: 'removed', job: { ...DONE, status: 'killed', output: { total: 4, earliest: 0 } } }) }).not.toThrow()
@@ -83,7 +84,7 @@ describe('job-registry invariants', () => {
     read({ ...RUNNING, progress: '3/4' })
     expect(() => { emit({ type: 'progress', job: { ...RUNNING, progress: '3/4' } }) }).not.toThrow()
     read(DONE)
-    expect(() => { emit({ type: 'settled', job: DONE, cause: 'producer' }) }).not.toThrow()
+    expect(() => { emit({ type: 'settled', job: DONE, cause: 'producer', awaited: false }) }).not.toThrow()
     read(undefined)
     expect(() => { emit({ type: 'removed', job: DONE }) }).not.toThrow()
   })
@@ -116,7 +117,7 @@ describe('job-registry invariants', () => {
     }, /must announce a live status without finishedAt/],
     ['progress after settlement', ({ emit, read }) => {
       read(DONE)
-      emit({ type: 'settled', job: DONE, cause: 'producer' })
+      emit({ type: 'settled', job: DONE, cause: 'producer', awaited: false })
       emit({ type: 'progress', job: { ...DONE, progress: 'late' } })
     }, /progress announced for job bash-1 after its settlement/],
     ['stopping with a terminal status', ({ emit, read }) => {
@@ -125,28 +126,28 @@ describe('job-registry invariants', () => {
     }, /stopping announced for job bash-1 with a terminal status/],
     ['settled twice', ({ emit, read }) => {
       read(DONE)
-      emit({ type: 'settled', job: DONE, cause: 'producer' })
-      emit({ type: 'settled', job: DONE, cause: 'producer' })
+      emit({ type: 'settled', job: DONE, cause: 'producer', awaited: false })
+      emit({ type: 'settled', job: DONE, cause: 'producer', awaited: false })
     }, /settled announced twice for job bash-1/],
     ['settled with a live status', ({ emit, read }) => {
       read(RUNNING)
-      emit({ type: 'settled', job: { ...RUNNING, finishedAt: 20 }, cause: 'producer' })
+      emit({ type: 'settled', job: { ...RUNNING, finishedAt: 20 }, cause: 'producer', awaited: false })
     }, /must announce a terminal status, got "running"/],
     ['settled without finishedAt', ({ emit, read }) => {
       read(DONE)
-      emit({ type: 'settled', job: { ...RUNNING, status: 'completed' }, cause: 'producer' })
+      emit({ type: 'settled', job: { ...RUNNING, status: 'completed' }, cause: 'producer', awaited: false })
     }, /finishedAt no earlier than startedAt/],
     ['settled before it started', ({ emit, read }) => {
       read(DONE)
-      emit({ type: 'settled', job: { ...DONE, finishedAt: 9 }, cause: 'producer' })
+      emit({ type: 'settled', job: { ...DONE, finishedAt: 9 }, cause: 'producer', awaited: false })
     }, /finishedAt no earlier than startedAt/],
     ['settled with a progress line', ({ emit, read }) => {
       read(DONE)
-      emit({ type: 'settled', job: { ...DONE, progress: '9/10' }, cause: 'producer' })
+      emit({ type: 'settled', job: { ...DONE, progress: '9/10' }, cause: 'producer', awaited: false })
     }, /must announce a cleared progress line/],
     ['settled while the registry still reads it live', ({ emit, read }) => {
       read(RUNNING)
-      emit({ type: 'settled', job: DONE, cause: 'producer' })
+      emit({ type: 'settled', job: DONE, cause: 'producer', awaited: false })
     }, /announces completed at 20 while the registry reads running at undefined/],
     ['removed before settlement', ({ emit, read }) => {
       read(RUNNING)
@@ -156,7 +157,7 @@ describe('job-registry invariants', () => {
     }, /removed announced for job bash-1 before its settlement/],
     ['removed while the registry still returns the job', ({ emit, read }) => {
       read(DONE)
-      emit({ type: 'settled', job: DONE, cause: 'producer' })
+      emit({ type: 'settled', job: DONE, cause: 'producer', awaited: false })
       emit({ type: 'removed', job: DONE })
     }, /removed announced for job bash-1 that the registry still returns/],
     ['output ahead of the read total', ({ emit, read }) => {
