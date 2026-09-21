@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { SettingsDescriptor } from '@deepseek-ai/dsh-settings'
-import { RemoteError, remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
+import { remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import SettingsController from '../src/index.ts'
 import { MemorySettings } from '../../../settings/settings/tests/memory.ts'
 
@@ -76,12 +76,10 @@ describe('the settings Remote namespace a configuration page calls', () => {
     expect(controller.typertRemote.namespace).toBe('settings')
     expect(remoteMethods(controller)).toEqual([
       { method: 'describe', invocation: { kind: 'direct' } },
-      { method: 'canOpenAgentPresetDirectory', invocation: { kind: 'direct' } },
       { method: 'update', invocation: { kind: 'direct' } },
       { method: 'replace', invocation: { kind: 'direct' } },
       { method: 'mutate', invocation: { kind: 'direct' } },
       { method: 'openSettingsDocument', invocation: { kind: 'direct' } },
-      { method: 'openAgentPresetDirectory', invocation: { kind: 'direct' } },
     ])
   })
 
@@ -245,7 +243,7 @@ describe('the settings Remote namespace a configuration page calls', () => {
     await ctx.plugin(DocumentSettings)
     const prepare = vi.spyOn(ctx.settings, 'prepareDocument').mockResolvedValue('/tmp/settings.yaml')
     const openTextFile = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
-    const controller = new SettingsController(ctx, {}, { openTextFile })
+    const controller = new SettingsController(ctx, { openTextFile })
     const signal = new AbortController().signal
 
     await expect(controller.openSettingsDocument(signal)).resolves.toEqual({ opened: true })
@@ -280,7 +278,7 @@ describe('the settings Remote namespace a configuration page calls', () => {
     const prepared = Promise.withResolvers<string | undefined>()
     vi.spyOn(ctx.settings, 'prepareDocument').mockReturnValue(prepared.promise)
     const openTextFile = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
-    const controller = new SettingsController(ctx, {}, { openTextFile })
+    const controller = new SettingsController(ctx, { openTextFile })
     const abort = new AbortController()
 
     const opening = controller.openSettingsDocument(abort.signal)
@@ -295,7 +293,7 @@ describe('the settings Remote namespace a configuration page calls', () => {
     const ctx = new Context()
     await ctx.plugin(DocumentSettings)
     vi.spyOn(ctx.settings, 'prepareDocument').mockResolvedValue('/tmp/settings.yaml')
-    const controller = new SettingsController(ctx, {}, {
+    const controller = new SettingsController(ctx, {
       openTextFile: () => Promise.reject(new Error('no default editor')),
     })
 
@@ -319,7 +317,7 @@ describe('the settings Remote namespace a configuration page calls', () => {
     await opening.plugin(DocumentSettings)
     vi.spyOn(opening.settings, 'prepareDocument').mockResolvedValue('/tmp/settings.yaml')
     const openAbort = new AbortController()
-    const openingController = new SettingsController(opening, {}, {
+    const openingController = new SettingsController(opening, {
       openTextFile: async () => {
         openAbort.abort(new Error('cancelled'))
         throw new Error('opening stopped')
@@ -329,106 +327,4 @@ describe('the settings Remote namespace a configuration page calls', () => {
       .rejects.toMatchObject({ code: 'gateway/cancelled' })
   })
 
-  it('opens a user Agent preset directory or returns its path without a native opener', async () => {
-    const ctx = new Context()
-    ctx.provide('agentPresets', {
-      resolve: (id: string) => Promise.resolve({
-        id, trust: 'user', path: `/presets/${id}/agent.cordis.yml`,
-      }),
-    } as never)
-    const openPath = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
-    const openable = new SettingsController(ctx, { nativeOpen: true }, { openPath })
-    expect(openable.canOpenAgentPresetDirectory()).toBe(true)
-    const signal = new AbortController().signal
-    await expect(openable.openAgentPresetDirectory('mine', signal))
-      .resolves.toEqual({ opened: true })
-    expect(openPath).toHaveBeenCalledWith('/presets/mine', signal)
-
-    const headless = new Context()
-    headless.provide('agentPresets', {
-      resolve: (id: string) => Promise.resolve({
-        id, trust: 'user', path: `/presets/${id}/agent.cordis.yml`,
-      }),
-    } as never)
-    const reveal = new SettingsController(headless, { nativeOpen: false })
-    expect(reveal.canOpenAgentPresetDirectory()).toBe(false)
-    await expect(reveal.openAgentPresetDirectory('mine', new AbortController().signal))
-      .resolves.toEqual({ opened: false, path: '/presets/mine' })
-  })
-
-  it('covers native-open detection defaults and explicit overrides', () => {
-    const fromInjectedOpener = new SettingsController(new Context(), {}, {
-      openPath: () => Promise.resolve(),
-    })
-    expect((fromInjectedOpener as unknown as { canOpenPath: () => boolean }).canOpenPath()).toBe(true)
-
-    const detected = new SettingsController(new Context())
-    expect(typeof (detected as unknown as { canOpenPath: () => boolean }).canOpenPath()).toBe('boolean')
-
-    const override = vi.fn(() => false)
-    const overridden = new SettingsController(new Context(), {}, { canOpenPath: override })
-    expect((overridden as unknown as { canOpenPath: () => boolean }).canOpenPath()).toBe(false)
-    expect(override).toHaveBeenCalledOnce()
-  })
-
-  it('refuses a shipped Agent preset and a missing preset provider', async () => {
-    const ctx = new Context()
-    ctx.provide('agentPresets', {
-      resolve: (id: string) => Promise.resolve({
-        id, trust: 'system', path: `/presets/${id}/agent.cordis.yml`,
-      }),
-    } as never)
-    const controller = new SettingsController(ctx)
-    await expect(controller.openAgentPresetDirectory('standard', new AbortController().signal))
-      .rejects.toMatchObject({ code: 'agent-preset/read-only' })
-
-    const missing = new SettingsController(new Context())
-    await expect(missing.openAgentPresetDirectory('mine', new AbortController().signal))
-      .rejects.toMatchObject({ code: 'agent-preset/not-found' })
-  })
-
-  it('rejects an empty Agent preset id before resolving a provider', async () => {
-    const resolve = vi.fn()
-    const ctx = new Context()
-    ctx.provide('agentPresets', { resolve } as never)
-    const controller = new SettingsController(ctx)
-
-    await expect(controller.openAgentPresetDirectory('', new AbortController().signal))
-      .rejects.toMatchObject({ code: 'gateway/bad-request' })
-    expect(resolve).not.toHaveBeenCalled()
-  })
-
-  it('raises an Agent preset resolution failure as the roster reported it', async () => {
-    const ctx = new Context()
-    const reported = new RemoteError('agent-preset/not-found', 'no such preset', {
-      agentPreset: 'mine', available: ['standard'],
-    })
-    ctx.provide('agentPresets', { resolve: async () => { throw reported } } as never)
-    const controller = new SettingsController(ctx)
-
-    await expect(controller.openAgentPresetDirectory('mine', new AbortController().signal))
-      .rejects.toBe(reported)
-  })
-
-  it('classifies cancellation and non-Error failures from the preset opener', async () => {
-    const ctx = new Context()
-    ctx.provide('agentPresets', {
-      resolve: (id: string) => Promise.resolve({
-        id, trust: 'user', path: `/presets/${id}/agent.cordis.yml`,
-      }),
-    } as never)
-    const abort = new AbortController()
-    const openPath = vi.fn()
-      .mockImplementationOnce(async () => {
-        abort.abort(new Error('cancelled'))
-        throw new Error('opening stopped')
-      })
-      .mockRejectedValueOnce('desktop unavailable')
-    const controller = new SettingsController(ctx, { nativeOpen: true }, { openPath })
-
-    await expect(controller.openAgentPresetDirectory('first', abort.signal))
-      .rejects.toMatchObject({ code: 'gateway/cancelled' })
-    await expect(controller.openAgentPresetDirectory('second', new AbortController().signal))
-      .rejects.toMatchObject({ code: 'gateway/internal', message: 'path open failed: desktop unavailable' })
-  })
 })

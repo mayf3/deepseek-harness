@@ -512,15 +512,11 @@
 - id: tool-web
   disabled: true
 
-# The preset roster. The shipped presets are bundled inside
-# `dsh-agent-presets` itself and prepended as a read-only `system` root
-# (`includeShippedRoot`); `$DSH_HOME/.agent-presets` is where a person — or an
-# agent — authors their own, appended by the same package (`includeUserRoot`),
-# and carries the same trust as shell access because a preset IS a
-# composition. This row only names the default and any deployment-added
-# `roots`; no launcher patching is involved.
+# The preset selection registry. The shipped preset declarations follow as
+# separate patch files under `presets/`, listed after this file in
+# `package.json` `dsh.bundle.patch`.
 - insert:
-    - id: agent-presets
-      name: '@deepseek-ai/dsh-agent-presets'
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
       config:
         default: standard
