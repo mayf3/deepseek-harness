@@ -113,6 +113,7 @@ describe('web e2e: Agent Teams panel', () => {
   }, 60_000)
 
   it('keeps the panel inside the viewport and closes on outside click or Escape', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-team-panel-keyboard'))
     const panel = page.getByRole('dialog', { name: 'Agent Team', exact: true })
     const trigger = page.locator('[data-team-action]').getByRole('button', { name: /Agent Team/iu })
     const viewport = page.viewportSize()!
@@ -157,8 +158,10 @@ describe('web e2e: Agent Teams panel', () => {
       expect(await trigger.evaluate(element => element === document.activeElement)).toBe(true)
       await page.keyboard.press('Enter')
       await panel.waitFor()
-      await page.keyboard.press('Shift+Tab')
+      const outside = page.getByRole('button', { name: 'Settings', exact: true })
+      await outside.focus()
       await panel.waitFor({ state: 'detached' })
+      expect(await outside.evaluate(element => element === document.activeElement)).toBe(true)
     } finally {
       await page.setViewportSize(viewport)
     }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -99,7 +99,7 @@ export function TeamAction({
     setError(null)
   }, [sessionId])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (open && positioned) panelRef.current?.focus()
   }, [open, positioned])
 
