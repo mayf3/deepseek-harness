@@ -62,3 +62,31 @@ export async function excelHtmlFixture(): Promise<Uint8Array<ArrayBuffer>> {
   workbook.addWorksheet('Cached text').getCell('A1').value = { formula: '"cached"', result: excelHtmlText }
   return new Uint8Array(await workbook.xlsx.writeBuffer())
 }
+
+/** Build a meeting-minutes workbook whose formulas have no cached results. */
+export async function meetingMinutesFixture(): Promise<Uint8Array<ArrayBuffer>> {
+  const workbook = new ExcelJS.Workbook()
+  const info = workbook.addWorksheet('会议信息')
+  info.getCell('A1').value = '会议纪要'
+  info.getCell('B11').value = { formula: 'IF(OR(B9="",B10=""),"",ROUND((B10-B9)*1440,0))' }
+  const agenda = workbook.addWorksheet('会议议程')
+  agenda.getCell('D16').value = { formula: 'SUM(D4:D15)' }
+  agenda.getCell('E16').value = { formula: 'SUM(E4:E15)' }
+  workbook.addWorksheet('决议事项')
+  const actions = workbook.addWorksheet('行动计划')
+  for (let row = 4; row <= 23; row += 1) {
+    actions.getCell(`I${row}`).value = { formula: `IF(AND($E${row}<>"",$E${row}<TODAY(),$G${row}<>"已完成",$G${row}<>"已取消"),TODAY()-$E${row},"")` }
+  }
+  workbook.addWorksheet('待确认问题')
+  workbook.addWorksheet('风险与依赖')
+  const dashboard = workbook.addWorksheet('统计看板')
+  dashboard.getCell('A1').value = '会议纪要 · 统计看板'
+  dashboard.getCell('A5').value = '未开始'
+  dashboard.getCell('B5').value = { formula: 'COUNTIF(行动计划!$G$4:$G$23,$A5)' }
+  dashboard.getCell('C5').value = { formula: 'IF($B5=0,"",REPT("█",MAX(1,ROUND($B5/MAX(1,$B$5)*16,0))))' }
+  dashboard.getCell('D5').value = { formula: 'IFERROR($B5/$B$10,0)' }
+  dashboard.getCell('D5').numFmt = '0%'
+  dashboard.getCell('B10').value = { formula: 'SUM(B5:B9)' }
+  workbook.addWorksheet('填写说明')
+  return new Uint8Array(await workbook.xlsx.writeBuffer())
+}

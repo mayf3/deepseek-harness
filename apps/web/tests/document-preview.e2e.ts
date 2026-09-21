@@ -9,7 +9,7 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { realOfficeBytes } from './office-fixture.ts'
-import { excelFixture, excelHtmlFixture, excelHtmlText } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-fixture.ts'
+import { excelFixture, excelHtmlFixture, excelHtmlText, meetingMinutesFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-fixture.ts'
 import { xlsFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/xls-fixture.ts'
 import { pdfFixture, selectionPdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
@@ -246,6 +246,7 @@ else process.exit(1);
       ...[90, 180, 270].map(rotation => writeFile(join(cwd, `rotated-${rotation}.pdf`), pdfFixture(4, rotation))),
       writeFile(join(cwd, 'selection.pdf'), selectionPdfFixture()),
       writeFile(join(cwd, 'budget.xlsx'), await excelFixture()),
+      writeFile(join(cwd, 'meeting.xlsx'), await meetingMinutesFixture()),
       writeFile(join(cwd, 'literal-html.xlsx'), await excelHtmlFixture()),
       writeFile(join(cwd, 'budget.xls'), xlsFixture()),
       writeFile(join(cwd, 'table.csv'), '00123,"中文,字段","=SUM(1,2)"\n2024-03-01,,TRUE'),
@@ -764,17 +765,37 @@ else process.exit(1);
     await successShot(page, 'excel-budget')
     expect(await preview.locator('[data-pdf-preview]').count()).toBe(0)
     expect(await excel.locator('.fortune-toolbar').count()).toBe(0)
+    const sheetOverlay = excel.locator('.fortune-sheet-overlay')
+    const formulaInput = excel.locator('.fortune-fx-input')
+    await sheetOverlay.click({ position: { x: 500, y: 110 } })
+    await expect.poll(() => formulaInput.innerText()).toBe('=C3/B3')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('80.0%\n')
     await excel.getByText('公式与格式', { exact: true }).click()
     await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
-    await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
-    await expect.poll(() => excel.locator('.fortune-fx-input').innerText()).toBe('=_xlfn.XLOOKUP(1,{1},{42})')
-    expect(await excel.locator('.fortune-fx-input').getAttribute('contenteditable')).toBe('false')
+    await sheetOverlay.click({ position: { x: 140, y: 30 } })
+    await expect.poll(() => formulaInput.innerText()).toBe('46281')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('2026-09-16\n')
+    await sheetOverlay.click({ position: { x: 70, y: 30 } })
+    await expect.poll(() => formulaInput.innerText()).toBe('=_xlfn.XLOOKUP(1,{1},{42})')
+    expect(await formulaInput.getAttribute('contenteditable')).toBe('false')
     await page.keyboard.press('ControlOrMeta+C')
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('42\n')
     await page.keyboard.type('999')
     await page.keyboard.press('ControlOrMeta+C')
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('42\n')
     await successShot(page, 'excel-cached-formula')
+    await openFile('meeting.xlsx')
+    await excel.getByText('会议信息', { exact: true }).waitFor({ state: 'visible' })
+    expect(await excel.getByText('Read-only preview', { exact: false }).count()).toBe(0)
+    expect(await excel.getByText('Some formulas have no saved result', { exact: false }).count()).toBe(0)
+    const formulaWarning = excel.locator('[data-excel-formula-warning]')
+    await formulaWarning.hover()
+    await page.getByText('This workbook contains formulas. Displayed results may be missing or inaccurate.', { exact: true }).waitFor()
+    await excel.getByText('统计看板', { exact: true }).click()
+    await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
+    await successShot(page, 'excel-meeting')
     await openFile('budget.xls')
     await excel.getByText('预算', { exact: true }).waitFor({ state: 'visible' })
     await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
@@ -786,7 +807,6 @@ else process.exit(1);
     await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
     await successShot(page, 'excel-legacy')
     await openFile('literal-html.xlsx')
-    const formulaInput = excel.locator('.fortune-fx-input')
     for (const [sheet, formula, copied] of [
       ['Formula', `="${excelHtmlText}"`, 'saved result'],
       ['Text', excelHtmlText, excelHtmlText],
@@ -812,6 +832,8 @@ else process.exit(1);
       '## Browser Excel preview', '',
       '- Opens without the Office conversion service',
       '- Sheets: 季度预算 | 公式与格式; hidden worksheet omitted',
+      '- Formula workbooks use a compact warning beside fx; notice rows absent',
+      '- Formatted percent copied: 80.0%; date copied: 2026-09-16',
       '- Cached XLOOKUP result copied: 42; typing leaves it unchanged',
       '- Formula bar is read-only; PDF body and editing toolbar absent',
       '- HTML-looking formulas, text, and cached results stay literal; copying retains text and table cells without executing HTML',

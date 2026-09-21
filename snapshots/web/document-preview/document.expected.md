@@ -76,6 +76,8 @@
 
 - Opens without the Office conversion service
 - Sheets: 季度预算 | 公式与格式; hidden worksheet omitted
+- Formula workbooks use a compact warning beside fx; notice rows absent
+- Formatted percent copied: 80.0%; date copied: 2026-09-16
 - Cached XLOOKUP result copied: 42; typing leaves it unchanged
 - Formula bar is read-only; PDF body and editing toolbar absent
 - HTML-looking formulas, text, and cached results stay literal; copying retains text and table cells without executing HTML

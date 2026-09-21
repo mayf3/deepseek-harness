@@ -9,19 +9,35 @@
 }
 
 .workbook {
+  position: relative;
   flex: 1;
   min-height: 0;
   min-width: 0;
   color-scheme: light;
 }
 
-.notice {
-  flex: none;
-  margin: 0;
-  padding: 6px 12px;
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
-  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
+.formulaWarning {
+  position: absolute;
+  top: 4px;
+  left: 142px;
+  z-index: 3;
+  display: flex;
+  width: 20px;
+  height: 20px;
+  padding: 3px;
+  color: var(--dsw-alias-state-warn-label);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+}
+
+.formulaWarning:hover, .formulaWarning:focus-visible {
+  background: var(--dsw-alias-state-warn-tertiary);
+  outline: none;
+}
+
+.withFormulaWarning :global(.fortune-fx-input) {
+  padding-left: 24px;
 }
 
 .status {

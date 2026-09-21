@@ -1,7 +1,7 @@
 /** Read-only spreadsheet surface backed by browser-parsed workbook data. */
 import { useEffect, useState, type ReactNode } from 'react'
 import { Workbook } from '@fortune-sheet/react'
-import { Button, IconLoadingOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconLoadingOutlineRegular, IconWarningTriangleOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import fortuneCss from '@fortune-sheet/react/dist/index.css?inline'
 import type { ExcelFormat } from './format.ts'
 import type { ExcelPreview } from './model.ts'
@@ -19,7 +19,6 @@ const scopedStyles = `@scope ([data-excel-preview]) { ${fortuneCss} }`
  */
 export function ExcelBody({ content, format, limits, t }: LoadedExcelBodyProps): ReactNode {
   const data = content.kind === 'bytes' ? content.data : undefined
-  const delimited = format === 'csv' || format === 'tsv'
   const [state, setState] = useState<State>()
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
@@ -40,11 +39,15 @@ export function ExcelBody({ content, format, limits, t }: LoadedExcelBodyProps):
     <span>{t(state.error === 'tooLarge' || state.error === 'timeout' || state.error === 'encoding' ? state.error : 'invalid')}</span>
     <Button size="sm" onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</Button>
   </div>
+  const hasFormulas = state.value.sheets.some(sheet => sheet.celldata?.some(cell => cell.v?.f !== undefined))
   return <section className={css.body} data-excel-preview aria-label={t('title')}>
     <style>{scopedStyles}</style>
-    <p className={css.notice} title={delimited ? undefined : t(format === 'xls' ? 'xlsLimitations' : 'limitations')}>{t(delimited ? 'textSummary' : 'summary')}</p>
-    {state.value.missingResults > 0 && <p className={css.notice} role="status">{t('missingResults')}</p>}
-    <div className={css.workbook}>
+    <div className={`${css.workbook} ${hasFormulas ? css.withFormulaWarning : ''}`}>
+      {hasFormulas && <Tooltip portal label={t('formulaWarning')} side="bottom" delayMs={500}>
+        <button type="button" className={css.formulaWarning} aria-label={t('formulaWarning')} data-excel-formula-warning>
+          <IconWarningTriangleOutlineRegular size={14} />
+        </button>
+      </Tooltip>}
       <Workbook key={`${attempt}:${t('language')}`} data={state.value.sheets} lang={t('language')}
         allowEdit={false} showToolbar={false} showFormulaBar showSheetTabs forceCalculation={false}
         cellContextMenu={['copy']} headerContextMenu={[]} sheetTabContextMenu={[]} filterContextMenu={[]} />

@@ -16,15 +16,16 @@ import { LazyExcelBody } from '../src/client/excel/LazyExcelBody.tsx'
 const props = { content: { kind: 'bytes', data: new Uint8Array([1]) }, limits: Config({}).excel, t: makeTranslate(en), resourceAddress: 'dsh-resource://file/session/s1/book.xlsx' } as ExcelBodyProps
 const loadedProps = { ...props, format: 'xlsx' } as LoadedExcelBodyProps
 const value = { sheets: [{ name: 'Budget', celldata: [] }], missingResults: 0 }
+const formulaValue = { sheets: [{ name: 'Budget', celldata: [{ r: 0, c: 0, v: { f: '=SUM(1,2)', m: '' } }] }], missingResults: 1 }
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 
 it('shows loading then a workbook with editing and recalculation disabled', async () => {
-  mocked.parse.mockResolvedValue({ ...value, missingResults: 1 })
+  mocked.parse.mockResolvedValue(formulaValue)
   const view = render(<ExcelBody {...loadedProps} />)
   expect(screen.getByRole('status', { name: en.loading })).toBeDefined()
-  await screen.findByText(en.summary)
-  expect(screen.getByText(en.missingResults)).toBeDefined()
-  expect(mocked.workbook.mock.calls[0]![0]).toMatchObject({ data: value.sheets, allowEdit: false, forceCalculation: false, showToolbar: false, showSheetTabs: true, lang: 'en', cellContextMenu: ['copy'] })
+  await waitFor(() => { expect(mocked.workbook).toHaveBeenCalledOnce() })
+  expect(screen.getByRole('button', { name: en.formulaWarning })).toBeDefined()
+  expect(mocked.workbook.mock.calls[0]![0]).toMatchObject({ data: formulaValue.sheets, allowEdit: false, forceCalculation: false, showToolbar: false, showSheetTabs: true, lang: 'en', cellContextMenu: ['copy'] })
   const signal = mocked.parse.mock.calls[0]![3] as AbortSignal
   view.unmount()
   expect(signal.aborted).toBe(true)
@@ -36,10 +37,10 @@ it('ignores a retired file result and cancels parsing when the bytes change', as
   const view = render(<ExcelBody {...loadedProps} />)
   const signal = mocked.parse.mock.calls[0]![3] as AbortSignal
   view.rerender(<ExcelBody {...loadedProps} content={{ kind: 'bytes', data: new Uint8Array([2]) }} />)
-  await screen.findByText(en.summary)
+  await waitFor(() => { expect(mocked.workbook).toHaveBeenCalledTimes(1) })
   expect(signal.aborted).toBe(true)
-  finish({ ...value, missingResults: 1 })
-  await waitFor(() => { expect(screen.queryByText(en.missingResults)).toBeNull() })
+  finish(value)
+  await waitFor(() => { expect(mocked.workbook).toHaveBeenCalledTimes(1) })
 })
 
 it.each(['invalid', 'tooLarge', 'timeout', 'encoding', 'unexpected'])('shows localized %s errors and retries explicitly', async (error) => {
@@ -48,7 +49,7 @@ it.each(['invalid', 'tooLarge', 'timeout', 'encoding', 'unexpected'])('shows loc
   const key = error === 'tooLarge' || error === 'timeout' || error === 'encoding' ? error : 'invalid'
   await screen.findByText(en[key])
   fireEvent.click(screen.getByRole('button', { name: en.retry }))
-  await screen.findByText(en.summary)
+  await waitFor(() => { expect(mocked.workbook).toHaveBeenCalledOnce() })
   expect(mocked.parse).toHaveBeenCalledTimes(2)
 })
 
@@ -61,7 +62,8 @@ it('rejects non-byte content without allocating a parser', () => {
 it.each(['xlsx', 'xls', 'csv', 'tsv'])('loads the spreadsheet chunk for %s', async (format) => {
   mocked.parse.mockResolvedValue(value)
   render(<LazyExcelBody {...props} resourceAddress={`dsh-resource://file/session/s1/book.${format}`} />)
-  await screen.findByText(format === 'csv' || format === 'tsv' ? en.textSummary : en.summary)
+  await waitFor(() => { expect(mocked.workbook).toHaveBeenCalledOnce() })
+  expect(screen.queryByRole('button', { name: en.formulaWarning })).toBeNull()
   expect(mocked.parse.mock.calls[0]![1]).toBe(format)
 })
 

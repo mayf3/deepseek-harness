@@ -4,12 +4,12 @@ import { strToU8, unzipSync, zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import { convertExcel } from '../src/client/excel/convert.ts'
 import { Config } from '../src/config.ts'
-import { excelFixture } from './excel-fixture.ts'
+import { excelFixture, meetingMinutesFixture } from './excel-fixture.ts'
 
 const limits = Config({}).excel
 
 describe('Excel conversion', () => {
-  it('keeps values, cached formulas, styles, merges, dimensions, visibility, and frozen headings', async () => {
+  it('keeps values, dates, cached formulas, styles, merges, dimensions, visibility, and frozen headings', async () => {
     const input = await excelFixture()
     const { sheets, missingResults } = await convertExcel(input, 'xlsx', limits)
     expect(input.byteLength).toBeGreaterThan(0)
@@ -40,6 +40,17 @@ describe('Excel conversion', () => {
     expect(second.config).toMatchObject({ rowhidden: { 6: 0 }, colhidden: { 4: 0 }, rowlen: { 6: 40 * 96 / 72 } })
     expect(sheets[2]).toMatchObject({ hide: 1, status: 0 })
     expect(missingResults).toBe(1)
+  })
+
+  it('opens workbooks with missing results and Chinese worksheet references', async () => {
+    const { sheets, missingResults } = await convertExcel(await meetingMinutesFixture(), 'xlsx', limits)
+    expect(sheets.map(sheet => sheet.name)).toEqual(['会议信息', '会议议程', '决议事项', '行动计划', '待确认问题', '风险与依赖', '统计看板', '填写说明'])
+    const dashboard = sheets[6]!
+    const cell = (r: number, c: number) => dashboard.celldata!.find(value => value.r === r && value.c === c)!.v
+    expect(cell(4, 1)).toMatchObject({ f: '=COUNTIF(行动计划!$G$4:$G$23,$A5)', m: '' })
+    expect(cell(4, 2)).toMatchObject({ f: '=IF($B5=0,"",REPT("█",MAX(1,ROUND($B5/MAX(1,$B$5)*16,0))))', m: '' })
+    expect(cell(4, 3)).toMatchObject({ f: '=IFERROR($B5/$B$10,0)', m: '' })
+    expect(missingResults).toBe(27)
   })
 
   it('rejects damaged files, byte limits and sparse worksheets that would allocate a large matrix', async () => {
