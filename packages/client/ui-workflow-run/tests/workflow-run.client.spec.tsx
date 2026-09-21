@@ -307,7 +307,6 @@ const listState = (overrides: Partial<SessionListState> = {}): SessionListState 
   projectionsBySession: { [PARENT_ID]: { state: 'ready', error: null, values: { subagentCatalog: [
     { createdAt: 1, id: CHILD_ID, mode: 'one-shot' },
   ] } } },
-  jobsBySession: {},
   ...overrides,
 })
 

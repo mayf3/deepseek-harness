@@ -1,2 +1,2 @@
 - list "Background jobs":
-  - listitem: "bash sleep 45 signal: SIGTERM {{duration}}"
+  - listitem: "bash for _ in $(seq 1 3000); do [ -e .background-job-list.release ] && break; sleep 0.2; done signal: SIGTERM; web e2e cancellation {{duration}}"

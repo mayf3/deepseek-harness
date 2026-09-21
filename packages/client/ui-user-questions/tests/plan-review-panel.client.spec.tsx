@@ -53,7 +53,6 @@ const sessionList = {
   byId: { [SID]: { id: SID, displayTitle: 'Session', running: false, retainedBy: {}, blank: false, updatedAt: 0 } },
   phase: 'ready' as const,
   projectionsBySession: {},
-  jobsBySession: {},
 }
 const attentionState: AttentionState = new Map()
 const workspaceState = {

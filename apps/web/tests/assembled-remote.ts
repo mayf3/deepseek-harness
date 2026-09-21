@@ -60,7 +60,6 @@ interface ControlBaseline {
   readonly type: 'baseline'
   readonly value: {
     readonly queues: Readonly<Record<string, readonly unknown[]>>
-    readonly jobs: Readonly<Record<string, readonly unknown[]>>
     readonly approvals: readonly unknown[]
     readonly questions: readonly unknown[]
     readonly projections: Readonly<Record<string, {
@@ -178,6 +177,9 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
   })
   mock.stream('session/control', (_args, stream) => {
     stream.push(structuredClone(fixture.control))
+  })
+  mock.stream('job/list', (_args, stream) => {
+    stream.push({ type: 'rows', jobs: [] })
   })
   mock.stream('workspace/follow', (_args, stream) => {
     stream.push({
