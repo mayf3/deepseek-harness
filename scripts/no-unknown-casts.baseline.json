@@ -1388,9 +1388,6 @@
   "packages/hooks/hook-protocol/tests/events.spec.ts": {
     "a59fe57e5f3994018a6bd25208b9c2f56a7bcf7353d6ec2d453564f3f5c225f2": 1
   },
-  "packages/hooks/hook-protocol/tests/runner.spec.ts": {
-    "09500884210bc2ec2161286a539ca63f8c2627ca73a82ca00d24c58d600118f3": 1
-  },
   "packages/hooks/hooks-claude-code/tests/bridge.spec.ts": {
     "38a7cf3dfd5da2f739390f5b233b97731f3bfa1ac3a51fdb8e1594735764bb80": 1
   },

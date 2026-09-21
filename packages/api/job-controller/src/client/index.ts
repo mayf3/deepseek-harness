@@ -1,6 +1,6 @@
 /**
- * Job Controller client half: installs `ctx.jobs` over the generated `job`
- * Remote namespace. The plugin resolves both Remote faces it drives while its
+ * Job Controller client half: installs `ctx.jobs` (rosters, observations, and
+ * the human kill) over the generated `job` Remote namespace. The plugin resolves both Remote faces it drives while its
  * own context is current, because stream (re)opens run on caller stacks — a
  * React event, a carrier retry — whose dynamic context has not declared
  * `remote.job`.
@@ -18,7 +18,7 @@ export type { JobsSnapshot, ObservedJob } from './model.ts'
 // declaration emit drops the value import above.
 export type { IJobs } from './service.ts'
 export type {
-  JobChunk, JobFollowFrame, JobFollowRequest, JobListFrame, JobListRequest, JobView,
+  JobChunk, JobKillRequest, JobKillValue, JobFollowFrame, JobFollowRequest, JobListFrame, JobListRequest, JobView,
 } from '../types.ts'
 
 /** Required Client Remote services. */

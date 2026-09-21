@@ -256,6 +256,8 @@ it('uses the same application menu in the prominent empty-state control', async 
   const view = render(<OpenPathEmptyAction {...b.props} />)
   await act(async () => {})
   expect(view.container.querySelector('[data-open-target]')?.getAttribute('data-size')).toBe('large')
+  // The large control scales the menu chevron up from the compact 10px glyph.
+  expect(screen.getByRole('button', { name: zh['path.more'] }).querySelector('svg')?.getAttribute('width')).toBe('14')
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.more'] })) })
   expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Music（默认）', zh['path.reveal']])
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Music（默认）' })) })

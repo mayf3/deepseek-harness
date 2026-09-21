@@ -69,7 +69,7 @@ This section explains the design decisions behind the contract and points at the
 - **Contract and implementation are separate packages.** `JobRegistry` is an abstract Cordis service; loading the class directly throws, so a misconfigured composition fails at load instead of registering an empty `ctx.jobs`.
 - **One registry per process, owner-relative answers.** One instance serves every composition in the process, so registrations and deliveries are relative to the registering scope: a controller or listener registered from an unscoped context serves every owner; one registered under an agent composition's scope serves exactly the agents composed under it.
 - **Access is fenced by the owner's session id.** Ids are predictable, so authorization — not secrecy — is the boundary.
-- **Settlement is first-wins, and its event follows every released waiter.** One terminal record, released waiters, then one round of contained event delivery; a consumer that claims a settlement while waiting therefore always claims before the event, so `dsh-tool-jobs` never announces a completion the model already collected.
+- **Settlement is first-wins, and its event follows every released waiter.** One terminal record, released waiters, then one round of contained event delivery; the `settled` event reports whether it released a live `wait` (`awaited`), so `dsh-tool-jobs` never announces a completion a waiting caller already collected, whichever plugin was waiting.
 - **Registrations outlive producer and controller fibers.** Owner and service disposal cancel live work and await compliant producers; a throwing teardown cancel force-fails only the record.
 
 ### Source map
@@ -84,7 +84,7 @@ This section explains the design decisions behind the contract and points at the
 
 ### Service operations
 
-Each read or control operation accepts an optional caller `SessionId`; omitting it permits only unowned jobs: `list` and `get` return fresh projections, `read` advances the model's cursor and hands out the producer's result once after settlement, `readAt` reads retained chunks at an absolute offset without consuming anything, `kill` invokes producer cancellation before changing status and records the reason for the terminal `detail`, `wait` blocks up to a timeout, and `start()` preflights access, validation, and admission before invoking the producer's `run()` once while refusing any owner no attached controller serves; `events.subscribe` delivers registration, progress, stopping, settlement, removal, and output commits at owner, scope, or process granularity.
+Each read or control operation accepts an optional caller `SessionId`; omitting it permits only unowned jobs: `list` and `get` return fresh projections, `read` advances the model's cursor and hands out the producer's result once after settlement, `readAt` reads retained chunks at an absolute offset without consuming anything, `kill` invokes producer cancellation before changing status and records the reason for the terminal `detail`, `wait` blocks up to a timeout, `remove` drops a settled record a caller collected through its own wait and never handed out, and `start()` preflights access, validation, and admission before invoking the producer's `run()` once while refusing any owner no attached controller serves; `events.subscribe` delivers registration, progress, stopping, settlement, removal, and output commits at owner, scope, or process granularity.
 
 </details>
 
@@ -123,7 +123,7 @@ These limits define when the contract is a poor fit. They are current package co
 
 - **The contract is in-process** — `JobSpec.run()` passes callbacks and the registry resolves the live `Agent` behind the owner session; a durable or cross-process backend must reshape identity, restart, ownership, and observation semantics before it can implement this seam.
 - **The model's cursor is the only consuming read** — independent observers use the non-consuming `readAt` and never move it.
-- **Foreground work cannot be promoted** — producers choose foreground or background before starting.
+- **A settled record stays listed until it is removed** — by its owner's disposal, service disposal, or an explicit `remove` from the caller that collected it; the registry keeps no retention count of settled jobs.
 
 <a id="dev-note"></a>
 ### Dev Note
