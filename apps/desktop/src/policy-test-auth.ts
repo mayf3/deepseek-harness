@@ -1,4 +1,5 @@
 /** Isolated, process-lifetime Feishu cookies for explicitly configured test policy requests. */
+import { installDevToolsShortcut } from './devtools-shortcut.ts'
 import { randomUUID } from 'node:crypto'
 import { BrowserWindow, session } from 'electron'
 import type { DesktopLocale } from './locale.ts'
@@ -92,11 +93,7 @@ export class DesktopPolicyTestAuth {
     window.on('closed', () => { finish('cancelled') })
     window.on('page-title-updated', (event) => { event.preventDefault() })
     const contents = window.webContents
-    contents.on('before-input-event', (event, input) => {
-      if (input.type !== 'keyDown' || input.key !== 'F12' || input.isAutoRepeat) return
-      event.preventDefault()
-      contents.openDevTools({ mode: 'detach' })
-    })
+    installDevToolsShortcut(contents)
     contents.setWindowOpenHandler(() => ({ action: 'deny' }))
     contents.on('will-navigate', (event, url) => {
       if (!this.allowed(url)) { event.preventDefault(); finish('failed') }

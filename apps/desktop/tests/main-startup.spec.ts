@@ -368,45 +368,13 @@ describe('desktop main startup', () => {
     expect((await handler(new Request('dsh-app://unknown/update-dialog.html'))).status).toBe(404)
   })
 
-  it.each(['darwin', 'win32'])('opens packaged main-window DevTools with F12 on %s', async (platform) => {
-    vi.stubGlobal('process', { ...process, platform })
+  it('installs DevTools shortcuts on the packaged main window', async () => {
     await readyForUpdate()
-    const contents = harness.windows[0]!.webContents
-    expect(contents.openDevTools).not.toHaveBeenCalled()
+    const window = harness.windows[0]!
+    expect(window.options).toMatchObject({ webPreferences: { devTools: true } })
     const event = { preventDefault: vi.fn() }
-    for (const input of [
-      { type: 'keyUp', key: 'F12' },
-      { type: 'keyDown', key: 'F11' },
-      { type: 'keyDown', key: 'F12', isAutoRepeat: true },
-    ]) contents.emit('before-input-event', event, input)
-    expect(contents.openDevTools).not.toHaveBeenCalled()
-    expect(event.preventDefault).not.toHaveBeenCalled()
-    contents.emit('before-input-event', event, { type: 'keyDown', key: 'F12', isAutoRepeat: false })
-    expect(event.preventDefault).toHaveBeenCalledOnce()
-    expect(contents.openDevTools).toHaveBeenCalledExactlyOnceWith({ mode: 'detach' })
-  })
-
-  it.each(['darwin', 'win32'])('handles Command+Option+I only on macOS (platform=%s)', async (platform) => {
-    vi.stubGlobal('process', { ...process, platform })
-    await readyForUpdate()
-    const contents = harness.windows[0]!.webContents
-    const event = { preventDefault: vi.fn() }
-    const input = { type: 'keyDown', key: 'ˆ', code: 'KeyI', meta: true, alt: true,
-      control: false, shift: false, isAutoRepeat: false }
-    for (const change of [
-      { type: 'keyUp' }, { isAutoRepeat: true }, { code: 'KeyJ' },
-      { meta: false }, { alt: false }, { control: true }, { shift: true },
-    ]) contents.emit('before-input-event', event, { ...input, ...change })
-    expect(contents.openDevTools).not.toHaveBeenCalled()
-    expect(event.preventDefault).not.toHaveBeenCalled()
-    contents.emit('before-input-event', event, input)
-    if (platform === 'darwin') {
-      expect(contents.openDevTools).toHaveBeenCalledExactlyOnceWith({ mode: 'detach' })
-      expect(event.preventDefault).toHaveBeenCalledOnce()
-    } else {
-      expect(contents.openDevTools).not.toHaveBeenCalled()
-      expect(event.preventDefault).not.toHaveBeenCalled()
-    }
+    window.webContents.emit('before-input-event', event, { type: 'keyDown', key: 'F12' })
+    expect(window.webContents.openDevTools).toHaveBeenCalledExactlyOnceWith({ mode: 'detach' })
   })
 
   it.each([

@@ -1,3 +1,4 @@
+import { installDevToolsShortcut } from './devtools-shortcut.ts'
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
@@ -151,18 +152,10 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
       sandbox: true,
       webSecurity: true,
       webviewTag: primary,
+      devTools: primary,
     },
   })
-  if (primary) {
-    window.webContents.on('before-input-event', (event, input) => {
-      if (input.type !== 'keyDown' || input.isAutoRepeat) return
-      const macShortcut = process.platform === 'darwin' && input.code === 'KeyI'
-        && input.meta && input.alt && !input.control && !input.shift
-      if (input.key !== 'F12' && !macShortcut) return
-      event.preventDefault()
-      window.webContents.openDevTools({ mode: 'detach' })
-    })
-  }
+  if (primary) installDevToolsShortcut(window.webContents)
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (['http:', 'https:'].includes(new URL(url).protocol)) void shell.openExternal(url)
     return { action: 'deny' }

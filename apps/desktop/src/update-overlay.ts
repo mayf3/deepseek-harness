@@ -1,6 +1,16 @@
 /** Shell-owned modal windows cover the parent's content without replacing its native window controls. */
 import { BrowserWindow } from 'electron'
 
+const overlays = new WeakMap<object, Set<BrowserWindow>>()
+
+/**
+ * @param contents - Parent renderer whose input may be blocked by an update overlay.
+ * @returns Whether at least one update overlay remains attached.
+ */
+export function hasUpdateOverlay(contents: object): boolean {
+  return (overlays.get(contents)?.size ?? 0) > 0
+}
+
 /**
  * @param parent - Product window whose content is blocked while the overlay is open.
  * @param preload - Isolated shell-only preload.
@@ -14,6 +24,13 @@ export function createUpdateOverlay(parent: BrowserWindow, preload: string, titl
     ...parent.getContentBounds(), resizable: false, minimizable: false, maximizable: false,
     skipTaskbar: true, hasShadow: false, title,
     webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true },
+  })
+  const attached = overlays.get(parent.webContents) ?? new Set<BrowserWindow>()
+  overlays.set(parent.webContents, attached)
+  attached.add(window)
+  window.once('closed', () => {
+    attached.delete(window)
+    if (attached.size === 0) overlays.delete(parent.webContents)
   })
   // macOS native modals animate the entire viewport as a sheet.
   const focus = (): void => { if (!window.isDestroyed()) window.focus() }
