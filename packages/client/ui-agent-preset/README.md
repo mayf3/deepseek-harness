@@ -25,7 +25,7 @@ Choose Agent presets and the new-task default in Web, and read what each mode do
 <a id="use-this-package"></a>
 ## Use this package
 
-Settings shows the built-in and custom card groups with default highlighting and card-body selection; a group without presets is omitted. The page edits nothing: the question icon beside the title opens a dialog explaining that presets are declared by installed bundles and, when the `cordis` preset is on the roster and a conversation flow exists, offers to start a Creator-mode task that authors or overrides a preset as a bundle.
+Settings shows the built-in and custom card groups with default highlighting and card-body selection; a group without presets is omitted, except the custom group, which keeps its Creator entry on screen. The page edits nothing: that entry starts a Creator-mode task that authors or overrides a preset as a bundle, offered while the `cordis` preset is on the roster and a conversation flow exists.
 
 The “Choose a mode for new tasks” switch controls whether the saved user default is active. Hiding selection uses the deployment default; showing it restores the user preference. Choosing a healthy default also synchronizes the blank session on the current new-task surface. Creator starts a new task using the `cordis` preset. The new-session picker additionally requires Developer tools in General Settings.
 
