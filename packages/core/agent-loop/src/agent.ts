@@ -69,10 +69,10 @@ function requestProposal(header: EpochHeader): LlmCallConfig {
 }
 
 /**
- * Read the cause {@link ReactLoopAgent.cancel} aborted a loop-owned signal
- * with, copying the fields `turn/end` records. The live reason stays the
- * caller's object, and Node's fetch assigns a `stack` onto it that
- * `Session.append` would either log or reject as data JSON cannot hold.
+ * Read the cause `cancel()` passed when aborting a loop-owned signal, copying
+ * only the fields `turn/end` records. The live reason stays the caller's
+ * object, and Node's fetch assigns a `stack` onto it that `Session.append`
+ * would either log or reject as data JSON cannot hold.
  * @param signal - a turn or maintenance signal this loop owns.
  * @returns the copied cause, or undefined while the signal is still live.
  */
