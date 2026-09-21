@@ -14,7 +14,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import * as Retry from '../src/index.ts'
 
 let context: Context | undefined
-const servers: MockLlmServer[] = []
+const servers: Promise<MockLlmServer>[] = []
 
 afterEach(async () => {
   const ownedContext = context
@@ -22,18 +22,18 @@ afterEach(async () => {
   // A failed transport can still await a stalled socket while its context disposes.
   const results = await Promise.allSettled([
     ownedContext?.fiber.dispose(),
-    ...servers.splice(0).map(server => server.close()),
+    ...servers.splice(0).map(async server => (await server).close()),
   ])
   vi.unstubAllEnvs()
   const failure = results.find(result => result.status === 'rejected')
   if (failure?.status === 'rejected') throw failure.reason
 })
 
-async function start(
+function start(
   sequence: readonly MockLlmBehavior[],
   options: Omit<Parameters<typeof startMockLlmServer>[0], 'sequence'> = {},
 ): Promise<MockLlmServer> {
-  const server = await startMockLlmServer({ sequence, ...options })
+  const server = startMockLlmServer({ sequence, ...options })
   servers.push(server)
   return server
 }
