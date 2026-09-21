@@ -66,6 +66,8 @@ The completed-turn action footer follows the recorded Turn end. Its action row s
 <a id="turn-process-folding"></a>
 ## Turn Process Folding
 
+Preference menus restore focus to their trigger without scrolling before publishing a new selection.
+
 Work-details modes control process-group display and reasoning previews; eligible completed Turns fold their process without hiding the final answer. The [business-rule reference](src/client/conversation-nodes/README.md#display-modes) contains the mode table, title behavior, whole-Turn eligibility, clocks, and disclosure resets.
 
 -----
