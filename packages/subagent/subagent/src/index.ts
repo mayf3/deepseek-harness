@@ -73,6 +73,7 @@ import SubagentContinuationManager from './continuation.ts'
 import type { SubagentDelivery } from './inbox.ts'
 import { listChildren as listSubagentChildren, listDescendants as listSubagentDescendants } from './list-children.ts'
 import type { SubagentDescendantListEntry } from './list-children.ts'
+import { installSubagentArchiveAdmission } from './archive-admission.ts'
 import { snapshotSubagentDescriptor } from './descriptor.ts'
 import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
 import { establishCatalogChild, subagentCatalogProjectionDefinition } from './catalog.ts'
@@ -230,6 +231,9 @@ export class SubagentRuntime extends TypertRemoteService {
       projections.register(subagentTimingProjectionDefinition)
       projections.register(subagentIdentityProjectionDefinition)
     })
+    // Archive admission: this runtime is the owner that knows which live
+    // children descend from a Session and how a parent stops them.
+    ctx.inject(['agents'], (agentsCtx: Context) => { installSubagentArchiveAdmission(agentsCtx) })
   }
 
   /**
