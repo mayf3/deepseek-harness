@@ -1,26 +1,9 @@
-// Web e2e scenario: at the 800×720 viewport the plan chip and the model
-// trigger keep disjoint click areas, and clicking the chip at its center
-// leaves plan mode through the real command channel. This is the browser
-// regression the external report asked for (dsh-external/issues#107 →
-// deepseek-harness#1406): "increase an 800×720 browser regression test and
-// assert that the plan center hits the plan button".
-//
-// Plan mode is entered through the real /plan command with no argument:
-// the command handler commits plan/mode active on the live agent without a
-// model round (the lifecycle-chrome precedent), so the test needs no model
-// call in any mode and no API key in replay/refresh; a providers-only
-// fixture mounts the model catalog without a script to consume. Plan state
-// folds from the session log (`plan/mode`, last one wins); the chip executes
-// /plan off through commands.execute, which needs the live agent
-// connectFreshWorkspace keeps.
-//
-// The geometry golden records stable facts — viewport membership on both
-// axes for the chip and the trigger, and disjoint click areas — never
-// absolute coordinates, whose pixel values depend on installed fonts and
-// differ between macOS and Linux. The center hit-test is Playwright's
-// actionability check: clicking the chip fails in a real engine when the
-// element center does not receive pointer events. jsdom resolves no layout,
-// so only a real engine can answer any of these facts.
+// Browser regressions for composer click areas and content-sized model collapse.
+// The live /plan command changes mode without a model round; a providers-only
+// fixture supplies the model catalog. Real-engine geometry and click actions
+// cover the 800×720 layout, same-width model changes, resizing, and Plan toggles.
+// Goldens retain visibility, containment, and stability facts rather than pixel
+// coordinates, which depend on platform fonts.
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
@@ -38,7 +21,7 @@ import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './suppor
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/plan-narrow-viewport', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
-const LAYOUT_EXPECTED = join(SNAPSHOT_DIR, 'layout.expected.md')
+const LAYOUT_EXPECTED = fileURLToPath(new URL('./expected/plan-narrow-viewport/layout.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 
 /** The reported viewport: 800×720, where the composer card is 448px wide at 0.0.1. */
@@ -179,7 +162,9 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
     const overlapArea = Math.max(0, overlapRight - overlapLeft) * Math.max(0, overlapBottom - overlapTop)
 
     const layoutGolden = [
-      '# Plan chip and model trigger at the 800×720 viewport',
+      '# Composer control layout',
+      '',
+      '## Click areas at the 800×720 viewport',
       '',
       '- Plan chip fully in viewport: ' + (chipInViewport ? 'true' : 'false'),
       '- Model trigger fully in viewport: ' + (triggerInViewport ? 'true' : 'false'),
@@ -272,6 +257,6 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
   }, 200_000)
 
   it('keeps the snapshot inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['session.v3.jsonl', 'layout.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['session.v3.jsonl'])
   })
 })
