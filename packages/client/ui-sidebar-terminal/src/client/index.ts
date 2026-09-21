@@ -51,24 +51,22 @@ export function apply(ctx: Context): void {
   const namespace = 'sidebarTerminal'
   const id = '@deepseek-ai/dsh-client-ui-sidebar-terminal'
   const t = ctx.locale.bind(namespace)
-  ctx.inject(['shortcuts'], (ctx) => {
-    ctx.effect(() => ctx.shortcuts.register({
-      id: 'terminal.new' as ShortcutCommandId, label: () => t('new'), aliases: ['new terminal', 'shell'],
-      defaults: {
-        'desktop:macos': { code: 'Backquote', modifiers: ['control'] },
-        'desktop:windows': { code: 'Backquote', modifiers: ['control'] },
-        'desktop:linux': { code: 'Backquote', modifiers: ['control'] },
-        'web:macos': { code: 'Backquote', modifiers: ['control'] },
-        'web:windows': { code: 'Backquote', modifiers: ['control'] },
-      },
-      regions: ['page', 'editable', 'terminal'], modals: [],
-      resolve: ({ target: element }) => {
-        const target = ctx.sidebarRight.commandTarget(element)
-        if (target === undefined) return { status: 'blocked', reason: t('shortcut.noSession') }
-        return { status: 'handled', run: () => { ctx.sidebarRight.openTabFromTarget('terminal', target) } }
-      },
-    }), 'ui-sidebar-terminal: shortcut')
-  })
+  ctx.effect(() => ctx.shortcuts.register({
+    id: 'terminal.new' as ShortcutCommandId, label: () => t('new'), aliases: ['new terminal', 'shell'],
+    defaults: {
+      'desktop:macos': { code: 'Backquote', modifiers: ['control'] },
+      'desktop:windows': { code: 'Backquote', modifiers: ['control'] },
+      'desktop:linux': { code: 'Backquote', modifiers: ['control'] },
+      'web:macos': { code: 'Backquote', modifiers: ['control'] },
+      'web:windows': { code: 'Backquote', modifiers: ['control'] },
+    },
+    regions: ['page', 'editable', 'terminal'], modals: [],
+    resolve: ({ target: element }) => {
+      const target = ctx.sidebarRight.commandTarget(element)
+      if (target === undefined) return { status: 'blocked', reason: t('shortcut.noSession') }
+      return { status: 'handled', run: () => { ctx.sidebarRight.openTabFromTarget('terminal', target) } }
+    },
+  }), 'ui-sidebar-terminal: shortcut')
   ctx.effect(() => ctx.locale.register(namespace, { zh, en }), 'ui-sidebar-terminal.copy')
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id, kind: 'terminal', multiple: true, priority: 'builtin', title: () => t('title'),

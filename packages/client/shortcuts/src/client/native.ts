@@ -27,6 +27,7 @@ export function installNativeKeyboard(window: Window, keyboard: DesktopKeyboardA
       registry.dispatch({ ...input, composing: false, defaultPrevented: false }, context, () => {})
       return
     }
+    // Renderer focus and embedding identity may change after preload verification.
     if (!(target instanceof HTMLIFrameElement) || !target.isConnected
       || !target.matches('iframe[data-sidebar-browser-frame], iframe[data-html-preview]')
       || input.frameName === '' || target.name !== input.frameName) return

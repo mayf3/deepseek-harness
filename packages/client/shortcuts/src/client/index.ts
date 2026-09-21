@@ -34,7 +34,6 @@ export default class ShortcutsService extends Service implements Shortcuts {
   readonly stopSequenceMs: number
   private readonly fixedListeners = new Set<(input: ShortcutFixedInput) => void>()
   private readonly adapter: DesktopShortcutsApi | undefined
-  private readonly keyboard: DesktopKeyboardApi | undefined
   private active = true
   private connected = false
   private readonly registry: ShortcutRegistry
@@ -58,7 +57,6 @@ export default class ShortcutsService extends Service implements Shortcuts {
     }
     const web = this.runtime === 'web' ? webShortcutStorage(window, this.platform, publish) : undefined
     this.adapter = web ?? desktopShortcutStorage(window)
-    this.keyboard = keyboard
     if (keyboard !== undefined) ctx.effect(() => installNativeKeyboard(window, keyboard, this.registry,
       () => this.config.getSnapshot(), () => { this.fixedInput({ type: 'reset' }) }), 'shortcuts: native keyboard')
     ctx.effect(() => {
@@ -72,11 +70,6 @@ export default class ShortcutsService extends Service implements Shortcuts {
       return () => { off(); this.fixedListeners.clear() }
     }, 'shortcuts: keyboard')
     ctx.effect(() => ctx.locale.subscribe(() => { this.registry.refreshLabels() }), 'shortcuts: locale')
-  }
-
-  closeWindow(): void {
-    if (this.keyboard === undefined) throw new Error('Desktop keyboard bridge unavailable')
-    void this.keyboard.closeWindow(this.config.getSnapshot().revision).catch((error: unknown) => { console.error('Window close failed', error) })
   }
 
   register(command: Parameters<Shortcuts['register']>[0]): () => void {

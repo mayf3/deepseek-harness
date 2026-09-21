@@ -78,8 +78,6 @@ export interface ShortcutFixedCatalogEntry {
 }
 /** Feature-facing keyboard registry. */
 export interface Shortcuts {
-  /** Request native close after the page owner resolves a desktop fallback. */
-  closeWindow(): void
   readonly runtime: ShortcutRuntime
   readonly platform: ShortcutPlatform
   readonly catalog: ObservableSnapshot<readonly ShortcutCatalogEntry[]>
@@ -124,7 +122,7 @@ export interface Shortcuts {
    */
   recording(active: boolean): Promise<void>
   /**
-   * Register a command; duplicate ids and normalized defaults throw.
+   * Register a command; duplicate ids and overlapping default bindings throw.
    * @param command - feature-owned labels, defaults, and target resolver.
    * @returns disposer removing the binding and catalog entry.
    */

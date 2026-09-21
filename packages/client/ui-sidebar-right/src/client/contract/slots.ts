@@ -169,9 +169,9 @@ export interface SidebarRightTabInfo {
   }
   readonly panel: { readonly id: PaneId }
   readonly tab: TabRecord & {
-    /** Effective refresh binding for this tab’s controls. */
+    /** Effective refresh binding for this page's controls. */
     readonly refreshShortcut?: ShortcutCatalogEntry | undefined
-    /** Only the foreground Session is visible. Docked bodies also require expansion and selection; its floats survive collapse. */
+    /** Only the foreground Session is visible. Docked bodies require expansion and selection; expanded titles include inactive tabs. Floats survive collapse. */
     readonly visible: boolean
     readonly navigation: SidebarRightTabNavigation
     /** Aborted only when the record disappears or this plugin unloads, not on hide or session switch. */

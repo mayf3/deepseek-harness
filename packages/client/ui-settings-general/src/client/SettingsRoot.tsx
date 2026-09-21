@@ -12,6 +12,7 @@
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
+import { createPortal } from 'react-dom'
 import {
   ConnectionIndicator, Tooltip, useModalLayer,
   IconAgentPresetOutlineMedium, IconArchiveOutlineMedium, IconCloseOutlineRegular, IconDataOutlineMedium,
@@ -46,7 +47,7 @@ type PanelProps = {
 }
 
 /**
- * The modal layer: full-viewport mask + centered panel. Close paths: the
+ * Body-portaled modal layer: full-viewport mask + centered panel. Close paths: the
  * header button, a mask click, and document-level Escape (mounted only while
  * open, so the listener lifetime is the panel's).
  */
@@ -59,7 +60,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
   const panel = useRef<HTMLDivElement>(null)
   useModalLayer(panel, true, onClose)
 
-  return (
+  return createPortal((
     <div className={css.overlay} role="presentation">
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
       <div ref={panel} tabIndex={-1} data-shortcut-modal="settings" className={css.panel} role="dialog" aria-modal="true" aria-labelledby={titleId}>
@@ -94,7 +95,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
         </div>
       </div>
     </div>
-  )
+  ), document.body)
 }
 
 /**

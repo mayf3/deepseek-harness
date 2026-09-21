@@ -36,7 +36,10 @@ async function mount(options: {
       ...registry.fixedCatalog.getSnapshot().filter(row => row.bindings.some(binding => overlappingBindings(binding, normalized)))
         .map(row => row.id)] }
   }
-  for (const command of fixedCommands(makeTranslate(en), describeBinding)) registry.registerFixed(command)
+  for (const command of fixedCommands(makeTranslate(en))) registry.registerFixed(command)
+  registry.registerFixed({ id: 'composer.inputs' as ShortcutCommandId, label: () => 'Composer input', keys: ['Enter'], group: 'input',
+    bindings: [{ code: 'Enter', modifiers: ['shift'] }, { code: 'Enter', modifiers: ['control'] },
+      { code: 'Enter', modifiers: ['meta'] }, { code: 'Slash', modifiers: [] }, { code: 'Digit2', modifiers: ['shift'] }] })
   let raw: string | null = null
   const storage = { read: vi.fn(async () => raw), write: vi.fn(async (next: string) => { raw = next }) }
   const persistence = new ShortcutPersistence(storage, runtime, platform, false, (value) => { registry.configure(value) })
@@ -183,6 +186,22 @@ it('requires review after an external update and cancels Escape outside the reco
   expect(f.onClose).toHaveBeenCalledOnce(); expect(f.onSaved).not.toHaveBeenCalled()
 })
 
+it('requires review when available commands change during recording', async () => {
+  const f = await mount()
+  const recorder = screen.getByRole('button', { name: en.record })
+  fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j', metaKey: true })
+  await act(async () => {
+    f.registry.register({ id: 'other.command' as ShortcutCommandId, label: () => 'Other command', aliases: [], defaults: {},
+      regions: ['page'], modals: [], resolve: () => ({ status: 'pass' }) })
+    f.persistence.setDefinitions(f.registry.definitions())
+    await f.persistence.readCurrent()
+  })
+  fireEvent.keyUp(recorder, { code: 'KeyJ' })
+  expect(screen.getAllByText('Shortcut configuration or available commands changed. Review the latest bindings before saving.').length).toBeGreaterThan(0)
+  expect(f.storage.write).not.toHaveBeenCalled()
+  expect(f.onSaved).not.toHaveBeenCalled()
+})
+
 it.each(['Remove', 'Restore default'])('performs %s through the same persistence operation', async (name) => {
   const f = await mount()
   fireEvent.click(screen.getByRole('button', { name }))
@@ -281,7 +300,8 @@ it.each(['loading', 'unreadable'] as const)('retains the binding if configuratio
   const f = await mount()
   act(() => { f.registry.configure({ ...f.registry.config.getSnapshot(), status }) })
   press('KeyJ')
-  expect(f.onError).toHaveBeenCalledWith(en[status === 'loading' ? 'not-ready' : 'unreadable'])
+  if (status === 'loading') expect(f.onError).toHaveBeenCalledWith(en['not-ready'])
+  else expect(f.onError).toHaveBeenCalledWith(expect.stringContaining('userData/keybindings.json'))
   expect(f.storage.write).not.toHaveBeenCalled()
 })
 

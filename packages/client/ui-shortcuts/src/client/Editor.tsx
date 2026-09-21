@@ -6,7 +6,7 @@ import type { ShortcutBinding, ShortcutCommandId, ShortcutEdit, ShortcutRevision
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ReferenceInjected } from './Reference.tsx'
-import { shortcutFailure } from './feedback.ts'
+import { shortcutFailure, shortcutReadFailure } from './feedback.ts'
 import css from './Reference.module.css'
 
 type EditorInjected = ReferenceInjected
@@ -53,7 +53,7 @@ EditorProps) {
     writing.current = false
     setBusy(false)
     if (result.status === 'saved') onSaved()
-    else { setRetry(operation.type === 'set' ? operation.binding : null); report(shortcutFailure(result, [...catalog, ...fixed], t)) }
+    else { setRetry(operation.type === 'set' ? operation.binding : null); report(shortcutFailure(result, [...catalog, ...fixed], t, runtime)) }
   }
   const capture = (binding: ShortcutBinding, id: ShortcutCommandId): void => {
     setCandidate(binding); setCaptured(true); setRetry(null)
@@ -66,7 +66,7 @@ EditorProps) {
     }
     if (conflicts.length > 0) { report(t('conflict', { commands: conflicts.join(', ') })); return }
     if (stale) { setRetry(binding); report(t('stale')); return }
-    if (config.status !== 'ready') { report(t(config.status === 'loading' ? 'not-ready' : 'unreadable')); return }
+    if (config.status !== 'ready') { report(config.status === 'loading' ? t('not-ready') : shortcutReadFailure(config, runtime, t)); return }
     void save({ type: 'set', id, binding })
   }
   const handlers = useRef({ capture, report, onClose })

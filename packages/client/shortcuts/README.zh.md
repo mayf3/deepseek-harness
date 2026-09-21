@@ -27,7 +27,7 @@ Windows 在修饰键之间及第一个普通键之前使用 ` + `。Windows 和 
 <a id="use-this-package"></a>
 ## 使用此包
 
-Web 应用 bundle 自动挂载此包。功能插件在 `ctx.effect()` 中通过 `ctx.shortcuts` 注册命令。每个命令为 `desktop:macos`、`desktop:windows`、`desktop:linux`、`web:macos`、`web:windows` 和 `web:linux` 显式声明默认值；省略的配置不绑定按键。服务接收物理 `code`，按设备展开 `primary`，并拒绝重复 ID 和任一支持配置中的默认键位冲突。同一可观察目录提供名称、键帽、已修改标记和键位冲突。命令 owner 在执行操作前解析当前目标。
+Web 应用 bundle 自动挂载此包。功能插件在 `ctx.effect()` 中通过 `ctx.shortcuts` 注册命令。每个命令为 `desktop:macos`、`desktop:windows`、`desktop:linux`、`web:macos`、`web:windows` 和 `web:linux` 显式声明默认值；省略的配置不绑定按键。服务接收物理 `code`，按设备展开 `primary`，并拒绝重复 ID 和任一支持配置中重叠的默认键位。同一可观察目录提供名称、键帽、已修改标记和键位冲突。命令 owner 在执行操作前解析当前目标。
 
 功能插件通过 `registerFixed()` 贡献只读序列，通过 `observeFixedInput()` 观察局部控件处理后的输入。固定操作行随所属注册和语言变化。每个操作至少声明一个物理按键组合，不保存覆盖配置。这些组合参与冲突校验，不能分配给可编辑命令。Host 的 `stopSequenceMs` 配置控制连续两次 Esc 的最大间隔，默认为 500 毫秒，只接受 1 至 2,147,483,646 的整数，确保过期计时不超过浏览器定时器上限；页面加载时采用已校验的值。
 
@@ -77,7 +77,7 @@ Desktop 原生菜单和内嵌 frame 使用与 DOM 输入相同的命令注册表
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 功能 owner 显式声明 Windows 和 macOS Web 的默认键位：Mod+Slash、Mod+Comma、Mod+Backslash 和 Control+Backquote 保持双键；其他不含 Alt 的默认键位使用 Mod+Alt，含 Alt 的使用 Mod+Shift，全屏除外，使用 Mod+Alt+Enter。macOS Web 的“刷新当前页”默认不绑定快捷键，刷新按钮和用户显式绑定仍然可用。Mod 在 macOS 上为 Command，在 Windows 上为 Control。Windows 和 macOS 的 Web、Desktop 均接受任意三个或四个不同修饰键的组合。Web 还接受上述组合及 Mod+Shift 组合；浏览器或系统能否送达按键需在对应平台测试。Linux Web 接受 Mod+Slash、Mod+Shift+Comma 和 Mod+Shift+Period。未送达窗口的操作系统快捷键无法被拦截。双键组合等待第二个键时，不延迟或消费第一个键；原生操作或焦点变化可能使组合无法完成。Desktop 文件在命令目录连接时重新读取，不设置文件 watcher。
+- 功能 owner 显式声明 Windows 和 macOS Web 的默认键位：Mod+Slash、Mod+Comma、Mod+Backslash 和 Control+Backquote 保持双键；其他不含 Alt 的默认键位使用 Mod+Alt，含 Alt 的使用 Mod+Shift，全屏除外，使用 Mod+Alt+Enter。macOS Web 的“刷新当前页”默认不绑定快捷键，刷新按钮和用户显式绑定仍然可用。Mod 在 macOS 上为 Command，在 Windows 上为 Control。Windows 和 macOS 的 Web、Desktop 均接受任意三个或四个不同修饰键的组合。Web 还接受上述组合及 Mod+Shift 组合；浏览器或系统能否送达按键需在对应平台测试。Linux Web 接受 Mod+Slash、Mod+Shift+Comma 和 Mod+Shift+Period。未送达窗口的操作系统快捷键无法被拦截。双键组合等待第二个键时，不延迟或消费第一个键；原生操作或焦点变化可能使组合无法完成。命令注册或注销会使打开的编辑草稿过期，即使保存的偏好未改变。Desktop 在每次命令目录更新时重新读取文件，不设置文件 watcher。
 
 <a id="dev-note"></a>
 ### 开发备注

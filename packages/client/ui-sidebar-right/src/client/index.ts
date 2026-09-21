@@ -21,6 +21,7 @@
  * from another package does — `ui-sidebar-documentpreview` is the live proof.
  */
 import type {} from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { DesktopKeyboardApi } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import { observeSidebarFocus } from './focus.ts'
 import { registerSidebarShortcuts } from './shortcuts.ts'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -132,9 +133,11 @@ export function apply(ctx: ClientContext): void {
   }, 'ui-sidebar-right: service faces')
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar-right: dictionaries')
-  ctx.inject(['shortcuts'], (ctx) => {
-    ctx.effect(() => registerSidebarShortcuts(ctx.shortcuts, controller, t), 'ui-sidebar-right: shortcuts')
-  })
+  ctx.effect(() => registerSidebarShortcuts(ctx.shortcuts, controller, t, () => {
+    const keyboard = (window as Window & { dshDesktop?: { keyboard?: DesktopKeyboardApi } }).dshDesktop?.keyboard
+    if (keyboard === undefined) throw new Error('Desktop keyboard bridge unavailable')
+    void keyboard.closeWindow(ctx.shortcuts.config.getSnapshot().revision).catch((error: unknown) => { console.error('Window close failed', error) })
+  }), 'ui-sidebar-right: shortcuts')
   if (typeof document !== 'undefined') ctx.effect(() => observeSidebarFocus(document), 'ui-sidebar-right: focus')
 
   ctx.effect(() => {

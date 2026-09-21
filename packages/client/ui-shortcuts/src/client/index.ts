@@ -33,7 +33,7 @@ export function apply(ctx: Context): void {
   const edit: typeof ctx.shortcuts.edit = (...args) => ctx.shortcuts.edit(...args)
   const recording = (active: boolean) => ctx.shortcuts.recording(active)
   const describeBinding: typeof ctx.shortcuts.describeBinding = binding => ctx.shortcuts.describeBinding(binding)
-  for (const command of fixedCommands(t, describeBinding)) {
+  for (const command of fixedCommands(t)) {
     ctx.effect(() => ctx.shortcuts.registerFixed(command), `shortcuts: ${command.id}`)
   }
   const injected = () => ({ platform: ctx.shortcuts.platform, runtime: ctx.shortcuts.runtime, edit, recording, describeBinding,

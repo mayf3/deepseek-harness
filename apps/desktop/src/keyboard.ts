@@ -33,9 +33,6 @@ export function installDesktopShortcuts(
   let editingInput: BrowserWindow['webContents'] | undefined
   const scopedDesktop = platform === 'windows' || platform === 'macos'
   const disposers = new Set<() => void>()
-  const embeddedCommands = new Set(['page.close', 'page.refresh', 'pane.split', 'pane.fullscreen.toggle',
-    'sidebar.right.toggle', 'sidebar.left.toggle', 'workspace.files', 'terminal.new', 'shortcuts.open', 'settings.open'])
-  let embeddedKeys = new Set<string>()
   const closeAccelerator = (): string | undefined => presentBinding(closeBinding, platform).aria
     ?.replace('Meta+', 'Command+').replace(/Arrow(Up|Down|Left|Right)$/u, '$1')
   const sendMenuClose = (): void => {
@@ -51,9 +48,6 @@ export function installDesktopShortcuts(
     revision = definitions.length === 0 || snapshot.status === 'loading' ? undefined : snapshot.revision
     const rows = snapshot.status === 'loading' ? [] : effectiveShortcuts(definitions, snapshot.document, 'desktop', platform)
     keys = new Set(rows.flatMap(row => row.binding !== null && row.issue === null && row.conflicts.length === 0
-      ? [bindingKey(row.binding)] : []))
-    embeddedKeys = new Set(rows.flatMap(row => row.binding !== null && row.issue === null
-      && row.conflicts.length === 0 && embeddedCommands.has(row.id)
       ? [bindingKey(row.binding)] : []))
     const close = rows.find(row => row.id === 'page.close')
     closeBinding = close?.issue === null && close.conflicts.length === 0 ? close.binding : null
@@ -126,7 +120,7 @@ export function installDesktopShortcuts(
       let inputFrame: typeof contents.focusedFrame = null
       let inputRevision: ShortcutRevision | undefined
       const clear = (): void => {
-        definitions = []; keys.clear(); embeddedKeys.clear(); held.clear(); consumed.clear()
+        definitions = []; keys.clear(); held.clear(); consumed.clear()
         inputFrame = null; recording = false; deadKey = false
         persistence.setDefinitions(null)
         if (!contents.isDestroyed()) contents.setIgnoreMenuShortcuts(false)
@@ -185,7 +179,7 @@ export function installDesktopShortcuts(
           if (codes.length === 2 && keys.has(bindingKey(pair))) { binding = pair; priority = true }
         }
         const main = frame === contents.mainFrame
-        if (!priority && (main || !embeddedKeys.has(key))) return
+        if (!priority && (main || !match)) return
         event.preventDefault()
         if (input.type !== 'keyDown') return
         if (scopedDesktop) {

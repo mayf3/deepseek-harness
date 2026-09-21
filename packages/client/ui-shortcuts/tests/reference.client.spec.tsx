@@ -36,7 +36,10 @@ it.each(['macos', 'windows'] as const)('shows the reference, filters labels and 
     return { ...describeBinding(binding), keys: presentBinding(normalized, platform).keys }
   }
   const registry = new ShortcutRegistry('web', platform)
-  for (const command of fixedCommands(makeTranslate(en), describe)) registry.registerFixed(command)
+  for (const command of fixedCommands(makeTranslate(en))) registry.registerFixed(command)
+  registry.registerFixed({ id: 'composer.alternate' as ShortcutCommandId, label: () => 'Alternate delivery',
+    keys: describe({ code: 'Enter', modifiers: ['primary'] }).keys,
+    bindings: [{ code: 'Enter', modifiers: ['primary'] }], group: 'input' })
   const props = { actions: store.actions, useStore: bindSnapshotSelector(store), useCatalog: bindSnapshotSelector(catalog),
     useConfig: bindSnapshotSelector(config), useFixedCatalog: bindSnapshotSelector(registry.fixedCatalog), runtime: 'web', edit: async () => ({ status: 'saved', snapshot: config.getSnapshot() }), recording: async () => {},
     describeBinding: describe, platform, t: makeTranslate(en) } as Parameters<typeof ShortcutReference>[0]
@@ -60,7 +63,7 @@ it.each(['macos', 'windows'] as const)('shows the reference, filters labels and 
     .toEqual(['Edit shortcut for Open shortcuts', 'Edit shortcut for Toggle left sidebar', 'Edit shortcut for Open settings'])
   fireEvent.change(search, { target: { value: platform === 'macos' ? '⌘ Enter' : 'Ctrl + Enter' } })
   expect(screen.getAllByRole('listitem')).toHaveLength(1)
-  expect(screen.getByText(en.complementary)).toBeTruthy()
+  expect(screen.getByText('Alternate delivery')).toBeTruthy()
   for (const query of ['abc', 'sendEnter', 'not a command']) {
     fireEvent.change(search, { target: { value: query } })
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
@@ -111,15 +114,18 @@ it('saves individual edits and disables changes when configuration cannot be rea
   await screen.findByText(en.saved)
   expect(screen.getAllByRole('dialog')).toHaveLength(1)
   act(() => { config.set({ ...config.getSnapshot(), status: 'unreadable', error: null }) })
-  expect(screen.getByText(`${en.read} ${en['using-defaults']}`)).toBeTruthy()
+  expect(screen.getByRole('alert').textContent).toContain('this site’s localStorage entry dsh.keybindings.v1')
+  expect(screen.getByRole('alert').textContent).toContain('Check access permissions, then reload the page.')
+  expect(screen.getByRole('alert').textContent).toContain(en['using-defaults'])
   act(() => { config.set({ ...config.getSnapshot(), error: 'future', usingDefaults: false }) })
-  expect(screen.getByText(`${en.future} ${en['using-accepted']}`)).toBeTruthy()
+  expect(screen.getByRole('alert').textContent).toContain('Upgrade Harness and try again.')
+  expect(screen.getByRole('alert').textContent).toContain(en['using-accepted'])
   expect(screen.getByRole('dialog').contains(screen.getByRole('alert'))).toBe(false)
   expect(screen.getByRole('button', { name: en['reset-all'] }).hasAttribute('disabled')).toBe(true)
   expect(screen.getByRole('button', { name: 'Edit shortcut for Open shortcuts' }).hasAttribute('disabled')).toBe(true)
 })
 
-function referenceFixture() {
+function referenceFixture({ runtime = 'web', dictionary = en }: { runtime?: 'web' | 'desktop'; dictionary?: typeof en } = {}) {
   const store = createShortcutsStore().create()
   const catalog = createSnapshotStore<readonly ShortcutCatalogEntry[]>([
     { id: 'settings.open' as ShortcutCommandId, label: 'Open settings', aliases: [],
@@ -131,18 +137,37 @@ function referenceFixture() {
   const edit = vi.fn<Parameters<typeof ShortcutReference>[0]['edit']>(async () => ({ status: 'saved', snapshot: config.getSnapshot() }))
   store.actions.open()
   const props = { actions: store.actions, useStore: bindSnapshotSelector(store), useCatalog: bindSnapshotSelector(catalog),
-    useConfig: bindSnapshotSelector(config), useFixedCatalog: bindSnapshotSelector(fixedCatalog), runtime: 'web', platform: 'macos', edit,
-    recording: async () => {}, describeBinding, t: makeTranslate(en) } as Parameters<typeof ShortcutReference>[0]
+    useConfig: bindSnapshotSelector(config), useFixedCatalog: bindSnapshotSelector(fixedCatalog), runtime, platform: 'macos', edit,
+    recording: async () => {}, describeBinding, t: makeTranslate(dictionary) } as Parameters<typeof ShortcutReference>[0]
   const view = render(<ShortcutReference {...props} />)
   return { store, catalog, fixedCatalog, config, edit, view }
 }
+
+it.each((['web', 'desktop'] as const).flatMap(runtime => (['invalid', 'future'] as const)
+  .flatMap(error => [{ runtime, error, dictionary: en }, { runtime, error, dictionary: zh }])))
+('identifies the $runtime document and preserves $error data in the selected locale', ({ runtime, error, dictionary }) => {
+  const f = referenceFixture({ runtime, dictionary })
+  act(() => { f.config.set({ ...f.config.getSnapshot(), status: 'unreadable', error, usingDefaults: false,
+    document: { schemaVersion: 1, profiles: { [`${runtime}:macos`]: { 'settings.open': null } } } }) })
+  const text = screen.getByRole('alert').textContent
+  expect(text).toContain(runtime === 'web' ? 'dsh.keybindings.v1' : 'userData/keybindings.json')
+  expect(text).toContain(error === 'future'
+    ? dictionary === en ? 'Upgrade Harness' : '升级 Harness'
+    : dictionary === en ? 'Back up and repair' : '先备份并修复')
+  expect(text).toContain(dictionary['using-accepted'])
+  const reset = screen.getByRole('button', { name: dictionary['reset-all'] })
+  expect(reset.hasAttribute('disabled')).toBe(true)
+  fireEvent.click(reset)
+  expect(screen.queryByRole('dialog', { name: dictionary['reset-title'] })).toBeNull()
+  expect(f.edit).not.toHaveBeenCalled()
+})
 
 it('shows mounted fixed actions as searchable read-only rows and follows their label and lifetime', () => {
   const { fixedCatalog, store } = referenceFixture()
   const send = { id: 'fixed.send' as ShortcutCommandId, label: 'Send from catalog', keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'input' as const }
   const stop = { id: 'response.stop' as ShortcutCommandId, label: 'Stop reply', keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input' as const }
   const approve = { id: 'approval.accept' as ShortcutCommandId, label: 'Approve', keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'approval' as const }
-  expect(screen.queryByText(en.send)).toBeNull()
+  expect(screen.queryByText(send.label)).toBeNull()
   act(() => { fixedCatalog.set([send, stop, approve]) })
   expect(screen.getByRole('button', { name: 'Send from catalog Enter' }).hasAttribute('disabled')).toBe(true)
   expect(screen.getByRole('region', { name: 'Approval area' }).textContent).toContain('Approve')

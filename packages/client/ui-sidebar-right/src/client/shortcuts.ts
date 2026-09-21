@@ -10,9 +10,11 @@ import type {} from './locales.ts'
  * @param shortcuts - effective-binding registry for this window.
  * @param sidebar - current Session and page owner.
  * @param t - current localized command and unavailable labels.
+ * @param closeWindow - private native close operation using the current configuration revision.
  * @returns release callback for the commands.
  */
-export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' | 'runtime' | 'closeWindow'>, sidebar: SidebarRightController, t: TranslateNS<'sidebarRight'>): () => void {
+export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' | 'runtime'>, sidebar: SidebarRightController,
+  t: TranslateNS<'sidebarRight'>, closeWindow: () => void): () => void {
   const reason = (kind: 'split' | 'fullscreen', target: SidebarRightTarget): string | null => {
     if (kind === 'split') {
       const block = sidebar.splitBlock(target)
@@ -84,7 +86,7 @@ export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' |
         }
         if (shortcuts.runtime !== 'desktop') return { status: 'blocked', reason: t('command.noFocus') }
         return { status: 'handled', run: () => {
-          if (target === undefined || sidebar.isTargetCurrent(target)) shortcuts.closeWindow()
+          if (target === undefined || sidebar.isTargetCurrent(target)) closeWindow()
         } }
       },
     }))

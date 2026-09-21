@@ -198,12 +198,11 @@ export function parseShortcutEdit(value: unknown): ShortcutEdit {
 /**
  * Validate the trusted product's serializable command catalog at IPC ingress.
  * @param value - renderer-supplied active command definitions.
- * @returns validated definitions; duplicate IDs/defaults and unsupported combinations throw.
+ * @returns validated definitions; duplicate IDs, overlapping defaults, and unsupported combinations throw.
  */
 export function parseShortcutDefinitions(value: unknown): readonly ShortcutDefinition[] {
   if (!Array.isArray(value)) throw new Error('Invalid shortcut catalog')
   const ids = new Set<string>()
-  const keys = new Set<string>()
   for (const entry of value) {
     if (!record(entry) || typeof entry.id !== 'string' || !commandPattern.test(entry.id) || ids.has(entry.id)
       || !record(entry.defaults) || Object.keys(entry).some(key => key !== 'id' && key !== 'defaults' && key !== 'fixed')) throw new Error('Invalid shortcut definition')
@@ -219,15 +218,16 @@ export function parseShortcutDefinitions(value: unknown): readonly ShortcutDefin
     }
   }
   const definitions = value as ShortcutDefinition[]
-  for (const entry of definitions) {
-    for (const runtime of ['desktop', 'web'] as const) {
-      for (const platform of ['macos', 'windows', 'linux'] as const) {
+  for (const runtime of ['desktop', 'web'] as const) {
+    for (const platform of ['macos', 'windows', 'linux'] as const) {
+      const bindings: NormalizedBinding[] = []
+      for (const entry of definitions) {
         const binding = resolveShortcutDefault(entry, runtime, platform)
         if (binding === undefined) continue
         const normalized = normalizeBinding(binding, platform)
-        const key = `${runtime}:${platform}:${bindingKey(normalized)}`
-        if (keys.has(key) || bindingIssue(normalized, runtime, platform) !== null) throw new Error('Conflicting or reserved shortcut default')
-        keys.add(key)
+        if (bindings.some(other => overlappingBindings(other, normalized))
+          || bindingIssue(normalized, runtime, platform) !== null) throw new Error('Conflicting or reserved shortcut default')
+        bindings.push(normalized)
       }
     }
   }

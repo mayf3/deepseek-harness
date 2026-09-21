@@ -6,7 +6,7 @@ import type { ObservableSnapshot, PropsStore } from '@deepseek-ai/dsh-client-sto
 import type { ShortcutCatalogEntry, ShortcutPlatform, Shortcuts } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { ShortcutEditor } from './Editor.tsx'
 import { ShortcutIcon } from './Icons.tsx'
-import { shortcutFailure } from './feedback.ts'
+import { shortcutFailure, shortcutReadFailure } from './feedback.ts'
 import type { createShortcutsStore } from './store.ts'
 import css from './Reference.module.css'
 
@@ -69,8 +69,8 @@ export function ShortcutReference({
     })
   }, [])
   useEffect(() => {
-    if (open && config.status === 'unreadable') notify(`${t(config.error ?? 'read')} ${t(config.usingDefaults ? 'using-defaults' : 'using-accepted')}`, true)
-  }, [open, config.status, config.error, config.usingDefaults, notify, t])
+    if (open && config.status === 'unreadable') notify(shortcutReadFailure(config, runtime, t), true)
+  }, [open, config, runtime, notify, t])
   const closeEditor = (): void => {
     setTarget(null)
     search.current?.closest<HTMLElement>('[role="dialog"]')?.focus({ preventScroll: true })
@@ -91,7 +91,7 @@ export function ShortcutReference({
   const remove = async (row: ShortcutCatalogEntry): Promise<void> => {
     const result = await persist({ type: 'set', id: row.id, binding: null }, config.revision)
     if (!mounted.current) return
-    notify(result.status === 'saved' ? t('saved') : shortcutFailure(result, catalog, t), result.status !== 'saved')
+    notify(result.status === 'saved' ? t('saved') : shortcutFailure(result, catalog, t, runtime), result.status !== 'saved')
   }
   const resetAll = async (): Promise<void> => {
     if (resetRevision === null) return
@@ -99,7 +99,7 @@ export function ShortcutReference({
     if (!mounted.current) return
     if (result.status === 'saved' || result.status === 'stale') setResetRevision(null)
     notify(result.status === 'saved' ? t('reset-saved')
-      : result.status === 'write-failed' ? t('reset-failed') : shortcutFailure(result, catalog, t), result.status !== 'saved')
+      : result.status === 'write-failed' ? t('reset-failed') : shortcutFailure(result, catalog, t, runtime), result.status !== 'saved')
   }
   const editorProps = { useCatalog, useConfig, useFixedCatalog, platform, runtime, edit: persist, recording, describeBinding, t,
     onClose: closeEditor,

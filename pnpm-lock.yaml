@@ -572,6 +572,12 @@ importers:
       '@deepseek-ai/dsh-app-boot':
         specifier: workspace:^
         version: link:../../packages/boot/app-boot
+      '@deepseek-ai/dsh-atomic-write':
+        specifier: workspace:^
+        version: link:../../packages/util/atomic-write
+      '@deepseek-ai/dsh-client-shortcuts':
+        specifier: workspace:^
+        version: link:../../packages/client/shortcuts
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: workspace:^
         version: link:../../packages/client/ui-primitives
@@ -2319,6 +2325,9 @@ importers:
       '@deepseek-ai/dsh-client-resources':
         specifier: workspace:^
         version: link:../../client/resources
+      '@deepseek-ai/dsh-client-shortcuts':
+        specifier: workspace:^
+        version: link:../../client/shortcuts
       '@deepseek-ai/dsh-client-ui-agent-preset':
         specifier: workspace:^
         version: link:../../client/ui-agent-preset
@@ -2424,6 +2433,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings-web-search':
         specifier: workspace:^
         version: link:../../client/ui-settings-web-search
+      '@deepseek-ai/dsh-client-ui-shortcuts':
+        specifier: workspace:^
+        version: link:../../client/ui-shortcuts
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: workspace:^
         version: link:../../client/ui-sidebar
@@ -2855,6 +2867,37 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:^
         version: link:../../typert/protocol
+
+  packages/client/shortcuts:
+    dependencies:
+      '@deepseek-ai/dsh-util-crypto':
+        specifier: workspace:^
+        version: link:../../util/crypto
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:^
+        version: link:../../util/values
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:^
+        version: link:../locale
+      '@deepseek-ai/dsh-client-store':
+        specifier: workspace:^
+        version: link:../store
+      '@deepseek-ai/dsh-client-test-runtime':
+        specifier: workspace:^
+        version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:^
+        version: link:../../host/webserver
 
   packages/client/store:
     devDependencies:
@@ -3737,6 +3780,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
+      '@deepseek-ai/dsh-client-shortcuts':
+        specifier: workspace:^
+        version: link:../shortcuts
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:^
         version: link:../store
@@ -3929,6 +3975,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-deliverables':
         specifier: workspace:^
         version: link:../ui-deliverables
+      '@deepseek-ai/dsh-client-ui-layout':
+        specifier: workspace:^
+        version: link:../ui-layout
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: workspace:^
         version: link:../ui-primitives
@@ -4562,6 +4611,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
+      '@deepseek-ai/dsh-client-shortcuts':
+        specifier: workspace:^
+        version: link:../shortcuts
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:^
         version: link:../store
@@ -4595,12 +4647,18 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      '@types/react-dom':
+        specifier: ~18.3.0
+        version: 18.3.7(@types/react@18.3.31)
       clsx:
         specifier: ^2.0.0
         version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
 
   packages/client/ui-settings-models:
     dependencies:
@@ -4852,6 +4910,51 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1
 
+  packages/client/ui-shortcuts:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:^
+        version: link:../locale
+      '@deepseek-ai/dsh-client-shortcuts':
+        specifier: workspace:^
+        version: link:../shortcuts
+      '@deepseek-ai/dsh-client-store':
+        specifier: workspace:^
+        version: link:../store
+      '@deepseek-ai/dsh-client-test-runtime':
+        specifier: workspace:^
+        version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-client-ui-layout':
+        specifier: workspace:^
+        version: link:../ui-layout
+      '@deepseek-ai/dsh-client-ui-primitives':
+        specifier: workspace:^
+        version: link:../ui-primitives
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: workspace:^
+        version: link:../ui-renderer
+      '@deepseek-ai/dsh-client-ui-settings':
+        specifier: workspace:^
+        version: link:../ui-settings
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: workspace:^
+        version: link:../ui-slots
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+
   packages/client/ui-sidebar:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -4863,6 +4966,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
+      '@deepseek-ai/dsh-client-shortcuts':
+        specifier: workspace:^
+        version: link:../shortcuts
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:^
         version: link:../store
@@ -18614,13 +18720,9 @@ packages:
     deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
-  glob@7.2.0:
-    resolution: {integrity: sha512-lmLf6gtyrPq8tTjSmrO94wBeQbFR3HbLHbuyD69wuyQkImp2hWqMGB47OX65FBkPffO641IP9jWa1z4ivqG26Q==}
-    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
-
   glob@7.2.3:
     resolution: {integrity: sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q==}
-    deprecated: Glob versions prior to v9 are no longer supported
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   global-agent@3.0.0:
     resolution: {integrity: sha512-PT6XReJ+D07JvGoxQMkT6qji/jVNfX/h364XHZOWeRzy64sSFr+xJ5OX7LI3b4MPQzdL4H8Y8M0xzPpsVMwA8Q==}
@@ -26032,15 +26134,6 @@ snapshots:
       package-json-from-dist: 1.0.1
       path-scurry: 1.11.1
 
-  glob@7.2.0:
-    dependencies:
-      fs.realpath: 1.0.0
-      inflight: 1.0.6
-      inherits: 2.0.4
-      minimatch: 3.1.5
-      once: 1.4.0
-      path-is-absolute: 1.0.1
-
   glob@7.2.3:
     dependencies:
       fs.realpath: 1.0.0
@@ -27774,7 +27867,7 @@ snapshots:
 
   rimraf@2.6.3:
     dependencies:
-      glob: 7.2.0
+      glob: 7.2.3
 
   roarr@2.15.4:
     dependencies:

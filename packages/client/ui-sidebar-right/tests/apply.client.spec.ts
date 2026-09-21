@@ -8,11 +8,13 @@
  * service binding — and that every registration is gone after dispose, which
  * is what makes a reload safe. The seats' components have their own specs.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { Shortcuts, ShortcutCommand } from '@deepseek-ai/dsh-client-shortcuts/client'
+import { initialShortcutConfig } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import { apply, inject } from '../src/client/index.ts'
 import type { GuideInjected, SidebarRightInjected } from '../src/client/index.ts'
 import { apply as hostApply } from '../src/index.ts'
@@ -42,7 +44,7 @@ interface Recorded {
   component: unknown
 }
 
-async function boot() {
+async function boot(shortcuts: Partial<Shortcuts> = {}) {
   const ctx = new Context()
   const registered: Recorded[] = []
   const slots = {
@@ -66,7 +68,8 @@ async function boot() {
   const resources = { pin: vi.fn<(address: string, signal: AbortSignal) => void>() }
   ctx.provide('slots', slots as never)
   ctx.provide('locale', locale as never)
-  ctx.provide('shortcuts', { register: () => () => {}, catalog: { getSnapshot: () => SHORTCUT_CATALOG, subscribe: () => () => {} } } as never)
+  ctx.provide('shortcuts', { runtime: 'web', register: () => () => {},
+    catalog: { getSnapshot: () => SHORTCUT_CATALOG, subscribe: () => () => {} }, ...shortcuts } as never)
   ctx.provide('layout', layout as never)
   ctx.provide('resources', resources as never)
   ctx.provide('sessions', { retain: vi.fn() } as never)
@@ -88,6 +91,30 @@ async function boot() {
 describe('ui-sidebar-right apply', () => {
   it('keeps the host Loader entry inert', () => {
     expect(hostApply).not.toThrow()
+  })
+
+  it('uses the latest shortcut revision for native close and contains bridge rejections', async () => {
+    onTestFinished(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+    const closeWindow = vi.fn<() => Promise<void>>().mockResolvedValue()
+    vi.stubGlobal('window', { dshDesktop: { keyboard: { closeWindow } } })
+    const commands = new Map<string, ShortcutCommand>()
+    let snapshot = initialShortcutConfig()
+    const h = await boot({ runtime: 'desktop',
+      config: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      register: (command) => { commands.set(command.id, command); return () => { commands.delete(command.id) } },
+    })
+    onTestFinished(async () => { await h.ctx.fiber.dispose() })
+    const close = commands.get('page.close')!.resolve({ region: 'page', modal: null, target: null })
+    expect(close.status).toBe('handled')
+    if (close.status !== 'handled') throw new Error('Expected native close')
+    snapshot = initialShortcutConfig()
+    close.run()
+    expect(closeWindow).toHaveBeenCalledExactlyOnceWith(snapshot.revision)
+    const failure = new Error('Window unavailable')
+    closeWindow.mockRejectedValueOnce(failure)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    close.run()
+    await vi.waitFor(() => { expect(error).toHaveBeenCalledExactlyOnceWith('Window close failed', failure) })
   })
 
   it('provides both faces, and registers the guide through the same two-stage path as any other type', async () => {

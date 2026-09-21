@@ -1,6 +1,6 @@
 /** Command registration, normalized default bindings, and synchronous dispatch. */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { bindingIssue, bindingKey, effectiveShortcuts, initialShortcutConfig, isWebBindingAllowed, normalizeBinding, presentBinding, resolveShortcutDefault } from '../protocol.ts'
+import { bindingIssue, bindingKey, effectiveShortcuts, initialShortcutConfig, isWebBindingAllowed, normalizeBinding, overlappingBindings, presentBinding, resolveShortcutDefault } from '../protocol.ts'
 import type { ShortcutCommandId, ShortcutConfigSnapshot, ShortcutDefinition, ShortcutPlatform, ShortcutRuntime } from '../protocol.ts'
 import type { ShortcutCatalogEntry, ShortcutCommand, ShortcutContext, ShortcutGesture,
   ShortcutFixedCommand, ShortcutFixedCatalogEntry } from './types.ts'
@@ -94,7 +94,7 @@ export class ShortcutRegistry {
         if (bindingIssue(binding, runtime, platform) !== null) throw new Error(`Reserved shortcut default: ${command.id}`)
         for (const existing of this.commands.values()) {
           const other = resolveShortcutDefault(existing, runtime, platform)
-          if (other !== undefined && bindingKey(binding) === bindingKey(normalizeBinding(other, platform))) {
+          if (other !== undefined && overlappingBindings(binding, normalizeBinding(other, platform))) {
             throw new Error(`Conflicting shortcut defaults: ${command.id} and ${existing.id} (${runtime}:${platform})`)
           }
         }

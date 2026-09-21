@@ -2,12 +2,43 @@
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { bindingIssue, bindingKey, effectiveShortcuts, normalizeBinding, parseBinding, parseShortcutDocument,
   parseShortcutDefinitions, presentBinding, ShortcutPersistence } from '../src/protocol.ts'
-import type { ShortcutCommandId } from '../src/protocol.ts'
+import type { ShortcutBinding, ShortcutCommandId, ShortcutDefinition } from '../src/protocol.ts'
+import { ShortcutRegistry } from '../src/client/registry.ts'
 
 const id = 'test.action' as ShortcutCommandId
 const other = 'test.other' as ShortcutCommandId
 const pair = { code: 'KeyA', secondCode: 'KeyB', modifiers: [] } as const
 const definitions = [{ id, defaults: {} }, { id: other, defaults: {} }]
+
+it.each(['macos', 'windows'] as const)('rejects overlapping %s defaults at registration and IPC ingress without disabling the active command', (platform) => {
+  const modifier = platform === 'macos' ? 'meta' : 'control'
+  for (const code of ['KeyA', 'KeyB']) {
+    const single: ShortcutBinding = { code, modifiers: ['primary'] }
+    const chord: ShortcutBinding = { ...pair, modifiers: [modifier] }
+    for (const [first, second] of [[single, chord], [chord, single]] as const) {
+      const catalog: ShortcutDefinition[] = [
+        { id, defaults: { [`desktop:${platform}`]: first } },
+        { id: other, defaults: { [`desktop:${platform}`]: second } },
+      ]
+      expect(() => parseShortcutDefinitions(catalog)).toThrow('Conflicting')
+      const registry = new ShortcutRegistry('desktop', platform)
+      const run = vi.fn()
+      const register = (definition: ShortcutDefinition) => registry.register({ ...definition, label: () => definition.id,
+        aliases: [], regions: ['page'], modals: [], resolve: () => ({ status: 'handled', run }) })
+      register(catalog[0]!)
+      const accepted = registry.catalog.getSnapshot()
+      expect(() => register(catalog[1]!)).toThrow('Conflicting')
+      expect(registry.catalog.getSnapshot()).toBe(accepted)
+      expect(registry.dispatch({ ...first, meta: platform === 'macos', control: platform === 'windows',
+        alt: false, shift: false, repeat: false, composing: false, defaultPrevented: false },
+      { region: 'page', modal: null, target: null }, vi.fn()).status).toBe('handled')
+      expect(run).toHaveBeenCalledOnce()
+      expect(parseShortcutDefinitions([catalog[0], { id: other, defaults: { [`desktop:${platform}`]: {
+        ...second, modifiers: [modifier, 'shift'],
+      } } }])).toHaveLength(2)
+    }
+  }
+})
 
 it.each([['web', 'macos'], ['web', 'windows'], ['web', 'linux'], ['desktop', 'linux']] as const)(
   'rejects bare keys and chords in %s on %s', (runtime, platform) => {

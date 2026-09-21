@@ -12,6 +12,7 @@ import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import type { DesktopUpdateView } from '../src/types.ts'
+import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
@@ -325,6 +326,25 @@ describe('SettingsPanel close paths', () => {
     mount()
     openPanel()
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }))
+  })
+
+  it('opens above an existing body modal and gives the visible settings panel keyboard ownership', () => {
+    mount()
+    const closeReference = vi.fn()
+    render(<Modal open title="Keyboard reference" closeLabel="Close reference" onClose={closeReference}>
+      <button data-modal-autofocus>Reference control</button>
+    </Modal>)
+    const reference = screen.getByRole('dialog', { name: 'Keyboard reference' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reference control' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    const settings = screen.getByRole('dialog', { name: 'Settings Title' })
+    expect(settings.parentElement?.parentElement).toBe(document.body)
+    expect(reference.parentElement!.compareDocumentPosition(settings.parentElement!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Settings Title' })).toBeNull()
+    expect(closeReference).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reference control' }))
   })
 })
 

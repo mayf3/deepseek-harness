@@ -21,7 +21,7 @@ function desktopDefaults(binding: ShortcutBinding): ShortcutDefinition['defaults
   return { 'desktop:macos': binding, 'desktop:windows': binding, 'desktop:linux': binding }
 }
 
-async function fixture(platform: 'macos' | 'windows' = 'macos') {
+async function fixture(platform: 'macos' | 'windows' | 'linux' = 'macos') {
   const root = await mkdtemp(join(tmpdir(), 'dsh-keyboard-'))
   onTestFinished(async () => { await rm(root, { recursive: true, force: true }) })
   const frame = { url: 'dsh-app://app/' }
@@ -129,6 +129,37 @@ it('routes embedded input once, follows rebindings, and guards native window clo
   expect(closeItem().accelerator).toBeUndefined()
   f.keyboard.dispose()
   expect(f.contents.listenerCount('before-input-event')).toBe(0)
+})
+
+it.each([
+  ['browser.new', 'KeyT'], ['session.new', 'KeyN'],
+])('forwards Linux %s from embedded frames while leaving main-document input to the DOM', async (id, code) => {
+  const f = await fixture('linux')
+  const initial = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet,
+    [{ id, defaults: desktopDefaults({ code, modifiers: ['primary'] }) }])
+  const input = { modifiers: ['control'], type: 'keyDown', code, key: code.slice(3).toLowerCase(),
+    control: true, meta: false, alt: false, shift: false, isAutoRepeat: false, isComposing: false }
+  const preventDefault = vi.fn()
+  f.contents.send.mockClear()
+  f.contents.emit('before-input-event', { preventDefault }, input)
+  expect(preventDefault).not.toHaveBeenCalled()
+  expect(f.contents.send).not.toHaveBeenCalled()
+
+  Object.assign(f.contents, { focusedFrame: { name: 'browser', parent: f.frame } })
+  f.contents.emit('before-input-event', { preventDefault }, input)
+  expect(preventDefault).toHaveBeenCalledOnce()
+  expect(f.contents.send).toHaveBeenCalledExactlyOnceWith(DESKTOP_IPC.shortcutsInput,
+    expect.objectContaining({ kind: 'iframe', frameName: 'browser', code, revision: initial.revision }))
+  f.contents.emit('before-input-event', { preventDefault }, { ...input, type: 'keyUp' })
+  expect(f.contents.send).toHaveBeenCalledOnce()
+
+  const cleared = await f.call<ShortcutSaveResult>(DESKTOP_IPC.shortcutsEdit,
+    { type: 'set', id, binding: null }, initial.revision)
+  expect(cleared.status).toBe('saved')
+  preventDefault.mockClear(); f.contents.send.mockClear()
+  f.contents.emit('before-input-event', { preventDefault }, input)
+  expect(preventDefault).not.toHaveBeenCalled()
+  expect(f.contents.send).not.toHaveBeenCalled()
 })
 
 it.each([

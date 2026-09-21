@@ -534,11 +534,16 @@ describe('workspace browser rows', () => {
       const row = screen.getByRole('treeitem')
       const create = screen.getByRole('button', { name: '在“Project”中新建会话' })
       fireEvent.pointerEnter(row.parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getByText('/projects/project')).toBeTruthy()
 
-      if (trigger === 'hover') fireEvent.mouseEnter(create)
-      else fireEvent.focus(create)
+      if (trigger === 'hover') {
+        fireEvent.mouseEnter(create)
+        act(() => { vi.advanceTimersByTime(500) })
+      } else {
+        fireEvent.keyDown(document, { key: 'Tab' })
+        fireEvent.focus(create)
+      }
       expect(screen.getByRole('tooltip').textContent).toBe('新会话')
       expect(screen.queryByText('/projects/project')).toBeNull()
 

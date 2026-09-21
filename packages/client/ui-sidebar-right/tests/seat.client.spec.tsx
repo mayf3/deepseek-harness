@@ -220,7 +220,7 @@ describe('RightbarSeat presentation', () => {
     const registry = new ShortcutRegistry('desktop', platform)
     const closeWindow = vi.fn()
     h.runtime.ctx.effect(() => registerSidebarShortcuts({ register: command => registry.register(command),
-      runtime: 'desktop', closeWindow }, h.controller, h.runtime.ctx.locale.bind('sidebarRight')))
+      runtime: 'desktop' }, h.controller, h.runtime.ctx.locale.bind('sidebarRight'), closeWindow))
     const focusedPane = () => document.activeElement?.getAttribute('data-dockkit-pane')
       ?? document.activeElement?.getAttribute('data-dockkit-float')
     const close = (): void => {

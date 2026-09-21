@@ -103,6 +103,40 @@ it.each([
         await expect.poll(() => composer.textContent()).toBe('')
         await openReference()
         const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts', exact: true })
+        await dialog.waitFor()
+        const settings = page.getByRole('dialog', { name: 'Settings', exact: true })
+        const modalState = () => page.evaluate(() => {
+          const name = (node: Element | null) => node?.getAttribute('aria-label')
+            ?? document.getElementById(node?.getAttribute('aria-labelledby') ?? '')?.textContent ?? null
+          return {
+            focused: name(document.activeElement?.closest('[role="dialog"]') ?? null),
+            foreground: name(document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.closest('[role="dialog"]') ?? null),
+          }
+        })
+        await deliverPrimary('Comma')
+        await settings.waitFor()
+        const settingsOnTop = await modalState()
+        expect(settingsOnTop).toEqual({ focused: 'Settings', foreground: 'Settings' })
+        await page.keyboard.press('Escape')
+        await settings.waitFor({ state: 'hidden' })
+        expect(await dialog.isVisible()).toBe(true)
+        await page.keyboard.press('Escape')
+        await dialog.waitFor({ state: 'hidden' })
+        await deliverPrimary('Comma')
+        await settings.waitFor()
+        await openReference()
+        await dialog.waitFor()
+        const referenceOnTop = await modalState()
+        expect(referenceOnTop).toEqual({ focused: 'Keyboard shortcuts', foreground: 'Keyboard shortcuts' })
+        await compareOrRefreshGolden(join(expected, 'modal-layers.expected.md'),
+          `# Modal layers\n\n${JSON.stringify({ settingsOnTop, referenceOnTop }, null, 2)}`, mode)
+        await page.keyboard.press('Escape')
+        await dialog.waitFor({ state: 'hidden' })
+        expect(await settings.isVisible()).toBe(true)
+        await page.keyboard.press('Escape')
+        await settings.waitFor({ state: 'hidden' })
+        await openReference()
+        await dialog.waitFor()
         const rowHeights = () => dialog.getByRole('listitem').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))
         const heights = await rowHeights()
         expect(new Set(heights)).toEqual(new Set([42]))
