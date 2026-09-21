@@ -761,7 +761,9 @@ else process.exit(1);
 
     await openFile('budget.xlsx')
     const excel = preview.locator('[data-excel-preview]')
-    await excel.getByText('季度预算', { exact: true }).waitFor({ state: 'visible' })
+    const sheetTabs = excel.locator('.luckysheet-sheets-item-name')
+    await sheetTabs.getByText('季度预算', { exact: true }).waitFor({ state: 'visible' })
+    expect(await sheetTabs.getByText('隐藏页', { exact: true }).isVisible()).toBe(false)
     await successShot(page, 'excel-budget')
     expect(await preview.locator('[data-pdf-preview]').count()).toBe(0)
     expect(await excel.locator('.fortune-toolbar').count()).toBe(0)
@@ -771,7 +773,7 @@ else process.exit(1);
     await expect.poll(() => formulaInput.innerText()).toBe('=C3/B3')
     await page.keyboard.press('ControlOrMeta+C')
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('80.0%\n')
-    await excel.getByText('公式与格式', { exact: true }).click()
+    await sheetTabs.getByText('公式与格式', { exact: true }).click()
     await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
     await sheetOverlay.click({ position: { x: 140, y: 30 } })
     await expect.poll(() => formulaInput.innerText()).toBe('46281')
@@ -787,23 +789,23 @@ else process.exit(1);
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('42\n')
     await successShot(page, 'excel-cached-formula')
     await openFile('meeting.xlsx')
-    await excel.getByText('会议信息', { exact: true }).waitFor({ state: 'visible' })
+    await sheetTabs.getByText('会议信息', { exact: true }).waitFor({ state: 'visible' })
     expect(await excel.getByText('Read-only preview', { exact: false }).count()).toBe(0)
     expect(await excel.getByText('Some formulas have no saved result', { exact: false }).count()).toBe(0)
     const formulaWarning = excel.locator('[data-excel-formula-warning]')
     await formulaWarning.hover()
     await page.getByText('This workbook contains formulas. Displayed results may be missing or inaccurate.', { exact: true }).waitFor()
-    await excel.getByText('统计看板', { exact: true }).click()
+    await sheetTabs.getByText('统计看板', { exact: true }).click()
     await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
     await successShot(page, 'excel-meeting')
     await openFile('budget.xls')
-    await excel.getByText('预算', { exact: true }).waitFor({ state: 'visible' })
+    await sheetTabs.getByText('预算', { exact: true }).waitFor({ state: 'visible' })
     await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
     await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
     await expect.poll(() => excel.locator('.fortune-fx-input').innerText()).toBe('旧版预算')
     await page.keyboard.press('ControlOrMeta+C')
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('旧版预算')
-    await excel.getByText('明细', { exact: true }).click()
+    await sheetTabs.getByText('明细', { exact: true }).click()
     await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
     await successShot(page, 'excel-legacy')
     await openFile('literal-html.xlsx')
@@ -812,7 +814,7 @@ else process.exit(1);
       ['Text', excelHtmlText, excelHtmlText],
       ['Cached text', '="cached"', excelHtmlText],
     ] as const) {
-      await excel.getByText(sheet, { exact: true }).click()
+      await sheetTabs.getByText(sheet, { exact: true }).click()
       await expect.poll(() => formulaInput.textContent()).toBe(formula)
       expect(await formulaInput.locator('img').count()).toBe(0)
       await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
@@ -975,10 +977,9 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
     await Promise.all([
       writeFile(join(cwd, 'renamed.docx'), 'This is plain text renamed to docx.'),
       writeFile(join(cwd, 'chinese.docx'), realOfficeBytes('docx', 'DSH Missing Preview Font')),
-      writeFile(join(cwd, 'chinese.xlsx'), realOfficeBytes('xlsx')),
       writeFile(join(cwd, 'chinese.pptx'), realOfficeBytes('pptx')),
-      ...(['doc', 'xls', 'ppt'] as const).map(extension => writeFile(join(cwd, `chinese.${extension}`), realOfficeBytes(extension))),
-      ...['doc', 'xls', 'ppt'].map(extension => writeFile(join(cwd, `renamed.${extension}`), 'Plain text is not a binary Office document.')),
+      ...(['doc', 'ppt'] as const).map(extension => writeFile(join(cwd, `chinese.${extension}`), realOfficeBytes(extension))),
+      ...['doc', 'ppt'].map(extension => writeFile(join(cwd, `renamed.${extension}`), 'Plain text is not a binary Office document.')),
     ])
     const convert = vi.spyOn(scaffold.ctx.officeToPdf, 'convert')
     try {
