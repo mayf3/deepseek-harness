@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest'
 import type {} from '@deepseek-ai/dsh-workspace-changes'
 import { deriveReplayScript, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import {
@@ -352,6 +352,68 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(await review.locator('[data-review-tool="open-native"]').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
+  })
+
+  it('keeps edge gestures inside either diff column and accepts reverse scrolling', async () => {
+    const review = page.locator('[data-changes-review]')
+    await review.getByRole('button', { name: '自动换行' }).click()
+    const body = review.locator('[data-review-view="split"]:not([data-review-wrap])')
+    await body.waitFor({ state: 'visible' })
+    // A scrollable parent makes escaped edge gestures observable without native trackpad rebound.
+    const layout = await page.addStyleTag({ content: `
+      [data-changes-review] { height: 220px !important; }
+      [data-review-view="split"] { display: block; max-width: 220px; }
+      [data-review-view="split"] > div { width: 160px; height: 60px; margin: 160px; }
+    ` })
+    onTestFinished(async () => {
+      await layout.evaluate(element => element.parentNode!.removeChild(element))
+      await body.evaluate((element) => { element.scrollTo(0, 0) })
+      await review.getByRole('button', { name: '自动换行' }).click()
+    })
+    const input = await page.context().newCDPSession(page)
+    try {
+      for (const side of ['left', 'right']) {
+        const column = review.locator(`[data-diff-side="${side}"]`)
+        for (const axis of ['x', 'y'] as const) {
+          for (const end of [false, true]) {
+            const parentPosition = await body.evaluate((element) => {
+              const x = (element.scrollWidth - element.clientWidth) / 2
+              const y = (element.scrollHeight - element.clientHeight) / 2
+              element.scrollTo(x, y)
+              return { x: element.scrollLeft, y: element.scrollTop }
+            })
+            expect(parentPosition.x).toBeGreaterThan(0)
+            expect(parentPosition.y).toBeGreaterThan(0)
+            const edge = await column.evaluate((element, { axis, end }) => {
+              const maximum = axis === 'x'
+                ? element.scrollWidth - element.clientWidth
+                : element.scrollHeight - element.clientHeight
+              element.scrollTo(axis === 'x' && end ? maximum : 0, axis === 'y' && end ? maximum : 0)
+              return { maximum, offset: end ? maximum : 0 }
+            }, { axis, end })
+            expect(edge.maximum).toBeGreaterThan(0)
+            const position = () => column.evaluate((element, axis) => axis === 'x' ? element.scrollLeft : element.scrollTop, axis)
+            await expect.poll(position).toBe(edge.offset)
+            const box = await column.boundingBox()
+            if (box === null) throw new Error('diff column has no visible bounds')
+            const gesture = { x: box.x + box.width / 2, y: box.y + box.height / 2, gestureSourceType: 'mouse' as const }
+            const distance = end ? -80 : 80
+            // CDP acknowledges the completed gesture, including default scrolling, before observation.
+            await input.send('Input.synthesizeScrollGesture', {
+              ...gesture, xDistance: axis === 'x' ? distance : 0, yDistance: axis === 'y' ? distance : 0,
+            })
+            expect(await body.evaluate(element => ({ x: element.scrollLeft, y: element.scrollTop }))).toEqual(parentPosition)
+            expect(await position()).toBe(edge.offset)
+            await input.send('Input.synthesizeScrollGesture', {
+              ...gesture, xDistance: axis === 'x' ? -distance : 0, yDistance: axis === 'y' ? -distance : 0,
+            })
+            await expect.poll(position).not.toBe(edge.offset)
+          }
+        }
+      }
+    } finally {
+      await input.detach()
+    }
   })
 
   it.skipIf(MODE === 'record')('replays the workspace and the Chinese conversation', async () => {

@@ -312,6 +312,7 @@ function hunkHeader(hunk: WorkspaceDiffHunk): string {
  * lines and scroll together on both axes, so a long line on one side never
  * runs under the other and both sides show the same rows and columns of text.
  * Every line is one fixed-height row, which keeps the sides aligned.
+ * The columns suppress elastic overscroll while retaining native in-range scrolling.
  */
 function SplitColumns({ hunks, highlights }: { hunks: readonly WorkspaceDiffHunk[]; highlights: readonly HunkHighlights[] }): ReactNode {
   const paired = useMemo(() => hunks.map(hunk => ({ header: hunkHeader(hunk), rows: splitRows(hunk) })), [hunks])
