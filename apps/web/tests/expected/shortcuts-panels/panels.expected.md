@@ -1,14 +1,4 @@
 - tablist:
-  - tab "Files Close" [selected]:
-    - text: Files
-    - button "Close"
-  - button "New tab"
-  - button "Split" [disabled]
-- text: {{cwd}}/workspace
-- button "Reload"
-- list:
-  - listitem: Empty directory
-- tablist:
   - tab "Files Close":
     - text: Files
     - button "Close"
@@ -23,3 +13,13 @@
   - button "Exit fullscreen"
   - button "Collapse right sidebar"
 - textbox "Terminal"
+- tablist:
+  - tab "Files Close" [selected]:
+    - text: Files
+    - button "Close"
+  - button "New tab"
+  - button "Split" [disabled]
+- text: {{cwd}}/workspace
+- button "Reload"
+- list:
+  - listitem: Empty directory

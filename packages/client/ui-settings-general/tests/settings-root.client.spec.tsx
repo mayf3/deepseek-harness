@@ -147,7 +147,11 @@ function mount({
     desktopUpdate = next
     view.rerender(<SettingsRoot {...props} />)
   }
-  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, setDesktopUpdate }
+  const setShortcuts = (next: readonly ShortcutCatalogEntry[]) => {
+    shortcuts = next
+    view.rerender(<SettingsRoot {...props} />)
+  }
+  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, setDesktopUpdate, setShortcuts }
 }
 
 function openPanel() {
@@ -487,4 +491,17 @@ it('shows the effective settings binding on focus and exposes it to assistive te
   expect(trigger.getAttribute('aria-keyshortcuts')).toBe('Meta+,')
   fireEvent.focus(trigger)
   expect(screen.getByRole('tooltip').textContent).toBe('Settings ⌘ ,')
+})
+
+it('passes current Settings key labels to the launcher and removes them when unbound', () => {
+  const row: ShortcutCatalogEntry = { id: 'settings.open' as ShortcutCommandId, label: 'Open settings', aliases: [], keys: ['⌘', ','], aria: 'Meta+,', binding: { code: 'Comma', modifiers: ['meta'] }, modified: false, conflicts: [], issue: null }
+  const { renderSlot, setShortcuts } = mount({ shortcuts: [row] })
+  const launcher = () => renderSlot.mock.calls.filter(call => call[0] === 'settings.launcher').at(-1)?.[1]
+  expect(launcher()).toMatchObject({ settingsShortcut: { keys: ['⌘', ','], aria: 'Meta+,' } })
+
+  setShortcuts([{ ...row, keys: ['Ctrl', 'Shift', 'S'], aria: 'Control+Shift+S', binding: { code: 'KeyS', modifiers: ['control', 'shift'] }, modified: true }])
+  expect(launcher()).toMatchObject({ settingsShortcut: { keys: ['Ctrl', 'Shift', 'S'], aria: 'Control+Shift+S' } })
+
+  setShortcuts([{ ...row, keys: [], aria: undefined, binding: null, modified: true }])
+  expect(launcher()).not.toHaveProperty('settingsShortcut')
 })

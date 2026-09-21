@@ -48,7 +48,12 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
     { platform: 'MacIntel', primary: 'Meta', aria: 'Shift+Meta+,' },
     { platform: 'Win32', primary: 'Control', aria: 'Control+Shift+,' },
   ].flatMap(platform => (['left', 'right'] as const).map(closeFirst => ({ ...platform, closeFirst }))))('targets panes and closes $closeFirst first with $platform bindings', async ({ platform, primary, aria, closeFirst }) => {
-    const scaffold: WebScaffold = await launchWebScaffold({ extraOverlayPath: fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url)) })
+    const scaffold: WebScaffold = await launchWebScaffold({
+      extraOverlayPath: [
+        fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url)),
+        fileURLToPath(new URL('./sidebar-browser.overlay.yml', import.meta.url)),
+      ],
+    })
     const context = await browser.newContext({ locale: 'en-US', timezoneId: 'Asia/Shanghai', viewport: { width: 1680, height: 1000 } })
     try {
       // Device-label/DOM branch evidence only; physical Windows input has its own acceptance checklist.
@@ -151,9 +156,8 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await panel.locator('[data-dockkit-tab]').filter({ hasText: 'Files' }).focus()
       await page.keyboard.press(`${primary}+Shift+,`)
       await expect.poll(() => panel.locator('[data-dockkit-pane]').count()).toBe(2)
-      const panes = panel.locator('[data-dockkit-pane]')
-      const left = panes.nth(0)
-      const right = panes.nth(1)
+      const left = panel.locator('[data-dockkit-pane][data-dockkit-column="0"]')
+      const right = panel.locator('[data-dockkit-pane][data-dockkit-column="1"]')
       const disabled = right.locator('[data-dockkit-split-button]')
       expect(await disabled.isDisabled()).toBe(true)
       await disabled.locator('..').focus()
@@ -233,7 +237,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await panel.getByRole('button', { name: 'Fullscreen', exact: true }).click()
       await panel.locator('[data-dockkit-split-button]').click()
       await expect.poll(() => panel.locator('[data-dockkit-pane]').count()).toBe(2)
-      await panel.getByRole('tab').nth(closeFirst === 'left' ? 0 : 1).focus()
+      await (closeFirst === 'left' ? left : right).getByRole('tab').focus()
       await page.keyboard.press(`${primary}+Shift+,`)
       await expect.poll(() => panel.getByRole('tab').count()).toBe(1)
       expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => pane === document.activeElement)).toBe(true)

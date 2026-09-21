@@ -2402,7 +2402,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'Optional sidebar account launcher; opens the shell-owned settings panel.',
     registerOptions: [],
     ownerProps: [
-      '/** Sidebar launcher geometry and settings navigation. */\nexport interface SettingsLauncherOwnerProps {\n  /** Whether the sidebar shows labels. */\n  wide: boolean\n  /** Open the settings panel. */\n  openSettings: () => void\n  /** @param id - registered onboarding editor to open explicitly. */\n  openOnboarding: (id: string) => void\n}',
+      '/** Sidebar launcher geometry and settings navigation. */\nexport interface SettingsLauncherOwnerProps {\n  /** Whether the sidebar shows labels. */\n  wide: boolean\n  /** Effective Settings key labels and accessible combination; omitted when unbound. */\n  settingsShortcut?: { readonly keys: readonly string[]; readonly aria?: string | undefined }\n  /** Open the settings panel. */\n  openSettings: () => void\n  /** @param id - registered onboarding editor to open explicitly. */\n  openOnboarding: (id: string) => void\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [

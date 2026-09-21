@@ -144,6 +144,8 @@ export interface SettingsOnboardingOwnerProps {
 export interface SettingsLauncherOwnerProps {
   /** Whether the sidebar shows labels. */
   wide: boolean
+  /** Effective Settings key labels and accessible combination; omitted when unbound. */
+  settingsShortcut?: { readonly keys: readonly string[]; readonly aria?: string | undefined }
   /** Open the settings panel. */
   openSettings: () => void
   /** @param id - registered onboarding editor to open explicitly. */

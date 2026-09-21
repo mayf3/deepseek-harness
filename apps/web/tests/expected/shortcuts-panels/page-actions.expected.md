@@ -1,15 +1,4 @@
 - tablist:
-  - tab "Files Close" [selected]:
-    - text: Files
-    - button "Close"
-  - button "New tab"
-  - button "Split" [disabled]
-- text: {{cwd}}/workspace
-- button "Reload"
-- list:
-  - listitem:
-    - button "t6-refresh.txt"
-- tablist:
   - tab "Files Close":
     - text: Files
     - button "Close"
@@ -21,3 +10,14 @@
   - button "Fullscreen"
   - button "Collapse right sidebar"
 - textbox "Terminal"
+- tablist:
+  - tab "Files Close" [selected]:
+    - text: Files
+    - button "Close"
+  - button "New tab"
+  - button "Split" [disabled]
+- text: {{cwd}}/workspace
+- button "Reload"
+- list:
+  - listitem:
+    - button "t6-refresh.txt"
