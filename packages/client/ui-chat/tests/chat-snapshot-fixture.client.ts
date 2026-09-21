@@ -408,14 +408,16 @@ export function chatSnapshotFixture(input: {
     const controlAnchor = inTurn.find(candidate => candidate.kind === 'assistant-step'
       || candidate.kind === 'tool-call'
       || candidate.kind === 'model-retry')
-    if (controlAnchor === undefined) continue
+    const turn = turns.get(turnNumber)
+    const controlAnchorSeq = controlAnchor?.anchorSeq ?? turn?.start?.seq
+    if (controlAnchorSeq === undefined) continue
     const processStart = inTurn.find(candidate => !TURN_PROCESS_INDEPENDENT_KINDS.has(candidate.kind))
       ?? controlAnchor
     const inlineReasoning = answer?.blocks.some(block => block.kind === 'reasoning' && block.text.trim() !== '') === true
     const candidate: TurnProcessSpec = {
       turn: turnNumber,
-      controlAnchorSeq: controlAnchor.anchorSeq,
-      processStartSeq: processStart.anchorSeq,
+      controlAnchorSeq,
+      processStartSeq: processStart?.anchorSeq ?? controlAnchorSeq,
       answerAnchorSeq: answer?.finalNode.seq ?? null,
       answerStep: answer?.step ?? null,
       inlineReasoning: answer !== undefined && inlineReasoning,
@@ -437,7 +439,6 @@ export function chatSnapshotFixture(input: {
       ? previousSpec
       : candidate
     dataStore.set('turn-process', spec)
-    const turn = turns.get(turnNumber)
     if (turn !== undefined) {
       nodes.push({
         key: `fixture:turn-process:${String(turnNumber)}`,
