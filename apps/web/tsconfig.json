@@ -51,6 +51,7 @@
     "tests/office-fixture.ts",
     "tests/sidebar-browser.e2e.ts",
     "tests/plugin-config.e2e.ts",
+    "tests/input-plugin-extensions.e2e.ts",
     "tests/plugin-manager.e2e.ts",
     "tests/plugin-install-cancel.e2e.ts",
     "tests/plugin-install-approve.e2e.ts",
