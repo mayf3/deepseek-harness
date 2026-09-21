@@ -97,17 +97,16 @@ function parseMacApplications(value: unknown): readonly MacApplication[] {
   const entries: readonly unknown[] = value
   return entries.map((entry) => {
     if (typeof entry !== 'object' || entry === null) throw new Error('Invalid native application entry')
-    const bundle = macField(entry, 'bundle')
-    const version = macField(entry, 'version')
+    const bundle = macField('bundle' in entry ? entry.bundle : null)
+    const version = macField('version' in entry ? entry.version : null)
     const [base] = parseNativeFileApplications([entry])
     // oxlint-disable-next-line typescript/no-non-null-assertion -- a one-entry input parses to one entry
     return { ...base!, bundle, version }
   })
 }
 
-/** Read one optional string field of a validated macOS entry; empty strings and missing fields read as null. */
-function macField(entry: object, key: 'bundle' | 'version'): string | null {
-  const field = key in entry ? Reflect.get(entry, key) : null
+/** Validate one optional string field value of a macOS entry; missing fields, null, and empty strings read as null. */
+function macField(field: unknown): string | null {
   if (field === null) return null
   if (typeof field !== 'string') throw new Error('Invalid native application entry')
   return field.length === 0 ? null : field
