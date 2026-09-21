@@ -1,7 +1,4 @@
 /** An explicit New Session the Host refuses reports through the Workspace notice in the shipped Web composition. */
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { describe, expect, it, onTestFinished } from 'vitest'
@@ -13,28 +10,19 @@ const MODE = webSnapshotMode()
 /** The default preset of this lane: its one row names a package the Host cannot resolve, as a preset copied before a plugin rename does. */
 const PRESET_ID = 'renamed-plugin'
 
-/**
- * Seed a user preset root holding one preset the roster reads as broken.
- *
- * Discovery reports the unresolvable row before any mount, so the refusal
- * carries no temp path and the notice text is stable across runs.
- * @param root - the lane-owned preset root.
- */
-async function seedBrokenPreset(root: string): Promise<void> {
-  const directory = join(root, PRESET_ID)
-  await mkdir(directory, { recursive: true })
-  await writeFile(join(directory, 'agent.cordis.yml'), '- id: ghost\n  name: \'@deepseek-ai/dsh-no-such-plugin\'\n')
-  await writeFile(join(directory, 'preset.yml'), 'name: Renamed plugin\ndescription: Names a plugin that no longer resolves.\n')
+/** The default preset of this lane as a declaration: its one row names a package the Host cannot resolve. */
+const BROKEN_PRESET = {
+  id: PRESET_ID,
+  name: 'Renamed plugin',
+  description: 'Names a plugin that no longer resolves.',
+  plugins: [{ id: 'ghost', name: '@deepseek-ai/dsh-no-such-plugin' }],
 }
 
 describe.skipIf(MODE === 'record')('web e2e: refused New Session', () => {
   it('shows the Host refusal as a notice and leaves the Workspace without a Session', async () => {
-    const presetRoot = await realpath(await mkdtemp(join(tmpdir(), 'dsh-web-e2e-broken-preset-')))
-    onTestFinished(() => rm(presetRoot, { recursive: true, force: true }))
-    await seedBrokenPreset(presetRoot)
     const scaffold = await launchWebScaffold({
       firstUse: true,
-      agentPresets: { roots: [{ path: presetRoot, trust: 'user' }], default: PRESET_ID },
+      agentPresets: { default: PRESET_ID, definitions: [BROKEN_PRESET] },
     })
     onTestFinished(() => scaffold.close())
     const browser = await chromium.launch()

@@ -487,10 +487,10 @@ const SERVICE_ROLES: ServiceRole[] = [
   },
   {
     key: 'agentPresets',
-    pkg: 'agent-presets',
+    pkg: 'agent-preset-registry',
     title: 'Per-session agent composition',
     mode: 'core',
-    note: 'Discovers preset directories over trusted and user-authored roots and mounts one preset cordis.yml under an agent scope during creation, rejecting a row that never activates or that publishes into the root service realm.',
+    note: 'Eagerly mounts YAML-declared preset revisions, binds Agents and cold readers to scoped contributions, and retains retired revisions until their last user releases them.',
   },
   {
     key: 'commands',
