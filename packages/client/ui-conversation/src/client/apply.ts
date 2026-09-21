@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { UiConversation } from './conversation/assembly.ts'
 import type { ViewTab } from './contract/views.ts'
 import type {
@@ -38,6 +39,7 @@ import { ConversationHeader } from './skeleton/ConversationHeader.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
 import { InputBar } from './skeleton/InputBar.tsx'
 import { todoDockEntry } from './skeleton/TodoPanel.tsx'
+import { installStopShortcut } from './stop-shortcut.ts'
 import { DEVELOPER_TOOLS_VIEW_ID, resolveActiveView } from './view-selection.ts'
 import { en, NS, zh, type ConversationKey } from './locales.ts'
 import { CONVERSATION_SETTINGS_NAMESPACE, type ConversationSettings } from '../submission-settings.ts'
@@ -224,6 +226,19 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       disposeViews()
     }
   }, 'ui-conversation: View selection')
+
+  const stop = (sessionId: SessionId): void => {
+    scopedConversation(sessions, sessionId).cancel().catch((_error: unknown) => {
+      // Stop failure is published through Session promptError.
+    })
+  }
+  ctx.inject(['shortcuts'], (scope) => {
+    scope.effect(() => installStopShortcut(scope.shortcuts, sessions, uiConversation, ctx.uiSession, stop),
+      'ui-conversation: fixed stop input')
+    scope.effect(() => scope.shortcuts.registerFixed({
+      id: 'response.stop' as ShortcutCommandId, label: () => t('input.stop'), keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input',
+    }), 'ui-conversation: fixed stop reference')
+  })
 
   const inputHub = new InputHub(ctx, t)
   const composerBlocks = new ComposerBlockRegistry()
@@ -475,11 +490,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
               span: { ...selection, draftRev: snapshot.draftRev },
             })
           },
-        stop: () => {
-          scopedConversation(sessions, sessionId).cancel().catch(() => {
-            // Stop failure is published through Session promptError.
-          })
-        },
+        stop: () => { stop(sessionId) },
         hooks: {
           busyEnter: submissionPolicy.busyEnter,
           fileUploads: conversation.fileUploads,

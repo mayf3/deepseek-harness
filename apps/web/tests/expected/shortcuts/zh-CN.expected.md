@@ -108,6 +108,9 @@
       - listitem:
         - text: 打开引用菜单
         - button "打开引用菜单 @" [disabled]: "@"
+      - listitem:
+        - text: 停止生成
+        - button "停止生成 Esc Esc" [disabled]: Esc Esc
   - region "菜单与弹层":
     - heading "菜单与弹层" [level=3]
     - list:
@@ -120,3 +123,12 @@
       - listitem:
         - text: 关闭菜单或顶层弹窗
         - button "关闭菜单或顶层弹窗 Esc" [disabled]: Esc
+  - region "审批区域":
+    - heading "审批区域" [level=3]
+    - list:
+      - listitem:
+        - text: 允许一次
+        - button "允许一次 Enter" [disabled]: Enter
+      - listitem:
+        - text: 拒绝
+        - button "拒绝 Esc" [disabled]: Esc

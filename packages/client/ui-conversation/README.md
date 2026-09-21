@@ -82,6 +82,8 @@ File chips and editable skill references share a whole-reference hover backgroun
 
 When another writer owns the Session, the send-error toast asks the user to quit other running DSH instances and retry.
 
+Two independent Escape presses in the focused Chat or Composer stop its current running turn and preserve queued messages. The interval comes from the shortcuts plugin’s `stopSequenceMs` configuration (500 ms by default). A menu, approval, modal, terminal, embedded webpage, composition, repeated key, changed input region, Session or turn breaks the sequence. The shortcut uses the same scoped cancellation as the Stop button. Its fixed-action registration reserves plain Escape against editable shortcuts.
+
 <a id="temporary-composer-entries"></a>
 ## Temporary composer entries
 

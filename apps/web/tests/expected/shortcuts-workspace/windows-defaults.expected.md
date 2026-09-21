@@ -109,6 +109,9 @@
       - listitem:
         - text: Open reference menu
         - button "Open reference menu @" [disabled]: "@"
+      - listitem:
+        - text: Stop generating
+        - button "Stop generating Esc Esc" [disabled]: Esc Esc
   - region "Menus and dialogs":
     - heading "Menus and dialogs" [level=3]
     - list:
@@ -121,3 +124,12 @@
       - listitem:
         - text: Close menu or top dialog
         - button "Close menu or top dialog Esc" [disabled]: Esc
+  - region "Approval area":
+    - heading "Approval area" [level=3]
+    - list:
+      - listitem:
+        - text: Allow once
+        - button "Allow once Enter" [disabled]: Enter
+      - listitem:
+        - text: Reject
+        - button "Reject Esc" [disabled]: Esc
