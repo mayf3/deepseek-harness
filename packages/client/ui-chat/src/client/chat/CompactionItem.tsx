@@ -1,4 +1,3 @@
-import type { CompactionSummaryNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 // A compaction marker does not replace shadowed transcript rows. It is
 // expandable only when the current window includes its cited summary.
 
@@ -11,6 +10,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { markdownLabels } from '../markdown-labels.ts'
+import type { CompactionSummaryNode } from '../contract/snapshot.ts'
 import css from './MessageItem.module.css'
 
 interface CompactionItemProps {
