@@ -25,7 +25,7 @@ kind: "package-library"
 <a id="use-this-package"></a>
 ## 使用本包
 
-`Toast` 在浅色和深色模式下均使用主题的系统提示背景与文字颜色。`Menu` 数据条目与 `MenuItemButton` 组件条目接收功能 owner 提供的有效快捷键，并在末端以无背景的浅灰色文字对齐显示，子菜单也采用同一呈现。`ShortcutKeys` 将调用方提供的有效按键组合显示在同一个圆角标签中；可选的 `className` 供调用方设置交互状态样式。`Modal` 与设置外壳通过 `useModalLayer` 共用顶层 Esc 和 Tab 处理，关闭时恢复先前焦点。菜单先消费自己的 Esc，再由模态层处理关闭。 `observeComposition` 为局部弹层和录键处理提供相同的 composition-end 与旧版 IME 保护；调用方随交互生命周期释放其 document 监听。
+锚点中嵌套的 `Tooltip` 在显示悬停或焦点标签时隐藏该预览；嵌套提示释放、禁用或卸载后，仍处于打开状态的预览会恢复。`Toast` 在浅色和深色模式下均使用主题的系统提示背景与文字颜色。`Menu` 数据条目与 `MenuItemButton` 组件条目接收功能 owner 提供的有效快捷键，并在末端以无背景的浅灰色文字对齐显示，子菜单也采用同一呈现。`ShortcutKeys` 将调用方提供的有效按键组合显示在同一个圆角标签中；可选的 `className` 供调用方设置交互状态样式。`Modal` 与设置外壳通过 `useModalLayer` 共用顶层 Esc 和 Tab 处理，关闭时恢复先前焦点。菜单先消费自己的 Esc，再由模态层处理关闭。 `observeComposition` 为局部弹层和录键处理提供相同的 composition-end 与旧版 IME 保护；调用方随交互生命周期释放其 document 监听。
 
 本包是 Web 壳的构建输入。静态 ESM 为 Vite 保留第三方导入和样式；独立消费方自行提供开发依赖（[依赖规则](../AGENTS.md#dependency-declaration)）。
 

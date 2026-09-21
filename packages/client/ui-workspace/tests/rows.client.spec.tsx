@@ -523,6 +523,58 @@ describe('workspace browser rows', () => {
     }
   })
 
+  it.each(['hover', 'focus'] as const)('shows only the new Session tooltip while its action owns %s', (trigger) => {
+    vi.useFakeTimers()
+    try {
+      const group: GroupNode = {
+        key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
+        sessionCount: 0, expanded: false, containsCurrent: false, sessions: [],
+      }
+      render(<ProjectRowItem group={group} onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
+      const row = screen.getByRole('treeitem')
+      const create = screen.getByRole('button', { name: '在“Project”中新建会话' })
+      fireEvent.pointerEnter(row.parentElement as HTMLElement)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(screen.getByText('/projects/project')).toBeTruthy()
+
+      if (trigger === 'hover') fireEvent.mouseEnter(create)
+      else fireEvent.focus(create)
+      expect(screen.getByRole('tooltip').textContent).toBe('新会话')
+      expect(screen.queryByText('/projects/project')).toBeNull()
+
+      if (trigger === 'hover') fireEvent.mouseLeave(create, { relatedTarget: row })
+      else fireEvent.blur(create, { relatedTarget: row })
+      expect(screen.queryByRole('tooltip')).toBeNull()
+      expect(screen.getByText('/projects/project')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps workspace details hidden when the pointer first enters its new Session action', () => {
+    vi.useFakeTimers()
+    try {
+      const group: GroupNode = {
+        key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
+        sessionCount: 0, expanded: false, containsCurrent: false, sessions: [],
+      }
+      render(<ProjectRowItem group={group} onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
+      const row = screen.getByRole('treeitem')
+      const create = screen.getByRole('button', { name: '在“Project”中新建会话' })
+      fireEvent.pointerEnter(row.parentElement as HTMLElement)
+      fireEvent.mouseEnter(create)
+      act(() => { vi.advanceTimersByTime(1000) })
+      expect(screen.getByRole('tooltip').textContent).toBe('新会话')
+      expect(screen.queryByText('/projects/project')).toBeNull()
+
+      fireEvent.mouseLeave(create, { relatedTarget: row })
+      expect(screen.queryByRole('tooltip')).toBeNull()
+      expect(screen.getByText('/projects/project')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('workspace hover card shows a POSIX home descendant as ~ and still copies the full path', async () => {
     vi.useFakeTimers()
     const writeText = vi.fn(async () => {})

@@ -1,6 +1,6 @@
 /** Workspace keyboard commands over the real Web composition and a recorded Session. */
 import { mkdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -128,6 +128,19 @@ describe.skipIf(mode === 'record')('web e2e: workspace shortcuts', () => {
     await picker.waitFor({ state: 'hidden' })
     await expect.poll(() => scaffold.ctx.workspaceRegistry.resolveByPath(join(scaffold.workspaceCwd, 'keyboard-project'))).toBeDefined()
     const workspace = (await scaffold.ctx.workspaceRegistry.resolveByPath(join(scaffold.workspaceCwd, 'keyboard-project')))!
+
+    const workspaceLabel = basename(workspace.path)
+    const workspaceRow = page.locator('[role="treeitem"][aria-expanded]')
+      .filter({ has: page.getByText(workspaceLabel, { exact: true }) })
+    const details = page.getByRole('button', { name: `Copy: ${workspace.path}`, exact: true })
+    await workspaceRow.getByText(workspaceLabel, { exact: true }).hover()
+    await details.waitFor()
+    await workspaceRow.getByRole('button', { name: `New session in ${workspaceLabel}`, exact: true }).hover()
+    await page.getByRole('tooltip').filter({ hasText: 'New Session' }).waitFor()
+    await expect.poll(() => details.count()).toBe(0)
+    await workspaceRow.getByText(workspaceLabel, { exact: true }).hover()
+    await details.waitFor()
+    await page.mouse.move(700, 100)
 
     await bind('New Session')
     await page.keyboard.press('Meta+Shift+Comma')
