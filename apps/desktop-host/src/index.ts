@@ -9,10 +9,12 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import * as desktopOffice from './office.ts'
 
 import { installDesktopUpdateTaskControl } from './update-tasks.ts'
+import { installOfficeEngineResolution } from './office-engine.ts'
 
 async function main(): Promise<void> {
   const runtimeDir = process.argv[2] as string
   const projectDir = process.argv[3] as string
+  installOfficeEngineResolution(runtimeDir)
   const installAnchor = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
   const profile = loadProfileDirectory('dsh', projectDir, installAnchor)
   const application = runProfile({

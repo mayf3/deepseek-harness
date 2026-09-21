@@ -172,7 +172,7 @@ function standaloneDuration(): Pick<
 /** Empty sessions-list hook; breadcrumbs therefore fall back to the raw id. */
 function emptySessions() {
   const store = createSnapshotStore<SessionListState>(
-    { ids: [], byId: {}, phase: 'ready', projectionsBySession: {}, jobsBySession: {} })
+    { ids: [], byId: {}, phase: 'ready', projectionsBySession: {} })
   return bindSnapshotSelector(store)
 }
 

@@ -38,11 +38,11 @@ Sidebar 的 Document Preview 和 Files 面板都需要反映磁盘上的最新�
 
 | 类或类型 | 所在文件 | 职责 |
 |---|---|---|
-| `FileSystem` | [fs/src/index.ts](../../../../packages/fs/fs/src/index.ts) | 声明抽象的单目标 `watch(target, changed, signal)` 方法；文件观察自身，目录观察直接子项；就绪后返回异步关闭函数，不支持的提供方显式抛异常，不新增 FS 错误码 |
+| `FileSystem` | [fs/src/index.ts](../../../../packages/fs/fs/src/index.ts) | 声明单目标 `watch(target, changed, signal)` 方法；文件观察自身，目录观察直接子项；就绪后返回异步关闭函数，基类以 `FS_IO_ERROR` 拒绝，不支持监听的提供方无需覆写，也不新增 FS 错误码 |
 | `FsTarget` | [fs/src/types.ts](../../../../packages/fs/fs/src/types.ts) | 沿用现有目标类型，不单独增加 FS 监听事件体系，也不让上层解析 `targetKey` |
 | `LocalFileSystem` | [fs-local/src/index.ts](../../../../packages/fs/fs-local/src/index.ts) | 文件监听其父目录并过滤到目标，目录监听自身；等待 Chokidar 就绪和关闭；依赖声明在 `fs-local` |
 | `SandboxedFileSystem` | [fs-sandbox/src/index.ts](../../../../packages/fs/fs-sandbox/src/index.ts) | 继承本地只读监听能力，不复制 watcher 实现；保留自身对写入、编辑的策略检查 |
-| `SshFileSystem` | [fs-ssh/src/index.ts](../../../../packages/ssh/fs-ssh/src/index.ts) | `watch()` 显式抛出普通异常；Host 转成 `workspace-file/watch-unsupported` 的 `RemoteError`，不跨包导入或判断 `FsError` 实体，也不把远端 `processPath()` 传给本机 Chokidar |
+| `SshFileSystem` | [fs-ssh/src/index.ts](../../../../packages/ssh/fs-ssh/src/index.ts) | 继承基类的 `FS_IO_ERROR` 拒绝；Host 将其转换为 `workspace-file/watch-unsupported` 的 `RemoteError`，不跨包导入或判断 `FsError` 实体，也不把远端 `processPath()` 传给本机 Chokidar |
 | `WorkspaceFiles` | [workspace-files/src/index.ts](../../../../packages/api/workspace-files/src/index.ts) | 使用仅携带目标路径的 `changes(scope, path, signal)`；Host stat 决定是否执行目录包含检查，目标类型变化后也检查，普通文件沿用文件读取权限 |
 | `WorkspaceChangeFeed` | [workspace-files/src/changes.ts](../../../../packages/api/workspace-files/src/changes.ts) | 在现有 follow 中建立目标 watch，发送就绪和变化；保留原队列与操作观察入口，出流前过滤目标，不重写整套分发逻辑 |
 | `ChangeFollower` | [workspace-files/src/changes.ts](../../../../packages/api/workspace-files/src/changes.ts) | 接收操作观察与 OS 通知，处理监听错误；关闭独立于生成器拉取进度，并等待 watcher 关闭完成 |

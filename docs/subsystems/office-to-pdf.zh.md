@@ -29,7 +29,7 @@
 
 ## 预览读取
 
-`RenderedDocumentBytes` 在工作区字节响应上增加 `missingFonts` 和 `generation`；转换后的 PDF 附带原始源文件身份。
+`RenderedDocumentBytes` 携带工作区文件元数据、base64 PDF `data`、`missingFonts` 和 `generation`；转换后的 PDF 附带原始源文件身份。
 
 `officeToPdf.render` Remote 方法通过 Session 的[工作区文件](../../packages/api/workspace-files/README.zh.md)服务检查源文件授权与版本。取得转换容量后，`fs.readBytes` 在预留字节容量内提供原始输入；该读取受 Office 输入上限约束。响应携带 base64 PDF 字节、源文件绝对路径与新鲜度版本。源访问失败直接传递；大小和引擎失败只暴露分类原因，不含诊断信息。转换不激活 Agent 或追加事件。
 

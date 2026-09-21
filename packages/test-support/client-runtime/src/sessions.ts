@@ -328,7 +328,7 @@ export class TestSessions implements ISessions {
    */
   constructor(private readonly stabilize: Stabilizer, private readonly rootCtx: Context) {
     this.list = createSnapshotStore<SessionListState>({
-      ids: [], byId: {}, phase: 'ready', projectionsBySession: {}, jobsBySession: {},
+      ids: [], byId: {}, phase: 'ready', projectionsBySession: {},
     })
     rootCtx.effect(() => async () => {
       this.closed = true

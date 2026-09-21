@@ -201,7 +201,27 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/gateway/src/index.ts:140`](../packages/api/gateway/src/index.ts)
+来源：[`packages/api/gateway/src/index.ts:144`](../packages/api/gateway/src/index.ts)
+
+<a id="deepseek-aidsh-api-job-controller"></a>
+
+## `@deepseek-ai/dsh-api-job-controller`
+
+需要：`jobs` · `typert`
+
+```ts config-catalog
+/** Job Controller deployment policy. */
+export interface Config {
+  /** Coalescing window after a registry commit before the next rows or output read, in milliseconds (default 100). */
+  readonly observeFlushMs?: number
+  /** Soft byte budget per observation output frame (default 65536); one larger chunk ships whole. */
+  readonly observeMaxFrameBytes?: number
+}
+```
+
+来源：[`packages/api/job-controller/src/index.ts:33`](../packages/api/job-controller/src/index.ts)
+
+<a id="deepseek-aidsh-api-session-controller"></a>
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
@@ -322,7 +342,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/workspace-files/src/index.ts:69`](../packages/api/workspace-files/src/index.ts)
+来源：[`packages/api/workspace-files/src/index.ts:70`](../packages/api/workspace-files/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 
@@ -450,7 +470,7 @@ export interface ConnectionRecoveryConfig {
 }
 ```
 
-来源： [`packages/client/connection/src/index.ts:90`](../packages/client/connection/src/index.ts)
+来源： [`packages/client/connection/src/index.ts:92`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -1250,10 +1270,20 @@ export interface Config {
    * omission defaults to 10.
    */
   maxConcurrentJobsPerOwner?: number
+  /** Live ring retention per job in UTF-8 bytes; omission defaults to 262144. */
+  retainBytes?: number
+  /**
+   * Ring retention kept after a job settles, in UTF-8 bytes; omission defaults to 16384.
+   * Settlement keeps every byte the model cursor has not consumed on top of
+   * this cap; the first terminal model read then trims to it.
+   */
+  settledRetainBytes?: number
+  /** Poll interval for a job's pull sources, in milliseconds; omission defaults to 150. */
+  pumpPollMs?: number
 }
 ```
 
-来源：[`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
+来源：[`packages/jobs/jobs-local/src/index.ts:45`](../packages/jobs/jobs-local/src/index.ts)
 
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
@@ -2184,7 +2214,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/sandbox/sandbox-local/src/index.ts:44`](../packages/sandbox/sandbox-local/src/index.ts)
+来源：[`packages/sandbox/sandbox-local/src/index.ts:45`](../packages/sandbox/sandbox-local/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-policy"></a>
 
@@ -3028,7 +3058,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/core/system-prompt/src/index.ts:248`](../packages/core/system-prompt/src/index.ts)
+来源：[`packages/core/system-prompt/src/index.ts:247`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -3263,7 +3293,7 @@ export interface Config {
 }
 
 /**
- * How an unreported completion reaches an owner that is already idle: `wakeup`
+ * How an uncollected completion reaches an owner that is already idle: `wakeup`
  * opens a turn for it, `quiet` leaves it pending until something else wakes the
  * owner. A busy owner is injected either way.
  */
@@ -3322,7 +3352,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/shell/tool-pwsh/src/index.ts:51`](../packages/shell/tool-pwsh/src/index.ts)
+来源：[`packages/shell/tool-pwsh/src/index.ts:52`](../packages/shell/tool-pwsh/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh-persistent"></a>
 
@@ -3507,7 +3537,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/terminal/tool-terminal/src/index.ts:35`](../packages/terminal/tool-terminal/src/index.ts)
+来源：[`packages/terminal/tool-terminal/src/index.ts:36`](../packages/terminal/tool-terminal/src/index.ts)
 
 <a id="deepseek-aidsh-tool-todo"></a>
 

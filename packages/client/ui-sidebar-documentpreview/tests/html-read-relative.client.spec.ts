@@ -1,4 +1,4 @@
-/** HTML URL decoding stays local; ordinary Remote reads leave path resolution and authorization to the Host. */
+/** HTML URL decoding stays local; workspace reads leave path resolution and authorization to the Host. */
 import { describe, expect, it, vi } from 'vitest'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
@@ -8,14 +8,14 @@ import type { ReadHtmlRelated } from '../src/client/html/read-relative.ts'
 const ADDRESS = 'dsh-resource://file/session/html/sub/index.html'
 
 describe('HTML relative file reader', () => {
-  it('decodes a relative URL once and converts the Remote result to native bytes', async () => {
-    const value = { absolutePath: '/workspace/a b.js', data: btoa('x'), version: 'v1', offset: 0, bytes: 1, eof: true }
+  it('decodes a relative URL once and preserves the returned bytes', async () => {
+    const value = { absolutePath: '/workspace/a b.js', data: new Uint8Array([120]), version: 'v1', offset: 0, bytes: 1, eof: true }
     const readRelated = vi.fn<ReadHtmlRelated>().mockResolvedValue({ ok: true, value })
     const tab = new AbortController()
     const loading = new AbortController()
     const addResource = vi.fn()
     const read = createReadHtmlRelative(readRelated, ADDRESS, tab.signal, addResource)
-    await expect(read('../a%20b.js?v=1#fragment', loading.signal)).resolves.toEqual({ ...value, data: new Uint8Array([120]) })
+    await expect(read('../a%20b.js?v=1#fragment', loading.signal)).resolves.toBe(value)
     const signal = readRelated.mock.calls[0]?.[2]
     expect(readRelated).toHaveBeenCalledExactlyOnceWith(ADDRESS, '../a b.js', signal)
     expect(addResource).toHaveBeenCalledExactlyOnceWith(sessionFileAddress('html', value.absolutePath))
@@ -25,7 +25,7 @@ describe('HTML relative file reader', () => {
   })
 
   it('observes the Host-resolved dependency instead of a symlink and parent-segment spelling', async () => {
-    const value = { absolutePath: '/workspace/style.css', data: btoa('x'), version: 'v1', offset: 0, eof: true }
+    const value = { absolutePath: '/workspace/style.css', data: new TextEncoder().encode('x'), version: 'v1', offset: 0, bytes: 1, eof: true }
     const readRelated = vi.fn<ReadHtmlRelated>().mockResolvedValue({ ok: true, value })
     const addResource = vi.fn()
     const signal = new AbortController().signal
@@ -85,7 +85,7 @@ describe('HTML relative file reader', () => {
     const result = read('./late.js', loading.signal)
     const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' })
     loading.abort()
-    pending.resolve({ ok: true, value: { absolutePath: '/workspace/late.js', version: 'v1', bytes: 1, offset: 0, data: 'AQ==', eof: true } })
+    pending.resolve({ ok: true, value: { absolutePath: '/workspace/late.js', version: 'v1', bytes: 1, offset: 0, data: new Uint8Array([1]), eof: true } })
     await rejected
   })
 })

@@ -24,7 +24,7 @@ import type {
 } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import type { ClientRemote } from '../src/client/index.ts'
-import { apply, inject, RemoteStream } from '../src/client/index.ts'
+import { apply, inject, isRemoteFailure, RemoteStream } from '../src/client/index.ts'
 import {
   ClientUplinkQueue,
   RemoteStreamCarrierError,
@@ -95,6 +95,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       signal?: AbortSignal,
     ) => Promise<RemoteResult<{ readonly ref: string }>>
     'probe/maybe': (value: string | null | undefined) => Promise<RemoteResult<string | null | undefined>>
+    'probe/bytes': (signal?: AbortSignal) => Promise<RemoteResult<{ readonly data: Uint8Array<ArrayBuffer>; readonly offset: number }>>
     'probe/watch': (topic: string, signal?: AbortSignal) => AsyncIterable<string>
     'probe/attach': (topic: string, signal?: AbortSignal) => RemoteStreamHandle<string, string>
   }
@@ -3155,6 +3156,96 @@ async function withFakeWebSocket(
     else Object.defineProperty(globalThis, 'location', locationDescriptor)
   }
 }
+
+describe('Remote result decoders', () => {
+  const schema = z.object({ data: z.instanceof(Uint8Array), offset: z.number() })
+  const descriptor: InvocationDescriptor = {
+    id: '@fixture/probe#probe/bytes',
+    service: 'probe', namespace: 'probe', method: 'bytes',
+    invocation: { kind: 'direct' }, parameters: [],
+    cancellation: { parameter: 'signal' },
+    result: {
+      mode: 'strict', typeSymbol: '@fixture#Bytes',
+      create: () => schema,
+      decode: value => schema.parse(value),
+    },
+  }
+
+  it('validates metadata without copying or freezing native data on a logical RPC carrier', async () => {
+    const data = new Uint8Array([0, 128, 255])
+    const call = vi.fn<ConnectionHandle['rpc']['call']>().mockResolvedValue({ ok: true, value: { data, offset: 2 } })
+    const { ctx, client } = await benchFiber(call)
+    try {
+      await ctx.remote.$mount({ package: '@fixture/binary', descriptors: [descriptor] })
+      const result = await ctx.remote.probe.bytes()
+      expect(result).toEqual({ ok: true, value: { data, offset: 2 } })
+      if (result.ok) expect(result.value.data).toBe(data)
+      expect(Object.isFrozen(data)).toBe(false)
+      for (const value of [{ data: 'base64', offset: 2 }, { data: [0, 128], offset: 2 }, { data, offset: '2' }]) {
+        call.mockResolvedValueOnce({ ok: true, value })
+        const failure = await ctx.remote.probe.bytes()
+        expect(failure).toMatchObject({ ok: false, error: { code: 'gateway/internal' } })
+        if (!failure.ok) expect(isRemoteFailure(failure.error)).toBe(true)
+      }
+    } finally {
+      await client.dispose()
+    }
+  })
+
+  it('delegates nested fields to the result decoder and leaves JSON results untouched', async () => {
+    const data = new Uint8Array([0, 128, 255])
+    const value = { files: [{ content: data }], thumbnail: data }
+    const call = vi.fn<ConnectionHandle['rpc']['call']>().mockResolvedValue({ ok: true, value })
+    const decode = vi.fn((input: unknown) => z.object({
+      files: z.array(z.object({ content: z.instanceof(Uint8Array) })),
+      thumbnail: z.instanceof(Uint8Array),
+    }).parse(input))
+    const { ctx, client } = await benchFiber(call)
+    try {
+      const dispose = await ctx.remote.$mount({
+        package: '@fixture/binary', descriptors: [{
+          ...descriptor, result: { mode: 'strict', typeSymbol: '@fixture#Files', create: () => schema, decode },
+        }],
+      })
+      expect(await ctx.remote.probe.bytes()).toEqual({ ok: true, value })
+      expect(decode).toHaveBeenCalledWith(value)
+      expect((decode.mock.results[0]?.value as ReturnType<typeof decode>).files[0]?.content).toBe(data)
+      expect(Object.isFrozen(data)).toBe(false)
+      await dispose()
+      const json = { base64: 'AP8=', items: [1, 2] }
+      call.mockResolvedValue({ ok: true, value: json })
+      const create = vi.fn(() => schema)
+      await ctx.remote.$mount({ package: '@fixture/json', descriptors: [{
+        ...descriptor, result: { mode: 'strict', typeSymbol: '@fixture#Json', create },
+      }] })
+      const result = await ctx.remote.probe.bytes()
+      if (result.ok) expect(result.value).toBe(json)
+      expect(create).not.toHaveBeenCalled()
+    } finally {
+      await client.dispose()
+    }
+  })
+
+  it.each(['cancel', 'withdraw'] as const)('discards late binary results after %s', async (action) => {
+    const response = Promise.withResolvers<Awaited<ReturnType<ConnectionHandle['rpc']['call']>>>()
+    const call = vi.fn<ConnectionHandle['rpc']['call']>().mockReturnValue(response.promise)
+    const { ctx, client } = await benchFiber(call)
+    try {
+      const dispose = await ctx.remote.$mount({ package: '@fixture/binary', descriptors: [descriptor] })
+      const abort = new AbortController()
+      const pending = ctx.remote.probe.bytes(abort.signal)
+      expect(call).toHaveBeenCalledOnce()
+      if (action === 'cancel') abort.abort()
+      else await dispose()
+      response.resolve({ ok: true, value: { data: new Uint8Array([7]), offset: 0 } })
+      expect(await pending).toMatchObject({
+        ok: false, error: { code: action === 'cancel' ? 'gateway/cancelled' : 'gateway/internal' },
+      })
+    } finally {
+      await client.dispose()
+    }
+  })
+})
 
 async function drainStream(source: AsyncIterable<unknown>): Promise<unknown[]> {
   const values: unknown[] = []

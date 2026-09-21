@@ -55,6 +55,7 @@ export {
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
+  type LinkedRoot,
   type RuntimeResolutionOptions,
   type RuntimeResolutionEntry,
   type RuntimeResolution,

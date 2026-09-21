@@ -38,7 +38,7 @@ console.log(result.exitCode, result.stdout.text)
 
 ### Background processes
 
-Await `start` with a resolved spec to launch a background process; it publishes the handle after preparation and applies no background execution timeout. Cancellation or preparation failure rejects before publication. Read output incrementally with `readOutput()` — consecutive reads never repeat output, and lossy reads point at full-stream spill files. Terminate the provider-managed range with `kill()` (returns `false` once the direct command has finished) and await `done` for direct-command settlement. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, where the tool layer registers the handle.
+Await `start` with a resolved spec to launch a background process; it publishes the handle after preparation and applies no background execution timeout. Cancellation or preparation failure rejects before publication. Read output incrementally with `readOutput()` — consecutive reads never repeat output, and lossy reads point at full-stream spill files. Terminate the provider-managed range with `kill()` (returns `false` once the direct command has finished) and await `done` for direct-command settlement. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, where the tool layer registers the handle. `ShellProcess.observed` exposes non-consuming offset readers over the same captured streams — for observers independent of the consuming cursor, such as the job registry's pump — and every provider serves them, including the provider-failure note of a spawn that never ran.
 
 ### Requests and resolved specs
 

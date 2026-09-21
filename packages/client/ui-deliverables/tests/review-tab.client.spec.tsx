@@ -18,8 +18,9 @@ import { ChangesDiffStore } from '../src/client/changes-diff.ts'
 import { ChangesSummaryStore } from '../src/client/changes-summary.ts'
 import { PresentedOpenController } from '../src/client/present-open.ts'
 import {
-  hunkRows, MAX_RENDERED_LINES, renderedHunks, ReviewTab, splitRows, type ReviewInjected, type ReviewTabProps,
+  ReviewTab, type ReviewInjected, type ReviewTabProps,
 } from '../src/client/ReviewTab.tsx'
+import { hunkRows, MAX_RENDERED_LINES, renderedHunks, splitRows } from '../src/client/FileDiff.tsx'
 import { changesReviewDefinition } from '../src/client/review-definition.ts'
 import { createReviewStore } from '../src/client/review-store.ts'
 import { en, zh } from '../src/client/locales.ts'
@@ -165,7 +166,7 @@ describe('ReviewTab', () => {
       ids: [SESSION],
       byId: { [SESSION]: { id: SESSION, displayTitle: 'Workspace', cwd: options.cwd ?? '/work/app',
         running: false, retainedBy: {}, blank: false, updatedAt: 0 } },
-      phase: 'ready', projectionsBySession: {}, jobsBySession: {},
+      phase: 'ready', projectionsBySession: {},
     }
     const navigation = { address: options.address ?? ADDRESS, params: options.params, revision: options.revision ?? 1 }
     const runtime = {

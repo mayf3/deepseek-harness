@@ -251,6 +251,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Lists the Session composition\'s user-invocable skills without activating a cold Agent.',
   },
   {
+    key: 'jobController',
+    pkg: 'api-job-controller',
+    title: 'Host job Remote controller',
+    mode: 'core',
+    note: 'Streams one background job\'s observation record over the generated Remote namespace; the roster stays on the session control stream.',
+  },
+  {
     key: 'credentialsController',
     pkg: 'api-settings-controller',
     title: 'Host credential-surface Remote controller',
@@ -693,8 +700,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Background job registry',
     mode: 'seam',
     implementations: ['jobs-local'],
-    consumers: ['tool-bash', 'tool-terminal', 'tool-subagent', 'tool-jobs'],
-    note: 'Producers (background bash, PTY sends, and subagent delegations) register running work; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry.',
+    consumers: ['tool-bash', 'tool-pwsh', 'tool-terminal', 'tool-subagent', 'tool-jobs', 'api-job-controller'],
+    note: 'Producers (background bash/pwsh, PTY sends, and subagent delegations) register running work; record-declaring jobs additionally stream raw output for non-consuming observers; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry.',
   },
   {
     key: 'web',

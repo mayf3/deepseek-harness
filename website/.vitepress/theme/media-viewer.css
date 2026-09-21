@@ -4,7 +4,8 @@
 }
 
 .vp-doc .dsh-diagram-open,
-.dsh-diagram-viewer button {
+.vp-doc .dsh-image-open,
+.dsh-media-viewer button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -25,7 +26,7 @@
   right: 0;
 }
 
-.dsh-diagram-icon {
+.dsh-media-icon {
   width: 20px;
   height: 20px;
   fill: none;
@@ -36,19 +37,21 @@
 }
 
 .dsh-diagram-open:hover,
-.dsh-diagram-viewer button:hover,
-.dsh-diagram-viewer button[aria-expanded="true"] {
+.dsh-image-open:hover,
+.dsh-media-viewer button:hover,
+.dsh-media-viewer button[aria-expanded="true"] {
   color: var(--vp-c-brand-1);
   background: var(--vp-c-bg-soft);
 }
 
 .dsh-diagram-open:focus-visible,
-.dsh-diagram-viewer button:focus-visible {
+.dsh-image-open:focus-visible,
+.dsh-media-viewer button:focus-visible {
   outline: 2px solid var(--vp-c-brand-1);
   outline-offset: 2px;
 }
 
-.dsh-diagram-viewer {
+.dsh-media-viewer {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -64,7 +67,7 @@
   box-sizing: border-box;
 }
 
-.dsh-diagram-title {
+.dsh-media-title {
   position: absolute;
   top: 24px;
   left: 24px;
@@ -76,9 +79,9 @@
   font-size: 13px;
 }
 
-.dsh-diagram-close { position: absolute; top: 12px; right: 16px; }
+.dsh-media-close { position: absolute; top: 12px; right: 16px; }
 
-.dsh-diagram-toolbar {
+.dsh-media-toolbar {
   position: absolute;
   bottom: 20px;
   left: 50%;
@@ -93,7 +96,7 @@
   box-shadow: 0 3px 12px #0000000a;
 }
 
-.dsh-diagram-scale {
+.dsh-media-scale {
   min-width: 48px;
   text-align: center;
   color: var(--vp-c-text-2);
@@ -101,16 +104,16 @@
   font-variant-numeric: tabular-nums;
 }
 
-.dsh-diagram-toolbar .dsh-diagram-fit {
+.dsh-media-toolbar .dsh-media-fit {
   margin-left: 6px;
   border-left: 1px solid var(--vp-c-divider);
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
 }
 
-.dsh-diagram-help-toggle { position: absolute; bottom: 25px; right: 16px; }
+.dsh-media-help-toggle { position: absolute; bottom: 25px; right: 16px; }
 
-.dsh-diagram-help {
+.dsh-media-help {
   position: absolute;
   right: 16px;
   bottom: 80px;
@@ -124,19 +127,23 @@
   font-size: 13px;
 }
 
-.dsh-diagram-viewport {
+.dsh-media-viewport {
   position: absolute;
   inset: 64px 16px 88px;
   overflow: hidden;
   overscroll-behavior: contain;
 }
 
-.dsh-diagram-paper { position: absolute; inset: 0; }
+.dsh-media-paper { position: absolute; inset: 0; }
 
 @media (max-width: 600px) {
-  .dsh-diagram-title { top: 20px; left: 16px; }
-  .dsh-diagram-close { top: 8px; right: 8px; }
-  .dsh-diagram-viewport { inset: 56px 8px 80px; }
-  .dsh-diagram-toolbar { bottom: 12px; }
-  .dsh-diagram-help-toggle { right: 8px; bottom: 17px; }
+  .dsh-media-title { top: 20px; left: 16px; }
+  .dsh-media-close { top: 8px; right: 8px; }
+  .dsh-media-viewport { inset: 56px 8px 80px; }
+  .dsh-media-toolbar { bottom: 12px; }
+  .dsh-media-help-toggle { right: 8px; bottom: 17px; }
 }
+
+.vp-doc .dsh-image-container { position: relative; width: fit-content; max-width: 100%; }
+.vp-doc .dsh-image-zoomable { cursor: zoom-in; }
+.vp-doc .dsh-image-open { position: absolute; bottom: 8px; right: 8px; }

@@ -69,6 +69,8 @@ flowchart LR
   svc_sessionController["ctx.sessionController<br/>Host Session Remote controller"]
   svc_sessionFileReferences["ctx.sessionFileReferences<br/>Session-addressed file-reference Remote adapter"]
   svc_sessionSkillCatalog["ctx.sessionSkillCatalog<br/>Session-addressed skill Remote adapter"]
+  pkg_api_job_controller["api-job-controller"]
+  svc_jobController["ctx.jobController<br/>Host job Remote controller"]
   pkg_api_settings_controller["api-settings-controller"]
   svc_credentialsController["ctx.credentialsController<br/>Host credential-surface Remote controller"]
   svc_settingsController["ctx.settingsController<br/>Host settings-surface Remote controller"]
@@ -264,6 +266,7 @@ flowchart LR
   pkg_agent_loop --> svc_agentLoop
   pkg_agent_presets --> svc_agentPresets
   pkg_api_gateway --> svc_typertGateway
+  pkg_api_job_controller --> svc_jobController
   pkg_api_session_controller --> svc_sessionController
   pkg_api_session_controller --> svc_sessionFileReferences
   pkg_api_session_controller --> svc_sessionSkillCatalog
@@ -440,8 +443,10 @@ flowchart LR
   svc_invariants --> pkg_agent_loop
   svc_invariants --> pkg_scope
   svc_invariants --> pkg_session
+  svc_jobs --> pkg_api_job_controller
   svc_jobs --> pkg_tool_bash
   svc_jobs --> pkg_tool_jobs
+  svc_jobs --> pkg_tool_pwsh
   svc_jobs --> pkg_tool_subagent
   svc_jobs --> pkg_tool_terminal
   svc_llm --> pkg_agent_loop
@@ -565,6 +570,7 @@ flowchart LR
 | `ctx.sessionController` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | Owns Session commands, cold reads, durable-event following, live control state, model catalogs, workspace opening, and Agent activation policy. |
 | `ctx.sessionFileReferences` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | Delegates file-reference discovery through the Session Controller's established Agent lookup policy. |
 | `ctx.sessionSkillCatalog` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | Lists the Session composition's user-invocable skills without activating a cold Agent. |
+| `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | Streams one background job's observation record over the generated Remote namespace; the roster stays on the session control stream. |
 | `ctx.credentialsController` | `core` | [`api-settings-controller`](../packages/api/settings-controller) | - | - | - | Projects the credential-reference seam onto the generated Remote namespace: batch fan-out, view projection, and refusal mapping live here, not on the seam Definition. |
 | `ctx.settingsController` | `core` | [`api-settings-controller`](../packages/api/settings-controller) | - | - | - | Projects the user-settings seam onto the generated Remote namespace: the read is always redacted and every refusal is classified here, not on the seam Definition. |
 | `ctx.workspaceFiles` | `core` | [`api-workspace-files`](../packages/api/workspace-files) | - | - | - | Serves stat, paged text, byte windows, directory listings, and the change feed for files inside a Session's workspace root, confined by lstat, containment, and a stat re-check. |
@@ -619,7 +625,7 @@ flowchart LR
 | `ctx.speechToText` | `seam` | [`experimental-speech-to-text`](../packages/experimental/speech-to-text) | [`experimental-speech-to-text-sensevoice`](../packages/experimental/speech-to-text-sensevoice) | [`experimental-api-speech-to-text`](../packages/experimental/api-speech-to-text) | - | Routes explicit recognizers; the browser uses the authenticated Remote and keeps transcripts in the draft until submission. |
 | `ctx.agentTeams` | `core` | [`experimental-agent-team`](../packages/experimental/agent-team) | - | [`experimental-tool-agent-team`](../packages/experimental/tool-agent-team), [`experimental-client-ui-agent-team`](../packages/experimental/client-ui-agent-team) | - | Owns the implicit-root roster, durable peer mailbox, shared task DAG, continuable-child lifecycle, and generated Team Remote methods; tool-agent-team contributes model controls and client-ui-agent-team mounts the browser contribution. |
 | `ctx.inspector` | `core` | `inspector` | - | - | - | Owns the Worker-hosted CDP target and the transport-independent Host and Client observation and Cordis-tree query API. |
-| `ctx.jobs` | `seam` | [`jobs`](../packages/jobs/jobs) | [`jobs-local`](../packages/jobs/jobs-local) | [`tool-bash`](../packages/shell/tool-bash), [`tool-terminal`](../packages/terminal/tool-terminal), [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-jobs`](../packages/jobs/tool-jobs) | - | Producers (background bash, PTY sends, and subagent delegations) register running work; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry. |
+| `ctx.jobs` | `seam` | [`jobs`](../packages/jobs/jobs) | [`jobs-local`](../packages/jobs/jobs-local) | [`tool-bash`](../packages/shell/tool-bash), [`tool-pwsh`](../packages/shell/tool-pwsh), [`tool-terminal`](../packages/terminal/tool-terminal), [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-jobs`](../packages/jobs/tool-jobs), [`api-job-controller`](../packages/api/job-controller) | - | Producers (background bash/pwsh, PTY sends, and subagent delegations) register running work; record-declaring jobs additionally stream raw output for non-consuming observers; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry. |
 | `ctx.web` | `seam` | [`web`](../packages/web/web) | [`web-search-exa`](../packages/web/web-search-exa), [`web-search-perplexity`](../packages/web/web-search-perplexity), [`web-search-deepseek`](../packages/web/web-search-deepseek), [`web-fetch-http`](../packages/web/web-fetch-http) | [`tool-web`](../packages/web/tool-web) | - | Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names. |
 | `ctx.spillStore` | `seam` | [`spill`](../packages/spill/spill) | [`spill-local`](../packages/spill/spill-local) | [`spill-policy`](../packages/spill/spill-policy) | - | The backend saves oversized tool text and returns a model-facing locator plus retrieval hint; spill-policy is the tools/post-execute consumer that decides when to spill. |
 | `ctx.directoryPicker` | `seam` | [`host-directory-picker`](../packages/host/directory-picker) | [`host-directory-picker-native`](../packages/host/directory-picker-native), [`host-directory-picker-browse`](../packages/host/directory-picker-browse) | [`api-workspace-controller`](../packages/api/workspace-controller) | - | Discriminated interaction capability: the native backend opens one OS chooser on the host display, the browse backend serves listing/creation primitives for the in-app browser; dual-face backends fill ui-workspace directory-flow slots from their browser halves (no wire advertisement). |

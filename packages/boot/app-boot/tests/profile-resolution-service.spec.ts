@@ -47,6 +47,7 @@ function resolution(
     profilesDir,
     profileDir,
     localPackageNames: [],
+    linkedRoots: [],
     entries: [{ name: 'metadata-lib', packageDir, version, declarer, scope: 'installation' }],
   }
 }
@@ -123,7 +124,7 @@ describe('profile package metadata service', () => {
     expect(ctx.pluginPackages.packageOf('missing-package', parentURL)).toBeUndefined()
     expect(ctx.pluginPackages.packageOf('@scope', parentURL)).toBeUndefined()
     expect(() => { ctx.pluginPackages.replace({
-      profilesDir: join(root, 'profiles'), profileDir: undefined, localPackageNames: [], entries: [],
+      profilesDir: join(root, 'profiles'), profileDir: undefined, localPackageNames: [], linkedRoots: [], entries: [],
     }) }).toThrow(/runtime resolution is not installed/u)
   })
 
@@ -158,6 +159,71 @@ describe('profile package metadata service', () => {
     expect(ctx.pluginPackages.packageOf(
       'metadata-lib', pathToFileURL(join(profileDir, 'entry.mjs')).href,
     )).toBeUndefined()
+  })
+
+  it('removes and restores linked roots while rejecting changes to their historical targets', async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-linked-package-service-')))
+    roots.push(root)
+    const profilesDir = join(root, 'profiles')
+    const profileDir = join(profilesDir, 'test')
+    const runtime = join(root, 'runtime')
+    const runtimeAnchor = pkg(runtime, '1.0.0')
+    const linkedA = join(root, 'work', 'a')
+    const linkedB = join(root, 'work', 'b')
+    for (const dir of [linkedA, linkedB]) {
+      file(join(dir, 'package.json'), JSON.stringify({
+        name: 'linked-plugin', peerDependencies: { 'metadata-lib': '*' },
+      }))
+    }
+    const local = join(linkedA, 'node_modules', 'metadata-lib')
+    pkg(local, '2.0.0')
+    const parentPath = join(linkedA, 'entry.mjs')
+    file(parentPath, '')
+    const parentURL = pathToFileURL(parentPath).href
+    const require = createRequire(parentURL)
+    const linked = { name: 'linked-plugin', realPath: linkedA }
+    const initial: RuntimeResolution = {
+      ...resolution(profilesDir, profileDir, runtime, runtimeAnchor, '1.0.0'),
+      linkedRoots: [linked],
+    }
+    const removed: RuntimeResolution = { ...initial, linkedRoots: [] }
+    const relinked: RuntimeResolution = { ...initial, linkedRoots: [{ ...linked, realPath: linkedB }] }
+    const key = '@deepseek-ai/dsh-app-boot/profile-resolution'
+    const previous = getEnvironmentData(key)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(PluginPackages, { resolution: initial })
+
+    const expectSelectedPackage = (dir: string, version: string): void => {
+      expect(ctx.pluginPackages.packageOf('metadata-lib', parentURL)).toMatchObject({
+        name: 'metadata-lib', version, dir,
+      })
+      expect(require.resolve('metadata-lib')).toBe(realpathSync.native(join(dir, 'index.cjs')))
+    }
+    expectSelectedPackage(runtime, '1.0.0')
+    expect(getEnvironmentData(key)).toEqual({ resolution: initial })
+
+    ctx.pluginPackages.replace(removed)
+    expectSelectedPackage(local, '2.0.0')
+    expect(getEnvironmentData(key)).toEqual({ resolution: removed })
+
+    ctx.pluginPackages.replace(initial)
+    expectSelectedPackage(runtime, '1.0.0')
+    expect(getEnvironmentData(key)).toEqual({ resolution: initial })
+
+    ctx.pluginPackages.replace(removed)
+    expectSelectedPackage(local, '2.0.0')
+    const removedWorkerData = getEnvironmentData(key)
+    expect(removedWorkerData).toEqual({ resolution: removed })
+    expect(() => { ctx.pluginPackages.replace(relinked) }).toThrow(
+      'profile resolution: relinking "linked-plugin" requires a process restart',
+    )
+    expectSelectedPackage(local, '2.0.0')
+    expect(getEnvironmentData(key)).toBe(removedWorkerData)
+
+    await ctx.fiber.dispose()
+    contexts.pop()
+    expect(getEnvironmentData(key)).toBe(previous)
   })
 
   it('publishes additive generations to the process and future Workers', async () => {

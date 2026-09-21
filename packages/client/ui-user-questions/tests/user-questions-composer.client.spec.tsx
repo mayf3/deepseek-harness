@@ -51,7 +51,6 @@ const sessionList = {
   byId: { [SID]: { id: SID, displayTitle: 'Session', running: false, retainedBy: {}, blank: false, updatedAt: 0 } },
   phase: 'ready' as const,
   projectionsBySession: {},
-  jobsBySession: {},
 }
 const attentionState: AttentionState = new Map()
 const workspaceState = {
@@ -63,7 +62,7 @@ const workspaceState = {
   error: null,
 }
 const conversationState: ConversationState = {
-  views: { get: () => undefined },
+  views: { get: () => undefined, grouped: () => undefined },
   activeTargets: new Set(),
 }
 const emptyKeys: readonly string[] = []

@@ -26,6 +26,7 @@ import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-clie
 import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { Deliverables, DeliverablesTail, selectDeliverables, type DeliverablesInjected } from '../src/client/Deliverables.tsx'
 import type { ReviewInjected } from '../src/client/ReviewTab.tsx'
+import { ChangesDiffStore } from '../src/client/changes-diff.ts'
 import { ChangesSummaryStore } from '../src/client/changes-summary.ts'
 import { changesSummaryUrl, type ChangesSummary } from '../src/changes.ts'
 import { PresentedOpenController } from '../src/client/present-open.ts'
@@ -40,10 +41,13 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 
 function openProps(controller = new PresentedOpenController(), summaries = new ChangesSummaryStore()) {
   controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
-  const sessions: SessionListState = { ids: [], byId: {}, phase: 'ready', projectionsBySession: {}, jobsBySession: {} }
+  const diffs = new ChangesDiffStore()
+  const sessions: SessionListState = { ids: [], byId: {}, phase: 'ready', projectionsBySession: {} }
   return {
     SessionProvider: ({ children }: { children?: import('react').ReactNode }) => <>{children}</>,
     renderSlot: renderFileActions,
+    useChangesDiff: <T,>(select: (state: ReturnType<typeof diffs.state.getSnapshot>) => T): T => select(diffs.state.getSnapshot()),
+    loadChangesDiff: vi.fn((...args: Parameters<ChangesDiffStore['load']>) => diffs.load(...args)),
     useShowCodeDiff: <T,>(select: (value: boolean) => T): T => select(true),
     useSessions: <T,>(select: (state: SessionListState) => T): T => select(sessions),
     reloadPresentedHost: vi.fn(() => controller.loadHost()),
@@ -598,9 +602,9 @@ describe('ChangedFiles card', () => {
     expect(within(card).getByText('-326')).toBeTruthy()
     expect(within(card).getByText('Preview in sidebar')).toBeTruthy()
     expect(within(card).getAllByRole('listitem')).toHaveLength(4)
-    expect(within(card).getByText('config/design-token')).toBeTruthy()
+    expect(within(within(card).getByRole('button', { name: 'View changes to config/design-token' })).getByText('config/design-token')).toBeTruthy()
     expect(within(card).getByText('+42')).toBeTruthy()
-    expect(within(card).getByText('src/index.ts')).toBeTruthy()
+    expect(within(within(card).getByRole('button', { name: 'View changes to src/index.ts' })).getByText('src/index.ts')).toBeTruthy()
     expect(within(card).queryByText('~/.zshrc')).toBeNull()
     expect(within(card).getByRole('button', { name: 'Review this turn’s changes in the sidebar' })
       .querySelector('svg')?.getAttribute('width')).toBe('10')
@@ -616,7 +620,8 @@ describe('ChangedFiles card', () => {
     fireEvent.click(expand)
     expect(within(card).getAllByRole('listitem')).toHaveLength(5)
     expect(within(card).getByText('binary')).toBeTruthy()
-    expect(within(card).getByRole('button', { name: 'View changes to ~/.zshrc' }).getAttribute('title')).toBe('/home/u/.zshrc')
+    expect(within(card).getByRole('button', { name: 'View changes to ~/.zshrc' }).getAttribute('title')).toBeNull()
+    expect(within(card).getByRole('button', { name: 'View changes to ~/.zshrc', description: '/home/u/.zshrc' })).toBeTruthy()
     fireEvent.click(within(card).getByRole('button', { name: 'View changes to ~/.zshrc' }))
     expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 4)
     const collapse = within(card).getByRole('button', { name: 'Collapse changed files' })
@@ -642,6 +647,19 @@ describe('ChangedFiles card', () => {
     expect(openFile).not.toHaveBeenCalled()
     expect(props.openChanged).not.toHaveBeenCalled()
     expect(view.getByRole('button', { name: '展开全部 5 个改动文件' }).textContent).toContain('全部 5 个文件')
+  })
+
+  it('preserves expanded rows when the served announcement changes', () => {
+    const summaries = servedStore()
+    summaries.state.set({ ...summaries.state.getSnapshot(), [changesSummaryUrl(SessionId('child-session'), 6)]: served })
+    const { props, openFile, view } = renderCard(new PresentedOpenController(), en, { changes, presented: [] }, summaries)
+    const card = view.container.querySelector('[data-changed-files]')
+    fireEvent.click(view.getByRole('button', { name: 'Show all 5 changed files' }))
+    view.rerender(<Deliverables {...props} matched={{ changes: { seq: 6 }, presented: [] }} openFile={openFile}
+      sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
+    expect(view.container.querySelector('[data-changed-files]')).toBe(card)
+    expect(view.getAllByRole('listitem')).toHaveLength(5)
+    expect(view.getByRole('button', { name: 'Collapse changed files' }).getAttribute('aria-expanded')).toBe('true')
   })
 
   it('keeps every count in place whatever the native-open gestures of the review tab are doing', () => {
@@ -790,7 +808,12 @@ describe('plugin registration', () => {
     await tabFace.loadChangesSummary(SessionId('child-session'), 6)
     expect(tabFace.hooks.changesSummary.getSnapshot()['api/changes.summary?sessionId=child-session&seq=6']).toEqual({ turn: 3, files: [], total: 0, added: 0, deleted: 0 })
     fetcher.mockResolvedValueOnce(Response.json({ kind: 'binary', path: 'src/a.ts', display: 'src/a.ts' }))
+    await face.loadChangesDiff(SessionId('child-session'), 5, 1)
+    expect(face.hooks.changesDiff).toBe(tabFace.hooks.changesDiff)
+    expect(face.hooks.changesDiff.getSnapshot()['api/changes.diff?sessionId=child-session&seq=5&index=1']).toEqual({ kind: 'binary', path: 'src/a.ts', display: 'src/a.ts' })
+    const readsAfterHover = fetcher.mock.calls.length
     await tabFace.loadChangesDiff(SessionId('child-session'), 5, 1)
+    expect(fetcher).toHaveBeenCalledTimes(readsAfterHover)
     expect(tabFace.hooks.changesDiff.getSnapshot()['api/changes.diff?sessionId=child-session&seq=5&index=1']).toEqual({ kind: 'binary', path: 'src/a.ts', display: 'src/a.ts' })
     expect(tabFace.hooks.presentedHost).toBe(face.hooks.presentedHost)
     fetcher.mockResolvedValueOnce(Response.json({ name: 'desktop', available: true, fileManager: 'finder' }))

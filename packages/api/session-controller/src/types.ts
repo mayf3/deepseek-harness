@@ -9,7 +9,6 @@ import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { TextBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId, SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
-import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
@@ -555,20 +554,8 @@ export type SessionFollowFrame =
   | SessionEventEntry
   | { readonly type: 'assistant-stream'; readonly frame: SessionAssistantStreamFrame }
 
-/** Browser-safe background-job row. */
-export interface SessionJob {
-  readonly id: JobId
-  readonly kind: string
-  readonly label: string
-  readonly status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
-  readonly detail?: string
-  readonly startedAt: number
-  readonly finishedAt?: number
-}
-
 /** Complete live control baseline emitted once per control stream generation. */
 export interface SessionControlBaseline {
-  readonly jobs: Readonly<Record<SessionId, readonly SessionJob[]>>
   readonly projections: Readonly<Record<SessionId, SessionProjectionBaseline>>
 }
 
@@ -583,7 +570,6 @@ export interface SessionProjectionUpdate {
 /** Host-wide live state stream. Each generation starts with exactly one baseline. */
 export type SessionControlFrame =
   | { readonly type: 'baseline'; readonly value: SessionControlBaseline }
-  | { readonly type: 'jobs'; readonly sessionId: SessionId; readonly jobs: readonly SessionJob[] }
   | ({ readonly type: 'projection' } & SessionProjectionUpdate)
 
 declare module '@deepseek-ai/cordis' {

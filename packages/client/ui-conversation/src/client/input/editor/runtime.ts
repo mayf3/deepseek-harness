@@ -241,6 +241,25 @@ export class DraftEditorRuntime {
     return applied
   }
 
+  /**
+   * Insert an ordered file-reference batch after the live selection without deleting it.
+   * @param references - validated references in source order.
+   * @returns whether the live insertion position accepted the batch.
+   */
+  insertFileReferences(references: readonly ReferenceInsert[]): boolean {
+    if (references.length === 0) return true
+    let applied = false
+    this.applyEdit(() => {
+      const projection = $projectComposer(key => this.occurrenceIdOf(key))
+      const at = projection.selection?.end ?? projection.detectText.length
+      const before = projection.detectText.slice(0, at)
+      const nodes = references.flatMap(ref => [$createReferenceChipNode(ref), $createTextNode(' ')])
+      if (before !== '' && !/\s$/u.test(before)) nodes.unshift($createTextNode(' '))
+      applied = $replaceDetectSpanWithNodes({ start: at, end: at }, nodes)
+    }, PASTE_TAG)
+    return applied
+  }
+
   /** Refresh claim-token decoration after the model's claim changes. */
   refreshClaimDecoration(): void {
     refreshClaimDecoration(this.editor)
