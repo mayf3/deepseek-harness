@@ -1,18 +1,20 @@
 /**
  * Host job Remote owner: streams the background-job roster one session can
  * see and one job's retained output to browsers over the generated `job`
- * namespace. Both streams are projections of `ctx.jobs`; the model's
- * consuming cursor and notice state never observe them.
+ * namespace, and stops a job on a human's behalf. The streams are
+ * projections of `ctx.jobs`; the model's consuming cursor and notice state
+ * never observe them, and a human kill is not the model's own, so the
+ * completion notice still reaches the owning agent.
  * @module @deepseek-ai/dsh-api-job-controller
  */
 
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-jobs'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { observeJobOutput } from './observe.ts'
 import { streamJobRows } from './rows.ts'
-import type { JobFollowFrame, JobFollowRequest, JobListFrame, JobListRequest } from './types.ts'
+import type { JobKillRequest, JobKillValue, JobFollowFrame, JobFollowRequest, JobListFrame, JobListRequest } from './types.ts'
 
 export type * from './types.ts'
 
@@ -50,7 +52,7 @@ export class JobController extends TypertRemoteService {
   private readonly observeMaxFrameBytes: number
 
   /**
-   * @param ctx - Host context carrying the job registry.
+   * @param ctx - Host context carrying the live Agent registry and the job registry.
    * @param config - observation cadence and framing policy.
    */
   constructor(ctx: Context, config: Config) {
@@ -91,6 +93,37 @@ export class JobController extends TypertRemoteService {
       flushMs: this.observeFlushMs,
       maxFrameBytes: this.observeMaxFrameBytes,
     }, signal)
+  }
+
+  /**
+   * Kill one background job on a human's behalf. The request's session is
+   * the fenced read's caller, so the job must be one that session can see:
+   * the registry's owner fence is the only access rule, and a child session's
+   * own jobs are killable from its list like any other. The kill records
+   * `cancelled by the user` as its reason; it is not one the model requested,
+   * so the owning agent still receives the completion notice, and a shell
+   * tool waiting on that job reads the reason in its own result.
+   * @param request - Session whose job list carries the job, and the job id.
+   * @returns the registry's admission of the kill request.
+   */
+  @Remote('kill')
+  kill(request: JobKillRequest): JobKillValue {
+    const jobs = this.ctx.jobs
+    try {
+      jobs.get(request.jobId, request.sessionId)
+    } catch (error) {
+      // `unknown job` and `belongs to another session` both mean this session's
+      // list no longer carries a killable row; the client renders one story.
+      throw new RemoteError('job/not-found', String(error), {
+        sessionId: request.sessionId,
+        jobId: request.jobId,
+      })
+    }
+    // Same synchronous span as the lookup, so nothing can remove the job in
+    // between — and a producer-cancel throw propagates per the registry
+    // contract (job state unchanged) instead of masquerading as job-not-found.
+    const outcome = jobs.kill(request.jobId, request.sessionId, 'cancelled by the user')
+    return { outcome }
   }
 }
 

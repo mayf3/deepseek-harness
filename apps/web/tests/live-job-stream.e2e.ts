@@ -110,7 +110,7 @@ describe.skipIf(MODE === 'record')('web e2e: live job stream', () => {
     await expand.click()
     await page.getByText('streamed-marker-line').waitFor({ timeout: 15_000 })
 
-    const streaming = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)
+    const streaming = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd, { runningJobs: 'keep' })
     await compareOrRefreshGolden(STREAMING_EXPECTED, streaming, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

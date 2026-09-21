@@ -602,6 +602,83 @@ describe('LocalJobRegistry.wait', () => {
   })
 })
 
+describe('LocalJobRegistry settled event awaited flag', () => {
+  it('reports a settlement that released a live wait as awaited', async () => {
+    const ctx = await harness()
+    const seen = collect(ctx, { owners: 'all' }, ['settled'])
+    const p = producer()
+    const id = ctx.jobs.start(p.spec)
+    const wait = ctx.jobs.wait(id, 5_000)
+    p.settle({ status: 'completed' })
+    await wait
+    expect(seen).toMatchObject([{ type: 'settled', awaited: true }])
+  })
+
+  it('reports a settlement nobody waited on, or whose waits timed out or aborted, as not awaited', async () => {
+    const ctx = await harness()
+    const seen = collect(ctx, { owners: 'all' }, ['settled'])
+    const unwatched = producer()
+    const unwatchedId = ctx.jobs.start(unwatched.spec)
+    unwatched.settle({ status: 'completed' })
+    await tick()
+
+    const abandoned = producer()
+    const abandonedId = ctx.jobs.start(abandoned.spec)
+    await ctx.jobs.wait(abandonedId, 5)
+    const controller = new AbortController()
+    const aborted = ctx.jobs.wait(abandonedId, 5_000, undefined, controller.signal)
+    controller.abort()
+    await expect(aborted).rejects.toThrow('wait aborted')
+    abandoned.settle({ status: 'completed' })
+    await tick()
+    expect(seen).toMatchObject([
+      { type: 'settled', job: { id: unwatchedId }, awaited: false },
+      { type: 'settled', job: { id: abandonedId }, awaited: false },
+    ])
+  })
+
+  it('counts a wait still owed the projection even when another wait on the job timed out', async () => {
+    const ctx = await harness()
+    const seen = collect(ctx, { owners: 'all' }, ['settled'])
+    const p = producer()
+    const id = ctx.jobs.start(p.spec)
+    const patient = ctx.jobs.wait(id, 5_000)
+    await ctx.jobs.wait(id, 5)
+    p.settle({ status: 'completed' })
+    await patient
+    expect(seen).toMatchObject([{ type: 'settled', awaited: true }])
+  })
+})
+
+describe('LocalJobRegistry.remove', () => {
+  it('drops a settled record from the visible set and announces the removal', async () => {
+    const ctx = await harness()
+    const seen = collect(ctx, { owners: 'all' }, ['removed'])
+    const p = producer()
+    const id = ctx.jobs.start(p.spec)
+    p.settle({ status: 'completed', detail: 'exit code: 0' })
+    await tick()
+    ctx.jobs.remove(id)
+    expect(ctx.jobs.list()).toEqual([])
+    expect(() => ctx.jobs.get(id)).toThrow(`unknown job ${id}`)
+    expect(seen).toMatchObject([{ type: 'removed', job: { id, status: 'completed', detail: 'exit code: 0' } }])
+  })
+
+  it('refuses a live job, an unknown id, and a foreign caller', async () => {
+    const ctx = await harness()
+    const owner = await liveAgent(ctx, 'owner')
+    const p = producer({ owner })
+    const id = ctx.jobs.start(p.spec)
+    expect(() => { ctx.jobs.remove(id, owner.id) }).toThrow(`job ${id} is still running`)
+    expect(() => { ctx.jobs.remove(id) }).toThrow('belongs to another session')
+    expect(() => { ctx.jobs.remove(JobId('bash-99'), owner.id) }).toThrow('unknown job bash-99')
+    p.settle({ status: 'completed' })
+    await tick()
+    ctx.jobs.remove(id, owner.id)
+    expect(ctx.jobs.list(owner.id)).toEqual([])
+  })
+})
+
 describe('LocalJobRegistry owner isolation', () => {
   it('fences every view operation to the owning session and keeps unowned jobs open', async () => {
     const ctx = await harness()
