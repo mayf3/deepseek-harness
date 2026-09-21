@@ -14,7 +14,7 @@ Chat Builder 汇总整个目标的节点及索引。在其中固定创建 Chat �
 
 ## Decision
 
-分组基础机制提供独立的节点输入 `ConversationGroupDefinition`、注册表及 Session 内上下文、Builder 通用输入与发布、按键 Group 存储及两种 React 分支。基础机制不注册真实 Chat 分段及 PR #4565 展示，[业务迁移提案](../../proposed/feature/2026-09-20-chat-work-details-migration.zh.md)保留这些需求。[子系统参考](../../../../docs/subsystems/conversation.zh.md#group-definitions)与[源码类型](../../../../packages/client/ui-conversation/src/client/contract/groups.ts)拥有当前 API 细节。
+分组基础机制提供独立的节点输入 `ConversationGroupDefinition`、注册表及 Session 内上下文、Builder 通用输入与发布、按键 Group 存储及两种 React 分支。Chat 在[业务规则参考](../../../../packages/client/ui-chat/src/client/conversation-nodes/README.zh.md)中拥有其已注册的分段与展示规则。[子系统参考](../../../../docs/subsystems/conversation.zh.md#group-definitions)与[源码类型](../../../../packages/client/ui-conversation/src/client/contract/groups.ts)拥有当前 API 细节。
 
 ### 职责
 
@@ -34,7 +34,6 @@ Chat Builder 汇总整个目标的节点及索引。在其中固定创建 Chat �
 |---|---|
 | [业务节点组装](2026-08-09-client-conversation-node-assembly.zh.md) | 保留事件匹配、Context、Location、每个 Context 一个业务 Node 及目标 Builder，分组增加另一种输入类别。 |
 | [展示策略与过程分组](../../proposed/architecture/2026-09-20-chat-presentation-policy-and-step-groups.zh.md) | 保留 Definition 归属、局部订阅和模式无关要求，以新分组机制替代事件 fold 及 Step 范围成员推断。 |
-| [工作过程展示迁移](../../proposed/feature/2026-09-20-chat-work-details-migration.zh.md) | 保留产品范围及迁移跟踪，基础机制本身不代表这些功能完成。 |
 
 这些记录仍有独立理由，保留有效状态。跨 View 导航与 `toolCallFocus` 不属于本次改动；不引入 View 句柄、Label Slot 或资源导航架构。
 

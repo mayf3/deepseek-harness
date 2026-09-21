@@ -21,7 +21,7 @@ The deeper difficulty is information ownership: a group header must exist before
 
 This proposal supplies an architecture for three modes and grouping that satisfies the constraints below and confines later product changes to a small set of nodes.
 
-The three settings, presentation policy channel, and per-Turn folding eligibility are implemented; step-group remains proposed. The [migration progress table](../feature/2026-09-20-chat-work-details-migration.md) owns current implementation, committed scope, and incomplete items. The grouping state machine and change inventory below do not describe delivered work.
+The [Chat business rules](../../../../packages/client/ui-chat/src/client/conversation-nodes/README.md) describe the registered process groups and display modes. The grouping state machine and change inventory below record the superseded proposal, not the current implementation.
 
 ## Goals and constraints
 

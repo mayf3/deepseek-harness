@@ -14,7 +14,7 @@ Process groups are orthogonal to Steps: one Assistant Node can contribute reason
 
 ## Decision
 
-The grouping foundation provides a separate, Node-input `ConversationGroupDefinition`, its registry and Session-local context, generic Builder input/publication, keyed Group storage, and the two React branches. Production Chat segmentation and PR #4565 presentation are not registered by this foundation; the [business migration proposal](../../proposed/feature/2026-09-20-chat-work-details-migration.md) retains their requirements. The [subsystem reference](../../../../docs/subsystems/conversation.md#group-definitions) and [source types](../../../../packages/client/ui-conversation/src/client/contract/groups.ts) own the current API details.
+The grouping foundation provides a separate, Node-input `ConversationGroupDefinition`, its registry and Session-local context, generic Builder input/publication, keyed Group storage, and the two React branches. Chat owns its registered segmentation and presentation in the [business-rule reference](../../../../packages/client/ui-chat/src/client/conversation-nodes/README.md). The [subsystem reference](../../../../docs/subsystems/conversation.md#group-definitions) and [source types](../../../../packages/client/ui-conversation/src/client/contract/groups.ts) own the current API details.
 
 ### Responsibilities
 
@@ -34,7 +34,6 @@ The grouping foundation provides a separate, Node-input `ConversationGroupDefini
 |---|---|
 | [Business Node assembly](2026-08-09-client-conversation-node-assembly.md) | Retains event matching, Contexts, Locations, one business Node per Context, and target Builders; grouping adds another input category. |
 | [Presentation policy and grouping](../../proposed/architecture/2026-09-20-chat-presentation-policy-and-step-groups.md) | Retains Definition ownership, local subscriptions, and mode independence; replaces event folding and Step-range membership as the grouping mechanism. |
-| [Work-details migration](../../proposed/feature/2026-09-20-chat-work-details-migration.md) | Retains product scope and migration tracking; infrastructure alone does not complete those features. |
 
 These records retain independent rationale and remain active. Cross-View navigation and `toolCallFocus` are outside this change; no View handles, Label Slots, or resource-navigation architecture is introduced.
 
