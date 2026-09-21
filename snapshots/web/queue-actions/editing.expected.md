@@ -8,9 +8,9 @@
     - tab "Trajectory"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Context injection runtime-context"
-- paragraph: partial
 - status: Deep diving...
+- button "Deep diving for {{duration}}" [disabled] [expanded]
+- paragraph: partial
 - button "2 queued messages" [disabled] [expanded]
 - list:
   - listitem:

@@ -339,6 +339,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
         await input.press('Enter')
         if (MODE !== 'record') {
           const thinking = page.locator('[data-variant="think"][data-state="running"]')
+          await expandOwningTurnProcess(page, thinking)
           await expect.poll(() => thinking.getByRole('button').getAttribute('aria-expanded')).toBe('false')
           await reasoningComplete.promise
           expect(await thinking.getAttribute('data-preview')).toBeNull()
