@@ -217,6 +217,40 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       return [center(text), center(caret), center(counts)].map(value => Math.abs(value - buttonCenter))
     })
     for (const offset of headerAlignment) expect(offset).toBeLessThanOrEqual(0.5)
+    // The appended row has no old-side text; constrain the columns so the hunk header overflows it.
+    const emptyRowLayout = await page.addStyleTag({ content: `
+      [data-diff-side="left"] { width: 90px; }
+      [data-diff-side="right"] { width: 120px; }
+    ` })
+    try {
+      const left = review.locator('[data-diff-side="left"]')
+      const emptyRow = left.locator('[data-diff-line="add"]')
+      const maximum = await left.evaluate(element => element.scrollWidth - element.clientWidth)
+      expect(maximum).toBeGreaterThan(0)
+      await left.evaluate((element) => { element.scrollLeft = element.scrollWidth })
+      await expect.poll(() => left.evaluate(element => element.scrollLeft)).toBe(maximum)
+      const fill = await emptyRow.evaluate((row) => {
+        const column = row.closest('[data-diff-side]')!
+        const columnBox = column.getBoundingClientRect()
+        const rowBox = row.getBoundingClientRect()
+        const y = rowBox.top + rowBox.height / 2
+        return {
+          rowWidth: rowBox.width,
+          contentWidth: column.scrollWidth,
+          background: getComputedStyle(row).backgroundColor,
+          coversViewport: [columnBox.left + 4, columnBox.right - 4].every(x =>
+            document.elementFromPoint(x, y)?.closest('[data-diff-line]') === row),
+        }
+      })
+      expect(fill.background).not.toBe('rgba(0, 0, 0, 0)')
+      expect(fill.rowWidth).toBeGreaterThanOrEqual(fill.contentWidth - 0.5)
+      expect(fill.coversViewport).toBe(true)
+    } finally {
+      await emptyRowLayout.evaluate(element => element.parentNode!.removeChild(element))
+      await review.locator('[data-diff-side]').evaluateAll((elements) => {
+        for (const element of elements) element.scrollLeft = 0
+      })
+    }
     const addedLine = review.locator('[data-diff-side="right"] [data-diff-line="add"]')
     const rightContextLine = review.locator('[data-diff-side="right"] [data-diff-line="context"]')
     const addedRule = await addedLine.evaluate((line) => {
