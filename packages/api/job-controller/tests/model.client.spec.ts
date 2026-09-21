@@ -253,6 +253,7 @@ function bench() {
   const streams: { options: StreamOptions; stream: FakeStream<JobFollowFrame> & FakeStream<JobListFrame> }[] = []
   const observeCalls: unknown[] = []
   const rowsCalls: unknown[] = []
+  const killCalls: unknown[] = []
   const remote = {
     $stream: (options: StreamOptions) => {
       const stream = new FakeStream<never>()
@@ -268,16 +269,26 @@ function bench() {
         rowsCalls.push(request)
         return { [Symbol.asyncIterator]: async function* () { /* never yields */ } }
       },
+      kill: async (request: unknown) => {
+        killCalls.push(request)
+        return { ok: false as const, error: { code: 'job/not-found', message: 'gone' } }
+      },
     },
   }
   const jobs = new ClientJobs(ctx, remote as never, model)
-  return { ctx, model, jobs, streams, observeCalls, rowsCalls }
+  return { ctx, model, jobs, streams, observeCalls, rowsCalls, killCalls }
 }
 
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 0))
 const anchor = (): JobFollowFrame => ({ type: 'opened', job: view(), from: 0 })
 
 describe('ClientJobs roster streams', () => {
+  it('forwards a kill to the job namespace and returns the Remote verdict', async () => {
+    const { jobs, killCalls } = bench()
+    await expect(jobs.kill(S1, ID)).resolves.toMatchObject({ ok: false })
+    expect(killCalls).toEqual([{ sessionId: 'alice', jobId: ID }])
+  })
+
   it('shares one roster stream per session and drops the rows after the last release', async () => {
     const { model, jobs, streams, rowsCalls } = bench()
     const first = jobs.watchRows(S1)

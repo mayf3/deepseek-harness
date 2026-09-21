@@ -207,6 +207,14 @@ export type JobEvent =
     readonly type: 'settled'
     readonly job: JobView
     readonly cause: JobSettleCause
+    /**
+     * Whether this settlement released a live {@link JobRegistry.wait}. That
+     * waiter's caller receives the terminal projection as its own result, so
+     * a completion reporter treats an awaited settlement as already delivered
+     * and reports only the unawaited ones. A wait that timed out or was
+     * aborted before the settlement does not count.
+     */
+    readonly awaited: boolean
   }
   | {
     readonly type: 'output'
