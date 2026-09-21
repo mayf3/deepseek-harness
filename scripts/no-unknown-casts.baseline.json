@@ -1624,13 +1624,8 @@
     "9c749359b9458267505dc9d87b2b4e2a73e874c0e3908d7fa06e4fd4fd11cad4": 1
   },
   "packages/sandbox/sandbox-windows-acl/tests/grant-failure-paths.spec.ts": {
-    "0ee37bb1bf169e1de1030cd3449529c550283dccba4ea2d9d2af967b9ac51895": 1,
     "24defbb8f6adc4ec8ebd3443b233aceadae85ab486413320de0967eaf7d43032": 1,
-    "d7b28f469106e3e88d52c1742fe001ac7807bc1bc21c0fd4ddcb5bd9b97bf31b": 1,
     "ff7b125eae197db9cb8866293613a5de2a984d42b4487b2cc37eeacc8c300783": 1
-  },
-  "packages/sandbox/sandbox-windows-acl/tests/index-failure-paths.spec.ts": {
-    "916c26b0b6721f519ca6c95b93446c1b16b174f9bfb067e79f9cb03cec8fc87c": 1
   },
   "packages/sandbox/sandbox-windows-acl/tests/probe.spec.ts": {
     "d187b3ab8af0b780660e2b764b553ccff82e3af3254598ee18a059e5bd0381f5": 1

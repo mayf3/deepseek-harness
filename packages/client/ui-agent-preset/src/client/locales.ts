@@ -42,7 +42,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
     'Work with code, files, and information. Suitable for most tasks, with search, editing, terminal commands, and other tools available as needed.',
   presetPtcName: 'PTC mode',
   presetPtcDescription:
-    'Includes all Standard mode capabilities, with the agent connecting tools through code for batch processing, filtering, and summaries. Just describe your task.',
+    'Includes all Standard mode capabilities. Better suited to tasks that call tools in batches and then filter, organize, deduplicate, count, or summarize the results.',
   presetMinimalName: 'Minimal mode',
   presetMinimalDescription:
     'The agent works using only a terminal tool. Useful for testing and comparing its basic performance.',
@@ -110,7 +110,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetStandardName: '标准模式',
   presetStandardDescription: '处理代码、文件和资料，适合大多数任务。Agent 会按需使用检索、编辑和终端等工具。',
   presetPtcName: 'PTC 模式',
-  presetPtcDescription: '包含标准模式的所有能力，让 Agent 用代码串联多个工具，完成批量处理、筛选和汇总。你只需描述任务。',
+  presetPtcDescription: '包含标准模式的所有能力，更适合批量调用工具，并对结果进行筛选、整理、去重、统计或汇总的任务。',
   presetMinimalName: '极简模式',
   presetMinimalDescription: 'Agent 仅使用终端工具完成任务，适合测试和对比其基础表现。',
   presetCordisName: '创造模式',

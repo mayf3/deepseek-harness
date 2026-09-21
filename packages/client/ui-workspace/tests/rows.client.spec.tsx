@@ -208,66 +208,136 @@ describe('workspace browser rows', () => {
     expect(onOpen).toHaveBeenCalledWith(node.id)
   })
 
-  it('reveals a clipped session title by scrolling it while the row is hovered', () => {
-    const node: SessionNode = {
-      id: sid('clipped'), title: 'A Session Title Long Enough To Be Clipped (1)', blank: false,
-      running: false, runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0,
-      pinned: false, archived: false,
+  it('marquees a clipped session title at a constant speed while the row is hovered', () => {
+    vi.useFakeTimers()
+    // jsdom implements no matchMedia; the stub answers the reduced-motion probe.
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })))
+    try {
+      const node: SessionNode = {
+        id: sid('clipped'), title: 'A Session Title Long Enough To Be Clipped (1)', blank: false,
+        running: false, runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0,
+        pinned: false, archived: false,
+      }
+      render(
+        <SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />,
+      )
+      const row = screen.getByRole('treeitem')
+      const title = screen.getByText(node.title)
+      // jsdom lays out nothing: the title's clipped geometry is stated outright.
+      const geometry = (scrollWidth: number, clientWidth: number): void => {
+        Object.defineProperty(title, 'scrollWidth', { value: scrollWidth, configurable: true })
+        Object.defineProperty(title, 'clientWidth', { value: clientWidth, configurable: true })
+      }
+
+      geometry(320, 180)
+      fireEvent.pointerEnter(row)
+      // The first frame only records the clock; travel begins on the second.
+      vi.advanceTimersByTime(16)
+      expect(title.scrollLeft).toBe(0)
+      expect(title.hasAttribute('data-scrolled')).toBe(false)
+      expect(title.hasAttribute('data-clipped')).toBe(true)
+      // Constant 30px/s: 1600ms of frames crawl 48px, and the moved title
+      // publishes both fade-mask hooks — off its start, short of its far edge.
+      vi.advanceTimersByTime(1600)
+      expect(title.scrollLeft).toBeCloseTo(48, 5)
+      expect(title.hasAttribute('data-scrolled')).toBe(true)
+      expect(title.hasAttribute('data-clipped')).toBe(true)
+      // The crawl clamps at the far edge and rests there under the pointer;
+      // the right fade lifts so the final character reads at full strength.
+      vi.advanceTimersByTime(10_000)
+      expect(title.scrollLeft).toBe(140)
+      expect(title.hasAttribute('data-clipped')).toBe(false)
+      fireEvent.pointerLeave(row)
+      expect(title.scrollLeft).toBe(0)
+      expect(title.hasAttribute('data-scrolled')).toBe(false)
+      expect(title.hasAttribute('data-clipped')).toBe(false)
+
+      // A title that fits has no scroll range: hovering leaves it at its start.
+      geometry(180, 180)
+      fireEvent.pointerEnter(row)
+      vi.advanceTimersByTime(1000)
+      expect(title.scrollLeft).toBe(0)
+      fireEvent.pointerLeave(row)
+
+      // Overflow at the 8px jitter threshold also stays put.
+      geometry(188, 180)
+      fireEvent.pointerEnter(row)
+      vi.advanceTimersByTime(1000)
+      expect(title.scrollLeft).toBe(0)
+      fireEvent.pointerLeave(row)
+
+      // One pixel past the threshold crawls to its 9px extent.
+      geometry(189, 180)
+      fireEvent.pointerEnter(row)
+      vi.advanceTimersByTime(1000)
+      expect(title.scrollLeft).toBe(9)
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
     }
-    render(
-      <SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />,
-    )
-    const row = screen.getByRole('treeitem')
-    const title = screen.getByText(node.title)
-    // jsdom lays out nothing: the title's clipped geometry is stated outright.
-    const geometry = (scrollWidth: number, clientWidth: number): void => {
-      Object.defineProperty(title, 'scrollWidth', { value: scrollWidth, configurable: true })
-      Object.defineProperty(title, 'clientWidth', { value: clientWidth, configurable: true })
-    }
-
-    geometry(320, 180)
-    fireEvent.pointerEnter(row)
-    expect(title.scrollLeft).toBe(140)
-    fireEvent.pointerLeave(row)
-    expect(title.scrollLeft).toBe(0)
-
-    // A title that fits has no scroll range: hovering leaves it at its start.
-    geometry(180, 180)
-    fireEvent.pointerEnter(row)
-    expect(title.scrollLeft).toBe(0)
-    fireEvent.pointerLeave(row)
-
-    // Overflow at the 8px jitter threshold also stays put.
-    geometry(188, 180)
-    fireEvent.pointerEnter(row)
-    expect(title.scrollLeft).toBe(0)
-    fireEvent.pointerLeave(row)
-
-    // One pixel past the threshold reveals.
-    geometry(189, 180)
-    fireEvent.pointerEnter(row)
-    expect(title.scrollLeft).toBe(9)
   })
 
-  it('returns a revealed title to its start in one step', () => {
-    const node: SessionNode = {
-      id: sid('instant-return'), title: 'A Session Title Long Enough To Be Clipped (1)', blank: false,
-      running: false, runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0,
-      pinned: false, archived: false,
-    }
-    render(
-      <SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />,
-    )
-    const row = screen.getByRole('treeitem')
-    const title = screen.getByText(node.title)
-    const scrollTo = vi.fn()
-    Object.defineProperty(title, 'scrollTo', { value: scrollTo, configurable: true })
+  it('jumps a clipped title to its far edge under reduced motion', () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(prefers-reduced-motion: reduce)' })))
+    try {
+      const node: SessionNode = {
+        id: sid('reduced-motion'), title: 'A Session Title Long Enough To Be Clipped (1)', blank: false,
+        running: false, runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0,
+        pinned: false, archived: false,
+      }
+      render(
+        <SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />,
+      )
+      const row = screen.getByRole('treeitem')
+      const title = screen.getByText(node.title)
+      Object.defineProperty(title, 'scrollWidth', { value: 320, configurable: true })
+      Object.defineProperty(title, 'clientWidth', { value: 180, configurable: true })
 
-    fireEvent.pointerEnter(row)
-    fireEvent.pointerLeave(row)
-    // Browsers receive the explicit instant behavior that the stylesheet's
-    // smooth scroll-behavior would otherwise override.
-    expect(scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'instant' })
+      fireEvent.pointerEnter(row)
+      expect(title.scrollLeft).toBe(140)
+      expect(title.hasAttribute('data-scrolled')).toBe(true)
+      expect(title.hasAttribute('data-clipped')).toBe(false)
+      fireEvent.pointerLeave(row)
+      expect(title.scrollLeft).toBe(0)
+      expect(title.hasAttribute('data-scrolled')).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('returns a marqueed title to its start in one step and cancels the crawl', () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })))
+    try {
+      const node: SessionNode = {
+        id: sid('instant-return'), title: 'A Session Title Long Enough To Be Clipped (1)', blank: false,
+        running: false, runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0,
+        pinned: false, archived: false,
+      }
+      render(
+        <SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />,
+      )
+      const row = screen.getByRole('treeitem')
+      const title = screen.getByText(node.title)
+      Object.defineProperty(title, 'scrollWidth', { value: 320, configurable: true })
+      Object.defineProperty(title, 'clientWidth', { value: 180, configurable: true })
+      const scrollTo = vi.fn()
+      Object.defineProperty(title, 'scrollTo', { value: scrollTo, configurable: true })
+
+      fireEvent.pointerEnter(row)
+      vi.advanceTimersByTime(160)
+      fireEvent.pointerLeave(row)
+      // Browsers receive the explicit instant behavior so mid-crawl positions
+      // never ease; the return is one step.
+      expect(scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'instant' })
+      // Leaving cancels the crawl rather than letting it finish under the mask.
+      const settled = scrollTo.mock.calls.length
+      vi.advanceTimersByTime(1000)
+      expect(scrollTo.mock.calls.length).toBe(settled)
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('keeps the active-Schedule marker between the title and time in grouped and flat rows', () => {

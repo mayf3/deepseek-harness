@@ -99,6 +99,35 @@ it.each(['--unsigned', '--prepare-only'])('keeps %s hardware-free and creates no
   expect(withWindowsSigningStage).not.toHaveBeenCalled()
   for (const call of run.run.mock.calls) expect(call[3].env).not.toHaveProperty('DSH_DESKTOP_WINDOWS_TOKEN_PIN')
   expect(writeFileSync).not.toHaveBeenCalled()
+  expect(stages.includes('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')).toBe(mode === '--unsigned')
+})
+
+it('checks the assembled macOS runtime before notarizing and recording the release', async () => {
+  const { run, stages } = supervisor()
+  vi.mocked(packageMacOSArtifacts).mockImplementationOnce(async () => {
+    expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts')
+    expect(writeFileSync).not.toHaveBeenCalled()
+  })
+  await packageTarget(parseDesktopPackageInvocation(['mac-arm64'], 'darwin', 'arm64'), environment, run)
+  expect(packageMacOSArtifacts).toHaveBeenCalledOnce()
+  expect(writeFileSync).toHaveBeenCalledOnce()
+})
+
+it.each([false, true])('refuses macOS notarization and release records after an assembled-runtime failure (directory=%s)', async (directory) => {
+  const { run } = supervisor('exec tsx scripts/smoke-packaged-runtime.ts')
+  await expect(packageTarget(parseDesktopPackageInvocation(['mac-arm64', ...(directory ? ['--dir'] : [])], 'darwin', 'arm64'), environment, run))
+    .rejects.toThrow('stage refused')
+  expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
+  expect(packageMacOSArtifacts).not.toHaveBeenCalled()
+  expect(writeFileSync).not.toHaveBeenCalled()
+})
+
+it('checks macOS directory packages without writing a release record', async () => {
+  const { run, stages } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation(['mac-arm64', '--dir'], 'darwin', 'arm64'), { ...environment, APPLE_KEYCHAIN_PROFILE: 'fixture' }, run)
+  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts')
+  expect(packageMacOSArtifacts).not.toHaveBeenCalled()
+  expect(writeFileSync).not.toHaveBeenCalled()
 })
 
 it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace packing and download routing only to download stages', async (concurrency) => {
