@@ -58852,7 +58852,7 @@
       },
       "names": [],
       "sources": [
-        "packages/preset/agent-presets/src/session.ts:28"
+        "packages/preset/agent-preset-registry/src/session.ts:28"
       ]
     },
     {

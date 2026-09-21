@@ -14,7 +14,7 @@ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { loadOverlayPatches } from '../packages/boot/app-boot/src/index.ts'
 import { bundlePatchPaths, composeEntries } from '../packages/boot/app-boot/src/profile.ts'
 import type { DshBundleManifest } from '../packages/util/package-manifest/src/types.ts'
-import { isCordisGroupEntry, loadCordisYaml } from './cordis-yaml.ts'
+import { isAgentPresetEntry, isCordisGroupEntry, loadCordisYaml } from './cordis-yaml.ts'
 import {
   collectRuntimeLocalSourceSpecifiers,
   collectRuntimeSourceSpecifiers,
@@ -24,7 +24,7 @@ const EXPERIMENTAL_PREFIX = '@deepseek-ai/dsh-experimental-'
 // The independently published entry package owns platform-engine dependencies.
 const EXTERNAL_KIT_PACKAGES = new Set(['@deepseek-ai/libreoffice-kit'])
 const PROFILE_SOURCE = 'packages/boot/app-boot/src/profile.ts'
-const PRESET_PATTERN = 'packages/preset/agent-presets/presets/*/agent.cordis.yml'
+const PRESET_PATTERN = 'packages/bundle/web-app/presets/*.patch.yml'
 const RUNTIME_SECTIONS = ['dependencies', 'optionalDependencies', 'peerDependencies'] as const
 
 interface Manifest {
@@ -186,6 +186,7 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
       if (isCordisGroupEntry(entry) || entry.name === 'cordis:group' && Array.isArray(entry.config)) {
         (entry.config as unknown[]).forEach(visit)
       }
+      if (isAgentPresetEntry(entry)) entry.config.plugins.forEach(visit)
       if (Array.isArray(entry.insert)) entry.insert.forEach(visit)
       if ((entry.name === '@deepseek-ai/cordis-plugin-include' || entry.name === 'cordis:include') && isRecord(entry.config)) {
         if (!composedWeb && Array.isArray(entry.config.patches)) entry.config.patches.forEach(visit)

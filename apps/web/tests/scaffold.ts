@@ -195,7 +195,8 @@ export function recordedSessionFixturePath(path: string, version: number): strin
 
 /** The shipped composition under test: the dsh-base and dsh-web-app bundle patches over the empty profile root. */
 const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
-const WEB_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
+const WEB_BUNDLE_DIR = join(REPO_ROOT, 'packages/bundle/web-app')
+const WEB_BUNDLE_PATCH = (JSON.parse(readFileSync(join(WEB_BUNDLE_DIR, 'package.json'), 'utf8')) as { dsh: { bundle: { patch: string[] } } }).dsh.bundle
 /** The installation anchor whose dependency surface the runtime resolution mirrors. */
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 
@@ -405,18 +406,10 @@ export interface LaunchOptions {
     /** Credential reference resolved by the shipped search provider. */
     apiKeyEnv: string
   }
-  /**
-   * Replace the roster row the scaffold pins by default (no configured roots,
-   * default `standard` — the plugin's own shipped presets). Supply this only
-   * to change WHICH presets a scenario sees beyond the shipped set — a
-   * writable user root, a different default. The patch lands after the
-   * default, so it wins.
-   */
+  /** Preset selection default and additional declarative definitions for this scenario. */
   agentPresets?: {
-    /** Roots to discover after the plugin's shipped root, in precedence order. */
-    roots: { path: string; trust: 'system' | 'user' }[]
-    /** The preset a session that names none is composed from. */
     default: string
+    definitions?: import('@deepseek-ai/dsh-agent-preset-registry').PresetDefinition[]
   }
   /**
    * Patch the telemetry exporter URL while preserving the shipped enabled
@@ -466,6 +459,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const {
     auditStartupEntries, composeEntries, createRuntimeResolution, initProfile,
     mountRootInclude, readProfileManifest, readProfilePatches, loadProfileDirectory, loadOverlayPatches, PluginPackages,
+    bundlePatchPaths,
   } = appBoot()
   const mode = webSnapshotMode()
   const replayFixture = options.replayFixture === undefined
@@ -554,7 +548,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   // patch id that stops matching a row fails the boot sweep loudly instead of
   // drifting).
   const basePatches = loadOverlayPatches('web e2e scaffold', BASE_PATCH_PATH)
-  const surfacePatches = loadOverlayPatches('web e2e scaffold', WEB_PATCH_PATH)
+  const surfacePatches = bundlePatchPaths(WEB_BUNDLE_DIR, WEB_BUNDLE_PATCH).flatMap(file => loadOverlayPatches('web e2e scaffold', file))
   const extraOverlayPatches = options.extraOverlayPath === undefined
     ? []
     : (typeof options.extraOverlayPath === 'string' ? [options.extraOverlayPath] : options.extraOverlayPath)
@@ -573,17 +567,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       ? []
       : [{ id: 'agent-default-model', config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }],
     ...extraOverlayPatches,
-    // The roster's shipped presets are the plugin's own, bundled inside
-    // `dsh-agent-presets` and prepended by it. Pin only the machine-local
-    // root away: a developer's own `~/.dsh/.agent-presets` must not be able
-    // to change a golden.
-    {
-      id: 'agent-presets',
-      config: {
-        default: 'standard',
-        includeUserRoot: false,
-      },
-    },
+    { id: 'agent-preset-registry', config: { default: 'standard' } },
     { id: 'session-persistence-jsonl', config: { root: persistenceRoot } },
     // Content search is enabled here although the shipped bundles default it
     // off (`openAt: never`, pinned by apps/cli/tests/lazy-search-startup):
@@ -674,11 +658,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // Open In scenario supplies launch facts that suppress every native probe.
     { id: 'open-in-app', disabled: options.openInAppEnvironment === undefined },
     { id: 'ui-open-in-app', disabled: options.openInAppEnvironment === undefined },
-    ...options.agentPresets === undefined
-      ? []
-      // Never the derived harness-home root: a developer's own presets must not
-      // be able to change a golden, whatever roots a scenario asks for.
-      : [{ id: 'agent-presets', config: { ...options.agentPresets, includeUserRoot: false } }],
+    ...options.agentPresets === undefined ? [] : [
+      { id: 'agent-preset-registry', config: { default: options.agentPresets.default } },
+      { insert: (options.agentPresets.definitions ?? []).map(config => ({ id: `preset-${config.id}`, name: '@deepseek-ai/dsh-agent-preset', config })) },
+    ],
     ...options.toolsMode === undefined ? [] : [{ id: 'tools', config: { mode: options.toolsMode } }],
     ...options.deepSeekSearch === undefined
       ? []
@@ -796,8 +779,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       ctx.loader.builtins.include = Include
       // `cordis:group` beside it, exactly as `boot()` registers it: a group row is
       // how a preset gives one `isolate` realm to a provider and its consumers,
-      // and a preset resolving package names from its own directory cannot reach
-      // `@deepseek-ai/cordis-plugin-group` by name.
+      // including when the deployment supplies only Cordis builtin resolution.
       ctx.loader.builtins.group = Group
       await ctx.loader.create({
         name: 'cordis:include',
