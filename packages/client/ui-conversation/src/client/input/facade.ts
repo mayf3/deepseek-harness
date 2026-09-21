@@ -117,6 +117,12 @@ export class SessionInputShell implements SessionInput {
   }
   /** The public provide-channel action face (one stable identity per session). */
   readonly actions: InputActions = {
+    captureInsertion: () => ({ ...this.caretSpan(), draftRev: this.rev }),
+    insertText: (text, span) => {
+      if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting' || this.disposed) return false
+      if (span.draftRev !== this.rev) return false
+      return this.draftEditor.insertAsyncText(span, text)
+    },
     setDraft: (text) => { this.setDraft(text) },
     addAttachments: ids => this.addAttachments(ids),
     removeAttachment: (id) => { this.removeAttachment(id) },

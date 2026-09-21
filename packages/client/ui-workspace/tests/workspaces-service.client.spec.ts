@@ -81,7 +81,6 @@ function sessionState(
     byId: Object.fromEntries(summaries.map(item => [item.id, item])),
     phase,
     projectionsBySession: {},
-    jobsBySession: {},
   }
 }
 

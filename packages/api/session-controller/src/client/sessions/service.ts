@@ -5,7 +5,6 @@ import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { SESSION_SEARCH_RESULT_LIMIT } from '../../types.ts'
-import type { SessionJob as JobView } from '../../types.ts'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import {
   createSnapshotStore, notifySubscribers, type ObservableSnapshot, type SnapshotStore,
@@ -61,12 +60,6 @@ export interface SessionListState {
   phase: SessionListPhase
   /** Shared projection values and explicit-read state, including unopened Sessions. */
   projectionsBySession: Readonly<Record<SessionId, SessionProjectionSnapshot>>
-  /**
-   * Background jobs each session can see, mirrored last-wins from Session
-   * Controller's control baseline and `jobs` frames. A missing key is an empty
-   * set, so consumers read absence rather than a sentinel.
-   */
-  jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>
 }
 
 /** Structured session-create failure. */
@@ -263,7 +256,7 @@ export class ClientSessions implements ISessions {
   ) {
     this.manager = new SessionManager(remote)
     this.list = createSnapshotStore<SessionListState>({
-      ids: [], byId: {}, phase: 'pending', projectionsBySession: {}, jobsBySession: {},
+      ids: [], byId: {}, phase: 'pending', projectionsBySession: {},
     })
     const disposeManagerProjection = this.manager.subscribe(() => { this.projectList() })
     rootCtx.effect(() => async () => {
@@ -614,7 +607,7 @@ export class ClientSessions implements ISessions {
   private projectList(): void {
     const previousById = this.list.getSnapshot().byId
     const {
-      items, phase, projectionsBySession, jobsBySession,
+      items, phase, projectionsBySession,
     } = this.manager.getListSnapshot()
     const ids: SessionId[] = []
     const byId: Record<SessionId, SessionSummary> = {}
@@ -681,7 +674,7 @@ export class ClientSessions implements ISessions {
         ...(title === undefined ? {} : { title, displayTitle: title }),
       }
     }
-    this.list.set({ ids, byId, phase, projectionsBySession, jobsBySession })
+    this.list.set({ ids, byId, phase, projectionsBySession })
   }
 
   private startScopeDrop(

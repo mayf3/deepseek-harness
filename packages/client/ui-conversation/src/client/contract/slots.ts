@@ -201,6 +201,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.input.left': { kind: 'list'; scope: 'session' }
     /** Compact controls before the composer submit action. */
     'conversation.input.right': { kind: 'list'; scope: 'session' }
+    /** Compact action after the model selector; it can expand across the toolbar while retaining the editor and submit action. */
+    'conversation.input.activity': { kind: 'single'; scope: 'session'; owner: InputActivityOwnerProps }
     /** Resident composer body, including the no-Session inert state. */
     'conversation.composer.bar': { kind: 'single'; scope: 'session-maybe'; owner: ComposerBarOwnerProps }
     /** Optional draft-attachment rail and drop target. */
@@ -404,6 +406,12 @@ export interface InputControlOwnerProps {
   locked: boolean
 }
 
+/** A toolbar activity hides ordinary accessory controls while expanded; its occupant must release expansion on unmount. */
+export interface InputActivityOwnerProps extends InputControlOwnerProps {
+  /** @param active - whether the occupant needs the toolbar width before the submit action. */
+  onActiveChange: (active: boolean) => void
+}
+
 /** Full props of the resident composer bar. */
 export type ComposerBarProps =
   PropsRuntime<'conversation.composer.bar'>
@@ -411,7 +419,7 @@ export type ComposerBarProps =
     | 'conversation.input.attachments' | 'conversation.input.overlay'
     | 'conversation.input.permission'
     | 'conversation.input.left' | 'conversation.input.plan'
-    | 'conversation.input.right' | 'conversation.input.model'
+    | 'conversation.input.right' | 'conversation.input.model' | 'conversation.input.activity'
     | 'conversation.composer.dock'
   >
   & InjectFace<ComposerBarInjected>

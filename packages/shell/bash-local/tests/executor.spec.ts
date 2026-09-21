@@ -370,7 +370,15 @@ describe('LocalBashExecutor.start (background process handles)', () => {
     // done resolves (never rejects) even though the process never ran.
     await expect(proc.done).resolves.toBeUndefined()
     expect(proc.status).toBe('killed')
-    expect(proc.readOutput().delta).toContain('subprocess failed before reporting an outcome:')
+    // Observers read the note as the whole stderr stream at their own offsets.
+    const first = proc.observed.stderr.readFrom(0)
+    expect(first.text).toMatch(/^subprocess failed before reporting an outcome: /)
+    expect(first).toMatchObject({ nextOffset: Buffer.byteLength(first.text, 'utf8'), lossy: false })
+    expect(proc.observed.stderr.readFrom(first.nextOffset)).toEqual({ text: '', nextOffset: first.nextOffset, lossy: false })
+    expect(proc.observed.stdout.readFrom(0).text).toBe('')
+    // The consuming read folds the same note in exactly once.
+    expect(proc.readOutput().delta).toBe(`[stderr]\n${first.text}`)
+    expect(proc.readOutput().delta).toBe('')
   })
 })
 
