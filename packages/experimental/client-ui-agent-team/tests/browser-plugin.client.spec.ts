@@ -55,7 +55,17 @@ async function bench(options: { addressed?: boolean } = {}) {
   await fiber.await()
   const entry = () => ctx.slots.entries('conversation.session.header.actions')
     .find(candidate => candidate.component === TeamAction)
-  const actions = () => (entry()!.inject as unknown as () => TeamActionInjected)()
+  const actions = (): TeamActionInjected => {
+    const injected = entry()!.inject!()
+    const { loadProjections, openTeammate } = injected
+    if (typeof loadProjections !== 'function' || typeof openTeammate !== 'function') {
+      throw new Error('Team header action lacks its injected callbacks')
+    }
+    return {
+      loadProjections: loadProjections as TeamActionInjected['loadProjections'],
+      openTeammate: openTeammate as TeamActionInjected['openTeammate'],
+    }
+  }
   return {
     ctx,
     fiber,
