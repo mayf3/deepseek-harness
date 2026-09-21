@@ -188,6 +188,30 @@ it.each([true, false])('validates the real builder hook for unsigned=%s', async 
   }
 })
 
+it.each([false, true])('unpacks platform ripgrep executables with external source=%s', async (external) => {
+  const input = await fixture(external)
+  const files = ['ripgrep-darwin-arm64/bin/rg', 'ripgrep-darwin-x64/bin/rg', 'ripgrep-win32-x64/bin/rg.exe']
+  for (const file of [...files, 'ripgrep/lib/index.js']) {
+    const path = join(input.source, 'node_modules', '@vscode', file)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, 'ripgrep fixture')
+  }
+  const config = createElectronBuilderConfig({
+    DSH_DESKTOP_APP_ID: 'com.example.ripgrep', DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
+    DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
+    DSH_DESKTOP_UNSIGNED: '1',
+  }, 'win32', 'x64', input.source)
+  input.config.asarUnpack = [...config.asarUnpack]
+  await packageFixture(input)
+  const archive = await readAsar(join(input.resources, 'app.asar'))
+  expect(archive.getFile(join('dsh', 'node_modules', '@vscode', 'ripgrep/lib/index.js')).unpacked).not.toBe(true)
+  for (const file of files) {
+    const path = join('dsh', 'node_modules', '@vscode', file)
+    expect(archive.getFile(path, false).unpacked).toBe(true)
+    expect(await readFile(join(input.resources, 'app.asar.unpacked', path), 'utf8')).toBe('ripgrep fixture')
+  }
+})
+
 it.each([false, true])('keeps the complete Office engine outside ASAR with external source=%s', async (external) => {
   const input = await fixture(external)
   const engine = join('node_modules', '@deepseek-ai', 'libreoffice-kit-win32-x64')

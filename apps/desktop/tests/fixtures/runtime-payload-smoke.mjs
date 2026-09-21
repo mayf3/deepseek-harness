@@ -7,6 +7,7 @@ import { rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const runtime = process.argv[2]
 assert.ok(runtime, 'Pass the filtered resources/dsh directory')
@@ -44,6 +45,21 @@ console.log('desktop-node-script-ok')
       PATH: `${bin}${delimiter}${systemBin}`, HOME: scratch, USERPROFILE: scratch, TMP: scratch, TEMP: scratch, TMPDIR: scratch },
   })
   assert.match(output, /desktop-node-script-ok/u)
+}
+
+/** Exercise grep and glob operations with the search tool's resolved native executable. */
+async function checkSearch() {
+  const { resolveRgPath } = await import(pathToFileURL(requireRuntime.resolve('@deepseek-ai/dsh-tool-fs-search')).href)
+  const executable = await resolveRgPath()
+  const name = 'ripgrep-smoke.txt'
+  const marker = 'desktop-ripgrep-smoke'
+  writeFileSync(join(scratch, name), `${marker}\n`, { flag: 'wx', mode: 0o600 })
+  const run = args => execFileSync(executable, ['--no-config', ...args], {
+    cwd: scratch, encoding: 'utf8', timeout: 45_000, windowsHide: true,
+    env: Object.fromEntries(Object.entries(process.env).filter(([name]) => /^(?:systemroot|windir)$/iu.test(name))),
+  }).trim().replaceAll('\\', '/')
+  assert.equal(run(['--no-heading', '--no-filename', '--line-number', '--fixed-strings', '--', marker, name]), `1:${marker}`)
+  assert.equal(run(['--files', '--glob', name, '.']), `./${name}`)
 }
 
 /** Spawn only a fixed Node program and await the terminal's drained exit event. */
@@ -146,6 +162,7 @@ try {
   await checkSharp()
   checkHtml()
   await checkPty()
+  await checkSearch()
 } finally {
   // This private tree contains only fixture files; Windows may release handles after terminal exit.
   await rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })
@@ -154,5 +171,5 @@ try {
 // Natural event-loop drain includes node-pty's worker and console-list helper teardown.
 process.once('beforeExit', () => {
   console.log(JSON.stringify({ node: process.versions.node, platform: process.platform, arch: process.arch,
-    koffi: true, sharp: true, html: true, pty: true, pnpm: true }))
+    koffi: true, sharp: true, html: true, pty: true, pnpm: true, grep: true, glob: true }))
 })
