@@ -182,7 +182,7 @@ ManifestDPIAware true
   ${EndIf}
   !insertmacro InstallerPublishStage 4
   !insertmacro dshFinishDirectories
-  ; Explorer associates Start menu shortcuts with this entry only through InstallLocation; the upstream template records it elsewhere.
+  ; Standard uninstall-entry metadata read by inventory tools; the upstream template records it only under its private key.
   WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" InstallLocation "$INSTDIR"
   ${If} $0 == 1
     SetErrors

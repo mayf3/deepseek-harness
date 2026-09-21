@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-18-windows-uninstall-retains-harness-home.md
-2026-09-18-windows-uninstall-retains-harness-home.md: 8ceeeecf640a3dbbf236706807b3cb0d70479430
-2026-09-18-windows-uninstall-retains-harness-home.zh.md: c83a724e1609e79743aab05d2e4689b783d52dca
+2026-09-18-windows-uninstall-retains-harness-home.md: 193a732c94d8daa3f37def70fdec32b29f8f4d08
+2026-09-18-windows-uninstall-retains-harness-home.zh.md: a64bc61cc8699ae92c4c95f56218fdcfb2442f54

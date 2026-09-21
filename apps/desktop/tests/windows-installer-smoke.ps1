@@ -171,7 +171,7 @@ try {
     }
     $results.Add('registered-directory-with-trailing-separators')
     $uninstallEntry = Get-ItemProperty ('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $RegistryKey)
-    if ($uninstallEntry.InstallLocation.TrimEnd('\') -ne $installPath) { throw 'Uninstall entry lacks the InstallLocation Explorer matches Start menu shortcuts against' }
+    if ($uninstallEntry.InstallLocation.TrimEnd('\') -ne $installPath) { throw 'Uninstall entry lacks InstallLocation' }
     $results.Add('uninstall-entry-install-location')
     $timer = [Diagnostics.Stopwatch]::StartNew()
     do {
