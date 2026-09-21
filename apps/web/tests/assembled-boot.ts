@@ -203,7 +203,7 @@ let mountedRemote: RemoteMock | undefined
  * Register the per-test jsdom setup and teardown the assembled boot needs:
  * English pinned before boot so role/text locators stay deterministic across
  * localized component migrations (the newEnglishPage e2e convention), the
- * observers and frame callbacks jsdom lacks, and a full reset of the document,
+ * observers, font events, and frame callbacks jsdom lacks, and a full reset of the document,
  * the boot globals, and the injected plugin styles afterwards.
  */
 export function installAssembledBootEnv(): void {
@@ -220,7 +220,10 @@ export function installAssembledBootEnv(): void {
       top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}),
     })
   }
+  let fontsDescriptor: PropertyDescriptor | undefined
   beforeEach(() => {
+    fontsDescriptor = Object.getOwnPropertyDescriptor(document, 'fonts')
+    Object.defineProperty(document, 'fonts', { configurable: true, value: new EventTarget() })
     localStorage.clear()
     // The locale service derives its provisional locale from the browser and
     // takes an explicit choice only from Host settings. This scenario serves no
@@ -263,6 +266,8 @@ export function installAssembledBootEnv(): void {
     delete ownNavigator.languages
     delete ownNavigator.language
     vi.unstubAllGlobals()
+    if (fontsDescriptor === undefined) Reflect.deleteProperty(document, 'fonts')
+    else Object.defineProperty(document, 'fonts', fontsDescriptor)
     if (failures.length > 0) throw new AggregateError(failures, 'assembled boot teardown failed')
   })
 }
