@@ -58,8 +58,9 @@ describe('desktop toolchain preflight', () => {
     const saved = { PATH: process.env.PATH, Path: process.env.Path }
     try {
       Object.assign(process.env, { PATH: empty, Path: empty })
-      expect(await probeDesktopToolchain('darwin', {}))
-        .toEqual([{ tool: 'tar', detail: expect.any(String) as unknown as string }])
+      const failures = await probeDesktopToolchain('darwin', {})
+      expect(failures.map(failure => failure.tool)).toEqual(['tar'])
+      expect(failures[0]?.detail).not.toBe('')
     }
     finally {
       Object.assign(process.env, saved)
