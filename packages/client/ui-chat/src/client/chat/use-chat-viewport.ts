@@ -141,10 +141,13 @@ export class ChatViewport {
 
   private anchor(key: string): HTMLElement | null {
     if (this.elements === null) return null
-    for (const row of this.elements.list.querySelectorAll<HTMLElement>('[data-chat-anchor-key]:not([hidden])')) {
+    // Reading anchors name exact parts; Turn navigation names the original Node.
+    let nodePart: HTMLElement | null = null
+    for (const row of this.elements.list.querySelectorAll<HTMLElement>('[data-chat-anchor-key]:not([hidden]):not([hidden] *)')) {
       if (row.dataset.chatAnchorKey === key) return row
+      if (nodePart === null && row.dataset.chatNodeKey === key) nodePart = row
     }
-    return null
+    return nodePart
   }
 
   /**
@@ -169,7 +172,8 @@ export class ChatViewport {
     }
     if (anchor === null) {
       const rows = list.querySelectorAll<HTMLElement>(
-        '[data-chat-flow] > [data-chat-flow-key]:not(:empty):not([hidden])',
+        ':is([data-chat-flow], [data-chat-flow] > [data-chat-group-key])'
+        + ' > [data-chat-flow-key]:not([data-chat-group-key]):not(:empty):not([hidden]):not([hidden] *)',
       )
       let low = 0
       let high = rows.length
@@ -229,6 +233,7 @@ export class ChatViewport {
 
   /**
    * Align a known loaded turn and return its actual clamped position.
+   * A split Node anchor selects its first visible part.
    * @param turn - loaded turn to align below the scrollport's top edge.
    * @returns the actual landing, or null when its anchor is unavailable.
    */
@@ -246,7 +251,7 @@ export class ChatViewport {
    */
   scrollToTurnAtOrAfter(turn: number): ViewportLanding | null {
     if (this.elements === null) return null
-    for (const row of this.elements.list.querySelectorAll<HTMLElement>('[data-chat-turn]:not([hidden])')) {
+    for (const row of this.elements.list.querySelectorAll<HTMLElement>('[data-chat-turn]:not([hidden]):not([hidden] *)')) {
       const candidate = Number(row.dataset.chatTurn)
       if (Number.isSafeInteger(candidate) && candidate >= turn) return this.align(row, 24, candidate)
     }

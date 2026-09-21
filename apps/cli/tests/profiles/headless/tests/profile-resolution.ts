@@ -15,6 +15,7 @@ const bundleName = 'profile-resolution-bundle'
 const bridgeName = 'profile-resolution-bridge'
 const leafName = 'profile-resolution-leaf'
 const pluginName = 'profile-resolution-plugin'
+const sourceProbeName = 'source-probe'
 const externalName = 'profile-resolution-external'
 const externalLeafName = 'profile-resolution-external-leaf'
 const marker = 'DSH_PROFILE_RESOLUTION '
@@ -33,6 +34,12 @@ interface ResolutionEvidence {
   sameCjsExternalLeaf: boolean
   externalManaged: boolean
   toolsInstance: boolean
+  pluginToolsInstance: boolean
+  sourceToolsInstance: boolean
+  profileToolsCjs: string | null
+  sourceToolsCjs: string | null
+  sourceLeafCjs: string
+  sourceLeafExplicitCjs: string
   scheduler: boolean
   modules: string[]
 }
@@ -64,6 +71,8 @@ export function testProfileResolution(mode: ExampleMode): void {
       const bridgeDir = layout === 'npm-link' ? join(root, 'dependencies', bridgeName) : installedBridge
       const logicalLeaf = join(bundleDir, 'node_modules', leafName)
       const realLeaf = join(root, 'dependencies', 'node_modules', leafName)
+      const sourcePackageDir = join(root, 'work', 'source-package')
+      const sourceDevLeaf = join(sourcePackageDir, 'node_modules', leafName)
       const exports = { import: './index.mjs', require: './index.cjs' }
       await writePackage(bundleDir, {
         name: bundleName, version: '1.0.0', dependencies: { [bridgeName]: '*' },
@@ -75,7 +84,9 @@ export function testProfileResolution(mode: ExampleMode): void {
         'index.mjs': `export { leaf } from '${leafName}'`,
         'index.cjs': `module.exports = require('${leafName}')`,
       })
-      for (const [dir, version] of [[logicalLeaf, '1.0.0'], [realLeaf, '2.0.0']] as const) {
+      for (const [dir, version] of [
+        [logicalLeaf, '1.0.0'], [realLeaf, '2.0.0'], [sourceDevLeaf, '0.0.0'],
+      ] as const) {
         await writePackage(dir, { name: leafName, version, exports }, {
           'index.mjs': `export const leaf = { version: '${version}', url: import.meta.url }`,
           'index.cjs': `exports.leaf = { version: '${version}', filename: __filename }`,
@@ -91,7 +102,10 @@ export function testProfileResolution(mode: ExampleMode): void {
       }
 
       const sharedModules = join(home, 'profiles', 'node_modules')
-      const pluginDir = join(profileDir, 'node_modules', pluginName)
+      const installedPlugin = join(profileDir, 'node_modules', pluginName)
+      // npm-link keeps the plugin as a linked root outside the profile tree, so its own node_modules hold the
+      // developer's devDependency dsh-tools copy (stale, never read) and the declared dependency's install.
+      const pluginDir = layout === 'npm-link' ? join(root, 'work', pluginName) : installedPlugin
       const sharedExternal = join(sharedModules, externalName)
       const externalDir = layout === 'npm-link' ? join(root, 'external', externalName) : sharedExternal
       const externalLeaf = join(externalDir, 'node_modules', externalLeafName)
@@ -100,8 +114,14 @@ export function testProfileResolution(mode: ExampleMode): void {
       const ancestorLeaf = join(home, 'node_modules', externalLeafName)
       await writePackage(pluginDir, {
         name: pluginName, version: '1.0.0', exports, dependencies: { [externalName]: '*' },
+        peerDependencies: { '@deepseek-ai/dsh-tools': '*' }, devDependencies: { '@deepseek-ai/dsh-tools': '*' },
       }, {
-        'index.mjs': `export { external } from '${externalName}'\nexport function apply() {}`,
+        'index.mjs': [
+          `export { external } from '${externalName}'`,
+          "import Tools from '@deepseek-ai/dsh-tools'",
+          'export { Tools as PluginTools }',
+          'export function apply() {}',
+        ].join('\n'),
         'index.cjs': `module.exports = require('${externalName}')`,
       })
       for (const [dir, version] of [[externalDir, '3.0.0'], [ancestorExternal, '9.0.0']] as const) {
@@ -122,9 +142,33 @@ export function testProfileResolution(mode: ExampleMode): void {
         'index.mjs': "export default class Tools {}\nexport const TOOL_RUNTIME_SCHEDULER = Symbol()\nthrow new Error('STALE_DSH_TOOLS')",
         'index.cjs': "throw new Error('STALE_DSH_TOOLS')",
       })
+      const sourceDir = join(sourcePackageDir, 'src')
+      const toolsCjsExpression = mode === 'lib' ? "require.resolve('@deepseek-ai/dsh-tools')" : 'null'
+      await mkdir(sourceDir, { recursive: true })
+      // The ESM-only source hook does not map CommonJS exports to source, so its CJS probe uses a fixture-owned peer.
+      await writePackage(sourcePackageDir, {
+        name: 'source-package', version: '1.0.0', peerDependencies: { '@deepseek-ai/dsh-tools': '*', [leafName]: '*' },
+      }, {
+        'src/query.mjs': [
+          "import { createRequire } from 'node:module'",
+          "import Tools from '@deepseek-ai/dsh-tools'",
+          'export { Tools as SourceTools }',
+          'const require = createRequire(import.meta.url)',
+          `export const sourceToolsCjs = ${toolsCjsExpression}`,
+          `export const sourceLeafCjs = require.resolve('${leafName}')`,
+          `export const sourceLeafExplicitCjs = require.resolve('${leafName}', { paths: [${JSON.stringify(sourceDir)}] })`,
+        ].join('\n'),
+      })
       for (const [target, link] of [
         [staleTools, staleToolsLink],
-        ...layout === 'npm-link' ? [[externalDir, sharedExternal]] as const : [],
+        [sourceDir, join(profileDir, 'node_modules', sourceProbeName)],
+        [staleTools, join(sourcePackageDir, 'node_modules', '@deepseek-ai', 'dsh-tools')],
+        ...layout === 'npm-link' ? [
+          [externalDir, sharedExternal],
+          [pluginDir, installedPlugin],
+          [staleTools, join(pluginDir, 'node_modules', '@deepseek-ai', 'dsh-tools')],
+          [externalDir, join(pluginDir, 'node_modules', externalName)],
+        ] as const : [],
       ] as const) {
         await mkdir(dirname(link), { recursive: true })
         await symlink(target, link, 'junction')
@@ -143,7 +187,8 @@ export function testProfileResolution(mode: ExampleMode): void {
           `import { leaf } from '${leafName}'`,
           `import { leaf as bridgeLeaf } from '${bridgeName}'`,
           `import { external } from '${externalName}'`,
-          `import { external as pluginExternal } from '${pluginName}'`,
+          `import { external as pluginExternal, PluginTools } from '${pluginName}'`,
+          `import { SourceTools, sourceToolsCjs, sourceLeafCjs, sourceLeafExplicitCjs } from '${sourceProbeName}/query.mjs'`,
           `import { leaf as externalLeaf } from ${JSON.stringify(pathToFileURL(join(externalLeaf, 'index.mjs')).href)}`,
           'const require = createRequire(import.meta.url)',
           "export const inject = ['tools', 'agentLoop', 'loader']",
@@ -165,6 +210,10 @@ export function testProfileResolution(mode: ExampleMode): void {
           `      sameCjsExternalLeaf: externalCjs.leaf === require(${JSON.stringify(join(externalLeaf, 'index.cjs'))}).leaf,`,
           `      externalManaged: entries.some(entry => [${JSON.stringify(externalName)}, ${JSON.stringify(externalLeafName)}].includes(entry.name)),`,
           '      toolsInstance: ctx.tools instanceof Tools,',
+          '      pluginToolsInstance: ctx.tools instanceof PluginTools,',
+          '      sourceToolsInstance: ctx.tools instanceof SourceTools,',
+          `      profileToolsCjs: ${toolsCjsExpression},`,
+          '      sourceToolsCjs, sourceLeafCjs, sourceLeafExplicitCjs,',
           "      scheduler: typeof ctx.tools[TOOL_RUNTIME_SCHEDULER]?.prepare === 'function',",
           '      modules: [...ctx.loader.internal.loadCache.keys()]',
           '        .filter(url => /\\/packages\\/core\\/(?:tools|agent-loop)\\//.test(url)),',
@@ -185,8 +234,8 @@ export function testProfileResolution(mode: ExampleMode): void {
         ]),
       })
       const packageDirs = [
-        bundleDir, bridgeDir, logicalLeaf, realLeaf, pluginDir, externalDir, externalLeaf,
-        sharedLeaf, ancestorExternal, ancestorLeaf, staleTools, profileDir,
+        bundleDir, bridgeDir, logicalLeaf, realLeaf, sourceDevLeaf, pluginDir, externalDir, externalLeaf,
+        sharedLeaf, ancestorExternal, ancestorLeaf, staleTools, sourcePackageDir, sourceDir, profileDir,
       ]
       const packageFiles = (await Promise.all(packageDirs.map(async dir =>
         (await readdir(dir, { withFileTypes: true })).filter(entry => entry.isFile()).map(entry => join(dir, entry.name)),
@@ -233,6 +282,15 @@ export function testProfileResolution(mode: ExampleMode): void {
       expect(evidence.sameCjsExternalLeaf).toBe(true)
       expect(evidence.externalManaged).toBe(false)
       expect(evidence.toolsInstance).toBe(true)
+      expect(evidence.pluginToolsInstance).toBe(true)
+      expect(evidence.sourceToolsInstance).toBe(true)
+      expect(evidence.sourceToolsCjs).toBe(evidence.profileToolsCjs)
+      expect(evidence.profileToolsCjs).toBe(mode === 'lib'
+        ? realpathSync.native(join(repoRoot, 'packages/core/tools/lib/index.js'))
+        : null)
+      expect(evidence.sourceLeafCjs).toBe(evidence.cjs.filename)
+      expect(evidence.sourceLeafExplicitCjs).toBe(realpathSync.native(join(sourceDevLeaf, 'index.cjs')))
+      expect(evidence.sourceLeafCjs).not.toBe(evidence.sourceLeafExplicitCjs)
       expect(evidence.scheduler).toBe(true)
       expect(evidence.execArgv).toEqual(mode === 'src' ? launch.args.slice(0, 2) : [])
       for (const name of ['tools', 'agent-loop']) {
@@ -243,6 +301,7 @@ export function testProfileResolution(mode: ExampleMode): void {
       }
       for (const [path, content] of contents) expect(await readFile(path), path).toEqual(content)
       for (const [path, target] of linkTargets) expect(await readlink(path), path).toBe(target)
+      expect(await readdir(sourceDir)).toEqual(['query.mjs'])
     } finally {
       try {
         for (const link of links.reverse()) await unlink(link)
