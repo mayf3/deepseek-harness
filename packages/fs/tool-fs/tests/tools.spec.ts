@@ -352,7 +352,7 @@ describe('read tool', () => {
       offset: 1,
       lines: [{ number: 1, text: 'const x = 1' }, { number: 2, text: 'const y = 2' }],
       totalLines: 2,
-      lang: 'ts',
+      lang: 'typescript',
     })
     const view = ctx.tools.get('read')?.presentResult?.({ file_path: 'a.ts' }, result)
     expect(view).toEqual({
@@ -361,7 +361,7 @@ describe('read tool', () => {
       offset: 1,
       lines: [{ number: 1, text: 'const x = 1' }, { number: 2, text: 'const y = 2' }],
       totalLines: 2,
-      lang: 'ts',
+      lang: 'typescript',
       content: [{ type: 'text', text: '1: const x = 1\n2: const y = 2\n\n(End of file - total 2 lines)' }],
     })
   })

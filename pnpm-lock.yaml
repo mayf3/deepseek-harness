@@ -4053,6 +4053,9 @@ importers:
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:^
         version: link:../store
+      '@deepseek-ai/dsh-util-code-language':
+        specifier: workspace:^
+        version: link:../../util/code-language
       '@shikijs/langs':
         specifier: ^4.3.1
         version: 4.3.1
@@ -7806,6 +7809,9 @@ importers:
 
   packages/fs/tool-fs:
     dependencies:
+      '@deepseek-ai/dsh-util-code-language':
+        specifier: workspace:^
+        version: link:../../util/code-language
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -12514,6 +12520,12 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+
+  packages/util/code-language:
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

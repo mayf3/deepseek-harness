@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { languageForPath } from '@deepseek-ai/dsh-util-code-language'
 import { buildWindow, langFromPath, readMetaFromMeta, READ_MAX_BYTES, READ_MAX_LINE_LENGTH } from '../src/read-render.ts'
 import type { ReadWindow } from '../src/read-render.ts'
 
@@ -118,19 +119,29 @@ describe('buildWindow', () => {
 })
 
 describe('langFromPath', () => {
-  it('maps a known extension to its language hint, case-insensitively', () => {
-    expect(langFromPath('src/a.ts')).toBe('ts')
-    expect(langFromPath('src/a.TSX')).toBe('tsx')
-    expect(langFromPath('/abs/module.mjs')).toBe('js')
+  it('resolves through the one shared extension table, never a local copy', () => {
+    // The read card and the Client code surfaces must agree on every path; a
+    // local table re-introduced on either side makes one of these identity
+    // assertions fail before the two can drift in language hints.
+    expect(langFromPath).toBe(languageForPath)
+    for (const path of ['src/a.ts', 'conf.yml', 'README.md', 'build.PS1', 'C:\\src\\main.rs']) {
+      expect(langFromPath(path), path).toBe(languageForPath(path))
+    }
+  })
+
+  it('maps a known extension to its canonical language id, case-insensitively', () => {
+    expect(langFromPath('src/a.ts')).toBe('typescript')
+    expect(langFromPath('src/a.TSX')).toBe('typescript')
+    expect(langFromPath('/abs/module.mjs')).toBe('javascript')
     expect(langFromPath('conf.yml')).toBe('yaml')
-    expect(langFromPath('README.md')).toBe('md')
+    expect(langFromPath('README.md')).toBe('markdown')
   })
 
   it('reads the extension after the last path segment and last dot', () => {
     expect(langFromPath('a.py.bak')).toBeUndefined()
     expect(langFromPath('archive.tar.gz')).toBeUndefined()
     expect(langFromPath('/dir.py/plain')).toBeUndefined()
-    expect(langFromPath('C:\\src\\main.rs')).toBe('rs')
+    expect(langFromPath('C:\\src\\main.rs')).toBe('rust')
   })
 
   it('returns undefined for a dotfile, an extensionless name, and an unknown extension', () => {
