@@ -107,7 +107,9 @@ function recordProductionRelease(plan: DesktopUploadPlan): void {
   const result = tagDesktopRelease({ version: plan.version, commit: plan.commit, repositoryRoot: resolve(import.meta.dirname, '../../..') })
   if (result.status === 'failed') {
     process.stderr.write(`desktop upload: the release is published but ${result.tag} was not recorded: ${result.detail ?? 'unknown error'}\n`)
-    process.stderr.write(`desktop upload: record it with: git tag ${result.tag} ${plan.commit} && git push origin ${result.tag}\n`)
+    if (result.recovery !== undefined) {
+      process.stderr.write(`desktop upload: record it with: ${result.recovery.join(' && ')}\n`)
+    }
     return
   }
   process.stdout.write(`desktop upload: ${result.tag} ${result.status === 'created' ? 'records' : 'already recorded'} ${plan.commit}\n`)

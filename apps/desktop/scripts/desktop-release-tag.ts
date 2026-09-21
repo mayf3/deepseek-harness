@@ -18,6 +18,8 @@ import { execFileSync } from 'node:child_process'
 export interface DesktopReleaseTagResult {
   readonly tag: string
   readonly status: 'created' | 'present' | 'failed'
+  /** Commands that finish the tagging a failure interrupted, in order. */
+  readonly recovery?: readonly string[]
   readonly detail?: string
 }
 
@@ -47,21 +49,32 @@ export function tagDesktopRelease(options: {
   const run = options.run
     ?? ((command: string, args: readonly string[]) =>
       execFileSync(command, [...args], { cwd: options.repositoryRoot, encoding: 'utf8' }).trim())
+  const create = `git tag ${tag} ${options.commit}`
+  const push = `git push ${remote} ${tag}`
+  // A local tag that already exists makes `git tag` fail, so recovery must name only the steps still outstanding.
+  let tagged = false
   try {
     const existing = run('git', ['tag', '--list', tag])
     if (existing !== '') {
-      const tagged = run('git', ['rev-list', '-n', '1', tag])
-      if (tagged !== options.commit) {
-        return { tag, status: 'failed', detail: `${tag} already names ${tagged}, not the uploaded commit ${options.commit}` }
+      const named = run('git', ['rev-list', '-n', '1', tag])
+      if (named !== options.commit) {
+        return { tag, status: 'failed', detail: `${tag} already names ${named}, not the uploaded commit ${options.commit}` }
       }
+      tagged = true
       run('git', ['push', remote, tag])
       return { tag, status: 'present' }
     }
     run('git', ['tag', tag, options.commit])
+    tagged = true
     run('git', ['push', remote, tag])
     return { tag, status: 'created' }
   }
   catch (error) {
-    return { tag, status: 'failed', detail: error instanceof Error ? error.message : String(error) }
+    return {
+      tag,
+      status: 'failed',
+      recovery: tagged ? [push] : [create, push],
+      detail: error instanceof Error ? error.message : String(error),
+    }
   }
 }

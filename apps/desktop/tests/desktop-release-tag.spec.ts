@@ -58,6 +58,19 @@ describe('desktop release tag', () => {
       .toMatchObject({ status: 'failed', detail: 'git unavailable' })
   })
 
+  it('recovers a failed push without repeating the tag that already exists', () => {
+    // `git tag` would fail with "already exists" and short-circuit a combined command, leaving the push undone.
+    const { run } = recorder({ tag: '', push: new Error('remote rejected') })
+    expect(tagDesktopRelease({ version: VERSION, commit: COMMIT, repositoryRoot: '.', run }))
+      .toMatchObject({ status: 'failed', recovery: [`git push origin desktop-v${VERSION}`] })
+  })
+
+  it('recovers a failed tag by creating it before pushing', () => {
+    const { run } = recorder({ tag: new Error('cannot write ref') })
+    expect(tagDesktopRelease({ version: VERSION, commit: COMMIT, repositoryRoot: '.', run }))
+      .toMatchObject({ recovery: [`git tag desktop-v${VERSION} ${COMMIT}`, `git push origin desktop-v${VERSION}`] })
+  })
+
   it('pushes to a named remote', () => {
     const { run, calls } = recorder({ tag: '' })
     tagDesktopRelease({ version: VERSION, commit: COMMIT, repositoryRoot: '.', remote: 'upstream', run })

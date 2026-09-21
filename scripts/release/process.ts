@@ -119,6 +119,11 @@ export function pnpmCommand(): readonly [command: string, ...args: string[]] {
   for (let directory = dirname(fileURLToPath(import.meta.url)); ; directory = dirname(directory)) {
     const entry = join(directory, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs')
     if (existsSync(entry)) return [process.execPath, entry]
-    if (dirname(directory) === directory) return ['pnpm']
+    if (dirname(directory) === directory) break
   }
+  // Windows resolves a bare `pnpm` to a batch shim that spawnSync cannot start, so say that rather than fail later.
+  if (process.platform === 'win32') {
+    throw new Error('release: cannot locate pnpm\'s JavaScript entry; run this through a pnpm script or install workspace dependencies')
+  }
+  return ['pnpm']
 }

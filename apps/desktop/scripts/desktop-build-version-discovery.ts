@@ -20,7 +20,7 @@
 import { readdir } from 'node:fs/promises'
 import { parse } from 'semver'
 import { desktopBuildVersionPrefix, validateDesktopBuildVersion } from './desktop-build-version.mjs'
-import { resolveDesktopUploadConfig } from './desktop-auto-update-environment.mjs'
+import { DESKTOP_AUTO_UPDATE_ENV, resolveDesktopUploadConfig } from './desktop-auto-update-environment.mjs'
 import { createDesktopCos, DESKTOP_COS_REGION } from './desktop-cos.ts'
 import type { DesktopPackageTargetName } from './package-target.ts'
 
@@ -87,15 +87,12 @@ async function localVersions(artifactsRoot: string): Promise<string[]> {
  * @returns Versions parsed from object names, or undefined when the bucket cannot be listed completely in time.
  */
 async function remoteVersions(options: DesktopBuildVersionSuggestionOptions): Promise<string[] | undefined> {
-  let update
-  try {
-    const platform = options.target === 'win-x64' ? 'win32' as const : 'darwin' as const
-    update = resolveDesktopUploadConfig(options.environment, platform, options.target === 'mac-arm64' ? 'arm64' : 'x64')
-  }
-  catch {
-    // Without a configured destination there is nothing to be unique against.
-    return undefined
-  }
+  const platform = options.target === 'win-x64' ? 'win32' as const : 'darwin' as const
+  const arch = options.target === 'mac-arm64' ? 'arm64' : 'x64'
+  // An unconfigured destination has nothing to be unique against; an invalid one must not be mistaken for it.
+  if (options.environment[DESKTOP_AUTO_UPDATE_ENV] === undefined
+    && options.environment.DOWNLOAD_TEST_ORIGIN === undefined) return undefined
+  const update = resolveDesktopUploadConfig(options.environment, platform, arch)
   const secretId = options.environment[update.secretIdEnvName]?.trim()
   const secretKey = options.environment[update.secretKeyEnvName]?.trim()
   if (secretId === undefined || secretId === '' || secretKey === undefined || secretKey === '') return undefined
@@ -132,8 +129,10 @@ async function remoteVersions(options: DesktopBuildVersionSuggestionOptions): Pr
       marker = page.next
     } while (marker !== undefined)
   }
-  catch {
+  catch (unfinished) {
     // Numbering against a partial listing could reuse a published index, so an unfinished query yields nothing.
+    process.stdout.write(`desktop package: the update bucket did not answer completely (${
+      unfinished instanceof Error ? unfinished.message : String(unfinished)}); numbering from local artifacts\n`)
     return undefined
   }
   return versions
