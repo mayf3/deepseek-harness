@@ -8,11 +8,11 @@ English | [中文](2026-09-09-profile-resolution-generations.zh.md)
 
 A profile loads plugin rows from its own package project, while Harness packages and packages carried by selected bundles can live outside that project's ordinary dependency tree. Bridging the trees through shared symlinks, profile-owned links, or packaged-executable proxy packages persists package selections across processes and installations. Those files require reconciliation and locking, expose generated proxy manifests to metadata readers, and cannot represent a process-local change atomically.
 
-The runtime design keeps installation-first, ordered-bundle, and local-before-fallback precedence. It covers imports performed by plugin modules as well as Loader row imports and works in the main thread and Harness-owned Workers. Generation replacement accepts only additive package sets and never mutates a live table entry by entry.
+The runtime design keeps installation-first, ordered-bundle, and local-before-fallback precedence. It covers imports performed by plugin modules as well as Loader row imports and works in the main thread and Harness-owned Workers. Generation replacement preserves existing package mappings and local package names, permits linked-root membership changes, and never mutates a live table entry by entry.
 
 ## Decision
 
-Profile startup computes one immutable `RuntimeResolution` and installs it into Node's ESM and CommonJS resolvers. Runtime is the only resolution backend; there is no mode selector or disk materializer. `PluginPackages.replace()` publishes a complete additive successor with one reference replacement.
+Profile startup computes one immutable `RuntimeResolution` and installs it into Node's ESM and CommonJS resolvers. Runtime is the only resolution backend; there is no mode selector or disk materializer. `PluginPackages.replace()` publishes a complete successor with one reference replacement.
 
 ### One selection algorithm
 
@@ -64,13 +64,18 @@ For example, `@deepseek-ai/dsh-tools` creates its scheduler key with `Symbol()`.
 
 The source launcher does not install a CommonJS TypeScript hook. `createRequire().resolve()` still selects the package's published JavaScript entry and requires that file to exist. Source-mode resolution tests therefore use fixture-provided CommonJS files; checks of real installation CommonJS entries run with build outputs present.
 
+<a id="immutable-generations"></a>
 ### Immutable generations
 
 A runtime interception holds one `current` generation. Each synchronous resolution captures that reference once. Generation construction reads every required dependency-graph manifest before publication; an error leaves the current generation unchanged. Successful publication replaces one reference, and in-flight calls may finish against the generation they captured.
 
 Selection and package-metadata caches belong to a generation. Publishing a successor invalidates them by making the old generation unreachable after its callers finish; update code does not mutate or clear individual entries. Profile-importer hits and successful native selections can be cached, but a generation miss is rescanned so a profile-local package installed after the miss becomes visible through native lookup. Linked importer routes are not cached: each resolution reads current peer declarations at the ancestor positions it visits. Explicit CommonJS paths bypass interception entirely; non-default conditions never reuse a default-resolution cache entry.
 
-The launcher constructs one startup generation. The service accepts an additive successor, but no package-manager transaction invokes replacement in this implementation.
+Linked-root membership is immutable within a generation. A successor may add or remove roots without restarting the process. When no remaining root covers a directory, subsequent resolutions there use native Node lookup, including new requests from already loaded modules. A request may then select a development copy or fail because the package is absent. Removing interception does not unload modules, replace existing references, or clear Node's own caches.
+
+The router retains the real target of each successfully published link name for its lifetime, solely to validate successors. Removing a root does not erase that record or keep its directory intercepted. Re-adding the same name and target is allowed; a different target is rejected because Node caches real paths. Failed publication changes neither the current generation nor the recorded targets.
+
+The launcher constructs one startup generation. The service accepts a complete successor, but no package-manager transaction invokes replacement in this implementation.
 
 ### Shared ESM and CommonJS rule
 
@@ -102,7 +107,7 @@ New Workers inherit the latest published generation. Existing Workers keep the g
 
 A caller adding a package completes its pnpm transaction before constructing a successor generation. Replacement rejects any generation that changes the directory or version of an existing package. The caller publishes an additive successor before mounting the new Loader row; this implementation does not provide that package transaction. A mount failure may leave the package installed but inactive.
 
-Replacing, upgrading, or removing an already loaded package requires process restart because Node's ESM Module Map, CommonJS cache, existing object references, and running Workers can retain the old module identity. Generation replacement does not claim to unload modules.
+Changing or removing an existing runtime package mapping, or removing a recorded profile-local package name, requires process restart because Node's ESM Module Map, CommonJS cache, existing object references, and running Workers can retain the old module identity. These restrictions do not prohibit removing a linked root from the interception scope. Generation replacement does not claim to unload modules.
 
 ### Filesystem and runtime carriers
 
@@ -137,7 +142,7 @@ Behavior tests exercise root order, transitive and peer dependencies, local and 
 ## Verification
 
 - One eager computation supplies the runtime resolution; startup neither writes nor retires module-resolution data.
-- [Generation tests](../../../../packages/boot/app-boot/tests/profile-resolution.spec.ts) cover installation and selected-bundle graphs with ordinary directories and recursive symlinks, including different dependency versions beside logical and real anchors.
+- [Generation tests](../../../../packages/boot/app-boot/tests/profile-resolution.spec.ts) cover installation and selected-bundle graphs with ordinary directories and recursive symlinks, including different dependency versions beside logical and real anchors. They also cover linked-root removal, same-target restoration, overlapping roots, native misses, new requests from loaded modules, and relink rejection after removal.
 - [Source-launch tests](../../../../apps/cli/tests/source-launch.compat.spec.ts) and [built-bin tests](../../../../apps/cli/tests/built-bin.e2e.ts) run both profile layouts through the real CLI. They assert ESM/CJS versions, loaded paths, per-format dependency identity, and consistent Tools/AgentLoop module instances with an accessible scheduler key.
 - Pkg and Electron carriers select runtime resolution; Electron executes its Host in Node mode from the ASAR-backed dsh tree while native executable entries remain unpacked.
 - ESM and CommonJS adapters share one router and delegate final resolution to Node without `module.registerHooks` or `_findPath` replacement.
@@ -147,4 +152,4 @@ Behavior tests exercise root order, transitive and peer dependencies, local and 
 
 ## Consequences
 
-Runtime startup avoids disk mutation and proxy manifests while retaining package-precedence rules. Real-directory anchors align dependency discovery with default Node loading and tsx workspace mapping, including cases where a logical symlink path would select another version. The implementation accepts the maintenance cost of Node Internal compatibility tests and an early, self-contained bootstrap in each owned Worker; it provides no disk-only backend or dual comparison mode. Generation replacement remains additive until the product owns module-cache invalidation and Worker restart.
+Runtime startup avoids disk mutation and proxy manifests while retaining package-precedence rules. Real-directory anchors align dependency discovery with default Node loading and tsx workspace mapping, including cases where a logical symlink path would select another version. The implementation accepts the maintenance cost of Node Internal compatibility tests and an early, self-contained bootstrap in each owned Worker; it provides no disk-only backend or dual comparison mode. Package mappings and local package names remain additive; linked-root membership may change without unloading modules.

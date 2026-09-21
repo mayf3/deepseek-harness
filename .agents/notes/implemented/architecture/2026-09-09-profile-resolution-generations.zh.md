@@ -8,11 +8,11 @@ Status: implemented
 
 profile 从自己的包项目加载插件配置项，而 Harness 包和所选 bundle 携带的包可能位于该项目普通依赖树之外。通过共享 symlink、profile 自有链接或打包可执行文件的代理包连接两棵依赖树，会让选包结果跨进程和安装版本持续存在。这些文件需要协调和锁来维护，并向元数据读取方暴露生成的代理 manifest（元数据清单），也无法原子表示进程内变更。
 
-运行时设计保留安装优先、有序 bundle 和本地包优先于 fallback 的顺序。它覆盖插件模块内部的 import 以及 Loader 配置项的 import，并在主线程和 Harness 自有 Worker 中工作。generation 替换只接受新增包的集合，不会逐项修改正在使用的表。
+运行时设计保留安装优先、有序 bundle 和本地包优先于 fallback 的顺序。它覆盖插件模块内部的 import 以及 Loader 配置项的 import，并在主线程和 Harness 自有 Worker 中工作。generation 替换保留既有包映射和本地包名，允许调整 linked root 集合，不会逐项修改正在使用的表。
 
 ## Decision
 
-profile 启动生成一个不可变 `RuntimeResolution`，并将其安装到 Node 的 ESM 与 CommonJS 解析器。runtime 是唯一的解析后端，不提供模式选择器或磁盘物化器。`PluginPackages.replace()` 通过一次引用替换发布完整的新增型后继 generation。
+profile 启动生成一个不可变 `RuntimeResolution`，并将其安装到 Node 的 ESM 与 CommonJS 解析器。runtime 是唯一的解析后端，不提供模式选择器或磁盘物化器。`PluginPackages.replace()` 通过一次引用替换发布完整的后继 generation。
 
 ### 唯一选包算法
 
@@ -64,13 +64,18 @@ ESM `import` 和 CommonJS `require` 都选中这些版本。在每种模块格�
 
 源码启动器不安装 CommonJS TypeScript 钩子。`createRequire().resolve()` 仍选择包发布的 JavaScript 入口，并要求该文件存在。因此，源码模式的解析测试使用 fixture 提供的 CommonJS 文件，真实安装包的 CommonJS 入口检查则在构建产物存在时运行。
 
+<a id="immutable-generations"></a>
 ### 不可变 generation
 
 一个 runtime interception 持有一个 `current` generation。每个同步 resolve 在入口只捕获一次该引用，完整调用只读该引用。generation 构造在发布前读取依赖图所需的全部 manifest；失败时当前 generation 不变。发布成功只替换一个引用，执行中的调用可以继续使用它已捕获的 generation。
 
 选包缓存和包元数据缓存归 generation 所有。发布下一代后，旧 generation 在调用方退出后自然不可达，不逐项清理缓存。profile importer 的命中和原生解析成功结果可以缓存，但 generation 未命中会重新扫描，因此未命中后安装的 profile 本地包会通过原生查找变为可见。linked importer 的路由不缓存，每次解析读取所访问祖先位置当前的 peer 声明。显式 CommonJS paths 完全绕过拦截，非默认 conditions 不复用默认解析缓存。
 
-launcher 只构造启动 generation。服务接受新增型后继 generation，但本实现没有包管理器事务调用替换操作。
+linked root 集合在一个 generation 内不可变。后继 generation 可以增加或移除 root，无需重启进程。目录不再被任何剩余 root 覆盖时，该目录后续的解析使用原生 Node 查询，包括已加载模块发起的新请求。请求可能因此选中开发副本，也可能因缺包而失败。移除拦截不会卸载模块、替换已有引用或清空 Node 自身的缓存。
+
+解析器在自身生命周期内保留每个已成功发布的 link 名称对应的真实目标，仅用于校验后继 generation。移除 root 不会抹掉该记录，也不会让其目录继续被拦截。同名、同目标可以重新加入；不同目标会被拒绝，因为 Node 缓存真实路径。发布失败时，当前 generation 和已记录目标均不变。
+
+launcher 只构造启动 generation。服务接受完整的后继 generation，但本实现没有包管理器事务调用替换操作。
 
 ### ESM 与 CommonJS 共用规则
 
@@ -102,7 +107,7 @@ runtime resolution 列出它提供的包；Loader entries 组成活动插件列�
 
 添加包的调用方先完成 pnpm 事务，再构造下一代。替换操作会拒绝改变任何既有 package name 的目录或版本。调用方先发布只增加映射的后继 generation，再挂载新的 Loader 配置项；本实现不提供该包事务。挂载失败可以留下已安装但未启用的包。
 
-替换、升级或删除已加载包需要重启，因为 Node 的 ESM Module Map、CommonJS cache、现存对象引用和运行中的 Worker 都可能保留旧模块 identity。generation 换代不声称卸载模块。
+修改或删除既有运行时包映射，或删除已记录的 profile 本地包名，需要重启，因为 Node 的 ESM Module Map、CommonJS cache、现存对象引用和运行中的 Worker 都可能保留旧模块 identity。这些限制不禁止从拦截范围移除 linked root。generation 换代不声称卸载模块。
 
 ### 文件系统与运行时载体
 
@@ -137,7 +142,7 @@ generation 构造发生在启动或显式更新阶段，不属于单次 resolve�
 ## Verification
 
 - 一次 eager 计算供应 runtime resolution；启动既不写入也不退休模块解析数据。
-- [Generation 测试](../../../../packages/boot/app-boot/tests/profile-resolution.spec.ts)覆盖普通目录和递归软链接下的安装图与所选 bundle 图，包括逻辑锚点和真实锚点旁存在不同依赖版本的情况。
+- [Generation 测试](../../../../packages/boot/app-boot/tests/profile-resolution.spec.ts)覆盖普通目录和递归软链接下的安装图与所选 bundle 图，包括逻辑锚点和真实锚点旁存在不同依赖版本的情况。测试还覆盖 linked root 移除、同目标恢复、重叠 root、原生缺包、已加载模块的新请求，以及移除后重新链接不同目标时的拒绝。
 - [源码启动测试](../../../../apps/cli/tests/source-launch.compat.spec.ts)与[构建入口测试](../../../../apps/cli/tests/built-bin.e2e.ts)通过真实 CLI 运行两种 profile 布局，断言 ESM/CJS 版本、加载路径、各模块格式内的依赖身份，以及一致的 Tools/AgentLoop 模块实例和可访问的 scheduler 键。
 - pkg 与 Electron 载体选择 runtime 解析；Electron 以 Node 模式从 ASAR 承载的 dsh 依赖树执行 Host，原生可执行条目保持 unpacked。
 - ESM 与 CommonJS 适配器共享同一个路由器，并把最终解析委托给 Node，不使用 `module.registerHooks` 或替换 `_findPath`。
@@ -147,4 +152,4 @@ generation 构造发生在启动或显式更新阶段，不属于单次 resolve�
 
 ## Consequences
 
-runtime 启动避免磁盘修改和代理 manifest，同时保留包优先级规则。真实目录锚点让依赖发现对齐 Node 默认加载与 tsx workspace 映射，也覆盖软链接逻辑路径会选中另一版本的情况。实现需要持续维护 Node Internal 兼容测试，并在每个自有 Worker 中尽早执行自包含 bootstrap；它不提供纯磁盘后端或 dual 对比模式。在产品拥有模块缓存失效和 Worker 重启前，generation 替换只能新增映射。
+runtime 启动避免磁盘修改和代理 manifest，同时保留包优先级规则。真实目录锚点让依赖发现对齐 Node 默认加载与 tsx workspace 映射，也覆盖软链接逻辑路径会选中另一版本的情况。实现需要持续维护 Node Internal 兼容测试，并在每个自有 Worker 中尽早执行自包含 bootstrap；它不提供纯磁盘后端或 dual 对比模式。包映射和本地包名仍只允许新增；linked root 集合可以变化，而不卸载模块。

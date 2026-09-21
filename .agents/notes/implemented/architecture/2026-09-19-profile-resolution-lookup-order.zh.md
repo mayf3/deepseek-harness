@@ -56,7 +56,7 @@ linked 拦截排除 installation 作用域包目录内的 importer，同时识�
 
 更近的物理候选先于后续祖先的 peer 声明。选中包的 `exports` 拒绝请求时，Node 的错误是终局。旧式 CommonJS 子路径缺失可以继续到下一位置，再应用那个目录的 peer 规则；不会重试已被占据位置上的物理副本。每次新的 linked 解析读取所访问位置的 manifest，不缓存选中的路由。不可读的 manifest 不提供 peer，Node 保留其原生 manifest 诊断。这不清除 Node 缓存，也不自动重新加载已加载的模块。
 
-runtime resolution 构造时扫描 `<profile>/node_modules` 的顶层与 `@scope/*` 链接。successor 可以在既有包映射和本地包名约束内新增或移除 linked root；同名 link 换了真实目标则拒绝发布并要求重启，因为 Node 缓存 realpath。依赖的真实路径在所有已记录 linked root 之外时，即使插件链接到它，也不参与拦截。
+runtime resolution 构造时扫描 `<profile>/node_modules` 的顶层与 `@scope/*` 链接。successor 可以在既有包映射和本地包名约束内新增或移除 linked root。移除无需重启：目录不再被任何 root 覆盖时，后续解析恢复原生查询。[Generation 规则](2026-09-09-profile-resolution-generations.zh.md#immutable-generations)定义了发布、已有模块引用，以及跨越移除操作的重新链接检查。依赖的真实路径在所有已记录 linked root 之外时，即使插件链接到它，也不参与拦截。
 
 #### 4. 拦截层里有什么：runtime resolution 的扫描内容
 
