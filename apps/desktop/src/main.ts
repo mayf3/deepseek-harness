@@ -155,7 +155,10 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
   })
   if (primary) {
     window.webContents.on('before-input-event', (event, input) => {
-      if (input.type !== 'keyDown' || input.key !== 'F12' || input.isAutoRepeat) return
+      if (input.type !== 'keyDown' || input.isAutoRepeat) return
+      const macShortcut = process.platform === 'darwin' && input.code === 'KeyI'
+        && input.meta && input.alt && !input.control && !input.shift
+      if (input.key !== 'F12' && !macShortcut) return
       event.preventDefault()
       window.webContents.openDevTools({ mode: 'detach' })
     })

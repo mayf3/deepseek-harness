@@ -386,6 +386,29 @@ describe('desktop main startup', () => {
     expect(contents.openDevTools).toHaveBeenCalledExactlyOnceWith({ mode: 'detach' })
   })
 
+  it.each(['darwin', 'win32'])('handles Command+Option+I only on macOS (platform=%s)', async (platform) => {
+    vi.stubGlobal('process', { ...process, platform })
+    await readyForUpdate()
+    const contents = harness.windows[0]!.webContents
+    const event = { preventDefault: vi.fn() }
+    const input = { type: 'keyDown', key: 'ˆ', code: 'KeyI', meta: true, alt: true,
+      control: false, shift: false, isAutoRepeat: false }
+    for (const change of [
+      { type: 'keyUp' }, { isAutoRepeat: true }, { code: 'KeyJ' },
+      { meta: false }, { alt: false }, { control: true }, { shift: true },
+    ]) contents.emit('before-input-event', event, { ...input, ...change })
+    expect(contents.openDevTools).not.toHaveBeenCalled()
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    contents.emit('before-input-event', event, input)
+    if (platform === 'darwin') {
+      expect(contents.openDevTools).toHaveBeenCalledExactlyOnceWith({ mode: 'detach' })
+      expect(event.preventDefault).toHaveBeenCalledOnce()
+    } else {
+      expect(contents.openDevTools).not.toHaveBeenCalled()
+      expect(event.preventDefault).not.toHaveBeenCalled()
+    }
+  })
+
   it.each([
     ['darwin', true, 'en-US'],
     ['darwin', false, 'zh-CN'],
