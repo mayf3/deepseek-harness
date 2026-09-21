@@ -3,6 +3,7 @@
 export const en = {
   application: 'Application',
   aboutMenu: 'About DeepSeek Harness',
+  aboutProduct: 'DeepSeek Harness',
   aboutVersion: 'Version V{version}',
   hideApplication: 'Hide DeepSeek Harness',
   hideOtherApplications: 'Hide Others',
@@ -99,6 +100,7 @@ export type DesktopMessages = { readonly [Key in keyof typeof en]: string }
 export const zh = {
   application: '应用',
   aboutMenu: '关于 DeepSeek Harness',
+  aboutProduct: 'DeepSeek Harness',
   aboutVersion: '版本 V{version}',
   hideApplication: '隐藏 DeepSeek Harness',
   hideOtherApplications: '隐藏其他',

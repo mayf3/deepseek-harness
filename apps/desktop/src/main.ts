@@ -266,7 +266,7 @@ async function main(): Promise<void> {
   }
   const showAbout = (): Promise<unknown> => {
     const current = currentDesktopLocale().messages
-    return ordinaryMessageBox({ type: 'info', title: current.aboutMenu, message: 'DeepSeek Harness',
+    return ordinaryMessageBox({ type: 'info', title: current.aboutMenu, message: current.aboutProduct,
       detail: formatDesktopMessage(current.aboutVersion, { version: app.getVersion() }),
       buttons: [current.updateAcknowledge], cancelId: 0 })
   }
