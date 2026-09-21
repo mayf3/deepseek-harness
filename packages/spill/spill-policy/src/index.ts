@@ -140,7 +140,7 @@ export function apply(ctx: Context, config: Config): void {
     const retained = await bound(exec, content, exec.name, exec.callId, exec.parent === undefined ? 'result' : 'dispatch')
     if (retained === undefined) return decision
     const additionalContexts = [...decision.additionalContexts ?? []]
-    if (exec.parent !== undefined && hasImages && !retained.some(block => block.type === 'image')) {
+    if (exec.parent !== undefined && !result.isError && hasImages && !retained.some(block => block.type === 'image')) {
       additionalContexts.push(createUserMessage({ content: retained, source: { kind: 'ptc-mode' } }))
     }
     return {

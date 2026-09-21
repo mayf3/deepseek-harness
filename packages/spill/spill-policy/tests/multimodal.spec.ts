@@ -176,9 +176,20 @@ describe('multimodal spill', () => {
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('inconsistent occurrence count'))
   })
 
-  it('preserves the complete PTC value and forwards recovery text when every image is omitted', async () => {
+  it.each([false, true])('forwards omitted-image recovery only for successful PTC results (failure: %s)', async (failure) => {
     const original = [text('A'.repeat(4000)), image(), text('C'.repeat(4000))]
     const { ctx, execute, session } = await setup(original, 200)
+    if (failure) {
+      const attachment = await ctx.attachments.saveImage({ data: PNG, mediaType: 'image/png' })
+      ctx.on('tools/execute', async (exec, next) => {
+        if (exec.name !== 'inspect') return next()
+        await next()
+        return { isError: true, error: { message: 'capture failed' }, content: [
+          { type: 'text', text: 'A'.repeat(4000) }, { type: 'image', attachment },
+          { type: 'text', text: 'C'.repeat(4000) },
+        ] }
+      })
+    }
     class BindingRuntime extends PtcRuntime {
       readonly language = 'typescript'
       readonly isolation = 'fixture'
@@ -186,14 +197,18 @@ describe('multimodal spill', () => {
       async run(spec: PtcRunSpec): Promise<PtcRunResult> {
         const binding = spec.bindings.find(item => item.global === 'tools')?.functions.inspect
         if (binding === undefined) throw new Error('missing inspect binding')
-        const value = await binding({})
-        expect(value).toEqual({ content: original })
+        if (failure) await expect(binding({})).rejects.toThrow('capture failed')
+        else expect(await binding({})).toEqual({ content: original })
         return { logs: [], value: 'complete' }
       }
     }
     await ctx.plugin(BindingRuntime)
     const result = await execute('run_code')
     expect(result.isError).toBe(false)
+    if (failure) {
+      expect(result.additionalContexts).toBeUndefined()
+      return
+    }
     expect(result.additionalContexts).toHaveLength(1)
     const context = result.additionalContexts?.[0]
     expect(context?.content.every(block => block.type === 'text')).toBe(true)
