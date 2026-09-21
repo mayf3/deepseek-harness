@@ -1,10 +1,10 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
+import { notifySubscribers, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {
   ConversationLocation, ConversationNode, ConversationTimelineSnapshot, ConversationViewBuilder,
   ConversationViewDefinition, ConversationGroupInput, GroupNodePosition, NodeChange, NodeKey, PartialAssistant, RunningToolCall,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { ChatConversationViewNode, ChatNode } from '../contract/chat-nodes.ts'
+import type { ChatConversationViewNode, ChatNode, ChatNodeDataMap, ChatNodeKind } from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
 import { isVisibleChatNode } from '../contract/chat-visibility.ts'
 import type {
@@ -66,6 +66,42 @@ class MutableChatSource<Value> {
 }
 /* jscpd:ignore-end */
 
+/** Membership is indexed on write; ordered arrays are materialized only for observed collections. */
+class TurnKindNodes {
+  private readonly nodes = new Map<string, ChatConversationViewNode>()
+  private current: readonly unknown[] = EMPTY_LIST
+  private dirty = false
+  private observable: MutableChatSource<readonly unknown[]> | undefined
+
+  source(): ObservableSnapshot<readonly unknown[]> {
+    return this.observable ??= new MutableChatSource(() => this.read(), '[ui-chat] turn kind nodes')
+  }
+
+  set(node: ChatConversationViewNode): void {
+    const previous = this.nodes.get(node.key)
+    this.nodes.set(node.key, node)
+    if (previous !== undefined && previous.data === node.data && previous.anchorSeq === node.anchorSeq) return
+    this.dirty = true
+  }
+
+  delete(key: string): void {
+    this.nodes.delete(key)
+    this.dirty = true
+  }
+
+  publish(): void {
+    this.observable?.publish()
+  }
+
+  private read(): readonly unknown[] {
+    if (this.dirty) {
+      this.current = [...this.nodes.values()].sort((a, b) => a.anchorSeq - b.anchorSeq).map(node => node.data)
+      this.dirty = false
+    }
+    return this.current
+  }
+}
+
 class MutableChatNodeStore implements ChatNodeStore {
   private readonly byKey = new Map<string, ChatConversationViewNode>()
   private readonly turnProcesses = new ChatTurnProcessProjector()
@@ -73,6 +109,8 @@ class MutableChatNodeStore implements ChatNodeStore {
   private readonly processSources = new Map<string, MutableChatSource<ChatTurnProcessPresentation | undefined>>()
   private readonly dirtyKeys = new Set<string>()
   private readonly dirtyProcessKeys = new Set<string>()
+  private readonly turnKinds = new Map<number, Map<string, TurnKindNodes>>()
+  private readonly dirtyTurnKinds = new Set<TurnKindNodes>()
   private valuesCache: readonly ChatConversationViewNode[] = EMPTY_LIST
   private valuesDirty = false
 
@@ -85,6 +123,30 @@ class MutableChatNodeStore implements ChatNodeStore {
       () => this.get(key),
       `[ui-chat] node source ${key}`,
     ))
+  }
+
+  turnDataSource<Kind extends ChatNodeKind>(turn: number, kind: Kind): ObservableSnapshot<readonly ChatNodeDataMap[Kind][]> {
+    return this.turnKind(turn, kind).source() as ObservableSnapshot<readonly ChatNodeDataMap[Kind][]>
+  }
+
+  private turnKind(turn: number, kind: string): TurnKindNodes {
+    const kinds = cachedSource(this.turnKinds, turn, () => new Map<string, TurnKindNodes>())
+    return cachedSource(kinds, kind, () => new TurnKindNodes())
+  }
+
+  private updateTurnKind(previous: ChatConversationViewNode | undefined, next: ChatConversationViewNode | undefined): void {
+    const before = previous === undefined ? undefined : locationCoordinates(previous.location).turn
+    const after = next === undefined ? undefined : locationCoordinates(next.location).turn
+    if (previous !== undefined && before !== undefined && (before !== after || previous.kind !== next?.kind)) {
+      const collection = this.turnKind(before, previous.kind)
+      collection.delete(previous.key)
+      this.dirtyTurnKinds.add(collection)
+    }
+    if (next !== undefined && after !== undefined) {
+      const collection = this.turnKind(after, next.kind)
+      collection.set(next)
+      this.dirtyTurnKinds.add(collection)
+    }
   }
 
   processSource(key: string): ChatNodeProcessSource {
@@ -112,12 +174,14 @@ class MutableChatNodeStore implements ChatNodeStore {
     for (const node of nodes) {
       this.byKey.set(node.key, node)
       if (previous.get(node.key) !== node) {
+        this.updateTurnKind(previous.get(node.key), node)
         this.dirtyKeys.add(node.key)
         this.dirtyProcessKeys.add(node.key)
       }
       previous.delete(node.key)
     }
     for (const key of previous.keys()) {
+      this.updateTurnKind(previous.get(key), undefined)
       this.dirtyKeys.add(key)
       this.dirtyProcessKeys.add(key)
     }
@@ -129,6 +193,7 @@ class MutableChatNodeStore implements ChatNodeStore {
     let changed = false
     for (const node of nodes) {
       if (this.byKey.get(node.key) === node) continue
+      this.updateTurnKind(this.byKey.get(node.key), node)
       this.byKey.set(node.key, node)
       this.dirtyKeys.add(node.key)
       this.dirtyProcessKeys.add(node.key)
@@ -154,10 +219,13 @@ class MutableChatNodeStore implements ChatNodeStore {
   publish(): void {
     const dirty = [...this.dirtyKeys]
     const dirtyProcesses = [...this.dirtyProcessKeys]
+    const dirtyTurnKinds = [...this.dirtyTurnKinds]
     this.dirtyKeys.clear()
     this.dirtyProcessKeys.clear()
+    this.dirtyTurnKinds.clear()
     for (const key of dirty) this.sources.get(key)?.publish()
     for (const key of dirtyProcesses) this.processSources.get(key)?.publish()
+    for (const collection of dirtyTurnKinds) collection.publish()
   }
 }
 

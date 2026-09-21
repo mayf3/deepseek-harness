@@ -117,6 +117,10 @@ class FixtureNodeStore implements ChatNodeStore {
     return cachedSource(this.sources, key, () => new FixtureSource(() => this.get(key)))
   }
 
+  turnDataSource(): never {
+    throw new Error('turn collections require the real ChatSnapshotBuilder')
+  }
+
   processSource(key: string): ChatNodeProcessSource {
     return cachedSource(this.processSources, key, () => new FixtureSource(() => this.process(key)))
   }

@@ -12,6 +12,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { EMPTY_CHAT_SNAPSHOT } from '../../ui-chat/src/client/contract/snapshot.ts'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { PlanChip } from '../src/client/PlanModeControl.tsx'
 import { PlanCards, PlanReviewOpen, type PlanOpenInjected, type PlanReviewOpenInjected } from '../src/client/PlanCard.tsx'
@@ -26,7 +27,8 @@ import { createSidebarRightStore } from '@deepseek-ai/dsh-client-ui-sidebar-righ
 
 function providePreview(ctx: Context) {
   const events = new ConversationEventRegistry(ctx)
-  ctx.provide('uiConversation', { events })
+  const chat = createSnapshotStore(EMPTY_CHAT_SNAPSHOT)
+  ctx.provide('uiConversation', { events, binding: () => ({ target: () => chat }) })
   const removeResources = vi.fn()
   const removeType = vi.fn()
   const registerType = vi.fn<Context['sidebarRightTabs']['register']>(() => removeType)
@@ -34,7 +36,7 @@ function providePreview(ctx: Context) {
   const openResource = vi.fn<Context['sidebarRight']['openResource']>()
   const mounted = createSnapshotStore<SessionId | undefined>(undefined)
   const subagentAddress = vi.fn<Context['sessions']['subagentAddress']>(() => undefined)
-  ctx.provide('sessions', { subagentAddress })
+  ctx.provide('sessions', { subagentAddress, binding: () => ({}) })
   ctx.provide('resources', { register: vi.fn(() => removeResources) })
   ctx.provide('sidebarRightTabs', { register: registerType })
   ctx.provide('sidebarRight', { openResourceIn, openResource, mounted })
