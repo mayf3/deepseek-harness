@@ -10,15 +10,17 @@
  * settles like Enter, and Escape and Shift+Tab leave a drilled pane first and
  * otherwise close back to the trigger. A drilled pane hands focus to the row
  * of the effort in use or the model search field. Model names match a
- * case-insensitive ordered subsequence within each provider group. Returning
- * to the root pane hands focus back to the cell that opened it. Data and
- * submission ride the SAME per-session ModelDirectory as the /model popup; exact-model reasoning metadata and the
- * selected effort come from the Host rather than a client-owned vocabulary. A
- * rejected selection announces through the shared transient Toast anchored to
- * the composer card; the in-menu strip with Retry remains the catalog-load
- * surface. While the directory's pending selection is unsettled, the trigger
- * shows a spinner in place of its chevron, and each row whose value that
- * selection carries shows one in place of its check mark.
+ * case-insensitive ordered subsequence within each provider group, ranked by
+ * prefix, alignment score, then catalog order. Returning to the root pane
+ * hands focus back to the cell that opened it. Data and submission ride the
+ * same per-session ModelDirectory as the /model popup; exact-model reasoning
+ * metadata and the selected effort come from the Host rather than a
+ * client-owned vocabulary. A rejected selection announces through the shared
+ * transient Toast anchored to the composer card; the in-menu strip with
+ * Retry remains the catalog-load surface. While the directory's pending
+ * selection is unsettled, the trigger shows a spinner in place of its
+ * chevron, and each row whose value that selection carries shows one in place
+ * of its check mark.
  */
 import { MenuSurface } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
@@ -409,7 +411,7 @@ export function ModelSelect(
           id={`${id}-menu`}
           className={css.menu}
           style={menuPos ?? MEASURE_STYLE}
-          role="menu"
+          role={pane === 'model' ? 'group' : 'menu'}
           aria-label={t('menu.aria')}
           aria-busy={state.status === 'loading' || busy}
         >
@@ -456,7 +458,12 @@ export function ModelSelect(
                   <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
                 </div>
               ))}
-              <div className={clsx(css.groups, 'scrollable')}>
+              <div
+                className={clsx(css.groups, 'scrollable')}
+                role="menu"
+                aria-label={t('menu.model')}
+                hidden={filteredGroups.length === 0}
+              >
                 {filteredGroups.map((group) => {
                   const headingId = `${id}-${group.id}`
                   return (
