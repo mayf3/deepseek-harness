@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { languageForPath } from '@deepseek-ai/dsh-util-code-language'
+import { CODE_HIGHLIGHT_EXTENSIONS, languageForPath } from '@deepseek-ai/dsh-util-code-language'
 import { buildWindow, langFromPath, readMetaFromMeta, READ_MAX_BYTES, READ_MAX_LINE_LENGTH } from '../src/read-render.ts'
 import type { ReadWindow } from '../src/read-render.ts'
 
@@ -118,30 +118,77 @@ describe('buildWindow', () => {
   })
 })
 
+/**
+ * The pre-unification read table's extension-to-hint mapping, transcribed
+ * verbatim. A read card persisted one of these strings, so changing any value
+ * changes replay-visible output for an already-recorded session.
+ */
+const MASTER_READ_LANG_BY_EXTENSION: Readonly<Record<string, string>> = {
+  ts: 'ts', tsx: 'tsx', mts: 'ts', cts: 'ts',
+  js: 'js', jsx: 'jsx', mjs: 'js', cjs: 'js',
+  json: 'json', jsonc: 'json',
+  py: 'py', rb: 'rb', go: 'go', rs: 'rs', java: 'java',
+  c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', hpp: 'cpp', cxx: 'cpp',
+  cs: 'cs', kt: 'kotlin', swift: 'swift', php: 'php',
+  sh: 'sh', bash: 'sh', zsh: 'sh',
+  yaml: 'yaml', yml: 'yaml', toml: 'toml', ini: 'ini',
+  md: 'md', markdown: 'md', mdx: 'mdx',
+  html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
+  sql: 'sql', xml: 'xml', lua: 'lua',
+}
+
 describe('langFromPath', () => {
-  it('resolves through the one shared extension table, never a local copy', () => {
-    // The read card and the Client code surfaces must agree on every path; a
-    // local table re-introduced on either side makes one of these identity
-    // assertions fail before the two can drift in language hints.
-    expect(langFromPath).toBe(languageForPath)
-    for (const path of ['src/a.ts', 'conf.yml', 'README.md', 'build.PS1', 'C:\\src\\main.rs']) {
-      expect(langFromPath(path), path).toBe(languageForPath(path))
+  it('keeps every pre-unification suffix byte-identical to the old persisted hint', () => {
+    expect(Object.keys(MASTER_READ_LANG_BY_EXTENSION)).toHaveLength(43)
+    for (const [extension, hint] of Object.entries(MASTER_READ_LANG_BY_EXTENSION)) {
+      expect(langFromPath(`file.${extension}`), extension).toBe(hint)
     }
   })
 
-  it('maps a known extension to its canonical language id, case-insensitively', () => {
-    expect(langFromPath('src/a.ts')).toBe('typescript')
-    expect(langFromPath('src/a.TSX')).toBe('typescript')
-    expect(langFromPath('/abs/module.mjs')).toBe('javascript')
+  it('uses the shared canonical id for every suffix the old read table did not know', () => {
+    // The legacy projection is keyed by exactly the old extensions, so a suffix
+    // the shared table adds later must fall through to its canonical id instead
+    // of inheriting a stale short hint.
+    const legacy = new Set(Object.keys(MASTER_READ_LANG_BY_EXTENSION))
+    for (const extension of CODE_HIGHLIGHT_EXTENSIONS) {
+      if (legacy.has(extension)) continue
+      expect(langFromPath(`file.${extension}`), extension).toBe(languageForPath(`file.${extension}`))
+    }
+  })
+
+  it('gives a newly added suffix its shared canonical id', () => {
+    // These suffixes were undefined in the old build, so they are free to carry
+    // the canonical grammar id instead of a short hint.
+    expect(langFromPath('build.ps1')).toBe('powershell')
+    expect(langFromPath('deploy.bat')).toBe('bat')
+    expect(langFromPath('.env')).toBe('dotenv')
+    expect(langFromPath('server.log')).toBe('log')
+    expect(langFromPath('message.proto')).toBe('proto')
+    expect(langFromPath('infra.tf')).toBe('hcl')
+    expect(langFromPath('paper.tex')).toBe('latex')
+  })
+
+  it('maps a known extension to its old short hint, case-insensitively', () => {
+    expect(langFromPath('src/a.ts')).toBe('ts')
+    expect(langFromPath('src/a.TSX')).toBe('tsx')
+    expect(langFromPath('/abs/module.mjs')).toBe('js')
     expect(langFromPath('conf.yml')).toBe('yaml')
-    expect(langFromPath('README.md')).toBe('markdown')
+    expect(langFromPath('README.md')).toBe('md')
+  })
+
+  it('keeps the canonical ids the Client code surfaces use out of the persisted hint', () => {
+    // The Client reads the shared table directly; only this projection owns the
+    // persisted value, so the two intentionally differ for the old suffixes.
+    expect(languageForPath('src/a.ts')).toBe('typescript')
+    expect(languageForPath('README.md')).toBe('markdown')
+    expect(langFromPath('src/a.ts')).not.toBe(languageForPath('src/a.ts'))
   })
 
   it('reads the extension after the last path segment and last dot', () => {
     expect(langFromPath('a.py.bak')).toBeUndefined()
     expect(langFromPath('archive.tar.gz')).toBeUndefined()
     expect(langFromPath('/dir.py/plain')).toBeUndefined()
-    expect(langFromPath('C:\\src\\main.rs')).toBe('rust')
+    expect(langFromPath('C:\\src\\main.rs')).toBe('rs')
   })
 
   it('returns undefined for a dotfile, an extensionless name, and an unknown extension', () => {

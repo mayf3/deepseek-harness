@@ -2,9 +2,9 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, renderHook, waitFor } from '@testing-library/react'
-import { languageForPath as sharedLanguageForPath } from '@deepseek-ai/dsh-util-code-language'
+import { languageForPath as sharedLanguageForPath, readLangHintForPath } from '@deepseek-ai/dsh-util-code-language'
 import { CODE_HIGHLIGHT_EXTENSIONS, languageForPath, useCodeHighlighter } from '../src/code-highlighting.ts'
-import { supportsHighlighting } from '../src/markdown/highlight.ts'
+import { grammarForHint, supportsHighlighting } from '../src/markdown/highlight.ts'
 
 afterEach(cleanup)
 
@@ -28,7 +28,7 @@ describe('code highlighting', () => {
   it.each([
     ['build.bat', 'bat'], ['build.cmd', 'bat'], ['deploy.ps1', 'powershell'],
     ['module.psm1', 'powershell'], ['config.fish', 'fish'], ['app.properties', 'ini'],
-    ['app.conf', 'ini'], ['.env', 'dotenv'], ['server.log', 'log'], ['rows.csv', 'csv'],
+    ['app.conf', 'ini'], ['.env', 'dotenv'], ['server.log', 'log'],
     ['change.diff', 'diff'], ['fix.patch', 'diff'], ['api.http', 'http'], ['notebook.ipynb', 'json'],
     ['guide.rst', 'rst'], ['paper.tex', 'latex'], ['style.sty', 'latex'], ['doc.cls', 'latex'],
     ['refs.bib', 'bibtex'], ['Info.plist', 'xml'], ['logo.svg', 'xml'], ['manual.adoc', 'asciidoc'],
@@ -46,9 +46,23 @@ describe('code highlighting', () => {
   })
 
   it('resolves through the one shared extension table, never a local copy', () => {
-    // A second table re-introduced here fails this identity assertion before it
-    // can drift from the read card's file-extension hints.
+    // A second canonical table re-introduced here fails this identity assertion
+    // before it can drift from the shared extension table.
     expect(languageForPath).toBe(sharedLanguageForPath)
+  })
+
+  it('reaches one grammar from the shared canonical id and the read card legacy hint', () => {
+    // The read card persists the old short ids while this surface reads the
+    // canonical table directly; both must select the same grammar, so a
+    // persisted hint can never render differently from this surface's own
+    // selection. This is the alias-normalized check the identity assertion
+    // cannot make now that the read projection intentionally differs.
+    for (const extension of CODE_HIGHLIGHT_EXTENSIONS) {
+      const path = `file.${extension}`
+      const readHint = readLangHintForPath(path)
+      expect(readHint, extension).toBeDefined()
+      expect(grammarForHint(readHint), extension).toBe(grammarForHint(languageForPath(path)))
+    }
   })
 
   it('keeps every registered suffix highlightable by the shared primitive', () => {

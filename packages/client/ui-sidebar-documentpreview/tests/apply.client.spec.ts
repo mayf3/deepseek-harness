@@ -77,7 +77,7 @@ async function boot() {
   const fiber = ctx.plugin({ inject: [...inject], apply })
   onTestFinished(async () => { await fiber.dispose() })
   await fiber.await()
-  return { tabs, registered, dictionaries, fiber, read, readBytes }
+  return { ctx, tabs, registered, dictionaries, fiber, read, readBytes }
 }
 
 describe('ui-sidebar-documentpreview apply', () => {
@@ -112,6 +112,36 @@ describe('ui-sidebar-documentpreview apply', () => {
     expect(tabs.get(TEXTPREVIEW_KIND)).toBeUndefined()
     expect(registered).toEqual([])
     expect(dictionaries.size).toBe(0)
+  })
+
+  it('leaves every declared suffix with its owning preview and never lets the shared highlighter claim a later viewer\'s suffix', async () => {
+    const { ctx } = await boot()
+    const previews = ctx.get('documentPreviews')
+    if (previews === undefined) throw new Error('documentPreviews was not provided')
+    // apply() registers in production order: text, markdown, html, image, pdf,
+    // code, office, excel. The shared Code body is the generic highlighter, so
+    // where it collides with an EARLIER dedicated body the earlier body keeps the
+    // suffix; any other collision means a later dedicated viewer lost a suffix it
+    // must render. Listing csv under Code makes Spreadsheet the loser.
+    const sharedHighlighter = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code'
+    const owners = new Map<string, string>()
+    for (const definition of previews.getSnapshot()) {
+      for (const extension of new Set([...definition.extensions, ...definition.binaryExtensions ?? []])) {
+        const winner = previews.candidates(`file.${extension}`)[0]
+        const earlier = owners.get(extension)
+        if (earlier === undefined) {
+          expect(winner?.id, `${definition.id} declares .${extension}`).toBe(definition.id)
+        } else {
+          expect(winner?.id, `.${extension} must stay with the earlier ${earlier}`).toBe(earlier)
+          expect(definition.id, `later body ${definition.id} must not collide on .${extension}`).toBe(sharedHighlighter)
+        }
+        owners.set(extension, earlier ?? definition.id)
+      }
+    }
+    // Delimited spreadsheets stay with the Spreadsheet viewer, not the Code body.
+    const excel = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/excel'
+    expect(previews.candidates('table.csv')[0]?.id).toBe(excel)
+    expect(previews.candidates('table.tsv')[0]?.id).toBe(excel)
   })
 
   it('injects paged and byte Remote reads independently of resource metadata', async () => {

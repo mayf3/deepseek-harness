@@ -170,14 +170,17 @@ ${body}
 }
 
 /**
- * Derive a syntax-highlighting language id from a read path's file extension via
- * the extension table shared with the Client code surfaces; see
- * `@deepseek-ai/dsh-util-code-language` for the table and the path rules (both
- * separators, a leading dot as the extension separator, and prototype-key safety).
+ * Derive the persisted `lang` hint from a read path's file extension. The shared
+ * table in `@deepseek-ai/dsh-util-code-language` owns the recognized suffixes and
+ * the path rules (both separators, a leading dot as the extension separator, and
+ * prototype-key safety); `readLangHintForPath` projects the read card's
+ * historical short ids over it, so a suffix the pre-unification read table
+ * recognized keeps its byte-identical old value while a newly added suffix uses
+ * the canonical id.
  * @param path - the model-facing path the read reported.
- * @returns the language id, or `undefined` when the extension maps to none.
+ * @returns the persisted language hint, or `undefined` when the extension maps to none.
  */
-export { languageForPath as langFromPath } from '@deepseek-ai/dsh-util-code-language'
+export { readLangHintForPath as langFromPath } from '@deepseek-ai/dsh-util-code-language'
 
 /**
  * The `read` tool's private `tool/result` `meta` payload: the structured

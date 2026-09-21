@@ -231,12 +231,21 @@ const LANG_ALIASES = new Map<string, string>([
 ])
 
 /**
+ * Resolve a language hint to the grammar id {@link LANG_ALIASES} selects.
+ * @param lang - Language hint from a code surface: a shared canonical id or a legacy read-card hint.
+ * @returns The resolved grammar id, or `undefined` when the table aliases no grammar.
+ */
+export function grammarForHint(lang: string | undefined): string | undefined {
+  return lang === undefined ? undefined : LANG_ALIASES.get(lang.toLowerCase())
+}
+
+/**
  * Whether a language hint can use the shared syntax highlighter.
  * @param lang - Language hint from a code surface.
  * @returns Whether the hint resolves to a supported grammar.
  */
 export function supportsHighlighting(lang: string | undefined): boolean {
-  return lang !== undefined && LANG_ALIASES.has(lang.toLowerCase())
+  return grammarForHint(lang) !== undefined
 }
 
 /** All token colors resolve through `--shiki-*` custom properties (theme package sheets). */

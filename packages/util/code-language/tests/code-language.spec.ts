@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CODE_HIGHLIGHT_EXTENSIONS, languageForPath } from '../src/index.ts'
+import { CODE_HIGHLIGHT_EXTENSIONS, languageForPath, readLangHintForPath } from '../src/index.ts'
 
 describe('languageForPath', () => {
   it.each([
@@ -8,7 +8,7 @@ describe('languageForPath', () => {
     ['module.psm1', 'powershell'], ['data.psd1', 'powershell'], ['config.fish', 'fish'],
     // Config, data, and text extensions.
     ['app.properties', 'ini'], ['app.conf', 'ini'], ['app.cfg', 'ini'],
-    ['.env', 'dotenv'], ['server.log', 'log'], ['rows.csv', 'csv'],
+    ['.env', 'dotenv'], ['server.log', 'log'],
     ['change.diff', 'diff'], ['fix.patch', 'diff'], ['api.http', 'http'],
     ['notebook.ipynb', 'json'],
     // Documentation and markup extensions.
@@ -77,6 +77,51 @@ describe('languageForPath', () => {
   it('leaves certificate and lock extensions unlisted', () => {
     for (const extension of ['pem', 'crt', 'key', 'cer', 'lock']) {
       expect(languageForPath(`secret.${extension}`), extension).toBeUndefined()
+    }
+  })
+
+  it('leaves delimited-spreadsheet suffixes to the Spreadsheet preview', () => {
+    // The Code preview registers before the Spreadsheet preview, so listing csv
+    // here would make Code the earlier candidate and steal the suffix from the
+    // viewer that must render it.
+    for (const extension of ['csv', 'tsv']) {
+      expect(languageForPath(`table.${extension}`), extension).toBeUndefined()
+    }
+  })
+})
+
+describe('readLangHintForPath', () => {
+  it('keeps the read card pre-unification short hints for the old suffixes', () => {
+    expect(readLangHintForPath('src/a.ts')).toBe('ts')
+    expect(readLangHintForPath('src/a.tsx')).toBe('tsx')
+    expect(readLangHintForPath('src/a.mts')).toBe('ts')
+    expect(readLangHintForPath('src/a.cts')).toBe('ts')
+    expect(readLangHintForPath('src/a.js')).toBe('js')
+    expect(readLangHintForPath('src/a.jsx')).toBe('jsx')
+    expect(readLangHintForPath('src/a.mjs')).toBe('js')
+    expect(readLangHintForPath('src/a.cjs')).toBe('js')
+    expect(readLangHintForPath('src/a.jsonc')).toBe('json')
+    expect(readLangHintForPath('src/a.cc')).toBe('cpp')
+    expect(readLangHintForPath('src/a.hpp')).toBe('cpp')
+    expect(readLangHintForPath('src/a.sh')).toBe('sh')
+    expect(readLangHintForPath('src/a.kt')).toBe('kotlin')
+    expect(readLangHintForPath('README.md')).toBe('md')
+    expect(readLangHintForPath('README.markdown')).toBe('md')
+    expect(readLangHintForPath('page.htm')).toBe('html')
+  })
+
+  it('uses the canonical id for a suffix added after the old read table', () => {
+    expect(readLangHintForPath('build.ps1')).toBe('powershell')
+    expect(readLangHintForPath('.env')).toBe('dotenv')
+    expect(readLangHintForPath('infra.tf')).toBe('hcl')
+    expect(readLangHintForPath('paper.tex')).toBe('latex')
+    expect(readLangHintForPath('server.log')).toBe('log')
+    expect(readLangHintForPath('message.proto')).toBe('proto')
+  })
+
+  it('returns undefined exactly when the shared table does not recognize the suffix', () => {
+    for (const path of ['.gitignore', '/etc/hosts', 'trailingdot.', 'data.unknownext', 'foo.constructor']) {
+      expect(readLangHintForPath(path), path).toBeUndefined()
     }
   })
 })

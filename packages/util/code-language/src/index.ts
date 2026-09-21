@@ -5,6 +5,9 @@
  * highlighter's alias table resolves, so a language returned here reaches
  * `highlightLines`/`highlightToHtml` unchanged; a filename outside the table, or
  * one naming a language the highlighter does not register, renders as plain text.
+ * The read card predates the shared table, so {@link readLangHintForPath} projects
+ * its historical short ids over this table for the suffixes the old read table
+ * already recognized, keeping those persisted values byte-identical.
  * @module @deepseek-ai/dsh-util-code-language
  */
 
@@ -17,7 +20,9 @@
  * grammar does not exist map to the nearest available grammar
  * (`properties` to `ini`, whose registration carries the `properties` alias) or
  * stay unlisted. Certificate and lock extensions (`pem`, `crt`, `key`, `cer`,
- * `lock`) intentionally stay unlisted.
+ * `lock`) stay unlisted, and `csv` is deliberately absent: the Spreadsheet
+ * preview declares it and must keep it, so listing it here would let the earlier
+ * Code registration take the suffix.
  */
 const LANGUAGE_EXTENSIONS: Readonly<Record<string, readonly string[]>> = {
   typescript: ['ts', 'tsx', 'mts', 'cts'],
@@ -41,7 +46,6 @@ const LANGUAGE_EXTENSIONS: Readonly<Record<string, readonly string[]>> = {
   ini: ['ini', 'conf', 'cfg', 'properties'],
   dotenv: ['env'],
   log: ['log'],
-  csv: ['csv'],
   diff: ['diff', 'patch'],
   http: ['http'],
   markdown: ['md', 'markdown'],
@@ -96,6 +100,34 @@ const LANGUAGES = new Map(Object.entries(LANGUAGE_EXTENSIONS)
 export const CODE_HIGHLIGHT_EXTENSIONS: readonly string[] = [...LANGUAGES.keys()]
 
 /**
+ * The read card's historical short language hints for the suffixes its
+ * pre-unification table recognized. Keys are shared-table extensions, so the
+ * recognized set still derives from {@link LANGUAGE_EXTENSIONS}; values preserve
+ * the old persisted `lang` strings byte for byte. An extension absent here but
+ * present in the shared table is new and uses its canonical id.
+ */
+const READ_LANG_BY_EXTENSION = new Map<string, string>(Object.entries({
+  ts: 'ts', tsx: 'tsx', mts: 'ts', cts: 'ts',
+  js: 'js', jsx: 'jsx', mjs: 'js', cjs: 'js',
+  json: 'json', jsonc: 'json',
+  py: 'py', rb: 'rb', go: 'go', rs: 'rs', java: 'java',
+  c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', hpp: 'cpp', cxx: 'cpp',
+  cs: 'cs', kt: 'kotlin', swift: 'swift', php: 'php',
+  sh: 'sh', bash: 'sh', zsh: 'sh',
+  yaml: 'yaml', yml: 'yaml', toml: 'toml', ini: 'ini',
+  md: 'md', markdown: 'md', mdx: 'mdx',
+  html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
+  sql: 'sql', xml: 'xml', lua: 'lua',
+}))
+
+function extensionForPath(path: string): string | undefined {
+  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  const base = path.slice(slash + 1)
+  const dot = base.lastIndexOf('.')
+  return dot < 0 ? undefined : base.slice(dot + 1).toLowerCase()
+}
+
+/**
  * Derive the syntax-highlighting language from a filename or path, case
  * insensitively. The extension is the text after the last dot of the final path
  * segment; a leading dot is still the separator, so `.env` resolves to `dotenv`
@@ -106,9 +138,23 @@ export const CODE_HIGHLIGHT_EXTENSIONS: readonly string[] = [...LANGUAGES.keys()
  * @returns the canonical language id, or `undefined` for an unrecognized or absent suffix.
  */
 export function languageForPath(path: string): string | undefined {
-  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  const base = path.slice(slash + 1)
-  const dot = base.lastIndexOf('.')
-  if (dot < 0) return undefined
-  return LANGUAGES.get(base.slice(dot + 1).toLowerCase())
+  const extension = extensionForPath(path)
+  return extension === undefined ? undefined : LANGUAGES.get(extension)
+}
+
+/**
+ * Derive the Host read card's persisted `lang` hint from a read path's
+ * extension. This is the legacy projection the read card writes: a suffix the
+ * pre-unification read table recognized keeps its old short id (`ts`, `md`,
+ * `cpp`, …), while a suffix only the shared table knows (`.ps1`, `.env`,
+ * `.tf`, …) yields its canonical id. An unrecognized suffix stays
+ * `undefined`, so the card renders as plain text.
+ * @param path - the model-facing path the read reported.
+ * @returns the persisted language hint, or `undefined` when the extension maps to none.
+ */
+export function readLangHintForPath(path: string): string | undefined {
+  const extension = extensionForPath(path)
+  if (extension === undefined) return undefined
+  const canonical = LANGUAGES.get(extension)
+  return canonical === undefined ? undefined : READ_LANG_BY_EXTENSION.get(extension) ?? canonical
 }
