@@ -12,7 +12,7 @@ Creator 和 Web Plugin Manager 在 Electron Node 模式下使用 Desktop 内置 
 
 桌面麦克风访问仅允许主 `dsh-app://app` 页面发起的音频请求。macOS 使用系统麦克风授权与随包用途说明。
 
-主应用页面获得焦点时，按 F12（多媒体功能键键盘上为 Fn+F12）或 macOS 的 Command+Option+I 可打开独立的 Renderer DevTools，打包版本同样支持。更新遮罩存在时，这些快捷键不会生效；内嵌浏览器获得焦点时，按键不会传递到主窗口。
+按 F12（多媒体功能键键盘上为 Fn+F12）、macOS 的 Command+Option+I 或 Windows 的 Ctrl+Shift+I，可切换当前获得焦点的应用页面的 DevTools，打包版本同样支持。这些原生快捷键通过隐藏的应用菜单项注册。更新遮罩和打包版本的内嵌浏览器禁用 DevTools。
 
 ## 关键技术决策
 

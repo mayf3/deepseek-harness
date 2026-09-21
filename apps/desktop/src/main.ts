@@ -1,4 +1,3 @@
-import { installDevToolsShortcut } from './devtools-shortcut.ts'
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
@@ -152,10 +151,9 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
       sandbox: true,
       webSecurity: true,
       webviewTag: primary,
-      devTools: primary,
+      devTools: true,
     },
   })
-  if (primary) installDevToolsShortcut(window.webContents)
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (['http:', 'https:'].includes(new URL(url).protocol)) void shell.openExternal(url)
     return { action: 'deny' }
@@ -675,9 +673,13 @@ async function main(): Promise<void> {
     { role: 'quit', ...(darwin ? { label: currentDesktopLocale().messages.quitApplication }
       : process.platform === 'win32' ? { label: currentDesktopLocale().messages.exitApplication } : {}) },
   ]
-  Menu.setApplicationMenu(process.platform === 'win32' ? null : Menu.buildFromTemplate([{
+  const devToolsItems: MenuItemConstructorOptions[] = [
+    { role: 'toggleDevTools', visible: false },
+    { role: 'toggleDevTools', visible: false, accelerator: 'F12' },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(process.platform === 'win32' ? devToolsItems : [{
     label: darwin ? app.name : currentDesktopLocale().messages.application,
-    submenu: applicationItems(),
+    submenu: [...applicationItems(), ...devToolsItems],
   }, ...platformMenus]))
 
   if (process.platform === 'win32') {

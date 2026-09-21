@@ -78,6 +78,11 @@ it('opens only the Feishu login window DevTools on a single F12 keydown', () => 
   const press = (type: string, key: string, isAutoRepeat = false) => {
     window.webContents.emit('before-input-event', { preventDefault }, { type, key, isAutoRepeat })
   }
+  press('keyDown', 'F11')
+  press('keyUp', 'F12')
+  press('keyDown', 'F12', true)
+  expect(window.webContents.openDevTools).not.toHaveBeenCalled()
+  expect(preventDefault).not.toHaveBeenCalled()
   press('keyDown', 'F12')
   expect(preventDefault).toHaveBeenCalledOnce()
   expect(window.webContents.openDevTools).toHaveBeenCalledExactlyOnceWith({ mode: 'detach' })

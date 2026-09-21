@@ -1,8 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { expect, it, vi } from 'vitest'
 import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron'
-import { installDevToolsShortcut } from '../src/devtools-shortcut.ts'
-import { createUpdateOverlay, hasUpdateOverlay } from '../src/update-overlay.ts'
+import { createUpdateOverlay } from '../src/update-overlay.ts'
 
 const native = vi.hoisted(() => ({ create: vi.fn<(options: BrowserWindowConstructorOptions) => object>() }))
 vi.mock('electron', () => ({ BrowserWindow: function (options: object) { return native.create(options) } }))
@@ -11,7 +10,7 @@ it('keeps the macOS mandatory overlay stationary and blocks parent keyboard inpu
   const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
   const parent = Object.assign(new EventEmitter(), {
     getContentBounds: () => ({ x: 0, y: 0, width: 1000, height: 700 }),
-    webContents: Object.assign(new EventEmitter(), { insertCSS: vi.fn(async () => 'blur'), removeInsertedCSS: vi.fn(async () => {}), openDevTools: vi.fn() }),
+    webContents: Object.assign(new EventEmitter(), { insertCSS: vi.fn(async () => 'blur'), removeInsertedCSS: vi.fn(async () => {}) }),
     isDestroyed: () => false,
   })
   const window = Object.assign(new EventEmitter(), {
@@ -20,23 +19,15 @@ it('keeps the macOS mandatory overlay stationary and blocks parent keyboard inpu
   })
   native.create.mockReturnValue(window)
   try {
-    installDevToolsShortcut(parent.webContents)
     createUpdateOverlay(parent as unknown as BrowserWindow, 'owned', 'Update required', false)
-    expect(native.create).toHaveBeenLastCalledWith(expect.objectContaining({ modal: false, transparent: true, frame: false }))
+    expect(native.create).toHaveBeenLastCalledWith(expect.objectContaining({ modal: false, transparent: true, frame: false,
+      webPreferences: expect.objectContaining({ devTools: false }) }))
     const event = { preventDefault: vi.fn() }
-    expect(hasUpdateOverlay(parent.webContents)).toBe(true)
-    parent.webContents.emit('before-input-event', event, { type: 'keyDown', key: 'F12' })
-    expect(parent.webContents.openDevTools).not.toHaveBeenCalled()
-    parent.webContents.emit('before-input-event', { preventDefault: vi.fn() },
-      { type: 'keyDown', code: 'KeyI', meta: true, alt: true })
-    expect(parent.webContents.openDevTools).not.toHaveBeenCalled()
+    parent.webContents.emit('before-input-event', event)
     expect(event.preventDefault).toHaveBeenCalledOnce()
-    expect(window.focus).toHaveBeenCalledTimes(2)
+    expect(window.focus).toHaveBeenCalledOnce()
     window.emit('closed')
     expect(parent.listenerCount('focus')).toBe(0)
-    expect(parent.webContents.listenerCount('before-input-event')).toBe(1)
-    expect(hasUpdateOverlay(parent.webContents)).toBe(false)
-    parent.webContents.emit('before-input-event', event, { type: 'keyDown', key: 'F12' })
-    expect(parent.webContents.openDevTools).toHaveBeenCalledExactlyOnceWith({ mode: 'detach' })
+    expect(parent.webContents.listenerCount('before-input-event')).toBe(0)
   } finally { platform.mockRestore() }
 })
