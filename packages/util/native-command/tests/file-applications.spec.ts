@@ -14,7 +14,7 @@ describe('native file associations', () => {
     expect(run).toHaveBeenCalledWith('osascript', ['-l', 'JavaScript', '-e', expect.any(String), path, 'icons'], signal)
   })
 
-  it.each(['{}', '[null]', '[{"id":1}]', '[{"id":"/a.app","default":false,"icon":null,"bundle":"b"}]', JSON.stringify([{ ...application, icon: 'javascript:alert(1)' }])])('rejects malformed native output %s', async (stdout) => {
+  it.each(['{}', '[null]', '[{"id":1}]', '[{"id":"/a.app","default":false,"icon":null,"bundle":"b"}]', '[{"id":"/a.app","name":"A","default":false,"icon":null,"bundle":5}]', JSON.stringify([{ ...application, icon: 'javascript:alert(1)' }])])('rejects malformed native output %s', async (stdout) => {
     await expect(nativeFileApplications('/file.mp3', signal, {
       platform: 'darwin', run: async () => ({ stdout, stderr: '' }),
     })).rejects.toThrow()
@@ -58,11 +58,21 @@ describe('native file associations', () => {
     const stdout = JSON.stringify([
       copy('/a/H.app', 'h', '1.0'), copy('/b/H.app', 'h', '1.0.0'),
       copy('/a/N.app', 'n'), copy('/b/N.app', 'n'),
-      copy('/a/V.app', 'v'), copy('/b/V.app', 'v', '0.1'),
+      copy('/a/V.app', 'v', ''), copy('/b/V.app', 'v', '0.1'),
       copy('/a/W.app', 'w', '0.1'), copy('/b/W.app', 'w'),
     ])
     const apps = await nativeFileApplications('/file.txt', signal, { platform: 'darwin', run: async () => ({ stdout, stderr: '' }) })
     expect(apps.map(app => app.id)).toEqual(['/a/H.app', '/a/N.app', '/b/V.app', '/a/W.app'])
+  })
+
+  it('rejects a malformed copy even when deduplication would discard it', async () => {
+    const stdout = JSON.stringify([
+      { ...application, bundle: 'com.apple.Music', version: '2.0' },
+      { id: '/updates/Music.app', name: 'Music', icon: null, bundle: 'com.apple.Music', version: '1.0' },
+    ])
+    await expect(nativeFileApplications('/file.mp3', signal, {
+      platform: 'darwin', run: async () => ({ stdout, stderr: '' }),
+    })).rejects.toThrow('Invalid native application entry')
   })
 
   it('launches only a currently registered application with argv', async () => {
@@ -73,6 +83,18 @@ describe('native file associations', () => {
     run.mockClear()
     await expect(openNativeFileApplication('/file.mp3', '/arbitrary.app', signal, { platform: 'darwin', run })).rejects.toThrow('not registered')
     expect(run).toHaveBeenCalledOnce()
+  })
+
+  it('launches a registered copy that deduplication collapses out of the display list', async () => {
+    const stdout = JSON.stringify([
+      { ...application, bundle: 'com.apple.Music', version: '2.0' },
+      { ...application, id: '/updates/Music.app', default: false, bundle: 'com.apple.Music', version: '1.0' },
+    ])
+    const run = vi.fn(async () => ({ stdout, stderr: '' }))
+    const shown = await nativeFileApplications('/file.mp3', signal, { platform: 'darwin', run })
+    expect(shown.map(app => app.id)).toEqual([application.id])
+    await openNativeFileApplication('/file.mp3', '/updates/Music.app', signal, { platform: 'darwin', run })
+    expect(run).toHaveBeenLastCalledWith('open', ['-a', '/updates/Music.app', '/file.mp3'], signal)
   })
 
   it('does not query after cancellation or on unsupported platforms', async () => {
