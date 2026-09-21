@@ -5,14 +5,14 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Page, WebSocketRoute } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { expandAssistantStream } from '@deepseek-ai/dsh-llm'
 import {
-  assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
+  acknowledgeReloadConnectionLoss, assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
   compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
@@ -196,6 +196,7 @@ describe('web e2e: composer shortcut steers directly', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let remoteSocket: WebSocketRoute | undefined
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
@@ -203,6 +204,10 @@ describe('web e2e: composer shortcut steers directly', () => {
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
+    await page.routeWebSocket('**/api/remote.mux', (route) => {
+      remoteSocket = route
+      route.connectToServer()
+    })
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -224,6 +229,7 @@ describe('web e2e: composer shortcut steers directly', () => {
     await input.fill(PROMPT)
     await input.press('Enter')
     await page.getByRole('button', { name: 'Stop generating' }).waitFor({ timeout: 10_000 })
+    await expect.poll(() => sessionEvents.some(event => event.type === 'request/context'), { timeout: 10_000 }).toBe(true)
 
     await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
     await input.fill(STEER)
@@ -252,6 +258,15 @@ describe('web e2e: composer shortcut steers directly', () => {
         requestAnimationFrame(() => requestAnimationFrame(() => { resolve() }))
       }))
       expect(await page.getByText(STEER, { exact: true }).count()).toBe(1)
+      expect(await page.locator('[data-submission-echo]').filter({ hasText: STEER }).count()).toBe(1)
+      const socket = remoteSocket
+      if (socket === undefined) throw new Error('steering page has no Remote connection')
+      const warningStart = tripwire.warnings.length
+      await socket.close({ code: 1012, reason: 'steering reconnect checkpoint' })
+      await expect.poll(() => remoteSocket !== socket, { timeout: 10_000 }).toBe(true)
+      await expect.poll(() => page.locator('[data-submission-echo]').count(), { timeout: 10_000 }).toBe(0)
+      expect(await page.getByText(STEER, { exact: true }).count()).toBe(0)
+      acknowledgeReloadConnectionLoss(tripwire, warningStart)
     } finally {
       admission.resolve(undefined)
       stopHolding()

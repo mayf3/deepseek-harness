@@ -127,7 +127,11 @@ export class Session implements SessionFace {
   private readonly submissionSettlements = new Map<SessionRequestId, {
     readonly placement: PendingSubmission['placement']
     /** Latest received next-step position; null means claimed but not yet admitted. */
-    receipt?: { readonly seq: number; readonly index: number | null }
+    receipt?: {
+      readonly seq: number
+      readonly index: number | null
+      readonly attachments: readonly (ImageAttachmentRef | FileAttachmentRef)[]
+    }
     readonly onRetire?: ((retirement: PendingSubmissionRetirement) => void) | undefined
     retiring: boolean
   }>()
@@ -668,6 +672,15 @@ export class Session implements SessionFace {
     if (visible.some(entry => entry.event.type === 'turn/start')) this.firstPromptPendingTurn = false
     if (projections !== undefined) this.projections.seed(projections)
     this.eventSource.replace(visible, hasMore)
+    // A new follow baseline replaces optimistic steering with Host-owned rows.
+    // Receipt-backed inputs are accepted, not failed, even if their history is outside this window.
+    if (projections !== undefined) {
+      for (const [requestId, { receipt }] of this.submissionSettlements) {
+        if (receipt !== undefined && receipt.seq <= projections.asOfSeq) {
+          this.scheduleObservedRetirement(requestId, receipt.attachments)
+        }
+      }
+    }
     for (const entry of visible) this.observeSubmissionEvent(entry.event)
     if (projections !== undefined) {
       const inbox = projections.values.inbox as InboxState | undefined
@@ -742,6 +755,7 @@ export class Session implements SessionFace {
           const removed = receipt.index >= start && receipt.index < start + removedCount
           if (removed && outcome === 'canceled') this.retireFailedSubmission(requestId)
           else settlement.receipt = {
+            ...receipt,
             seq: event.seq,
             index: removed ? null : receipt.index < start ? receipt.index : receipt.index + inserted.length - removedCount,
           }
@@ -766,7 +780,7 @@ export class Session implements SessionFace {
       if (source.kind !== 'user' || !('rpcId' in source)) continue
       const settlement = this.submissionSettlements.get(source.rpcId)
       if (settlement?.placement !== 'steering' || settlement.retiring || (settlement.receipt?.seq ?? -1) > seq) continue
-      settlement.receipt = { seq, index: start + index }
+      settlement.receipt = { seq, index: start + index, attachments: attachmentRefsIn(message.content) }
     }
   }
 
