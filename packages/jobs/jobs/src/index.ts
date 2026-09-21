@@ -11,6 +11,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import { installJobArchiveAdmission } from './archive-admission.ts'
 import type { JobEvents, JobId, JobOutputRead, JobRead, JobSpec, JobView } from './types.ts'
 
 export { JobId } from './types.ts'
@@ -90,6 +91,9 @@ export abstract class JobRegistry extends Service {
       throw new Error('@deepseek-ai/dsh-jobs is the abstract job registry seam; load an implementation such as @deepseek-ai/dsh-jobs-local instead')
     }
     super(ctx, 'jobs')
+    // Archive admission: the Workspace registry asks what still runs for a
+    // Session before hiding it; owned jobs answer here for every implementation.
+    installJobArchiveAdmission(ctx, this)
   }
 
   /** Lifecycle and output events, filtered per subscription. */

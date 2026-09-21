@@ -36,10 +36,16 @@
       "path": "../store"
     },
     {
+      "path": "../../core/agent"
+    },
+    {
       "path": "../../core/session"
     },
     {
       "path": "../../subagent/subagent"
+    },
+    {
+      "path": "../../jobs/jobs"
     },
     {
       "path": "../../schedule/schedule"

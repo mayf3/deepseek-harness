@@ -239,6 +239,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'user-questions': 'user-questions.md',
   'webserver': 'web-server.md',
   'workflow': 'workflow.md',
+  'workspace': 'workspace.md',
 }
 
 /**
@@ -725,6 +726,9 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   DomainChanged: 'storage.md',
   DomainFacility: 'storage.md',
   Workspace: 'workspace.md',
+  ArchiveSessionOptions: 'workspace.md',
+  SessionActivity: 'workspace.md',
+  SessionActivityRequest: 'workspace.md',
   WorkspaceArchiveSessionRequest: 'workspace.md',
   WorkspaceArchiveValue: 'workspace.md',
   WorkspaceCreateRequest: 'workspace.md',

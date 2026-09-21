@@ -189,13 +189,18 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * Archive one Session and install the returned complete archive set.
    * A reply superseded by a later archive request or a pushed set installs nothing.
    * @param sessionId - Session to archive.
+   * @param options - Whether the Host stops the Session's running work instead of refusing.
    * @returns generated Remote result.
    */
   async archiveSession(
     sessionId: WorkspaceArchiveSessionRequest['sessionId'],
+    options: Pick<WorkspaceArchiveSessionRequest, 'stopActivity'> = {},
   ): Promise<RemoteResult<WorkspaceArchiveValue>> {
     const requestSeq = ++this.archiveRequestSeq
-    const result = await this.remote.archiveSession({ sessionId })
+    const result = await this.remote.archiveSession({
+      sessionId,
+      ...(options.stopActivity === true ? { stopActivity: true } : {}),
+    })
     if (result.ok && requestSeq === this.archiveRequestSeq) {
       this.installArchived(result.value.archivedSessionIds)
       // The Host drops an archived session's pin in the same durable write;
