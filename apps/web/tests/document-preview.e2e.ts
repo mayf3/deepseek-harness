@@ -83,6 +83,26 @@ async function openPreviewFile(column: Locator, filesTab: Locator, preview: Loca
   await expect.poll(async () => (await preview.getAttribute('data-textpreview-url'))?.endsWith(`/${name}`)).toBe(true)
 }
 
+/** Move into the bottom reveal zone and wait for the shared zoom control. */
+async function revealDocumentZoom(page: Page, preview: Locator): Promise<Locator> {
+  const frame = preview.locator('[data-document-zoom-frame]')
+  const bounds = await frame.boundingBox()
+  if (bounds === null) throw new Error('document zoom frame has no bounds')
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height - 8)
+  const controls = preview.locator('[data-document-zoom-controls]')
+  await expect.poll(() => controls.getAttribute('data-document-zoom-visible')).toBe('true')
+  return preview.getByRole('button', { name: 'Choose zoom', exact: true })
+}
+
+/** Leave the bottom reveal zone and wait for the delayed dismissal. */
+async function hideDocumentZoom(page: Page, preview: Locator): Promise<void> {
+  const frame = preview.locator('[data-document-zoom-frame]')
+  const bounds = await frame.boundingBox()
+  if (bounds === null) throw new Error('document zoom frame has no bounds')
+  await page.mouse.move(bounds.x + 8, bounds.y + 8)
+  await expect.poll(() => preview.locator('[data-document-zoom-controls]').getAttribute('data-document-zoom-visible')).toBeNull()
+}
+
 describe.skipIf(MODE === 'record')('web e2e: document preview through Files', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -468,7 +488,25 @@ else process.exit(1);
     const canvas = preview.getByRole('img', { name: 'PDF page 1', exact: true })
     await canvas.waitFor({ state: 'visible', timeout: 30_000 })
     expect(await viewer.count()).toBe(0)
-    expect(await preview.locator('[role="toolbar"]').count()).toBe(0)
+    const zoomControls = preview.locator('[data-document-zoom-controls]')
+    await expect.poll(() => zoomControls.getAttribute('data-document-zoom-visible')).toBeNull()
+    let pdfZoom = await revealDocumentZoom(page, preview)
+    await hideDocumentZoom(page, preview)
+    pdfZoom = await revealDocumentZoom(page, preview)
+    const pdfWidth = (await canvas.boundingBox())!.width
+    const pdfIntrinsicWidth = await canvas.evaluate(node => Number.parseFloat(node.style.getPropertyValue('--pdf-page-width')))
+    await expect.poll(() => pdfZoom.innerText()).toBe(`${String(Math.round(pdfWidth / pdfIntrinsicWidth * 100))}%`)
+    await pdfZoom.click()
+    await page.getByRole('menuitem', { name: '100%', exact: true }).click()
+    await expect.poll(async () => (await canvas.boundingBox())!.width).toBeCloseTo(pdfIntrinsicWidth, 0)
+    pdfZoom = await revealDocumentZoom(page, preview)
+    await pdfZoom.click()
+    await page.getByRole('menuitem', { name: '150%', exact: true }).click()
+    await expect.poll(async () => (await canvas.boundingBox())!.width / pdfIntrinsicWidth).toBeCloseTo(1.5, 1)
+    pdfZoom = await revealDocumentZoom(page, preview)
+    await pdfZoom.click()
+    await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
+    await expect.poll(async () => (await canvas.boundingBox())!.width).toBeCloseTo(pdfWidth, 0)
     expect(await preview.locator('[data-pdf-page]').count()).toBe(2)
     await expect.poll(() => canvasColor(canvas), { timeout: 30_000 }).toBe('red')
     const firstColor = await canvasColor(canvas)
@@ -501,6 +539,8 @@ else process.exit(1);
       `- Viewer menu hidden: ${String(await viewer.count() === 0)}`,
       `- Worker: ${workerNames.find(name => name === 'dsh-pdf')}`,
       `- Continuous pages: ${await preview.locator('[data-pdf-page]').count()}`,
+      '- Zoom reveal: hidden -> bottom hover -> delayed hidden',
+      '- Zoom modes: fit width -> 100% -> 150% -> fit width',
       `- Horizontal overflow: ${String(await body.evaluate(node => node.scrollWidth > node.clientWidth))}`,
       `- Canvas fills: ${[firstColor, secondColor, restoredColor].join(' -> ')}`,
       `- Same tab: ${String(await pdfTab.getAttribute('data-dockkit-tab') === pdfTabId)}`,
@@ -613,6 +653,16 @@ else process.exit(1);
     })
     expect(centering.horizontal).toBeLessThan(10)
     expect(centering.vertical).toBeLessThan(10)
+    let imageZoom = await revealDocumentZoom(page, preview)
+    await expect.poll(() => imageZoom.innerText()).toBe('100%')
+    const tinyWidth = (await tinyImage.boundingBox())!.width
+    await imageZoom.click()
+    await page.getByRole('menuitem', { name: '200%', exact: true }).click()
+    await expect.poll(async () => (await tinyImage.boundingBox())!.width / tinyWidth).toBeCloseTo(2, 1)
+    imageZoom = await revealDocumentZoom(page, preview)
+    await imageZoom.click()
+    await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
+    await expect.poll(() => imageZoom.innerText()).toBe('100%')
 
     await openFile('large.svg')
     await expect.poll(() => viewer.innerText()).toBe('Image')
@@ -640,12 +690,30 @@ else process.exit(1);
     // Width fit: the image fills the frame's 12px-inset box while the aspect ratio holds.
     expect(Math.abs((fitted.paneWidth - 24) - fitted.width)).toBeLessThanOrEqual(1)
     expect(fitted.height / fitted.width).toBeCloseTo(1600 / 1200, 2)
-    const scrolled = await body.evaluate((node) => {
+    let svgZoom = await revealDocumentZoom(page, preview)
+    await expect.poll(async () => Number.parseInt(await svgZoom.innerText(), 10)).toBeCloseTo(fitted.width / 12, 0)
+    const imageScrollport = preview.locator('[data-document-zoom-scrollport]')
+    const fitScrolled = await imageScrollport.evaluate((node) => {
       node.scrollLeft = node.scrollWidth
       return { left: node.scrollLeft, horizontalOverflow: node.scrollWidth > node.clientWidth }
     })
-    expect(scrolled).toEqual({ left: 0, horizontalOverflow: false })
+    expect(fitScrolled).toEqual({ left: 0, horizontalOverflow: false })
+    await svgZoom.click()
+    await page.getByRole('menuitem', { name: '100%', exact: true }).click()
+    await expect.poll(async () => (await largeImage.boundingBox())!.width).toBeCloseTo(1200, 0)
+    expect(await imageScrollport.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true)
+    svgZoom = await revealDocumentZoom(page, preview)
+    await svgZoom.click()
+    await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
+    await expect.poll(async () => (await largeImage.boundingBox())!.width).toBeCloseTo(fitted.width, 0)
+    expect(await imageScrollport.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(false)
     expect(await page.locator('html').getAttribute('data-image-preview-escape')).toBeNull()
+    sections.push([
+      '## Image zoom', '',
+      '- Small PNG fit width remains at intrinsic size; 200% doubles it',
+      '- SVG fit width -> 100% -> fit width toggles horizontal overflow: false -> true -> false',
+      '- Image and Blob identities remain stable while zoom changes',
+    ].join('\n'))
 
     const releaseRead = Promise.withResolvers<undefined>()
     let waitingForRead = false
@@ -957,7 +1025,10 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
 
   it('rejects renamed text and renders Chinese Office documents through the PDF worker', async () => {
     scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false,
-      extraOverlayPath: fileURLToPath(new URL('../../../packages/client/ui-sidebar-documentpreview/tests/fixtures/office-cache.patch.yml', import.meta.url)),
+      extraOverlayPath: [
+        fileURLToPath(new URL('../../../packages/client/ui-sidebar-documentpreview/tests/fixtures/office-cache.patch.yml', import.meta.url)),
+        fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
+      ],
     })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -1027,6 +1098,27 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       await copyPdfText(page, preview, 'Office preview')
       await copyPdfText(page, preview, '中文文档')
       expect((await preview.locator('[data-pdf-text]').allTextContents()).join('')).toContain('中文文档')
+      const zoomMenu = await revealDocumentZoom(page, preview)
+      const initialWidth = (await canvas.boundingBox())!.width
+      const intrinsicWidth = await canvas.evaluate(node => Number.parseFloat(node.style.getPropertyValue('--pdf-page-width')))
+      const fitPercent = `${String(Math.round(initialWidth / intrinsicWidth * 100))}%`
+      await expect.poll(() => zoomMenu.innerText()).toBe(fitPercent)
+      await zoomMenu.click()
+      await page.getByRole('menuitem', { name: '150%', exact: true }).click()
+      await expect.poll(() => zoomMenu.innerText()).toBe('150%')
+      await expect.poll(async () => (await canvas.boundingBox())!.width / intrinsicWidth).toBeCloseTo(1.5, 1)
+      const zoomScrollport = preview.locator('[data-document-zoom-scrollport]')
+      await zoomScrollport.evaluate((node) => {
+        const bounds = node.getBoundingClientRect()
+        node.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true,
+          deltaY: -10, clientX: bounds.left + bounds.width / 2, clientY: bounds.top + bounds.height / 2 }))
+      })
+      await expect.poll(() => zoomMenu.innerText()).toBe('166%')
+      await expect.poll(async () => (await canvas.boundingBox())!.width / intrinsicWidth).toBeCloseTo(1.66, 1)
+      await zoomMenu.click()
+      await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
+      await expect.poll(() => zoomMenu.innerText()).toBe(fitPercent)
+      await zoomScrollport.evaluate((node) => { node.scrollTop = 0; node.scrollLeft = 0 })
       expect(convert).toHaveBeenCalledTimes(1)
       await preview.getByRole('button', { name: 'Read the file again', exact: true }).click()
       await canvas.waitFor({ state: 'visible' })
@@ -1078,6 +1170,8 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
         '- Requested absent family is listed: true',
         '- Escape restores focus to the warning: true',
         '- Closing details preserves the warning and document position: true',
+        '- Fit width, presets, and pinch resize the Office PDF continuously: true',
+        '- Pinch updates the displayed percentage during the gesture: 166%',
         `- Document top inset: ${topInset}px`,
       ].join('\n'), MODE)
       await successShot(page, 'office-docx')
