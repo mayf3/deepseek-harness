@@ -1638,6 +1638,49 @@ describe('built-in conversation node Definitions', () => {
     expect(node(snapshot(value), 'user')).toBeUndefined()
   })
 
+  it('keeps a paged input between its surrounding replies before its inbox insertion loads', () => {
+    const steering = textMessage('paged-steering', 'change direction')
+    const earlier = [
+      at(0, 'turn/start', { turn: 1 }),
+      at(1, 'step/start', { turn: 1, step: 1 }),
+      at(2, 'user/message', textMessage('opening-user', 'question'), { surfaceOp: 'append' }),
+      at(3, 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [steering] }),
+    ]
+    const later = [
+      at(4, 'assistant/message', {
+        turn: 1, step: 1, message: assistantMessage('progress', 'progress'),
+      }, { surfaceOp: 'append' }),
+      at(5, 'step/end', { turn: 1, step: 1 }),
+      at(6, 'agent/inbox/spliced', { target: 'next-step', start: 0, removedCount: 1, inserted: [] }),
+      at(7, 'step/start', { turn: 1, step: 2 }),
+      at(8, 'user/message', steering, { surfaceOp: 'append' }),
+      at(9, 'assistant/message', {
+        turn: 1, step: 2, message: assistantMessage('answer', 'done'),
+      }, { surfaceOp: 'append' }),
+      at(10, 'step/end', { turn: 1, step: 2 }),
+      at(11, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ]
+    const value = assembler(later, true)
+    const before = snapshot(value)
+    const order = before.order
+    expect(order.map(key => before.nodes.get(key)?.kind)).toEqual([
+      'turn-process', 'assistant-step', 'user', 'assistant-step', 'turn-tail',
+    ])
+    const input = node(before, 'user')!
+    expect(before.nodes.processSource(input.key).getSnapshot()?.hasInterleavedInput).toBe(true)
+
+    value.prepend(earlier, false)
+    value.flush()
+    const after = snapshot(value)
+    expect(after.order.slice(1)).toEqual(order)
+    expect(after.order.map(key => after.nodes.get(key)?.kind)).toEqual([
+      'user', 'turn-process', 'assistant-step', 'steering', 'assistant-step', 'turn-tail',
+    ])
+    expect(after.nodes.processSource(input.key).getSnapshot()?.hasInterleavedInput).toBe(true)
+    const replayed = snapshot(assembler([...earlier, ...later]))
+    expect(replayed.order).toEqual(after.order)
+  })
+
   it('keeps claimed steering after the closing Assistant and before the Turn tail', () => {
     const steering = textMessage('steer-after-answer', 'change direction')
     const value = assembler([

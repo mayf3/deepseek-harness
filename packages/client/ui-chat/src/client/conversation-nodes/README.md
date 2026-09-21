@@ -22,7 +22,7 @@ A Turn shows an answer and lets the reader inspect the work behind it. Start wit
 <a id="reading-model"></a>
 ## How one Turn becomes a transcript
 
-Grouping, counts, display modes, and whole-Turn folding answer different questions. Grouping decides which process rows belong together. Counts summarize work inside an existing group. Display modes decide how much of each group to show. Whole-Turn folding can hide the entire process across several groups and intermediate replies.
+Grouping, counts, display modes, and whole-Turn folding answer different questions. Grouping decides which process rows belong together. Counts summarize work inside an existing group. Display modes decide how much of each group to show. Without an intervening input, whole-Turn folding can hide the entire process across several groups and intermediate replies.
 
 ### A complete example
 
@@ -44,7 +44,7 @@ Every reply separates secondary groups; only the final answer is protected from 
 | Which rows belong together? | Group boundaries | The reply separates G1 and G2; changing from `read` to `bash` does not. |
 | What did a group do? | Category counts | G1 has `read=1, commands=1`; G2 has `code=1`. Reasoning adds no tool count. |
 | What does its title say? | Group state and summary | Running groups use their latest running activity; closed groups use their highest-count categories. Counts never decide folding. |
-| How much detail is visible? | Display mode and manual group opening | Compact/Detailed start with group headers; Expanded shows bodies without headers. |
+| How much detail is visible? | Display mode and manual group opening | Completed Turns retain group headers and manual bodies in every mode; Expanded directly shows group bodies only in running Turns. |
 | Is the process visible at all? | Whole-Turn opening | Closing the Turn hides G1, the intermediate reply, and G2 together. |
 
 ### What the reader sees
@@ -56,9 +56,11 @@ Assume the Turn above completed normally, with no inner disclosure manually open
 | Whole Turn collapsed, any mode | Input, whole-Turn control, final response, and footer. No process headers, bodies, or intermediate reply. |
 | Whole Turn open, Compact or Detailed | G1/G2 headers, the intermediate reply, and final response. Group bodies start collapsed. |
 | Whole Turn and G1 open, Detailed | G1's reasoning and tool rows with the settled reasoning preview; G2 remains a header. Full reasoning/tool bodies are still manual. |
-| Whole Turn open, Expanded | G1/G2 bodies, intermediate reply, and final response. No group headers or group-level height caps; individual full bodies remain manual. |
+| Whole Turn open, Expanded | G1/G2 headers, intermediate reply, and final response. Completed Turns' group bodies still require manual opening. |
 
 Visibility applies from outside inward: whole Turn → secondary group → individual reasoning/tool disclosure. Opening an inner layer cannot bypass a closed outer layer. Category changes never open or close a layer. Mode changes preserve membership and manual opening choices.
+
+If steering, a User message, or a trigger notice follows process output, the Turn offers only individual group disclosures, not whole-Turn collapse. In Compact/Detailed, `G1 → steering 1 → G2 → steering 2 → G3` retains all three headers and both inputs in that order, with intermediate replies visible; opening one group reveals only its body. Expanded directly shows group bodies only while the Turn runs; completed Turns retain headers and manual disclosure. The Turn control still shows duration or status, without a collapse action.
 
 -----
 
@@ -67,7 +69,7 @@ Visibility applies from outside inward: whole Turn → secondary group → indiv
 
 Whole-Turn folding controls the loaded process range, independently of secondary groups. A recorded Turn end makes that range eligible even when paging has not loaded the Turn start.
 
-The Turn control follows all its opening inputs, including human steering and non-human trigger notices, while waiting for the first Assistant output and after that output arrives.
+The Turn control follows all its opening inputs, including human steering and non-human trigger notices, while waiting for the first Assistant output and after that output arrives. Consecutive inputs before the first process evidence are opening inputs, anchored by the last one. Later inputs retain their positions: even when paging has not loaded their inbox insertions and they temporarily appear as ordinary User messages, preceding process content must not move after them.
 
 | Admitted input | Chat presentation |
 |---|---|
@@ -82,6 +84,7 @@ Trigger titles and icons use the recorded `source.kind`: `schedule`, `tool-jobs`
 |---|---|
 | Not closed | Keep process content open; whole-Turn collapse is unavailable. Secondary groups still follow the mode table. |
 | Stopped or failed | Keep process content open; whole-Turn collapse is unavailable. |
+| Visible input after the first process evidence | Whole-Turn collapse is unavailable. Preserve process segments, intermediate replies, and input order; group disclosures remain available. Consecutive opening inputs do not qualify. |
 | Other closed Turn with loaded process content | Initially collapse the process; allow manual opening and closing. Neither the Turn start nor the rest of Session history must already be loaded. |
 | Closed Turn with no final answer | Collapse all process rows when otherwise eligible. |
 | End is loaded but start is absent | Apply the closed-Turn rules above to loaded content. Show no elapsed duration; do not use the first loaded tool/message time as the start. |
@@ -90,7 +93,7 @@ Trigger titles and icons use the recorded `source.kind`: `schedule`, `tool-jobs`
 
 The final answer is the latest Step's settled Assistant reply, provided it has visible reply content and no tool-call block. Its response remains outside whole-Turn folding; its reasoning remains process content. User and steering inputs, trigger notices, terminal errors, max-token notices, and the completed-turn footer remain independent. Secondary grouping treats model retries as separators, but whole-Turn folding still includes retry rows.
 
-Loading an older page does not itself change the reader's opening choice. Newly loaded process content follows the same Turn state while the final answer is unchanged. When the real start arrives, the duration becomes available; loading all history is not an additional folding condition. When new content only extends an existing group at its beginning, that group and its old message rows retain their identities and opening choices. Replies, steering, and other real boundaries in the new page still separate groups; not every new row joins the old group.
+Loading an older page preserves the reader's group-opening choices. Newly loaded process content follows the same Turn state while the final answer is unchanged and whole-Turn folding remains eligible. If the page reveals an intervening input, individual group disclosures replace whole-Turn hiding. When the real start arrives, the duration becomes available; loading all history is not an additional folding condition. When new content only extends an existing group at its beginning, that group and its old message rows retain their identities and opening choices. Replies, steering, and other real boundaries in the new page still separate groups; not every new row joins the old group.
 
 Clicking Load older anchors the first visible content item below that button in transcript order, regardless of its position in the viewport. A collapsed group anchors its header; an expanded group skips its header and anchors its first visible member. The whole-Turn process control is excluded because paging can move it ahead of newly loaded work and steering. When a whole Turn is collapsed, the anchor is its first remaining visible message, such as steering or the final answer. Ordinary messages and steering anchor themselves; hidden and empty rows are skipped. Loading more content inside a collapsed group keeps its header stationary; adding earlier groups or rows preserves that same group header while they appear above it.
 
@@ -109,8 +112,8 @@ Settings → General → Work details stores `ui-chat.transcriptView` as `compac
 
 | Behavior | Compact | Detailed | Expanded |
 |---|---|---|---|
-| Process-group header | Category summary | Summary and live task detail | Hidden |
-| Process-group body | Initially collapsed | Initially collapsed | Visible, without group-level height cap |
+| Process-group header | Category summary | Summary and live task detail | Hidden in running Turns; retained in historical Turns |
+| Process-group body | Initially collapsed | Initially collapsed | Directly visible without a group-level height cap in running Turns; manual disclosure in historical Turns |
 | Settled reasoning preview | Hidden | First line | First line |
 | Individual reasoning and tool bodies | Manual expansion | Manual expansion | Manual expansion |
 | Eligible completed Turn | Initially collapsed | Initially collapsed | Initially collapsed |
@@ -146,9 +149,9 @@ The labels below describe recorded activity, not successful outcomes. For exampl
 | Closed, three categories | Join all three ranked labels with commas. |
 | Closed, more than three categories | Show the first three labels followed by “etc.” (`等` in Chinese). |
 
-English lowercases the initial letter of joined labels after the first. Closing a group immediately selects the completed summary; the 150ms minimum applies to running-title changes, not to delaying completion. Expanded hides the entire header.
+English lowercases the initial letter of joined labels after the first. Closing a group immediately selects the completed summary; the 150ms minimum applies to running-title changes, not to delaying completion. Expanded hides group headers in running Turns, including groups ended by a reply or steering before their Turn ends.
 
-Group headers show a category icon, replace it with a down arrow on hover or keyboard focus, and show an up arrow while open. Manually expanded group bodies use 8px row spacing, a `min(400px, 50vh)` height cap, and 24px directional fades. Wheel scrolling can continue into the outer transcript at an edge. Expanded mode removes the group-level cap and uses 16px row spacing.
+Group headers show a category icon, replace it with a down arrow on hover or keyboard focus, and show an up arrow while open. Manually expanded group bodies use 8px row spacing, a `min(400px, 50vh)` height cap, and 24px directional fades. Wheel scrolling can continue into the outer transcript at an edge. Expanded mode removes the group-level cap and uses 16px row spacing only in running Turns.
 
 Individual reasoning starts collapsed, including while streaming. All modes preview the latest paragraph whose first line ends with a newline; an unfinished single line has no preview. Later text in that paragraph does not change the preview. After settlement, the mode table applies. Expanded reasoning uses compact Markdown typography.
 

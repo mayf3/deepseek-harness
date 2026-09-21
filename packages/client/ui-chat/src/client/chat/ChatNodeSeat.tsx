@@ -60,7 +60,8 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     ? storedEntry
     : undefined
   const liveProcess = processPresentation !== undefined && !processPresentation.turnClosed
-  const alwaysOpen = liveProcess || turnProcessAlwaysOpen(routedNode)
+  const interleavedInput = processPresentation?.hasInterleavedInput === true
+  const alwaysOpen = liveProcess || interleavedInput || turnProcessAlwaysOpen(routedNode)
   const processOpen = alwaysOpen || processEntry !== undefined
   const setOpen = useCallback((open: boolean) => {
     if (processSpec !== undefined && !alwaysOpen) {
@@ -94,11 +95,11 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     : {
       spec: processSpec,
       foldable,
-      hasContent: processPresentation?.hasExternalProcess === true || processSpec.inlineReasoning,
+      hasContent: !interleavedInput && (processPresentation?.hasExternalProcess === true || processSpec.inlineReasoning),
       open: processOpen,
       setOpen,
     }, [
-    foldable, processOpen, processSpec, processPresentation?.hasExternalProcess, setOpen,
+    foldable, interleavedInput, processOpen, processSpec, processPresentation?.hasExternalProcess, setOpen,
   ])
   const controllerInactive = routedNode?.kind === 'turn-process'
     && !foldable

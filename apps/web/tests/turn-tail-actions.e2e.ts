@@ -269,6 +269,16 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     await expect.poll(async () => readFile(join(scaffold!.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain(`transcriptView: ${mode}`)
 
+    await process.click()
+    const group = page.locator('[data-sample="bash"]').first().locator('xpath=ancestor::*[@data-chat-group-key]')
+    const groupControl = group.locator('[data-process-activity]')
+    expect(await groupControl.isVisible()).toBe(true)
+    expect(await groupControl.getAttribute('aria-expanded')).toBe('false')
+    expect(await tool.isVisible()).toBe(false)
+    await groupControl.click()
+    expect(await tool.isVisible()).toBe(true)
+    await process.click()
+
     await openSettingsFromAccountMenu(page, 'en')
     const restored = page.getByRole('dialog', { name: 'Settings' })
     await restored.getByText('Work details', { exact: true }).locator('../..')

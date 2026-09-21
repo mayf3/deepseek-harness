@@ -135,7 +135,6 @@ const ProcessGroupHeader = memo(function ProcessGroupHeader({ groupKey, useChatG
 export const ChatGroupSeat = memo(function ChatGroupSeat({ groupKey, useChatGroup, ...props }: ChatGroupSeatProps) {
   const members = useChatGroup(groupKey, group => group?.members)
   const turn = useChatGroup(groupKey, group => group?.data.turn)
-  const grouped = props.usePresentation(policy => policy.stepGrouping !== 'none')
   const foldCompleted = props.usePresentation(policy => policy.foldCompletedTurns)
   const { expanded: open, setExpanded: setOpen, toggle } = useDisclosure()
   const firstKey = members?.[0]?.key ?? ''
@@ -144,8 +143,10 @@ export const ChatGroupSeat = memo(function ChatGroupSeat({ groupKey, useChatGrou
     const location = node?.location
     return location?.kind === 'turn' || location?.kind === 'step' ? location.turn : undefined
   })
+  const grouped = props.usePresentation(policy => turnLocation?.status !== 'open' || policy.stepGrouping !== 'none')
   const reason = turnLocation?.end?.data.reason.kind
-  const alwaysOpen = presentation?.turnClosed === false || reason === 'aborted' || reason === 'error'
+  const alwaysOpen = presentation?.turnClosed === false || presentation?.hasInterleavedInput === true
+    || reason === 'aborted' || reason === 'error'
   const spec = presentation?.spec
   const selectStored = useCallback((state: Readonly<ChatStoreState>) => turn === undefined
     ? undefined : storedTurnProcessEntry(state, turn), [turn])

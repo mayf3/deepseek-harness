@@ -654,7 +654,7 @@ describe('ChatView', () => {
   })
 
   it('keeps grouped Node instances mounted across presentation modes and group data updates', () => {
-    const snapshot = chatSnapshotFixture({ nodes: [user(1, 'outside'), user(2, 'inside')] })
+    const snapshot = chatSnapshotFixture({ nodes: [user(1, 'outside'), userInTurn(2, 'inside', 1)] })
     const h = makeHarness({}, {}, snapshot)
     const [outside, inside] = snapshot.order.map(key => ({ kind: 'node' as const, key: key as NodeKey }))
     if (outside === undefined || inside === undefined) throw new Error('expected two Nodes')
@@ -710,6 +710,49 @@ describe('ChatView', () => {
     expect(view.queryByRole('textbox', { name: inside.key })).toBeNull()
     act(() => { h.setGrouped(groupStore) })
     expect(view.queryByRole('textbox', { name: outside.key })).toBeNull()
+  })
+
+  it('expands only the running Turn groups when switching work-details modes', () => {
+    const nodes = [
+      userInTurn(1, 'old question', 1), reasoningAssistant(2, 'old analysis', 1, 1),
+      assistant(3, 'old progress', 1, 2), steering(4, 'old direction', 1),
+      reasoningAssistant(5, 'old follow-up analysis', 1, 3), assistant(6, 'old answer', 1, 4),
+      userInTurn(8, 'current question', 2), reasoningAssistant(9, 'current analysis', 2, 1),
+    ]
+    const builder = new ChatSnapshotBuilder()
+    const groups = new ConversationGroupStore<ProcessGroupData>()
+    const state = new ProcessState()
+    const project = (closed: boolean) => installGroupedSnapshot(builder, state, groups, chatSnapshotFixture({
+      nodes: closed ? [...nodes, assistant(10, 'current answer', 2, 2)] : nodes,
+      turnTimings: new Map([[1, { startTime: 0 }], [2, { startTime: 8_000 }]]),
+      turnEnds: new Map(closed ? [[1, 7], [2, 11]] : [[1, 7]]),
+    }))
+    const h = makeHarness({ chat: project(false) }, { running: true })
+    h.setGrouped(groups)
+    const view = render(<h.ChatView {...h.props} />)
+    const roots = [...view.container.querySelectorAll<HTMLElement>('[data-chat-group-key]')]
+    const headers = roots.map(root => root.querySelector<HTMLButtonElement>('[data-process-activity]')!)
+    const bodies = roots.map(root => root.querySelector<HTMLElement>('[data-step-process-body]')!)
+    expect(roots).toHaveLength(3)
+    expect(bodies.map(body => body.hasAttribute('hidden'))).toEqual([true, true, true])
+    fireEvent.click(headers[0]!)
+
+    for (const mode of ['detailed', 'expanded', 'compact', 'expanded'] as const) {
+      act(() => { h.setTranscriptView(mode) })
+      expect(bodies.map(body => body.hasAttribute('hidden'))).toEqual([false, true, mode !== 'expanded'])
+      expect(headers.map(header => header.closest('[hidden]') !== null)).toEqual([false, false, mode === 'expanded'])
+      expect([...view.container.querySelectorAll('[data-chat-group-key]')]).toEqual(roots)
+    }
+
+    act(() => { h.set({ chat: project(true), running: false }) })
+    const control = view.container.querySelector<HTMLButtonElement>('[data-turn-process="2"]')!
+    expect(control.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(control)
+    expect(roots[2]!.closest('[hidden]')).toBeNull()
+    expect(headers[2]!.closest('[hidden]')).toBeNull()
+    expect(bodies[2]!.hasAttribute('hidden')).toBe(true)
+    expect(bodies[0]!.hasAttribute('hidden')).toBe(false)
+    expect(bodies[1]!.hasAttribute('hidden')).toBe(true)
   })
 
   it('waits for observed layout before measuring an opened process group', () => {
@@ -1188,6 +1231,7 @@ describe('ChatView', () => {
 
   it.each([
     { mode: 'compact', anchor: 'group' }, { mode: 'detailed', anchor: 'group' },
+    { mode: 'expanded', anchor: 'group' },
     { mode: 'compact', anchor: 'node' }, { mode: 'detailed', anchor: 'node' }, { mode: 'expanded', anchor: 'node' },
   ] as const)(
     'keeps the first visible item in place when paging inserts a steering boundary ($mode, $anchor)', ({ mode, anchor }) => {
@@ -1206,7 +1250,7 @@ describe('ChatView', () => {
       fireEvent.click(control)
       const group = view.container.querySelector<HTMLElement>('[data-chat-group-key]')!
       const header = group.querySelector<HTMLButtonElement>('[data-process-activity]')!
-      if (anchor === 'node' && mode !== 'expanded') fireEvent.click(header)
+      if (anchor === 'node') fireEvent.click(header)
       const body = group.querySelector<HTMLElement>('[data-step-process-body]')!
       const old = view.container.querySelector<HTMLElement>('[data-chat-node-key="fixture:tool:retained"]')!
       const pinned = anchor === 'group' ? group : old
@@ -1230,7 +1274,7 @@ describe('ChatView', () => {
       expect(pinned.closest('[hidden]')).toBeNull()
       expect(pinned.hasAttribute('data-chat-paging-anchor')).toBe(true)
       expect(controlSeat.hasAttribute('data-chat-paging-anchor')).toBe(false)
-      expect(group.hasAttribute('data-chat-paging-anchor')).toBe(mode !== 'expanded' && anchor !== 'node')
+      expect(group.hasAttribute('data-chat-paging-anchor')).toBe(anchor !== 'node')
       act(() => {
         paged = true
         source = chatSnapshotFixture({ ...initial, nodes: [
@@ -1244,8 +1288,9 @@ describe('ChatView', () => {
       expect(scroller.scrollTop).toBe(expectedScroll)
       expect(view.container.querySelector('[data-chat-node-key="fixture:tool:retained"]')).toBe(old)
       expect(old.closest('[data-chat-group-key]')).toBe(group)
-      expect(control.getAttribute('aria-expanded')).toBe('true')
-      if (mode !== 'expanded') expect(header.getAttribute('aria-expanded')).toBe(String(anchor === 'node'))
+      expect(control.disabled).toBe(true)
+      expect(group.hasAttribute('hidden')).toBe(false)
+      expect(header.getAttribute('aria-expanded')).toBe(String(anchor === 'node'))
       expect(view.container.querySelector('[data-chat-flow-kind="steering"]')?.closest('[data-chat-group-key]')).toBeNull()
       expect(h.chatScroll.read()?.anchorKey).toBe(pinned.dataset.chatAnchorKey)
     },
@@ -1318,7 +1363,8 @@ describe('ChatView', () => {
     expect(rows.indexOf(control)).toBeLessThan(rows.indexOf(steer))
     expect(rows.indexOf(steer)).toBeLessThan(rows.indexOf(answer))
     expect(first.getBoundingClientRect().top).toBe(top)
-    expect(scroller.scrollTop).toBe(hasSteering ? 80 : 40)
+    expect(scroller.scrollTop).toBe(hasSteering ? 160 : 120)
+    expect([...column.querySelectorAll('[data-chat-group-key]')].every(group => !group.hasAttribute('hidden'))).toBe(true)
     expect(h.chatScroll.read()?.anchorKey).toBe(first.dataset.chatAnchorKey)
     expect(first.isConnected).toBe(true)
     expect(view.container.querySelector('[data-chat-node-key="fixture:assistant:6"]')).toBe(answer)
@@ -2080,7 +2126,68 @@ describe('ChatView', () => {
     expect(answer?.hasAttribute('data-turn-process-answer')).toBe(false)
   })
 
-  it('keeps ordinary spacing when steering precedes the first process evidence', () => {
+  it.each(['compact', 'detailed', 'expanded'] as const)(
+    'preserves steering-separated process groups in %s mode after Turn completion', (mode) => {
+      const nodes = [
+        userInTurn(1, 'question', 1),
+        reasoningAssistant(2, 'first analysis', 1, 1),
+        assistant(3, 'first progress', 1, 2),
+        steering(4, 'first direction', 1),
+        reasoningAssistant(5, 'second analysis', 1, 3),
+        assistant(6, 'second progress', 1, 4),
+        steering(7, 'second direction', 1),
+        reasoningAssistant(8, 'third analysis', 1, 5),
+        assistant(9, 'final answer', 1, 6),
+      ]
+      const builder = new ChatSnapshotBuilder()
+      const groups = new ConversationGroupStore<ProcessGroupData>()
+      const state = new ProcessState()
+      const project = (closed: boolean) => installGroupedSnapshot(builder, state, groups, chatSnapshotFixture({
+        nodes,
+        turnTimings: new Map([[1, { startTime: 0 }]]),
+        turnEnds: new Map(closed ? [[1, 10]] : []),
+      }))
+      const h = makeHarness({ chat: project(false) }, { running: true })
+      h.setGrouped(groups)
+      h.setTranscriptView(mode)
+      const view = render(<h.ChatView {...h.props} />)
+      const roots = [...view.container.querySelectorAll<HTMLElement>('[data-chat-group-key]')]
+      const headers = roots.map(root => root.querySelector<HTMLButtonElement>('[data-process-activity]')!)
+      expect(roots).toHaveLength(3)
+
+      act(() => { h.set({ chat: project(true), running: false }) })
+
+      expect(roots.map(root => root.closest('[hidden]'))).toEqual([null, null, null])
+      expect(turnProcessControl(view.container)?.disabled).toBe(true)
+      const visibleOrder = (): HTMLElement[] => [...view.container.querySelectorAll<HTMLElement>(
+        '[data-chat-group-key], [data-chat-flow-kind="steering"], [data-chat-group-part="response"]',
+      )].filter(row => row.closest('[hidden]') === null)
+      const order = visibleOrder()
+      expect(order).toEqual([
+        roots[0], view.getByText('first progress').closest('[data-chat-flow-kind]'),
+        view.getByText('first direction').closest('[data-chat-flow-kind]'),
+        roots[1], view.getByText('second progress').closest('[data-chat-flow-kind]'),
+        view.getByText('second direction').closest('[data-chat-flow-kind]'),
+        roots[2], view.getByText('final answer').closest('[data-chat-flow-kind]'),
+      ])
+      for (const next of ['compact', 'detailed', 'expanded', mode] as const) {
+        act(() => { h.setTranscriptView(next) })
+        expect(visibleOrder()).toEqual(order)
+        expect([...view.container.querySelectorAll('[data-chat-group-key]')]).toEqual(roots)
+      }
+      act(() => { h.setTranscriptView('compact') })
+      fireEvent.click(headers[1]!)
+      expect(headers.map(header => header.getAttribute('aria-expanded'))).toEqual(['false', 'true', 'false'])
+      expect(roots[1]!.querySelector('[data-step-process-body]')?.hasAttribute('hidden')).toBe(false)
+      expect(roots[1]!.querySelector('[data-turn-process-member]')?.hasAttribute('hidden')).toBe(false)
+      expect(visibleOrder()).toEqual(order)
+      fireEvent.click(headers[1]!)
+      expect(headers.map(header => header.getAttribute('aria-expanded'))).toEqual(['false', 'false', 'false'])
+      expect(visibleOrder()).toEqual(order)
+    },
+  )
+
+  it('keeps compact answer spacing after multiple opening steering inputs', () => {
     const h = makeHarness({
       nodes: [
         steering(1, 'question', 1),
@@ -2094,6 +2201,8 @@ describe('ChatView', () => {
     const answer = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="assistant-step"]:not([hidden])')
 
     expect(view.getByText('also mention safety')).toBeTruthy()
+    expect(answer?.hasAttribute('data-turn-process-answer')).toBe(true)
+    fireEvent.click(turnProcessControl(view.container)!)
     expect(answer?.hasAttribute('data-turn-process-answer')).toBe(false)
   })
 

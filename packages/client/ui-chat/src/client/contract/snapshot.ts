@@ -87,6 +87,8 @@ export interface ChatTurnProcessPresentation {
   readonly turnStarted: boolean
   readonly turnClosed: boolean
   readonly hasExternalProcess: boolean
+  /** A visible input after process output prevents one disclosure from hiding its surrounding groups. */
+  readonly hasInterleavedInput: boolean
   readonly compactAnswer: boolean
 }
 

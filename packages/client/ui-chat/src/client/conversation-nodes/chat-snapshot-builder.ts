@@ -431,9 +431,9 @@ function turnProcessPresentations(
     if (location.kind !== 'turn' && location.kind !== 'step') continue
     const current: TurnProcessPresentation = presentations.get(location.turn.turn) ?? {}
     const controlAnchor = current.control?.data.controlAnchorSeq
-    if (node.kind === 'user' || node.kind === 'turn-trigger'
-      || (node.kind === 'steering' && controlAnchor !== undefined
-        && (controlAnchor === location.turn.start?.seq || node.anchorSeq < controlAnchor))) {
+    if ((node.kind === 'user' || node.kind === 'turn-trigger' || node.kind === 'steering')
+      && controlAnchor !== undefined
+      && (controlAnchor === location.turn.start?.seq || node.anchorSeq < controlAnchor)) {
       presentations.set(location.turn.turn, {
         ...current,
         openingInputAnchor: Math.max(current.openingInputAnchor ?? node.anchorSeq, node.anchorSeq),
