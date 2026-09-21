@@ -436,7 +436,7 @@ describe('Conversation inject API', () => {
     }
   })
 
-  it('preserves selected text and source order when files arrive inside a paste transaction', async () => {
+  it('preserves selected text and file order and restores pasted directory chips from the draft', async () => {
     vi.stubGlobal('__DSH_HOST_PATHS__', { pathFor: (file: File) => `/proj/${file.name}` })
     onTestFinished(() => { vi.unstubAllGlobals(); cleanup() })
     const b = await bench()
@@ -453,18 +453,19 @@ describe('Conversation inject API', () => {
     const off = registerComposerKeymap(editor, {
       arbitrate: () => 'pass', space: () => false, dismissPopup: () => {},
       canSubmit: () => true, submit: () => {}, pasteText: (text) => { composer.keyboard!.paste(text) },
-      intakeFiles: (files) => { expect(composer.addFiles?.(files)).toBeNull() },
+      intakeFiles: (files, directories) => { expect(composer.addFiles?.(files, directories)).toBeNull() },
     })
     onTestFinished(off)
-    const files = [new File([], 'a.txt'), new File([], 'b.txt')]
+    const folder = new File([], 'my project')
+    const files = [new File([], 'a.txt'), folder, new File([], 'b.txt')]
     const event = new KeyboardEvent('paste', { cancelable: true })
     Object.defineProperty(event, 'clipboardData', { value: {
-      items: files.map(file => ({ kind: 'file', getAsFile: () => file })), getData: () => '',
+      items: files.map(file => ({
+        kind: 'file', getAsFile: () => file, webkitGetAsEntry: () => ({ isDirectory: file === folder }),
+      })), getData: () => '',
     } })
     editor.update(() => { editor.dispatchCommand(PASTE_COMMAND, event) }, { discrete: true })
-    expect(state.getSnapshot().draft).toBe('读取 @a.txt @b.txt ')
-    const folder = new File([], 'my project')
-    expect(composer.addFiles?.([folder], new Set([folder]))).toBeNull()
+    expect(state.getSnapshot().draft).toBe('读取 @a.txt @"my project/" @b.txt ')
     const view = render(<div>{projectUserText(state.getSnapshot().draft, [])}</div>)
     expect(view.container.querySelector('[data-ref-chip="folder"]')?.textContent).toBe('my project')
     expect(view.container.querySelector('[data-ref-chip="folder"]')?.getAttribute('title')).toBe('@"my project/"')

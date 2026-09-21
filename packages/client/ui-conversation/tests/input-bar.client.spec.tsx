@@ -349,6 +349,29 @@ describe('image draft rail', () => {
     await vi.waitFor(() => { expect(shell.snapshot.draft).toBe('同时粘贴的文字') })
   })
 
+  it('passes known clipboard directories and keeps files whose entry metadata is unavailable', () => {
+    const addFiles = vi.fn(() => null)
+    const { textarea } = bench({ addFiles })
+    const folder = new File([], 'folder with spaces')
+    const emptyFile = new File([], 'empty-file')
+    const withoutApi = new File([], 'without-api')
+    const withoutEntry = new File([], 'without-entry')
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        items: [
+          { kind: 'string', getAsFile: () => null },
+          { kind: 'file', getAsFile: () => folder, webkitGetAsEntry: () => ({ isDirectory: true }) },
+          { kind: 'file', getAsFile: () => emptyFile, webkitGetAsEntry: () => ({ isDirectory: false }) },
+          { kind: 'file', getAsFile: () => withoutApi },
+          { kind: 'file', getAsFile: () => withoutEntry, webkitGetAsEntry: () => null },
+          { kind: 'file', getAsFile: () => null },
+        ],
+        getData: () => '',
+      },
+    })
+    expect(addFiles).toHaveBeenCalledWith([folder, emptyFile, withoutApi, withoutEntry], new Set([folder]))
+  })
+
   it('pre-checks projected limits at intake: whole-batch refusal with product copy, none added', () => {
     const limits = {
       maxImageBytes: 1024 * 1024,
