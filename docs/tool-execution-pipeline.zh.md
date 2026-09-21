@@ -42,7 +42,7 @@ flowchart TD
   approval -->|allowed-once| guards
   approval -->|rejected, cancelled, unavailable| denied
   approval -.->|throw| normalized
-  denied --> post
+  denied --> project
   pre -.->|throw| normalized
   toolBody --> fsGate
   fsGate --> toolBody
