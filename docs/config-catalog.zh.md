@@ -618,7 +618,7 @@ export interface Config {
 }
 ```
 
-来源： [`packages/extensions/cordis-host-runner/src/index.ts:94`](../packages/extensions/cordis-host-runner/src/index.ts)
+来源： [`packages/extensions/cordis-host-runner/src/index.ts:93`](../packages/extensions/cordis-host-runner/src/index.ts)
 
 <a id="deepseek-aidsh-credentials-local"></a>
 
