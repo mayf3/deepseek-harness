@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vit
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { realOfficeBytes } from './office-fixture.ts'
 import { excelFixture, excelHtmlFixture, excelHtmlText, meetingMinutesFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-fixture.ts'
+import { excelDrawingFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-drawing-fixture.ts'
 import { xlsFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/xls-fixture.ts'
 import { pdfFixture, selectionPdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
@@ -266,6 +267,7 @@ else process.exit(1);
       ...[90, 180, 270].map(rotation => writeFile(join(cwd, `rotated-${rotation}.pdf`), pdfFixture(4, rotation))),
       writeFile(join(cwd, 'selection.pdf'), selectionPdfFixture()),
       writeFile(join(cwd, 'budget.xlsx'), await excelFixture()),
+      writeFile(join(cwd, 'chart-budget.xlsx'), await excelDrawingFixture()),
       writeFile(join(cwd, 'meeting.xlsx'), await meetingMinutesFixture()),
       writeFile(join(cwd, 'literal-html.xlsx'), await excelHtmlFixture()),
       writeFile(join(cwd, 'budget.xls'), xlsFixture()),
@@ -856,8 +858,19 @@ else process.exit(1);
     await page.keyboard.press('ControlOrMeta+C')
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('42\n')
     await successShot(page, 'excel-cached-formula')
+    await openFile('chart-budget.xlsx')
+    await sheetTabs.getByText('季度预算', { exact: true }).waitFor({ state: 'visible' })
+    const unsupportedNotice = excel.locator('[data-excel-unsupported-notice]')
+    const chartNotice = await unsupportedNotice.innerText()
+    expect(chartNotice).toBe('This preview does not support charts, conditional formatting in this workbook. Open it in a system application for the full experience.')
+    await sheetOverlay.click({ position: { x: 500, y: 110 } })
+    await expect.poll(() => formulaInput.innerText()).toBe('=C3/B3')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('80.0%\n')
+    await successShot(page, 'excel-chart-notice')
     await openFile('meeting.xlsx')
     await sheetTabs.getByText('会议信息', { exact: true }).waitFor({ state: 'visible' })
+    expect(await unsupportedNotice.count()).toBe(0)
     expect(await excel.getByText('Read-only preview', { exact: false }).count()).toBe(0)
     expect(await excel.getByText('Some formulas have no saved result', { exact: false }).count()).toBe(0)
     const formulaWarning = excel.locator('[data-excel-formula-warning]')
@@ -903,6 +916,8 @@ else process.exit(1);
       '- Opens without the Office conversion service',
       '- Sheets: 季度预算 | 公式与格式; hidden worksheet omitted',
       '- Formula workbooks use a compact warning beside fx; notice rows absent',
+      `- Unsupported XLSX content: ${chartNotice}`,
+      '- Drawing parts omitted; styled cells and cached formulas retained; notice cleared on file replacement',
       '- Formatted percent copied: 80.0%; date copied: 2026-09-16',
       '- Cached XLOOKUP result copied: 42; typing leaves it unchanged',
       '- Formula bar is read-only; PDF body and editing toolbar absent',
