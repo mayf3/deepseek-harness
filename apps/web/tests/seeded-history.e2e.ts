@@ -17,7 +17,7 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ContextFormed, Message, MessageSource } from '@deepseek-ai/dsh-llm'
 import { deriveEventMessage, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
@@ -30,6 +30,15 @@ import {
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'fixture': { kind: 'fixture' } & ContextFormed
+  }
+}
+
+type CheckpointSource = Extract<MessageSource, { readonly kind: 'compact-checkpoint' }>
+type CheckpointCommandId = NonNullable<CheckpointSource['sourceCommandId']>
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/seeded-history', import.meta.url))
 const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
@@ -105,8 +114,8 @@ function withCompaction(raw: string, meter: TokenMeter): string {
     events.push({ ...event, seq: taken, time: time++ })
     return taken
   }
-  const commandId = 'cmd-seeded-manual-compact'
-  const compactionId = 'compact-seeded-manual-compact'
+  const commandId = 'cmd-seeded-manual-compact' as CheckpointCommandId
+  const compactionId = 'compact-seeded-manual-compact' as CheckpointSource['compactionId']
   at({
     type: 'command/run',
     data: { commandId, name: 'compact', args: '', source: { kind: 'user' } },
@@ -173,7 +182,7 @@ function withCompaction(raw: string, meter: TokenMeter): string {
         text: '<context_checkpoint>Model-only compact checkpoint.</context_checkpoint>',
       }],
       source: {
-        kind: 'plugin', plugin: 'compact', compactionId, sourceCommandId: commandId,
+        kind: 'compact-checkpoint', compactionId, sourceCommandId: commandId,
       },
     }),
     surfaceOp: { op: 'replace', startSeq: first, endSeq: last },
@@ -219,6 +228,13 @@ describe('web e2e: seeded history renders through cold resume', () => {
       ],
       openInAppEnvironment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { SSH_CONNECTION: '10.0.0.2 55000 10.0.0.9 22' } }]),
     })
+    // Application registrations belong to the host desktop, not to the recorded Session.
+    const controller = scaffold.ctx.get('sessionController')
+    if (controller === undefined) throw new Error('seeded-history requires Session Controller')
+    const nativeQuery: unknown = Reflect.get(controller, 'fileApplications')
+    if (typeof nativeQuery !== 'function') throw new Error('seeded-history requires the native file-association adapter')
+    Reflect.set(controller, 'fileApplications', async () => [])
+    scaffold.ctx.effect(() => () => { Reflect.set(controller, 'fileApplications', nativeQuery) }, 'seeded-history: native association fixture')
     // Composer recording uses a child workspace; seedSession owns the scaffold root.
     const sessionCwd = MODE === 'record' ? join(scaffold.workspaceCwd, 'workspace') : scaffold.workspaceCwd
     await mkdir(sessionCwd, { recursive: true })
@@ -509,7 +525,8 @@ describe('web e2e: seeded history renders through cold resume', () => {
       await expect.poll(() => path.textContent()).toBe(absolutePath)
       expect(await path.getAttribute('title')).toBe(absolutePath)
       await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
-      await column.locator('[data-open-path-open]').waitFor({ timeout: 5_000 })
+      await column.getByRole('button', { name: 'Show file location', exact: true }).waitFor({ timeout: 5_000 })
+      await expect.poll(() => column.locator('[data-open-path-open]').isEnabled()).toBe(true)
       const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(FILE_PREVIEW_EXPECTED, preview, MODE)
     } finally {
@@ -712,24 +729,21 @@ describe('web e2e: seeded history renders through cold resume', () => {
     if (bodyError !== undefined) throw bodyError
   })
 
-  it.skipIf(MODE === 'record')('an Access-chip switch lands one command row: bare name, non-repeating settlement text', async () => {
+  it.skipIf(MODE === 'record')('an Access-chip switch persists its command without adding a Chat row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-command-row'))
-    // The Access chip submits `/permission <preset>` — a host command with no
-    // model call, so the settled row renders keylessly over this cold history.
-    // The row copy is the assertion: `permission · preset read-only`,
-    // where neither half repeats the other (the dispatched `/` and its
-    // argument stay out of the title, and the settlement text never restates
-    // the command's own name).
     await page.getByRole('button', { name: 'Access mode, current: Workspace Write' }).click()
     await page.getByRole('menuitem', { name: 'Read Only' }).click()
     const access = page.getByRole('button', { name: 'Access mode, current: Read Only' })
     await expect.poll(() => access.isEnabled(), { timeout: 10_000 }).toBe(true)
-    // Scoped to the row itself, so unrelated page text that happens to read
-    // `permission` (a future resident slash menu) cannot satisfy or break it.
     const row = page.locator('[data-variant="others"]').filter({ hasText: 'preset read-only' })
-    await expect.poll(() => row.count(), { timeout: 10_000 }).toBe(1)
-    expect(await row.getByText('permission', { exact: true }).count()).toBe(1)
-    expect(await row.getByText('/permission read-only', { exact: true }).count()).toBe(0)
+    expect(await row.count()).toBe(0)
+    const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
+    if (agent === undefined) throw new Error('seeded session did not attach an agent')
+    const events = agent.session.snapshotEvents()
+    const run = events.findLast(event => event.type === 'command/run' && event.data.name === 'permission')
+    if (run?.type !== 'command/run') throw new Error('permission command was not persisted')
+    expect(events.find(event => event.type === 'command/done' && event.data.commandId === run.data.commandId)?.data)
+      .toMatchObject({ kind: 'success', text: 'preset read-only' })
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(COMMAND_ROW_EXPECTED, snapshot, MODE)
@@ -781,7 +795,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     if (agent === undefined) throw new Error('seeded session did not attach an agent')
     agent.session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'Short injected context.' }],
-      source: { kind: 'plugin', plugin: 'fixture' },
+      source: { kind: 'fixture' },
     }), { surfaceOp: 'append' })
 
     const disclosure = page.getByRole('button', { name: 'Context injection fixture', exact: true })

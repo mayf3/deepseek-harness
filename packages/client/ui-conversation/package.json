@@ -80,6 +80,7 @@
     "@deepseek-ai/dsh-tool-todo": "workspace:^",
     "@deepseek-ai/dsh-util-crypto": "workspace:^",
     "@deepseek-ai/dsh-workspace": "workspace:^",
+    "@deepseek-ai/dsh-file-reference": "workspace:^",
     "@deepseek-ai/dsh-util-workspace-path": "workspace:^",
     "@types/react": "~18.3.1",
     "react": "^18.2.0",

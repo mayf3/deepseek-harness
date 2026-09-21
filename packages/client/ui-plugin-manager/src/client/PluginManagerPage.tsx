@@ -17,7 +17,7 @@ import {
   IconChevronRightOutlineRegular, IconCloseOutlineMedium,
   IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
   IconWarningOutlineRegular, Input, Modal,
-  PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTeam, PluginArtworkTerminal,
+  PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTerminal,
   StateDot, Switch, Tag, TerminalBlock, Toast, useAnchoredPosition, useDismissOnOutsidePointer,
   type IconProps, type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -26,10 +26,10 @@ import { rowConfigKey, type OfficialItem } from './config-ledger.ts'
 import type { PluginManagerLocaleKey } from './locales.ts'
 import {
   isInstallPending, offeredRegistries, rowKey,
-  type ConfirmState, type InstallInputError, type InstallState, type InstallSubject, type PackageRow, type PackageView,
+  type InstallInputError, type InstallState, type InstallSubject, type PackageRow, type PackageView,
   type PluginManagerFace, type RegistryChoice,
 } from './manager-store.ts'
-import { managementText, noticeText, packageText, registryText, type Translate } from './presentation.ts'
+import { managementText, noticeText, packageText, registryText, rowText, type Translate } from './presentation.ts'
 import type {} from './slot-contract.ts'
 import css from './PluginManagerPage.module.css'
 
@@ -37,11 +37,12 @@ import css from './PluginManagerPage.module.css'
 export type PluginManagerPageProps =
   PropsRuntime<'main'>
   & PropsLocale<'pluginManager'>
-  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config'>
+  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.activation'>
   & InjectFace<PluginManagerFace>
 
 /** The page's slot renderer, narrowed to the configuration slots. */
 type RenderConfig = PluginManagerPageProps['renderSlot']
+type ResolveText = PluginManagerFace['resolveText']
 
 /** What the page shows: the cards, a bundle's page, an official plugin's page, or a row's configuration page. */
 type View =
@@ -129,26 +130,29 @@ const ITEM_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
   ['web-search', PluginArtworkSearch],
 ])
 
-/** The artwork of the official bundles with artwork of their own, by package name. */
-const PACKAGE_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
-  ['@deepseek-ai/dsh-experimental-agent-team-profile', PluginArtworkTeam],
-])
-
 /** An official plugin's card and page artwork; plugins without their own get the default. */
 function itemArtwork(id: string): ReactNode {
   const Artwork = ITEM_ARTWORK.get(id) ?? PluginArtworkDefault
   return <Artwork size={CARD_ARTWORK_SIZE} />
 }
 
-/** A package's card and page artwork; packages without their own get the default. */
-function packageArtwork(name: string): ReactNode {
-  const Artwork = PACKAGE_ARTWORK.get(name) ?? PluginArtworkDefault
-  return <Artwork size={CARD_ARTWORK_SIZE} />
+/** Manifest images remain isolated from the page DOM; a failed decode keeps the position's default artwork. */
+function PackageArtwork({ src, row = false, size = row ? ROW_ARTWORK_SIZE : CARD_ARTWORK_SIZE }: {
+  readonly src: string | undefined
+  readonly row?: boolean
+  readonly size?: number
+}): ReactNode {
+  const [failedSource, setFailedSource] = useState<string>()
+  const Fallback = row ? PluginArtworkSubagent : PluginArtworkDefault
+  return src === undefined || src === failedSource
+    ? <Fallback size={size} />
+    : <img className={css.packageImage} src={src} width={size} height={size} alt="" onError={() => { setFailedSource(src) }} />
 }
 
 /** A row's switch: locked, saying why, when the Host refuses to address the row through the profile patch. */
-function RowSwitch({ row, t, busy, onChange }: {
+function RowSwitch({ row, title, t, busy, onChange }: {
   readonly row: PackageRow
+  readonly title: string
   readonly t: Translate
   readonly busy: boolean
   readonly onChange: (enabled: boolean) => void
@@ -157,7 +161,7 @@ function RowSwitch({ row, t, busy, onChange }: {
   return (
     <Switch
       checked={row.enabled}
-      label={t('partToggle', { name: row.rowId })}
+      label={t('partToggle', { name: title })}
       disabled={busy || locked}
       {...row.readOnlyReason === undefined ? {} : { title: managementText({ code: row.readOnlyReason }, t) }}
       onChange={onChange}
@@ -177,21 +181,29 @@ function rowDotState(row: PackageRow): StateDotState {
   return PHASE_STATES[row.phase]
 }
 
+/** A Host metadata diagnostic does not change the package's management permissions. */
+function MetadataError({ error, t }: { readonly error: string | undefined; readonly t: Translate }): ReactNode {
+  return error === undefined ? null : <p className={css.reason} role="status" data-package-meta-error>{t('metadataError', { error })}</p>
+}
+
 /**
  * A pack's rows as a list in the order the pack declares them: a state dot,
  * the row id, one line saying its state, a configure control for a row that
  * registered a page, and, when the pack is on, a switch. A pack like base
  * carries close to a hundred rows, so a long list gets a filter.
  */
-function RowsSection({ rows, t, toggle, configure }: {
+function RowsSection({ rows, t, resolveText, toggle, configure }: {
   readonly rows: readonly PackageRow[]
   readonly t: Translate
+  readonly resolveText: ResolveText
   readonly toggle?: RowToggles | undefined
   readonly configure?: RowConfigure | undefined
 }): ReactNode {
   const [filter, setFilter] = useState('')
   const query = filter.trim().toLowerCase()
-  const shown = query === '' ? rows : rows.filter(row => row.rowId.toLowerCase().includes(query))
+  const localized = rows.map(row => ({ row, ...rowText(row, resolveText) }))
+  const shown = query === '' ? localized : localized.filter(({ row, title, description }) =>
+    [title, description, row.rowId, row.moduleName].some(value => value?.toLowerCase().includes(query)))
   return (
     <section className={css.detailSection} data-plugin-rows>
       <div className={css.sectionHead}>
@@ -216,7 +228,7 @@ function RowsSection({ rows, t, toggle, configure }: {
         ? null
         : (
           <ul className={css.rows}>
-            {shown.map(row => (
+            {shown.map(({ row, title, description }) => (
               <li
                 key={row.rowId}
                 className={css.row}
@@ -224,17 +236,19 @@ function RowsSection({ rows, t, toggle, configure }: {
                 {...row.phase === 'failed' ? { 'data-state': 'failed' } : row.enabled ? {} : { 'data-state': 'off' }}
               >
                 <div className={css.rowLine}>
-                  <span className={css.rowIcon} aria-hidden="true"><PluginArtworkSubagent size={ROW_ARTWORK_SIZE} /></span>
+                  <span className={css.rowIcon} aria-hidden="true"><PackageArtwork key={row.meta?.icon} src={row.meta?.icon} row /></span>
                   <div className={css.rowMain}>
                     {configure?.has(row) === true
                       ? (
-                        <button type="button" className={css.rowOpen} aria-label={t('configureRow', { name: row.rowId })} onClick={() => { configure.open(row) }}>
-                          <span className={css.rowId}>{row.rowId}</span>
+                        <button type="button" className={css.rowOpen} aria-label={t('configureRow', { name: title })} onClick={() => { configure.open(row) }}>
+                          <span className={css.rowId}>{title}</span>
                           <IconChevronRightOutlineRegular className={css.rowOpenIcon} aria-hidden="true" />
                         </button>
                       )
-                      : <span className={css.rowId}>{row.rowId}</span>}
-                    <span className={css.rowModule}>{row.moduleName}</span>
+                      : <span className={css.rowId}>{title}</span>}
+                    {description === undefined ? null : <span className={css.rowModule}>{description}</span>}
+                    {title === row.rowId ? null : <code className={css.rowModule}>{row.rowId}</code>}
+                    {title === row.moduleName ? null : <code className={css.rowModule}>{row.moduleName}</code>}
                   </div>
                   <span className={css.rowState}>
                     <StateDot state={rowDotState(row)} />
@@ -242,8 +256,12 @@ function RowsSection({ rows, t, toggle, configure }: {
                   </span>
                   {toggle === undefined
                     ? null
-                    : <RowSwitch row={row} t={t} busy={toggle.busy(row)} onChange={(enabled) => { toggle.onSetEnabled(row, enabled) }} />}
+                    : <RowSwitch
+                      row={row} title={title} t={t} busy={toggle.busy(row)}
+                      onChange={(enabled) => { toggle.onSetEnabled(row, enabled) }}
+                    />}
                 </div>
+                <MetadataError error={row.meta?.error} t={t} />
               </li>
             ))}
           </ul>
@@ -290,15 +308,16 @@ function CardHead({ title, t, onOpen, icon, tags, description, end }: {
   readonly description: ReactNode
   readonly end?: ReactNode
 }): ReactNode {
+  const descriptionId = useId()
   return (
     <div className={css.cardHead}>
       <span className={css.cardIcon} aria-hidden="true">{icon}</span>
       <div className={css.cardMain}>
         <div className={css.titleRow}>
-          <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
+          <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: title })} aria-describedby={description === undefined ? undefined : descriptionId} onClick={onOpen}>{title}</button>
           {tags}
         </div>
-        {description === undefined ? null : <span className={css.cardDesc}>{description}</span>}
+        {description === undefined ? null : <span className={css.cardDesc} id={descriptionId}>{description}</span>}
       </div>
       {end === undefined ? null : <div className={css.cardEnd}>{end}</div>}
     </div>
@@ -328,15 +347,16 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
 }
 
 /** One package as a card that opens its page: its name, its one-liner, its tags, and its bundle switch. */
-function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
+function PackageCard({ pkg, t, resolveText, busy, highlighted, onOpen, onSetEnabled }: {
   readonly pkg: PackageView
   readonly t: Translate
+  readonly resolveText: ResolveText
   readonly busy: boolean
   readonly highlighted: boolean
   readonly onOpen: () => void
   readonly onSetEnabled: (enabled: boolean) => void
 }): ReactNode {
-  const { title, description, beta } = packageText(pkg, t)
+  const { title, description, beta } = packageText(pkg, resolveText)
   const status = packageStatus(pkg)
   return (
     <li
@@ -349,7 +369,7 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
         title={title}
         t={t}
         onOpen={onOpen}
-        icon={packageArtwork(pkg.name)}
+        icon={<PackageArtwork key={pkg.meta?.icon} src={pkg.meta?.icon} />}
         tags={(
           <>
             {beta ? <Tag className={css.statusTag} tone="info">{t('statusBeta')}</Tag> : null}
@@ -359,6 +379,7 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
         description={description}
         end={<EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />}
       />
+      <MetadataError error={pkg.meta?.error} t={t} />
     </li>
   )
 }
@@ -404,28 +425,32 @@ function ItemDetail({ item, t, onBack, renderSlot }: {
 }
 
 /**
- * A row's configuration page: the crumb back to its bundle's page, the row id
- * over the module it names and the entry's one-liner, and the form the entry renders.
+ * A row's configuration page keeps its technical identity beside local package
+ * text and the form supplied by its configuration entry.
  */
-function RowDetail({ pkg, row, t, onBack, renderSlot }: {
+function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot }: {
   readonly pkg: PackageView
   readonly row: PackageRow
   readonly t: Translate
+  readonly resolveText: ResolveText
   readonly onBack: () => void
   readonly renderSlot: RenderConfig
 }): ReactNode {
-  const { title } = packageText(pkg, t)
+  const { title } = packageText(pkg, resolveText)
+  const { title: rowTitle, description } = rowText(row, resolveText)
   const key = rowConfigKey(pkg.name, row.rowId)
   return (
     <div className={css.detail} data-plugin-row-detail={key}>
-      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<PluginArtworkSubagent size={CARD_ARTWORK_SIZE} />} />
+      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<PackageArtwork key={row.meta?.icon} src={row.meta?.icon} row size={CARD_ARTWORK_SIZE} />} />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
-          <h3 className={css.detailTitle}>{row.rowId}</h3>
+          <h3 className={css.detailTitle}>{rowTitle}</h3>
         </div>
+        {rowTitle === row.rowId ? null : <p className={css.detailName}><code>{row.rowId}</code></p>}
         <p className={css.detailName}><code>{row.moduleName}</code></p>
-        <p className={css.detailDesc}>{renderSlot('plugins.row.config', { view: 'summary' }, { entryKey: key })}</p>
+        <p className={css.detailDesc}>{description ?? renderSlot('plugins.row.config', { view: 'summary' }, { entryKey: key })}</p>
       </div>
+      <MetadataError error={row.meta?.error} t={t} />
       <div className={css.detailSections} data-plugin-config>
         {renderSlot('plugins.row.config', { view: 'page' }, { entryKey: key })}
       </div>
@@ -442,11 +467,12 @@ function RowDetail({ pkg, row, t, onBack, renderSlot }: {
  * itself; and its rows with their switches and configure controls.
  */
 function PackageDetail({
-  pkg, t, busy, rowBusy, configured, configure, renderSlot,
+  pkg, t, resolveText, busy, rowBusy, configured, configure, renderSlot,
   onBack, onSetEnabled, onUninstall, onSetRowEnabled,
 }: {
   readonly pkg: PackageView
   readonly t: Translate
+  readonly resolveText: ResolveText
   readonly busy: boolean
   /** Whether a row has a write in flight. */
   readonly rowBusy: (row: PackageRow) => boolean
@@ -459,7 +485,7 @@ function PackageDetail({
   readonly onUninstall: () => void
   readonly onSetRowEnabled: (row: PackageRow, enabled: boolean) => void
 }): ReactNode {
-  const { title, description, beta } = packageText(pkg, t)
+  const { title, description, beta } = packageText(pkg, resolveText)
   const status = packageStatus(pkg)
   return (
     <div className={css.detail} data-plugin-detail={pkg.name}>
@@ -467,7 +493,7 @@ function PackageDetail({
         crumbLabel={t('backToList')}
         crumbText={t('crumbRoot')}
         onBack={onBack}
-        icon={packageArtwork(pkg.name)}
+        icon={<PackageArtwork key={pkg.meta?.icon} src={pkg.meta?.icon} />}
         actions={(
           <div className={css.detailActions}>
             {pkg.installed
@@ -497,8 +523,9 @@ function PackageDetail({
           {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
         </div>
         <p className={css.detailName}><code data-plugin-name>{pkg.name}</code></p>
-        <p className={css.detailDesc}>{description ?? t('noDescription')}</p>
+        {description === undefined ? null : <p className={css.detailDesc}>{description}</p>}
       </div>
+      <MetadataError error={pkg.meta?.error} t={t} />
       {pkg.error === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {managementText(pkg.error, t)}</p>}
       {pkg.readOnlyReason === undefined ? null : <p className={css.reason} role="status">{managementText({ code: pkg.readOnlyReason }, t)}</p>}
       <div className={css.detailSections}>
@@ -512,6 +539,7 @@ function PackageDetail({
         <RowsSection
           rows={pkg.rows}
           t={t}
+          resolveText={resolveText}
           toggle={pkg.enabled ? { busy: row => busy || rowBusy(row), onSetEnabled: onSetRowEnabled } : undefined}
           configure={configure}
         />
@@ -1012,13 +1040,12 @@ function InstallDialog({
 }
 
 /** The confirmation an uninstall waits on. */
-function ConfirmDialog({ confirm, t, onConfirm, onCancel }: {
-  readonly confirm: ConfirmState
+function ConfirmDialog({ name, t, onConfirm, onCancel }: {
+  readonly name: string
   readonly t: Translate
   readonly onConfirm: () => void
   readonly onCancel: () => void
 }): ReactNode {
-  const { title: name } = packageText({ name: confirm.packageName }, t)
   return (
     <Modal
       open
@@ -1040,11 +1067,12 @@ function ConfirmDialog({ confirm, t, onConfirm, onCancel }: {
 
 /** Render the plugin manager: the official plugins and installed bundles, their pages, the install dialog, and the confirmation. */
 export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
-  const { t, ensure, renderSlot } = props
+  const { t, ensure, renderSlot, resolveText } = props
   const state = props.usePluginManager(snapshot => snapshot)
   const ledger = props.useConfigLedger(snapshot => snapshot)
   // What is open; a package that leaves the list (uninstalled) drops back to the cards.
   const [view, setView] = useState<View>({ kind: 'list' })
+  const [activation, setActivation] = useState<string | null>(null)
   useEffect(() => { ensure() }, [ensure])
   // A package an install just enabled: scroll it into view and mark it for a moment.
   const { highlight, clearHighlight } = { highlight: state.highlight, clearHighlight: props.clearHighlight }
@@ -1069,6 +1097,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const openItem = view.kind === 'item' ? ledger.items.find(item => item.id === view.id) : undefined
   const openRow = view.kind === 'row' && openPkg !== undefined ? openPkg.rows.find(row => row.rowId === view.rowId) : undefined
   const showsCards = openPkg === undefined && openItem === undefined
+  const activated = listed.find(pkg => pkg.name === activation && pkg.enabled && !state.busy.includes(pkg.name))
   const setRowEnabled = (row: PackageRow, enabled: boolean): void => {
     /* v8 ignore next -- a row without a live entry has its switch disabled */
     if (row.entryId !== undefined) props.setRowEnabled(row.entryId, enabled)
@@ -1082,10 +1111,11 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
       key={pkg.name}
       pkg={pkg}
       t={t}
+      resolveText={resolveText}
       busy={state.busy.includes(pkg.name)}
       highlighted={state.highlight === pkg.name}
-      onOpen={() => { setView({ kind: 'package', name: pkg.name }) }}
-      onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
+      onOpen={() => { setActivation(null); setView({ kind: 'package', name: pkg.name }) }}
+      onSetEnabled={(enabled) => { setActivation(enabled ? pkg.name : null); props.setEnabled(pkg.name, enabled) }}
     />
   )
   // The Official group: the bundles the installation ships, then the plugins that registered their configuration.
@@ -1165,6 +1195,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             pkg={openPkg}
             row={openRow}
             t={t}
+            resolveText={resolveText}
             renderSlot={renderSlot}
             onBack={() => { setView({ kind: 'package', name: openPkg.name }) }}
           />
@@ -1175,6 +1206,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           <PackageDetail
             pkg={openPkg}
             t={t}
+            resolveText={resolveText}
             busy={state.busy.includes(openPkg.name)}
             rowBusy={row => row.entryId !== undefined && state.busy.includes(rowKey(row.entryId))}
             configured={ledger.bundles.has(openPkg.name)}
@@ -1212,6 +1244,12 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             </>
           )
         : null}
+      {showsCards && activated !== undefined && !state.install.open
+        ? renderSlot('plugins.bundle.activation', {
+          packageName: activated.name,
+          onDismiss: () => { setActivation(null) },
+          onOpenDetails: () => { setActivation(null); setView({ kind: 'package', name: activated.name }) },
+        }, { entryKey: activated.name }) : null}
       <InstallDialog
         install={state.install}
         t={t}
@@ -1221,7 +1259,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         onCancel={props.cancelInstall}
         onReconcile={props.reconcileInstall}
         onToggleDetails={props.toggleInstallDetails}
-        onEnableNow={props.enableInstalled}
+        onEnableNow={() => { setActivation(state.install.installed); props.enableInstalled() }}
         onApproveBuilds={props.approveBuildsAndRetry}
         onToggleRegistry={props.toggleRegistryOptions}
         onChooseRegistry={props.chooseRegistry}
@@ -1231,7 +1269,10 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         ? null
         : (
           <ConfirmDialog
-            confirm={state.confirm}
+            name={packageText(
+              state.packages.find(pkg => pkg.name === state.confirm?.packageName) ?? { name: state.confirm.packageName },
+              resolveText,
+            ).title}
             t={t}
             onConfirm={props.confirm}
             onCancel={props.cancelConfirm}

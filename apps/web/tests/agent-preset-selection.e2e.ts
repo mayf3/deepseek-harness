@@ -34,6 +34,9 @@ const MENU_EXPECTED = join(SNAPSHOT_DIR, 'menu.expected.md')
 const HEADER_EXPECTED = join(SNAPSHOT_DIR, 'header.expected.md')
 const MODE = webSnapshotMode()
 const SEED_ID = 'agent-preset-selection-web-e2e'
+const SEED_TIME = 1784974100000
+const SEEDED_CHILD_ID = sessionId('agent-preset-selection-child')
+const SEEDED_CHILD_CREATED_AT = 1784974100100
 /** A project skill only a preset that mounts `skill-filesystem` can discover. */
 const SKILL_NAME = 'preset-catalog-demo'
 /** The preset whose rows resolve and then refuse to start. */
@@ -87,19 +90,18 @@ async function seedWorkspaceSkill(workspaceCwd: string): Promise<void> {
  * @returns a tokenized session log ending on a closed turn.
  */
 function seedLog(): string {
-  const time = 1784974100000
   const at = (index: number, event: Record<string, unknown>): string =>
-    JSON.stringify({ ...event, seq: index, time: time + index })
+    JSON.stringify({ ...event, seq: index, time: SEED_TIME + index })
   return [
     JSON.stringify({
       type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}',
-      createdAt: time, cwd: '{{cwd}}/workspace', isSeeded: false, delegationDepth: 0,
+      createdAt: SEED_TIME, cwd: '{{cwd}}/workspace', isSeeded: false, delegationDepth: 0,
     }),
     at(0, { type: 'turn/start', data: { turn: 1, trigger: { kind: 'message', source: { kind: 'user', rpcId: 'seed' } } } }),
     at(1, { type: 'step/start', data: { turn: 1, step: 1 } }),
     at(2, {
       type: 'system/message',
-      data: { turn: 1, step: 1, message: createSystemMessage('', '@deepseek-ai/dsh-system-prompt') },
+      data: { turn: 1, step: 1, message: createSystemMessage('') },
       surfaceOp: 'append',
     }),
     at(3, {
@@ -114,7 +116,17 @@ function seedLog(): string {
     }),
     at(4, { type: 'session/title', data: { title: 'Seeded turn', messageSeqs: [3], source: { kind: 'fallback' } } }),
     at(5, { type: 'step/end', data: { turn: 1, step: 1 } }),
-    at(6, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }),
+    at(6, {
+      type: 'subagent/catalog',
+      data: {
+        version: 0,
+        childId: SEEDED_CHILD_ID,
+        childCreatedAt: SEEDED_CHILD_CREATED_AT,
+        mode: 'one-shot',
+        label: 'header order probe',
+      },
+    }),
+    at(7, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }),
   ].join('\n')
 }
 
@@ -125,13 +137,11 @@ function seedLog(): string {
  * @param parentId - the seeded session whose header the browser opens.
  */
 async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise<void> {
-  const childId = sessionId('agent-preset-selection-child')
-  const createdAt = 1784974100100
   const header: SessionHeader = {
     version: SESSION_FORMAT_VERSION,
-    id: childId,
+    id: SEEDED_CHILD_ID,
     isSeeded: false,
-    createdAt,
+    createdAt: SEEDED_CHILD_CREATED_AT,
     cwd: scaffold.workspaceCwd,
     parentSession: parentId,
     origin: 'subagent',
@@ -143,13 +153,13 @@ async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise
     {
       type: 'turn/start',
       seq: 0,
-      time: createdAt,
+      time: SEEDED_CHILD_CREATED_AT,
       data: { turn: 1, trigger: { kind: 'message', source: { kind: 'user' } } },
     },
     {
       type: 'user/message',
       seq: 1,
-      time: createdAt + 1,
+      time: SEEDED_CHILD_CREATED_AT + 1,
       data: createUserMessage({
         content: [{ type: 'text', text: 'Check the session-header action order.' }],
         source: { kind: 'user' },
@@ -159,7 +169,7 @@ async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise
     {
       type: 'subagent/descriptor',
       seq: 2,
-      time: createdAt + 2,
+      time: SEEDED_CHILD_CREATED_AT + 2,
       data: snapshotSubagentDescriptor({
         mode: 'one-shot', provider: 'spawn', label: 'header order probe',
       }),
@@ -167,7 +177,7 @@ async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise
     {
       type: 'turn/end',
       seq: 3,
-      time: createdAt + 3,
+      time: SEEDED_CHILD_CREATED_AT + 3,
       data: { turn: 1, reason: { kind: 'completed' } },
     },
   ] as SessionEvent[])
@@ -255,7 +265,7 @@ describe('web e2e: agent-preset selection', () => {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Settings' })
     await dialog.getByRole('button', { name: 'Agent presets' }).click()
-    const toggle = dialog.getByRole('switch', { name: 'Allow switching Agent modes' })
+    const toggle = dialog.getByRole('switch', { name: 'Choose a mode for new tasks' })
     await dialog.getByRole('button', { name: 'New task default: Standard mode' }).waitFor({ timeout: 10_000 })
     expect(await toggle.getAttribute('aria-checked')).toBe('true')
     await dialog.getByRole('button', { name: 'Close' }).last().click()
@@ -355,13 +365,13 @@ describe('web e2e: agent-preset selection', () => {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Settings' })
     await dialog.getByRole('button', { name: 'Agent presets' }).click()
-    await dialog.getByRole('button', { name: 'Set as default: Minimal mode' }).click()
+    await dialog.getByRole('button', { name: 'Set as new task default: Minimal mode' }).click()
     await dialog.getByRole('button', { name: 'New task default: Minimal mode' }).waitFor({ timeout: 10_000 })
     await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('minimal')
-    const toggle = dialog.getByRole('switch', { name: 'Allow switching Agent modes' })
+    const toggle = dialog.getByRole('switch', { name: 'Choose a mode for new tasks' })
     await toggle.click()
     await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
-    await dialog.getByRole('button', { name: 'Default: Standard mode' }).waitFor({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: 'Application default: Standard mode' }).waitFor({ timeout: 10_000 })
     await dialog.getByRole('button', { name: 'Close' }).last().click()
 
     await expect.poll(() => page.getByRole('button', { name: / mode$/ }).count()).toBe(0)
@@ -372,7 +382,7 @@ describe('web e2e: agent-preset selection', () => {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const reopened = page.getByRole('dialog', { name: 'Settings' })
     await reopened.getByRole('button', { name: 'Agent presets' }).click()
-    const reopenedToggle = reopened.getByRole('switch', { name: 'Allow switching Agent modes' })
+    const reopenedToggle = reopened.getByRole('switch', { name: 'Choose a mode for new tasks' })
     await reopenedToggle.click()
     await expect.poll(() => reopenedToggle.getAttribute('aria-checked')).toBe('true')
     await reopened.getByRole('button', { name: 'New task default: Minimal mode' }).waitFor({ timeout: 10_000 })
@@ -394,8 +404,9 @@ describe('web e2e: agent-preset selection', () => {
     await compareOrRefreshGolden(HEADER_EXPECTED, snapshot, MODE)
     expect(snapshot).toContain('Minimal mode')
     expect(snapshot).toContain('button "1 subagent"')
-    expect(snapshot.indexOf('button "1 subagent"')).toBeLessThan(snapshot.indexOf('Minimal mode'))
-    expect(snapshot.indexOf('Minimal mode')).toBeLessThan(snapshot.indexOf('button "More actions"'))
+    // The preset label leads the header band; delegation navigation follows it.
+    expect(snapshot.indexOf('Minimal mode')).toBeLessThan(snapshot.indexOf('button "1 subagent"'))
+    expect(snapshot.indexOf('button "1 subagent"')).toBeLessThan(snapshot.indexOf('button "More actions"'))
     // Static chrome, not a control: the header can only report a composition
     // the host would refuse to change.
     expect(snapshot).not.toContain('button "Minimal mode"')

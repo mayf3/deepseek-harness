@@ -172,7 +172,7 @@ function standaloneDuration(): Pick<
 /** Empty sessions-list hook; breadcrumbs therefore fall back to the raw id. */
 function emptySessions() {
   const store = createSnapshotStore<SessionListState>(
-    { ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
+    { ids: [], byId: {}, phase: 'ready', projectionsBySession: {} })
   return bindSnapshotSelector(store)
 }
 
@@ -214,6 +214,8 @@ function standaloneProps(
     draft: '', attachmentIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [],
   })
   const inputActions: InputActions = {
+    captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),
+    insertText: () => false,
     setDraft: () => {},
     addAttachments: () => false,
     removeAttachment: () => {},
@@ -339,6 +341,8 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
     draft: '', attachmentIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [],
   }))
   const inputActions: InputActions = {
+    captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),
+    insertText: () => false,
     setDraft: vi.fn(),
     addAttachments: vi.fn(() => false),
     removeAttachment: vi.fn(),
@@ -457,7 +461,7 @@ describe('plugin registration', () => {
 
     expect(resolveSource(binding)).toBe(source)
     expect(resolveSource(binding)).toBe(source)
-    const optionalTrajectory = b.trajectoryStore as unknown as {
+    const optionalTrajectory = b.trajectoryStore as {
       set(value: TrajectorySnapshot | undefined): void
     }
     optionalTrajectory.set(undefined)

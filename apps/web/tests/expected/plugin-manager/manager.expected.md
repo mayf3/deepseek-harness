@@ -25,6 +25,6 @@
 - text: "1"
 - list:
   - listitem:
-    - button "查看 bundle": bundle
-    - text: "Web e2e fixture: a bundle whose one row is an inert plugin."
-    - switch "启用 bundle"
+    - button "查看 @fixture/bundle": "@fixture/bundle"
+    - text: Registry description for the fixture bundle.
+    - switch "启用 @fixture/bundle"

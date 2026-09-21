@@ -14,9 +14,6 @@ import type {} from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
-import {
-  indexSubagentDescendants, type SubagentDescendantSummary,
-} from './subagent-lineage.ts'
 
 /** Group key for Sessions outside every Workspace. */
 export const UNGROUPED_KEY = ''
@@ -54,7 +51,7 @@ export interface SessionNode {
   /** A Session-scoped UI consumer is awaiting this user. */
   pendingInteraction?: SessionPendingInteractionStatus
   running: boolean
-  /** Running descendants connected through uninterrupted subagent-origin lineage. */
+  /** Running direct children in the loaded subagent catalog. */
   runningSubagentCount: number
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
@@ -97,7 +94,7 @@ export interface SearchResultNode {
   /** A Session-scoped UI consumer is awaiting this user. */
   pendingInteraction?: SessionPendingInteractionStatus
   running: boolean
-  /** Running descendants connected through uninterrupted subagent-origin lineage. */
+  /** Running direct children in the loaded subagent catalog. */
   runningSubagentCount: number
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
@@ -166,11 +163,12 @@ export function orderByRecency(
 
 /**
  * Reconcile a browser-local manual order with current account membership.
+ * New ordinary forks precede their sources without changing saved entries' relative order.
  * @param memberIds - authoritative account membership.
  * @param savedOrder - previously saved browser-local order.
- * @param summaries - current Session summaries used to append newly known members by recency.
+ * @param summaries - current Session metadata; unknown new members wait for their summaries.
  * @param rowState - global pin and archive membership; only account members can supplement the order.
- * @returns missing pins, retained saved slots, new ordinary members, then missing archives; unknown new members wait for their summaries.
+ * @returns saved relative positions plus missing members ordered by pin, fork source, recency, and archive status.
  */
 export function reconcileManualOrder(
   memberIds: readonly SessionId[],
@@ -201,7 +199,18 @@ export function reconcileManualOrder(
     if (archived.has(id)) archives.push(id)
     else ordinary.push(id)
   }
-  return [...pins, ...ordered, ...ordinary, ...archives]
+  const result = [...pins, ...ordered, ...ordinary, ...archives]
+  const pending = new Set(ordinary)
+  const placeFork = (id: SessionId): void => {
+    if (!pending.delete(id)) return
+    const parentId = summaries[id]?.parentId
+    if (parentId === undefined || parentId === id || !result.includes(parentId)) return
+    placeFork(parentId)
+    result.splice(result.indexOf(id), 1)
+    result.splice(result.indexOf(parentId), 0, id)
+  }
+  for (const id of [...ordinary].reverse()) placeFork(id)
+  return result
 }
 
 /**
@@ -384,9 +393,16 @@ function visiblePendingKind(kind: string | undefined): SessionPendingInteraction
   }
 }
 
+function runningChildCount(list: SessionListState, parentId: SessionId, statuses: SessionStatuses): number {
+  return list.projectionsBySession[parentId]?.values.subagentCatalog?.reduce(
+    (count, child) => count + ((statuses.get(child.id)?.running ?? list.byId[child.id]?.running) === true ? 1 : 0),
+    0,
+  ) ?? 0
+}
+
 function sessionNode(
   s: SessionSummary,
-  descendants: ReadonlyMap<SessionId, SubagentDescendantSummary>,
+  list: SessionListState,
   statuses: SessionStatuses,
   pinned: ReadonlySet<SessionId>,
   archived: ReadonlySet<SessionId>,
@@ -398,7 +414,7 @@ function sessionNode(
     title: sessionTitle(s),
     blank: s.blank,
     running: status?.running ?? s.running,
-    runningSubagentCount: descendants.get(s.id)?.runningCount ?? 0,
+    runningSubagentCount: runningChildCount(list, s.id, statuses),
     completed: status?.completionUnread === true,
     hasActiveSchedule: hasActiveSchedule(s),
     pinned: !archived.has(s.id) && pinned.has(s.id),
@@ -433,7 +449,6 @@ export function deriveGroups(
   const archived = new Set(rowState.archivedSessionIds)
   const pinned = new Set(rowState.pinnedSessionIds)
   const expandedGroups = new Set(view.expandedGroups)
-  const descendants = indexSubagentDescendants(list.byId)
   const current = mainSessionId(list)
   const currentGroup = current === undefined
     ? undefined
@@ -452,7 +467,7 @@ export function deriveGroups(
       containsCurrent: g.key === currentGroup,
       sessions: expanded
         ? sectionMembers(g.sessions, pinned, archived)
-          .map(session => sessionNode(session, descendants, statuses, pinned, archived))
+          .map(session => sessionNode(session, list, statuses, pinned, archived))
         : [],
     })
   }
@@ -505,7 +520,6 @@ export function deriveFlat(
 ): SessionNode[] {
   const archived = new Set(rowState.archivedSessionIds)
   const pinned = new Set(rowState.pinnedSessionIds)
-  const descendants = indexSubagentDescendants(list.byId)
   const current = mainSessionId(list)
   const members = sessionIds.flatMap((id) => {
     const session = list.byId[id]
@@ -514,7 +528,7 @@ export function deriveFlat(
       : []
   })
   return sectionMembers(members, pinned, archived)
-    .map(session => sessionNode(session, descendants, statuses, pinned, archived))
+    .map(session => sessionNode(session, list, statuses, pinned, archived))
 }
 
 /**
@@ -544,7 +558,6 @@ export function deriveSearchResults(
   const q = query.trim().toLowerCase()
   if (q === '') return { items: [], hasMore: false }
   const archived = new Set(archivedSessionIds)
-  const descendants = indexSubagentDescendants(list.byId)
   const current = mainSessionId(list)
 
   const workspaceBySession = new Map<SessionId, string>()
@@ -600,7 +613,7 @@ export function deriveSearchResults(
         title: sessionTitle(summary),
         workspace: labelOf(summary),
         running: status?.running ?? summary.running,
-        runningSubagentCount: descendants.get(summary.id)?.runningCount ?? 0,
+        runningSubagentCount: runningChildCount(list, summary.id, statuses),
         ...(pendingInteraction === undefined
           ? {}
           : { pendingInteraction }),

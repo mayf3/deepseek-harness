@@ -218,7 +218,7 @@ export class TestClient {
       mountPoint = resolveMountPoint(options.mount)
       release = sharedJsdomShims.acquire()
       const system = createInProcessModules(graphFromRoster(roster.rows), modules)
-      ctx.plugin(remoteProxiesPlugin(remoteNamespacesOf(modules.values(), mock), mock) as unknown as Plugin)
+      ctx.plugin(remoteProxiesPlugin(remoteNamespacesOf(modules.values(), mock), mock) as Plugin)
       await bootClient({ ctx, modules: system, manifest: system.manifest })
       if (mountPoint.element !== undefined) {
         if (ctx.get('uiRenderer') === undefined) {

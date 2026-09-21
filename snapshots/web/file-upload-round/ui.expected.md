@@ -1,13 +1,11 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Read the attached file with" [disabled]
+  - navigation "Session hierarchy": Read the attached file with
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: poem.txt TXT 16B
 - button "reference-1.png, click to view original":
   - img "reference-1.png"

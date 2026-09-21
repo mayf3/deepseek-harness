@@ -9,15 +9,13 @@
 ---
 
 - banner:
-  - navigation "Session hierarchy":
-    - button "Review deepseek-ai/deepseek-harness#314" [disabled]
+  - navigation "Session hierarchy": Review deepseek-ai/deepseek-harness#314
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - button "Thought for a while"
 - paragraph: "Review complete: no actionable findings."
 - button "Copy"

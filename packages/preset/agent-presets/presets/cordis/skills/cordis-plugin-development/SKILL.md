@@ -1,6 +1,6 @@
 ---
 name: cordis-plugin-development
-description: Use when authoring, installing, configuring, or debugging persistent plugins and MCP connections in the current Harness profile.
+description: Use when authoring, installing, configuring, or debugging persistent plugins and MCP connections in the current Harness profile, and for any visual object, decoration, or widget request that names no other destination, which means an installed UI plugin rendered in the Harness Web UI.
 ---
 
 # Persistent Harness plugins
@@ -9,7 +9,7 @@ Use ordinary workspace files to author a bundle, then `plugin_manager install_bu
 
 ## Deliver a working plugin first
 
-1. Resolve the requested result and destination. In Creator mode, an unspecified visual destination is the current Harness Web UI. Choose reasonable visual details and implement a small first version.
+1. Resolve the requested result and destination. An unspecified visual destination is the current Harness Web UI; a standalone image or HTML file does not complete such a request. Choose reasonable visual details and implement a small first version; install it before visual refinement.
 2. Discover only the APIs needed for that version: `cordis_inspect_list`, then targeted `cordis_inspect_query` calls. For UI, query Client `Slots.listSubTree` and the selected slot's registration options and props. Treat the recipes below and returned API declarations as the supported implementation path. Once the chosen slot and registration API are known, write the plugin. Before the first installation, resolve missing declarations through inspection; do not re-check these recipes by reading Loader, manifest-parser, package-manager, React, or slot implementation source. Source-level diagnosis starts from a concrete installation or runtime failure.
 3. The first files you write are the installable package, patch, and required Host/Client files in one workspace directory. Check JavaScript syntax and the manifest, then install it. Before that first installation, do not create preview HTML, mock shells, design variants, screenshot scripts, or rasterizer tooling. Use the installed plugin itself as the first preview.
 4. Read the installation result. After `application: applied`, exercise the capability or inspect the live Client registration. Use the connected page for visual verification when browser control is available. State any verification limitation explicitly; installation and slot registration alone do not establish what the user can see.
@@ -47,7 +47,7 @@ For a simple drawing, prefer a slot with allocated space, such as `conversation.
       name: '@local/my-decoration'
 ```
 
-Call `plugin_manager` with `action: install_bundle` and the absolute package directory as `target`. It performs package installation and bundle selection; do not reproduce those steps with shell commands. Only pass `approvedBuilds` after the user explicitly approves the reported pending build scripts.
+Call `plugin_manager` with `action: install_bundle` and the absolute package directory as `target`. It performs package installation and bundle selection; do not reproduce those steps with shell commands. Only pass `approvedBuilds` after the user explicitly approves the reported pending build scripts. Preserve returned failures and pending states; report success only after observing the requested capability.
 
 Use `list_plugins` or `list_bundles` to obtain exact identifiers for existing installations. `set_plugin` and `set_bundle` toggle them; `remove_bundle` removes a bundle. Inspect saved-state and activation outcomes separately: `failed` requires diagnosis, `overridden` means a higher-priority layer wins, and `restart-required` means the change is not live. Installing a new bundle can activate through HMR; replacing an installed package requires restart to load a fresh JavaScript module generation. Do not infer updated browser code from an unchanged slot id.
 
@@ -105,4 +105,4 @@ Create a configuration-only bundle: its manifest needs a unique name, version, a
         failOnStartupError: true
 ```
 
-Replace the endpoint, install the bundle through `plugin_manager`, then call `mcp__demo__ping` or another discovered tool. For stdio, use `transport: stdio`, `command`, and optional `args`, `env`, and `cwd`. Ambient credentials are scrubbed; reference existing credentials with Loader `!!js` rather than copying secrets into conversation text. Repair the same bundle on failure instead of creating duplicates.
+Replace the endpoint, install the bundle through `plugin_manager`, then call `mcp__demo__ping` or another newly available `mcp__<serverName>__<tool>` tool to verify the connection. For stdio, use `transport: stdio`, `command`, and optional `args`, `env`, and `cwd`. Ambient credentials are scrubbed; reference existing credentials with Loader `!!js` rather than copying secrets into conversation text. Repair the same bundle on failure instead of creating duplicates.

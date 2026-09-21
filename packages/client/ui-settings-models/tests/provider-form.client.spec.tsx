@@ -181,7 +181,7 @@ interface MutateCall {
 
 /** The latest interrogation payload; fails the case when nothing was asked. */
 function lastProbe(discover: ReturnType<typeof vi.fn>): unknown {
-  const call = (discover.mock.calls as unknown as [string, Record<string, unknown>][]).at(-1)
+  const call = (discover.mock.calls as [string, Record<string, unknown>][]).at(-1)
   if (call === undefined) throw new Error('no interrogation was recorded')
   return { settingsNs: call[0], ...call[1] }
 }

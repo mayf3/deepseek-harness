@@ -113,7 +113,7 @@ describe('translucent menu surfaces pair fill and filter', () => {
     ] as const
     const files = packageStylesheets()
     for (const [suffix, container, background] of surfaces) {
-      const file = files.find(candidate => candidate.replaceAll('\\', '/').endsWith(suffix))
+      const file = files.find(candidate => candidate.endsWith(suffix))
       expect(file, suffix).toBeDefined()
       const rules = parseRules(readFileSync(file!, 'utf8'))
       const declarations = (selector: string) => new Map(rules

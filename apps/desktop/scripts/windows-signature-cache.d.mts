@@ -18,7 +18,7 @@ export interface WindowsSignatureCacheOptions {
  */
 export function signatureCacheIdentity(files: readonly string[]): Promise<string>
 
-/** Counters include failed attempts; verification covers both restored and newly signed files, while restore time includes its verification and staging cleanup. */
+/** Counters include failed attempts; times sum per-file work. Verification covers restored and newly signed files; restore time includes its verification and staging cleanup. */
 export interface WindowsSignatureCacheSummary {
   root: string
   identity: string
@@ -34,8 +34,14 @@ export interface WindowsSignatureCacheSummary {
   signingMs: number
 }
 
-/** Serial cache callback with a snapshot of this instance's completed and failed operations. */
+/** Serial signing callback with a separate hardware-free restore operation and shared counters. */
 export type WindowsCachedSigner = ReturnType<typeof createWindowsTokenSigner> & {
+  /**
+   * Restore a hit without accessing hardware; distinct targets may run concurrently under the stage lock.
+   * @param configuration Unsigned target owned exclusively by the caller.
+   * @returns True after verified replacement, false for an absent entry without counting a signing miss; corrupt entries reject. The caller drains all restores before signing or reporting failure.
+   */
+  restore(configuration: Parameters<ReturnType<typeof createWindowsTokenSigner>>[0]): Promise<boolean>
   /** @returns Current counters and elapsed times; does not wait for queued operations. */
   summary(): WindowsSignatureCacheSummary
 }
@@ -43,7 +49,7 @@ export type WindowsCachedSigner = ReturnType<typeof createWindowsTokenSigner> & 
 /**
  * Reuse complete signed files only after input, integrity, identity and timestamp checks.
  * @param options Cache policy, supervised signer, public-key verifier and audit sink.
- * @returns Serial signer that stops its queue on any failure and never repairs invalid cache entries.
+ * @returns Serial fail-stop signer with hardware-free restores; invalid cache entries are never repaired.
  */
 export function createCachedSigner(options: WindowsSignatureCacheOptions): WindowsCachedSigner
 

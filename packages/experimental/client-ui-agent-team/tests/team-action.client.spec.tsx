@@ -84,7 +84,7 @@ function actions(overrides: Partial<TeamActionInjected> = {}): TeamActionInjecte
       ok: true,
       value: { ok: true, value: { ...task, revision: 2 } },
     }),
-    openTeammate: () => Promise.resolve(),
+    openTeammate: () => {},
     ...overrides,
   }
 }
@@ -119,7 +119,7 @@ describe('TeamAction', () => {
   })
 
   it('loads roster/task diagnostics on open and navigates a healthy teammate', async () => {
-    const openTeammate = vi.fn(() => Promise.resolve())
+    const openTeammate = vi.fn()
     render(<TeamAction {...props(actions({ openTeammate }))} />)
     fireEvent.click(screen.getByRole('button', { name: /Agent Team/u }))
     const worker = await screen.findByRole('button', { name: /worker/u })
@@ -495,7 +495,7 @@ describe('TeamAction', () => {
       ],
     }
     const load = vi.fn(() => Promise.resolve({ ok: true as const, value: richView }))
-    const openTeammate = vi.fn(() => Promise.reject(new Error('navigation failed')))
+    const openTeammate = vi.fn(() => { throw new Error('navigation failed') })
     render(<TeamAction {...props(actions({ load, openTeammate }))} />)
     fireEvent.click(screen.getByRole('button', { name: /Agent Team/u }))
     expect(await screen.findByText('provider failed')).toBeTruthy()

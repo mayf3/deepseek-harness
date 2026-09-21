@@ -49,7 +49,10 @@ export function apply(ctx: Context): void {
             throw new Error('offset must be a non-negative integer and limit must be an integer from 1 to 100')
           }
           const rows = args.action === 'list_plugins' ? await manager.listPlugins() : await manager.listBundles()
-          const entries = rows.slice(offset, offset + limit)
+          const entries = rows.slice(offset, offset + limit).map(({ meta: _meta, ...row }) =>
+            'rows' in row
+              ? { ...row, rows: row.rows.map(({ meta: _rowMeta, ...declared }) => declared) }
+              : row)
           return JSON.stringify({ entries, total: rows.length,
             nextOffset: offset + entries.length < rows.length ? offset + entries.length : null })
         }

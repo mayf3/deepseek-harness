@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include, { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import { evaluate, isJsExpr } from '@deepseek-ai/cordis-plugin-loader'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as yaml from 'js-yaml'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -151,6 +152,19 @@ describe('the shipped preset root', () => {
       expect(findEntry(entries, 'tool-workflow')?.disabled, id).not.toBe(true)
       expect(findEntry(entries, 'workflow-ptc')?.disabled, id).not.toBe(true)
     }
+  })
+
+  it('enables the cordis plugin-manager tool exactly when a launched profile provides profileContext', async () => {
+    // Same condition as the host `plugin-manager` row in `dsh-base`: the tool
+    // injects `pluginManager`, so without that service the row must be
+    // disabled rather than left waiting and blocking the whole mount.
+    const disabled = findEntry(await shippedEntries('cordis'), 'tool-plugin-manager')?.disabled
+    if (!isJsExpr(disabled)) throw new TypeError('cordis tool-plugin-manager must gate on a !!js expression')
+    const scope = (profileContext: object | undefined) => ({
+      ctx: { get: (name: string) => (name === 'profileContext' ? profileContext : undefined) },
+    })
+    expect(evaluate(scope(undefined), disabled.__jsExpr)).toBe(true)
+    expect(evaluate(scope({ name: 'web' }), disabled.__jsExpr)).toBe(false)
   })
 
   it('disables the ralph tool in every shipped preset that carries it', async () => {

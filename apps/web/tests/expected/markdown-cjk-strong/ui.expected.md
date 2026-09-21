@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "CJK strong emphasis" [disabled]
+  - navigation "Session hierarchy": CJK strong emphasis
   - button "More actions"
   - button "Open right sidebar"
   - tablist:

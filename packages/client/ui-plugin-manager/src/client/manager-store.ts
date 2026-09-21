@@ -27,6 +27,7 @@ import type {
 import { REGISTRY_URL } from '@deepseek-ai/dsh-plugin-manager/registry'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import type { LocalizedText, PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
 import type { ConfigLedger } from './config-ledger.ts'
 import { shortName } from './presentation.ts'
 
@@ -59,6 +60,8 @@ export interface PackageRow {
   readonly rowId: string
   /** The module the row names. */
   readonly moduleName: string
+  /** Local package display text and metadata diagnostics supplied by the Host. */
+  readonly meta?: PluginLocalizedMeta
   /** Whether the entry runs; false for a row without a live entry. */
   readonly enabled: boolean
   /** The entry's fiber phase, null without a live fiber. */
@@ -72,6 +75,8 @@ export interface PackageView {
   readonly name: string
   readonly version?: string
   readonly description?: string
+  /** Local package display text and metadata diagnostics supplied by the Host. */
+  readonly meta?: PluginLocalizedMeta
   /** Whether the profile's own dependencies hold the package; false for a bundle the installation supplies. */
   readonly installed: boolean
   /** Whether the installation ships the bundle for the person to switch on: official, off until selected, never removable. */
@@ -220,6 +225,8 @@ export interface PluginManagerState {
 
 /** The registration-side face the tab's slot entry injects. */
 export interface PluginManagerFace {
+  /** Resolve local package text in the current Client locale at render time. */
+  resolveText: (text: LocalizedText) => string
   hooks: {
     /** Tab snapshot bound by the renderer as usePluginManager. */
     pluginManager: SnapshotStore<PluginManagerState>
@@ -325,6 +332,7 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
       moduleName: row.moduleName,
       enabled: live?.enabled ?? false,
       phase: live?.fiberPhase ?? null,
+      ...row.meta === undefined ? {} : { meta: row.meta },
       ...row.entryId === undefined ? {} : { entryId: row.entryId },
       ...live?.readOnlyReason === undefined ? {} : { readOnlyReason: live.readOnlyReason },
     }
@@ -337,6 +345,7 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
     rows,
     ...bundle.version === undefined ? {} : { version: bundle.version },
     ...bundle.description === undefined ? {} : { description: bundle.description },
+    ...bundle.meta === undefined ? {} : { meta: bundle.meta },
     ...bundle.readOnlyReason === undefined ? {} : { readOnlyReason: bundle.readOnlyReason },
     ...bundle.error === undefined ? {} : { error: bundle.error },
   }
@@ -431,10 +440,12 @@ export class PluginManagerController {
   /**
    * Build the face the tab's slot registration injects.
    * @param configLedger - the projection of the plugins carrying configuration, bound beside the tab's own state.
+   * @param resolveText - render-time package text resolution supplied by the locale service.
    * @returns the tab's snapshot sources and its actions.
    */
-  inject(configLedger: HostObservable<ConfigLedger>): PluginManagerFace {
+  inject(configLedger: HostObservable<ConfigLedger>, resolveText: PluginManagerFace['resolveText']): PluginManagerFace {
     return {
+      resolveText,
       hooks: { pluginManager: this.store, configLedger },
       ensure: () => { if (this.getSnapshot().status === 'idle') void this.load() },
       refresh: () => { void this.load() },

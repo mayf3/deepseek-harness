@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionLiveEventEntry } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -7,6 +7,7 @@ import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { chatViewDefinition } from '../../ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { PlanCards, PlanReviewOpen } from '../src/client/PlanCard.tsx'
@@ -28,6 +29,16 @@ function planNode(data: typeof plan) {
 }
 function planHook(nodes: readonly unknown[]): Parameters<typeof PlanCards>[0]['useChat'] {
   return ((select: (snapshot: unknown) => unknown) => select({ nodes: { values: () => nodes } })) as Parameters<typeof PlanCards>[0]['useChat']
+}
+/** The opener's props share; each test supplies the seat hook beside it. */
+function reviewProps(review: { plan: string; callId?: typeof plan.callId }, openReview: Mock, store: ReturnType<ReturnType<typeof createPlanReviewStore>['create']>) {
+  return { review, requestKey: 'question:1', t, openReview, actions: store.actions,
+    useStore: (select: (state: ReturnType<typeof store.getSnapshot>) => unknown) => select(store.getSnapshot()),
+  } as unknown as Parameters<typeof PlanReviewOpen>[0]
+}
+/** A bound `useSidebarMounted` reading one observable seat value. */
+function seatHook(read: () => SessionId | undefined) {
+  return <S,>(select: (session: SessionId | undefined) => S): S => select(read())
 }
 
 describe('submitted plan identity', () => {
@@ -164,9 +175,7 @@ describe('plan entry points and document', () => {
     const openReview = vi.fn()
     const store = createPlanReviewStore().create()
     const review = { plan: markdown, ...(logged ? { callId: plan.callId } : {}) }
-    const props = { review, requestKey: 'question:1', t, openReview, actions: store.actions,
-      useStore: (select: (state: ReturnType<typeof store.getSnapshot>) => unknown) => select(store.getSnapshot()),
-    } as unknown as Parameters<typeof PlanReviewOpen>[0]
+    const props = { ...reviewProps(review, openReview, store), useSidebarMounted: seatHook(() => target.session.sessionId) }
     const first = render(<PlanReviewOpen {...props} />)
     expect(openReview).toHaveBeenCalledExactlyOnceWith(review, 'question:1')
     first.rerender(<PlanReviewOpen {...props} />)
@@ -176,15 +185,40 @@ describe('plan entry points and document', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open plan in sidebar' }))
     expect(openReview).toHaveBeenCalledTimes(2)
     const revised = { plan: '# Revised', ...(logged ? { callId: 'call:2' } : {}) }
-    second.rerender(<PlanReviewOpen {...{ ...props, review: revised, requestKey: 'question:2' } as unknown as Parameters<typeof PlanReviewOpen>[0]} />)
+    second.rerender(<PlanReviewOpen {...{ ...props, review: revised, requestKey: 'question:2' } as Parameters<typeof PlanReviewOpen>[0]} />)
     expect(openReview).toHaveBeenLastCalledWith(revised, 'question:2')
     expect(openReview).toHaveBeenCalledTimes(3)
     second.unmount()
     const other = createPlanReviewStore().create()
     render(<PlanReviewOpen {...{ ...props, actions: other.actions,
       useStore: (select: (state: ReturnType<typeof other.getSnapshot>) => unknown) => select(other.getSnapshot()),
-    } as unknown as Parameters<typeof PlanReviewOpen>[0]} />)
+    } as Parameters<typeof PlanReviewOpen>[0]} />)
     expect(openReview).toHaveBeenCalledTimes(4)
+  })
+  it('waits for a mounted sidebar seat before opening automatically, then opens once', () => {
+    // The review and the seat mount in one commit, the review first: its effect
+    // runs while no seat is bound, and the seat's own effect binds afterwards.
+    const openReview = vi.fn()
+    const store = createPlanReviewStore().create()
+    const mounted = createSnapshotStore<SessionId | undefined>(undefined)
+    const review = { plan: markdown, callId: plan.callId }
+    const props = { ...reviewProps(review, openReview, store), useSidebarMounted: seatHook(() => mounted.getSnapshot()) }
+    const view = render(<PlanReviewOpen {...props} />)
+    expect(openReview).not.toHaveBeenCalled()
+    expect(store.getSnapshot().opened).toEqual({})
+    // The manual opener stays available without a seat; the service decides what to do.
+    fireEvent.click(screen.getByRole('button', { name: 'Open plan in sidebar' }))
+    expect(openReview).toHaveBeenCalledTimes(1)
+    mounted.set(target.session.sessionId)
+    view.rerender(<PlanReviewOpen {...props} />)
+    expect(openReview).toHaveBeenCalledTimes(2)
+    expect(store.getSnapshot().opened).toEqual({ [`call:${plan.callId}`]: true })
+    view.rerender(<PlanReviewOpen {...props} />)
+    mounted.set(undefined)
+    view.rerender(<PlanReviewOpen {...props} />)
+    mounted.set(target.session.sessionId)
+    view.rerender(<PlanReviewOpen {...props} />)
+    expect(openReview).toHaveBeenCalledTimes(2)
   })
   it('renders temporary Markdown and reports expired navigation after reload', () => {
     const address = reviewPreviewAddress(target.session.sessionId, 'window:question:1')

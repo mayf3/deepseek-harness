@@ -5,6 +5,7 @@
  * its own settings surface.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { LocalizedText } from '@deepseek-ai/dsh-package-manifest'
 import {
   type BoundActions, type LocaleDictOf, type LocaleNamespaceMap, type Translate, type TranslateNS,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -198,6 +199,20 @@ export class LocaleRuntime {
    */
   getLocale(): LocaleSnapshot {
     return this.snapshot
+  }
+
+  /**
+   * Resolve package text through the active language's declared fallback chain.
+   * Plain strings stay verbatim; maps do not consult registered dictionaries.
+   * @param text - package text whose locale keys are lowercase and include English.
+   * @returns the first available translation, including an empty string.
+   */
+  resolveText(text: LocalizedText): string {
+    if (typeof text === 'string') return text
+    return this.fallbackChain(this.snapshot.active).reduceRight(
+      (resolved, locale) => text[localeKey(locale)] ?? resolved,
+      text.en,
+    )
   }
 
   /**
