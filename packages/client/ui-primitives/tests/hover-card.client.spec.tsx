@@ -6,7 +6,7 @@ import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
 
 afterEach(cleanup)
 beforeEach(() => { vi.useFakeTimers() })
-afterEach(() => { vi.useRealTimers() })
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 /** Anchor wrapper rect: the card positions from this (jsdom rects are all-zero by default). */
 function stubAnchorRect(anchor: HTMLElement, rect: { top: number; right: number }): void {
@@ -18,6 +18,8 @@ function stubAnchorRect(anchor: HTMLElement, rect: { top: number; right: number 
 }
 
 function mount(props: {
+  widthAnchorRef?: { current: HTMLElement | null }
+  variant?: 'compact' | 'preview'
   openDelayMs?: number
   disabled?: boolean
   copyText?: string
@@ -63,6 +65,90 @@ describe('HoverCard', () => {
     expect(card.parentElement).toBe(document.body)
     expect(card.style.left).toBe('208px')
     expect(card.style.top).toBe('40px')
+  })
+
+  it('insets a preview by 24px on each side and follows anchor resizing', () => {
+    const { wrapper } = mount({ variant: 'preview' })
+    wrapper.getBoundingClientRect = () => DOMRect.fromRect({ x: 100, y: 600, width: 600, height: 32 })
+    fireEvent.pointerEnter(wrapper)
+    act(() => { vi.advanceTimersByTime(500) })
+    const card = screen.getByText('card body').parentElement as HTMLElement
+    expect(card.style.width).toBe('552px')
+    expect(card.style.left).toBe('124px')
+    expect(card.style.maxHeight).toBe('420px')
+    wrapper.getBoundingClientRect = () => DOMRect.fromRect({ x: 100, y: 600, width: 400, height: 32 })
+    fireEvent(window, new Event('resize'))
+    expect(card.style.width).toBe('352px')
+    fireEvent.keyDown(wrapper, { key: 'Escape' })
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(screen.queryByText('card body')).toBeNull()
+  })
+
+  it('places previews below rows near the top and dismisses without anchor focus', () => {
+    const { wrapper } = mount({ variant: 'preview' })
+    fireEvent.pointerEnter(wrapper)
+    act(() => { vi.advanceTimersByTime(500) })
+    const card = screen.getByText('card body').parentElement as HTMLElement
+    expect(card.style.top).toBe('82px')
+    expect(card.style.maxHeight).toBe('420px')
+    fireEvent.keyDown(document.body, { key: 'a' })
+    expect(screen.queryByText('card body')).not.toBeNull()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(screen.queryByText('card body')).toBeNull()
+  })
+
+  it('observes preview and container sizes until dismissal', () => {
+    let resize = () => {}
+    const observe = vi.fn()
+    const disconnect = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe = observe
+      disconnect = disconnect
+    })
+    const container = document.createElement('div')
+    container.getBoundingClientRect = () => DOMRect.fromRect({ x: 10, width: 700 })
+    const { wrapper, view } = mount({ variant: 'preview', widthAnchorRef: { current: container } })
+    fireEvent.pointerEnter(wrapper)
+    act(() => { vi.advanceTimersByTime(500) })
+    const card = screen.getByText('card body').parentElement as HTMLElement
+    expect(observe).toHaveBeenCalledWith(card)
+    expect(observe).toHaveBeenCalledWith(container)
+    expect(card.style.width).toBe('652px')
+    expect(card.style.left).toBe('34px')
+    container.getBoundingClientRect = () => DOMRect.fromRect({ x: 10, width: 500 })
+    act(() => { resize() })
+    expect(card.style.width).toBe('452px')
+    const previousDisconnects = disconnect.mock.calls.length
+    view.unmount()
+    expect(disconnect.mock.calls.length).toBe(previousDisconnects + 1)
+  })
+
+  it('retains a dismissing preview for 100ms and cancels dismissal on re-entry', () => {
+    const { wrapper, view } = mount({ variant: 'preview' })
+    fireEvent.pointerEnter(wrapper)
+    act(() => { vi.advanceTimersByTime(500) })
+    const card = screen.getByText('card body').parentElement as HTMLElement
+    fireEvent.pointerLeave(wrapper)
+    act(() => { vi.advanceTimersByTime(POINTER_GRACE_MS) })
+    expect(card.hasAttribute('data-closing')).toBe(true)
+    act(() => { vi.advanceTimersByTime(99) })
+    expect(screen.queryByText('card body')).not.toBeNull()
+    fireEvent.pointerEnter(wrapper)
+    expect(card.hasAttribute('data-closing')).toBe(false)
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(screen.queryByText('card body')).not.toBeNull()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(screen.queryByText('card body')).toBeNull()
+    fireEvent.pointerDown(wrapper)
+    expect(vi.getTimerCount()).toBe(0)
+    fireEvent.pointerEnter(wrapper)
+    act(() => { vi.advanceTimersByTime(500) })
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('honors a custom openDelayMs', () => {
