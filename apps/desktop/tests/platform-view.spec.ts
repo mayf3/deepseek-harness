@@ -22,7 +22,7 @@ vi.mock('electron', () => ({
       session: { clearStorageData: vi.fn(async () => {}) },
       setWindowOpenHandler: vi.fn(),
       loadURL: vi.fn(async (_url: string) => { if (state.loadFailure !== undefined) throw state.loadFailure }),
-      isDestroyed: () => false, close: vi.fn(),
+      isDestroyed: () => false, close: vi.fn(), send: vi.fn(),
     })
     setVisible = vi.fn()
     setBounds = vi.fn()
@@ -36,7 +36,7 @@ function setup() {
   const owner = Object.assign(new EventEmitter(), {
     webContents: new EventEmitter(), contentView: { addChildView: vi.fn(), removeChildView }, isDestroyed: () => false,
   })
-  const manager = new DesktopPlatformView('/bundled/preload.cjs')
+  const manager = new DesktopPlatformView('/bundled/preload.cjs', () => 'en_US')
   manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
   return { manager, owner, removeChildView }
 }
@@ -48,6 +48,7 @@ function view() {
       loadURL: ReturnType<typeof vi.fn>
       setWindowOpenHandler: ReturnType<typeof vi.fn>
       close: ReturnType<typeof vi.fn>
+      send: ReturnType<typeof vi.fn>
     } }
 }
 const bounds = { x: 10, y: 20, width: 800, height: 600 }
@@ -57,7 +58,7 @@ it('bootstraps only the owned main frame and never puts the token in a URL', asy
   await manager.open(owner, 'usage', bounds)
   const sender = view().webContents
   const event = { sender, senderFrame: sender.mainFrame }
-  expect(manager.bootstrap(event)).toEqual({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
+  expect(manager.bootstrap(event)).toEqual({ origin: 'https://platform.deepseek.com', token: 'fixture-secret', locale: 'en_US' })
   expect(sender.loadURL).toHaveBeenCalledWith('https://platform.deepseek.com/usage')
   expect(() => manager.bootstrap({ ...event, senderFrame: { url: sender.mainFrame.url } })).toThrow()
   expect(() => manager.bootstrap({ ...event, sender: {} })).toThrow()
@@ -171,7 +172,7 @@ it('injects deployment headers only at the Platform origin and excludes them fro
   expect(callback).toHaveBeenLastCalledWith({ requestHeaders: { cookie: 'payment=session', constructor: 'keep' } })
   const sender = view().webContents
   expect(manager.bootstrap({ sender, senderFrame: sender.mainFrame }))
-    .toEqual({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
+    .toEqual({ origin: 'https://platform.deepseek.com', token: 'fixture-secret', locale: 'en_US' })
   manager.close()
 })
 
@@ -235,4 +236,28 @@ it('does not reveal a pending view after the owner reloads or remove a replaceme
   expect(owner.webContents.listenerCount('did-start-navigation')).toBe(1)
   manager.close()
   expect(owner.webContents.listenerCount('did-start-navigation')).toBe(0)
+})
+
+
+it('bootstraps the current language and updates an open view without reloading', async () => {
+  const { owner } = setup()
+  let locale: 'en_US' | 'zh_CN' = 'zh_CN'
+  const manager = new DesktopPlatformView('/bundled/preload.cjs', () => locale)
+  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
+  manager.notifyLocaleChanged()
+  await manager.open(owner, 'usage', bounds)
+  const sender = view().webContents
+  expect(manager.bootstrap({ sender, senderFrame: sender.mainFrame }).locale).toBe('zh_CN')
+  locale = 'en_US'
+  manager.notifyLocaleChanged()
+  expect(sender.send).toHaveBeenCalledWith('dsh-platform:locale-changed', 'en_US')
+  expect(sender.loadURL).toHaveBeenCalledOnce()
+  manager.close()
+  sender.send.mockClear()
+  manager.notifyLocaleChanged()
+  expect(sender.send).not.toHaveBeenCalled()
+  await manager.open(owner, 'top-up', bounds)
+  const reopened = view().webContents
+  expect(manager.bootstrap({ sender: reopened, senderFrame: reopened.mainFrame }).locale).toBe('en_US')
+  manager.close()
 })
