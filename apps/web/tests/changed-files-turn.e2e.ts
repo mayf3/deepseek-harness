@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest'
 import type {} from '@deepseek-ai/dsh-workspace-changes'
+import type { ChangesSummary } from '../../../packages/client/ui-deliverables/src/changes.ts'
 import { deriveReplayScript, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import {
   assertFinalWorkspaceSnapshot, captureExpandedTurnProcessAria, compareOrRefreshGolden,
@@ -58,9 +59,10 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     })
     await seedRepository(join(scaffold.workspaceCwd, 'workspace'))
     browser = await chromium.launch()
-    page = await browser.newPage({
+    const context = await browser.newContext({
       viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE, timezoneId: 'Asia/Shanghai',
     })
+    page = await context.newPage()
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]')
@@ -421,4 +423,84 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     const aria = await captureExpandedTurnProcessAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(DIR, 'ui.expected.md'), aria, MODE)
   })
+
+  it('preserves filename endings when the review narrows and updates the fade after resizing or selecting another file', async () => {
+    const preview = await page.context().newPage()
+    onTestFinished(async () => { await preview.close() })
+    const prefix = 'src/components/review/' + 'long-filename-'.repeat(8)
+    const names = [`${prefix}before.ts`, `${prefix}after.ts`] as const
+    // Project long display names into a separate page; recorded paths, comparisons, and Session data stay intact.
+    await preview.route('**/api/changes.summary?*', async (route) => {
+      const response = await route.fetch()
+      const summary = await response.json() as ChangesSummary
+      await route.fulfill({ response, json: {
+        ...summary, files: summary.files.map((file, index) => ({ ...file, display: names[index] ?? file.display })),
+      } })
+    })
+    await preview.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    await preview.locator('[data-changed-files]').getByRole('button', { name: '在侧边栏查看本轮改动' }).click()
+    const review = preview.locator('[data-changes-review]')
+    const selector = review.getByRole('button', { name: '选择要查看的文件' })
+    const label = selector.locator('[data-path-label]')
+    const layout = await preview.addStyleTag({ content: '[data-sidebar-right-panel] { width: 340px !important; }' })
+    const resize = async (width: number) => {
+      await layout.evaluate((element, width) => {
+        element.textContent = `[data-sidebar-right-panel] { width: ${width}px !important; }`
+      }, width)
+    }
+    const metrics = () => label.evaluate((element) => {
+      const text = element.firstElementChild!
+      const box = element.getBoundingClientRect()
+      const textBox = text.getBoundingClientRect()
+      const filename = text.lastElementChild!
+      const suffix = document.createRange()
+      const node = filename.firstChild!
+      suffix.setStart(node, Math.max(0, node.textContent!.length - 'before.ts'.length))
+      suffix.setEnd(node, node.textContent!.length)
+      const suffixBox = suffix.getBoundingClientRect()
+      return {
+        clipped: element.hasAttribute('data-path-clipped'), mask: getComputedStyle(element).maskImage,
+        left: textBox.left - box.left, right: box.right - textBox.right,
+        suffixVisible: suffixBox.left >= box.left && suffixBox.right <= box.right + 0.5,
+        directoryColor: getComputedStyle(text.firstElementChild!).color,
+        nameColor: getComputedStyle(filename).color,
+      }
+    })
+    await expect.poll(async () => (await metrics()).clipped).toBe(true)
+    const clipped = await metrics()
+    expect(clipped.left).toBeLessThan(0)
+    expect(Math.abs(clipped.right)).toBeLessThanOrEqual(0.5)
+    expect(clipped.suffixVisible).toBe(true)
+    expect(clipped.mask).toContain('linear-gradient')
+    expect(clipped.directoryColor).not.toBe(clipped.nameColor)
+    expect(await label.getAttribute('title')).toBe(names[0])
+    const controls = await selector.evaluate((button) => {
+      const header = button.parentElement!.parentElement!
+      const bounds = header.getBoundingClientRect()
+      const caret = button.querySelector('svg')!
+      const counts = button.parentElement!.nextElementSibling!
+      return [caret, counts, ...header.querySelectorAll('[data-review-tool]')].map((element) => {
+        const box = element.getBoundingClientRect()
+        return box.width > 0 && box.left >= bounds.left && box.right <= bounds.right
+      })
+    })
+    expect(controls.every(Boolean)).toBe(true)
+    await selector.click()
+    await preview.getByRole('menuitem').filter({ hasText: names[1] }).click()
+    await expect.poll(() => label.getAttribute('title')).toBe(names[1])
+    expect((await metrics()).suffixVisible).toBe(true)
+    await resize(1400)
+    await expect.poll(async () => (await metrics()).clipped).toBe(false)
+    expect((await metrics()).left).toBeCloseTo(0, 1)
+    expect((await metrics()).mask).toBe('none')
+    await resize(340)
+    await expect.poll(async () => (await metrics()).clipped).toBe(true)
+    await selector.click()
+    await preview.getByRole('menuitem').filter({ hasText: 'src/util.ts' }).click()
+    await expect.poll(() => label.getAttribute('title')).toBe('src/util.ts')
+    await expect.poll(async () => (await metrics()).clipped).toBe(false)
+    expect((await metrics()).left).toBeCloseTo(0, 1)
+    expect((await metrics()).mask).toBe('none')
+  })
+
 })

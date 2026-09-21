@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, UIEvent } from 'react'
 import {
   Button, IconChevronDownOutlineRegular, IconCompareSplitOutlineRegular, IconInspectOutlineRegular,
-  IconNowrapFillRegular, IconRightUpOutlineRegular, IconWrapFillRegular, Menu, Tooltip,
+  IconNowrapFillRegular, IconRightUpOutlineRegular, IconWrapFillRegular, Menu, PathLabel, Tooltip,
   languageForPath, useCodeHighlighter,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CodeHighlighter, HighlightSpan } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -239,7 +239,7 @@ export function ReviewTab({
             anchor={<button type="button" className={css.selectorButton} aria-haspopup="menu" aria-expanded={menuOpen}
               aria-label={t('review.selectFile')} title={file.display} data-review-file={file.path}
               onClick={() => { setMenuOpen(value => !value) }}>
-              <span className={css.selectorText}>{file.display}</span>
+              <PathLabel path={file.display} />
               <IconChevronDownOutlineRegular size={12} />
             </button>}
             items={files.map((entry, at) => ({ id: String(at), label: <span className={css.item}>

@@ -44,6 +44,8 @@ The card renders the summary the Host serves for the turn's latest `workspace/ch
 
 A row opens the turn's `changes-review` tab, addressed by the viewed Session and the announcing event's sequence and titled by the turn, on that row's file; another row of the same card reveals the same tab on its file. The header's file selector lists every recorded file with its counts and switches the comparison. A new tab starts in the side-by-side view without wrapping. Its controls switch between unified and side-by-side comparison, toggle line wrapping, open the whole current file in the Sidebar, and, with a Host desktop available, open it in the default application with the same pending and retryable-error states as the cards; the view and wrap choices are kept per tab. The tab reads the summary and each comparison once through the authenticated routes. A text comparison lists its hunks with the old and new line numbers of every line, and highlights each rendered hunk side independently with the code preview's filename grammar and Shiki token colours. Additions and deletions use aligned success or error markers and background tints. The tab also shows a note when the file was created or deleted in the turn, when both sides hold the same lines, when the Host's line comparison timed out and every line shows as replaced, or when the tab stopped drawing at 5,000 lines. A binary or oversized file, a comparison the Host no longer serves, and a failed read each show one line instead; a failed read offers Retry. The comparison is the turn's snapshot of the file, not its current content.
 
+The selected-file title uses the document preview’s [`PathLabel`](../ui-primitives/README.md#component-catalog): complete and left-aligned when it fits, otherwise clipped at the left with a fade that preserves trailing characters and the extension. Directories use subdued text, the filename uses primary text, and hovering reveals the complete displayed path. Resizing the pane or selecting another file updates the fade; the dropdown arrow, line counts, and toolbar actions retain their space.
+
 Without wrapping, the two columns synchronize vertical scrolling and horizontal offsets up to each side’s available range. Both columns suppress elastic edge feedback and scroll chaining on both axes; the browser retains control of native momentum within each column’s scrollable range. Both horizontal scrollbars remain at the bottom of the visible comparison; scrolling vertically preserves a long line’s horizontal offset when the other side fits without horizontal scrolling.
 
 ### Inline-code links
@@ -116,24 +118,5 @@ These limits define the current deliverables vocabulary. They are current packag
 
 <a id="dev-note"></a>
 ### Dev Note
-
-<details>
-<summary>Working context for maintainers — click to expand</summary>
-
-Working context for Issue #4670: filename presentation remains unimplemented. The proposed filename behavior below is not a shipped guarantee.
-
-**Reported reproduction.** In macOS Chrome, open a completed turn's changed-file review with enough changed rows and long lines to scroll on both axes. Keep the pointer over either column and flick the trackpad toward each edge. The user reports that the operated column rebounds beyond the edge while the other stays at its limit. A long selected-file path also hides its filename suffix; the document preview provides the requested reference appearance.
-
-**Scroll verification.** The [recorded-session browser case](../../../apps/web/tests/changed-files-turn.e2e.ts) covers containment at all four edges from either column, reverse scrolling, and unequal horizontal ranges. On 2026-09-21, the reporting user confirmed with a real macOS trackpad in Chrome that edge rebound is absent and normal momentum remains.
-
-**Planned filename behavior.** Give the selected-file title the document preview's path presentation: left-aligned complete text when it fits; preserved trailing characters and extension with a left-edge fade only when clipped; subdued directories and normal filename text; and the complete displayed path on hover. Follow the layout and overflow measurement in [TextPreview.tsx](../ui-sidebar-documentpreview/src/client/TextPreview.tsx) and [TextPreview.module.css](../ui-sidebar-documentpreview/src/client/TextPreview.module.css). Recalculate clipping when the selected file or available width changes. Keep the selector arrow, line counts, and action buttons visible. Any shared presentation component belongs in `ui-primitives`, rather than a component import between feature plugins.
-
-**Acceptance criteria.**
-
-- Short titles remain complete and unfaded. Narrowing the pane preserves long filename endings with a left fade; widening it removes the fade once the path fits. Switching between files with matching prefixes and different suffixes keeps their endings distinguishable. The title remains selectable through the file menu, with the full displayed path available on hover.
-
-**Remaining verification.** Extend the browser case for filename clipping, and add focused [component coverage](tests/review-tab.client.spec.tsx) for any new title behavior that does not require browser layout. Once the filename fix is verified, update the review-tab usage section and affected JSDoc, then remove this draft.
-
-</details>
 
 **Runtime invariant:** No companion is published. Prompt, slot, dictionary, file-action route, and optional service registrations are effect-owned; the Session log owns declarations and the filesystem owns file contents.
