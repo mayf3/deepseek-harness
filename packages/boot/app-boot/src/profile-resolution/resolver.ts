@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { getEnvironmentData, setEnvironmentData } from 'node:worker_threads'
 import type { ModuleLoaderV1, ModuleLoaderV2, ResolveResult } from '@deepseek-ai/cordis-plugin-loader'
 import { imports as resolvePackageImports, type Package as ResolvePackageManifest } from 'resolve.exports'
-import type { LinkedRoot, RuntimeResolutionEntry, RuntimeResolution } from '../profile.ts'
+import type { RuntimeResolutionEntry, RuntimeResolution } from '../profile.ts'
 
 const WORKER_RESOLUTION_KEY = '@deepseek-ai/dsh-app-boot/profile-resolution'
 const EMPTY_ATTRIBUTES: ImportAttributes = Object.freeze({})
@@ -91,11 +91,6 @@ type InterceptionLayer =
   | LayerPositions & { readonly kind: 'profile'; readonly active: boolean }
   | { readonly kind: 'linked' }
 
-interface CompiledLinkedRoot {
-  readonly root: LinkedRoot
-  readonly paths: readonly string[]
-}
-
 interface ParentRoutes {
   readonly parent: string
   readonly layer: InterceptionLayer
@@ -112,7 +107,7 @@ interface CompiledResolution {
   readonly profilePaths: readonly string[]
   readonly profile: readonly string[]
   readonly installationPaths: readonly string[]
-  readonly linkedRoots: readonly CompiledLinkedRoot[]
+  readonly linkedPaths: readonly string[]
   readonly localPackageNames: ReadonlySet<string>
   readonly esmRoutes: ResolutionRoutes
   readonly cjsRoutes: ResolutionRoutes
@@ -129,9 +124,11 @@ export interface RuntimeInterception {
    */
   packageDir(specifier: string, parentURL: string): string | undefined
   /**
-   * Atomically publish an additive package table and fresh caches.
-   * @param successor - fully constructed additive successor generation.
-   * @throws when the profile scope, an existing package mapping, or a linked root's real directory changes.
+   * Atomically publish a complete successor and fresh caches. Linked roots may be added or removed.
+   * Removed roots stop intercepting uncovered directories; existing modules and Node caches remain intact.
+   * @param successor - fully constructed generation retaining existing package mappings and local names.
+   * @throws when the profile scope or existing mappings change, local names are removed or override
+   * existing mappings, or a previously published link name selects a different real directory.
    */
   replace(successor: RuntimeResolution): void
   /** Restore the native resolver methods. Interceptions dispose in reverse order. */
@@ -178,7 +175,7 @@ function compileResolution(resolution: RuntimeResolution): CompiledResolution {
     installationPaths: [...new Set(resolution.entries
       .filter(entry => entry.scope === 'installation')
       .flatMap(entry => prefixes(entry.packageDir)))],
-    linkedRoots: resolution.linkedRoots.map(root => ({ root, paths: prefixes(root.realPath) })),
+    linkedPaths: resolution.linkedRoots.flatMap(root => prefixes(root.realPath)),
     localPackageNames: new Set(resolution.localPackageNames),
     esmRoutes: new Map(),
     cjsRoutes: new Map(),
@@ -205,7 +202,7 @@ function findInterceptionLayer(path: string, resolution: CompiledResolution): In
   const activeProfile = resolution.profile.find(prefix => path.startsWith(prefix))
   const dir = treeRoot !== undefined ? profileChild(path, treeRoot) : activeProfile?.slice(0, -1)
   if (dir !== undefined) return computeProfileLayer(dir, activeProfile !== undefined)
-  if (!resolution.linkedRoots.some(candidate => startsWithin(path, candidate.paths))) return undefined
+  if (!startsWithin(path, resolution.linkedPaths)) return undefined
   if (startsWithin(path, resolution.installationPaths)) return undefined
   return { kind: 'linked' }
 }
@@ -366,9 +363,11 @@ function sameResolution(left: string, right: string): boolean {
 /** One mutable pointer to the immutable runtime resolution. */
 class ResolutionRouter {
   private current: CompiledResolution
+  private readonly linkedTargets: Map<string, string>
 
   constructor(resolution: RuntimeResolution, private readonly nodeModulePaths: (directory: string) => string[]) {
     this.current = compileResolution(resolution)
+    this.linkedTargets = new Map(resolution.linkedRoots.map(root => [root.name, root.realPath]))
   }
 
   replace(successor: RuntimeResolution): void {
@@ -398,15 +397,18 @@ class ResolutionRouter {
         throw new Error(`profile resolution: overriding ${JSON.stringify(name)} locally requires a process restart`)
       }
     }
-    // Node memoizes real paths for the process lifetime, so a link that now points elsewhere would keep
-    // answering from its former directory.
-    for (const { root } of this.current.linkedRoots) {
-      const next = successor.linkedRoots.find(candidate => candidate.name === root.name)
-      if (next !== undefined && !sameResolution(root.realPath, next.realPath)) {
+    // Node retains realpath caches after a root leaves the interception scope.
+    for (const root of successor.linkedRoots) {
+      const previous = this.linkedTargets.get(root.name)
+      if (previous !== undefined && !sameResolution(previous, root.realPath)) {
         throw new Error(`profile resolution: relinking ${JSON.stringify(root.name)} requires a process restart`)
       }
     }
-    this.current = compileResolution(successor)
+    const next = compileResolution(successor)
+    for (const { name, realPath } of successor.linkedRoots) {
+      if (!this.linkedTargets.has(name)) this.linkedTargets.set(name, realPath)
+    }
+    this.current = next
   }
 
   /** Whether a module path has an interception layer: it lies in the profiles tree, the active profile, or a linked root. */

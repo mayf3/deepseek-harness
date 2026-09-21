@@ -1876,6 +1876,310 @@ describe('runtime resolution', { concurrent: false }, () => {
     return { f, linkedRoot, helper, writeManifest }
   }
 
+  describe('linked root generations', () => {
+    const peer = '@deepseek-ai/dsh-core'
+
+    function unsavedFixture(): ReturnType<typeof linkedPluginFixture> {
+      const result = linkedPluginFixture()
+      file(join(result.f.profile.dir, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-web', private: true, dependencies: {},
+      }))
+      return result
+    }
+
+    function expectPeerLookup(
+      registration: RuntimeInterception, require: NodeJS.Require, parent: string, selected: string,
+    ): void {
+      expect(require.resolve(peer)).toBe(join(selected, 'index.cjs'))
+      expect(resolveFrom(peer, parent)).toBe(pathToFileURL(join(selected, 'index.js')).href)
+      expect(registration.packageDir(peer, parent)).toBe(selected)
+    }
+
+    it('returns an unlinked importer to native lookup without changing its first generation', async () => {
+      const { f, linkedRoot } = unsavedFixture()
+      const link = join(f.profile.dir, 'node_modules', 'my-plugin')
+      const local = join(linkedRoot, 'node_modules', peer)
+      const require = createRequire(join(linkedRoot, 'entry.cjs'))
+      const parent = pathToFileURL(join(linkedRoot, 'entry.mjs')).href
+      const first = await resolutionOf(f)
+      expect(first.localPackageNames).toEqual([])
+      expect(first.linkedRoots).toEqual([{ name: 'my-plugin', realPath: linkedRoot }])
+      const registration = installRuntimeInterception(first)
+      registrations.push(registration)
+      try {
+        expectPeerLookup(registration, require, parent, f.installed)
+        unlinkSync(link)
+        const second = await resolutionOf(f)
+        expect(second.localPackageNames).toEqual([])
+        expect(second.linkedRoots).toEqual([])
+        registration.replace(second)
+        expectPeerLookup(registration, require, parent, local)
+        expect(first.linkedRoots).toEqual([{ name: 'my-plugin', realPath: linkedRoot }])
+      } finally {
+        registration.dispose()
+        registrations.pop()
+      }
+    })
+
+    it('reports native misses after unlinking when no physical peer remains', async () => {
+      const { f, linkedRoot } = unsavedFixture()
+      rmSync(join(linkedRoot, 'node_modules', peer), { recursive: true })
+      const require = createRequire(join(linkedRoot, 'entry.cjs'))
+      const parent = pathToFileURL(join(linkedRoot, 'entry.mjs')).href
+      const first = await resolutionOf(f)
+      expect(first.localPackageNames).toEqual([])
+      const registration = installRuntimeInterception(first)
+      registrations.push(registration)
+      try {
+        expectPeerLookup(registration, require, parent, f.installed)
+        unlinkSync(join(f.profile.dir, 'node_modules', 'my-plugin'))
+        const second = await resolutionOf(f)
+        expect(second.linkedRoots).toEqual([])
+        registration.replace(second)
+        expect(thrownError(() => require.resolve(peer))).toMatchObject({ code: 'MODULE_NOT_FOUND' })
+        expect(thrownError(() => require(peer))).toMatchObject({ code: 'MODULE_NOT_FOUND' })
+        expect(thrownError(() => resolveFrom(peer, parent))).toMatchObject({ code: 'ERR_MODULE_NOT_FOUND' })
+        await expect(importFrom(peer, parent)).rejects.toMatchObject({ code: 'ERR_MODULE_NOT_FOUND' })
+        expect(registration.packageDir(peer, parent)).toBeUndefined()
+      } finally {
+        registration.dispose()
+        registrations.pop()
+      }
+    })
+
+    it('restores the same link target and admits an additional root name', async () => {
+      const { f, linkedRoot } = unsavedFixture()
+      const link = join(f.profile.dir, 'node_modules', 'my-plugin')
+      const require = createRequire(join(linkedRoot, 'entry.cjs'))
+      const parent = pathToFileURL(join(linkedRoot, 'entry.mjs')).href
+      const first = await resolutionOf(f)
+      expect(first.localPackageNames).toEqual([])
+      const registration = installRuntimeInterception(first)
+      registrations.push(registration)
+      try {
+        expectPeerLookup(registration, require, parent, f.installed)
+        unlinkSync(link)
+        registration.replace(await resolutionOf(f))
+        expectPeerLookup(registration, require, parent, join(linkedRoot, 'node_modules', peer))
+        const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+        symlinkSync(linkedRoot, link, linkType)
+        registration.replace(await resolutionOf(f))
+        expectPeerLookup(registration, require, parent, f.installed)
+
+        const additional = join(f.root, 'work', 'another-plugin')
+        pkg(additional, 'another-plugin', 0, {}, { [peer]: '*' })
+        pkg(join(additional, 'node_modules', peer), peer, 31)
+        symlinkSync(additional, join(f.profile.dir, 'node_modules', 'another-plugin'), linkType)
+        const successor = await resolutionOf(f)
+        expect(successor.localPackageNames).toEqual([])
+        expect(successor.linkedRoots).toEqual([
+          { name: 'another-plugin', realPath: additional },
+          { name: 'my-plugin', realPath: linkedRoot },
+        ])
+        registration.replace(successor)
+        expectPeerLookup(registration, require, parent, f.installed)
+        expectPeerLookup(registration, createRequire(join(additional, 'entry.cjs')),
+          pathToFileURL(join(additional, 'entry.mjs')).href, f.installed)
+      } finally {
+        registration.dispose()
+        registrations.pop()
+      }
+    })
+
+    it.each(['inner', 'outer'] as const)(
+      'keeps an overlapping importer proxied after removing the %s root until the last root is removed', async (removed) => {
+        const { f, linkedRoot } = unsavedFixture()
+        const innerLink = join(f.profile.dir, 'node_modules', 'my-plugin')
+        const outer = dirname(linkedRoot)
+        const outerLink = join(f.profile.dir, 'node_modules', 'workspace')
+        symlinkSync(outer, outerLink, process.platform === 'win32' ? 'junction' : 'dir')
+        const require = createRequire(join(linkedRoot, 'entry.cjs'))
+        const parent = pathToFileURL(join(linkedRoot, 'entry.mjs')).href
+        const first = await resolutionOf(f)
+        expect(first.localPackageNames).toEqual([])
+        expect(first.linkedRoots).toEqual([
+          { name: 'my-plugin', realPath: linkedRoot },
+          { name: 'workspace', realPath: outer },
+        ])
+        const registration = installRuntimeInterception(first)
+        registrations.push(registration)
+        try {
+          expectPeerLookup(registration, require, parent, f.installed)
+          unlinkSync(removed === 'inner' ? innerLink : outerLink)
+          const second = await resolutionOf(f)
+          expect(second.linkedRoots).toEqual(removed === 'inner'
+            ? [{ name: 'workspace', realPath: outer }]
+            : [{ name: 'my-plugin', realPath: linkedRoot }])
+          registration.replace(second)
+          expectPeerLookup(registration, require, parent, f.installed)
+          unlinkSync(removed === 'inner' ? outerLink : innerLink)
+          const third = await resolutionOf(f)
+          expect(third.linkedRoots).toEqual([])
+          registration.replace(third)
+          expectPeerLookup(registration, require, parent, join(linkedRoot, 'node_modules', peer))
+        } finally {
+          registration.dispose()
+          registrations.pop()
+        }
+      },
+    )
+
+    it('uses native fresh subpaths from a loaded caller while held modules keep their values', async () => {
+      const { f, linkedRoot } = unsavedFixture()
+      const local = join(linkedRoot, 'node_modules', peer)
+      for (const [dir, marker] of [[f.installed, 1], [local, 21]] as const) {
+        file(join(dir, 'package.json'), JSON.stringify({
+          name: peer, version: `${String(marker)}.0.0`, type: 'module',
+          exports: {
+            '.': { import: './index.js', require: './index.cjs' },
+            './fresh': { import: './fresh.js', require: './fresh.cjs' },
+          },
+        }))
+        file(join(dir, 'fresh.js'), `export const marker = ${String(marker)}\n`)
+        file(join(dir, 'fresh.cjs'), `module.exports = { marker: ${String(marker)} }\n`)
+      }
+      // The fresh subpath has no completed Node resolution; root removal does not replace held module references.
+      file(join(linkedRoot, 'caller.js'), `import * as held from '${peer}'\nexport { held }\n`
+        + `export async function fresh() { return await import('${peer}/fresh') }\n`)
+      file(join(linkedRoot, 'caller.cjs'), `module.exports = { held: require('${peer}'), `
+        + `fresh: () => require('${peer}/fresh') }\n`)
+      const require = createRequire(join(linkedRoot, 'entry.cjs'))
+      const parent = pathToFileURL(join(linkedRoot, 'entry.mjs')).href
+      const first = await resolutionOf(f)
+      expect(first.localPackageNames).toEqual([])
+      const registration = installRuntimeInterception(first)
+      registrations.push(registration)
+      try {
+        const cjsCaller = require('./caller.cjs') as { held: { marker: number }; fresh(): { marker: number } }
+        const esmCaller = await importFrom('./caller.js', parent) as {
+          held: { marker: number }
+          fresh(): Promise<{ marker: number }>
+        }
+        const heldCjs = cjsCaller.held
+        const heldEsm = esmCaller.held
+        expect(heldCjs).toEqual({ marker: 1 })
+        expect(heldEsm).toMatchObject({ marker: 1 })
+        unlinkSync(join(f.profile.dir, 'node_modules', 'my-plugin'))
+        const second = await resolutionOf(f)
+        expect(second.linkedRoots).toEqual([])
+        registration.replace(second)
+        expect(cjsCaller.fresh()).toEqual({ marker: 21 })
+        await expect(esmCaller.fresh()).resolves.toMatchObject({ marker: 21 })
+        expect(cjsCaller.held).toBe(heldCjs)
+        expect(esmCaller.held).toBe(heldEsm)
+        expect(heldCjs).toEqual({ marker: 1 })
+        expect(heldEsm).toMatchObject({ marker: 1 })
+      } finally {
+        registration.dispose()
+        registrations.pop()
+      }
+    })
+
+    it.each(['initial', 'added'] as const)(
+      'rejects a removed %s root retarget without reactivating either directory', async (generation) => {
+        const { f, linkedRoot } = unsavedFixture()
+        const link = join(f.profile.dir, 'node_modules', 'my-plugin')
+        const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+        const require = createRequire(join(linkedRoot, 'entry.cjs'))
+        const parent = pathToFileURL(join(linkedRoot, 'entry.mjs')).href
+        if (generation === 'added') unlinkSync(link)
+        const first = await resolutionOf(f)
+        expect(first.localPackageNames).toEqual([])
+        expect(first.linkedRoots).toEqual(generation === 'added'
+          ? [] : [{ name: 'my-plugin', realPath: linkedRoot }])
+        const registration = installRuntimeInterception(first)
+        registrations.push(registration)
+        try {
+          if (generation === 'added') {
+            symlinkSync(linkedRoot, link, linkType)
+            registration.replace(await resolutionOf(f))
+          }
+          expectPeerLookup(registration, require, parent, f.installed)
+          unlinkSync(link)
+          const removed = await resolutionOf(f)
+          expect(removed.linkedRoots).toEqual([])
+          registration.replace(removed)
+          expectPeerLookup(registration, require, parent, join(linkedRoot, 'node_modules', peer))
+
+          const target = join(f.root, 'work', 'retargeted-plugin')
+          pkg(target, 'my-plugin', 0, {}, { [peer]: '*' })
+          pkg(join(target, 'node_modules', peer), peer, 22)
+          symlinkSync(target, link, linkType)
+          const successor = await resolutionOf(f)
+          expect(successor.localPackageNames).toEqual([])
+          expect(successor.linkedRoots).toEqual([{ name: 'my-plugin', realPath: target }])
+          expect(() => { registration.replace(successor) })
+            .toThrow(/^profile resolution: relinking "my-plugin" requires a process restart$/u)
+          expectPeerLookup(registration, require, parent, join(linkedRoot, 'node_modules', peer))
+          expectPeerLookup(registration, createRequire(join(target, 'entry.cjs')),
+            pathToFileURL(join(target, 'entry.mjs')).href, join(target, 'node_modules', peer))
+        } finally {
+          registration.dispose()
+          registrations.pop()
+        }
+      },
+    )
+
+    it('does not retain targets from a rejected successor', async () => {
+      const { f, linkedRoot } = unsavedFixture()
+      const modules = join(f.profile.dir, 'node_modules')
+      const originalLink = join(modules, 'my-plugin')
+      const newLink = join(modules, 'a-new-plugin')
+      const replacement = join(f.root, 'work', 'replacement')
+      const rejectedTarget = join(f.root, 'work', 'rejected-target')
+      const acceptedTarget = join(f.root, 'work', 'accepted-target')
+      for (const [dir, name, marker] of [
+        [replacement, 'my-plugin', 22],
+        [rejectedTarget, 'a-new-plugin', 31],
+        [acceptedTarget, 'a-new-plugin', 32],
+      ] as const) {
+        pkg(dir, name, 0, {}, { [peer]: '*' })
+        pkg(join(dir, 'node_modules', peer), peer, marker)
+      }
+      const require = createRequire(join(linkedRoot, 'entry.cjs'))
+      const parent = pathToFileURL(join(linkedRoot, 'entry.mjs')).href
+      const first = await resolutionOf(f)
+      expect(first.localPackageNames).toEqual([])
+      const registration = installRuntimeInterception(first)
+      registrations.push(registration)
+      try {
+        expectPeerLookup(registration, require, parent, f.installed)
+        unlinkSync(originalLink)
+        const removed = await resolutionOf(f)
+        expect(removed.linkedRoots).toEqual([])
+        registration.replace(removed)
+        expectPeerLookup(registration, require, parent, join(linkedRoot, 'node_modules', peer))
+
+        const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+        symlinkSync(replacement, originalLink, linkType)
+        symlinkSync(rejectedTarget, newLink, linkType)
+        const rejected = await resolutionOf(f)
+        expect(rejected.linkedRoots).toEqual([
+          { name: 'a-new-plugin', realPath: rejectedTarget },
+          { name: 'my-plugin', realPath: replacement },
+        ])
+        expect(() => { registration.replace(rejected) })
+          .toThrow(/^profile resolution: relinking "my-plugin" requires a process restart$/u)
+        expectPeerLookup(registration, require, parent, join(linkedRoot, 'node_modules', peer))
+        expectPeerLookup(registration, createRequire(join(rejectedTarget, 'entry.cjs')),
+          pathToFileURL(join(rejectedTarget, 'entry.mjs')).href, join(rejectedTarget, 'node_modules', peer))
+
+        unlinkSync(originalLink)
+        unlinkSync(newLink)
+        symlinkSync(acceptedTarget, newLink, linkType)
+        const accepted = await resolutionOf(f)
+        expect(accepted.linkedRoots).toEqual([{ name: 'a-new-plugin', realPath: acceptedTarget }])
+        registration.replace(accepted)
+        expectPeerLookup(registration, createRequire(join(acceptedTarget, 'entry.cjs')),
+          pathToFileURL(join(acceptedTarget, 'entry.mjs')).href, f.installed)
+        expectPeerLookup(registration, require, parent, join(linkedRoot, 'node_modules', peer))
+      } finally {
+        registration.dispose()
+        registrations.pop()
+      }
+    })
+  })
+
   it.each(['src', 'dist'] as const)(
     'keeps intermediate %s/node_modules ahead of linked-root peers and ancestor packages', async (directory) => {
       const { f, linkedRoot } = linkedPluginFixture()

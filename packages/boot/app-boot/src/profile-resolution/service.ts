@@ -75,8 +75,9 @@ export class PluginPackages extends Service {
   }
 
   /**
-   * Publish an additive successor generation for this process and subsequently created Workers.
-   * @param successor - fully constructed successor generation.
+   * Publish a complete successor generation for this process and subsequently created Workers.
+   * Linked roots may be removed without unloading modules or clearing Node caches.
+   * @param successor - fully constructed generation accepted by {@link RuntimeInterception.replace}.
    */
   replace(successor: RuntimeResolution): void {
     if (this.interception === undefined) throw new Error('plugin-packages: runtime resolution is not installed')
