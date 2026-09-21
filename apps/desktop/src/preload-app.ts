@@ -6,18 +6,22 @@ import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.t
 import { syncNativeTheme } from './preload-theme.ts'
 import { syncWindowsAppearance } from './preload-windows.ts'
 import { installMandatoryUpdateOverlay } from './preload-mandatory-overlay.ts'
+import { createDesktopBrowserBridge } from './preload-browser.ts'
 
-const product: DshDesktopProductApi = {
-  protocolVersion: 1,
-  updates: {
-    status: () => ipcRenderer.invoke(DESKTOP_IPC.updatesStatus) as Promise<DesktopUpdatePresentation>,
-    open: () => ipcRenderer.invoke(DESKTOP_IPC.updatesOpen) as Promise<void>,
-    subscribe(listener) {
-      const handle = (_event: Electron.IpcRendererEvent, state: DesktopUpdatePresentation): void => { listener(state) }
-      ipcRenderer.on(DESKTOP_IPC.updatesPresentation, handle)
-      return () => { ipcRenderer.off(DESKTOP_IPC.updatesPresentation, handle) }
+function createProductApi(): DshDesktopProductApi {
+  return {
+    protocolVersion: 1,
+    browser: createDesktopBrowserBridge(),
+    updates: {
+      status: () => ipcRenderer.invoke(DESKTOP_IPC.updatesStatus) as Promise<DesktopUpdatePresentation>,
+      open: () => ipcRenderer.invoke(DESKTOP_IPC.updatesOpen) as Promise<void>,
+      subscribe(listener) {
+        const handle = (_event: Electron.IpcRendererEvent, state: DesktopUpdatePresentation): void => { listener(state) }
+        ipcRenderer.on(DESKTOP_IPC.updatesPresentation, handle)
+        return () => { ipcRenderer.off(DESKTOP_IPC.updatesPresentation, handle) }
+      },
     },
-  },
+  }
 }
 
 if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
@@ -36,4 +40,4 @@ markDocumentPlatform()
 syncWindowFullscreen()
 syncNativeTheme()
 // Main-process IPC also verifies the owning window and top frame.
-contextBridge.exposeInMainWorld('dshDesktop', location.protocol === `${SCHEME}:` && location.hostname === 'app' ? product : { protocolVersion: 1 })
+contextBridge.exposeInMainWorld('dshDesktop', location.protocol === `${SCHEME}:` && location.hostname === 'app' ? createProductApi() : { protocolVersion: 1 })

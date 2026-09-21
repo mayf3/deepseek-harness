@@ -466,3 +466,18 @@ describe('Tooltip', () => {
     expect(screen.getByRole('tooltip').textContent).toBe('Open sidebar')
   })
 })
+
+
+it('keeps the anchor in its clipping container and portals only the tooltip', () => {
+  const view = render(<div style={{ overflow: 'hidden', contain: 'layout' }}>
+    <Tooltip portal label="Open in Music" side="bottom"><button type="button">File action</button></Tooltip>
+  </div>)
+  const anchor = screen.getByRole('button', { name: 'File action' })
+  fireEvent.mouseEnter(anchor)
+  const tooltip = screen.getByRole('tooltip')
+  expect(tooltip.parentElement).toBe(document.body)
+  expect(view.container.contains(anchor)).toBe(true)
+  expect(view.container.contains(tooltip)).toBe(false)
+  view.unmount()
+  expect(screen.queryByRole('tooltip')).toBeNull()
+})
