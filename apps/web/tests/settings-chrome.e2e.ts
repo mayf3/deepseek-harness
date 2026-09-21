@@ -376,18 +376,15 @@ describe('web e2e: settings modal and General preferences', () => {
       legacy: string | null
       themeColor: string | null
       themeColorCount: number
-      faviconFill: string | null
+      faviconPaths: string[]
       token: string
     }
     const readState = async (target: Page = page): Promise<ThemeState> => await target.evaluate(() => {
       const metas = document.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
       const computed = getComputedStyle(document.body)
-      const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.href ?? ''
-      if (!icon.startsWith('data:image/svg+xml,')) throw new Error('favicon is not an explicit-color SVG')
-      const svg = new DOMParser().parseFromString(decodeURIComponent(icon.slice('data:image/svg+xml,'.length)), 'image/svg+xml')
-      if (svg.querySelector('style') !== null) throw new Error('favicon still depends on SVG media queries')
+      const icons = [...document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]')]
       return {
-        faviconFill: svg.querySelector('path')?.getAttribute('fill') ?? null,
+        faviconPaths: icons.filter(icon => matchMedia(icon.media).matches).map(icon => new URL(icon.href).pathname),
         attr: document.body.hasAttribute('data-ds-dark-theme'),
         background: computed.backgroundColor,
         legacy: localStorage.getItem('dsh.theme'),
@@ -406,7 +403,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await page.emulateMedia({ colorScheme: 'light' })
     const light = await readState()
     expect(light.attr).toBe(false)
-    expect(light.faviconFill).toBe('#000')
+    expect(light.faviconPaths).toEqual(['/favicon.svg'])
     expectThemeColorSynchronized(light)
 
     await page.getByRole('button', { name: '设置', exact: true }).click()
@@ -420,7 +417,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(() => darkCube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
     const dark = await readState()
     expect(dark.attr).toBe(true)
-    expect(dark.faviconFill).toBe('#000')
+    expect(dark.faviconPaths).toEqual(['/favicon.svg'])
     expect(dark.legacy).toBeNull()
     expect(dark.token).not.toBe(light.token)
     expectThemeColorSynchronized(dark)
@@ -437,7 +434,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(async () => (await readState()).attr, { timeout: 5_000 }).toBe(true)
     const reloaded = await readState()
     expect(reloaded.legacy).toBeNull()
-    expect(reloaded.faviconFill).toBe('#000')
+    expect(reloaded.faviconPaths).toEqual(['/favicon.svg'])
     expectThemeColorSynchronized(reloaded)
 
     // A second live Host binds another ephemeral port but shares the same
@@ -471,15 +468,15 @@ describe('web e2e: settings modal and General preferences', () => {
     expectThemeColorSynchronized(await readState())
     await page.emulateMedia({ colorScheme: 'dark' })
     await expect.poll(async () => (await readState()).attr, { timeout: 5_000 }).toBe(true)
-    await expect.poll(async () => (await readState()).faviconFill).toBe('#fff')
+    await expect.poll(async () => (await readState()).faviconPaths).toEqual(['/favicon-dark.svg'])
     expectThemeColorSynchronized(await readState())
     // Restore for the specs that follow: light preference beats the emulated
     // dark OS scheme, leaving the shared page in the light default.
     await selectTheme(page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '浅色' }), 'light')
     await expect.poll(async () => (await readState()).attr, { timeout: 5_000 }).toBe(false)
-    expect((await readState()).faviconFill).toBe('#fff')
+    expect((await readState()).faviconPaths).toEqual(['/favicon-dark.svg'])
     await page.emulateMedia({ colorScheme: 'light' })
-    await expect.poll(async () => (await readState()).faviconFill).toBe('#000')
+    await expect.poll(async () => (await readState()).faviconPaths).toEqual(['/favicon.svg'])
     expectThemeColorSynchronized(await readState())
     await page.keyboard.press('Escape')
     expect(tripwire.pageErrors).toEqual([])

@@ -1,6 +1,5 @@
 /** Browser entry for the Web client. */
 import { AppWebEntry, applyIndexInjections } from '@deepseek-ai/dsh-client-web'
-import { installFavicon } from './favicon.ts'
 
 interface DesktopBootGlobal {
   dshDesktopBoot?: {
@@ -15,7 +14,6 @@ const reportFailure = (reason: unknown): void => {
 }
 
 try {
-  installFavicon()
   const el = document.getElementById('root')
   if (el === null) throw new Error('web app: missing #root')
   const entry = new AppWebEntry(el)

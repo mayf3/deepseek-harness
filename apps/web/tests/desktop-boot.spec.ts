@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 
 const boot = vi.hoisted(() => ({
   run: vi.fn(),
@@ -10,16 +10,10 @@ vi.mock('@deepseek-ai/dsh-client-web', () => ({
   applyIndexInjections: boot.applyIndexInjections,
 }))
 
-beforeEach(() => {
-  document.head.innerHTML = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
-  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn() }))
-})
-
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
   vi.resetModules()
-  document.head.replaceChildren()
   document.body.replaceChildren()
 })
 
