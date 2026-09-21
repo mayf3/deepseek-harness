@@ -258,7 +258,7 @@ describe('PluginManagerPage', () => {
   it.each([
     '@deepseek-ai/dsh-experimental-agent-team-profile',
     '@deepseek-ai/dsh-experimental-auto-review',
-    '@deepseek-ai/dsh-experimental-voice-input-bundle',
+    '@deepseek-ai/dsh-experimental-fixture-input',
     '@acme/dsh-local-tools',
   ])('localizes Host metadata for %s across cards, details, switches, and uninstall confirmation', (name) => {
     const meta = {
@@ -275,6 +275,7 @@ describe('PluginManagerPage', () => {
       expect(document.getElementById(card.getAttribute('aria-describedby')!)?.textContent).toBe(description(dict))
       expect(screen.getByRole('switch', { name: dict.enableToggle.replace('{name}', title(dict)) })).toBeTruthy()
       expect(screen.queryByText('Original metadata.')).toBeNull()
+      expect(screen.queryByText(dict.statusBeta) !== null).toBe(name.startsWith('@deepseek-ai/dsh-experimental-'))
     }
     assertCard(en)
     setLanguage(zh)

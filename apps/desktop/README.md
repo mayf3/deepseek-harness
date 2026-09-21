@@ -10,7 +10,7 @@ Desktop’s local native directory flow opens an Electron folder dialog attached
 
 Creator and the Web Plugin Manager use Desktop’s bundled pnpm under Electron Node mode without requiring pnpm on PATH. The private Node launcher environment applies only to package operations.
 
-Desktop microphone access is restricted to audio requests from the primary `dsh-app://app` frame. macOS uses system microphone authorization and a packaged usage description. Native speech libraries remain outside ASAR and use the existing runtime signing path; recognition runs in a managed Node-mode child.
+Desktop microphone access is restricted to audio requests from the primary `dsh-app://app` frame. macOS uses system microphone authorization and a packaged usage description.
 
 ## Key technical decisions
 
