@@ -102,3 +102,33 @@ it.each([en, zh])('shows a temporary copy failure without interrupting sign-in',
     else Reflect.deleteProperty(navigator, 'clipboard')
   }
 })
+
+it.each([en, zh])('shows an error during an active attempt and waits for cancellation before retrying', async (copy) => {
+  const props = mount({ id, phase: 'waiting-browser' }, copy)
+  cleanup()
+  props.account.failed = true
+  render(<SignInDialog {...props} />)
+  expect(screen.getByRole('dialog', { name: copy.failureTitle })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: copy.waiting })).toBeNull()
+  await expect(`${screen.getByRole('dialog').textContent}\n`).toMatchFileSnapshot(`./expected/login-active-error-${copy === en ? 'en' : 'zh'}.txt`)
+  const cancelled = Promise.withResolvers<undefined>()
+  props.cancel.mockReturnValueOnce(cancelled.promise)
+  fireEvent.click(screen.getByRole('button', { name: copy.retry }))
+  expect(props.cancel).toHaveBeenCalledExactlyOnceWith(id)
+  expect(props.start).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: copy.retry }).hasAttribute('disabled')).toBe(true)
+  await act(async () => { cancelled.resolve(undefined); await cancelled.promise })
+  expect(props.start).toHaveBeenCalledOnce()
+})
+
+it('does not start another attempt when cancellation fails', async () => {
+  const props = mount({ id, phase: 'waiting-browser' })
+  cleanup()
+  props.account.failed = true
+  props.cancel.mockRejectedValueOnce(new Error('cancel unavailable'))
+  render(<SignInDialog {...props} />)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.retry })) })
+  expect(props.start).not.toHaveBeenCalled()
+  expect(screen.getByRole('dialog', { name: en.failureTitle })).toBeTruthy()
+  expect(screen.getByRole('button', { name: en.retry }).hasAttribute('disabled')).toBe(false)
+})
