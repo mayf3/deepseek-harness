@@ -1,5 +1,5 @@
 ---
-description: "工具结果 spill 策略：部署如何用预览和可检索的 spill 文件把过大的纯文本工具结果挡在模型上下文之外。"
+description: "工具结果保留：文字和图片共享 token 预算，并通过完整结果文件恢复省略内容。"
 kind: "package-reference"
 ---
 

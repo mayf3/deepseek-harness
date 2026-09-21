@@ -1,5 +1,5 @@
 ---
-description: "The tool-result spill policy: how deployments keep oversized plain-text tool results out of the model's context with a preview and a retrievable spill file."
+description: "Tool-result retention with a shared text/image token budget and readable recovery files."
 kind: "package-reference"
 ---
 
