@@ -193,9 +193,13 @@ describe('hmr node half', () => {
     const clientModuleHost = fakeClientModuleHost(new Map([['pkg-a', bundle]]))
     const fiber = await mount(clientModuleHost, fakeHttpServer([]))
     try {
-      await expect.poll(() => Date.now()).toBeGreaterThan(Math.ceil(baseline.ctimeMs))
-      writeFileSync(bundle, 'next')
-      utimesSync(bundle, fixedTime, fixedTime)
+      expect(clientModuleHost.rebuiltCalls).toEqual([])
+      // Filesystem ctime can advance more coarsely than Date.now(); the fixture needs a distinct value.
+      await expect.poll(() => {
+        writeFileSync(bundle, 'next')
+        utimesSync(bundle, fixedTime, fixedTime)
+        return statSync(bundle).ctimeMs
+      }).not.toBe(baseline.ctimeMs)
       expect(statSync(bundle)).toMatchObject({ mtimeMs: baseline.mtimeMs, size: baseline.size })
       await vi.waitFor(() => { expect(clientModuleHost.rebuiltCalls).toEqual(['pkg-a']) }, { timeout: 3_000 })
     } finally {
