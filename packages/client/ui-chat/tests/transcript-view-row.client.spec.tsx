@@ -9,7 +9,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { TranscriptViewRow, type TranscriptViewRowProps } from '../src/client/settings/TranscriptViewRow.tsx'
 import { PerformanceUsageRow } from '../src/client/settings/PerformanceUsageRow.tsx'
-import type { LinkOpening, PerformanceUsageMode } from '../src/chat-settings.ts'
+import type { LinkOpening, PerformanceUsageMode, TranscriptViewMode } from '../src/chat-settings.ts'
 import { LinkOpeningRow } from '../src/client/settings/LinkOpeningRow.tsx'
 import { en, zh } from '../src/client/locale.ts'
 
@@ -34,9 +34,9 @@ function noPendingInteraction() {
 // The resource hook the resources plugin merges into GlobalStandardProps; this row reads no address.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
 
-function mount(mode: 'normal' | 'compact' = 'compact', dictionary: typeof en | typeof zh = en) {
-  const source = createSnapshotStore(mode)
-  const setTranscriptView = vi.fn((next: 'normal' | 'compact') => { source.set(next) })
+function mount(mode: TranscriptViewMode = 'compact', dictionary: typeof en | typeof zh = en) {
+  const source = createSnapshotStore<TranscriptViewMode>(mode)
+  const setTranscriptView = vi.fn((next: TranscriptViewMode) => { source.set(next) })
   const props: TranscriptViewRowProps = {
     usePanelInfo: selector => selector({ activePanelId: null }),
     useSessions: emptySessions(),
@@ -55,28 +55,37 @@ function mount(mode: 'normal' | 'compact' = 'compact', dictionary: typeof en | t
 describe('TranscriptViewRow', () => {
   it('explains the preference and shows Compact by default', () => {
     mount()
-    expect(screen.getByText('Conversation display')).toBeDefined()
-    expect(screen.getByText('Controls process content in completed turns')).toBeDefined()
+    expect(screen.getByText('Work details')).toBeDefined()
+    expect(screen.getByText('Controls how turns and steps expand by default')).toBeDefined()
     expect(screen.getByRole('button', { name: /Compact/ }).getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('selects Normal and follows the mirrored value', () => {
+  it.each([
+    ['detailed', 'Detailed'],
+    ['expanded', 'Expanded'],
+  ] as const)('selects %s and follows the mirrored value', (mode, label) => {
     const b = mount()
     fireEvent.click(screen.getByRole('button', { name: /Compact/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Normal' }))
-    expect(b.setTranscriptView).toHaveBeenCalledWith('normal')
-    const trigger = screen.getByRole('button', { name: /Normal/ })
+    expect(screen.queryByRole('menuitem', { name: 'Normal' })).toBeNull()
+    fireEvent.click(screen.getByRole('menuitem', { name: label }))
+    expect(b.setTranscriptView).toHaveBeenCalledWith(mode)
+    const trigger = screen.getByRole('button', { name: label })
     fireEvent.click(trigger)
     expect(screen.getByRole('menuitem', { name: 'Compact' })).toBeDefined()
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('menuitem', { name: 'Compact' })).toBeNull()
   })
 
-  it('shows the conversation-display values in Chinese', () => {
-    mount('compact', zh)
-    fireEvent.click(screen.getByRole('button', { name: '紧凑' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '标准' }))
-    expect(screen.getByRole('button', { name: '标准' })).toBeDefined()
+  it('shows all three work-detail values in Chinese', () => {
+    const b = mount('compact', zh)
+    expect(screen.getByText('工作过程展示')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '简洁' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '详细' }))
+    expect(b.setTranscriptView).toHaveBeenLastCalledWith('detailed')
+    fireEvent.click(screen.getByRole('button', { name: '详细' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '完全展开' }))
+    expect(b.setTranscriptView).toHaveBeenLastCalledWith('expanded')
+    expect(screen.getByRole('button', { name: '完全展开' })).toBeDefined()
   })
 })
 

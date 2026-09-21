@@ -29,6 +29,8 @@ const PLUGIN_INSTANCES_EXPECTED = join(SNAPSHOT_DIR, 'plugin-instances.expected.
 const DIALOG_EN_EXPECTED = join(SNAPSHOT_DIR, 'dialog-en.expected.md')
 const PLUGIN_ROW_SELECTOR = '[data-plugin-scope="preset"] [data-plugin-entry="tool-subagent"]'
 const MODE = webSnapshotMode()
+const { version } = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8')) as { version: string }
+const versionCapture = { replacements: [[version, '{{version}}']] as const }
 
 describe('web e2e: settings modal and General preferences', () => {
   let scaffold: WebScaffold
@@ -93,8 +95,9 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(() => openRequests, { timeout: 5_000 }).toBe(1)
     await expect.poll(() => openDocument.isEnabled(), { timeout: 5_000 }).toBe(true)
     await page.unroute('**/api/settings/openSettingsDocument')
+    await dialog.getByText(`当前版本：${version}`, { exact: true }).waitFor()
     // Golden of the freshly opened dialog (default zh, General active).
-    const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd, versionCapture)
     await compareOrRefreshGolden(DIALOG_EXPECTED, snapshot, MODE)
     // Section switch: aria-current moves (the Models page itself has its own scenario file).
     await dialog.getByRole('button', { name: '模型' }).click()
@@ -545,17 +548,20 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
-  it('persists the completed-Turn transcript mode across reload', async () => {
+  it.each([
+    ['detailed', '详细'], ['expanded', '完全展开'],
+  ] as const)('persists the %s work-details mode across reload', async (mode, label) => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-transcript-view'))
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.waitFor({ timeout: 10_000 })
-    await dialog.getByText('对话显示', { exact: true }).waitFor({ timeout: 10_000 })
-    await dialog.getByRole('button', { name: '紧凑', exact: true }).click()
-    await page.getByRole('menuitem', { name: '标准', exact: true }).click()
-    await dialog.getByRole('button', { name: '标准', exact: true }).waitFor({ timeout: 10_000 })
+    await dialog.getByText('工作过程展示', { exact: true }).waitFor({ timeout: 10_000 })
+    const details = dialog.getByText('工作过程展示', { exact: true }).locator('../..')
+    await details.getByRole('button', { name: '简洁', exact: true }).click()
+    await page.getByRole('menuitem', { name: label, exact: true }).click()
+    await details.getByRole('button', { name: label, exact: true }).waitFor({ timeout: 10_000 })
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
-      .toMatch(/ui-chat:\n\s+transcriptView: normal/)
+      .toContain(`transcriptView: ${mode}`)
     await page.keyboard.press('Escape')
 
     const warningStart = tripwire.warnings.length
@@ -564,11 +570,12 @@ describe('web e2e: settings modal and General preferences', () => {
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const reloaded = page.getByRole('dialog', { name: '设置' })
-    await reloaded.getByRole('button', { name: '标准', exact: true }).waitFor({ timeout: 10_000 })
+    const restoredDetails = reloaded.getByText('工作过程展示', { exact: true }).locator('../..')
+    await restoredDetails.getByRole('button', { name: label, exact: true }).waitFor({ timeout: 10_000 })
 
-    await reloaded.getByRole('button', { name: '标准', exact: true }).click()
-    await page.getByRole('menuitem', { name: '紧凑', exact: true }).click()
-    await reloaded.getByRole('button', { name: '紧凑', exact: true }).waitFor({ timeout: 10_000 })
+    await restoredDetails.getByRole('button', { name: label, exact: true }).click()
+    await page.getByRole('menuitem', { name: '简洁', exact: true }).click()
+    await restoredDetails.getByRole('button', { name: '简洁', exact: true }).waitFor({ timeout: 10_000 })
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
       .toMatch(/ui-chat:\n\s+transcriptView: compact/)
     await page.keyboard.press('Escape')
@@ -647,6 +654,7 @@ describe('web e2e: settings modal and General preferences', () => {
     // ...and the attribute follows that switch, in the assembled app.
     await expect.poll(() => page.evaluate(() => document.documentElement.lang), { timeout: 5_000 }).toBe('en')
     expect(await enDialog.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe('true')
+    await enDialog.getByText(`Current version: ${version}`, { exact: true }).waitFor()
     await expect.poll(() => enDialog.getByText('Appearance', { exact: true }).count(), { timeout: 5_000 }).toBe(1)
     expect(await page.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
@@ -756,7 +764,8 @@ describe('web e2e: settings modal and General preferences', () => {
       // Golden of the English fallback dialog — the visible output this change
       // produces. The zh golden above covers the detected-locale surface, so
       // the pair pins both directions of the resolution.
-      const snapshot = await captureStableAria(frPage, '[role="dialog"]', fresh.workspaceCwd)
+      await dialog.getByText(`Current version: ${version}`, { exact: true }).waitFor()
+      const snapshot = await captureStableAria(frPage, '[role="dialog"]', fresh.workspaceCwd, versionCapture)
       await compareOrRefreshGolden(DIALOG_EN_EXPECTED, snapshot, MODE)
       expect(frTripwire.pageErrors).toEqual([])
       expect(frTripwire.warnings).toEqual([])
@@ -780,7 +789,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const dialog = withoutBrowser.getByRole('dialog', { name: 'Settings' })
     await dialog.getByRole('button', { name: 'Detailed', exact: true }).waitFor()
     expect(await dialog.getByText('Open chat links in', { exact: true }).count()).toBe(0)
-    const snapshot = await captureStableAria(withoutBrowser, '[role="dialog"]', fresh.workspaceCwd)
+    const snapshot = await captureStableAria(withoutBrowser, '[role="dialog"]', fresh.workspaceCwd, versionCapture)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'dialog-no-browser.expected.md'), snapshot, MODE)
     expect(browserConsole.pageErrors).toEqual([])
     expect(browserConsole.warnings).toEqual([])

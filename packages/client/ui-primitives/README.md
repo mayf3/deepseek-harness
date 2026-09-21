@@ -42,10 +42,11 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `Input` | Single-line text entry for search boxes and inline forms. |
 | `Menu`, `MenuItemButton` | Dropdown of `items` data rows, separators, and group labels, with nested submenus; `children` adds component rows, each a `MenuItemButton` (`separatorBefore` starts a new group), in the same list. Every row shares the styling, the keyboard walk, and the focus return; closing stays the owner's state change for both kinds. While open, ↑/↓ (with Home and End) walk the list, Tab settles the focused row, and Escape or Shift+Tab close back to the anchor; selecting a row also returns the keyboard to the anchor unless the owner moved it itself. Only a keyboard on the anchor or inside the list is intercepted, and `autoFocus` decides solely whether opening focuses the first row. |
 | `Pill` | Selectable capsule button for view switchers and filters; takes `active` and `onClick`. |
+| `SegmentedTabs` | Controlled equal-width tabs with a sliding indicator and Left/Right, Home, and End navigation. The caller supplies labels, tab/panel ids, and panel content. |
 | `Tag` | Read-only capsule badge; `tone` selects one of eight palettes. |
-| `StateDot` | Solid green `done`, amber `warning`, red `error`, and neutral-grey `idle` marks in a 10px slot, plus a tertiary-grey 14px rotating `ongoing` loader. `aria-hidden`, so the render site owns the name. |
+| `StateDot` | Solid green `done`, amber `warning`, red `error`, and neutral-grey `idle` marks in a 10px slot, plus a tertiary-grey 14px rotating `ongoing` loader whose animations pin to document time zero so every visible loader rotates in phase. `aria-hidden`, so the render site owns the name. |
 | `ConnectionIndicator` | Inline connection-recovery control across outage, retry, and recovered states. |
-| `DisclosureRow` | 24px compact disclosure that lays title and content side by side. |
+| `DisclosureRow` | 24px compact disclosure that lays title and content side by side. Memoized with shallow prop comparison; keep callbacks and React-node props stable when their content is unchanged. |
 | `Modal` | Centered dialog over a page mask. |
 | `RiskConfirmation` | Sensitive action gated behind an explicit checkbox. |
 | `OnboardingSurface` | First-run stage that holds the application root inert. |

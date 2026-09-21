@@ -18,7 +18,7 @@
   - text: Font size Only affects conversation content 14
   - button "Increase font size"
   - button "Decrease font size"
-  - text: px Conversation display Controls process content in completed turns
+  - text: px Work details Controls how turns and steps expand by default
   - button "Compact"
   - text: Performance & usage Choose how much performance and usage information to show
   - button "Detailed"
@@ -26,3 +26,4 @@
   - switch "Developer tools"
   - text: Send behavior while busy What Enter and the Send button do while the agent is running; Cmd/Ctrl+Enter uses the other behavior
   - button "Queue"
+  - text: "Current version: {{version}}"

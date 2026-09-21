@@ -122,6 +122,15 @@ describe('bundleRoster on a scratch installation', () => {
     expect(scratch.roster(['@t/base'])).toEqual(['@t/a', '@t/c'])
   })
 
+  it('concatenates a dsh.bundle.patch list in order', () => {
+    scratch.web('@t/listed')
+    scratch.pkg('@t/list', { dsh: { bundle: { patch: ['./first.yml', './second.yml'] } } }, {
+      'first.yml': '- insert:\n    - id: listed\n      name: \'@t/listed\'\n      disabled: true\n',
+      'second.yml': '- id: listed\n  disabled: false\n',
+    })
+    expect(scratch.roster(['@t/list'])).toEqual(['@t/listed'])
+  })
+
   it('descends into Loader groups and lets a disabled group disable every row beneath it', () => {
     scratch.web('@t/grouped')
     scratch.web('@t/grouped-off')
@@ -243,7 +252,9 @@ describe('bundleRoster on a scratch installation', () => {
   it('fails loud on a bundle that does not resolve, declares no patch, or whose patch is not a list', () => {
     expect(() => scratch.roster(['@t/missing'])).toThrow('cannot resolve bundle @t/missing from')
     scratch.pkg('@t/no-patch', { dsh: {} })
-    expect(() => scratch.roster(['@t/no-patch'])).toThrow('bundle @t/no-patch declares no dsh.bundle.patch in')
+    expect(() => scratch.roster(['@t/no-patch'])).toThrow('bundle @t/no-patch declares no dsh.bundle.patch file list in')
+    scratch.pkg('@t/bad-patch-list', { dsh: { bundle: { patch: [1] } } })
+    expect(() => scratch.roster(['@t/bad-patch-list'])).toThrow('bundle @t/bad-patch-list declares no dsh.bundle.patch file list in')
     scratch.bundle('@t/not-a-list', 'insert: []\n')
     expect(() => scratch.roster(['@t/not-a-list'])).toThrow('must be a top-level list of patches')
   })

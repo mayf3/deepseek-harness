@@ -200,7 +200,6 @@
     "fc16f363fc891dac66e0be8c042da4b1d3f45c35af2d31a03f2214a6c3698379": 1
   },
   "packages/api/gateway/tests/stream-server.host.spec.ts": {
-    "53253a9a650abe4678a5eb411720231ef4a387ed2de78dde44054ff3d72efbbe": 1,
     "c7136804a6f7b829f525135643cb93cc8b3176b1d0036b2ebde5d7b668411658": 1,
     "dd244515f22ccbc14e5872126c3fc405ed6a63bb0390940976e234e3c06fcc2b": 1
   },
@@ -823,9 +822,6 @@
   },
   "packages/client/ui-subagent/tests/browser-plugin.client.spec.ts": {
     "810a8e63d34628d25866491b3c6455a51b2d114261b67e62b42728b765370993": 1
-  },
-  "packages/client/ui-subagent/tests/conversation-ui.client.spec.tsx": {
-    "92d757187bb2dba986b160c2417c7b4a8b199784d441bfa0777d8077774b932b": 1
   },
   "packages/client/ui-subagent/tests/sidebar-chat.client.spec.tsx": {
     "024f8748e8908a495117a23a7673046a871f0d8187f8fe561aceba1269aefa31": 1,

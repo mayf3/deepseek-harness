@@ -387,6 +387,7 @@ describe('RowActionToast', () => {
     ['pinFailed', '置顶失败，请稍后重试'],
     ['unpinFailed', '取消置顶失败，请稍后重试'],
     ['archivedNotOpenable', '已归档对话暂时无法查看，请取消归档后查看'],
+    ['defaultWorkspaceFailed', '无法创建默认工作区，请通过“选择工作区”选择文件夹'],
   ] as const)('shows the %s warning and takes it down when its hold ends', (kind, text) => {
     vi.useFakeTimers()
     try {
@@ -396,6 +397,24 @@ describe('RowActionToast', () => {
       expect(alert.textContent).toBe(text)
       expect(alert.querySelector('button')).toBeNull()
       act(() => { vi.advanceTimersByTime(4000) })
+      expect(dismissToast).toHaveBeenCalledOnce()
+      expect(screen.queryByRole('alert')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows a refused creation with the Host reason and holds it as long as the archived notice', () => {
+    vi.useFakeTimers()
+    try {
+      const { dismissToast, notify } = toastSurface()
+      notify({ kind: 'createFailed', message: 'agent-preset/invalid: agent-presets: preset "broken" failed to mount' })
+      const alert = screen.getByRole('alert')
+      expect(alert.textContent).toBe('新建会话失败：agent-preset/invalid: agent-presets: preset "broken" failed to mount')
+      expect(alert.querySelector('button')).toBeNull()
+      act(() => { vi.advanceTimersByTime(4000) })
+      expect(dismissToast).not.toHaveBeenCalled()
+      act(() => { vi.advanceTimersByTime(3000) })
       expect(dismissToast).toHaveBeenCalledOnce()
       expect(screen.queryByRole('alert')).toBeNull()
     } finally {

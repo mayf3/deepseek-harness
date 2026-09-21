@@ -13,7 +13,8 @@ import {
   PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES,
 } from './experimental-package-policy.ts'
 import { hasTypertRemoteNavigation, isForbiddenPublicationFile } from './publication-payload.ts'
-import { OPTIONAL_BUNDLES } from '../packages/boot/app-boot/src/profile.ts'
+import type { DshBundleManifest } from '../packages/util/package-manifest/src/types.ts'
+import { OPTIONAL_BUNDLES, bundlePatchFiles } from '../packages/boot/app-boot/src/profile.ts'
 import { collectProjectReferenceFaceViolations } from './project-reference-faces.ts'
 
 const root = resolve(import.meta.dirname, '..')
@@ -98,9 +99,7 @@ export interface PackageManifest {
   dependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
   dsh?: {
-    bundle?: {
-      patch?: string
-    }
+    bundle?: DshBundleManifest
   }
 }
 
@@ -222,8 +221,8 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     const target = exportDefault(manifest, resource)
     if (target?.startsWith('./') && target.endsWith('.json')) localeFiles.add(target.slice(2))
   }
-  const declaredPatch = manifest.dsh?.bundle?.patch
-  const bundleFiles = declaredPatch === undefined ? [] : [declaredPatch.replace(/^\.\//, '')]
+  const bundle = manifest.dsh?.bundle
+  const bundleFiles = bundle === undefined ? [] : bundlePatchFiles(bundle).map(file => file.replace(/^\.\//, ''))
   const extras = [
     ...bundleFiles,
     ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),

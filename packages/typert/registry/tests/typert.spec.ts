@@ -500,9 +500,25 @@ describe('TypertRegistry', () => {
     }
     const dispose = ctx.typert.remotes.register({ package: '@fixture/strict', descriptors: [strictInvocation] })
     await dispose()
+    const uplinkInvocation: InvocationDescriptor = {
+      ...strictInvocation,
+      id: '@fixture/remote#attach',
+      method: 'attach',
+      mode: 'stream',
+      uplink: { codec: strict },
+    }
+    const disposeUplink = ctx.typert.remotes.register({ package: '@fixture/uplink', descriptors: [uplinkInvocation] })
+    await disposeUplink()
 
+    const bogusMode: string = 'duplex'
     const malformed: readonly [InvocationDescriptor, string][] = [
       [{ ...invocation(), id: '' }, 'invocation id'],
+      [{ ...invocation(), mode: bogusMode as 'stream' }, 'mode must be "stream"'],
+      [{
+        ...invocation(),
+        mode: 'stream',
+        uplink: { codec: { mode: 'strict', typeSymbol: '', create: () => z.string() } },
+      }, 'uplink type symbol'],
       [{ ...invocation(), namespace: 'bad/name' }, 'namespace'],
       [{ ...invocation(), implementation: 'bad/name' }, 'implementation method'],
       [{

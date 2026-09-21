@@ -1,19 +1,23 @@
 /**
- * The `shell.overlay` entry that shows the row actions' notices: the archived
- * notice with its undo and "show archived" actions, pin failures, and the
- * browser's "archived rows cannot be opened" notice. One notice at a time;
- * a parent rerender does not extend its hold.
+ * The `shell.overlay` entry for Workspace and Session notices.
+ * One notice is visible at a time; a parent rerender does not extend its hold.
  */
 import { IconWarningOutlineRegular, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { RowToastProps } from '../contract/slots.ts'
-
-/** Hold for the actionable archived notice: two buttons need a longer read-and-react window than a plain notice. */
-const ARCHIVED_TOAST_HOLD_MS = 6000
+import { assertNever } from '@deepseek-ai/dsh-util-values'
+import type { RowToastProps, RowToastState } from '../contract/slots.ts'
 
 /**
- * Render the row actions' current notice: the archived notice with its undo
- * and show-archived actions on a 6 s hold, or a plain warning for a failed
- * pin or an archived row that was clicked.
+ * Hold for the notices that take longer to read than a one-line warning: the
+ * actionable archived notice (two buttons to react to) and a refused Session
+ * creation, which quotes the Host's reason.
+ */
+const LONG_TOAST_HOLD_MS = 6000
+
+/**
+ * Render the current notice: the archived notice with its undo
+ * and show-archived actions on a 6 s hold, a refused Session creation with
+ * the Host's reason on the same hold, or a plain warning for a failed
+ * pin, an archived row that was clicked, or default Workspace creation.
  * @param props - the notice hook, its dismissal, the two archived-notice actions, and the locale seat.
  * @returns the notice on display, or null.
  */
@@ -27,7 +31,7 @@ export function RowActionToast({ useToast, dismissToast, undoArchive, showArchiv
         key={`toast-${String(toast.seq)}`}
         text={t('toast.archived')}
         tone="success"
-        holdMs={ARCHIVED_TOAST_HOLD_MS}
+        holdMs={LONG_TOAST_HOLD_MS}
         actions={[
           { label: t('toast.archivedUndo'), onClick: () => { dismissToast(); undoArchive(sessionId) } },
           { prefix: t('toast.archivedOr'), label: t('toast.archivedFilter'), onClick: () => { dismissToast(); showArchived() } },
@@ -36,15 +40,39 @@ export function RowActionToast({ useToast, dismissToast, undoArchive, showArchiv
       />
     )
   }
-  const text = toast.kind === 'pinFailed'
-    ? t('toast.pinFailed')
-    : toast.kind === 'unpinFailed' ? t('toast.unpinFailed') : t('toast.archivedNotOpenable')
+  if (toast.kind === 'createFailed') {
+    return (
+      <Toast
+        key={`toast-${String(toast.seq)}`}
+        text={t('toast.createFailed', { message: toast.message })}
+        icon={<IconWarningOutlineRegular />}
+        holdMs={LONG_TOAST_HOLD_MS}
+        onDone={dismissToast}
+      />
+    )
+  }
   return (
     <Toast
       key={`toast-${String(toast.seq)}`}
-      text={text}
+      text={plainNoticeText(toast, t)}
       icon={<IconWarningOutlineRegular />}
       onDone={dismissToast}
     />
   )
+}
+
+/** The copy of one plain warning, keyed by the notice kind the union closes over. */
+function plainNoticeText(
+  toast: Exclude<RowToastState, { kind: 'archived' | 'createFailed' }>,
+  t: RowToastProps['t'],
+): string {
+  switch (toast.kind) {
+    case 'pinFailed': return t('toast.pinFailed')
+    case 'unpinFailed': return t('toast.unpinFailed')
+    case 'defaultWorkspaceFailed': return t('defaultWorkspace.failed')
+    case 'archivedNotOpenable': return t('toast.archivedNotOpenable')
+    /* v8 ignore next 2 -- closed-union backstop; only reached if a notice kind is forged */
+    default:
+      return assertNever(toast)
+  }
 }

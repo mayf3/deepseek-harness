@@ -296,24 +296,13 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     await compareOrRefreshGolden(UI_EXPANDED_EXPECTED, expanded, MODE)
   })
 
-  it.skipIf(MODE === 'record')('renders the system prompt disclosure inside the expanded Turn process', async () => {
+  it.skipIf(MODE === 'record')('omits system prompt rows even when the Turn process is expanded', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-round-trip-system-prompt'))
     await expandTurnProcesses(page)
-    const disclosure = page.getByRole('button', { name: 'System prompt', exact: true })
-    const body = page.locator('[data-system-prompt-body]')
-    await expect.poll(() => disclosure.count(), { timeout: 10_000 }).toBe(1)
-    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
-    expect(await body.count()).toBe(0)
-
-    await disclosure.click()
-    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('true')
-    const opaque = body.locator('[data-context-text]')
-    await expect.poll(() => opaque.count(), { timeout: 5_000 }).toBe(1)
-    expect(await opaque.textContent()).toContain('You are an AI agent powered by DeepSeek Harness.')
-
-    await disclosure.click()
-    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
-    await expect.poll(() => body.count()).toBe(0)
+    expect(sessionEvents.some(event => event.type === 'system/message')).toBe(true)
+    expect(await page.locator('[data-chat-flow-kind="system-prompt"]').count()).toBe(0)
+    expect(await page.getByRole('button', { name: 'System prompt', exact: true }).count()).toBe(0)
+    expect(await page.locator('[data-system-prompt-body]').count()).toBe(0)
   })
 
   it.skipIf(MODE === 'record')('expands and collapses the reasoning fold from its click target', async () => {

@@ -26,7 +26,7 @@ The reference-owned lifetime and Provider targeting now follow [Client Session r
 Host-side `session.create(workspaceId)` produces Session + Agent + cwd in one piece (an atomic bundle, never split); the client side is the mirror of that birth — the instant a session row enters the list mirror, the client mints its Agent scope (actx + provide + the full input surface mounted):
 
 - Session identity is the host's true form from birth: the sessionId arrives via the `session.create` response / the `host/session-added` frame, and every client-side address (the scope tag, slot store keys, RPC addressing) uses that same id.
-- The materialization moment = the instant the user picks a Workspace (cwd settled): the client calls `session.create({workspaceId})` on the spot and receives the complete entity.
+- A manual Workspace pick or successful [first-use startup initialization](../feature/2026-09-20-default-workspace.md) establishes cwd before the client calls `session.create({workspaceId})` and receives the complete entity.
 - "New Session with no workspace picked" is a **pure view state** (a navigation position) corresponding to no session/scope entity; until the pick, the composer is locked whole (no slash, no plain text).
 - A "blank session" is an ordinary materialized session with no turn yet; to Agent-scope plugins on the host (goal/plan/skill/…) it remains an ordinary Session, so slash/plan are naturally live.
 
