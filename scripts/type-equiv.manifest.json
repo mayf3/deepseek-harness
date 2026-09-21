@@ -2256,6 +2256,16 @@
       "doc": "docs/subsystems/deliverables.md",
       "symbol": "WorkspaceChanges",
       "source": "packages/deliverables/workspace-changes/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/product-telemetry.md",
+      "symbol": "ProductTelemetryScalar",
+      "source": "packages/host/product-telemetry-otel/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/product-telemetry.md",
+      "symbol": "ProductTelemetryRecord",
+      "source": "packages/host/product-telemetry-otel/src/index.ts"
     }
   ]
 }
