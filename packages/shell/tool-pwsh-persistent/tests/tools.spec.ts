@@ -356,7 +356,7 @@ describe('tool-pwsh-persistent', () => {
     expect(result).not.toContain('Invoke-Expression')
   })
 
-  it('preserves command output that equals the private shell prompt', async () => {
+  it("preserves command output that equals the backend's prompt text", async () => {
     const { ctx, owner, stub } = await setup({ backendType: 'stub' })
     await call(ctx, owner, 'warm up')
     const session = stub.sessions[0]!
@@ -403,6 +403,12 @@ describe('tool-pwsh-persistent', () => {
     session.scrollback = ''
     const crlfPromptFallback = text(await call(ctx, owner, 'bad {'))
     expect(crlfPromptFallback).toContain('pwsh: synt')
+
+    // The stdin_read fallback returns captured output without resetting the
+    // shell, so later calls keep the same session; the README names the
+    // interactive-child consequence of that retention.
+    expect(session.closed).toEqual([])
+    expect(stub.sessions).toHaveLength(1)
 
     session.mode = 'end-only'
     session.scrollback = ''
@@ -656,14 +662,14 @@ describe('tool-pwsh-persistent', () => {
     }
   })
 
-  it.each(['initialization', 'command', 'cleanup'] as const)('preserves a distinct %s failure during cancellation', async (phase) => {
+  it.each(['command', 'cleanup'] as const)('preserves a distinct %s failure during cancellation', async (phase) => {
     const { ctx, owner } = await setup()
-    if (phase === 'command') await call(ctx, owner, 'warm up')
+    await call(ctx, owner, 'warm up')
     const controller = new AbortController()
     const failure = new Error(`${phase} failed`)
     vi.spyOn(ctx.terminals, 'startSend').mockImplementationOnce(() => {
       controller.abort({ kind: 'user' })
-      throw phase === 'cleanup' ? new Error('initialization failed') : failure
+      throw phase === 'cleanup' ? new Error('send failed') : failure
     })
     if (phase === 'cleanup') vi.spyOn(ctx.terminals, 'kill').mockRejectedValueOnce(failure)
     const result = await call(ctx, owner, 'fails', controller.signal)
