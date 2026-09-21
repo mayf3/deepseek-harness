@@ -3,13 +3,19 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 describe('offline brand font', () => {
-  it('ships a local TTF with its redistribution license', () => {
+  it('ships a local WOFF2 with its redistribution license', () => {
     const css = readFileSync(new URL('../src/styles/brand-font.css', import.meta.url), 'utf8')
-    const fontPath = /url\(\.\/([^)]*\.ttf)\)/.exec(css)?.[1]
+    const fontPath = /url\(\.\/([^)]*\.woff2)\)/.exec(css)?.[1]
     expect(fontPath).toBeDefined()
     const font = readFileSync(new URL(`../src/styles/${fontPath!}`, import.meta.url))
-    expect(font.readUInt32BE(0)).toBe(0x00010000)
+    expect(font.readUInt32BE(0)).toBe(0x774f4632)
     expect(css).toContain('font-weight: 400')
+    expect(css).toContain('font-weight: 300')
+    const light = readFileSync(new URL('../src/styles/montserrat-light.woff2', import.meta.url))
+    expect(light.readUInt32BE(0)).toBe(0x774f4632)
+    expect(css).toContain('font-weight: 500')
+    const medium = readFileSync(new URL('../src/styles/montserrat-medium.woff2', import.meta.url))
+    expect(medium.readUInt32BE(0)).toBe(0x774f4632)
     expect(css).toContain('font-style: normal')
     expect(css).not.toMatch(/url\(https?:/)
     const license = readFileSync(new URL('../src/styles/Montserrat-OFL.txt', import.meta.url), 'utf8')

@@ -12,7 +12,7 @@ export default defineConfig([
         plugins: [{
           name: 'desktop-brand-font',
           async generateBundle() {
-            for (const name of ['brand-font.css', 'montserrat-light.ttf', 'montserrat-regular.ttf', 'Montserrat-OFL.txt']) {
+            for (const name of ['brand-font.css', 'montserrat-regular.woff2', 'montserrat-light.woff2', 'montserrat-medium.woff2', 'Montserrat-OFL.txt']) {
               this.emitFile({
                 type: 'asset',
                 fileName: name,
