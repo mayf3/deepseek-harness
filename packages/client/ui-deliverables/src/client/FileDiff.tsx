@@ -8,7 +8,7 @@ import type { WorkspaceDiffHunk } from '@deepseek-ai/dsh-workspace-changes/types
 import type { ChangesDiff } from '../changes.ts'
 import type { ChangesDiffState } from './changes-diff.ts'
 import type { NS } from './locales.ts'
-import css from './ReviewTab.module.css'
+import css from './FileDiff.module.css'
 
 /** Maximum rendered lines per comparison. */
 export const MAX_RENDERED_LINES = 5000
@@ -220,7 +220,7 @@ function TextDiff({ diff, split, wrap, t }: { diff: Extract<ChangesDiff, { kind:
   const highlights = useMemo(() => hunks.map(hunk => hunkHighlights(hunk, highlighter)), [hunks, highlighter])
   return (
     <div className={css.body} data-review-view={split ? 'split' : 'unified'} data-review-wrap={wrap || undefined}>
-      {note !== undefined && <p className={css.note} data-diff-note>{t(note)}</p>}
+      {note !== undefined && <p className={css.note} data-diff-note={hunks.length === 0 ? 'empty' : 'metadata'}>{t(note)}</p>}
       {diff.coarse && <p className={css.note} data-diff-coarse>{t('diff.coarse')}</p>}
       {truncated && <p className={css.note} data-diff-truncated>{t('diff.truncated', { count: String(MAX_RENDERED_LINES) })}</p>}
       {split && !wrap ? <SplitColumns hunks={hunks} highlights={highlights} /> : hunks.map((hunk, position) => {

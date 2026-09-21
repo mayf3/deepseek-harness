@@ -21,6 +21,7 @@ import type { ChangesReviewParams } from './review-definition.ts'
 import type { createReviewStore } from './review-store.ts'
 import type { NS } from './locales.ts'
 import { FileDiff } from './FileDiff.tsx'
+import diffCss from './FileDiff.module.css'
 import css from './ReviewTab.module.css'
 
 const GROUPED = new Intl.NumberFormat('en-US')
@@ -108,8 +109,8 @@ export function ReviewTab({
   const native = host !== null && host !== 'error' && host.available && phase !== 'nativeUnavailable'
   const summaryState = summary === undefined || summary === 'loading' ? 'loading' : summary === 'missing' ? 'missing' : 'ready'
   return (
-    <div className={css.root} data-changes-review data-review-state={summaryState}>
-      <div className={css.header}>
+    <div className={`${diffCss.root} ${css.root}`} data-changes-review data-review-state={summaryState}>
+      <div className={diffCss.header}>
         {file === undefined
           ? <span className={css.selectorLabel}>{t('review.title', { turn: String(coordinates.turn) })}</span>
           : <Menu className={css.selector} open={menuOpen} autoFocus portal align="start" dense onClose={() => { setMenuOpen(false) }}
@@ -150,8 +151,8 @@ export function ReviewTab({
           })}
         </span>
       </div>
-      {summaryState === 'loading' && <p className={css.status} role="status">{t('diff.loading')}</p>}
-      {summaryState === 'missing' && <p className={css.status}>{t('diff.missing')}</p>}
+      {summaryState === 'loading' && <p className={diffCss.status} role="status">{t('diff.loading')}</p>}
+      {summaryState === 'missing' && <p className={diffCss.status}>{t('diff.missing')}</p>}
       {file !== undefined && <FileDiff state={diffState} split={split} wrap={wrap} t={t}
         retry={() => { void loadChangesDiff(sessionId, seq, index) }} />}
     </div>

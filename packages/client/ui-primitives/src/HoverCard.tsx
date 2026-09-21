@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode, RefObject } from 'react'
+import type { CSSProperties, ReactNode, RefObject, SyntheticEvent } from 'react'
 import clsx from 'clsx'
 import { createPortal } from 'react-dom'
 import { writeClipboard } from './clipboard.ts'
 import { usePointerGrace } from './pointer-grace.ts'
+import { overlayTopMargin } from './overlay-top-margin.ts'
 import css from './HoverCard.module.css'
 
 /** Preview opacity transition and retained lifetime during dismissal. */
 const PREVIEW_FADE_MS = 100
+const PREVIEW_MAX_HEIGHT = 420
+const PREVIEW_INSET = 24
+const ANCHOR_GAP = 8
+const VIEWPORT_MARGIN = 8
 
 /**
  * Render an anchor with a hover-triggered preview card.
@@ -16,7 +21,7 @@ const PREVIEW_FADE_MS = 100
  * readable and selectable, but it carries no dismissal affordance of its own.
  * @param props.openDelayMs - hover dwell before the card shows (default 500).
  * @param props.variant - compact card beside the anchor, or a preview above/below it
- * with 24px side insets, a 420px height cap, and 100ms opacity transitions.
+ * with 24px side insets, a 420px height cap, frame-top clearance, and 100ms opacity transitions.
  * @param props.widthAnchorRef - optional element whose width and horizontal position size the preview.
  * @param props.disabled - suppress opening; turning true dismisses an open card.
  * @param props.copyText - optional primary value copied by activation and
@@ -129,20 +134,22 @@ export function HoverCard({
       const h = cardRef.current?.offsetHeight ?? 0
       if (variant === 'preview') {
         const bounds = widthAnchorRef?.current?.getBoundingClientRect() ?? r
-        const width = Math.max(0, Math.min(bounds.width - 48, window.innerWidth - 16))
-        const above = Math.max(0, r.top - 16)
-        const below = Math.max(0, window.innerHeight - r.bottom - 16)
-        const onTop = above >= Math.min(420, below)
-        const maxHeight = Math.min(420, onTop ? above : below)
+        const width = Math.max(0, Math.min(bounds.width - PREVIEW_INSET * 2, window.innerWidth - VIEWPORT_MARGIN * 2))
+        const topMargin = overlayTopMargin(VIEWPORT_MARGIN)
+        const belowTop = Math.max(topMargin, r.bottom + ANCHOR_GAP)
+        const above = Math.max(0, r.top - ANCHOR_GAP - topMargin)
+        const below = Math.max(0, window.innerHeight - belowTop - VIEWPORT_MARGIN)
+        const onTop = above >= Math.min(PREVIEW_MAX_HEIGHT, below)
+        const maxHeight = Math.min(PREVIEW_MAX_HEIGHT, onTop ? above : below)
         setPos({
-          left: Math.max(8, Math.min(bounds.left + 24, window.innerWidth - width - 8)),
-          top: onTop ? Math.max(8, r.top - Math.min(h, maxHeight) - 8) : r.bottom + 8,
+          left: Math.max(VIEWPORT_MARGIN, Math.min(bounds.left + PREVIEW_INSET, window.innerWidth - width - VIEWPORT_MARGIN)),
+          top: onTop ? Math.max(topMargin, r.top - Math.min(h, maxHeight) - ANCHOR_GAP) : belowTop,
           width, maxHeight,
         })
         return
       }
-      const top = r.top + h > window.innerHeight - 8 ? window.innerHeight - h - 8 : r.top
-      setPos({ left: r.right + 8, top })
+      const top = r.top + h > window.innerHeight - VIEWPORT_MARGIN ? window.innerHeight - h - VIEWPORT_MARGIN : r.top
+      setPos({ left: r.right + ANCHOR_GAP, top })
     }
     place()
     const observer = variant === 'preview' && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(place) : null
@@ -165,8 +172,8 @@ export function HoverCard({
     if (!open || pos === null || variant === 'preview') return
     /* v8 ignore next -- the card is mounted whenever pos is set, so the ref is attached here. */
     const h = cardRef.current?.offsetHeight ?? 0
-    if (pos.top + h > window.innerHeight - 8) {
-      setPos({ left: pos.left, top: window.innerHeight - h - 8 })
+    if (pos.top + h > window.innerHeight - VIEWPORT_MARGIN) {
+      setPos({ left: pos.left, top: window.innerHeight - h - VIEWPORT_MARGIN })
     }
   }, [open, pos, variant])
 
@@ -185,6 +192,13 @@ export function HoverCard({
   }
 
   const copyable = copyText !== undefined
+  const dismissFromAnchor = (event: SyntheticEvent<HTMLSpanElement>): void => {
+    // Portal content is a React child, but its clicks and text selection do not activate the anchor.
+    if (cardRef.current?.contains(event.target as Node)) return
+    clearTimer()
+    cancelClose()
+    close()
+  }
   const card = open && pos !== null && (
     <div
       ref={cardRef}
@@ -239,17 +253,8 @@ export function HoverCard({
         // open, matching Menu's shape.
         if (open) armClose()
       }}
-      // A press inside the anchor (row click, menu trigger) dismisses the
-      // card, without waiting for the owner to flip `disabled`.
-      // Capture presses reach this handler from the card too — it is a React
-      // child of the wrapper — but a press there starts a selection, so the
-      // card must stay mounted under it (and the browser's click with it).
-      onPointerDownCapture={(e) => {
-        if (cardRef.current?.contains(e.target as Node)) return
-        clearTimer()
-        cancelClose()
-        close()
-      }}
+      onPointerDownCapture={dismissFromAnchor}
+      onClickCapture={dismissFromAnchor}
     >
       {anchor}
       {open && copyable && <span className={css.status} role="status">{copied ? copiedLabel : ''}</span>}

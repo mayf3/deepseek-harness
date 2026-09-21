@@ -1,12 +1,12 @@
 /** The changed-files card: a header and per-file rows that open the turn's review, and a four-row fold. */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { HoverCard, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { changesDiffUrl, type ChangesSummary } from '../changes.ts'
 import type { DeliverablesInjected } from './Deliverables.tsx'
 import { FileDiff } from './FileDiff.tsx'
-import reviewCss from './ReviewTab.module.css'
+import diffCss from './FileDiff.module.css'
 import { IconCodeBracketsOutline16 } from './icons.tsx'
 import type { NS } from './locales.ts'
 import css from './ChangedFiles.module.css'
@@ -42,6 +42,7 @@ export function ChangedFiles({ changes, cwd, openReview, t, sessionId, useChange
   openReview: (index: number) => void
 } & PropsLocale<typeof NS> & PreviewProps) {
   const cardRef = useRef<HTMLDivElement>(null)
+  const pathDescriptionId = useId()
   const [expanded, setExpanded] = useState(false)
   const foldable = changes.files.length > COLLAPSED_ROWS
   const rows = foldable && !expanded ? changes.files.slice(0, COLLAPSED_ROWS) : changes.files
@@ -66,6 +67,7 @@ export function ChangedFiles({ changes, cwd, openReview, t, sessionId, useChange
               display={resolveWorkspacePath(cwd, file.path)} useChangesDiff={useChangesDiff} loadChangesDiff={loadChangesDiff} t={t} />}
             anchor={<button type="button" className={css.row}
               aria-label={t('changes.viewDiff', { name: file.display })}
+              aria-describedby={`${pathDescriptionId}-${index}`}
               onClick={() => { openReview(index) }}>
               <span className={css.path}>{file.display}</span>
               <span className={css.counts}>
@@ -74,6 +76,7 @@ export function ChangedFiles({ changes, cwd, openReview, t, sessionId, useChange
                     : <Counts t={t} added={file.added} deleted={file.deleted} />}
               </span>
             </button>} />
+          <span id={`${pathDescriptionId}-${index}`} hidden>{resolveWorkspacePath(cwd, file.path)}</span>
         </li>
       ))}
     </ul>
@@ -97,8 +100,8 @@ function ChangedFilePreview({ sessionId, seq, index, display, useChangesDiff, lo
   useEffect(() => {
     if (state === undefined) void loadChangesDiff(sessionId, seq, index)
   }, [state, sessionId, seq, index, loadChangesDiff])
-  return <div className={`${reviewCss.root} ${css.preview}`} data-changes-hover-preview>
-    <div className={reviewCss.header}><span className={css.previewPath} data-changes-preview-path tabIndex={0}>{display}</span></div>
+  return <div className={`${diffCss.root} ${css.preview}`} data-changes-hover-preview>
+    <div className={diffCss.header}><span className={css.previewPath} data-changes-preview-path>{display}</span></div>
     <FileDiff state={state} split={false} wrap={false} t={t} retry={() => { void loadChangesDiff(sessionId, seq, index) }} />
   </div>
 }

@@ -56,7 +56,6 @@
 .preview {
   display: flex;
   flex-direction: column;
-  max-height: 420px;
   padding: 0;
   overflow: hidden;
   border: 0;

@@ -48,6 +48,8 @@ it('reads only after 500ms and renders the selected comparison in a single colum
   expect(preview.querySelector('[data-diff-line="del"]')?.textContent).toContain('const value = 1')
   expect(preview.querySelector('[data-diff-line="add"]')?.textContent).toContain('const value = 2')
   expect(preview.textContent).toContain('/workspace/main.ts')
+  expect(screen.getByRole('button', { name: 'View changes to main.ts', description: '/workspace/main.ts' })).toBe(row)
+  expect(preview.querySelector('[data-changes-preview-path]')?.getAttribute('tabindex')).toBeNull()
   fireEvent.pointerLeave(row)
   fireEvent.pointerEnter(preview)
   act(() => { vi.advanceTimersByTime(500) })
@@ -60,6 +62,16 @@ it('reads only after 500ms and renders the selected comparison in a single colum
   act(() => { vi.advanceTimersByTime(1) })
   expect(document.querySelector('[data-changes-hover-preview]')).toBeNull()
   expect(openReview).toHaveBeenCalledExactlyOnceWith(0)
+})
+
+it('keeps a status note for a comparison with no hunks', () => {
+  const { row, diffs } = mount()
+  diffs.state.set({ [changesDiffUrl(sessionId, 5, 0)]: {
+    kind: 'text', path: 'main.ts', display: 'main.ts', before: true, after: true, coarse: false, hunks: [],
+  } })
+  fireEvent.pointerEnter(row)
+  act(() => { vi.advanceTimersByTime(500) })
+  expect(document.querySelector('[data-changes-hover-preview] [data-diff-note="empty"]')?.textContent).toBe('Both sides hold the same lines')
 })
 
 it('cancels a short hover and the pending dwell when unmounted', () => {
@@ -87,7 +99,7 @@ it('previews each row independently, retries failed reads, and closes on Escape'
   act(() => { vi.advanceTimersByTime(200) })
   act(() => { vi.advanceTimersByTime(300) })
   expect(document.querySelectorAll('[data-changes-hover-preview]')).toHaveLength(1)
-  expect(screen.getByText('/workspace/second.ts')).toBeTruthy()
+  expect(document.querySelector('[data-changes-preview-path]')?.textContent).toBe('/workspace/second.ts')
   fireEvent.keyDown(screen.getByRole('button', { name: 'View changes to second.ts' }), { key: 'Escape' })
   act(() => { vi.advanceTimersByTime(100) })
   expect(document.querySelector('[data-changes-hover-preview]')).toBeNull()

@@ -221,6 +221,8 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(geometry.width).toBe(geometry.cardWidth - 48)
     expect(geometry.height).toBeLessThanOrEqual(420)
     const path = preview.locator('[data-changes-preview-path]')
+    expect(await row.evaluate(element => document.getElementById(element.getAttribute('aria-describedby')!)?.textContent)).toBe(await path.textContent())
+    expect(await path.getAttribute('tabindex')).toBeNull()
     const pathStyle = await path.evaluate((element) => {
       const style = getComputedStyle(element)
       return { family: style.fontFamily, overflow: style.overflowX, whiteSpace: style.whiteSpace, ellipsis: style.textOverflow }
@@ -249,11 +251,25 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     await preview.locator('[data-diff-code]').first().waitFor({ state: 'visible' })
     expect(await preview.locator('[data-review-view="unified"]').count()).toBe(1)
     expect(await preview.locator('[data-diff-note]').isVisible()).toBe(false)
+    // Empty comparisons keep their status; only metadata accompanying code is hidden.
+    await preview.locator('[data-diff-note]').evaluate((element) => { element.setAttribute('data-diff-note', 'empty') })
+    expect(await preview.locator('[data-diff-note]').isVisible()).toBe(true)
+    await preview.locator('[data-diff-note]').evaluate((element) => { element.setAttribute('data-diff-note', 'metadata') })
     expect(await preview.locator('[data-diff-hunk-header]').isVisible()).toBe(false)
     await expect.poll(() => preview.evaluate(element => Number(getComputedStyle(element.parentElement!).opacity))).toBe(1)
     expect(await hoverOpacityTransition(page, true)).toEqual({ duration: 100, opacity: 0.5 })
     await preview.waitFor({ state: 'detached' })
+    for (const key of ['Enter', 'Space']) {
+      await page.mouse.move(0, 0)
+      await row.focus()
+      await row.hover()
+      await preview.locator('[data-review-view="unified"]').waitFor({ state: 'visible' })
+      await row.press(key)
+      await preview.waitFor({ state: 'detached' })
+      await review.locator('[data-review-file="notes.txt"]').waitFor({ state: 'visible' })
+    }
     expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
   })
 
   it('reviews a shell-appended file from the snapshots and an ignored file from its captured copies in one tab', async () => {

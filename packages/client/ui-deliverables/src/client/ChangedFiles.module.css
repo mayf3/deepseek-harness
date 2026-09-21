@@ -30,8 +30,7 @@ button.header:disabled { cursor: progress; }
 .toggle svg { flex: none; width: 14px; height: 14px; }
 @media (pointer: coarse) { .row, .toggle { min-height: 44px; } }
 
-.preview { height: auto; max-height: 100%; overflow: hidden; }
+.preview { max-height: 100%; overflow: hidden; }
 
 .previewPath { flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code); font-size: 12px; line-height: 20px; white-space: nowrap; }
-.previewPath:focus-visible { outline: 1px solid var(--dsw-alias-brand-primary); outline-offset: -1px; }
-.preview [data-diff-note], .preview [data-diff-hunk-header] { display: none; }
+.preview [data-diff-note='metadata'], .preview [data-diff-hunk-header] { display: none; }

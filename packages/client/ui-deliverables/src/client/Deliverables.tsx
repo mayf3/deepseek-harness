@@ -92,7 +92,7 @@ export function Deliverables({
     if (host === null) void reloadPresentedHost()
   }, [host, reloadPresentedHost])
   return <>
-    {changes !== null && <ChangedFiles key={`${sessionId}:${changes.seq}`} changes={changes} cwd={cwd} t={t}
+    {changes !== null && <ChangedFiles changes={changes} cwd={cwd} t={t}
       sessionId={sessionId} useChangesDiff={useChangesDiff} loadChangesDiff={loadChangesDiff}
       openReview={(index) => { openChangesReview({ sessionId, seq: changes.seq, turn: changes.turn }, index) }} />}
     {matched.presented.length > 0 && <div

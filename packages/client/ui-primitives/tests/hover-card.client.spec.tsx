@@ -158,6 +158,45 @@ describe('HoverCard', () => {
     expect(screen.getByText('card body')).toBeTruthy()
   })
 
+  it('dismisses on keyboard clicks and cancels a pending hover', () => {
+    const { anchor, wrapper } = mount({ variant: 'preview' })
+    fireEvent.pointerEnter(wrapper)
+    act(() => { vi.advanceTimersByTime(499) })
+    fireEvent.click(anchor, { detail: 0 })
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screen.queryByText('card body')).toBeNull()
+    fireEvent.pointerEnter(wrapper)
+    act(() => { vi.advanceTimersByTime(500) })
+    fireEvent.click(screen.getByText('card body'))
+    expect(screen.getByText('card body').parentElement?.hasAttribute('data-closing')).toBe(false)
+    fireEvent.click(anchor, { detail: 0 })
+    expect(screen.getByText('card body').parentElement?.hasAttribute('data-closing')).toBe(true)
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(screen.queryByText('card body')).toBeNull()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('keeps previews below the desktop frame clearance', () => {
+    const prior = document.documentElement.style.getPropertyValue('--dsh-frame-top-clearance')
+    const priority = document.documentElement.style.getPropertyPriority('--dsh-frame-top-clearance')
+    document.documentElement.style.setProperty('--dsh-frame-top-clearance', '120px')
+    try {
+      const { wrapper } = mount({ variant: 'preview' })
+      wrapper.getBoundingClientRect = () => DOMRect.fromRect({ x: 100, y: 600, width: 600, height: 32 })
+      fireEvent.pointerEnter(wrapper)
+      act(() => { vi.advanceTimersByTime(500) })
+      const card = screen.getByText('card body').parentElement as HTMLElement
+      Object.defineProperty(card, 'offsetHeight', { configurable: true, value: 420 })
+      wrapper.getBoundingClientRect = () => DOMRect.fromRect({ x: 100, y: 450, width: 600, height: 32 })
+      fireEvent(window, new Event('resize'))
+      expect(card.style.top).toBe('120px')
+      expect(card.style.maxHeight).toBe('322px')
+    } finally {
+      if (prior === '') document.documentElement.style.removeProperty('--dsh-frame-top-clearance')
+      else document.documentElement.style.setProperty('--dsh-frame-top-clearance', prior, priority)
+    }
+  })
+
   it('pointerleave before the delay cancels the pending open', () => {
     const { wrapper } = mount()
     fireEvent.pointerEnter(wrapper)
