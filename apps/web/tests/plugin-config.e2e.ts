@@ -1,6 +1,6 @@
 // Web e2e scenario: the configuration pages on the Plugins page — the official
 // pages a deployment's exposed host-plane namespaces produce, one field edited
-// through the real wire down to `$DSH_HOME/settings.yaml`, the override badge
+// through the real wire down to `$DSH_HOME/cordis.patch.yml`, the override badge
 // and reset that layering produces, and a community bundle's row configuration
 // registered by its own browser half. Zero model calls: everything is client
 // state plus the settings document and the profile on a blank frame, so there
@@ -79,7 +79,7 @@ describe('web e2e: plugin configuration pages', () => {
 
   /** The settings document as the Host has written it so far. */
   async function settingsDocument(): Promise<string> {
-    return readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8').catch(() => '')
+    return readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8').catch(() => '')
   }
 
   it('lists one official page per exposed host-plane namespace after the official bundles', async () => {
@@ -182,7 +182,7 @@ describe('web e2e: plugin configuration pages', () => {
     // The Save label returns only after both namespace controllers settle.
     await expect.poll(() => save.isDisabled(), { timeout: 10_000 }).toBe(true)
     const saved = await settingsDocument()
-    expect(saved).toContain('subagent-model-selection:')
+    expect(saved).toContain('id: subagent-model-selection-settings')
     expect(saved).toContain('maxDepth: 2')
     expect(saved).toContain('enabled: true')
     expect(saved).toContain('allowedModels:')
@@ -202,6 +202,8 @@ describe('web e2e: plugin configuration pages', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-write'))
     const panel = await openPlugins()
     await openPage(panel, '终端')
+    const entry = [...scaffold.ctx.loader.entries()].find(row => row.options.id === 'bash-sandbox')!
+    const fiber = entry.fiber
 
     const timeout = panel.getByLabel('命令超时（毫秒）')
     await timeout.waitFor({ timeout: 10_000 })
@@ -219,6 +221,8 @@ describe('web e2e: plugin configuration pages', () => {
 
     await expect.poll(async () => (await settingsDocument()).includes('timeoutMs: 12000'), { timeout: 10_000 })
       .toBe(true)
+    expect(scaffold.ctx.shell.resolve({ command: 'true' }).timeoutMs).toBe(12000)
+    expect(entry.fiber === fiber).toBe(true)
     // Presence in the user layer is what the badge reports, and the reset is
     // offered only for a field that has one.
     await expect.poll(() => panel.getByText('已覆盖').count(), { timeout: 5_000 }).toBe(1)
@@ -346,4 +350,6 @@ describe('web e2e: plugin configuration pages', () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, ['bundle.expected.md', 'official.expected.md', 'row.expected.md', 'subagent.expected.md'])
   })
+
+
 })

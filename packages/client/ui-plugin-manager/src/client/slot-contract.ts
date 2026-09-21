@@ -17,11 +17,14 @@
  */
 
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 /** The view the page asks a configuration entry for. */
 export interface PluginConfigViewProps {
   /** `summary` renders the one-liner alone, as text or inline nodes; `page` renders the form with its save control. */
   readonly view: 'summary' | 'page'
+  /** Host-owned configuration values and write actions for this page's entry. */
+  readonly form?: ConfigPageForm | undefined
 }
 
 /** One row of a bundle as a detail contribution sees it. */
@@ -116,4 +119,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'plugins.detail.section': { kind: 'list'; scope: 'root'; owner: PluginDetailProps }
   }
+}
+
+/** Reactive page values and commands supplied by the configuration page owner. */
+export interface ConfigPageForm {
+  /** Accepted Host values; refreshed by the page owner. */
+  readonly state: ConfigFormSnapshot<Record<string, unknown>>
+  /** Submit all field edits together with the revision the editor read. */
+  readonly mutate: ConfigForm<Record<string, unknown>>['mutate']
 }

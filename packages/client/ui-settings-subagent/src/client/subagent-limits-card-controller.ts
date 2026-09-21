@@ -60,4 +60,7 @@ export class SubagentLimitsCardController {
   inject(): SubagentLimitsCardFace {
     return { hooks: { subagentLimitsCard: this.store }, ...this.form.actions() }
   }
+  /** Release accepted-value subscriptions. */
+  dispose(): void { this.form.dispose() }
+
 }

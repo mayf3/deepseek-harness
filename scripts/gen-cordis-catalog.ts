@@ -59,6 +59,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   productTelemetry: 'product-telemetry.md',
   connection: 'web-server.md',
   pluginManager: 'boot.md',
+  configEditor: 'boot.md',
   profileContext: 'boot.md',
   hmr: 'boot.md',
   mcpResources: 'mcp.md',
@@ -177,7 +178,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   uiConversation: 'client-side Conversation registries and assembler — packages/client/ui-conversation/README.md owns the API',
   uiWorkspace: 'client-side Workspace navigation adapter — packages/client/ui-workspace/README.md owns the API',
   settingsSchema: 'client-side schema introspection service — packages/client/ui-settings/README.md owns the API',
-  settingsScope: 'client-side settings-namespace transport service — packages/client/ui-settings/README.md owns the API',
+  configForms: 'client-side shared entry forms — packages/client/ui-settings/README.md owns the API',
   chatFileMentions: 'client-side slot-contract accessor (ChatFileMentions) — packages/client/ui-chat/README.md owns the API',
   commandUi: 'client-side interface-typed browser service — packages/client/ui-commands/README.md owns the API',
   feedbackUi: 'client-side feedback dialog service — packages/client/ui-message-feedback/README.md owns the API',
@@ -207,6 +208,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
  * {@link EVENT_WALK_EXEMPTIONS} names each one with its documentation owner.
  */
 export const EVENT_SCOPE_PAGE: Record<string, string> = {
+  'app-boot': 'boot.md',
   hmr: 'boot.md',
   'plugin-manager': 'boot.md',
   'agent': 'core.md',
@@ -664,10 +666,6 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ToolRestriction: 'tools.md',
   ToolSchema: 'tools.md',
   SettingsNamespace: 'settings.md',
-  SettingsNamespaceInput: 'settings.md',
-  SettingsRegisterOptions: 'settings.md',
-  SettingsSectionHooks: 'settings.md',
-  SettingsScope: 'settings.md',
   SettingsDescriptor: 'settings.md',
   SettingsDescribeValue: 'settings.md',
   SettingsDocumentOpenValue: 'settings.md',
@@ -677,7 +675,6 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SettingsSecretView: 'settings.md',
   SettingsPathOp: 'settings.md',
   SettingsDescribeOptions: 'settings.md',
-  SettingsUpdateSource: 'settings.md',
   SkillListRequest: 'skills.md',
   SkillListValue: 'skills.md',
   AuthorizationEntry: 'credentials.md',
@@ -766,12 +763,14 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
 
 /** TypeScript lib and pinned framework types with no repository-owned data page. */
 export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
+  'Entry', 'Array',
   'Plugin',
   'AbortSignal',
   'AsyncIterable',
   'Context',
   'Error',
   'EntryTree',
+  'Fiber',
   'EntryOptions',
   'Exclude',
   'Extract',

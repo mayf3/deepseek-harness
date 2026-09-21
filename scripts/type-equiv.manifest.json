@@ -1727,36 +1727,6 @@
       "source": "packages/subprocess/subprocess/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/settings.md",
-      "symbol": "SettingsNamespace",
-      "source": "packages/settings/settings/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/settings.md",
-      "symbol": "SettingsRegisterOptions",
-      "source": "packages/settings/settings/src/index.ts"
-    },
-    {
-      "doc": "docs/subsystems/settings.md",
-      "symbol": "SettingsApplies",
-      "source": "packages/settings/settings/src/index.ts"
-    },
-    {
-      "doc": "docs/subsystems/settings.md",
-      "symbol": "SettingsScope",
-      "source": "packages/settings/settings/src/index.ts"
-    },
-    {
-      "doc": "docs/subsystems/settings.md",
-      "symbol": "SettingsDescriptor",
-      "source": "packages/settings/settings/src/index.ts"
-    },
-    {
-      "doc": "docs/subsystems/settings.md",
-      "symbol": "SettingsUpdateSource",
-      "source": "packages/settings/settings/src/types.ts"
-    },
-    {
       "doc": "docs/subsystems/credentials.md",
       "symbol": "ResolvedCredential",
       "source": "packages/credentials/credentials/src/index.ts"
@@ -1767,19 +1737,9 @@
       "source": "packages/credentials/credentials/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/settings.md",
-      "symbol": "SettingsDescribeOptions",
-      "source": "packages/settings/settings/src/index.ts"
-    },
-    {
       "doc": "docs/subsystems/llm-streaming.md",
       "symbol": "LlmConfigurableProvider",
       "source": "packages/llm/llm/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/settings.md",
-      "symbol": "SettingsPathOp",
-      "source": "packages/settings/settings/src/index.ts"
     },
     {
       "doc": "docs/subsystems/permission-presets.md",

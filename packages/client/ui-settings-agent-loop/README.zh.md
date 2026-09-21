@@ -35,7 +35,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-宿主半侧是一个空的 `apply`，只为让本包占一条 Loader 行，客户端模块系统据此送出浏览器半侧。浏览器半侧通过 `ctx.settingsScope` 绑定 `agent-loop` 命名空间，用 `ui-primitives` 的共享 `SettingsFormModel` 在 `AgentLoopCardController` 里维护暂存表单，并通过 `ctx.settingsScope.whileServed` 把 `AgentLoopCard` 注册进插件页的 `plugins.item` slot。页面文案在本包的 `settings.agentLoop` 字典里。
+宿主半侧是一个空的 `apply`，只为让本包占一条 Loader 行，客户端模块系统据此送出浏览器半侧。浏览器半侧通过 `ctx.configForms.get` 绑定 `agent-loop` 命名空间，用 `ui-primitives` 的共享 `SettingsFormModel` 在 `AgentLoopCardController` 里维护暂存表单，并通过 `ctx.configForms.whileServed` 把 `AgentLoopCard` 注册进插件页的 `plugins.item` slot。页面文案在本包的 `settings.agentLoop` 字典里。
 
 </details>
 

@@ -25,7 +25,7 @@ async function bench() {
     ns: LOCALE_SETTINGS_NAMESPACE,
     schema: LocaleSettingsSchema.toJSON(),
     value: preference === undefined ? {} : { preference },
-    applies: 'live' as const,
+    autoGenerate: true, applies: 'live' as const,
     secrets: [],
     revision,
   })
@@ -71,7 +71,7 @@ describe('locale apply', () => {
   // setLocale/Host preference instead of leaning on a dead browser pin.
 
   it('declares the slot service', () => {
-    expect(inject).toEqual(['slots', 'remote', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'remote', 'configForms'])
   })
 
   it('provides the service with base + settings dictionaries and registers the row (declaration before or after apply)', async () => {

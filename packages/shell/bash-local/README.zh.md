@@ -67,7 +67,7 @@ if (result.timedOut) console.log('timed out after', result.timeoutMs)
 <a id="adjusting-budgets-at-runtime"></a>
 ### 运行时调整预算
 
-当组合了设置提供方时，本执行器以组合条目为 base 注册该能力共享的 `shell` 设置命名空间，因此 `settings.yaml` 中的用户段会叠加其上，下一条命令即按新预算运行。schema 无法判定的值——正有限数字与 `graceMs` 的定时器上界——会在写入时被拒绝，运行中的执行器保持它最后一份可用的段；没有提供方时，运行的就是组合条目。
+执行预算是解析每条命令时读取的 volatile Config 字段。插件页面编辑当前执行器的 profile 条目。完整 Config 验证在表单写入磁盘前拒绝无效数字和定时器上限。
 
 -----
 

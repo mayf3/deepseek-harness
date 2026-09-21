@@ -113,7 +113,7 @@ This section explains the design of the bench; the observable behavior is fully 
 
 ### Design
 
-The bench copies no production logic: it mounts the production `SlotRegistry`, production renderer, and `UiSession` adapter. `TestSessions` and `TestWorkspaces` implement the owner interfaces that features consume through Cordis, each fixture Session implements `SessionFace`, and `stubSettingsScope` implements `SettingsScope`. `UiSession` derives standard renderer sources from those Controller bindings. Unstubbed `ISession` behavior fails with the missing method name.
+The bench copies no production logic: it mounts the production `SlotRegistry`, production renderer, and `UiSession` adapter. `TestSessions` and `TestWorkspaces` implement the owner interfaces that features consume through Cordis, each fixture Session implements `SessionFace`, and `stubConfigForm` implements `ConfigForm`. `UiSession` derives standard renderer sources from those Controller bindings. Unstubbed `ISession` behavior fails with the missing method name.
 
 ### Source map
 
@@ -125,7 +125,7 @@ The bench copies no production logic: it mounts the production `SlotRegistry`, p
 | [`src/snapshot.ts`](src/snapshot.ts) | DOM snapshot serializer (class-hash folding, `<svg>` fingerprint) |
 | [`src/remote.ts`](src/remote.ts) | `TestRemote` double for host RPC, `RemoteError` value re-export |
 | [`src/translate.ts`](src/translate.ts) + [`src/locale-env.ts`](src/locale-env.ts) | Translation and pinned-browser-language test helpers |
-| [`src/settings-scope.ts`](src/settings-scope.ts) | `stubSettingsScope` with test-driven publications and write spies |
+| [`src/config-form.ts`](src/config-form.ts) | `stubConfigForm` with test-driven publications and write spies |
 | [`src/assembly/roster.ts`](src/assembly/roster.ts) | `ClientRosterRow`, `ClientRoster` (`of`/`closure`/`pick`/`without`), the `AssemblyPlan` it annotates, and `graphFromRoster` |
 | [`src/assembly/modules.ts`](src/assembly/modules.ts) | Source `/client` imports and replacements, registered through the production module facade's pending factory queue |
 | [`src/assembly/test-client.ts`](src/assembly/test-client.ts) | `TestClient`: instance-bound Connection, shared jsdom shims, `bootClient`, mount, readiness wait, `reload`/`unload`/`dispose` |

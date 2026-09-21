@@ -84,7 +84,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * through your own inject face and `host.call`. Declared at runtime by
      * ui-settings-general's General entry; the type lives here with every other
      * settings slot type, because this package is the settings domain's base
-     * layer and every registrant already depends on it for `ctx.settingsScope`.
+     * layer and every registrant already depends on it for `ctx.configForms`.
      */
     'settings.general.item': { kind: 'list'; scope: 'root'; owner: SettingsGeneralItemOwnerProps }
   }

@@ -62,7 +62,7 @@ export { SettingsSecretField, SettingsValueField } from './settings-form/fields.
 export type { SettingsFieldProps } from './settings-form/fields.tsx'
 export { SettingsFormModel, settingsNumberField, settingsTextField } from './settings-form/form-model.ts'
 export type {
-  SettingsFieldSpec, SettingsFieldState, SettingsFieldWrite, SettingsFormActions, SettingsFormScope,
+  SettingsFieldSpec, SettingsFieldState, SettingsFieldWrite, SettingsFormActions, SettingsFormPathOp, SettingsFormScope,
   SettingsFormScopeSnapshot, SettingsFormShell, SettingsSecretSpec,
 } from './settings-form/form-model.ts'
 export { CODE_HIGHLIGHT_EXTENSIONS, languageForPath, useCodeHighlighter } from './code-highlighting.ts'

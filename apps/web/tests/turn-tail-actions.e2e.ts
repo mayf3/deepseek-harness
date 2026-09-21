@@ -255,7 +255,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     expect(await process.count()).toBe(1)
     expect(await process.getAttribute('aria-expanded')).toBe('false')
     expect(await tool.isVisible()).toBe(false)
-    await expect.poll(async () => readFile(join(scaffold!.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
+    await expect.poll(async () => readFile(join(scaffold!.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain(`transcriptView: ${mode}`)
 
     await page.getByRole('button', { name: 'Settings', exact: true }).click()

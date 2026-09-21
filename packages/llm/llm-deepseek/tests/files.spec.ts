@@ -7,7 +7,7 @@ import { createAssistantMessage, createToolResultMessage, LlmError, ToolCallId }
 import { DeepSeekFileId } from '../src/file-id.ts'
 import { DeepSeekFileStore } from '../src/file-store.ts'
 import { resolveAdapterOptions } from '../src/config.ts'
-import type { Config } from '../src/config.ts'
+import type { Options as Config } from '../src/config.ts'
 import { DeepSeekAdapter } from '../src/adapter.ts'
 import { prepareImages } from '../src/images.ts'
 import { providerErrorDetail } from '../src/transport.ts'

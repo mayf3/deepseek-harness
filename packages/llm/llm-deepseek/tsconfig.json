@@ -45,9 +45,6 @@
       "path": "../../util/launch-environment"
     },
     {
-      "path": "../../settings/settings"
-    },
-    {
       "path": "../../util/timeout"
     },
     {
@@ -55,6 +52,12 @@
     },
     {
       "path": "../../util/http-proxy"
+    },
+    {
+      "path": "../../../vendor/loader"
+    },
+    {
+      "path": "../../settings/settings"
     }
   ]
 }

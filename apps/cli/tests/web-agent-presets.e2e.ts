@@ -19,11 +19,12 @@ import { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import { dump, load } from 'js-yaml'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { bundlePatchPaths, composeEntries } from '@deepseek-ai/dsh-app-boot'
-const SETTINGS_NAMESPACE = 'agent-presets'
+/** Profile entry ids whose volatile fields these scenarios edit through Settings. */
+const SETTINGS_NAMESPACE = 'agent-preset-registry'
+const SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE = 'subagent-model-selection-settings'
 import { applyChildComposition, childSessionMeta } from '@deepseek-ai/dsh-subagent'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-compaction-basic'
@@ -59,25 +60,20 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
  * agent's capabilities is the real thing, including both shipped presets.
  */
 async function bootWeb(
-  settingsFile: string,
+  profileHome: string,
   extra: PatchOptions[] = [],
   profilePackages: readonly string[] = [],
   profileBundles?: readonly string[],
 ): Promise<Context> {
-  const storageRoot = join(dirname(settingsFile), 'storages')
+  const storageRoot = join(profileHome, 'storages')
   const overrides: PatchOptions[] = [
-    // The settings row defaults to `$DSH_HOME/settings.yaml`. Left alone it
-    // reads the developer's own document — and since the default preset is a
-    // setting, a stored `agent-presets.default` would decide this file's
-    // outcome. Point it at a temporary file to isolate settings.
-    { id: 'settings', config: { path: settingsFile, watch: false } },
     // storage-json's root is anchored to the real $DSH_HOME. Unpinned, this
     // file writes the developer's own `~/.dsh/storages/` — and then reads it
     // back on the next run, so a stored document from any other build decides
-    // this test's boot. Same reason the settings row above is pinned.
+    // this test's boot.
     { id: 'storage-json', config: { root: storageRoot } },
     // Fixed Session IDs must stay inside this boot's temporary profile root.
-    { id: 'session-persistence-jsonl', config: { root: join(dirname(settingsFile), 'sessions') } },
+    { id: 'session-persistence-jsonl', config: { root: join(profileHome, 'sessions') } },
     // Host rows with side effects outside this process: a bound port, a served
     // asset tree, a telemetry exporter. `api-gateway` and `directory-picker`
     // stay ENABLED on purpose — the api-proxy is the host row that injects
@@ -123,7 +119,7 @@ async function bootWeb(
     { id: 'agent-preset-registry', config: { default: 'standard' } },
     ...extra,
   ]
-  const home = dirname(settingsFile)
+  const home = profileHome
   const profileDir = join(home, 'profiles', 'spec')
   await mkdir(profileDir, { recursive: true })
   if (profileBundles === undefined) initProfile(profileDir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
@@ -157,9 +153,15 @@ async function bootWeb(
     profile = loadProfile('dsh-test', 'spec', INSTALL_ANCHOR, home, { userLayer: false })
     bundlePatches = profile.layers.flatMap(layer => layer.patches)
   }
-  const declarations = overrides.filter(patch => 'insert' in patch)
-  await writeFile(profile.patchPath, dump(declarations, { schema: entryListSchema }))
-  const launchOverrides = overrides.filter(patch => !('insert' in patch))
+  // Deployment defaults live in a bundle beneath the profile patch, so Settings writes are not shadowed by overlays.
+  const fixtureName = 'dsh-web-presets-defaults'
+  const fixtureDir = join(profileDir, 'node_modules', fixtureName)
+  await mkdir(fixtureDir, { recursive: true })
+  await writeFile(join(fixtureDir, 'package.json'), JSON.stringify({ name: fixtureName, version: '1.0.0', dsh: { bundle: { patch: 'cordis.patch.yml' } } }))
+  await writeFile(join(fixtureDir, 'cordis.patch.yml'), JSON.stringify(overrides))
+  const manifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8')) as { dsh: { profile: { bundles: string[] } } }
+  manifest.dsh.profile.bundles.push(fixtureName)
+  await writeFile(join(profileDir, 'package.json'), JSON.stringify(manifest))
   const resolution = await createRuntimeResolution({ installAnchor: INSTALL_ANCHOR, home, profile })
   const rootConfig = join(profileDir, 'cordis.yml')
   await writeFile(rootConfig, '[]\n')
@@ -167,7 +169,7 @@ async function bootWeb(
     bootCtx.provide('profileContext', { name: 'spec', dir: profileDir, patchPath: profile.patchPath,
       installAnchor: INSTALL_ANCHOR, home, cwd: home,
       startedBundles: profileBundles ?? ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
-      overlays: launchOverrides, telemetryDisabledEnv: '1' })
+      overlays: [], telemetryDisabledEnv: '1' })
     await bootCtx.plugin(PluginPackages, { resolution })
     bootCtx.provide('connection', {
       fetch: { register: () => () => {} },
@@ -202,9 +204,7 @@ function enablePresetTool(composition: string, id: string): string {
 
 let ctx: Context
 beforeAll(async () => {
-  const settingsFile = join(await mkdtemp(join(tmpdir(), 'dsh-web-presets-')), 'settings.yaml')
-  await writeFile(settingsFile, '{}\n')
-  ctx = await bootWeb(settingsFile)
+  ctx = await bootWeb(await mkdtemp(join(tmpdir(), 'dsh-web-presets-')))
 }, 120_000)
 
 describe('the shipped Web composition', () => {
@@ -544,10 +544,8 @@ describe('product Bundle and user-preset intersection', () => {
   async function bootProducts(installed: readonly Product[]): Promise<Context> {
     const root = await mkdtemp(join(tmpdir(), 'dsh-product-presets-'))
     const definitions: import('@deepseek-ai/cordis-plugin-loader').EntryOptions[] = []
-    const settingsFile = join(root, 'settings.yaml')
     const standardConfig = composeEntries([webPatches('test')]).find(row => row.id === 'preset-standard')!.config as import('@deepseek-ai/dsh-agent-preset-registry').PresetDefinition
     const standard = dump(standardConfig.plugins, { schema: entryListSchema })
-    await writeFile(settingsFile, '{}\n')
     for (const id of presetIds) {
       let composition = standard
       if (id === 'products-codex' || id === 'products-both') {
@@ -566,7 +564,7 @@ describe('product Bundle and user-preset intersection', () => {
         ? '@deepseek-ai/dsh-subagent-codex'
         : '@deepseek-ai/dsh-subagent-claude-code'
     )
-    return await bootWeb(settingsFile, [{ insert: definitions }    ], installed.map(packageDir), [
+    return await bootWeb(root, [{ insert: definitions }], installed.map(packageDir), [
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
       ...installed.map(packageName),
@@ -639,10 +637,8 @@ describe('a user preset declared from the shipped cordis rows', () => {
     // `tool-cordis` row only registers the tools. Before that split the copy
     // failed to mount: its row re-registered provider "Service".
     const root = await mkdtemp(join(tmpdir(), 'dsh-copied-preset-'))
-    const settingsFile = join(root, 'settings.yaml')
-    await writeFile(settingsFile, '{}\n')
     const cordis = composeEntries([webPatches('test')]).find(row => row.id === 'preset-cordis')!.config as import('@deepseek-ai/dsh-agent-preset-registry').PresetDefinition
-    const copyCtx = await bootWeb(settingsFile, [{ insert: [{
+    const copyCtx = await bootWeb(root, [{ insert: [{
       id: 'preset-cordis-copy', name: '@deepseek-ai/dsh-agent-preset',
       config: { ...cordis, id: 'cordis-copy', name: 'Cordis copy' },
     }] }])
@@ -814,7 +810,7 @@ describe('the default preset as a user setting', () => {
     expect((await ctx.agentPresets.remoteExportList()).modeSelectionEnabled).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
 
-    await ctx.settings.update(SETTINGS_NAMESPACE, { default: 'minimal' })
+    await ctx.settings.update(SETTINGS_NAMESPACE, { selectedDefault: 'minimal' })
     try {
       expect(ctx.agentPresets.defaultId).toBe('minimal')
 

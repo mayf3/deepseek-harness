@@ -35,7 +35,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-宿主半侧是一个空的 `apply`，只为让本包占一条 Loader 行，客户端模块系统据此送出浏览器半侧。浏览器半侧通过 `ctx.settingsScope` 绑定 `web-search-deepseek` 命名空间，用 `ui-primitives` 的共享 `SettingsFormModel` 在 `WebSearchCardController` 里维护暂存表单，密钥是表单里唯一的密文控件：写入走 `remote.credentials.set`，引用名取自本节的 `apiKeyEnv`（未指定时为 `DEEPSEEK_API_KEY`），是否成功由 `remote.credentials.describe` 回读判定。scope 变化时、以及 Host 对所监视引用发出 `credentials/reference-updated` 时，控制器都会重读凭据，因为在模型页写入的密钥不会改变任何设置节。页面通过 `ctx.settingsScope.whileServed` 把 `WebSearchCard` 注册进插件页的 `plugins.item` slot。
+宿主半侧是一个空的 `apply`，只为让本包占一条 Loader 行，客户端模块系统据此送出浏览器半侧。浏览器半侧通过 `ctx.configForms.get` 绑定 `web-search-deepseek` 命名空间，用 `ui-primitives` 的共享 `SettingsFormModel` 在 `WebSearchCardController` 里维护暂存表单，密钥是表单里唯一的密文控件：写入走 `remote.credentials.set`，引用名取自本节的 `apiKeyEnv`（未指定时为 `DEEPSEEK_API_KEY`），是否成功由 `remote.credentials.describe` 回读判定。scope 变化时、以及 Host 对所监视引用发出 `credentials/reference-updated` 时，控制器都会重读凭据，因为在模型页写入的密钥不会改变任何设置节。页面通过 `ctx.configForms.whileServed` 把 `WebSearchCard` 注册进插件页的 `plugins.item` slot。
 
 </details>
 
