@@ -613,6 +613,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   JobEventListener: 'jobs.md',
   JobEvents: 'jobs.md',
   JobSettleCause: 'jobs.md',
+  SpeechDownloadFailure: 'voice-input.md',
   SpeechPreparationState: 'voice-input.md',
   SpeechPreparationStep: 'voice-input.md',
   SpeechPreparationStepKind: 'voice-input.md',

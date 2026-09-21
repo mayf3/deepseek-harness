@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/voice-input.md
-voice-input.md: f1d3f36d067f756235e976fa6eafe70f94b19ccc
-voice-input.zh.md: a32b539fc1237bb70d68668de939084d5f634a82
+voice-input.md: 1c35bbe673a0814cf3fea0a5b9ca141ba075e8ab
+voice-input.zh.md: aa4d37a845a1694842ae6926985226c843b8160b
