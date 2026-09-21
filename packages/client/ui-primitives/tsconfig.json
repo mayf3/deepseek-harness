@@ -13,6 +13,9 @@
   "references": [
     {
       "path": "../store"
+    },
+    {
+      "path": "../../util/workspace-path"
     }
   ]
 }
