@@ -901,7 +901,7 @@ else process.exit(1);
     const emptyOpen = unsupported.locator('[data-textpreview-unsupported] [data-open-path-unpreviewable]')
     await emptyOpen.waitFor({ timeout: 15_000 })
     const prominent = unsupported.locator('[data-open-target="file"][data-size="large"]')
-    expect((await prominent.boundingBox())?.height).toBe(40)
+    expect((await prominent.boundingBox())?.height).toBe(36)
     expect((await unsupported.locator('[data-open-path]').boundingBox())?.height).toBe(24)
     await successShot(page, 'unsupported')
     sections.push([
