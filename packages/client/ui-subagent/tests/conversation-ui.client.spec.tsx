@@ -132,10 +132,8 @@ function summary(id: SessionId, updatedAt: number): SessionSummary {
 }
 
 function hoverCatalog(trigger: HTMLElement): void {
-  const root = trigger.parentElement
-  if (root === null) throw new Error('catalog trigger has no root')
   vi.useFakeTimers()
-  fireEvent.mouseEnter(root)
+  fireEvent.mouseEnter(trigger)
   act(() => { vi.advanceTimersByTime(150) })
 }
 
@@ -256,7 +254,7 @@ describe('SubagentHeaderLineage', () => {
     expect(screen.getByRole('button', { name: '展开 reviewer 的下级子代理' })).toBeTruthy()
 
     const sidebarButton = within(screen.getByRole('treeitem', { name: /worker/ }))
-      .getByRole('button', { name: '在侧边栏打开' })
+      .getByRole('button', { name: '在侧边栏打开 worker' })
     fireEvent.keyDown(sidebarButton, { key: 'Enter' })
     fireEvent.click(sidebarButton)
     expect(input.openChildAside).toHaveBeenCalledWith({
@@ -342,7 +340,7 @@ describe('SubagentHeaderLineage', () => {
     const triggerRect = vi.spyOn(trigger, 'getBoundingClientRect')
       .mockReturnValue({ bottom: 40, left: 50 } as DOMRect)
 
-    fireEvent.mouseEnter(trigger.parentElement!)
+    fireEvent.mouseEnter(trigger)
     await advance(149)
     expect(screen.queryByRole('tree')).toBeNull()
     await advance(1)
@@ -381,7 +379,7 @@ describe('SubagentHeaderLineage', () => {
 
     fireEvent.click(trigger)
     const menu = screen.getByRole('tree')
-    fireEvent.mouseEnter(root)
+    fireEvent.mouseEnter(trigger)
     fireEvent.mouseLeave(root)
     await advance(300)
     expect(screen.getByRole('tree')).toBe(menu)
@@ -392,7 +390,7 @@ describe('SubagentHeaderLineage', () => {
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('tree')).toBeNull()
 
-    fireEvent.mouseEnter(root)
+    fireEvent.mouseEnter(trigger)
     await advance(150)
     const hovered = screen.getByRole('tree')
     fireEvent.click(trigger)
@@ -401,10 +399,37 @@ describe('SubagentHeaderLineage', () => {
     expect(screen.getByRole('tree')).toBe(hovered)
     fireEvent.keyDown(hovered, { key: 'Escape' })
     expect(screen.queryByRole('tree')).toBeNull()
-    fireEvent.mouseEnter(root)
+    fireEvent.mouseEnter(trigger)
     fireEvent.mouseLeave(root)
     await advance(300)
     expect(screen.queryByRole('tree')).toBeNull()
+  })
+
+  it('keeps the hover catalog open when the pointer returns directly to its trigger', async () => {
+    vi.useFakeTimers()
+    render(<HeaderCatalog {...props(catalog())} />)
+    const trigger = screen.getByRole('button', { name: /1 个子代理，正在运行/ })
+    fireEvent.mouseOver(trigger, { relatedTarget: document.body })
+    await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+    const menu = screen.getByRole('tree').parentElement!
+    fireEvent.mouseOut(trigger, { relatedTarget: menu })
+    fireEvent.mouseOver(menu, { relatedTarget: trigger })
+    fireEvent.mouseOut(menu, { relatedTarget: trigger })
+    fireEvent.mouseOver(trigger, { relatedTarget: menu })
+    await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+    expect(screen.getByRole('tree').parentElement).toBe(menu)
+  })
+
+  it('cancels pending hover dismissal when the catalog trigger is activated from the keyboard', async () => {
+    vi.useFakeTimers()
+    render(<HeaderCatalog {...props(catalog())} />)
+    const trigger = screen.getByRole('button', { name: /1 个子代理，正在运行/ })
+    fireEvent.mouseOver(trigger, { relatedTarget: document.body })
+    await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+    fireEvent.mouseOut(trigger, { relatedTarget: document.body })
+    fireEvent.click(trigger, { detail: 0 })
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    expect(screen.getByRole('tree')).toBeTruthy()
   })
 
   it('repositions an open catalog after viewport resize and document scroll', () => {
@@ -434,7 +459,7 @@ describe('SubagentHeaderLineage', () => {
     const view = render(<HeaderCatalog {...props(catalog())} />)
     const trigger = screen.getByRole('button', { name: /1 个子代理，正在运行/ })
 
-    fireEvent.mouseEnter(trigger.parentElement!)
+    fireEvent.mouseEnter(trigger)
     await vi.advanceTimersByTimeAsync(149)
     view.rerender(<HeaderCatalog {...props(catalog({ entries: [] }))} />)
     expect(screen.queryByRole('button')).toBeNull()

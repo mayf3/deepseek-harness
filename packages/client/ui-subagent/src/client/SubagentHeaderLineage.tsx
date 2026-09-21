@@ -355,7 +355,7 @@ function CatalogRows({
                     <button
                       type="button"
                       className={css.sidebarButton}
-                      aria-label={t('open.sidebar')}
+                      aria-label={t('open.sidebar.aria', { label })}
                       onClick={openAside}
                       onKeyDown={(event) => { event.stopPropagation() }}
                     >
@@ -646,11 +646,11 @@ function CatalogDropdown({
       className={`${css.root} ${variant === 'switcher' ? css.switcherRoot : ''}`}
       ref={rootRef}
       onKeyDown={navigate}
-      onMouseEnter={scheduleHoverOpen}
       onMouseLeave={scheduleHoverClose}
     >
       <button
         ref={triggerRef}
+        onMouseEnter={scheduleHoverOpen}
         type="button"
         className={variant === 'switcher'
           ? `${css.switcherTrigger} ${ancestorSwitcher ? css.ancestorSwitcherTrigger : ''}`
@@ -665,6 +665,8 @@ function CatalogDropdown({
           )}
         onClick={openTitle === undefined
           ? () => {
+            cancelHoverOpen()
+            cancelHoverClose()
             pinnedRef.current = true
             if (!open) changeOpen(true)
           }
@@ -733,7 +735,7 @@ export type SubagentCatalogActionProps =
 
 /**
  * Session-header catalog action for root sessions: the descendant count and
- * its dropdown, ordered after the task list. Child sessions render nothing
+ * its dropdown at the start of the header actions band. Child sessions render nothing
  * here — their breadcrumb switcher in the lineage slot owns the same
  * navigation.
  * @param props - Session standard props plus the catalog actions and translator.
@@ -778,7 +780,7 @@ export function SubagentHeaderLineage({
   })
   const shared = { useSessions, useSessionStatus, openChild, openChildAside, refreshProjection, t }
   // Root sessions carry no breadcrumb; their descendant count lives in the
-  // header actions band (SubagentCatalogAction), after the task list.
+  // header actions band (SubagentCatalogAction).
   if (parentId === undefined) return null
   return (
     <>

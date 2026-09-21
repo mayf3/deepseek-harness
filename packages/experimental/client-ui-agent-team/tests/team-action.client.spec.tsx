@@ -19,6 +19,7 @@ afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 const SESSION = 'lead' as SessionId
@@ -356,7 +357,8 @@ describe('TeamAction', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('clamps a long task description to two lines behind an expand toggle', async () => {
+  it.each([true, false])('clamps a long task description behind an expand toggle (ResizeObserver: %s)', async (resizeObserver) => {
+    if (!resizeObserver) vi.stubGlobal('ResizeObserver', undefined)
     const scrollHeight = vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(120)
     const clientHeight = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(60)
     try {
@@ -390,13 +392,13 @@ describe('TeamAction', () => {
     const trigger = screen.getByRole('button', { name: /智能体团队/u })
     const root = trigger.parentElement!
 
-    fireEvent.mouseEnter(root)
+    fireEvent.mouseEnter(trigger)
     await advance(149)
     expect(screen.queryByRole('dialog')).toBeNull()
     await advance(1)
     const panel = screen.getByRole('dialog')
 
-    fireEvent.mouseEnter(root)
+    fireEvent.mouseEnter(trigger)
     expect(screen.getByRole('dialog')).toBe(panel)
 
     fireEvent.mouseLeave(root)
@@ -410,8 +412,8 @@ describe('TeamAction', () => {
     await advance(1)
     expect(screen.queryByRole('dialog')).toBeNull()
 
-    fireEvent.mouseEnter(root)
-    fireEvent.mouseLeave(root)
+    fireEvent.mouseEnter(trigger)
+    fireEvent.mouseLeave(root, { relatedTarget: document.body })
     rendered.unmount()
     await advance(150)
   })
@@ -427,7 +429,7 @@ describe('TeamAction', () => {
 
     fireEvent.click(trigger)
     const panel = screen.getByRole('dialog')
-    fireEvent.mouseEnter(root)
+    fireEvent.mouseEnter(trigger)
     fireEvent.mouseLeave(root)
     await advance(300)
     expect(screen.getByRole('dialog')).toBe(panel)
@@ -438,7 +440,7 @@ describe('TeamAction', () => {
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('dialog')).toBeNull()
 
-    fireEvent.mouseEnter(root)
+    fireEvent.mouseEnter(trigger)
     await advance(150)
     const hovered = screen.getByRole('dialog')
     fireEvent.click(trigger)
@@ -447,7 +449,7 @@ describe('TeamAction', () => {
     expect(screen.getByRole('dialog')).toBe(hovered)
     fireEvent.keyDown(trigger, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
-    fireEvent.mouseEnter(root)
+    fireEvent.mouseEnter(trigger)
     fireEvent.mouseLeave(root)
     await advance(300)
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -460,13 +462,12 @@ describe('TeamAction', () => {
     }
     render(<TeamAction {...bench().props} />)
     const trigger = screen.getByRole('button', { name: /智能体团队/u })
-    const root = trigger.parentElement!
     const label = screen.getByText(zh.trigger)
     const computedStyle = window.getComputedStyle.bind(window)
     vi.spyOn(window, 'getComputedStyle').mockImplementation(element =>
       element === label ? { display: 'none' } as CSSStyleDeclaration : computedStyle(element))
 
-    fireEvent.mouseEnter(root)
+    fireEvent.mouseEnter(trigger)
     await advance(300)
     expect(screen.queryByRole('dialog')).toBeNull()
 
@@ -495,7 +496,7 @@ describe('TeamAction', () => {
     render(<><textarea aria-label="Composer" /><TeamAction {...bench().props} /></>)
     const composer = screen.getByRole('textbox')
     composer.focus()
-    fireEvent.mouseEnter(screen.getByRole('button', { name: zh.trigger }).parentElement!)
+    fireEvent.mouseEnter(screen.getByRole('button', { name: zh.trigger }))
     await act(async () => { await vi.advanceTimersByTimeAsync(150) })
     expect(screen.getByRole('dialog')).toBeTruthy()
     fireEvent.keyDown(composer, { key: 'a' })
@@ -504,4 +505,61 @@ describe('TeamAction', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.activeElement).toBe(composer)
   })
+})
+
+it('keeps the hover panel open when the pointer returns directly to its trigger', async () => {
+  vi.useFakeTimers()
+  render(<TeamAction {...bench().props} />)
+  const trigger = screen.getByRole('button', { name: zh.trigger })
+  fireEvent.mouseOver(trigger, { relatedTarget: document.body })
+  await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+  const panel = screen.getByRole('dialog')
+  fireEvent.mouseOut(trigger, { relatedTarget: panel })
+  fireEvent.mouseOver(panel, { relatedTarget: trigger })
+  await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+  expect(screen.getByRole('dialog')).toBe(panel)
+  fireEvent.mouseOut(panel, { relatedTarget: trigger })
+  fireEvent.mouseOver(trigger, { relatedTarget: panel })
+  await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+  expect(screen.getByRole('dialog')).toBe(panel)
+})
+
+it('cancels pending hover dismissal when the trigger is activated from the keyboard', async () => {
+  vi.useFakeTimers()
+  render(<TeamAction {...bench().props} />)
+  const trigger = screen.getByRole('button', { name: zh.trigger })
+  trigger.focus()
+  fireEvent.mouseOver(trigger, { relatedTarget: document.body })
+  await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+  fireEvent.mouseOut(trigger, { relatedTarget: document.body })
+  fireEvent.click(trigger, { detail: 0 })
+  await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+  expect(screen.getByRole('dialog')).toBe(document.activeElement)
+})
+
+it('updates expansion availability on paragraph resize and disconnects its observer', () => {
+  const observers: TestResizeObserver[] = []
+  class TestResizeObserver implements ResizeObserver {
+    observe = vi.fn<ResizeObserver['observe']>()
+    unobserve = vi.fn<ResizeObserver['unobserve']>()
+    disconnect = vi.fn()
+    constructor(readonly callback: ResizeObserverCallback) { observers.push(this) }
+  }
+  vi.stubGlobal('ResizeObserver', TestResizeObserver)
+  const scrollHeight = vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(36)
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(36)
+  const view = render(<TeamAction {...bench().props} />)
+  openPanel()
+  const paragraph = screen.getByText('Build the Team runtime')
+  const observer = observers.find(item => item.observe.mock.calls.some(([target]) => target === paragraph))!
+  expect(observer).toBeDefined()
+  expect(screen.queryByRole('button', { name: zh['task.expand'] })).toBeNull()
+  scrollHeight.mockReturnValue(72)
+  act(() => { observer.callback([], observer) })
+  expect(screen.getByRole('button', { name: zh['task.expand'] })).toBeTruthy()
+  scrollHeight.mockReturnValue(36)
+  act(() => { observer.callback([], observer) })
+  expect(screen.queryByRole('button', { name: zh['task.expand'] })).toBeNull()
+  view.unmount()
+  expect(observer.disconnect).toHaveBeenCalledOnce()
 })

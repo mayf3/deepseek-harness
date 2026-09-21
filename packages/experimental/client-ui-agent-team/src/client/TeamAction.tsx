@@ -135,7 +135,12 @@ function TaskCard({ task, t }: { task: TeamTask; t: TranslateNS<typeof NS> }) {
     const paragraph = textRef.current
     /* v8 ignore next -- the paragraph mounts in the same commit as the effect. */
     if (paragraph === null) return
-    setClamped(paragraph.scrollHeight > paragraph.clientHeight + 1)
+    const measure = (): void => { setClamped(paragraph.scrollHeight > paragraph.clientHeight + 1) }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(paragraph)
+    return () => { observer.disconnect() }
   }, [task.description, expanded])
   return (
     <article className={css.task}>
@@ -262,17 +267,18 @@ export function TeamAction({
       ref={rootRef}
       className={css.root}
       data-team-action
-      onMouseEnter={scheduleHoverOpen}
       onMouseLeave={scheduleHoverClose}
     >
       <button
         type="button"
         ref={triggerRef}
+        onMouseEnter={scheduleHoverOpen}
         className={css.trigger}
         aria-label={t('trigger')}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
+          cancelHoverChange()
           pinnedRef.current = true
           if (!open) changeOpen(true)
           else panelRef.current?.focus()
