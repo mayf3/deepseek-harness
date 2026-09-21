@@ -11,8 +11,6 @@ English | [中文](README.zh.md)
 
 Use `ctx.tokenMeter` to estimate a session's current request and context pressure or price one message. Measurements replay the durable session log, remain deterministic, and make no model calls, so compaction, occupancy displays, and telemetry can share one result. When session projections are available, consumers can read `tokenUsage`, `contextPressure`, and `contextBreakdown`; text and routes without image pricing use an approximate fixed heuristic, declared visual-token pricing applies when available, and files are priced as model-visible handle text. Provider-reported usage is reused only for an identical request envelope; the package adds no model-visible content and makes no loop decisions.
 
-`./estimate` exports the stateless text/content estimators used by tool-result retention. Model adapters supply request-image costs through `imageRequestPricing`.
-
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -103,6 +101,8 @@ Each `measure()` call synchronizes the fold to the current durable tail, then re
 ### Projection semantics
 
 `contextBreakdown` retains plain-JSON `{ seq, heuristicTokens, system }` entries in surface order and reuses the measurement plan/commit fold. Its state and surface transitions are O(current retained surface), not O(1) and not O(total historical log); replaced entries and message bodies are not retained. State version 5 invalidates checkpoints priced with offload metadata. `contextPressure` remains the scalar shadow-price consumer: replacements without adjacent claims contribute zero delta. The usage fold retains one last-sample slot because legal logs never report usage for an earlier step after a later step reports usage.
+
+`./estimate` exports the stateless text/content estimators used by tool-result retention. Model adapters supply request-image costs through `imageRequestPricing`.
 
 </details>
 

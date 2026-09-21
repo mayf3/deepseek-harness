@@ -698,7 +698,7 @@ describe('tool execution', () => {
       })
       expect(result.isError).toBe(false)
       expect(result.content.map(block => block.type)).toEqual(['text', 'image'])
-      expect(textAt(result.content)).toBe(blocks[0].text?.slice(0, 20))
+      expect(textAt(result.content)).toBe('long text'.repeat(1000).slice(0, 20))
       if (result.isError) throw new Error('expected MCP success')
       expect(result.value).toEqual({ content: blocks })
     } finally {
