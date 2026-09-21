@@ -461,7 +461,7 @@ describe('scope tree', () => {
     using reference = b.svc.retainAgentScope(sid('s-early'))
     const scoped = reference.binding.ctx
     expect(scopeOf(scoped)).toBe('s-early')
-    b.svc.handleControlFrame({ type: 'baseline', value: { jobs: {}, projections: {} } })
+    b.svc.handleControlFrame({ type: 'baseline', value: { projections: {} } })
     await feedList(b, [])
     expect(b.svc.scope(sid('s-early'))).toBe(scoped)
     reference.release()

@@ -22,9 +22,9 @@ import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandb
 import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { DSH_ENV_PREFIX } from '@deepseek-ai/dsh-shell'
-import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
-import { processJob } from './background.ts'
-import { parseExitStatus, renderProcessRead, renderResult } from './render.ts'
+import type { ShellRunResult, ShellProcess } from '@deepseek-ai/dsh-shell'
+import { processJob, processOutcome, processSources } from './background.ts'
+import { parseExitStatus, renderResult } from './render.ts'
 
 export const name = 'tool-bash'
 export const inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']
@@ -363,14 +363,21 @@ export function apply(ctx: Context, config: Config = {}): void {
           error.name = 'AbortError'
           throw error
         }
-        // Task preflight finishes before the starter can spawn a process.
+        // The registry pumps the process's non-consuming readers into the
+        // job's ring; the sources bind lazily because the process is spawned
+        // only once admission has passed.
+        let proc: ShellProcess | undefined
         const id = jobs.start({
           kind: 'bash',
           label: args.command,
-          ...exec.agent ? { owner: exec.agent } : {},
+          ...exec.agent ? { owner: exec.agent.id } : {},
+          output: processSources(() => proc),
           run: () => processJob(
-            signal => ctx.shell.start(ctx.shell.resolve({ ...request, signal })),
-            proc => renderProcessRead(proc.readOutput(), proc.sandbox, escalationModes),
+            async (signal) => {
+              proc = await ctx.shell.start(ctx.shell.resolve({ ...request, signal }))
+              return proc
+            },
+            started => processOutcome(started, escalationModes),
           ),
         })
         return { kind: 'background' as const, jobId: id }

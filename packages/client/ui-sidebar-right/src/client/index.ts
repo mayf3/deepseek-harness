@@ -33,7 +33,8 @@ import { GuideBody, type GuideInjected } from './tabs/guide/GuideBody.tsx'
 import { GuideTitle } from './tabs/guide/GuideTitle.tsx'
 import { ExpandButton } from './shell/ExpandButton.tsx'
 import { RightbarSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
-import { RightbarRoot } from './shell/RightbarRoot.tsx'
+import { RightbarRoot, type RightbarRootInjected } from './shell/RightbarRoot.tsx'
+import { SidebarSessionViews } from './session-views.ts'
 import { createSidebarRightController, type SidebarRightController } from './service.ts'
 import { SidebarRightTabRegistry } from './tab-registry.ts'
 import { createSidebarRightStore } from './stores.ts'
@@ -74,7 +75,7 @@ export type { SidebarRightOpenTab } from './tab-inventory.ts'
 const NS = 'sidebarRight'
 
 /** Required browser services: the slot registry, the frame's panel actions, copy, and the resource model. */
-export const inject = ['slots', 'layout', 'locale', 'resources']
+export const inject = ['slots', 'layout', 'locale', 'resources', 'sessions', 'uiSession']
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -102,6 +103,14 @@ export function apply(ctx: ClientContext): void {
   // its own apply top level for the same reason.
   const t = ctx.locale.bind(NS)
   const tabs = new SidebarRightTabRegistry(ctx)
+  const views = new SidebarSessionViews(ctx.sessions)
+  ctx.effect(() => {
+    const current = ctx.uiSession.adapter.current
+    const sync = (): void => { views.select(current.getSnapshot().key as SessionId | undefined) }
+    const unsubscribe = current.subscribe(sync)
+    sync()
+    return () => { unsubscribe(); views.dispose() }
+  }, 'ui-sidebar-right: retained Session views')
   const { controller, adopt, forget } = createSidebarRightController(
     tabs,
     (address, signal) => { ctx.resources.pin(address, signal) },
@@ -156,6 +165,10 @@ export function apply(ctx: ClientContext): void {
       yield ctx.slots.register({
         name: 'rightbar',
         children: { 'rightbar.session': { kind: 'single', scope: 'session' } },
+        inject: (): RightbarRootInjected => ({
+          hooks: { views: views.source },
+          mountView: reference => views.mount(reference),
+        }),
       }, RightbarRoot)
       yield ctx.slots.register({
         name: 'rightbar.session',

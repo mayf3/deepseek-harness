@@ -35,7 +35,7 @@ Creator mode includes this toolset. Other compositions mount `@deepseek-ai/dsh-t
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Host providers combine generated Service/Event catalogs and the requesting agent's tool registry. Client providers synchronize their manifests through the existing inspection registry and answer queries from a connected page. The tool plugin owns its registrations through Cordis effects; disposal removes both tools and prompt contributions. No invariant companion is published because inspection reads its providers directly and maintains no independent runtime projection.
+Host providers combine generated Service/Event catalogs and the requesting agent's tool registry. Client providers synchronize their manifests through the existing inspection registry and answer queries from a connected page. The tool plugin owns its registrations through Cordis effects; disposal removes the two tools and the Host inspect providers. No invariant companion is published because inspection reads its providers directly and maintains no independent runtime projection.
 
 </details>
 
@@ -54,15 +54,15 @@ Host providers combine generated Service/Event catalogs and the requesting agent
 
 #### What the model sees
 
-The [tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-cordis) describes two read-only inspection tools. The [prompt](src/prompt.ts) directs persistent changes through Plugin Manager and describes MCP setup. Creator visual requests default to an installed UI plugin displayed in the current Web page; the development skill covers Client packaging and slot registration. Query results contain the requested API declarations or live tool schemas.
+The [tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-cordis) describes two read-only inspection tools. The plugin contributes no system prompt section: the tool descriptions state when to call each tool and that queries never invoke business methods. In the `cordis` preset, the first-turn skill catalog carries the descriptions of the two shipped skills, which route plugin, MCP, composition, and destination-less visual requests to the skill covering Plugin Manager, MCP setup, Client packaging, and slot registration. Query results contain the requested API declarations or live tool schemas.
 
 #### Token effect
 
-Both tool schemas and the guidance section enter model requests while this plugin is visible. Query results append to the transcript; exact queries avoid loading unrelated declarations.
+Only the two tool schemas enter model requests while this plugin is visible. Query results append to the transcript; exact queries avoid loading unrelated declarations.
 
 #### KV Cache effect
 
-Unchanged schemas and guidance remain prefix-stable. Query results append to history; enabling other plugins can change subsequent tool schemas.
+Unchanged tool schemas remain prefix-stable. Query results append to history; enabling other plugins can change subsequent tool schemas.
 
 ## Known Limitations and Deferred Work
 

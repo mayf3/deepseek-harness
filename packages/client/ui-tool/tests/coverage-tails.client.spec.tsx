@@ -28,7 +28,7 @@ function listStore() {
       [SID]: { id: SID, title: 'r', displayTitle: 'r', running: false, retainedBy: {}, blank: false, updatedAt: 0 },
     },
     phase: 'ready',
-    projectionsBySession: {}, jobsBySession: {},
+    projectionsBySession: {},
   })
 }
 

@@ -321,13 +321,24 @@ export class PwshLocalExecutor extends ShellExecutor {
     const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, this.config.maxOutputBytes, spec.signal, argv))
     const collected = PwshLocalExecutor.collected(running)
 
-    // A provider rejection has no direct outcome to display; its stage is not
-    // public, so a neutral note is delivered once through the read path.
+    // A provider rejection produces no process output, so the subprocess
+    // service has nothing to buffer: once the provider rejected, its
+    // stage-neutral note is the whole stderr stream for every reader. The
+    // observed reader serves it at offset 0 and the consuming read folds it in
+    // exactly once.
     let providerFailureNote: string | undefined
+    let providerFailureReported = false
     const consumeProviderFailure = (): string => {
-      const note = providerFailureNote ?? ''
-      providerFailureNote = undefined
-      return note
+      if (providerFailureNote === undefined || providerFailureReported) return ''
+      providerFailureReported = true
+      return providerFailureNote
+    }
+    const observedStderr: SubprocessOutputReader = {
+      readFrom: (fromByte) => {
+        if (providerFailureNote === undefined) return collected.stderr.readFrom(fromByte)
+        const note = Buffer.from(providerFailureNote, 'utf8')
+        return { text: note.subarray(Math.min(fromByte, note.length)).toString('utf8'), nextOffset: note.length, lossy: false }
+      },
     }
 
     let stdoutOffset = 0
@@ -336,6 +347,7 @@ export class PwshLocalExecutor extends ShellExecutor {
       status: 'running',
       exitCode: null,
       signal: null,
+      observed: { stdout: collected.stdout, stderr: observedStderr },
       done: running.done.then((outcome) => {
         // Any signal termination is killed, including a command signaling itself.
         if (proc.status === 'running') {
@@ -345,7 +357,7 @@ export class PwshLocalExecutor extends ShellExecutor {
         proc.signal = outcome.signal
         this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
       }, (error: unknown) => {
-        // Background provider failures settle as killed and surface through the read path.
+        // Background provider failures settle as killed and surface on stderr for every reader.
         proc.status = 'killed'
         let detail = 'unprintable provider failure'
         try {

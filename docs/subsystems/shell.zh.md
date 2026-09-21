@@ -196,6 +196,13 @@ interface ShellProcess {
    */
   readOutput(): ShellProcessRead
   /**
+   * Non-consuming offset readers over the same captured streams the consuming
+   * {@link readOutput} cursor drains, including the provider-failure note a
+   * rejected spawn leaves on stderr. Independent observers read here at their
+   * own offsets without stealing bytes from `readOutput`.
+   */
+  observed: ShellObservedStreams
+  /**
    * Terminate the provider-managed range. Returns false when it had already finished
    * (no-op); idempotent.
    */

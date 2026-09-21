@@ -34,7 +34,7 @@ const sessionState = (items: readonly SessionSummary[]): SessionListState => ({
   ids: items.map(item => item.id),
   byId: Object.fromEntries(items.map(item => [item.id, item])),
   phase: 'ready',
-  projectionsBySession: {}, jobsBySession: {},
+  projectionsBySession: {},
 })
 const workspace = (id: string, sessionIds: readonly string[]): WorkspaceView => ({
   workspaceId: id as WorkspaceId, path: `/projects/${id}`, title: id,
