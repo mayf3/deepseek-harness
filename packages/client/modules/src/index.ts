@@ -325,7 +325,7 @@ function readSourceMap(clientPath: string): Record<string, unknown> | undefined 
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error
   }
-  const value = JSON.parse(body.toString('utf8')) as unknown
+  const value: unknown = JSON.parse(body.toString('utf8'))
   const parsed = typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined
   if (
     parsed === undefined

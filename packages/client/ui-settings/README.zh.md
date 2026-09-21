@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 绑定命名空间
 
-`ctx.settingsScope.developerTools` 管理 Web 和桌面端共享的偏好 `ui-developer-tools.enabled`，默认为 `false`。其 `enabled` 可观察值发布已接受的选择，`setEnabled` 使用相同的有序设置写入。桌面端和回环 Web 将设置持久化到 Host 文档；远程 Web 将此选择保存在单个浏览器本地可观察值中，刷新后重置，不发送 Host 写入。此设置控制界面展示和 HTML 预览权限，不控制 Host 授权或 Session 记录。
+`ctx.settingsScope.developerTools` 管理 Web 和桌面端共享的偏好 `ui-developer-tools.enabled`，默认为 `true`。其 `enabled` 可观察值发布已接受的选择，`setEnabled` 使用相同的有序设置写入。桌面端和回环 Web 将设置持久化到 Host 文档；远程 Web 将此选择保存在单个浏览器本地可观察值中，刷新后重置，不发送 Host 写入。此设置控制界面展示和 HTML 预览权限，不控制 Host 授权或 Session 记录。 使用 Host 偏好的客户端在首个经过 schema 解析并接受的值到达前保持开发者功能关闭；首次响应缺失或失败不会启用它们。后续刷新保留已接受的选择。
 
 功能调用 `ctx.settingsScope.bind(spec)` 并传入按命名空间的 spec，得到一个由共享文档镜像派生的 scope。scope 快照携带解析后的分区、组合 `base`、原始 `user`、revision、可写性以及 host/内存模式；字段只要出现在 `user` 中即视为覆盖，即使其值与 `base` 相等，`unset` 会清除该覆盖。写入经 scope 进行：`set` 与 `unset` 提交一个操作，`mutate` 则原子提交多个有序操作。这些方法在 Host 接受时返回 `true`，拒绝或跳过写入时返回 `false`；传输失败会 reject。每次写入都以命名空间 revision 作为 `expectedRevision` 围栏，因此来自另一界面的并发写入会被拒绝，而不是被静默覆盖。暂存编辑器可以把开始草拟时读取的 revision 作为固定围栏传入；否则 scope 使用最新排队或镜像 revision。
 
@@ -57,7 +57,7 @@ kind: "package-reference"
 
 ### Describe 镜像
 
-Host 部分向 settings 注册 `ui-developer-tools` schema 及其默认关闭值。Client 插件注入 `remote` 及其 `settings` 命名空间，从固定的 `remote.$host` 事实一次性解析 Host 持久化模式，并持有浏览器中唯一的 `settings.describe` 读取方：一面共享镜像，在每次转发的 `settings/document-updated` 事件与 `connection/reset` 时刷新（首次连接也包含在内，关闭「提交落在急切读取与 SSE 订阅之间」的窗口）。跨命名空间表面通过 `ctx.settingsScope.describe()` 读它，这是一个读取/折叠面（`getSnapshot`/`subscribe`/`ensure`，另有把写应答折入的 `acceptView`）。
+Host 部分向 settings 注册 `ui-developer-tools` schema 及其默认开启值。Client 插件注入 `remote` 及其 `settings` 命名空间，从固定的 `remote.$host` 事实一次性解析 Host 持久化模式，并持有浏览器中唯一的 `settings.describe` 读取方：一面共享镜像，在每次转发的 `settings/document-updated` 事件与 `connection/reset` 时刷新（首次连接也包含在内，关闭「提交落在急切读取与 SSE 订阅之间」的窗口）。跨命名空间表面通过 `ctx.settingsScope.describe()` 读它，这是一个读取/折叠面（`getSnapshot`/`subscribe`/`ensure`，另有把写应答折入的 `acceptView`）。
 
 ### Scope 派生
 

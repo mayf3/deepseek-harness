@@ -1,5 +1,5 @@
 /** Persistent manager behavior through a real profile Include and Loader. */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -8,8 +8,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import {
   boot, composeEntries, initProfile, loadProfileDirectory, readProfilePatches, readProfileManifest,
-  reconcileProfilePatches, OPTIONAL_BUNDLES,
-  type ProfileContext,
+  reconcileProfilePatches, OPTIONAL_BUNDLES, PluginPackages, readPluginMeta,
+  type ProfileContext, type RuntimeResolution,
 } from '@deepseek-ai/dsh-app-boot'
 import PluginManager, { type Config, type PluginChange, type PluginInstallLogChunk, type PluginInstallProgress, type PluginInstallRequestId } from '../src/index.ts'
 import Hmr from '@deepseek-ai/dsh-hmr'
@@ -20,8 +20,11 @@ import * as operations from '../src/operations.ts'
 import { parse, parseDocument } from 'yaml'
 
 async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, prepare?: (ctx: Context) => void, config: Config = {}, packageManager?: ProfileContext['packageManager'], prepareFiles?: (dir: string) => void) {
+  const temporaryHome = mkdtempSync(join(tmpdir(), 'plugin-manager-'))
+  let owner: Context | undefined
+  onTestFinished(async () => { await owner?.fiber.dispose(); rmSync(temporaryHome, { recursive: true, force: true }) })
   // pnpm resolves workspace roots through native realpath, including Windows 8.3 aliases.
-  const home = await realpath(mkdtempSync(join(tmpdir(), 'plugin-manager-')))
+  const home = await realpath(temporaryHome)
   const dir = join(home, 'profiles', 'test')
   const anchor = join(home, 'package.json')
   writeFileSync(anchor, '{"name":"installation","dependencies":{}}\n')
@@ -49,12 +52,12 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
     overlays, telemetryDisabledEnv: undefined,
   }
   const ctx = await boot('test', join(dir, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
+    owner = ctx
     ctx.provide('appReady', { onReady: (listener: () => void) => { listener(); return () => {} } })
     prepare?.(ctx)
     ctx.provide('profileContext', profile)
     ctx.loader.builtins.manager = PluginManager
   })
-  onTestFinished(async () => { await ctx.fiber.dispose(); rmSync(home, { recursive: true, force: true }) })
   // What pnpm's own configuration names is read from pnpm before every registry plan; the fixture answers npm's own registry.
   const registry = vi.spyOn(operations, 'readProfileRegistry').mockResolvedValue('https://registry.npmjs.org/')
   onTestFinished(() => { registry.mockRestore() })
@@ -136,10 +139,12 @@ it('lists bundle versions and current-profile plugin targets', async () => {
   expect(await manager.listBundles()).toEqual([
     {
       name: 'core', version: '1.0.0', enabled: true, installed: false, optional: false, removable: false, readOnlyReason: 'management-required',
+      meta: { title: 'core' },
       rows: [{ rowId: 'manager', moduleName: 'cordis:manager', entryId: 'include:manager' }], overrides: [],
     },
     {
       name: 'extra', version: '1.0.0', enabled: true, installed: true, optional: false, removable: true,
+      meta: { title: 'extra' },
       rows: [{ rowId: 'managed', moduleName: pathToFileURL(join(dir, 'node_modules', 'extra', 'plugin.mjs')).href, entryId: 'include:managed' }], overrides: [],
     },
   ])
@@ -161,6 +166,7 @@ it('describes a bundle by its manifest and patch: one-liner, rows without a live
   const moduleName = pathToFileURL(join(dir, 'node_modules', 'described', 'plugin.mjs')).href
   expect((await manager.listBundles()).find(row => row.name === 'described')).toEqual({
     name: 'described', version: '2.0.0', description: 'Describes itself.', enabled: false, installed: true, optional: false, removable: true,
+    meta: { title: 'described', description: 'Describes itself.' },
     rows: [{ rowId: 'described-row', moduleName }], overrides: ['managed'],
   })
   await manager.setBundleEnabled('described', true)
@@ -170,6 +176,91 @@ it('describes a bundle by its manifest and patch: one-liner, rows without a live
   // Off again, the rows lose their entries.
   await manager.setBundleEnabled('described', false)
   expect((await manager.listBundles()).find(row => row.name === 'described')?.rows).toEqual([{ rowId: 'described-row', moduleName }])
+})
+
+it.each(['native', 'runtime'] as const)('reads a disabled bundle and its independent exported plugins without running them with %s resolution', async (mode) => {
+  const { ctx, manager, dir, bundle, profile } = await fixture('startup')
+  bundle('localized', [{ id: 'first', name: 'local-child/first' }, { id: 'second', name: 'local-child/second' }])
+  const root = join(dir, 'node_modules', 'localized')
+  const child = mode === 'runtime'
+    ? join(profile.home, 'installation', 'node_modules', 'local-child')
+    : join(root, 'node_modules', 'local-child')
+  mkdirSync(join(root, 'locale'), { recursive: true })
+  mkdirSync(join(child, 'first-locale'), { recursive: true })
+  mkdirSync(join(child, 'second-locale'), { recursive: true })
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'localized',
+    exports: { './locale/*.json': './locale/*.json' }, dsh: {
+      bundle: { patch: './cordis.patch.yml' },
+    } }))
+  writeFileSync(join(root, 'locale', 'en.json'), '{"meta":{"title":"Local bundle"}}')
+  writeFileSync(join(root, 'locale', 'zh.json'), '{"meta":{"title":"本地组合包"}}')
+  writeFileSync(join(child, 'package.json'), JSON.stringify({ name: 'local-child', exports: {
+    './first': './index.js', './second': './index.js',
+    './first/locale/*.json': './first-locale/*.json', './second/locale/*.json': './second-locale/*.json',
+  } }))
+  writeFileSync(join(child, 'index.js'), 'throw new Error("must not execute")\n')
+  writeFileSync(join(child, 'first-locale', 'en.json'), '{"meta":{"title":"First plugin"}}')
+  writeFileSync(join(child, 'second-locale', 'en.json'), '{"meta":{"title":"Second plugin"}}')
+  const manifest = readProfileManifest('test', dir)
+  manifest.dependencies = { ...manifest.dependencies, localized: '1.0.0' }
+  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+  const parentURL = pathToFileURL(join(root, 'package.json')).href
+  const readChildren = () => ['first', 'second'].map(part => readPluginMeta(`local-child/${part}`, parentURL))
+  const expectUnlinked = () => {
+    expect(lstatSync(child).isDirectory()).toBe(true)
+    for (const path of [
+      join(root, 'node_modules'), join(dir, 'node_modules', 'local-child'),
+      join(profile.home, 'profiles', 'node_modules'), join(profile.home, 'node_modules'),
+      join(dir, '.dsh-module-fallback'),
+    ]) expect(lstatSync(path, { throwIfNoEntry: false }), path).toBeUndefined()
+  }
+  const resolution: RuntimeResolution = {
+    profilesDir: join(profile.home, 'profiles'), profileDir: dir,
+    localPackageNames: Object.keys(manifest.dependencies),
+    linkedRoots: [],
+    entries: [{ name: 'local-child', packageDir: child, version: undefined,
+      declarer: join(child, 'package.json'), scope: 'installation' }],
+  }
+  if (mode === 'runtime') {
+    expectUnlinked()
+    expect(readChildren()).toEqual([undefined, undefined])
+  }
+  await ctx.plugin(PluginPackages, mode === 'runtime' ? { resolution } : {})
+  const result = (await manager.listBundles()).find(row => row.name === 'localized')
+  expect(result).toMatchObject({ enabled: false, meta: { title: { en: 'Local bundle', zh: '本地组合包' } }, rows: [
+    { rowId: 'first', moduleName: 'local-child/first', meta: { title: { en: 'First plugin' } } },
+    { rowId: 'second', moduleName: 'local-child/second', meta: { title: { en: 'Second plugin' } } },
+  ] })
+  expect(result?.rows[0]?.entryId).toBeUndefined()
+  expect(readPluginMeta('local-child/private', parentURL)).toBeUndefined()
+  if (mode === 'runtime') {
+    expectUnlinked()
+    await ctx.fiber.dispose()
+    expect(readChildren()).toEqual([undefined, undefined])
+    expectUnlinked()
+  }
+})
+
+it.each([
+  { resources: 'exported', exports: { './locale/*.json': './locale/*.json' }, expected: { meta: { title: { en: 'Nameless bundle' } } } },
+  { resources: 'private', exports: {}, expected: {} },
+])('lists a bundle without a manifest name with $resources locale resources', async ({ exports, expected }) => {
+  const { manager, dir, bundle } = await fixture('startup')
+  bundle('unnamed', [])
+  const root = join(dir, 'node_modules', 'unnamed')
+  mkdirSync(join(root, 'locale'))
+  writeFileSync(join(root, 'package.json'), JSON.stringify({
+    version: '1.0.0', exports, dsh: { bundle: { patch: './cordis.patch.yml' } },
+  }))
+  writeFileSync(join(root, 'locale', 'en.json'), '{"meta":{"title":"Nameless bundle"}}')
+  const manifest = readProfileManifest('test', dir)
+  manifest.dependencies = { ...manifest.dependencies, unnamed: '1.0.0' }
+  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+
+  expect((await manager.listBundles()).find(row => row.name === 'unnamed')).toEqual({
+    name: 'unnamed', version: '1.0.0', enabled: false, installed: true, optional: false, removable: true,
+    rows: [], overrides: [], ...expected,
+  })
 })
 
 it('turns a plugin off and on without duplicating patch overrides', async () => {
@@ -767,6 +858,7 @@ it('offers the launcher\'s optional bundles switched off and never removable', a
   writeFileSync(profile.installAnchor, JSON.stringify({ name: 'installation', dependencies: { [offered]: '3.0.0' } }))
   expect((await manager.listBundles()).find(row => row.name === offered)).toEqual({
     name: offered, version: '3.0.0', description: 'Package one-liner.',
+    meta: { title: offered, description: 'Package one-liner.' },
     enabled: false, installed: false, optional: true, removable: false,
     rows: [{ rowId: 'offered-row', moduleName: pathToFileURL(join(supplied, 'plugin.mjs')).href }], overrides: [],
   })

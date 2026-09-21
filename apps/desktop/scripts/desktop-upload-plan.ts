@@ -222,7 +222,7 @@ export async function createDesktopUploadPlan(
   const updaterInfo = updateFileInfo(metadata.files[0], `${metadataFilename}.files[0]`, `${base}.${updaterExtension}`)
   const updaterPath = await verifyChecksummedArtifact(artifactsRoot, updaterInfo)
   const artifacts: DesktopUploadArtifact[] = []
-  const binaryPrefix = `dsh-desk/bin/${targetName}`
+  const binaryPrefix = update.binaryKeyPrefix
 
   if (target.platform === 'darwin') {
     const dmgPath = await requireArtifact(artifactsRoot, `${base}.dmg`)

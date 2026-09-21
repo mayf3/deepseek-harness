@@ -8,18 +8,19 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to render a browser chat from recorded Session conversations, including historical images, localized actions, and restored scroll position. Compact display folds completed-turn process rows while keeping the final answer and independently useful context visible; packed historical Assistant runs remain collapsed. Local transcript and steering submissions appear immediately, remain in their original surface, and disappear atomically when authoritative Session records arrive, while queued submissions stay outside Chat. The package does not assemble or modify model requests.
+Use this package to render a browser chat from recorded Session conversations, including historical images, localized actions, and restored scroll position. Work-details modes control reasoning previews and fold eligible completed-turn process rows without hiding final answers. Local transcript and steering submissions appear immediately, remain in their original surface, and disappear atomically when authoritative Session records arrive, while queued submissions stay outside Chat. The package does not assemble or modify model requests.
 
 File-mention providers receive the viewed Session ID with the closing-turn owner, so links into inherited history can address the fork itself.
 
 ## Table of Contents
 
 - [Reference previews](#reference-previews)
-- [System prompt row](#system-prompt-row)
+- [Hidden Chat rows](#system-prompt-row)
 - [Command and failure rows](#command-and-failure-rows)
 - [Turn token usage](#turn-token-usage)
 - [Completed-turn footer](#completed-turn-footer)
 - [Turn Process Folding](#turn-process-folding)
+- [Grouped rendering](#grouped-rendering)
 - [Scroll ownership](#scroll-ownership)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
@@ -32,12 +33,12 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 
 Chat supplies file and HTTP(S) navigation through one `MarkdownDelegateProvider` around its node list. Assistant Markdown file links open in the right Sidebar after the message settles, including references to unmodified files. Relative paths resolve in the viewed Session's workspace; absolute paths retain the same Session's filesystem access. `#L24` and `#L24-L30` navigate to the first specified line and reuse an existing file tab. Missing files show the preview's error state.
 
-HTTP(S) links in Assistant Markdown open a new right-Sidebar Browser tab on ordinary clicks when that type is registered, or the system browser otherwise; modified clicks retain the native external-link behavior. Sent file references and skills confirmed by the message’s logged invocation also open in the right Sidebar. File paths use the viewed Session; skill names resolve through its current input-trigger source. Both use the prose file-link dotted underline on hover or focus. Sessions, directories, and command labels remain non-navigating references.
+Settings → General → Open chat links in selects the destination for ordinary clicks on Chat HTTP(S) links: Built-in browser (default) opens a new right-Sidebar Browser tab, while New browser tab opens an external tab. The setting is shown only while the built-in browser is available. If the Sidebar Browser is not registered, both choices use the external browser; modified clicks retain native behavior. The `ui-chat.linkOpening` preference persists on loopback browsers and stays process-local when settings cannot persist writes. Sent file references and skills confirmed by the message’s logged invocation also open in the right Sidebar. File paths use the viewed Session; skill names resolve through its current input-trigger source. Both use the prose file-link dotted underline on hover or focus. Sessions, directories, and command labels remain non-navigating references.
 
 <a id="system-prompt-row"></a>
-## System prompt row
+## Hidden Chat rows
 
-Each nonempty appended `system/message` owns a collapsed prompt row, including a complete prompt at the start of a headerless window; the same-step header does not duplicate it. Chat also shows a collapsed `System prompt` row for a non-empty initial request, explicit message-series start, or `system/message` surface node replacement whose text differs, reading the last nonempty surviving system node in surface order at the `request/header`; a non-initial request whose preceding header is outside the loaded history window also shows one. A resume repeats the row even when its system text is unchanged, including after pagination supplies the preceding header and system node; same-series config-only or tool-only changes, tool steps, and retries create no repetition, and a `system/message` event is never rendered as a transcript message. The row appears before that request's user messages, matching the provider envelope, and expands to the exact model-visible text with its original line breaks. A request whose system node is empty or outside the loaded window creates no row until the page holding the node arrives.
+Chat omits system-prompt and `permission` command rows in every work-details mode. The filter changes neither recorded Session events nor Trajectory inspection. Ordinary Context injection and other command rows remain in Chat; Context injection can fold with the owning Turn's process content.
 
 <a id="command-and-failure-rows"></a>
 ## Command and failure rows
@@ -65,9 +66,32 @@ The completed-turn action footer starts 20px below the preceding prose or extens
 <a id="turn-process-folding"></a>
 ## Turn Process Folding
 
-Each reasoning row starts collapsed, including during streaming and in reasoning-only replies. Clicking the row opens or closes its complete Markdown; incoming answer text, Tool calls, and stream completion preserve that choice. Expanded reasoning uses compact secondary typography: headings add bold weight without changing text size, line height, or color. The collapsed summary stays on one line, follows the latest reasoning line while streaming, and shows the first line after settlement.
+Each reasoning row starts collapsed, including during streaming and in reasoning-only replies. Clicking the row opens or closes its complete Markdown; incoming answer text, Tool calls, and stream completion preserve that choice. Expanded reasoning uses compact secondary typography: headings add bold weight without changing text size, line height, or color. While streaming, all modes preview the latest paragraph whose first line ends with a newline. Further text in that paragraph does not change the preview; an unfinished single line has no preview. One or more blank lines separate paragraphs. The one-line preview fades at the right edge. After settlement, Compact hides the preview, while Detailed and Expanded show the full text's first line.
 
-Settings → General exposes a persisted, localized `Normal` / `Compact` conversation-display preference in the `ui-chat` namespace; `Compact` is the default. Normal leaves process rows visible and renders no Turn-process control. In Compact mode, the System prompt remains independently visible before the opening User throughout the Turn. Context injection, reasoning, Assistant material, Tool rows, and Retry rows remain expanded while a Turn is open. At `turn/end`, its latest Step becomes the final-answer boundary only when it contains non-blank text, an image, or an unknown visible block—and no Tool-call block; preceding Context injection, reasoning, earlier Assistant material, Tool rows, and Retry rows then collapse by default. The control reports Turn-wide durable counts for non-subagent Tool calls, reply-bearing Assistant messages before the final answer, and subagent delegation calls; zero-valued segments are omitted, the Tool and subagent figures are mutually exclusive, and neither System prompt nor Context injection contributes a count. When all three counts are zero, the process still folds and the control reads `Thought for a while`. A full-width divider below the summary separates it from the answer or expanded process rows. User and steering messages, System prompt, error, max-token, and turn-tail rows stay outside, and a closed Turn with no final answer keeps all process evidence visible. A newly available process control is inserted without changing the relative order of existing rows: opening human input precedes the control and process rows from their first projection, while System prompt remains above that input. While older history remains available through Load earlier, process controls stay absent and no members are hidden; once history is complete, every eligible closed Turn uses the collapsed default immediately. Stable Chat Node Seats keep every renderer mounted, hidden members add no flow spacing, and a closed control sits 8px above its answer only when no independent input intervenes. Completion collapse does not depend on tail-follow position, so a reader above the tail may see the transcript reflow. An automatic collapse that would hide keyboard focus keeps the group open and leaves focus in place; a manual close focuses the process control before hiding its members. The session-scoped store records only manually expanded Turn-and-answer-Step generations; a different answer generation starts collapsed.
+Reasoning rows retain the disclosure's callback, icon, and unchanged content references. Each reasoning row selects its preview visibility from the display policy; mode changes toggle CSS display without unmounting the collapsed summary or updating its parent Assistant renderer. Full Markdown elements are created only while expanded.
+
+Settings → General → Work details stores `ui-chat.transcriptView` as `compact` (default), `detailed`, or `expanded`. A saved legacy `normal` value reads as `detailed` without being written back; it is not offered as an option.
+
+| Behavior | Compact | Detailed | Expanded |
+|---|---|---|---|
+| Settled reasoning preview | Think title only | First line | First line |
+| Individual reasoning and tool bodies | Manual expansion | Manual expansion | Manual expansion |
+| Eligible completed-Turn process | Folded by default | Folded by default | Folded by default |
+
+While a Turn is open, its process rows remain in the transcript; individual reasoning and tool disclosures retain their own expansion state. At `turn/end`, its latest Step becomes the final-answer boundary only when it contains non-blank text, an image, or an unknown visible block—and no Tool-call block. If that Turn's `turn/start` is loaded, preceding Context injection, reasoning, earlier Assistant material, Tool rows, and Retry rows fold by default. Folding eligibility is per Turn: a complete Turn can fold while Load earlier remains available, and a Turn whose start is missing keeps its process content visible until that start arrives. A closed Turn with no final answer also keeps all process evidence visible.
+
+The control reports Turn-wide durable counts for non-subagent Tool calls, reply-bearing Assistant messages before the final answer, and subagent delegation calls. Zero-valued segments are omitted; the Tool and subagent figures are mutually exclusive, and Context injection contributes no count. When all three counts are zero, the process still folds and the control reads `Thought for a while`. A full-width divider below the summary separates it from the answer or expanded process rows. User and steering messages, error, max-token, and turn-tail rows stay outside. A newly available process control preserves existing row order, with opening human input before the control and process rows.
+
+Stable Chat Node Seats keep every renderer mounted, hidden members add no flow spacing, and a closed control sits 8px above its answer only when no independent input intervenes. Completion collapse does not depend on tail-follow position, so a reader above the tail may see the transcript reflow. An automatic collapse that would hide keyboard focus keeps the process open and leaves focus in place; a manual close focuses the process control before hiding its members. The session-scoped store records only manually expanded Turn-and-answer-Step generations; a different answer generation starts collapsed. Switching work-details modes preserves manual expansion.
+
+-----
+
+<a id="grouped-rendering"></a>
+## Grouped rendering
+
+Chat can render optional Conversation Group Definition output as a mixed `node`/`group` root list. A group seat subscribes only to its member array; each member retains the existing keyed Node source and renderer. `groupPart` reaches that renderer as a business-owned part selector, with distinct DOM anchors for reading-position restoration; Turn navigation can still address the original Node key and land on its first visible part. Presentation modes do not select the root branch or alter member parents. No process Group Definition is registered by this package yet; the default transcript remains ungrouped.
+
+The group seat uses `div` with `display: contents`: it retains the DOM parent without creating a layout box. CSS inheritance remains available, but child and sibling selectors still follow the DOM tree. The existing direct-child spacing selectors do not reach group members. Business styles must adapt spacing within and across groups, including hidden or empty members and the answer-spacing exception, and own any measurable body or scroll container. CSS variables do not belong in the Group Definition.
 
 -----
 
@@ -101,6 +125,10 @@ None; Chat presentation does not assemble or mutate provider requests.
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
+
+- **Secondary process grouping is not implemented** — Detailed and Expanded currently display the same Chat content. Expanded retains whole-Turn folding and does not automatically open individual reasoning or tool bodies.
+
+- **Developer messages are not displayed** — presentation is intentionally deferred; encountering `developer/message` throws instead of rendering a fallback row.
 
 - **The transcript reflects the loaded Session window** — older transcript nodes become available only after Session Controller loads the preceding event page. Turn navigation is wider than the window: the rail merges the loaded Turns with the host `turnOutline` projection, so every started Turn gets a fixed-pitch mark (10px apart; a ladder taller than the frame scrolls inside it with gradient fades), and activating an unloaded mark pages history through the Turn's `turn/start` seq before landing on its row. Without the projection (assemblies not mounting `dsh-session-turn-outline`) the rail falls back to loaded Turns only.
 - **Rail previews are card-sized** — one prompt line (50 characters) and up to three response lines (120), on loaded and unloaded Turns alike; an unloaded Turn's response arrives from the outline only once the Turn settled, so an open Turn previews its prompt (or just the Turn number) until then.

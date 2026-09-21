@@ -33,7 +33,7 @@ Use it when the product shows a persistent workspace surface — a sidebar, sess
 
 ### Setting up
 
-The package takes no configuration of its own; it needs a session store, a session persistence backend, and the storage rows that keep its records. A minimal composition:
+The package needs a session store, a session persistence backend, and the storage rows that keep its records. A minimal composition:
 
 ```yaml
 - name: '@deepseek-ai/dsh-session'
@@ -58,6 +58,15 @@ const project = await ctx.workspaceRegistry.create('/path/to/dir', 'My Project')
 await project.setTitle('Renamed')
 ctx.workspaceRegistry.list() // shows the project, newest first
 ```
+
+<a id="first-use-workspace"></a>
+### First-use Workspace
+
+`initializeDefault(resolveDirectory)` initializes the default Workspace without creating a Session. Initial creation requires an empty Workspace registry and no live, persisted, or archived Session, including Sessions without a working directory. The registry checks persistent history directly; an empty visible sidebar is insufficient.
+
+The directory resolver runs inside the mutation queue only when creation is eligible. It returns an absolute path and initial title; the registry creates missing parent directories, canonicalizes the path, rechecks Session history, and commits the Workspace with its initialization marker. An existing directory is reused; a file conflict or directory failure rejects initialization. The [Host controller](../../api/workspace-controller/README.md#first-use-workspace) supplies the Documents path policy.
+
+The first successful registration records its identity durably. Repeated calls return it without resolving a directory again; renaming keeps that identity, and deleting its registration does not permit another automatic creation. Directory or registration failure leaves initialization unset for retry. Directories created before a later failure remain on disk. Once directory resolution succeeds, caller cancellation does not roll back directory creation or registration. The [first-use decision](../../../.agents/notes/implemented/feature/2026-09-20-default-workspace.md) explains this lifetime.
 
 ### Grouping sessions under a project
 
@@ -87,7 +96,7 @@ This section explains the design decisions behind the feature and points at the 
 
 ### API behavior
 
-The API is one small family with two owners: `WorkspaceRegistry` creates, orders, and deletes projects, manages their session accounting, and archives or restores single sessions; the `Workspace` entity exposes the display title, directory status, and the session projection. Per-method contracts live in the code, not this README — see [src/index.ts](src/index.ts) and [src/entity.ts](src/entity.ts).
+The API has two owners: `WorkspaceRegistry` creates, orders, and deletes projects, manages their Session accounting, and pins, unpins, archives, or restores Sessions; the `Workspace` entity exposes the display title, directory status, and Session projection. Pinning requires a known, unarchived Session; archiving clears its pin in the same durable write, and restoring does not restore that pin. Per-method contracts live in [src/index.ts](src/index.ts) and [src/entity.ts](src/entity.ts).
 
 ### Source map
 
@@ -102,7 +111,7 @@ The API is one small family with two owners: `WorkspaceRegistry` creates, orders
 
 ### Durable shape
 
-The registry opens the `workspace` domain (version 2): a `workspaces` table keyed by `WorkspaceId` plus one global state holding `workspaceIds` (the authoritative display order), `archivedSessionIds`, and the optional `pendingMutation` marker. Records written before `archivedSessionIds` existed parse with an empty set through the schema default. Archiving and unarchiving both rewrite only that global state, so a restore is one filtered write of the same field; unarchive runs no session-existence probe, because dropping an id from the set cannot introduce an unknown one, while archive verifies the session before adding it.
+The registry opens the `workspace` domain (version 2): a `workspaces` table keyed by `WorkspaceId` plus one global state holding `workspaceIds` (the authoritative display order), `archivedSessionIds`, `pinnedSessionIds`, the optional `defaultWorkspaceId` first-use identity, and the optional `pendingMutation` marker. Archive and pin sets contain Session id strings, default to empty, and carry no per-entry objects or timestamps; the pin array keeps the most recently pinned id first. Archiving clears the pin in the same global-state write without changing Workspace membership. Unarchive runs no session-existence probe, because dropping an id from the set cannot introduce an unknown one, while archive verifies the session before adding it.
 
 ### Lifecycle
 

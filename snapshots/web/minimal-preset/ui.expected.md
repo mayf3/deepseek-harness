@@ -1,13 +1,11 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use the bash tool to" [disabled]
+  - navigation "Session hierarchy": Use the bash tool to
   - text: Minimal mode
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: "Use the bash tool to run exactly: printf 'MINIMAL_BASH_CARD_OK\\n'. Then reply exactly MINIMAL_PRESET_REQUEST_OK and stop. {{clock}}"
 - button "Copy"
 - button "1 tool call" [expanded]

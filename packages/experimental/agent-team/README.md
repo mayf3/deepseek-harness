@@ -145,6 +145,10 @@ Tasks are complete versioned snapshots; every mutation carries `expectedRevision
 
 Team events are appended to the exact live Lead Session and flushed before the operation reports success or wakes waiters. `team/member`, `team/task`, `team/message/queued`, and `team/message/delivered` are log-only: they never enter the conversation surface, so derived model history is untouched by coordination records. Session event `seq` and `time` own ordering and timing; snapshots do not duplicate them. The `./invariant` companion replays each candidate Team event against its committed prefix and rejects invalid transitions before append.
 
+Native V4 Team event and checkpoint admission reject retired `tool-result` content before it can enter mailbox state. Historical conversion belongs to the Session-format migration; the Team projection does not convert old wrappers.
+
+Mailbox projection and checkpoint admission preserve every decoded JSON field of accepted content outside the locally declared validators, including an own `__proto__` key. Local field checks cover `text`, `reasoning`, `image`, and `tool-call`; accepted unknown tags remain opaque. Team projection cache version 4 rebuilds checkpoints from earlier cache versions from the Session log; the Session format version is unchanged.
+
 ### Disposal
 
 Disposal closes admission, aborts and awaits admitted creation and mailbox-dispatch transactions, then asks the continuation owner to release the roster's exact live direct children and their descendants; non-Team continuable children of the Lead remain untouched. Cleanup failures make disposal fail visibly, bounded by `disposalTimeoutMs`.
@@ -169,7 +173,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 ### Browser Remote
 
-`TeamService` owns the generated `agentTeams/view`, `agentTeams/createTask`, and `agentTeams/updateTask` Remote methods beside the roster, mailbox, task, and lifecycle operations. The `./remote` export supplies the Client contribution mounted by the Web UI, while `./client` re-exports the request, view, and task-mutation result types that are safe in a browser compilation face. Typert retains transport failures in its outer `RemoteResult`; create and update rejections remain explicit domain results inside a successful transport response, with stale update revisions distinguished as task conflicts.
+`TeamService` exposes the read-only `agentTeams/view` Remote method for browser clients. Task creation and updates belong to Team agents through the service and model tools. The `./remote` export supplies the Client contribution mounted by the Web UI, while `./client` exports browser-safe roster and task views.
 
 ## Model Experience
 

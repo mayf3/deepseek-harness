@@ -55,12 +55,6 @@
   flex: none;
 }
 
-.separator {
-  color: var(--dsw-alias-label-caption);
-  font-size: 14px;
-  line-height: 20px;
-}
-
 .activitySlot {
   display: inline-flex;
   flex: none;
@@ -167,19 +161,6 @@
   justify-content: center;
   width: 14px;
   height: 17px;
-}
-
-.disabled {
-  color: var(--dsw-alias-label-dimmed);
-  cursor: not-allowed;
-}
-
-.disabled:hover {
-  background: transparent;
-}
-
-.loadingRow {
-  cursor: default;
 }
 
 .disclosure,

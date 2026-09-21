@@ -34,6 +34,7 @@ describe('web e2e: plugin configuration pages', () => {
     // The live-client fixture is a bundle with a browser half; switched on
     // below, that half registers its row's configuration into the page.
     scaffold = await launchWebScaffold({
+      extraOverlayPath: fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
       profile: { packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-live-client') }] },
     })
     browser = await chromium.launch()
@@ -87,10 +88,10 @@ describe('web e2e: plugin configuration pages', () => {
 
     // Every page the shipped web composition exposes: the shell executor, the
     // agent loop, subagent selection, and the DeepSeek search provider, after
-    // the official Team bundle the installation ships switched off.
+    // the official bundles the installation ships switched off.
     await panel.getByRole('button', { name: '查看 网页搜索', exact: true }).waitFor({ timeout: 20_000 })
     const official = panel.locator('[data-plugin-group="official"]')
-    expect(await official.locator('[data-plugin-package]').count()).toBe(1)
+    expect(await official.locator('[data-plugin-package]').count()).toBe(2)
     expect(await official.locator('[data-plugin-item]').count()).toBe(4)
     for (const title of ['终端', 'Agent 循环', 'Subagent', '网页搜索']) {
       expect(await official.getByRole('button', { name: `查看 ${title}`, exact: true }).count()).toBe(1)
@@ -287,10 +288,10 @@ describe('web e2e: plugin configuration pages', () => {
     const panel = await openPlugins()
 
     // Off, the bundle's browser half is not loaded and the row has no configuration to open.
-    await panel.getByRole('button', { name: '查看 live-client', exact: true }).click()
+    await panel.getByRole('button', { name: '查看 @fixture/live-client', exact: true }).click()
     const row = panel.locator('[data-plugin-row]', { hasText: 'fixture-live-client' })
     await row.waitFor({ timeout: 10_000 })
-    expect(await panel.getByRole('button', { name: '配置 fixture-live-client' }).count()).toBe(0)
+    expect(await panel.getByRole('button', { name: '配置 @fixture/live-client' }).count()).toBe(0)
 
     // Off, the bundle's page carries no contribution either: the browser half
     // that would make them is not loaded.
@@ -301,8 +302,8 @@ describe('web e2e: plugin configuration pages', () => {
     // reload; its registration puts the configure control on the row, and
     // its detail contributions on the bundle's page: the action before the
     // page's own switch, the badge beside the title, the section after the rows.
-    await panel.getByRole('switch', { name: '启用 live-client' }).click()
-    const configure = panel.getByRole('button', { name: '配置 fixture-live-client' })
+    await panel.getByRole('switch', { name: '启用 @fixture/live-client' }).click()
+    const configure = panel.getByRole('button', { name: '配置 @fixture/live-client' })
     await configure.waitFor({ timeout: 30_000 })
     await bundlePage.locator('[data-live-section="bundle"]').waitFor({ timeout: 10_000 })
     // The page's own view of the row follows the Host's change event, which
@@ -317,7 +318,7 @@ describe('web e2e: plugin configuration pages', () => {
 
     const rowPage = panel.locator('[data-plugin-row-detail="@fixture/live-client#fixture-live-client"]')
     await rowPage.waitFor({ timeout: 10_000 })
-    expect(await rowPage.getByRole('heading', { level: 3 }).textContent()).toBe('fixture-live-client')
+    expect(await rowPage.getByRole('heading', { level: 3 }).textContent()).toBe('@fixture/live-client')
     expect(await rowPage.getByText('示例配置项', { exact: true }).count()).toBe(1)
     // The same entries render for the row's page, told it is about the row.
     expect(await rowPage.locator('[data-live-action="row"]').count()).toBe(1)
@@ -330,7 +331,7 @@ describe('web e2e: plugin configuration pages', () => {
 
     const snapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(ROW_EXPECTED, snapshot, MODE)
-    await rowPage.getByRole('button', { name: '返回 live-client' }).click()
+    await rowPage.getByRole('button', { name: '返回 @fixture/live-client' }).click()
     await bundlePage.waitFor({ timeout: 10_000 })
 
     // An official plugin's page is another subject; the fixture's entries render nothing for it.

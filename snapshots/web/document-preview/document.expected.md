@@ -11,12 +11,13 @@
 
 - Heading: Markdown smoke
 - Tail loaded by scrolling: Markdown tail
+- Loaded images: relative image | absolute image | reference image
 - Viewers: Markdown -> Code -> Plain text
 - Same tab: true
 
 ## Basic HTML
 
-- Developer tools: off by default on Web and desktop
+- Developer tools: disabled for this scenario
 - Sandbox: no permissions
 - Inline script: pending
 - Local script: pending
@@ -66,10 +67,29 @@
 
 ## Office unavailable
 
-- DOC, DOCX, XLS, XLSX, PPT, PPTX viewer menus: 0 | 0 | 0 | 0 | 0 | 0
+- DOC, DOCX, PPT, PPTX viewer menus: 0 | 0 | 0 | 0
 - Guidance: Read failed: Office previews are unavailable. Enable the document preview service on the computer running DeepSeek Harness.
 - Binary text shown: false
 - Plain-text option and viewer picker: hidden
+
+## Browser Excel preview
+
+- Opens without the Office conversion service
+- Sheets: 季度预算 | 公式与格式; hidden worksheet omitted
+- Formula workbooks use a compact warning beside fx; notice rows absent
+- Formatted percent copied: 80.0%; date copied: 2026-09-16
+- Cached XLOOKUP result copied: 42; typing leaves it unchanged
+- Formula bar is read-only; PDF body and editing toolbar absent
+- HTML-looking formulas, text, and cached results stay literal; copying retains text and table cells without executing HTML
+- XLS: merged title copied; worksheet selection retained
+- Invalid XLS/XLSX: This spreadsheet could not be opened. Check its format, contents, or password protection.
+
+## Delimited spreadsheets
+
+- CSV and TSV default to Spreadsheet; Plain text remains selectable
+- Copied ID: 00123; copied literal formula: =SUM(1,2)
+- Plain-text round trip retains complete source lines
+- Reload replaces parsed cells: 00123 -> 00999
 
 ## Unknown suffix
 
@@ -80,5 +100,5 @@
 
 - State: unsupported
 - Line: Preview is not available for this file type yet.
-- Header control: Open
-- Empty-state control: Open in default app
+- Header control has no text: true
+- Empty-state control has text: true

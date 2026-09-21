@@ -1,7 +1,9 @@
-- button "返回 live-client": live-client
+- button "返回 @fixture/live-client": "@fixture/live-client"
 - button "夹具操作"
-- heading "fixture-live-client" [level=3]
+- heading "@fixture/live-client" [level=3]
 - text: 夹具标签
+- paragraph:
+  - code: fixture-live-client
 - paragraph:
   - code: "@fixture/live-client"
 - paragraph: 示例配置项

@@ -29,7 +29,7 @@ The shipped Web composition mounts this transport for live plugin changes. Durin
 
 ### Starting the reload chain
 
-Run `pnpm run dev:web` (or a watch process using the shared Client tsdown preset) against the same host; rebuilt plugins are then swapped into the running browser automatically, one at a time. The preset stamps `lib/client.js` after all package-local chunks are written, so a chunk-only rebuild also advances the package revision without Host-side chunk scanning.
+Run `pnpm run dev:web`, which starts the host and the rebuild watchers together (`--no-serve` attaches only the watchers to a host started elsewhere, as does any watch process using the shared Client tsdown preset); rebuilt plugins are then swapped into the running browser automatically, one at a time. The preset stamps `lib/client.js` after all package-local chunks are written, so a chunk-only rebuild also advances the package revision without Host-side chunk scanning.
 
 ### What a reload does
 

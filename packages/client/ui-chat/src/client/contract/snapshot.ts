@@ -74,6 +74,8 @@ export interface ChatLocationNodeIndex {
 export interface ChatTurnProcessPresentation {
   readonly turn: number
   readonly spec: TurnProcessSpec
+  /** Whether the loaded window contains this Turn's `turn/start`; folding is decided per Turn on this fact. */
+  readonly turnStarted: boolean
   readonly turnClosed: boolean
   readonly hasExternalProcess: boolean
   readonly compactAnswer: boolean

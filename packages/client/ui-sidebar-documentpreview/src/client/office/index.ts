@@ -5,7 +5,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-office-to-pdf/remote'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
-import type {} from '@deepseek-ai/dsh-client-connection/client'
 import { documentFileBytes } from '../rpc.ts'
 import { failureLine } from '../failure-line.ts'
 import { documentTabInfoFactory } from '../document/contract.ts'
@@ -15,6 +14,7 @@ import { pdfBodyRegistration } from '../pdf/index.ts'
 import { LazyPdfBody } from '../pdf/LazyPdfBody.tsx'
 import { OfficeBody, type OfficeBodyInjected } from './OfficeBody.tsx'
 import { OfficeFontAction } from './OfficeFontAction.tsx'
+import { officeFace } from './face.ts'
 import { createOfficeStore } from './store.ts'
 import type { Config } from '../../config.ts'
 
@@ -31,7 +31,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  */
 export function apply(ctx: Context, config: Config['office']): void {
   const id = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office'
-  const extensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+  const extensions = ['doc', 'docx', 'ppt', 'pptx']
   ctx.effect(() => ctx.locale.register('sidebarOffice', { zh, en }))
   const t = ctx.locale.bind('sidebarOffice')
   const unavailable: ReadOfficeDocument = (_file, signal) => {
@@ -50,14 +50,17 @@ export function apply(ctx: Context, config: Config['office']): void {
   }, OfficeFontAction)))
   const retainTab = retainDocumentTabs(ctx)
   const documentT = ctx.locale.bind('sidebarDocumentPreview')
+  const face = officeFace(
+    (file, signal) => read(file, signal),
+    failure => 'code' in failure ? failureLine(documentT, failure) : documentT('error.unavailable', { message: failure.message }),
+  )
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
     name: 'sidebar.right.tab.document', key: id, locale: 'sidebarOffice', store,
     children: { 'sidebar.right.tab.document.office.pdf': {
       kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: documentTabInfoFactory } },
     } },
-    inject: (_sessionId, actions): OfficeBodyInjected => ({
-      read: (file, signal) => read(file, signal),
-      describeFailure: failure => 'code' in failure ? failureLine(documentT, failure) : documentT('error.unavailable', { message: failure.message }),
+    inject: (sessionId, actions): OfficeBodyInjected => ({
+      ...face(sessionId, actions),
       retainTab: (tabId, signal) => { retainTab(tabId, signal, actions.forget) },
     }),
   }, OfficeBody)))
@@ -81,7 +84,9 @@ export function apply(ctx: Context, config: Config['office']): void {
     }
     const createCache = () => new OfficePreviewCache(
       async (file, signal) => {
-        const authorized = await scope.remote.workspaceFiles.readBytes(file.sessionId, file.path, { offset: 0, length: 1 }, signal)
+        const authorized = await scope.remote.workspaceFiles.readBytes(
+          file.sessionId, file.path, { range: { offset: 0, length: 1 } }, signal,
+        )
         signal.throwIfAborted()
         if (!authorized.ok) return authorized
         const metadata = await scope.remote.workspaceFiles.stat(file.sessionId, file.path, signal)

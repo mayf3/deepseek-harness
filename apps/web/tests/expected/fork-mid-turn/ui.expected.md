@@ -1,0 +1,16 @@
+- text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. {{clock}}"
+- button "Copy"
+- button "Think"
+- text: Failed
+- 'button "Read The history inherited by this branch records this tool call starting but does not include its result. The parent session may have completed it after the fork point. Decide whether to retry from the tool semantics: retry only if the operation is read-only or idempotent; if it may have side effects, first verify external state or ask the user. Do not retry blindly."'
+- text: Failed
+- 'button "Tool call The history inherited by this branch has no record of this tool call starting. The parent session may have executed it after the fork point. Decide whether to retry from the tool semantics: retry only if the operation is read-only or idempotent; if it may have side effects, first verify external state or ask the user. Do not retry blindly."'
+- text: FORK_BRANCH_USER Summarize what this branch knows about the reads. {{clock}}
+- button "Copy"
+- button "Thought for a while"
+- paragraph: FORK_BRANCH_FIRST this branch has no read results, so I would check what the parent completed before retrying. FORK_BRANCH_DONE.
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation"
+- text: {{clock}}

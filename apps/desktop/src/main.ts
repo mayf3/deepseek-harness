@@ -22,6 +22,7 @@ import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager } from './project-manager.ts'
 import { DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
+import { installMicrophonePermissions } from './microphone-permissions.ts'
 import { DesktopBackendController } from './backend-controller.ts'
 import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
@@ -39,6 +40,7 @@ import { DesktopMandatoryUpdateWindow } from './mandatory-update-window.ts'
 import { DesktopPolicyTestAuth } from './policy-test-auth.ts'
 import { DesktopUpdateDialog, type UpdateDialogOptions } from './update-dialog.ts'
 import { readDesktopRuntime } from './runtime-tree.ts'
+import { DesktopBrowserGuests } from './browser-guests.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -108,16 +110,27 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
   return port
 }
 
+/**
+ * Opaque chrome fallback matching the built-in sidebar palette (the resolved
+ * `--dsw-static-neutral-bluish-900` / `-50` tokens). An approximation for
+ * custom themes: Windows swaps in the renderer's measured palette over the
+ * windowsAppearance IPC, and macOS shows it only while minimized or hidden.
+ * @returns the sidebar fill hex for the active system color scheme.
+ */
+function chromeFallbackFill(): string {
+  return nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb'
+}
+
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
-    height: 840,
-    minWidth: 880,
+    height: 820,
+    minWidth: 520,
     minHeight: 600,
     show,
     ...(process.platform === 'win32' && primary ? {
       titleBarStyle: 'hidden' as const,
-      titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb',
+      titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: chromeFallbackFill(),
         symbolColor: nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115' },
     } : {}),
     // hiddenInset places traffic lights inside the sidebar; sidebar vibrancy
@@ -137,12 +150,45 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
+      webviewTag: primary,
     },
   })
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (['http:', 'https:'].includes(new URL(url).protocol)) void shell.openExternal(url)
     return { action: 'deny' }
   })
+  if (process.platform === 'darwin') {
+    // macOS hides the traffic lights in fullscreen; the page drops its
+    // clearance for them off the html[data-fullscreen] flag this feeds.
+    const sendFullscreen = (): void => {
+      if (!window.isDestroyed()) window.webContents.send(DESKTOP_IPC.windowFullscreen, window.isFullScreen())
+    }
+    window.on('enter-full-screen', sendFullscreen)
+    window.on('leave-full-screen', sendFullscreen)
+    // Reloads and navigations re-register the preload listener; resend the
+    // current state so a fullscreen reload does not fall back to windowed CSS.
+    window.webContents.on('did-finish-load', sendFullscreen)
+    // Deminiaturize reattaches the NSVisualEffectView material late
+    // (electron/electron#25368), so a transparent window shows the desktop
+    // through the sidebar until then. Paint an opaque base while minimized or
+    // hidden so the deminiaturize animation and the reattachment gap show a
+    // solid fill; restoring flips back, and the null -> 'sidebar' transition
+    // forces the material to reattach.
+    const applyBackdrop = (): void => {
+      if (window.isDestroyed()) return
+      if (window.isMinimized() || !window.isVisible()) {
+        window.setVibrancy(null)
+        window.setBackgroundColor(chromeFallbackFill())
+      } else {
+        window.setVibrancy('sidebar')
+        window.setBackgroundColor('#00000000')
+      }
+    }
+    window.on('minimize', applyBackdrop)
+    window.on('hide', applyBackdrop)
+    window.on('restore', applyBackdrop)
+    window.on('show', applyBackdrop)
+  }
   window.webContents.on('context-menu', (_event, { isEditable, selectionText, editFlags }) => {
     const items: MenuItemConstructorOptions[] = []
     if (isEditable) {
@@ -222,6 +268,7 @@ async function main(): Promise<void> {
   const applicationUrl = `${SCHEME}://app/`
   let hostUrl: string | undefined
   let hostCookie: string | undefined
+  const browserGuests = new DesktopBrowserGuests(() => hostUrl)
   let injections: readonly unknown[] = []
   const assertProductSender = (event: IpcMainInvokeEvent): void => {
     assertDesktopSender(event, ['app'])
@@ -251,7 +298,7 @@ async function main(): Promise<void> {
       hostInspectPort, process.env, onFailure,
       development ? join(app.getAppPath(), '.desktop-build', 'targets', `${process.platform === 'darwin' ? 'mac' : 'win'}-${process.arch}`, 'runtime', 'primary-runtime')
         : join(process.resourcesPath, 'runtime', 'primary-runtime'),
-      development ? 'link' : 'runtime', resources)
+      resources)
     return {
       start: async () => {
         const ready = await host.start()
@@ -326,7 +373,7 @@ async function main(): Promise<void> {
     startup ??= (async () => {
       await navigateMain(applicationUrl)
       await backend.start(async () => {
-        await manager.applyRelease(app.isPackaged)
+        await manager.applyRelease()
       })
       if (backend.host !== undefined) updateJournal?.action('workspace-ready')
       // The existing Web document resumes through the boot IPC response.
@@ -398,7 +445,7 @@ async function main(): Promise<void> {
   protocol.handle(SCHEME, (request) => {
     const url = new URL(request.url)
     // Serves shell URLs declared in update-dialog.ts and mandatory-update-window.ts plus their renderer assets.
-    // Removing this route leaves those modal windows empty while their parent remains blocked.
+    // Removing this route leaves those shell windows and embedded documents empty while their parent remains blocked.
     if (url.hostname === 'shell') return serveWebDocument(request, join(app.getAppPath(), 'renderer'))
     if (url.hostname === 'app') {
       if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname.startsWith('/assets/')
@@ -414,6 +461,7 @@ async function main(): Promise<void> {
   })
 
   installDesktopDirectoryPicker(() => mainWindow)
+  installMicrophonePermissions(session.defaultSession, () => mainWindow?.webContents)
 
   ipcMain.handle(DESKTOP_IPC.boot, async (event) => {
     assertDesktopSender(event, ['app'])
@@ -429,6 +477,15 @@ async function main(): Promise<void> {
     }
     if (typeof message !== 'string') throw new Error('dsh desktop: startup failure must be text')
     reportFatal(new Error(message))
+  })
+
+  ipcMain.handle(DESKTOP_IPC.browserAcquire, (event, workspace: unknown) => {
+    assertProductSender(event)
+    return browserGuests.acquire(event.sender, workspace)
+  })
+  ipcMain.handle(DESKTOP_IPC.browserRelease, (event, lease: unknown) => {
+    assertProductSender(event)
+    return browserGuests.release(event.sender, lease)
   })
 
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*'] }, (details, callback) => {
@@ -596,12 +653,15 @@ async function main(): Promise<void> {
   })
   // A custom application menu replaces Electron's default menu, so macOS needs
   // its standard menus and application hide commands declared explicitly.
+  // Keep app.name stable: Electron derives its default userData directory from it.
   const darwin = process.platform === 'darwin'
   const platformMenus: MenuItemConstructorOptions[] = darwin
     ? [{ role: 'fileMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]
     : [{ role: 'editMenu' }]
   const hideCommands: MenuItemConstructorOptions[] = darwin
-    ? [{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }]
+    ? [{ role: 'hide', label: currentDesktopLocale().messages.hideApplication },
+      { role: 'hideOthers', label: currentDesktopLocale().messages.hideOtherApplications },
+      { role: 'unhide', label: currentDesktopLocale().messages.showAllApplications }, { type: 'separator' }]
     : []
   const applicationItems = (): MenuItemConstructorOptions[] => [
     { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
@@ -609,7 +669,8 @@ async function main(): Promise<void> {
     { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
     { type: 'separator' },
     ...hideCommands,
-    { role: 'quit', ...(process.platform === 'win32' ? { label: currentDesktopLocale().messages.exitApplication } : {}) },
+    { role: 'quit', ...(darwin ? { label: currentDesktopLocale().messages.quitApplication }
+      : process.platform === 'win32' ? { label: currentDesktopLocale().messages.exitApplication } : {}) },
   ]
   Menu.setApplicationMenu(process.platform === 'win32' ? null : Menu.buildFromTemplate([{
     label: darwin ? app.name : currentDesktopLocale().messages.application,
@@ -668,6 +729,7 @@ async function main(): Promise<void> {
   const createMainWindow = (): BrowserWindow => {
     const window = createWindow(appPreload, true, true)
     mainWindow = window
+    browserGuests.bind(window)
     window.on('focus', automaticCheck)
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
     window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {

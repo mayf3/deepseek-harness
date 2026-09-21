@@ -347,6 +347,7 @@ function ciSharedStaticGates(): Gate[] {
     pnpmScript('package-dependencies', 'verify-package-dependencies', { label: 'package dependencies' }),
     pnpmScript('dsh-package-licenses', 'verify-dsh-package-licenses', { label: 'DSH package licenses' }),
     pnpmScript('package-invariants', 'verify-package-invariants', { label: 'package invariants' }),
+    pnpmScript('package-meta', 'verify-package-meta', { label: 'package metadata' }),
     pnpmScript('cordis-config', 'verify-cordis-config', { label: 'Cordis config' }),
     ...sharedHygieneGates(),
     pnpmScript('approval-policy', 'test:approval-policy', { label: 'Weighted approval policy' }),
@@ -363,6 +364,7 @@ function sharedHygieneGates(): Gate[] {
     pnpmScript('client-ui-i18n', 'verify-client-ui-i18n', { label: 'client UI i18n' }),
     pnpmScript('client-route-resolution', 'verify-client-route-resolution', { label: 'client route resolution' }),
     pnpmScript('no-bare-dispatcher', 'verify-no-bare-dispatcher', { label: 'proxy-aware dispatchers' }),
+    pnpmScript('no-unknown-casts', 'verify-no-unknown-casts', { label: 'no new unknown casts' }),
   ]
 }
 
@@ -824,6 +826,7 @@ function docSyncLeafGates(options: {
     pnpmExec('docs-site-projection', [
       'vitest', 'run', 'scripts/project-doc-site.spec.ts', 'scripts/verify-doc-site-fragments.spec.ts',
       'website/tests/mermaid-viewer.spec.ts',
+      'website/tests/image-viewer.spec.ts',
       'website/tests/code-groups.spec.ts',
       'website/tests/page-markdown-actions.spec.ts', 'website/tests/raw-markdown.spec.ts',
     ], {
@@ -849,6 +852,7 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     '--config',
     'vitest.e2e.config.ts',
     'apps/cli/tests/profiles/headless/tests/keyless-smoke.e2e.ts',
+    'apps/cli/tests/profiles/headless/tests/source-tool.built.e2e.ts',
     'apps/cli/tests/built-bin.e2e.ts',
     'packages/host/directory-picker-native/tests/built-worker.e2e.ts',
     'packages/sdk/server/tests/built-scope-carrier.e2e.ts',

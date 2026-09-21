@@ -30,6 +30,7 @@ const WINDOWS_SIGNING_ENV_NAMES = [
   'DSH_DESKTOP_WINDOWS_SIGNTOOL',
   'DSH_DESKTOP_WINDOWS_TOKEN_PIN',
   'DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_DIR',
+  'DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY',
 ] as const
 const DESKTOP_UPLOAD_CREDENTIAL_ENV_NAMES = new Set([
   'DOWNLOAD_TEST_COS_SECRET_ID',
@@ -423,6 +424,7 @@ export async function packageTarget(
       ...desktopElectronBuilderArguments(target, true),
       '--config.mac.notarize=false',
     ], electronBuilderEnv)
+    await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
     await withMacOSNotarizationProxy(mac?.notarizationProxy, () => packageMacOSArtifacts({
       arch: target.arch,
       version: packageVersion(join(APP_ROOT, 'package.json'), 'desktop package'),
@@ -431,13 +433,14 @@ export async function packageTarget(
     }, artifact => execute(desktopElectronBuilderArguments(target, false, artifact), electronBuilderEnv)), undefined, undefined, proxyEvent)
   } else if (target.platform === 'darwin') {
     await execute([...desktopElectronBuilderArguments(target, true), '--config.mac.notarize=false'], electronBuilderEnv)
+    await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
     const appPath = join(buildPaths.artifacts, target.arch === 'arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app')
     await withMacOSNotarizationProxy(mac?.notarizationProxy,
       () => notarizeMacOS({ appPath, ...resolveMacOSNotarizationEnvironment(environment) }), undefined, undefined, proxyEvent)
   } else {
     await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv))
+    await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts', ...(invocation.unsigned ? ['--unsigned'] : [])], targetEnv)
   }
-  if (signPrimaryRuntime) await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
   if (!invocation.directory && !invocation.unsigned) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
   if (journal) recordPackagingEvent(journal, { type: 'artifacts', directory: buildPaths.artifacts })
 }

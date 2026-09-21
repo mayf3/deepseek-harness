@@ -9,13 +9,14 @@ kind: "package-reference"
 
 ## 概述
 
-在右侧 Sidebar 预览文件，并切换已注册的渲染器。Markdown 和代码支持分页文本；PDF、HTML 和常见图片接收完整字节；未知扩展名使用纯文本。Office 文档在本地转换为 PDF。tab 提供文件状态、渲染器选择、换行以及自动或手动重新载入。插件可在头部和不支持预览的空态中添加本地打开控件。
+在右侧 Sidebar 预览文件，并切换已注册的渲染器。Markdown 和代码支持分页文本；PDF、HTML、常见图片和表格接收完整字节；未知扩展名使用纯文本。Word 与 PowerPoint 文档在本地转换为 PDF；表格在浏览器内打开。tab 提供文件状态、渲染器选择、换行以及自动或手动重新载入。插件可在头部和不支持预览的空态中添加本地打开控件。
 
 ## 目录
 
 - [注册了什么](#what-it-registers)
 - [地址](#addresses)
 - [怎么读](#how-it-reads)
+- [Excel 预览](#excel-preview)
 - [Office 预览](#office-preview)
 - [导航](#navigation)
 - [模型体验](#model-experience)
@@ -33,12 +34,14 @@ kind: "package-reference"
 
 文档实现在 `ctx.documentPreviews.register({ id, extensions, binaryExtensions?, priority, title, loading, wrap? })` 注册元数据，并以相同 `id` 向 keyed、Session 作用域的子 slot `sidebar.right.tab.document` 注册正文。`binaryExtensions` 列出 `extensions` 中不可按文本阅读的后缀，这些后缀不提供纯文本选项。两处注册都由 effect 持有，通过 `ctx.slots.inject` 等待子 slot。正文接收 `resourceAddress`、`content`、`wrap`、`scrollportRef`、`addResource`、`setResources` 和标准 `useTabInfo`/`useResource` 钩子。依赖成员由 tab 持有的 `ResourceGroup` 管理；替换依赖始终保留根 Resource。内部滚动元素挂载 `scrollportRef`；卸载时恢复共享正文的滚动职责。注册表保留所有匹配备选：`extension`（默认）优先于 `builtin`，随后按更长的后缀、再按注册顺序排列。所选实现仍可用时，下拉选择保持不变。HTML、SVG 和未匹配的扩展名保留纯文本回退，与加载方式无关。
 
-`loading: 'text-pages'` 和 `'bytes-complete'` 使用共享文件读取器。选择 `'renderer'` 时，所选正文在读取任何字节前挂载，并接收 `content: { kind: 'renderer', revision, loaded, failed, reload }`。其注入回调负责内容加载、错误和取消。`loaded(version)` 记录已展示的源版本并结束加载。`failed()` 结束加载但不记录成功版本，使后续文件变化可以重试；已被替换的 revision 所发出的报告会被忽略。`reload()` 增加 revision，正文据此取消并替换当前请求。正文也在卸载和 tab 关闭时取消请求，将已完成内容保留在自己声明的 tab store 中，并在 tab 结束时释放。[Office 预览](#office-preview) 使用此模式，转换后的字节和字体元数据不会进入共享文件 store。
+`loading: 'text-pages'` 和 `'bytes-complete'` 使用共享文件读取器。选择 `'renderer'` 时，所选正文在读取任何字节前挂载，并接收 `content: { kind: 'renderer', revision, loaded, failed, reload }`。其注入 face 负责内容加载、错误、store 更新和取消。`loaded(version)` 记录已展示的源版本并结束加载。`failed()` 结束加载但不记录成功版本，使后续文件变化可以重试；已被替换的 revision 所发出的报告会被忽略。`reload()` 增加 revision，正文据此取消并替换当前请求。正文也在卸载和 tab 关闭时取消请求，将已完成内容保留在自己声明的 tab store 中，并在 tab 结束时释放。[Office 预览](#office-preview) 使用此模式，转换后的字节和字体元数据不会进入共享文件 store。
 
 <a id="addresses"></a>
 ## 地址
 
 tab 使用 `fileAddressFor` 构造的 Session 地址，携带相对或绝对路径。`hostFileOf(address)` 仅从地址取得 Session，不接收外部 Session 参数，也不借用当前或 Tab Session。Host 通过 Session 文件系统解析文件及关联路径，由该后端控制读取权限。任何 UI（包括 Global 组件）都共享同一完整地址的元数据。[Workspace Files README](../../api/workspace-files/README.zh.md) 定义这些规则；渲染器选择不改变导航地址。
+
+全部文本分页加载完成后，Markdown 图片通过已鉴权的 `/api/file` 路由读取绝对文件路径，以及相对于源文档所在目录的路径。相对图片等待 Host 返回文档绝对路径。URL 转义只解码一次；查询参数与片段后缀不计入文件名。HTTP(S) 图片保留原始 URL，加载失败的图片显示 alt 文本。本地图片要求应用基址为 HTTP(S) URL；图片文件不加入自动刷新依赖。
 
 <a id="how-it-reads"></a>
 ## 怎么读
@@ -49,10 +52,10 @@ Web 和桌面端均通过开发者工具选择 HTML 预览策略。渲染器从�
 
 - 资源快照仅包含 `status`、`value` 和 `failure`；`value` 是 `WorkspaceFileStat` 元数据。提供方可用后，内容读取无需等待首个元数据帧。观察失败优先于 Preview 的变更提示显示；元数据不可用时保留已加载内容。
 - **文本页** —— 纯文本、Markdown 和代码通过 inject 回调调用 `remote.workspaceFiles.read(sessionId, path, { offset }, signal)`。首次挂载读取第一页；滚动到正文末尾或点击 **加载更多** 会读取下一页，直到 `eof`。owner 以 `{ kind: 'text', text, pages, eof }` 提供累计前缀，包含源码偏移和行数。Markdown 和代码增量渲染此前缀，不把每页当成独立文档。第一页之后到达的更新版本页会使读取从头开始，避免混合版本。尚无内容时，失败会以文件类型图标、说明和该失败对应的出路（重试、unpreviewable 子 slot，或什么都不给）填满正文；较晚的失败保留已有内容并在其下提供重试。
-- **完整字节** —— PDF、HTML 和常见图片通过 inject 回调调用 `remote.workspaceFiles.readAll(sessionId, path, signal)`。`rpc.ts` 将线路上的 base64 解码为 `data: Uint8Array<ArrayBuffer>`，供 `{ kind: 'bytes', data }` 使用。Host 的 `maxFileBytes` 上限拒绝超大文件，不截断。PDF 在传给 worker 前复制保留的字节，使 Preview 缓冲区仍可使用。字节仅保存在临时视图状态中，绝不进入持久布局或 Session JSONL。加载模式变化会淘汰先前结果。
-- **重新载入** —— 手动重新载入仅让当前 Preview tab 通过自己的 Remote 回调重读，保留滚动偏好并淘汰旧请求。ResourceGroup 成员变化后，自动刷新使用相同回调。各成员首次元数据仅建立基线，不触发重新载入或首读版本对账；后续在读取期间收到的变化仍会留待下一次刷新。读取既不刷新共享元数据，也不清除其它 tab 的提示。
+- **完整字节** —— PDF、HTML、常见图片和表格调用 `remote.workspaceFiles.readBytes(sessionId, path, {}, signal)`。二进制 Remote 直接返回 `data: Uint8Array<ArrayBuffer>`，供 `{ kind: 'bytes', data }` 使用。Host 的 `maxFileBytes` 上限拒绝超大文件，不截断。PDF 和表格渲染器在传给 Worker 前复制保留的字节，使 Preview 缓冲区仍可使用。字节仅保存在临时视图状态中，绝不进入持久布局或 Session JSONL。加载模式变化会淘汰先前结果。
+- **重新载入** —— 手动重新载入仅让当前 Preview tab 通过自己的 Remote 回调重读，保留滚动偏好并淘汰旧请求。`ResourceGroup` 成员变化后，自动刷新使用相同回调。各成员首次元数据仅建立基线，不触发重新载入或首读版本对账；后续在读取期间收到的变化仍会留待下一次刷新。读取既不刷新共享元数据，也不清除其它 tab 的提示。
 
-开启开发者工具时，HTML 以贴合正文四边的 Blob iframe 运行，沙箱属性严格为 `sandbox="allow-scripts"`，不含 `allow-same-origin`；脚本无法访问父应用的源或文件读取接口。渲染器通过普通 inject 回调调用 `remote.workspaceFiles.readRelated`，加载直接声明的相对 `.js` 经典脚本和 `.css` 样式表；固定安全上限为单个资源 4 MiB、总计 32 MiB、64 个不同资源。Host 代码解析关联路径，`rpc.ts` 解码返回的字节。依赖 Resource 在 `readRelated` 返回后加入，使用返回的 `absolutePath`，失败时则使用字符串类型的 `error.details.path`；没有 Host 路径时，Client 不自行猜测。在渲染器内部，base64 仅用于把 iframe 引导载荷嵌入脚本文本。`<base href>` 将依赖解析交给浏览器，HTTPS 资源也由浏览器处理。本地模块 import、CSS `url()`/`@import` 和动态 `fetch` 不使用 Host 文件访问。读取失败、无效 UTF-8 或超出上限都使预览失败，不发布部分资源包。替换或卸载文档会释放其 Blob URL。
+开启开发者工具时，HTML 以贴合正文四边的 Blob iframe 运行，沙箱属性严格为 `sandbox="allow-scripts"`，不含 `allow-same-origin`；脚本无法访问父应用的源或文件读取接口。渲染器通过注入的 Remote 回调，加载直接声明的相对 `.js` 经典脚本和 `.css` 样式表；固定安全上限为单个资源 4 MiB、总计 32 MiB、64 个不同资源。Host 代码解析关联路径，带 `baseFile` 的 `readBytes` 返回原生字节。依赖 Resource 在读取返回后加入，使用返回的 `absolutePath`，失败时则使用字符串类型的 `error.details.path`；没有 Host 路径时，Client 不自行猜测。在渲染器内部，base64 仅用于把 iframe 引导载荷嵌入脚本文本。`<base href>` 将依赖解析交给浏览器，HTTPS 资源也由浏览器处理。本地模块 import、CSS `url()`/`@import` 和动态 `fetch` 不使用 Host 文件访问。读取失败、无效 UTF-8 或超出上限都使预览失败，不发布部分资源包。替换或卸载文档会释放其 Blob URL。
 
 PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态图片上下文中渲染，带 12px 内边距和圆角。宽图按固有纵横比缩小到面板宽度，小图按固有 CSS 像素尺寸居中，超高图纵向滚动。渲染器既不提供缩放，也不提供拖拽平移。SVG 标记绝不进入应用 DOM 或 iframe，因此其中的脚本无法执行，也无法访问父页面。替换或卸载图片会撤销其 Blob URL。
 
@@ -60,10 +63,29 @@ PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态�
 
 首次读取、追加页及 HTML/PDF/图片准备共用 ongoing `StateDot` loading，其标签暴露给辅助技术，并遵循减少动态效果偏好；内容出现前的每个等待都把 loading 居中在面板中，打开文件到正文出现始终是同一位置的一个标记。下一页加载期间保留已显示的内容。PDF 正文仅在 PDF 预览挂载时加载包内 `client.pdf.js` chunk；PDF.js、Worker 源码和内嵌支持数据不会进入启动 `client.js`。PDF 页面贴边占满面板宽度，组成一个纵向连续序列并在接近视口时惰性渲染；未渲染的页以安静的 3:4 占位块保持位置。PDF.js 官方 TextLayerBuilder 在与画面重合的文字层上管理选区边界和复制文本规范化。配套样式不高亮空白换行；对齐同时考虑 PDF 页面单位、页面旋转与视口宽度变化，页面释放时取消两层渲染。纯图片 PDF 不包含可选取的文字。代码预览默认显示源码行号，但复制文本不包含行号；纯文本与代码使用相同字号和行高。代码直接坐在分栏自身的背景上，而不是会话卡片的填充色；复制条与占满剩余高度的内部滚动区相邻，因此横纵滚动条都从复制控件下方开始。
 
+<a id="excel-preview"></a>
+## Excel 预览
+
+直接在浏览器中打开 `.xlsx`、`.xls`、`.csv` 和 `.tsv`，支持工作表标签、单元格选择、复制和只读公式栏。XLSX 保留字体、纯色填充、边框、数字格式、富文本、合并单元格、行列尺寸、隐藏行列及工作表，以及冻结标题。XLS 保留已保存的值、公式、数字格式、合并及可用的行列元数据；不支持字体、边框和冻结窗格。工作簿显示已保存的公式结果而不重新计算；缺少的结果保持为空，公式栏旁的紧凑提示会标记显示结果可能不完整或不准确的工作簿。表格预览不调用 Office 转换服务。
+
+CSV 和 TSV 默认使用表格查看器，也可选择纯文本。两者分别以逗号和制表符分隔字段，支持引号内分隔符、转义引号、多行字段、空字段和不等长行。首行仍作为数据。值保持为字面字符串，包括前导零、日期、布尔值和类似公式的文本。文本文件支持 UTF-8 或带 BOM 的 UTF-16；无效编码会显示转换提示。引号字段格式错误会使表格预览失败，不会静默丢弃数据。
+
+在同一个 `ui-sidebar-documentpreview` 条目上配置 `excel`。这些限制补充 Host 的完整文件读取限制，但不限制浏览器进程内存或解压分配量。
+
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `excel.maxBytes` | `16777216`（16 MiB） | 最大源文件字节数 |
+| `excel.maxCells` | `250000` | 所有工作表矩形区域的最大合计单元格数，包含空单元格 |
+| `excel.timeoutMs` | `15000` | 解析 Worker 的最长存活时间，单位毫秒 |
+
+惰性 Excel chunk 打包 FortuneSheet、用于 XLSX 的 ExcelJS、用于 XLS 的 SheetJS CE，以及用于 CSV/TSV 的 PapaParse。包内独立于 React 的适配层将解析结果直接映射为 FortuneSheet 单元格，并复用单元格格式化和初始选区。第三方许可证文本保留在发布的 chunk 中；SheetJS CE 保留其 Apache-2.0 条款。每次解析拥有一个独立可释放的 Worker，并传输所保留文件字节的副本；内容替换、卸载、失败或超时都会终止该 Worker。样式表仅作用于 Excel 预览区域。暂不支持图表、绘图/图片、数据透视表、条件格式、编辑、重新计算和导出；字体可用性、Excel 列宽近似和主题色明暗近似会影响保真度。超链接显示为文本，不加载目标地址。ExcelJS 会再次解码 XLSX 字符串公式缓存结果中的实体写法；保存的字面文本 `&lt;` 会显示为 `<`。
+
+只读公式栏按字面显示公式和单元格文本。复制时保留 HTML 表格，并转义单元格内容，包括已保存的公式结果。[FortuneSheet 补丁决策](../../../.agents/notes/implemented/feature/2026-09-16-browser-excel-preview.zh.md)说明升级依赖时保留这些行为与工作表选区的要求。
+
 <a id="office-preview"></a>
 ## Office 预览
 
-将 `.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt` 和 `.pptx` 打开为 PDF 预览，使用与 PDF 文件相同的加载状态、控件、取消和文本选择能力。[Host 提供方](../../document/office-to-pdf/README.zh.md)负责本地转换；无效文件、转换失败和超时会显示本地化消息。缺少 Host 服务时显示配置引导。
+将 `.doc`、`.docx`、`.ppt` 和 `.pptx` 打开为 PDF 预览，使用与 PDF 文件相同的加载状态、控件、取消和文本选择能力。[Host 提供方](../../document/office-to-pdf/README.zh.md)负责本地转换，并为其他消费者保留电子表格转换 API。受支持的无效文件、转换失败和超时会显示本地化消息。缺少 Host 服务时显示配置引导。
 
 [Web bundle](../../bundle/web-app/README.zh.md) 以 `ui-sidebar-documentpreview` 挂载本包。通过该条目的 `office` 设置配置临时 Office 缓存；[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-client-ui-sidebar-documentpreview)定义可接受的值。设置注入到每个页面；修改 YAML 后重新加载浏览器页面。
 
@@ -82,9 +104,9 @@ PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态�
 <details>
 <summary>Office 实现——点击展开</summary>
 
-Office 注册、加载、缓存和字体提示位于 `src/client/office/`。Office 正文持有转换后的 PDF 字节和字体元数据，并声明嵌套 PDF slot，复用惰性 PDF 正文及其 tab 阅读状态。keyed slot `sidebar.right.tab.document.action` 将渲染器操作放在刷新按钮前。Office 操作与正文共享 store，仅读取当前 revision 的字体元数据。Host 渲染器缺失时，注册仍然可用；可选的 `remote.officeToPdf` 和 `remote.workspaceFiles` 注入提供转换与版本检查回调，移除后恢复不可用提示。注册和 tab 状态保留都遵循 effect 生命周期。[转换服务](../../document/office-to-pdf/README.zh.md)拥有 Host Remote 方法，由 `api/remotes` 挂载。
+Office 注册、加载、缓存和字体提示位于 `src/client/office/`。注入的 Office face 通过已声明的 store action 写入转换后的 PDF 字节、字体元数据和失败。Office 正文触发加载，将取消绑定到自身生命周期，并声明嵌套 PDF slot，复用惰性 PDF 正文及其 tab 阅读状态。keyed slot `sidebar.right.tab.document.action` 将渲染器操作放在刷新按钮前。Office 操作与正文共享 store，仅读取当前 revision 的字体元数据。Host 渲染器缺失时，注册仍然可用；可选的 `remote.officeToPdf` 和 `remote.workspaceFiles` 注入提供转换与版本检查回调，移除后恢复不可用提示。注册和 tab 状态保留都遵循 effect 生命周期。[转换服务](../../document/office-to-pdf/README.zh.md)拥有 Host Remote 方法，由 `api/remotes` 挂载。
 
-共享 `documentFileBytes()` 辅助函数将普通文件与转换后 PDF 的响应解码到一个独立持有的字节缓冲区，不会将字节展开为 JavaScript 数组元素。渲染器以只读方式借用保留的字节，并在传给 Worker 前复制。
+`documentFileBytes()` 辅助函数将 Office 转换后的 PDF 响应解码到一个独立持有的字节缓冲区，不会将字节展开为 JavaScript 数组元素。渲染器以只读方式借用保留的字节，并在传给 Worker 前复制。
 
 </details>
 
@@ -106,7 +128,7 @@ Office 注册、加载、缓存和字体提示位于 `src/client/office/`。Offi
 
 <a id="known-limitations-and-deferred-work"></a>
 - **预览而非编辑。** 查看器不提供文件编辑或共享搜索接口；目录地址以 `not-regular-file` 失败。未知扩展名使用纯文本读取，仍受其 UTF-8/NUL 检查限制。
-- **Office 转换限制。** 预览不启动原生 Office 编辑器，也不下载引擎。二进制 `.doc`、`.xls` 和 `.ppt` 文件不返回缺失字体诊断。转换保真度与资源限制由 [LibreOffice 提供方](../../document/office-to-pdf/README.zh.md)负责。
+- **Office 转换限制。** 预览不启动原生 Office 编辑器，也不下载引擎。二进制 `.doc` 和 `.ppt` 文件不返回缺失字体诊断。转换保真度与资源限制由 [LibreOffice 提供方](../../document/office-to-pdf/README.zh.md)负责。
 - **文本顺序分页，完整文件受限。** 定位到较深处的源码行需要先加载此前各页；PDF、HTML 和图片必须取得 Host `maxFileBytes` 上限内的完整结果。
 - **字节视图不恢复滚动位置。** PDF、HTML 与图片的渲染器重新挂载或重新载入时可能回到顶部；图片适配面板宽度、不产生横向滚动，HTML iframe 的滚动属于其不透明浏览上下文。
 - **本地 HTML 依赖集合有限。** 只打包直接引用的经典 `.js` 脚本和 `.css` 样式表。浏览器解析的资源仍受浏览器源与网络规则限制；iframe 不获得运行时文件读取桥接。

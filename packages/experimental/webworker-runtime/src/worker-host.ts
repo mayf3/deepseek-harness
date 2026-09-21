@@ -230,7 +230,7 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
         provideCmdline(ctx: unknown, host: { args: readonly string[]; exit: (code: number) => void }): void
       }
 
-      const { patches, presetOverlay } = bootPatches(loader, mounted, configPath, root)
+      const { patches } = bootPatches(loader, mounted, configPath, root)
       const ctx = await appBoot.boot('dsh-webworker', configPath, patches, (hostCtx) => {
         // Before any entry mounts: the Loader would otherwise fall back to the
         // runtime's own dynamic import for every row.
@@ -251,12 +251,14 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
       }
       const handler = connection.createSharedFetchHandler('/api')
       const usage = loader.usage()
-      console.info(`webworker host: tree active (modules=${String(usage.modules)}, data overlays=${String(overlays.length)}, preset root overlay=${presetOverlay ? 'applied' : 'already in roster'}, direct lane=connection.createSharedFetchHandler, als causality=${options.alsCausality === undefined ? 'inert' : 'snapshot/restore'}, image lowering=${LOWERING_VERSION})`)
+      console.info(`webworker host: tree active (modules=${String(usage.modules)}, data overlays=${String(overlays.length)}, direct lane=connection.createSharedFetchHandler, als causality=${options.alsCausality === undefined ? 'inert' : 'snapshot/restore'}, image lowering=${LOWERING_VERSION})`)
 
       tunnel.serve({
         directFetch: (request: Request) => handler.fetch(request),
         bootPayload: () => readBootPayload(ctx),
-        openStream: typertGateway.wireStream.open,
+        // The worker tree serves its own page: every stream speaks for the operator.
+        openStream: (endpoint, payload, uplink, signal) =>
+          typertGateway.wireStream.open(endpoint, payload, uplink, undefined, signal),
         streamFailure: typertGateway.wireStream.failure,
       })
     } catch (reason) {
@@ -346,29 +348,19 @@ function requireLoweredImage(vfs: MemoryVfs, path: string): void {
   }
 }
 
-/**
- * The shipped preset root, as the application layer that owns the composition
- * supplies it.
- *
- * A launcher appends this root itself rather than writing it into the roster —
- * `apps/cli` does it in `composeProfile` (`profile-boot.ts:159-166`) because only
- * the application knows where its own presets sit. The worker's presets travel
- * in the image, so the same overlay names their virtual path. Patching replaces
- * a row's whole `config`, so the current one is read and spread, and a roster
- * that already names roots keeps them.
- * @param loader - Module loader, for the image's YAML reader.
- * @param vfs - Filesystem holding the composed configuration.
- * @param configPath - Composed configuration path.
- * @param root - Virtual root.
- * @returns Boot patches (preset root overlay, frontend serving off) and
- * whether the preset overlay was applied.
+/** Select plaintext session persistence for the in-memory Worker filesystem.
+ * @param loader Module loader for the image's YAML reader.
+ * @param vfs Filesystem holding the composed configuration.
+ * @param configPath Composed configuration path.
+ * @param root Virtual root used to resolve YAML packages.
+ * @returns Boot patches for the configured JSONL provider.
  */
 function bootPatches(
   loader: WorkerModuleLoader,
   vfs: MemoryVfs,
   configPath: string,
   root: string,
-): { patches: unknown[]; presetOverlay: boolean } {
+): { patches: unknown[] } {
   const text = vfs.readFileSync(configPath, 'utf8') as string
   let rows: unknown
   if (configPath.endsWith('.json')) {
@@ -394,22 +386,13 @@ function bootPatches(
       : {}) as Record<string, unknown>
 
   const patches: unknown[] = []
-  let presetOverlay = false
-  const presets = find(rows, 'agent-presets')
-  if (presets !== undefined && configOf(presets).roots === undefined) {
-    presetOverlay = true
-    patches.push({
-      id: 'agent-presets',
-      config: { ...configOf(presets), roots: [{ path: join(root, 'config/agent-presets'), trust: 'system' }] },
-    })
-  }
   // The worker carries no compression codec, and the VFS is in-memory anyway:
   // the JSONL backend's plaintext path is the composition's one legal encoding.
   const jsonl = find(rows, 'session-persistence-jsonl')
   if (jsonl !== undefined) {
     patches.push({ id: 'session-persistence-jsonl', config: { ...configOf(jsonl), compression: 'none' } })
   }
-  return { patches, presetOverlay }
+  return { patches }
 }
 
 /**

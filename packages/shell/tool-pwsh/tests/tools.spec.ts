@@ -32,9 +32,12 @@ import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
-import type { ShellProcessRead } from '@deepseek-ai/dsh-shell'
+import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
 import { processOutcome } from '../src/background.ts'
-import { renderPwshProcessRead, renderPwshResult } from '../src/render.ts'
+import { renderPwshResult } from '../src/render.ts'
+
+/** Empty offset readers for fakes that never produce output. */
+const silentReader = { readFrom: (fromByte: number) => ({ text: '', nextOffset: fromByte, lossy: false }) }
 
 const testToolSignal = new AbortController().signal
 
@@ -97,20 +100,19 @@ function runResult(stdout: string, overrides?: Partial<ShellRunResult>): ShellRu
   }
 }
 
-/** A settled successful background handle; overrides script failure shapes. */
+/** A settled successful background handle whose stdout the registry pump reads by offset (ASCII: offsets are string indexes). */
 function fakeProcess(delta = 'bg-ok\n'): ShellProcess {
-  let consumed = false
   return {
     status: 'completed',
     exitCode: 0,
     signal: null,
     done: Promise.resolve(),
-    readOutput: () => {
-      if (consumed) return { delta: '', lossy: false }
-      consumed = true
-      return { delta, lossy: false }
-    },
+    readOutput: () => ({ delta: '', lossy: false }),
     kill: () => false,
+    observed: {
+      stdout: { readFrom: (fromByte: number) => ({ text: delta.slice(fromByte), nextOffset: delta.length, lossy: false }) },
+      stderr: { readFrom: (fromByte: number) => ({ text: '', nextOffset: fromByte, lossy: false }) },
+    },
   }
 }
 
@@ -124,6 +126,7 @@ function killableProcess(): ShellProcess {
     signal: null,
     done,
     readOutput: () => ({ delta: '', lossy: false }),
+    observed: { stdout: silentReader, stderr: silentReader },
     kill: () => {
       if (proc.status !== 'running') return false
       proc.status = 'killed'
@@ -1018,58 +1021,6 @@ describe('renderPwshResult sandbox markers', () => {
   })
 })
 
-describe('renderPwshProcessRead', () => {
-  const base: ShellProcessRead = { delta: 'out\n', lossy: false }
-
-  it('returns the delta verbatim for a lossless read', () => {
-    expect(renderPwshProcessRead(base)).toBe('out\n')
-    expect(renderPwshProcessRead({ delta: '', lossy: false })).toBe('')
-  })
-
-  it('appends the loss notice with the available spill paths', () => {
-    expect(renderPwshProcessRead({ ...base, lossy: true, stdoutSpillPath: 'C:\\spill\\out.log' }))
-      .toBe('out\n[some output was dropped from memory; full output: C:\\spill\\out.log]')
-    expect(renderPwshProcessRead({
-      ...base,
-      lossy: true,
-      stdoutSpillPath: 'C:\\spill\\out.log',
-      stderrSpillPath: 'C:\\spill\\err.log',
-    }))
-      .toBe('out\n[some output was dropped from memory; full output: C:\\spill\\out.log, C:\\spill\\err.log]')
-  })
-
-  it('reports (unavailable) when a lossy read has no safe spill path', () => {
-    expect(renderPwshProcessRead({ ...base, lossy: true }))
-      .toBe('out\n[some output was dropped from memory; full output: (unavailable)]')
-  })
-
-  it('an empty lossy delta is the notice alone', () => {
-    expect(renderPwshProcessRead({ delta: '', lossy: true, stderrSpillPath: 'C:\\spill\\err.log' }))
-      .toBe('[some output was dropped from memory; full output: C:\\spill\\err.log]')
-  })
-
-  it('inserts the separating newline only when the delta lacks one', () => {
-    expect(renderPwshProcessRead({ delta: 'tail', lossy: true }))
-      .toBe('tail\n[some output was dropped from memory; full output: (unavailable)]')
-    expect(renderPwshProcessRead({ delta: 'tail\n', lossy: true }))
-      .toBe('tail\n[some output was dropped from memory; full output: (unavailable)]')
-  })
-
-  it('appends the runner-failed notice (denial outranked)', () => {
-    expect(renderPwshProcessRead({ delta: 'x', lossy: false }, { mode: 'read-only', denied: true, runnerFailed: true }))
-      .toBe('x\n[sandbox: the sandbox runner itself failed under read-only mode — the command did not run; this is a sandbox problem, not a command failure]')
-  })
-
-  it('appends the denial marker and hints only when escalation is advertised', () => {
-    expect(renderPwshProcessRead({ delta: 'x', lossy: false }, { mode: 'read-only', denied: true }))
-      .toBe('x\n[sandbox: file access denied under read-only mode]')
-    expect(renderPwshProcessRead({ delta: 'x', lossy: false }, { mode: 'read-only', denied: true }, ['workspace-write']))
-      .toBe('x\n[sandbox: file access denied under read-only mode]\n'
-        + '[sandbox: escalation available — retry this exact command once with sandbox_permissions '
-        + '(the narrowest wider mode that suffices) + justification; the approval prompt asks the user]')
-  })
-})
-
 describe('processOutcome', () => {
   function settled(over: Partial<ShellProcess>): ShellProcess {
     return {
@@ -1078,6 +1029,7 @@ describe('processOutcome', () => {
       signal: null,
       done: Promise.resolve(),
       readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
       kill: () => false,
       ...over,
     }
@@ -1101,5 +1053,15 @@ describe('processOutcome', () => {
   it('defensively reads a null exit code as 0 (handle shapes from other executors)', () => {
     expect(processOutcome(settled({ exitCode: null })))
       .toEqual({ status: 'completed', detail: 'exit code: 0' })
+  })
+
+  it('appends sandbox facts to the terminal detail', () => {
+    const denied = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: true } }), ['workspace-write'])
+    expect(denied.detail).toBe(`exit code: 1; ${sandboxDenialMarker('read-only')} ${escalationHintMarker('command')}`)
+    const deniedWithoutEscalation = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: true } }))
+    expect(deniedWithoutEscalation.detail).toBe(`exit code: 1; ${sandboxDenialMarker('read-only')}`)
+    const runnerFailed = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: false, runnerFailed: true } }))
+    expect(runnerFailed.detail).toContain('the sandbox runner itself failed under read-only mode')
+    expect(processOutcome(settled({ sandbox: { mode: 'read-only', denied: false } })).detail).toBe('exit code: 0')
   })
 })

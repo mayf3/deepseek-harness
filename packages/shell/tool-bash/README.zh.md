@@ -56,11 +56,11 @@ kind: "package-reference"
 <a id="running-long-commands-in-the-background"></a>
 ### 后台运行长时间命令
 
-传入 `run_in_background: true` 会准入任务并立即返回 job id；限制准备可能仍在进行，且不设后台执行超时。进程可用前输出为空。任务取消会中止准备并停止随后返回的进程；启动失败使已准入任务以失败状态结算。agent 用 `job_output` 读取输出（除非 `wait: true`，否则非阻塞）、用 `job_list` 列出任务、用 `job_kill` 停止任务；完成的任务会在会话内通知拥有它的 agent。后台支持需要挂载通用任务运行时（`dsh-jobs-local`）及其控制工具（`dsh-tool-jobs`）。
+传入 `run_in_background: true` 会准入任务并立即返回 job id；限制准备可能仍在进行，且不设后台执行超时。进程可用前输出为空。任务取消会中止准备并停止随后返回的进程；启动失败使已准入任务以失败状态结算。agent 用 `job_output` 读取输出（除非 `wait: true`，否则非阻塞）、用 `job_list` 列出任务、用 `job_kill` 停止任务；完成的任务会在会话内通知拥有它的 agent。后台支持需要挂载通用任务运行时（`dsh-jobs-local`）及其控制工具（`dsh-tool-jobs`）。后台 job 把运行的非消费 `observed` 读取器交给 job 注册表作为拉式源；注册表按自己的节奏（`dsh-jobs-local` 的 `pumpPollMs`）把它们泵入 job 的输出环，Web 客户端由此流式看到实时输出，模型的 `job_output` 读取则经另一个游标消费同一份字节。读取器抛错只记录一次，该流就此停止，job 继续跑到自己的结算。输出环是尽力而为的实时预览：stdout 与 stderr 按轮询轮次复制，同一个轮询窗口内两条流的写入会先 stdout 后 stderr 出现，而不是按写入顺序。
 
 ### 沙箱执行与升权
 
-当已挂载的执行器约束命令（例如 `dsh-bash-sandbox`）时，被阻止的文件操作会报告为 `[sandbox: file access denied under <mode> mode]`——这是策略拒绝，不是命令失败。模型随后可以在同一轮次中用 `sandbox_permissions`（满足需要的最窄更宽模式）与一句 `justification` 重试完全相同的命令一次；该重试引发的审批提示就是用户同意的方式。只有发生真实拒绝后才请求更宽权限；被拒绝的升权对该命令即为最终结果。重复当前模式无需审批即可执行，更窄目标则在执行前失败。
+当已挂载的执行器约束命令（例如 `dsh-bash-sandbox`）时，被阻止的文件操作会报告为 `[sandbox: file access denied under <mode> mode]`——这是策略拒绝，不是命令失败。模型随后可以在同一轮次中用 `sandbox_permissions`（满足需要的最窄更宽模式）与一句 `justification` 重试完全相同的命令一次；该重试引发的审批提示就是用户同意的方式。只有发生真实拒绝后才请求更宽权限；被拒绝的升权对该命令即为最终结果。重复当前模式无需审批即可执行，更窄目标则在执行前失败。未提供 `sandbox_permissions` 时，`justification` 可以省略、为空字符串或仅含空白；未指定模式却提供非空理由会被拒绝。重复当前生效模式时也可省略理由或提供空白理由。请求不同模式时必须提供非空理由；升权仍需审批。
 
 ### 可能出什么问题
 

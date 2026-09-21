@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { ShellExecutor } from '@deepseek-ai/dsh-shell'
-import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -22,8 +22,12 @@ import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
+import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
 import { processOutcome } from '../src/background.ts'
-import { renderProcessRead, renderResult } from '../src/render.ts'
+import { renderResult } from '../src/render.ts'
+
+/** Empty offset readers for fakes that never produce output. */
+const silentReader = { readFrom: (fromByte: number) => ({ text: '', nextOffset: fromByte, lossy: false }) }
 
 const testToolSignal = new AbortController().signal
 
@@ -152,6 +156,7 @@ class RecordingSandboxExecutor extends ShellExecutor {
       done: Promise.resolve(),
       sandbox: { mode: spec.sandboxPolicy?.mode ?? 'read-only', denied: false },
       readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
       kill: () => false,
     }
   }
@@ -181,6 +186,7 @@ class CountingStartExecutor extends ShellExecutor {
       signal: null,
       done: Promise.resolve(),
       readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
       kill: () => false,
     }
   }
@@ -619,6 +625,38 @@ describe('sandbox escalation through the generic task producer', () => {
     }
   })
 
+  it.each([undefined, '', ' \t\n'])('runs without escalation for justification %j', async (justification) => {
+    const { ctx, bash } = await setupSandboxed(true)
+    try {
+      const prompted = vi.fn()
+      ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
+      const result = await call(ctx, 'bash', {
+        command: 'true', description: 'ordinary', ...justification === undefined ? {} : { justification },
+      }, sandboxAgent('workspace-write'))
+      expect(result.isError, text(result)).toBe(false)
+      expect(text(result)).toBe('ok')
+      expect(bash.modes).toEqual(['workspace-write'])
+      expect(prompted).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each(['', ' \t\n'])('rejects an explicit mode with blank justification %j before execution', async (justification) => {
+    const { ctx, bash } = await setupSandboxed(true)
+    try {
+      const prompted = vi.fn()
+      ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
+      const result = await call(ctx, 'bash', { ...escalate, justification }, sandboxAgent())
+      expect(text(result)).toContain('invalid justification: expected a non-empty sentence')
+      expect(result.isError).toBe(true)
+      expect(bash.modes).toEqual([])
+      expect(prompted).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('rejects injected escalation without a sandbox and narrower escalation without prompting', async () => {
     const plain = await setup()
     expect(text(await call(plain, 'bash', escalate))).toContain('not available in this composition')
@@ -644,6 +682,25 @@ describe('sandbox escalation through the generic task producer', () => {
     const result = await call(ctx, 'bash', { ...escalate, sandbox_permissions: mode }, sandboxAgent(mode))
     expect(result.isError).toBe(false)
     expect(bash.modes).toEqual([mode])
+  })
+
+  it.each(['workspace-write', 'danger-full-access'] as const)('runs a repeated %s request without a reason or approval', async (mode) => {
+    const { ctx, bash } = await setupSandboxed(true)
+    try {
+      const prompted = vi.fn()
+      ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
+      for (const justification of [undefined, '', ' \t\n']) {
+        const result = await call(ctx, 'bash', {
+          command: 'true', description: 'repeat current mode', sandbox_permissions: mode,
+          ...justification === undefined ? {} : { justification },
+        }, sandboxAgent(mode))
+        expect(result.isError, text(result)).toBe(false)
+      }
+      expect(bash.modes).toEqual([mode, mode, mode])
+      expect(prompted).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('fails closed when approval cannot be routed', async () => {
@@ -743,53 +800,6 @@ describe('sandbox escalation through the generic task producer', () => {
   })
 })
 
-describe('renderProcessRead', () => {
-  const base: ShellProcessRead = { delta: 'out\n', lossy: false }
-
-  it('returns the delta verbatim for a lossless read', () => {
-    expect(renderProcessRead(base)).toBe('out\n')
-    expect(renderProcessRead({ delta: '', lossy: false })).toBe('')
-  })
-
-  it('appends the loss notice with the available spill paths', () => {
-    expect(renderProcessRead({ ...base, lossy: true, stdoutSpillPath: '/spill/out.log' }))
-      .toBe('out\n[some output was dropped from memory; full output: /spill/out.log]')
-    expect(renderProcessRead({ ...base, lossy: true, stdoutSpillPath: '/spill/out.log', stderrSpillPath: '/spill/err.log' }))
-      .toBe('out\n[some output was dropped from memory; full output: /spill/out.log, /spill/err.log]')
-  })
-
-  it('reports (unavailable) when a lossy read has no safe spill path', () => {
-    expect(renderProcessRead({ ...base, lossy: true }))
-      .toBe('out\n[some output was dropped from memory; full output: (unavailable)]')
-  })
-
-  it('an empty lossy delta is the notice alone', () => {
-    expect(renderProcessRead({ delta: '', lossy: true, stderrSpillPath: '/spill/err.log' }))
-      .toBe('[some output was dropped from memory; full output: /spill/err.log]')
-  })
-
-  it('inserts the separating newline only when the delta lacks one', () => {
-    expect(renderProcessRead({ delta: 'tail', lossy: true }))
-      .toBe('tail\n[some output was dropped from memory; full output: (unavailable)]')
-    expect(renderProcessRead({ delta: 'tail\n', lossy: true }))
-      .toBe('tail\n[some output was dropped from memory; full output: (unavailable)]')
-  })
-
-  it('appends settled sandbox denial and runner-failure facts', () => {
-    expect(renderProcessRead(base, { mode: 'read-only', denied: true }, ['workspace-write']))
-      .toContain('[sandbox: escalation available')
-    expect(renderProcessRead({ delta: 'tail', lossy: false }, { mode: 'read-only', denied: true }))
-      .toBe('tail\n[sandbox: file access denied under read-only mode]')
-    const runner = renderProcessRead(
-      { delta: '', lossy: false },
-      { mode: 'workspace-write', denied: true, runnerFailed: true },
-      ['danger-full-access'],
-    )
-    expect(runner).toContain('sandbox runner itself failed under workspace-write mode')
-    expect(runner).not.toContain('file access denied')
-  })
-})
-
 describe('processOutcome', () => {
   function settled(over: Partial<ShellProcess>): ShellProcess {
     return {
@@ -798,6 +808,7 @@ describe('processOutcome', () => {
       signal: null,
       done: Promise.resolve(),
       readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
       kill: () => false,
       ...over,
     }
@@ -821,6 +832,16 @@ describe('processOutcome', () => {
   it('defensively reads a null exit code as 0 (handle shapes from other executors)', () => {
     expect(processOutcome(settled({ exitCode: null })))
       .toEqual({ status: 'completed', detail: 'exit code: 0' })
+  })
+
+  it('appends sandbox facts to the terminal detail', () => {
+    const denied = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: true } }), ['workspace-write'])
+    expect(denied.detail).toBe(`exit code: 1; ${sandboxDenialMarker('read-only')} ${escalationHintMarker('command')}`)
+    const deniedWithoutEscalation = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: true } }))
+    expect(deniedWithoutEscalation.detail).toBe(`exit code: 1; ${sandboxDenialMarker('read-only')}`)
+    const runnerFailed = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: false, runnerFailed: true } }))
+    expect(runnerFailed.detail).toContain('the sandbox runner itself failed under read-only mode')
+    expect(processOutcome(settled({ sandbox: { mode: 'read-only', denied: false } })).detail).toBe('exit code: 0')
   })
 })
 
@@ -1121,6 +1142,7 @@ describe('the model-facing bash tool builds its request from named args only (no
         signal: null,
         done: Promise.resolve(),
         readOutput: () => ({ delta: '', lossy: false }),
+        observed: { stdout: silentReader, stderr: silentReader },
         kill: () => false,
       }
     }

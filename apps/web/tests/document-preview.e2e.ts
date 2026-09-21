@@ -9,6 +9,8 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { realOfficeBytes } from './office-fixture.ts'
+import { excelFixture, excelHtmlFixture, excelHtmlText, meetingMinutesFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-fixture.ts'
+import { xlsFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/xls-fixture.ts'
 import { pdfFixture, selectionPdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
@@ -89,8 +91,8 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
   let outsideRoot: string | undefined
   let nativeRoot: string | undefined
   let openLog = ''
-  const opened = async (): Promise<Array<{ path: string; action: 'open' | 'reveal' }>> =>
-    (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; action: 'open' | 'reveal' })
+  const opened = async (): Promise<Array<{ path: string; action: 'open' | 'reveal' | 'application' }>> =>
+    (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; action: 'open' | 'reveal' | 'application' })
 
   beforeAll(async () => {
     outsideRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-outside-'))
@@ -102,10 +104,34 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
       await writeFile(join(nativeRoot, command), `#!/usr/bin/env node
 const fs = require('node:fs');
-const path = process.argv[2] === '-R' ? process.argv[3] : process.argv[2];
-const action = process.argv[2] === '-R' || fs.statSync(path).isDirectory() ? 'reveal' : 'open';
+const path = process.argv[2] === '-a' ? process.argv[4] : process.argv[2] === '-R' ? process.argv[3] : process.argv[2];
+const action = process.argv[2] === '-a' ? 'application' : process.argv[2] === '-R' || fs.statSync(path).isDirectory() ? 'reveal' : 'open';
 fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) + '\\n');
 `, { mode: 0o700 })
+      if (process.platform === 'darwin') {
+        const apps = [
+          { id: '/Applications/Test Player.app', name: 'Test Player', default: true, icon: `data:image/png;base64,${TINY_PNG.toString('base64')}` },
+          { id: '/Applications/Other Player.app', name: 'Other Player', default: false, icon: null },
+        ]
+        await writeFile(join(nativeRoot, 'osascript'), `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(apps))});\n`, { mode: 0o700 })
+      }
+      if (process.platform === 'linux') {
+        const data = join(nativeRoot, 'data')
+        await mkdir(join(data, 'applications'), { recursive: true })
+        const icon = join(nativeRoot, 'icon.png')
+        await writeFile(icon, TINY_PNG)
+        await writeFile(join(data, 'applications', 'test.desktop'), `[Desktop Entry]\nName=Test Player\nIcon=${icon}\n`)
+        await writeFile(join(data, 'applications', 'other.desktop'), '[Desktop Entry]\nName=Other Player\n')
+        await writeFile(join(nativeRoot, 'gio'), `#!/usr/bin/env node
+const fs = require('node:fs');
+if (process.argv[2] === 'info') process.stdout.write('standard::content-type: video/mp4');
+else if (process.argv[2] === 'mime') process.stdout.write('Default application for video/mp4: test.desktop\\nRegistered applications:\\n  test.desktop\\n  other.desktop\\n');
+else if (process.argv[2] === 'launch') fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.argv[4], action: 'application' }) + '\\n');
+else process.exit(1);
+`, { mode: 0o700 })
+        vi.stubEnv('XDG_DATA_HOME', data)
+        vi.stubEnv('XDG_DATA_DIRS', '')
+      }
       vi.stubEnv('PATH', `${nativeRoot}${delimiter}${process.env.PATH ?? ''}`)
     }
     // The Open In rows carry the default-application controls; the SSH marker
@@ -169,7 +195,11 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       '# Markdown smoke', '', 'Rendered from the workspace.', '',
       ...Array.from({ length: (PAGE_LINES - 4) / 2 }, (_, index) => [`Paragraph ${index + 1}: ${'visible prefix '.repeat(20)}`, '']).flat(),
       '# Markdown tail',
+      '', '![relative image](preview-images/local%20image.png)',
+      '', `![absolute image](<${join(cwd, 'tiny.png').replaceAll('\\', '/')}>)`,
+      '', '![reference image][local-image]', '', '[local-image]: preview-images/local%20image.png',
     ].join('\n')
+    await mkdir(join(cwd, 'preview-images'))
     const codeLines = [
       ...Array.from({ length: PAGE_LINES }, (_, index) => index === 0 ? 'const prefix = "CODE_PREFIX";' : `// prefix line ${index + 1}`),
       'const tail = "CODE_TAIL";',
@@ -204,6 +234,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       writeFile(join(cwd, 'local.css'), '#local-result { color: rgb(12, 34, 56); }'),
       writeFile(outsideScript, 'document.getElementById("outside-result").textContent="OUTSIDE_JS_OK";'),
       writeFile(join(cwd, 'tiny.png'), TINY_PNG),
+      writeFile(join(cwd, 'preview-images', 'local image.png'), TINY_PNG),
       writeFile(join(cwd, 'large.svg'), [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">',
         '<script>parent.document.documentElement.setAttribute("data-image-preview-escape","true")</script>',
@@ -214,6 +245,12 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       writeFile(join(cwd, 'user-unit.pdf'), pdfFixture(2)),
       ...[90, 180, 270].map(rotation => writeFile(join(cwd, `rotated-${rotation}.pdf`), pdfFixture(4, rotation))),
       writeFile(join(cwd, 'selection.pdf'), selectionPdfFixture()),
+      writeFile(join(cwd, 'budget.xlsx'), await excelFixture()),
+      writeFile(join(cwd, 'meeting.xlsx'), await meetingMinutesFixture()),
+      writeFile(join(cwd, 'literal-html.xlsx'), await excelHtmlFixture()),
+      writeFile(join(cwd, 'budget.xls'), xlsFixture()),
+      writeFile(join(cwd, 'table.csv'), '00123,"中文,字段","=SUM(1,2)"\n2024-03-01,,TRUE'),
+      writeFile(join(cwd, 'table.tsv'), '00123\t"中文\t字段"\t=SUM(1,2)\n2024-03-01\t\tTRUE'),
       ...['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].map(extension => writeFile(join(cwd, `unavailable.${extension}`), Buffer.from('PK\u0003\u0004OFFICE_BINARY_PREVIEW'))),
       writeFile(join(cwd, 'clip.mp4'), Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])),
     ])
@@ -255,7 +292,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     const restoredAdd = await addTab.count()
     expect(restoredFilesClose).toBe(1)
     expect(restoredAdd).toBe(1)
-    const preview = column.locator('[data-document-preview]')
+    const preview = column.locator('[data-textpreview-url]')
     const openFile = openPreviewFile.bind(undefined, column, filesTab, preview)
     const viewer = preview.locator('[data-document-viewer-menu]')
     const body = preview.locator('[data-textpreview-body]')
@@ -282,6 +319,15 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     expect(await preview.getByRole('heading', { name: heading, exact: true }).count()).toBe(1)
     expect(await preview.getByText('Rendered from the workspace.', { exact: true }).count()).toBe(1)
     const tailHeading = await markdownTail.innerText()
+    const markdownImages: string[] = []
+    for (const alt of ['relative image', 'absolute image', 'reference image']) {
+      const image = preview.getByRole('img', { name: alt, exact: true })
+      await image.scrollIntoViewIfNeeded()
+      await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0)).toBe(true)
+      const source = new URL(await image.getAttribute('src') ?? '')
+      expect(source.pathname).toBe('/api/file')
+      markdownImages.push(alt)
+    }
     await preview.getByRole('heading', { name: heading, exact: true }).scrollIntoViewIfNeeded()
     await successShot(page, 'markdown')
     const markdownTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('smoke.md', { exact: true }) })
@@ -314,6 +360,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       '## Markdown', '',
       `- Heading: ${heading}`,
       `- Tail loaded by scrolling: ${tailHeading}`,
+      `- Loaded images: ${markdownImages.join(' | ')}`,
       `- Viewers: ${markdownViewers.join(' -> ')}`,
       `- Same tab: ${String(await markdownTab.getAttribute('data-dockkit-tab') === markdownTabId)}`,
     ].join('\n'))
@@ -350,7 +397,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await successShot(page, 'html-basic')
     sections.push([
       '## Basic HTML', '',
-      '- Developer tools: off by default on Web and desktop',
+      '- Developer tools: disabled for this scenario',
       '- Sandbox: no permissions',
       `- Inline script: ${await basicHtml.locator('#result').innerText()}`,
       `- Local script: ${await basicHtml.locator('#local-result').innerText()}`,
@@ -532,7 +579,21 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await successShot(page, 'pdf-drag-selection')
     sections.push('## PDF drag selection\n\n- Table selection: forward and backward drags exclude later sections\n- Line-break highlight: transparent')
 
+    const pngResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/workspaceFiles/readBytes'
+      && (response.request().postDataJSON() as { payload: { args: { path: string } } }).payload.args.path === 'tiny.png')
     await openFile('tiny.png')
+    const transferred = await pngResponse
+    expect(transferred.headers()['content-type']).toMatch(/^multipart\/form-data;/)
+    const transferredBody = await new Response(new Uint8Array(await transferred.body()), { headers: transferred.headers() }).formData()
+    const metadata = transferredBody.get('metadata')
+    if (typeof metadata !== 'string') throw new Error('missing PNG metadata')
+    const { attachments } = JSON.parse(metadata) as { attachments: { path: string[]; codec: string; part: string }[] }
+    expect(attachments).toHaveLength(1)
+    expect(attachments[0]).toMatchObject({ path: ['data'], codec: 'bytes' })
+    expect(attachments[0]!.part).toEqual(expect.any(String))
+    const transferredFile = transferredBody.get(attachments[0]!.part)
+    if (transferredFile === null || typeof transferredFile === 'string') throw new Error('missing PNG payload')
+    expect(Buffer.from(await transferredFile.arrayBuffer())).toEqual(TINY_PNG)
     const tinyImage = preview.getByRole('img', { name: 'Image preview: tiny.png', exact: true })
     await tinyImage.waitFor({ state: 'visible', timeout: 15_000 })
     expect(await viewer.count()).toBe(0)
@@ -681,7 +742,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
 
     const officeMenus: number[] = []
     const configurationGuide = 'Read failed: Office previews are unavailable. Enable the document preview service on the computer running DeepSeek Harness.'
-    for (const extension of ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']) {
+    for (const extension of ['doc', 'docx', 'ppt', 'pptx']) {
       await openFile(`unavailable.${extension}`)
       expect(await preview.locator('[data-document-viewer-menu]').count()).toBe(0)
       await preview.getByText(configurationGuide, { exact: true }).waitFor({ timeout: 15_000 })
@@ -692,10 +753,126 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await successShot(page, 'office-unavailable')
     sections.push([
       '## Office unavailable', '',
-      `- DOC, DOCX, XLS, XLSX, PPT, PPTX viewer menus: ${officeMenus.join(' | ')}`,
+      `- DOC, DOCX, PPT, PPTX viewer menus: ${officeMenus.join(' | ')}`,
       `- Guidance: ${configurationGuide}`,
       '- Binary text shown: false',
       '- Plain-text option and viewer picker: hidden',
+    ].join('\n'))
+
+    await openFile('budget.xlsx')
+    const excel = preview.locator('[data-excel-preview]')
+    await excel.getByText('季度预算', { exact: true }).waitFor({ state: 'visible' })
+    await successShot(page, 'excel-budget')
+    expect(await preview.locator('[data-pdf-preview]').count()).toBe(0)
+    expect(await excel.locator('.fortune-toolbar').count()).toBe(0)
+    const sheetOverlay = excel.locator('.fortune-sheet-overlay')
+    const formulaInput = excel.locator('.fortune-fx-input')
+    await sheetOverlay.click({ position: { x: 500, y: 110 } })
+    await expect.poll(() => formulaInput.innerText()).toBe('=C3/B3')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('80.0%\n')
+    await excel.getByText('公式与格式', { exact: true }).click()
+    await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
+    await sheetOverlay.click({ position: { x: 140, y: 30 } })
+    await expect.poll(() => formulaInput.innerText()).toBe('46281')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('2026-09-16\n')
+    await sheetOverlay.click({ position: { x: 70, y: 30 } })
+    await expect.poll(() => formulaInput.innerText()).toBe('=_xlfn.XLOOKUP(1,{1},{42})')
+    expect(await formulaInput.getAttribute('contenteditable')).toBe('false')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('42\n')
+    await page.keyboard.type('999')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('42\n')
+    await successShot(page, 'excel-cached-formula')
+    await openFile('meeting.xlsx')
+    await excel.getByText('会议信息', { exact: true }).waitFor({ state: 'visible' })
+    expect(await excel.getByText('Read-only preview', { exact: false }).count()).toBe(0)
+    expect(await excel.getByText('Some formulas have no saved result', { exact: false }).count()).toBe(0)
+    const formulaWarning = excel.locator('[data-excel-formula-warning]')
+    await formulaWarning.hover()
+    await page.getByText('This workbook contains formulas. Displayed results may be missing or inaccurate.', { exact: true }).waitFor()
+    await excel.getByText('统计看板', { exact: true }).click()
+    await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
+    await successShot(page, 'excel-meeting')
+    await openFile('budget.xls')
+    await excel.getByText('预算', { exact: true }).waitFor({ state: 'visible' })
+    await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
+    await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
+    await expect.poll(() => excel.locator('.fortune-fx-input').innerText()).toBe('旧版预算')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('旧版预算')
+    await excel.getByText('明细', { exact: true }).click()
+    await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
+    await successShot(page, 'excel-legacy')
+    await openFile('literal-html.xlsx')
+    for (const [sheet, formula, copied] of [
+      ['Formula', `="${excelHtmlText}"`, 'saved result'],
+      ['Text', excelHtmlText, excelHtmlText],
+      ['Cached text', '="cached"', excelHtmlText],
+    ] as const) {
+      await excel.getByText(sheet, { exact: true }).click()
+      await expect.poll(() => formulaInput.textContent()).toBe(formula)
+      expect(await formulaInput.locator('img').count()).toBe(0)
+      await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
+      await page.keyboard.press('ControlOrMeta+C')
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`${copied}\n`)
+      const clipboardTable = excel.locator('#fortune-copy-content table')
+      expect(await clipboardTable.locator('td').textContent()).toBe(copied)
+      expect(await clipboardTable.locator('img').count()).toBe(0)
+      expect(await page.evaluate(() => document.documentElement.dataset.spreadsheetHtml)).toBeUndefined()
+    }
+    const invalidExcel = 'This spreadsheet could not be opened. Check its format, contents, or password protection.'
+    for (const extension of ['xls', 'xlsx']) {
+      await openFile(`unavailable.${extension}`)
+      await preview.getByText(invalidExcel, { exact: true }).waitFor()
+    }
+    sections.push([
+      '## Browser Excel preview', '',
+      '- Opens without the Office conversion service',
+      '- Sheets: 季度预算 | 公式与格式; hidden worksheet omitted',
+      '- Formula workbooks use a compact warning beside fx; notice rows absent',
+      '- Formatted percent copied: 80.0%; date copied: 2026-09-16',
+      '- Cached XLOOKUP result copied: 42; typing leaves it unchanged',
+      '- Formula bar is read-only; PDF body and editing toolbar absent',
+      '- HTML-looking formulas, text, and cached results stay literal; copying retains text and table cells without executing HTML',
+      '- XLS: merged title copied; worksheet selection retained',
+      `- Invalid XLS/XLSX: ${invalidExcel}`,
+    ].join('\n'))
+
+    for (const extension of ['csv', 'tsv']) {
+      await openFile(`table.${extension}`)
+      await expect.poll(() => viewer.innerText()).toBe('Spreadsheet')
+      await excel.getByText(extension.toUpperCase(), { exact: true }).waitFor()
+      await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
+      await expect.poll(() => excel.locator('.fortune-fx-input').innerText()).toBe('00123')
+      await page.keyboard.press('ControlOrMeta+C')
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('00123\n')
+      await page.keyboard.press('ArrowRight')
+      await page.keyboard.press('ArrowRight')
+      await page.keyboard.press('ControlOrMeta+C')
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('=SUM(1,2)\n')
+      await viewer.click()
+      await page.getByRole('menuitem', { name: 'Plain text', exact: true }).click()
+      await expect.poll(() => preview.locator('[data-textpreview-line]').count()).toBe(2)
+      expect((await preview.locator('[data-textpreview-line]').allTextContents()).join('\n')).toContain('00123')
+      await viewer.click()
+      await page.getByRole('menuitem', { name: 'Spreadsheet', exact: true }).click()
+      await excel.getByText(extension.toUpperCase(), { exact: true }).waitFor()
+      await writeFile(join(cwd, `table.${extension}`), extension === 'csv' ? '00999,更新' : '00999\t更新')
+      await preview.locator('[data-textpreview-tool="reload"]').click()
+      await expect.poll(() => excel.locator('.fortune-fx-input').innerText()).toBe('00999')
+      await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
+      await page.keyboard.press('ControlOrMeta+C')
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('00999\n')
+      await successShot(page, `excel-${extension}`)
+    }
+    sections.push(['## Delimited spreadsheets', '',
+      '- CSV and TSV default to Spreadsheet; Plain text remains selectable',
+      '- Copied ID: 00123; copied literal formula: =SUM(1,2)',
+      '- Plain-text round trip retains complete source lines',
+      '- Reload replaces parsed cells: 00123 -> 00999',
     ].join('\n'))
 
     await openFile('notes.unknown')
@@ -721,13 +898,16 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await headerOpen.waitFor({ timeout: 15_000 })
     const emptyOpen = unsupported.locator('[data-textpreview-unsupported] [data-open-path-unpreviewable]')
     await emptyOpen.waitFor({ timeout: 15_000 })
+    const prominent = unsupported.locator('[data-open-target="file"][data-size="large"]')
+    expect((await prominent.boundingBox())?.height).toBe(40)
+    expect((await unsupported.locator('[data-open-path]').boundingBox())?.height).toBe(24)
     await successShot(page, 'unsupported')
     sections.push([
       '## Unviewable binary', '',
       '- State: unsupported',
       `- Line: ${unsupportedLine.trim()}`,
-      `- Header control: ${await headerOpen.innerText()}`,
-      `- Empty-state control: ${await emptyOpen.innerText()}`,
+      `- Header control has no text: ${String(await headerOpen.innerText() === '')}`,
+      `- Empty-state control has text: ${String((await emptyOpen.innerText()).length > 0)}`,
     ].join('\n'))
     if (STUB_OPENER) {
       // Real Host gestures against the stubbed opener: default application from the empty state, reveal from the header menu.
@@ -735,19 +915,32 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       await emptyOpen.click()
       await expect.poll(async () => (await opened()).length, { timeout: 15_000 }).toBe(1)
       await unsupported.locator('[data-open-path-more]').click()
-      await page.getByRole('menuitem', { name: 'Show file location', exact: true }).click()
+      await page.getByRole('menuitem', { name: /^Show file location/ }).click()
       await expect.poll(async () => (await opened()).length, { timeout: 15_000 }).toBe(2)
       const gestures = await opened()
-      expect(gestures[0]).toEqual({ path: clip, action: 'open' })
+      expect(gestures[0]?.action).toBe('open')
+      expect([clip, cwd]).toContain(gestures[0]?.path)
       expect(gestures[1]?.action).toBe('reveal')
       expect([clip, cwd]).toContain(gestures[1]?.path)
+      if (STUB_OPENER) {
+        await expect.poll(() => headerOpen.locator('img').count()).toBe(1)
+        await prominent.getByRole('button', { name: 'More ways to open' }).click()
+        await page.getByRole('menuitem', { name: 'Test Player (default)', exact: true }).waitFor()
+        await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'applications.expected.md'), await page.getByRole('menu').ariaSnapshot(), MODE)
+        await page.getByRole('menuitem', { name: 'Other Player', exact: true }).click()
+        await expect.poll(async () => (await opened()).length).toBe(3)
+        expect((await opened())[2]).toEqual({ path: clip, action: 'application' })
+        await headerOpen.click()
+        await expect.poll(async () => (await opened()).length).toBe(4)
+        expect((await opened())[3]).toEqual({ path: clip, action: 'open' })
+      }
       // Gesture facts stay out of the golden: the stub does not run on Windows.
       expect(await page.getByRole('alert').count()).toBe(0)
     }
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await compareOrRefreshGolden(EXPECTED, sections.join('\n\n'), MODE)
-    await assertFixtureInventory(SNAPSHOT_DIR, ['document.expected.md', 'paging.patch.yml'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['document.expected.md', 'applications.expected.md', 'paging.patch.yml'])
   })
 })
 
@@ -795,7 +988,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       await column.locator('[data-files-state="tree"]').waitFor({ state: 'visible' })
       await column.locator('[data-files-reload]').click()
       const filesTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('Files', { exact: true }) })
-      const preview = column.locator('[data-document-preview]')
+      const preview = column.locator('[data-textpreview-url]')
       await column.locator('[data-files-entry="file"]').getByRole('button', { name: 'chinese.docx', exact: true }).click()
       expect(await preview.locator('[data-document-viewer-menu]').count()).toBe(0)
       const canvas = preview.getByRole('img', { name: 'PDF page 1', exact: true })
@@ -870,30 +1063,30 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
         `- Document top inset: ${topInset}px`,
       ].join('\n'), MODE)
       await successShot(page, 'office-docx')
-      for (const extension of ['doc', 'xls', 'xlsx', 'ppt', 'pptx']) {
+      for (const extension of ['doc', 'ppt', 'pptx']) {
         await openPreviewFile(column, filesTab, preview, `chinese.${extension}`)
         await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible', timeout: 60_000 })
         await expect.poll(async () => (await preview.locator('[data-pdf-text]').allTextContents()).join(''), { timeout: 30_000 }).toContain('中文文档')
-        if (['doc', 'xls', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
+        if (['doc', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
         await successShot(page, `office-${extension}`)
       }
-      expect(convert).toHaveBeenCalledTimes(6)
+      expect(convert).toHaveBeenCalledTimes(4)
       await openPreviewFile(column, filesTab, preview, 'chinese.docx')
       await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible' })
       await preview.getByRole('button', { name: 'Read the file again', exact: true }).click()
-      await expect.poll(() => convert.mock.calls.length).toBe(7)
+      await expect.poll(() => convert.mock.calls.length).toBe(5)
       await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible' })
       await openPreviewFile(column, filesTab, preview, 'renamed.docx')
       await preview.getByText('Read failed: This Office file cannot be previewed. It may be damaged, password protected, or have the wrong extension.', { exact: true }).waitFor({ timeout: 30_000 })
       expect(await preview.locator('[data-textpreview-line]').count()).toBe(0)
       await successShot(page, 'office-invalid')
-      expect(convert).toHaveBeenCalledTimes(8)
-      for (const extension of ['doc', 'xls', 'ppt']) {
+      expect(convert).toHaveBeenCalledTimes(6)
+      for (const extension of ['doc', 'ppt']) {
         await openPreviewFile(column, filesTab, preview, `renamed.${extension}`)
         await preview.getByText('Read failed: This Office file cannot be previewed. It may be damaged, password protected, or have the wrong extension.', { exact: true }).waitFor({ timeout: 30_000 })
         expect(await preview.locator('[data-textpreview-line]').count()).toBe(0)
       }
-      expect(convert).toHaveBeenCalledTimes(11)
+      expect(convert).toHaveBeenCalledTimes(8)
       expect(tripwire.pageErrors).toEqual([])
     } finally { convert.mockRestore() }
   })

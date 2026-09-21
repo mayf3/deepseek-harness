@@ -2,13 +2,14 @@
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AssistantMarkdown, localPathMediaUrl } from '../src/client/chat/AssistantMarkdown.tsx'
+import { useDetailedPresentation } from './presentation-fixture.client.ts'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../src/client/contract/slots.ts'
 import type { AssistantBlock } from '../src/client/contract/snapshot.ts'
 
 afterEach(cleanup)
 
-const t = ((_key: string) => 'label') as unknown as ChatViewSlotProps['t']
-const renderMessageImages = (() => null) as unknown as ChatNodeOwnerProps['renderMessageImages']
+const t = ((_key: string) => 'label') as ChatViewSlotProps['t']
+const renderMessageImages = (() => null) as ChatNodeOwnerProps['renderMessageImages']
 
 function textBlock(text: string): AssistantBlock {
   return { kind: 'text', text }
@@ -54,6 +55,7 @@ describe('AssistantMarkdown local-path images', () => {
   it('renders a local image path in closing prose through the same-origin API', () => {
     const { container } = render(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         blocks={[textBlock('See ![diagram](/tmp/graph.png) for the layout.')]}
         streaming={false}
         renderMessageImages={renderMessageImages}
@@ -70,6 +72,7 @@ describe('AssistantMarkdown local-path images', () => {
   it('keeps non-absolute destinations inert', () => {
     const { container } = render(
       <AssistantMarkdown
+        usePresentation={useDetailedPresentation}
         blocks={[textBlock('See ![diagram](relative.png).')]}
         streaming={false}
         renderMessageImages={renderMessageImages}

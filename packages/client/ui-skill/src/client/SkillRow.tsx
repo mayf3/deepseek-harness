@@ -28,7 +28,7 @@ function firstLine(text: string): string {
 /** Skill names are the only call argument the compact row presents. */
 function skillName(argsRaw: string, callId: string): string {
   try {
-    const parsed = JSON.parse(argsRaw) as unknown
+    const parsed: unknown = JSON.parse(argsRaw)
     if (typeof parsed === 'object' && parsed !== null) {
       const name = (parsed as Record<string, unknown>).name
       if (typeof name === 'string' && name !== '') return firstLine(name)
