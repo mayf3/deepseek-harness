@@ -61,7 +61,7 @@ export function apply() {
       name: dsh-hello-plugin
 ```
 
-没有 `dsh.bundle` 声明的包仍然可以安装，但只作为普通依赖：`dsh plugin` 会打印警告，且不激活任何层。如果一个库供插件包 import，而不是供用户启用，就使用这种包格式。
+`patch` 也接受一个有序的文件列表，例如 `["./base.patch.yml", "./web.patch.yml"]`；launcher 按该顺序把它们作为同一层应用，每个文件中的相对插件路径相对于该文件解析。没有 `dsh.bundle` 声明的包仍然可以安装，但只作为普通依赖：`dsh plugin` 会打印警告，且不激活任何层。如果一个库供插件包 import，而不是供用户启用，就使用这种包格式。
 
 ### profile manifest
 

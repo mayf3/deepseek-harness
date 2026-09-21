@@ -66,6 +66,7 @@ const CHANGE_DESCRIPTIONS = {
   'index-signature-changed': 'index signature changed',
   'tuple-length-changed': 'tuple length changed',
   'tuple-element-cardinality-changed': 'tuple element cardinality changed',
+  'payload-version-added': 'event payload version added',
   'union-variants-changed': 'union variants changed',
   'source-policy-changed': 'source compatibility policy changed',
   'attribution-kind-added': 'attribution-only source kind added',
@@ -405,6 +406,27 @@ export function classifyPersistenceChange(before: PersistenceRoot | null, after:
     }
     const oldNode = oldRoot.schema.nodes[oldIndex] as SchemaNode
     const newNode = newRoot.schema.nodes[newIndex] as SchemaNode
+    if (oldRoot.kind === 'event' && oldRoot.surface === false && scope === 'body' && path === `${key}.data`) {
+      const oldTypes = oldNode.kind === 'union' ? oldNode.types : [oldIndex]
+      const newTypes = newNode.kind === 'union' ? newNode.types : [newIndex]
+      const payloadVersion = (schema: CanonicalSchema, index: number): number | undefined => {
+        const node = schema.nodes[index]
+        if (node?.kind !== 'object') return undefined
+        const property = node.properties.find(property => property.name === 'version' && !property.optional)
+        const version = schema.nodes[property?.type ?? -1]
+        return version?.kind === 'literal' && typeof version.value === 'number'
+          && Number.isSafeInteger(version.value) && version.value >= 0 ? version.value : undefined
+      }
+      const versions = oldTypes.map(index => payloadVersion(oldRoot.schema, index))
+      const oldHashes = new Set(oldTypes.map(index => fingerprint(oldRoot.schema, index, 0)))
+      const newHashes = new Set(newTypes.map(index => fingerprint(newRoot.schema, index, 1)))
+      const added = newTypes.filter(index => !oldHashes.has(fingerprint(newRoot.schema, index, 1)))
+      if (versions.every(version => version !== undefined) && added.length > 0
+        && [...oldHashes].every(hash => newHashes.has(hash))
+        && added.every(index => (payloadVersion(newRoot.schema, index) ?? -1) > Math.max(...versions))) {
+        return [describe(path, 'payload-version-added', false)]
+      }
+    }
     if (oldNode.kind !== newNode.kind) return [describe(path, 'type-changed')]
     if (oldNode.kind === 'object' && newNode.kind === 'object') {
       const oldProps = new Map(oldNode.properties.map(property => [property.name, property]))

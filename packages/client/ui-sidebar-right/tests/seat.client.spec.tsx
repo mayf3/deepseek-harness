@@ -2,7 +2,7 @@
 /** Sidebar presentation and tab subscriptions through the production slot renderer. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent } from '@testing-library/react'
-import { useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -18,6 +18,13 @@ import type { createSidebarRightStore } from '../src/client/stores.ts'
 declare module '../src/client/contract/params.ts' {
   interface SidebarRightResourceParamsMap {
     test: { line?: number; x?: number }
+  }
+}
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    /** A Conversation-column stand-in rendered before the seat, opening a resource as soon as a seat is mounted. */
+    'sidebar-right.test.opener': { kind: 'single'; scope: 'session'; owner: { armed: boolean } }
   }
 }
 
@@ -57,7 +64,7 @@ function transition(property = 'transform') {
   }
 }
 
-async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0) {
+async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0, opener = false) {
   const runtime = await SlotTestRuntime.create()
   runtimes.push(runtime)
   const frame = { openRightbar: vi.fn(), closeRightbar: vi.fn() }
@@ -68,12 +75,40 @@ async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0) {
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.declare({
+    'sidebar-right.test.opener': { kind: 'single', scope: 'session' },
     'rightbar': { kind: 'single', scope: 'root' },
     'conversation.session.header.corner': { kind: 'single', scope: 'session' },
   })
   await runtime.sessions.add({ id: SESSION })
   let reference = runtime.sessions.retainFor(runtime.ctx, SESSION, { source: 'mainView' })
   const feature = await runtime.mount({ inject: [...inject], apply })
+  // The frame mounts the Conversation column before the right column, so a
+  // Conversation component's mount effect runs before the seat's. The opener
+  // stands in for one that opens a resource as soon as a seat is mounted — it
+  // reads `mounted` the way a slot component reads its bound hook — and shows
+  // only while the Conversation is selected, as the main panel does.
+  const opened: string[] = []
+  function OpenerMount() {
+    const { mounted } = runtime.ctx.sidebarRight
+    const seat = useSyncExternalStore(listener => mounted.subscribe(listener), () => mounted.getSnapshot())
+    useEffect(() => {
+      if (seat === undefined) return
+      const address = `dsh-resource://file/session/s-test/arrival-${opened.length + 1}.txt`
+      runtime.ctx.sidebarRight.openResource(address)
+      opened.push(address)
+    }, [seat])
+    return null
+  }
+  function Opener({ usePanelInfo, armed }: PropsRuntime<'sidebar-right.test.opener'>) {
+    const visible = usePanelInfo(info => info.activePanelId === null)
+    return armed && visible ? <OpenerMount /> : null
+  }
+  let arm = (_armed: boolean): void => { throw new Error('mountSeat(opener = true) renders the opener') }
+  if (opener) {
+    await act(async () => { runtime.slots.register({ name: 'sidebar-right.test.opener' }, Opener) })
+    const openerView = runtime.renderSlot('sidebar-right.test.opener', { armed: false }, { session: reference })
+    arm = (armed) => { openerView.update({ armed }) }
+  }
   const bodies = new Map<string, SidebarRightTabInfo>()
   const titles = new Map<string, SidebarRightTabInfo>()
   const hooks = new Map<string, PropsRuntime<'sidebar.right.pane.tab'>['useTabInfo']>()
@@ -115,7 +150,7 @@ async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0) {
   }
   return {
     runtime, feature, controller, instance, actions: instance.actions, layout,
-    open, selectSession, frame, pin, bodies, titles, hooks, view,
+    open, selectSession, frame, pin, bodies, titles, hooks, view, arm, opened,
   }
 }
 
@@ -137,6 +172,29 @@ describe('RightbarSeat presentation', () => {
     act(() => { h.runtime.panelInfo.set({ activePanelId: null }) })
     expect(h.view.container.querySelector('[data-sidebar-right-panel]')).not.toBeNull()
     expect(h.layout()).toBe(retained)
+  })
+
+  it('publishes the mounted seat so a Conversation opener acts in the commit that returns from a global panel', async () => {
+    const h = await mountSeat(1440, true, 0, true)
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(h.controller.mounted.getSnapshot()).toBe(SESSION)
+    // Armed while the seat is already bound: the ordinary case.
+    act(() => { h.arm(true) })
+    expect(h.opened).toHaveLength(1)
+    expect(Object.values(h.layout().tabs).map(tab => tab.contentId)).toEqual(h.opened)
+    // A global panel unmounts both columns and the mounted seat with them.
+    act(() => { h.runtime.panelInfo.set({ activePanelId: 'other-panel' as MainPanelId }) })
+    expect(h.view.container.querySelector('[data-sidebar-right-panel]')).toBeNull()
+    expect(h.controller.mounted.getSnapshot()).toBeUndefined()
+    // Returning mounts both in one commit, the Conversation's effects first; the
+    // opener sees no seat, then the seat's own effect binds and it opens.
+    act(() => { h.runtime.panelInfo.set({ activePanelId: null }) })
+    expect(h.controller.mounted.getSnapshot()).toBe(SESSION)
+    expect(h.opened).toHaveLength(2)
+    expect(Object.values(h.layout().tabs).map(tab => tab.contentId)).toEqual(h.opened)
+    expect(h.controller.active()?.contentId).toBe(h.opened[1])
+    expect(errors.mock.calls.map(call => String(call[0])).filter(text => text.includes('slot entry crashed'))).toEqual([])
+    expect(document.querySelector('[data-slot-error]')).toBeNull()
   })
 
   it.each([0, 1, 2])('selects the default from %i guide entries and protects only a sole guide', async (entryCount) => {

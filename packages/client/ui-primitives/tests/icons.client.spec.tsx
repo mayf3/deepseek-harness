@@ -17,16 +17,32 @@ const icons = Object.fromEntries(
 const iconNames = Object.keys(icons)
 
 describe('product icon set', () => {
-  it('exports regular and medium variants for all 91 public glyphs', () => {
-    expect(iconNames.length).toBe(182)
+  it('exports regular and medium variants for all 92 public glyphs', () => {
+    expect(iconNames.length).toBe(184)
     expect(iconNames.some(name => /\d+$/.test(name))).toBe(false)
     const regular = iconNames.filter(name => name.endsWith('Regular')).map(name => name.slice(0, -'Regular'.length))
     const medium = iconNames.filter(name => name.endsWith('Medium')).map(name => name.slice(0, -'Medium'.length))
     expect(medium.sort()).toEqual(regular.sort())
     expect(iconNames).toEqual(expect.arrayContaining([
-      'IconMicrophoneOutlineRegular', 'IconPlanOutlineRegular', 'IconCompactOutlineRegular', 'IconShieldOutlineRegular', 'IconDeliverDocRegular',
-      'IconWarningTriangleOutlineRegular', 'IconCompareSplitOutlineRegular',
+      'IconMicrophoneOutlineRegular',
+      'IconPlanOutlineRegular', 'IconCompactOutlineRegular', 'IconShieldOutlineRegular', 'IconDeliverDocRegular',
+      'IconWarningTriangleOutlineRegular', 'IconCompareSplitOutlineRegular', 'IconCloseCircleFillRegular',
     ]))
+  })
+
+  it('draws the circled close as one currentColor knockout path in both weights', () => {
+    // A filled disc with the cross cut out of it (even-odd), so the cross shows
+    // the surface behind the glyph on any background instead of a second color.
+    for (const Icon of [primitives.IconCloseCircleFillRegular, primitives.IconCloseCircleFillMedium]) {
+      const { container, unmount } = render(<Icon />)
+      const paths = container.querySelectorAll('path')
+      expect(paths).toHaveLength(1)
+      expect(paths[0]!.getAttribute('fill')).toBe('currentColor')
+      expect(paths[0]!.getAttribute('fill-rule')).toBe('evenodd')
+      expect(paths[0]!.getAttribute('stroke')).toBeNull()
+      expect(container.querySelector('svg')!.getAttribute('width')).toBe('16')
+      unmount()
+    }
   })
 
   it('exports the shield contour and regular stroke for composite glyphs', () => {

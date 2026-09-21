@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Preview files in the right Sidebar and choose among registered renderers. Markdown and code support paged text; PDF, HTML, and common images receive complete bytes; unknown extensions use plain text. Office documents convert locally to PDF. The tab provides file status, renderer selection, wrap, and automatic or manual reload. Plugins can add local opening controls to the header and unsupported-preview empty state.
+Preview files in the right Sidebar and choose among registered renderers. Markdown and code support paged text; PDF, HTML, and common images receive complete bytes; unknown extensions use plain text. Word and PowerPoint documents convert locally to PDF; Excel workbooks use the unsupported-preview state. The tab provides file status, renderer selection, wrap, and automatic or manual reload. Plugins can add local opening controls to the header and unsupported-preview empty state.
 
 ## Table of Contents
 
@@ -65,7 +65,7 @@ Initial reads, additional pages, and HTML/PDF/image preparation share the ongoin
 <a id="office-preview"></a>
 ## Office preview
 
-Open `.doc`, `.docx`, `.xls`, `.xlsx`, `.ppt`, and `.pptx` as PDF previews with the same loading state, controls, cancellation, and selectable text as PDF files. The [Host provider](../../document/office-to-pdf/README.md) performs local conversion; invalid files, conversion failures, and timeouts receive localized messages. Missing Host services show configuration guidance.
+Open `.doc`, `.docx`, `.ppt`, and `.pptx` as PDF previews with the same loading state, controls, cancellation, and selectable text as PDF files. `.xls` and `.xlsx` do not register a Sidebar renderer: they show the unsupported-preview message without requesting conversion and offer the system default application when the Host reports a desktop. The [Host provider](../../document/office-to-pdf/README.md) retains its spreadsheet conversion API for other consumers. Invalid supported files, conversion failures, and timeouts receive localized messages. Missing Host services show configuration guidance.
 
 The [Web bundle](../../bundle/web-app/README.md) mounts this package as `ui-sidebar-documentpreview`. Configure its transient Office cache through that entry's `office` settings; the [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-client-ui-sidebar-documentpreview) defines accepted values. Settings are embedded in each served page; reload the browser page after changing YAML.
 
@@ -108,7 +108,7 @@ No direct effect; what the user reads here never enters a model request.
 
 <a id="known-limitations-and-deferred-work"></a>
 - **Preview, not editing.** The viewers provide no file editing or shared search interface; a directory address fails with `not-regular-file`. Unknown extensions use the plain-text reader and remain subject to its UTF-8/NUL checks.
-- **Office conversion limits.** The preview does not launch native Office editors or download an engine. Binary `.doc`, `.xls`, and `.ppt` files return no missing-font diagnostics. Conversion fidelity and resource limits belong to the [LibreOffice provider](../../document/office-to-pdf/README.md).
+- **Office conversion limits.** The preview does not launch native Office editors or download an engine. Excel workbooks are not previewed and instead offer the system default application on desktop Hosts. Binary `.doc` and `.ppt` files return no missing-font diagnostics. Conversion fidelity and resource limits belong to the [LibreOffice provider](../../document/office-to-pdf/README.md).
 - **Sequential text and bounded complete files.** Deep source lines require the preceding pages; PDF, HTML, and images require a complete result within the Host's `maxFileBytes` cap.
 - **Byte-view scroll state is not restored.** PDF, HTML, and images can return to the top when their renderer remounts or reloads; images fit the pane's width and never scroll horizontally, and HTML iframe scrolling belongs to its opaque browsing context.
 - **Finite local HTML dependencies.** Only direct classic `.js` and stylesheet `.css` references are packed. Browser-resolved resources retain browser origin and network restrictions; no runtime file-read bridge is exposed to the iframe.

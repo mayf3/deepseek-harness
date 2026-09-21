@@ -164,6 +164,20 @@ describe('dsh family version coherence', () => {
 })
 
 describe('package payload constraints', () => {
+  it.each(['./art/icon.svg', 'art/icon.svg'])('includes declared icon %s in the canonical payload', (icon) => {
+    expect(expectedDshPackageFiles({ icon, exports: { './locale/*.json': './locale/*.json' } })).toEqual([
+      'art/icon.svg', 'locale/*.json', 'lib/index.js', 'lib/types/**/*.d.ts',
+    ])
+  })
+
+  it('accepts the Agent Team icon payload and rejects its omission', () => {
+    const dir = 'packages/experimental/agent-team-profile'
+    const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+    expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: manifest.files!.filter(file => file !== 'icon.svg') } }))
+      .toEqual([expect.stringContaining('package.json files must be')])
+  })
+
   it.each([
     { exports: { './locale/*.json': './locale/*.json' }, resources: ['locale/*.json'] },
     { exports: { './search/locale/*.json': './resources/search/*.json' }, resources: ['resources/search/*.json'] },
@@ -216,6 +230,15 @@ describe('package payload constraints', () => {
     })).toEqual([
       'lib/index.js',
       'cordis.patch.yml',
+      'lib/types/**/*.d.ts',
+    ])
+    expect(expectedDshPackageFiles({
+      name: '@deepseek-ai/dsh-private-profile',
+      dsh: { bundle: { patch: ['./cordis.patch.yml', './layers/web.patch.yml'] } },
+    })).toEqual([
+      'lib/index.js',
+      'cordis.patch.yml',
+      'layers/web.patch.yml',
       'lib/types/**/*.d.ts',
     ])
   })

@@ -47,7 +47,11 @@ async function bench() {
   } as never)
   runtime.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn() } as never)
   runtime.ctx.provide('sidebarRight', { openResource: vi.fn(), openTab: vi.fn() } as never)
-  runtime.ctx.provide('sidebarRightTabs', { register: vi.fn(() => () => {}) } as never)
+  runtime.ctx.provide('sidebarRightTabs', {
+    register: vi.fn(() => () => {}),
+    get: vi.fn(() => ({})),
+    subscribe: vi.fn(() => () => {}),
+  } as never)
   runtime.ctx.provide('resources', { register: vi.fn(() => () => {}) } as never)
   const openSession = vi.fn<(id: SessionId) => void>()
   runtime.ctx.provide('uiWorkspace', {
@@ -84,6 +88,12 @@ function storeOf(runtime: SlotTestRuntime, key: 'conversation.session' | 'conver
 }
 
 describe('Chat apply wiring', () => {
+  it('keeps presentation-policy helpers out of the public browser entry', async () => {
+    const entry = await import('../src/client/index.ts')
+    expect(entry).not.toHaveProperty('derivePresentationPolicy')
+    expect(entry).not.toHaveProperty('presentationPolicyFor')
+  })
+
   it('contributes Chat View, node renderers, and stats', async () => {
     const b = await bench()
     const views = b.runtime.slots.entries('conversation.view')
@@ -94,7 +104,7 @@ describe('Chat apply wiring', () => {
     expect(b.runtime.slots.entries('conversation.composer.dock').map(row => row.options.id))
       .toEqual(['stats'])
     expect(b.runtime.slots.entries('settings.general.item').map(row => row.options.id))
-      .toEqual(['transcript-view', 'performance-usage', 'composer-enter'])
+      .toEqual(['transcript-view', 'performance-usage', 'link-opening', 'composer-enter'])
     await b.runtime.dispose()
   })
 
@@ -105,12 +115,12 @@ describe('Chat apply wiring', () => {
     const face = (row.inject as unknown as () => TranscriptViewRowInjected)()
 
     expect(face.hooks.transcriptView.getSnapshot()).toBe('compact')
-    face.setTranscriptView('normal')
-    expect(face.hooks.transcriptView.getSnapshot()).toBe('normal')
-    expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', 'normal')
+    face.setTranscriptView('detailed')
+    expect(face.hooks.transcriptView.getSnapshot()).toBe('detailed')
+    expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', 'detailed')
 
     b.chatSettings.publish({
-      status: 'ready', value: { transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 1, writable: true,
+      status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 1, writable: true,
     })
     expect(face.hooks.transcriptView.getSnapshot()).toBe('compact')
     await b.runtime.dispose()
@@ -123,7 +133,7 @@ describe('Chat apply wiring', () => {
     expect(face.hooks.performanceUsage.getSnapshot()).toBe('detailed')
     face.setPerformanceUsage('compact')
     expect(b.chatSettings.set).toHaveBeenCalledWith('performanceUsage', 'compact')
-    b.chatSettings.publish({ value: { transcriptView: 'compact', performanceUsage: 'compact' } })
+    b.chatSettings.publish({ value: { linkOpening: 'sidebar', transcriptView: 'compact', performanceUsage: 'compact' } })
     expect(face.hooks.performanceUsage.getSnapshot()).toBe('compact')
     for (const entry of [
       b.runtime.slots.entries('conversation.composer.dock').find(entry => entry.options.id === 'stats')!,

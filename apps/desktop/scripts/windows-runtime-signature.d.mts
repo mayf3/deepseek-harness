@@ -31,6 +31,11 @@ export interface WindowsCodeSigningOptions {
   sign: ReturnType<typeof import('./windows-sign.mjs').createWindowsTokenSigner>
   inspect?: typeof inspectWindowsRuntimeSignature
   record: (event: object) => void
+  /** Hardware-free restores on distinct targets; concurrency is a resolved positive integer. All restores and their verification drain before serial signing starts. */
+  cache?: {
+    restore: import('./windows-signature-cache.mjs').WindowsCachedSigner['restore']
+    concurrency: number
+  }
 }
 
 /**
@@ -44,7 +49,7 @@ export function windowsRuntimeCode(root: string): Promise<string[]>
  * Preserve valid signatures and sign unsigned PE files with a supervised signer.
  * @param root Materialized directory to sign.
  * @param options Signer, certificate identity and audit sink.
- * @returns Resolves after verified sequential signing; rejects without retries.
+ * @returns Resolves after verified parallel cache restores and sequential signing; stops dispatch and drains active restores on failure, without retries.
  */
 export function signWindowsCode(root: string, options: WindowsCodeSigningOptions): Promise<void>
 

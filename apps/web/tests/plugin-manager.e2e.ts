@@ -141,6 +141,50 @@ describe('web e2e: plugin manager', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('decodes manifest icons for disabled bundles and independent plugin rows', async () => {
+    const panel = await openPluginsPanel()
+    const fixtureIcon = `data:image/svg+xml;base64,${(await readFile(join(FIXTURE_PLUGINS, 'fixture-bundle/icon.svg'))).toString('base64')}`
+    const teamIcon = `data:image/svg+xml;base64,${(await readFile(fileURLToPath(new URL('../../../packages/experimental/agent-team-profile/icon.svg', import.meta.url)))).toString('base64')}`
+    const images: string[] = []
+    const checkImage = async (selector: string, source: string, label: string) => {
+      const image = panel.locator(`${selector} img`).first()
+      await image.waitFor()
+      expect(await image.getAttribute('src')).toBe(source)
+      await image.evaluate(async (node: HTMLImageElement) => { await node.decode() })
+      const size = await image.evaluate((node: HTMLImageElement) => ({
+        width: node.width, height: node.height, naturalWidth: node.naturalWidth,
+      }))
+      expect(size.naturalWidth).toBeGreaterThan(0)
+      images.push(`${label}: image, ${size.width}×${size.height}, decoded`)
+    }
+    await checkImage('[data-plugin-package="@fixture/bundle"]', fixtureIcon, 'Third-party bundle card')
+    const team = panel.locator('[data-plugin-package="@deepseek-ai/dsh-experimental-agent-team-profile"]')
+    expect(await team.getByRole('switch').getAttribute('aria-checked')).toBe('false')
+    await checkImage('[data-plugin-package="@deepseek-ai/dsh-experimental-agent-team-profile"]', teamIcon, 'Disabled Agent Teams card')
+    try {
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme })
+        expect(await team.locator('img').evaluate((node: HTMLImageElement) => node.naturalWidth)).toBe(36)
+        if (MODE === 'refresh') {
+          const path = fileURLToPath(new URL(`../../../.artifacts/plugin-icons-${process.pid}-${colorScheme}.png`, import.meta.url))
+          await page.screenshot({ path })
+          console.log(`Plugin icon screenshot: ${path}`)
+        }
+      }
+    } finally {
+      await page.emulateMedia({ colorScheme: null })
+    }
+    await panel.getByRole('button', { name: '查看 智能体团队', exact: true }).click()
+    await checkImage('[data-plugin-detail]', teamIcon, 'Agent Teams detail')
+    await panel.getByRole('button', { name: '返回插件列表' }).click()
+    await panel.getByRole('button', { name: '查看 @fixture/bundle', exact: true }).click()
+    await checkImage('[data-plugin-detail]', fixtureIcon, 'Third-party bundle detail')
+    await checkImage('[data-plugin-row="fixture-search"]', fixtureIcon, 'Independent search row')
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'icons.expected.md'), images.join('\n'), MODE)
+    await panel.getByRole('button', { name: '返回插件列表' }).click()
+    expect(tripwire.pageErrors).toEqual([])
+  })
+
   it('localizes independent exports and falls back per field without activating the plugins', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-exports'))
     const panel = await openPluginsPanel()
@@ -332,7 +376,7 @@ describe('web e2e: plugin manager', () => {
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'manager.expected.md', 'live-enabled.expected.md', 'missing-bundle.expected.md', 'exports.expected.md', 'exports-en.expected.md',
+      'manager.expected.md', 'live-enabled.expected.md', 'missing-bundle.expected.md', 'exports.expected.md', 'exports-en.expected.md', 'icons.expected.md',
     ])
   })
 })

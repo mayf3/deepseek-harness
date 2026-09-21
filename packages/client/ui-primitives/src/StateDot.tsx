@@ -9,6 +9,20 @@ import { IconCheckOutlineRegular } from './icons/index.tsx'
 export type StateDotState = 'done' | 'warning' | 'ongoing' | 'error' | 'idle'
 
 /**
+ * Pin the loader's CSS animations to document time zero. A CSS animation starts
+ * when its element is inserted, so loaders mounted at different moments rotate
+ * out of phase; one shared start time keeps every visible loader in step.
+ * @param element - the mounted loader, or null on unmount.
+ */
+function syncSpinner(element: SVGSVGElement | null): void {
+  if (element === null) return
+  // jsdom (the unit lane) implements no Web Animations despite lib.dom's
+  // non-optional typing; the optional call leaves that lane unsynced.
+  const spinner = element as { getAnimations?: SVGSVGElement['getAnimations'] }
+  for (const animation of spinner.getAnimations?.({ subtree: true }) ?? []) animation.startTime = 0
+}
+
+/**
  * Render a state dot.
  * @param props.state - which of `done`, `warning`, `ongoing`, `error`, or `idle` to show.
  * @param props.size - outer diameter in px; defaults to 14 for ongoing and 10 for solid states.
@@ -26,6 +40,7 @@ export function StateDot({ state, size, className, appearance = 'dot' }: {
   if (state === 'ongoing') {
     return (
       <svg
+        ref={syncSpinner}
         className={clsx(css.spinner, className)}
         data-state="ongoing"
         width={edge}

@@ -278,6 +278,24 @@ export const IconCloseFillMedium = (props: IconProps) => (
   <IconCloseFillArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
 )
 
+// A 7-unit disc with the cross knocked out of it (even-odd), so the cross
+// takes the color of whatever sits behind the glyph.
+const IconCloseCircleFillArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
+    <path fillRule="evenodd" clipRule="evenodd" d="M15 8A7 7 0 1 1 1 8A7 7 0 1 1 15 8ZM6.409 10.652L5.348 9.591L6.939 8L5.348 6.409L6.409 5.348L8 6.939L9.591 5.348L10.652 6.409L9.061 8L10.652 9.591L9.591 10.652L8 9.061Z" fill="currentColor" />
+  </svg>
+)
+
+/** Regular IconCloseCircleFill artwork (cross knocked out of a filled disc); its fill-only geometry is weight-independent. */
+export const IconCloseCircleFillRegular = (props: IconProps) => (
+  <IconCloseCircleFillArtwork {...props} strokeWidth={ICON_REGULAR_STROKE} />
+)
+
+/** Medium IconCloseCircleFill artwork; it matches Regular because the geometry is fill-only. */
+export const IconCloseCircleFillMedium = (props: IconProps) => (
+  <IconCloseCircleFillArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
+)
+
 const IconCopyOutlineArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
     <rect x="1.52075" y="4.07373" width="10.3932" height="10.3932" rx="2" stroke="currentColor" />

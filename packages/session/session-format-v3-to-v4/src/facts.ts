@@ -6,7 +6,8 @@ import type { SessionFormatArtifact, SessionFormatJsonObject, SessionFormatJsonV
 /**
  * Collect a child's own descriptor without requiring one before its parent catalog is read.
  * @param artifact - validated historical child artifact with its exact inherited cut.
- * @returns compact child identity and descriptor evidence for catalog completion.
+ * @returns compact child identity and descriptor evidence with validated discovery fields for catalog completion.
+ * @throws SessionFormatError when a supported own descriptor has invalid discovery fields.
  */
 export function historicalChildCatalogSource(artifact: SessionFormatArtifact): SessionFormatJsonObject {
   const header = artifact.header
@@ -14,10 +15,12 @@ export function historicalChildCatalogSource(artifact: SessionFormatArtifact): S
     throw new SessionFormatUnsupportedMigrationError('catalog migration requires a subagent child with a direct parent')
   }
   const descriptors = artifact.events.filter(event => event.type === 'subagent/descriptor' && event.seq >= artifact.inheritedEventCount)
-  return {
+  const source = {
     childId: header.id, childCreatedAt: header.createdAt,
     descriptorCount: descriptors.length, descriptor: descriptors[0]?.data ?? null,
   }
+  childCatalogFact(source)
+  return source
 }
 
 /**
@@ -49,6 +52,9 @@ export function childCatalogFact(source: SessionFormatJsonObject): SessionFormat
   if (typeof descriptor['provider'] !== 'string') {
     throw new SessionFormatUnsupportedMigrationError(`${childCatalogSubject(source)} has an invalid subagent descriptor provider`)
   }
+  if (descriptor['version'] !== 1 && descriptor['mode'] !== 'continuable' && descriptor['mode'] !== 'one-shot') {
+    throw new SessionFormatUnsupportedMigrationError(`${childCatalogSubject(source)} has an invalid subagent descriptor mode`)
+  }
   return catalogFact({
     version: 0, childId: id, childCreatedAt: source['childCreatedAt'] as number,
     // V1 described only continuable children and carried no mode field.
@@ -64,12 +70,13 @@ export function childCatalogFact(source: SessionFormatJsonObject): SessionFormat
  * @returns validated catalog payload.
  */
 export function catalogFact(value: SessionFormatJsonValue, subject = 'subagent/catalog'): SessionFormatJsonObject {
-  if (!isSessionFormatJsonObject(value) || value['version'] !== 0
+  if (!isSessionFormatJsonObject(value) || (value['version'] !== 0 && value['version'] !== 1)
     || typeof value['childId'] !== 'string'
-    || (value['mode'] !== 'continuable' && value['mode'] !== 'one-shot')
+    || (value['mode'] !== 'continuable' && value['mode'] !== 'one-shot' && value['mode'] !== 'unknown')
+    || (value['version'] === 0 && value['mode'] === 'unknown')
     || (value['mode'] === 'continuable' && typeof value['label'] !== 'string')
     || (value['label'] !== undefined && typeof value['label'] !== 'string')) {
-    throw new SessionFormatError(`${subject} requires a complete version 0 catalog fact`)
+    throw new SessionFormatError(`${subject} requires a supported versioned catalog fact`)
   }
   sessionFormatCount(value['childCreatedAt'], 'catalog child creation time')
   return value

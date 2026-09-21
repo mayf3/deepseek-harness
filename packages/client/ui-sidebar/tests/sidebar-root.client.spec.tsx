@@ -245,3 +245,38 @@ it('wires the shell.leading controls to the shared sidebar actions', () => {
   expect(toggleSidebar).toHaveBeenCalledOnce()
   expect(startSession).toHaveBeenCalledOnce()
 })
+
+describe('Windows caption tooltips', () => {
+  afterEach(() => { document.documentElement.removeAttribute('data-windows-titlebar') })
+
+  const hover = (button: HTMLElement): void => {
+    fireEvent.mouseEnter(button)
+    act(() => { vi.advanceTimersByTime(500) })
+  }
+
+  it.each([false, true])(
+    'drops the sidebar toggle bubble below the caption (collapsed=%s)',
+    (collapsed) => {
+      vi.useFakeTimers()
+      document.documentElement.setAttribute('data-windows-titlebar', '')
+      mountShell({ collapsed, width: collapsed ? 0 : 300 })
+      hover(screen.getByRole('button', { name: collapsed ? 'Open sidebar' : 'Collapse sidebar' }))
+      expect(screen.getByRole('tooltip').getAttribute('data-side')).toBe('bottom')
+    },
+  )
+
+  it('drops the collapsed New Session bubble below the caption as well', () => {
+    vi.useFakeTimers()
+    document.documentElement.setAttribute('data-windows-titlebar', '')
+    mountShell({ collapsed: true, width: 0 })
+    hover(screen.getByRole('button', { name: 'New session' }))
+    expect(screen.getByRole('tooltip').getAttribute('data-side')).toBe('bottom')
+  })
+
+  it('keeps the ordinary Web bubble beside its anchor', () => {
+    vi.useFakeTimers()
+    mountShell({ collapsed: true, width: 0 })
+    hover(screen.getByRole('button', { name: 'Open sidebar' }))
+    expect(screen.getByRole('tooltip').getAttribute('data-side')).toBe('right')
+  })
+})
