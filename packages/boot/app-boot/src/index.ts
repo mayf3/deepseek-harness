@@ -20,6 +20,7 @@ import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from 
 export { readProfilePatches, resolveTelemetryPatch, type ProfileContext, type ProfilePnpmInvocation } from './profile-context.ts'
 export { sanitizeProfile } from './profile-sanitize.ts'
 export { readPluginMeta } from './package-meta.ts'
+export { generateConfigSchema, type ConfigSchemaDump } from './config-schema/index.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
 export {
@@ -32,6 +33,15 @@ declare module '@deepseek-ai/cordis' {
     /** Harness-home path resolver available to Loader `!!js` config expressions. */
     dshHomePath?: typeof dshHomePath
   }
+
+  interface Events {
+    /**
+     * Profile patches were reconciled into the running Loader tree: every entry update settled and no new
+     * inactive entry was introduced. Carries no diff; listeners re-read Loader entries.
+     * @mode emit
+     */
+    'app-boot/config-reload'(): void
+  }
 }
 
 export {
@@ -39,6 +49,8 @@ export {
   createRuntimeResolution,
   DEFAULT_PROFILE_BUNDLES,
   OPTIONAL_BUNDLES,
+  bundlePatchFiles,
+  bundlePatchPaths,
   initProfile,
   removeLinkProjections,
   loadProfile,
@@ -53,6 +65,7 @@ export {
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
+  type LinkedRoot,
   type RuntimeResolutionOptions,
   type RuntimeResolutionEntry,
   type RuntimeResolution,
@@ -270,6 +283,7 @@ export async function reconcileProfilePatches(
   for (const [index, result] of results.entries()) {
     if (result.status === 'rejected' && !previousFibers[index]?.failed) throw result.reason
   }
+  ctx.emit('app-boot/config-reload')
   return failures.map(inactiveDiagnostic)
 }
 

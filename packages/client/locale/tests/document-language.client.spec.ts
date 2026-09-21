@@ -27,7 +27,7 @@ async function bench(preference?: string) {
     ns: LOCALE_SETTINGS_NAMESPACE,
     schema: LocaleSettingsSchema.toJSON(),
     value: stored === undefined ? {} : { preference: stored },
-    applies: 'live' as const,
+    autoGenerate: true, applies: 'live' as const,
     secrets: [],
     revision,
   })

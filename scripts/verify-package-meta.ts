@@ -9,12 +9,14 @@ interface Manifest {
   name: string
   exports?: unknown
   files?: string[]
+  icon?: unknown
 }
 
 interface SourceJson {
   file: string
   metadata: boolean
   invalid: boolean
+  icon?: unknown
 }
 
 function sourceJsonFiles(dir: string): SourceJson[] {
@@ -29,7 +31,7 @@ function sourceJsonFiles(dir: string): SourceJson[] {
     if (typeof contents !== 'object' || contents === null || Array.isArray(contents)) {
       return { file, metadata: false, invalid: true }
     }
-    return { file, metadata: Object.hasOwn(contents, 'meta'), invalid: false }
+    return { file, metadata: Object.hasOwn(contents, 'meta'), invalid: false, icon: 'icon' in contents ? contents.icon : undefined }
   })
 }
 
@@ -77,7 +79,10 @@ function packageProblems(manifestPath: string): string[] {
   const exported = typeof pkg.exports === 'object' && pkg.exports !== null ? Object.entries(pkg.exports) : []
   for (const [key, target] of exported) {
     if (!key.startsWith('.')) continue
-    if (!key.includes('*')) candidates.add(key)
+    if (!key.includes('*')) {
+      candidates.add(key)
+      if (key.endsWith('/package.json')) candidates.add(key.slice(0, -'/package.json'.length))
+    }
     const plugin = pluginOf(key)
     if (plugin !== undefined && !plugin.includes('*')) candidates.add(plugin)
     for (const pattern of targetsOf(target)) {
@@ -85,6 +90,7 @@ function packageProblems(manifestPath: string): string[] {
         const value = substitution(pattern, `./${document.file}`)
         if (value === undefined) continue
         const request = key.replaceAll('*', value)
+        if (request.endsWith('/package.json')) candidates.add(request.slice(0, -'/package.json'.length))
         const owner = pluginOf(request)
         if (owner === undefined) continue
         candidates.add(owner)
@@ -116,6 +122,26 @@ function packageProblems(manifestPath: string): string[] {
       const file = lookup(resourceOf(filename))
       return file === undefined ? [] : [{ filename, file }]
     })
+    const iconManifest = lookup(`${specifier}/package.json`)
+    const iconDocument = iconManifest === undefined ? undefined : byPath.get(iconManifest)
+    let iconChecked = false
+    if (candidate === '.' && pkg.icon !== undefined && iconManifest !== join(dir, 'package.json')) {
+      problems.push(`${manifestPath}: exports must expose its icon declaration through ${pkg.name}/package.json`)
+    }
+    if (iconDocument?.icon !== undefined && resources.every(({ file }) => byPath.has(file))) {
+      iconChecked = true
+      const meta = readPluginMeta(specifier, parentURL)
+      if (meta?.error !== undefined) problems.push(meta.error)
+      if (meta?.icon !== undefined && typeof iconDocument.icon === 'string') {
+        const iconFile = relative(dir, resolve(dirname(join(dir, iconDocument.file)), iconDocument.icon)).replaceAll('\\', '/')
+        if (pkg.files !== undefined && !published(iconFile, pkg.files)) problems.push(`${manifestPath}: files must include ${iconFile}`)
+        if (iconDocument.file !== 'package.json' && pkg.files !== undefined && !published(iconDocument.file, pkg.files)) {
+          problems.push(`${manifestPath}: files must include ${iconDocument.file}`)
+        }
+      }
+    } else if (iconDocument?.icon !== undefined) {
+      problems.push(`${specifier}: icon metadata requires locale resources to resolve to source JSON`)
+    }
     if (!resources.some(({ file }) => byPath.get(file)?.metadata || byPath.get(file)?.invalid)) continue
     for (const { file } of resources) claimed.add(file)
     const english = lookup(resourceOf('en.json'))
@@ -138,7 +164,7 @@ function packageProblems(manifestPath: string): string[] {
         problems.push(`${resourceOf(filename)}: ${file} must share the English locale directory ${directory}`)
       }
     }
-    if (sourceResources) {
+    if (sourceResources && !iconChecked) {
       const meta = readPluginMeta(specifier, parentURL)
       if (meta?.error !== undefined) problems.push(meta.error)
     }

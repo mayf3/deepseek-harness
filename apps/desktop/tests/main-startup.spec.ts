@@ -63,7 +63,9 @@ const harness = await vi.hoisted(async () => {
       getZoomFactor: () => 1,
       focus: vi.fn(),
       sendInputEvent: vi.fn(),
-      send: vi.fn(),
+      send: vi.fn((channel: string, state: { policy?: { blocking: boolean } }) => {
+        if (channel === 'dsh-desktop:mandatory-state' && state.policy?.blocking) policyBlocked.resolve()
+      }),
     })
     readonly show = vi.fn()
     readonly hide = vi.fn()
@@ -71,13 +73,18 @@ const harness = await vi.hoisted(async () => {
     readonly restore = vi.fn()
     readonly setSize = vi.fn()
     readonly setTitleBarOverlay = vi.fn()
+    readonly setVibrancy = vi.fn()
+    readonly setBackgroundColor = vi.fn()
     constructor(readonly options: { show: boolean; modal?: boolean }) {
-      super(); if (windowFailure !== undefined) throw windowFailure; windows.push(this); if (options.modal) policyBlocked.resolve()
+      super(); if (windowFailure !== undefined) throw windowFailure; windows.push(this)
     }
     isDestroyed() { return this.destroyed }
     fullscreen = false
     isFullScreen() { return this.fullscreen }
-    isMinimized() { return false }
+    minimized = false
+    isMinimized() { return this.minimized }
+    visible = true
+    isVisible() { return this.visible }
     isFocused() { return true }
     async loadURL(url: string) {
       this.urls.push(url)
@@ -139,9 +146,10 @@ const harness = await vi.hoisted(async () => {
     }),
   })
   let accountListener: ((state: AccountView) => void) | undefined
+  const nativeTheme = { themeSource: 'system', shouldUseDarkColors: false }
   return {
     failWindow(error: Error) { windowFailure = error },
-    windows, hosts, handlers, app, FakeWindow, FakeHost, powerMonitor,
+    windows, hosts, handlers, app, FakeWindow, FakeHost, powerMonitor, nativeTheme,
     menu, popup, socketHeaders: vi.fn(), updateCheck, updateDownload, updateInstall,
 
     watchAccount: (listener: (state: AccountView) => void) => {
@@ -189,6 +197,7 @@ const harness = await vi.hoisted(async () => {
       updateCheck.mockReset().mockImplementation(async () => updateState)
       updateDownload.mockReset().mockImplementation(async () => updateState)
       updateInstall.mockReset().mockImplementation(async () => updateState)
+      nativeTheme.themeSource = 'system'; nativeTheme.shouldUseDarkColors = false
       preparing = deferred(); prepared = deferred(); hostStarted = deferred()
       navigated = deferred(); dialogShown = deferred(); quitCompleted = deferred()
       policyBlocked = deferred()
@@ -211,7 +220,7 @@ vi.mock('electron', () => ({
   BrowserWindow: harness.FakeWindow,
   dialog: harness.dialog,
   shell: { openExternal: harness.openExternal },
-  nativeTheme: { themeSource: 'system' },
+  nativeTheme: harness.nativeTheme,
   net: { fetch: vi.fn() },
   ipcMain: {
     on: harness.ipcOn,
@@ -222,7 +231,9 @@ vi.mock('electron', () => ({
     removeHandler: (channel: string) => { harness.handlers.delete(channel) },
   },
   Menu: { setApplicationMenu: harness.menu.setApplicationMenu, buildFromTemplate: harness.menu },
-  session: { defaultSession: { webRequest: { onBeforeSendHeaders: harness.socketHeaders } } },
+  session: { defaultSession: {
+    setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeSendHeaders: harness.socketHeaders },
+  } },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: harness.protocolHandle },
   powerMonitor: harness.powerMonitor,
 }))
@@ -389,6 +400,7 @@ describe('desktop main startup', () => {
     harness.app.isPackaged = packaged
     vi.spyOn(harness.app, 'getLocale').mockReturnValue(locale)
     vi.spyOn(harness.app, 'getPreferredSystemLanguages').mockReturnValue([locale])
+    vi.spyOn(harness.app, 'getPreferredSystemLanguages').mockReturnValue([locale])
     await readyForUpdate()
     const submenu = applicationMenuItems()
     const options = harness.app.setAboutPanelOptions.mock.calls[0]![0]
@@ -491,7 +503,7 @@ describe('desktop main startup', () => {
     expect(testAuth.login).not.toHaveBeenCalled()
   })
 
-  it('retains the same blocking window and running Host after expired test login is cancelled', async () => {
+  it('retains the embedded block and running Host after expired test login is cancelled', async () => {
     harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test', allowedAuthOrigins: ['https://login.example.com'],
       allowedPageOrigins: ['https://downloads.example.com'], intervalMs: 1000, jitter: 0 }
     const request = vi.fn<typeof fetch>().mockImplementation(async () =>
@@ -502,7 +514,7 @@ describe('desktop main startup', () => {
     const host = await readyForUpdate()
     await harness.policyBlocked.promise
     await vi.advanceTimersByTimeAsync(1000)
-    const modal = harness.windows.find(window => window.options.modal)!
+    const modal = harness.windows[0]!
     const owned = { sender: modal.webContents, senderFrame: modal.webContents.mainFrame }
     harness.dialog.showMessageBox.mockResolvedValue({ response: 0 })
     testAuth.login.mockResolvedValueOnce('cancelled')
@@ -622,6 +634,48 @@ describe('desktop main startup', () => {
     expect(window.webContents.send.mock.calls.filter(([channel]) => channel === DESKTOP_IPC.windowFullscreen)).toHaveLength(0)
   })
 
+  it('covers the macOS vibrancy reattach gap with an opaque base while minimized or hidden', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    // Minimizing drops the vibrancy material and paints the theme's opaque fill.
+    window.minimized = true
+    window.emit('minimize')
+    expect(window.setVibrancy).toHaveBeenLastCalledWith(null)
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#f9fafb')
+    // Restoring re-requests the material and returns to the transparent base.
+    window.minimized = false
+    window.emit('restore')
+    expect(window.setVibrancy).toHaveBeenLastCalledWith('sidebar')
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#00000000')
+    // Hiding under the dark palette picks the dark opaque fill.
+    harness.nativeTheme.shouldUseDarkColors = true
+    window.visible = false
+    window.emit('hide')
+    expect(window.setVibrancy).toHaveBeenLastCalledWith(null)
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#1b1b1c')
+    window.visible = true
+    window.emit('show')
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#00000000')
+    // A destroyed window ends the backdrop updates.
+    const applied = window.setVibrancy.mock.calls.length
+    window.destroyed = true
+    window.emit('minimize')
+    expect(window.setVibrancy.mock.calls).toHaveLength(applied)
+  })
+
+  it.each(['win32', 'linux'] as const)('registers no backdrop swap on %s', async (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    window.minimized = true
+    window.emit('minimize')
+    expect(window.setVibrancy).not.toHaveBeenCalled()
+    expect(window.setBackgroundColor).not.toHaveBeenCalled()
+  })
+
   it('follows the Windows primary document language and palette without trusting other frames', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     await import('../src/main.ts')
@@ -705,6 +759,23 @@ describe('desktop main startup', () => {
       ? ['about', 'separator', en.checkUpdatesMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
       : ['about', 'separator', en.checkUpdatesMenu, 'separator', 'quit'])
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
+  })
+
+  it.each(['en-US', 'zh-CN'])('localizes macOS visibility and quit commands without changing the application name (%s)', async (locale) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    vi.spyOn(harness.app, 'getLocale').mockReturnValue(locale)
+    vi.spyOn(harness.app, 'getPreferredSystemLanguages').mockReturnValue([locale])
+    const originalName = harness.app.name
+    harness.app.name = '@deepseek-ai/dsh-desktop'
+    try {
+      await import('../src/main.ts')
+      await harness.preparing.promise
+      const commands = applicationMenuItems().filter(item =>
+        item.role === 'hide' || item.role === 'hideOthers' || item.role === 'unhide' || item.role === 'quit')
+      await expect(JSON.stringify(commands, null, 2) + '\n')
+        .toMatchFileSnapshot(`./expected/application-menu-${locale}.json`)
+      expect(harness.app.name).toBe('@deepseek-ai/dsh-desktop')
+    } finally { harness.app.name = originalName }
   })
 
   it('attaches Host socket credentials only to the owned application origin and window', async () => {
@@ -886,14 +957,15 @@ describe('desktop main startup', () => {
     vi.stubGlobal('fetch', request)
     const host = await readyForUpdate()
     await harness.policyBlocked.promise
-    const modal = harness.windows.find(window => window.options.modal)!
+    const modal = harness.windows[0]!
     expect(modal).toBeDefined()
+    expect(harness.windows).toHaveLength(1)
     const status = harness.handlers.get(MANDATORY_IPC.status)!
     const action = harness.handlers.get(MANDATORY_IPC.action)!
     const owned = { sender: modal.webContents, senderFrame: modal.webContents.mainFrame }
     expect(status(owned)).toMatchObject({ policy: { blocking: true } })
     const unowned = [
-      { ...owned, sender: harness.windows[0]!.webContents },
+      { ...owned, sender: {} },
       { ...owned, senderFrame: { url: 'dsh-app://app/index.html' } },
       { ...owned, senderFrame: { url: 'https://untrusted.example.com/' } },
     ]
@@ -918,7 +990,8 @@ describe('desktop main startup', () => {
     await vi.advanceTimersByTimeAsync(20_000)
     expect(modal.isDestroyed()).toBe(false)
     await vi.advanceTimersByTimeAsync(150)
-    expect(modal.isDestroyed()).toBe(true)
+    expect(modal.isDestroyed()).toBe(false)
+    expect(modal.webContents.send.mock.calls.at(-1)).toMatchObject([MANDATORY_IPC.state, { policy: { blocking: false } }])
     expect(host.stop).not.toHaveBeenCalled()
     expect(request.mock.calls[0]![1]!.headers).toMatchObject({ 'x-client-bundle-id': 'com.deepseek.dsh', 'x-client-version': '1.0.0' })
   })
@@ -1134,7 +1207,7 @@ describe('desktop main startup', () => {
   })
 
   async function answerMandatory(action: 'install' | 'later') {
-    const modal = harness.windows.find(window => window.options.modal && !window.isDestroyed())!
+    const modal = harness.windows[0]!
     const event = { sender: modal.webContents, senderFrame: modal.webContents.mainFrame }
     await vi.waitFor(() => {
       expect(harness.handlers.get(MANDATORY_IPC.status)!(event)).toHaveProperty('confirmation')
@@ -1143,14 +1216,14 @@ describe('desktop main startup', () => {
     await harness.handlers.get(MANDATORY_IPC.action)!(event, action, view.confirmation.version, view.confirmation.revision)
   }
 
-  it('releases the mandatory modal when the confirmed installer quits Electron', async () => {
+  it('closes the main window when the confirmed installer quits Electron', async () => {
     harness.embeddedPolicy = { origin: 'https://policy.example.com', allowedPageOrigins: ['https://downloads.example.com'] }
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ code: 40005, data: {
       show_content: { title: 'Update required', detail: 'Please update' }, desktop_app_link: 'https://downloads.example.com/',
     } })))
     const host = await readyForUpdate()
     await harness.policyBlocked.promise
-    const modal = harness.windows.find(window => window.options.modal)!
+    const modal = harness.windows[0]!
     const preparing = harness.prepareUpdate()
     await answerMandatory('install')
     await host.stopping.promise
@@ -1194,7 +1267,10 @@ describe('desktop main startup', () => {
     await expect(retry).resolves.toBe(false)
     expect(replacement.updateTasks.mock.calls).toEqual([['inspect']])
     expect(replacement.stop).not.toHaveBeenCalled()
-    if (mandatory) expect(harness.windows.find(window => window.options.modal)?.isDestroyed()).toBe(false)
+    if (mandatory) {
+      expect(harness.windows).toHaveLength(1)
+      expect(harness.windows[0]!.isDestroyed()).toBe(false)
+    }
   })
 
   it.each([false, true])('restores a confirmed non-graceful exit without approving installation, mandatory: %s', async (mandatory) => {
@@ -1228,7 +1304,10 @@ describe('desktop main startup', () => {
     await expect(retry).resolves.toBe(false)
     expect(replacement.updateTasks.mock.calls).toEqual([['inspect']])
     expect(replacement.stop).not.toHaveBeenCalled()
-    if (mandatory) expect(harness.windows.find(window => window.options.modal)?.isDestroyed()).toBe(false)
+    if (mandatory) {
+      expect(harness.windows).toHaveLength(1)
+      expect(harness.windows[0]!.isDestroyed()).toBe(false)
+    }
   })
 
   it('does not replace a Host whose failed stop has not confirmed process exit', async () => {

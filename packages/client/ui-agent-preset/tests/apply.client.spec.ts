@@ -30,8 +30,7 @@ import { apply as hostApply } from '../src/index.ts'
 const ROSTER_ONE = {
   ok: true as const,
   value: {
-    presets: [{ id: 'standard', trust: 'system', isDefault: true }],
-    authorable: true,
+    presets: [{ id: 'standard', isDefault: true }],
     modeSelectionEnabled: true,
   },
 }
@@ -41,10 +40,9 @@ const ROSTER_AUTHORED = {
   ok: true as const,
   value: {
     presets: [
-      { id: 'standard', trust: 'system', isDefault: true },
-      { id: 'mine', trust: 'user', isDefault: false },
+      { id: 'standard', isDefault: true },
+      { id: 'mine', isDefault: false },
     ],
-    authorable: true,
     modeSelectionEnabled: true,
   },
 }
@@ -54,10 +52,9 @@ const ROSTER_MOVED = {
   ok: true as const,
   value: {
     presets: [
-      { id: 'standard', trust: 'system', isDefault: false },
-      { id: 'minimal', trust: 'system', isDefault: true },
+      { id: 'standard', isDefault: false },
+      { id: 'minimal', isDefault: true },
     ],
-    authorable: true,
     modeSelectionEnabled: true,
   },
 }
@@ -66,8 +63,7 @@ const ROSTER_MOVED = {
 const ROSTER_HIDDEN = {
   ok: true as const,
   value: {
-    presets: [{ id: 'standard', trust: 'system', isDefault: true }],
-    authorable: true,
+    presets: [{ id: 'standard', isDefault: true }],
     modeSelectionEnabled: false,
   },
 }
@@ -94,12 +90,11 @@ async function bench(options: {
   // The row reads `describe` to learn whether this browser may write at all,
   // and its default write is the one op this spec records.
   const settings = {
-    canOpenAgentPresetDirectory: () => Promise.resolve({ ok: true as const, value: true }),
     describe: () => Promise.resolve({
       ok: true as const,
       value: { writable: true, hasDocument: true, namespaces: [] },
     }),
-    update: (_ns: string, patch: { default?: unknown; modeSelectionEnabled?: unknown }) => {
+    update: (_ns: string, patch: { selectedDefault?: unknown; modeSelectionEnabled?: unknown }) => {
       calls.push(`settings:${JSON.stringify(patch)}`)
       if (options.failSettingsUpdate === true) {
         return Promise.resolve({
@@ -107,8 +102,8 @@ async function bench(options: {
           error: new RemoteError('gateway/internal', 'settings write disconnected', {}),
         })
       }
-      if (typeof patch.default === 'string') {
-        savedDefault = patch.default
+      if (typeof patch.selectedDefault === 'string') {
+        savedDefault = patch.selectedDefault
       }
       if (typeof patch.modeSelectionEnabled === 'boolean') {
         selectionEnabled = patch.modeSelectionEnabled
@@ -119,10 +114,7 @@ async function bench(options: {
       settingsSaved = true
       return Promise.resolve({ ok: true as const, value: {} })
     },
-    openAgentPresetDirectory: (agentPreset: string) => {
-      calls.push(`openAgentPresetDirectory:${agentPreset}`)
-      return Promise.resolve({ ok: true as const, value: { opened: true as const } })
-    },
+
   }
   const remote = new TestRemote(ctx, { settings })
   // The roster and the switch are the AgentPresets Remote namespace; the
@@ -141,16 +133,15 @@ async function bench(options: {
     },
     read: () => Promise.resolve({
       ok: true as const,
-      value: { agentPreset: 'standard', trust: 'system', content: '' },
+      value: { agentPreset: 'standard', content: '', revision: 'rev' },
     }),
-    copy: (_from: string, id: string) => {
-      calls.push(`copy:${id}`)
+    save: (id: string) => {
+      calls.push(`save:${id}`)
       // The host's roster now contains it, which is the whole point of the
-      // copy and what every surface must converge on.
+      // save and what every surface must converge on.
       ROSTER = ROSTER_AUTHORED
-      return Promise.resolve({ ok: true as const, value: undefined })
+      return Promise.resolve({ ok: true as const, value: { saved: true } })
     },
-    deletePreset: () => Promise.resolve({ ok: true as const, value: undefined }),
     select: (_agentId: SessionId, agentPreset: string) => {
       calls.push(`select:${agentPreset}`)
       return Promise.resolve(options.selectGate).then(() => ({ ok: true as const, value: agentPreset }))
@@ -316,7 +307,7 @@ describe('ui-agent-preset apply', () => {
 
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'sessions', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'settingsScope',
+      'slots', 'sessions', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'configForms',
     ])
   })
 
@@ -358,34 +349,7 @@ describe('ui-agent-preset apply', () => {
     await section.load()
     await section.makeDefault('standard')
     expect(section.hooks.agentPresetSection.getSnapshot().rows)
-      .toEqual([{ id: 'standard', trust: 'system', isDefault: true }])
-  })
-
-  it('routes the section actions to one controller', async () => {
-    const { ctx, slots, calls } = await bench()
-    ctx.provide('sessions', sessionsDouble(ctx, { byId: {} }) as never)
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
-
-    await section.load()
-    section.beginCopy('standard')
-    section.cancelCopy()
-    section.beginCopy('standard')
-    section.setCopyId('mine')
-    section.setCopyName('我的模式')
-    await section.confirmCopy()
-    await section.view('standard')
-    section.closeView()
-    section.confirmDelete('mine')
-    await Promise.all([section.openLocation('mine'), section.remove()])
-
-    // One controller behind every action: the copy the dialog named is the
-    // one the roster re-read reflects, and the delete the section confirmed
-    // is the one its remove() sees.
-    expect(calls).toContain('copy:mine')
-    expect(calls.filter(call => call === 'openAgentPresetDirectory:mine').length).toBeGreaterThan(0)
-    expect(section.hooks.agentPresetSection.getSnapshot().rows).toHaveLength(2)
+      .toEqual([{ id: 'standard', isDefault: true }])
   })
 
   it('refreshes a showing surface when its namespace changes, and ignores others', async () => {
@@ -397,7 +361,7 @@ describe('ui-agent-preset apply', () => {
     await section.load()
     const before = calls.length
 
-    remote.emit('settings/document-updated', ['agent-presets', 1])
+    remote.emit('settings/document-updated', ['agent-preset-registry', 1])
     await vi.waitFor(() => { expect(calls.length).toBe(before + 3) })
     const afterRelevant = calls.length
 
@@ -435,7 +399,7 @@ describe('ui-agent-preset apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
     const before = calls.length
 
-    remote.emit('settings/document-updated', ['agent-presets', 1])
+    remote.emit('settings/document-updated', ['agent-preset-registry', 1])
     await vi.waitFor(() => { expect(calls.length).toBeGreaterThan(before) })
 
     // The directory and unbound seat reload: a section nobody opened has
@@ -490,7 +454,7 @@ describe('ui-agent-preset apply', () => {
     await Promise.resolve()
     expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
 
-    remote.emit('settings/document-updated', ['agent-presets', 1])
+    remote.emit('settings/document-updated', ['agent-preset-registry', 1])
     await vi.waitFor(() => {
       expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal')
     })
@@ -525,16 +489,8 @@ describe('ui-agent-preset apply', () => {
 
     await first.load()
     const beforeRefresh = calls.length
-    remote.emit('settings/document-updated', ['agent-presets', 1])
+    remote.emit('settings/document-updated', ['agent-preset-registry', 1])
     await vi.waitFor(() => { expect(calls.length).toBeGreaterThan(beforeRefresh + 2) })
-
-    const section = (slots.entries('settings.section')[0]!
-      .inject as unknown as () => AgentPresetSectionInjected)()
-    await section.load()
-    section.beginCopy('standard')
-    section.setCopyId('mine')
-    section.setCopyName('Mine')
-    await section.confirmCopy()
 
     delete state.current
     sessions.notify()
@@ -685,36 +641,6 @@ describe('ui-agent-preset apply', () => {
     })
   })
 
-  it('offers a just-authored preset on the new-session chip', async () => {
-    const { ctx, slots } = await bench()
-    declareRoot(slots)
-    const conversation = declareConversation(slots)
-    ctx.provide('conversation', {} as never)
-    ctx.provide('sessions', sessionsDouble(ctx, { byId: {} }) as never)
-    ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
-    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
-
-    const chip = slots.entries('conversation.hero.agentPreset')[0]!
-    const seat = (chip.inject as unknown as () => AgentPresetSeatInjected)()
-    await seat.load()
-    expect(seat.hooks.agentPresetSeat.getSnapshot().options.map(option => option.id)).toEqual(['standard'])
-
-    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
-    await section.load()
-    section.beginCopy('standard')
-    section.setCopyId('mine')
-    section.setCopyName('我的模式')
-    await section.confirmCopy()
-
-    // Authoring copies a directory rather than writing a setting, so nothing
-    // on the wire announces it: a preset created to be used must appear on
-    // the one screen that starts sessions, without a reload.
-    await vi.waitFor(() => {
-      expect(seat.hooks.agentPresetSeat.getSnapshot().options.map(option => option.id)).toEqual(['standard', 'mine'])
-    })
-    conversation()
-  })
-
   it('applies the staged choice to the blank session the flow lands on', async () => {
     const { ctx, slots, calls } = await bench()
     declareRoot(slots)
@@ -819,7 +745,7 @@ describe('ui-agent-preset apply', () => {
 
     await label.load()
 
-    expect(label.hooks.agentPresets.getSnapshot().options).toEqual([{ id: 'standard', trust: 'system' }])
+    expect(label.hooks.agentPresets.getSnapshot().options).toEqual([{ id: 'standard' }])
   })
 
   it('stages the creator preset and starts a session from the section', async () => {

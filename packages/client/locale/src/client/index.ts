@@ -9,10 +9,10 @@ import type { LocalizedText } from '@deepseek-ai/dsh-package-manifest'
 import {
   type BoundActions, type LocaleDictOf, type LocaleNamespaceMap, type Translate, type TranslateNS,
 } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: the ctx.settingsScope Context merge and the settings slot types.
+// Type-only: the ctx.configForms Context merge and the settings slot types.
 // Cross-plugin collaboration goes through the service, never a value import
 // (client bundle purity gate).
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { parseLocaleBootstrap, type LocaleBootstrap, type LocaleBridge } from './bootstrap.ts'
 // Type-only: pulls the SlotRegistry service merge (ctx.slots).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -169,7 +169,7 @@ export class LocaleRuntime {
   private snapshot: LocaleSnapshot
   private listeners = new Set<() => void>()
   private readonly ctx: ClientContext
-  private readonly host: SettingsScope<LocaleSettings> | undefined
+  private readonly host: ConfigForm<LocaleSettings> | undefined
   /** Browser-derived locale standing wherever no explicit Host selection does. */
   private provisional: LocaleId
   /** Last explicit selection, including one awaiting an external registration. */
@@ -182,7 +182,7 @@ export class LocaleRuntime {
    * absent compositions (standalone dictionary registries) stay process-local.
    * @param bootstrap - native initialization; absent in ordinary browsers.
    */
-  constructor(ctx: ClientContext, host?: SettingsScope<LocaleSettings>, private readonly bootstrap?: LocaleBootstrap) {
+  constructor(ctx: ClientContext, host?: ConfigForm<LocaleSettings>, private readonly bootstrap?: LocaleBootstrap) {
     this.ctx = ctx
     this.host = host
     for (const locale of BUILT_IN_LOCALES) this.catalog.set(localeKey(locale.id), locale)
@@ -300,7 +300,7 @@ export class LocaleRuntime {
    * absent selection returns to the browser-derived locale.
    * @param host - the constructor-narrowed scope driving this adoption.
    */
-  private adopt(host: SettingsScope<LocaleSettings>): void {
+  private adopt(host: ConfigForm<LocaleSettings>): void {
     const section = host.getSnapshot().value
     if (section === undefined) return
     this.preference = section.preference
@@ -550,7 +550,7 @@ function detectBrowserLocale(locales: readonly LocaleDefinition[], languages?: r
 }
 
 /** Required services: slot registration plus the settings transport. */
-export const inject = ['slots', 'remote', 'settingsScope']
+export const inject = ['slots', 'remote', 'configForms']
 
 /**
  * Client plugin body: provide the locale service with base dictionaries and
@@ -573,7 +573,7 @@ export async function apply(ctx: ClientContext): Promise<void> {
     if (ctx.fiber.uid === null) return
     bootstrap = parseLocaleBootstrap(value)
   }
-  const host = ctx.settingsScope.bind<LocaleSettings>({ namespace: LOCALE_SETTINGS_NAMESPACE })
+  const host = ctx.configForms.get<LocaleSettings>(LOCALE_SETTINGS_NAMESPACE)
   const locale = new LocaleRuntime(ctx, host, bootstrap)
   locale.register(COMMON_NS, { zh, en })
   locale.register(SETTINGS_NS, { zh: settingsZh, en: settingsEn })

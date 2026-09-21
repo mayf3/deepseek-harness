@@ -629,10 +629,13 @@ class JsonlSessionPersistence extends SessionPersistence {
     let prepared: Awaited<ReturnType<typeof prepareJsonlMigration>>
     let validateRelatedSources: () => Promise<void>
     try {
-      const children = async () => (await this.listArtifacts(signal, selected.sourcePath))
+      const children = async () => (await this.listArtifacts(signal))
         .filter(source => source.header.origin === 'subagent' && source.header.parentSession === id)
       const sources = await children()
       const related = await prepareCatalogFacts(id, sources, this.compression, signal)
+      for (const failure of related.failures) {
+        this.ctx.logger.warn(`${this.name}: session "${id}" catalog retained a child with unknown descriptor (raw log: ${failure.path}): ${String(failure.error)}`)
+      }
       const membership = sources.map(source => source.path).sort()
       validateRelatedSources = async () => {
         const current = (await children()).map(source => source.path).sort()
@@ -1052,7 +1055,6 @@ class JsonlSessionPersistence extends SessionPersistence {
 
   private async listArtifacts(
     signal?: AbortSignal,
-    migrationSource?: string,
   ): Promise<Array<{ header: SessionHeader; path: string; sourceVersion: number }>> {
     signal?.throwIfAborted()
     await this.ensureRootEncoding()
@@ -1061,26 +1063,14 @@ class JsonlSessionPersistence extends SessionPersistence {
     const ids = new Set<SessionId>()
     for (const selected of await this.listGenerations(signal)) {
       signal?.throwIfAborted()
-      if (migrationSource !== undefined && selected.sourceVersion > SESSION_FORMAT_VERSION) {
-        throw new SessionFormatUnsupportedError(
-          `catalog migration cannot inspect Session format v${selected.sourceVersion}; upgrade the harness (raw log: ${selected.sourcePath})`,
-          { kind: 'jsonl', path: selected.sourcePath },
-        )
-      }
       let header: SessionHeader | undefined
       try {
         header = await this.readGenerationHeader(selected, undefined, signal)
       } catch (error: unknown) {
-        if (error instanceof SessionFormatUnsupportedError && migrationSource === undefined) continue
+        if (error instanceof SessionFormatUnsupportedError || error instanceof SessionPersistenceCorruptionError) continue
         throw error
       }
       if (header === undefined) {
-        if (migrationSource !== undefined && selected.sourcePath !== migrationSource) {
-          throw new SessionFormatUnsupportedError(
-            `cannot establish complete catalog membership from an unreadable Session header (raw log: ${selected.sourcePath})`,
-            { kind: 'jsonl', path: selected.sourcePath },
-          )
-        }
         continue
       }
       if (ids.has(header.id)) {
@@ -1416,7 +1406,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     }
   }
 
-  /** Read and validate only the independently compressed header frame. */
+  /** Read only the header frame; compression failures reject as corruption, while I/O and cancellation propagate. */
   private async readFirstZstdLine(path: string, signal?: AbortSignal): Promise<string | undefined> {
     signal?.throwIfAborted()
     const handle = await open(path, 'r')
@@ -1432,21 +1422,21 @@ class JsonlSessionPersistence extends SessionPersistence {
         signal?.throwIfAborted()
         content = Buffer.concat([content, chunk.subarray(0, bytesRead)])
         signal?.throwIfAborted()
-        const first = scanZstdFrames(content, 1).frames[0]
-        signal?.throwIfAborted()
-        if (first === undefined) continue
-        let plaintext: Buffer
         try {
+          const first = scanZstdFrames(content, 1).frames[0]
+          if (first === undefined) continue
+          const plaintext = await decompressZstdFrame(content.subarray(first.start, first.end))
           signal?.throwIfAborted()
-          plaintext = await decompressZstdFrame(content.subarray(first.start, first.end))
+          assertZstdHeaderFrame(plaintext)
+          return plaintext.subarray(0, -1).toString('utf8')
         } catch (error) {
           /* v8 ignore next -- decoder failure plus concurrent abort is timing-dependent */
           if (signal?.aborted) signal.throwIfAborted()
-          throw new Error('corrupt Zstandard session log: header frame failed validation', { cause: error })
+          throw new SessionPersistenceCorruptionError(
+            `corrupt Zstandard session log: header frame failed validation: ${String(error)} (raw log: ${path})`,
+            { cause: error },
+          )
         }
-        signal?.throwIfAborted()
-        assertZstdHeaderFrame(plaintext)
-        return plaintext.subarray(0, -1).toString('utf8')
       }
     } finally {
       await handle.close()

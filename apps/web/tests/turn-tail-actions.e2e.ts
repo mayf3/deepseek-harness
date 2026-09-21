@@ -232,7 +232,9 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('switches a completed Turn between Compact and Normal', async () => {
+  it.skipIf(MODE === 'record').each([
+    ['detailed', 'Detailed'], ['expanded', 'Expanded'],
+  ] as const)('preserves whole-Turn folding in %s mode', async (mode, label) => {
     await launch()
     onTestFailed(() => saveFailureShot(page, 'web-e2e-turn-process-setting'))
     const { settled } = await sendPrompt()
@@ -245,18 +247,21 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
 
     await openSettingsFromAccountMenu(page, 'en')
     const dialog = page.getByRole('dialog', { name: 'Settings' })
-    await dialog.getByRole('button', { name: 'Compact', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Normal', exact: true }).click()
+    await dialog.getByText('Work details', { exact: true }).locator('../..')
+      .getByRole('button', { name: 'Compact', exact: true }).click()
+    await page.getByRole('menuitem', { name: label, exact: true }).click()
     await page.keyboard.press('Escape')
 
-    await expect.poll(() => process.count(), { timeout: 10_000 }).toBe(0)
-    await tool.waitFor({ state: 'visible', timeout: 10_000 })
-    await expect.poll(async () => readFile(join(scaffold!.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
-      .toMatch(/ui-chat:\n\s+transcriptView: normal/)
+    expect(await process.count()).toBe(1)
+    expect(await process.getAttribute('aria-expanded')).toBe('false')
+    expect(await tool.isVisible()).toBe(false)
+    await expect.poll(async () => readFile(join(scaffold!.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
+      .toContain(`transcriptView: ${mode}`)
 
     await openSettingsFromAccountMenu(page, 'en')
     const restored = page.getByRole('dialog', { name: 'Settings' })
-    await restored.getByRole('button', { name: 'Normal', exact: true }).click()
+    await restored.getByText('Work details', { exact: true }).locator('../..')
+      .getByRole('button', { name: label, exact: true }).click()
     await page.getByRole('menuitem', { name: 'Compact', exact: true }).click()
     await page.keyboard.press('Escape')
     await process.waitFor({ timeout: 10_000 })

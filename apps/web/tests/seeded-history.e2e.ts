@@ -228,6 +228,13 @@ describe('web e2e: seeded history renders through cold resume', () => {
       ],
       openInAppEnvironment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { SSH_CONNECTION: '10.0.0.2 55000 10.0.0.9 22' } }]),
     })
+    // Application registrations belong to the host desktop, not to the recorded Session.
+    const controller = scaffold.ctx.get('sessionController')
+    if (controller === undefined) throw new Error('seeded-history requires Session Controller')
+    const nativeQuery: unknown = Reflect.get(controller, 'fileApplications')
+    if (typeof nativeQuery !== 'function') throw new Error('seeded-history requires the native file-association adapter')
+    Reflect.set(controller, 'fileApplications', async () => [])
+    scaffold.ctx.effect(() => () => { Reflect.set(controller, 'fileApplications', nativeQuery) }, 'seeded-history: native association fixture')
     // Composer recording uses a child workspace; seedSession owns the scaffold root.
     const sessionCwd = MODE === 'record' ? join(scaffold.workspaceCwd, 'workspace') : scaffold.workspaceCwd
     await mkdir(sessionCwd, { recursive: true })
@@ -288,11 +295,9 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // The seed carries a session/title event: the title unit is host-plane, so
     // it folds the detached log and serves the value with nothing composed.
     expect(typeof projections.values.title).toBe('string')
-    // `todos` is absent because its unit belongs to the agent preset and this
-    // directly seeded session never composed that preset. History computes
-    // the baseline through the standard projection registry without mounting
-    // an Agent composition as a read side effect.
-    expect(projections.values).not.toHaveProperty('todos')
+    // Eager preset activation registers the todo projection before any Agent
+    // opens this log. A log without todo events projects its empty value.
+    expect(projections.values.todos).toBeNull()
     // The session-stats unit is a shipped web-app bundle row: whole-log
     // turn/step counts ride the same tail block (the stats strip's source).
     const sessionStats = projections.values.sessionStats as { turns: number; steps: number } | undefined
@@ -518,7 +523,8 @@ describe('web e2e: seeded history renders through cold resume', () => {
       await expect.poll(() => path.textContent()).toBe(absolutePath)
       expect(await path.getAttribute('title')).toBe(absolutePath)
       await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
-      await column.locator('[data-open-path-open]').waitFor({ timeout: 5_000 })
+      await column.getByRole('button', { name: 'Show file location', exact: true }).waitFor({ timeout: 5_000 })
+      await expect.poll(() => column.locator('[data-open-path-open]').isEnabled()).toBe(true)
       const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(FILE_PREVIEW_EXPECTED, preview, MODE)
     } finally {
@@ -721,24 +727,21 @@ describe('web e2e: seeded history renders through cold resume', () => {
     if (bodyError !== undefined) throw bodyError
   })
 
-  it.skipIf(MODE === 'record')('an Access-chip switch lands one command row: bare name, non-repeating settlement text', async () => {
+  it.skipIf(MODE === 'record')('an Access-chip switch persists its command without adding a Chat row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-command-row'))
-    // The Access chip submits `/permission <preset>` — a host command with no
-    // model call, so the settled row renders keylessly over this cold history.
-    // The row copy is the assertion: `permission · preset read-only`,
-    // where neither half repeats the other (the dispatched `/` and its
-    // argument stay out of the title, and the settlement text never restates
-    // the command's own name).
     await page.getByRole('button', { name: 'Access mode, current: Workspace Write' }).click()
     await page.getByRole('menuitem', { name: 'Read Only' }).click()
     const access = page.getByRole('button', { name: 'Access mode, current: Read Only' })
     await expect.poll(() => access.isEnabled(), { timeout: 10_000 }).toBe(true)
-    // Scoped to the row itself, so unrelated page text that happens to read
-    // `permission` (a future resident slash menu) cannot satisfy or break it.
     const row = page.locator('[data-variant="others"]').filter({ hasText: 'preset read-only' })
-    await expect.poll(() => row.count(), { timeout: 10_000 }).toBe(1)
-    expect(await row.getByText('permission', { exact: true }).count()).toBe(1)
-    expect(await row.getByText('/permission read-only', { exact: true }).count()).toBe(0)
+    expect(await row.count()).toBe(0)
+    const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
+    if (agent === undefined) throw new Error('seeded session did not attach an agent')
+    const events = agent.session.snapshotEvents()
+    const run = events.findLast(event => event.type === 'command/run' && event.data.name === 'permission')
+    if (run?.type !== 'command/run') throw new Error('permission command was not persisted')
+    expect(events.find(event => event.type === 'command/done' && event.data.commandId === run.data.commandId)?.data)
+      .toMatchObject({ kind: 'success', text: 'preset read-only' })
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(COMMAND_ROW_EXPECTED, snapshot, MODE)

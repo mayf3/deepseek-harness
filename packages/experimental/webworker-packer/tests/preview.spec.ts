@@ -65,7 +65,7 @@ describe('Node preparation of Preview Session data', () => {
     expect(packVfsOverlay(fixture.trees).files).toEqual(original.files)
   })
 
-  it.each(['missing-descriptor', 'other-root', 'other-origin', 'current-child'] as const)('adds catalog facts only for supported direct subagent children in the same root: %s', (mode) => {
+  it.each(['missing-descriptor', 'other-root', 'other-origin', 'current-child'] as const)('catalogs direct subagent children in the same root, retaining missing descriptors as unknown: %s', (mode) => {
     const fixture = source()
     const parent = fixture.put(3)
     const childDirectory = join(fixture.trees[0]!.directory, 'sessions', mode === 'other-root' ? 'other' : 'project', 'child')
@@ -84,8 +84,12 @@ describe('Node preparation of Preview Session data', () => {
     const packed = packPreviewFixture(fixture.trees)
     const restored = restore(packed.files[`home/sessions/project/example/${sessionFormatLogFilename(currentVersion)}`])
     expect(restored.inheritedEventCount).toBe(0)
-    expect(restored.events).toEqual(mode === 'current-child' ? [{ type: 'subagent/catalog', seq: 0, time: 1,
-      data: { version: 0, childId: 'child', childCreatedAt: 2, mode: 'one-shot' } }] : [])
+    const catalog = mode === 'current-child'
+      ? [{ version: 0, childId: 'child', childCreatedAt: 2, mode: 'one-shot' }]
+      : mode === 'missing-descriptor'
+        ? [{ version: 1, childId: 'child', childCreatedAt: 2, mode: 'unknown' }]
+        : []
+    expect(restored.events).toEqual(catalog.map(data => ({ type: 'subagent/catalog', seq: 0, time: 1, data })))
     for (const [path, bytes] of Object.entries(original.files)) expect(packed.files[path], path).toEqual(bytes)
     expect(readFileSync(parent)).toEqual(before)
     expect(readFileSync(childPath)).toEqual(childBefore)

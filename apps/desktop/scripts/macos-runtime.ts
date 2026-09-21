@@ -40,8 +40,9 @@ export async function signMacOSRuntime(
       const path = files[next++]
       if (path === undefined) return
       const identifier = `${appId}.runtime.${createHash('sha256').update(path).digest('hex')}`
-      const entitlements = path === 'dependencies/node/bin/node'
-        ? join(import.meta.dirname, 'node-entitlements.plist') : undefined
+      const needsJit = path === 'dependencies/node/bin/node'
+        || /^node_modules\/@deepseek-ai\/libreoffice-kit-darwin-(?:arm64|x64)\/bin\/libreoffice-kit$/u.test(path)
+      const entitlements = needsJit ? join(import.meta.dirname, 'jit-entitlements.plist') : undefined
       const file = join(root, path)
       const thin = ['cefaedfe', 'cffaedfe', 'feedface', 'feedfacf'].includes(magic(file))
       if (cacheDirectory !== undefined && policy !== undefined && thin) {

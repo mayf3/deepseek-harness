@@ -17,6 +17,7 @@
     "website"
   ],
   "scripts": {
+    "prepare:primary-runtime": "tsx scripts/primary-runtime/prepare.ts",
     "build": "tsx scripts/build.ts",
     "build:bench": "npm run build:native-system && npm run build:lib && tsdown --config benchmarks/tsdown.config.ts",
     "build:official": "tsx scripts/build.ts --profile official",
@@ -126,7 +127,7 @@
     "docs:build": "tsx website/build.ts && pnpm run verify-doc-site-fragments",
     "docs:build:mpa": "tsx website/build.ts --mpa && pnpm run verify-doc-site-fragments",
     "docs:preview": "pnpm --filter @deepseek-ai/website run preview",
-    "docs:check": "pnpm exec vitest run scripts/project-doc-site.spec.ts scripts/verify-doc-site-fragments.spec.ts website/tests/mermaid-viewer.spec.ts website/tests/code-groups.spec.ts website/tests/page-markdown-actions.spec.ts website/tests/raw-markdown.spec.ts && pnpm run docs:build",
+    "docs:check": "pnpm exec vitest run scripts/project-doc-site.spec.ts scripts/verify-doc-site-fragments.spec.ts website/tests/mermaid-viewer.spec.ts website/tests/image-viewer.spec.ts website/tests/code-groups.spec.ts website/tests/page-markdown-actions.spec.ts website/tests/raw-markdown.spec.ts && pnpm run docs:build",
     "website:dev": "pnpm run docs:dev",
     "website:build": "pnpm run docs:build",
     "verify-package-readme-limitations": "tsx scripts/verify-package-readme-limitations.ts",
@@ -196,6 +197,7 @@
     "demo:ptc": "node scripts/demo-ptc.mjs",
     "demo:inspector": "node --import tsx/esm apps/cli/src/bin.ts web --patch ./packages/experimental/inspector/cordis.source.patch.yml",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
+    "start:web": "node --import tsx/esm apps/cli/src/bin.ts web",
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "postinstall": "node scripts/install-lefthook.mjs"
   },
@@ -225,7 +227,9 @@
     "@yarnpkg/cli-dist": "4.17.1",
     "eslint-plugin-sonarjs": "^4.1.0",
     "execa": "^10.0.0",
+    "extract-zip": "^2.0.1",
     "fast-check": "^4.8.0",
+    "fflate": "^0.8.2",
     "istanbul-lib-report": "^3.0.1",
     "js-yaml": "^4.2.0",
     "jscpd": "^5.0.12",
@@ -238,14 +242,17 @@
     "micromark-extension-gfm": "^3.0.0",
     "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",
+    "pnpm": "11.7.0",
     "publint": "^0.3.21",
     "smol-toml": "^1.7.1",
     "spdx-expression-parse": "^5.0.0",
+    "tar": "^7.5.0",
     "tsdown": "^0.22.2",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.8",
-    "@deepseek-ai/dsh-skill-office": "workspace:^"
+    "@deepseek-ai/dsh-skill-office": "workspace:^",
+    "@deepseek-ai/dsh-tool-workspace-dependencies": "workspace:^"
   }
 }

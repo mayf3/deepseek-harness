@@ -31,7 +31,7 @@ describe('installer preparation preserves application dependencies', () => {
       DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Example Company (TEAMID1234)',
       DSH_DESKTOP_MACOS_TEAM_ID: 'TEAMID1234',
       APPLE_KEYCHAIN_PROFILE: 'installer-test',
-      DOWNLOAD_TEST_ORIGIN: 'https://desktop-updates.example.com',
+      DOWNLOAD_TEST_ORIGIN: 'https://desktop-updates.example.com', DOWNLOAD_TEST_RELEASE_ID: '0123456789abcdef0123456789abcdef',
     }
     for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
     try {
@@ -61,8 +61,9 @@ describe('installer preparation preserves application dependencies', () => {
     const { readdirSync, readFileSync } = await import('node:fs')
     const sourceDirectory = new URL('../src/', import.meta.url)
     const referenced = new Set<string>()
-    for (const entry of readdirSync(sourceDirectory)) {
-      for (const match of readFileSync(new URL(entry, sourceDirectory), 'utf8').matchAll(/preload-[a-z-]+\.cjs/gu)) referenced.add(match[0])
+    for (const entry of readdirSync(sourceDirectory, { withFileTypes: true })) {
+      if (!entry.isFile()) continue
+      for (const match of readFileSync(new URL(entry.name, sourceDirectory), 'utf8').matchAll(/preload-[a-z-]+\.cjs/gu)) referenced.add(match[0])
     }
     expect(referenced.size).toBeGreaterThan(0)
     const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')

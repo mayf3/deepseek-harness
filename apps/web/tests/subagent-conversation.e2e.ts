@@ -86,7 +86,7 @@ async function waitForCacheRow(
   header: SessionHeader,
 ): Promise<void> {
   const deadline = Date.now() + 10_000
-  while (scaffold.ctx.sessionProjectionCache.cachedSnapshot(header, SessionLogOffset(0)) === undefined) {
+  while (scaffold.ctx.sessionProjectionCache.cachedSnapshot(header) === undefined) {
     if (Date.now() >= deadline) throw new Error(`cache row for "${header.id}" did not land`)
     await new Promise<void>(resolve => setTimeout(resolve, 10))
   }

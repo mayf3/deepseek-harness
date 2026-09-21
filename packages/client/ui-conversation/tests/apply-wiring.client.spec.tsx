@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import {
-  SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
+  SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -21,7 +21,7 @@ async function bench(options: { declareConversation?: boolean } = {}) {
     }),
     openSession: vi.fn(),
   } as never)
-  runtime.ctx.provide('settingsScope', { developerTools: { enabled: developerTools }, bind: () => stubSettingsScope().scope } as never)
+  runtime.ctx.provide('configForms', { developerTools: { enabled: developerTools }, get: () => stubConfigForm().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
@@ -44,18 +44,18 @@ function entry(
 }
 
 describe('target-neutral Conversation apply wiring', () => {
-  it('offers only Chat while developer tools are disabled and restores registered views when enabled', async () => {
+  it('hides only the Trajectory View while developer tools are disabled and restores it when enabled', async () => {
     const b = await bench()
     const header = b.runtime.slots.entries('conversation.session.header')[0]!
     const source = (header.inject!() as { hooks: { conversationViews: ObservableSnapshot<readonly ViewTab[]> } }).hooks.conversationViews
-    for (const id of ['chat', 'trajectory']) {
+    for (const id of ['chat', 'trajectory', 'probe']) {
       b.runtime.slots.register({ name: 'conversation.view', id, label: id }, (() => null) as never)
     }
-    await vi.waitFor(() => { expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'trajectory']) })
+    await vi.waitFor(() => { expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'trajectory', 'probe']) })
     b.developerTools.set(false)
-    expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat'])
+    expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'probe'])
     b.developerTools.set(true)
-    expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'trajectory'])
+    expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'trajectory', 'probe'])
     await b.runtime.dispose()
   })
   it('waits for the layout-owned conversation declaration before registering its subtree', async () => {

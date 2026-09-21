@@ -7,7 +7,12 @@
  * rail entry path, each requesting expansion through the owner share. Adding
  * is the header button's one action, so it raises the directory flow with no
  * menu in between; the flow and its error dialog live in WorkspacePicker
- * (same package — direct composition, no slot between them).
+ * (same package — direct composition, no slot between them). A Session row's
+ * "..." menu and hover buttons are the `sidebar.workspaces.session.menu.item`
+ * and `sidebar.workspaces.session.row.action` lists rendered through this
+ * entry's `renderSlot`; the actions in them, this package's own included,
+ * are slot entries with their own behavior, so this component threads no
+ * action callbacks and hosts no action surface.
  */
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
@@ -15,14 +20,15 @@ import {
   Button, IconArchiveCheckOutlineRegular, IconArchiveOutlineRegular,
   IconChevronsUpDownOutlineRegular, IconClockOutlineRegular, IconCloseFillRegular,
   IconFlatListOutlineRegular, IconFolderCloseRegular, IconProjectAddOutlineRegular,
-  IconSearchOutlineRegular, IconSlidersTwoOutlineRegular, IconWarningOutlineRegular,
-  IconWorkspaceTreeOutlineRegular, Menu, Modal, Toast, Tooltip,
+  IconSearchOutlineRegular, IconSlidersTwoOutlineRegular,
+  IconWorkspaceTreeOutlineRegular, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SessionListState, SessionSearchResultItem,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { ArchivedFilter, GroupNode, SessionNode, SessionOrderBy, SessionRowState } from '../tree.ts'
 import {
@@ -44,19 +50,19 @@ const EXPAND_SLIDE_MS = 300
 const SEARCH_DEBOUNCE_MS = 250
 /** `session.search` wire bound, measured in JavaScript UTF-16 code units. */
 const SEARCH_QUERY_MAX_CODE_UNITS = 500
-/** Session rows visible per Workspace before the local overflow control. */
+/** Idle Session rows visible per Workspace before the local overflow control. */
 const COLLAPSED_SESSION_LIMIT = 5
 
-/** Fold one Workspace without charging its provisional New Session against the ordinary-row limit. */
-function collapsedSessionRows(sessions: readonly SessionNode[]): {
+/** Keep provisional and running rows outside the idle-session quota, including parents with running children. */
+function collapsedSessionRows(sessions: readonly SessionNode[], limit = COLLAPSED_SESSION_LIMIT): {
   rows: readonly SessionNode[]
   hiddenCount: number
 } {
-  let ordinaryCount = 0
+  let idleCount = 0
   const rows = sessions.filter((session) => {
-    if (session.blank) return true
-    if (ordinaryCount >= COLLAPSED_SESSION_LIMIT) return false
-    ordinaryCount += 1
+    if (session.blank || session.running || session.runningSubagentCount > 0) return true
+    if (idleCount >= limit) return false
+    idleCount += 1
     return true
   })
   return { rows, hiddenCount: sessions.length - rows.length }
@@ -71,11 +77,6 @@ function sanitizeSearchQuery(value: string): string {
   const next = withoutNul.charCodeAt(end)
   if (last >= 0xD800 && last <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF) end--
   return withoutNul.slice(0, end)
-}
-
-/** Immutable membership toggle for the local expand-all array. */
-function toggled(list: readonly string[], key: string): string[] {
-  return list.includes(key) ? list.filter(k => k !== key) : [...list, key]
 }
 
 /**
@@ -101,27 +102,16 @@ function useNativeDragAcceptance(active: boolean): void {
 }
 
 /** Grouping, ordering, and archived-filter menu; own open state so it resets with the wide chrome. */
-function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrderPick, onArchivedFilterPick, openSeq, t }: {
+function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrderPick, onArchivedFilterPick, t }: {
   groupBy: SessionGroupBy
   orderBy: SessionOrderBy
   archivedFilter: ArchivedFilter
   onGroupPick: (mode: SessionGroupBy) => void
   onOrderPick: (mode: SessionOrderBy) => void
   onArchivedFilterPick: (filter: ArchivedFilter) => void
-  /** Each bump above zero opens the menu (the archive toast's filter action). */
-  openSeq?: number
   t: WorkspaceBrowserProps['t']
 }) {
   const [open, setOpen] = useState(false)
-  // Seeded with the mount-time value: a chrome remount (e.g. window resize
-  // through the rail breakpoint) must not replay an old toast-action bump.
-  const seenOpenSeq = useRef(openSeq ?? 0)
-  useEffect(() => {
-    if (openSeq !== undefined && openSeq > seenOpenSeq.current) {
-      seenOpenSeq.current = openSeq
-      setOpen(true)
-    }
-  }, [openSeq])
   return (
     <Menu
       open={open}
@@ -177,9 +167,6 @@ function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrde
   )
 }
 
-/** Hold for the actionable post-archive toast: two buttons need a longer read-and-react window than a plain notice. */
-const ARCHIVE_TOAST_HOLD_MS = 6000
-
 /** In-flight root-row drag: source identity plus the current insert marker. */
 interface DragState {
   /** Workspace id, or {@link UNGROUPED_KEY} for the browser-local loose-session account. */
@@ -229,9 +216,9 @@ function workspaceGroupHalf(e: { clientY: number; currentTarget: HTMLElement }):
 
 type SessionTreeProps = Pick<
   WorkspaceBrowserProps,
-  'useSessionStatus' | 'startSession' | 'open' | 'forkSession'
+  'useSessionStatus' | 'startSession' | 'open'
   | 'insertWorkspaceBefore' | 't' | 'usePanelInfo'
-> & {
+> & PropsRenderSlots<'sidebar.workspaces.session.menu.item' | 'sidebar.workspaces.session.row.action'> & {
   /** Always-mounted Session list snapshot. */
   list: SessionListState
   /** Host account home for POSIX hover-path abbreviation. */
@@ -258,26 +245,21 @@ type SessionTreeProps = Pick<
   onRenameRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
   /** Open the browser-owned delete-confirmation dialog for a real Workspace group. */
   onDeleteRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
-  /** Open the browser-owned session rename dialog. */
-  onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
-  /** Archive a Session; the selected filter determines its visibility. */
-  onSessionArchive: (sessionId: SessionNode['id']) => void
-  /** Unarchive a session (row menu action on archived rows). */
-  onSessionUnarchive: (sessionId: SessionNode['id']) => void
-  /** Pin or unpin a session (row menu action; `pin` false unpins). */
-  onSessionPin: (sessionId: SessionNode['id'], pin: boolean) => void
+  /** Open the rename dialog from a row title double-click. */
+  onSessionRenameRequest: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** One Session chosen from search that must be exposed and scrolled into view. */
   revealSessionId?: SessionId | undefined
   /** Acknowledge that the chosen Session row has been revealed. */
   onSessionRevealed: (sessionId: SessionId) => void
 }
 
-/** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
+/** The scrolling session tree; unmounting drops the sessions subscription and local row limits. */
 function SessionTree({
-  list, useSessionStatus, startSession, open, forkSession, workspaces, ungroupedSessionIds,
+  list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds,
   rowState,
   workspaceReady, animationResetKey, usePanelInfo,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionUnarchive, onSessionPin,
+  onRenameRequest, onDeleteRequest, onSessionRenameRequest,
+  renderSlot,
   insertWorkspaceBefore,
   nestWorkspaces, groupExpansion, setGroupExpanded,
   setSessionOrder, home, t,
@@ -291,7 +273,7 @@ function SessionTree({
   const revealGroup = revealSessionId === undefined || !workspaceReady
     ? undefined
     : owningGroupKey(workspaces, revealSessionId)
-  const [expandedSessionGroups, setExpandedSessionGroups] = useState<string[]>([])
+  const [sessionLimits, setSessionLimits] = useState<Readonly<Record<string, number>>>({})
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
   const sessionDropCommitted = useRef(false)
@@ -346,7 +328,7 @@ function SessionTree({
     const group = groups.find(candidate => candidate.key === revealGroup)
     if (group === undefined || !group.expanded || !group.sessions.some(row => row.id === revealSessionId)) return
     if (collapsedSessionRows(group.sessions).rows.some(row => row.id === revealSessionId)) return
-    setExpandedSessionGroups(keys => keys.includes(revealGroup) ? keys : [...keys, revealGroup])
+    setSessionLimits(limits => limits[revealGroup] === Infinity ? limits : { ...limits, [revealGroup]: Infinity })
   }, [groups, revealGroup, revealSessionId])
   const now = Date.now()
   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
@@ -360,8 +342,7 @@ function SessionTree({
       ? ungroupedSessionIds
       : workspaces.find(workspace => workspace.workspaceId === activeDrag.accountKey)?.sessionIds
     if (accountSessionIds === undefined) return
-    const sessionsExpanded = expandedSessionGroups.includes(group.key)
-    const renderedSessions = sessionsExpanded ? group.sessions : collapsedSessionRows(group.sessions).rows
+    const renderedSessions = collapsedSessionRows(group.sessions, sessionLimits[group.key]).rows
     const nextOrder = sessionDragOrder(accountSessionIds, renderedSessions, activeDrag, over)
     if (nextOrder !== undefined) setSessionOrder(activeDrag.accountKey, nextOrder)
   }
@@ -408,10 +389,11 @@ function SessionTree({
     const children = childrenByParent.get(group.key) ?? []
     const compatibleDrag = workspaceDrag !== null && parents.get(workspaceDrag.workspaceId) === parents.get(group.key)
     const collapsed = collapsedSessionRows(group.sessions)
-    const sessionsExpanded = expandedSessionGroups.includes(group.key)
+    const visible = collapsedSessionRows(group.sessions, sessionLimits[group.key])
+    const sessionsExpanded = visible.hiddenCount === 0
     rowKeys.push(`workspace:${group.key}`)
     const childRows = group.expanded ? children.map(child => renderGroup(child, depth + 1)) : []
-    const sessions = sessionsExpanded ? group.sessions : collapsed.rows
+    const sessions = visible.rows
     for (const node of sessions) rowKeys.push(`session:${node.id}`)
     if (collapsed.hiddenCount > 0) rowKeys.push(`overflow:${group.key}`)
     const workspaceMarker = workspaceId !== undefined && workspaceDrag?.over?.id === workspaceId
@@ -490,7 +472,7 @@ function SessionTree({
           t={t}
           onToggle={() => {
             if (group.expanded) {
-              setExpandedSessionGroups(keys => keys.filter(key => key !== group.key))
+              setSessionLimits(limits => ({ ...limits, [group.key]: COLLAPSED_SESSION_LIMIT }))
             }
             setGroupExpanded(group.key, !group.expanded)
           }}
@@ -557,11 +539,8 @@ function SessionTree({
               currentId={current}
               now={now}
               onOpen={open}
-              onRename={onSessionRename}
-              onFork={forkSession}
-              onArchive={onSessionArchive}
-              onUnarchive={onSessionUnarchive}
-              onPin={onSessionPin}
+              onRenameRequest={onSessionRenameRequest}
+              renderSlot={renderSlot}
               onReveal={node.id === revealSessionId && group.key === revealGroup
                 ? () => { onSessionRevealed(node.id) }
                 : undefined}
@@ -576,11 +555,20 @@ function SessionTree({
             className={css.sessionOverflowButton}
             data-row-key={`overflow:${group.key}`}
             aria-expanded={sessionsExpanded}
-            onClick={() => { setExpandedSessionGroups(keys => toggled(keys, group.key)) }}
+            onClick={() => {
+              setSessionLimits(limits => ({
+                ...limits,
+                [group.key]: sessionsExpanded
+                  ? COLLAPSED_SESSION_LIMIT
+                  : visible.hiddenCount <= COLLAPSED_SESSION_LIMIT
+                    ? Infinity
+                    : (limits[group.key] ?? COLLAPSED_SESSION_LIMIT) + COLLAPSED_SESSION_LIMIT,
+              }))
+            }}
           >
             {sessionsExpanded
               ? t('sessions.collapse')
-              : t('sessions.expand', { n: collapsed.hiddenCount })}
+              : t('sessions.expand', { n: visible.hiddenCount })}
           </button>
         )}
       </div>
@@ -596,7 +584,7 @@ function SessionTree({
         label={t('section.sessions')}
         rowKeys={rowKeys}
         ready={list.phase === 'ready' && workspaceReady && !nativeDragActive}
-        resetKey={JSON.stringify([animationResetKey, expandedSessionGroups])}
+        resetKey={JSON.stringify([animationResetKey, sessionLimits])}
       >
         {groups.length === 0 && (
           <div className={css.empty} data-row-key="empty">{t('empty.none')}</div>
@@ -610,19 +598,16 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  list, sessionIds, rowState, useSessionStatus, open, forkSession, onSessionRename, onSessionArchive,
-  onSessionUnarchive, onSessionPin,
+  list, sessionIds, rowState, useSessionStatus, open, onSessionRenameRequest,
+  renderSlot,
   usePanelInfo, setSessionOrder, workspaceReady, animationResetKey,
   revealSessionId, onSessionRevealed, t,
 }: Pick<
   SessionTreeProps,
   | 'useSessionStatus'
   | 'open'
-  | 'forkSession'
-  | 'onSessionRename'
-  | 'onSessionArchive'
-  | 'onSessionUnarchive'
-  | 'onSessionPin'
+  | 'onSessionRenameRequest'
+  | 'renderSlot'
   | 'usePanelInfo'
   | 'setSessionOrder'
   | 'workspaceReady'
@@ -678,11 +663,8 @@ function FlatList({
               currentId={currentId}
               now={now}
               onOpen={open}
-              onRename={onSessionRename}
-              onFork={forkSession}
-              onArchive={onSessionArchive}
-              onUnarchive={onSessionUnarchive}
-              onPin={onSessionPin}
+              onRenameRequest={onSessionRenameRequest}
+              renderSlot={renderSlot}
               onReveal={node.id === revealSessionId
                 ? () => { onSessionRevealed(node.id) }
                 : undefined}
@@ -834,15 +816,12 @@ export function WorkspaceBrowser({
   actions,
   startSession,
   open,
-  renameSession,
-  forkSession,
+  requestSessionRename,
+  notifyArchivedNotOpenable,
   renameWorkspace,
   deleteWorkspace,
   insertWorkspaceBefore,
-  archiveSession,
   unarchiveSession,
-  pinSession,
-  unpinSession,
   createWorkspace,
   searchSessions,
   searchResultLimit,
@@ -869,23 +848,11 @@ export function WorkspaceBrowser({
   const archivedFilter = useStore(s => s.archivedFilter ?? 'default')
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
-  // Each bump opens the view-options menu (the archive toast's filter action).
-  const [viewOptionsOpenSeq, setViewOptionsOpenSeq] = useState(0)
-  // One transient banner at a time; the seq keys remounts so a repeat message restarts its hold.
-  const [toast, setToast] = useState<{
-    text: string
-    seq: number
-    tone: 'warning' | 'success'
-    actions?: readonly { label: string; onClick: () => void }[]
-  } | null>(null)
-  const showToast = (text: string): void => {
-    setToast(current => ({ text, seq: (current?.seq ?? 0) + 1, tone: 'warning' }))
-  }
   // Archived sessions are not openable: the row stays visible under the
   // filter but a click explains instead of navigating.
   const guardedOpen = (sessionId: SessionId): void => {
     if (archivedSessionIds.includes(sessionId)) {
-      showToast(t('toast.archivedNotOpenable'))
+      notifyArchivedNotOpenable()
       return
     }
     open(sessionId)
@@ -945,9 +912,6 @@ export function WorkspaceBrowser({
     [UNGROUPED_KEY, orderedUngroupedSessionIds] as const,
     [FLAT_SESSION_ORDER_KEY, orderedFlatSessionIds] as const,
   ]), [orderedFlatSessionIds, orderedUngroupedSessionIds, orderedWorkspaces])
-  const pinOrderSource = { workspaces, ungroupedMemberIds, flatMemberIds, summaries: list.byId, rowState: orderState }
-  const latestPinOrder = useRef(pinOrderSource)
-  latestPinOrder.current = pinOrderSource
   useEffect(() => {
     if (workspacePhase !== 'ready') return
     actions.retainAccountKeys([
@@ -1017,7 +981,7 @@ export function WorkspaceBrowser({
 
   const openSearchResult = (sessionId: SessionId): void => {
     if (archivedSessionIds.includes(sessionId)) {
-      showToast(t('toast.archivedNotOpenable'))
+      notifyArchivedNotOpenable()
       return
     }
     setRevealSessionId(sessionId)
@@ -1132,86 +1096,11 @@ export function WorkspaceBrowser({
     })
   }
 
-  // Session rename dialog (same browser-owned pattern as workspace rename;
-  // sessions have no client-side name-conflict rule — the host normalizes).
-  // Unlike workspace rename, an unchanged title is NOT blocked: confirming
-  // the current automatic title is the gesture that pins it.
-  const [sessionRenameTarget, setSessionRenameTarget] = useState<{ sessionId: SessionNode['id']; currentTitle: string } | null>(null)
-  const [sessionRenameDraft, setSessionRenameDraft] = useState('')
-  const [sessionRenaming, setSessionRenaming] = useState(false)
-  const [sessionRenameError, setSessionRenameError] = useState<string | null>(null)
-  const sessionRenameTrimmed = sessionRenameDraft.trim()
-  const sessionRenameBlocked = sessionRenaming || sessionRenameTrimmed === '' || sessionRenameTarget === null
-  const closeSessionRename = () => {
-    if (sessionRenaming) return
-    setSessionRenameTarget(null)
-    setSessionRenameError(null)
-  }
-  const confirmSessionRename = () => {
-    if (sessionRenameBlocked) return
-    setSessionRenaming(true)
-    setSessionRenameError(null)
-    renameSession(sessionRenameTarget.sessionId, sessionRenameTrimmed).then(() => {
-      setSessionRenaming(false)
-      setSessionRenameTarget(null)
-    }).catch((reason: unknown) => {
-      setSessionRenaming(false)
-      setSessionRenameError(reason instanceof Error ? reason.message : String(reason))
-    })
-  }
-  const onSessionRename = (sessionId: SessionNode['id'], currentTitle: string) => {
-    setSessionRenameTarget({ sessionId, currentTitle })
-    setSessionRenameDraft(currentTitle)
-    setSessionRenameError(null)
-  }
-
-  // Archive preserves the log and account position, so it needs no confirmation.
-  // The selected filter determines visibility after the archive-set echo.
-  const onSessionArchive = (sessionId: SessionNode['id']) => {
-    archiveSession(sessionId).then(() => {
-      setToast(current => ({
-        text: t('toast.archived'),
-        seq: (current?.seq ?? 0) + 1,
-        tone: 'success',
-        actions: [
-          { label: t('toast.archivedUndo'), onClick: () => { setToast(null); onSessionUnarchive(sessionId) } },
-          {
-            prefix: t('toast.archivedOr'),
-            label: t('toast.archivedFilter'),
-            onClick: () => { setToast(null); setViewOptionsOpenSeq(seq => seq + 1) },
-          },
-        ],
-      }))
-    }).catch((reason: unknown) => {
-      console.warn('session archive rejected:', reason)
-    })
-  }
+  // The search results' restore button; the row actions own the rest of the
+  // Session verbs as slot entries.
   const onSessionUnarchive = (sessionId: SessionNode['id']) => {
     unarchiveSession(sessionId).catch((reason: unknown) => {
       console.warn('session unarchive rejected:', reason)
-    })
-  }
-  // Pin failures surface as a toast: unlike archive, nothing else on the
-  // surface moves, so a silent failure would read as a dead menu action.
-  const onSessionPin = (sessionId: SessionNode['id'], pin: boolean) => {
-    (pin ? pinSession(sessionId) : unpinSession(sessionId)).then(() => {
-      if (!pin) return
-      const source = latestPinOrder.current
-      actions.pinSessionOrder(
-        sessionId,
-        [owningGroupKey(source.workspaces, sessionId), FLAT_SESSION_ORDER_KEY],
-        {
-          members: Object.fromEntries([
-            ...source.workspaces.map(workspace => [workspace.workspaceId, workspace.sessionIds] as const),
-            [UNGROUPED_KEY, source.ungroupedMemberIds],
-            [FLAT_SESSION_ORDER_KEY, source.flatMemberIds],
-          ]),
-          summaries: source.summaries,
-          rowState: source.rowState,
-        },
-      )
-    }).catch(() => {
-      showToast(t(pin ? 'toast.pinFailed' : 'toast.unpinFailed'))
     })
   }
 
@@ -1324,7 +1213,6 @@ export function WorkspaceBrowser({
               onGroupPick={actions.setGroupBy}
               onOrderPick={(mode) => { actions.setOrderBy(mode, activeSessionOrders) }}
               onArchivedFilterPick={actions.setArchivedFilter}
-              openSeq={viewOptionsOpenSeq}
               t={t}
             />
           )}
@@ -1414,9 +1302,9 @@ export function WorkspaceBrowser({
                 workspaceReady={workspaceReady}
                 animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
                 useSessionStatus={useSessionStatus}
-                open={guardedOpen} forkSession={forkSession}
-                onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
-                onSessionUnarchive={onSessionUnarchive} onSessionPin={onSessionPin}
+                open={guardedOpen}
+                onSessionRenameRequest={requestSessionRename}
+                renderSlot={renderSlot}
                 setSessionOrder={saveSessionOrder}
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
@@ -1428,11 +1316,8 @@ export function WorkspaceBrowser({
                 usePanelInfo={usePanelInfo}
                 list={list}
                 useSessionStatus={useSessionStatus}
-                onSessionRename={onSessionRename}
-                onSessionArchive={onSessionArchive}
-                onSessionUnarchive={onSessionUnarchive}
-                onSessionPin={onSessionPin}
-                forkSession={forkSession}
+                onSessionRenameRequest={requestSessionRename}
+                renderSlot={renderSlot}
                 workspaces={orderedWorkspaces}
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}
@@ -1498,37 +1383,6 @@ export function WorkspaceBrowser({
       </Modal>
 
       <Modal
-        open={sessionRenameTarget !== null}
-        onClose={closeSessionRename}
-        closeLabel={t('close')}
-        title={t('rename.session.title')}
-        footer={(
-          <>
-            <Button variant="outline" disabled={sessionRenaming} onClick={closeSessionRename}>{t('cancel')}</Button>
-            <Button variant="primary" disabled={sessionRenameBlocked} onClick={confirmSessionRename}>{t('rename')}</Button>
-          </>
-        )}
-      >
-        <input
-          className={css.renameInput}
-          value={sessionRenameDraft}
-          aria-label={t('field.sessionName')}
-          autoFocus
-          disabled={sessionRenaming}
-          onFocus={(e) => { e.target.select() }}
-          onChange={(e) => { setSessionRenameDraft(e.target.value); setSessionRenameError(null) }}
-          onCompositionStart={() => { composingRef.current = true }}
-          onCompositionEnd={() => { composingRef.current = false }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !composingRef.current) {
-              e.preventDefault()
-              confirmSessionRename()
-            }
-          }}
-        />
-        {sessionRenameError !== null && <div className={css.renameError} role="alert">{sessionRenameError}</div>}
-      </Modal>
-      <Modal
         open={deleteTarget !== null}
         onClose={closeDelete}
         closeLabel={t('close')}
@@ -1553,17 +1407,6 @@ export function WorkspaceBrowser({
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
-      {toast !== null && (
-        <Toast
-          key={`toast-${String(toast.seq)}`}
-          text={toast.text}
-          {...toast.tone === 'success'
-            ? { tone: 'success' as const }
-            : { icon: <IconWarningOutlineRegular /> }}
-          {...toast.actions === undefined ? {} : { actions: toast.actions, holdMs: ARCHIVE_TOAST_HOLD_MS }}
-          onDone={() => { setToast(null) }}
-        />
-      )}
     </div>
   )
 }

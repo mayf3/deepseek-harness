@@ -144,17 +144,17 @@ There is no recursive source search. Captured request text, assistant replay sta
 |---|---|
 | One descriptor with version 1 | Require string provider and label; derive `mode: 'continuable'`. |
 | One descriptor with version 2 or 3 | Require string provider; use its mode and optional label under catalog rules. |
-| Zero descriptors, or an unsupported descriptor version | May retain an existing parent entry; cannot create a missing entry. |
-| More than one own descriptor | Retain an existing parent entry without mode/label comparison; do not create a missing entry. |
+| Zero descriptors, or an unsupported descriptor version | Retain an existing parent entry; otherwise append unknown-mode membership. |
+| More than one own descriptor | Retain an existing parent entry without mode/label comparison; otherwise append unknown-mode membership. |
 | Existing own parent entry | Retain it and its extensions; require matching child creation time and mode/label from exactly one supported own descriptor, when available. |
 | Missing own parent entry with complete supported evidence | Append a version-0 catalog fact with child id, creation time, mode, and optional label. |
-| Missing own parent entry without complete evidence | Preserve the parent without inventing a catalog entry. |
+| Missing own parent entry without complete evidence | Append a version-1 `subagent/catalog` with header identity and unknown mode, without inventing a label. |
 
-Catalog version 0 requires string `childId`, nonnegative safe-integer `childCreatedAt`, mode `continuable` or `one-shot`, and a string label for continuable mode; a present one-shot label must also be a string. Duplicate own child ids are refused. Existing entries without a corresponding retained child remain in the parent. Descriptor collection does not restore a child's old continuation composition or recover deleted children from tool arguments.
+Catalog versions 0 and 1 require string `childId`, nonnegative safe-integer `childCreatedAt`, mode `continuable` or `one-shot` (version 1 additionally accepts `unknown`), and a string label for continuable mode; a present label in any mode must also be a string. Duplicate own child ids are refused. Existing entries without a corresponding retained child remain in the parent. Descriptor collection does not restore a child's old continuation composition or recover deleted children from tool arguments. Unknown-mode entries retain header identity without asserting a supported child descriptor.
 
 The stage considers parent catalog records only after the final inherited cut. Every inherited marker discards earlier catalog candidates without interpreting their payloads. Missing entries append after all source events, sorted by creation time then child id, with dense new sequences. Their time is the final source event's time, or header creation time for an empty log. They neither enter the model surface nor change the inherited count.
 
-Storage supplies the complete recognizable child set within its root and rechecks membership and physical revisions during preparation, memo reuse, and publication. Incomplete descriptor evidence only prevents that child’s backfill. Unreadable headers that prevent classifying membership, unsupported selected generations, or source drift refuse the operation. The package itself reads no files; [persistence](../session-persistence-jsonl/README.md) owns encoding, locks, cancellation, and publication.
+Storage supplies recognizable direct-child evidence and rechecks membership and physical revisions during preparation, memo reuse, and publication. The JSONL provider isolates unreadable child headers, child decoding failures, and invalid descriptor fields while retaining other catalog entries; it does not migrate child catalogs during parent preparation. The converter still rejects conflicting supplied facts and changed parent history. [JSONL persistence](../session-persistence-jsonl/README.md) owns warnings, source checks, and child-local failure handling. Current V4 reads never invoke this converter and validate native catalog fields, uniqueness, and delivery ownership directly.
 
 <a id="sequence-references"></a>
 ### Sequence references and inheritance
@@ -243,7 +243,7 @@ Current common admission does not validate each user/tool/developer content bloc
 | `compaction/start`, `compaction/summary`, `compaction/end` | Match compaction id, source command, and the active turn context. Summary spans name exact current-surface nodes and exclude the protected head; successful completion has one summary. Inherited unfinished compactions expire at the end-seed marker. |
 | `compaction/prune` | Its span names exact current-surface nodes and excludes the protected head; it does not require a compaction transaction or its owner fields. |
 | Compact checkpoint replacement | Its `compact-checkpoint` source identifies the active compaction. |
-| Native `subagent/catalog` | Check own version-0 payload fields and unique child ids after the inherited cut. Native reads neither collect child logs nor compare their physical facts; inherited entries do not establish own membership. |
+| Native `subagent/catalog` | Check own version-0/version-1 payload fields and unique child ids after the inherited cut. Native reads neither collect child logs nor compare their physical facts; inherited entries do not establish own membership. |
 | Inherited cut and delivery | Apply the marker, coordinate, and generation-ownership rules stated above. |
 
 These checks are generation-owned in [relationships.ts](src/relationships.ts). Full common message/envelope acceptance and plugin-owned message projections additionally use the installed Session; the exported V4 restorer alone is not a replacement for complete catalog restoration.
@@ -334,7 +334,7 @@ The edge preserves the recorded request prefix. Provider cache availability and 
 - **Nested historical tool results** — migration currently refuses results containing another tool-result wrapper. The original generation remains intact and no V4 successor is published. A later converter may support evidenced source cases without changing the established V4 format; the [migration cookbook](../../../docs/cookbook/adding-a-session-format-version.md#stages-and-validation) defines that distinction.
 - **Historical extension consumers** — prefixed message and result fields preserve JSON data without activating core fields. A consumer must explicitly understand those fields before interpreting them.
 - **Retained child logs required** — a parent alone cannot recover unrecorded child ids, creation times, or descriptors. Deleted children cannot be reconstructed from tool arguments; existing parent catalog records remain.
-- **Missing historical catalog entries** — without exactly one supported own descriptor, an absent parent entry is not backfilled. The child log remains readable by id; current V4 reads do not rescan children to repair that omission.
+- **Unknown historical modes** — without exactly one supported own descriptor, a missing parent entry records unknown mode. Current reads do not rewrite that entry; opening the child resolves available descriptor information or reports its own error.
 - **Storage scope** — facts cover recognizable children within the same persistence root. Cross-root import and corrupt-log repair are outside this migration.
 
 <a id="dev-note"></a>

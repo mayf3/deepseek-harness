@@ -23,6 +23,22 @@ async function fixture(t: TestContext) {
   return { root, path, cache, state, options, request }
 }
 
+test('restore misses leave inputs and hardware untouched, then share a cached payload across targets', async (t) => {
+  const f = await fixture(t)
+  const signer = createCachedSigner(f.options)
+  assert.equal(await signer.restore(f.request), false)
+  assert.equal(f.state.hardwareCalls, 0)
+  assert.equal(signer.summary().misses, 0)
+  assert.equal(await readFile(f.path, 'utf8'), 'original')
+  await signer(f.request)
+  const targets = [join(f.root, 'first.node'), join(f.root, 'second.node')]
+  await Promise.all(targets.map(path => writeFile(path, 'original')))
+  assert.deepEqual(await Promise.all(targets.map(path => signer.restore({ ...f.request, path }))), [true, true])
+  assert.deepEqual(await Promise.all(targets.map(path => readFile(path, 'utf8'))), ['signed:original', 'signed:original'])
+  assert.equal(f.state.hardwareCalls, 1)
+  assert.equal(signer.summary().hits, 2)
+})
+
 test('unchanged bytes restored in another file avoid another hardware call', async (t) => {
   const f = await fixture(t)
   await createCachedSigner(f.options)(f.request)
@@ -71,7 +87,7 @@ test('different content or signing policy misses the cache', async (t) => {
   assert.equal(f.state.hardwareCalls, 3)
 })
 
-for (const corrupt of ['payload', 'record.json']) test(`corrupt ${corrupt} stops without signing or replacing the input`, async (t) => {
+for (const restoreOnly of [false, true]) for (const corrupt of ['payload', 'record.json']) test(`corrupt ${corrupt} stops without signing or replacing the input (restore-only: ${restoreOnly})`, async (t) => {
   const f = await fixture(t)
   await createCachedSigner(f.options)(f.request)
   await writeFile(f.path, 'original')
@@ -79,7 +95,7 @@ for (const corrupt of ['payload', 'record.json']) test(`corrupt ${corrupt} stops
   assert(entry)
   await writeFile(join(f.cache, entry, corrupt), 'corrupt')
   const signer = createCachedSigner(f.options)
-  await assert.rejects(signer(f.request))
+  await assert.rejects(restoreOnly ? signer.restore(f.request) : signer(f.request))
   assert.equal(signer.summary().validationFailures, 1)
   assert.equal(signer.summary().avoidedSigningCalls, 0)
   assert.equal(f.state.hardwareCalls, 1)
