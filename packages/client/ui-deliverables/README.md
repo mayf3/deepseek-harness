@@ -120,7 +120,21 @@ These limits define the current deliverables vocabulary. They are current packag
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-None.
+Working draft for Issue #4670, pending implementation and verification. This section does not describe shipped behavior.
+
+**Reported reproduction.** In macOS Chrome, open a completed turn's changed-file review with enough changed rows and long lines to scroll on both axes. Keep the pointer over either column and flick the trackpad toward each edge. The user reports that the operated column rebounds beyond the edge while the other stays at its limit. A long selected-file path also hides its filename suffix; the document preview provides the requested reference appearance.
+
+**Planned scrolling behavior.** In the unwrapped split view, suppress elastic overscroll at all four edges of both columns while retaining native momentum within the scrollable range. Start with `overscroll-behavior: none` on the actual column scroll containers in [ReviewTab.module.css](src/client/ReviewTab.module.css). Preserve the position synchronization in [ReviewTab.tsx](src/client/ReviewTab.tsx), including each column's horizontal limit and the long side's offset when the other side fits. The proposal does not introduce wheel cancellation, custom inertia, or shared content widths. Check scroll chaining to the surrounding pane before deciding whether any additional containment is needed.
+
+**Planned filename behavior.** Give the selected-file title the document preview's path presentation: left-aligned complete text when it fits; preserved trailing characters and extension with a left-edge fade only when clipped; subdued directories and normal filename text; and the complete displayed path on hover. Follow the layout and overflow measurement in [TextPreview.tsx](../ui-sidebar-documentpreview/src/client/TextPreview.tsx) and [TextPreview.module.css](../ui-sidebar-documentpreview/src/client/TextPreview.module.css). Recalculate clipping when the selected file or available width changes. Keep the selector arrow, line counts, and action buttons visible. Any shared presentation component belongs in `ui-primitives`, rather than a component import between feature plugins.
+
+**Acceptance criteria.**
+
+- From either column, rapid gestures toward the top, bottom, left, and right stop at the corresponding limit without elastic displacement. Releasing a gesture before an edge still permits native momentum, and reversing direction resumes normal synchronized scrolling.
+- Equal and unequal horizontal content widths remain usable, including a comparison where only one side needs horizontal scrolling. Vertical scrolling preserves horizontal position. Unified and wrapped views remain usable, and reaching a split-column edge does not move the surrounding pane unexpectedly.
+- Short titles remain complete and unfaded. Narrowing the pane preserves long filename endings with a left fade; widening it removes the fade once the path fits. Switching between files with matching prefixes and different suffixes keeps their endings distinguishable. The title remains selectable through the file menu, with the full displayed path available on hover.
+
+**Verification plan.** Extend the existing [recorded-session browser case](../../../apps/web/tests/changed-files-turn.e2e.ts) for the changed-file title and scroll geometry, and retain its unequal-range regression coverage. Add focused [component coverage](tests/review-tab.client.spec.tsx) for any new title behavior that does not require browser layout. The implementer must verify elastic overscroll and momentum with a real macOS trackpad in Chrome and record the browser version and result; programmatic scroll offsets or synthetic wheel events alone do not establish native rebound behavior. Record desktop validation separately if exercised. After implementation, update the review-tab usage section and affected JSDoc to the verified behavior, then remove this draft.
 
 </details>
 
