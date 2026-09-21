@@ -52,11 +52,11 @@ describe('ui-settings-shell apply', () => {
   })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'configForms'])
   })
 
   it('registers the shell page while the Host serves the namespace, titled in the active locale', async () => {
-    const { ctx, slots } = await bench(['shell', 'ui-theme'])
+    const { ctx, slots } = await bench(['bash-sandbox', 'ui-theme'])
     declareRoot(slots)
 
     await ctx.plugin({ inject: [...inject], apply }).await()
@@ -72,7 +72,7 @@ describe('ui-settings-shell apply', () => {
   })
 
   it('registers nothing while the namespace is not served, and follows the Host when that changes', async () => {
-    // A deployment composing no POSIX or PowerShell executor serves no `shell` at all.
+    // A deployment composing no POSIX or PowerShell executor serves neither executor entry.
     const { ctx, slots, describeSettings, remote } = await bench(['agent-loop'])
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
@@ -80,18 +80,27 @@ describe('ui-settings-shell apply', () => {
     expect(slots.entries('plugins.item')).toHaveLength(0)
 
     describeSettings.mockResolvedValue({
-      ok: true, value: { writable: true, hasDocument: true, namespaces: [view('shell', 1)] },
+      ok: true, value: { writable: true, hasDocument: true, namespaces: [view('bash-sandbox', 1)] },
     })
-    remote.emit('settings/document-updated', ['shell', 1])
+    remote.emit('settings/document-updated', ['bash-sandbox', 1])
     await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(1) })
 
     describeSettings.mockResolvedValue({ ok: true, value: { writable: true, hasDocument: true, namespaces: [] } })
-    remote.emit('settings/document-updated', ['shell', 2])
+    remote.emit('settings/document-updated', ['bash-sandbox', 2])
     await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(0) })
   })
 
+  it('binds the page to the PowerShell executor entry when that is the composed shell', async () => {
+    const { ctx, slots } = await bench(['pwsh-sandbox'])
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(1) })
+    const face = (slots.entries('plugins.item')[0]!.inject as () => Pick<ShellCardFace, 'hooks'>)()
+    expect(Object.keys(face.hooks)).toEqual(['shellCard'])
+  })
+
   it('registers into a declaration that arrives after apply', async () => {
-    const { ctx, slots } = await bench(['shell'])
+    const { ctx, slots } = await bench(['bash-sandbox'])
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     declareRoot(slots)
@@ -100,7 +109,7 @@ describe('ui-settings-shell apply', () => {
   })
 
   it('collapses the page on teardown', async () => {
-    const { ctx, slots } = await bench(['shell'])
+    const { ctx, slots } = await bench(['bash-sandbox'])
     declareRoot(slots)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()

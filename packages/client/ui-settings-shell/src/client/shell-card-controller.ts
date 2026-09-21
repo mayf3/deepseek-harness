@@ -1,4 +1,4 @@
-/** The shell page's staged form over the `shell` settings namespace. */
+/** The shell page's staged form over the composed shell executor entry. */
 
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
@@ -6,12 +6,10 @@ import {
   type SettingsFieldState, type SettingsFormActions, type SettingsFormScope, type SettingsFormShell,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
-/**
- * Namespace of the shell capability. Spelled here rather than imported: a
- * client package must not depend on a Host package, and the executor families
- * that own it spell the same value.
- */
-export const SHELL_NS = 'shell'
+/** Profile entry id of the POSIX shell executor; the base bundle composes it off Windows. */
+export const BASH_NS = 'bash-sandbox'
+/** Profile entry id of the PowerShell executor; the base bundle composes it on Windows. */
+export const PWSH_NS = 'pwsh-sandbox'
 
 /** The shell fields this page edits — a subset of the served schema by design. */
 export interface ShellSettings {
@@ -37,12 +35,12 @@ export interface ShellCardFace extends SettingsFormActions {
   }
 }
 
-/** Bridges the `shell` scope onto the page's staged form. */
+/** Bridges one shell executor entry's form onto the page's staged form. */
 export class ShellCardController {
   private readonly form: SettingsFormModel<ShellSettings>
   private readonly store: SnapshotStore<ShellCardState>
 
-  /** @param scope - the bound settings scope for the `shell` namespace. */
+  /** @param scope - the shared configuration form of the composed shell executor entry. */
   constructor(scope: SettingsFormScope<ShellSettings>) {
     this.form = new SettingsFormModel(scope, [settingsNumberField('timeoutMs'), settingsNumberField('maxOutputBytes')])
     this.store = this.form.bind(() => this.projection())
@@ -63,4 +61,7 @@ export class ShellCardController {
   inject(): ShellCardFace {
     return { hooks: { shellCard: this.store }, ...this.form.actions() }
   }
+
+  /** Release the form subscription. */
+  dispose(): void { this.form.dispose() }
 }

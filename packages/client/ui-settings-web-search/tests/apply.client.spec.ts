@@ -51,7 +51,7 @@ describe('ui-settings-web-search apply', () => {
   })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.credentials', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.credentials', 'configForms'])
   })
 
   it('registers the page while the Host serves the namespace, titled in the active locale', async () => {

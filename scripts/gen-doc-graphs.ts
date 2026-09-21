@@ -31,7 +31,7 @@ interface ServiceRole {
   key: string
   pkg: string
   title: string
-  mode: 'core' | 'seam' | 'bundle'
+  mode: 'core' | 'seam' | 'bundle' | 'service'
   implementations?: string[]
   consumers?: string[]
   companions?: string[]
@@ -339,13 +339,20 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The JSONL backend persists the SessionEvent vocabulary as one artifact per Session.',
   },
   {
+    key: 'configEditor',
+    pkg: 'config-editor',
+    title: 'Profile configuration edits',
+    mode: 'core',
+    consumers: ['settings', 'agent-default-model'],
+    note: 'Persists profile config patches under the application file lock and HMR queue, then reconciles Loader entries.',
+  },
+  {
     key: 'settings',
     pkg: 'settings',
-    title: 'User-settings seam',
-    mode: 'seam',
-    implementations: ['settings-file'],
-    consumers: ['api-settings-controller', 'llm-deepseek', 'llm-pi-ai'],
-    note: 'Plugins register namespace schemas and resolve layered values; providers store the raw document. The LLM adapters register their entry config as the composition base under the user section; the settings controller serves redacted layered descriptors and writes the user layer.',
+    title: 'Plugin configuration forms',
+    mode: 'core',
+    consumers: ['api-settings-controller'],
+    note: 'Forms project volatile Config fields from active profile entries and delegate validated edits to config-editor. Plugins consume their own Config references.',
   },
   {
     key: 'subagentModelSelection',
@@ -373,6 +380,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     consumers: ['llm-pi-ai'],
     note: 'Flows are registered by the plugin that knows how to obtain one credential and keyed by the record they write; the seam owns the conversation and the one-attempt-per-key lifecycle, never the protocol.',
   },
+  {
+    key: 'productTelemetry',
+    pkg: 'host-product-telemetry-otel',
+    title: 'Product usage event sender',
+    mode: 'service',
+    note: 'Exports explicitly submitted analytics events through OTLP/HTTP; mounting alone collects nothing.',
+  },
+
   {
     key: 'sessionTelemetry',
     pkg: 'session-telemetry',
@@ -538,7 +553,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Default Agent model selection',
     mode: 'core',
     consumers: ['api-session-controller', 'headless'],
-    note: 'Layers the default ModelSelection through settings so direct and Host-backed Agent entry points share one state owner.',
+    note: 'Reads the default ModelSelection from volatile Config and saves selections through the profile editor.',
   },
   {
     key: 'agentLoop',
@@ -863,7 +878,7 @@ function renderCapabilitySeams(pkgs: Pkg[], services: readonly ServiceEntry[]): 
   const addEdge = (from: string, to: string): void => { edges.add(`  ${from} --> ${to}`) }
   const lines = generatedHeader('Capability Seams And Core Services')
   lines.push(
-    'A service can be a core spine service, a swappable capability seam, or a bundle/composition point. The graph shows the package that owns the service declaration, known implementation packages, and packages that consume the service directly.',
+    'A service can be a core spine service, a swappable capability seam, a bundle/composition point, or a standalone service. The graph shows the package that owns the service declaration, known implementation packages, and packages that consume the service directly.',
     '',
     '```mermaid',
     'flowchart LR',

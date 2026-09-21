@@ -33,6 +33,15 @@ declare module '@deepseek-ai/cordis' {
     /** Harness-home path resolver available to Loader `!!js` config expressions. */
     dshHomePath?: typeof dshHomePath
   }
+
+  interface Events {
+    /**
+     * Profile patches were reconciled into the running Loader tree: every entry update settled and no new
+     * inactive entry was introduced. Carries no diff; listeners re-read Loader entries.
+     * @mode emit
+     */
+    'app-boot/config-reload'(): void
+  }
 }
 
 export {
@@ -274,6 +283,7 @@ export async function reconcileProfilePatches(
   for (const [index, result] of results.entries()) {
     if (result.status === 'rejected' && !previousFibers[index]?.failed) throw result.reason
   }
+  ctx.emit('app-boot/config-reload')
   return failures.map(inactiveDiagnostic)
 }
 

@@ -15,6 +15,7 @@ export { SegmentedTabs } from './SegmentedTabs.tsx'
 export type { SegmentedTab } from './SegmentedTabs.tsx'
 export { Tag } from './Tag.tsx'
 export type { TagTone } from './Tag.tsx'
+export { PathLabel } from './PathLabel.tsx'
 export { Switch } from './Switch.tsx'
 export { SegmentedControl } from './SegmentedControl.tsx'
 export type { SegmentedControlOption } from './SegmentedControl.tsx'
@@ -61,7 +62,7 @@ export { SettingsSecretField, SettingsValueField } from './settings-form/fields.
 export type { SettingsFieldProps } from './settings-form/fields.tsx'
 export { SettingsFormModel, settingsNumberField, settingsTextField } from './settings-form/form-model.ts'
 export type {
-  SettingsFieldSpec, SettingsFieldState, SettingsFieldWrite, SettingsFormActions, SettingsFormScope,
+  SettingsFieldSpec, SettingsFieldState, SettingsFieldWrite, SettingsFormActions, SettingsFormPathOp, SettingsFormScope,
   SettingsFormScopeSnapshot, SettingsFormShell, SettingsSecretSpec,
 } from './settings-form/form-model.ts'
 export { CODE_HIGHLIGHT_EXTENSIONS, languageForPath, useCodeHighlighter } from './code-highlighting.ts'

@@ -20,7 +20,7 @@ import LlmRuntime, { createAssistantMessage, createSystemMessage, createToolResu
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
-import FileSettings from '@deepseek-ai/dsh-settings-file'
+import { profileComposition } from '../../../settings/settings/tests/profile-composition.ts'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { DeepSeekAdapter } from '../src/adapter.ts'
 import { object } from '../src/replay.ts'
@@ -250,15 +250,14 @@ describe('Cordis provider composition', () => {
     const { ctx, home } = await context()
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     await writeFile(join(home, '.credentials.yaml'), 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: stored-key\n', { mode: 0o600 })
-    await writeFile(join(home, 'settings.yaml'), '{}\n')
     const template = await readFile(new URL('fixtures/cordis.yml', import.meta.url), 'utf8')
-    await writeFile(join(home, 'cordis.yml'), template.replaceAll('{{endpoint}}', JSON.stringify(http.url)).replaceAll('{{settings}}', JSON.stringify(join(home, 'settings.yaml'))).replaceAll('{{credentials}}', JSON.stringify(join(home, '.credentials.yaml'))))
+    await writeFile(join(home, 'cordis.yml'), template.replaceAll('{{endpoint}}', JSON.stringify(http.url)).replaceAll('{{credentials}}', JSON.stringify(join(home, '.credentials.yaml'))))
     ctx.baseUrl = pathToFileURL(home).href + '/'
     await ctx.plugin(Loader)
     ctx.loader.builtins.include = Include
     const modules = new Map<string, unknown>([
       ['@deepseek-ai/dsh-llm', LlmRuntime], ['@deepseek-ai/dsh-llm-deepseek', Messages],
-      ['@deepseek-ai/dsh-credentials-local', LocalCredentials], ['@deepseek-ai/dsh-settings-file', FileSettings],
+      ['@deepseek-ai/dsh-credentials-local', LocalCredentials],
       ['@deepseek-ai/dsh-agent', AgentRegistry], ['@deepseek-ai/dsh-agent-loop', AgentLoop],
       ['@deepseek-ai/dsh-session', SessionStore], ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
       ['@deepseek-ai/dsh-system-prompt', SystemPrompt], ['@deepseek-ai/dsh-tools', ToolRuntime],
@@ -273,8 +272,7 @@ describe('Cordis provider composition', () => {
       if (!modules.has(name)) throw new Error(`unexpected module ${name}`)
       return modules.get(name)
     })
-    await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(home, 'cordis.yml')).href } })
-    await ctx.loader.await()
+    await profileComposition(ctx, home, join(home, 'cordis.yml'))
     return { ctx, http }
   }
 
@@ -416,8 +414,9 @@ describe('Cordis provider composition', () => {
     await chunks(ctx.llm.stream(options()))
     expect(second.requests[0]).toMatchObject({ headers: { 'x-api-key': 'rotated' }, body: { max_tokens: 51 } })
     await ctx.settings.update(Messages.name, { models: [{ id: 'duplicate' }, { id: 'duplicate' }], baseURL: http.url })
-    await chunks(ctx.llm.stream(options()))
-    expect(second.requests).toHaveLength(2)
+    const refused: unknown = (await chunks(ctx.llm.stream(options()))).find(chunk => chunk.type === 'finish')
+    expect(JSON.stringify(refused)).toContain('duplicate catalog model')
+    expect(second.requests).toHaveLength(1)
     expect(http.requests).toHaveLength(1)
     await ctx.settings.update(Messages.name, { models: [{ id: MODEL }], baseURL: http.url })
     await chunks(ctx.llm.stream(options()))
@@ -445,4 +444,8 @@ describe('Cordis provider composition', () => {
     await fiber.dispose()
     expect(ctx.llm.listProviders()).toEqual([])
   })
+})
+
+it('rejects invalid catalog context windows at the options resolver', () => {
+  expect(() => Messages.resolveAdapterOptions({ models: [{ id: 'invalid-window', contextWindow: 0 }] })).toThrow('contextWindow must be a positive integer')
 })

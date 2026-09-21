@@ -35,7 +35,7 @@ The **Agent loop** card in the Official group opens the page. **Parallel tool ca
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Host half is an empty `apply`, present only so the package holds a Loader row the client module system serves the browser half for. The browser half binds the `agent-loop` namespace through `ctx.settingsScope`, keeps the staged form in `AgentLoopCardController` over the shared `SettingsFormModel` of `ui-primitives`, and registers `AgentLoopCard` into the Plugins page's `plugins.item` slot through `ctx.settingsScope.whileServed`. The page's copy lives in this package's `settings.agentLoop` dictionary.
+The Host half is an empty `apply`, present only so the package holds a Loader row the client module system serves the browser half for. The browser half binds the `agent-loop` namespace through `ctx.configForms.get`, keeps the staged form in `AgentLoopCardController` over the shared `SettingsFormModel` of `ui-primitives`, and registers `AgentLoopCard` into the Plugins page's `plugins.item` slot through `ctx.configForms.whileServed`. The page's copy lives in this package's `settings.agentLoop` dictionary.
 
 </details>
 

@@ -55,7 +55,7 @@ export { AGENT_PRESET_SETTINGS_NS, writeDefaultPreset } from './settings-store.t
 
 /** Required services (cordis fiber inject). */
 export const inject = [
-  'slots', 'sessions', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'settingsScope',
+  'slots', 'sessions', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'configForms',
 ]
 
 /**
@@ -141,7 +141,7 @@ export function apply(ctx: ClientContext): void {
       const binding = sessionId === undefined ? undefined : ctx.sessions.binding(sessionId)
       const seat = binding === undefined ? unboundSeat : seatFor(binding)
       return {
-        hooks: { agentPresetSeat: seat.store, showPresetPicker: ctx.settingsScope.developerTools.enabled },
+        hooks: { agentPresetSeat: seat.store, showPresetPicker: ctx.configForms.developerTools.enabled },
         load: () => seat.load(),
         select: (id: string) => seat.select(id),
         introduced: () => { seat.introduced() },
@@ -197,7 +197,7 @@ export function apply(ctx: ClientContext): void {
   }
 
   const sectionInjected = (): AgentPresetSectionInjected => ({
-    hooks: { agentPresetSection: section.store, developerTools: ctx.settingsScope.developerTools.enabled },
+    hooks: { agentPresetSection: section.store, developerTools: ctx.configForms.developerTools.enabled },
     load: () => section.load(),
     ...creatorDraft === undefined ? {} : { startCreatorDraft: creatorDraft },
     makeDefault: (id: string) => section.makeDefault(id, captureBlankSessionSync()),

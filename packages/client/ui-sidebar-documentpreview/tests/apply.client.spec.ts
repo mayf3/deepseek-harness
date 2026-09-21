@@ -48,7 +48,7 @@ interface Recorded {
 async function boot() {
   const ctx = new Context()
   ctx.provide('resources', createResources())
-  ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) } } as never)
+  ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) } } as never)
   const tabs = new SidebarRightTabRegistry(ctx)
   const registered: Recorded[] = []
   const slots = {

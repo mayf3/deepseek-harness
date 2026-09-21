@@ -1,4 +1,6 @@
 /** Models section registration: slot declaration injection, the locale-following label thunk, and HMR recovery. */
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import Schema from '@deepseek-ai/schemastery'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -69,7 +71,7 @@ describe('ui-settings-models apply', () => {
   it('declares the services it uses', () => {
     expect(inject).toEqual([
       'slots', 'locale', 'remote', 'remote.credentials', 'remote.llm', 'remote.settings',
-      'settingsScope', 'settingsSchema',
+      'configForms', 'settingsSchema',
     ])
   })
 
@@ -262,9 +264,9 @@ describe('pushed invalidations', () => {
     const mock = RemoteMock.create().load(remoteDefaultResponses)
     const namespace = {
       ns: WELCOME_NOTICE_SETTINGS_NAMESPACE,
-      schema: {},
+      schema: JSON.parse(JSON.stringify(Schema.object({ [WELCOME_NOTICE_ACK_FIELD]: Schema.string() }).toJSON())) as JsonValue,
       value: {},
-      applies: 'live' as const,
+      autoGenerate: true, applies: 'live' as const,
       secrets: [],
       revision: 0,
     }
@@ -287,7 +289,7 @@ describe('pushed invalidations', () => {
       ...document,
       namespaces: [{ ...namespace, value: { [WELCOME_NOTICE_ACK_FIELD]: WELCOME_NOTICE_VERSION }, revision: 1 }],
     }))
-    b.remote.emit('settings/document-updated', ['ui-onboarding', 1])
+    b.remote.emit('settings/document-updated', ['ui-settings-general', 1])
     await vi.waitFor(() => {
       expect(injected.hooks.welcome.getSnapshot()).toMatchObject({ status: 'ready', acknowledged: true })
     })
@@ -295,7 +297,7 @@ describe('pushed invalidations', () => {
 
   it('joins the refreshed mirror view on a settings invalidation', async () => {
     const mock = RemoteMock.create().load(remoteDefaultResponses)
-    const namespace = { ns: 'llm-test', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 1 }
+    const namespace = { ns: 'llm-test', schema: {}, value: {}, autoGenerate: true, applies: 'live' as const, secrets: [], revision: 1 }
     const document = { writable: true, hasDocument: false, namespaces: [namespace] }
     const describe = mock.remote.settings.describe
     describe.mockResolvedValue(ok(document))

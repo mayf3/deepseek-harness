@@ -1,58 +1,51 @@
 /**
- * The staged settings form model: what a draft shows before it is written,
- * which scope write a save reaches, and what happens to drafts the Host did
- * not accept.
+ * The staged form model: what a draft shows before it is written, which wire
+ * call a save reaches, and what happens to drafts the Host did not accept.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import {
-  SettingsFormModel, settingsNumberField, settingsTextField, type SettingsFormScope, type SettingsFormScopeSnapshot,
-} from '../src/settings-form/form-model.ts'
+  SettingsFormModel, settingsNumberField, settingsTextField,
+  type SettingsFormPathOp, type SettingsFormScope, type SettingsFormScopeSnapshot,
+} from '../src/index.ts'
 
-/** A scripted scope: what it holds, and the writes it records without applying. */
 interface StubScope<T> {
   scope: SettingsFormScope<T>
-  set: ReturnType<typeof vi.fn<(field: string, value: unknown) => Promise<boolean>>>
-  unset: ReturnType<typeof vi.fn<(field: string) => Promise<boolean>>>
+  mutate: ReturnType<typeof vi.fn<SettingsFormScope<T>['mutate']>>
   publish: (next: Partial<SettingsFormScopeSnapshot<T>>) => void
 }
 
+/** An in-memory scope: starts loading, records mutations, and lets the test publish Host acceptances. */
 function stubScope<T>(): StubScope<T> {
-  let snapshot: SettingsFormScopeSnapshot<T> = { status: 'loading', value: undefined, base: undefined, user: undefined, writable: false }
+  let snapshot: SettingsFormScopeSnapshot<T> = { status: 'loading', value: undefined, base: undefined, user: undefined, writable: false, revision: undefined }
   const listeners = new Set<() => void>()
-  const set = vi.fn<(field: string, value: unknown) => Promise<boolean>>(() => Promise.resolve(true))
-  const unset = vi.fn<(field: string) => Promise<boolean>>(() => Promise.resolve(true))
-  return {
-    scope: {
-      getSnapshot: () => snapshot,
-      subscribe: (listener) => {
-        listeners.add(listener)
-        return () => { listeners.delete(listener) }
-      },
-      set,
-      unset,
-    },
-    set,
-    unset,
-    publish: (next) => {
-      snapshot = { ...snapshot, ...next }
-      for (const listener of [...listeners]) listener()
-    },
+  const mutate = vi.fn<SettingsFormScope<T>['mutate']>(() => Promise.resolve(true))
+  const scope: SettingsFormScope<T> = {
+    getSnapshot: () => snapshot,
+    subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    mutate,
   }
+  return { scope, mutate, publish: (next) => { snapshot = { ...snapshot, ...next }; for (const listener of listeners) listener() } }
 }
 
 /** Make the stub behave like a Host that accepts every write. */
 function acceptWrites<T>(host: StubScope<T>): void {
   const section = (): Record<string, unknown> => ({ ...host.scope.getSnapshot().value as object })
   const layer = (): Record<string, unknown> => ({ ...host.scope.getSnapshot().user as object })
-  host.set.mockImplementation((field: string, value: unknown) => {
-    host.publish({ value: { ...section(), [field]: value } as T, user: { ...layer(), [field]: value } })
-    return Promise.resolve(true)
-  })
-  host.unset.mockImplementation((field: string) => {
-    const user = Object.fromEntries(Object.entries(layer()).filter(([key]) => key !== field))
-    const base = host.scope.getSnapshot().base as Record<string, unknown> | undefined
-    host.publish({ value: { ...section(), [field]: base?.[field] } as T, user })
+  host.mutate.mockImplementation((ops: readonly SettingsFormPathOp[]) => {
+    const value = { ...section() }
+    const user = { ...layer() }
+    for (const op of ops) {
+      const field = op.path[0]!
+      if (op.op === 'set') {
+        value[field] = op.value
+        user[field] = op.value
+      } else {
+        Reflect.deleteProperty(user, field)
+        value[field] = (host.scope.getSnapshot().base as Record<string, unknown> | undefined)?.[field]
+      }
+    }
+    host.publish({ value: value as T, user })
     return Promise.resolve(true)
   })
 }
@@ -70,6 +63,31 @@ describe('SettingsFormModel', () => {
     })
     return { host, subject }
   }
+
+  it('reports a failed credential write even when another credential succeeds', async () => {
+    const host = stubScope<Record<string, unknown>>()
+    host.publish({ status: 'ready', writable: true, value: {} })
+    const first = vi.fn(() => Promise.resolve(false))
+    const second = vi.fn(() => Promise.resolve(true))
+    const subject = new SettingsFormModel(host.scope, [], [{ field: 'first', write: first }, { field: 'second', write: second }])
+    subject.actions().edit('first', 'one')
+    subject.actions().edit('second', 'two')
+    await subject.save()
+    expect(first).toHaveBeenCalledWith('one')
+    expect(second).toHaveBeenCalledWith('two')
+    expect(subject.shell()).toMatchObject({ failed: true, dirty: true })
+  })
+
+  it('retains drafts after transport failure and allows a retry', async () => {
+    const { host, subject } = form()
+    subject.actions().edit('timeoutMs', '9000')
+    host.mutate.mockRejectedValueOnce(new Error('disconnected'))
+    await subject.save()
+    expect(subject.shell()).toMatchObject({ dirty: true, failed: true, saving: false })
+    acceptWrites(host)
+    await subject.save()
+    expect(subject.shell()).toMatchObject({ dirty: false, failed: false, saving: false })
+  })
 
   it('shows the effective value and stays clean until something is staged', () => {
     const { subject } = form()
@@ -95,11 +113,11 @@ describe('SettingsFormModel', () => {
 
     expect(subject.field('timeoutMs')).toEqual({ text: '9000', overridden: true, invalid: false })
     expect(subject.shell().dirty).toBe(true)
-    expect(host.set).not.toHaveBeenCalled()
+    expect(host.mutate).not.toHaveBeenCalled()
 
     await subject.save()
 
-    expect(host.set.mock.calls).toEqual([['timeoutMs', 9_000]])
+    expect(host.mutate.mock.calls.map(([ops]) => ops)).toEqual([[['timeoutMs', 9_000]].map(([field, value]) => ({ op: 'set', path: [field], value }))])
     expect(subject.shell()).toMatchObject({ dirty: false, failed: false, saving: false })
   })
 
@@ -112,7 +130,7 @@ describe('SettingsFormModel', () => {
     expect(subject.shell().dirty).toBe(false)
     await subject.save()
 
-    expect(host.set).not.toHaveBeenCalled()
+    expect(host.mutate).not.toHaveBeenCalled()
   })
 
   it('refuses to save while a draft is not a value the field accepts', async () => {
@@ -125,7 +143,7 @@ describe('SettingsFormModel', () => {
 
     await subject.save()
 
-    expect(host.set).not.toHaveBeenCalled()
+    expect(host.mutate).not.toHaveBeenCalled()
     expect(subject.field('timeoutMs').text).toBe('soon')
   })
 
@@ -138,11 +156,11 @@ describe('SettingsFormModel', () => {
 
     // The badge previews the save: the field will no longer be overridden.
     expect(subject.field('timeoutMs')).toEqual({ text: '60000', overridden: false, invalid: false })
-    expect(host.unset).not.toHaveBeenCalled()
+    expect(host.mutate).not.toHaveBeenCalled()
 
     await subject.save()
 
-    expect(host.unset.mock.calls).toEqual([['timeoutMs']])
+    expect(host.mutate).toHaveBeenCalledWith([{ op: 'unset', path: ['timeoutMs'] }], undefined)
     expect(subject.shell()).toMatchObject({ dirty: false, failed: false })
   })
 
@@ -154,7 +172,7 @@ describe('SettingsFormModel', () => {
     expect(subject.shell().dirty).toBe(false)
     await subject.save()
 
-    expect(host.unset).not.toHaveBeenCalled()
+    expect(host.mutate).not.toHaveBeenCalled()
   })
 
   it('clears a number field by emptying it', async () => {
@@ -167,7 +185,7 @@ describe('SettingsFormModel', () => {
     expect(subject.field('timeoutMs')).toEqual({ text: '', overridden: false, invalid: false })
     await subject.save()
 
-    expect(host.unset.mock.calls).toEqual([['timeoutMs']])
+    expect(host.mutate).toHaveBeenCalledWith([{ op: 'unset', path: ['timeoutMs'] }], undefined)
   })
 
   it('clears a text field by emptying it', async () => {
@@ -178,7 +196,7 @@ describe('SettingsFormModel', () => {
     subject.actions().edit('baseURL', '   ')
     await subject.save()
 
-    expect(host.unset.mock.calls).toEqual([['baseURL']])
+    expect(host.mutate).toHaveBeenCalledWith([{ op: 'unset', path: ['baseURL'] }], undefined)
   })
 
   it('writes the trimmed text of a text field', async () => {
@@ -188,35 +206,38 @@ describe('SettingsFormModel', () => {
     subject.actions().edit('baseURL', '  https://other.test  ')
     await subject.save()
 
-    expect(host.set.mock.calls).toEqual([['baseURL', 'https://other.test']])
+    expect(host.mutate.mock.calls.map(([ops]) => ops)).toEqual([[['baseURL', 'https://other.test']].map(([field, value]) => ({ op: 'set', path: [field], value }))])
   })
 
   it('keeps the drafts a save did not land, and reports the failure', async () => {
     const { host, subject } = form()
+    host.mutate.mockResolvedValue(false)
 
     subject.actions().edit('timeoutMs', '9000')
     await subject.save()
 
     // The stub Host accepted the call without storing it, exactly as a
     // validator that refuses the value does.
-    expect(host.set).toHaveBeenCalledWith('timeoutMs', 9_000)
+    expect(host.mutate).toHaveBeenCalledWith([{ op: 'set', path: ['timeoutMs'], value: 9_000 }], undefined)
     expect(subject.shell()).toMatchObject({ dirty: true, failed: true, saving: false })
     expect(subject.field('timeoutMs').text).toBe('9000')
   })
 
   it('reports a reset the Host did not apply as a failure', async () => {
     const { host, subject } = form()
+    host.mutate.mockResolvedValue(false)
     host.publish({ user: { timeoutMs: 9_000 } })
 
     subject.actions().resetField('timeoutMs')
     await subject.save()
 
-    expect(host.unset).toHaveBeenCalledWith('timeoutMs')
+    expect(host.mutate).toHaveBeenCalledWith([{ op: 'unset', path: ['timeoutMs'] }], undefined)
     expect(subject.shell().failed).toBe(true)
   })
 
   it('clears the failure as soon as the user edits again', async () => {
-    const { subject } = form()
+    const { host, subject } = form()
+    host.mutate.mockResolvedValue(false)
 
     subject.actions().edit('timeoutMs', '9000')
     await subject.save()
@@ -242,7 +263,7 @@ describe('SettingsFormModel', () => {
     expect(subject.shell()).toEqual(before)
 
     await subject.save()
-    expect(host.set).not.toHaveBeenCalled()
+    expect(host.mutate).not.toHaveBeenCalled()
   })
 
   it('refuses a second save while one is in flight', async () => {
@@ -255,7 +276,7 @@ describe('SettingsFormModel', () => {
     const second = subject.save()
     await Promise.all([first, second])
 
-    expect(host.set).toHaveBeenCalledTimes(1)
+    expect(host.mutate).toHaveBeenCalledTimes(1)
   })
 
   it('publishes a projection whenever the scope or a draft changes', () => {
@@ -270,10 +291,10 @@ describe('SettingsFormModel', () => {
     expect(store.getSnapshot()).toBe('2000')
   })
 
-  it('refuses to address a field the form never declared', () => {
+  it('refuses to address a field the card never declared', () => {
     const { subject } = form()
 
-    expect(() => subject.field('nope')).toThrow('settings form has no field nope')
+    expect(() => subject.field('nope')).toThrow('plugin card has no field nope')
   })
 
   it('renders an absent section value as an empty draft', () => {
