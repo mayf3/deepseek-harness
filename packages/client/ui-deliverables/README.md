@@ -44,7 +44,7 @@ The card renders the summary the Host serves for the turn's latest `workspace/ch
 
 A row opens the turn's `changes-review` tab, addressed by the viewed Session and the announcing event's sequence and titled by the turn, on that row's file; another row of the same card reveals the same tab on its file. The header's file selector lists every recorded file with its counts and switches the comparison. A new tab starts in the side-by-side view without wrapping. Its controls switch between unified and side-by-side comparison, toggle line wrapping, open the whole current file in the Sidebar, and, with a Host desktop available, open it in the default application with the same pending and retryable-error states as the cards; the view and wrap choices are kept per tab. The tab reads the summary and each comparison once through the authenticated routes. A text comparison lists its hunks with the old and new line numbers of every line, and highlights each rendered hunk side independently with the code preview's filename grammar and Shiki token colours. Additions and deletions use aligned success or error markers and background tints. The tab also shows a note when the file was created or deleted in the turn, when both sides hold the same lines, when the Host's line comparison timed out and every line shows as replaced, or when the tab stopped drawing at 5,000 lines. A binary or oversized file, a comparison the Host no longer serves, and a failed read each show one line instead; a failed read offers Retry. The comparison is the turn's snapshot of the file, not its current content.
 
-The selected-file title uses the document preview’s [`PathLabel`](../ui-primitives/README.md#component-catalog): complete and left-aligned when it fits, otherwise clipped at the left with a fade that preserves trailing characters and the extension. Directories use subdued text, the filename uses primary text, and hovering reveals the complete displayed path. Resizing the pane or selecting another file updates the fade; the dropdown arrow, line counts, and toolbar actions retain their space.
+The selected-file title uses the shared `ui-primitives` [`PathLabel`](../ui-primitives/README.md#component-catalog): complete and left-aligned when it fits, otherwise clipped at the left with a fade that preserves trailing characters and the extension. Directories use subdued text, the filename uses primary text, and hovering reveals the complete displayed path. Resizing the pane or selecting another file updates the fade; the dropdown arrow, line counts, and toolbar actions retain their space.
 
 Without wrapping, the two columns synchronize vertical scrolling and horizontal offsets up to each side’s available range. Line backgrounds, including empty alignment rows, cover each column’s full scrollable width. Both columns suppress elastic edge feedback and scroll chaining on both axes; the browser retains control of native momentum within each column’s scrollable range. Both horizontal scrollbars remain at the bottom of the visible comparison; scrolling vertically preserves a long line’s horizontal offset when the other side fits without horizontal scrolling.
 
@@ -118,5 +118,12 @@ These limits define the current deliverables vocabulary. They are current packag
 
 <a id="dev-note"></a>
 ### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
 
 **Runtime invariant:** No companion is published. Prompt, slot, dictionary, file-action route, and optional service registrations are effect-owned; the Session log owns declarations and the filesystem owns file contents.

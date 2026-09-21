@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest'
 import type {} from '@deepseek-ai/dsh-workspace-changes'
-import type { ChangesSummary } from '../../../packages/client/ui-deliverables/src/changes.ts'
+import type { ChangesSummary } from '@deepseek-ai/dsh-client-ui-deliverables/src/changes.ts'
 import { deriveReplayScript, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import {
   assertFinalWorkspaceSnapshot, captureExpandedTurnProcessAria, compareOrRefreshGolden,
@@ -553,6 +553,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
   it('preserves filename endings when the review narrows and updates the fade after resizing or selecting another file', async () => {
     const preview = await page.context().newPage()
     onTestFinished(async () => { await preview.close() })
+    const previewTripwire = watchConsole(preview)
     const prefix = 'src/components/review/' + 'long-filename-'.repeat(8)
     const names = [`${prefix}before.ts`, `${prefix}after.ts`] as const
     // Project long display names into a separate page; recorded paths, comparisons, and Session data stay intact.
@@ -627,6 +628,8 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     await expect.poll(async () => (await metrics()).clipped).toBe(false)
     expect((await metrics()).left).toBeCloseTo(0, 1)
     expect((await metrics()).mask).toBe('none')
+    expect(previewTripwire.pageErrors).toEqual([])
+    expect(previewTripwire.warnings).toEqual([])
   })
 
 })

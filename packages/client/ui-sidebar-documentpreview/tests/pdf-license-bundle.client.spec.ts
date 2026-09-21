@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
+import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 
 const packageRoot = resolve(import.meta.dirname, '..')
@@ -41,8 +42,8 @@ function runPnpm(args: string[], cwd: string, timeout: number): string {
     : run(entrypoint, args, cwd, timeout)
 }
 
-describe('published PDF.js licenses', () => {
-  it.skipIf(!existsSync(bundlePath))('keeps every bundled license in the packed PDF chunk', ({ task }) => {
+describe('published document preview licenses', () => {
+  it.skipIf(!existsSync(bundlePath))('keeps bundled licenses in the packed lazy chunks', ({ task }) => {
     expect(existsSync(pdfChunkPath)).toBe(true)
     const output = mkdtempSync(join(tmpdir(), 'dsh-document-preview-pack-'))
     try {
@@ -56,13 +57,37 @@ describe('published PDF.js licenses', () => {
       const client = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.js'], packageRoot, task.timeout)
       const pdf = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.pdf.js'], packageRoot, task.timeout)
       expect([...client.matchAll(/require\.async\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
-        .toEqual(['./client.pdf.js'])
+        .toEqual(['./client.pdf.js', './client.excel.js'])
       expect(client).not.toMatch(/\brequire\("\.\/client[^"/]*\.js"\)/u)
       expect([...pdf.matchAll(/require\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
         .toEqual([])
       expect(client).not.toContain('//! Bundled PDF.js license notices')
       expect(client).not.toContain('/pdfjs-dist/')
       expect(pdf).toContain('//! Bundled PDF.js license notices')
+      const excel = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.excel.js'], packageRoot, task.timeout)
+      expect(excel).not.toMatch(/\brequire\("\.\/client[^"/]*\.js"\)/u)
+      expect(client).not.toContain('FortuneSheet')
+      expect(excel).toContain('//! Bundled spreadsheet license notices')
+      expect(excel).toContain('Copyright (c) 2022 Suzhou Ruilisi Technology Co., Ltd')
+      expect(excel).toContain('Permission is hereby granted, free of charge')
+      for (const dependency of ['xlsx', 'papaparse']) {
+        const root = dirname(require.resolve(dependency === 'xlsx' ? dependency : `${dependency}/package.json`))
+        const license = readFileSync(join(root, 'LICENSE'), 'utf8').trimEnd()
+        expect(excel).toContain(license.split('\n').map(line => `// ${line}`).join('\n'))
+      }
+      let initialized = false
+      runInNewContext(excel, { window: { __ModuleLoader__: { load: (registration: {
+        factory: (resolve: (specifier: string) => unknown) => { ExcelBody: unknown }
+      }) => {
+        const loaded = registration.factory((specifier) => {
+          if (specifier === '@deepseek-ai/dsh-client-ui-primitives') return {}
+          if (specifier === 'react' || specifier === 'react/jsx-runtime' || specifier === 'react-dom') return require(specifier)
+          throw new Error(`Unexpected browser dependency: ${specifier}`)
+        })
+        expect(typeof loaded.ExcelBody).toBe('function')
+        initialized = true
+      } } } })
+      expect(initialized).toBe(true)
       const pdfRoot = dirname(require.resolve('pdfjs-dist/package.json'))
       for (const name of licenseNames) {
         const source = readFileSync(join(pdfRoot, name), 'utf8').trimEnd()
