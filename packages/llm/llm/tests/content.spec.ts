@@ -430,6 +430,27 @@ describe('projectToolUpdates', () => {
     expect(projectToolUpdates([prompt], undefined, undefined, history).tools).toBeUndefined()
   })
 
+  it.each(['addition-only', 'in-history'] as const)('activates explicitly deferred baseline tools on %s routes', (mode) => {
+    const deferred = { ...search, deferLoading: true as const }
+    const added = developer([{ type: 'tool-addition', toolName: 'search' }])
+    const duplicate = developer([{ type: 'tool-addition', toolName: 'search' }])
+    const removed = developer([{ type: 'tool-removal', toolName: 'search' }])
+    const restored = developer([{ type: 'tool-addition', toolName: 'search' }])
+    const history: ToolHistory = { tools: [deferred], updates: [
+      { messageId: added.id, additions: [deferred] },
+      { messageId: duplicate.id, additions: [deferred] },
+      { messageId: removed.id, additions: [] },
+      { messageId: restored.id, additions: [deferred] },
+    ] }
+
+    const projected = projectToolUpdates([prompt, added, duplicate, removed, restored], [deferred], mode, history)
+
+    expect(projected.tools).toEqual([deferred])
+    expect(projected.messages).toEqual(mode === 'in-history'
+      ? [prompt, added, removed, restored]
+      : [prompt, added])
+  })
+
   it('uses current declarations without updates when history is missing or the prefix omits an update', () => {
     const added = developer([{ type: 'tool-addition', toolName: 'fetch' }])
     const history: ToolHistory = { tools: [search], updates: [{ messageId: added.id, additions: [fetch] }] }
@@ -440,6 +461,17 @@ describe('projectToolUpdates', () => {
     const prefix = projectToolUpdates([prompt], tools, 'in-history', history)
     expect(prefix.tools).toBe(tools)
     expect(prefix.messages).toEqual([prompt])
+  })
+
+  it('omits updates from an earlier declaration series', () => {
+    const earlier = developer([{ type: 'tool-addition', toolName: 'search' }])
+    const current = developer([{ type: 'tool-addition', toolName: 'fetch' }])
+    const history: ToolHistory = { tools: [search], updates: [{ messageId: current.id, additions: [fetch] }] }
+
+    const projected = projectToolUpdates([prompt, earlier, current], [search, fetch], 'in-history', history)
+
+    expect(projected.messages).toEqual([prompt, current])
+    expect(projected.tools).toEqual([search, { ...fetch, deferLoading: true }])
   })
 
   it('defers historical additions and retains removed definitions for in-history routes', () => {

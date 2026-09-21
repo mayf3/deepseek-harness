@@ -1075,19 +1075,15 @@ export class LlmRuntime extends TypertRemoteService {
       // Tool changes are logged on every route; the route's declared mode selects what it receives.
       const projectedTools = projectToolUpdates(projectedMessages, resolvedOptions.tools, modelInfo.toolUpdate, resolvedOptions.toolHistory)
       projectedMessages = projectedTools.messages
-      const projectedOptions = projectedMessages === resolvedOptions.messages && projectedTools.tools === resolvedOptions.tools
-        ? resolvedOptions
-        : Object.isFrozen(resolvedOptions)
-          ? deepFreeze({
-            ...resolvedOptions,
-            messages: projectedMessages as RequestMessage[],
-            ...projectedTools.tools === undefined ? {} : { tools: projectedTools.tools as ToolSchema[] },
-          })
-          : {
-            ...resolvedOptions,
-            messages: projectedMessages as RequestMessage[],
-            ...projectedTools.tools === undefined ? {} : { tools: projectedTools.tools as ToolSchema[] },
-          }
+      let projectedOptions = resolvedOptions
+      if (projectedMessages !== resolvedOptions.messages || projectedTools.tools !== resolvedOptions.tools) {
+        projectedOptions = {
+          ...resolvedOptions,
+          messages: projectedMessages as RequestMessage[],
+          ...projectedTools.tools === undefined ? {} : { tools: projectedTools.tools as ToolSchema[] },
+        }
+        if (Object.isFrozen(resolvedOptions)) deepFreeze(projectedOptions)
+      }
       const stream = dispatch(this.forAdapter(projectedOptions, adapter))
       iterator = stream[Symbol.asyncIterator]()
     } catch (error: unknown) {

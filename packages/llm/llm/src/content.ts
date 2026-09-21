@@ -373,9 +373,48 @@ export interface ProjectedToolUpdates {
   readonly tools: readonly ToolSchema[] | undefined
 }
 
+function withoutDeveloperMessages(messages: readonly RequestMessage[]): readonly RequestMessage[] {
+  const retained = messages.filter(message => message.role !== 'developer')
+  return retained.length === messages.length ? messages : retained
+}
+
+function toolDeclarations(
+  tools: readonly ToolSchema[] | undefined,
+  mode: ToolUpdate,
+  history: ToolHistory,
+): Map<string, ToolSchema> {
+  const declarations = new Map(history.tools.map(tool => [tool.name, tool]))
+  for (const update of history.updates) {
+    for (const tool of update.additions) {
+      if (!declarations.has(tool.name)) {
+        // Later additions activate these definitions at their recorded position.
+        declarations.set(tool.name, { ...tool, deferLoading: true })
+      }
+    }
+  }
+
+  switch (mode) {
+    case 'in-history':
+      // Removal blocks disable tools without discarding their historical definitions.
+      return declarations
+    case 'addition-only': {
+      // Without removal support, the declaration list must omit inactive tools.
+      const activeNames = new Set(tools?.map(tool => tool.name))
+      for (const name of declarations.keys()) {
+        if (!activeNames.has(name)) declarations.delete(name)
+      }
+      return declarations
+    }
+    /* v8 ignore next 2 -- closed-union exhaustiveness guard */
+    default:
+      return assertNever(mode)
+  }
+}
+
 /**
  * Construct provider declarations from session-folded history without changing logged active tools.
  * Unsupported routes and incomplete history use current declarations without developer updates.
+ * Explicitly deferred baseline tools become available only after their first retained addition.
  * @param messages - complete request inputs, or the prefix selected for an auxiliary call.
  * @param tools - currently active tool schemas.
  * @param toolUpdate - the resolved route's update mode.
@@ -388,44 +427,66 @@ export function projectToolUpdates(
   toolUpdate: ToolUpdate | undefined,
   history?: ToolHistory,
 ): ProjectedToolUpdates {
-  const messageIds = new Set(messages.flatMap(message => message.role === 'developer' ? [message.id] : []))
-  const incremental = toolUpdate !== undefined && history !== undefined
-    && history.updates.every(update => messageIds.has(update.messageId))
-  const updates = new Map(incremental ? history.updates.map(update => [update.messageId, update]) : [])
-  const declarations = new Map<string, ToolSchema>()
-  if (incremental) {
-    for (const tool of history.tools) declarations.set(tool.name, tool)
-    for (const update of history.updates) {
-      for (const tool of update.additions) {
-        if (!declarations.has(tool.name)) declarations.set(tool.name, { ...tool, deferLoading: true })
-      }
+  if (toolUpdate === undefined) {
+    // Unsupported routes need immediately available tools and no update messages.
+    let immediateTools = tools
+    if (tools?.some(tool => tool.deferLoading === true)) {
+      immediateTools = tools.map(({ deferLoading: _loading, ...tool }) => tool)
     }
-    if (toolUpdate === 'addition-only') {
-      const active = new Set(tools?.map(tool => tool.name))
-      for (const name of declarations.keys()) if (!active.has(name)) declarations.delete(name)
+    return { messages: withoutDeveloperMessages(messages), tools: immediateTools }
+  }
+
+  if (history === undefined) {
+    // Current schemas alone cannot resolve definitions referenced by past updates.
+    return { messages: withoutDeveloperMessages(messages), tools }
+  }
+  const messageIds = new Set(messages.flatMap(message => message.role === 'developer' ? [message.id] : []))
+  if (history.updates.some(update => !messageIds.has(update.messageId))) {
+    // An auxiliary prefix may omit updates needed to activate historical declarations.
+    return { messages: withoutDeveloperMessages(messages), tools }
+  }
+
+  const declarations = toolDeclarations(tools, toolUpdate, history)
+  const updateIds = new Set(history.updates.map(update => update.messageId))
+  // Deferred baseline tools still need their first addition to become available.
+  const offered = new Set(history.tools.filter(tool => !tool.deferLoading).map(tool => tool.name))
+  const projectedMessages: RequestMessage[] = []
+  for (const message of messages) {
+    if (message.role !== 'developer') {
+      projectedMessages.push(message)
+      continue
+    }
+    // Earlier declaration series do not govern the current tool set.
+    if (!updateIds.has(message.id)) continue
+
+    const content = message.content.filter((block) => {
+      switch (block.type) {
+        case 'tool-addition':
+          // Only declared tools that are not already available need activation.
+          if (!declarations.has(block.toolName) || offered.has(block.toolName)) return false
+          offered.add(block.toolName)
+          return true
+        case 'tool-removal':
+          // Addition-only routes cannot deactivate a tool through history.
+          if (toolUpdate !== 'in-history') return false
+          return offered.delete(block.toolName)
+        default:
+          // Other core and plugin-defined blocks retain their content and order.
+          return true
+      }
+    })
+    if (content.length === 0) continue
+    if (content.length === message.content.length) {
+      projectedMessages.push(message)
+    } else {
+      projectedMessages.push({ ...message, content })
     }
   }
-  const projectedTools = incremental ? [...declarations.values()]
-    : toolUpdate === undefined && tools?.some(tool => tool.deferLoading === true)
-      ? tools.map(({ deferLoading: _loading, ...tool }) => tool)
-      : tools
-  // Names the provider currently offers; a block survives only when it changes that set.
-  const offered = new Set(incremental ? history.tools.map(tool => tool.name) : [])
-  const projectedMessages = messages.flatMap((message): RequestMessage[] => {
-    if (message.role !== 'developer') return [message]
-    if (!updates.has(message.id)) return []
-    const content = message.content.filter((block) => {
-      if (block.type === 'tool-addition') {
-        if (!declarations.has(block.toolName) || offered.has(block.toolName)) return false
-        offered.add(block.toolName)
-      } else if (block.type === 'tool-removal') {
-        if (toolUpdate !== 'in-history' || !offered.has(block.toolName)) return false
-        offered.delete(block.toolName)
-      }
-      return true
-    })
-    return content.length === 0 ? [] : [content.length === message.content.length ? message : { ...message, content }]
-  })
-  const changed = projectedMessages.length !== messages.length || projectedMessages.some((message, index) => message !== messages[index])
-  return { messages: changed ? projectedMessages : messages, tools: projectedTools }
+
+  const unchanged = projectedMessages.length === messages.length
+    && projectedMessages.every((message, index) => message === messages[index])
+  return {
+    messages: unchanged ? messages : projectedMessages,
+    tools: [...declarations.values()],
+  }
 }
