@@ -211,6 +211,19 @@ export class DraftEditorRuntime {
   }
 
   /**
+   * Insert an asynchronous text result as one independent undo operation.
+   * @param span - owner-validated insertion range.
+   * @param text - text sanitized with the same rules as paste.
+   * @returns whether the range mapped and the edit applied.
+   */
+  insertAsyncText(span: DetectSpan, text: string): boolean {
+    let applied = false
+    const clean = text.replace(REFERENCE_PLACEHOLDER_RE, '')
+    this.applyEdit(() => { applied = $replaceDetectSpanWithText(span, clean) }, PASTE_TAG)
+    return applied
+  }
+
+  /**
    * Insert a reference chip with the existing trailing-space rule.
    * @param span - detect-coordinate range.
    * @param ref - reference fields.
