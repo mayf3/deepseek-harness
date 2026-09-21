@@ -68,11 +68,10 @@
   --dsh-chat-flow-gap: 8px;
 }
 
-/* A keyed renderer may intentionally decline its row after dispatch (the
-   completed-turn tail does this when it owns neither actions nor extensions).
-   An empty flex item must not consume the column gap. */
+/* Empty Seats retain ordered layout positions for Turn lookup without
+   contributing height or the sibling gap. */
 .flowItem:empty {
-  display: none;
+  height: 0;
 }
 
 .callRow {

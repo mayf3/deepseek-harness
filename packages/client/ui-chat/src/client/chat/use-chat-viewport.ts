@@ -32,6 +32,7 @@ interface ViewportEvents {
 
 interface ViewportElements {
   readonly list: HTMLElement
+  readonly column: HTMLElement
   readonly scroller: HTMLElement
   readonly composer: HTMLElement | null
 }
@@ -56,13 +57,13 @@ export class ChatViewport {
   /**
    * Bind to the containing scrollport and observe content and viewport sizes.
    * @param list - Chat root inside an optional shared conversation scrollport.
-   * @param column - content column whose size changes invalidate cached landings.
+   * @param column - ordered outer Node/Group boxes; its size changes invalidate cached landings.
    */
   attach(list: HTMLElement, column: HTMLElement): void {
     this.detach()
     const scroller = list.closest<HTMLElement>('[data-conversation-scroll]') ?? list
     const composer = scroller.querySelector<HTMLElement>('[data-composer-seat]')
-    const elements = { list, scroller, composer }
+    const elements = { list, column, scroller, composer }
     this.elements = elements
     scroller.addEventListener('scroll', this.onScroll, { passive: true })
     scroller.addEventListener('scrollend', this.onScrollEnd, { passive: true, capture: true })
@@ -212,9 +213,11 @@ export class ChatViewport {
   }
 
   /**
-   * Resolve the active turn, reusing a known landing when its position is unchanged.
+   * Approximate the active Turn by binary-searching outer Node/Group boxes.
+   * Gaps retain the preceding Turn; group contents need no further lookup.
+   * A known landing bypasses measurement while its position is unchanged.
    * @param metrics - reusable scroll metrics; omitted callers request a fresh read.
-   * @returns the loaded turn at the reading line, or null while detached or empty.
+   * @returns the Turn near the reading line, or null while detached or empty.
    */
   readVisibleTurn(metrics = this.metrics()): number | null {
     const knownTurn = this.observation.landing?.turn
@@ -223,30 +226,22 @@ export class ChatViewport {
     const first = this.turns[0]
     if (elements === null || metrics === null || first === undefined) return null
     const line = elements.scroller.getBoundingClientRect().top + Math.min(96, metrics.height * 0.2)
-    const content = elements.list.getBoundingClientRect()
-    let reading: number | null = null
-    if (typeof document.elementsFromPoint === 'function' && content.width > 0) {
-      for (const element of document.elementsFromPoint(content.left + content.width / 2, line)) {
-        const row = element instanceof HTMLElement ? element.closest<HTMLElement>('[data-chat-turn]') : null
-        const turn = Number(row?.dataset.chatTurn)
-        if (row !== null && elements.list.contains(row) && Number.isSafeInteger(turn)) { reading = turn; break }
-      }
-    }
-    if (reading === null) {
-      for (const row of elements.list.querySelectorAll<HTMLElement>('[data-chat-turn]')) {
-        if (row.getBoundingClientRect().top > line) break
-        const turn = Number(row.dataset.chatTurn)
+    const rows = elements.column.children
+    let low = 0
+    let high = rows.length
+    let reading = first.turn
+    while (low < high) {
+      const middle = (low + high) >>> 1
+      const row = rows[middle] as Element
+      if (row.getBoundingClientRect().top > line) high = middle
+      else {
+        const value = row.getAttribute('data-chat-turn')
+        const turn = value === null ? NaN : Number(value)
         if (Number.isSafeInteger(turn)) reading = turn
+        low = middle + 1
       }
     }
-    let result = first.turn
-    if (reading !== null) {
-      for (const item of this.turns) {
-        if (item.turn > reading) break
-        result = item.turn
-      }
-    }
-    return result
+    return reading
   }
 
   /**

@@ -107,6 +107,8 @@ While the pointer is outside the rail, automatic follow keeps the rail still whe
 
 `useChatReading` owns follow policy, sampled reader input, and semantic memory; `useChatNavigation` owns turn jumps and requests preservation from the viewport. Reader input releases the paging anchor; while a page is still loading, `scrollend` captures the reader's new position. `useChatScroll` coordinates their committed inputs. Explicit navigation carries its measured landing into reading policy, so it does not rediscover the known target with a hit test.
 
+Active-Turn highlighting is approximate: `readVisibleTurn` binary-searches the content column's direct Node/Group boxes and retains the preceding candidate in gaps. It neither hit-tests the document nor searches Group members or all Turn markers. Empty Seats retain zero-height in-flow boxes so outer positions remain ordered without extra spacing. This lookup does not change semantic position capture or paging compensation.
+
 </details>
 
 -----

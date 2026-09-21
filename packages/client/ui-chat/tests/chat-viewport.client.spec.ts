@@ -47,6 +47,94 @@ function fixture() {
   return { column, viewport, group, row, prepend: (height: number) => { prependedHeight += height } }
 }
 
+it.each([64, 4096])('locates the reading Turn with logarithmic outer-row measurements (%s rows)', (count) => {
+  const h = fixture()
+  const rows = Array.from({ length: count }, (_, index) => {
+    const row = h.row(h.column, `turn-${index + 1}`, index * 100)
+    row.dataset.chatTurn = String(index + 1)
+    return row
+  })
+  h.viewport.updateTurns(rows.map((row, index) => ({
+    turn: index + 1, anchorKey: row.dataset.chatAnchorKey!, prompt: '', response: '',
+  })))
+  const selected = Math.floor(count * 0.73)
+  h.column.scrollTop = selected * 100 + 10
+  const hitTest = vi.fn(() => [])
+  Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: hitTest })
+  const query = vi.spyOn(h.column, 'querySelectorAll')
+
+  expect(h.viewport.readVisibleTurn()).toBe(selected + 1)
+  expect(hitTest).not.toHaveBeenCalled()
+  expect(query).not.toHaveBeenCalled()
+  const measurements = rows.reduce((sum, row) => sum + vi.mocked(row.getBoundingClientRect).mock.calls.length, 0)
+  expect(measurements).toBeLessThanOrEqual(Math.ceil(Math.log2(count)) + 1)
+})
+
+it('uses outer group geometry and keeps the preceding Turn in a gap', () => {
+  const h = fixture()
+  h.row(h.column, 'first', 0)
+  const group = h.row(h.column, 'group', 100)
+  group.dataset.chatGroupKey = 'group'
+  group.dataset.chatTurn = '2'
+  const body = document.createElement('div')
+  group.append(body)
+  const member = h.row(body, 'member', -500)
+  vi.mocked(member.getBoundingClientRect).mockImplementation(() => { throw new Error('measured inside a group') })
+  const empty = h.row(h.column, 'empty', 180)
+  empty.textContent = ''
+  empty.dataset.chatTurn = '2'
+  vi.mocked(empty.getBoundingClientRect).mockImplementation(() => new DOMRect(0, 180 - h.column.scrollTop, 500, 0))
+  const hidden = h.row(h.column, 'hidden-control', 180)
+  hidden.dataset.chatTurn = '2'
+  hidden.setAttribute('hidden', 'until-found')
+  vi.mocked(hidden.getBoundingClientRect).mockImplementation(() => new DOMRect(0, 180 - h.column.scrollTop, 500, 0))
+  const next = h.row(h.column, 'next', 300)
+  next.dataset.chatTurn = '3'
+  h.viewport.updateTurns([1, 2, 3].map(turn => ({ turn, anchorKey: String(turn), prompt: '', response: '' })))
+
+  for (const collapsed of [false, true]) {
+    body.toggleAttribute('hidden', collapsed)
+    h.column.scrollTop = 80
+    expect(h.viewport.readVisibleTurn()).toBe(2)
+    h.column.scrollTop = 160
+    expect(h.viewport.readVisibleTurn()).toBe(2)
+    h.column.scrollTop = 240
+    expect(h.viewport.readVisibleTurn()).toBe(3)
+  }
+  expect(member.getBoundingClientRect).not.toHaveBeenCalled()
+  const inserted = h.row(h.column, 'prepended', -100)
+  inserted.dataset.chatTurn = '0'
+  h.column.prepend(inserted)
+  h.column.scrollTop = 160
+  expect(h.viewport.readVisibleTurn()).toBe(2)
+})
+
+it('reads only the supplied column and reuses a known Turn landing', () => {
+  const h = fixture()
+  const list = document.createElement('div')
+  h.column.replaceWith(list)
+  list.append(h.column)
+  onTestFinished(() => { list.remove() })
+  Object.defineProperties(list, {
+    clientHeight: { value: 300 }, scrollHeight: { value: 2_000 },
+  })
+  vi.spyOn(list, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 500, 300))
+  h.viewport.attach(list, h.column)
+  h.viewport.updateTurns([{ turn: 7, anchorKey: 'seven', prompt: '', response: '' }])
+  const row = h.row(h.column, 'seven', 0)
+  row.dataset.chatTurn = '7'
+  const rail = document.createElement('nav')
+  list.prepend(rail)
+  vi.spyOn(rail, 'getBoundingClientRect').mockImplementation(() => { throw new Error('measured the rail') })
+  expect(h.viewport.readVisibleTurn()).toBe(7)
+  expect(h.viewport.scrollToTurn(7)?.turn).toBe(7)
+  vi.mocked(row.getBoundingClientRect).mockClear()
+  expect(h.viewport.readVisibleTurn()).toBe(7)
+  expect(row.getBoundingClientRect).not.toHaveBeenCalled()
+  h.viewport.detach()
+  expect(h.viewport.readVisibleTurn()).toBeNull()
+})
+
 it.each([1, 1000])('selects the first paging marker without measuring other rows (%s later rows)', (count) => {
   const h = fixture()
   const unmarked = h.row(h.column, 'expanded-control', 0)
