@@ -24,6 +24,8 @@ import type {
   ModelModality,
   StreamChunk,
   SystemPromptUpdate,
+  ToolSchema,
+  ToolUpdate,
 } from './types.ts'
 import { freezeMessage } from './message.ts'
 import { resolveRetryPolicy } from './retry-policy.ts'
@@ -35,7 +37,7 @@ import { HarnessError, INVALID_CREDENTIAL_CODE } from './error.ts'
 import { normalizeLlmFailure } from './adapter-failure.ts'
 import { normalizeApiKey } from './api-key.ts'
 import {
-  contentHasFile, contentHasImage, fileHandleText, projectFilesToText, projectImagesForTextModel,
+  contentHasFile, contentHasImage, fileHandleText, projectFilesToText, projectImagesForTextModel, projectToolUpdates,
 } from './content.ts'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 
@@ -175,6 +177,8 @@ export interface PreparedLlmCall {
   readonly inputModalities?: readonly ModelModality[]
   /** Exact model system prompt update mode captured with the adapter dispatch generation. */
   readonly systemPromptUpdate?: SystemPromptUpdate
+  /** Exact model tool update mode captured with the adapter dispatch generation. */
+  readonly toolUpdate?: ToolUpdate
   /** Config fields materialized by the captured adapter rather than proposed by the caller. */
   readonly adapterDefaults: LlmCallConfigAdapterDefaults
   /**
@@ -789,6 +793,14 @@ export class LlmRuntime extends TypertRemoteService {
         'INVALID_MODEL_INFO',
       )
     }
+    // Widened for the same reason: catalog config supplies the tool update mode as text.
+    const toolUpdate: string | undefined = resolved.toolUpdate
+    if (toolUpdate !== undefined && toolUpdate !== 'in-history' && toolUpdate !== 'addition-only') {
+      throw new LlmError(
+        `adapter returned invalid tool update mode for provider "${provider}" model "${model}"`,
+        'INVALID_MODEL_INFO',
+      )
+    }
     const defaultMaxTokens = resolved.defaultMaxTokens
     if (defaultMaxTokens !== undefined
       && (!Number.isSafeInteger(defaultMaxTokens) || defaultMaxTokens <= 0)) {
@@ -806,6 +818,7 @@ export class LlmRuntime extends TypertRemoteService {
       ...context === undefined ? {} : { context: { contextWindow: context.contextWindow } },
       ...defaultMaxTokens === undefined ? {} : { defaultMaxTokens },
       ...resolved.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: resolved.systemPromptUpdate },
+      ...resolved.toolUpdate === undefined ? {} : { toolUpdate: resolved.toolUpdate },
     }
     const reasoning = resolved.reasoning
     if (reasoning === undefined) return info
@@ -947,6 +960,7 @@ export class LlmRuntime extends TypertRemoteService {
         ? {}
         : { inputModalities: Object.freeze([...modelInfo.inputModalities]) },
       ...modelInfo.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: modelInfo.systemPromptUpdate },
+      ...modelInfo.toolUpdate === undefined ? {} : { toolUpdate: modelInfo.toolUpdate },
       stream: (options: GenerateOptions): AsyncIterable<StreamChunk> => {
         if (dispatched) {
           throw new LlmError('a prepared LLM call can only be dispatched once', 'INVALID_PREPARED_CALL')
@@ -1058,11 +1072,22 @@ export class LlmRuntime extends TypertRemoteService {
         && projectedMessages.some(message => contentHasImage(message.content))) {
         projectedMessages = projectImagesForTextModel(projectedMessages)
       }
-      const projectedOptions = projectedMessages === resolvedOptions.messages
+      // Tool changes are logged on every route; the route's declared mode selects what it receives.
+      const projectedTools = projectToolUpdates(projectedMessages, resolvedOptions.tools, modelInfo.toolUpdate, resolvedOptions.toolHistory)
+      projectedMessages = projectedTools.messages
+      const projectedOptions = projectedMessages === resolvedOptions.messages && projectedTools.tools === resolvedOptions.tools
         ? resolvedOptions
         : Object.isFrozen(resolvedOptions)
-          ? deepFreeze({ ...resolvedOptions, messages: projectedMessages as RequestMessage[] })
-          : { ...resolvedOptions, messages: projectedMessages as RequestMessage[] }
+          ? deepFreeze({
+            ...resolvedOptions,
+            messages: projectedMessages as RequestMessage[],
+            ...projectedTools.tools === undefined ? {} : { tools: projectedTools.tools as ToolSchema[] },
+          })
+          : {
+            ...resolvedOptions,
+            messages: projectedMessages as RequestMessage[],
+            ...projectedTools.tools === undefined ? {} : { tools: projectedTools.tools as ToolSchema[] },
+          }
       const stream = dispatch(this.forAdapter(projectedOptions, adapter))
       iterator = stream[Symbol.asyncIterator]()
     } catch (error: unknown) {

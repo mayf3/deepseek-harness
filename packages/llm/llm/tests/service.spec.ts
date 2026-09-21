@@ -14,6 +14,7 @@ import LlmRuntime, {
   resolveRetryPolicy,
   StreamChunk,
   createMessage,
+  createDeveloperMessage,
   createUserMessage,
 } from '@deepseek-ai/dsh-llm'
 import type {
@@ -195,6 +196,24 @@ describe('LlmRuntime', () => {
     const chunks: StreamChunk[] = []
     for await (const chunk of ctx.llm.stream({ provider: 'test-provider', model: 'test-model', messages: [] })) chunks.push(chunk)
     expect(chunks).toEqual(SCRIPT)
+  })
+
+  it('sends complete declarations without deferred loading or developer updates on an undeclared route', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const adapter = new RecordingAdapter(SCRIPT)
+    ctx.llm.registerAdapter(['test-provider'], adapter)
+    const changes = createDeveloperMessage({ source: { kind: 'test' }, content: [{ type: 'tool-addition', toolName: 'search' }] })
+    const search = { name: 'search', description: 'Search', parameters: {} }
+    await collect(ctx.llm.stream({
+      provider: 'test-provider',
+      model: 'test-model',
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }), changes],
+      tools: [{ ...search, deferLoading: true }],
+      toolHistory: { tools: [], updates: [{ messageId: changes.id, additions: [search] }] },
+    }))
+    expect(adapter.lastOptions?.tools).toEqual([search])
+    expect(adapter.lastOptions?.messages.map(message => message.role)).toEqual(['user'])
   })
 
   it('trusts the immutable message creation boundary for direct calls', async () => {
@@ -650,6 +669,7 @@ describe('LlmRuntime', () => {
     [{ provider: 'route', id: 'model', name: 1 }, 'non-string name'],
     [{ provider: 'route', id: 'model', name: '' }, 'empty name'],
     [{ provider: 'route', id: 'model', name: 'Model', description: 1 }, 'non-string description'],
+    [{ provider: 'route', id: 'model', name: 'Model', toolUpdate: 'sometimes' }, 'unknown tool update mode'],
   ] as const)('rejects invalid exact model metadata (%s: %s)', async (metadata, _label) => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
@@ -672,6 +692,7 @@ describe('LlmRuntime', () => {
         return Promise.resolve({
           provider: 'route', id: 'model', name: 'Model',
           inputModalities: ['text', 'image'],
+          toolUpdate: 'in-history',
         })
       }
     }(SCRIPT)
@@ -682,7 +703,9 @@ describe('LlmRuntime', () => {
     await expect(ctx.llm.resolveModelInfo('route', 'model')).resolves.toEqual({
       provider: 'route', id: 'model', name: 'Model',
       inputModalities: ['text', 'image'],
+      toolUpdate: 'in-history',
     })
+    expect((await ctx.llm.prepareCall({ provider: 'route', model: 'model' })).toolUpdate).toBe('in-history')
   })
 
   it('resolves detached model context independently of advisory catalog membership', async () => {

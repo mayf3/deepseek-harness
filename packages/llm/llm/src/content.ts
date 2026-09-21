@@ -1,6 +1,6 @@
 /** Content-block structure helpers. @module @deepseek-ai/dsh-llm/content */
 
-import type { ContentBlock, ImageBlock, LlmImageRequestBudget } from './types.ts'
+import type { ContentBlock, ImageBlock, LlmImageRequestBudget, ToolSchema, ToolUpdate, ToolHistory } from './types.ts'
 import type { RequestMessage } from './types.ts'
 import type { Message } from './message.ts'
 import type {
@@ -363,4 +363,69 @@ export function projectImagesForTextModel(messages: readonly RequestMessage[]): 
     const content = replaceImagesForTextModel(message.content)
     return content === message.content ? message : { ...message, content }
   })
+}
+
+/** Request messages and tools after one route's tool update projection. */
+export interface ProjectedToolUpdates {
+  /** History with only the developer updates supported by this route and declaration series. */
+  readonly messages: readonly RequestMessage[]
+  /** Provider declarations, including deferred and retained definitions when supported. */
+  readonly tools: readonly ToolSchema[] | undefined
+}
+
+/**
+ * Construct provider declarations from session-folded history without changing logged active tools.
+ * Unsupported routes and incomplete history use current declarations without developer updates.
+ * @param messages - complete request inputs, or the prefix selected for an auxiliary call.
+ * @param tools - currently active tool schemas.
+ * @param toolUpdate - the resolved route's update mode.
+ * @param history - immutable state folded from committed headers and developer messages.
+ * @returns provider declarations and the corresponding filtered history.
+ */
+export function projectToolUpdates(
+  messages: readonly RequestMessage[],
+  tools: readonly ToolSchema[] | undefined,
+  toolUpdate: ToolUpdate | undefined,
+  history?: ToolHistory,
+): ProjectedToolUpdates {
+  const messageIds = new Set(messages.flatMap(message => message.role === 'developer' ? [message.id] : []))
+  const incremental = toolUpdate !== undefined && history !== undefined
+    && history.updates.every(update => messageIds.has(update.messageId))
+  const updates = new Map(incremental ? history.updates.map(update => [update.messageId, update]) : [])
+  const declarations = new Map<string, ToolSchema>()
+  if (incremental) {
+    for (const tool of history.tools) declarations.set(tool.name, tool)
+    for (const update of history.updates) {
+      for (const tool of update.additions) {
+        if (!declarations.has(tool.name)) declarations.set(tool.name, { ...tool, deferLoading: true })
+      }
+    }
+    if (toolUpdate === 'addition-only') {
+      const active = new Set(tools?.map(tool => tool.name))
+      for (const name of declarations.keys()) if (!active.has(name)) declarations.delete(name)
+    }
+  }
+  const projectedTools = incremental ? [...declarations.values()]
+    : toolUpdate === undefined && tools?.some(tool => tool.deferLoading === true)
+      ? tools.map(({ deferLoading: _loading, ...tool }) => tool)
+      : tools
+  // Names the provider currently offers; a block survives only when it changes that set.
+  const offered = new Set(incremental ? history.tools.map(tool => tool.name) : [])
+  const projectedMessages = messages.flatMap((message): RequestMessage[] => {
+    if (message.role !== 'developer') return [message]
+    if (!updates.has(message.id)) return []
+    const content = message.content.filter((block) => {
+      if (block.type === 'tool-addition') {
+        if (!declarations.has(block.toolName) || offered.has(block.toolName)) return false
+        offered.add(block.toolName)
+      } else if (block.type === 'tool-removal') {
+        if (toolUpdate !== 'in-history' || !offered.has(block.toolName)) return false
+        offered.delete(block.toolName)
+      }
+      return true
+    })
+    return content.length === 0 ? [] : [content.length === message.content.length ? message : { ...message, content }]
+  })
+  const changed = projectedMessages.length !== messages.length || projectedMessages.some((message, index) => message !== messages[index])
+  return { messages: changed ? projectedMessages : messages, tools: projectedTools }
 }

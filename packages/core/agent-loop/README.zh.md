@@ -151,7 +151,7 @@ const handle = await ctx.agents.create({
 
 #### 模型看到什么
 
-每个步骤中，循环会发送会话的派生消息与可见工具 schema。非空的 `system/message` 节点承载提示词，最新一条是有效版本；空渲染文本会从派生历史中清除所有提示词版本。它提供 `provider`、`model` 与 `cwd` 变量值，但不添加固定文案。
+每个步骤中，循环会发送会话的派生消息与可见工具 schema。非空的 `system/message` 节点承载提示词，最新一条是有效版本；空渲染文本会从派生历史中清除所有提示词版本。它提供 `provider`、`model` 与 `cwd` 变量值，但不添加固定文案。 请求头始终记录当前有效工具。将其名称与前一请求头比较后，添加和移除合并为一条 `developer/message`，不依赖模型能力；添加记录引用新请求头。请求还携带 `Session.toolHistory()`，供 LLM 运行时构造提供方声明。
 
 #### Token 影响
 

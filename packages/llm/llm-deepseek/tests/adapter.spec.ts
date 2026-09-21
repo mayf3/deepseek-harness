@@ -17,7 +17,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import LlmRuntime, { createAssistantMessage, createSystemMessage, createToolResultMessage, createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createAssistantMessage, createDeveloperMessage, createSystemMessage, createToolResultMessage, createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
@@ -107,6 +107,22 @@ describe('direct Messages HTTP', () => {
       { role: 'assistant', content: [{ type: 'text', text: 'Remember 731.' }] },
       { role: 'user', content: [{ type: 'text', text: 'hello' }] },
     ])
+  })
+
+  it('sends the tool-changes beta header only when update blocks are present', async () => {
+    const http = await endpoint()
+    const llm = adapter({ baseURL: http.url })
+    const tools = [{ name: 'search', description: 'Search', parameters: {}, deferLoading: true as const }]
+    const changes = createDeveloperMessage({ source: { kind: 'tool-registry' }, content: [{ type: 'tool-addition', toolName: 'search' }] })
+    await assemble(llm.stream(options({ messages: [user(), changes], tools })))
+    expect(http.requests[0]).toMatchObject({
+      headers: { 'anthropic-beta': 'mid-conversation-tool-changes-2026-07-01' },
+      body: { tools: [{ name: 'search', defer_loading: true }], messages: [
+        { role: 'user' }, { role: 'system', content: [{ type: 'tool_addition', tool: { type: 'tool_reference', name: 'search' } }] },
+      ] },
+    })
+    await assemble(llm.stream(options({ tools })))
+    expect(http.requests[1]?.headers).not.toHaveProperty('anthropic-beta')
   })
 
   it('uses the Messages endpoint, authentication, attribution and final usage', async () => {
