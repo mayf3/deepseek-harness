@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-product-telemetry-otel",
+  "name": "@deepseek-ai/dsh-host-product-telemetry-otel",
   "description": "Explicit product usage events exported through OpenTelemetry HTTP logs",
   "version": "0.1.6-alpha.2",
   "publishConfig": {
@@ -27,13 +27,14 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@opentelemetry/api-logs": "^0.220.0",
-    "@opentelemetry/exporter-logs-otlp-http": "^0.220.0",
-    "@opentelemetry/otlp-exporter-base": "^0.220.0",
-    "@opentelemetry/resources": "^2.9.0",
-    "@opentelemetry/sdk-logs": "^0.220.0",
     "@deepseek-ai/schemastery": "workspace:^",
-    "@opentelemetry/core": "2.9.0"
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/api-logs": "^0.220.0",
+    "@opentelemetry/core": "2.9.0",
+    "@opentelemetry/otlp-exporter-base": "^0.220.0",
+    "@opentelemetry/otlp-transformer": "^0.220.0",
+    "@opentelemetry/resources": "^2.9.0",
+    "@opentelemetry/sdk-logs": "^0.220.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^"

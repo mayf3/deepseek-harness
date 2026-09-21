@@ -1,7 +1,7 @@
 import { createServer, type IncomingHttpHeaders } from 'node:http'
 import { once } from 'node:events'
 import { gunzipSync } from 'node:zlib'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LoggerProvider } from '@opentelemetry/sdk-logs'
 import { SeverityNumber } from '@opentelemetry/api-logs'
@@ -16,9 +16,15 @@ afterEach(async () => {
   try {
     for (const dispose of cleanup.splice(0).reverse()) await dispose()
   } finally {
+    vi.unstubAllEnvs()
     vi.restoreAllMocks()
     vi.useRealTimers()
   }
+})
+
+beforeEach(() => {
+  vi.stubEnv('OTEL_EXPORTER_OTLP_COMPRESSION', undefined)
+  vi.stubEnv('OTEL_EXPORTER_OTLP_LOGS_COMPRESSION', undefined)
 })
 
 async function collector(statuses = [200]) {
@@ -92,6 +98,22 @@ describe('explicit product telemetry', () => {
     expect(JSON.stringify(capture)).not.toContain('user.id')
   })
 
+  it('isolates collector headers from ambient OpenTelemetry credentials', async () => {
+    vi.stubEnv('OTEL_EXPORTER_OTLP_HEADERS', 'Authorization=Bearer%20synthetic-secret,x-user-id=synthetic-user')
+    vi.stubEnv('OTEL_EXPORTER_OTLP_LOGS_HEADERS', 'x-log-token=synthetic-token,x-channel=other-collector')
+    const target = await collector()
+    const ctx = context()
+    const fiber = await ctx.plugin(ProductTelemetry, config(target.endpoint))
+    ctx.productTelemetry.emit(event)
+    await fiber.dispose()
+    expect(target.captures).toHaveLength(1)
+    expect(target.captures[0]?.headers).toMatchObject({ 'x-channel': 'dsh_otel_report' })
+    expect(target.captures[0]?.headers).not.toHaveProperty('authorization')
+    expect(target.captures[0]?.headers).not.toHaveProperty('x-user-id')
+    expect(target.captures[0]?.headers).not.toHaveProperty('x-log-token')
+    expect(process.env['OTEL_EXPORTER_OTLP_HEADERS']).toContain('synthetic-secret')
+  })
+
   it('does not export on mount or empty shutdown', async () => {
     const target = await collector()
     const fiber = await context().plugin(ProductTelemetry, config(target.endpoint))
@@ -124,11 +146,12 @@ describe('explicit product telemetry', () => {
     expect(() => { ctx.productTelemetry.emit(event) }).not.toThrow()
     await fiber.dispose()
     expect(target.captures).toHaveLength(1)
-    expect(warn).toHaveBeenCalledWith('Product telemetry export failed')
+    expect(warn).toHaveBeenCalledWith('Product telemetry export failed', expect.any(Error))
   })
 
   it.each([
     { endpoint: 'broken' }, { endpoint: 'ftp://collector.test/logs' },
+    { channel: '' }, { channel: 'bad\nchannel' }, { channel: '中文' }, { timeoutMillis: 0 },
     { maxExportBatchSize: 0 }, { maxExportBatchSize: 2, maxQueueSize: 1 },
     { maxQueueSize: -1 }, { scheduledDelayMillis: 0 }, { exportTimeoutMillis: Infinity },
     { shutdownTimeoutMillis: 2_147_483_648 },
@@ -136,6 +159,29 @@ describe('explicit product telemetry', () => {
     const ctx = context()
     expect(() => new ProductTelemetry(ctx, config('http://collector.test/v1/logs', invalid))).toThrow()
     expect(ctx.get('productTelemetry')).toBeUndefined()
+  })
+
+  it.each([
+    [{ endpoint: 'broken' }, 'endpoint must be a valid HTTP(S) URL'],
+    [{ channel: 'bad\nchannel' }, 'channel must be a valid HTTP header value'],
+  ] as const)('names invalid transport fields before registering the service', (invalid, message) => {
+    const ctx = context()
+    expect(() => new ProductTelemetry(ctx, config('http://collector.test/v1/logs', invalid)))
+      .toThrow(`product-telemetry-otel: ${message}`)
+    expect(ctx.get('productTelemetry')).toBeUndefined()
+  })
+
+  it.each([
+    ['OTEL_EXPORTER_OTLP_COMPRESSION', 'gzip'],
+    ['OTEL_EXPORTER_OTLP_LOGS_COMPRESSION', 'gzip'],
+  ])('honors %s when compression is omitted', async (name, value) => {
+    vi.stubEnv(name, value)
+    const target = await collector()
+    const ctx = context()
+    const fiber = await ctx.plugin(ProductTelemetry, config(target.endpoint))
+    ctx.productTelemetry.emit(event)
+    await fiber.dispose()
+    expect(target.captures[0]?.headers['content-encoding']).toBe('gzip')
   })
 
   it('bounds a stalled shutdown and observes its later settlement', async () => {

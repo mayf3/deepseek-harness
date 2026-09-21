@@ -3,7 +3,7 @@ description: "Configure explicit product usage events, OTLP/HTTP routing, batchi
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-product-telemetry-otel
+# @deepseek-ai/dsh-host-product-telemetry-otel
 
 English | [中文](README.zh.md)
 
@@ -25,14 +25,14 @@ Send selected product usage events to an OTLP/HTTP collector. Events carry a nam
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin in a Cordis composition with the application identity; override the collector endpoint when needed. The shipped profiles do not mount it.
+Mount the plugin in a Cordis composition with the application identity; override the collector endpoint when needed. The shipped profiles do not mount it. Set `DSH_APP_VERSION` to the running application release version in the launcher environment; the schema rejects an absent version.
 
 ```yaml
-- name: '@deepseek-ai/dsh-product-telemetry-otel'
+- name: '@deepseek-ai/dsh-host-product-telemetry-otel'
   config:
     endpoint: https://dsh-otel-collector.deepseeksvc.com/v1/logs
-    serviceName: dsh-telemetry-test
-    serviceVersion: test
+    serviceName: deepseek-harness
+    serviceVersion: !!js process.env.DSH_APP_VERSION
     compression: gzip
     scheduledDelayMillis: 30000
 ```
@@ -49,6 +49,10 @@ Mount the plugin in a Cordis composition with the application identity; override
 | `exportTimeoutMillis` | `20000` | Processor batch export deadline |
 | `shutdownTimeoutMillis` | `21000` | Outer wait for shutdown; expiry reports possible loss |
 
+The default endpoint routes explicitly submitted events to the production product collector. Test and custom deployments must override it. Only `x-channel` and SDK protocol headers reach the collector; ambient OTel headers and client certificates are not inherited.
+
+The 30-second interval batches product events; the exporter has a 15-second retry window inside the processor’s 20-second batch deadline. The outer 21-second wait bounds plugin disposal, including SDK `forceFlush()` work that the processor deadline does not cover. An unreachable collector can delay disposal for the full 21 seconds. A full 2,048-record queue requires four 512-record batches and may not drain before that deadline. Interactive compositions needing a shorter exit should override these budgets; neither configuration guarantees delivery.
+
 Consumers inject `productTelemetry` and call `emit()` with explicitly selected analytics fields. Event names and field semantics belong to their product and analytics owners. The plugin reads no Session, account, credential, or device identifier. Callers must exclude prompts, responses, file contents, credentials, and other unapproved values.
 
 The collector expects a string body and attributes containing strings, numbers, booleans, or objects of those scalars. Callers supply occurrence time in milliseconds; the plugin assigns observation time and defaults severity to INFO. Invalid transport configuration fails at activation. Export failures produce local warnings without making event submission wait for the network.
@@ -61,7 +65,7 @@ The collector expects a string body and attributes containing strings, numbers, 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-A private OTel logger feeds `BatchLogRecordProcessor` and the HTTP JSON exporter. The SDK owns queueing, transient-error retries, and compression; plugin disposal drains pending records with a bounded wait. Export completion is observed separately because SDK shutdown can resolve after a rejected export. No global OTel provider is installed.
+A private OTel logger feeds `BatchLogRecordProcessor` and the SDK HTTP delegate with its JSON log serializer. The delegate receives explicit headers and an HTTP agent; only shared timeout and compression settings use SDK environment resolution. The direct `@opentelemetry/core` dependency matches `sdk-logs` at 2.9.0 so exporter result enums share one TypeScript identity. The SDK owns queueing, transient-error retries, and compression; plugin disposal drains pending records with a bounded wait. Export completion is observed separately because SDK shutdown can resolve after a rejected export. No global OTel provider is installed.
 
 [`src/index.ts`](src/index.ts) owns configuration and submission. No runtime invariant companion is published: delivery has no independent local acknowledgement to compare with the SDK's queue.
 
@@ -93,7 +97,7 @@ None; event submission does not change model requests.
 
 Delivery and collection remain limited to the following capabilities.
 
-- No business events, renderer transport, or account/device identity are wired automatically.
+- Callers own event selection, renderer-to-host transport, and any permitted identity attributes.
 - The queue is memory-only; overflow, network failure, and process exit can lose events. There is no durable outbox or warehouse acknowledgement.
 - The SDK batches by record count, not encoded bytes. Callers must keep records within the collector's 4 MB limit and choose batch sizes appropriate to the receiver.
 - Caller-selected strings are not redacted automatically. This package does not decide product disclosure or consent policy.

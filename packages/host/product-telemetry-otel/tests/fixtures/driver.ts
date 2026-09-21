@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { gunzipSync } from 'node:zlib'
 import { writeFile } from 'node:fs/promises'
-import type {} from '@deepseek-ai/dsh-product-telemetry-otel'
+import type {} from '@deepseek-ai/dsh-host-product-telemetry-otel'
 import { bootProductionProfile } from '../../../../test-support/loader-smoke/tests/fixtures/production-profile.ts'
 
 const configPath = process.argv[2]
@@ -24,6 +24,7 @@ try {
   await once(server, 'listening')
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('collector has no port')
+  process.env.DSH_APP_VERSION = 'synthetic-release'
   process.env.DSH_PRODUCT_TELEMETRY_TEST_ENDPOINT = `http://127.0.0.1:${address.port}/v1/logs`
   const ctx = await bootProductionProfile({ binName: 'product-telemetry-test', profile: 'headless', overlayPaths: [configPath] })
   try {

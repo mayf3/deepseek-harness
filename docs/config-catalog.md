@@ -1208,6 +1208,40 @@ export interface Config {
 
 Source: [`packages/host/open-in-app/src/index.ts:50`](../packages/host/open-in-app/src/index.ts)
 
+<a id="deepseek-aidsh-host-product-telemetry-otel"></a>
+
+## `@deepseek-ai/dsh-host-product-telemetry-otel`
+
+```ts config-catalog
+/** Collector routing, application identity, and bounded in-memory batch settings. */
+export interface Config {
+  /** Full HTTP(S) logs URL. */
+  endpoint: string
+  /** Collector routing header. */
+  channel: string
+  /** Resource service.name supplied by the application composition. */
+  serviceName: string
+  /** Resource service.version supplied by the application composition. */
+  serviceVersion: string
+  /** Omit to honor OTEL_EXPORTER_OTLP_LOGS_COMPRESSION / OTEL_EXPORTER_OTLP_COMPRESSION. */
+  compression?: 'none' | 'gzip'
+  /** Maximum records per export; must not exceed maxQueueSize. */
+  maxExportBatchSize: number
+  /** Maximum queued records; the SDK drops new records when full. */
+  maxQueueSize: number
+  /** Delay before exporting a partial batch. */
+  scheduledDelayMillis: number
+  /** Exporter HTTP deadline, including SDK transient-error retries. */
+  timeoutMillis: number
+  /** Processor deadline for one batch export. */
+  exportTimeoutMillis: number
+  /** Outer shutdown wait; pending exports may be lost after this deadline. */
+  shutdownTimeoutMillis: number
+}
+```
+
+Source: [`packages/host/product-telemetry-otel/src/index.ts:37`](../packages/host/product-telemetry-otel/src/index.ts)
+
 <a id="deepseek-aidsh-host-webserver"></a>
 
 ## `@deepseek-ai/dsh-host-webserver`
@@ -2048,40 +2082,6 @@ export interface Config {
 ```
 
 Source: [`packages/llm/plugin-package-inventory-deepseek/src/index.ts:32`](../packages/llm/plugin-package-inventory-deepseek/src/index.ts)
-
-<a id="deepseek-aidsh-product-telemetry-otel"></a>
-
-## `@deepseek-ai/dsh-product-telemetry-otel`
-
-```ts config-catalog
-/** Collector routing, application identity, and bounded in-memory batch settings. */
-export interface Config {
-  /** Full HTTP(S) logs URL. */
-  endpoint: string
-  /** Collector routing header. */
-  channel: string
-  /** Resource service.name supplied by the application composition. */
-  serviceName: string
-  /** Resource service.version supplied by the application composition. */
-  serviceVersion: string
-  /** Omit to honor OTEL_EXPORTER_OTLP_LOGS_COMPRESSION / OTEL_EXPORTER_OTLP_COMPRESSION. */
-  compression?: 'none' | 'gzip'
-  /** Maximum records per export; must not exceed maxQueueSize. */
-  maxExportBatchSize: number
-  /** Maximum queued records; the SDK drops new records when full. */
-  maxQueueSize: number
-  /** Delay before exporting a partial batch. */
-  scheduledDelayMillis: number
-  /** Exporter HTTP deadline, including SDK transient-error retries. */
-  timeoutMillis: number
-  /** Processor deadline for one batch export. */
-  exportTimeoutMillis: number
-  /** Outer shutdown wait; pending exports may be lost after this deadline. */
-  shutdownTimeoutMillis: number
-}
-```
-
-Source: [`packages/host/product-telemetry-otel/src/index.ts:35`](../packages/host/product-telemetry-otel/src/index.ts)
 
 <a id="deepseek-aidsh-ptc-runtime-node"></a>
 

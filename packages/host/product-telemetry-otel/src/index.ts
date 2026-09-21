@@ -2,8 +2,10 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SeverityNumber, type Logger } from '@opentelemetry/api-logs'
-import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http'
-import { CompressionAlgorithm } from '@opentelemetry/otlp-exporter-base'
+import { validateHeaderValue } from 'node:http'
+import { JsonLogsSerializer } from '@opentelemetry/otlp-transformer'
+import { createOtlpHttpExportDelegate, getSharedConfigurationFromEnvironment, httpAgentFactoryFromOptions } from '@opentelemetry/otlp-exporter-base/node-http'
+import { CompressionAlgorithm, getSharedConfigurationDefaults, mergeOtlpSharedConfigurationWithDefaults, OTLPExporterBase } from '@opentelemetry/otlp-exporter-base'
 import { ExportResultCode } from '@opentelemetry/core'
 import { resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs'
@@ -59,10 +61,10 @@ export interface Config {
 
 const positiveInteger = () => z.number().step(1).min(1).max(2_147_483_647)
 
-/** Loader validation; the same schema resolves defaults for direct construction. */
+/** Loader validation and defaults for application compositions. */
 export const Config: z<Partial<Config>, Config> = z.object({
   endpoint: z.string().default('https://dsh-otel-collector.deepseeksvc.com/v1/logs'),
-  channel: z.string().default('dsh_otel_report'),
+  channel: z.string().min(1).default('dsh_otel_report'),
   serviceName: z.string().required(),
   serviceVersion: z.string().required(),
   compression: z.union(['none', 'gzip']),
@@ -79,9 +81,18 @@ export default class ProductTelemetry extends Service {
   static Config = Config
   private readonly logger: Logger
 
-  constructor(ctx: Context, input: Config) {
-    const config = Config(input)
-    const endpoint = new URL(config.endpoint)
+  constructor(ctx: Context, config: Config) {
+    let endpoint: URL
+    try {
+      endpoint = new URL(config.endpoint)
+    } catch (cause) {
+      throw new Error('product-telemetry-otel: endpoint must be a valid HTTP(S) URL', { cause })
+    }
+    try {
+      validateHeaderValue('x-channel', config.channel)
+    } catch (cause) {
+      throw new Error('product-telemetry-otel: channel must be a valid HTTP header value', { cause })
+    }
     if (!['http:', 'https:'].includes(endpoint.protocol)) {
       throw new Error('product-telemetry-otel: endpoint must use HTTP or HTTPS')
     }
@@ -89,14 +100,20 @@ export default class ProductTelemetry extends Service {
       throw new Error('product-telemetry-otel: maxExportBatchSize must not exceed maxQueueSize')
     }
     super(ctx, 'productTelemetry')
-    const exporter = new OTLPLogExporter({
-      url: config.endpoint,
-      headers: { 'x-channel': config.channel },
+    const shared = mergeOtlpSharedConfigurationWithDefaults({
       timeoutMillis: config.timeoutMillis,
       ...(config.compression === undefined ? {} : {
         compression: config.compression === 'gzip' ? CompressionAlgorithm.GZIP : CompressionAlgorithm.NONE,
       }),
-    })
+    }, getSharedConfigurationFromEnvironment('LOGS'), getSharedConfigurationDefaults())
+    const transport = {
+      ...shared,
+      url: config.endpoint,
+      // This collector must not inherit another endpoint's headers or TLS client identity.
+      headers: () => Promise.resolve({ 'Content-Type': 'application/json', 'x-channel': config.channel }),
+      agentFactory: httpAgentFactoryFromOptions({ keepAlive: true }),
+    }
+    const exporter = new OTLPExporterBase(createOtlpHttpExportDelegate(transport, JsonLogsSerializer))
     const provider = new LoggerProvider({
       resource: resourceFromAttributes({
         'service.name': config.serviceName,
@@ -111,7 +128,7 @@ export default class ProductTelemetry extends Service {
           export: (records, callback) => {
             exporter.export(records, (result) => {
               // SDK flush/shutdown can resolve after export failure; observe the actual completion.
-              if (result.code !== ExportResultCode.SUCCESS) ctx.logger.warn('Product telemetry export failed')
+              if (result.code !== ExportResultCode.SUCCESS) ctx.logger.warn('Product telemetry export failed', result.error)
               callback(result)
             })
           },
@@ -120,7 +137,7 @@ export default class ProductTelemetry extends Service {
         },
       })],
     })
-    this.logger = provider.getLogger('@deepseek-ai/dsh-product-telemetry-otel')
+    this.logger = provider.getLogger('@deepseek-ai/dsh-host-product-telemetry-otel')
     ctx.effect(() => async () => {
       let timer!: ReturnType<typeof setTimeout>
       const deadline = new Promise<void>((resolve) => {
