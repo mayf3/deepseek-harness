@@ -96,6 +96,8 @@ function props(
     useChat: unused,
     useTrajectory: unused,
     inputActions: {
+      captureInsertion: unused,
+      insertText: unused,
       setDraft: unused,
       addAttachments: unused,
       removeAttachment: unused,
