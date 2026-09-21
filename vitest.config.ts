@@ -305,6 +305,9 @@ export default defineConfig({
         // The Team browser entry binds its source-covered mount lifecycle to
         // the generated Team Remote contribution, which likewise exists only in lib.
         'packages/experimental/client-ui-agent-team/src/client/index.ts',
+        // The speech entry also imports generated Remote definitions; voice-input.e2e.ts
+        // exercises the built entry, while source tests cover mountVoiceInput.
+        'packages/experimental/client-ui-voice-input/src/client/index.ts',
         // Slash/command/input round: per-file gaps deferred with the same
         // client-lane debt. TODO(gui): cover and remove with the lane above.
         'packages/client/ui-commands/src/index.ts',

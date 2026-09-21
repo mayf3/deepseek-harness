@@ -25,6 +25,8 @@
     "tests/default-product-isolation.e2e.ts",
     "tests/diff-context.e2e.ts",
     "tests/scaffold.ts",
+    "tests/voice-input.e2e.ts",
+    "tests/voice-setup.e2e.ts",
     "tests/prefix-proxy.ts",
     "tests/auto-review-fixture.ts",
     "tests/scaffold-generation.spec.ts",
