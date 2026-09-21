@@ -1756,6 +1756,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError when the request is invalid, has no verified Host mapping, is cancelled, or the opener fails.'],
       },
       {
+        signature: '@Remote(\'workspacePathApplications\') async workspacePathApplications( request: { readonly path: string }, signal: AbortSignal, ): Promise<readonly SessionWorkspacePathApplication[]>',
+        description: 'Query current file handlers on the serving desktop without activating an Agent.',
+        parameters: [{ name: 'request', description: 'file path in Host filesystem syntax.' }, { name: 'signal', description: 'caller lifetime, propagated to filesystem and desktop queries.' }],
+        returns: 'OS application names, icons, and default selection; empty when desktop opening is unavailable.',
+        throws: ['RemoteError when the path is invalid, the query is cancelled, or native discovery fails.'],
+      },
+      {
         signature: '@Remote(\'rename\') rename(request: SessionRenameRequest): Promise<SessionRenameValue>',
         description: 'Rename one Session after explicitly resuming it.',
         parameters: [{ name: 'request', description: 'Session identity and proposed title.' }],
@@ -5300,6 +5307,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelReasoningEffort {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n}',
   },
   {
+    name: 'NativeFileApplication',
+    declaration: 'export interface NativeFileApplication {\n    readonly id: string;\n    readonly name: string;\n    readonly default: boolean;\n    readonly icon: string | null;\n}',
+  },
+  {
     name: 'ObjectJsonSchema',
     declaration: 'export type ObjectJsonSchema = JsonSchemaNode & {\n    type: \'object\';\n};',
   },
@@ -6021,7 +6032,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionOpenWorkspacePathRequest',
-    declaration: 'export interface SessionOpenWorkspacePathRequest {\n    readonly action?: \'reveal\';\n    readonly path: string;\n}',
+    declaration: 'export interface SessionOpenWorkspacePathRequest {\n    readonly action?: \'reveal\';\n    readonly application?: string;\n    readonly path: string;\n}',
   },
   {
     name: 'SessionOpenWorkspacePathValue',
@@ -6274,6 +6285,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionWireHeader',
     declaration: 'export interface SessionWireHeader {\n    readonly version: number;\n    readonly id: SessionId;\n    readonly createdAt: number;\n    readonly cwd?: string;\n    readonly parentSession?: SessionId;\n    readonly isSeeded: boolean;\n    readonly origin?: \'subagent\';\n    readonly delegationDepth?: number;\n    readonly agentPreset?: string;\n}',
+  },
+  {
+    name: 'SessionWorkspacePathApplication',
+    declaration: 'export type SessionWorkspacePathApplication = NativeFileApplication;',
   },
   {
     name: 'SettingsApplies',

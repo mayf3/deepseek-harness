@@ -28,7 +28,8 @@ it('limits product documents to update status and a native confirmation action',
   expect(api.updates).not.toHaveProperty('install')
   const listener = vi.fn()
   const dispose = api.updates.subscribe(listener)
-  const handler = electron.ipcRenderer.on.mock.calls[0]?.[1] as (event: unknown, state: unknown) => void
+  const handler = electron.ipcRenderer.on.mock.calls.find(([channel]) => channel === DESKTOP_IPC.updatesPresentation)?.[1] as
+    (event: unknown, state: unknown) => void
   handler({}, { visible: false })
   expect(listener).toHaveBeenCalledWith({ visible: false })
   dispose()
@@ -39,6 +40,7 @@ it.each(['dsh-app://shell/plugin-manager.html', 'dsh-app://other/index.html', 'h
   vi.stubGlobal('location', new URL(url))
   await import('../src/preload-app.ts')
   expect(electron.contextBridge.exposeInMainWorld).toHaveBeenCalledWith('dshDesktop', { protocolVersion: 1 })
+  expect(electron.ipcRenderer.on.mock.calls.some(([channel]) => channel === DESKTOP_IPC.browserOpenRequested)).toBe(false)
 })
 
 it('exposes asynchronous boot only to the local application document', async () => {

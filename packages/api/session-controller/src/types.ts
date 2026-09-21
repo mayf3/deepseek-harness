@@ -1,4 +1,5 @@
 /** Browser-safe request, result, and lifecycle vocabulary for the Session Remote service. */
+import type { NativeFileApplication } from '@deepseek-ai/dsh-native-command/types'
 
 import type {
   AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
@@ -381,6 +382,8 @@ export interface SessionCancelValue {
 export interface SessionOpenWorkspacePathRequest {
   /** File-manager navigation when requested; omission uses the default application. */
   readonly action?: 'reveal'
+  /** Registered application identifier; ignored for reveal. Omission preserves the operating system default. */
+  readonly application?: string
   /** Path after best-effort Session workspace resolution, in Host filesystem syntax. */
   readonly path: string
 }
@@ -624,3 +627,6 @@ declare module '@deepseek-ai/cordis' {
 
 /** JSON-compatible projection value accepted by list consumers. */
 export type SessionProjectionValue = JsonValue
+
+/** Application metadata returned by the serving desktop for one file. */
+export type SessionWorkspacePathApplication = NativeFileApplication

@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { PresentedOpenController } from '../src/client/present-open.ts'
 
-afterEach(() => { vi.unstubAllGlobals() })
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
 const id = SessionId('fork')
 const url = 'api/present.open?sessionId=fork&seq=2&index=1'
@@ -173,4 +173,69 @@ it.each(['open', 'reveal'] as const)('reports an unavailable Host path for %s wh
   await controller.open(id, 2, 1, action)
   expect(controller.state.getSnapshot()[url]).toBe('nativeUnavailable')
   await controller.dispose()
+})
+
+
+it('encodes an explicit application identifier without changing the file coordinates', async () => {
+  const fetcher = vi.fn(async () => new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetcher)
+  const controller = new PresentedOpenController()
+  expect(await controller.open(id, 2, 1, 'open', '/Apps/A&B.app')).toBeNull()
+  expect(fetcher).toHaveBeenCalledWith(`${url}&application=%2FApps%2FA%26B.app`, { method: 'POST', signal: expect.any(AbortSignal) as AbortSignal })
+  await controller.dispose()
+})
+
+
+it.each(['open', 'reveal'] as const)('expires successful %s feedback after five seconds and its fade', async (action) => {
+  vi.useFakeTimers()
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
+  const controller = new PresentedOpenController()
+  await controller.open(id, 2, 1, action)
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(controller.state.getSnapshot()[url]).toBe(action === 'open' ? 'opened' : 'revealed')
+  await vi.advanceTimersByTimeAsync(200)
+  expect(controller.state.getSnapshot()[url]).toBeUndefined()
+  await controller.dispose()
+})
+
+it('cancels an earlier success expiry when the next action fails', async () => {
+  vi.useFakeTimers()
+  const fetcher = vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 }))
+    .mockResolvedValueOnce(new Response(null, { status: 500 }))
+  vi.stubGlobal('fetch', fetcher)
+  const controller = new PresentedOpenController()
+  await controller.open(id, 2, 1)
+  await vi.advanceTimersByTimeAsync(4000)
+  await controller.open(id, 2, 1)
+  await vi.advanceTimersByTimeAsync(6000)
+  expect(controller.state.getSnapshot()[url]).toBe('error')
+  await controller.dispose()
+})
+
+it('cancels success expiry when its controller is disposed', async () => {
+  vi.useFakeTimers()
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
+  const controller = new PresentedOpenController()
+  await controller.open(id, 2, 1)
+  const state = controller.state.getSnapshot()
+  await controller.dispose()
+  await vi.advanceTimersByTimeAsync(6000)
+  expect(controller.state.getSnapshot()).toBe(state)
+})
+
+
+it('owns the expiry before notifying subscribers that can dispose the controller', async () => {
+  vi.useFakeTimers()
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
+  const controller = new PresentedOpenController()
+  let disposal: Promise<void> | undefined
+  const release = controller.state.subscribe(() => {
+    if (controller.state.getSnapshot()[url] === 'opened') disposal = controller.dispose()
+  })
+  await controller.open(id, 2, 1)
+  await disposal
+  const state = controller.state.getSnapshot()
+  await vi.advanceTimersByTimeAsync(6000)
+  expect(controller.state.getSnapshot()).toBe(state)
+  release()
 })
