@@ -1,4 +1,4 @@
-/** Desktop gestures use live focus, modal state, and verified iframe ownership. */
+/** Desktop gestures use live focus, modal state, and verified embedding ownership. */
 import type { DesktopKeyboardApi, ShortcutConfigSnapshot } from '../protocol.ts'
 import type { ShortcutRegistry } from './registry.ts'
 
@@ -17,7 +17,9 @@ export function installNativeKeyboard(window: Window, keyboard: DesktopKeyboardA
     if (input.revision !== snapshot().revision) return
     reset?.()
     let target = window.document.activeElement
-    while (target?.shadowRoot?.activeElement != null) target = target.shadowRoot.activeElement
+    while (target?.shadowRoot?.activeElement != null && !target.matches('webview[data-sidebar-browser-frame]')) {
+      target = target.shadowRoot.activeElement
+    }
     const top = [...window.document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"], [role="menu"]')].at(-1)
     const region = target?.closest('.xterm') ? 'terminal' as const
       : target?.matches('input, textarea, select, [contenteditable="true"], [contenteditable=""]') ? 'editable' as const : 'page' as const
@@ -28,6 +30,12 @@ export function installNativeKeyboard(window: Window, keyboard: DesktopKeyboardA
       return
     }
     // Renderer focus and embedding identity may change after preload verification.
+    if (input.kind === 'webview') {
+      if (target?.matches('webview[data-sidebar-browser-frame]') !== true || !target.isConnected
+        || input.frameName === '' || target.getAttribute('name') !== input.frameName) return
+      registry.dispatch({ ...input, composing: false, defaultPrevented: false }, { ...context, source: 'webview' }, () => {})
+      return
+    }
     if (!(target instanceof HTMLIFrameElement) || !target.isConnected
       || !target.matches('iframe[data-sidebar-browser-frame], iframe[data-html-preview]')
       || input.frameName === '' || target.name !== input.frameName) return

@@ -1,7 +1,8 @@
 /** Product-window preference IPC and native menu interception during physical-key dispatch/recording. */
-import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent, type Input, type MenuItemConstructorOptions } from 'electron'
+import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent, type Input, type MenuItemConstructorOptions, type WebContents } from 'electron'
 import { bindingKey, effectiveShortcuts, presentBinding, parseShortcutDefinitions, parseShortcutEdit } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { NormalizedBinding, ShortcutConfigSnapshot, ShortcutDefinition, ShortcutPlatform, ShortcutRevision } from '@deepseek-ai/dsh-client-shortcuts/protocol'
+import type { DesktopBrowserLeaseId } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
 import { desktopKeybindings } from './keybindings.ts'
 import { DESKTOP_IPC, assertDesktopSender } from './ipc.ts'
 
@@ -24,6 +25,14 @@ export function installDesktopShortcuts(
    */
   sendEditingKey(keyCode: string, modifiers: Array<'control'>): void
   attach(window: BrowserWindow): void
+  /**
+   * Intercept an approved browser guest's keys until its lease ends.
+   * @param window - owning product window.
+   * @param guest - approved browser contents.
+   * @param name - main-issued lease used as the webview element name.
+   * @returns idempotent listener disposer.
+   */
+  attachGuest(window: BrowserWindow, guest: WebContents, name: DesktopBrowserLeaseId): () => void
   dispose(): void
 } {
   let definitions: readonly ShortcutDefinition[] = []
@@ -33,6 +42,7 @@ export function installDesktopShortcuts(
   let editingInput: BrowserWindow['webContents'] | undefined
   const scopedDesktop = platform === 'windows' || platform === 'macos'
   const disposers = new Set<() => void>()
+  const guestInputs = new Map<WebContents, { window: BrowserWindow; reset(): void }>()
   const closeAccelerator = (): string | undefined => presentBinding(closeBinding, platform).aria
     ?.replace('Meta+', 'Command+').replace(/Arrow(Up|Down|Left|Right)$/u, '$1')
   const sendMenuClose = (): void => {
@@ -87,11 +97,128 @@ export function installDesktopShortcuts(
     if (expected !== revision || revision === undefined || recording || !window.isFocused() || !window.isEnabled()) return
     window.close()
   })
+  function attachInput(window: BrowserWindow, contents: WebContents, guestName?: DesktopBrowserLeaseId): () => void {
+    let deadKey = false
+    const held = new Set<string>()
+    const consumed = new Map<string, 'press' | 'repeat'>()
+    let inputFrame: typeof contents.focusedFrame = null
+    let inputRevision: ShortcutRevision | undefined
+    const resetInput = (): void => {
+      deadKey = false; held.clear(); consumed.clear(); inputFrame = null; inputRevision = undefined
+      if (!contents.isDestroyed()) contents.setIgnoreMenuShortcuts(false)
+    }
+    if (guestName !== undefined) guestInputs.set(contents, { window, reset: resetInput })
+    const resetWindow = (): void => {
+      resetInput()
+      for (const guest of guestInputs.values()) if (guest.window === window) guest.reset()
+    }
+    const clear = (): void => {
+      resetInput()
+      if (guestName !== undefined) return
+      definitions = []; keys.clear(); recording = false
+      persistence.setDefinitions(null)
+    }
+    const navigation = (event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>): void => {
+      if (event.isMainFrame && !event.isSameDocument) clear()
+    }
+    const beforeInput = (event: Electron.Event, input: Input): void => {
+      if (editingInput === contents) {
+        held.clear()
+        consumed.clear()
+        contents.setIgnoreMenuShortcuts(true)
+        return
+      }
+      if (window !== getWindow() || !window.isFocused() || !window.isEnabled() || revision === undefined
+        || (guestName !== undefined && !contents.isFocused())) {
+        contents.setIgnoreMenuShortcuts(false)
+        held.clear()
+        consumed.clear()
+        return
+      }
+      const modifiers = (['control', 'alt', 'shift', 'meta'] as const).filter(modifier => input[modifier])
+      const key = bindingKey({ code: input.code, modifiers })
+      const match = keys.has(key)
+      const menuMatch = closeBinding !== null && closeBinding.secondCode === undefined && modifiers.join('+') === closeBinding.modifiers.join('+')
+        && input.key.toUpperCase() === (closeBinding.code.startsWith('Key') ? closeBinding.code.slice(3) : input.code === closeBinding.code ? input.key.toUpperCase() : '')
+      contents.setIgnoreMenuShortcuts(recording || match || menuMatch)
+      const frame = contents.focusedFrame
+      const composing = input.isComposing || input.key === 'Dead' || deadKey || input.modifiers.includes('altgr')
+      if (input.type === 'keyDown') deadKey = input.key === 'Dead'
+      if (recording || composing || frame === null) { held.clear(); consumed.clear(); return }
+      let binding: NormalizedBinding = { code: input.code, modifiers }
+      let priority = false
+      if (scopedDesktop) {
+        if (frame !== inputFrame || inputRevision !== revision) { held.clear(); inputFrame = frame; inputRevision = revision }
+        const modifierKey = /^(Control|Alt|Shift|Meta)(Left|Right)$/u.test(input.code)
+        if (input.type === 'keyUp') {
+          // A chord's first key reached the renderer, so its release must reach the same input handlers.
+          if (consumed.get(input.code) === 'press') event.preventDefault()
+          consumed.delete(input.code)
+          held.delete(input.code)
+          if (modifierKey) held.clear()
+          return
+        }
+        if (!input.isAutoRepeat) consumed.delete(input.code)
+        if (modifierKey) { held.clear(); return }
+        if (input.isAutoRepeat && consumed.has(input.code) && !match) { event.preventDefault(); return }
+        if (input.isAutoRepeat && !held.has(input.code) && !match) return
+        held.add(input.code)
+        const codes: [string, ...string[]] = [input.code, ...[...held].filter(value => value !== input.code)]
+        codes.sort()
+        const pair = { code: codes[0], ...(codes[1] === undefined ? {} : { secondCode: codes[1] }), modifiers }
+        priority = keys.has(key)
+        if (codes.length === 2 && keys.has(bindingKey(pair))) { binding = pair; priority = true }
+      }
+      const main = guestName === undefined && frame === contents.mainFrame
+      if (!priority && (main || !match)) return
+      event.preventDefault()
+      if (input.type !== 'keyDown') return
+      if (scopedDesktop) {
+        if (!input.isAutoRepeat) {
+          if (binding.secondCode !== undefined) {
+            consumed.set(binding.code, 'repeat')
+            consumed.set(binding.secondCode, 'repeat')
+          }
+          consumed.set(input.code, 'press')
+        }
+        // Electron can omit both keyups after interception; completed presses cannot seed another chord.
+        held.clear()
+      }
+      let embedding = frame
+      while (guestName === undefined && !main && embedding.parent !== null && embedding.parent !== contents.mainFrame) {
+        embedding = embedding.parent
+      }
+      window.webContents.send(DESKTOP_IPC.shortcutsInput, { kind: guestName === undefined ? main ? 'keyboard' : 'iframe' : 'webview',
+        revision, frameName: guestName ?? (main ? '' : embedding.name),
+        code: binding.code, ...(binding.secondCode === undefined ? {} : { secondCode: binding.secondCode }),
+        repeat: input.isAutoRepeat, control: input.control, alt: input.alt, shift: input.shift, meta: input.meta })
+    }
+    const dispose = (): void => {
+      contents.off('did-start-navigation', navigation)
+      contents.off('before-input-event', beforeInput)
+      contents.off('blur', resetInput)
+      contents.off('destroyed', dispose)
+      if (guestName === undefined) { window.off('blur', resetWindow); window.off('closed', closed) }
+      disposers.delete(dispose)
+      guestInputs.delete(contents)
+      if (!contents.isDestroyed()) contents.setIgnoreMenuShortcuts(false)
+    }
+    const closed = (): void => { clear(); dispose() }
+    contents.on('did-start-navigation', navigation)
+    contents.on('before-input-event', beforeInput)
+    contents.on('blur', resetInput)
+    contents.once('destroyed', dispose)
+    if (guestName === undefined) { window.on('closed', closed); window.on('blur', resetWindow) }
+    disposers.add(dispose)
+    return dispose
+  }
+
   return {
     sendEditingKey(keyCode, modifiers) {
       const window = getWindow()
       if (window === undefined || window.isDestroyed()) return
-      const contents = window.webContents
+      const contents = [...guestInputs].find(([guest, owner]) => owner.window === window && !guest.isDestroyed() && guest.isFocused())?.[0]
+        ?? window.webContents
       contents.focus()
       const previous = editingInput
       editingInput = contents
@@ -112,108 +239,8 @@ export function installDesktopShortcuts(
         click: sendMenuClose,
       }] }
     },
-    attach(window) {
-      const contents = window.webContents
-      let deadKey = false
-      const held = new Set<string>()
-      const consumed = new Map<string, 'press' | 'repeat'>()
-      let inputFrame: typeof contents.focusedFrame = null
-      let inputRevision: ShortcutRevision | undefined
-      const clear = (): void => {
-        definitions = []; keys.clear(); held.clear(); consumed.clear()
-        inputFrame = null; recording = false; deadKey = false
-        persistence.setDefinitions(null)
-        if (!contents.isDestroyed()) contents.setIgnoreMenuShortcuts(false)
-      }
-      const navigation = (event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>): void => {
-        if (event.isMainFrame && !event.isSameDocument) clear()
-      }
-      const blur = (): void => {
-        deadKey = false; held.clear(); consumed.clear(); inputFrame = null; contents.setIgnoreMenuShortcuts(false)
-      }
-      const beforeInput = (event: Electron.Event, input: Input): void => {
-        if (editingInput === contents) {
-          held.clear()
-          consumed.clear()
-          contents.setIgnoreMenuShortcuts(true)
-          return
-        }
-        if (!window.isFocused() || !window.isEnabled() || revision === undefined) {
-          contents.setIgnoreMenuShortcuts(false)
-          held.clear()
-          consumed.clear()
-          return
-        }
-        const modifiers = (['control', 'alt', 'shift', 'meta'] as const).filter(modifier => input[modifier])
-        const key = bindingKey({ code: input.code, modifiers })
-        const match = keys.has(key)
-        const menuMatch = closeBinding !== null && closeBinding.secondCode === undefined && modifiers.join('+') === closeBinding.modifiers.join('+')
-          && input.key.toUpperCase() === (closeBinding.code.startsWith('Key') ? closeBinding.code.slice(3) : input.code === closeBinding.code ? input.key.toUpperCase() : '')
-        contents.setIgnoreMenuShortcuts(recording || match || menuMatch)
-        const frame = contents.focusedFrame
-        const composing = input.isComposing || input.key === 'Dead' || deadKey || input.modifiers.includes('altgr')
-        if (input.type === 'keyDown') deadKey = input.key === 'Dead'
-        if (recording || composing || frame === null) { held.clear(); consumed.clear(); return }
-        let binding: NormalizedBinding = { code: input.code, modifiers }
-        let priority = false
-        if (scopedDesktop) {
-          if (frame !== inputFrame || inputRevision !== revision) { held.clear(); inputFrame = frame; inputRevision = revision }
-          const modifierKey = /^(Control|Alt|Shift|Meta)(Left|Right)$/u.test(input.code)
-          if (input.type === 'keyUp') {
-            // A chord's first key reached the renderer, so its release must reach the same input handlers.
-            if (consumed.get(input.code) === 'press') event.preventDefault()
-            consumed.delete(input.code)
-            held.delete(input.code)
-            if (modifierKey) held.clear()
-            return
-          }
-          if (!input.isAutoRepeat) consumed.delete(input.code)
-          if (modifierKey) { held.clear(); return }
-          if (input.isAutoRepeat && consumed.has(input.code) && !match) { event.preventDefault(); return }
-          if (input.isAutoRepeat && !held.has(input.code) && !match) return
-          held.add(input.code)
-          const codes: [string, ...string[]] = [input.code, ...[...held].filter(value => value !== input.code)]
-          codes.sort()
-          const pair = { code: codes[0], ...(codes[1] === undefined ? {} : { secondCode: codes[1] }), modifiers }
-          priority = keys.has(key)
-          if (codes.length === 2 && keys.has(bindingKey(pair))) { binding = pair; priority = true }
-        }
-        const main = frame === contents.mainFrame
-        if (!priority && (main || !match)) return
-        event.preventDefault()
-        if (input.type !== 'keyDown') return
-        if (scopedDesktop) {
-          if (!input.isAutoRepeat) {
-            if (binding.secondCode !== undefined) {
-              consumed.set(binding.code, 'repeat')
-              consumed.set(binding.secondCode, 'repeat')
-            }
-            consumed.set(input.code, 'press')
-          }
-          // Electron can omit both keyups after interception; completed presses cannot seed another chord.
-          held.clear()
-        }
-        let embedding = frame
-        while (!main && embedding.parent !== null && embedding.parent !== contents.mainFrame) embedding = embedding.parent
-        contents.send(DESKTOP_IPC.shortcutsInput, { kind: main ? 'keyboard' : 'iframe', revision, frameName: main ? '' : embedding.name,
-          code: binding.code, ...(binding.secondCode === undefined ? {} : { secondCode: binding.secondCode }),
-          repeat: input.isAutoRepeat, control: input.control, alt: input.alt, shift: input.shift, meta: input.meta })
-      }
-      const dispose = (): void => {
-        contents.off('did-start-navigation', navigation)
-        contents.off('before-input-event', beforeInput)
-        window.off('blur', blur)
-        window.off('closed', closed)
-        disposers.delete(dispose)
-        if (!contents.isDestroyed()) contents.setIgnoreMenuShortcuts(false)
-      }
-      const closed = (): void => { clear(); dispose() }
-      contents.on('did-start-navigation', navigation)
-      contents.on('before-input-event', beforeInput)
-      window.on('closed', closed)
-      window.on('blur', blur)
-      disposers.add(dispose)
-    },
+    attach(window) { attachInput(window, window.webContents) },
+    attachGuest: attachInput,
     dispose() {
       for (const dispose of disposers) dispose()
       persistence.dispose()

@@ -24,6 +24,11 @@ function createProductApi(): DshDesktopProductApi {
               || !element.matches('iframe[data-sidebar-browser-frame], iframe[data-html-preview]')) return
             if (input.frameName === '' || element.name !== input.frameName) return
           }
+          if (input.kind === 'webview') {
+            const element = document.activeElement
+            if (element?.matches('webview[data-sidebar-browser-frame]') !== true || !element.isConnected
+              || input.frameName === '' || element.getAttribute('name') !== input.frameName) return
+          }
           listener(input)
         }
         ipcRenderer.on(DESKTOP_IPC.shortcutsInput, handle)

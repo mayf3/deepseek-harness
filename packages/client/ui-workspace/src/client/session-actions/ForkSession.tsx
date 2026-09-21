@@ -8,7 +8,9 @@ import type { ForkSessionInjected, SessionMenuItemProps } from '../contract/slot
  * @param props - owner share, menu open state, and the fork share.
  * @returns the row.
  */
-export function ForkSessionMenuItem({ sessionId, useMenuOpenState, useShortcuts, forkSession, t }: SessionMenuItemProps<ForkSessionInjected>) {
+export function ForkSessionMenuItem({
+  sessionId, useMenuOpenState, useShortcuts, forkSession, t,
+}: SessionMenuItemProps<ForkSessionInjected>) {
   const [, setMenuOpen] = useMenuOpenState()
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'session.fork'))
   return (

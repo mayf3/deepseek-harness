@@ -23,7 +23,7 @@ export type OpenTargetOperation = { readonly kind: 'default' } | { readonly kind
 
 /** Inputs shared by both target adapters and the file empty-state action. */
 export interface OpenTargetButtonProps {
-  readonly shortcut?: Pick<ShortcutCatalogEntry, 'keys' | 'aria'>
+  readonly shortcut?: Pick<ShortcutCatalogEntry, 'keys' | 'aria'> | undefined
   readonly kind: 'file' | 'directory'
   readonly applications: readonly OpenTargetApplication[]
   readonly defaultId: string | undefined

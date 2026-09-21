@@ -125,3 +125,43 @@ it.each(['macos', 'windows'] as const)('runs a custom %s chord across text field
     expect(run).toHaveBeenCalledTimes(2)
   } finally { off() }
 })
+
+it('checks the focused browser guest lease before dispatch and retains its embedding context across shadow focus', () => {
+  const registry = new ShortcutRegistry('desktop', 'macos')
+  const run = vi.fn()
+  const resolve = vi.fn(() => ({ status: 'handled' as const, run }))
+  registry.register({ id: 'browser.new' as ShortcutCommandId, label: () => 'Browser', aliases: [],
+    defaults: { 'desktop:macos': { code: 'KeyT', modifiers: ['primary'] } }, regions: ['page'], modals: [], resolve })
+  let deliver: (input: DesktopShortcutInput) => void = () => {}
+  const off = installNativeKeyboard(window, { subscribe: (listener) => { deliver = listener; return () => {} }, closeWindow: vi.fn() },
+    registry, () => registry.config.getSnapshot())
+  const input: DesktopShortcutInput = { kind: 'webview', frameName: 'guest', revision: registry.config.getSnapshot().revision,
+    code: 'KeyT', control: false, alt: false, shift: false, meta: true, repeat: false }
+  const frame = document.createElement('webview')
+  frame.tabIndex = 0
+  frame.setAttribute('name', 'guest')
+  document.body.append(frame)
+  frame.focus()
+  const shadow = document.createElement('div').attachShadow({ mode: 'open' })
+  Object.defineProperty(shadow, 'activeElement', { value: document.createElement('input') })
+  const shadowRoot = vi.spyOn(frame, 'shadowRoot', 'get').mockReturnValue(shadow)
+  try {
+    deliver(input)
+    expect(run).not.toHaveBeenCalled()
+    frame.setAttribute('data-sidebar-browser-frame', 'webview')
+    deliver({ ...input, frameName: '' })
+    deliver({ ...input, frameName: 'old' })
+    deliver({ ...input, revision: 'old' as typeof input.revision })
+    expect(run).not.toHaveBeenCalled()
+    deliver(input)
+    expect(run).toHaveBeenCalledOnce()
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ source: 'webview', target: frame }))
+    deliver({ ...input, repeat: true })
+    frame.remove()
+    deliver(input)
+    expect(run).toHaveBeenCalledOnce()
+  } finally {
+    shadowRoot.mockRestore()
+    off()
+  }
+})

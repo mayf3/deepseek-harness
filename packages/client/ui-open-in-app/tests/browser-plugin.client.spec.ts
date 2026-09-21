@@ -51,7 +51,7 @@ async function bench() {
       'deliverables.review.file.actions': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
-  const list = createSnapshotStore<SessionListState>({ ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
+  const list = createSnapshotStore<SessionListState>({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} })
   const commands = new Map<string, ShortcutCommand>()
   const layoutStore = createLayoutStore().create()
   const layout = new LayoutController(layoutStore.actions, id => id === 'plugins', {

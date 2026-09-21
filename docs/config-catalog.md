@@ -481,6 +481,20 @@ export interface Config {
 
 Source: [`packages/client/hmr/src/index.ts:30`](../packages/client/hmr/src/index.ts)
 
+<a id="deepseek-aidsh-client-shortcuts"></a>
+
+## `@deepseek-ai/dsh-client-shortcuts`
+
+```ts config-catalog
+/** Fixed shortcut sequence settings. */
+export interface Config {
+  /** Maximum interval between independent Escape presses for stopping a reply, in milliseconds. */
+  stopSequenceMs: number
+}
+```
+
+Source: [`packages/client/shortcuts/src/config.ts:5`](../packages/client/shortcuts/src/config.ts)
+
 <a id="deepseek-aidsh-client-ui-settings-account"></a>
 
 ## `@deepseek-ai/dsh-client-ui-settings-account`
@@ -4127,6 +4141,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-settings-shell` ([`packages/client/ui-settings-shell/src/index.ts`](../packages/client/ui-settings-shell/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-subagent` ([`packages/client/ui-settings-subagent/src/index.ts`](../packages/client/ui-settings-subagent/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-web-search` ([`packages/client/ui-settings-web-search/src/index.ts`](../packages/client/ui-settings-web-search/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-shortcuts` ([`packages/client/ui-shortcuts/src/index.ts`](../packages/client/ui-shortcuts/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar` ([`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar-browser` ([`packages/client/ui-sidebar-browser/src/index.ts`](../packages/client/ui-sidebar-browser/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar-files` ([`packages/client/ui-sidebar-files/src/index.ts`](../packages/client/ui-sidebar-files/src/index.ts))

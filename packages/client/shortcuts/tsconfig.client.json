@@ -16,7 +16,7 @@
       "path": "../../util/brand"
     },
     {
-      "path": "../locale"
+      "path": "../locale/tsconfig.client.json"
     },
     {
       "path": "../store"

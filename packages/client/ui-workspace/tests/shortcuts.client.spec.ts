@@ -48,9 +48,13 @@ async function bench(runtime: 'web' | 'desktop' = 'desktop') {
   locale.register('workspace', { en, zh })
   locale.setLocale('en')
   ctx.provide('locale', locale)
-  const navigation = { startSession: vi.fn(), forkSession: vi.fn(async () => {}), archiveSession: vi.fn(async () => {}) }
+  const navigation = {
+    startSession: vi.fn(), forkSession: vi.fn(async () => {}), archiveSession: vi.fn(async (_sessionId: SessionId) => {}),
+  }
   const controls = createWorkspaceShortcutControls()
-  const fiber = ctx.plugin((scoped) => { installWorkspaceShortcuts(scoped, navigation as unknown as UiWorkspace, controls, navigation.archiveSession) })
+  const fiber = ctx.plugin((scoped) => {
+    installWorkspaceShortcuts(scoped, navigation as unknown as UiWorkspace, controls, (id) => { void navigation.archiveSession(id) })
+  })
   await fiber.await()
   const select = (id: string) => { list.set({ ...list.getSnapshot(), byId: {
     [sid('a')]: row('a', id === 'a'), [sid('b')]: row('b', id === 'b'),

@@ -2,11 +2,11 @@
 import type { ShortcutRevision } from './persistence.ts'
 import type { ShortcutCommandId } from './binding.ts'
 
-/** Native input carries the accepted configuration identity; iframe names identify the focused embedding element. */
+/** Native input carries the accepted configuration identity; frame names identify the focused iframe or browser guest embedding element. */
 export type DesktopShortcutInput = {
   readonly revision: ShortcutRevision
 } & ({ readonly kind: 'menu'; readonly commandId: ShortcutCommandId }
-  | { readonly kind: 'keyboard' | 'iframe'
+  | { readonly kind: 'keyboard' | 'iframe' | 'webview'
     readonly frameName: string
     readonly code: string
     readonly secondCode?: string
