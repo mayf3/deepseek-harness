@@ -90,6 +90,12 @@ describe('DetailsRow', () => {
     expect(inspect).toHaveBeenCalledOnce()
   })
 
+  it('presents teammate-coordination tools under the two-person team icon', () => {
+    const inspect = vi.fn()
+    render(<DetailsRow {...{ toolName: 'wait_agent', block: result('wait_agent', { timedOut: true }), inspect, t } as Parameters<typeof DetailsRow>[0]} />)
+    expect(screen.getByText('Wait for teammates')).toBeTruthy()
+  })
+
   it('registers the supported tool names through the scoped keyed slot', () => {
     const register = vi.fn((_spec: unknown, _component: unknown) => () => undefined)
     const inject = vi.fn((_name: string, callback: () => Iterable<() => void>) => {

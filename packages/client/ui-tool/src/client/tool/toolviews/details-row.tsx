@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import {
   IconAgentPresetOutlineRegular, IconBranchOutlineRegular, IconChecklistOutlineRegular, IconClockOutlineRegular,
   IconCodeOutlineRegular, IconCordisPluginOutlineRegular, IconGoalOutlineRegular, IconSearchOutlineRegular,
+  IconUsersOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -59,7 +60,11 @@ const LSP_TITLE_KEYS = {
   hover: 'tool.title.hoverSymbol',
 } as const
 
+/** Teammate-coordination tools presented with the two-person team icon. */
+const TEAMMATE_TOOLS = new Set(['spawn_teammate', 'list_agents', 'send_message', 'interrupt_agent', 'wait_agent'])
+
 function detailIcon(toolName: string) {
+  if (TEAMMATE_TOOLS.has(toolName)) return <IconUsersOutlineRegular size={14} />
   if (toolName.startsWith('schedule_')) return <IconClockOutlineRegular size={14} />
   if (toolName.endsWith('_goal')) return <IconGoalOutlineRegular size={14} />
   if (toolName.startsWith('cordis_')) return <IconCordisPluginOutlineRegular />

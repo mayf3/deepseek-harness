@@ -255,7 +255,8 @@ describe('SubagentHeaderLineage', () => {
     expect(screen.getByRole('button', { name: '展开 worker 的下级子代理' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '展开 reviewer 的下级子代理' })).toBeTruthy()
 
-    const sidebarButton = screen.getByRole('button', { name: '在侧边栏打开 worker' })
+    const sidebarButton = within(screen.getByRole('treeitem', { name: /worker/ }))
+      .getByRole('button', { name: '在侧边栏打开' })
     fireEvent.keyDown(sidebarButton, { key: 'Enter' })
     fireEvent.click(sidebarButton)
     expect(input.openChildAside).toHaveBeenCalledWith({
@@ -331,7 +332,7 @@ describe('SubagentHeaderLineage', () => {
     expect(screen.queryByRole('tree')).toBeNull()
   })
 
-  it('opens only on hover and preserves the portaled-menu crossing grace', async () => {
+  it('opens on hover and preserves the portaled-menu crossing grace', async () => {
     vi.useFakeTimers()
     const advance = async (duration: number): Promise<void> => {
       await act(async () => { await vi.advanceTimersByTimeAsync(duration) })
@@ -341,26 +342,23 @@ describe('SubagentHeaderLineage', () => {
     const triggerRect = vi.spyOn(trigger, 'getBoundingClientRect')
       .mockReturnValue({ bottom: 40, left: 50 } as DOMRect)
 
-    fireEvent.click(trigger)
-    expect(screen.queryByRole('tree')).toBeNull()
-
     fireEvent.mouseEnter(trigger.parentElement!)
     await advance(149)
     expect(screen.queryByRole('tree')).toBeNull()
     await advance(1)
-    const tree = screen.getByRole('tree')
-    expect(tree.style.top).toBe('45px')
-    expect(tree.style.left).toBe('50px')
+    const menu = screen.getByRole('tree').parentElement!
+    expect(menu.style.top).toBe('45px')
+    expect(menu.style.left).toBe('50px')
     triggerRect.mockReturnValue({ bottom: 60, left: 70 } as DOMRect)
     fireEvent.resize(window)
-    expect(tree.style.top).toBe('65px')
-    expect(tree.style.left).toBe('70px')
+    expect(menu.style.top).toBe('65px')
+    expect(menu.style.left).toBe('70px')
     fireEvent.mouseLeave(trigger.parentElement!)
-    fireEvent.mouseEnter(tree)
+    fireEvent.mouseEnter(menu)
     await advance(120)
     expect(screen.getByRole('tree')).toBeTruthy()
 
-    fireEvent.mouseLeave(tree)
+    fireEvent.mouseLeave(menu)
     await advance(119)
     expect(screen.getByRole('tree')).toBeTruthy()
     await advance(1)
@@ -372,25 +370,62 @@ describe('SubagentHeaderLineage', () => {
     await advance(120)
   })
 
+  it('pins a click-opened catalog through hover-out until outside pointer or Escape', async () => {
+    vi.useFakeTimers()
+    const advance = async (duration: number): Promise<void> => {
+      await act(async () => { await vi.advanceTimersByTimeAsync(duration) })
+    }
+    render(<HeaderCatalog {...props(catalog())} />)
+    const trigger = screen.getByRole('button', { name: /1 个子代理，正在运行/ })
+    const root = trigger.parentElement!
+
+    fireEvent.click(trigger)
+    const menu = screen.getByRole('tree')
+    fireEvent.mouseEnter(root)
+    fireEvent.mouseLeave(root)
+    await advance(300)
+    expect(screen.getByRole('tree')).toBe(menu)
+    fireEvent.mouseEnter(menu.parentElement!)
+    fireEvent.mouseLeave(menu.parentElement!)
+    await advance(300)
+    expect(screen.getByRole('tree')).toBe(menu)
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('tree')).toBeNull()
+
+    fireEvent.mouseEnter(root)
+    await advance(150)
+    const hovered = screen.getByRole('tree')
+    fireEvent.click(trigger)
+    fireEvent.mouseLeave(root)
+    await advance(300)
+    expect(screen.getByRole('tree')).toBe(hovered)
+    fireEvent.keyDown(hovered, { key: 'Escape' })
+    expect(screen.queryByRole('tree')).toBeNull()
+    fireEvent.mouseEnter(root)
+    fireEvent.mouseLeave(root)
+    await advance(300)
+    expect(screen.queryByRole('tree')).toBeNull()
+  })
+
   it('repositions an open catalog after viewport resize and document scroll', () => {
     const view = render(<HeaderCatalog {...props(catalog())} />)
     const trigger = screen.getByRole('button', { name: /1 个子代理，正在运行/ })
     const bounds = vi.spyOn(trigger, 'getBoundingClientRect')
     bounds.mockReturnValue({ bottom: 20, left: 30 } as DOMRect)
     hoverCatalog(trigger)
-    const tree = screen.getByRole('tree')
-    expect(tree.style.top).toBe('25px')
-    expect(tree.style.left).toBe('30px')
+    const menu = screen.getByRole('tree').parentElement!
+    expect(menu.style.top).toBe('25px')
+    expect(menu.style.left).toBe('30px')
 
     bounds.mockReturnValue({ bottom: 70, left: 80 } as DOMRect)
     act(() => { window.dispatchEvent(new Event('resize')) })
-    expect(tree.style.top).toBe('75px')
-    expect(tree.style.left).toBe('80px')
+    expect(menu.style.top).toBe('75px')
+    expect(menu.style.left).toBe('80px')
 
     bounds.mockReturnValue({ bottom: 90, left: 100 } as DOMRect)
     act(() => { document.dispatchEvent(new Event('scroll')) })
-    expect(tree.style.top).toBe('95px')
-    expect(tree.style.left).toBe('100px')
+    expect(menu.style.top).toBe('95px')
+    expect(menu.style.left).toBe('100px')
     view.unmount()
   })
 

@@ -15,7 +15,11 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import { TeamAction, type TeamActionInjected, type TeamActionProps } from '../src/client/TeamAction.tsx'
 import { zh } from '../src/client/locales.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 const SESSION = 'lead' as SessionId
 const WORKER = 'worker-id' as SessionId
@@ -99,7 +103,7 @@ function bench(options: {
 }
 
 function openPanel(): void {
-  fireEvent.click(screen.getByRole('button', { name: /Agent Team/u }))
+  fireEvent.click(screen.getByRole('button', { name: /智能体团队/u }))
 }
 
 function setProjectionSnapshot(
@@ -121,7 +125,7 @@ describe('TeamAction', () => {
   it('renders the Lead projection and applies later projection frames without any user action', async () => {
     const b = bench()
     render(<TeamAction {...b.props} />)
-    expect(screen.getByRole('button', { name: /Agent Team/u }).textContent).toContain('1')
+    expect(screen.getByRole('button', { name: /智能体团队/u }).textContent).toBe(zh.trigger)
     openPanel()
     expect(await screen.findByText('Implement runtime')).toBeTruthy()
     expect(screen.getByText('write scopes overlap with task-2')).toBeTruthy()
@@ -133,7 +137,7 @@ describe('TeamAction', () => {
     })
     expect(screen.getByText('Pushed task')).toBeTruthy()
     expect(screen.getByRole('button', { name: /worker-b/u })).toHaveProperty('disabled', true)
-    expect(screen.getByRole('button', { name: /Agent Team/u }).textContent).toContain('2')
+    expect(screen.getByRole('heading', { name: '成员3' })).toBeTruthy()
   })
 
   it('overlays live Session status and the durable model selection on roster rows', () => {
@@ -154,18 +158,18 @@ describe('TeamAction', () => {
     })
     render(<TeamAction {...b.props} />)
     openPanel()
-    expect(screen.getByRole('button', { name: `lead${zh['memberStatus.running']} · ${zh.model}: lead-model` })).toBeTruthy()
-    const row = screen.getByRole('button', { name: `worker${zh['memberStatus.running']} · ${zh.model}: worker-model` })
+    expect(screen.getByRole('button', { name: new RegExp(`lead.*${zh['memberStatus.running']}.*lead-model`, 'u') })).toBeTruthy()
+    const row = screen.getByRole('button', { name: new RegExp(`worker.*${zh['memberStatus.running']}.*worker-model`, 'u') })
     expect(row.querySelector('[data-state="ongoing"]')).not.toBeNull()
 
     act(() => { b.statuses.set(new Map([[WORKER, { running: false, pendingInteraction: undefined, completionUnread: false }]])) })
-    expect(screen.getByRole('button', { name: /^worker未运行/u })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^worker.*未运行/u })).toBeTruthy()
 
     act(() => {
       b.statuses.set(new Map())
       b.sessions.update((draft) => { draft.byId[WORKER] = summary(WORKER, true) })
     })
-    expect(screen.getByRole('button', { name: /^worker运行中/u })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^worker.*运行中/u })).toBeTruthy()
   })
 
   it('reads the Lead projection from an addressed teammate conversation', () => {
@@ -173,8 +177,9 @@ describe('TeamAction', () => {
     render(<TeamAction {...b.props} />)
     openPanel()
     expect(screen.getByText('Implement runtime')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /^worker/u }))
-    expect(b.injected.openTeammate).toHaveBeenCalledWith(WORKER, WORKER)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: /^worker/u }).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: /^lead/u }))
+    expect(b.injected.openTeammate).toHaveBeenCalledWith(WORKER, SESSION)
   })
 
   it.each([false, true])('accepts shared baselines and late capability updates (teammate page: %s)', (addressed) => {
@@ -256,7 +261,7 @@ describe('TeamAction', () => {
     })
     render(<TeamAction {...b.props} />)
     openPanel()
-    expect(screen.getByRole('alert').textContent).toBe('Team 持久记录无效：revision is not contiguous')
+    expect(screen.getByRole('alert').textContent).toBe('团队持久记录无效：revision is not contiguous')
     expect(screen.getByText('Implement runtime')).toBeTruthy()
   })
 
@@ -306,9 +311,9 @@ describe('TeamAction', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^worker/u }))
     expect(screen.getByRole('alert').textContent).toBe('Error: navigation failed')
-    fireEvent.click(screen.getByRole('button', { name: zh.close }))
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: /Agent Team/u }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /智能体团队/u }))
   })
 
   it('closes the panel and clears a navigation failure when the conversation switches sessions', () => {
@@ -330,7 +335,7 @@ describe('TeamAction', () => {
   it('keeps panel interactions open and dismisses on outside pointer or Escape', () => {
     const b = bench()
     const rendered = render(<TeamAction {...b.props} />)
-    const trigger = screen.getByRole('button', { name: /Agent Team/u })
+    const trigger = screen.getByRole('button', { name: /智能体团队/u })
     fireEvent.click(trigger)
     const panel = screen.getByRole('dialog')
     expect(rendered.container.contains(panel)).toBe(false)
@@ -342,28 +347,161 @@ describe('TeamAction', () => {
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(trigger)
-    fireEvent.keyDown(screen.getByRole('button', { name: zh.close }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('button', { name: /^worker/u }), { key: 'Enter' })
     expect(screen.queryByRole('dialog')).not.toBeNull()
-    fireEvent.keyDown(screen.getByRole('button', { name: zh.close }), { key: 'Escape' })
+    fireEvent.keyDown(screen.getByRole('button', { name: /^worker/u }), { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.activeElement).toBe(trigger)
     fireEvent.keyDown(trigger, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('keeps focus within the trigger or panel and closes when focus moves elsewhere', () => {
+  it('clamps a long task description to two lines behind an expand toggle', async () => {
+    const scrollHeight = vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(120)
+    const clientHeight = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(60)
+    try {
+      render(<TeamAction {...bench().props} />)
+      fireEvent.click(screen.getByRole('button', { name: /智能体团队/u }))
+      const expand = await screen.findByRole('button', { name: zh['task.expand'] })
+      const description = screen.getByText('Build the Team runtime')
+      expect(expand.getAttribute('aria-expanded')).toBe('false')
+      expect(description.className).not.toBe('')
+
+      fireEvent.click(expand)
+      const collapse = screen.getByRole('button', { name: zh['task.collapse'] })
+      expect(collapse.getAttribute('aria-expanded')).toBe('true')
+      expect(screen.getByText('Build the Team runtime').className).toBe('')
+
+      fireEvent.click(collapse)
+      expect(screen.getByRole('button', { name: zh['task.expand'] })).toBeTruthy()
+    } finally {
+      scrollHeight.mockRestore()
+      clientHeight.mockRestore()
+    }
+  })
+
+  it('opens on hover and preserves the trigger-to-panel crossing grace', async () => {
+    vi.useFakeTimers()
+    const advance = async (duration: number): Promise<void> => {
+      await act(async () => { await vi.advanceTimersByTimeAsync(duration) })
+    }
     const b = bench()
-    render(<><TeamAction {...b.props} /><button>Outside</button></>)
-    const trigger = screen.getByRole('button', { name: /Agent Team/u })
+    const rendered = render(<TeamAction {...b.props} />)
+    const trigger = screen.getByRole('button', { name: /智能体团队/u })
+    const root = trigger.parentElement!
+
+    fireEvent.mouseEnter(root)
+    await advance(149)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await advance(1)
+    const panel = screen.getByRole('dialog')
+
+    fireEvent.mouseEnter(root)
+    expect(screen.getByRole('dialog')).toBe(panel)
+
+    fireEvent.mouseLeave(root)
+    fireEvent.mouseEnter(panel)
+    await advance(120)
+    expect(screen.getByRole('dialog')).toBe(panel)
+
+    fireEvent.mouseLeave(panel)
+    await advance(119)
+    expect(screen.getByRole('dialog')).toBe(panel)
+    await advance(1)
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    fireEvent.mouseEnter(root)
+    fireEvent.mouseLeave(root)
+    rendered.unmount()
+    await advance(150)
+  })
+
+  it('pins a click-opened panel through hover-out until explicit dismissal', async () => {
+    vi.useFakeTimers()
+    const advance = async (duration: number): Promise<void> => {
+      await act(async () => { await vi.advanceTimersByTimeAsync(duration) })
+    }
+    render(<TeamAction {...bench().props} />)
+    const trigger = screen.getByRole('button', { name: /智能体团队/u })
+    const root = trigger.parentElement!
+
     fireEvent.click(trigger)
     const panel = screen.getByRole('dialog')
-    fireEvent.blur(panel, { relatedTarget: screen.getByRole('button', { name: zh.close }) })
+    fireEvent.mouseEnter(root)
+    fireEvent.mouseLeave(root)
+    await advance(300)
     expect(screen.getByRole('dialog')).toBe(panel)
-    fireEvent.blur(panel, { relatedTarget: trigger })
+    fireEvent.mouseEnter(panel)
+    fireEvent.mouseLeave(panel)
+    await advance(300)
     expect(screen.getByRole('dialog')).toBe(panel)
-    fireEvent.blur(panel, { relatedTarget: null })
-    expect(screen.getByRole('dialog')).toBe(panel)
-    fireEvent.blur(panel, { relatedTarget: screen.getByRole('button', { name: 'Outside' }) })
+    fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('dialog')).toBeNull()
+
+    fireEvent.mouseEnter(root)
+    await advance(150)
+    const hovered = screen.getByRole('dialog')
+    fireEvent.click(trigger)
+    fireEvent.mouseLeave(root)
+    await advance(300)
+    expect(screen.getByRole('dialog')).toBe(hovered)
+    fireEvent.keyDown(trigger, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.mouseEnter(root)
+    fireEvent.mouseLeave(root)
+    await advance(300)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('opens by click only while the trigger is collapsed to its icon', async () => {
+    vi.useFakeTimers()
+    const advance = async (duration: number): Promise<void> => {
+      await act(async () => { await vi.advanceTimersByTimeAsync(duration) })
+    }
+    render(<TeamAction {...bench().props} />)
+    const trigger = screen.getByRole('button', { name: /智能体团队/u })
+    const root = trigger.parentElement!
+    const label = screen.getByText(zh.trigger)
+    const computedStyle = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(element =>
+      element === label ? { display: 'none' } as CSSStyleDeclaration : computedStyle(element))
+
+    fireEvent.mouseEnter(root)
+    await advance(300)
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    fireEvent.click(trigger)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('keeps projection updates live without polling while pinned', async () => {
+    vi.useFakeTimers()
+    const b = bench()
+    render(<TeamAction {...b.props} />)
+    openPanel()
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+    setProjection(b.sessions, SESSION, { ...team, tasks: [{ ...task, subject: 'Pushed while pinned' }] })
+    expect(screen.getByText('Pushed while pinned')).toBeTruthy()
+  })
+
+  it('keeps an accessible trigger name when its label is collapsed', () => {
+    render(<TeamAction {...bench().props} />)
+    screen.getByText(zh.trigger).style.display = 'none'
+    expect(screen.getByRole('button', { name: zh.trigger })).toBeTruthy()
+  })
+
+  it('dismisses a hovered panel with Escape without stealing composer focus', async () => {
+    vi.useFakeTimers()
+    render(<><textarea aria-label="Composer" /><TeamAction {...bench().props} /></>)
+    const composer = screen.getByRole('textbox')
+    composer.focus()
+    fireEvent.mouseEnter(screen.getByRole('button', { name: zh.trigger }).parentElement!)
+    await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    fireEvent.keyDown(composer, { key: 'a' })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    fireEvent.keyDown(composer, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(composer)
   })
 })
