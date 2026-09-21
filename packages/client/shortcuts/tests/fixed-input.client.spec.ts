@@ -6,7 +6,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { installKeyboard } from '../src/client/dom.ts'
 import ShortcutsService from '../src/client/index.ts'
 import { ShortcutRegistry } from '../src/client/registry.ts'
-import type { ShortcutFixedInput } from '../src/client/types.ts'
+import type { ShortcutFixedCommand, ShortcutFixedInput } from '../src/client/types.ts'
 import type { ShortcutCommandId } from '../src/protocol.ts'
 
 let dispose: (() => void) | undefined
@@ -96,7 +96,7 @@ it('releases listeners, modal observation, and pending local-input resets on dis
 it('publishes fixed reservations and removes them with their owning registration', () => {
   const registry = new ShortcutRegistry('web', 'windows')
   let label = 'Stop reply'
-  const command = { id: 'response.stop' as ShortcutCommandId, label: () => label, keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input' as const }
+  const command: ShortcutFixedCommand = { id: 'response.stop' as ShortcutCommandId, label: () => label, keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input' }
   const off = registry.registerFixed(command)
   expect(registry.fixedCatalog.getSnapshot()).toEqual([{ id: 'response.stop', label, keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input' }])
   expect(registry.definitions()).toEqual([{ id: 'response.stop', defaults: {}, fixed: [{ code: 'Escape', modifiers: [] }] }])

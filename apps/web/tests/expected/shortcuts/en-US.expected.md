@@ -47,11 +47,6 @@
         - button "Edit shortcut for Browser"
         - button "Browser Ctrl + Alt + T": Ctrl + Alt + T
       - listitem:
-        - text: Open settings
-        - button "Remove shortcut for Open settings"
-        - button "Edit shortcut for Open settings"
-        - button "Open settings Ctrl + ,": Ctrl + ,
-      - listitem:
         - text: New Session
         - button "Remove shortcut for New Session"
         - button "Edit shortcut for New Session"
@@ -81,6 +76,11 @@
         - button "Remove shortcut for Archive session"
         - button "Edit shortcut for Archive session"
         - button "Archive session Ctrl + Alt + A": Ctrl + Alt + A
+      - listitem:
+        - text: Open settings
+        - button "Remove shortcut for Open settings"
+        - button "Edit shortcut for Open settings"
+        - button "Open settings Ctrl + ,": Ctrl + ,
       - listitem:
         - text: Workspace files
         - button "Remove shortcut for Workspace files"
@@ -133,3 +133,6 @@
       - listitem:
         - text: Reject
         - button "Reject Esc" [disabled]: Esc
+  - contentinfo:
+    - button "Restore all defaults" [disabled]
+    - text: 0 customized

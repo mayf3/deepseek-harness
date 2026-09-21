@@ -63,6 +63,7 @@ function harness() {
     return controller.bind({
       sessionId: SESSION, actions: instance.actions, surfaces: instance.getSnapshot().bySession,
       closeWithFocus: (_paneId, close) => { close() },
+      openWithFocus: (open) => { open() },
       canSplitPane: () => room.allowed,
     })
   }
@@ -525,7 +526,8 @@ describe('SidebarRightController — a tab\'s own actions', () => {
       sessionId: OTHER,
       actions: other.actions,
       surfaces: other.getSnapshot().bySession,
-      closeWithFocus: (_paneId, close) => { close() }, canSplitPane: () => true,
+      closeWithFocus: (_paneId, close) => { close() },
+      openWithFocus: (open) => { open() }, canSplitPane: () => true,
     })
     controller.openResourceIn(SESSION, A_TXT)
     expect(titles()).toContain('a.txt')
@@ -555,6 +557,7 @@ describe('SidebarRightController — a tab\'s own actions', () => {
     controller.bind({
       sessionId: OTHER, actions: other.actions, surfaces: other.getSnapshot().bySession,
       closeWithFocus: (_paneId, close) => { close() },
+      openWithFocus: (open) => { open() },
       canSplitPane: () => true,
     })
     fromOwn.openResource(B_TXT)

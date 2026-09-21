@@ -308,7 +308,7 @@ export function TextPreview({
             </button>
           </Tooltip>
         </span>
-        <Tooltip label={[t('reload'), ...(tab.refreshShortcut?.keys ?? [])].join(' ')} side="bottom" delayMs={500}>
+        <Tooltip label={tab.refreshShortcut?.keys.length ? t('shortcut.hint', { label: t('reload'), keys: tab.refreshShortcut.keys.join(' ') }) : t('reload')} side="bottom" delayMs={500}>
           <button
             type="button"
             className={css.tool}

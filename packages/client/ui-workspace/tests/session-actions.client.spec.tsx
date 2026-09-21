@@ -576,7 +576,11 @@ it('shows effective Session shortcuts while menu clicks keep the row target', ()
   const shortcuts = new ShortcutRegistry('desktop', 'macos')
   for (const [action, code] of [['rename', 'KeyR'], ['fork', 'KeyF'], ['archive', 'KeyA']] as const) {
     shortcuts.register({ id: `session.${action}` as ShortcutCommandId, label: () => action, aliases: [],
-      defaults: { desktop: { code, modifiers: ['primary', action === 'archive' ? 'shift' : 'alt'] } },
+      defaults: {
+        'desktop:macos': { code, modifiers: ['primary', action === 'archive' ? 'shift' : 'alt'] },
+        'desktop:windows': { code, modifiers: ['primary', action === 'archive' ? 'shift' : 'alt'] },
+        'desktop:linux': { code, modifiers: ['primary', action === 'archive' ? 'shift' : 'alt'] },
+      },
       regions: ['page'], modals: [], resolve: () => ({ status: 'pass' }) })
   }
   const requestSessionRename = vi.fn()

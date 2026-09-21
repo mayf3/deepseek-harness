@@ -186,7 +186,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
 
     const stopButton = page.getByRole('button', { name: 'Stop generating' })
     await stopButton.hover()
-    await page.getByRole('tooltip', { name: 'Stop generating', exact: true }).waitFor()
+    await page.getByRole('tooltip', { name: 'Stop generating Esc Esc', exact: true }).waitFor()
     await stopButton.click()
     await settled
     expect(turnEndReasons(sessionEvents).at(-1)).toBe('aborted')

@@ -5,5 +5,5 @@
 - button "Add workspace"
 - tree "Sessions":
   - treeitem "Ungrouped" [expanded]
-  - treeitem "T4 source (1) now" [selected]
-  - treeitem "T4 source 1min"
+  - treeitem "T4 source (1) now"
+  - treeitem "T4 source 1min" [selected]

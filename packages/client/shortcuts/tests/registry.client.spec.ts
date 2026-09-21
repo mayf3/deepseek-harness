@@ -10,7 +10,11 @@ const gesture: ShortcutGesture = { code: 'KeyB', control: false, alt: false, shi
   repeat: false, composing: false, defaultPrevented: false }
 function command(overrides: Partial<ShortcutCommand> = {}): ShortcutCommand {
   return { id: 'test.toggle' as ShortcutCommandId, label: () => 'Toggle', aliases: ['toggle'],
-    defaults: { desktop: { code: 'KeyB', modifiers: ['primary'] } }, regions: ['page', 'editable'], modals: [],
+    defaults: {
+      'desktop:macos': { code: 'KeyB', modifiers: ['primary'] },
+      'desktop:windows': { code: 'KeyB', modifiers: ['primary'] },
+      'desktop:linux': { code: 'KeyB', modifiers: ['primary'] },
+    }, regions: ['page', 'editable'], modals: [],
     resolve: () => ({ status: 'handled', run: () => {} }), ...overrides }
 }
 
@@ -61,11 +65,23 @@ describe('physical key registry', () => {
     const off = registry.register(command())
     expect(() => registry.register(command())).toThrow('Duplicate')
     expect(() => registry.register(command({ id: 'other.toggle' as ShortcutCommandId,
-      defaults: { desktop: { code: 'KeyB', modifiers: ['control'] } } }))).toThrow('windows')
+      defaults: {
+        'desktop:macos': { code: 'KeyB', modifiers: ['control'] },
+        'desktop:windows': { code: 'KeyB', modifiers: ['control'] },
+        'desktop:linux': { code: 'KeyB', modifiers: ['control'] },
+      } }))).toThrow('windows')
     expect(() => registry.register(command({ id: 'web.new' as ShortcutCommandId,
-      defaults: { web: { code: 'KeyN', modifiers: ['primary'] } } }))).toThrow('Unsupported Web')
+      defaults: {
+        'web:macos': { code: 'KeyN', modifiers: ['primary'] },
+        'web:windows': { code: 'KeyN', modifiers: ['primary'] },
+        'web:linux': { code: 'KeyN', modifiers: ['primary'] },
+      } }))).toThrow('Unsupported Web')
     expect(() => registry.register(command({ id: 'system.copy' as ShortcutCommandId,
-      defaults: { desktop: { code: 'KeyC', modifiers: ['primary'] } } }))).toThrow('Reserved')
+      defaults: {
+        'desktop:macos': { code: 'KeyC', modifiers: ['primary'] },
+        'desktop:windows': { code: 'KeyC', modifiers: ['primary'] },
+        'desktop:linux': { code: 'KeyC', modifiers: ['primary'] },
+      } }))).toThrow('Reserved')
     expect(registry.catalog.getSnapshot()).toHaveLength(1)
     const changed = vi.fn()
     registry.catalog.subscribe(changed)
@@ -108,7 +124,7 @@ describe('physical key registry', () => {
   it('publishes stable effective rows with Windows Web three-key defaults', () => {
     const registry = new ShortcutRegistry('web', 'windows')
     let label = 'Settings'
-    registry.register(command({ label: () => label }))
+    registry.register(command({ label: () => label, defaults: { 'web:windows': { code: 'KeyB', modifiers: ['primary', 'alt'] } } }))
     const first = registry.catalog.getSnapshot()
     expect(registry.catalog.getSnapshot()).toBe(first)
     expect(first[0]?.keys).toEqual(['Ctrl', '+', 'Alt', '+', 'B'])

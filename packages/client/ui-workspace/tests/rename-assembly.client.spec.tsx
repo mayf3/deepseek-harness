@@ -38,10 +38,6 @@ beforeEach(() => { localStorage.clear() })
 async function createRuntime(): Promise<SlotTestRuntime> {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('shortcuts', { register: () => () => {}, catalog: createSnapshotStore([]) })
-  runtime.ctx.provide('uiConversation', { binding: () => ({
-    timeline: createSnapshotStore({ turnOrder: [], turns: new Map() }),
-    historyStart: createSnapshotStore(undefined),
-  }) })
   runtime.ctx.provide('layout', { selectPanel: vi.fn(), beginNavigation: () => new AbortController().signal })
   runtime.releaseWorkspaceSource()
   // The rename flow never picks a directory; the namespace only has to be there

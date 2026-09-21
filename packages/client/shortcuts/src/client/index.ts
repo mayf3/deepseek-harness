@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { ShortcutRegistry } from './registry.ts'
 import { detectEnvironment, installKeyboard } from './dom.ts'
 import { bindingIssue, bindingKey, initialShortcutConfig, normalizeBinding, overlappingBindings, presentBinding } from '../protocol.ts'
-import type { DesktopKeyboardApi, DesktopShortcutsApi } from '../protocol.ts'
+import type { DesktopKeyboardApi, DesktopShortcutsApi, ShortcutSaveResult } from '../protocol.ts'
 import { desktopShortcutStorage, webShortcutStorage } from './storage.ts'
 import type { Shortcuts } from './types.ts'
 import type { ShortcutFixedInput } from './types.ts'
@@ -140,22 +140,15 @@ export default class ShortcutsService extends Service implements Shortcuts {
    */
   async edit(...args: Parameters<Shortcuts['edit']>): ReturnType<Shortcuts['edit']> {
     if (this.adapter === undefined) return { status: 'unreadable', snapshot: this.config.getSnapshot() }
+    let result: ShortcutSaveResult
     try {
-      const result = await this.adapter.edit(...args)
-      if (this.active && result.snapshot.sequence >= this.config.getSnapshot().sequence) this.registry.configure(result.snapshot)
-      return result
-    } catch (_error) {
+      result = await this.adapter.edit(...args)
+    } catch (error) {
+      if (this.active) console.error('Shortcut preference save failed', error)
       return { status: 'write-failed', snapshot: this.config.getSnapshot() }
     }
-  }
-
-  async reload(): ReturnType<Shortcuts['reload']> {
-    try {
-      if (this.adapter === undefined) throw new Error('Desktop shortcuts bridge unavailable')
-      const snapshot = await this.adapter.reload()
-      if (this.active && this.connected && snapshot.sequence >= this.config.getSnapshot().sequence) this.registry.configure(snapshot)
-    } catch (_error) { this.failRead() }
-    return this.config.getSnapshot()
+    if (this.active && result.snapshot.sequence >= this.config.getSnapshot().sequence) this.registry.configure(result.snapshot)
+    return result
   }
 
   async recording(active: boolean): Promise<void> {

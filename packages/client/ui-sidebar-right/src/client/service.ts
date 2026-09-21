@@ -117,6 +117,8 @@ export interface SidebarRightBinding {
   readonly canSplitPane: (paneId: PaneId) => boolean
   /** Commit a keyboard/menu close and retain focus on a surviving visible pane. */
   readonly closeWithFocus: (paneId: PaneId, close: () => void) => void
+  /** Commit a page operation and focus the pane it selects. */
+  readonly openWithFocus: (open: () => PaneId | undefined) => void
   /** Narrow viewports present an expanded panel fullscreen. */
   readonly autoFullscreen?: boolean
 }
@@ -532,15 +534,18 @@ export class SidebarRightController implements ISidebarRight {
    */
   openTabFromTarget(kind: string, target: SidebarRightTarget): void {
     if (!this.isTargetCurrent(target)) return
-    const tab = target.tabId === undefined ? undefined : this.mountedSurface()?.layout.tabs[target.tabId]
-    if (target.host === 'float' && tab?.kind === kind && this.tabs.get(kind)?.multiple !== true) {
-      this.require().actions.setExpanded(target.sessionId, true)
-      this.focus(tab.id)
-      return
-    }
-    this.openTab(kind, {
-      ...target.host === 'dock' ? { paneId: target.paneId } : {},
-      ...tab?.kind === 'guide' ? { replaceTab: tab.id } : {},
+    this.require().openWithFocus(() => {
+      const tab = target.tabId === undefined ? undefined : this.mountedSurface()?.layout.tabs[target.tabId]
+      if (target.host === 'float' && tab?.kind === kind && this.tabs.get(kind)?.multiple !== true) {
+        this.require().actions.setExpanded(target.sessionId, true)
+        this.focus(tab.id)
+      } else {
+        this.openTab(kind, {
+          ...target.host === 'dock' ? { paneId: target.paneId } : {},
+          ...tab?.kind === 'guide' ? { replaceTab: tab.id } : {},
+        })
+      }
+      return this.mountedSurface()?.layout.activePaneId
     })
   }
 
@@ -632,7 +637,10 @@ export class SidebarRightController implements ISidebarRight {
     if (node === undefined || node.kind !== 'pane' || node.host !== 'dock') return undefined
     if (!canSplit(layout) || dockPaneIds(layout).length >= 2 || !canSplitPane(target)) return undefined
     let created: PaneId | undefined
-    actions.splitPane(sessionId, target, (id) => { created = id })
+    this.require().openWithFocus(() => {
+      actions.splitPane(sessionId, target, (id) => { created = id })
+      return created
+    })
     return created
   }
 

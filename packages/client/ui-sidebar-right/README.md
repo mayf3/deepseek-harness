@@ -107,6 +107,8 @@ A type's `keepMounted: true` retains visited bodies across tab and Session chang
 
 Tab owners register `registerCloseHandler(kind, handler)` through an effect. A handler synchronously retains any background cleanup before allowing explicit close or replacement. The resource owner tracks completion and retry; the sidebar does not wait. A thrown handler preserves the tab. Collapse, presentation changes and plugin disposal do not invoke close handlers; the tab abort signal identifies occurrence disposal, not an explicit close.
 
+Close and refresh commands resolve the focused pane and tab occurrence. Page bodies bind their refresh operation through `tab.actions.bindCommands()` and release it on unmount; ended occurrences cannot regain capabilities. Refresh never reloads the application. Shortcut page opens and all splits focus the selected pane after its DOM commits, including singleton reveals and guide replacements. Pane focus preserves existing text selections. If a focused page input or iframe is replaced, focus returns to its visible pane only while no other element owns focus; an outside pointer gesture or explicit blur cancels this restoration. Close checks the captured identity again and uses resource cleanup. After a keyboard or native-menu close, focus moves to a surviving visible pane in the same Session so consecutive close commands continue there. Stale targets and cleanup failures never fall back to closing a window. Modal restrictions follow the [shortcut service](../shortcuts/README.md); Windows and macOS Desktop bindings take priority over modal controls. Closing the sole docked guide with a shortcut or native menu collapses the sidebar and retains the guide. Desktop closes its window only when no sidebar page owns focus; Web leaves the browser open.
+
 <a id="the-guide"></a>
 ## The guide
 
@@ -151,8 +153,6 @@ None; this package neither assembles nor sends a provider request.
 <summary>Working context for maintainers — click to expand</summary>
 
 None.
-
-Close and refresh commands resolve the focused pane and tab occurrence. Page bodies bind their refresh operation through `tab.actions.bindCommands()` and release it on unmount; ended occurrences cannot regain capabilities. Refresh never reloads the application. Close checks the captured identity again and uses resource cleanup. After a keyboard or native-menu close, focus moves to a surviving visible pane in the same Session so consecutive close commands continue there. Stale targets and cleanup failures never fall back to closing a window. Modal restrictions follow the [shortcut service](../shortcuts/README.md); Windows and macOS Desktop bindings take priority over modal controls. Closing the sole docked guide with a shortcut or native menu collapses the sidebar and retains the guide. Desktop closes its window only when no sidebar page owns focus; Web leaves the browser open.
 
 </details>
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, onTestFinished } from 'vitest'
+import { describe, expect, onTestFinished, vi } from 'vitest'
 import { createClientTest, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import type {} from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { createSettingsShellStore } from '../../ui-settings-general/src/client/shell-store.ts'
@@ -19,7 +19,7 @@ describe('assembled shortcut command owners', () => {
     const overlay = client.ctx.slots.entries('shell.overlay').find(entry => entry.options.id === 'shortcuts')!
     const injected = (overlay.inject as unknown as () => ReferenceInjected)()
     expect(injected.hooks.catalog).toBe(shortcuts.catalog)
-    await shortcuts.reload()
+    await vi.waitFor(() => { expect(shortcuts.config.getSnapshot().status).toBe('ready') })
     expect(injected.describeBinding(null).keys).toEqual([])
     await injected.recording(false)
     const shortcut = shortcuts.catalog.getSnapshot().find(row => row.id === 'shortcuts.open')!

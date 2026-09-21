@@ -54,7 +54,13 @@ export function apply(ctx: Context): void {
   ctx.inject(['shortcuts'], (ctx) => {
     ctx.effect(() => ctx.shortcuts.register({
       id: 'terminal.new' as ShortcutCommandId, label: () => t('new'), aliases: ['new terminal', 'shell'],
-      defaults: { desktop: { code: 'Backquote', modifiers: ['control'] } },
+      defaults: {
+        'desktop:macos': { code: 'Backquote', modifiers: ['control'] },
+        'desktop:windows': { code: 'Backquote', modifiers: ['control'] },
+        'desktop:linux': { code: 'Backquote', modifiers: ['control'] },
+        'web:macos': { code: 'Backquote', modifiers: ['control'] },
+        'web:windows': { code: 'Backquote', modifiers: ['control'] },
+      },
       regions: ['page', 'editable', 'terminal'], modals: [],
       availability: {
         getSnapshot: () => ctx.sidebarRight.commandTarget() === undefined ? t('shortcut.noSession') : null,

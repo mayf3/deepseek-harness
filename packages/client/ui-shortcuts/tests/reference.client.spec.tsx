@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ShortcutCatalogEntry, ShortcutCommandId, ShortcutFixedCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
@@ -79,7 +79,7 @@ it.each(['macos', 'windows'] as const)('shows the reference, filters labels and 
 })
 
 
-it('saves individual edits and reports configuration failures without footer actions', async () => {
+it('saves individual edits and disables changes when configuration cannot be read', async () => {
   const store = createShortcutsStore().create()
   const catalog = createSnapshotStore<readonly ShortcutCatalogEntry[]>([
     { id: 'shortcuts.open' as ShortcutCommandId, label: 'Open shortcuts', aliases: [], binding: null, modified: true,
@@ -94,7 +94,7 @@ it('saves individual edits and reports configuration failures without footer act
     describeBinding, t: makeTranslate(en) } as Parameters<typeof ShortcutReference>[0]
   store.actions.open()
   render(<ShortcutReference {...props} />)
-  expect(screen.getByRole('dialog').querySelector('footer')).toBeNull()
+  expect(screen.getByRole('button', { name: en['reset-all'] }).hasAttribute('disabled')).toBe(true)
   expect(screen.queryByText('Unavailable')).toBeNull()
   expect(screen.getByRole('button', { name: 'Edit shortcut for Open shortcuts' }).hasAttribute('disabled')).toBe(true)
   act(() => { config.set({ ...config.getSnapshot(), status: 'ready' }) })
@@ -110,7 +110,7 @@ it('saves individual edits and reports configuration failures without footer act
   act(() => { config.set({ ...config.getSnapshot(), error: 'future', usingDefaults: false }) })
   expect(screen.getByText(`${en.future} ${en['using-accepted']}`)).toBeTruthy()
   expect(screen.getByRole('dialog').contains(screen.getByRole('alert'))).toBe(false)
-  expect(screen.getByRole('dialog').querySelector('footer')).toBeNull()
+  expect(screen.getByRole('button', { name: en['reset-all'] }).hasAttribute('disabled')).toBe(true)
   expect(screen.getByRole('button', { name: 'Edit shortcut for Open shortcuts' }).hasAttribute('disabled')).toBe(true)
 })
 
@@ -280,4 +280,130 @@ it('blocks reference dismissal during a removal and ignores its completion after
   f.view.unmount()
   await act(async () => { settle({ status: 'saved', snapshot: f.config.getSnapshot() }); await reply })
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it('counts current-profile overrides even when hidden by search or an unloaded command, and cancels without saving', () => {
+  const f = referenceFixture()
+  const restore = screen.getByRole('button', { name: en['reset-all'] })
+  expect(restore.hasAttribute('disabled')).toBe(true)
+  act(() => { f.config.set({ ...f.config.getSnapshot(), document: { schemaVersion: 2, profiles: {
+    'desktop:macos': { 'settings.open': null },
+  } } }) })
+  expect(restore.hasAttribute('disabled')).toBe(true)
+  act(() => {
+    f.config.set({ ...f.config.getSnapshot(), document: { schemaVersion: 2, profiles: {
+      'web:macos': { 'settings.open': null, 'unloaded.command': { code: 'KeyI', modifiers: ['meta', 'alt'] } },
+      'web:windows': { 'settings.open': null },
+    } } })
+    f.store.actions.search('no matching command')
+  })
+  expect(screen.getByText('2 customized')).toBeTruthy()
+  expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+  restore.focus(); fireEvent.click(restore)
+  const confirmation = screen.getByRole('dialog', { name: en['reset-title'] })
+  expect(confirmation.textContent).toContain(en['reset-description'])
+  const cancel = within(confirmation).getByRole('button', { name: en.cancel })
+  expect(document.activeElement).toBe(cancel)
+  act(() => { f.store.actions.open() })
+  expect(document.activeElement).toBe(cancel)
+  fireEvent.click(cancel)
+  expect(screen.queryByRole('dialog', { name: en['reset-title'] })).toBeNull()
+  expect(document.activeElement).toBe(restore)
+  expect(f.edit).not.toHaveBeenCalled()
+  fireEvent.click(restore)
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  expect(f.store.getSnapshot().open).toBe(true)
+})
+
+it('restores focus to Reset All when clicking it does not move focus out of the recorder', () => {
+  const f = referenceFixture()
+  act(() => { f.config.set({ ...f.config.getSnapshot(), document: { schemaVersion: 1, profiles: {
+    'web:macos': { 'settings.open': null },
+  } } }) })
+  fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
+  const recorder = screen.getByRole('button', { name: en.record })
+  recorder.focus()
+  const restore = screen.getByRole('button', { name: en['reset-all'] })
+  // Safari mouse clicks do not focus buttons; fireEvent keeps the recorder focused until the handler runs.
+  fireEvent.click(restore)
+  expect(recorder.isConnected).toBe(false)
+  const confirmation = screen.getByRole('dialog', { name: en['reset-title'] })
+  const cancel = within(confirmation).getByRole('button', { name: en.cancel })
+  expect(document.activeElement).toBe(cancel)
+  fireEvent.click(cancel)
+  expect(document.activeElement).toBe(restore)
+  expect(f.edit).not.toHaveBeenCalled()
+})
+
+it('restores defaults after confirmation and retains accepted configuration when the write fails', async () => {
+  const f = referenceFixture()
+  act(() => { f.config.set({ ...f.config.getSnapshot(), document: { schemaVersion: 1, profiles: {
+    'web:macos': { 'settings.open': null },
+  } } }) })
+  const original = f.config.getSnapshot()
+  let settle!: (result: Awaited<ReturnType<typeof f.edit>>) => void
+  f.edit.mockReturnValueOnce(new Promise((resolve) => { settle = resolve }))
+  const restore = screen.getByRole('button', { name: en['reset-all'] })
+  restore.focus(); fireEvent.click(restore)
+  const confirmation = screen.getByRole('dialog', { name: en['reset-title'] })
+  const confirm = within(confirmation).getByRole('button', { name: en.reset })
+  fireEvent.click(confirm)
+  expect(f.edit).toHaveBeenCalledWith({ type: 'reset-all' }, original.revision)
+  expect(confirm.hasAttribute('disabled')).toBe(true)
+  expect(within(confirmation).getByRole('button', { name: en.cancel }).hasAttribute('disabled')).toBe(true)
+  fireEvent.keyDown(confirmation, { key: 'Escape' })
+  expect(screen.getByRole('dialog', { name: en['reset-title'] })).toBeTruthy()
+  await act(async () => { settle({ status: 'write-failed', snapshot: original }) })
+  expect(screen.getByRole('alert').textContent).toBe(en['reset-failed'])
+  expect(f.config.getSnapshot()).toBe(original)
+  expect(screen.getByText('1 customized')).toBeTruthy()
+  f.edit.mockImplementationOnce(async () => {
+    const snapshot = { ...original, document: { schemaVersion: 1 as const, profiles: {} } }
+    f.config.set(snapshot)
+    return { status: 'saved', snapshot }
+  })
+  await act(async () => { confirm.click() })
+  expect(screen.queryByRole('dialog', { name: en['reset-title'] })).toBeNull()
+  expect(screen.getByRole('alert').textContent).toBe(en['reset-saved'])
+  expect(screen.getByText('0 customized')).toBeTruthy()
+  expect(restore.hasAttribute('disabled')).toBe(true)
+  expect(document.activeElement).toBe(screen.getByRole('searchbox'))
+})
+
+it('requires a new confirmation when another window changes the configuration', async () => {
+  const f = referenceFixture()
+  act(() => { f.config.set({ ...f.config.getSnapshot(), document: { schemaVersion: 1, profiles: {
+    'web:macos': { 'settings.open': null },
+  } } }) })
+  const original = f.config.getSnapshot()
+  fireEvent.click(screen.getByRole('button', { name: en['reset-all'] }))
+  const updated = { ...original, revision: initialShortcutConfig().revision }
+  act(() => { f.config.set(updated) })
+  f.edit.mockResolvedValueOnce({ status: 'stale', snapshot: updated })
+  await act(async () => {
+    within(screen.getByRole('dialog', { name: en['reset-title'] })).getByRole('button', { name: en.reset }).click()
+  })
+  expect(f.edit).toHaveBeenCalledWith({ type: 'reset-all' }, original.revision)
+  expect(f.edit).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('dialog', { name: en['reset-title'] })).toBeNull()
+  expect(screen.getByRole('alert').textContent).toBe(en.stale)
+  fireEvent.click(screen.getByRole('button', { name: en['reset-all'] }))
+  await act(async () => {
+    within(screen.getByRole('dialog', { name: en['reset-title'] })).getByRole('button', { name: en.reset }).click()
+  })
+  expect(f.edit).toHaveBeenLastCalledWith({ type: 'reset-all' }, updated.revision)
+})
+
+it('keeps an active recorder focused when another window resets the profile', () => {
+  const f = referenceFixture()
+  act(() => { f.config.set({ ...f.config.getSnapshot(), document: { schemaVersion: 1, profiles: {
+    'web:macos': { 'settings.open': null },
+  } } }) })
+  fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
+  const recorder = screen.getByRole('button', { name: en.record })
+  recorder.focus()
+  act(() => { f.config.set({ ...initialShortcutConfig(), status: 'ready' }) })
+  expect(document.activeElement).toBe(recorder)
+  expect(screen.getByRole('group', { name: 'Open settings' })).toBeTruthy()
 })

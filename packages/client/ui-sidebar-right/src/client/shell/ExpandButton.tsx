@@ -37,7 +37,7 @@ export function ExpandButton({ sessionId, useStore, actions, t, useShortcuts }: 
   const expanded = useStore(state => state.bySession[sessionId]?.layout.expanded ?? false)
   if (expanded) return null
   return (
-    <Tooltip label={[t('chrome.expand'), ...(shortcut?.keys ?? [])].join(' ')} side="bottom" delayMs={500}>
+    <Tooltip label={shortcut?.keys.length ? t('shortcut.hint', { label: t('chrome.expand'), keys: shortcut.keys.join(' ') }) : t('chrome.expand')} side="bottom" delayMs={500}>
       <button
         type="button"
         className={css.button}

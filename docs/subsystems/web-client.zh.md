@@ -4,7 +4,7 @@
 
 Web Client 是由独立加载插件组装而成的浏览器侧 Cordis 应用。它有四个可复用底座：[Client Modules](client-modules.zh.md) 加载插件图，[API Gateway](../api-gateway.zh.md) 提供类型化 Host 通信，[Slots](slots.zh.md) 组合 React UI，[Conversation](conversation.zh.md) 把 Session 历史窗口变成各 target 自有的视图。本文串联这些系统，并规定 Client model 与功能包各自所在的位置。
 
-[快捷键](../../packages/client/shortcuts/README.zh.md)负责窗口内命令注册和物理键分发；[快捷键速查](../../packages/client/ui-shortcuts/README.zh.md)展示可用命令及局部输入操作。命令 owner 与鼠标控件共用既有操作。共用模态组件裁决顶层 Esc 并恢复焦点。
+[快捷键](../../packages/client/shortcuts/README.zh.md)负责窗口内命令注册和物理键分发；[快捷键速查](../../packages/client/ui-shortcuts/README.zh.md)展示可用命令及局部输入操作。命令 owner 声明各运行端／平台的默认键位，并与鼠标控件共用既有操作。共用模态组件裁决顶层 Esc 并恢复焦点。
 
 ## 分层与所有权
 

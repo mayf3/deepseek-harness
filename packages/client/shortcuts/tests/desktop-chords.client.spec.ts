@@ -132,10 +132,10 @@ it('canonicalizes unordered pairs, rejects invalid main keys, and omits unsuppor
 it.each(['macos', 'windows'] as const)('migrates %s preferences on write and rejects both directions of single/chord conflicts', async (platform) => {
   let raw = JSON.stringify({ schemaVersion: 1, profiles: { 'web:macos': { 'dormant.web': null } } })
   const original = raw
-  const store = new ShortcutPersistence({ read: () => raw, write: (next) => { raw = next }, backup() {} }, 'desktop', platform, false, () => {})
+  const store = new ShortcutPersistence({ read: () => raw, write: (next) => { raw = next } }, 'desktop', platform, false, () => {})
   onTestFinished(() => { store.dispose() })
   store.setDefinitions(definitions)
-  let state = await store.reload()
+  let state = await store.readCurrent()
   expect(raw).toBe(original)
   const saved = await store.edit({ type: 'set', id, binding: pair }, state.revision)
   expect(saved.status).toBe('saved')
@@ -158,11 +158,11 @@ it.each(['macos', 'windows'] as const)('rejects direct %s writes that overlap fi
   const fixedId = 'menu.dismiss' as ShortcutCommandId
   const catalog = parseShortcutDefinitions([...definitions,
     { id: fixedId, defaults: {}, fixed: [{ code: 'Escape', modifiers: [] }] }])
-  const storage = { read: () => null, write: vi.fn(), backup() {} }
+  const storage = { read: () => null, write: vi.fn() }
   const store = new ShortcutPersistence(storage, 'desktop', platform, false, () => {})
   onTestFinished(() => { store.dispose() })
   store.setDefinitions(catalog)
-  const state = await store.reload()
+  const state = await store.readCurrent()
   for (const binding of [{ code: 'Escape', modifiers: [] }, { code: 'KeyA', secondCode: 'Escape', modifiers: [] }] as const) {
     expect(await store.edit({ type: 'set', id, binding }, state.revision)).toMatchObject({ status: 'conflict', conflicts: [fixedId] })
     expect(effectiveShortcuts(catalog, { schemaVersion: 2, profiles: { [`desktop:${platform}`]: { [id]: binding } } },
@@ -172,12 +172,16 @@ it.each(['macos', 'windows'] as const)('rejects direct %s writes that overlap fi
   expect((await store.edit({ type: 'set', id: fixedId, binding: null }, state.revision)).status).toBe('not-ready')
   expect((await store.edit({ type: 'set', id, binding: { code: 'Escape', modifiers: ['control', 'alt'] } }, state.revision)).status).toBe('saved')
   store.setDefinitions(definitions)
-  expect((await store.edit({ type: 'set', id, binding: { code: 'Escape', modifiers: [] } }, (await store.reload()).revision)).status).toBe('saved')
+  expect((await store.edit({ type: 'set', id, binding: { code: 'Escape', modifiers: [] } }, (await store.readCurrent()).revision)).status).toBe('saved')
 })
 
 it('rejects malformed fixed reservations at catalog IPC ingress', () => {
   for (const fixed of [[], null, [null], [{ code: 'MetaLeft', modifiers: [] }], [{ code: 'Escape', modifiers: [], extra: true }]]) {
     expect(() => parseShortcutDefinitions([{ id, defaults: {}, fixed }])).toThrow()
   }
-  expect(() => parseShortcutDefinitions([{ id, defaults: { desktop: pair }, fixed: [{ code: 'Escape', modifiers: [] }] }])).toThrow()
+  expect(() => parseShortcutDefinitions([{ id, defaults: {
+    'desktop:macos': pair,
+    'desktop:windows': pair,
+    'desktop:linux': pair,
+  }, fixed: [{ code: 'Escape', modifiers: [] }] }])).toThrow()
 })

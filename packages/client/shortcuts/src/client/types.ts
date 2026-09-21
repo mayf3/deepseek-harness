@@ -1,6 +1,6 @@
 /** Command contributions and immutable catalog values. */
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { BindingIssue, NormalizedBinding, ShortcutConfigSnapshot, ShortcutEdit, ShortcutRevision, ShortcutSaveResult, ShortcutBinding, ShortcutCommandId, ShortcutPlatform, ShortcutRuntime } from '../protocol.ts'
+import type { BindingIssue, NormalizedBinding, ShortcutConfigSnapshot, ShortcutEdit, ShortcutRevision, ShortcutSaveResult, ShortcutBinding, ShortcutCommandId, ShortcutPlatform, ShortcutProfile, ShortcutRuntime } from '../protocol.ts'
 
 /** Local input owner resolved before an application command. */
 export type ShortcutRegion = 'page' | 'editable' | 'terminal'
@@ -21,7 +21,7 @@ export interface ShortcutCommand {
   readonly id: ShortcutCommandId
   readonly label: () => string
   readonly aliases: readonly string[]
-  readonly defaults: Readonly<Partial<Record<ShortcutRuntime, ShortcutBinding>>>
+  readonly defaults: Readonly<Partial<Record<ShortcutProfile, ShortcutBinding>>>
   readonly regions: readonly ShortcutRegion[]
   /** Modal identifiers in which this command may resolve; others block it. */
   readonly modals: readonly string[]
@@ -67,8 +67,8 @@ export interface ShortcutFixedCommand {
   readonly id: ShortcutCommandId
   readonly label: () => string
   readonly keys: readonly string[]
-  /** Physical combinations reserved by this action, including individual steps of a sequence. */
-  readonly bindings: readonly ShortcutBinding[]
+  /** One or more physical combinations reserved by this action, including individual steps of a sequence. */
+  readonly bindings: readonly [ShortcutBinding, ...ShortcutBinding[]]
   readonly group: 'input' | 'menus' | 'approval'
 }
 /** Localized fixed-action row; its key sequence is not an editable binding. */
@@ -119,16 +119,12 @@ export interface Shortcuts {
   }
   /**
    * Save a reviewed edit; failures preserve both accepted preferences and the caller's draft.
-   * @param edit - set, clear, reset, or explicit recovery operation.
+   * @param edit - set, clear, reset, or reset-all operation.
    * @param revision - accepted revision reviewed by the user.
    * @returns persistence outcome and current accepted configuration.
+   * @throws when publishing the accepted command catalog fails.
    */
   edit(edit: ShortcutEdit, revision: ShortcutRevision): Promise<ShortcutSaveResult>
-  /**
-   * Retry reading local preferences without discarding the last accepted configuration.
-   * @returns accepted configuration with visible read diagnostics.
-   */
-  reload(): Promise<ShortcutConfigSnapshot>
   /**
    * Suppress native menu accelerators while the recording layer owns keyboard input; reject if Desktop cannot acknowledge it.
    * @param active - whether the recording layer is mounted.

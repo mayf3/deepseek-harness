@@ -1,18 +1,19 @@
 /** Validated preference documents and deterministic conflict resolution, without browser dependencies. */
+import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { bindingKey, isWebBindingAllowed, normalizeBinding } from './binding.ts'
-import type { NormalizedBinding, ShortcutBinding, ShortcutCommandId, ShortcutPlatform, ShortcutRuntime } from './binding.ts'
+import type { NormalizedBinding, ShortcutBinding, ShortcutCommandId, ShortcutPlatform, ShortcutProfile, ShortcutRuntime } from './binding.ts'
 
 /** Overrides are platform-local; absent commands inherit defaults and null explicitly unbinds. */
 export interface ShortcutDocument {
   readonly schemaVersion: 1 | 2
-  readonly profiles: Readonly<Partial<Record<`${ShortcutRuntime}:${ShortcutPlatform}`, Readonly<Record<string, ShortcutBinding | null>>>>>
+  readonly profiles: Readonly<Partial<Record<ShortcutProfile, Readonly<Record<string, ShortcutBinding | null>>>>>
 }
 /** Serializable command definitions accepted from the trusted product frame. */
 export interface ShortcutDefinition {
   readonly id: ShortcutCommandId
-  readonly defaults: Readonly<Partial<Record<ShortcutRuntime, ShortcutBinding>>>
-  /** Fixed actions reserve these combinations instead of exposing an editable default. */
-  readonly fixed?: readonly ShortcutBinding[]
+  readonly defaults: Readonly<Partial<Record<ShortcutProfile, ShortcutBinding>>>
+  /** Fixed actions reserve one or more combinations instead of exposing an editable default. */
+  readonly fixed?: readonly [ShortcutBinding, ...ShortcutBinding[]]
 }
 /** Validation failures select localized copy in the UI. */
 export type BindingIssue = 'reserved' | 'unsupported-browser' | 'modifier-required' | 'unsupported-key'
@@ -26,7 +27,7 @@ export interface EffectiveShortcut {
 }
 /** One revision-checked preference edit, limited to the current runtime and platform. */
 export type ShortcutEdit = { type: 'set'; id: ShortcutCommandId; binding: ShortcutBinding | null }
-  | { type: 'reset'; id: ShortcutCommandId } | { type: 'reset-all' } | { type: 'recover' }
+  | { type: 'reset'; id: ShortcutCommandId } | { type: 'reset-all' }
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const commandPattern = /^[a-z][a-zA-Z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9-]*)+$/u
@@ -104,26 +105,15 @@ export function bindingIssue(binding: NormalizedBinding, runtime: ShortcutRuntim
 }
 
 /**
- * Resolve Web defaults on Windows and macOS with primary modifiers and a Control+Backquote terminal binding.
- * @param definition - command identity and defaults; macOS Web leaves page.refresh unbound.
+ * Select the command owner's explicit default for one device profile.
+ * @param definition - command identity and per-profile defaults.
  * @param runtime - receiving shell.
  * @param platform - receiving device.
- * @returns the default physical binding, or undefined for an unbound action.
+ * @returns the declared physical binding, or undefined for an unbound action.
  */
 export function resolveShortcutDefault(definition: ShortcutDefinition, runtime: ShortcutRuntime,
   platform: ShortcutPlatform): ShortcutBinding | undefined {
-  const { id, defaults } = definition
-  if (runtime === 'web' && platform === 'macos' && id === 'page.refresh') return undefined
-  if (runtime === 'web' && (platform === 'windows' || platform === 'macos') && defaults.desktop !== undefined) {
-    const code = defaults.desktop.code
-    const primary = platform === 'macos' ? 'meta' : 'control'
-    if (code === 'Backquote') return { code, modifiers: ['control'] }
-    if (defaults.desktop.modifiers.includes('alt')) {
-      return { code, modifiers: code === 'Enter' ? [primary, 'alt'] : [primary, 'shift'] }
-    }
-    return { code, modifiers: ['Slash', 'Comma', 'Backslash'].includes(code) ? [primary] : [primary, 'alt'] }
-  }
-  return defaults[runtime]
+  return definition.defaults[`${runtime}:${platform}`]
 }
 
 /**
@@ -176,15 +166,19 @@ export function overlappingBindings(left: NormalizedBinding, right: NormalizedBi
 export function editShortcutDocument(document: ShortcutDocument, edit: ShortcutEdit,
   runtime: ShortcutRuntime, platform: ShortcutPlatform): ShortcutDocument {
   const schemaVersion = runtime === 'desktop' && (platform === 'macos' || platform === 'windows') ? 2 : document.schemaVersion
-  if (edit.type === 'recover') return { schemaVersion, profiles: {} }
   const profile = `${runtime}:${platform}` as const
-  const overrides = { ...document.profiles[profile] }
-  if (edit.type === 'set') overrides[edit.id] = edit.binding
-  if (edit.type === 'reset') {
-    const { [edit.id]: _removed, ...remaining } = overrides
-    return { schemaVersion, profiles: { ...document.profiles, [profile]: remaining } }
+  let overrides = { ...document.profiles[profile] }
+  switch (edit.type) {
+    case 'set': overrides[edit.id] = edit.binding; break
+    case 'reset': {
+      const { [edit.id]: _removed, ...remaining } = overrides
+      overrides = remaining
+      break
+    }
+    case 'reset-all': overrides = {}; break
+    default: return assertNever(edit, 'shortcut edit')
   }
-  return { schemaVersion, profiles: { ...document.profiles, [profile]: edit.type === 'reset-all' ? {} : overrides } }
+  return { schemaVersion, profiles: { ...document.profiles, [profile]: overrides } }
 }
 
 /**
@@ -194,7 +188,7 @@ export function editShortcutDocument(document: ShortcutDocument, edit: ShortcutE
  */
 export function parseShortcutEdit(value: unknown): ShortcutEdit {
   if (!record(value)) throw new Error('Invalid shortcut edit')
-  if ((value.type === 'reset-all' || value.type === 'recover') && Object.keys(value).length === 1) return { type: value.type }
+  if (value.type === 'reset-all' && Object.keys(value).length === 1) return { type: value.type }
   if (typeof value.id !== 'string' || !commandPattern.test(value.id)) throw new Error('Invalid shortcut command')
   if (value.type === 'reset' && Object.keys(value).length === 2) return { type: 'reset', id: value.id as ShortcutCommandId }
   if (value.type === 'set' && Object.keys(value).length === 3) return { type: 'set', id: value.id as ShortcutCommandId, binding: parseBinding(value.binding) }
@@ -218,8 +212,8 @@ export function parseShortcutDefinitions(value: unknown): readonly ShortcutDefin
       if (!Array.isArray(entry.fixed) || entry.fixed.length === 0 || Object.keys(entry.defaults).length > 0) throw new Error('Invalid fixed shortcut definition')
       for (const binding of entry.fixed) if (parseBinding(binding) === null) throw new Error('Invalid fixed shortcut binding')
     }
-    for (const [runtime, candidate] of Object.entries(entry.defaults)) {
-      if (runtime !== 'desktop' && runtime !== 'web') throw new Error('Invalid shortcut runtime')
+    for (const [profile, candidate] of Object.entries(entry.defaults)) {
+      if (!/^(desktop|web):(macos|windows|linux)$/u.test(profile)) throw new Error('Invalid shortcut profile')
       const binding = parseBinding(candidate)
       if (binding === null) throw new Error('Invalid shortcut default')
     }

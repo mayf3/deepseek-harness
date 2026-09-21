@@ -32,7 +32,6 @@ function createProductApi(): DshDesktopProductApi {
     },
     shortcuts: {
       get: definitions => ipcRenderer.invoke(DESKTOP_IPC.shortcutsGet, definitions) as Promise<ShortcutConfigSnapshot>,
-      reload: () => ipcRenderer.invoke(DESKTOP_IPC.shortcutsReload) as Promise<ShortcutConfigSnapshot>,
       edit: (edit, revision) => ipcRenderer.invoke(DESKTOP_IPC.shortcutsEdit, edit, revision) as Promise<ShortcutSaveResult>,
       recording: active => ipcRenderer.invoke(DESKTOP_IPC.shortcutsRecording, active) as Promise<void>,
       subscribe(listener) {

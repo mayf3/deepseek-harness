@@ -58,7 +58,13 @@ export function apply(ctx: ClientContext): void {
     ? t('shortcut.busy') : target() === undefined ? t('shortcut.unavailable') : null
   ctx.effect(() => ctx.shortcuts.register({
     id: 'workspace.openLocal' as ShortcutCommandId, label: () => t('open.tooltip'), aliases: ['open workspace locally', 'open in app'],
-    defaults: { desktop: { code: 'KeyO', modifiers: ['primary', 'alt'] } },
+    defaults: {
+      'desktop:macos': { code: 'KeyO', modifiers: ['primary', 'alt'] },
+      'desktop:windows': { code: 'KeyO', modifiers: ['primary', 'alt'] },
+      'desktop:linux': { code: 'KeyO', modifiers: ['primary', 'alt'] },
+      'web:macos': { code: 'KeyO', modifiers: ['primary', 'shift'] },
+      'web:windows': { code: 'KeyO', modifiers: ['primary', 'shift'] },
+    },
     regions: ['page', 'editable'], modals: [],
     availability: {
       getSnapshot: unavailable,

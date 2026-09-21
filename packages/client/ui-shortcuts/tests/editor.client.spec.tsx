@@ -22,8 +22,10 @@ async function mount(options: {
   const platform = options.platform ?? 'macos'
   const runtime = options.runtime ?? 'desktop'
   const registry = new ShortcutRegistry(runtime, platform)
-  registry.register({ id, label: () => 'Toggle sidebar', aliases: [], defaults: { desktop: { code: 'KeyB', modifiers: ['primary'] } },
-    regions: ['page'], modals: [], resolve: () => ({ status: 'handled', run() {} }) })
+  registry.register({ id, label: () => 'Toggle sidebar', aliases: [], defaults: {
+    [`${runtime}:${platform}`]: { code: 'KeyB', modifiers: runtime === 'desktop' ? ['primary'] : ['primary', 'alt'] },
+  },
+  regions: ['page'], modals: [], resolve: () => ({ status: 'handled', run() {} }) })
   const describeBinding: Parameters<typeof ShortcutEditor>[0]['describeBinding'] = (binding) => {
     const normalized = binding === null ? null : normalizeBinding(binding, platform)
     return { binding: normalized, index: normalized === null ? null : bindingKey(normalized),
@@ -36,9 +38,9 @@ async function mount(options: {
   }
   for (const command of fixedCommands(makeTranslate(en), describeBinding)) registry.registerFixed(command)
   let raw: string | null = null
-  const storage = { read: vi.fn(async () => raw), write: vi.fn(async (next: string) => { raw = next }), backup: vi.fn(async () => {}) }
+  const storage = { read: vi.fn(async () => raw), write: vi.fn(async (next: string) => { raw = next }) }
   const persistence = new ShortcutPersistence(storage, runtime, platform, false, (value) => { registry.configure(value) })
-  persistence.setDefinitions(registry.definitions()); await persistence.reload()
+  persistence.setDefinitions(registry.definitions()); await persistence.readCurrent()
   options.setup?.(registry)
   const onClose = vi.fn(), onSaved = vi.fn(), onError = vi.fn(), recording = vi.fn(options.recording ?? (async () => {}))
   const view = render(<ShortcutEditor target={registry.catalog.getSnapshot()[0]!}
@@ -151,6 +153,21 @@ it('ignores modifier-only input, repeat, IME, dead keys, and AltGraph', async ()
   expect(f.storage.write).not.toHaveBeenCalled()
 })
 
+it.each(['macos', 'windows'] as const)('ignores the accent character after a %s dead key is released', async (platform) => {
+  const f = await mount({ platform })
+  const recorder = screen.getByRole('button', { name: en.record })
+  await act(async () => {
+    fireEvent.keyDown(recorder, { code: 'KeyE', key: 'Dead', altKey: true })
+    fireEvent.keyUp(recorder, { code: 'KeyE', altKey: true })
+    fireEvent.keyUp(recorder, { code: 'AltLeft', key: 'Alt' })
+    fireEvent.keyDown(recorder, { code: 'KeyA', key: 'á' })
+    fireEvent.keyUp(recorder, { code: 'KeyA' })
+  })
+  expect(f.storage.write).not.toHaveBeenCalled()
+  expect(f.onSaved).not.toHaveBeenCalled()
+  expect(f.onError).not.toHaveBeenCalled()
+})
+
 it('requires review after an external update and cancels Escape outside the recorder', async () => {
   const f = await mount()
   const recorder = screen.getByRole('button', { name: en.record }); recorder.focus()
@@ -235,7 +252,7 @@ it('blocks dismissal during a write and ignores completion after unmount', async
   const reply = new Promise<ShortcutSaveResult>((resolve) => { settle = resolve })
   const f = await mount({ result: () => reply })
   press('KeyJ')
-  expect(screen.getByRole('button', { name: en.record }).hasAttribute('disabled')).toBe(true)
+  expect(screen.getByRole('button', { name: en.record }).getAttribute('aria-disabled')).toBe('true')
   fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
   expect(f.onClose).not.toHaveBeenCalled()
   f.view.unmount()
@@ -322,12 +339,13 @@ it.each(['macos', 'windows'] as const)('rejects %s fixed-action keys and their o
     { code: 'Enter', key: 'Enter', metaKey: true }, { code: 'ArrowUp', key: 'ArrowUp' },
     { code: 'ArrowDown', key: 'ArrowDown' }, { code: 'Slash', key: '/' }, { code: 'Digit2', key: '@', shiftKey: true },
   ]) {
-    fireEvent.click(recorder); recorder.focus()
+    const errors = f.onError.mock.calls.length
     fireEvent.keyDown(recorder, input); fireEvent.keyUp(recorder, input)
+    expect(f.onError).toHaveBeenCalledTimes(errors + 1)
+    expect(document.activeElement).toBe(recorder)
     expect(recorder.getAttribute('aria-invalid')).toBe('true')
     expect(f.onError).toHaveBeenLastCalledWith(expect.stringContaining('Already used by'))
   }
-  fireEvent.click(recorder)
   fireEvent.keyDown(recorder, { code: 'KeyA', key: 'a' })
   fireEvent.keyDown(recorder, { code: 'Escape', key: 'Escape' })
   fireEvent.keyUp(recorder, { code: 'Escape' })
@@ -351,16 +369,99 @@ it.each(['macos', 'windows'] as const)('records only the first released key for 
   expect(f.storage.write).toHaveBeenCalledOnce()
 })
 
-it('rejects three held ordinary keys until the recorder is restarted', async () => {
-  const f = await mount()
+it.each(['macos', 'windows'] as const)('accepts a new %s combination after all keys of a rejected three-key draft are released', async (platform) => {
+  const f = await mount({ platform })
   const recorder = screen.getByRole('button', { name: en.record }); recorder.focus()
   for (const code of ['KeyA', 'KeyB', 'KeyC']) fireEvent.keyDown(recorder, { code, key: code.slice(3) })
   for (const code of ['KeyA', 'KeyB', 'KeyC']) fireEvent.keyUp(recorder, { code })
   expect(screen.getByText(en['too-many-keys'])).toBeTruthy()
   expect(f.storage.write).not.toHaveBeenCalled()
-  fireEvent.click(recorder)
-  press('KeyJ', { metaKey: false })
+  expect(document.activeElement).toBe(recorder)
+  fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j' })
+  fireEvent.keyUp(recorder, { code: 'KeyJ' })
   await waitFor(() => { expect(f.onSaved).toHaveBeenCalledOnce() })
+  expect(f.registry.catalog.getSnapshot()[0]?.binding).toEqual({ code: 'KeyJ', modifiers: [] })
+})
+
+it.each(['macos', 'windows'] as const)('retries a %s command conflict while continuing to hold the modifier', async (platform) => {
+  const f = await mount({ platform, setup: (registry) => {
+    registry.register({ id: 'other.toggle' as ShortcutCommandId, label: () => 'Other action', aliases: [],
+      defaults: { [`desktop:${platform}`]: { code: 'KeyK', modifiers: ['primary'] } },
+      regions: ['page'], modals: [], resolve: () => ({ status: 'pass' }) })
+  } })
+  const recorder = screen.getByRole('button', { name: en.record })
+  const modifiers = platform === 'macos' ? { metaKey: true } : { ctrlKey: true }
+  fireEvent.keyDown(recorder, { code: 'KeyK', key: 'k', ...modifiers })
+  fireEvent.keyUp(recorder, { code: 'KeyK', ...modifiers })
+  expect(f.onError).toHaveBeenCalledWith('Already used by “Other action”')
+  expect(f.storage.write).not.toHaveBeenCalled()
+  expect(document.activeElement).toBe(recorder)
+  fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j', ...modifiers })
+  expect(recorder.getAttribute('aria-invalid')).toBe('false')
+  fireEvent.keyUp(recorder, { code: 'KeyJ', ...modifiers })
+  await waitFor(() => { expect(f.onSaved).toHaveBeenCalledOnce() })
+  expect(f.registry.catalog.getSnapshot()[0]?.binding).toEqual({ code: 'KeyJ', modifiers: [platform === 'macos' ? 'meta' : 'control'] })
+})
+
+it.each(['macos', 'windows'] as const)('waits for the remaining %s chord keys before accepting a retry', async (platform) => {
+  const f = await mount({ platform })
+  const recorder = screen.getByRole('button', { name: en.record })
+  fireEvent.keyDown(recorder, { code: 'KeyA', key: 'a' })
+  fireEvent.keyDown(recorder, { code: 'Escape', key: 'Escape' })
+  fireEvent.keyUp(recorder, { code: 'Escape' })
+  expect(f.onError).toHaveBeenCalledOnce()
+  fireEvent.keyDown(recorder, { code: 'KeyA', key: 'a', repeat: true })
+  fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j' })
+  fireEvent.keyUp(recorder, { code: 'KeyA' })
+  fireEvent.keyDown(recorder, { code: 'KeyK', key: 'k' })
+  fireEvent.keyUp(recorder, { code: 'KeyJ' })
+  fireEvent.keyUp(recorder, { code: 'KeyK' })
+  expect(f.onError).toHaveBeenCalledOnce()
+  expect(f.storage.write).not.toHaveBeenCalled()
+  fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j' })
+  fireEvent.keyUp(recorder, { code: 'KeyJ' })
+  await waitFor(() => { expect(f.onSaved).toHaveBeenCalledOnce() })
+  expect(f.registry.catalog.getSnapshot()[0]?.binding).toEqual({ code: 'KeyJ', modifiers: [] })
+})
+
+it('retries unsupported keys and macOS conflicts whose character keyup is omitted', async () => {
+  const f = await mount()
+  const recorder = screen.getByRole('button', { name: en.record })
+  fireEvent.keyDown(recorder, { code: 'Unidentified', key: 'Unidentified', metaKey: true })
+  expect(f.onError).toHaveBeenLastCalledWith(en['unsupported-key'])
+  fireEvent.keyUp(recorder, { code: 'MetaLeft', key: 'Meta' })
+  fireEvent.keyDown(recorder, { code: 'Enter', key: 'Enter', metaKey: true })
+  fireEvent.keyUp(recorder, { code: 'MetaLeft', key: 'Meta' })
+  expect(f.onError).toHaveBeenCalledTimes(2)
+  expect(f.onError).toHaveBeenLastCalledWith(expect.stringContaining('Already used by'))
+  fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j', metaKey: true })
+  fireEvent.keyUp(recorder, { code: 'MetaLeft', key: 'Meta' })
+  await waitFor(() => { expect(f.onSaved).toHaveBeenCalledOnce() })
+  expect(f.registry.catalog.getSnapshot()[0]?.binding).toEqual({ code: 'KeyJ', modifiers: ['meta'] })
+})
+
+it('keeps recorder focus during a write and accepts another combination after failure', async () => {
+  const f = await mount()
+  let reject!: (error: Error) => void
+  const write = new Promise<void>((_resolve, rejectWrite) => { reject = rejectWrite })
+  f.storage.write.mockImplementationOnce(() => write)
+  const recorder = screen.getByRole('button', { name: en.record })
+  fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j', metaKey: true })
+  fireEvent.keyUp(recorder, { code: 'KeyJ' })
+  expect(recorder.getAttribute('aria-disabled')).toBe('true')
+  expect(recorder.hasAttribute('disabled')).toBe(false)
+  fireEvent.click(recorder)
+  fireEvent.keyDown(recorder, { code: 'KeyK', key: 'k', metaKey: true })
+  fireEvent.keyUp(recorder, { code: 'KeyK' })
+  await waitFor(() => { expect(f.storage.write).toHaveBeenCalledOnce() })
+  expect(recorder.textContent).toContain('J')
+  await act(async () => { reject(new Error('disk full')); await write.catch(() => {}) })
+  await screen.findByText(en['write-failed'])
+  expect(document.activeElement).toBe(recorder)
+  fireEvent.keyDown(recorder, { code: 'KeyK', key: 'k', metaKey: true })
+  fireEvent.keyUp(recorder, { code: 'KeyK' })
+  await waitFor(() => { expect(f.onSaved).toHaveBeenCalledOnce() })
+  expect(f.registry.catalog.getSnapshot()[0]?.binding).toEqual({ code: 'KeyK', modifiers: ['meta'] })
 })
 
 it.each(['focus', 'composition'] as const)('abandons an unfinished Desktop recording on %s changes', async (change) => {

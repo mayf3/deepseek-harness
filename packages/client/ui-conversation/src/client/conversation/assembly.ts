@@ -30,8 +30,6 @@ export interface ConversationBinding {
   readonly snapshot: ObservableSnapshot<ConversationSnapshot>
   /** Loaded Turn/Step timeline; lifecycle events publish synchronously even without an active View. */
   readonly timeline: ObservableSnapshot<ConversationTimelineSnapshot>
-  /** First loaded event sequence, published synchronously after history replacement or paging. */
-  readonly historyStart: ObservableSnapshot<number | undefined>
   /**
    * Add one selected target to the Session's monotonic active set.
    * @param target - registered or subsequently registered Conversation target.
@@ -52,7 +50,6 @@ export interface ConversationBinding {
 class BoundConversation implements ConversationBinding {
   readonly snapshot: SnapshotStore<ConversationSnapshot>
   readonly timeline: SnapshotStore<ConversationTimelineSnapshot>
-  readonly historyStart = createSnapshotStore<number | undefined>(undefined)
   private readonly viewStore: ConversationViewSnapshotStore
   private readonly targetSources = new Map<string, ObservableSnapshot<unknown>>()
   private revision = -1
@@ -106,7 +103,6 @@ class BoundConversation implements ConversationBinding {
   private replace(window: SessionEventWindow): void {
     this.revision = window.revision
     this.publish(this.assembler.replaceWindow(window.entries, window.hasMore))
-    this.historyStart.set(window.entries[0]?.event.seq)
   }
 
   private accept(window: SessionEventWindow): void {
@@ -119,7 +115,6 @@ class BoundConversation implements ConversationBinding {
     switch (window.change.kind) {
       case 'prepend':
         this.publish(this.assembler.prepend(window.change.entries, window.hasMore))
-        this.historyStart.set(window.entries[0]?.event.seq)
         return
       case 'append': {
         let publication: ConversationPublication = 'none'

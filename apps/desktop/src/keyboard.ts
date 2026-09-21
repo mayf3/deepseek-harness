@@ -10,13 +10,19 @@ import { DESKTOP_IPC, assertDesktopSender } from './ipc.ts'
  * @param getWindow - current product window.
  * @param userData - Electron-resolved device preference directory.
  * @param platform - local device platform.
- * @param updateMenu - rebuild the application menu from current accepted bindings.
- * @returns window attachment and application teardown operations.
+ * @param updateMenu - rebuild the application menu when the close accelerator or availability changes.
+ * @returns menu construction, editor key delivery, window attachment, and teardown operations.
  */
 export function installDesktopShortcuts(
   getWindow: () => BrowserWindow | undefined, userData: string, platform: ShortcutPlatform, updateMenu: () => void,
 ): {
   fileMenu(labels: { fileMenu: string; closePage: string }): MenuItemConstructorOptions
+  /**
+   * Send a native Edit action to the editor without matching user shortcuts.
+   * @param keyCode - edit key.
+   * @param modifiers - edit modifiers.
+   */
+  sendEditingKey(keyCode: string, modifiers: Array<'control'>): void
   attach(window: BrowserWindow): void
   dispose(): void
 } {
@@ -24,11 +30,14 @@ export function installDesktopShortcuts(
   let recording = false
   let revision: ShortcutRevision | undefined
   let closeBinding: NormalizedBinding | null = null
+  let editingInput: BrowserWindow['webContents'] | undefined
   const scopedDesktop = platform === 'windows' || platform === 'macos'
   const disposers = new Set<() => void>()
   const embeddedCommands = new Set(['page.close', 'page.refresh', 'pane.split', 'pane.fullscreen.toggle',
     'sidebar.right.toggle', 'sidebar.left.toggle', 'workspace.files', 'terminal.new', 'shortcuts.open', 'settings.open'])
   let embeddedKeys = new Set<string>()
+  const closeAccelerator = (): string | undefined => presentBinding(closeBinding, platform).aria
+    ?.replace('Meta+', 'Command+').replace(/Arrow(Up|Down|Left|Right)$/u, '$1')
   const sendMenuClose = (): void => {
     const window = getWindow()
     if (window === undefined || window.isDestroyed() || !window.isFocused() || !window.isEnabled()
@@ -37,6 +46,8 @@ export function installDesktopShortcuts(
   }
   let keys = new Set<string>()
   const publish = (snapshot: ShortcutConfigSnapshot): void => {
+    const wasEnabled = revision !== undefined
+    const previousAccelerator = closeAccelerator()
     revision = definitions.length === 0 || snapshot.status === 'loading' ? undefined : snapshot.revision
     const rows = snapshot.status === 'loading' ? [] : effectiveShortcuts(definitions, snapshot.document, 'desktop', platform)
     keys = new Set(rows.flatMap(row => row.binding !== null && row.issue === null && row.conflicts.length === 0
@@ -46,7 +57,7 @@ export function installDesktopShortcuts(
       ? [bindingKey(row.binding)] : []))
     const close = rows.find(row => row.id === 'page.close')
     closeBinding = close?.issue === null && close.conflicts.length === 0 ? close.binding : null
-    updateMenu()
+    if (wasEnabled !== (revision !== undefined) || previousAccelerator !== closeAccelerator()) updateMenu()
     const window = getWindow()
     if (window !== undefined && !window.isDestroyed() && window.webContents.mainFrame.url.startsWith('dsh-app://app/')) {
       window.webContents.send(DESKTOP_IPC.shortcutsChanged, snapshot)
@@ -64,9 +75,8 @@ export function installDesktopShortcuts(
     assertSender(event)
     definitions = parseShortcutDefinitions(input)
     persistence.setDefinitions(definitions)
-    return persistence.reload()
+    return persistence.readCurrent()
   })
-  ipcMain.handle(DESKTOP_IPC.shortcutsReload, async (event) => { assertSender(event); return persistence.reload() })
   ipcMain.handle(DESKTOP_IPC.shortcutsEdit, async (event, input: unknown, revision: unknown) => {
     assertSender(event)
     if (typeof revision !== 'string') throw new Error('desktop shortcuts: invalid revision')
@@ -84,8 +94,24 @@ export function installDesktopShortcuts(
     window.close()
   })
   return {
+    sendEditingKey(keyCode, modifiers) {
+      const window = getWindow()
+      if (window === undefined || window.isDestroyed()) return
+      const contents = window.webContents
+      contents.focus()
+      const previous = editingInput
+      editingInput = contents
+      try {
+        // Electron emits before-input-event synchronously for these editor-owned keys.
+        contents.sendInputEvent({ type: 'keyDown', keyCode, modifiers })
+        contents.sendInputEvent({ type: 'keyUp', keyCode, modifiers })
+      } finally {
+        editingInput = previous
+        if (!contents.isDestroyed()) contents.setIgnoreMenuShortcuts(recording)
+      }
+    },
     fileMenu: (labels) => {
-      const accelerator = presentBinding(closeBinding, platform).aria?.replace('Meta+', 'Command+')
+      const accelerator = closeAccelerator()
       return { label: labels.fileMenu, submenu: [{
         id: 'dsh-page-close', label: labels.closePage, enabled: revision !== undefined,
         ...accelerator === undefined ? {} : { accelerator },
@@ -101,9 +127,8 @@ export function installDesktopShortcuts(
       let inputRevision: ShortcutRevision | undefined
       const clear = (): void => {
         definitions = []; keys.clear(); embeddedKeys.clear(); held.clear(); consumed.clear()
-        inputFrame = null; recording = false; deadKey = false; revision = undefined; closeBinding = null
+        inputFrame = null; recording = false; deadKey = false
         persistence.setDefinitions(null)
-        updateMenu()
         if (!contents.isDestroyed()) contents.setIgnoreMenuShortcuts(false)
       }
       const navigation = (event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>): void => {
@@ -113,6 +138,12 @@ export function installDesktopShortcuts(
         deadKey = false; held.clear(); consumed.clear(); inputFrame = null; contents.setIgnoreMenuShortcuts(false)
       }
       const beforeInput = (event: Electron.Event, input: Input): void => {
+        if (editingInput === contents) {
+          held.clear()
+          consumed.clear()
+          contents.setIgnoreMenuShortcuts(true)
+          return
+        }
         if (!window.isFocused() || !window.isEnabled() || revision === undefined) {
           contents.setIgnoreMenuShortcuts(false)
           held.clear()
@@ -192,7 +223,7 @@ export function installDesktopShortcuts(
     dispose() {
       for (const dispose of disposers) dispose()
       persistence.dispose()
-      for (const channel of [DESKTOP_IPC.shortcutsGet, DESKTOP_IPC.shortcutsReload,
+      for (const channel of [DESKTOP_IPC.shortcutsGet,
         DESKTOP_IPC.shortcutsEdit, DESKTOP_IPC.shortcutsRecording, DESKTOP_IPC.shortcutsCloseWindow]) {
         ipcMain.removeHandler(channel)
       }

@@ -3,9 +3,10 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionListState, SessionSummary, SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { ConversationTimelineSnapshot, TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionForkError } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ShortcutCommand, ShortcutGesture } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
 import { createWorkspaceShortcutControls, installWorkspaceShortcuts } from '../src/client/shortcuts.ts'
@@ -22,18 +23,6 @@ const row = (id: string, main = false): SessionSummary => ({
   id: sid(id), title: id, displayTitle: id, cwd: `/workspace/${id}`, blank: false,
   running: false, updatedAt: 0, retainedBy: main ? { mainView: 1 } : {},
 })
-function turns(ended: number | undefined, open = false): ConversationTimelineSnapshot {
-  const rows: [number, TurnLocation][] = ended === undefined ? [] : [[1, {
-    turn: 1, status: 'closed', start: undefined,
-    end: { type: 'turn/end', seq: SessionSeq(ended), time: 0, data: { turn: 1, reason: { kind: 'completed' } } },
-    steps: [], data: { get: () => undefined, source: () => createSnapshotStore(undefined) },
-  }]]
-  if (open) rows.push([2, { turn: 2, status: 'open', start: {
-    type: 'turn/start', seq: SessionSeq(10), time: 0, data: { turn: 2 },
-  }, end: undefined, steps: [], data: { get: () => undefined, source: () => createSnapshotStore(undefined) } }])
-  return { turnOrder: rows.map(([turn]) => turn), turns: new Map(rows) }
-}
-
 async function bench(runtime: 'web' | 'desktop' = 'desktop') {
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose() })
@@ -47,15 +36,12 @@ async function bench(runtime: 'web' | 'desktop' = 'desktop') {
     ids: [sid('a'), sid('b')], byId: { [sid('a')]: row('a', true), [sid('b')]: row('b') },
     phase: 'ready', projectionsBySession: {},
   })
-  const timeline = createSnapshotStore(turns(undefined))
   const history = createSnapshotStore({ openState: 'open', hasMore: false, loadingOlder: false } as SessionSnapshot)
   const loadOlder = vi.fn(async () => {})
   const bindings = new Map(['a', 'b'].map(id => [sid(id), {
     sessionId: sid(id), session: { ...history, loadOlder },
   }]))
   ctx.provide('sessions', { list, binding: (id: SessionId) => bindings.get(id) })
-  const historyStart = createSnapshotStore(SessionSeq(100))
-  ctx.provide('uiConversation', { binding: () => ({ timeline, historyStart }) })
   const directory = createSnapshotStore(true)
   ctx.provide('slots', { entries: () => directory.getSnapshot() ? [{}] : [], subscribe: (_name: string, listener: () => void) => directory.subscribe(listener) })
   const locale = new LocaleRuntime(ctx)
@@ -69,7 +55,7 @@ async function bench(runtime: 'web' | 'desktop' = 'desktop') {
   const select = (id: string) => { list.set({ ...list.getSnapshot(), byId: {
     [sid('a')]: row('a', id === 'a'), [sid('b')]: row('b', id === 'b'),
   } }) }
-  return { ctx, fiber, registry, commands, navigation, controls, list, timeline, directory, select, history, loadOlder, historyStart }
+  return { ctx, fiber, registry, commands, navigation, controls, list, directory, select, history, loadOlder }
 }
 
 afterEach(() => { vi.restoreAllMocks() })
@@ -124,43 +110,48 @@ describe('workspace shortcut ownership', () => {
     expect(b.navigation.archiveSession).toHaveBeenCalledWith('a')
   })
 
-  it('loads older pages until a completed turn is found without treating the tail as complete history', async () => {
-    const b = await bench()
-    b.timeline.set(turns(undefined, true))
-    b.loadOlder.mockImplementationOnce(async () => { b.historyStart.set(SessionSeq(50)) })
-      .mockImplementationOnce(async () => { b.timeline.set(turns(5, true)) })
-    b.history.set({ ...b.history.getSnapshot(), hasMore: true })
-    await vi.waitFor(() => { expect(b.loadOlder).toHaveBeenCalledTimes(2) })
-    expect(b.registry.dispatch(key('KeyF', { alt: true }), context, vi.fn()).status).toBe('handled')
-    expect(b.navigation.forkSession).toHaveBeenCalledWith('a', 5)
-  })
-
-  it('stops history paging after navigation or a page that made no progress', async () => {
+  it('leaves loaded history unchanged when commands mount, Sessions change, or Fork runs', async () => {
     const b = await bench()
     b.history.set({ ...b.history.getSnapshot(), hasMore: true })
-    await vi.waitFor(() => { expect(b.loadOlder).toHaveBeenCalledOnce() })
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(b.loadOlder).toHaveBeenCalledOnce()
-    const c = await bench()
-    let finish!: () => void
-    c.loadOlder.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
-    c.history.set({ ...c.history.getSnapshot(), hasMore: true })
-    c.select('b')
-    finish()
-    await vi.waitFor(() => { expect(c.loadOlder).toHaveBeenCalledTimes(2) })
-
-  })
-
-  it('refuses a first open turn and captures the last ended turn before another turn ends', async () => {
-    const b = await bench()
-    b.timeline.set(turns(undefined, true))
-    expect(b.registry.dispatch(key('KeyF', { alt: true }), context, vi.fn()).status).toBe('blocked')
-    b.timeline.set(turns(5, true))
-    const resolution = b.commands.get('session.fork')!.resolve(context)
-    b.timeline.set(turns(20))
     b.select('b')
-    if (resolution.status !== 'handled') throw new Error('completed turn was unavailable')
+    b.select('a')
+    expect(b.registry.dispatch(key('KeyF', { alt: true }), context, vi.fn()).status).toBe('handled')
+    await Promise.resolve()
+    expect(b.loadOlder).not.toHaveBeenCalled()
+    expect(b.navigation.forkSession).toHaveBeenCalledWith('a')
+  })
+
+  it('captures the source Session and lets the Host choose its last completed turn', async () => {
+    const b = await bench()
+    const resolution = b.commands.get('session.fork')!.resolve(context)
+    b.select('b')
+    if (resolution.status !== 'handled') throw new Error('nonblank Session was unavailable')
     resolution.run()
-    expect(b.navigation.forkSession).toHaveBeenCalledWith('a', 5)
+    expect(b.navigation.forkSession).toHaveBeenCalledWith('a')
+  })
+
+  it('blocks absent or blank Sessions and permits retry while running after the Host refuses a fork', async () => {
+    const b = await bench()
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    b.navigation.forkSession.mockRejectedValueOnce(new SessionForkError(
+      new RemoteError('session/fork-unavailable', 'no completed turn', { sessionId: sid('a') }), sid('a'),
+    ))
+    const invoke = () => b.registry.dispatch(key('KeyF', { alt: true }), context, vi.fn())
+    expect(invoke().status).toBe('handled')
+    await vi.waitFor(() => { expect(b.controls.state.getSnapshot().forkError).toMatchObject({ reason: 'unavailable' }) })
+    expect(warning).not.toHaveBeenCalled()
+    b.controls.dismissForkError()
+    b.navigation.forkSession.mockRejectedValueOnce(new Error('connection closed'))
+    expect(invoke().status).toBe('handled')
+    await vi.waitFor(() => { expect(b.controls.state.getSnapshot().forkError).toMatchObject({ reason: 'failed' }) })
+    expect(warning).toHaveBeenCalledOnce()
+    b.list.set({ ...b.list.getSnapshot(), byId: { [sid('a')]: { ...row('a', true), running: true } } })
+    expect(invoke().status).toBe('handled')
+    expect(b.navigation.forkSession).toHaveBeenCalledTimes(3)
+    b.list.set({ ...b.list.getSnapshot(), byId: { [sid('a')]: { ...row('a', true), blank: true } } })
+    expect(invoke()).toMatchObject({ status: 'blocked', reason: en['shortcut.noCompletedTurn'] })
+    b.list.set({ ...b.list.getSnapshot(), byId: {} })
+    expect(invoke()).toMatchObject({ status: 'blocked', reason: en['shortcut.noSession'] })
+    expect(b.loadOlder).not.toHaveBeenCalled()
   })
 })

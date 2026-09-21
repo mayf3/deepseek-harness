@@ -31,6 +31,7 @@ function harness() {
   const bind = (sessionId = SESSION) => controller.bind({ sessionId, actions: store.actions,
     surfaces: store.getSnapshot().bySession,
     closeWithFocus: (_paneId, close) => { close() },
+    openWithFocus: (open) => { open() },
     canSplitPane: () => room.allowed, autoFullscreen: room.autoFullscreen })
   releases.push(bind())
   const layout = () => store.getSnapshot().bySession[SESSION]!.layout
@@ -231,6 +232,100 @@ describe('sidebar focus targets', () => {
     expect(changed).toHaveBeenCalledTimes(before)
     body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
     expect(changed).toHaveBeenCalledTimes(before)
+  })
+
+  it.each([
+    { name: 'outside editor range', inside: false, editable: true, textAnchor: true, collapsed: false },
+    { name: 'outside editor caret', inside: false, editable: true, textAnchor: true, collapsed: true },
+    { name: 'outside editor element', inside: false, editable: true, textAnchor: false, collapsed: false },
+    { name: 'pane editor text', inside: true, editable: true, textAnchor: true, collapsed: false },
+    { name: 'outside page text', inside: false, editable: false, textAnchor: true, collapsed: false },
+  ])('preserves text selection while focusing a pane: $name', ({ inside, editable, textAnchor, collapsed }) => {
+    const h = harness()
+    const pane = h.paneElement()
+    const selected = document.createElement('div')
+    selected.setAttribute('contenteditable', String(editable))
+    selected.textContent = 'preserved text'
+    ;(inside ? pane : document.body).append(selected)
+    releases.push(observeSidebarFocus(document, vi.fn()))
+    pane.focus()
+    const selection = document.getSelection()!
+    // Chromium retains the departing editor selection on focus; jsdom moves it to the pane.
+    const anchor = textAnchor ? selected.firstChild! : selected
+    selection.setBaseAndExtent(anchor, 0, anchor, textAnchor ? 'preserved text'.length : selected.childNodes.length)
+    if (collapsed) selection.collapseToEnd()
+    pane.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    expect(document.activeElement).toBe(pane)
+    expect(selection.rangeCount).toBe(1)
+    expect(selection.toString()).toBe(collapsed ? '' : 'preserved text')
+    expect(selected.textContent).toBe('preserved text')
+  })
+
+  it('follows the active tab when a focused pane is replaced and its tabs move to different panes', async () => {
+    const h = harness()
+    const pane = h.paneElement()
+    const owner = pane.parentElement!
+    owner.setAttribute('data-sidebar-right-open', '')
+    const tab = (id: string, selected: boolean) => {
+      const button = document.createElement('button')
+      button.setAttribute('role', 'tab')
+      button.setAttribute('aria-selected', String(selected))
+      const marker = document.createElement('span')
+      marker.dataset.sidebarRightOccurrence = id
+      button.append(marker)
+      return button
+    }
+    const first = tab('first', false)
+    const selected = tab('selected', true)
+    pane.append(first, selected)
+    releases.push(observeSidebarFocus(document, vi.fn()))
+    pane.focus()
+    const firstPane = pane.cloneNode() as HTMLElement
+    firstPane.dataset.dockkitPane = 'first-destination'
+    firstPane.append(first)
+    const selectedPane = pane.cloneNode() as HTMLElement
+    selectedPane.dataset.dockkitPane = 'selected-destination'
+    selectedPane.append(selected)
+    pane.replaceWith(firstPane, selectedPane)
+    await Promise.resolve()
+    expect(document.activeElement).toBe(selectedPane)
+  })
+
+  it.each(['input', 'iframe'] as const)('retains the owning pane after its focused %s is remounted', async (kind) => {
+    const h = harness()
+    const pane = h.paneElement()
+    pane.parentElement!.setAttribute('data-sidebar-right-open', '')
+    const input = document.createElement(kind)
+    pane.append(input)
+    const release = observeSidebarFocus(document, vi.fn())
+    releases.push(release)
+    input.focus()
+    input.replaceWith(document.createElement(kind))
+    await Promise.resolve()
+    expect(document.activeElement).toBe(pane)
+  })
+
+  it.each(['outside-pointer', 'other-focus', 'blur', 'hidden', 'session-change', 'dispose'] as const)('does not reclaim focus after %s', async (reason) => {
+    const h = harness()
+    const pane = h.paneElement()
+    const owner = pane.parentElement!
+    owner.setAttribute('data-sidebar-right-open', '')
+    const input = document.createElement('input')
+    pane.append(input)
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    const release = observeSidebarFocus(document, vi.fn())
+    releases.push(release)
+    input.focus()
+    if (reason === 'outside-pointer') outside.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    else if (reason === 'other-focus') outside.focus()
+    else if (reason === 'blur') input.blur()
+    else if (reason === 'hidden') owner.removeAttribute('data-sidebar-right-open')
+    else if (reason === 'session-change') owner.dataset.sidebarRightSession = 'different-session'
+    else release()
+    input.remove()
+    await Promise.resolve()
+    expect(document.activeElement).toBe(reason === 'other-focus' ? outside : document.body)
   })
 })
 

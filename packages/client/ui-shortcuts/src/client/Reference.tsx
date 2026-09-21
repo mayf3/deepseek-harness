@@ -1,6 +1,6 @@
 /** Searchable editable shortcut reference and its General Settings row. */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { IconCloseOutlineRegular, Modal, ShortcutKeys, Tooltip, Toast, rankByName } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseOutlineRegular, IconRefreshOutlineRegular, Modal, ShortcutKeys, Tooltip, Toast, isBehindModal, rankByName } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot, PropsStore } from '@deepseek-ai/dsh-client-store'
 import type { ShortcutCatalogEntry, ShortcutPlatform, Shortcuts } from '@deepseek-ai/dsh-client-shortcuts/client'
@@ -56,6 +56,7 @@ export function ShortcutReference({
   const config = useConfig(value => value)
   const contributedFixed = useFixedCatalog(value => value)
   const [target, setTarget] = useState<ShortcutCatalogEntry | null>(null)
+  const [resetRevision, setResetRevision] = useState<typeof config.revision | null>(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<{ text: string; error: boolean; seq: number } | null>(null)
   const mounted = useRef(true)
@@ -77,9 +78,11 @@ export function ShortcutReference({
   }
   const closeReference = (): void => {
     if (busy) return
-    if (target !== null) closeEditor()
+    if (resetRevision !== null) setResetRevision(null)
+    else if (target !== null) closeEditor()
     else actions.close()
   }
+  useEffect(() => { if (!open) setResetRevision(null) }, [open])
   const persist: typeof edit = async (...args) => {
     setBusy(true)
     const result = await edit(...args)
@@ -91,11 +94,19 @@ export function ShortcutReference({
     if (!mounted.current) return
     notify(result.status === 'saved' ? t('saved') : shortcutFailure(result, catalog, t), result.status !== 'saved')
   }
+  const resetAll = async (): Promise<void> => {
+    if (resetRevision === null) return
+    const result = await persist({ type: 'reset-all' }, resetRevision)
+    if (!mounted.current) return
+    if (result.status === 'saved' || result.status === 'stale') setResetRevision(null)
+    notify(result.status === 'saved' ? t('reset-saved')
+      : result.status === 'write-failed' ? t('reset-failed') : shortcutFailure(result, catalog, t), result.status !== 'saved')
+  }
   const editorProps = { useCatalog, useConfig, useFixedCatalog, platform, runtime, edit: persist, recording, describeBinding, t,
     onClose: closeEditor,
     onSaved: () => { notify(t('saved')); closeEditor() },
     onError: (message: string) => { notify(message, true) } }
-  useLayoutEffect(() => { if (open) search.current?.focus() }, [open, focusRequest])
+  useLayoutEffect(() => { if (open && !isBehindModal(search.current)) search.current?.focus() }, [open, focusRequest])
   const fixed = fixedCommands(t, describeBinding).map(({ id, label, keys, group }) => ({ id, label: label(), keys, group }))
   const entries = [
     ...catalog.map(row => ({
@@ -108,6 +119,10 @@ export function ShortcutReference({
   ]
   const ranked = rankByName(entries.flatMap(row => row.names.map(name => ({ name, label: row.label, row }))), query.trim())
   const matches = [...new Set(ranked.map(match => match.row))]
+  const modifiedCount = Object.keys(config.document.profiles[`${runtime}:${platform}`] ?? {}).length
+  useLayoutEffect(() => {
+    if (open && resetRevision === null && modifiedCount === 0 && document.activeElement === document.body) search.current?.focus()
+  }, [open, resetRevision, modifiedCount])
   return <><Modal open={open} onClose={closeReference} title={t('title')} headless
     shortcutModal="shortcuts" className={css.dialog as string}>
     <header className={css.header}>
@@ -162,7 +177,20 @@ export function ShortcutReference({
       })}
       {matches.length === 0 && <p className={css.hint} role="status">{t('empty')}</p>}
     </div>
+    <footer className={css.footer}>
+      <button type="button" className={css.resetAll} disabled={busy || config.status !== 'ready' || modifiedCount === 0}
+        onClick={(event) => { event.currentTarget.focus(); setTarget(null); setResetRevision(config.revision) }}>
+        <IconRefreshOutlineRegular size={16} />{t('reset-all')}
+      </button>
+      <span className={css.modifiedCount}>{t('modified-count', { count: modifiedCount })}</span>
+    </footer>
   </Modal>
+  <Modal open={open && resetRevision !== null} title={t('reset-title')} description={t('reset-description')}
+    closeLabel={t('close-confirmation')} onClose={() => { if (!busy) setResetRevision(null) }}
+    footer={<>
+      <Button data-modal-autofocus disabled={busy} onClick={() => { setResetRevision(null) }}>{t('cancel')}</Button>
+      <Button variant="primary" disabled={busy || config.status !== 'ready'} onClick={() => { void resetAll() }}>{t('reset')}</Button>
+    </>} />
   {toast !== null && <Toast key={toast.seq} text={toast.text} onDone={dismissToast}
     icon={<ShortcutIcon kind={toast.error ? 'error' : 'success'} className={toast.error ? css.toastError : css.toastSuccess} />} />}
   </>

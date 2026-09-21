@@ -24,16 +24,14 @@ export interface ShortcutSaveResult {
   readonly issue?: BindingIssue
   readonly conflicts?: readonly ShortcutCommandId[]
 }
-/** Storage adapter owns path/origin isolation and retention of recovery backups. */
+/** Storage adapter owns path/origin isolation and complete replacement on successful writes. */
 export interface ShortcutStorage {
   read(): string | null | Promise<string | null>
   write(raw: string): void | Promise<void>
-  backup(raw: string): void | Promise<void>
 }
 /** Restricted Desktop preload API; file paths and accelerators never cross from Renderer. */
 export interface DesktopShortcutsApi {
   get(definitions: readonly ShortcutDefinition[]): Promise<ShortcutConfigSnapshot>
-  reload(): Promise<ShortcutConfigSnapshot>
   edit(edit: ShortcutEdit, revision: ShortcutRevision): Promise<ShortcutSaveResult>
   subscribe(listener: (snapshot: ShortcutConfigSnapshot) => void): () => void
   recording(active: boolean): Promise<void>
@@ -76,29 +74,27 @@ export class ShortcutPersistence {
    * Read the current file; failures retain the last accepted document and disable ordinary writes.
    * @returns the accepted snapshot or diagnostic snapshot.
    */
-  reload(): Promise<ShortcutConfigSnapshot> {
+  readCurrent(): Promise<ShortcutConfigSnapshot> {
     return this.serialize(() => this.read())
   }
 
   /**
    * Compare the draft revision, validate the complete candidate, then persist before publishing.
-   * Recovery first retains the original bytes; a failed backup prevents replacement.
    * @param edit - constrained preference operation.
    * @param revision - state against which the user reviewed the edit.
    * @returns a classified outcome and the currently accepted snapshot.
    */
   edit(edit: ShortcutEdit, revision: ShortcutRevision): Promise<ShortcutSaveResult> {
     return this.serialize(async () => {
-      if (this.rereadBeforeWrite || edit.type === 'recover') await this.read()
+      if (this.rereadBeforeWrite) await this.read()
       const result = (status: ShortcutSaveResult['status']): ShortcutSaveResult => ({ status, snapshot: this.snapshot })
       if (!this.active || this.definitions === null || this.snapshot.status === 'loading') return result('not-ready')
       if (revision !== this.snapshot.revision) return result('stale')
-      if (this.snapshot.status === 'unreadable' && edit.type !== 'recover') return result('unreadable')
-      if (edit.type === 'recover' && (this.raw === undefined || this.snapshot.error === 'read')) return result('unreadable')
+      if (this.snapshot.status === 'unreadable') return result('unreadable')
       if ((edit.type === 'set' || edit.type === 'reset') && !this.definitions.some(row => row.id === edit.id && row.fixed === undefined)) return result('not-ready')
       const document = editShortcutDocument(this.snapshot.document, edit, this.runtime, this.platform)
       const rows = effectiveShortcuts(this.definitions, document, this.runtime, this.platform)
-      const invalid = rows.find(row => (edit.type === 'reset-all' || edit.type === 'recover' || row.id === edit.id)
+      const invalid = rows.find(row => (edit.type === 'reset-all' || row.id === edit.id)
         && (row.issue !== null || row.conflicts.length > 0))
       // An explicit edit must not silently disable another command's default binding.
       const displaced = edit.type === 'set' ? rows.find(row => row.conflicts.includes(edit.id)) : undefined
@@ -106,7 +102,6 @@ export class ShortcutPersistence {
         ...(invalid?.issue ? { issue: invalid.issue } : {}),
         conflicts: invalid?.conflicts.length ? invalid.conflicts : displaced === undefined ? [] : [displaced.id] }
       try {
-        if (edit.type === 'recover' && this.raw !== null && this.raw !== undefined) await this.storage.backup(this.raw)
         const raw = `${JSON.stringify(document, null, 2)}\n`
         await this.storage.write(raw)
         this.raw = raw

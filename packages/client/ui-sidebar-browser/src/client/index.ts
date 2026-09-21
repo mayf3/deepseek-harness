@@ -46,7 +46,13 @@ export function apply(ctx: Context): void {
   ctx.inject(['shortcuts'], (ctx) => {
     ctx.effect(() => ctx.shortcuts.register({
       id: 'browser.new' as ShortcutCommandId, label: () => t('guide.title'), aliases: ['browser', 'new browser tab'],
-      defaults: { desktop: { code: 'KeyT', modifiers: ['primary'] } },
+      defaults: {
+        'desktop:macos': { code: 'KeyT', modifiers: ['primary'] },
+        'desktop:windows': { code: 'KeyT', modifiers: ['primary'] },
+        'desktop:linux': { code: 'KeyT', modifiers: ['primary'] },
+        'web:macos': { code: 'KeyT', modifiers: ['primary', 'alt'] },
+        'web:windows': { code: 'KeyT', modifiers: ['primary', 'alt'] },
+      },
       regions: ['page', 'editable', 'terminal'], modals: [],
       availability: {
         getSnapshot: () => ctx.sidebarRight.commandTarget() === undefined ? t('shortcut.noSession') : null,

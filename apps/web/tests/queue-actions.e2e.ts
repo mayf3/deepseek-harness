@@ -281,7 +281,7 @@ describe('web e2e: queue row actions', () => {
 
     const stopButton = page.getByRole('button', { name: 'Stop generating' })
     await stopButton.hover()
-    await page.getByRole('tooltip', { name: 'Stop generating', exact: true }).waitFor()
+    await page.getByRole('tooltip', { name: 'Stop generating Esc Esc', exact: true }).waitFor()
     if (method === 'button') await stopButton.click()
     else {
       await input.focus()

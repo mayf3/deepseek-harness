@@ -177,7 +177,13 @@ export function apply(ctx: ClientContext): void {
     const shellStore: typeof shellHandle = { ...shellHandle, create: () => shellInstance }
     const disposeCommand = ctx.shortcuts.register({
       id: 'settings.open' as ShortcutCommandId, label: () => t('shortcut.open'), aliases: ['settings', 'preferences'],
-      defaults: { desktop: { code: 'Comma', modifiers: ['primary'] } },
+      defaults: {
+        'desktop:macos': { code: 'Comma', modifiers: ['primary'] },
+        'desktop:windows': { code: 'Comma', modifiers: ['primary'] },
+        'desktop:linux': { code: 'Comma', modifiers: ['primary'] },
+        'web:macos': { code: 'Comma', modifiers: ['primary'] },
+        'web:windows': { code: 'Comma', modifiers: ['primary'] },
+      },
       regions: ['page', 'editable', 'terminal'], modals: ['settings'],
       resolve: () => ({ status: 'handled', run: () => { shellInstance.actions.open() } }),
     })

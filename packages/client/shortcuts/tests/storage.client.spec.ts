@@ -5,7 +5,11 @@ import type { ShortcutCommandId, ShortcutConfigSnapshot } from '../src/protocol.
 
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks() })
 const id = 'shortcuts.open' as ShortcutCommandId
-const definitions = [{ id, defaults: { web: { code: 'Slash', modifiers: ['primary'] as const } } }]
+const definitions = [{ id, defaults: {
+  'web:macos': { code: 'Slash', modifiers: ['primary'] as const },
+  'web:windows': { code: 'Slash', modifiers: ['primary'] as const },
+  'web:linux': { code: 'Slash', modifiers: ['primary'] as const },
+} }]
 
 it('syncs same-origin updates, rejects stale drafts, and releases the storage listener', async () => {
   let latest!: ShortcutConfigSnapshot
@@ -33,7 +37,7 @@ it('syncs same-origin updates, rejects stale drafts, and releases the storage li
   } finally { adapter.dispose() }
 })
 
-it('retains drafts after quota failure and backs up future data only on explicit recovery', async () => {
+it('retains drafts after quota failure and refuses to replace future data', async () => {
   let latest!: ShortcutConfigSnapshot
   const adapter = webShortcutStorage(window, 'windows', (value) => { latest = value })
   try {
@@ -44,10 +48,9 @@ it('retains drafts after quota failure and backs up future data only on explicit
     write.mockRestore()
     const raw = '{"schemaVersion":9}'
     localStorage.setItem(SHORTCUT_STORAGE_KEY, raw)
-    await adapter.reload()
+    await adapter.get(definitions)
     expect((await adapter.edit({ type: 'reset-all' }, latest.revision)).status).toBe('unreadable')
-    expect((await adapter.edit({ type: 'recover' }, latest.revision)).status).toBe('saved')
-    const backup = Object.keys(localStorage).find(key => key.startsWith(`${SHORTCUT_STORAGE_KEY}.backup.`))!
-    expect(localStorage.getItem(backup)).toBe(raw)
+    expect(localStorage.getItem(SHORTCUT_STORAGE_KEY)).toBe(raw)
+
   } finally { adapter.dispose() }
 })

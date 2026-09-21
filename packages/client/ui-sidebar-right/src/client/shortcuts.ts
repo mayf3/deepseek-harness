@@ -1,5 +1,5 @@
 /** Sidebar-owned commands and live availability from the mounted surface. */
-import type { Shortcuts, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { Shortcuts, ShortcutBinding, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { SidebarRightController } from './service.ts'
 import type { SidebarRightTarget } from './focus.ts'
@@ -28,7 +28,13 @@ export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' |
   })
   const disposers = [shortcuts.register({
     id: 'sidebar.right.toggle' as ShortcutCommandId, label: () => t('command.toggle'), aliases: ['right sidebar', 'toggle right panel'],
-    defaults: { desktop: { code: 'KeyB', modifiers: ['primary', 'alt'] } },
+    defaults: {
+      'desktop:macos': { code: 'KeyB', modifiers: ['primary', 'alt'] },
+      'desktop:windows': { code: 'KeyB', modifiers: ['primary', 'alt'] },
+      'desktop:linux': { code: 'KeyB', modifiers: ['primary', 'alt'] },
+      'web:macos': { code: 'KeyB', modifiers: ['primary', 'shift'] },
+      'web:windows': { code: 'KeyB', modifiers: ['primary', 'shift'] },
+    },
     regions: ['page', 'editable', 'terminal'], modals: [], availability: status(missing),
     resolve: () => {
       const target = sidebar.commandTarget(null)
@@ -37,10 +43,13 @@ export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' |
     },
   })]
   for (const kind of ['split', 'fullscreen'] as const) {
+    const binding: ShortcutBinding = kind === 'split' ? { code: 'Backslash', modifiers: ['primary'] }
+      : { code: 'Enter', modifiers: ['primary', 'alt'] }
     disposers.push(shortcuts.register({
       id: (kind === 'split' ? 'pane.split' : 'pane.fullscreen.toggle') as ShortcutCommandId,
       label: () => t(kind === 'split' ? 'dock.splitPane' : 'command.fullscreen'), aliases: [kind, 'panel'],
-      defaults: { desktop: kind === 'split' ? { code: 'Backslash', modifiers: ['primary'] } : { code: 'Enter', modifiers: ['primary', 'alt'] } },
+      defaults: { 'desktop:macos': binding, 'desktop:windows': binding, 'desktop:linux': binding,
+        'web:macos': binding, 'web:windows': binding },
       regions: ['page', 'editable', 'terminal'], modals: [], availability: status(() => reason(kind, sidebar.focusedTarget())),
       resolve: ({ target: element }) => {
         const target = sidebar.focusedTarget(element)
@@ -56,9 +65,12 @@ export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' |
     }))
   }
   for (const kind of ['close', 'refresh'] as const) {
+    const desktop: ShortcutBinding = { code: kind === 'close' ? 'KeyW' : 'KeyR', modifiers: ['primary'] }
+    const web: ShortcutBinding = { ...desktop, modifiers: ['primary', 'alt'] }
     disposers.push(shortcuts.register({
       id: `page.${kind}` as ShortcutCommandId, label: () => t(`command.${kind}`), aliases: [kind, 'page'],
-      defaults: { desktop: { code: kind === 'close' ? 'KeyW' : 'KeyR', modifiers: ['primary'] } },
+      defaults: { 'desktop:macos': desktop, 'desktop:windows': desktop, 'desktop:linux': desktop,
+        'web:windows': web, ...(kind === 'close' ? { 'web:macos': web } : {}) },
       regions: ['page', 'editable', 'terminal'], modals: [],
       resolve: ({ target: element, source }) => {
         const target = sidebar.focusedTarget(element)

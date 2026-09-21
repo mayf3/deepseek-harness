@@ -6,10 +6,12 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, readPersistedEvents,
   seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
+import { connectFreshWorkspace } from './support.ts'
 
 const root = fileURLToPath(new URL('./expected/shortcuts-workspace', import.meta.url))
 const seed = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
@@ -97,12 +99,18 @@ describe.skipIf(mode === 'record')('web e2e: workspace shortcuts', () => {
     await expect.poll(async () => (await readPersistedEvents(scaffold, childId)).some(event => event.type === 'session/title' && event.data.title === 'T4 source (1)')).toBe(true)
     const copied = await readPersistedEvents(scaffold, childId)
     expect(copied.slice(0, lastEnd + 1)).toEqual(original.slice(0, lastEnd + 1))
-    await page.getByRole('treeitem', { selected: true }).filter({ hasText: 'T4 source (1)' }).waitFor()
+    const sourceRow = page.getByRole('treeitem').filter({ has: page.getByText('T4 source', { exact: true }) })
+    const childRow = page.getByRole('treeitem').filter({ has: page.getByText('T4 source (1)', { exact: true }) })
+    await childRow.waitFor()
+    expect(await sourceRow.getAttribute('aria-selected')).toBe('true')
+    expect(await childRow.getAttribute('aria-selected')).toBe('false')
     await compareOrRefreshGolden(join(root, 'fork.expected.md'),
       await captureStableAria(page, '[data-slot="sidebar.workspaces"]', scaffold.workspaceCwd), mode)
 
+    await childRow.click()
+    await expect.poll(() => childRow.getAttribute('aria-selected')).toBe('true')
     await bind('Archive session')
-    await page.getByRole('treeitem').filter({ has: page.getByText('T4 source', { exact: true }) }).hover()
+    await sourceRow.hover()
     await page.getByRole('button', { name: 'Session actions for T4 source', exact: true }).click()
     await page.getByRole('menu').waitFor()
     await compareOrRefreshGolden(join(root, 'session-menu.expected.md'),
@@ -113,6 +121,7 @@ describe.skipIf(mode === 'record')('web e2e: workspace shortcuts', () => {
     await page.getByRole('treeitem', { selected: true }).filter({ hasText: 'T4 source (1)' }).waitFor()
     await page.keyboard.press('Meta+Shift+Comma')
     await expect.poll(() => scaffold.ctx.workspaceRegistry.archivedSessionIds).toContain(childId)
+    expect(scaffold.ctx.workspaceRegistry.archivedSessionIds).not.toContain(sourceId)
     expect((await readPersistedEvents(scaffold, sourceId)).length).toBeGreaterThan(0)
 
     await bind('Add workspace')
@@ -154,14 +163,77 @@ describe.skipIf(mode === 'record')('web e2e: workspace shortcuts', () => {
   })
 })
 
-it.each([
-  { platform: 'Win32', primary: 'Control', file: 'windows-defaults', custom: 'Control+Alt+Shift+Meta+J' },
+it.skipIf(mode === 'record')('explains a first-turn fork refusal and retries from the completed prefix', async () => {
+  const scaffold = await launchWebScaffold({ developerTools: false })
+  let browser: Browser | undefined
+  try {
+    browser = await chromium.launch()
+    const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 1000 } })
+    await context.addInitScript(() => { Object.defineProperty(navigator, 'platform', { value: 'MacIntel' }) })
+    const page = await context.newPage()
+    const tripwire = watchConsole(page)
+    const forkWarnings: string[] = []
+    page.on('console', (message) => { if (message.text().startsWith('session fork rejected:')) forkWarnings.push(message.text()) })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    const before = new Set(scaffold.ctx.agents.list().map(agent => agent.id))
+    await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    const source = scaffold.ctx.agents.list().find(agent => !before.has(agent.id))
+    if (source === undefined) throw new Error('The workspace did not create a Session')
+    source.session.append('turn/start', { turn: 1 })
+    const user = source.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'The first turn has not ended.' }], source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    source.session.append('session/title', { title: 'First turn', messageSeqs: [user.seq], source: { kind: 'fallback' } })
+    await scaffold.ctx.sessions.flush(source.session)
+    await page.getByText('The first turn has not ended.', { exact: true }).waitFor()
+    const selected = page.getByRole('treeitem', { selected: true })
+    await selected.filter({ hasText: 'First turn' }).waitFor()
+    await page.keyboard.press('Meta+Slash')
+    const reference = page.getByRole('dialog', { name: 'Keyboard shortcuts', exact: true })
+    await reference.getByRole('button', { name: 'Edit shortcut for Fork session', exact: true }).click()
+    await page.keyboard.press('Meta+Shift+Comma')
+    await reference.getByRole('group').waitFor({ state: 'hidden' })
+    await page.keyboard.press('Escape')
+    await reference.waitFor({ state: 'hidden' })
+    await page.keyboard.press('Meta+Shift+Comma')
+    const unavailable = page.getByRole('alert').filter({ hasText: 'This session has no completed turn' })
+    await unavailable.waitFor()
+    await compareOrRefreshGolden(join(root, 'fork-unavailable.expected.md'),
+      await unavailable.ariaSnapshot(), mode)
+    expect(await selected.textContent()).toContain('First turn')
+    expect(scaffold.ctx.agents.list().filter(agent => agent.session.header.parentSession === source.id)).toHaveLength(0)
+    expect(forkWarnings).toEqual([])
+
+    source.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const completed = source.session.snapshotEvents()
+    source.session.append('turn/start', { turn: 2 })
+    source.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'The second turn has not ended.' }], source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    await scaffold.ctx.sessions.flush(source.session)
+    await page.getByText('The second turn has not ended.', { exact: true }).waitFor()
+    await page.keyboard.press('Meta+Shift+Comma')
+    await expect.poll(() => scaffold.ctx.agents.list().find(agent => agent.session.header.parentSession === source.id)).toBeDefined()
+    const child = scaffold.ctx.agents.list().find(agent => agent.session.header.parentSession === source.id)!
+    await selected.filter({ hasText: 'First turn (1)' }).waitFor()
+    expect((await readPersistedEvents(scaffold, child.id)).slice(0, completed.length)).toEqual(completed)
+    await page.getByText('The second turn has not ended.', { exact: true }).waitFor({ state: 'hidden' })
+    expect(tripwire.warnings).toEqual([])
+    expect(tripwire.pageErrors).toEqual([])
+  } finally {
+    await browser?.close()
+    await scaffold.close()
+  }
+})
+
+it.skipIf(mode === 'record').each([
+  { platform: 'Win32', primary: 'Control', file: '../shortcuts/en-US', custom: 'Control+Alt+Shift+Meta+J' },
   { platform: 'MacIntel', primary: 'Meta', file: 'macos-defaults', custom: 'Meta+Alt+Shift+J' },
 ])('runs $platform defaults over recorded history and restores them after a multi-modifier binding', async ({ platform, primary, file, custom }) => {
   const scaffold = await launchWebScaffold({ developerTools: false })
   let browser: Browser | undefined
   try {
-    await seedSession(scaffold, await readFile(seed, 'utf8'), SessionId('windows-shortcuts-source'))
+    await seedSession(scaffold, await readFile(seed, 'utf8'), SessionId('shortcut-defaults-source'))
     browser = await chromium.launch()
     const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 1000 } })
     await context.addInitScript((value) => { Object.defineProperty(navigator, 'platform', { value }) }, platform)

@@ -5,3 +5,6 @@
   - search "搜索快捷键":
     - searchbox "搜索快捷键": abc
   - status: 没有匹配的快捷键
+  - contentinfo:
+    - button "恢复全部默认"
+    - text: 1 项已自定义

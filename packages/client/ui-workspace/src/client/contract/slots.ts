@@ -201,6 +201,8 @@ export type WorkspaceBrowserInjected = {
   closeAddWorkspace: () => void
   /** Publish directory interaction occupancy for command availability. */
   setDirectoryBusy: (busy: boolean) => void
+  /** Dismiss the shortcut's fork-failure notification. */
+  dismissForkError: () => void
   /**
    * Start a New Session in a Workspace: reuse-or-create its blank session and
    * open it; without an explicit workspace, inherit the current Session

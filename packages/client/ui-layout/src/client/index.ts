@@ -182,7 +182,13 @@ export function apply(ctx: ClientContext): void {
     }, AppFrame)
     const disposeShortcut = ctx.shortcuts.register({
       id: 'sidebar.left.toggle' as ShortcutCommandId, label: () => t('toggle'), aliases: ['sidebar', 'toggle left sidebar'],
-      defaults: { desktop: { code: 'KeyB', modifiers: ['primary'] } },
+      defaults: {
+        'desktop:macos': { code: 'KeyB', modifiers: ['primary'] },
+        'desktop:windows': { code: 'KeyB', modifiers: ['primary'] },
+        'desktop:linux': { code: 'KeyB', modifiers: ['primary'] },
+        'web:macos': { code: 'KeyB', modifiers: ['primary', 'alt'] },
+        'web:windows': { code: 'KeyB', modifiers: ['primary', 'alt'] },
+      },
       regions: ['page', 'editable'], modals: [],
       resolve: () => ({ status: 'handled', run: () => { layout.toggleSidebar() } }),
     })

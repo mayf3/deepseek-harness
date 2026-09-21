@@ -11,7 +11,11 @@ it.each(['macos', 'windows'] as const)('prioritizes %s custom native bindings ac
   const registry = new ShortcutRegistry('desktop', platform)
   const run = vi.fn()
   registry.register({ id: 'session.new' as ShortcutCommandId, label: () => 'New', aliases: [],
-    defaults: { desktop: { code: 'KeyN', modifiers: ['primary'] } }, regions: ['page', 'editable'], modals: [],
+    defaults: {
+      'desktop:macos': { code: 'KeyN', modifiers: ['primary'] },
+      'desktop:windows': { code: 'KeyN', modifiers: ['primary'] },
+      'desktop:linux': { code: 'KeyN', modifiers: ['primary'] },
+    }, regions: ['page', 'editable'], modals: [],
     resolve: () => ({ status: 'handled', run }) })
   registry.configure({ ...registry.config.getSnapshot(), revision: 'custom' as never,
     document: { schemaVersion: 1, profiles: { [`desktop:${platform}`]: { 'session.new': { code: 'KeyC', modifiers: ['primary'] } } } } })
@@ -48,7 +52,11 @@ it('rejects old configuration and iframe identities, consumes repeats, and invok
   const registry = new ShortcutRegistry('desktop', 'macos')
   const run = vi.fn()
   const offCommand = registry.register({ id: 'page.close' as ShortcutCommandId, label: () => 'Close', aliases: [],
-    defaults: { desktop: { code: 'KeyW', modifiers: ['primary'] } }, regions: ['page'], modals: [],
+    defaults: {
+      'desktop:macos': { code: 'KeyW', modifiers: ['primary'] },
+      'desktop:windows': { code: 'KeyW', modifiers: ['primary'] },
+      'desktop:linux': { code: 'KeyW', modifiers: ['primary'] },
+    }, regions: ['page'], modals: [],
     resolve: () => ({ status: 'handled', run }) })
   let deliver: (input: DesktopShortcutInput) => void = () => {}
   const release = vi.fn()

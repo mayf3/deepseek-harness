@@ -45,7 +45,14 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('shell.overlay', () => {
     const disposeCommand = ctx.shortcuts.register({
       id: 'shortcuts.open' as ShortcutCommandId, label: () => t('open'), aliases: ['shortcuts', 'keyboard shortcuts'],
-      defaults: { desktop: { code: 'Slash', modifiers: ['primary'] }, web: { code: 'Slash', modifiers: ['primary'] } },
+      defaults: {
+        'desktop:macos': { code: 'Slash', modifiers: ['primary'] },
+        'desktop:windows': { code: 'Slash', modifiers: ['primary'] },
+        'desktop:linux': { code: 'Slash', modifiers: ['primary'] },
+        'web:macos': { code: 'Slash', modifiers: ['primary'] },
+        'web:windows': { code: 'Slash', modifiers: ['primary'] },
+        'web:linux': { code: 'Slash', modifiers: ['primary'] },
+      },
       regions: ['page', 'editable', 'terminal'], modals: ['settings', 'shortcuts'],
       resolve: () => ({ status: 'handled', run: () => { instance.actions.open() } }),
     })

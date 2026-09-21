@@ -20,7 +20,7 @@ type EditorProps = InjectFace<EditorInjected> & PropsLocale<'shortcuts'> & {
 /**
  * Save a released physical combination against the configuration the user reviewed.
  * @param props - command, accepted snapshots, and storage/feedback callbacks.
- * @returns inline command controls; failures retain the draft.
+ * @returns inline command controls; failures retain the draft and allow another recording.
  */
 export function ShortcutEditor({ target, onClose, onSaved, onError, useCatalog, useConfig, useFixedCatalog,
   edit, recording, describeBinding, runtime, platform, t }:
@@ -81,11 +81,10 @@ EditorProps) {
     const composition = observeComposition(document)
     let pending: ShortcutBinding | null = null
     let dead = false
-    let finished = false
-    let invalid = false
+    let blocked = false
     const held = new Set<string>()
-    const reset = (): void => { pending = null; held.clear(); invalid = false; dead = false }
-    restart.current = () => { reset(); finished = false }
+    const reset = (): void => { pending = null; held.clear(); blocked = false; dead = false }
+    restart.current = reset
     const down = (event: KeyboardEvent): void => {
       if (composition.guards(event) || event.getModifierState('AltGraph')) { if (desktopChords) reset(); return }
       if ((!desktopChords || document.activeElement !== recorder.current) && event.key === 'Escape' && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
@@ -102,32 +101,34 @@ EditorProps) {
       const recordTab = desktopChords || (platform === 'macos' || platform === 'windows') && modifiers.length >= 3
       if (document.activeElement !== recorder.current || (event.key === 'Tab' && !recordTab)) return
       event.preventDefault(); event.stopPropagation()
-      if (writing.current || finished || event.repeat) return
+      if (writing.current || event.repeat) return
       if (/^(Control|Alt|Shift|Meta)(Left|Right)$/u.test(event.code)) {
         if (desktopChords && pending !== null) { reset(); setCandidate(null); setCaptured(false) }
         return
       }
       if (desktopChords) {
         held.add(event.code)
+        if (blocked) return
         if (held.size > 2) {
-          invalid = true; pending = null; handlers.current.report(t('too-many-keys')); return
+          blocked = true; pending = null; handlers.current.report(t('too-many-keys')); return
         }
-        if (invalid) return
       }
       try {
         const codes: [string, ...string[]] = [event.code, ...desktopChords ? [...held].filter(value => value !== event.code) : []]
         pending = describeBinding({ code: codes[0], ...(codes[1] === undefined ? {} : { secondCode: codes[1] }), modifiers }).binding
         setCandidate(pending); setCaptured(desktopChords); setMessage(''); setRetry(null)
-      } catch (_error) { invalid = desktopChords; pending = null; handlers.current.report(t('unsupported-key')) }
+      } catch (_error) { blocked = desktopChords; pending = null; handlers.current.report(t('unsupported-key')) }
     }
     const up = (event: KeyboardEvent): void => {
       held.delete(event.code)
       if (desktopChords && document.activeElement === recorder.current) { event.preventDefault(); event.stopPropagation() }
+      const binding = pending !== null && (pending.code === event.code || pending.secondCode === event.code
+        || pending.modifiers.some(modifier => modifier === event.code.replace(/(Left|Right)$/u, '').toLowerCase())) ? pending : null
+      if (binding !== null) { pending = null; blocked = desktopChords }
       // macOS can omit the character keyup while Command is held.
-      if (pending === null || (pending.code !== event.code && pending.secondCode !== event.code
-        && !pending.modifiers.some(modifier => modifier === event.code.replace(/(Left|Right)$/u, '').toLowerCase()))) return
+      if (desktopChords && (held.size === 0 || platform === 'macos' && /^Meta(Left|Right)$/u.test(event.code))) { held.clear(); blocked = false }
+      if (binding === null) return
       if (desktopChords && document.activeElement !== recorder.current) { reset(); return }
-      const binding = pending; reset(); finished = desktopChords
       handlers.current.capture(binding, targetId)
     }
     const blur = (): void => { reset(); if (desktopChords) { setCandidate(null); setCaptured(false) } }
@@ -161,9 +162,9 @@ EditorProps) {
       <button type="button" className={css.inlineAction} disabled={readonly} onClick={() => { void save({ type: 'reset', id: target.id }) }}>{t('reset')}</button>
       {target.binding !== null && <button type="button" className={css.inlineAction} disabled={readonly}
         onClick={() => { void save({ type: 'set', id: target.id, binding: null }) }}>{t('clear')}</button>}
-      <button ref={recorder} type="button" className={clsx(css.recorder, message && css.invalid)} disabled={busy || !nativeReady}
+      <button ref={recorder} type="button" className={clsx(css.recorder, message && css.invalid)} disabled={!nativeReady} aria-disabled={busy || !nativeReady}
         aria-label={t('record')} aria-invalid={message !== ''} aria-describedby={descriptionId}
-        onClick={() => { restart.current(); setCaptured(false); setMessage(''); setRetry(null) }}>
+        onClick={() => { if (!writing.current) { restart.current(); setCaptured(false); setMessage(''); setRetry(null) } }}>
         {captured && message === '' ? <ShortcutKeys keys={describeBinding(candidate).keys} className={css.recorded} /> : t('record')}
       </button>
     </div>

@@ -27,7 +27,6 @@ function desktop() {
   const unsubscribe = vi.fn()
   const api = {
     get: vi.fn<DesktopShortcutsApi['get']>().mockResolvedValue(snapshot(1)),
-    reload: vi.fn<DesktopShortcutsApi['reload']>().mockResolvedValue(snapshot(2)),
     edit: vi.fn<DesktopShortcutsApi['edit']>().mockResolvedValue({ status: 'saved', snapshot: snapshot(3) }),
     recording: vi.fn<DesktopShortcutsApi['recording']>().mockResolvedValue(),
     subscribe: vi.fn<DesktopShortcutsApi['subscribe']>((listener) => { publish = listener; return unsubscribe }),
@@ -44,25 +43,26 @@ function mount() {
   return { ctx, service, dispose }
 }
 const command = { id: 'test.toggle' as ShortcutCommandId, label: () => 'Toggle', aliases: [],
-  defaults: { desktop: { code: 'KeyB', modifiers: ['primary'] as const } }, regions: ['page'] as const, modals: [],
+  defaults: {
+    'desktop:macos': { code: 'KeyB', modifiers: ['primary'] as const },
+    'desktop:windows': { code: 'KeyB', modifiers: ['primary'] as const },
+    'desktop:linux': { code: 'KeyB', modifiers: ['primary'] as const },
+  }, regions: ['page'] as const, modals: [],
   resolve: () => ({ status: 'handled' as const, run() {} }) }
 
-it('waits for the Desktop handshake and ignores older get, reload, edit, and broadcast replies', async () => {
+it('waits for the Desktop handshake and ignores older get, edit, and broadcast replies', async () => {
   const f = desktop(), first = deferred<ShortcutConfigSnapshot>()
   f.api.get.mockReturnValueOnce(first.promise)
   const { service } = mount()
   f.publish(snapshot(20))
-  await service.reload()
   expect(service.config.getSnapshot().status).toBe('loading')
   const off = service.register(command)
   await vi.waitFor(() => { expect(service.config.getSnapshot().status).toBe('ready') })
   f.publish(snapshot(10)); first.resolve(snapshot(1)); await first.promise
   expect(service.config.getSnapshot().sequence).toBe(10)
-  f.publish(snapshot(9)); await service.reload()
+  f.publish(snapshot(9))
   await service.edit({ type: 'reset-all' }, service.config.getSnapshot().revision)
   expect(service.config.getSnapshot().sequence).toBe(10)
-  f.api.reload.mockResolvedValueOnce(snapshot(11))
-  expect((await service.reload()).sequence).toBe(11)
   f.api.edit.mockResolvedValueOnce({ status: 'saved', snapshot: snapshot(12) })
   await service.edit({ type: 'reset-all' }, service.config.getSnapshot().revision)
   expect(service.config.getSnapshot().sequence).toBe(12)
@@ -77,7 +77,6 @@ it('reports unavailable Desktop storage without reading or writing localStorage'
   const { service } = mount()
   expect(service.config.getSnapshot().status).toBe('unreadable')
   expect((await service.edit({ type: 'reset-all' }, service.config.getSnapshot().revision)).status).toBe('unreadable')
-  expect((await service.reload()).error).toBe('read')
   await expect(service.recording(true)).rejects.toThrow('bridge unavailable')
   expect(read).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled()
 })
@@ -85,12 +84,13 @@ it('reports unavailable Desktop storage without reading or writing localStorage'
 it('retains accepted bindings when the Desktop bridge rejects reads and writes', async () => {
   const f = desktop(); const { service } = mount()
   await vi.waitFor(() => { expect(service.config.getSnapshot().status).toBe('ready') })
-  f.api.edit.mockRejectedValueOnce(new Error('IPC disconnected'))
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const failure = new Error('IPC disconnected')
+  f.api.edit.mockRejectedValueOnce(failure)
   const accepted = service.config.getSnapshot()
   expect((await service.edit({ type: 'reset-all' }, accepted.revision)).status).toBe('write-failed')
   expect(service.config.getSnapshot()).toBe(accepted)
-  f.api.reload.mockRejectedValueOnce(new Error('read failed'))
-  expect((await service.reload()).error).toBe('read')
+  expect(error).toHaveBeenCalledExactlyOnceWith('Shortcut preference save failed', failure)
   f.api.get.mockRejectedValueOnce(new Error('handshake failed'))
   service.register(command)
   await vi.waitFor(() => { expect(service.config.getSnapshot().error).toBe('read') })
@@ -98,15 +98,15 @@ it('retains accepted bindings when the Desktop bridge rejects reads and writes',
 
 it.each(['resolve', 'reject'] as const)('suppresses %s completions after disposal and releases the bridge subscription', async (outcome) => {
   const f = desktop(), pending = deferred<ShortcutConfigSnapshot>()
-  f.api.get.mockReturnValue(pending.promise); f.api.reload.mockReturnValue(pending.promise)
+  f.api.get.mockReturnValue(pending.promise)
   f.api.edit.mockImplementation(async () => ({ status: 'saved', snapshot: await pending.promise }))
   const { service, dispose } = mount()
-  const off = service.register(command), reload = service.reload(), edit = service.edit({ type: 'reset-all' }, service.config.getSnapshot().revision)
+  const off = service.register(command), edit = service.edit({ type: 'reset-all' }, service.config.getSnapshot().revision)
   const accepted = service.config.getSnapshot()
   await dispose(); off(); f.publish(snapshot(50))
   if (outcome === 'resolve') pending.resolve(snapshot(30))
   else pending.reject(new Error('window closed'))
-  await Promise.all([reload, edit])
+  await edit
   expect(service.config.getSnapshot()).toBe(accepted)
   expect(f.unsubscribe).toHaveBeenCalledOnce()
 })
@@ -116,8 +116,12 @@ it('persists Web edits and presents normalized bindings through the public servi
   await vi.waitFor(() => { expect(service.config.getSnapshot().status).toBe('ready') })
   expect(service.describeBinding(null)).toEqual({ binding: null, index: null, keys: [], issue: null, conflicts: [] })
   expect(service.describeBinding({ code: 'Slash', modifiers: ['primary'] })).toMatchObject({ issue: null, index: 'control+Slash' })
-  const off = service.register({ ...command, defaults: { web: { code: 'Slash', modifiers: ['primary'] } } })
-  await service.reload()
+  const off = service.register({ ...command, defaults: {
+    'web:macos': { code: 'Slash', modifiers: ['primary'] },
+    'web:windows': { code: 'Slash', modifiers: ['primary'] },
+    'web:linux': { code: 'Slash', modifiers: ['primary'] },
+  } })
+  await vi.waitFor(() => { expect(service.config.getSnapshot().status).toBe('ready') })
   const changed = vi.fn(); service.catalog.subscribe(changed)
   ctx.locale.setLocale('zh'); expect(changed).toHaveBeenCalled()
   expect((await service.edit({ type: 'set', id: command.id, binding: null }, service.config.getSnapshot().revision)).status).toBe('saved')
@@ -136,4 +140,16 @@ it('publishes fixed reservations to Desktop and reports their conflicts while th
   off()
   expect(service.describeBinding({ code: 'Escape', modifiers: [] }).conflicts).toEqual([])
   expect(f.api.get).toHaveBeenLastCalledWith([])
+})
+
+it('propagates catalog publication failures after a successful preference save', async () => {
+  const f = desktop()
+  const { service } = mount()
+  const label = vi.fn(() => 'Toggle')
+  service.register({ ...command, label })
+  await vi.waitFor(() => { expect(service.config.getSnapshot().status).toBe('ready') })
+  label.mockImplementationOnce(() => { throw new Error('Command label unavailable') })
+  await expect(service.edit({ type: 'reset-all' }, service.config.getSnapshot().revision))
+    .rejects.toThrow('Command label unavailable')
+  expect(f.api.edit).toHaveBeenCalledOnce()
 })

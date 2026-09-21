@@ -13,7 +13,14 @@ function mount(runtime: 'desktop' | 'web' = 'web', platform: 'macos' | 'windows'
   const registry = new ShortcutRegistry(runtime, platform)
   const run = vi.fn()
   registry.register({ id: 'shortcuts.open' as ShortcutCommandId, label: () => 'Shortcuts', aliases: [],
-    defaults: { desktop: { code: 'Slash', modifiers: ['primary'] }, web: { code: 'Slash', modifiers: ['primary'] } },
+    defaults: {
+      'desktop:macos': { code: 'Slash', modifiers: ['primary'] },
+      'desktop:windows': { code: 'Slash', modifiers: ['primary'] },
+      'desktop:linux': { code: 'Slash', modifiers: ['primary'] },
+      'web:macos': { code: 'Slash', modifiers: ['primary'] },
+      'web:windows': { code: 'Slash', modifiers: ['primary'] },
+      'web:linux': { code: 'Slash', modifiers: ['primary'] },
+    },
     regions: ['page', 'editable'], modals: ['shortcuts'], resolve: () => ({ status: 'handled', run }) })
   dispose = installKeyboard(window, registry)
   const input = document.createElement('input'); document.body.append(input); input.focus()
@@ -47,7 +54,12 @@ function mountMacNewSession() {
   const fixture = mount('web', 'macos')
   const newSession = vi.fn()
   const unregister = fixture.registry.register({ id: 'session.new' as ShortcutCommandId, label: () => 'New session', aliases: [],
-    defaults: { desktop: { code: 'KeyN', modifiers: ['primary'] } }, regions: ['page', 'editable'], modals: [],
+    defaults: {
+      'desktop:macos': { code: 'KeyN', modifiers: ['primary'] },
+      'desktop:windows': { code: 'KeyN', modifiers: ['primary'] },
+      'desktop:linux': { code: 'KeyN', modifiers: ['primary'] },
+      'web:macos': { code: 'KeyN', modifiers: ['primary', 'alt'] },
+    }, regions: ['page', 'editable'], modals: [],
     resolve: () => ({ status: 'handled', run: newSession }) })
   return { ...fixture, newSession, unregister }
 }

@@ -1,5 +1,5 @@
 /** Real application composition and Desktop persistence with a substituted Electron preload transport. */
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,9 +13,8 @@ import { compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole, w
 
 type FixtureWindow = Window & {
   desktopShortcutsGet: DesktopShortcutsApi['get']
-  desktopShortcutsReload: DesktopShortcutsApi['reload']
   desktopShortcutsEdit: DesktopShortcutsApi['edit']
-  shortcutFixture: { deliver(input: DesktopShortcutInput): void; recording: boolean }
+  shortcutFixture: { deliver(input: DesktopShortcutInput): void; recording: boolean; closedWindows: number }
 }
 
 const expected = fileURLToPath(new URL('./expected/shortcuts-desktop', import.meta.url))
@@ -38,9 +37,8 @@ it.each([
         const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 1000 } })
         await page.exposeFunction('desktopShortcutsGet', async (definitions: unknown) => {
           persistence.setDefinitions(parseShortcutDefinitions(definitions))
-          return persistence.reload()
+          return persistence.readCurrent()
         })
-        await page.exposeFunction('desktopShortcutsReload', () => persistence.reload())
         await page.exposeFunction('desktopShortcutsEdit', (edit: unknown, revision: ShortcutRevision) => persistence.edit(parseShortcutEdit(edit), revision))
         // Only the Electron transport is substituted; preference storage and all Client plugins are real.
         await page.addInitScript((device) => {
@@ -49,28 +47,60 @@ it.each([
           if (document.documentElement === null) window.addEventListener('DOMContentLoaded', mark)
           else mark()
           const listeners = new Set<(input: DesktopShortcutInput) => void>()
-          const fixture = { recording: false, deliver(input: DesktopShortcutInput) { for (const listener of listeners) listener(input) } }
+          const fixture = { recording: false, closedWindows: 0,
+            deliver(input: DesktopShortcutInput) { for (const listener of listeners) listener(input) },
+          }
           Object.assign(window, { shortcutFixture: fixture, dshDesktop: { protocolVersion: 1,
             shortcuts: {
-              get: scope.desktopShortcutsGet, reload: scope.desktopShortcutsReload, edit: scope.desktopShortcutsEdit,
+              get: scope.desktopShortcutsGet, edit: scope.desktopShortcutsEdit,
               recording: async (active: boolean) => { fixture.recording = active }, subscribe: () => () => {},
             },
             keyboard: { subscribe: (listener: (input: DesktopShortcutInput) => void) => {
               listeners.add(listener); return () => { listeners.delete(listener) }
-            }, closeWindow: async () => {} },
+            }, closeWindow: async () => { fixture.closedWindows++ } },
           } })
         }, marker)
         const console = watchConsole(page)
         await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-        const openReference = () => page.evaluate((input) => { (window as unknown as FixtureWindow).shortcutFixture.deliver(input) }, {
-          kind: 'keyboard', frameName: '', revision: snapshot.revision, code: 'Slash',
+        const deliverPrimary = (code: string) => page.evaluate((input) => {
+          (window as unknown as FixtureWindow).shortcutFixture.deliver(input)
+        }, {
+          kind: 'keyboard', frameName: '', revision: snapshot.revision, code,
           control: platform === 'windows', meta: platform === 'macos', alt: false, shift: false, repeat: false,
         } satisfies DesktopShortcutInput)
+        const openReference = () => deliverPrimary('Slash')
         const group = page.getByRole('treeitem').first()
         await group.waitFor()
         if (await group.getAttribute('aria-expanded') !== 'true') await group.click()
         await page.getByRole('treeitem').nth(1).click()
         await page.getByText('DONE', { exact: true }).waitFor()
+        const composer = page.locator('[data-composer-input]').first()
+        await composer.focus()
+        await page.keyboard.insertText('Desktop focus draft')
+        const selectDraft = () => composer.evaluate((element) => {
+          const text = element.querySelector('[data-lexical-text]')!.firstChild!
+          document.getSelection()!.setBaseAndExtent(text, 0, text, 7)
+        })
+        await selectDraft()
+        await deliverPrimary('KeyP')
+        const panel = page.locator('[data-sidebar-right-panel][data-sidebar-right-open]')
+        const files = panel.locator('[data-dockkit-tab]').filter({ hasText: 'Files' })
+        await files.waitFor()
+        expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => document.activeElement === pane)).toBe(true)
+        expect(await page.evaluate(() => document.getSelection()?.toString())).toBe('Desktop')
+        await composer.focus()
+        await selectDraft()
+        await deliverPrimary('KeyP')
+        expect(await files.count()).toBe(1)
+        expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => document.activeElement === pane)).toBe(true)
+        expect(await page.evaluate(() => document.getSelection()?.toString())).toBe('Desktop')
+        await deliverPrimary('KeyW')
+        await expect.poll(() => page.locator('[data-sidebar-right-open]').count()).toBe(0)
+        expect(await page.evaluate(() => (window as unknown as FixtureWindow).shortcutFixture.closedWindows)).toBe(0)
+        expect(await composer.innerText()).toBe('Desktop focus draft')
+        await composer.focus()
+        await composer.fill('')
+        await expect.poll(() => composer.textContent()).toBe('')
         await openReference()
         const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts', exact: true })
         const rowHeights = () => dialog.getByRole('listitem').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))
@@ -98,7 +128,6 @@ it.each([
         await compareOrRefreshGolden(join(expected, `${platform}-copy-override.expected.md`), await row.ariaSnapshot(), mode)
         await page.keyboard.press('Escape')
         await dialog.waitFor({ state: 'hidden' })
-        const composer = page.locator('[data-composer-input]').first()
         await composer.focus()
         await page.evaluate((input) => { (window as unknown as FixtureWindow).shortcutFixture.deliver(input) }, {
           kind: 'keyboard', frameName: '', revision: snapshot.revision, code: 'KeyC',
@@ -126,18 +155,43 @@ it.each([
         await expect.poll(() => recorder.isEnabled()).toBe(true)
         await recorder.focus()
         const accepted = snapshot.document
-        for (const key of ['Escape', 'Enter', 'ArrowUp', 'ArrowDown', 'Shift+Enter', `${primary}+Enter`, 'Slash', 'Shift+Digit2']) {
-          await recorder.click()
-          await page.keyboard.press(key)
+        for (const key of [`${primary}+Slash`, 'Escape', 'Enter', 'ArrowUp', 'ArrowDown', 'Shift+Enter', `${primary}+Enter`, 'Slash', 'Shift+Digit2']) {
+          expect(await recorder.evaluate(node => node === document.activeElement)).toBe(true)
+          const keys = key.split('+')
+          for (const held of keys) await page.keyboard.down(held)
+          await expect.poll(() => recorder.getAttribute('aria-invalid')).toBe('false')
+          expect(await recorder.textContent()).not.toBe('Press a shortcut')
+          for (const held of keys.toReversed()) await page.keyboard.up(held)
           await expect.poll(() => recorder.getAttribute('aria-invalid')).toBe('true')
+          if (key === `${primary}+Slash`) {
+            await dialog.getByText('Already used by “Open keyboard shortcuts”', { exact: true }).waitFor()
+          }
+          expect(await recorder.evaluate(node => node === document.activeElement)).toBe(true)
           expect(snapshot.document).toEqual(accepted)
           expect(await dialog.getByRole('listitem').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height)))
             .toEqual([42])
         }
         await compareOrRefreshGolden(join(expected, `${platform}-fixed-conflict.expected.md`), await dialog.getByRole('group').ariaSnapshot(), mode)
-        await recorder.click()
+        const preferencePath = join(userData, 'keybindings.json')
+        const savedPreferencePath = join(userData, 'keybindings.saved.json')
+        await rename(preferencePath, savedPreferencePath)
+        try {
+          // A directory prevents atomic file replacement on every supported filesystem.
+          await mkdir(preferencePath)
+          await page.keyboard.press('j')
+          await dialog.getByText('Could not save. Your previous shortcuts and current draft are preserved. Please retry.', { exact: true }).waitFor()
+          expect(snapshot.document).toEqual(accepted)
+          expect(await recorder.getAttribute('aria-invalid')).toBe('true')
+          expect(await recorder.evaluate(node => node === document.activeElement)).toBe(true)
+        } finally {
+          await rm(preferencePath, { recursive: true, force: true })
+          await rename(savedPreferencePath, preferencePath)
+        }
         await page.keyboard.down('b')
         await page.keyboard.down('a')
+        await expect.poll(() => recorder.getAttribute('aria-invalid')).toBe('false')
+        expect(await recorder.textContent()).toContain('A')
+        expect(await recorder.textContent()).toContain('B')
         await page.keyboard.up('a')
         await page.keyboard.up('b')
         await dialog.getByRole('group').waitFor({ state: 'hidden' })

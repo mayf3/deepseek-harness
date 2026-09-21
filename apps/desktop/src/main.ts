@@ -800,9 +800,7 @@ async function main(): Promise<void> {
         label,
         ...(accelerator === undefined ? {} : { accelerator }),
         click: () => {
-          window.webContents.focus()
-          window.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers })
-          window.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers })
+          shortcuts.sendEditingKey(keyCode, modifiers)
         },
       })
       const items: MenuItemConstructorOptions[] = name === 'application' ? applicationItems() : [

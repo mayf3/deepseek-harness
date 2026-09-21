@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
-import type { DesktopShortcutInput, ShortcutCommandId, ShortcutConfigSnapshot,
+import type { DesktopShortcutInput, ShortcutBinding, ShortcutCommandId, ShortcutConfigSnapshot,
   ShortcutDefinition, ShortcutSaveResult } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import { ShortcutRegistry } from '../../../packages/client/shortcuts/src/client/registry.ts'
 import { installKeyboard } from '../../../packages/client/shortcuts/src/client/dom.ts'
@@ -17,16 +17,21 @@ vi.mock('electron', () => ({ ipcMain: ipc }))
 const { installDesktopShortcuts } = await import('../src/keyboard.ts')
 afterEach(() => { vi.clearAllMocks() })
 
+function desktopDefaults(binding: ShortcutBinding): ShortcutDefinition['defaults'] {
+  return { 'desktop:macos': binding, 'desktop:windows': binding, 'desktop:linux': binding }
+}
+
 async function fixture(platform: 'macos' | 'windows' = 'macos') {
   const root = await mkdtemp(join(tmpdir(), 'dsh-keyboard-'))
   onTestFinished(async () => { await rm(root, { recursive: true, force: true }) })
   const frame = { url: 'dsh-app://app/' }
   const contents = Object.assign(new EventEmitter(), { mainFrame: frame, focusedFrame: frame,
-    isDestroyed: () => false, send: vi.fn(), setIgnoreMenuShortcuts: vi.fn() })
+    isDestroyed: () => false, send: vi.fn(), setIgnoreMenuShortcuts: vi.fn(), focus: vi.fn(), sendInputEvent: vi.fn() })
   const window = Object.assign(new EventEmitter(), { webContents: contents, isDestroyed: vi.fn(() => false),
     isFocused: vi.fn(() => true), isEnabled: vi.fn(() => true), close: vi.fn() })
   let current: BrowserWindow | undefined = window as unknown as BrowserWindow
-  const keyboard = installDesktopShortcuts(() => current, root, platform, vi.fn())
+  const updateMenu = vi.fn()
+  const keyboard = installDesktopShortcuts(() => current, root, platform, updateMenu)
   keyboard.attach(current)
   onTestFinished(() => { keyboard.dispose() })
   const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>(
@@ -34,9 +39,9 @@ async function fixture(platform: 'macos' | 'windows' = 'macos') {
   const event = { sender: contents, senderFrame: frame } as unknown as IpcMainInvokeEvent
   const call = async <T>(channel: string, ...args: unknown[]): Promise<T> => await handlers.get(channel)!(event, ...args) as T
   const definitions: readonly ShortcutDefinition[] = [
-    { id: 'sidebar.left.toggle' as ShortcutCommandId, defaults: { desktop: { code: 'KeyB', modifiers: ['primary'] } } },
+    { id: 'sidebar.left.toggle' as ShortcutCommandId, defaults: desktopDefaults({ code: 'KeyB', modifiers: ['primary'] }) },
   ]
-  return { keyboard, window, contents, frame, event, handlers, call, definitions, detach: () => { current = undefined } }
+  return { keyboard, window, contents, frame, event, handlers, call, definitions, updateMenu, detach: () => { current = undefined } }
 }
 
 it('mirrors only successful bindings, suppresses recording menus, and invalidates pre-navigation drafts', async () => {
@@ -85,8 +90,8 @@ it('routes embedded input once, follows rebindings, and guards native window clo
   const f = await fixture()
   const closeItem = () => (f.keyboard.fileMenu({ fileMenu: 'File', closePage: 'Close' }).submenu as Electron.MenuItemConstructorOptions[])[0]!
   const initial = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet, [
-    { id: 'page.close', defaults: { desktop: { code: 'KeyW', modifiers: ['primary'] } } },
-    { id: 'page.refresh', defaults: { desktop: { code: 'KeyR', modifiers: ['primary'] } } },
+    { id: 'page.close', defaults: desktopDefaults({ code: 'KeyW', modifiers: ['primary'] }) },
+    { id: 'page.refresh', defaults: desktopDefaults({ code: 'KeyR', modifiers: ['primary'] }) },
   ])
   expect(closeItem().accelerator).toBe('Command+W')
   const preventDefault = vi.fn()
@@ -126,10 +131,50 @@ it('routes embedded input once, follows rebindings, and guards native window clo
   expect(f.contents.listenerCount('before-input-event')).toBe(0)
 })
 
+it.each([
+  ['ArrowUp', 'Command+Up'], ['ArrowDown', 'Command+Down'],
+  ['ArrowLeft', 'Command+Left'], ['ArrowRight', 'Command+Right'],
+])('uses the Electron accelerator for a saved %s binding', async (code, accelerator) => {
+  const f = await fixture()
+  const initial = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet,
+    [{ id: 'page.close', defaults: desktopDefaults({ code: 'KeyW', modifiers: ['primary'] }) }])
+  const saved = await f.call<ShortcutSaveResult>(DESKTOP_IPC.shortcutsEdit,
+    { type: 'set', id: 'page.close', binding: { code, modifiers: ['primary'] } }, initial.revision)
+  expect(saved.status).toBe('saved')
+  const menu = f.keyboard.fileMenu({ fileMenu: 'File', closePage: 'Close' }).submenu as Electron.MenuItemConstructorOptions[]
+  expect(menu[0]?.accelerator).toBe(accelerator)
+})
+
+it('refreshes the native menu only when its accelerator or availability changes', async () => {
+  const f = await fixture()
+  const close = { id: 'page.close', defaults: desktopDefaults({ code: 'KeyW', modifiers: ['primary'] }) }
+  expect(f.updateMenu).not.toHaveBeenCalled()
+  await f.call(DESKTOP_IPC.shortcutsGet, [close])
+  expect(f.updateMenu).toHaveBeenCalledOnce()
+  const menu = f.keyboard.fileMenu({ fileMenu: 'File', closePage: 'Close' }).submenu as Electron.MenuItemConstructorOptions[]
+  const registered = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet, [close, ...f.definitions])
+  const edited = await f.call<ShortcutSaveResult>(DESKTOP_IPC.shortcutsEdit,
+    { type: 'set', id: 'sidebar.left.toggle', binding: { code: 'KeyJ', modifiers: ['primary'] } }, registered.revision)
+  expect(edited.status).toBe('saved')
+  expect(f.updateMenu).toHaveBeenCalledOnce()
+  f.contents.send.mockClear()
+  const click = menu[0]!.click as () => void
+  click()
+  expect(f.contents.send).toHaveBeenCalledExactlyOnceWith(DESKTOP_IPC.shortcutsInput,
+    { kind: 'menu', commandId: 'page.close', revision: edited.snapshot.revision })
+  await f.call(DESKTOP_IPC.shortcutsEdit,
+    { type: 'set', id: 'page.close', binding: { code: 'KeyQ', modifiers: ['primary'] } }, edited.snapshot.revision)
+  expect(f.updateMenu).toHaveBeenCalledTimes(2)
+  f.contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+  expect(f.updateMenu).toHaveBeenCalledTimes(3)
+  f.contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+  expect(f.updateMenu).toHaveBeenCalledTimes(3)
+})
+
 it.each(['macos', 'windows'] as const)('prioritizes %s custom editing bindings before both main and embedded frame handlers', async (platform) => {
   const f = await fixture(platform)
   const initial = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet,
-    [{ id: 'session.new', defaults: { desktop: { code: 'KeyN', modifiers: ['primary'] } } }])
+    [{ id: 'session.new', defaults: desktopDefaults({ code: 'KeyN', modifiers: ['primary'] }) }])
   const saved = await f.call<ShortcutSaveResult>(DESKTOP_IPC.shortcutsEdit,
     { type: 'set', id: 'session.new', binding: { code: 'KeyC', modifiers: ['primary'] } }, initial.revision)
   expect(saved.status).toBe('saved')
@@ -169,7 +214,7 @@ it.each(['macos', 'windows'] as const)('prioritizes %s custom editing bindings b
 it.each(['macos', 'windows'] as const)('intercepts complete %s chords once and leaves their first key untouched', async (platform) => {
   const f = await fixture(platform)
   const initial = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet,
-    [{ id: 'page.close', defaults: { desktop: { code: 'KeyW', modifiers: ['primary'] } } }])
+    [{ id: 'page.close', defaults: desktopDefaults({ code: 'KeyW', modifiers: ['primary'] }) }])
   const saved = await f.call<ShortcutSaveResult>(DESKTOP_IPC.shortcutsEdit,
     { type: 'set', id: 'page.close', binding: { code: 'KeyA', secondCode: 'KeyB', modifiers: [] } }, initial.revision)
   expect(saved.status).toBe('saved')
@@ -204,6 +249,72 @@ it.each(['macos', 'windows'] as const)('intercepts complete %s chords once and l
   f.contents.send.mockClear()
   press('KeyC'); press('KeyA'); press('KeyB')
   expect(f.contents.send).not.toHaveBeenCalled()
+})
+
+it.each(['C', 'V', 'Z'])('delivers Windows Edit %s to the editor and physical input to its shortcut', async (keyCode) => {
+  const f = await fixture('windows')
+  const initial = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet, f.definitions)
+  const saved = await f.call<ShortcutSaveResult>(DESKTOP_IPC.shortcutsEdit,
+    { type: 'set', id: 'sidebar.left.toggle', binding: { code: `Key${keyCode}`, modifiers: ['control'] } }, initial.revision)
+  const registry = new ShortcutRegistry('desktop', 'windows', saved.snapshot)
+  const run = vi.fn()
+  registry.register({ ...f.definitions[0]!, label: () => 'Toggle sidebar', aliases: [], regions: ['page', 'editable'], modals: [],
+    resolve: () => ({ status: 'handled', run }) })
+  let nativeInput: (input: DesktopShortcutInput) => void = () => {}
+  onTestFinished(installNativeKeyboard(window, {
+    closeWindow: vi.fn(), subscribe: (listener) => { nativeInput = listener; return () => {} },
+  }, registry, () => registry.config.getSnapshot()))
+  onTestFinished(installKeyboard(window, registry, undefined, true))
+  f.contents.send.mockImplementation((channel: string, input: DesktopShortcutInput) => {
+    if (channel === DESKTOP_IPC.shortcutsInput) nativeInput(input)
+  })
+  const editorInput: string[] = []
+  const deliver = (type: 'keyDown' | 'keyUp'): void => {
+    const preventDefault = vi.fn()
+    f.contents.emit('before-input-event', { preventDefault }, { type, code: `Key${keyCode}`, key: keyCode.toLowerCase(),
+      modifiers: ['control'], control: true, meta: false, alt: false, shift: false, isAutoRepeat: false, isComposing: false })
+    if (!preventDefault.mock.calls.length) {
+      editorInput.push(type)
+      document.body.dispatchEvent(new KeyboardEvent(type === 'keyDown' ? 'keydown' : 'keyup',
+        { code: `Key${keyCode}`, key: keyCode.toLowerCase(), ctrlKey: true, bubbles: true, cancelable: true }))
+    }
+  }
+  f.contents.sendInputEvent.mockImplementation((input: { type: 'keyDown' | 'keyUp' }) => { deliver(input.type) })
+  f.contents.send.mockClear()
+
+  f.keyboard.sendEditingKey(keyCode, ['control'])
+
+  expect(f.contents.focus).toHaveBeenCalledOnce()
+  expect(editorInput).toEqual(['keyDown', 'keyUp'])
+  expect(f.contents.send).not.toHaveBeenCalled()
+  expect(run).not.toHaveBeenCalled()
+  expect(f.contents.sendInputEvent.mock.calls).toEqual([
+    [{ type: 'keyDown', keyCode, modifiers: ['control'] }],
+    [{ type: 'keyUp', keyCode, modifiers: ['control'] }],
+  ])
+  editorInput.length = 0
+  deliver('keyDown')
+  deliver('keyUp')
+  expect(editorInput).toEqual([])
+  expect(f.contents.send).toHaveBeenCalledExactlyOnceWith(DESKTOP_IPC.shortcutsInput,
+    expect.objectContaining({ kind: 'keyboard', code: `Key${keyCode}` }))
+  expect(run).toHaveBeenCalledOnce()
+})
+
+it('restores shortcut interception after native Edit delivery fails', async () => {
+  const f = await fixture('windows')
+  await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet, f.definitions)
+  f.contents.sendInputEvent.mockImplementationOnce(() => { throw new Error('editor unavailable') })
+  expect(() => { f.keyboard.sendEditingKey('C', ['control']) }).toThrow('editor unavailable')
+  const preventDefault = vi.fn()
+  f.contents.emit('before-input-event', { preventDefault }, { type: 'keyDown', code: 'KeyB', key: 'b', modifiers: ['control'],
+    control: true, meta: false, alt: false, shift: false, isAutoRepeat: false, isComposing: false })
+  expect(preventDefault).toHaveBeenCalledOnce()
+  f.window.isDestroyed.mockReturnValue(true)
+  expect(() => { f.keyboard.sendEditingKey('C', ['control']) }).not.toThrow()
+  f.detach()
+  expect(() => { f.keyboard.sendEditingKey('C', ['control']) }).not.toThrow()
+  expect(f.contents.sendInputEvent).toHaveBeenCalledOnce()
 })
 
 it.each(['macos', 'windows'] as const)('intercepts %s standalone custom keys and clears held state when preferences change', async (platform) => {

@@ -138,7 +138,7 @@ it('exposes constrained shortcut operations and releases configuration subscript
   await import('../src/preload-app.ts')
   const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === 'dshDesktop')?.[1] as DshDesktopProductApi
   await api.shortcuts.get([])
-  await api.shortcuts.reload()
+  expect(api.shortcuts).not.toHaveProperty('reload')
   await api.shortcuts.recording(true)
   expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(DESKTOP_IPC.shortcutsGet, [])
   expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(DESKTOP_IPC.shortcutsRecording, true)

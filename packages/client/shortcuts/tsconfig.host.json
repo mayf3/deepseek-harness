@@ -29,6 +29,9 @@
     },
     {
       "path": "../../host/webserver"
+    },
+    {
+      "path": "../../util/values"
     }
   ]
 }

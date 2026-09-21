@@ -1,9 +1,8 @@
 /** The shipped composer preserves drafts when an application Enter chord has extra modifiers. */
-import { fileURLToPath } from 'node:url'
 import { chromium, type Page } from 'playwright'
 import { expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode } from './scaffold.ts'
+import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft } from './support.ts'
 
 it('preserves the composer draft and menu for application Enter combinations', async () => {
@@ -20,14 +19,12 @@ it('preserves the composer draft and menu for application Enter combinations', a
       await page.goto(scaffold.authenticatedUrl)
       await connectFreshWorkspace(page, scaffold.workspaceCwd, 'composer-shortcuts')
       const input = page.locator('[data-composer-input][contenteditable="true"]').first()
-      const observations: string[] = []
       for (const draft of ['unsent draft', '/']) {
         await writeComposerDraft(page, input, draft)
         const markup = await input.innerHTML()
         for (const chord of ['Alt+Enter', 'Meta+Alt+Enter', 'Control+Alt+Enter', 'Control+Meta+Enter', 'Meta+Shift+Enter', 'Control+Shift+Enter']) {
           await input.press(chord)
           expect(await input.innerHTML(), `${draft}: ${chord}`).toBe(markup)
-          observations.push(`- ${draft === '/' ? 'Command menu' : 'Plain draft'} / ${chord}: draft unchanged`)
         }
         await input.press('Escape')
       }
@@ -35,14 +32,9 @@ it('preserves the composer draft and menu for application Enter combinations', a
       await input.press('Shift+Enter')
       await page.keyboard.type('second line')
       expect(await input.innerText()).toBe('first line\nsecond line')
-      observations.push('- Shift+Enter: two draft lines')
       expect(events.filter(event => event.type === 'user/message')).toHaveLength(0)
-      observations.push('- Persisted user messages: 0')
       expect(tripwire.pageErrors).toEqual([])
       expect(tripwire.warnings).toEqual([])
-      const directory = fileURLToPath(new URL('./expected/composer-shortcuts', import.meta.url))
-      await assertFixtureInventory(directory, ['gestures.expected.md'])
-      await compareOrRefreshGolden(`${directory}/gestures.expected.md`, observations.join('\n'), webSnapshotMode())
     } catch (error) {
       if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-composer-shortcuts')
       throw error

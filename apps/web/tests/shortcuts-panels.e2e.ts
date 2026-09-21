@@ -103,8 +103,21 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       expect(await browserGuide.getAttribute('aria-keyshortcuts')).toBe(aria)
       expect(await page.getByRole('tooltip').count()).toBe(0)
       await composer.click()
+      const selectedDraft = await composer.evaluate((element) => {
+        const text = element.querySelector('[data-lexical-text]')!.firstChild!
+        const selection = document.getSelection()!
+        selection.setBaseAndExtent(text, 0, text, text.textContent!.length)
+        return selection.toString()
+      })
       await page.keyboard.press(`${primary}+Shift+,`)
       await panel.getByPlaceholder('Enter an HTTP(S) address').waitFor()
+      expect(await page.evaluate(() => document.getSelection()?.toString())).toBe(selectedDraft)
+      await panel.getByPlaceholder('Enter an HTTP(S) address').focus()
+      await page.keyboard.press(`${primary}+Shift+,`)
+      await expect.poll(() => panel.getByRole('tab', { name: /Browser/ }).count()).toBe(2)
+      expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => document.activeElement === pane)).toBe(true)
+      await page.keyboard.press(`${primary}+Alt+W`)
+      await expect.poll(() => panel.getByRole('tab', { name: /Browser/ }).count()).toBe(1)
       await page.keyboard.press(`${primary}+Shift+,`)
       await expect.poll(() => panel.getByRole('tab', { name: /Browser/ }).count()).toBe(2)
       await expect.poll(() => panel.getByRole('button', { name: 'Disable sandbox restrictions', exact: true }).isEnabled()).toBe(true)
@@ -117,8 +130,10 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await composer.click()
       await page.keyboard.press(`${primary}+Shift+,`)
       await panel.locator('[data-dockkit-tab]').filter({ hasText: 'Files' }).waitFor()
+      expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => document.activeElement === pane)).toBe(true)
       await page.keyboard.press(`${primary}+Shift+,`)
       expect(await panel.locator('[data-dockkit-tab]').filter({ hasText: 'Files' }).count()).toBe(1)
+      expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => document.activeElement === pane)).toBe(true)
 
       await bind(page, primary, 'Toggle panel fullscreen', 'Workspace files')
       await composer.click()

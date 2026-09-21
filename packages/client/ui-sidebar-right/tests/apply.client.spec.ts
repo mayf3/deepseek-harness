@@ -147,6 +147,7 @@ describe('ui-sidebar-right apply', () => {
     const release = injected.bindService({
       sessionId: SESSION, actions: instance.actions, surfaces: {},
       closeWithFocus: (_paneId, close) => { close() },
+      openWithFocus: (open) => { open() },
       canSplitPane: () => true,
     })
     injected.openTab('guide', { revealIfOpened: false })
@@ -253,6 +254,7 @@ describe('ui-sidebar-right apply', () => {
     injected.bindService({
       sessionId: SESSION, actions: instance.actions, surfaces: {},
       closeWithFocus: (_paneId, close) => { close() },
+      openWithFocus: (open) => { open() },
       canSplitPane: () => true,
     })
     injected.openTab('guide')

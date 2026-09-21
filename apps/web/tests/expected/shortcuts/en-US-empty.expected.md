@@ -5,3 +5,6 @@
   - search "Search shortcuts":
     - searchbox "Search shortcuts": abc
   - status: No matching shortcuts
+  - contentinfo:
+    - button "Restore all defaults"
+    - text: 1 customized

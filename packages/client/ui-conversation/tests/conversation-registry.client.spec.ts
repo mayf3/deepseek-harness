@@ -143,18 +143,6 @@ async function bootRegistries(): Promise<{
 }
 
 describe('Conversation registries', () => {
-  it('publishes history progress even when an older page has no turn lifecycle events', async () => {
-    const { uiConversation, binding } = await bootRegistries()
-    const events = binding.eventSource as MutableSessionEventSource
-    const conversation = uiConversation.binding(binding)
-    events.replace([{ type: 'event', event: { type: 'session/title', seq: SessionSeq(20), time: 0, data: { title: 'tail', messageSeqs: [], source: { kind: 'user' } } } }], true)
-    const timeline = conversation.timeline.getSnapshot()
-    expect(conversation.historyStart.getSnapshot()).toBe(20)
-    events.prepend([{ type: 'event', event: { type: 'session/title', seq: SessionSeq(10), time: 0, data: { title: 'older', messageSeqs: [], source: { kind: 'user' } } } }], true)
-    expect(conversation.historyStart.getSnapshot()).toBe(10)
-    expect(conversation.timeline.getSnapshot()).toBe(timeline)
-  })
-
   it('publishes lifecycle timeline without an active view and retains the captured completed turn', async () => {
     const { uiConversation, binding } = await bootRegistries()
     const conversation = uiConversation.binding(binding)
@@ -162,7 +150,6 @@ describe('Conversation registries', () => {
     const listener = vi.fn()
     const unsubscribe = conversation.timeline.subscribe(listener)
     const initial = conversation.timeline.getSnapshot()
-    expect(conversation.historyStart.getSnapshot()).toBeUndefined()
     expect(initial.turnOrder).toEqual([])
     source.append({ type: 'event', event: {
       type: 'turn/start', seq: SessionSeq(1), time: 1, data: { turn: 1 },

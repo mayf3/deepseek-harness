@@ -7,6 +7,8 @@ export type ShortcutCommandId = Branded<'ShortcutCommandId'>
 export type ShortcutPlatform = 'macos' | 'windows' | 'linux'
 /** Application shell selecting the default bindings. */
 export type ShortcutRuntime = 'desktop' | 'web'
+/** Runtime and operating system selecting one explicit default and preference profile. */
+export type ShortcutProfile = `${ShortcutRuntime}:${ShortcutPlatform}`
 /** Logical primary expands to Meta on macOS and Control elsewhere. */
 export type ShortcutModifier = 'primary' | 'control' | 'alt' | 'shift' | 'meta'
 /** One or two distinct physical keys held together, plus an exact set of modifiers. */

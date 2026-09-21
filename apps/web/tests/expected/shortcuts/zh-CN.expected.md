@@ -46,11 +46,6 @@
         - button "修改浏览器快捷键"
         - button "浏览器 ⌥ ⌘ T": ⌥ ⌘ T
       - listitem:
-        - text: 打开设置
-        - button "移除打开设置快捷键"
-        - button "修改打开设置快捷键"
-        - button "打开设置 ⌘ ,": ⌘ ,
-      - listitem:
         - text: 新会话
         - button "移除新会话快捷键"
         - button "修改新会话快捷键"
@@ -80,6 +75,11 @@
         - button "移除归档会话快捷键"
         - button "修改归档会话快捷键"
         - button "归档会话 ⌥ ⌘ A": ⌥ ⌘ A
+      - listitem:
+        - text: 打开设置
+        - button "移除打开设置快捷键"
+        - button "修改打开设置快捷键"
+        - button "打开设置 ⌘ ,": ⌘ ,
       - listitem:
         - text: 工作区文件
         - button "移除工作区文件快捷键"
@@ -132,3 +132,6 @@
       - listitem:
         - text: 拒绝
         - button "拒绝 Esc" [disabled]: Esc
+  - contentinfo:
+    - button "恢复全部默认" [disabled]
+    - text: 0 项已自定义

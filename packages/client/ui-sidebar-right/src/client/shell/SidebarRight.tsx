@@ -49,7 +49,7 @@ import type { TabOccurrence } from '../tab-domain.ts'
 import type { SidebarRightTabNavigation } from '../contract/slots.ts'
 import type { TabHookContext } from '../tab-info.ts'
 import css from './SidebarRight.module.css'
-import { closeWithPaneFocus } from './close-focus.ts'
+import { closeWithPaneFocus, openWithPaneFocus } from './close-focus.ts'
 
 /** The store share the seat receives. */
 type Store = PropsStore<ReturnType<typeof createSidebarRightStore>>
@@ -95,6 +95,8 @@ export interface SidebarRightInjected {
     canSplitPane: (paneId: PaneId) => boolean
     /** Commit a keyboard/menu close and retain focus on a surviving visible pane. */
     closeWithFocus: (paneId: PaneId, close: () => void) => void
+    /** Commit a page operation and focus the pane it selects. */
+    openWithFocus: (open: () => PaneId | undefined) => void
     autoFullscreen?: boolean
   }) => () => void
   /**
@@ -274,7 +276,7 @@ function PanelChrome({ sessionId, fullscreen, actions, t, shortcuts, toggleFulls
   const toggle = shortcuts.find(entry => entry.id === 'sidebar.right.toggle')
   return (
     <>
-      <Tooltip label={[modeLabel, ...(mode?.keys ?? [])].join(' ')} side="bottom" delayMs={500}>
+      <Tooltip label={mode?.keys.length ? t('shortcut.hint', { label: modeLabel, keys: mode.keys.join(' ') }) : modeLabel} side="bottom" delayMs={500}>
         <button
           type="button"
           className={css.iconButton}
@@ -286,7 +288,7 @@ function PanelChrome({ sessionId, fullscreen, actions, t, shortcuts, toggleFulls
           {fullscreen ? <ExitFullscreenGlyph /> : <FullscreenGlyph />}
         </button>
       </Tooltip>
-      <Tooltip label={[t('chrome.collapse'), ...(toggle?.keys ?? [])].join(' ')} side="bottom" delayMs={500}>
+      <Tooltip label={toggle?.keys.length ? t('shortcut.hint', { label: t('chrome.collapse'), keys: toggle.keys.join(' ') }) : t('chrome.collapse')} side="bottom" delayMs={500}>
         <button
           type="button"
           className={css.iconButton}
@@ -451,6 +453,7 @@ export function RightbarSeat({
     () => active
       ? bindService({ sessionId, actions, surfaces, autoFullscreen,
         closeWithFocus: (paneId, close) => { closeWithPaneFocus(document, sessionId, paneId, close) },
+        openWithFocus: (open) => { openWithPaneFocus(document, sessionId, open) },
         canSplitPane: paneId => room.current.get(paneId)?.row !== false })
       : undefined,
     [bindService, sessionId, actions, surfaces, autoFullscreen, active],

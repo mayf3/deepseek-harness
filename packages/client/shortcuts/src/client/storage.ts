@@ -1,9 +1,8 @@
 /** Explicit browser and Desktop preference adapters; Desktop never falls back to browser storage. */
-import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { ShortcutPersistence } from '../protocol.ts'
 import type { DesktopShortcutsApi, ShortcutConfigSnapshot, ShortcutDefinition, ShortcutPlatform } from '../protocol.ts'
 
-/** Browser-profile and origin-local key; recovery copies use a unique suffix. */
+/** Browser-profile and origin-local preference key. */
 export const SHORTCUT_STORAGE_KEY = 'dsh.keybindings.v1'
 
 /**
@@ -18,15 +17,14 @@ export function webShortcutStorage(window: Window, platform: ShortcutPlatform,
   const persistence = new ShortcutPersistence({
     read: () => window.localStorage.getItem(SHORTCUT_STORAGE_KEY),
     write: (raw) => { window.localStorage.setItem(SHORTCUT_STORAGE_KEY, raw) },
-    backup: (raw) => { window.localStorage.setItem(`${SHORTCUT_STORAGE_KEY}.backup.${randomUUID()}`, raw) },
   }, 'web', platform, true, publish)
   const changed = (event: StorageEvent): void => {
-    if (event.key === null || event.key === SHORTCUT_STORAGE_KEY) void persistence.reload()
+    if (event.key === null || event.key === SHORTCUT_STORAGE_KEY) void persistence.readCurrent()
   }
   window.addEventListener('storage', changed)
   return {
-    get: (definitions: readonly ShortcutDefinition[]) => { persistence.setDefinitions(definitions); return persistence.reload() },
-    reload: () => persistence.reload(), edit: (edit, revision) => persistence.edit(edit, revision),
+    get: (definitions: readonly ShortcutDefinition[]) => { persistence.setDefinitions(definitions); return persistence.readCurrent() },
+    edit: (edit, revision) => persistence.edit(edit, revision),
     subscribe: () => () => {}, recording: async () => {},
     dispose: () => { window.removeEventListener('storage', changed); persistence.dispose() },
   }
