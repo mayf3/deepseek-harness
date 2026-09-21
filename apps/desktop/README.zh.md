@@ -240,6 +240,10 @@ Windows 打包使用 Visual C++ Build Tools 和 Windows SDK 编译 x86 Win32/GDI
 
 在有交互式桌面的 Windows x64 上，从仓库根目录运行 `pnpm --dir apps/desktop run test:installer`，可将小型原生测试载荷接入正式安装配置并执行验证。每次运行使用独立产品身份，依次验证仅英文和仅中文的安装器变体，并根据实际显示的欢迎页按钮选择测试文案。两个变体均安装到私有目录并在测试后卸载；截图和结果保留在 `.desktop-build/installer-tests/` 下。检查包含末尾带分隔符的已登记路径升级，以及磁盘根目录拒绝。可选的 `--signed` 标志使用下文的 Windows EV 配置，在嵌入前对测试程序和辅助库签名；它不会启用更新源。
 
+Windows 卸载程序提供默认不勾选的清理项：桌面浏览器数据与更新缓存、桌面插件配置档案、整个 Harness 主目录。选择整个主目录需要确认警告，并包含桌面配置档案；取消后恢复其独立选择。静默卸载和升级保留数据，即使传入旧的 `--delete-app-data` 参数。打包后的 Desktop 在 Electron 用户数据中的 `uninstall.ini` 记录最近启动使用的主目录；没有记录的旧安装提供默认主目录。链接根目录、受保护的 Windows 目录或与保留数据重叠的路径会阻止清理。文件占用会报告失败，此时可能已删除部分内容。原生向导声明 DPI 感知，中文使用微软雅黑 UI。安装时在 Windows 卸载注册项上记录 `InstallLocation`，使开始菜单右键菜单中的“卸载”直接启动此卸载程序，而不是打开已安装应用列表。此功能仅适用于 Windows。
+
+使用 `node apps/desktop/scripts/test-windows-installer.mjs --uninstall-only --compile-only` 编译独立的中英文夹具。省略 `--compile-only` 可运行原生保留与删除检查。启用 Application Control 的主机可能拒绝未签名的测试卸载器；编译通过不代表已安装卸载行为或高 DPI 视觉验收通过。
+
 ### Windows EV 签名
 
 运行时签名在当前 Windows 账户的各 worktree 间共享完整的已签名文件。`.env.windows` 中的 `DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_DIR` 指定固定本地磁盘上的绝对目录；默认值为 `%USERPROFILE%\.dsh-desktop-signing\signature-cache\v1`。缓存目录必须属于当前账户，访问权限不得向其他普通账户开放；带链接的路径会被拒绝。缓存项标识原始字节、公钥证书和签名工具链。每次恢复都检查摘要、Windows 信任状态、时间戳和证书，再替换未签名文件；缓存项无效会停止打包，不回退到硬件签名。不会仅因缓存较旧而重新签名。缓存信任同账户运行的程序，不防御管理员。[运行时签名缓存决策](../../.agents/notes/implemented/process/2026-09-17-windows-runtime-signature-cache.zh.md)定义验收要求和设计限制。

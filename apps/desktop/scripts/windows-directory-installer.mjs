@@ -78,9 +78,20 @@ export function installWindowsDirectoryInstaller() {
       adapted = replaceOnce(adapted, `!include "${helper}"`, `!include "${path}"`)
     }
     const uninstaller = join(directory, 'uninstaller.nsh')
-    await writeFile(uninstaller, replaceOnce(await readFile(join(templates, 'uninstaller.nsh'), 'utf8'),
-      'RMDir /r $INSTDIR', 'RMDir /r "\\\\?\\$INSTDIR"'))
+    await writeFile(uninstaller, directoryUninstaller(await readFile(join(templates, 'uninstaller.nsh'), 'utf8')))
     adapted = replaceOnce(adapted, '!include "uninstaller.nsh"', `!include "${uninstaller}"`)
-    return `!define DSH_SEVENZIP_PATH "${tool}"\n!define DSH_SEVENZIP_LICENSE_DIR "${dirname(dirname(sourceTool))}"\n${await compute.call(this, adapted, ...args)}`
+    return `!define DSH_UPDATER_CACHE_NAME "${this.packager.appInfo.updaterCacheDirName}"\n!define DSH_SEVENZIP_PATH "${tool}"\n!define DSH_SEVENZIP_LICENSE_DIR "${dirname(dirname(sourceTool))}"\n${await compute.call(this, adapted, ...args)}`
   }
+}
+
+/**
+ * Keep data removal in the opt-in custom UI, including for legacy command-line flags.
+ * @param {string} source - Pinned upstream uninstaller source.
+ * @returns Uninstaller with long-path application removal and no implicit data removal.
+ */
+export function directoryUninstaller(source) {
+  const start = source.indexOf('  Var /GLOBAL isDeleteAppData\n')
+  const end = source.indexOf('  DeleteRegKey SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}"', start)
+  if (start < 0 || end < 0) throw new Error('NSIS uninstaller data removal template changed')
+  return replaceOnce(source.slice(0, start) + source.slice(end), 'RMDir /r $INSTDIR', 'RMDir /r "\\\\?\\$INSTDIR"')
 }

@@ -8,6 +8,7 @@
     "welcome-presented-on-first-show",
     "successful-install-paints-100-before-finish",
     "registered-directory-with-trailing-separators",
+    "uninstall-entry-install-location",
     "registered-directory-and-checked-launch",
     "launch-failure-retry-and-prompt-dismissal",
     "progress-remains-monotonic-across-native-resets",

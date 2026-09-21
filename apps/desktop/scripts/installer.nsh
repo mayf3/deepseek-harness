@@ -1,15 +1,27 @@
 !include "LogicLib.nsh"
 !define INSTALLER_SOURCE_DIR "${__FILEDIR__}\..\installer"
 !define /ifndef INSTALLER_BUILD_DIR "${__FILEDIR__}\..\.desktop-build\targets\win-x64\installer-ui"
+!ifdef BUILD_UNINSTALLER
+  Var UnHome
+  Var UnTarget
+!endif
 
+ManifestDPIAware true
 !ifndef BUILD_UNINSTALLER
-  ManifestDPIAware true
   !define MUI_CUSTOMFUNCTION_GUIINIT InstallerGuiInit
 !endif
 
 !macro customHeader
   !define /ifndef INSTALLER_STRINGS_FILE "${INSTALLER_SOURCE_DIR}\strings.nsh"
   !include "${INSTALLER_STRINGS_FILE}"
+  !ifdef BUILD_UNINSTALLER
+    BrandingText " "
+    SetFont "Segoe UI" 9
+    !ifdef LANG_SIMPCHINESE
+      SetFont /LANG=${LANG_SIMPCHINESE} "Microsoft YaHei UI" 9
+    !endif
+    !include "${INSTALLER_SOURCE_DIR}\uninstall.nsh"
+  !endif
   !ifndef BUILD_UNINSTALLER
     !include "${INSTALLER_SOURCE_DIR}\theme.nsh"
     !include "${INSTALLER_SOURCE_DIR}\pages.nsh"
@@ -72,6 +84,19 @@
 
 !macro customWelcomePage
   Page custom InstallerWelcome InstallerWelcomeLeave
+!macroend
+
+!macro customUnWelcomePage
+  !insertmacro MUI_UNPAGE_WELCOME
+  UninstPage custom un.DataPage un.DataPageLeave
+!macroend
+
+!macro customUnInit
+  Call un.DataInit
+!macroend
+
+!macro customUnInstall
+  Call un.CleanData
 !macroend
 
 !macro customPageAfterChangeDir
@@ -163,6 +188,8 @@
   ${EndIf}
   !insertmacro InstallerPublishStage 4
   !insertmacro dshFinishDirectories
+  ; Explorer associates Start menu shortcuts with this entry only through InstallLocation; the upstream template records it elsewhere.
+  WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" InstallLocation "$INSTDIR"
   ${If} $0 == 1
     SetErrors
   ${Else}

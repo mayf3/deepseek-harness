@@ -14,5 +14,12 @@ export function directoryInstallSection(source: string): string
  */
 export function directoryInstallerExits(source: string): string
 
+/**
+ * Keep user-data removal exclusive to the interactive custom page.
+ * @param source - Pinned upstream uninstaller source.
+ * @returns Long-path uninstaller without implicit data removal.
+ */
+export function directoryUninstaller(source: string): string
+
 /** Install the build-only adapter while retaining signed uninstaller generation. */
 export function installWindowsDirectoryInstaller(): void

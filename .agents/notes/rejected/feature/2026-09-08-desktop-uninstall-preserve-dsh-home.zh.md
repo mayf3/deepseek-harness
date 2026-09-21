@@ -1,6 +1,6 @@
 # Agent Note: 卸载 Desktop 并保留 Harness 主目录
 
-Status: proposed
+Status: rejected — [Windows 使用按需清理](../../implemented/feature/2026-09-18-windows-opt-in-uninstall-data.zh.md)；默认不无条件删除外部数据，macOS 清理仍不在已实现范围内。
 
 [English](2026-09-08-desktop-uninstall-preserve-dsh-home.md) | 中文
 

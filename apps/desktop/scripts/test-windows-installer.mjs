@@ -61,8 +61,10 @@ try {
     await sign({ path: join(output, 'ui', 'window-frame.dll'), hash: 'sha256', isNest: false })
     installWindowsNsisBootstrapSigner({ sign })
   }
-  await execute(progressTest, [], childOptions)
-  await execute(presentationTest, [], childOptions)
+  if (!process.argv.includes('--uninstall-only')) {
+    await execute(progressTest, [], childOptions)
+    await execute(presentationTest, [], childOptions)
+  }
   const payloadSource = join(output, 'payload.nsi')
   await writeFile(payloadSource, `Unicode true
 RequestExecutionLevel user
@@ -81,12 +83,12 @@ SectionEnd
   await execute(compiler.path, ['/V2', payloadSource], { ...childOptions, env: { ...childOptions.env, ...compiler.env } })
   if (sign) await sign({ path: join(payload, `${productName}.exe`), hash: 'sha256', isNest: false })
   const sourceStrings = await readFile(join(appRoot, 'installer', 'strings.nsh'), 'utf8')
-  const config = createElectronBuilderConfig()
-  if (sign) {
-    config.win.forceCodeSigning = true
-    config.win.signtoolOptions.sign = sign
-  }
   for (const language of ['en_US', 'zh_CN']) {
+    const config = createElectronBuilderConfig()
+    if (sign) {
+      config.win.forceCodeSigning = true
+      config.win.signtoolOptions.sign = sign
+    }
     const languageOutput = join(output, language)
     await mkdir(languageOutput)
     const strings = join(languageOutput, 'strings.nsh')
@@ -96,12 +98,16 @@ SectionEnd
     const include = join(languageOutput, 'include.nsh')
     await writeFile(include, `!define INSTALLER_BUILD_DIR "${join(output, 'ui')}"\n!define INSTALLER_STRINGS_FILE "${strings}"\n!include "${join(appRoot, 'scripts', 'installer.nsh')}"\n`)
     await build({ projectDir: appRoot, prepackaged: payload, targets: Platform.WINDOWS.createTarget(['nsis'], Arch.x64), publish: 'never',
-      config: { ...config, productName, artifactName: 'installer-test.exe', directories: { output: languageOutput },
+      config: { ...config, productName, extraMetadata: { ...config.extraMetadata, name: `harness-installer-test-${id}` },
+        artifactName: 'installer-test.exe', directories: { output: languageOutput },
         nsis: { ...config.nsis, guid, include, installerLanguages: [language] }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },
     })
+    if (process.argv.includes('--compile-only')) continue
     const result = await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-      join(appRoot, 'tests', 'windows-installer-smoke.ps1'), '-Installer', join(languageOutput, 'installer-test.exe'),
-      '-ProductName', productName, '-RegistryKey', guid, '-OutputDirectory', languageOutput], childOptions)
+      join(appRoot, 'tests', process.argv.includes('--uninstall-only') ? 'windows-uninstall-smoke.ps1' : 'windows-installer-smoke.ps1'),
+      '-Installer', join(languageOutput, 'installer-test.exe'),
+      '-ProductName', productName, '-RegistryKey', guid, '-OutputDirectory', languageOutput,
+      ...process.argv.includes('--uninstall-only') ? ['-Language', languageId, '-PackageName', `harness-installer-test-${id}`] : []], childOptions)
     process.stdout.write(`${language}\n${result.stdout}`)
   }
   succeeded = true

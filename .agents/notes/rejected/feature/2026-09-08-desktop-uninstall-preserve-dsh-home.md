@@ -1,6 +1,6 @@
 # Agent Note: Uninstall Desktop while preserving the Harness home
 
-Status: proposed
+Status: rejected — [Windows uses opt-in cleanup](../../implemented/feature/2026-09-18-windows-opt-in-uninstall-data.md); unconditional external-data deletion is not the chosen default, and macOS cleanup remains outside the implemented scope.
 
 English | [中文](2026-09-08-desktop-uninstall-preserve-dsh-home.zh.md)
 
