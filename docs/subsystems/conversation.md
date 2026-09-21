@@ -37,7 +37,8 @@ The [group types](../../packages/client/ui-conversation/src/client/contract/grou
 | Type | Meaning |
 |---|---|
 | `ConversationGroupDefinition<Node, State, Data>` | `create()` initializes Session-local State; `update(context, input)` returns its next State; `buildGroups(context)` returns pending output or `null`. Replacement input requires entries and a complete group replacement. |
-| `ConversationGroupInput<Node>` | `replace` supplies the ordered target Node keys, synchronous `readNode`, and timeline. `apply` also supplies projected `previous/current` Node changes and `changedTurns`, including lifecycle-only changes. Do not retain the reader in State. |
+| `ConversationGroupInput<Node>` | `replace` supplies target order, timeline, and synchronous `readNode`, `readTurn`, and `readPosition` readers. `apply` adds projected `previous/current` Node changes, lifecycle `changedTurns`, and `changedTurnOrders`. Do not retain readers in State. |
+| `GroupNodePosition` | Owning Turn, when present, and immediate previous/next visible Node keys. Neighbours preserve interruptions that a Turn-only key list omits. |
 | `NodeReference` / `GroupReference` | Branded `NodeKey` or `GroupKey`, distinguished by `kind`. A Node reference may select a renderer-owned `groupPart`; omission selects the whole Node. |
 | `GroupSnapshot<Data>` | Immutable group key, business data, and ordered Node references. Groups cannot contain other groups or own source Node data. |
 | `GroupUpdate<Data>` | `entries` replaces the complete root sequence; only apply input may omit it to preserve the sequence. Replacement input requires both `entries` and `groups.replace`. `groups.replace.snapshots` replaces all groups; `groups.apply.upserts/removes` updates only named group records. Removal does not delete Nodes. |
@@ -45,6 +46,8 @@ The [group types](../../packages/client/ui-conversation/src/client/contract/grou
 | `ConversationGroupedView<Data>` | Stable root `entries` and keyed `groupSource(key)` readers; a removed group reads as `undefined`. |
 
 The Builder exposes `groupInput()` when grouping is registered; missing input fails at first activation. It records the Node values after its own projections and preserves content-only order identity. The assembler supplies changed Turns with every update; direct ungrouped Builder callers may omit them. Builders with independent sources defer their notifications to `publish()`. First activation and ordinary flush share the same sequence: materialize Location data and Nodes, update the Builder, call the Group Definition, validate and install grouping, then publish every affected target and Location source. The group phase reuses the existing publication cadence.
+
+Target position indexes supply the readers and identify Turns whose visible keys or neighbours changed. `changedTurnOrders` includes both owners of a moved Node and Turns adjacent to inserted or removed unscoped Nodes; lifecycle-only changes remain in `changedTurns`. A business Definition can resegment those Turns and refresh only groups containing changed content. Structural output still replaces the complete root-reference array, without requiring unchanged Node contents to be reread.
 
 The Group store validates the whole submitted result before installation: root Group references and records correspond one-to-one, all referenced Nodes exist, and each `(NodeKey, groupPart)` occupies at most one root or member position. A whole Node cannot coexist with one of its parts. Duplicate upserts, duplicate removals, and simultaneous upsert/removal of a group fail. Data-only upserts retain root and member arrays, do not read Nodes, and notify only changed group sources; full replacement revalidates every reference.
 

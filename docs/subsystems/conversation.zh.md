@@ -37,7 +37,8 @@ shell 拥有 View 选择，并在 binding 创建、被选为 current 或 View ro
 | 类型 | 含义 |
 |---|---|
 | `ConversationGroupDefinition<Node, State, Data>` | `create()` 初始化 Session 内的 State；`update(context, input)` 返回下一份 State；`buildGroups(context)` 返回待发布输出或 `null`。替换输入要求输出 entries 与完整组替换。 |
-| `ConversationGroupInput<Node>` | `replace` 提供目标节点的有序键、同步 `readNode` 及时间线。`apply` 还提供投影后的 `previous/current` 节点变化和 `changedTurns`，覆盖仅生命周期变化。不要把读取函数留在 State 中。 |
+| `ConversationGroupInput<Node>` | `replace` 提供目标顺序、时间线及同步的 `readNode`、`readTurn`、`readPosition` 读取器。`apply` 增加投影后的 `previous/current` 节点变化、生命周期 `changedTurns` 和 `changedTurnOrders`。不要把读取器留在 State 中。 |
+| `GroupNodePosition` | 所属 Turn（如有）及前后紧邻的可见 Node 键。相邻关系保留仅按 Turn 取键时会遗漏的分隔。 |
 | `NodeReference` / `GroupReference` | 以 `kind` 区分的品牌类型 `NodeKey` 或 `GroupKey`。Node 引用可选择渲染器拥有的 `groupPart`，省略表示整个 Node。 |
 | `GroupSnapshot<Data>` | 不可变的组键、业务数据和有序 Node 引用。Group 不包含其他 Group，也不拥有原 Node 数据。 |
 | `GroupUpdate<Data>` | `entries` 替换完整根序列，仅 apply 输入允许省略它以保留原序列。替换输入必须同时提供 `entries` 与 `groups.replace`。`groups.replace.snapshots` 替换全部组；`groups.apply.upserts/removes` 只更新具名组记录。删除组不删除 Node。 |
@@ -45,6 +46,8 @@ shell 拥有 View 选择，并在 binding 创建、被选为 current 或 View ro
 | `ConversationGroupedView<Data>` | 稳定的根 `entries` 与按键 `groupSource(key)` 读取器；已删除的组返回 `undefined`。 |
 
 注册分组时 Builder 必须提供 `groupInput()`，缺少输入方法在首次激活时报错。它记录自身投影后的节点值，并在仅正文更新时保留顺序数组身份。assembler 每次更新都提供变化轮次，直接调用未分组 Builder 的调用方可以省略。拥有独立来源的 Builder 把通知推迟到 `publish()`。首次激活与普通 flush 共用同一顺序：物化 Location 数据和 Node，更新 Builder，调用 Group Definition，校验并安装分组，再发布全部受影响目标及 Location 来源。分组阶段复用既有发布节奏。
+
+目标位置索引提供这些读取器，并标识可见键或相邻关系发生变化的 Turn。`changedTurnOrders` 包含移动 Node 的新旧所属轮次，以及相邻的轮次外 Node 被插入或移除所影响的轮次；仅生命周期变化仍由 `changedTurns` 提供。业务 Definition 可只重分这些轮次，并只刷新包含变化内容的组。结构输出仍替换完整根引用数组，但不要求重读未变化的 Node 内容。
 
 Group 存储在安装前校验完整提交结果：根 Group 引用与记录一一对应，引用的 Node 全部存在，每个 `(NodeKey, groupPart)` 在根和成员位置中最多占位一次。整 Node 不能与自身任一部分共存。重复 upsert、重复删除以及同时 upsert 和删除一个组都会报错。仅数据 upsert 保留根及成员数组、不读取 Node，并只通知变化组的来源；完整替换重新校验全部引用。
 

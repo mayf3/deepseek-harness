@@ -46,9 +46,10 @@ Chat Builder 汇总整个目标的节点及索引。在其中固定创建 Chat �
 - 注册要求已有 View 目标，但不构造 Builder。首次激活取得 Builder 后检查 `groupInput()`，缺少输入方法时报错。未分组目标不要求该方法，也不分配 Group 状态。
 - 每个 Session 为已注册 Definition 拥有一个派生上下文。`create()` 初始化 State，不是 `turn/start` 事件，也不是事件 Definition 的唯一 start Match。Definition 对象不保存跨 Session 的可变状态。
 - `update(context, input)` 返回框架采纳的 State。`buildGroups(context)` 物化待输出结果，不重新解释事件，不因重复读取增加计数。替换输入要求输出完整根序列和组替换，避免已移除节点留下悬挂引用；apply 的 `null` 保留结果。
-- `replace` 提供目标顺序、同步 `readNode` 和时间线；`apply` 还提供投影后的节点前后值及 `changedTurns`。读取函数仅在当前同步调用中有效，不保留到 State。
+- `replace` 提供目标顺序、时间线及同步的 `readNode`、`readTurn`、`readPosition` 读取器；`apply` 还提供投影后的节点前后值、`changedTurns` 和 `changedTurnOrders`。读取器仅在当前同步调用中有效，不保留到 State。
 - 节点数据仍在目标 Node Store。仅正文更新保留顺序数组；旧值在 Builder 安装投影结果前记录，也覆盖目标投影额外改变的节点。
 - `ConversationLocationIndex` 从边界事件和 Location 数据写入累计变化轮次。assembler 将同一批变化交给全部被更新目标，覆盖没有节点 upsert 的 Turn 结束。直接调用未分组 Builder 的调用方可省略该字段。
+- 目标位置索引通过 `changedTurnOrders` 提供可见键、所属 Turn 或紧邻关系的变化，包含移动 Node 的新旧所属轮次，以及受相邻轮次外 Node 影响的轮次。`readTurn` 返回某个 Turn 的可见键，`readPosition` 返回包含所属 Turn 和前后紧邻键的 `GroupNodePosition`。仅按 Turn 读取会遗漏轮次外 Node 造成的分隔，业务分段可以通过相邻事实保留这些分隔。索引提供位置，不决定分组。
 - 通用 GroupDataMap 在注册、存储及读取之间关联目标和 Data。未声明的目标没有组载荷类型，业务消费方不通过 unknown 断言恢复摘要类型。
 
 ## Node／Group 引用与更新
@@ -80,7 +81,7 @@ GroupStore 按 GroupKey 索引记录和来源，不反复查找数组。等价�
 2. assembler 运行既有 Node Definition 匹配、状态更新及必要的 Context 重放。
 3. 既有 immediate/animation-frame/none 节奏调度发布，分组不增加计时器或事件订阅。
 4. flush 依次物化 Step、Turn Location 数据及目标 Node。
-5. Builder.replace/apply 安装投影后 Node、目标顺序及索引，保留 GroupInput，不通知独立来源。
+5. Builder.replace/apply 安装投影后 Node、目标顺序及索引，记录位置变化，保留包含索引读取器的 GroupInput，不通知独立来源。
 6. assembler 取得目标已注册的 Group Definition 上下文，以 builder.groupInput() 调用 update，采纳返回 State。
 7. 调用 buildGroups，校验并安装结果，安装目标快照。
 8. 全部受影响目标安装完成后，调用 Builder.publish，发布 Group 来源和 Location 数据。
@@ -103,7 +104,7 @@ GroupStore 按 GroupKey 索引记录和来源，不反复查找数组。等价�
 | [assembler.ts](../../../../packages/client/ui-conversation/src/client/conversation/assembler.ts) | 首次激活和 flush 共用调度，上下文归属、安装及发布。 |
 | [location-index.ts](../../../../packages/client/ui-conversation/src/client/conversation/location-index.ts) | 累积变化轮次，覆盖仅生命周期和 Location 数据变化。 |
 | [group-store.ts](../../../../packages/client/ui-conversation/src/client/conversation/group-store.ts) | 原子引用校验、按键来源、数组复用及局部发布。 |
-| [chat-snapshot-builder.ts](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) | 记录投影后节点增量及稳定顺序，推迟来源通知，不持有过程分组类。 |
+| [chat-snapshot-builder.ts](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) | 记录投影后节点增量、目标位置及变化轮次顺序，提供索引读取器并推迟来源通知，不持有过程分组类。 |
 | [ChatView.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) | 读取可选根引用并切换 node/group，无分组时使用既有 Node 顺序。 |
 | [ChatGroupSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx) | 稳定组父级、仅成员订阅及嵌套 Node 容器。 |
 | [ChatNodeSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatNodeSeat.tsx) | 既有 Node 来源及渲染器、groupPart 传递、独立部分锚点及 Store 替换时重绑定。 |
@@ -141,12 +142,13 @@ React key 由引用 kind、NodeKey/groupPart 或 GroupKey 的无歧义元组派�
 
 - [Group 存储测试](../../../../packages/client/ui-conversation/tests/conversation-group-store.client.spec.ts)覆盖原子引用校验、根与成员身份复用、局部发布，以及删除组但保留原 Node。
 - [分组调度测试](../../../../packages/client/ui-conversation/tests/conversation-groups.client.spec.ts)覆盖首次激活、仅生命周期输入、注册替换、View 移除与恢复，以及完整替换输出。[Assembler 测试](../../../../packages/client/ui-conversation/tests/conversation-assembler.client.spec.ts)覆盖变化轮次报告和 Location 数据来源。
+- [Node 来源测试](../../../../packages/client/ui-chat/tests/chat-node-source.client.spec.ts)覆盖投影后的分组输入、索引读取器和空变化批次。
 - [Chat 渲染测试](../../../../packages/client/ui-chat/tests/chat-view.client.spec.tsx)保留模式切换时的组件状态，重绑定替换后的 Node 存储，传递独立部分，并省略未引用 Node。[视口测试](../../../../packages/client/ui-chat/tests/chat-viewport.client.spec.ts)覆盖组内阅读锚点、历史前插及部分感知的轮次导航。
 
 ## Consequences
 
 - 这是明确的框架扩展，包含新输入协议、注册表、上下文、发布阶段及读取器，不只是增加一个回调。
-- 目标内 State 不会自动让业务更新局部化，Definition 必须区分正文增长与结构变化，并索引受影响范围。
+- 目标内 State 不会自动让业务更新局部化，Definition 可以根据节点变化和轮次顺序变化选择受影响的组及范围。结构变化仍按可见顺序重建目标位置索引，仅正文更新不重建该索引。结构性分组输出仍替换完整根引用数组。
 - Node 顺序及可见性只有 Builder 一个所有者，分组不独立排序原始事件，也不在通用层再次推断成员。
 - 稳定挂载不消除布局、绘制或保留内存的成本，不宣称实测延迟或最优性能。
 - 真实组拆并、首成员变化及分页修正可以改变身份，模式切换保证不禁止这些正常变化。

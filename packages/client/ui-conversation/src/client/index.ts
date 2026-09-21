@@ -7,7 +7,7 @@ export type { ConversationGroupRegistry } from './conversation/group-registry.ts
 export type {
   ConversationGroupContext, ConversationGroupData, ConversationGroupDataMap,
   ConversationGroupDefinition, ConversationGroupedView, ConversationGroupInput,
-  GroupKey, GroupReference, GroupSnapshot, GroupUpdate, NodeChange, NodeKey,
+  GroupKey, GroupNodePosition, GroupReference, GroupSnapshot, GroupUpdate, NodeChange, NodeKey,
   NodeReference, RenderEntry,
 } from './contract/groups.ts'
 export { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'

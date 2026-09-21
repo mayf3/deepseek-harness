@@ -36,6 +36,8 @@ describe('Chat Node keyed sources', () => {
     expect(initial.kind).toBe('replace')
     expect(initial.order).toBe(snapshot.order)
     expect(initial.readNode(initial.order[0]!)).toBe(user)
+    expect(initial.readPosition(initial.order[0]!)).toEqual({ turn: undefined, previous: undefined, next: undefined })
+    expect(initial.readTurn(7)).toEqual([])
     const context: ChatConversationViewNode = {
       key: 'context:2', kind: 'context', id: '2', target: 'chat', anchorSeq: 2,
       location: { kind: 'session' }, visibility: 'visible',
@@ -49,13 +51,18 @@ describe('Chat Node keyed sources', () => {
     if (input.kind !== 'apply') throw new Error('expected apply')
     expect(input.order).toBe(next.order)
     expect(input.changedTurns).toEqual([7])
+    expect(input.changedTurnOrders).toEqual([])
+    expect(input.readPosition(context.key as typeof input.order[number])).toEqual({
+      turn: undefined, previous: user.key, next: undefined,
+    })
+    expect(input.readPosition('missing' as typeof input.order[number])).toBeUndefined()
     expect(input.changes.find(change => change.current.key === user.key)).toEqual({
       previous: user, current: next.nodes.get(user.key),
     })
     expect(next.nodes.get(user.key)?.data).toMatchObject({ skillNames: ['demo'] })
     expect(input.changes.find(change => change.current.key === context.key)).toEqual({ previous: undefined, current: context })
     builder.apply({ upserts: [], timeline })
-    expect(builder.groupInput()).toMatchObject({ kind: 'apply', changes: [], changedTurns: [] })
+    expect(builder.groupInput()).toMatchObject({ kind: 'apply', changes: [], changedTurns: [], changedTurnOrders: [] })
     expect(builder.groupInput().order).toBe(next.order)
   })
 

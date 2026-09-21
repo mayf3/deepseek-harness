@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type {
   ConversationLocation, ConversationNode, ConversationTimelineSnapshot, ConversationViewBuilder,
-  ConversationViewDefinition, ConversationGroupInput, NodeChange, NodeKey, PartialAssistant, RunningToolCall,
+  ConversationViewDefinition, ConversationGroupInput, GroupNodePosition, NodeChange, NodeKey, PartialAssistant, RunningToolCall,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatConversationViewNode, ChatNode } from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
@@ -164,6 +164,7 @@ class MutableChatNodeStore implements ChatNodeStore {
 class MutableChatLocationIndex implements ChatLocationNodeIndex {
   private turns = new Map<number, readonly string[]>()
   private steps = new Map<string, readonly string[]>()
+  private positions = new Map<string, GroupNodePosition>()
 
   getTurn(turn: number): readonly string[] {
     return this.turns.get(turn) ?? EMPTY_KEYS
@@ -173,13 +174,32 @@ class MutableChatLocationIndex implements ChatLocationNodeIndex {
     return this.steps.get(stepKey(turn, step)) ?? EMPTY_KEYS
   }
 
-  rebuild(order: readonly string[], store: ChatNodeStore): void {
+  getPosition(key: string): GroupNodePosition | undefined {
+    return this.positions.get(key)
+  }
+
+  rebuild(order: readonly string[], store: ChatNodeStore): readonly number[] {
     const turns = new Map<number, string[]>()
     const steps = new Map<string, string[]>()
-    for (const key of order) {
+    const positions = new Map<string, GroupNodePosition>()
+    const changedTurns = new Set<number>()
+    for (const [index, key] of order.entries()) {
       const location = store.get(key)?.location
       if (location === undefined) continue
       const coordinates = locationCoordinates(location)
+      const previous = this.positions.get(key)
+      const position: GroupNodePosition = {
+        turn: coordinates.turn,
+        previous: order[index - 1] as NodeKey | undefined,
+        next: order[index + 1] as NodeKey | undefined,
+      }
+      const unchanged = previous !== undefined && previous.turn === position.turn
+        && previous.previous === position.previous && previous.next === position.next
+      positions.set(key, unchanged ? previous : position)
+      if (!unchanged) {
+        if (previous?.turn !== undefined) changedTurns.add(previous.turn)
+        if (position.turn !== undefined) changedTurns.add(position.turn)
+      }
       if (coordinates.turn === undefined) continue
       const turnKeys = turns.get(coordinates.turn) ?? []
       turnKeys.push(key)
@@ -190,8 +210,13 @@ class MutableChatLocationIndex implements ChatLocationNodeIndex {
       stepKeys.push(key)
       steps.set(step, stepKeys)
     }
+    for (const [key, position] of this.positions) {
+      if (!positions.has(key) && position.turn !== undefined) changedTurns.add(position.turn)
+    }
+    this.positions = positions
     this.turns = updateIndex(this.turns, turns)
     this.steps = updateIndex(this.steps, steps)
+    return [...changedTurns]
   }
 
   /** Invalidate aggregate readers when member data changes without moving. */
@@ -968,6 +993,8 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
   private order: readonly string[] = EMPTY_KEYS
   private latestGroupInput: ConversationGroupInput<ChatConversationViewNode>
   private readonly readGroupNode = (key: NodeKey): ChatConversationViewNode | undefined => this.store.get(key)
+  private readonly readGroupTurn = (turn: number): readonly NodeKey[] => this.locations.getTurn(turn) as readonly NodeKey[]
+  private readonly readGroupPosition = (key: NodeKey): GroupNodePosition | undefined => this.locations.getPosition(key)
   /** Last published timeline: a Turn boundary can land without a new node. */
   private timeline: ConversationTimelineSnapshot | null = null
   readonly empty: ChatSnapshot
@@ -978,6 +1005,8 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
       kind: 'replace',
       order: this.order as readonly NodeKey[],
       readNode: this.readGroupNode,
+      readTurn: this.readGroupTurn,
+      readPosition: this.readGroupPosition,
       timeline: this.empty.timeline,
     }
   }
@@ -997,6 +1026,8 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
       kind: 'replace',
       order: this.order as readonly NodeKey[],
       readNode: this.readGroupNode,
+      readTurn: this.readGroupTurn,
+      readPosition: this.readGroupPosition,
       timeline: input.timeline,
     }
     const snapshot = this.snapshot(input.timeline, this.legacy.replace(nodes, input.timeline))
@@ -1031,10 +1062,11 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
       }
     }
     this.store.upsert(upserts)
+    let changedTurnOrders: readonly number[] = EMPTY_TURNS
     if (structural) {
       const next = orderedVisibleChatNodes(this.store.values()).map(node => node.key)
       this.order = sameReferences(this.order, next) ? this.order : next
-      this.locations.rebuild(this.order, this.store)
+      changedTurnOrders = this.locations.rebuild(this.order, this.store)
     }
     this.locations.touch(contentOnly)
     this.store.updateProcesses(processTurns, this.locations)
@@ -1049,8 +1081,11 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
       changes,
       order: this.order as readonly NodeKey[],
       readNode: this.readGroupNode,
+      readTurn: this.readGroupTurn,
+      readPosition: this.readGroupPosition,
       timeline: input.timeline,
       changedTurns: input.changedTurns ?? EMPTY_TURNS,
+      changedTurnOrders,
     }
     const snapshot = this.snapshot(input.timeline, this.legacy.apply(upserts, input.timeline))
     return snapshot

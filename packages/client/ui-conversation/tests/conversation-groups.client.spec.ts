@@ -25,14 +25,27 @@ class GroupTestBuilder implements ConversationViewBuilder<ConversationViewNode, 
   readonly empty = new Map<string, ConversationViewNode>()
   readonly nodes = new Map<string, ConversationViewNode>()
   readonly publish = vi.fn()
+  private readonly readers = {
+    readNode: (key: NodeKey) => this.nodes.get(key),
+    readTurn: (_turn: number): readonly NodeKey[] => [],
+    readPosition: (key: NodeKey) => {
+      const index = this.input.order.indexOf(key)
+      if (index < 0) return undefined
+      return {
+        turn: undefined,
+        previous: this.input.order[index - 1],
+        next: this.input.order[index + 1],
+      }
+    },
+  }
   private input: ConversationGroupInput<ConversationViewNode> = {
-    kind: 'replace', order: [], readNode: key => this.nodes.get(key), timeline: { turnOrder: [], turns: new Map() },
+    kind: 'replace', order: [], ...this.readers, timeline: { turnOrder: [], turns: new Map() },
   }
 
   replace({ nodes, timeline }: { nodes: readonly ConversationViewNode[]; timeline: ConversationTimelineSnapshot }) {
     this.nodes.clear()
     for (const node of nodes) this.nodes.set(node.key, node)
-    this.input = { kind: 'replace', order: [...this.nodes.keys()] as NodeKey[], readNode: key => this.nodes.get(key), timeline }
+    this.input = { kind: 'replace', order: [...this.nodes.keys()] as NodeKey[], ...this.readers, timeline }
     return this.nodes
   }
 
@@ -43,7 +56,10 @@ class GroupTestBuilder implements ConversationViewBuilder<ConversationViewNode, 
   }) {
     const changes = upserts.map(current => ({ previous: this.nodes.get(current.key), current }))
     for (const node of upserts) this.nodes.set(node.key, node)
-    this.input = { kind: 'apply', changes, changedTurns, order: [...this.nodes.keys()] as NodeKey[], readNode: key => this.nodes.get(key), timeline }
+    this.input = {
+      kind: 'apply', changes, changedTurns, changedTurnOrders: [],
+      order: [...this.nodes.keys()] as NodeKey[], ...this.readers, timeline,
+    }
     return this.nodes
   }
 

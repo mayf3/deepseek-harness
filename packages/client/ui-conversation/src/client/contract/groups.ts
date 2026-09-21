@@ -55,10 +55,21 @@ export interface NodeChange<Node> {
   readonly current: Node
 }
 
+/** Owning Turn and immediate neighbours in the target's visible Node order. */
+export interface GroupNodePosition {
+  readonly turn: number | undefined
+  readonly previous: NodeKey | undefined
+  readonly next: NodeKey | undefined
+}
+
 interface GroupInputNodes<Node> {
   readonly order: readonly NodeKey[]
   /** @param key - target Node identity. @returns its current value during this synchronous update. */
   readonly readNode: (key: NodeKey) => Node | undefined
+  /** @param turn - owning Turn. @returns its visible keys in target order; empty when absent. */
+  readonly readTurn: (turn: number) => readonly NodeKey[]
+  /** @param key - target Node identity. @returns its visible position, or absence outside the target order. */
+  readonly readPosition: (key: NodeKey) => GroupNodePosition | undefined
   readonly timeline: ConversationTimelineSnapshot
 }
 
@@ -69,6 +80,8 @@ export type ConversationGroupInput<Node> = GroupInputNodes<Node> & (
     readonly kind: 'apply'
     readonly changes: readonly NodeChange<Node>[]
     readonly changedTurns: readonly number[]
+    /** Turns whose visible keys or immediate neighbours changed, including removal and cross-Turn moves. */
+    readonly changedTurnOrders: readonly number[]
   }
 )
 
@@ -90,7 +103,7 @@ export interface ConversationGroupDefinition<
   /**
    * Consume target Node changes, not raw Session events or presentation modes.
    * @param context - current Session-local State.
-   * @param input - current target inputs; readNode is valid only during this call.
+   * @param input - current target inputs; its readers are valid only during this call.
    * @returns State adopted by the framework.
    */
   update(context: ConversationGroupContext<State>, input: ConversationGroupInput<Node>): State

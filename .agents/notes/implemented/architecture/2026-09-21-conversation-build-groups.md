@@ -46,9 +46,10 @@ These records retain independent rationale and remain active. Cross-View navigat
 - Registration requires an existing View target, but never constructs a Builder. First activation checks the constructed Builder for `groupInput()`; missing input fails. Ungrouped targets do not require it or allocate Group state.
 - Each Session owns one derived context per registered Definition. `create()` initializes its State; it is not a `turn/start` event or an event Definition's unique start Match. Definition objects do not hold mutable cross-Session state.
 - `update(context, input)` returns the adopted State. `buildGroups(context)` materializes pending output without interpreting events again or advancing counts on repeated reads. Replacement input requires a complete root and group replacement so removed Nodes cannot leave dangling references; `null` on apply retains output.
-- `replace` supplies target order, synchronous `readNode`, and timeline; `apply` also supplies projected previous/current Nodes and `changedTurns`. The reader is valid during the synchronous call only and must not be retained in State.
+- `replace` supplies target order, timeline, and synchronous `readNode`, `readTurn`, and `readPosition` readers; `apply` also supplies projected previous/current Nodes, `changedTurns`, and `changedTurnOrders`. Readers are valid during the synchronous call only and must not be retained in State.
 - Node data stays in the target Node Store. Content-only updates preserve the order array. Previous values are captured before the Builder installs projected updates, including additional Nodes changed by target projections.
 - `ConversationLocationIndex` accumulates changed Turns from boundaries and Location data writes. Assembler passes one drained batch to every updated target, including a Turn ending without Node upserts. Direct ungrouped Builder callers may omit this field.
+- The target position index supplies `changedTurnOrders` for visible-key, owning-Turn, or immediate-neighbour changes, including both owners of a moved Node and Turns affected by adjacent unscoped Nodes. `readTurn` returns one Turn's visible keys; `readPosition` returns `GroupNodePosition` with the owning Turn and immediate previous/next keys. Turn-only reads omit interruptions by unscoped Nodes; neighbour facts let business segmentation retain them. The index provides positions, not grouping decisions.
 - The generic GroupDataMap associates target and Data across registration, storage, and reading. Undeclared targets have no group payload type; business consumers do not reconstruct summary types with unknown assertions.
 
 ## Node/Group references and updates
@@ -80,7 +81,7 @@ GroupStore indexes records and sources by GroupKey, not repeated array searches.
 2. The assembler runs existing Node Definition matching, state updates, and required Context replay.
 3. Existing immediate/animation-frame/none cadence schedules publication; grouping adds no timer or event subscription.
 4. Flush materializes Step then Turn Location data and target Nodes.
-5. Builder.replace/apply installs projected Nodes, target order, and indexes, and retains GroupInput without notifying independent sources.
+5. Builder.replace/apply installs projected Nodes, target order, and indexes, records position changes, and retains GroupInput with its indexed readers without notifying independent sources.
 6. The assembler obtains the target's registered Group Definition context, calls update with builder.groupInput(), and adopts the returned State.
 7. It calls buildGroups, validates and installs the result, and installs the target snapshot.
 8. After every affected target is installed, it calls Builder.publish, publishes Group sources, and publishes Location data.
@@ -103,7 +104,7 @@ Grouping never replays raw events. Node Definitions handle replay first; groupin
 | [assembler.ts](../../../../packages/client/ui-conversation/src/client/conversation/assembler.ts) | Common first-activation/flush dispatch, context ownership, installation, and publication. |
 | [location-index.ts](../../../../packages/client/ui-conversation/src/client/conversation/location-index.ts) | Accumulate changed Turns, including lifecycle-only and Location-data changes. |
 | [group-store.ts](../../../../packages/client/ui-conversation/src/client/conversation/group-store.ts) | Atomic reference validation, keyed sources, array reuse, and local publication. |
-| [chat-snapshot-builder.ts](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) | Record projected Node deltas and stable order; defer source notification. No process grouping class. |
+| [chat-snapshot-builder.ts](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) | Record projected Node deltas, target positions, and changed Turn orders; provide indexed readers and defer source notification. No process grouping class. |
 | [ChatView.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) | Read optional root entries and switch between node/group; fallback to existing Node order. |
 | [ChatGroupSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx) | Stable group parent, member-only subscription, nested Node seats. |
 | [ChatNodeSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatNodeSeat.tsx) | Existing Node sources/renderers, groupPart forwarding, distinct part anchors, Store-replacement rebind. |
@@ -141,12 +142,13 @@ The stable Group parent is a `div` with `display: contents`, without its own lay
 
 - [Group store tests](../../../../packages/client/ui-conversation/tests/conversation-group-store.client.spec.ts) cover atomic reference validation, root/member identity reuse, local publication, and removal without deleting source Nodes.
 - [Grouping dispatch tests](../../../../packages/client/ui-conversation/tests/conversation-groups.client.spec.ts) cover first activation, lifecycle-only input, registry replacement, View removal/recovery, and complete replacement output. [Assembler tests](../../../../packages/client/ui-conversation/tests/conversation-assembler.client.spec.ts) cover changed-Turn reporting and Location data sources.
+- [Node source tests](../../../../packages/client/ui-chat/tests/chat-node-source.client.spec.ts) cover projected grouping inputs, indexed readers, and empty change batches.
 - [Chat rendering tests](../../../../packages/client/ui-chat/tests/chat-view.client.spec.tsx) retain component state across modes, rebind replacement Node stores, pass independent parts, and omit unreferenced Nodes. [Viewport tests](../../../../packages/client/ui-chat/tests/chat-viewport.client.spec.ts) cover grouped reading anchors, history prepend, and part-aware Turn navigation.
 
 ## Consequences
 
 - This is an explicit framework extension: a new input protocol, registry, context, publication phase, and reader. It is not merely another callback.
-- Target-local State does not automatically make business updates local. The Definition must distinguish content growth from structural changes and index the affected ranges.
+- Target-local State does not automatically make business updates local. Node changes and changed Turn orders let a Definition choose affected groups and ranges. Structural changes still rebuild the target position index over visible order; content-only updates do not rebuild it. Structural grouping output still replaces the complete root-reference array.
 - Node order and visibility have one owner: the Builder. Grouping must not independently sort raw events or infer membership again in infrastructure.
 - Stable mounting does not eliminate layout, paint, or retained-memory costs. No measured latency or optimal-performance claim is made.
 - Real group splits, merges, first-member changes, and pagination repairs can change identity. The mode-switch guarantee does not prohibit those legitimate changes.
