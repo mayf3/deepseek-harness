@@ -21,13 +21,6 @@ extern "C" __declspec(dllexport) DWORD __cdecl UninstallRemoveData(LPCWSTR path,
     return uninstall_data::Remove(path, installation);
 }
 
-// Invalid paths cannot establish separation from retained Harness data.
-extern "C" __declspec(dllexport) BOOL __cdecl UninstallPathsOverlap(LPCWSTR left, LPCWSTR right) {
-    std::wstring a, b;
-    return !uninstall_data::Normalize(left, a) || !uninstall_data::Normalize(right, b)
-        || uninstall_data::Contains(a, b) || uninstall_data::Contains(b, a);
-}
-
 // Match the affected executable, not another user's or directory's same-named application.
 // Returns 0 while running, 1 when absent, and -1 if the process list cannot be read.
 extern "C" __declspec(dllexport) int __cdecl InstallerFindProcess(LPCWSTR executable) {

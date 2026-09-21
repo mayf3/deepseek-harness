@@ -19,7 +19,6 @@ import {
   type MenuItemConstructorOptions,
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
-import { recordUninstallLocation } from './uninstall-location.ts'
 import { DesktopProjectManager } from './project-manager.ts'
 import { DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
@@ -235,7 +234,6 @@ async function main(): Promise<void> {
   const resources = runtimeResources()
   const paths = resolveDesktopPaths()
   const development = !app.isPackaged
-  if (process.platform === 'win32' && !development) await recordUninstallLocation(app.getPath('userData'), paths.profile)
   const activeProject = paths.profile
   const manager = new DesktopProjectManager(paths, resources)
   let quitting = false

@@ -85,9 +85,9 @@ export function installWindowsDirectoryInstaller() {
 }
 
 /**
- * Keep data removal in the opt-in custom UI, including for legacy command-line flags.
+ * Keep data removal in the native helper, which refuses unsafe roots and never follows links; the legacy flag is ignored.
  * @param {string} source - Pinned upstream uninstaller source.
- * @returns Uninstaller with long-path application removal and no implicit data removal.
+ * @returns Uninstaller with long-path application removal and no upstream RMDir data removal.
  */
 export function directoryUninstaller(source) {
   const start = source.indexOf('  Var /GLOBAL isDeleteAppData\n')

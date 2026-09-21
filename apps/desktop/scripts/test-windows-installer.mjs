@@ -21,6 +21,8 @@ const { getMakeNsisPath } = require('app-builder-lib/out/toolsets/windows.js')
 const guid = randomUUID()
 const id = guid.replaceAll('-', '')
 const productName = `Harness Installer Test ${id.slice(0, 8)}`
+// Scoped like the shipped package so Electron user data nests under the scope directory.
+const packageName = `@harness-installer-test/app-${id}`
 const outputRoot = join(appRoot, '.desktop-build', 'installer-tests')
 await mkdir(outputRoot, { recursive: true })
 const output = await mkdtemp(join(outputRoot, 'run-'))
@@ -98,7 +100,7 @@ SectionEnd
     const include = join(languageOutput, 'include.nsh')
     await writeFile(include, `!define INSTALLER_BUILD_DIR "${join(output, 'ui')}"\n!define INSTALLER_STRINGS_FILE "${strings}"\n!include "${join(appRoot, 'scripts', 'installer.nsh')}"\n`)
     await build({ projectDir: appRoot, prepackaged: payload, targets: Platform.WINDOWS.createTarget(['nsis'], Arch.x64), publish: 'never',
-      config: { ...config, productName, extraMetadata: { ...config.extraMetadata, name: `harness-installer-test-${id}` },
+      config: { ...config, productName, extraMetadata: { ...config.extraMetadata, name: packageName },
         artifactName: 'installer-test.exe', directories: { output: languageOutput },
         nsis: { ...config.nsis, guid, include, installerLanguages: [language] }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },
     })
@@ -107,7 +109,7 @@ SectionEnd
       join(appRoot, 'tests', process.argv.includes('--uninstall-only') ? 'windows-uninstall-smoke.ps1' : 'windows-installer-smoke.ps1'),
       '-Installer', join(languageOutput, 'installer-test.exe'),
       '-ProductName', productName, '-RegistryKey', guid, '-OutputDirectory', languageOutput,
-      ...process.argv.includes('--uninstall-only') ? ['-Language', languageId, '-PackageName', `harness-installer-test-${id}`] : []], childOptions)
+      ...process.argv.includes('--uninstall-only') ? ['-Language', languageId, '-PackageName', packageName] : []], childOptions)
     process.stdout.write(`${language}\n${result.stdout}`)
   }
   succeeded = true

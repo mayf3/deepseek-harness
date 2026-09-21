@@ -15,9 +15,9 @@ export function directoryInstallSection(source: string): string
 export function directoryInstallerExits(source: string): string
 
 /**
- * Keep user-data removal exclusive to the interactive custom page.
+ * Keep user-data removal in the native helper, which refuses unsafe roots and never follows links.
  * @param source - Pinned upstream uninstaller source.
- * @returns Long-path uninstaller without implicit data removal.
+ * @returns Long-path uninstaller without the upstream RMDir data removal.
  */
 export function directoryUninstaller(source: string): string
 

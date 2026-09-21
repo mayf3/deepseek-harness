@@ -1,4 +1,3 @@
 {
-  "defaultCleanupState": 0,
-  "cases": ["preserve", "desktop", "all", "local", "silent", "upgrade"]
+  "cases": ["interactive", "silent", "upgrade"]
 }

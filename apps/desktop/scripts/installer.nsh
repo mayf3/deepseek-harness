@@ -2,7 +2,6 @@
 !define INSTALLER_SOURCE_DIR "${__FILEDIR__}\..\installer"
 !define /ifndef INSTALLER_BUILD_DIR "${__FILEDIR__}\..\.desktop-build\targets\win-x64\installer-ui"
 !ifdef BUILD_UNINSTALLER
-  Var UnHome
   Var UnTarget
 !endif
 
@@ -84,11 +83,6 @@ ManifestDPIAware true
 
 !macro customWelcomePage
   Page custom InstallerWelcome InstallerWelcomeLeave
-!macroend
-
-!macro customUnWelcomePage
-  !insertmacro MUI_UNPAGE_WELCOME
-  UninstPage custom un.DataPage un.DataPageLeave
 !macroend
 
 !macro customUnInit
