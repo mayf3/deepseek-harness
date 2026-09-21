@@ -1226,6 +1226,8 @@ class FaceAnalyzer {
         `${registration.name}#${binding.namespace}/${exportedMethod}:result`,
         false,
         'undefined-or-void',
+        false,
+        mode === undefined,
       ),
       location: this.location(method.name),
     }
@@ -1511,6 +1513,7 @@ class FaceAnalyzer {
     requireNamed: boolean,
     topLevelAbsence: 'reject' | 'undefined' | 'undefined-or-void' = 'reject',
     optional = false,
+    allowBytes = false,
   ): RemoteBoundaryModel {
     const type = this.convertType(authoredType)
     const declaredType = this.checker.getTypeFromTypeNode(authoredType)
@@ -1519,7 +1522,7 @@ class FaceAnalyzer {
     const resolvedType = optional
       ? this.checker.getNullableType(declaredType, ts.TypeFlags.Undefined)
       : declaredType
-    const codecType = this.resolvedRemoteCodecType(authoredType, resolvedType, topLevelAbsence)
+    const codecType = this.resolvedRemoteCodecType(authoredType, resolvedType, topLevelAbsence, allowBytes)
     const acceptsUndefined = topLevelAbsence !== 'reject' && this.includesRemoteAbsence(resolvedType)
     const rootSymbol = this.namedWorkspaceType(authoredType)
     const imports = new Map<SymbolId, RemoteTypeImportModel>()
@@ -1575,6 +1578,7 @@ class FaceAnalyzer {
     authoredType: ts.TypeNode,
     resolvedType: ts.Type,
     topLevelAbsence: 'reject' | 'undefined' | 'undefined-or-void',
+    allowBytes: boolean,
   ): TypeNodeId {
     this.assertRemoteJsonType(
       resolvedType,
@@ -1582,6 +1586,7 @@ class FaceAnalyzer {
       new Set(),
       topLevelAbsence !== 'reject',
       topLevelAbsence === 'undefined-or-void',
+      allowBytes,
     )
     const completed = new Map<ts.Type, TypeNodeId>()
     const active = new Map<ts.Type, TypeNodeId>()
@@ -1617,6 +1622,9 @@ class FaceAnalyzer {
           return id
         }
         const flags = type.flags
+        if (this.isRemoteByteArray(type)) {
+          return add({ kind: 'reference', name: 'Uint8Array', target: { kind: 'standard', name: 'Uint8Array' }, arguments: [] })
+        }
         if ((flags & ts.TypeFlags.Any) !== 0) return add({ kind: 'keyword', name: 'any' })
         if ((flags & ts.TypeFlags.Unknown) !== 0) return add({ kind: 'keyword', name: 'unknown' })
         if ((flags & ts.TypeFlags.Never) !== 0) return add({ kind: 'keyword', name: 'never' })
@@ -1654,7 +1662,7 @@ class FaceAnalyzer {
         if ((flags & ts.TypeFlags.TypeParameter) !== 0) {
           this.fail(authoredType, 'Remote codec contains an unresolved type parameter')
         }
-        if ((flags & ts.TypeFlags.Object) === 0) {
+        if ((flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) === 0) {
           this.fail(
             authoredType,
             `Remote codec type ${this.checker.typeToString(type, authoredType, ts.TypeFormatFlags.NoTruncation)} has no concrete Zod projection`,
@@ -1669,7 +1677,9 @@ class FaceAnalyzer {
             elements: arguments_.map((argument, index) => {
               const elementFlags = target.elementFlags[index] ?? ts.ElementFlags.Required
               return {
-                type: convert(argument),
+                type: (elementFlags & ts.ElementFlags.Rest) !== 0
+                  ? this.addNode(authoredType, { kind: 'array', element: convert(argument) })
+                  : convert(argument),
                 optional: (elementFlags & ts.ElementFlags.Optional) !== 0,
                 rest: (elementFlags & (ts.ElementFlags.Rest | ts.ElementFlags.Variadic)) !== 0,
               }
@@ -1748,6 +1758,7 @@ class FaceAnalyzer {
     active: Set<ts.Type>,
     allowUndefined: boolean,
     allowVoid: boolean,
+    allowBytes = false,
   ): void {
     const flags = type.flags
     if ((flags & ts.TypeFlags.Undefined) !== 0 && allowUndefined) return
@@ -1763,22 +1774,26 @@ class FaceAnalyzer {
       | ts.TypeFlags.BooleanLike
       | ts.TypeFlags.Null
       | ts.TypeFlags.Never)) !== 0) return
+    if (this.isRemoteByteArray(type)) {
+      if (allowBytes) return
+      this.fail(site, 'Remote Uint8Array is only supported in unary results')
+    }
     if (type.isUnion()) {
       for (const member of type.types) {
-        this.assertRemoteJsonType(member, site, active, allowUndefined, allowVoid)
+        this.assertRemoteJsonType(member, site, active, allowUndefined, allowVoid, allowBytes)
       }
       return
     }
     if (type.isIntersection()) {
       const material = type.types.filter(member => !this.isRemotePhantomConstraint(member))
       if (material.length === 0) this.fail(site, 'Remote boundary contains a symbol-only object')
-      for (const member of material) this.assertRemoteJsonType(member, site, active, false, false)
+      for (const member of material) this.assertRemoteJsonType(member, site, active, false, false, allowBytes)
       return
     }
     if ((flags & ts.TypeFlags.TypeParameter) !== 0) {
       this.fail(site, 'Remote boundary contains an unresolved type parameter')
     }
-    if ((flags & ts.TypeFlags.Object) === 0) {
+    if ((flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) === 0) {
       this.fail(site, `Remote boundary contains non-JSON type ${this.checker.typeToString(type)}`)
     }
     const symbol = type.getSymbol()
@@ -1804,6 +1819,7 @@ class FaceAnalyzer {
             active,
             (elementFlags & ts.ElementFlags.Optional) !== 0,
             false,
+            allowBytes,
           )
         })
         return
@@ -1811,7 +1827,7 @@ class FaceAnalyzer {
       if (this.checker.isArrayType(type) || this.checker.isArrayLikeType(type)) {
         const element = this.checker.getIndexTypeOfType(type, ts.IndexKind.Number)
         if (element === undefined) this.fail(site, 'Remote boundary array has no element type')
-        this.assertRemoteJsonType(element, site, active, false, false)
+        this.assertRemoteJsonType(element, site, active, false, false, allowBytes)
         return
       }
       const properties = this.checker.getPropertiesOfType(type)
@@ -1827,17 +1843,24 @@ class FaceAnalyzer {
           active,
           (property.flags & ts.SymbolFlags.Optional) !== 0,
           false,
+          allowBytes,
         )
       }
       for (const info of this.checker.getIndexInfosOfType(type)) {
         if ((info.keyType.flags & ts.TypeFlags.ESSymbolLike) !== 0) {
           this.fail(site, 'Remote boundary contains a symbol index signature')
         }
-        this.assertRemoteJsonType(info.type, site, active, false, false)
+        this.assertRemoteJsonType(info.type, site, active, false, false, allowBytes)
       }
     } finally {
       active.delete(type)
     }
+  }
+
+  private isRemoteByteArray(type: ts.Type): boolean {
+    const symbol = type.getSymbol()
+    return symbol?.name === 'Uint8Array'
+      && symbol.declarations?.some(declaration => isStandardLibraryFile(declaration.getSourceFile().fileName)) === true
   }
 
   private includesRemoteAbsence(type: ts.Type): boolean {

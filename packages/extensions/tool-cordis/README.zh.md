@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-创造模式包含这组工具。其他组合需要同时挂载 `@deepseek-ai/dsh-tool-cordis` 和提供 `cordisInspect` 的 host runner。调用 `cordis_inspect_list` 发现 provider，再用 `cordis_inspect_query` 查询其具体方法和类型。通过 [Plugin Manager](../../boot/plugin-manager/README.zh.md) 安装包含插件代码或 MCP 配置的组合包。
+创造模式包含这组工具。其他组合需要在宿主组合里、提供 `cordisInspect` 的 host runner 旁挂载一次 `@deepseek-ai/dsh-tool-cordis/host`，并在每个要暴露这些工具的 agent preset 里挂载 `@deepseek-ai/dsh-tool-cordis`；仅有 preset 行不会注册任何 Host provider。调用 `cordis_inspect_list` 发现 provider，再用 `cordis_inspect_query` 查询其具体方法和类型。通过 [Plugin Manager](../../boot/plugin-manager/README.zh.md) 安装包含插件代码或 MCP 配置的组合包。
 
 -----
 
@@ -35,7 +35,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-Host provider 结合生成的 Service/Event 目录与请求 agent 的工具注册表。Client provider 通过现有检查注册表同步清单，并从已连接页面回答查询。工具插件通过 Cordis effect 持有注册；释放时移除两个工具和 Host inspect provider。检查直接读取 provider，不维护独立运行时投影，因此不发布不变式配套插件。
+Host provider 结合生成的 Service/Event 目录与请求 agent 的工具注册表。Client provider 通过现有检查注册表同步清单，并从已连接页面回答查询。宿主入口持有 Host provider 的注册，preset 行持有两个工具，都通过 Cordis effect；注册表拒绝重复的 provider id，所以 provider 按进程注册一次而不是按 preset 注册。检查直接读取 provider，不维护独立运行时投影，因此不发布不变式配套插件。
 
 </details>
 

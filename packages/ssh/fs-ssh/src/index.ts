@@ -20,8 +20,6 @@ const errorCodes: Record<FsErrorCode, true> = {
 export class SshFileSystem extends FileSystem {
   static inject = ['ssh', 'sandboxPolicy']
 
-  override watch(): never { throw new Error('SSH filesystem watching is not supported') }
-
   override get sandboxMode(): SandboxMode { return this.ctx.sandboxPolicy.defaultMode }
 
   override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
