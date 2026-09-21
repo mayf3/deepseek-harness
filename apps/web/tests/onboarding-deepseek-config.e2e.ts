@@ -99,7 +99,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const settings = page.getByRole('dialog', { name: '设置' })
     await settings.waitFor({ timeout: 10_000 })
-    await settings.getByRole('button', { name: '模型' }).click()
+    await settings.getByRole('button', { name: '模型', exact: true }).click()
     const deepSeekRow = settings.getByText('DeepSeek', { exact: true }).first()
     await deepSeekRow.waitFor({ timeout: 10_000 })
     await deepSeekRow.locator('xpath=ancestor::li').getByRole('button', { name: '编辑' }).click()
@@ -199,7 +199,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const settings = page.getByRole('dialog', { name: '设置' })
     await settings.waitFor({ timeout: 10_000 })
-    await settings.getByRole('button', { name: '模型' }).click()
+    await settings.getByRole('button', { name: '模型', exact: true }).click()
     const deepSeek = settings.getByText('DeepSeek', { exact: true }).first()
     await deepSeek.waitFor({ timeout: 10_000 })
     await deepSeek.locator('xpath=ancestor::li').getByRole('button', { name: '编辑' }).click()
@@ -233,7 +233,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     for (let index = 0; index < 2; index++) {
       await settings.getByRole('button', { name: /删除模型/ }).first().click()
     }
-    await settings.getByRole('button', { name: '添加模型' }).click()
+    await settings.getByRole('button', { name: '添加模型', exact: true }).click()
     const customModelId = settings.getByLabel('模型 ID 1')
     await customModelId.fill('private-preview')
     await settings.getByLabel('显示名称 1').fill('Private Preview')

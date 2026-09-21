@@ -8,7 +8,7 @@
   - button "打开配置文件"
   - button "关闭"
   - heading "模型" [level=2]
-  - paragraph: 填入各提供方的 API 密钥即可使用其模型。
+  - paragraph: 填入各提供商的 API 密钥即可使用其模型。
   - list:
     - listitem:
       - text: DeepSeek
@@ -43,5 +43,4 @@
           - button "添加模型"
       - button "取消"
       - button "保存"
-  - button "添加提供方"
-  - button "添加自定义提供方"
+  - button "添加模型提供商"

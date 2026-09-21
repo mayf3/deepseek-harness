@@ -506,6 +506,15 @@ export interface Config {
     /** Maximum readers including source and renderer metadata lookups. */
     maxReaders: number
   }
+  /** Browser spreadsheet parser and dense cell allocation limits. */
+  excel: {
+    /** Maximum source file bytes. */
+    maxBytes: number
+    /** Maximum combined rectangular cell area across worksheets. */
+    maxCells: number
+    /** Maximum parser Worker lifetime in milliseconds. */
+    timeoutMs: number
+  }
 }
 ```
 
@@ -638,6 +647,24 @@ export interface Config {
 ```
 
 来源：[`packages/experimental/agent-team/src/types.ts:130`](../packages/experimental/agent-team/src/types.ts)
+
+<a id="deepseek-aidsh-experimental-api-speech-to-text"></a>
+
+## `@deepseek-ai/dsh-experimental-api-speech-to-text`
+
+需要： `speechToText` · `typert`
+
+```ts config-catalog
+/** Limits applied before decoding or calling a provider. */
+export interface Config {
+  /** Maximum decoded WAV bytes per request. */
+  maxAudioBytes: number
+  /** Maximum PCM recording duration in seconds. */
+  maxDurationSeconds: number
+}
+```
+
+来源： [`packages/experimental/api-speech-to-text/src/index.ts:20`](../packages/experimental/api-speech-to-text/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-browser-use-chrome-devtools-mcp"></a>
 
@@ -868,6 +895,76 @@ export interface Config {
 ```
 
 来源：[`packages/experimental/ptc-runtime-python/src/index.ts:42`](../packages/experimental/ptc-runtime-python/src/index.ts)
+
+<a id="deepseek-aidsh-experimental-speech-to-text"></a>
+
+## `@deepseek-ai/dsh-experimental-speech-to-text`
+
+```ts config-catalog
+/** Composition defaults resolved before a transcription starts. */
+export interface Config {
+  /** Registered provider selected when the caller omits an id. */
+  defaultProvider: string
+  /** Provider language hint selected when the caller omits one. */
+  language: string
+}
+```
+
+来源： [`packages/experimental/speech-to-text/src/index.ts:18`](../packages/experimental/speech-to-text/src/index.ts)
+
+<a id="deepseek-aidsh-experimental-speech-to-text-sensevoice"></a>
+
+## `@deepseek-ai/dsh-experimental-speech-to-text-sensevoice`
+
+需要： `speechToText` · `subprocess`
+
+```ts config-catalog
+/** Local runtime, inference, and retention settings. */
+export interface Config {
+  /** Unique registration id; consumers select this exact id. */
+  providerId: string
+  /** Absolute directory for verified ONNX models. */
+  dataRoot: string
+  /** Existing directory containing the selected ONNX model and tokens.txt; omission downloads verified files. */
+  modelDirectory?: string | undefined
+  /** Existing Silero VAD ONNX file; omission downloads the verified model. */
+  vadModelPath?: string | undefined
+  /** Weight precision; INT8 minimizes first-use download and model storage. */
+  precision: 'int8' | 'fp32'
+  /** Hugging Face-compatible origin for pinned model URLs, including private mirrors. */
+  modelOrigin: string
+  /** CPU intra-operation thread count. */
+  threads: number
+  /** Maximum speech segment length passed to the recognizer. */
+  segmentSeconds: number
+  /** Silero speech probability threshold. */
+  vadThreshold: number
+  /** Minimum speech duration retained by VAD. */
+  minSpeechSeconds: number
+  /** Silence separating two speech segments. */
+  minSilenceSeconds: number
+  /** Maximum decoded WAV bytes accepted by the private worker. */
+  maxAudioBytes: number
+  /** Deadline for runtime preparation and cold model loading. */
+  prepareTimeoutMs: number
+  /** Deadline for one inference after the worker is ready. */
+  inferenceTimeoutMs: number
+  /** Idle period before stopping the worker; zero keeps it warm. */
+  idleTimeoutMs: number
+  /** Maximum accepted running and waiting transcriptions. */
+  maxPending: number
+  /** Managed process termination grace period. */
+  graceMs: number
+  /** Maximum retained worker diagnostic bytes. */
+  maxLogBytes: number
+  /** Maximum transcript response bytes. */
+  maxResponseBytes: number
+  /** Minimum interval between intermediate download progress notifications. */
+  progressIntervalMs: number
+}
+```
+
+来源： [`packages/experimental/speech-to-text-sensevoice/src/config.ts:6`](../packages/experimental/speech-to-text-sensevoice/src/config.ts)
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 
@@ -2126,7 +2223,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/sandbox/sandbox-local/src/index.ts:44`](../packages/sandbox/sandbox-local/src/index.ts)
+来源：[`packages/sandbox/sandbox-local/src/index.ts:45`](../packages/sandbox/sandbox-local/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-policy"></a>
 
@@ -3911,6 +4008,7 @@ export interface Config {
 - `@deepseek-ai/dsh-deepseek-llm-api-extensions`（[`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../packages/llm/deepseek-llm-api-extensions/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-auto-review` — 需要 `llm` · `permissionPresets` · `sessions` · `tools`（[`packages/experimental/auto-review/src/index.ts`](../packages/experimental/auto-review/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-client-ui-agent-team`（[`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts)）
+- `@deepseek-ai/dsh-experimental-client-ui-voice-input` ([`packages/experimental/client-ui-voice-input/src/index.ts`](../packages/experimental/client-ui-voice-input/src/index.ts))
 - `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` — requires `computerUse` · `tools` · `systemPrompt` ([`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts))
 - `@deepseek-ai/dsh-fs-observation-policy`（[`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts)）
 - `@deepseek-ai/dsh-fs-ssh` — 需要 `ssh` · `sandboxPolicy`（[`packages/ssh/fs-ssh/src/index.ts`](../packages/ssh/fs-ssh/src/index.ts)）
@@ -3982,6 +4080,7 @@ export interface Config {
 - `@deepseek-ai/dsh-deque`（[`packages/util/deque/src/index.ts`](../packages/util/deque/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-profile`（[`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-browser-use-runtime` ([`packages/experimental/browser-use-runtime/src/index.ts`](../packages/experimental/browser-use-runtime/src/index.ts))
+- `@deepseek-ai/dsh-experimental-voice-input-bundle`（[`packages/experimental/voice-input-bundle/src/index.ts`](../packages/experimental/voice-input-bundle/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-packer`（[`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-runtime`（[`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）

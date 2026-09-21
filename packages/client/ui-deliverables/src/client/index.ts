@@ -66,8 +66,9 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       children: { 'deliverables.file.actions': { kind: 'list', scope: 'session' } },
       inject: (): DeliverablesInjected => ({
-        hooks: { presentedOpen: opener.state, presentedHost: opener.host, changesSummary: summaries.state,
+        hooks: { changesDiff: diffs.state, presentedOpen: opener.state, presentedHost: opener.host, changesSummary: summaries.state,
           showCodeDiff: ctx.settingsScope.developerTools.enabled },
+        loadChangesDiff: (sessionId, seq, index) => diffs.load(sessionId, seq, index),
         reloadPresentedHost: () => opener.loadHost(),
         loadChangesSummary: (sessionId, seq) => summaries.load(sessionId, seq),
         openPresented: (sessionId, seq, index, action, application) => opener.open(sessionId, seq, index, action, application),

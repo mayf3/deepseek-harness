@@ -14,6 +14,7 @@ import { pdfBodyRegistration } from '../pdf/index.ts'
 import { LazyPdfBody } from '../pdf/LazyPdfBody.tsx'
 import { OfficeBody, type OfficeBodyInjected } from './OfficeBody.tsx'
 import { OfficeFontAction } from './OfficeFontAction.tsx'
+import { officeFace } from './face.ts'
 import { createOfficeStore } from './store.ts'
 import type { Config } from '../../config.ts'
 
@@ -49,14 +50,17 @@ export function apply(ctx: Context, config: Config['office']): void {
   }, OfficeFontAction)))
   const retainTab = retainDocumentTabs(ctx)
   const documentT = ctx.locale.bind('sidebarDocumentPreview')
+  const face = officeFace(
+    (file, signal) => read(file, signal),
+    failure => 'code' in failure ? failureLine(documentT, failure) : documentT('error.unavailable', { message: failure.message }),
+  )
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
     name: 'sidebar.right.tab.document', key: id, locale: 'sidebarOffice', store,
     children: { 'sidebar.right.tab.document.office.pdf': {
       kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: documentTabInfoFactory } },
     } },
-    inject: (_sessionId, actions): OfficeBodyInjected => ({
-      read: (file, signal) => read(file, signal),
-      describeFailure: failure => 'code' in failure ? failureLine(documentT, failure) : documentT('error.unavailable', { message: failure.message }),
+    inject: (sessionId, actions): OfficeBodyInjected => ({
+      ...face(sessionId, actions),
       retainTab: (tabId, signal) => { retainTab(tabId, signal, actions.forget) },
     }),
   }, OfficeBody)))

@@ -744,11 +744,6 @@
     "193e777770c611bf1005e2d5ce574b13e1469926c169812107cf091c73772c0b": 1,
     "ed59d2814914c377dda69ab030e0b51de776a34205ab85e6364fda6fbe903de5": 1
   },
-  "packages/client/ui-sidebar-documentpreview/tests/renderer-loading.client.spec.tsx": {
-    "3729313792d93c55cad1437e7ca1c5f9d5d6d4e02ab0000b0a3b01246504f898": 1,
-    "98dcb2e285933d18a1bc95899f5a46d545e3dba0873640e1920e711a254082dc": 1,
-    "a3a3404b2792d2353dc869625840b3166064d6f34100f366940ac686376783f8": 1
-  },
   "packages/client/ui-sidebar-documentpreview/tests/store.client.spec.ts": {
     "9173285d1c600b0eeb00bc3f852d2e3c8c46ea83cd36488a422d5fd05194935a": 1
   },
@@ -1200,8 +1195,7 @@
   },
   "packages/experimental/client-ui-agent-team/tests/browser-plugin.client.spec.ts": {
     "22baf2573ca146a7904b9ffc8b34a43692c4e042f01f43016d85443828bc88b1": 1,
-    "87ef7d60538b938bd8b5748cf4c0a5956ecedb860826c57d9ec789daea2f0355": 6,
-    "f1958372d07fa49fe88e9a25dd46b28fbf771fc4a15f8fbb7612745132757eaa": 1
+    "87ef7d60538b938bd8b5748cf4c0a5956ecedb860826c57d9ec789daea2f0355": 5
   },
   "packages/experimental/client-ui-agent-team/tests/team-action.client.spec.tsx": {
     "032fa1f91833ea216b76d2724f073741e70ad3eafebe4fbfcb166b950618e415": 1
@@ -1627,13 +1621,8 @@
     "9c749359b9458267505dc9d87b2b4e2a73e874c0e3908d7fa06e4fd4fd11cad4": 1
   },
   "packages/sandbox/sandbox-windows-acl/tests/grant-failure-paths.spec.ts": {
-    "0ee37bb1bf169e1de1030cd3449529c550283dccba4ea2d9d2af967b9ac51895": 1,
     "24defbb8f6adc4ec8ebd3443b233aceadae85ab486413320de0967eaf7d43032": 1,
-    "d7b28f469106e3e88d52c1742fe001ac7807bc1bc21c0fd4ddcb5bd9b97bf31b": 1,
     "ff7b125eae197db9cb8866293613a5de2a984d42b4487b2cc37eeacc8c300783": 1
-  },
-  "packages/sandbox/sandbox-windows-acl/tests/index-failure-paths.spec.ts": {
-    "916c26b0b6721f519ca6c95b93446c1b16b174f9bfb067e79f9cb03cec8fc87c": 1
   },
   "packages/sandbox/sandbox-windows-acl/tests/probe.spec.ts": {
     "d187b3ab8af0b780660e2b764b553ccff82e3af3254598ee18a059e5bd0381f5": 1
