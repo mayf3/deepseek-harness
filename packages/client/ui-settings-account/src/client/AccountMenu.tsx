@@ -25,14 +25,16 @@ export function AccountMenu({
     ? profile.value.name ?? profile.value.contact ?? t('signedIn') : t('signedIn')
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [logoutFailed, setLogoutFailed] = useState(false)
   const logout = async () => {
     setBusy(true)
-    setFailed(false)
+    setLogoutFailed(false)
     try { await signOut(); setOpen(false) }
-    catch { setFailed(true) }
+    catch { setLogoutFailed(true) }
     finally { setBusy(false) }
   }
+  // The plugin's start publishes `loginFailed` before it rejects, so the dialog owns the report.
+  const beginSignIn = (): void => { setOpen(false); void start().catch(() => undefined) }
   return <div className={css.root}>
     <Menu open={open} side="top" portal autoFocus className={css.anchor}
       anchor={<button type="button" className={css.trigger} data-collapsed={!wide} aria-label={t('menu')}
@@ -50,11 +52,11 @@ export function AccountMenu({
       onSelect={(id) => {
         if (id === 'settings') { setOpen(false); openSettings() }
         else if (id === 'contact') { setOpen(false); contactUs() }
-        else if (id === 'signin') { setOpen(false); void start().catch(() => { setFailed(true) }) }
+        else if (id === 'signin') beginSignIn()
         else if (id === 'signout') void logout()
       }} />
     {account.loginVisible && !account.onboarding && <SignInDialog account={account} start={start} cancel={cancel} t={t}
       close={() => { showLogin(false) }} useApiKey={() => { showLogin(false); openOnboarding('deepseek-official') }} />}
-    {failed && <span className={css.error} role="alert">{t('failed')}</span>}
+    {logoutFailed && <span className={css.error} role="alert">{t('failed')}</span>}
   </div>
 }

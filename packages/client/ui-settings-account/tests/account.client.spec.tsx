@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { PlatformBridge } from '../src/client/PlatformOverlay.tsx'
-import { AccountSection, type AccountSectionInjected } from '../src/client/AccountSection.tsx'
+import { AccountSection, type AccountSectionInjected, type AccountSnapshot } from '../src/client/AccountSection.tsx'
 import type {} from '../src/client/index.ts'
 import { en, zh, type AccountKey } from '../src/client/locales.ts'
 
@@ -72,6 +72,47 @@ it.each([en, zh])('opens settings and signs out from the sidebar account menu', 
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: copy.signOut })) })
   expect(signOut).toHaveBeenCalledOnce()
   expect(screen.queryByRole('menu')).toBeNull()
+})
+
+it('reports a failed start in the login dialog, not as a sidebar alert', async () => {
+  const operations = mount({ status: 'signed-out', attempt: null })
+  cleanup()
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  const links = { usageUrl: 'http://localhost:8081/usage', topUpUrl: 'http://localhost:8081/top_up' }
+  let snapshot: AccountSnapshot = { view: { status: 'signed-out', attempt: null, links }, details: undefined, failed: false }
+  // The plugin's start publishes the failure through the account snapshot, then rejects.
+  const start = vi.fn((): Promise<void> => {
+    snapshot = { ...snapshot, loginVisible: true, loginFailed: true }
+    return Promise.reject(new Error('account start failed'))
+  })
+  const view = render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} start={start}
+    useAccount={selector => selector(snapshot)} wide openOnboarding={() => {}} openSettings={() => {}}
+    t={key => key in en ? en[key as AccountKey] : key} />)
+  fireEvent.click(screen.getByRole('button', { name: en.menu }))
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: en.signIn })) })
+  expect(start).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('alert')).toBeNull()
+  view.rerender(<AccountMenu {...({} as GlobalStandardProps)} {...operations} start={start}
+    useAccount={selector => selector(snapshot)} wide openOnboarding={() => {}} openSettings={() => {}}
+    t={key => key in en ? en[key as AccountKey] : key} />)
+  expect(screen.getByRole('dialog').textContent).toContain(en.failed)
+  expect(screen.queryByRole('alert')).toBeNull()
+  // The dialog is the only place that reports the failure, so its copy appears once.
+  expect(document.body.textContent.split(en.failed)).toHaveLength(2)
+  await expect(`${document.body.textContent}\n`).toMatchFileSnapshot('./expected/login-failed-en.txt')
+})
+
+it('keeps the sidebar alert for a failed sign-out', async () => {
+  const operations = mount({ status: 'credential-stored', attempt: null })
+  cleanup()
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    signOut={() => Promise.reject(new Error('account sign-out failed'))}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())} wide
+    openOnboarding={() => {}} openSettings={() => {}} t={key => key in en ? en[key as AccountKey] : key} />)
+  fireEvent.click(screen.getByRole('button', { name: en.menu }))
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: en.signOut })) })
+  expect(screen.getByRole('alert').textContent).toBe(en.failed)
 })
 
 it.each([en, zh])('renders Platform profile and recharge wallet balances', async (copy) => {
