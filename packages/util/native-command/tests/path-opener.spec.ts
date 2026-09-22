@@ -80,17 +80,21 @@ describe('native path opener', () => {
     expect(run).toHaveBeenCalledOnce()
   })
 
-  it('encodes the target Explorer parses so a comma stays inside the path', async () => {
+  it.each([
+    // Explorer parses its own command line and splits it at commas, and libuv
+    // quotes an argument only when it holds a space, so the encoded file URI is
+    // what keeps the whole path in one field. The URI encoding covers the comma,
+    // spaces, the percent sign, and non-ASCII; the apostrophe and ampersand stay
+    // literal because no shell interprets them. UNC takes the same encoding.
+    ["C:\\work\\o'reilly, & 100%.txt", "file:///C:/work/o'reilly%2C%20&%20100%25.txt"],
+    ['C:\\work\\plain.txt', 'file:///C:/work/plain.txt'],
+    ['C:\\work\\my report.txt', 'file:///C:/work/my%20report.txt'],
+    ['C:\\my files\\报告,#%.txt', 'file:///C:/my%20files/%E6%8A%A5%E5%91%8A%2C%23%25.txt'],
+    ['\\\\server\\share\\a,b.txt', 'file://server/share/a%2Cb.txt'],
+  ] as const)('opens %s through the one encoded Explorer target', async (path, target) => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
-    // Explorer parses its own command line and splits it at commas, so the path
-    // crosses as a file URI with the comma percent-encoded. The apostrophe,
-    // ampersand, space, and percent need no escaping: no shell interprets them.
-    await openNativePath("C:\\work\\o'reilly, & 100%.txt", signal(), { platform: 'win32', run })
-    expect(run).toHaveBeenCalledWith(
-      'explorer.exe',
-      ["file:///C:/work/o'reilly%2C%20&%20100%25.txt"],
-      expect.any(AbortSignal),
-    )
+    await openNativePath(path, signal(), { platform: 'win32', run })
+    expect(run).toHaveBeenCalledExactlyOnceWith('explorer.exe', [target], expect.any(AbortSignal))
   })
 
   it('encodes a directory target the same way it encodes a file target', async () => {
