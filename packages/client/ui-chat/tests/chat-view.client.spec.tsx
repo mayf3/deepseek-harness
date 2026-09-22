@@ -755,7 +755,11 @@ describe('ChatView', () => {
     expect(bodies[1]!.hasAttribute('hidden')).toBe(true)
   })
 
-  it('waits for observed layout before measuring an opened process group', () => {
+  it.each([
+    { initialHeight: 200, closed: true },
+    { initialHeight: 600, closed: true },
+    { initialHeight: 600, closed: false },
+  ])('opens and follows a $initialHeight px process group with closed=$closed', ({ initialHeight, closed }) => {
     const observers = new Set<Observer>()
     class Observer implements ResizeObserver {
       readonly targets = new Set<Element>()
@@ -769,12 +773,13 @@ describe('ChatView', () => {
     const h = makeHarness({}, {}, snapshot)
     const key = 'observed-process' as GroupKey
     const groups = new ConversationGroupStore<ProcessGroupData>()
+    const group: GroupSnapshot<ProcessGroupData> = {
+      key, members: [{ kind: 'node', key: snapshot.order[0] as NodeKey }],
+      data: { turn: 1, closed, summary: { counts: [], running: undefined, runningDetail: '' } },
+    }
     groups.prepareAndInstall({
       entries: [{ kind: 'group', key }],
-      groups: { kind: 'replace', snapshots: [{
-        key, members: [{ kind: 'node', key: snapshot.order[0] as NodeKey }],
-        data: { turn: 1, closed: true, summary: { counts: [], running: undefined, runningDetail: '' } },
-      }] },
+      groups: { kind: 'replace', snapshots: [group] },
     }, key => snapshot.nodes.get(key))
     h.setGrouped(groups)
     const view = render(<h.ChatView {...h.props} />)
@@ -782,10 +787,12 @@ describe('ChatView', () => {
     const body = view.container.querySelector<HTMLElement>('[data-step-process-body]')!
     let reads = 0
     let top = 0
+    let height = initialHeight
     Object.defineProperties(body, {
-      scrollTop: { get: () => { reads++; return top } },
+      scrollTop: { get: () => { reads++; return top }, set: (value: number) => { top = value } },
       clientHeight: { get: () => { reads++; return 200 } },
-      scrollHeight: { get: () => { reads++; return 600 } },
+      scrollHeight: { get: () => { reads++; return height } },
+      scrollTo: { value: (options: ScrollToOptions) => { top = options.top ?? top } },
     })
 
     fireEvent.click(header)
@@ -793,16 +800,69 @@ describe('ChatView', () => {
     const observer = [...observers].find(observer => observer.targets.has(body))!
     expect(observer).toBeDefined()
     act(() => { observer.callback([], observer) })
-    expect(body.hasAttribute('data-scroll-up')).toBe(false)
-    expect(body.hasAttribute('data-scroll-down')).toBe(true)
+    expect(top).toBe(closed ? 0 : initialHeight - 200)
+    expect(body.hasAttribute('data-scroll-up')).toBe(!closed && initialHeight > 200)
+    expect(body.hasAttribute('data-scroll-down')).toBe(closed && initialHeight > 200)
+
+    height = 800
+    act(() => { observer.callback([], observer) })
+    fireEvent.scroll(body)
+    expect(top).toBe(!closed || initialHeight === 200 ? 600 : 0)
+
     top = 400
     fireEvent.scroll(body)
     expect(body.hasAttribute('data-scroll-up')).toBe(true)
+    expect(body.hasAttribute('data-scroll-down')).toBe(true)
+    height = 1_000
+    act(() => { observer.callback([], observer) })
+    expect(top).toBe(400)
+
+    top = 800
+    fireEvent.scroll(body)
+    height = 1_200
+    act(() => { observer.callback([], observer) })
+    fireEvent.scroll(body)
+    expect(top).toBe(1_000)
     expect(body.hasAttribute('data-scroll-down')).toBe(false)
     const measured = reads
     fireEvent.click(header)
     expect(reads).toBe(measured)
     expect(observers.has(observer)).toBe(false)
+
+    height = 1_400
+    fireEvent.click(header)
+    expect(reads).toBe(measured)
+    const reopened = [...observers].find(observer => observer.targets.has(body))!
+    act(() => { reopened.callback([], reopened) })
+    expect(top).toBe(closed ? 0 : 1_200)
+    expect(body.hasAttribute('data-scroll-down')).toBe(closed)
+
+    top = 400
+    fireEvent.scroll(body)
+    act(() => {
+      groups.prepareAndInstall({ groups: { kind: 'apply', removes: [], upserts: [{
+        ...group, data: { ...group.data, closed: true },
+      }] } }, key => snapshot.nodes.get(key))
+      groups.publish()
+    })
+    expect(top).toBe(400)
+    expect(observers.has(reopened)).toBe(true)
+    height = 1_600
+    act(() => { reopened.callback([], reopened) })
+    expect(top).toBe(400)
+    fireEvent.click(header)
+    fireEvent.click(header)
+    const historical = [...observers].find(observer => observer.targets.has(body))!
+    act(() => { historical.callback([], historical) })
+    expect(top).toBe(0)
+
+    top = 300
+    fireEvent.scroll(body)
+    fireEvent.click(header)
+    fireEvent(body, new Event('beforematch'))
+    const found = [...observers].find(observer => observer.targets.has(body))!
+    act(() => { found.callback([], found) })
+    expect(top).toBe(300)
   })
 
   it('does not recalculate settled group titles when work-details mode changes', () => {

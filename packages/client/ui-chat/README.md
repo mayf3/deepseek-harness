@@ -102,12 +102,23 @@ Chat restores semantic anchors across history prepend and renderer remounts, wit
 
 The turn rail and back-to-bottom button sit outside the clipped transcript. They use the shared conversation scrollport for sticky positioning, or the Chat frame for absolute positioning when Chat owns its scrollport.
 
+Outer transcript following and each open capped group's following are independent. Native animation progress retains follow intent; a reader gesture interrupts the animation, and actual movement determines whether following remains enabled. Scroll chaining can move the outer transcript, which then applies its own distance threshold. The back-to-bottom button restores only outer following.
+
+| Outer follows | Open group follows | Back-to-bottom button | New content |
+|---|---|---|---|
+| Yes | Yes | Hidden | Each scrollport follows its own floor. |
+| Yes | No | Hidden | The outer transcript follows; the group retains its position. |
+| No | Yes | Visible | The group follows; the outer transcript retains its reading position. |
+| No | No | Visible | Both retain their reading positions. |
+
 The turn rail mounts only visible marks, overscan, and the focused mark's neighbors. Its fixed pitch and observed viewport size determine scroll offsets without reading the DOM scroll extent. Initial placement waits for the body's restored active Turn and the rail's first usable viewport size. The ref controls activate a Turn or scroll the rail independently; the transcript itself remains fully mounted.
 
 While the pointer is outside the rail, automatic follow keeps the rail still when the active mark's center is inside the fade-free band and centers it after it leaves that band. Previews follow pointer movement or focus; marks scrolling under a stationary pointer do not select another preview.
 
 <details>
 <summary>Scroll implementation — click to expand</summary>
+
+`useScrollFollow` supplies independent controllers for shared bottom thresholds, follow intent, and native scrolling. `useProcessScroll` owns group observation, initial placement, and edge fades. Outer following remains immediate; group growth uses native smooth scrolling unless reduced motion is requested. Opening placement remains immediate.
 
 `useChatViewport` owns turn-aware DOM reads, clamped writes, native events, and one retained paging anchor. For Load older, Node and Group seats mark eligible anchors from their existing disclosure state. The viewport selects the first nonempty, unhidden marker in transcript order without hit testing or geometry-based search, then measures that element and its scroll containers. It compensates the anchor's capped group first, then gives the remaining displacement to the transcript scrollport. Commits and later content resizes reuse that anchor; a remounted row is resolved by the same semantic key. Compensation stays within the actual scroll ranges without adding bottom space.
 

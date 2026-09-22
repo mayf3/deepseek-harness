@@ -656,6 +656,107 @@ describe('web e2e: long Chat scroll contract', () => {
     })
   }, 180_000)
 
+  it.skipIf(MODE === 'record')('follows a growing process group independently of the outer transcript', async () => {
+    const parts = [
+      'GROUP_SCROLL_START\n\n',
+      ...Array.from({ length: 4 }, (_, batch) => Array.from({ length: 20 }, (_, row) =>
+        `Group batch ${batch} paragraph ${row}: inspect the next recorded operation.\n\n`).join('')),
+      'GROUP_SCROLL_END\n\n',
+    ]
+    const chunks: StreamChunk[] = [
+      { type: 'block-start', index: 0, blockType: 'reasoning' },
+      ...parts.map((text): StreamChunk => ({ type: 'reasoning-delta', index: 0, text })),
+      { type: 'block-end', index: 0, block: { type: 'reasoning', text: parts.join('') } },
+      { type: 'block-start', index: 1, blockType: 'text' },
+      { type: 'text-delta', index: 1, text: 'GROUP_SCROLL_DONE' },
+      { type: 'block-end', index: 1, block: { type: 'text', text: 'GROUP_SCROLL_DONE' } },
+      { type: 'usage', usage: { inputTokens: 256, outputTokens: 512 } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    await withScrollWorld({
+      failureShot: 'web-e2e-chat-process-follow',
+      replay: [replayEntry(chunks)],
+      seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
+    }, async (world) => {
+      await openSeed(world.page, HISTORY_FIXTURE, HISTORY_FIXTURE.markers.assistant(HISTORY_FIXTURE.turns))
+      const gates = parts.slice(1).map(() => Promise.withResolvers<undefined>())
+      const dispose = world.scaffold.ctx.on('llm/stream', async function* (_options, next) {
+        let index = -1
+        for await (const chunk of next()) {
+          if (chunk.type === 'reasoning-delta') await gates[index++]?.promise
+          yield chunk
+        }
+      })
+      const settled = world.scaffold.whenTurnSettled(60_000)
+      try {
+        await world.page.locator('[data-composer-input][contenteditable="true"]').last().fill(
+          'Inspect the recorded operations while I scroll the conversation.',
+        )
+        await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
+        const group = world.page.locator('[data-step-process]:has([data-variant="think"][data-state="running"])')
+        await group.locator('[data-process-activity]').click()
+        await group.locator('[data-disclosure-row]').click()
+        const body = group.locator('[data-step-process-body]')
+        await nextPaint(world.page)
+        expect(await body.evaluate(element => element.scrollHeight <= element.clientHeight)).toBe(true)
+        const height = () => body.evaluate(element => element.scrollHeight)
+        const top = () => body.evaluate(element => element.scrollTop)
+        const expectGroupBottom = async (): Promise<void> => {
+          await expect.poll(() => body.evaluate(element =>
+            element.scrollHeight - element.clientHeight - element.scrollTop))
+            .toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
+        }
+        const grow = async (index: number): Promise<void> => {
+          const before = await height()
+          gates[index]!.resolve(undefined)
+          await expect.poll(height).toBeGreaterThan(before + 200)
+        }
+
+        // Outer following is a precondition independent of opening the inner disclosure.
+        const backToBottom = world.page.getByRole('button', { name: 'Back to bottom', exact: true })
+        await wheelTranscript(world.page, -400)
+        await backToBottom.click()
+        await expectBottom(world.page)
+        await grow(0)
+        await expectGroupBottom()
+        await expectBottom(world.page)
+        await wheelTranscript(world.page, -800)
+        await backToBottom.waitFor()
+        const outerTop = (await scrollGeometry(world.page)).scrollTop
+        await grow(1)
+        await expectGroupBottom()
+        expect(Math.abs((await scrollGeometry(world.page)).scrollTop - outerTop)).toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
+
+        await backToBottom.click()
+        await expectBottom(world.page)
+        const pinnedTop = await top()
+        await body.hover()
+        await world.page.mouse.wheel(0, -160)
+        await expect.poll(top).toBeLessThan(pinnedTop - 100)
+        await nextPaint(world.page)
+        const readerTop = await top()
+        await grow(2)
+        expect(Math.abs(await top() - readerTop)).toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
+        await expectBottom(world.page)
+
+        await group.locator('[data-process-activity]').click()
+        await group.locator('[data-process-activity]').click()
+        await expectGroupBottom()
+
+        await body.hover()
+        await world.page.mouse.wheel(0, 10_000)
+        await expectGroupBottom()
+        await grow(3)
+        await expectGroupBottom()
+        assertClean(world)
+      } finally {
+        for (const gate of gates) gate.resolve(undefined)
+        dispose()
+        await settled
+      }
+    })
+  })
+
   it.skipIf(MODE === 'record')('virtualizes the outline rail and jumps to an unloaded turn', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-turn-rail-jump',
