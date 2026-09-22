@@ -95,6 +95,7 @@ export function processActivity(nodes: readonly ChatNode[]): ProcessActivitySumm
   let running: ProcessActivity | undefined
   let runningDetail = ''
   let runningTime = -Infinity
+  let preparing: boolean | undefined
   const visit = (tool: ToolCallBlock): void => {
     if (seen.has(tool.callId)) return
     seen.add(tool.callId)
@@ -103,7 +104,8 @@ export function processActivity(nodes: readonly ChatNode[]): ProcessActivitySumm
       const kind = activity(call.name)
       if (isRunningTool(tool) && tool.time >= runningTime) {
         running = kind
-        runningDetail = liveToolDetail(tool.name, tool.argsRaw)
+        preparing = tool.phase === 'preparing'
+        runningDetail = tool.phase === 'preparing' ? tool.name : liveToolDetail(tool.name, tool.argsRaw)
         runningTime = tool.time
       }
       counts.set(kind, (counts.get(kind) ?? 0) + 1)
@@ -118,5 +120,6 @@ export function processActivity(nodes: readonly ChatNode[]): ProcessActivitySumm
     counts: [...counts].map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count),
     running,
     runningDetail,
+    ...preparing ? { preparing: true } : {},
   }
 }

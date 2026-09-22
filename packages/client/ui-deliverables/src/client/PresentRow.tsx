@@ -25,7 +25,19 @@ function fileNames(raw: string): string {
  * @param props - tool call and localized status copy.
  * @returns a status row with a result disclosure.
  */
-export function PresentRow({ block, inspect, t }: PresentRowProps) {
+export function PresentRow(props: PresentRowProps) {
+  return props.phase === 'preparing' ? <PreparingPresentRow {...props} /> : <StartedPresentRow {...props} />
+}
+
+function PreparingPresentRow({ t, useDisclosure }: Extract<PresentRowProps, { phase: 'preparing' }>) {
+  const { toggle } = useDisclosure()
+  return <div data-tool="present" data-state="preparing" aria-label={t('row.preparing')}>
+    <DisclosureRow title={t('row.title')} icon={<IconDeliverDocRegular size={14} />}
+      open={false} expandable={false} onToggle={toggle} running />
+  </div>
+}
+
+function StartedPresentRow({ block, inspect, t }: Exclude<PresentRowProps, { phase: 'preparing' }>) {
   const settled = 'kind' in block
   const state = !settled ? 'running' : block.error?.code === 'interrupted' ? 'stopped' : block.isError ? 'error' : 'ok'
   const args = (settled ? block.call?.argsRaw : block.argsRaw) ?? ''

@@ -66,9 +66,9 @@ const resultNode = (argsRaw: string, over?: Partial<ToolResultNode>): ToolResult
   content: [], isError: false, subCalls: [], ...over,
 })
 
-function rowProps(block: unknown): TodoRowProps {
+function rowProps(block: TodoRowProps['block']): TodoRowProps {
   return {
-    useDisclosure, callId: 'c1', toolName: 'todo_write', block,
+    useDisclosure, callId: 'c1', toolName: 'todo_write', ...('kind' in block ? { phase: 'result' as const, block: block } : { phase: block.phase, block: block }),
     openFile: vi.fn(),
     sessionId: 's1',
     useSessions: () => undefined,
@@ -97,7 +97,7 @@ describe('TodoRow', () => {
 
   it('omits the active clause when no item is in progress and reads running-call args', () => {
     const args = JSON.stringify({ todos: [{ content: 'x', status: 'completed' }] })
-    render(<TodoRow {...rowProps({ callId: 'c1', name: 'todo_write', argsRaw: args, turn: 1, step: 1, time: 1_000, subCalls: [] })} />)
+    render(<TodoRow {...rowProps({ phase: 'start' as const, callId: 'c1', name: 'todo_write', argsRaw: args, turn: 1, step: 1, time: 1_000, subCalls: [] })} />)
     expect(screen.getByText('1/1 已完成')).toBeTruthy()
   })
 
@@ -110,7 +110,7 @@ describe('TodoRow', () => {
 
   it('keeps non-ok execution states visible through the shared row states', () => {
     const args = JSON.stringify({ todos: LIST })
-    const running = render(<TodoRow {...rowProps({ callId: 'c1', name: 'todo_write', argsRaw: args, turn: 1, step: 1, time: 1_000, subCalls: [] })} />)
+    const running = render(<TodoRow {...rowProps({ phase: 'start' as const, callId: 'c1', name: 'todo_write', argsRaw: args, turn: 1, step: 1, time: 1_000, subCalls: [] })} />)
     expect(running.container.querySelector('[data-state="running"]')).not.toBeNull()
     expect(running.container.querySelector('[data-state="running"] svg')).not.toBeNull()
     running.unmount()

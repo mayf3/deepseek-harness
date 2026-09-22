@@ -5,9 +5,6 @@
  * output and error material from the settled result node. A supported terminal
  * call gets its expanded body from `terminalCardModel` instead.
  */
-// The block union's defining home is runtime (fold-product types); this
-// contract only forwards it (type-definition authority stays with the layer
-// that produces the values).
 import type { ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { LocaleKeysOf } from '@deepseek-ai/dsh-client-ui-slots'
 import { abbreviateHomePath, relativizeToCwd } from '@deepseek-ai/dsh-util-workspace-path'
@@ -18,7 +15,7 @@ export type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 export type ToolRowVariant = 'search' | 'read' | 'bash' | 'write' | 'edit' | 'code' | 'others'
 
 /** Row lifecycle state used by summary styling and accessible status text. */
-export type ToolRowState = 'running' | 'ok' | 'error' | 'stopped'
+export type ToolRowState = 'preparing' | 'running' | 'ok' | 'error' | 'stopped'
 
 /** Locale-neutral structured fact consumed only by the user-facing Tool row. */
 export interface AutoReviewDenial {
@@ -91,6 +88,15 @@ const TOOL_TITLE_KEYS: Record<string, ToolTitleKey> = {
  */
 export function classifyTool(toolName: string): ToolRowVariant {
   return TOOL_VARIANTS[toolName] ?? 'others'
+}
+
+/**
+ * Select a tool-owned or generic title without reading arguments.
+ * @param toolName - wire tool name.
+ * @returns the localized title key.
+ */
+export function toolTitleKey(toolName: string): ToolTitleKey {
+  return TOOL_TITLE_KEYS[toolName] ?? VARIANT_TITLE_KEYS[classifyTool(toolName)]
 }
 
 /** Everything ToolRow needs, derived once from the frozen slice. */
@@ -229,14 +235,21 @@ export function formatToolBody(variant: ToolRowVariant, argsRaw: string): string
 /**
  * Derive the full row model from a frozen call slice.
  * @param toolName - wire tool name (dispatch-supplied; survives windowless results).
- * @param block - RunningToolCall or ToolResultNode off the snapshot caches.
+ * @param block - preparing call, dispatched call, or result from the snapshot.
  * @param cwd - session workspace root; workspace-rooted path summaries display relative to it.
  * @param home - host account home; a leftover POSIX home path displays as `~`.
  * @returns the row model.
  */
 export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: string, home?: string): ToolRowModel {
   const variant = classifyTool(toolName)
+  const titleKey = toolTitleKey(toolName)
   const done = 'kind' in block
+  if (!done && block.phase === 'preparing') {
+    return {
+      variant, titleKey, state: 'preparing', summary: '', filePath: undefined,
+      bodyRaw: null, output: null, errorSummary: null, autoReviewDenial: null,
+    }
+  }
   const argsRaw = (done ? block.call?.argsRaw : block.argsRaw) ?? ''
   const state: ToolRowState = !done ? 'running'
     : block.error?.code === 'interrupted' ? 'stopped'
@@ -244,10 +257,9 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
   const base = argsRaw === ''
     ? block.callId
     : abbreviateHomePath(relativizeToCwd(deriveSummary(variant, argsRaw), cwd), home)
-  const toolTitleKey = TOOL_TITLE_KEYS[toolName]
   // Others keeps the static "Tool call" title (figma literal); the real tool
   // name rides the mutable summary slot unless the tool owns a specific title.
-  const summary = variant === 'others' && toolName !== '' && toolTitleKey === undefined
+  const summary = variant === 'others' && toolName !== '' && TOOL_TITLE_KEYS[toolName] === undefined
     ? `${toolName} · ${base}`
     : base
   // The empty string is "no text" for both derived result fields: a settled
@@ -258,7 +270,7 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
   const bodyRaw = argsRaw === '' ? null : argsRaw
   return {
     variant,
-    titleKey: toolTitleKey ?? VARIANT_TITLE_KEYS[variant],
+    titleKey,
     summary,
     filePath: deriveFilePath(variant, argsRaw),
     bodyRaw,

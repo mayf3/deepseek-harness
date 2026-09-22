@@ -25,10 +25,11 @@ const VARIANT_ICONS: Record<ToolRowVariant, ReactNode> = {
 }
 
 /** Card props: the owner payload plus the render site's locale seat (plain prop). */
-export interface GenericToolCardProps extends ToolCallOwnerProps {
+export type GenericToolCardProps = ToolCallOwnerProps & {
   t: ToolTreeProps['t']
 }
 
+/** @param props - current tool stage and locale. @returns its preparation or dispatched card. */
 export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect, useDisclosure, t }: GenericToolCardProps) {
   const model = toolRowModel(toolName, block, cwd, home)
   const autoReview = model.autoReviewDenial === null
@@ -52,7 +53,7 @@ export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect,
       variant={model.variant}
       toolName={toolName}
       icon={VARIANT_ICONS[model.variant]}
-      title={t(model.titleKey)}
+      title={model.state === 'preparing' && model.titleKey === 'tool.title.generic' ? toolName : t(model.titleKey)}
       summary={model.summary}
       // Single-file tools never expose an args body — the path link is the only
       // args interaction. A card is not an args body: a read/write/edit row is

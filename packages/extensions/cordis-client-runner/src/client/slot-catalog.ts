@@ -3815,14 +3815,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.images\', () => ctx.slots.register(\n      { name: \'tool.call.images\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-tool/src/client/contract/slots.ts:35',
+    source: 'packages/client/ui-tool/src/client/contract/slots.ts:38',
   },
   {
     key: 'tool.call.toolview',
     kind: 'keyed',
     scope: 'session',
     summary: 'Keyed Tool call view dispatched by wire Tool name.',
-    doc: 'Keyed Tool call view dispatched by wire Tool name. Any name is allowed,\nincluding tools registered by your package. Register with\n`key: \'<tool name>\'`; a typo never renders.\n\nRegistering an occupied key replaces its view; unclaimed keys use the\ngeneric row. The owner supplies the call identity and frozen running\nor settled node through ToolCallOwnerProps.',
+    doc: 'Keyed Tool call view dispatched by wire Tool name. Any name is allowed,\nincluding tools registered by your package. Register with\n`key: \'<tool name>\'`; a typo never renders.\n\nRegistering an occupied key replaces its view; unclaimed keys use the\ngeneric row. The owner supplies the call identity and frozen running\nor settled node through explicit phase props; preparing inputs have no arguments.',
     registerOptions: [
       {
         name: 'key',
@@ -3832,13 +3832,10 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Standard owner currency supplied to every atomic Tool view. */\nexport interface ToolCallOwnerProps {\n  /** Stable injected Hook; each invocation owns its open state and subscribes to enclosing-Turn resets. */\n  useDisclosure: UseDisclosure\n  /** Tool call identity, stable across running and settled forms. */\n  callId: string\n  /** Wire Tool name and keyed dispatch value. */\n  toolName: string\n  /** Frozen running call or settled result node. */\n  block: ToolCallBlock\n  /** Session workspace root for relative summaries. */\n  cwd?: string | undefined\n  /** Host account home; POSIX home-rooted summaries display as `~`. */\n  home?: string | undefined\n  /**\n   * Open a Tool argument path. A view that knows which line the call was about\n   * passes it, and the opened surface lands there.\n   */\n  openFile: (path: string, options?: OpenFileOptions) => void\n  /**\n   * Session-authorized image loader for the `tool.call.images` slot, supplied\n   * by the chat node that owns this call. A composed chat node always\n   * supplies it (`ChatNodeOwnerProps.loadImage` is required), so the tool\n   * layer never imports an attachment implementation nor handles URL\n   * authorization.\n   */\n  loadIm /* …truncated — full shape in source */',
+      '/** Common owner callbacks and the data admitted at the current tool stage. */\nexport type ToolCallOwnerProps = ToolCallCommonProps & ToolCallPhaseProps',
     ],
     ownerPropsReferences: [
-      'ChatNodeOwnerProps',
-      'MessageImageLoader',
-      'OpenFileOptions',
-      'UseDisclosure',
+      'ToolCallPhaseProps',
     ],
     standardProps: [
       'useResource: UseResource',
@@ -3918,7 +3915,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.toolview\', () => ctx.slots.register(\n      { name: \'tool.call.toolview\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-tool/src/client/contract/slots.ts:21',
+    source: 'packages/client/ui-tool/src/client/contract/slots.ts:24',
   },
   {
     key: 'tool.view.cordis',

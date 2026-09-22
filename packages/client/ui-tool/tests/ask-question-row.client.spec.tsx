@@ -33,13 +33,13 @@ const resultNode = (argsRaw: string, resultText: string | null, over?: Partial<T
 })
 
 const runningCall = (argsRaw: string) =>
-  ({ callId: 'c1', name: 'ask_user_question', argsRaw, turn: 1, step: 1, time: 1_000, subCalls: [] })
+  ({ phase: 'start' as const, callId: 'c1', name: 'ask_user_question', argsRaw, turn: 1, step: 1, time: 1_000, subCalls: [] })
 
 const t = makeTranslate(zh, commonZh)
 
-function rowProps(block: unknown): Parameters<typeof AskQuestionRow>[0] {
+function rowProps(block: Parameters<typeof AskQuestionRow>[0]['block']): Parameters<typeof AskQuestionRow>[0] {
   return {
-    useDisclosure, callId: 'c1', toolName: 'ask_user_question', block, t,
+    useDisclosure, callId: 'c1', toolName: 'ask_user_question', ...('kind' in block ? { phase: 'result' as const, block: block } : { phase: block.phase, block: block }), t,
     openFile: vi.fn(),
     sessionId: 's1',
     useSessions: () => undefined,

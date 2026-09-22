@@ -61,6 +61,17 @@ function props(
 }
 
 describe('ToolCallTree', () => {
+  it('dispatches preparation through the existing keyed toolview with no argument fields', () => {
+    const owners: ToolCallOwnerProps[] = []
+    const view = render(<ToolCallTree {...props({
+      phase: 'preparing', callId: 'preparing', name: 'write', turn: 1, step: 1, time: 1, subCalls: [],
+    }, undefined, owners)} />)
+    expect(owners[0]).toMatchObject({ phase: 'preparing', callId: 'preparing', toolName: 'write' })
+    expect(owners[0]?.block).not.toHaveProperty('argsRaw')
+    expect(view.container.querySelector('[data-chat-call-id="preparing"] [data-state="preparing"]')).not.toBeNull()
+    expect(view.queryByRole('button')).toBeNull()
+  })
+
   it('forwards one stable disclosure Hook to nested calls and resets only their open state', () => {
     const reset = createSnapshotStore(0)
     const useDisclosure = bindDisclosure(reset)
@@ -139,13 +150,14 @@ describe('ToolCallTree', () => {
   it('dispatches a running call by its wire name and forwards inspect', () => {
     const owners: ToolCallOwnerProps[] = []
     const block: ToolCallBlock = {
-      callId: 'running', name: 'bash', argsRaw: '{"command":"pwd"}',
+      phase: 'start' as const, callId: 'running', name: 'bash', argsRaw: '{"command":"pwd"}',
       turn: 1, step: 0, time: 1_000, subCalls: [],
     }
     const treeProps = props(block, undefined, owners)
     render(<ToolCallTree {...treeProps} />)
 
     expect(owners[0]?.toolName).toBe('bash')
+    expect(owners[0]?.phase).toBe('start')
     const inspect = owners[0]?.inspect
     expect(inspect).toBeDefined()
     inspect?.()

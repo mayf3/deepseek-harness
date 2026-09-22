@@ -31,6 +31,7 @@ type ProcessTitleActivity = ProcessActivity | 'thinking'
 interface LiveProcessTitle {
   readonly activity: ProcessTitleActivity
   readonly detail: string
+  readonly preparing: boolean
 }
 
 const PROCESS_ICONS: Record<ProcessTitleActivity, ReactNode> = {
@@ -49,7 +50,7 @@ const PROCESS_ICONS: Record<ProcessTitleActivity, ReactNode> = {
 }
 
 function sameLiveProcessTitle(left: LiveProcessTitle, right: LiveProcessTitle): boolean {
-  return left.activity === right.activity && left.detail === right.detail
+  return left.activity === right.activity && left.detail === right.detail && left.preparing === right.preparing
 }
 
 function useStableLiveProcessTitle(desired: LiveProcessTitle, active: boolean): LiveProcessTitle {
@@ -73,7 +74,7 @@ function useStableLiveProcessTitle(desired: LiveProcessTitle, active: boolean): 
     }
     const timer = setTimeout(commit, remaining)
     return () => { clearTimeout(timer) }
-  }, [active, desired.activity, desired.detail])
+  }, [active, desired.activity, desired.detail, desired.preparing])
   return active ? displayed : desired
 }
 
@@ -99,9 +100,12 @@ const ProcessGroupHeader = memo(function ProcessGroupHeader({ groupKey, useChatG
   const live = useStableLiveProcessTitle({
     activity: data?.summary.running ?? 'thinking',
     detail: data?.summary.runningDetail ?? '',
+    preparing: data?.summary.preparing === true,
   }, data !== undefined && !data.closed)
   if (data === undefined) return null
-  const label = data.closed ? processTitle(data.summary, t) : t(`message.stepProcess.${live.activity}`)
+  const label = data.closed ? processTitle(data.summary, t)
+    : live.preparing ? t(`message.stepProcess.prepare.${live.activity === 'thinking' ? 'tools' : live.activity}`)
+      : t(`message.stepProcess.${live.activity}`)
   const detail = detailed && !data.closed ? live.detail : ''
   const title = detail === '' ? label : `${label}${t('message.turnProcess.separator')}${detail}`
   const activity = data.closed ? data.summary.counts[0]?.kind ?? 'thinking' : live.activity

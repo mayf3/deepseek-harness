@@ -14,6 +14,8 @@ import { detailsCardModel } from '../models/details-card-model.ts'
 import { parsedToolCall } from '../models/raw-tool-call.ts'
 import { toolRowModel } from '../models/tool-call-model.ts'
 
+type DetailsRowProps = ToolCallViewProps & PropsLocale<'conversation'>
+
 const TITLE_KEYS = {
   create_goal: 'tool.title.createGoal',
   get_goal: 'tool.title.getGoal',
@@ -80,7 +82,7 @@ function detailIcon(toolName: string) {
  * @param props - Tool call, row actions, and locale supplied by the keyed slot.
  * @returns A Tool row with structured details or generic input/output.
  */
-export function DetailsRow({ toolName, block, cwd, home, openFile, inspect, useDisclosure, t }: ToolCallViewProps & PropsLocale<'conversation'>) {
+export function DetailsRow({ toolName, block, cwd, home, openFile, inspect, useDisclosure, t }: DetailsRowProps) {
   const model = toolRowModel(toolName, block, cwd, home)
   const locale = document.documentElement.lang
   const details = useMemo(() => detailsCardModel(block, t, locale), [block, t, locale])

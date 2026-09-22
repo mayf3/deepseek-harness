@@ -7,6 +7,8 @@ export interface ProcessActivitySummary {
   readonly counts: readonly { readonly kind: ProcessActivity; readonly count: number }[]
   readonly running: ProcessActivity | undefined
   readonly runningDetail: string
+  /** Present only while the selected live activity has not reached tool/call. */
+  readonly preparing?: true
 }
 
 /** Presentation facts for one group between independent replies or input. */

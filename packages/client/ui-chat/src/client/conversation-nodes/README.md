@@ -122,6 +122,8 @@ A closed group's header names the first three categories from its ranked summary
 
 ### Group-title rules
 
+A preparing Tool node uses its category's preparation label and its wire name as detail. It contributes one call without parsing arguments and renders one non-expandable row. A named live delta can create this node; historical calls start directly from tool/call without replaying preparation.
+
 The labels below describe recorded activity, not successful outcomes. For example, a failed read still participates in the “Read files” category.
 
 | Category | Running label | Closed label |
@@ -210,7 +212,7 @@ Counts describe calls in this group, not successful operations, files changed, c
 
 | Call evidence in this group | Counting rule |
 |---|---|
-| Running call, successful result, failed result, or projected interrupted result with its original call | Count one call in the category selected by its recorded tool name. Settlement and failure do not add or subtract a call. |
+| Preparing call, running call, successful result, failed result, or projected interrupted result with its original call | Count one call in the category selected by its recorded tool name. Settlement and failure do not add or subtract a call. |
 | Repeated `callId` | Count only the first occurrence, including when it appears both as a root and as a nested call. Later occurrences and their subtrees are skipped. |
 | Parent and child with different `callId` values | Count both, in their own categories; visit the parent before its children and siblings in recorded order. |
 | Repeated calls to the same tool with different `callId` values | Count each call, even with identical arguments or the same terminal/session target. |
@@ -255,6 +257,8 @@ A `run_code` root counts once as `code`; its recorded PTC subcalls each count in
 Exact-name rules also mean that a recorded name such as `functions.read`, `mcp.read`, or `Read` falls into `tools`, while `browser_inspect` falls into `search`. A `terminal_*` name follows the command rule even when its operation only inspects or closes a terminal, unless the earlier `_inspect` rule matches.
 
 ### Live activity and detail
+
+Preparing calls use their first named delta time and show only the tool name. Dispatched calls use their tool/call time and complete arguments.
 
 Among running calls, the greatest `time` selects the live category and detail; equal times select the later visited call. With no running call, the category is absent and detail comes from the last nonempty reasoning paragraph of the latest running Assistant with nonempty reasoning, in member order. Reasoning detail removes `**` markers and does not require a newline-terminated first line; the individual reasoning-row preview has separate rules.
 
