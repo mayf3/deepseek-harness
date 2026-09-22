@@ -1,4 +1,4 @@
-/** Plain-Node smoke for the built Agent Teams service and Remote contribution. */
+/** Plain-Node smoke for the built Agent Teams service. */
 
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'

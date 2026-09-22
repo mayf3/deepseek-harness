@@ -225,9 +225,10 @@ describe('TeamAction', () => {
     expect(b.injected.loadProjections).not.toHaveBeenCalled()
 
     act(() => {
-      b.session.update((draft) => {
-        draft.openState = 'error'
-        draft.openError = new RemoteError('gateway/internal', 'history unavailable', {})
+      b.session.set({
+        ...b.session.getSnapshot(),
+        openState: 'error',
+        openError: new RemoteError('gateway/internal', 'history unavailable', {}),
       })
     })
     expect(screen.getByRole('alert').textContent).toBe('history unavailable (gateway/internal)')
@@ -235,10 +236,7 @@ describe('TeamAction', () => {
     expect(b.injected.loadProjections).not.toHaveBeenCalled()
 
     act(() => {
-      b.session.update((draft) => {
-        draft.openState = 'open'
-        draft.openError = null
-      })
+      b.session.set({ ...b.session.getSnapshot(), openState: 'open', openError: null })
     })
     expect(screen.getByRole('status').textContent).toBe(zh.unavailable)
     setProjection(b.sessions, SESSION, team)
@@ -259,10 +257,10 @@ describe('TeamAction', () => {
         .map(([id, snapshot]) => [id, { ...snapshot }]))
       b.sessions.set({
         ...current,
-        byId: { ...current.byId, unrelated: summary('unrelated' as SessionId, true) },
+        byId: { ...current.byId, ['unrelated' as SessionId]: summary('unrelated' as SessionId, true) },
         projectionsBySession: {
           ...projectionsBySession,
-          unrelated: { state: 'ready', error: null, values: { agentTeam: { members: [], tasks: [] } } },
+          ['unrelated' as SessionId]: { state: 'ready', error: null, values: { agentTeam: { members: [], tasks: [] } } },
         },
       })
       b.statuses.set(new Map([['unrelated' as SessionId, { running: true, pendingInteraction: undefined, completionUnread: false }]]))
