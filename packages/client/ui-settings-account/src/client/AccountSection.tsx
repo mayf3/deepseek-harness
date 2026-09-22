@@ -32,7 +32,7 @@ export interface AccountSectionInjected {
   /** Desktop-only commands; absent in ordinary browsers. */
   platform?: PlatformBridge
 
-  /** Host-owned account stream and theme snapshots observed through framework hooks. */
+  /** Account stream owned by the Host and theme snapshots published by the renderer, observed through framework hooks. */
   hooks: {
     account: HostObservable<AccountSnapshot>
     /** Palette the Platform login pages follow. */
