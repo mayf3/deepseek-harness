@@ -102,6 +102,8 @@ Chat restores semantic anchors across history prepend and renderer remounts, wit
 
 The turn rail and back-to-bottom button sit outside the clipped transcript. They use the shared conversation scrollport for sticky positioning, or the Chat frame for absolute positioning when Chat owns its scrollport.
 
+The transcript root uses `overflow-x: visible; overflow-y: clip`: vertical overflow is clipped without creating a scroll container. Sticky Markdown code banners and expanded compaction headers therefore retain the actual conversation scrollport as their reference when no nearer scrolling ancestor exists. Capped process groups and terminal sections keep their own scrollports.
+
 Outer transcript following and each open capped group's following are independent. Native animation progress retains follow intent; a reader gesture interrupts the animation, and actual movement determines whether following remains enabled. Scroll chaining can move the outer transcript, which then applies its own distance threshold. The back-to-bottom button restores only outer following.
 
 | Outer follows | Open group follows | Back-to-bottom button | New content |
