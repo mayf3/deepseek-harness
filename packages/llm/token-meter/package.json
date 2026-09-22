@@ -23,7 +23,11 @@
       "default": "./lib/types/client.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./estimate": {
+      "types": "./lib/types/estimate.d.ts",
+      "default": "./lib/types/estimate.js"
+    }
   },
   "files": [
     "lib/index.js",
