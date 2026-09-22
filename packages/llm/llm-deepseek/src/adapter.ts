@@ -139,7 +139,8 @@ export class DeepSeekAdapter extends LlmAdapter {
           if (await files.retry(detail)) continue
           const failure = providerError(raw, response.status, response.headers)
           const message = files.errorMessage(response.status, failure.message, detail)
-          throw new LlmError(message, failure.code, { ...failure.failure, cause: new Error(text) })
+          const code = accountToken !== undefined && response.status === 401 ? 'ACCOUNT_TOKEN_INVALID' : failure.code
+          throw new LlmError(message, code, { ...failure.failure, cause: new Error(text) })
         }
         await extensions.accept()
         if (response.body === null) throw new LlmError('DeepSeek Messages returned no response body', 'EMPTY_RESPONSE')

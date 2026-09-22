@@ -277,16 +277,21 @@ describe('Cordis provider composition', () => {
     return { ctx, http }
   }
 
-  it.each(['deepseek-account', 'deepseek-official'])('reports the rejected account token only for %s', async (provider) => {
+  it.each(['deepseek-account', 'deepseek-official'].flatMap(provider => [
+    { provider, body: JSON.stringify({ error: { type: 'authentication_error', message: 'API key is invalid' } }) },
+    { provider, body: JSON.stringify({ error: { message: 'Authentication Fails (invalid dsh token)' } }) },
+    { provider, body: 'Unauthorized' },
+    { provider, body: '' },
+  ]))('handles $provider HTTP 401 independently of the response body ($body)', async ({ provider, body }) => {
     const { ctx } = await boot((response) => {
       response.writeHead(401, { 'content-type': 'application/json' })
-      response.end(JSON.stringify({ error: { type: 'authentication_error', message: 'Authentication Fails (invalid dsh token)' } }))
+      response.end(body)
     })
     const rejectToken = vi.fn(async (_token: string) => {})
     ctx.provide('deepseekAccount', { resolveToken: async (_url: string): Promise<string | undefined> => 'fixture-token',
       rejectToken: (token: string): Promise<void> => rejectToken(token) } as DeepSeekAccount)
     expect((await chunks(ctx.llm.stream(options({ provider })))).at(-1)).toMatchObject({
-      type: 'finish', reason: { kind: 'error', failure: { code: 'ACCOUNT_TOKEN_INVALID' } },
+      type: 'finish', reason: { kind: 'error', failure: { code: provider === 'deepseek-account' ? 'ACCOUNT_TOKEN_INVALID' : 'AUTH' } },
     })
     expect(rejectToken.mock.calls).toEqual(provider === 'deepseek-account' ? [['fixture-token']] : [])
   })
@@ -318,9 +323,9 @@ describe('Cordis provider composition', () => {
     })
   })
 
-  it('does not remove account credentials for a generic authentication error', async () => {
+  it('does not remove account credentials for HTTP 403', async () => {
     const { ctx } = await boot((response) => {
-      response.writeHead(401)
+      response.writeHead(403)
       response.end(JSON.stringify({ error: { type: 'authentication_error', message: 'API key is invalid' } }))
     })
     const rejectToken = vi.fn(async (_token: string) => {})
