@@ -28,7 +28,7 @@ kind: "package-reference"
 
 Desktop 的用量和充值操作在 48px 返回栏下方打开隔离的原生 Platform 视图。返回操作销毁视图并保留 Account 设置页。浏览器客户端继续使用外链。加载失败时保留返回操作，居中显示本地化错误提示和“重试”按钮。重试重新加载同一目标页面；渲染进程命令不接收账号 token。
 
-“联系我们”在 Desktop 的系统浏览器或 Web 的新标签页打开飞书问卷。链接通过 prefill_* 参数填写已有的构建版本、界面语言和屏幕物理分辨率，并为所有上下文字段设置 hide_*=1；不传账号 UID、token 或联系方式。可在 ui-settings-account 插件配置 contactFormUrl，切换到另一个 HTTPS 问卷。问卷支持 Harness 来源选项前，contactSource 默认为空；OS 和设备字段沿用 Web 实现，保持未填写。
+账号菜单的“意见反馈”入口在 Desktop 的系统浏览器或 Web 的新标签页打开飞书问卷。链接通过 prefill_* 参数填写已有的构建版本、界面语言和屏幕物理分辨率，并为所有上下文字段设置 hide_*=1；不传账号 UID、token 或联系方式。可在 ui-settings-account 插件配置 contactFormUrl，切换到另一个 HTTPS 问卷。问卷支持 Harness 来源选项前，contactSource 默认为空；OS 和设备字段沿用 Web 实现，保持未填写。
 
 侧边栏账号菜单使用公共 Menu 的表面、背景模糊、间距和菜单项排版；功能样式仅设置入口布局。
 
