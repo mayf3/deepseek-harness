@@ -20,7 +20,7 @@ import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { openSettingsFromAccountMenu, connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, saveFailureShot, WEB_FIXTURE_TIME } from './support.ts'
+import { openSettings, connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, saveFailureShot, WEB_FIXTURE_TIME } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/turn-tail-actions', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
@@ -256,7 +256,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     expect(await process.getAttribute('aria-expanded')).toBe('false')
     expect(await tool.isVisible()).toBe(false)
 
-    await openSettingsFromAccountMenu(page, 'en')
+    await openSettings(page, 'en')
     const dialog = page.getByRole('dialog', { name: 'Settings' })
     await dialog.getByText('Work details', { exact: true }).locator('../..')
       .getByRole('button', { name: 'Compact', exact: true }).click()
@@ -279,7 +279,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     expect(await tool.isVisible()).toBe(true)
     await process.click()
 
-    await openSettingsFromAccountMenu(page, 'en')
+    await openSettings(page, 'en')
     const restored = page.getByRole('dialog', { name: 'Settings' })
     await restored.getByText('Work details', { exact: true }).locator('../..')
       .getByRole('button', { name: label, exact: true }).click()
