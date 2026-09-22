@@ -413,6 +413,15 @@ export interface ClientModuleLoader {
    */
   prefetch(id: string): Promise<void>
   /**
+   * The last failure of {@link import} or {@link prefetch} for one graph row:
+   * transport, registration, dependency cascade, or factory execution. Cleared
+   * by a later success and by {@link invalidate}. The boot audit reads it to
+   * report why a Loader entry has no fiber.
+   * @param id - graph entry name.
+   * @returns the recorded failure, or `undefined` when the row never failed or succeeded since.
+   */
+  importError(id: string): Error | undefined
+  /**
    * Full reset of one non-bootstrap package: drop its entry and chunk factories
    * and materialized records so the next prefetch/import loads its one-resource
    * combo script rather than the initial multi-resource request. The bootstrap
