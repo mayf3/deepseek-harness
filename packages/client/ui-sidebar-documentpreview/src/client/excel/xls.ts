@@ -95,5 +95,5 @@ export function mapXlsWorkbook(workbook: WorkBook, limits: ExcelLimits): ExcelPr
     return { id: String(order + 1), name, order, status, hide: visible ? 0 : 1, row, column,
       config, celldata: [...cells.values()], luckysheet_select_save: initialSelection(config) }
   })
-  return { sheets, missingResults }
+  return { sheets, missingResults, unsupportedFeatures: [] }
 }

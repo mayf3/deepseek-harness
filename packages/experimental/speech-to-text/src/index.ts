@@ -1,8 +1,10 @@
 /** Named transcription providers with disposable registration and explicit routing. */
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context, Service, type Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
+// Type-only: the `settings` service that persists `configure()` into this plugin's profile entry, and the Loader's
+// entry and `loader/volatile-update` merges.
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { SpeechProvider, SpeechProviderId, SpeechProviderInfo, SpeechSnapshot, SpeechSelectionPatch, SpeechRequest, SpeechSpec, Transcript } from './types.ts'
 
 export type * from './types.ts'
@@ -14,12 +16,12 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Composition defaults resolved before a transcription starts. */
+/** Live selection read before a transcription starts; `configure()` writes it through the profile. */
 export interface Config {
   /** Registered provider selected when the caller omits an id. */
-  defaultProvider: string
+  defaultProvider: Volatile<string>
   /** Provider language hint selected when the caller omits one. */
-  language: string
+  language: Volatile<string>
 }
 
 interface Registration {
@@ -31,25 +33,21 @@ interface Registration {
 
 /** Registry shared by all transcription consumers in one Host composition. */
 export default class SpeechToText extends Service {
-  static Config: z<Config> = z.object({
-    defaultProvider: z.string().min(1).required(),
-    language: z.string().min(1).default('auto'),
+  static Config = z.object({
+    defaultProvider: z.string().min(1).required().volatile(),
+    language: z.string().min(1).default('auto').volatile(),
   })
 
   private readonly providers = new Map<SpeechProviderId, Registration>()
   private readonly listeners = new Set<() => void>()
   private readonly lifetime = new AbortController()
-  private preferences: SettingsScope<Config> | undefined
+  /** Profile-local entry id used by Settings; absent when the plugin was mounted without Loader. */
+  private readonly entryId: string | undefined
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'speechToText')
-    ctx.inject(['settings'], (settingsCtx) => {
-      const preferences = settingsCtx.settings.register('voice-input', SpeechToText.Config, { base: config })
-      this.preferences = preferences
-      settingsCtx.effect(() => preferences.watch(() => { this.changed() }))
-      settingsCtx.effect(() => () => { this.preferences = undefined; this.changed() })
-      this.changed()
-    })
+    this.entryId = ctx.fiber.entry?.options.id
+    ctx.on('loader/volatile-update', () => { this.changed() })
     ctx.effect(() => async () => {
       this.lifetime.abort(new Error('Speech service disposed'))
       await Promise.all([...this.providers.values()].map(registration => this.remove(registration)))
@@ -123,23 +121,23 @@ export default class SpeechToText extends Service {
    * @returns one detached complete observation.
    */
   snapshot(): SpeechSnapshot {
-    const config = this.preferences?.get() ?? this.config
     return { providers: [...this.providers.values()].map(({ provider }) => ({ ...provider.info,
       preparation: provider.preparation?.snapshot() ?? { phase: 'ready' },
-    })), selection: { providerId: config.defaultProvider as SpeechProviderId, language: config.language } }
+    })), selection: { providerId: this.config.defaultProvider.get() as SpeechProviderId, language: this.config.language.get() } }
   }
 
   /**
-   * Persist changed preference fields; the resulting language must be accepted by the selected provider.
+   * Persist changed selection fields into this plugin's profile entry; the resulting language must be accepted by the selected provider.
    * @param patch - explicit provider or language changes.
-   * @returns after persistence and the resolved preference update.
+   * @returns after the profile write and the live update it applies.
    */
   async configure(patch: SpeechSelectionPatch): Promise<void> {
-    if (!this.preferences) throw new Error('Speech preferences require the user-settings service')
-    const current = this.preferences.get()
-    const id = patch.providerId ?? current.defaultProvider as SpeechProviderId
-    this.selectedProvider(id, patch.language ?? current.language)
-    await this.preferences.update({ ...patch.providerId === undefined ? {} : { defaultProvider: patch.providerId },
+    const settings = this.ctx.get('settings')
+    const entry = this.entryId
+    if (settings === undefined || entry === undefined) throw new Error('Speech selection requires the settings service and a profile entry')
+    const id = patch.providerId ?? this.config.defaultProvider.get() as SpeechProviderId
+    this.selectedProvider(id, patch.language ?? this.config.language.get())
+    await settings.update(entry, { ...patch.providerId === undefined ? {} : { defaultProvider: patch.providerId },
       ...patch.language === undefined ? {} : { language: patch.language } })
   }
 
@@ -179,9 +177,8 @@ export default class SpeechToText extends Service {
    * @returns provider-pinned input for transcribe().
    */
   resolve(request: SpeechRequest): SpeechSpec {
-    const config = this.preferences?.get() ?? this.config
-    const id = request.providerId ?? config.defaultProvider as SpeechProviderId
-    const language = request.language ?? config.language
+    const id = request.providerId ?? this.config.defaultProvider.get() as SpeechProviderId
+    const language = request.language ?? this.config.language.get()
     return { provider: this.selectedProvider(id, language), audio: request.audio, language }
   }
 

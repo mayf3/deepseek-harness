@@ -1,6 +1,7 @@
 /**
  * Wire types of the generated `job` Remote namespace: the per-session roster
- * stream and the per-job observation stream. Client-safe: no Host imports.
+ * stream, the per-job observation stream, and the human kill. Client-safe: no
+ * Host imports.
  * @module @deepseek-ai/dsh-api-job-controller/types
  */
 
@@ -23,6 +24,25 @@ export interface JobListRequest {
 export interface JobListFrame {
   readonly type: 'rows'
   readonly jobs: readonly JobView[]
+}
+
+/** Human-initiated cancellation of one background job visible to a session. */
+export interface JobKillRequest {
+  /** Session whose job list carries the job; the fenced lookup reads as it. */
+  readonly sessionId: SessionId
+  readonly jobId: JobId
+}
+
+/** Receipt after the registry accepted the human kill request. */
+export interface JobKillValue {
+  readonly outcome: 'requested' | 'already-finished'
+}
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    /** The session's job list no longer carries a killable row under that id. */
+    'job/not-found': { readonly sessionId: SessionId; readonly jobId: JobId }
+  }
 }
 
 /** Target of one `job.follow` stream: the job, its owning session, and an optional resume offset. */

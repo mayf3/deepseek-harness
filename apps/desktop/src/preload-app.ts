@@ -2,6 +2,7 @@
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation } from './ipc.ts'
+import { PLATFORM_IPC } from './platform-ipc.ts'
 import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.ts'
 import { syncNativeTheme } from './preload-theme.ts'
 import { syncWindowsAppearance } from './preload-windows.ts'
@@ -25,6 +26,14 @@ function createProductApi(): DshDesktopProductApi {
 }
 
 if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
+  ipcRenderer.on(DESKTOP_IPC.enterWorkspace, () => {
+    const body = document.body
+    const previous = body.getAttribute('tabindex')
+    body.tabIndex = -1
+    body.focus({ preventScroll: true })
+    if (previous === null) body.removeAttribute('tabindex')
+    else body.setAttribute('tabindex', previous)
+  })
   syncWindowsAppearance()
   if (process.platform === 'win32') installMandatoryUpdateOverlay()
   contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
@@ -40,6 +49,11 @@ if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
     ready: () => ipcRenderer.invoke(DESKTOP_IPC.boot) as Promise<unknown>,
     failed: (message: string) => ipcRenderer.invoke(DESKTOP_IPC.bootFailed, message) as Promise<void>,
   })
+  contextBridge.exposeInMainWorld('dshPlatform', {
+    open: (page: 'usage' | 'top-up', bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke(PLATFORM_IPC.open, page, bounds),
+    setBounds: (bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke(PLATFORM_IPC.bounds, bounds),
+    close: () => ipcRenderer.invoke(PLATFORM_IPC.close),
+  })
 }
 
 markDocumentPlatform()
@@ -47,3 +61,10 @@ syncWindowFullscreen()
 syncNativeTheme()
 // Main-process IPC also verifies the owning window and top frame.
 contextBridge.exposeInMainWorld('dshDesktop', location.protocol === `${SCHEME}:` && location.hostname === 'app' ? createProductApi() : { protocolVersion: 1 })
+
+if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
+  contextBridge.exposeInMainWorld('__DSH_LOCALE__', {
+    read: () => ipcRenderer.invoke(DESKTOP_IPC.localeBootstrap),
+    onChange: (locale: string) => { ipcRenderer.send(DESKTOP_IPC.localeChanged, locale) },
+  })
+}

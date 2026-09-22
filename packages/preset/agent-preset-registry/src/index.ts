@@ -4,7 +4,8 @@ import z from '@deepseek-ai/schemastery'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
+// Type-only: the optional `settings` service this registry keeps off the generated pages.
+import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-tools'
 import type { AgentPresetRoster } from './types.ts'
 import { entryListProblem, type PresetDefinition } from './definition.ts'
@@ -17,16 +18,6 @@ export { agentPresetProjectionDefinition } from './session.ts'
 export { entryListProblem, type PresetDefinition } from './definition.ts'
 export { auditRows, livePresetMounts, leakedServices, serviceForAgent, standingMountFor, type PresetMount, type RowAudit } from './mount.ts'
 export type { AgentPreset, Config } from './preset.ts'
-
-/** User-selected default and visibility of the new-session chooser. */
-export interface AgentPresetSettings {
-  default: string
-  modeSelectionEnabled: boolean
-}
-/** Accepted settings fields. */
-export const AgentPresetSettingsSchema: z<AgentPresetSettings> = z.object({
-  default: z.string(), modeSelectionEnabled: z.boolean(),
-})
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -57,24 +48,22 @@ interface Binding {
 /** Registry of YAML-declared presets and the revisions live Agents retain. */
 export class AgentPresetRegistry extends TypertRemoteService {
   static inject = ['loader', 'sessionProjections']
-  static Config: z<Config> = z.object({ default: z.string().required() })
+  static Config = z.object({
+    default: z.string().required(),
+    selectedDefault: z.string().volatile(),
+    modeSelectionEnabled: z.boolean().default(true).volatile(),
+  })
   private readonly owner: Context
   private readonly definitions = new Map<string, Definition>()
   private readonly generations = new Map<ScopeKey, Generation>()
   private readonly bindings = new WeakMap<ScopeKey, Binding>()
   private readonly switches = new Map<string, Promise<unknown>>()
-  private settings: SettingsScope<AgentPresetSettings> | undefined
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'agentPresets')
     this.owner = ctx
     ctx.sessionProjections.register(agentPresetProjectionDefinition)
-    ctx.inject(['settings'], (settingsCtx) => {
-      this.settings = settingsCtx.settings.register('agent-presets', AgentPresetSettingsSchema, {
-        base: { default: config.default, modeSelectionEnabled: true },
-      })
-      settingsCtx.effect(() => () => { this.settings = undefined }, 'agent-presets.settings')
-    })
+    ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
     ctx.on('session/event', (session, event) => {
       if (event.type === 'agent-preset/selected') ctx.emit('agent-preset/selected', session.id, event.data.agentPreset)
     })
@@ -84,9 +73,8 @@ export class AgentPresetRegistry extends TypertRemoteService {
   get defaultId(): string { return this.policy().defaultId }
 
   private policy(): { enabled: boolean; defaultId: string } {
-    const settings = this.settings?.get()
-    const enabled = settings?.modeSelectionEnabled ?? true
-    return { enabled, defaultId: enabled ? settings?.default ?? this.config.default : this.config.default }
+    const enabled = this.config.modeSelectionEnabled.get()
+    return { enabled, defaultId: enabled ? this.config.selectedDefault.get() ?? this.config.default : this.config.default }
   }
 
   /** Register and eagerly load a definition; activation failure remains visible in the roster.

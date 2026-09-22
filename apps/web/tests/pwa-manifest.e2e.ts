@@ -28,10 +28,14 @@ it('ships install metadata with the built web application', async () => {
   })
 })
 
-it('ships a favicon that switches to a light mark under dark color scheme', async () => {
-  const favicon = await readFile(join(DIST_ROOT, 'favicon.svg'), 'utf8')
-  // The light fill must live inside the dark-scheme media query, so the icon
-  // stays black in light mode and only turns white under a dark scheme.
-  expect(favicon).toMatch(/@media \(prefers-color-scheme: dark\)\s*{\s*path\s*{[^}]*fill:\s*#fff/i)
-  expect(favicon).toContain('fill="#000"')
+it('ships fixed-color favicons selected by document media queries', async () => {
+  const index = await readFile(join(DIST_ROOT, 'index.html'), 'utf8')
+  expect(index).toContain('<link rel="icon" type="image/svg+xml" href="./favicon-dark.svg" media="(prefers-color-scheme: dark)" />')
+  expect(index).toContain('<link rel="icon" type="image/svg+xml" href="./favicon.svg" media="(prefers-color-scheme: light)" />')
+  const light = await readFile(join(DIST_ROOT, 'favicon.svg'), 'utf8')
+  const dark = await readFile(join(DIST_ROOT, 'favicon-dark.svg'), 'utf8')
+  expect(light).not.toContain('<style>')
+  expect(light).toContain('fill="#000"')
+  expect(dark).toContain('fill="#fff"')
+  expect(dark.replace('fill="#fff"', 'fill="#000"')).toBe(light)
 })

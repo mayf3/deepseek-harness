@@ -365,9 +365,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'workspaceId', description: 'explicit target; absent inherits the current or most recent Workspace.' }],
       },
       {
-        signature: 'archiveSession(sessionId: SessionId): Promise<void>',
+        signature: 'archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>',
         description: 'Archive a Session and clear it when it is the current selection.',
-        parameters: [{ name: 'sessionId', description: 'Session to archive.' }],
+        parameters: [{ name: 'sessionId', description: 'Session to archive.' }, { name: 'options', description: '`stopActivity` asks the Host to stop the Session\'s running work instead of refusing.' }],
       },
       {
         signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
@@ -417,9 +417,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'workspaceId', description: 'target Workspace.' }],
       },
       {
-        signature: 'archiveSession(sessionId: SessionId): Promise<void>',
+        signature: 'archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>',
         description: 'Archive a Session from Workspace grouping surfaces.',
-        parameters: [{ name: 'sessionId', description: 'Session to archive.' }],
+        parameters: [{ name: 'sessionId', description: 'Session to archive.' }, { name: 'options', description: '`stopActivity` asks the Host to stop the Session\'s running work instead of refusing.' }],
+        throws: ['{WorkspaceArchiveError} when the Host refuses; without `stopActivity` a Session with running work fails as `workspace/session-active`, its details naming what runs.'],
       },
       {
         signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',

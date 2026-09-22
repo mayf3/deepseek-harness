@@ -40,7 +40,7 @@ installFailLoud('dsh')
 const ctx = await boot('dsh', resolveConfigPath(argv[2], process.env.DSH_SNAPSHOT))
 ```
 
-With that entry point, startup keeps every plugin that can activate. An enabled failed plugin produces a labelled warning. A failed required entry makes startup dispose the whole app and exit nonzero; required ids absent from a profile and disabled required entries do not affect startup. The global required list covers shared Agent execution, application endpoints, and Web bootstrap/transport: `agent-loop`, `webserver`, `modules`, `connection`, `headless-runner`, `acp`, and `sdk-jsonrpc-server`.
+`installFailLoud` writes one labelled `util.inspect` diagnostic to stderr for an unhandled rejection or an uncaught exception, awaits the surface's release hook under a fixed timeout, and exits 1; control never returns to the failed operation, because only the throw site knows which state is intact, and the event loop runs only until the release settles or times out. With that entry point, startup keeps every plugin that can activate. An enabled failed plugin produces a labelled warning. A failed required entry makes startup dispose the whole app and exit nonzero; required ids absent from a profile and disabled required entries do not affect startup. The global required list covers shared Agent execution, application endpoints, and Web bootstrap/transport: `agent-loop`, `webserver`, `modules`, `connection`, `headless-runner`, `acp`, and `sdk-jsonrpc-server`.
 
 <a id="profiles"></a>
 ### Profiles
@@ -66,6 +66,14 @@ Before mounting profile rows, the `dsh` launcher computes one immutable runtime 
 
 Before you boot, you can print the exact configuration the app will mount: the dump shows the composed entry list with `!!js` expressions verbatim, grouped under comments naming each source file and the patch layers that changed it, as one loadable YAML document. Patches that match no row are reported with their layer label; a missing, unparsable, or invalid config fails the dump.
 
+### Inspecting plugin configuration schemas
+
+`generateConfigSchema` takes a diagnostic bin name, a prepared on-disk profile, ordered patch lists, and an installation anchor, and returns `ConfigSchemaDump`. App-boot owns composition, runtime resolution, and collection diagnostics. The caller owns profile preparation, home/argv layer selection, process streams, and exit policy. `createConfigProjector`, `isNativeConfigSchema`, and `LOADER_EXPRESSION_SCHEMA` are exported for callers that project one live plugin Config without profile collection; projected value positions reference `#/$defs/loaderExpression`, so the enclosing document must define it.
+
+The generated JSON Schema 2020-12 describes the composed entry list, with `$defs.patchList` for root-tree overlays and shared definitions projected from plugin Config graphs. It includes disabled entries, native groups, and literal YAML/JSON includes; builtin and canonical native package exports are matched using each tree's module-resolution base, including profile-local copies. Custom carriers are not inferred from their config fields. A missing include with literal `initial` entries is expanded in memory without writes. Discovery and projection diagnostics remain in `x-cordis`, including unknown Configs and partial constraints. The [CLI schema-dump reference](../../../apps/cli/reference/README.md#config-schema-dump) owns the output fields and editing semantics.
+
+The projector preserves native omission behavior by checking literal defaults against generated schemas with Ajv, without executing native validators or transform callbacks. Regex compatibility checks and unsupported or recursive-default cases produce explicit limitations. Opaque input adaptations and lazy metadata effects widen validation rather than replaying native mutation. Non-JSON default/presentation annotations are omitted with limitations without losing the structural schema; an unrepresentable default leaves omission acceptance unknown unless the field is required. These dependencies load only when collection runs. Imports, Config getters, and lazy builders still execute trusted code; collection is not a sandbox. Do not overlap profile-resolution interceptions. The collector releases its interception before returning, while Node retains imported modules; runtime-created plugins and Agent preset instances remain outside discovery.
+
 ### Reading plugin display metadata
 
 Use `readPluginMeta(specifier, parentURL)` or `ctx.pluginPackages.metaOf(specifier, parentURL)` to read installed package display text without importing or activating the plugin. Lookup uses the complete package specifier and the caller's resolution base, respecting Node exports. File paths and file URLs return no metadata without resolving resources. Missing locale fields fall back to the accessible `package.json` at that address; malformed metadata returns an `error` diagnostic. Results retain translations for Client-side language selection. The reader also loads `package.json.icon` as an image data URL, even when locale text is complete; an icon error preserves valid text alongside the diagnostic. See [Plugin display metadata](../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) for the author format.
@@ -73,7 +81,7 @@ Use `readPluginMeta(specifier, parentURL)` or `ctx.pluginPackages.metaOf(specifi
 <a id="startup-and-reload-failures"></a>
 ### Startup and reload failures
 
-Profile reconciliation returns diagnostics for unchanged inactive entries without failing an unrelated mutation. A new inactive entry, a changed configuration or fiber, or a changed diagnostic fails reconciliation; removed fibers must still finish disposal. Explicit enablement targets must activate even when their failure predates the operation. Successful reconciliation returns after lifecycle settlement and diagnostic checks; volatile-only entry changes are committed by Loader during the update.
+Profile reconciliation returns diagnostics for unchanged inactive entries without failing an unrelated mutation. A new inactive entry, a changed configuration or fiber, or a changed diagnostic fails reconciliation; removed fibers must still finish disposal. Explicit enablement targets must activate even when their failure predates the operation. Successful reconciliation emits `app-boot/config-reload` after lifecycle settlement and diagnostic checks, including programmatic updates without HMR. The event carries no diff or parsed config. Successful reconciliation returns after lifecycle settlement and diagnostic checks; volatile-only entry changes are committed by Loader during the update.
 
 After the Loader settles, app-boot warns when only optional entries are inactive. If an enabled required entry cannot activate, `boot()` rejects with `StartupError` after disposal. An independently owned logger exporter retains warning and error records through asynchronous disposal and is released before `boot()` settles. Its message groups all failed plugins and pending services, marks required entries, and retains original stacks, nested causes, and aggregate members. The CLI prints that message once and saves [full startup diagnostics](../../../apps/cli/reference/README.md#startup-diagnostics) before exiting with code 1; unrelated exceptions retain their normal stack output. In the table, stopping startup means disposing any mounted plugins and exiting nonzero without reporting readiness; continuing keeps successful plugins running. Later configuration HMR does not repeat the required-startup audit and does not roll back the whole update.
 
@@ -89,6 +97,7 @@ After the Loader settles, app-boot warns when only optional entries are inactive
 | An injected service is unavailable | Warn; continue while the entry waits for its dependencies | Stop startup | Keep the entry waiting; adding the missing provider can activate it |
 | HTTP port binding fails | Warn; continue without that endpoint | Stop startup | Keep the process running without the failed endpoint; corrected config can restore it |
 | Detached asynchronous work outside the `apply()` return Promise produces an unhandled rejection | Fatal: dispose the app and exit nonzero | Fatal: dispose the app and exit nonzero | Fatal: dispose the app and exit nonzero, regardless of entry id |
+| A synchronous callback (a stream `'data'` listener, a timer) throws an uncaught exception at any point in the process lifetime | Fatal: dispose the app and exit nonzero; the failed operation is not resumed | Fatal: dispose the app and exit nonzero; the failed operation is not resumed | Fatal: dispose the app and exit nonzero, regardless of entry id |
 | Entry is absent or explicitly disabled | Ignore it | Ignore it | Do not activate it; no required-startup audit |
 
 The required list above includes `modules` and `connection`; Web startup cannot succeed when either enabled entry fails. Failure of an optional provider can also prevent a required consumer from activating. Schema rejection before an existing entry updates is not a transactional rollback of sibling changes.
@@ -141,6 +150,7 @@ The exports each own one stage of the boot: config resolution and snapshot repla
 | [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution, runtime resolution construction |
 | [`src/profile-plugins.ts`](src/profile-plugins.ts) | Installed dependencies, bundle activation policy, and manifest updates |
 | [`src/profile-sanitize.ts`](src/profile-sanitize.ts) | Profile patch backup and recovery bundle activation |
+| [`src/config-schema/`](src/config-schema/) | Profile schema generation, discovery, native projection, and result types |
 | [`src/profile-resolution/`](src/profile-resolution/) | Runtime resolver, package-metadata service, and built Worker bootstrap |
 | — | No runtime invariant companion is published; one interception owns each runtime resolution. |
 
@@ -196,8 +206,8 @@ These limits describe when this boot library is a poor fit or needs special care
 
 This Dev Note is working context for maintainers: open design questions and directions that are not decided. It is explicitly non-authoritative — shipped behavior, limits, and accepted rationale live in the sections above, the package code, and the linked Agent Notes.
 
-#### Open: config dump stability
+#### Open: YAML config dump stability
 
-`renderConfigDump` output is a loadable YAML document whose `# ==` source comments and `!!js`-verbatim rendering serve the `--dump-config` diagnostic. Nothing promises byte stability across package versions; decide whether the dump becomes a serialization contract before anything consumes it programmatically.
+`renderConfigDump` output is a loadable YAML document whose `# ==` source comments and `!!js`-verbatim rendering serve the `--dump-config` diagnostic. Nothing promises byte stability across package versions; decide whether the dump becomes a serialization contract before anything consumes it programmatically. JSON Schema output follows the separate [pre-stable compatibility policy](../../../apps/cli/reference/README.md#config-schema-dump).
 
 </details>

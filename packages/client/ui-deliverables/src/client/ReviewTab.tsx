@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   IconChevronDownOutlineRegular, IconCompareSplitOutlineRegular, IconInspectOutlineRegular,
-  IconNowrapFillRegular, IconWrapFillRegular, Menu, Tooltip,
+  IconNowrapFillRegular, IconWrapFillRegular, Menu, PathLabel, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -117,7 +117,7 @@ export function ReviewTab({
             anchor={<button type="button" className={css.selectorButton} aria-haspopup="menu" aria-expanded={menuOpen}
               aria-label={t('review.selectFile')} title={file.display} data-review-file={file.path}
               onClick={() => { setMenuOpen(value => !value) }}>
-              <span className={css.selectorText}>{file.display}</span>
+              <PathLabel path={file.display} />
               <IconChevronDownOutlineRegular size={12} />
             </button>}
             items={files.map((entry, at) => ({ id: String(at), label: <span className={css.item}>

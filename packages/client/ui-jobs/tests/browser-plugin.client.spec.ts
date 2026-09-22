@@ -9,7 +9,7 @@ import { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { describe, expect, it } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import type { JobListInjected } from '../src/client/JobListAction.tsx'
@@ -27,6 +27,10 @@ function headerEntryIds(ctx: Context): (string | undefined)[] {
 const observed: [string | undefined, string][] = []
 /** Roster watches handed to the stubbed jobs service. */
 const watched: string[] = []
+
+/** Job ids the stubbed bound session was asked to kill, and its scripted result. */
+const kills: [string, string][] = []
+let killResult: { ok: boolean } = { ok: true }
 
 /** Boot the browser half over a real slot tree that declares the header list. */
 async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugin']> }> {
@@ -48,12 +52,16 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
       observed.push([sessionId, id])
       return () => {}
     },
+    kill: async (sessionId: string, jobId: string) => {
+      kills.push([sessionId, jobId])
+      return killResult
+    },
   } as never)
   // The locale plugin binds a settings scope, which reads the connection handle
   // and the forwarded-event port.
   ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
-  ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
+  ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
   await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
   // These specs assert the shipped Chinese copy. There is no jsdom `window` in
   // this lane, so browser-language detection never runs and the locale comes
@@ -69,7 +77,7 @@ describe('ui-jobs browser half', () => {
     expect(inject).toEqual(['jobs', 'slots', 'locale'])
   })
 
-  it('exposes the jobs source and the roster and observation controls through the inject face', async () => {
+  it('exposes the jobs source and the roster, observation, and kill controls through the inject face', async () => {
     const { ctx } = await bench()
     const entry = ctx.slots
       .entries('conversation.session.header.actions')
@@ -84,6 +92,14 @@ describe('ui-jobs browser half', () => {
     const stopper = face.observe(SessionId('session'), JobId('bash-1'))
     expect(observed).toEqual([['session', 'bash-1']])
     stopper()
+
+    // The kill control routes through the job service with the row's session
+    // and reports the admission verdict.
+    killResult = { ok: true }
+    await expect(face.killJob(SessionId('sess-live'), 'bash-3')).resolves.toBe(true)
+    killResult = { ok: false }
+    await expect(face.killJob(SessionId('sess-live'), 'bash-4')).resolves.toBe(false)
+    expect(kills).toEqual([['sess-live', 'bash-3'], ['sess-live', 'bash-4']])
   })
 
   it('registers the header action, and fiber teardown removes it (HMR safety)', async () => {

@@ -94,7 +94,7 @@ async function bench(options: {
       ok: true as const,
       value: { writable: true, hasDocument: true, namespaces: [] },
     }),
-    update: (_ns: string, patch: { default?: unknown; modeSelectionEnabled?: unknown }) => {
+    update: (_ns: string, patch: { selectedDefault?: unknown; modeSelectionEnabled?: unknown }) => {
       calls.push(`settings:${JSON.stringify(patch)}`)
       if (options.failSettingsUpdate === true) {
         return Promise.resolve({
@@ -102,8 +102,8 @@ async function bench(options: {
           error: new RemoteError('gateway/internal', 'settings write disconnected', {}),
         })
       }
-      if (typeof patch.default === 'string') {
-        savedDefault = patch.default
+      if (typeof patch.selectedDefault === 'string') {
+        savedDefault = patch.selectedDefault
       }
       if (typeof patch.modeSelectionEnabled === 'boolean') {
         selectionEnabled = patch.modeSelectionEnabled
@@ -307,7 +307,7 @@ describe('ui-agent-preset apply', () => {
 
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'sessions', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'settingsScope',
+      'slots', 'sessions', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'configForms',
     ])
   })
 
@@ -361,7 +361,7 @@ describe('ui-agent-preset apply', () => {
     await section.load()
     const before = calls.length
 
-    remote.emit('settings/document-updated', ['agent-presets', 1])
+    remote.emit('settings/document-updated', ['agent-preset-registry', 1])
     await vi.waitFor(() => { expect(calls.length).toBe(before + 3) })
     const afterRelevant = calls.length
 
@@ -399,7 +399,7 @@ describe('ui-agent-preset apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
     const before = calls.length
 
-    remote.emit('settings/document-updated', ['agent-presets', 1])
+    remote.emit('settings/document-updated', ['agent-preset-registry', 1])
     await vi.waitFor(() => { expect(calls.length).toBeGreaterThan(before) })
 
     // The directory and unbound seat reload: a section nobody opened has
@@ -454,7 +454,7 @@ describe('ui-agent-preset apply', () => {
     await Promise.resolve()
     expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
 
-    remote.emit('settings/document-updated', ['agent-presets', 1])
+    remote.emit('settings/document-updated', ['agent-preset-registry', 1])
     await vi.waitFor(() => {
       expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal')
     })
@@ -489,7 +489,7 @@ describe('ui-agent-preset apply', () => {
 
     await first.load()
     const beforeRefresh = calls.length
-    remote.emit('settings/document-updated', ['agent-presets', 1])
+    remote.emit('settings/document-updated', ['agent-preset-registry', 1])
     await vi.waitFor(() => { expect(calls.length).toBeGreaterThan(beforeRefresh + 2) })
 
     delete state.current

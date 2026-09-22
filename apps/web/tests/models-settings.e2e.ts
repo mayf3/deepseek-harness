@@ -25,7 +25,7 @@ import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
+import { openSettings, ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/models-settings', import.meta.url))
 const EMPTY_EXPECTED = join(SNAPSHOT_DIR, 'empty.expected.md')
@@ -72,7 +72,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it('opens the add card over the dormant directory vocabulary', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-empty'))
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openSettings(page, 'zh')
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.waitFor({ timeout: 10_000 })
     await dialog.getByRole('button', { name: '模型', exact: true }).click()
@@ -129,7 +129,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await dialog.getByText('已保存 minimax-cn。', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await dialog.getByRole('img', { name: 'API 密钥已配置' }).count()).toBe(0)
     expect(await dialog.getByRole('img', { name: 'API 密钥缺失' }).count()).toBe(0)
-    const document = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
+    const document = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
     expect(document).toContain('minimax-cn: {}')
     expect(document).not.toContain('MINIMAX_CN_API_KEY')
   }, 60_000)
@@ -155,7 +155,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await dialog.getByRole('button', { name: '编辑 minimax-cn' }).click()
     await dialog.getByRole('textbox', { name: 'API 密钥', exact: true }).fill('sk-e2e-minimax')
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
-    // The profile lands in settings.yaml with only the derived reference, the
+    // The profile lands in cordis.patch.yml with only the derived reference, the
     // key value lands in the harness home's .credentials.yaml, the dormant route
     // registers, and the topology frame invalidates the page into the row.
     await expect.poll(
@@ -164,7 +164,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     ).toBe(0)
     await dialog.getByRole('img', { name: 'API 密钥已配置' }).waitFor({ timeout: 10_000 })
     await dialog.getByText('已保存 minimax-cn。', { exact: true }).waitFor({ timeout: 10_000 })
-    const document = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
+    const document = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
     expect(document).toContain('minimax-cn:')
     expect(document).toContain('apiKeyEnv: MINIMAX_CN_API_KEY')
     expect(document).not.toContain('sk-e2e-minimax')
@@ -189,7 +189,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     // stored profile beside the reference.
     await expect.poll(async () => dialog.getByLabel('API 地址').count(), { timeout: 10_000 }).toBe(0)
     await dialog.getByText('已保存 minimax-cn。', { exact: true }).waitFor({ timeout: 10_000 })
-    const document = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
+    const document = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
     expect(document).toContain('baseURL: https://gateway.minimax.example/v1')
     expect(document).toContain('apiKeyEnv: MINIMAX_CN_API_KEY')
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
@@ -270,7 +270,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
     const row = dialog.getByText('Acme Gateway', { exact: true }).first()
     await row.waitFor({ timeout: 10_000 })
-    const document = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
+    const document = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
     expect(document).toContain('acme-gateway:')
     await expect(scaffold.ctx.llm.resolveModelInfo('acme-gateway', 'acme-large')).resolves.toMatchObject({
       inputModalities: ['text', 'image'],
@@ -294,7 +294,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await dialog.getByText('自定义设置').click()
     // The create card asked this route for a name and a protocol because
     // nothing can default them; the editor reaches the same two fields rather
-    // than sending the user to settings.yaml for what only this route names.
+    // than sending the user to cordis.patch.yml for what only this route names.
     const protocol = dialog.getByLabel('API 协议')
     await protocol.waitFor({ timeout: 10_000 })
     expect(await protocol.inputValue()).toBe('openai-completions')
@@ -319,7 +319,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     // The status line names the route as the refreshed directory reports it;
     // the target captured when the card opened still carries the old name.
     await dialog.getByText('已保存 Acme 网关 (acme-gateway)。', { exact: true }).waitFor({ timeout: 10_000 })
-    const document = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
+    const document = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
     expect(document).toContain('api: anthropic-messages')
     expect(document).toContain('displayName: Acme 网关')
     await expect(scaffold.ctx.llm.resolveModelInfo('acme-gateway', 'acme-large')).resolves.toMatchObject({
@@ -371,12 +371,12 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       const image = types.getByRole('checkbox', { name: '图片', exact: true })
       await expect.poll(() => image.isChecked()).toBe(true)
       expect(await types.getByRole('checkbox', { name: '文本', exact: true }).isChecked()).toBe(true)
-      const before = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
+      const before = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
       await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'catalog-inputs.expected.md'),
         await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd), MODE)
       await dialog.getByRole('button', { name: '保存', exact: true }).click()
       await types.waitFor({ state: 'detached' })
-      expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).toBe(before)
+      expect(await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')).toBe(before)
 
       await edit.click()
       await dialog.getByText('自定义设置').click()
@@ -397,7 +397,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       const picker = page.getByRole('dialog', { name: '选择要添加的模型' })
       await picker.getByRole('button', { name: '取消全选' }).click()
       await picker.getByRole('searchbox', { name: '搜索模型' }).fill('gpt-6-astra')
-      await picker.getByRole('checkbox', { name: 'gpt-6-astra', exact: true }).check()
+      await picker.getByRole('checkbox', { name: 'GPT-6 Astra', exact: true }).check()
       await picker.getByRole('button', { name: '添加所选' }).click()
       await dialog.getByRole('button', { name: '模型选项 1' }).click()
       expect(await image.isChecked()).toBe(true)
@@ -414,7 +414,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it('confirms an identified provider deletion before removing its profile and key', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-delete'))
-    expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).not.toContain('openai:')
+    expect(await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')).not.toContain('openai:')
     const settingsDialog = page.getByRole('dialog', { name: '设置' })
     await settingsDialog.getByRole('button', { name: '删除 minimax-cn', exact: true }).click()
     const deleteDialog = page.getByRole('dialog', { name: '删除 minimax-cn？' })
@@ -427,12 +427,12 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await compareOrRefreshGolden(DELETE_EXPECTED, snapshot, MODE)
 
     await deleteDialog.getByRole('button', { name: '取消', exact: true }).click()
-    expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).toContain('minimax-cn:')
+    expect(await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')).toContain('minimax-cn:')
     await settingsDialog.getByRole('button', { name: '删除 minimax-cn', exact: true }).click()
     await page.getByRole('dialog', { name: '删除 minimax-cn？' })
       .getByRole('button', { name: '删除 minimax-cn', exact: true }).click()
     await expect.poll(
-      async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'),
+      async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'),
       { timeout: 10_000 },
     ).not.toContain('minimax-cn:')
     expect(await readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8'))

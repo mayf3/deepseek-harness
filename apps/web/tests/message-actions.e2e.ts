@@ -14,7 +14,7 @@ import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, parseSeedFixture, renderSeedFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { openSettings, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/message-actions', import.meta.url))
 // Borrowed read-only: this scenario needs any settled user+assistant pair, not
@@ -321,12 +321,12 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
   it.skipIf(MODE === 'record')('persists performance detail and hides statistics in Compact', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-performance-usage'))
     const stats = page.locator('[data-composer-stats]')
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await openSettings(page, 'en')
     const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
     const row = dialog.getByText('Performance & usage', { exact: true }).locator('../..')
     await row.getByRole('button', { name: 'Detailed', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Compact', exact: true }).click()
-    await expect.poll(() => scaffold.ctx.settings.get('ui-chat')).toMatchObject({ performanceUsage: 'compact' })
+    await expect.poll(() => scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ performanceUsage: 'compact' })
     await dialog.getByRole('button', { name: 'Close', exact: true }).click()
     await expect.poll(() => stats.locator('button').count()).toBe(0)
     expect(await stats.textContent()).not.toContain('turns')
@@ -336,12 +336,12 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'compact.expected.md'), await captureStableAria(page, '[data-composer-stats]', scaffold.workspaceCwd), MODE)
     const warningStart = tripwire.warnings.length
     await page.reload()
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await openSettings(page, 'en')
     await row.getByRole('button', { name: 'Compact', exact: true }).waitFor()
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await row.getByRole('button', { name: 'Compact', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Detailed', exact: true }).click()
-    await expect.poll(() => scaffold.ctx.settings.get('ui-chat')).toMatchObject({ performanceUsage: 'detailed' })
+    await expect.poll(() => scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ performanceUsage: 'detailed' })
     await dialog.getByRole('button', { name: 'Close', exact: true }).click()
     await expect.poll(() => stats.locator('button').count()).toBe(2)
     expect(await page.locator('[data-turn-tail]').getByRole('button', { name: /Ran for/ }).count()).toBe(0)

@@ -15,7 +15,7 @@ import {
   type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, expandTurnProcesses, newEnglishPage, REPO_ROOT, saveFailureShot,
+  connectFreshWorkspace, expandOwningTurnProcess, expandTurnProcesses, newEnglishPage, REPO_ROOT, saveFailureShot,
 } from './support.ts'
 
 const MODE = webSnapshotMode()
@@ -90,6 +90,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     await input.press('Enter')
 
     const workflow = page.locator('[data-workflow-run][data-run-status="running"]')
+    await expandOwningTurnProcess(page, workflow)
     await workflow.waitFor({ timeout: 30_000 })
     const disclosures = workflow.locator('[data-disclosure-row]')
     await disclosures.nth(1).waitFor({ timeout: 15_000 })

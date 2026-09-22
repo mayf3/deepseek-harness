@@ -38,9 +38,14 @@ export async function excelFixture(): Promise<Uint8Array<ArrayBuffer>> {
   details.getCell('B1').numFmt = 'yyyy-mm-dd'
   details.getCell('C1').value = { richText: [{ text: '富文本', font: { bold: true } }, { text: ' 示例', font: { italic: true } }] }
   details.getCell('D1').value = { text: 'Link text', hyperlink: 'https://example.com' }
+  // ExcelJS's reader permits rich text here even though its hyperlink declaration requires a string.
+  details.getCell('D2').value = { text: { richText: [{ text: 'Rich', font: { bold: true } }, { text: ' link' }] }, hyperlink: 'https://example.com' } as never
   details.getCell('A3').value = { sharedFormula: 'A2', result: 3 }
   details.getCell('A4').value = true
   details.getCell('A5').value = { error: '#DIV/0!' }
+  details.getCell('F1').value = { formula: '1-1', result: 0 }
+  details.getCell('F2').value = { formula: '1=2', result: false }
+  details.getCell('A7').value = 'Hidden row'
   details.getRow(7).height = 40
   details.getRow(7).hidden = true
   details.getColumn(5).hidden = true

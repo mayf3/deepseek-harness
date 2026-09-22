@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/capability-seams.md
-capability-seams.md: 66425afe98bcbefe69912bf130cb72bba9435ec0
-capability-seams.zh.md: faa31be64081a80d58a0f302f91c737c34ed3f38
+capability-seams.md: 6550250f0cc89ea5ca1c67c07894bc04385f93f6
+capability-seams.zh.md: f71f021a32f07eec129e892f8d65445ad7b8d264

@@ -25,7 +25,7 @@ Stream DeepSeek models through `deepseek-official` using the Messages API. Confi
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin when a composition streams DeepSeek models through the harness LLM service. It registers the single `deepseek-official` route and resolves connection facts per request, so a composition entry plus an optional user settings section drive the whole adapter.
+Mount this plugin with the harness LLM service to serve `deepseek-official`. It captures connection options from Config references once per operation.
 
 The adapter accepts the LLM service's [request-only user inputs](../llm/README.md#use-this-package) alongside durable history; omitting request-only identity and attribution does not alter provider content.
 
@@ -82,13 +82,19 @@ The official root is `https://api.deepseek.com/anthropic`. An explicit `baseURL`
 
 Messages sends text, thinking, tool calls, and tool results as content blocks, reasoning effort as `output_config.effort`, and images as Files references or inline base64. Models declaring `systemPromptUpdate: in-history` retain the initial top-level system and send new system snapshots after their corresponding user/tool-result turn; undeclared models use the latest snapshot as the top-level system. Replay metadata preserves the model and thinking signatures. Invalid replay metadata emits a warning and omits signatures while retaining text and tool history.
 
+### Account credentials
+
+When the [account provider](../../credentials/deepseek-account-platform/README.md) returns a stored token for the resolved endpoint, that token takes priority over the configured API key. Eligibility follows the provider's `inferenceOrigin`, which defaults to `https://api.deepseek.com`. Other origins and signed-out accounts use the configured API-key reference. Signing out removes the account grant and preserves API keys.
+
+Messages and Files requests send account tokens as `x-dsh-auth-token` without a Bearer prefix; API keys use `x-api-key`. Neither credential mode follows redirects.
+
 ### Streaming with thinking and images
 
 An image-capable route chooses each durable reference's request target and resolves it into a deterministic request version. Omitting `imagePixelBudget` sizes the target on the published vision token grid of 14px patches, 3:1 downsampling, and at most 1024 tokens per image, so a square image keeps up to 1302×1302 pixels and a 16:9 image is sent as 1708×961 for the provider's 1708×966 grid; a positive integer replaces the grid with a total-pixel budget, and `low` uses 512×512 total pixels. Every request image is capped at 4096 pixels per side, the provider limit for requests carrying 15 or more images, and `imageMaxBytes` defaults to 2 MiB. Alpha images use WebP effort 0 and opaque images use JPEG on the 85/75/60 quality ladder, keeping the smallest output when every candidate exceeds the target. Every retained image is preceded by text naming its complete attachment id and actual request dimensions. When the current filesystem maps the attachment provider's host object, that text also carries a read-only execution-world path and the extension for a writable copy. Text-only and unlisted routes receive stable attachment placeholders while durable history keeps the image references.
 
 The adapter normally uploads those exact request bytes through `/v1/files` and sends file-id references. Files requests and model requests containing file ids include `anthropic-beta: files-api-2025-04-14`. All requests reject redirects so credentials remain on the configured origin. A failed or timed-out file resolution rebuilds the whole model request with inline base64 under the inline budget; one request never mixes file ids and inline images. Caller cancellation stops the request.
 
-Cached ids are scoped by endpoint and API key, refreshed before expiry, invalidated from provider stale-file errors, and resolved through singleflight with waiter-local cancellation. Uploads request expiry through `expires_after[anchor]=created_at` and `expires_after[seconds]`. Messages file metadata omits remote expiry, so its local reuse deadline uses the original upload time plus `fileExpiresAfterSeconds`; this does not guarantee remote deletion. Quota failure deletes one configured batch of the oldest harness-owned files before one upload retry.
+Cached ids are scoped by endpoint and credential, refreshed before expiry, invalidated from provider stale-file errors, and resolved through singleflight with waiter-local cancellation. Uploads request expiry through `expires_after[anchor]=created_at` and `expires_after[seconds]`. Messages file metadata omits remote expiry, so its local reuse deadline uses the original upload time plus `fileExpiresAfterSeconds`; this does not guarantee remote deletion. Quota failure deletes one configured batch of the oldest harness-owned files before one upload retry.
 
 Files mode bounds retained request versions by `maxRequestFilesBytes` and `maxImagesPerRequest`; inline fallback has its own base64 budget. Both remove an oldest prefix in configured byte or count quanta. Each omitted image gets its own model-visible placeholder with its display name or attachment id and, when available, normalized dimensions, media type, and current read-only path. The stepped high-watermark policy avoids rewriting an old request prefix after every new image.
 
@@ -96,7 +102,7 @@ Files mode bounds retained request versions by `maxRequestFilesBytes` and `maxIm
 
 ### Dynamic configuration
 
-Connection facts are re-read once per operation through the optional settings and credentials seams. A `llm-deepseek:` section in the user settings document overrides any field without a restart; a snapshot that fails a beyond-schema bound keeps the last good facts and logs the failure. The API key resolves per stream call from the same snapshot that supplies the endpoint, image and Files policies, and idle budget, so a rejected settings generation contributes none of them. Image requests resolve the attachment service at request time, so load order does not freeze image availability.
+Connection options are captured from volatile Config references once per operation. Config validation rejects invalid candidates before form persistence. Credentials resolve from the same snapshot as the endpoint, image and Files policies, and idle budget. Attachment services resolve at request time.
 
 ### Provider-specific request fields
 
@@ -104,11 +110,11 @@ When `ctx.deepseekLlmApiExtensions` is present, the adapter prepares its registe
 
 ### Failures and recovery
 
-Configuration accepts Messages only and has no `protocol` field. If resolution reports `protocol is not configurable`, remove `protocol` from the `llm-deepseek` section in `<harness home>/settings.yaml` and from any matching Cordis entry or overlay. Keep the intended `baseURL`, `apiKeyEnv`, and `models` fields. An invalid live section keeps the complete last good configuration; saving other fields in the Models card does not remove an unknown property. Edit the configuration file, then let settings reload or restart the profile; composition edits require a profile restart.
+Configuration accepts Messages only and has no `protocol` field. If resolution reports `protocol is not configurable`, remove `protocol` from the `config` of the `llm-deepseek` entry in `$DSH_HOME/profiles/<profile>/cordis.patch.yml` and from any overriding home patch or command-line overlay. Keep the intended `baseURL`, `apiKeyEnv`, and `models` fields. A stored configuration rejected by adapter validation makes subsequent requests fail until corrected; saving other fields in the Models card does not remove an unknown property. Edit the configuration file, then let the profile reload it through HMR or restart the profile if HMR is disabled.
 
 Successful Files responses must contain valid JSON. JSON decoding failures from upload, list, retrieve, and delete throw `INVALID_RESPONSE` with the operation and HTTP status in the message, the status in `LlmError.failure`, and the original parser error as `cause`. Body-read transport and cancellation errors retain their identity.
 
-Non-2xx responses fail with stable codes: `AUTH` (401/403), `QUOTA`, `RATE_LIMIT`, `CONTEXT_WINDOW_EXCEEDED`, `INVALID_REQUEST`, `SERVER`, and `HTTP_<status>` otherwise; pre-response transport failures throw `TRANSPORT`, caller aborts throw `ABORTED`, and stream-idle expiry throws `TIMEOUT`. Request-extension preparation, field collision, or post-2xx acceptance fails with `REQUEST_EXTENSION`. A normalized-image rejection names every plausible attachment and its durable position when the provider does not identify a file id. Stale-file rejection invalidates the named mappings (or every mapping used by the attempt) and permits one replacement model request. Protocol violations throw `STREAM_CLOSED` or `MALFORMED_RESPONSE`, and a terminal `stop` with no content blocks becomes `EMPTY_RESPONSE`, which the default retry policy retries. A request with no key anywhere fails with `MISSING_CREDENTIAL`, and a malformed credential fails with `INVALID_CREDENTIAL` naming the reference to fix — never any part of the key.
+Non-2xx responses fail with stable codes: `AUTH` (401/403), `QUOTA`, `RATE_LIMIT`, `CONTEXT_WINDOW_EXCEEDED`, `INVALID_REQUEST`, `SERVER`, and `HTTP_<status>` otherwise; pre-response transport failures throw `TRANSPORT`, caller aborts throw `ABORTED`, and stream-idle expiry throws `TIMEOUT`. Request-extension preparation, field collision, or post-2xx acceptance fails with `REQUEST_EXTENSION`. A normalized-image rejection names every plausible attachment and its durable position when the provider does not identify a file id. Stale-file rejection invalidates the named mappings (or every mapping used by the attempt) and permits one replacement model request. Protocol violations throw `STREAM_CLOSED` or `MALFORMED_RESPONSE`, and a terminal `stop` with no content blocks becomes `EMPTY_RESPONSE`, which the default retry policy retries. A request with neither an eligible account token nor an API key fails with `MISSING_CREDENTIAL`, and a malformed credential fails with `INVALID_CREDENTIAL` naming the reference to fix — never any part of the key.
 
 -----
 
@@ -192,7 +198,7 @@ Loop-retained response blocks append to the next request and preserve its earlie
 
 These limits define where the adapter stops and future work begins. They are current package constraints, not a general DeepSeek comparison or a task backlog.
 
-- **A settings `models` list replaces the composition list wholesale** — settings-layer merging is per-field, and arrays are one field; per-entry catalog merging would need a keyed shape.
+- **Replacing `models` replaces the complete catalog list** — use path edits when changing one model entry.
 - **`tool_choice` is not mapped** — not part of the core vocabulary (shared with the pi-ai twin).
 - **Requests use raw `fetch`, not `@cordisjs/plugin-http`** — no shared proxy or interception configuration.
 - **Messages in-history system updates require a retained user or tool-result turn** — if all user input after an update is omitted and the preceding wire turn is assistant, serialization fails with `UNSUPPORTED_CONTENT` before the next assistant or at the end of the request. Text or an empty tool result can retain that turn. Moving the update to an earlier turn is not supported; the [input-history decision](../../../.agents/notes/implemented/bug-fix/2026-09-18-messages-input-history-compatibility.md) records the ordering constraint.

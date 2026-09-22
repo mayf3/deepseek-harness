@@ -38,7 +38,7 @@ afterEach(async () => {
 async function boot() {
   const rt = await SlotTestRuntime.create()
   runtime = rt
-  rt.ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) } } as never)
+  rt.ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) } } as never)
   rt.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn() } as never)
   const locale = new LocaleRuntime(rt.ctx)
   rt.ctx.provide('locale', locale)

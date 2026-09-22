@@ -38,6 +38,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`@browserbasehq/stagehand`](https://github.com/browserbase/stagehand) | MIT |
 | [`@deepseek-ai/libreoffice-kit`](https://github.com/deepseek-harness/libreoffice-kit) | MPL-2.0 |
 | [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) | MIT |
+| [`@eslint-community/regexpp`](https://github.com/eslint-community/regexpp) | MIT |
 | [`@fortune-sheet/core`](https://github.com/ruilisi/fortune-sheet) | MIT |
 | [`@fortune-sheet/react`](https://github.com/ruilisi/fortune-sheet) | MIT |
 | [`@joplin/turndown-plugin-gfm`](https://github.com/laurent22/joplin-turndown-plugin-gfm) | MIT |
@@ -53,8 +54,10 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`@openai/codex`](https://github.com/openai/codex) | Apache-2.0 |
 | [`@opentelemetry/api`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@opentelemetry/api-logs`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
+| [`@opentelemetry/core`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@opentelemetry/exporter-logs-otlp-http`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@opentelemetry/otlp-exporter-base`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
+| [`@opentelemetry/otlp-transformer`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@opentelemetry/resources`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@opentelemetry/sdk-logs`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@playwright/mcp`](https://github.com/microsoft/playwright-mcp) | Apache-2.0 |
@@ -70,7 +73,9 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`@xterm/xterm`](https://github.com/xtermjs/xterm.js) | MIT |
 | [`@yarnpkg/parsers`](https://github.com/yarnpkg/berry) | BSD-2-Clause |
 | [`acorn`](https://github.com/acornjs/acorn) | MIT |
+| [`ajv`](https://github.com/ajv-validator/ajv) | MIT |
 | [`anser`](https://github.com/IonicaBizau/anser) | MIT |
+| [`big.js`](https://github.com/MikeMcl/big.js) | MIT |
 | [`buffer`](https://github.com/feross/buffer) | MIT |
 | [`chokidar`](https://github.com/paulmillr/chokidar) | MIT |
 | [`chrome-devtools-mcp`](https://github.com/ChromeDevTools/chrome-devtools-mcp) | Apache-2.0 |
@@ -138,6 +143,7 @@ pnpm applies local patches to the following packages at install time, so shipped
 - `@fortune-sheet/core@1.0.4` — [`patches/@fortune-sheet__core@1.0.4.patch`](patches/@fortune-sheet__core@1.0.4.patch)
 - `@fortune-sheet/react@1.0.4` — [`patches/@fortune-sheet__react@1.0.4.patch`](patches/@fortune-sheet__react@1.0.4.patch)
 - `@yao-pkg/pkg@6.21.0` — [`patches/@yao-pkg__pkg@6.21.0.patch`](patches/@yao-pkg__pkg@6.21.0.patch)
+- `exceljs@4.4.0` — [`patches/exceljs@4.4.0.patch`](patches/exceljs@4.4.0.patch)
 - `node-pty@1.2.0-beta.15` — [`patches/node-pty@1.2.0-beta.15.patch`](patches/node-pty@1.2.0-beta.15.patch)
 
 ## Official Claude Code platform payloads
@@ -184,6 +190,7 @@ External packages **directly declared** for development, tests, types, or toolin
 | [`@testing-library/dom`](https://github.com/testing-library/dom-testing-library) | MIT |
 | [`@testing-library/react`](https://github.com/testing-library/react-testing-library) | MIT |
 | [`@types/babel__code-frame`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
+| [`@types/big.js`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/compression`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/js-yaml`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/jsdom`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |

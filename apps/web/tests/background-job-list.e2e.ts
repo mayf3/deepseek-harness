@@ -80,7 +80,7 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
     await scaffold?.close()
   })
 
-  it('shows a running background job in the header without a refresh, then flips it to cancelled on settlement', async () => {
+  it('shows a running background job in the header without a refresh, then kills it from the two-press stop control', async () => {
     let phase = 'running'
     onTestFailed(() => saveFailureShot(page, `web-e2e-background-job-${phase}`))
     // Polling for zero would pass at t=0 before delivery and prove nothing.
@@ -105,16 +105,29 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
     await row.waitFor({ timeout: 10_000 })
     await expect.poll(() => row.textContent()).toContain(COMMAND)
 
-    const running = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)
+    const running = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd, { runningJobs: 'keep' })
     await compareOrRefreshGolden(RUNNING_EXPECTED, running, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
 
     phase = 'settled'
-    expect(scaffold.ctx.jobs.kill(jobId, agent.id, 'web e2e cancellation')).toBe('requested')
+    // The whole human path: arm, confirm, job.kill, registry kill, jobs
+    // frames flipping the row — no registry call from the test.
+    const stop = page.locator('[data-kill-state]')
+    await stop.waitFor({ timeout: 10_000 })
+    await stop.click()
+    await expect.poll(() => stop.getAttribute('data-kill-state')).toBe('armed')
+    await stop.click()
 
+    // Exact: the running trigger's name ('1 background job running') contains this label.
     const idle = page.getByRole('button', { name: '1 background job', exact: true })
     await idle.waitFor({ timeout: 20_000 })
+    // The unclaimed report's reason lands in the settled row's detail.
+    await expect.poll(
+      () => page.getByRole('list', { name: 'Background jobs' }).textContent(),
+      { timeout: 15_000 },
+    ).toContain('cancelled by the user')
+    expect(scaffold.ctx.jobs.get(jobId, agent.id).status).toBe('killed')
 
     const settled = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, settled, MODE)

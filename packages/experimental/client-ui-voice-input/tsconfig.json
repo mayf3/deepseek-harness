@@ -18,10 +18,10 @@
       "path": "../../api/session-controller/tsconfig.client.json"
     },
     {
-      "path": "../../client/locale"
+      "path": "../../client/locale/tsconfig.client.json"
     },
     {
-      "path": "../../client/ui-conversation"
+      "path": "../../client/ui-conversation/tsconfig.client.json"
     },
     {
       "path": "../../client/ui-primitives"
@@ -54,7 +54,7 @@
       "path": "../../client/store"
     },
     {
-      "path": "../../client/ui-plugin-manager"
+      "path": "../../client/ui-plugin-manager/tsconfig.client.json"
     }
   ]
 }

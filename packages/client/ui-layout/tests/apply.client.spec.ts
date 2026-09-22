@@ -2,7 +2,7 @@
 
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context, type Fiber } from '@deepseek-ai/cordis'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SlotRendererHost } from '@deepseek-ai/dsh-client-ui-slots'
@@ -61,7 +61,7 @@ async function bench() {
   ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
   // ui-theme's Appearance row binds a durable scope through these two.
   ctx.provide('remote', { $on: () => () => {} } as never)
-  ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
+  ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
   await ctx.plugin({ inject: themeInject, apply: themeApply }).await()
   await slotsFiber.await()
   const slots = ctx.get('slots') as SlotRegistry

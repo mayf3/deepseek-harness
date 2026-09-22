@@ -1,10 +1,11 @@
 /**
  * Background-job plugin, browser half: contributes one session-header action
- * that renders this session's jobs. Job rows and per-row observation streams
- * both arrive through the `jobs` client service; this plugin holds no
- * transport state of its own.
+ * that renders this session's jobs. Job rows, per-row observation streams,
+ * and the human kill all go through the `jobs` client service; this plugin
+ * holds no transport state of its own.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import { JobListAction } from './JobListAction.tsx'
 import type { JobListInjected } from './JobListAction.tsx'
 import type {} from '@deepseek-ai/dsh-api-job-controller/client'
@@ -22,7 +23,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export type { JobListActionProps, JobListInjected } from './JobListAction.tsx'
 
-/** Required services: the jobs rosters and observations, the slot registry, and dictionaries. */
+/** Required services: the jobs rosters, observations, and kill, the slot registry, and dictionaries. */
 export const inject = ['jobs', 'slots', 'locale']
 
 /**
@@ -44,6 +45,9 @@ export function apply(ctx: ClientContext): void {
         hooks: { jobs: ctx.jobs.state },
         watchRows: sessionId => ctx.jobs.watchRows(sessionId),
         observe: (sessionId, id) => ctx.jobs.observe(sessionId, id),
+        // The brand is nominal typing only; the row key is the registry id the
+        // roster stream delivered, so the wire boundary stamps it back here.
+        killJob: async (sessionId, jobId) => (await ctx.jobs.kill(sessionId, jobId as JobId)).ok,
       }),
     }, JobListAction),
   )

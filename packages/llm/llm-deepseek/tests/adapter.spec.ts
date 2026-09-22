@@ -1,4 +1,5 @@
 /** HTTP lifecycle, routing and optional Cordis services under real composition. */
+import type { DeepSeekAccount } from '@deepseek-ai/dsh-deepseek-account'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -20,7 +21,7 @@ import LlmRuntime, { createAssistantMessage, createSystemMessage, createToolResu
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
-import FileSettings from '@deepseek-ai/dsh-settings-file'
+import { profileComposition } from '../../../settings/settings/tests/profile-composition.ts'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { DeepSeekAdapter } from '../src/adapter.ts'
 import { object } from '../src/replay.ts'
@@ -30,6 +31,7 @@ import { adapter, assemble, chunks, MODEL, options, prepareExtensions, server, s
 
 const cleanup: (() => Promise<unknown>)[] = []
 afterEach(async () => {
+  vi.useRealTimers()
   while (cleanup.length) await cleanup.pop()!()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
@@ -205,11 +207,35 @@ describe('direct Messages HTTP', () => {
     await stopped
   })
 
-  it('distinguishes caller cancellation from idle timeout and transport failure', async () => {
-    const http = await endpoint((response) =>{  response.flushHeaders() })
-    await expect(chunks(adapter({ baseURL: http.url, streamIdleTimeoutMs: 30 }).stream(options()))).rejects.toMatchObject({ code: 'TIMEOUT' })
+  it('times out an idle HTTP response and closes the connection', async () => {
+    const stopped = Promise.withResolvers<undefined>()
+    const http = await endpoint((response) => {
+      response.once('close', () => { stopped.resolve(undefined) })
+      response.write(sse(textEvents.slice(0, 2)))
+    })
+    // Advance the idle clock after the response is readable, independently of connection setup time.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const stream = adapter({ baseURL: http.url, streamIdleTimeoutMs: 30 }).stream(options())[Symbol.asyncIterator]()
+    try {
+      expect((await stream.next()).value).toMatchObject({ type: 'block-start' })
+      const rejected = expect(stream.next()).rejects.toMatchObject({ code: 'TIMEOUT' })
+      await vi.advanceTimersByTimeAsync(30)
+      await rejected
+      await stopped.promise
+    } finally {
+      vi.useRealTimers()
+      await stream.return?.()
+    }
+  })
+
+  it('classifies an already cancelled request without contacting the provider', async () => {
+    const http = await endpoint()
     const controller = new AbortController(); controller.abort()
     await expect(chunks(adapter({ baseURL: http.url }).stream(options({ signal: controller.signal })))).rejects.toMatchObject({ code: 'ABORTED' })
+    expect(http.requests).toEqual([])
+  })
+
+  it('classifies a transport failure', async () => {
     vi.stubGlobal('fetch', async () => { throw new TypeError('network down') })
     await expect(chunks(adapter().stream(options()))).rejects.toMatchObject({ code: 'TRANSPORT' })
   })
@@ -250,15 +276,14 @@ describe('Cordis provider composition', () => {
     const { ctx, home } = await context()
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     await writeFile(join(home, '.credentials.yaml'), 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: stored-key\n', { mode: 0o600 })
-    await writeFile(join(home, 'settings.yaml'), '{}\n')
     const template = await readFile(new URL('fixtures/cordis.yml', import.meta.url), 'utf8')
-    await writeFile(join(home, 'cordis.yml'), template.replaceAll('{{endpoint}}', JSON.stringify(http.url)).replaceAll('{{settings}}', JSON.stringify(join(home, 'settings.yaml'))).replaceAll('{{credentials}}', JSON.stringify(join(home, '.credentials.yaml'))))
+    await writeFile(join(home, 'cordis.yml'), template.replaceAll('{{endpoint}}', JSON.stringify(http.url)).replaceAll('{{credentials}}', JSON.stringify(join(home, '.credentials.yaml'))))
     ctx.baseUrl = pathToFileURL(home).href + '/'
     await ctx.plugin(Loader)
     ctx.loader.builtins.include = Include
     const modules = new Map<string, unknown>([
       ['@deepseek-ai/dsh-llm', LlmRuntime], ['@deepseek-ai/dsh-llm-deepseek', Messages],
-      ['@deepseek-ai/dsh-credentials-local', LocalCredentials], ['@deepseek-ai/dsh-settings-file', FileSettings],
+      ['@deepseek-ai/dsh-credentials-local', LocalCredentials],
       ['@deepseek-ai/dsh-agent', AgentRegistry], ['@deepseek-ai/dsh-agent-loop', AgentLoop],
       ['@deepseek-ai/dsh-session', SessionStore], ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
       ['@deepseek-ai/dsh-system-prompt', SystemPrompt], ['@deepseek-ai/dsh-tools', ToolRuntime],
@@ -273,8 +298,7 @@ describe('Cordis provider composition', () => {
       if (!modules.has(name)) throw new Error(`unexpected module ${name}`)
       return modules.get(name)
     })
-    await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(home, 'cordis.yml')).href } })
-    await ctx.loader.await()
+    await profileComposition(ctx, home, join(home, 'cordis.yml'))
     return { ctx, http }
   }
 
@@ -416,8 +440,9 @@ describe('Cordis provider composition', () => {
     await chunks(ctx.llm.stream(options()))
     expect(second.requests[0]).toMatchObject({ headers: { 'x-api-key': 'rotated' }, body: { max_tokens: 51 } })
     await ctx.settings.update(Messages.name, { models: [{ id: 'duplicate' }, { id: 'duplicate' }], baseURL: http.url })
-    await chunks(ctx.llm.stream(options()))
-    expect(second.requests).toHaveLength(2)
+    const refused: unknown = (await chunks(ctx.llm.stream(options()))).find(chunk => chunk.type === 'finish')
+    expect(JSON.stringify(refused)).toContain('duplicate catalog model')
+    expect(second.requests).toHaveLength(1)
     expect(http.requests).toHaveLength(1)
     await ctx.settings.update(Messages.name, { models: [{ id: MODEL }], baseURL: http.url })
     await chunks(ctx.llm.stream(options()))
@@ -445,4 +470,34 @@ describe('Cordis provider composition', () => {
     await fiber.dispose()
     expect(ctx.llm.listProviders()).toEqual([])
   })
+})
+
+it('rejects invalid catalog context windows at the options resolver', () => {
+  expect(() => Messages.resolveAdapterOptions({ models: [{ id: 'invalid-window', contextWindow: 0 }] })).toThrow('contextWindow must be a positive integer')
+})
+
+
+it.each([
+  ['https://api.deepseek.com', 'account-token'],
+  ['https://custom.example.test', 'ambient-key'],
+] as const)('selects account or API-key credentials from the actual endpoint %s', async (baseURL, expected) => {
+  vi.stubEnv('DEEPSEEK_API_KEY', 'ambient-key')
+  const { ctx } = await context()
+  // This consumer uses only resolveToken; the real provider owns origin validation in its own suite.
+  ctx.provide('deepseekAccount', {
+    resolveToken: (url: string) => Promise.resolve(url === 'https://api.deepseek.com' ? 'account-token' : undefined),
+  } as DeepSeekAccount)
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(Messages, { baseURL })
+  const request = vi.fn<typeof fetch>((_input, init) => {
+    const headers = new Headers(init?.headers)
+    expect(headers.has('authorization')).toBe(false)
+    expect(headers.get('x-api-key')).toBe(expected === 'account-token' ? null : expected)
+    expect(headers.get('x-dsh-auth-token')).toBe(expected === 'account-token' ? expected : null)
+    expect(init?.redirect).toBe('error')
+    return Promise.resolve(new Response(sse(textEvents), { status: 200 }))
+  })
+  vi.stubGlobal('fetch', request)
+  await assemble(ctx.llm.stream(options()))
+  expect(request).toHaveBeenCalledOnce()
 })

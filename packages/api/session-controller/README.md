@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`@deepseek-ai/dsh-api-session-controller` owns the Host `ctx.sessionController` service and the generated Client `session`, `skills`, and `fileReferences` Remote namespaces. It serves Session lifecycle and history, the Host-generation model catalog, workspace-path opening, user-invocable skill discovery, and Agent-scoped file references. Use it through API Gateway when a Client needs operations addressed by a Session.
+`@deepseek-ai/dsh-api-session-controller` owns the Host `ctx.sessionController` service and the generated Client `session`, `skills`, and `fileReferences` Remote namespaces. It serves Session lifecycle and history, the Host-generation model catalog, human background-job kill, workspace-path opening, user-invocable skill discovery, and Agent-scoped file references. Use it through API Gateway when a Client needs operations addressed by a Session.
 
 ## Table of Contents
 
@@ -48,6 +48,8 @@ The Client adapter exposes `SessionEventStream`, a Gateway `RemoteJournalStream`
 The Session object also carries local submission echoes: `session.beginSubmission` inserts one into `SessionSnapshot.pendingSubmissions` synchronously, before the caller serializes and prompts, so a conversation UI can show the message on the submit click's own frame. The echo stores ordered image previews and durable file references. Session derives its `transcript`, `queued`, or `steering` placement from the current running state and requested delivery mode, then retains that placement while serialization is in flight. The prompt's `requestId` is the correlation identity: the Host echoes it as the durable user source's `rpcId`, including pending messages in the `inbox` projection. An echo retires one animation frame after its durable event or queue occurrence is observed, immediately when its identified prompt fails or is abandoned, and as failed on disposal. Each retirement fires `onRetire` exactly once; an observed retirement includes the ordered durable attachment references so the composer can release successful cards while preserving failed drafts. Echoes are Client memory only; reload and reconnect rebuild the conversation from durable events alone.
 
 
+During uninterrupted following, steering echoes stay mounted through Inbox acceptance and claim until their durable messages arrive. A replacement follow baseline withdraws earlier receipt-confirmed steering echoes as observed, using their accepted attachment references; unconfirmed submissions remain pending. Host data then supplies the pending or admitted rows. Reconnecting between claim and admission can briefly omit that bubble; withdrawal confirms acceptance, not execution or failure.
+
 The user-invocable `skills/list` metadata includes the winning provider’s optional instruction-file `path`. The composer can preview that file without loading every skill body or activating a cold Agent.
 
 Fork copies the exact inclusive event prefix selected by `atSeq`, including a cut inside an open turn. The child records its inherited marker before synthetic fork results and closing events. Omitting `atSeq` selects the latest completed turn and its standalone tail, stopping before the next turn or queued input; a nonexistent event is rejected. The chat action selects a completed turn.
@@ -59,6 +61,8 @@ A resume blocked by an existing write handle returns `session/writer-held` with 
 Queue edits replace pending content with non-empty text only.
 
 Attachment authorization reads declared content fields of built-in Session events and completed assistant stream blocks, including flat V4 tool-role messages. Unknown event payloads and unrelated fields cannot authorize attachment reads.
+
+The controller composes `ArchivedSessionGate` through `ctx.plugin`: it loads once the Agent registry, Session store, and Workspace registry exist and unwinds with the controller. Its `agent/pre-step` listener rejects a step proposed for an archived Session or for a subagent descendant of one — read from the Session header's lineage fields, never a fork — so a late waking delivery ends its turn as `blocked` without a model request; unarchiving lifts the gate for the whole lineage. The work an archived Session still runs is reported and stopped by its owners through the Workspace registry's archive admission ([seam](../../workspace/workspace/README.md)): the running turn by the [Agent registry](../../core/agent/README.md), owned jobs by the [job registry seam](../../jobs/jobs/README.md), subagent descendants by the [Subagent](../../subagent/subagent/README.md) runtime, reminders by the [Schedule](../../schedule/schedule/README.md) plugin; this controller reports nothing itself.
 
 <a id="client-references"></a>
 ## Client references

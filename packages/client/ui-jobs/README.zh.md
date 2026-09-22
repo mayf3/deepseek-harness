@@ -31,6 +31,8 @@ kind: "package-reference"
 
 `ctx.jobs` 镜像的 `job.list` 流是唯一名册：每个 `JobView` 行携带生命周期、时长、实时 `progress` 行或终态 `detail`，以及其保留字节数——进行中的 job，或留有保留输出的已结束 job，就是行可展开的依据。不存在需要 join 的第二份名册。
 
+运行中的 job 行还带一个两击式停止控件：首击武装，三秒内的确认击调用 `ctx.jobs.kill`，行状态经名册流收敛（先 `stopping`，再入已结束分组，其 detail 携带 `cancelled by the user`）。该 kill 不在模型的播报台账里认领任何东西，任务的 owner agent 因此照常收到标准完成通知——模型被明确告知用户停止了它的任务，而不是留给它去猜（[决策](../../../.agents/notes/implemented/feature/2026-08-26-human-job-kill.zh.md)）。已结束分组在有进行中工作时折叠在其计数之后，并可在客户端清空。
+
 ### 展开的面板
 
 展开可观察的行会从 `ctx.jobs`（由 `dsh-api-job-controller` 安装）打开该 job 的输出观测流，注入内嵌终端面板。面板复制的是命令（不是输出），命令与输出行完整换行，输出在固定高度内滚动而非折叠，且不绘制自己的运行状态点——上方的行承载状态。保留缺口与流中断在面板上方渲染为提示。
@@ -58,7 +60,7 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [`dsh-api-job-controller`](../../api/job-controller/README.zh.md) —— 行与面板背后的 `job.list`、`job.follow` 流与 `ctx.jobs` 服务。
+- [`dsh-api-job-controller`](../../api/job-controller/README.zh.md) —— 行、面板与停止控件背后的 `job.list`、`job.follow` 流、`job.kill` Remote 与 `ctx.jobs` 服务。
 - [`dsh-jobs`](../../jobs/jobs/README.zh.md) —— 拥有环与投影语义的注册表契约。
 - [`dsh-client-ui-primitives`](../ui-primitives/README.zh.md) —— 面板所配置的 `TerminalBlock` 表面。
 
@@ -79,7 +81,6 @@ kind: "package-reference"
 
 这些限制界定当前包约束，不是任务清单。
 
-- **没有 kill 控件**——取消仍归模型的 `job_kill`。
 - **不渲染 channel 标签**——stdout 与 stderr 块拼接为一条流；按 channel 着色是展示层的后续工作。
 
 <a id="dev-note"></a>

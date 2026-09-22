@@ -56,4 +56,40 @@ describe('installer preparation preserves application dependencies', () => {
       vi.restoreAllMocks()
     }
   })
+
+  it('names unsigned Windows artifacts so they cannot pass for release builds', async () => {
+    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
+    const config = createElectronBuilderConfig({
+      DSH_DESKTOP_APP_ID: 'com.example.installer',
+      DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
+      DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
+      DSH_DESKTOP_TARGET_ARCH: 'x64',
+      DSH_DESKTOP_UNSIGNED: '1',
+    }, 'win32', 'x64')
+    expect(config.artifactName).toBe('deepseek-harness-${version}-${os}-${arch}-unsigned.${ext}')
+  })
+
+  it('packages every preload entry point the shell loads', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs')
+    const sourceDirectory = new URL('../src/', import.meta.url)
+    const referenced = new Set<string>()
+    for (const entry of readdirSync(sourceDirectory, { withFileTypes: true })) {
+      if (!entry.isFile()) continue
+      for (const match of readFileSync(new URL(entry.name, sourceDirectory), 'utf8').matchAll(/preload-[a-z-]+\.cjs/gu)) referenced.add(match[0])
+    }
+    expect(referenced.size).toBeGreaterThan(0)
+    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
+    const config = createElectronBuilderConfig({
+      DSH_DESKTOP_APP_ID: 'com.example.installer',
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+      DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://harness-test.deepseek.com',
+      DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN: 'https://policy.example.com',
+      DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Example Company (TEAMID1234)',
+      DSH_DESKTOP_MACOS_TEAM_ID: 'TEAMID1234',
+      APPLE_KEYCHAIN_PROFILE: 'installer-test',
+    }, 'darwin', 'arm64')
+    const packaged = new Set(config.files.filter((entry): entry is string => typeof entry === 'string'))
+    for (const name of referenced) expect(packaged.has(`lib/${name}`)).toBe(true)
+  })
 })
