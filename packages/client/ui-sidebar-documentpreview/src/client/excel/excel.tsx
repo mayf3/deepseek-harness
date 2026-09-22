@@ -1,7 +1,7 @@
 /** Read-only spreadsheet surface backed by browser-parsed workbook data. */
 import { useEffect, useState, type ReactNode } from 'react'
 import { Workbook } from '@fortune-sheet/react'
-import { Button, IconLoadingOutlineRegular, IconWarningTriangleOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconWarningTriangleOutlineRegular, StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import fortuneCss from '@fortune-sheet/react/dist/index.css?inline'
 import type { ExcelFormat } from './format.ts'
 import type { ExcelPreview } from './model.ts'
@@ -33,7 +33,7 @@ export function ExcelBody({ content, format, limits, t }: LoadedExcelBodyProps):
   }, [data, format, limits, attempt])
   if (data === undefined) return <p className={css.status} role="alert">{t('invalid')}</p>
   if (state?.data !== data || state.format !== format) return <span className={css.status} role="status" aria-label={t('loading')} data-document-loading>
-    <span className={css.loadingIcon} aria-hidden="true"><IconLoadingOutlineRegular /></span>
+    <StateDot state="ongoing" />
   </span>
   if ('error' in state) return <div className={css.status} role="alert">
     <span>{t(state.error === 'tooLarge' || state.error === 'timeout' || state.error === 'encoding' ? state.error : 'invalid')}</span>
@@ -42,6 +42,10 @@ export function ExcelBody({ content, format, limits, t }: LoadedExcelBodyProps):
   const hasFormulas = state.value.sheets.some(sheet => sheet.celldata?.some(cell => cell.v?.f !== undefined))
   return <section className={css.body} data-excel-preview aria-label={t('title')}>
     <style>{scopedStyles}</style>
+    {state.value.unsupportedFeatures.length > 0 && <div className={css.notice} role="note" data-excel-unsupported-notice>
+      <IconWarningTriangleOutlineRegular size={16} />
+      <span>{t('unsupportedNotice', { features: state.value.unsupportedFeatures.map(feature => t(feature)).join(t('featureSeparator')) })}</span>
+    </div>}
     <div className={`${css.workbook} ${hasFormulas ? css.withFormulaWarning : ''}`}>
       {hasFormulas && <Tooltip portal label={t('formulaWarning')} side="bottom" delayMs={500}>
         <button type="button" className={css.formulaWarning} aria-label={t('formulaWarning')} data-excel-formula-warning>

@@ -7,6 +7,7 @@
  * fallbacks on malformed results.
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -38,11 +39,11 @@ const t = makeTranslate(zh, commonZh)
 
 function rowProps(block: unknown): Parameters<typeof AskQuestionRow>[0] {
   return {
-    callId: 'c1', toolName: 'ask_user_question', block, t,
+    useDisclosure, callId: 'c1', toolName: 'ask_user_question', block, t,
     openFile: vi.fn(),
     sessionId: 's1',
     useSessions: () => undefined,
-  } as unknown as Parameters<typeof AskQuestionRow>[0]
+  } as Parameters<typeof AskQuestionRow>[0]
 }
 
 const answers = (entries: unknown[]): string => JSON.stringify({ answers: entries })

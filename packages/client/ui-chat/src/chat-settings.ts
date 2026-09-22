@@ -52,8 +52,11 @@ export interface ChatSettings {
 }
 
 /** Durable Chat schema; also the wire envelope the browser scope validates against. */
-export const ChatSettingsSchema: z<ChatSettings> = z.object({
+export const ChatSettingsFields = {
   linkOpening: z.union(['sidebar', 'new-tab']).default(DEFAULT_LINK_OPENING),
   performanceUsage: z.union([...PERFORMANCE_USAGE_MODES]).default(DEFAULT_PERFORMANCE_USAGE),
   [TRANSCRIPT_VIEW_FIELD]: z.union([...TRANSCRIPT_VIEW_SETTING_VALUES]).default(DEFAULT_TRANSCRIPT_VIEW_MODE),
-})
+}
+
+/** Schema for shared configuration values. */
+export const ChatSettingsSchema = z.object(ChatSettingsFields)

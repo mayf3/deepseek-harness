@@ -14,6 +14,14 @@ import { WorkspaceFeed } from '../src/feed.ts'
 import type { WorkspaceFollowFrame } from '../src/types.ts'
 import { MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 
+// The controller relays whatever families the providers report; this suite merges its own.
+declare module '@deepseek-ai/dsh-workspace/types' {
+  interface SessionActivityKindMap {
+    probe: true
+    'probe-items': true
+  }
+}
+
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     'fixture/failure': {}
@@ -231,6 +239,28 @@ describe('WorkspaceController commands', () => {
       workspaceId: 'missing' as WorkspaceId,
       sessionId: session.id,
     })).rejects.toMatchObject({ code: 'workspace/not-found' })
+
+    // A session reported active by the registry's activity waterfall is a
+    // stable business failure carrying what still runs, and nothing is written.
+    const activity = [{ kind: 'probe' as const }, { kind: 'probe-items' as const, items: [{ id: 'item-1', label: 'build' }] }]
+    const stopReporting = ctx.on('workspace/session-activity', async ({ sessionId }, next) =>
+      sessionId === session.id ? [...activity, ...(await next())] : next())
+    await expect(controller.archiveSession({ sessionId: session.id })).rejects.toMatchObject({
+      code: 'workspace/session-active',
+      details: { sessionId: session.id, activity },
+    })
+    expect([...ctx.workspaceRegistry.archivedSessionIds]).toEqual([])
+    // Asking to stop the work archives the still-active Session and reaches
+    // the stop providers first.
+    const stops: string[] = []
+    const stopListening = ctx.on('workspace/session-stop', ({ sessionId }) => { stops.push(String(sessionId)) })
+    await expect(controller.archiveSession({ sessionId: session.id, stopActivity: true }))
+      .resolves.toEqual({ archivedSessionIds: [session.id] })
+    expect(stops).toEqual([String(session.id)])
+    stopListening()
+    await expect(controller.unarchiveSession({ sessionId: session.id }))
+      .resolves.toEqual({ archivedSessionIds: [] })
+    stopReporting()
 
     await expect(controller.archiveSession({ sessionId: session.id }))
       .resolves.toEqual({ archivedSessionIds: [session.id] })

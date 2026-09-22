@@ -70,11 +70,9 @@ export function OfficeBody(props: OfficeBodyProps): ReactNode {
   }
   if (file === undefined) return <LoadingIndicator className={common.statusLine} label={t('loading')} />
   return <div className={css.body}>
-    <div className={css.scrollport} ref={props.scrollportRef}>
-      {props.renderSlot('sidebar.right.tab.document.office.pdf', {
-        resourceAddress, content: { kind: 'bytes', data: file.data }, wrap: props.wrap, scrollportRef: props.scrollportRef,
-        addResource: props.addResource, setResources: props.setResources,
-      }, { entryKey: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', hookContext: props.useTabInfo })}
-    </div>
+    {props.renderSlot('sidebar.right.tab.document.office.pdf', {
+      resourceAddress, content: { kind: 'bytes', data: file.data }, wrap: props.wrap, scrollportRef: props.scrollportRef,
+      addResource: props.addResource, setResources: props.setResources,
+    }, { entryKey: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', hookContext: props.useTabInfo })}
   </div>
 }

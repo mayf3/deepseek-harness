@@ -92,11 +92,16 @@ export function SidebarRoot({
   toggleSidebar,
   selectPanel,
   usePanels,
+  useShortcuts,
   usePanelInfo,
   t,
   renderSlot,
 }: SidebarRootComponentProps) {
   const panels = usePanels(snapshot => snapshot)
+  const shortcut = useShortcuts(rows => rows.find(row => row.id === 'sidebar.left.toggle'))
+  const newShortcut = useShortcuts(rows => rows.find(row => row.id === 'session.new'))
+  const newHint = newShortcut?.keys.length ? t('shortcut.hint', { label: t('session.new.label'), keys: newShortcut.keys.join(' ') }) : t('session.new.label')
+  const toggleLabel = collapsed ? t('toggle.open') : t('toggle.collapse')
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
   const [settled, setSettled] = useState(collapsed)
@@ -173,11 +178,12 @@ export function SidebarRoot({
   // (the expand affordance, figma sidebar-hover flow). Expanded it is a plain
   // panel icon.
   const toggle = (
-    <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500} side={captionTooltipSide}>
+    <Tooltip label={shortcut?.keys.length ? t('shortcut.hint', { label: toggleLabel, keys: shortcut.keys.join(' ') }) : toggleLabel} delayMs={500} side={captionTooltipSide}>
       <button
         type="button"
         className={clsx(css.iconButton, css.toggle)}
-        aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
+        aria-label={toggleLabel}
+        aria-keyshortcuts={shortcut?.aria}
         onClick={() => { toggleSidebar() }}
       >
         {!wide && !windowsTitlebar && (
@@ -237,25 +243,29 @@ export function SidebarRoot({
           return darwinDesktop
             ? <span className={clsx(css.brand, css.wide)}>{identity}</span>
             : (
-              <button
-                type="button"
-                className={clsx(css.brand, css.wide)}
-                aria-label={t('session.new.label')}
-                onClick={() => { startSession() }}
-              >
-                {identity}
-              </button>
+              <Tooltip label={newHint} delayMs={500}>
+                <button
+                  type="button"
+                  className={clsx(css.brand, css.wide)}
+                  aria-label={t('session.new.label')}
+                  aria-keyshortcuts={newShortcut?.aria}
+                  onClick={() => { startSession() }}
+                >
+                  {identity}
+                </button>
+              </Tooltip>
             )
         })()}
         {!darwinDesktop && toggle}
       </div>
 
       {/* Expanded, the button carries its own label — tooltip only on the rail. */}
-      <Tooltip label={t('session.new.label')} delayMs={500} disabled={wide} side={captionTooltipSide}>
+      <Tooltip label={newHint} delayMs={500} side={captionTooltipSide}>
         <button
           type="button"
           className={css.newSession}
           aria-label={t('session.new.label')}
+          aria-keyshortcuts={newShortcut?.aria}
           onClick={() => { startSession() }}
         >
           {/* The rail draws Regular: Medium's 1.3px stroke scaled to the rail's

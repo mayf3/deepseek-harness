@@ -56,8 +56,10 @@ export { REGION_BEGIN, REGION_END }
 export const SERVICE_PAGE: Record<string, string> = {
   speechToText: 'voice-input.md',
   speechController: 'voice-input.md',
+  productTelemetry: 'product-telemetry.md',
   connection: 'web-server.md',
   pluginManager: 'boot.md',
+  configEditor: 'boot.md',
   profileContext: 'boot.md',
   hmr: 'boot.md',
   mcpResources: 'mcp.md',
@@ -78,6 +80,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   compaction: 'compaction.md',
   cordisInspect: 'extensions.md',
   authorization: 'credentials.md',
+  deepseekAccount: 'credentials.md',
   credentials: 'credentials.md',
   credentialsController: 'credentials.md',
   settingsController: 'settings.md',
@@ -176,8 +179,9 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   uiConversation: 'client-side Conversation registries and assembler — packages/client/ui-conversation/README.md owns the API',
   uiWorkspace: 'client-side Workspace navigation adapter — packages/client/ui-workspace/README.md owns the API',
   settingsSchema: 'client-side schema introspection service — packages/client/ui-settings/README.md owns the API',
-  settingsScope: 'client-side settings-namespace transport service — packages/client/ui-settings/README.md owns the API',
+  configForms: 'client-side shared entry forms — packages/client/ui-settings/README.md owns the API',
   chatFileMentions: 'client-side slot-contract accessor (ChatFileMentions) — packages/client/ui-chat/README.md owns the API',
+  shortcuts: 'client-side interface-typed keyboard service — packages/client/shortcuts/README.md owns the API',
   commandUi: 'client-side interface-typed browser service — packages/client/ui-commands/README.md owns the API',
   feedbackUi: 'client-side feedback dialog service — packages/client/ui-message-feedback/README.md owns the API',
   conversation: 'client-side interface-typed browser service — packages/client/ui-conversation/README.md owns the API',
@@ -206,6 +210,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
  * {@link EVENT_WALK_EXEMPTIONS} names each one with its documentation owner.
  */
 export const EVENT_SCOPE_PAGE: Record<string, string> = {
+  'app-boot': 'boot.md',
   hmr: 'boot.md',
   'plugin-manager': 'boot.md',
   'agent': 'core.md',
@@ -235,6 +240,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'user-questions': 'user-questions.md',
   'webserver': 'web-server.md',
   'workflow': 'workflow.md',
+  'workspace': 'workspace.md',
 }
 
 /**
@@ -266,6 +272,8 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  ProductTelemetryRecord: 'product-telemetry.md',
+  ProductTelemetryScalar: 'product-telemetry.md',
   WorkspaceChangesSummary: 'deliverables.md',
   WorkspaceFileDiff: 'deliverables.md',
   Reload: 'boot.md',
@@ -433,7 +441,9 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   StoredImageAttachment: 'attachment.md',
   ShellExecRequest: 'shell.md',
   ShellExecSpec: 'shell.md',
+  ShellExecution: 'shell.md',
   ShellProcess: 'shell.md',
+  ShellPromotionOffer: 'shell.md',
   ShellRunResult: 'shell.md',
   DshEnvironment: 'subprocess.md',
   SubprocessHandle: 'subprocess.md',
@@ -588,6 +598,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SystemPrompt: 'system-prompt.md',
   ToolProviderResult: 'system-prompt.md',
   JobId: 'jobs.md',
+  JobKillRequest: 'jobs.md',
+  JobKillValue: 'jobs.md',
   JobFollowFrame: 'jobs.md',
   JobFollowRequest: 'jobs.md',
   JobListFrame: 'jobs.md',
@@ -657,10 +669,6 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ToolRestriction: 'tools.md',
   ToolSchema: 'tools.md',
   SettingsNamespace: 'settings.md',
-  SettingsNamespaceInput: 'settings.md',
-  SettingsRegisterOptions: 'settings.md',
-  SettingsSectionHooks: 'settings.md',
-  SettingsScope: 'settings.md',
   SettingsDescriptor: 'settings.md',
   SettingsDescribeValue: 'settings.md',
   SettingsDocumentOpenValue: 'settings.md',
@@ -670,7 +678,6 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SettingsSecretView: 'settings.md',
   SettingsPathOp: 'settings.md',
   SettingsDescribeOptions: 'settings.md',
-  SettingsUpdateSource: 'settings.md',
   SkillListRequest: 'skills.md',
   SkillListValue: 'skills.md',
   AuthorizationEntry: 'credentials.md',
@@ -679,6 +686,10 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AuthorizationMethod: 'credentials.md',
   AuthorizationNotice: 'credentials.md',
   AuthorizationOutcome: 'credentials.md',
+  AccountView: 'credentials.md',
+  AccountDetails: 'credentials.md',
+  PlatformSession: 'credentials.md',
+  SignInAttemptId: 'credentials.md',
   AuthorizationPrompt: 'credentials.md',
   AuthorizationRequest: 'credentials.md',
   AuthorizationSession: 'credentials.md',
@@ -716,6 +727,9 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   DomainChanged: 'storage.md',
   DomainFacility: 'storage.md',
   Workspace: 'workspace.md',
+  ArchiveSessionOptions: 'workspace.md',
+  SessionActivity: 'workspace.md',
+  SessionActivityRequest: 'workspace.md',
   WorkspaceArchiveSessionRequest: 'workspace.md',
   WorkspaceArchiveValue: 'workspace.md',
   WorkspaceCreateRequest: 'workspace.md',
@@ -759,12 +773,14 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
 
 /** TypeScript lib and pinned framework types with no repository-owned data page. */
 export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
+  'Entry', 'Array',
   'Plugin',
   'AbortSignal',
   'AsyncIterable',
   'Context',
   'Error',
   'EntryTree',
+  'Fiber',
   'EntryOptions',
   'Exclude',
   'Extract',

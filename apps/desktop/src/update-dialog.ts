@@ -50,9 +50,9 @@ export class DesktopUpdateDialog {
 
   /**
    * @param preload - Bundled isolated preload.
-   * @param locale - Shell-owned copy.
+   * @param locale - Shell-owned copy or a reader of the current UI language.
    */
-  constructor(private readonly preload: string, private readonly locale: DesktopLocale) {
+  constructor(private readonly preload: string, private readonly locale: DesktopLocale | (() => DesktopLocale)) {
     ipcMain.handle(UPDATE_DIALOG_IPC.status, (event) => { this.owned(event); return this.active?.view ?? null })
     ipcMain.handle(UPDATE_DIALOG_IPC.respond, (event, revision: unknown, index: unknown) => {
       this.owned(event)
@@ -72,7 +72,8 @@ export class DesktopUpdateDialog {
    * @returns A displayed response, or cancellation on replacement, abort, close, or load failure; backdrop dismissal fades independently.
    */
   show(parent: BrowserWindow, options: UpdateDialogOptions): Promise<MessageBoxReturnValue> {
-    const buttons = options.buttons ?? [this.locale.messages.updateAcknowledge]
+    const locale = typeof this.locale === 'function' ? this.locale() : this.locale
+    const buttons = options.buttons ?? [locale.messages.updateAcknowledge]
     const cancelId = options.cancelId ?? buttons.length - 1
     if (this.disposed || options.signal?.aborted === true || parent.isDestroyed()) {
       return Promise.resolve({ response: cancelId, checkboxChecked: false })
@@ -82,12 +83,12 @@ export class DesktopUpdateDialog {
     clearTimeout(this.closing)
     this.closing = undefined
     const existing = this.window
-    const window = existing ?? createUpdateOverlay(parent, this.preload, options.title ?? this.locale.messages.updateTitle, false)
+    const window = existing ?? createUpdateOverlay(parent, this.preload, options.title ?? locale.messages.updateTitle, false)
     this.window = window
     this.parent = parent
-    const view: UpdateDialogView = { revision: ++this.revision, locale: this.locale.id, title: options.title ?? '', message: options.message,
-      detail: options.detail ?? '', buttons, cancelId, closeLabel: this.locale.messages.updateClose,
-      technicalDetails: options.technicalDetails ?? '', technicalDetailsLabel: this.locale.messages.updateTechnicalDetails }
+    const view: UpdateDialogView = { revision: ++this.revision, locale: locale.id, title: options.title ?? '', message: options.message,
+      detail: options.detail ?? '', buttons, cancelId, closeLabel: locale.messages.updateClose,
+      technicalDetails: options.technicalDetails ?? '', technicalDetailsLabel: locale.messages.updateTechnicalDetails }
     return new Promise((resolve) => {
       const abort = (): void => { finish(cancelId) }
       const finish = (response: number, retain = false): void => {

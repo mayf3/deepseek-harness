@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import {
   IconChevronDownOutlineRegular, IconFolderOpenOutlineRegular, IconRightUpOutlineRegular, Menu, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { OpenInAppPathFailure } from './open-path.ts'
 import { useOpenFailureToast } from './open-failure-toast.tsx'
@@ -22,6 +23,7 @@ export type OpenTargetOperation = { readonly kind: 'default' } | { readonly kind
 
 /** Inputs shared by both target adapters and the file empty-state action. */
 export interface OpenTargetButtonProps {
+  readonly shortcut?: Pick<ShortcutCatalogEntry, 'keys' | 'aria'> | undefined
   readonly kind: 'file' | 'directory'
   readonly applications: readonly OpenTargetApplication[]
   readonly defaultId: string | undefined
@@ -117,8 +119,9 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
         anchor={(
           <div className={css.split} data-open-target={kind} data-size={props.prominent ? 'large' : 'compact'}
             data-open-path={kind === 'file' && !props.prominent ? '' : undefined} data-state={disabled ? 'busy' : 'idle'}>
-            <Tooltip portal label={primaryLabel} side="bottom" delayMs={500}>
+            <Tooltip portal label={props.shortcut?.keys.length ? t('shortcut.hint', { label: primaryLabel, keys: props.shortcut.keys.join(' ') }) : primaryLabel} side="bottom" delayMs={500}>
               <button type="button" className={css.main} disabled={disabled} aria-label={props.prominent ? undefined : primaryLabel}
+                aria-keyshortcuts={props.shortcut?.aria}
                 data-open-path-open={kind === 'file' && !props.prominent ? '' : undefined}
                 data-open-path-unpreviewable={props.prominent ? '' : undefined} onClick={primary}>
                 {icon}{(props.prominent) && (revealDefault ? t('path.reveal') : t('path.open'))}
@@ -133,7 +136,7 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
                 setMenuOpen(value => !value)
               }}
             >
-              <IconChevronDownOutlineRegular size={10} />
+              <IconChevronDownOutlineRegular size={props.prominent ? 14 : 10} />
             </button>}
           </div>
         )}

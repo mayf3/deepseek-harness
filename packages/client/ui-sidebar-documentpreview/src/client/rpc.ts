@@ -91,15 +91,3 @@ export type DocumentFileBytes = WorkspaceFileBytes<Uint8Array<ArrayBuffer>>
  * @returns complete native bytes, including declared failures.
  */
 export type ReadDocumentBytes = (file: SessionFile, signal: AbortSignal) => Promise<RemoteResult<DocumentFileBytes>>
-
-/**
- * Decode the Office conversion Remote's base64 PDF response.
- * @param file - converted PDF metadata and base64 contents.
- * @returns the same metadata with native bytes; malformed base64 throws.
- */
-export function documentFileBytes(file: Omit<WorkspaceFileBytes, 'data'> & { readonly data: string }): DocumentFileBytes {
-  const binary = atob(file.data)
-  const data = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index++) data[index] = binary.charCodeAt(index)
-  return { ...file, data }
-}

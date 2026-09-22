@@ -7,6 +7,8 @@
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+// Type-only: the Workspace registry's archive-admission family map this seam merges `job` into.
+import type {} from '@deepseek-ai/dsh-workspace/types'
 import type { JobId } from './brand.ts'
 
 /**
@@ -15,6 +17,13 @@ import type { JobId } from './brand.ts'
  * {@link JobView.detail}.
  */
 export type JobStatus = 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
+
+declare module '@deepseek-ai/dsh-workspace/types' {
+  interface SessionActivityKindMap {
+    /** A background job owned by this session is running or stopping. */
+    job: true
+  }
+}
 
 /**
  * Producer-defined job kinds. Plugins extend this map by declaration merging;

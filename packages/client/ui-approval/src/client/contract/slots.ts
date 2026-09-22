@@ -119,6 +119,14 @@ export class PendingApproval {
   }
 
   /**
+   * Availability of this pending request after answer or withdrawal.
+   * @returns whether this request can still accept a decision.
+   */
+  get answerable(): boolean {
+    return !this.#settled
+  }
+
+  /**
    * Resolve the Host waterfall with the user's decision.
    * @param outcome - supported interactive decision.
    */

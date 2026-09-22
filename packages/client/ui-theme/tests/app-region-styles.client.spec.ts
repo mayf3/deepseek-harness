@@ -1,7 +1,7 @@
 /**
  * Window drag-region ownership, asserted against the CSS text on disk:
- * `-webkit-app-region: drag` appears only in the two chrome bands that mount
- * before all content — ui-layout's frame band and ui-sidebar's logo row.
+ * `-webkit-app-region: drag` belongs to window chrome: the frame band,
+ * sidebar logo row, and the full-window Platform overlay's return bar.
  * Electron composes app-regions from window geometry in DOM order, ignoring
  * stacking: a drag rule on a content container overrides the no-drag of any
  * overlay mounted earlier, so its controls drag the window instead of
@@ -15,6 +15,7 @@ import { packageStylesheets, parseRules } from './stylesheet-scan.ts'
 const DRAG_OWNERS = [
   'client/ui-layout/src/client/AppFrame.module.css',
   'client/ui-sidebar/src/client/SidebarRoot.module.css',
+  'client/ui-settings-account/src/client/PlatformOverlay.module.css',
 ]
 
 /**
@@ -60,8 +61,16 @@ describe('window drag-region ownership', () => {
     expect(offenders([`/packages/${DRAG_OWNERS[0]!}`], () => drag)).toEqual([])
   })
 
-  it('keeps -webkit-app-region: drag inside the two chrome bands', () => {
+  it('keeps -webkit-app-region: drag inside the owned chrome bands', () => {
     expect(offenders(packageStylesheets(), file => readFileSync(file, 'utf8'))).toEqual([])
+  })
+
+  it('limits the Platform overlay drag region to its return bar and excludes the return button', () => {
+    const file = packageStylesheets().find(candidate => candidate.endsWith('/client/ui-settings-account/src/client/PlatformOverlay.module.css'))!
+    const css = readFileSync(file, 'utf8')
+    expect(dragSelectors(css)).toEqual(['.header'])
+    expect(parseRules(css).find(rule => rule.selectors.includes('.back'))?.declarations)
+      .toContainEqual(['app-region', 'no-drag'])
   })
 
   it('still finds a drag band in every allowlisted owner', () => {

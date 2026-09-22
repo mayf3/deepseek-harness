@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import { entryListProblem, livePresetMounts } from '../src/index.ts'
-import { currentKey, harness, declare, contribution, agentOn } from './harness.ts'
+import { currentKey, harness, declare, contribution, agentOn, liveRegistries } from './harness.ts'
+import { omitsGeneratedPage } from '../../../settings/settings/tests/live-config.ts'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import AgentPresets from '../src/index.ts'
 import type { Context } from '@deepseek-ai/cordis'
 
 const contexts: Context[] = []
@@ -193,25 +197,24 @@ it('allows an isolated service and resolves it through the Agent composition', a
 })
 
 it('keeps policy preferences while hiding and restoring the chooser', async () => {
-  const ctx = await setup()
-  const { default: Settings } = await import('@deepseek-ai/dsh-settings-file')
-  const { mkdtemp, rm } = await import('node:fs/promises')
-  const { tmpdir } = await import('node:os')
-  const pathModule = await import('node:path')
-  const join = (...parts: string[]) => pathModule.join(...parts)
-  const path = await mkdtemp(join(tmpdir(), 'preset-policy-'))
-  const settings = await ctx.plugin(Settings, { path: join(path, 'settings.yml'), watch: false })
-  try {
-    await ctx.settings.update('agent-presets', { default: 'minimal', modeSelectionEnabled: true })
-    expect(ctx.agentPresets.defaultId).toBe('minimal')
-    await ctx.settings.update('agent-presets', { default: 'minimal', modeSelectionEnabled: false })
-    expect(ctx.agentPresets.defaultId).toBe('standard')
-    await ctx.settings.update('agent-presets', { default: 'minimal', modeSelectionEnabled: true })
-    expect(ctx.agentPresets.defaultId).toBe('minimal')
-    await settings.dispose()
-    expect(ctx.agentPresets.defaultId).toBe('standard')
-  } finally { await settings.dispose(); await rm(path, { recursive: true, force: true }) }
+  const ctx = await harness({ live: true })
+  contexts.push(ctx)
+  const live = liveRegistries.get(ctx)!
+  await live.update({ selectedDefault: 'minimal', modeSelectionEnabled: true })
+  expect(ctx.agentPresets.defaultId).toBe('minimal')
+  await live.update({ modeSelectionEnabled: false })
+  expect(ctx.agentPresets.defaultId).toBe('standard')
+  await live.update({ modeSelectionEnabled: true })
+  expect(ctx.agentPresets.defaultId).toBe('minimal')
+  await live.replace({ default: 'standard' })
+  expect(ctx.agentPresets.defaultId).toBe('standard')
 })
+
+it('keeps its own instance off the generated Settings pages', () => omitsGeneratedPage(async (ctx) => {
+  await ctx.plugin(Loader)
+  await ctx.plugin(SessionProjectionRegistry)
+  return ctx.plugin(AgentPresets, { default: 'standard' })
+}))
 
 it('refuses an unscoped binding and a second child join without leaking references', async () => {
   const ctx = await setup()

@@ -1,2 +1,2 @@
-- button "Settings"
+- button "Account menu": Not signed in
 - button "Reconnecting, reconnect now": Reconnecting

@@ -8,7 +8,8 @@
     - tab "Trajectory"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Context injection runtime-context"
+- status: Failed
+- button "Failed" [disabled]
 - status:
   - text: This turn failedAPI key is invalid
   - code: AUTH
