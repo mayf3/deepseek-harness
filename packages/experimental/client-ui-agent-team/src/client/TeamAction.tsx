@@ -5,7 +5,7 @@ import type {
   TeamMemberProjection,
   TeamTaskView as TeamTask,
 } from '@deepseek-ai/dsh-experimental-agent-team/client'
-import type { SessionProjectionRefreshOptions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   IconCloseOutlineRegular, IconRefreshOutlineRegular, IconUserOutlineRegular, StateDot,
   useAnchoredPosition, useDismissOnOutsidePointer, type StateDotState,
@@ -17,8 +17,8 @@ import css from './TeamAction.module.css'
 
 /** Business actions injected by the browser plugin. */
 export interface TeamActionInjected {
-  /** Read a Session's baseline, optionally refreshing after any existing read. */
-  loadProjections: (sessionId: SessionId, options?: SessionProjectionRefreshOptions) => void
+  /** Read a Session's projection baseline once per connection, or retry a failed read. */
+  loadProjections: (sessionId: SessionId) => void
   openTeammate: (sessionId: SessionId, member: TeamMemberProjection) => void
 }
 
@@ -151,7 +151,7 @@ export function TeamAction({
   }, [sessionId])
 
   useEffect(() => {
-    if (open) loadProjections(leadSessionId, { force: true })
+    if (open) loadProjections(leadSessionId)
   }, [open, leadSessionId, loadProjections])
 
   useEffect(() => {
@@ -219,7 +219,7 @@ export function TeamAction({
             <div className={css.error} role="alert">
               <StateDot state="error" />
               <span className={css.spacer}>{failureText(readError)}</span>
-              <button type="button" className={css.iconButton} aria-label={t('retry')} onClick={() => { loadProjections(leadSessionId, { force: true }) }}>
+              <button type="button" className={css.iconButton} aria-label={t('retry')} onClick={() => { loadProjections(leadSessionId) }}>
                 <IconRefreshOutlineRegular size={14} />
               </button>
             </div>

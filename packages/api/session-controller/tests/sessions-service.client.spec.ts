@@ -719,17 +719,6 @@ describe('borrow-only bindings', () => {
 })
 
 describe('catalog-addressed navigation', () => {
-  it('refreshes cached projection baselines through the public Session service', async ({ bench }) => {
-    const b = bench()
-    b.mock.remote.session.projections.mockResolvedValueOnce(ok({ asOfSeq: 0, values: {} }))
-    await b.svc.refreshProjections(sid('root'))
-    b.mock.remote.session.projections.mockResolvedValueOnce(ok({ asOfSeq: 0, values: { title: 'new capability' } }))
-    await b.svc.refreshProjections(sid('root'), { force: true })
-    await b.svc.refreshProjections(sid('root'))
-    expect(b.svc.list.getSnapshot().projectionsBySession[sid('root')]?.values.title).toBe('new capability')
-    expect(b.mock.remote.session.projections).toHaveBeenCalledTimes(2)
-  })
-
   it('retains a projected child independently of its parent and shares its history generation', async ({ bench }) => {
     const b = bench()
     await feedList(b, [{ id: 'root' }])

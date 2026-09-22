@@ -1,6 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import type { SessionProjectionRefreshOptions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -30,8 +29,8 @@ async function bench(options: { addressed?: boolean } = {}) {
         },
       }) } }
       : undefined,
-    refreshProjections: (id: SessionId, options?: SessionProjectionRefreshOptions) => {
-      navigation.push(['refresh', id, options])
+    refreshProjections: (id: SessionId) => {
+      navigation.push(['refresh', id])
       return Promise.resolve()
     },
     retainInfo: (id: SessionId) => ({
@@ -89,10 +88,10 @@ describe('ui-team browser plugin', () => {
     const t = b.ctx.locale.bind('agent-team')
     expect(t('trigger')).toBe('Agent Team')
 
-    b.actions().loadProjections(SESSION, { force: true })
-    expect(b.navigation).toEqual([['refresh', SESSION, { force: true }]])
+    b.actions().loadProjections(SESSION)
+    expect(b.navigation).toEqual([['refresh', SESSION]])
     b.actions().openTeammate(SESSION, LEAD)
-    expect(b.navigation).toEqual([['refresh', SESSION, { force: true }]])
+    expect(b.navigation).toEqual([['refresh', SESSION]])
 
     await b.fiber.dispose()
     expect(b.entry()).toBeUndefined()

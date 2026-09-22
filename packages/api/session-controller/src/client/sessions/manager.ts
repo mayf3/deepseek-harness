@@ -25,7 +25,7 @@ import { Notifier } from './notifier.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import { Session } from './session.ts'
 import type { SessionRemotes } from './remotes.ts'
-import type { SessionProjectionRefreshOptions, SessionTarget } from '../contract/sessions.ts'
+import type { SessionTarget } from '../contract/sessions.ts'
 
 function sessionSeqCursor(value: number): SessionSeqCursor {
   return value === -1 ? -1 : SessionSeq(value)
@@ -68,7 +68,6 @@ export interface SessionProjectionSnapshot {
 interface ProjectionInflight {
   readonly promise: Promise<void>
   readonly controller: AbortController
-  refreshAfter?: Promise<void>
 }
 
 type ProjectionLoad = Omit<SessionProjectionSnapshot, 'values'>
@@ -335,19 +334,12 @@ export class SessionManager {
   /**
    * Load a complete projection baseline once per connection; retry unsuccessful reads.
    * @param sessionId - Session to inspect without opening its conversation.
-   * @param options - force a fresh read after any current request, including a cached successful baseline.
-   * @returns completion of the requested read; aborting the current request also cancels its queued refresh.
+   * @returns completion of the current or newly started read.
    */
-  refreshProjections(sessionId: SessionId, options?: SessionProjectionRefreshOptions): Promise<void> {
+  refreshProjections(sessionId: SessionId): Promise<void> {
     const existing = this.projectionInflight.get(sessionId)
-    if (existing !== undefined) {
-      if (!options?.force) return existing.refreshAfter ?? existing.promise
-      // A running read may predate plugin activation and omit its new projection.
-      return existing.refreshAfter ??= existing.promise.then(() => {
-        if (!existing.controller.signal.aborted) return this.refreshProjections(sessionId, { force: true })
-      })
-    }
-    if (!options?.force && this.projectionLoads.get(sessionId)?.state === 'ready') return Promise.resolve()
+    if (existing !== undefined) return existing.promise
+    if (this.projectionLoads.get(sessionId)?.state === 'ready') return Promise.resolve()
     const controller = new AbortController()
     const store = this.projectionStore(sessionId)
     const initialValues = store.values()

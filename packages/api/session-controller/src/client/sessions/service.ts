@@ -13,7 +13,7 @@ import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protoc
 import type { SessionEventSource } from '../contract/events.ts'
 import type { SessionFace } from '../contract/session.ts'
 import type {
-  AgentContext, ISessions, SessionProjectionRefreshOptions, SessionReference, SessionRetainInfo, SessionRetainOptions, SessionTarget,
+  AgentContext, ISessions, SessionReference, SessionRetainInfo, SessionRetainOptions, SessionTarget,
 } from '../contract/sessions.ts'
 import type { SessionReferenceSource } from '../index.ts'
 import { createScope, scopeIdentityOf, scopeOf as scopeTagOf } from '../scope.ts'
@@ -339,12 +339,11 @@ export class ClientSessions implements ISessions {
   }
 
   /**
-   * Load all Session projections using the requested cache policy.
+   * Load all Session projections once per connection; retry an unsuccessful initial read.
    * @param sessionId - Session to inspect without opening its conversation.
-   * @param options - optional fresh read after any current request.
    */
-  refreshProjections(sessionId: SessionId, options?: SessionProjectionRefreshOptions): Promise<void> {
-    return this.manager.refreshProjections(sessionId, options)
+  refreshProjections(sessionId: SessionId): Promise<void> {
+    return this.manager.refreshProjections(sessionId)
   }
 
   /**
