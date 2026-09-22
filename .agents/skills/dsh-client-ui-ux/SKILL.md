@@ -18,7 +18,7 @@ This skill is guidance, not a complete checklist. It covers judgment calls that 
 ## Reuse before adding
 
 - **Extend an existing component, container, or interaction before creating a new one.** A new capability that fits an existing surface (an extra menu item, a new prop on a primitive, an interactive mode on Tooltip) beats a parallel element stacked beside it.
-- **Icons come from the existing icon library.** Pick the semantically closest existing icon; a genuinely new glyph requires designer approval before it lands.
+- **Icons come from the existing icon library.** Pick the semantically closest existing icon; a genuinely new glyph requires designer approval before it lands — when reviewing a PR that adds one, suggest requesting a designer review.
 - **Right-sidebar content registers a slot in the existing sidebar**, never a separate sidebar. Every sidebar tab declares a tab icon matching its meaning.
 - **Icon-only actions whose meaning is not obvious get a Tooltip.** Prefer the shared Tooltip primitive (with `interactive` for selectable informational content) over ad-hoc title attributes.
 
@@ -53,3 +53,7 @@ Every menu, popover, and tooltip must be verified for all three before merge:
 
 - Review every changed region for gaps: nothing sits flush against its neighbour without an intentional gap, and adjacent icons and elements keep the region's established spacing.
 - Prefer symmetry for parallel elements; an unexplained one-off gap or offset usually signals a missed shared value.
+
+## Design review escalation
+
+- A PR with extensive UI changes, or any clearly user-perceivable change to UI or interaction, must get a designer or product review. When no approver holds that role, suggest requesting review from yx zhang, yifffan, zhangziya, or gaokaige.
