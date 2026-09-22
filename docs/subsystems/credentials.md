@@ -59,6 +59,8 @@ PlatformSession is a Host-only snapshot from getPlatformSession: origin names th
 
 AccountDetails.balance projects recharge wallets in value and promotional wallets in bonusWallets, with independent currency and decimal balance strings. Failed queries contain no wallet arrays.
 
+Bonus notification queries return an AccountBonusBatch with the current Platform account id and eligible orders in server order. AccountBonusNotification retains the server message and expiry without projecting credentials. Acknowledgment carries the expected account id and order id; the Host refuses it after an account change. Both notification operations use the initiating UI language through x-client-locale, without a language query parameter.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -285,6 +287,22 @@ abstract getProfile(client: AccountClientMetadata): Promise<AccountDetails['prof
  * @returns balance outcome, or null if signed out or the grant changed during the query.
  */
 abstract getBalance(client: AccountClientMetadata): Promise<AccountDetails['balance'] | null>
+
+/**
+ * Query the granted bonuses Platform has not yet recorded as displayed.
+ * @param client - identity of the requesting UI for this call; its language selects the server-authored message.
+ * @returns bonuses with their account, or null if signed out or the grant changed during the query.
+ */
+abstract getUnnotifiedBonuses(client: AccountClientMetadata): Promise<AccountBonusBatch | null>
+
+/**
+ * Record one displayed bonus as notified for the account it belongs to.
+ * @param accountId - account the notification was read for; a different current account is never acknowledged.
+ * @param orderId - granted bonus order the user saw.
+ * @param client - identity of the requesting UI for this call.
+ * @returns true once Platform records the acknowledgement; false if signed out or the account changed.
+ */
+abstract ackBonusNotified(accountId: AccountUserId, orderId: AccountBonusOrderId, client: AccountClientMetadata): Promise<boolean>
 
 /**
  * Join an active attempt or start browser authorization.

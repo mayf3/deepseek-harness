@@ -6,6 +6,7 @@ import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { PlatformBridge } from '../src/client/PlatformOverlay.tsx'
 import { AccountSection, type AccountSectionInjected, type AccountSnapshot } from '../src/client/AccountSection.tsx'
+import type { BonusNotice } from '../src/client/bonus-notices.ts'
 import type {} from '../src/client/index.ts'
 import { en, zh, type AccountKey } from '../src/client/locales.ts'
 
@@ -28,7 +29,8 @@ function operationsOf(state: Omit<AccountView, 'links'>, details?: Partial<Accou
       theme: { getSnapshot: () => themeOf('light'), subscribe: () => () => {} },
     },
     contactUs: vi.fn(), showLogin: vi.fn(), setOnboarding: vi.fn(),
-    refresh: vi.fn(() => Promise.resolve()),
+    bonusNoticeShown: vi.fn(), bonusNoticeDismissed: vi.fn(),
+    refresh: vi.fn(() => Promise.resolve()), refreshBonus: vi.fn(() => Promise.resolve()),
     start: vi.fn(() => Promise.resolve()), cancel: vi.fn(() => Promise.resolve()), signOut: vi.fn(() => Promise.resolve()),
   }
 }
@@ -47,7 +49,7 @@ function mount(state: Omit<AccountView, 'links'>, copy: typeof en | typeof zh = 
 it.each([en, zh])('renders account cards without inventing profile or balance data', async (copy) => {
   mount({ status: 'credential-stored', attempt: null }, copy)
   expect(screen.getByText(copy.signedIn)).toBeTruthy()
-  expect(screen.getAllByText(copy.loading)).toHaveLength(2)
+  expect(screen.getAllByText(copy.loading)).toHaveLength(3)
   expect(screen.getByRole('link', { name: copy.usage }).getAttribute('href')).toBe('http://localhost:8081/usage')
   expect(screen.getByRole('link', { name: copy.topUp }).getAttribute('href')).toBe('http://localhost:8081/top_up')
   expect(screen.queryByRole('button', { name: copy.signOut })).toBeNull()
@@ -71,7 +73,7 @@ it.each([en, zh])('opens settings and signs out from the sidebar account menu', 
   const operations = mount({ status: 'credential-stored', attempt: null }, copy)
   cleanup()
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
-  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} signOut={signOut}
+  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} settingsOpen={false} signOut={signOut}
     useAccount={selector => selector(operations.hooks.account.getSnapshot())}
     useTheme={selector => selector(operations.hooks.theme.getSnapshot())} wide openOnboarding={() => {}} openSettings={openSettings}
     t={key => key in copy ? copy[key as AccountKey] : key} />)
@@ -101,7 +103,7 @@ it('reports a failed start in the login dialog, not as a sidebar alert', async (
     snapshot = { ...snapshot, loginVisible: true, loginFailed: true }
     return Promise.reject(new Error('account start failed'))
   })
-  const view = render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} start={start}
+  const view = render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} settingsOpen={false} start={start}
     useAccount={selector => selector(snapshot)} useTheme={selector => selector(operations.hooks.theme.getSnapshot())}
     wide openOnboarding={() => {}} openSettings={() => {}}
     t={key => key in en ? en[key as AccountKey] : key} />)
@@ -109,7 +111,7 @@ it('reports a failed start in the login dialog, not as a sidebar alert', async (
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: en.signIn })) })
   expect(start).toHaveBeenCalledOnce()
   expect(screen.queryByRole('alert')).toBeNull()
-  view.rerender(<AccountMenu {...({} as GlobalStandardProps)} {...operations} start={start}
+  view.rerender(<AccountMenu {...({} as GlobalStandardProps)} {...operations} settingsOpen={false} start={start}
     useAccount={selector => selector(snapshot)} useTheme={selector => selector(operations.hooks.theme.getSnapshot())}
     wide openOnboarding={() => {}} openSettings={() => {}}
     t={key => key in en ? en[key as AccountKey] : key} />)
@@ -124,7 +126,7 @@ it('keeps the sidebar alert for a failed sign-out', async () => {
   const operations = mount({ status: 'credential-stored', attempt: null })
   cleanup()
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
-  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}
+  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} settingsOpen={false}
     signOut={() => Promise.reject(new Error('account sign-out failed'))}
     useAccount={selector => selector(operations.hooks.account.getSnapshot())}
     useTheme={selector => selector(operations.hooks.theme.getSnapshot())} wide
@@ -233,7 +235,8 @@ it('shows the profile while the balance is still loading', async () => {
     profile: { status: 'ready', value: { id: null, name: 'Ready User', contact: '138****0000' } },
   })
   expect(screen.getByText('Ready User')).toBeTruthy()
-  expect(screen.getByText(en.loading)).toBeTruthy()
+  // Both the recharge and the bonus row report their own pending read.
+  expect(screen.getAllByText(en.loading)).toHaveLength(2)
   expect(screen.queryByText(en.balanceUnavailable)).toBeNull()
   await expect(`${screen.getByRole('region').textContent}\n`).toMatchFileSnapshot('./expected/profile-before-balance.txt')
 })
@@ -270,7 +273,7 @@ it.each([
   })
   cleanup()
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
-  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}
+  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} settingsOpen={false}
     useAccount={selector => selector(operations.hooks.account.getSnapshot())}
     useTheme={selector => selector(operations.hooks.theme.getSnapshot())}
     wide openSettings={() => {}} openOnboarding={() => {}} t={key => en[key as AccountKey]} />)
@@ -282,7 +285,7 @@ it('shows the profile image in settings and the sidebar, with independent load-e
     profile: { status: 'ready', value: { id: null, name: 'User', contact: null, avatarUrl: 'https://example.test/avatar.png' } },
   })
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
-  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}
+  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} settingsOpen={false}
     useAccount={selector => selector(operations.hooks.account.getSnapshot())}
     useTheme={selector => selector(operations.hooks.theme.getSnapshot())}
     wide openSettings={() => {}} openOnboarding={() => {}} t={key => en[key as AccountKey]} />)
@@ -323,12 +326,16 @@ it.each([en, zh])('renders positive bonus wallets separately from recharge balan
 })
 
 it.each([[], [{ currency: 'CNY' as const, balance: '0.00' }, { currency: 'USD' as const, balance: '-1.00' }]].map(bonusWallets => ({ bonusWallets })))(
-  'hides bonus wallets without positive credit', ({ bonusWallets }) => {
+  'keeps the bonus row refreshable without inventing credit for zero or negative wallets', ({ bonusWallets }) => {
     mount({ status: 'credential-stored', attempt: null }, en, {
       balance: { status: 'ready', value: [{ currency: 'CNY', balance: '0' }], bonusWallets },
     })
-    expect(screen.queryByText(en.bonusBalance)).toBeNull()
+    // The row itself stays: it carries the refresh action and states the absence.
+    expect(screen.getByText(en.bonusBalance)).toBeTruthy()
+    expect(screen.getByText(en.bonusEmpty)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.refreshBonus })).toBeTruthy()
     expect(screen.getByText('¥0.00')).toBeTruthy()
+    expect(screen.queryByText('¥-1.00')).toBeNull()
   },
 )
 
@@ -375,7 +382,8 @@ it('shows unavailable details and keeps external Platform links usable in a brow
     profile: { status: 'failed' }, balance: { status: 'failed' },
   })
   expect(screen.getByText(en.profileUnavailable)).toBeTruthy()
-  expect(screen.getByText(en.balanceUnavailable)).toBeTruthy()
+  // The failed balance reports the same unavailable copy in both balance rows.
+  expect(screen.getAllByText(en.balanceUnavailable)).toHaveLength(2)
   for (const name of [en.usage, en.topUp]) {
     const event = new MouseEvent('click', { bubbles: true, cancelable: true })
     screen.getByRole('link', { name }).dispatchEvent(event)
@@ -408,7 +416,7 @@ it('dismisses a collapsed menu and hands its login dialog to the API-key onboard
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
   const openOnboarding = vi.fn()
   let snapshot = operations.hooks.account.getSnapshot()
-  const props = { ...({} as GlobalStandardProps), ...operations, wide: false, openSettings: vi.fn(), openOnboarding,
+  const props = { ...({} as GlobalStandardProps), ...operations, wide: false, settingsOpen: false, openSettings: vi.fn(), openOnboarding,
     useAccount: <T,>(select: (value: AccountSnapshot) => T) => select(snapshot),
     useTheme: <T,>(select: (value: ThemeSnapshot) => T) => select(operations.hooks.theme.getSnapshot()),
     t: (key: string) => en[key as AccountKey] }
@@ -426,6 +434,61 @@ it('dismisses a collapsed menu and hands its login dialog to the API-key onboard
   snapshot = { ...snapshot, onboarding: true }
   view.rerender(<AccountMenu {...props} />)
   expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('mounts the bonus notice only while settings is closed', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const operations = mount({ status: 'credential-stored', attempt: null }, en, {
+    profile: { status: 'ready', value: { id: null, name: 'User', contact: null } },
+  })
+  cleanup()
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  const notice = { orderId: 'order-1' as BonusNotice['orderId'], message: 'Awarded 5.00', expiresAt: '2099-01-01T00:00:00Z' }
+  const snapshot: AccountSnapshot = { ...operations.hooks.account.getSnapshot(), notice }
+  const renderMenu = (settingsOpen: boolean) => <AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    settingsOpen={settingsOpen} useAccount={selector => selector(snapshot)} wide
+    openOnboarding={() => {}} openSettings={() => {}} t={key => en[key as AccountKey]} />
+  const view = render(renderMenu(true))
+  // The settings dialog covers the sidebar, so the card waits for it to close.
+  expect(screen.queryByRole('status')).toBeNull()
+  view.rerender(renderMenu(false))
+  expect(screen.getByRole('status').textContent).toBe(`${en.bonusNoticeTitle}${notice.message}`)
+  // Reopening settings unmounts the card without another display report.
+  view.rerender(renderMenu(true))
+  expect(screen.queryByRole('status')).toBeNull()
+})
+
+it.each([en, zh])('refreshes balances and the bonus read from the bonus row', async (copy) => {
+  const operations = mount({ status: 'credential-stored', attempt: null }, copy, {
+    balance: { status: 'ready', value: [{ currency: 'CNY', balance: '12.34' }], bonusWallets: [] },
+  })
+  expect(operations.refreshBonus).not.toHaveBeenCalled()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.refreshBonus })) })
+  expect(operations.refreshBonus).toHaveBeenCalledOnce()
+  // The row stays available with no bonus balance, and says so without inventing a currency.
+  expect(screen.getByText(copy.bonusEmpty)).toBeTruthy()
+  expect(screen.queryByText('¥0.00')).toBeNull()
+})
+
+it('disables the refresh button until both reads settle and keeps it usable after a failure', async () => {
+  const pending = Promise.withResolvers<undefined>()
+  const operations = mount({ status: 'credential-stored', attempt: null }, en, {
+    balance: { status: 'failed' },
+  })
+  operations.refreshBonus = vi.fn(() => pending.promise)
+  cleanup()
+  const props = { ...({} as GlobalStandardProps), ...operations }
+  render(<AccountSection {...props}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())}
+    close={() => {}} t={key => en[key as AccountKey]} />)
+  const button = screen.getByRole('button', { name: en.refreshBonus })
+  expect(button.hasAttribute('disabled')).toBe(false)
+  fireEvent.click(button)
+  expect(screen.getByRole('button', { name: en.refreshBonus }).hasAttribute('disabled')).toBe(true)
+  // Both balance rows report the failed read.
+  expect(screen.getAllByText(en.balanceUnavailable)).toHaveLength(2)
+  await act(async () => { pending.resolve(undefined); await pending.promise })
+  expect(screen.getByRole('button', { name: en.refreshBonus }).hasAttribute('disabled')).toBe(false)
 })
 
 it('reports resize failure, ignores late native failures, and tolerates a removed IPC receiver', async () => {

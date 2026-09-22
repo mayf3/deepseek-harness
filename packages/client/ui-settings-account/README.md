@@ -38,6 +38,10 @@ The sidebar account menu uses the shared Menu surface, backdrop blur, spacing, a
 
 The account card’s More account information link opens `https://platform.deepseek.com` in the system browser.
 
+A granted bonus appears as a server-authored notice above the sidebar account launcher without taking focus. The client reads the unnotified bonus when an account becomes active and when the settings Refresh balance action runs; it never polls. The server orders the candidates and owns the copy, so the client displays the first one and renders its message verbatim.
+
+The notice is shown only while the settings panel is closed, the document is visible, and the card has passed one presented frame. A pending record is written before the server acknowledgement is requested, so an interruption between the two retries instead of showing the award twice. Closing the card also counts as seen. Records are scoped to the Platform origin and account in browser storage by order id, survive restarts and sign-ins, and leave the previous account’s notice unacknowledged if the account changed mid-request. Acknowledgement failures retry with a capped backoff and never surface as account UI errors. If browser storage is unavailable, records last for the current page only.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
@@ -52,7 +56,7 @@ Account login uses a dismissible dialog before the model onboarding credential e
 
 A terminal account-state stream failure appears in the sign-in dialog or Account settings. Plugin unload suppresses late failure reports.
 
-The balance card shows recharge funds and positive bonus credit in separate rows. Empty or nonpositive bonus wallets hide the bonus row and its divider; currencies retain their own amounts.
+The balance card shows recharge funds and bonus credit in separate rows. The bonus row is present while signed in and carries the refresh action; without positive bonus credit it states that no bonus is available, and a failed wallet read shows the existing unavailable copy with the same action still available. Currencies retain their own amounts, and a notice date is rendered only inside the server’s own message.
 
 <a id="model-experience"></a>
 ## Model Experience
@@ -68,6 +72,8 @@ No model request prefix changes.
 <a id="known-limitations-and-deferred-work"></a>
 
 - Profile and recharge-wallet balances use the existing Platform Web endpoints through Host getProfile / getBalance. The page refreshes when opened and after login or reconnect, preserves server-masked contact data, and shows query failures independently without manufacturing a zero balance. Usage and top-up use Host-provided links derived from platformOrigin and the browser’s own login; the links never carry a DSH token.
+
+- The notice copy is server-localized for the UI language in effect when the client reads it. Switching language does not itself re-read the unnotified bonus, so a notice already on screen keeps the copy the server sent for the earlier language until the user refreshes.
 
 <a id="dev-note"></a>
 ### Dev Note

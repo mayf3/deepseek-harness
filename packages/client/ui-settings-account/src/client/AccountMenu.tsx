@@ -1,11 +1,12 @@
 /** Sidebar account launcher and locally authoritative sign-out action. */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Menu, IconPaperPlaneOutlineMedium, IconSettingsOutlineMedium, IconUserOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountSectionInjected } from './AccountSection.tsx'
 import { SignInDialog } from './SignInDialog.tsx'
 import { LogoutIcon } from './LogoutIcon.tsx'
 import { AccountAvatar } from './AccountAvatar.tsx'
+import { AccountNoticeCard } from './AccountNotice.tsx'
 import css from './AccountMenu.module.css'
 
 /** Account launcher composed by the settings shell. */
@@ -16,8 +17,10 @@ export type AccountMenuProps = PropsRuntime<'settings.launcher'> & PropsLocale<'
  * @returns account menu launcher.
  */
 export function AccountMenu({
-  wide, openSettings, openOnboarding, useAccount, useTheme, signOut, contactUs, showLogin, start, cancel, t,
+  wide, openSettings, openOnboarding, settingsOpen, useAccount, useTheme, signOut, contactUs, showLogin, start, cancel,
+  bonusNoticeShown, bonusNoticeDismissed, t,
 }: AccountMenuProps) {
+  const anchor = useRef<HTMLDivElement>(null)
   const account = useAccount(state => state)
   const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
   const signedIn = account.view?.status === 'credential-stored'
@@ -36,7 +39,10 @@ export function AccountMenu({
   }
   // The plugin's start publishes `loginFailed` before it rejects, so the dialog owns the report.
   const beginSignIn = (): void => { setOpen(false); void start().catch(() => undefined) }
-  return <div className={css.root}>
+  return <div ref={anchor} className={css.root}>
+    {signedIn && !settingsOpen && account.notice && <AccountNoticeCard key={account.notice.orderId} notice={account.notice}
+      anchor={anchor} title={t('bonusNoticeTitle')} closeLabel={t('close')}
+      onShown={bonusNoticeShown} onDismiss={bonusNoticeDismissed} />}
     <Menu open={open} side="top" portal autoFocus className={css.anchor}
       anchor={<button type="button" className={css.trigger} data-collapsed={!wide} aria-label={t('menu')}
         aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>

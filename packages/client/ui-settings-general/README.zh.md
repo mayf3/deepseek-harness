@@ -54,7 +54,7 @@ Web 与桌面端的通用设置底部显示当前发布版本，使用构建注�
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-外壳声明 settings.launcher，供账号功能提供侧边栏菜单，并以设置按钮作为回退。关闭对话框后，焦点返回当前入口。
+外壳声明 settings.launcher，供账号功能提供侧边栏菜单，并以设置按钮作为回退。入口接收 settingsOpen，以便在对话框关闭后再显示通知。关闭对话框后，焦点返回当前入口。
 
 <details>
 <summary>实现细节——点击展开</summary>

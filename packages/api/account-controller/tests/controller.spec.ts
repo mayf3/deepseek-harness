@@ -1,7 +1,7 @@
 /** Account Remote delegation preserves provider results, failures, and stream lifetime. */
 import { Context } from '@deepseek-ai/cordis'
 import type { DeepSeekAccount } from '@deepseek-ai/dsh-deepseek-account'
-import type { AccountClientMetadata } from '@deepseek-ai/dsh-deepseek-account/types'
+import type { AccountBonusBatch, AccountBonusOrderId, AccountClientMetadata, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { AccountView, SignInAttemptId } from '../src/types.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import AccountController from '../src/index.ts'
@@ -18,6 +18,8 @@ function fixture() {
     getState: vi.fn<DeepSeekAccount['getState']>().mockResolvedValue(state),
     getProfile: vi.fn<DeepSeekAccount['getProfile']>().mockResolvedValue({ status: 'failed' }),
     getBalance: vi.fn<DeepSeekAccount['getBalance']>().mockResolvedValue(null),
+    getUnnotifiedBonuses: vi.fn<DeepSeekAccount['getUnnotifiedBonuses']>().mockResolvedValue(null),
+    ackBonusNotified: vi.fn<DeepSeekAccount['ackBonusNotified']>().mockResolvedValue(false),
     startSignIn: vi.fn<DeepSeekAccount['startSignIn']>().mockResolvedValue(state),
     cancelSignIn: vi.fn<DeepSeekAccount['cancelSignIn']>().mockResolvedValue(state),
     signOut: vi.fn<DeepSeekAccount['signOut']>().mockResolvedValue(state),
@@ -43,6 +45,23 @@ it('delegates account operations without coupling profile and balance queries', 
   const failure = new Error('storage unavailable')
   provider.signOut.mockRejectedValueOnce(failure)
   await expect(controller.signOut(client)).rejects.toBe(failure)
+})
+
+it('delegates bonus reads and acknowledgements without altering their values', async () => {
+  const { provider, controller } = fixture()
+  const accountId = 'account' as AccountUserId
+  const orderId = 'order' as AccountBonusOrderId
+  const batch: AccountBonusBatch = { accountId, bonuses: [{ orderId, campaign: 'dsh_login_bonus', amount: '5.00',
+    currency: 'CNY', grantedAt: '2026-09-21T12:00:00Z', expiresAt: '2026-10-21T12:00:00Z', message: '已赠送您 5.00 元 DSH 体验赠金。' }] }
+  provider.getUnnotifiedBonuses.mockResolvedValueOnce(batch)
+  expect(await controller.getUnnotifiedBonuses(client)).toBe(batch)
+  expect(provider.getUnnotifiedBonuses).toHaveBeenCalledExactlyOnceWith(client)
+  provider.ackBonusNotified.mockResolvedValueOnce(true)
+  expect(await controller.ackBonusNotified(accountId, orderId, client)).toBe(true)
+  expect(provider.ackBonusNotified).toHaveBeenCalledExactlyOnceWith(accountId, orderId, client)
+  const failure = new Error('unavailable')
+  provider.getUnnotifiedBonuses.mockRejectedValueOnce(failure)
+  await expect(controller.getUnnotifiedBonuses(client)).rejects.toBe(failure)
 })
 
 it('passes the subscriber lifetime to the provider and returns its state stream', async () => {

@@ -7,10 +7,10 @@ import { finished } from 'node:stream/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
-import { DeepSeekAccount, mergePlatformCookies, platformClientHeaders, type AccountClientMetadata, type AccountDetails, type AccountView, type PlatformSession, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
+import { DeepSeekAccount, mergePlatformCookies, platformClientHeaders, type AccountBonusBatch, type AccountBonusOrderId, type AccountClientMetadata, type AccountDetails, type AccountUserId, type AccountView, type PlatformSession, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
-import { profile, readAccountDetail } from './details.ts'
+import { profile, readAccountDetail, readUnnotifiedBonuses, sendBonusNotified } from './details.ts'
 import { revokeAccount, type LogoutRetryPolicy } from './logout.ts'
 import { PlatformAuthError, platformHeaders, platformOrigin, browserUrl, requestPlatform, initialization, exchange, loginOrigin } from './protocol.ts'
 
@@ -191,9 +191,60 @@ export class PlatformAccount extends DeepSeekAccount {
     return this.getDetail('balance', this.detailHeaders(client))
   }
 
-  private async getDetail<K extends keyof AccountDetails>(field: K, headers: Record<string, string>): Promise<AccountDetails[K] | null> {
+  override async getUnnotifiedBonuses(client: AccountClientMetadata): Promise<AccountBonusBatch | null> {
     const lifetime = this.detailsLifetime
+    const headers = this.detailHeaders(client)
     const stored = await this.readCurrentGrant(lifetime)
+    if (stored === null) return null
+    const accountId = await this.currentAccountId(lifetime, stored, headers)
+    if (accountId === null) return null
+    const bonuses = await readUnnotifiedBonuses(this.origin, stored.token,
+      AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), headers)
+    return { accountId, bonuses }
+  }
+
+  override async ackBonusNotified(accountId: AccountUserId, orderId: AccountBonusOrderId, client: AccountClientMetadata): Promise<boolean> {
+    const lifetime = this.detailsLifetime
+    const headers = this.detailHeaders(client)
+    const stored = await this.readCurrentGrant(lifetime)
+    if (stored === null) return false
+    const current = await this.currentAccountId(lifetime, stored, headers)
+    if (current === null || current !== accountId) return false
+    await sendBonusNotified(this.origin, stored.token, orderId,
+      AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), headers)
+    return true
+  }
+
+  /**
+   * Resolve the profile identity bound to one captured grant, within that grant's credential lifetime.
+   * @param lifetime - credential lifetime the grant was captured under; a change discards the result.
+   * @param stored - captured grant; the identity query never re-reads a newer credential.
+   * @param headers - client identity headers of the calling operation.
+   * @returns the account identity, or null while signed out or after the credential changed.
+   */
+  private async currentAccountId(lifetime: AbortController, stored: z.infer<typeof grant>,
+    headers: Record<string, string>): Promise<AccountUserId | null> {
+    const details = await this.getDetail('profile', headers, { lifetime, stored })
+    if (details === null) return null
+    if (details.status === 'failed') {
+      // A failed query keeps the same-credential cache, matching getProfile; without either, identity is unknown.
+      const cached = this.lastProfile?.value.id
+      if (cached === undefined) throw new PlatformAuthError('network')
+      if (cached === null) throw new PlatformAuthError('protocol')
+      return cached
+    }
+    this.lastProfile = details
+    if (details.value.id === null) {
+      // Notifications are per account; without a stable Platform id they cannot be isolated.
+      throw new PlatformAuthError('protocol')
+    }
+    return details.value.id
+  }
+
+  private async getDetail<K extends keyof AccountDetails>(field: K, headers: Record<string, string>,
+    captured?: { lifetime: AbortController; stored: z.infer<typeof grant> }): Promise<AccountDetails[K] | null> {
+    const lifetime = captured?.lifetime ?? this.detailsLifetime
+    const stored = captured?.stored ?? await this.readCurrentGrant(lifetime)
     if (stored === null || lifetime.signal.aborted) return null
     if (field === 'profile' && this.attempt?.initialProfile?.token === stored.token) {
       const initial = this.attempt.initialProfile.value

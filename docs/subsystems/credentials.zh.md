@@ -59,6 +59,8 @@ PlatformSession 是 getPlatformSession 返回的仅限 Host 快照：origin 指�
 
 AccountDetails.balance 将充值钱包投影为 value、赠送钱包投影为 bonusWallets，分别保留币种和十进制余额字符串。查询失败不包含钱包数组。
 
+赠金通知查询返回 AccountBonusBatch，包含当前 Platform 账号 id 和按服务端顺序排列的可通知订单。AccountBonusNotification 保留服务端消息与到期时间，不投影凭证。确认请求携带预期账号 id 和订单 id；账号变化后 Host 拒绝该请求。两项通知操作都通过 x-client-locale 传递发起界面的语言，不使用语言查询参数。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -285,6 +287,22 @@ abstract getProfile(client: AccountClientMetadata): Promise<AccountDetails['prof
  * @returns balance outcome, or null if signed out or the grant changed during the query.
  */
 abstract getBalance(client: AccountClientMetadata): Promise<AccountDetails['balance'] | null>
+
+/**
+ * Query the granted bonuses Platform has not yet recorded as displayed.
+ * @param client - identity of the requesting UI for this call; its language selects the server-authored message.
+ * @returns bonuses with their account, or null if signed out or the grant changed during the query.
+ */
+abstract getUnnotifiedBonuses(client: AccountClientMetadata): Promise<AccountBonusBatch | null>
+
+/**
+ * Record one displayed bonus as notified for the account it belongs to.
+ * @param accountId - account the notification was read for; a different current account is never acknowledged.
+ * @param orderId - granted bonus order the user saw.
+ * @param client - identity of the requesting UI for this call.
+ * @returns true once Platform records the acknowledgement; false if signed out or the account changed.
+ */
+abstract ackBonusNotified(accountId: AccountUserId, orderId: AccountBonusOrderId, client: AccountClientMetadata): Promise<boolean>
 
 /**
  * Join an active attempt or start browser authorization.

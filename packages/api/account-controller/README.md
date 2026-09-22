@@ -20,9 +20,9 @@ Account screens use authenticated Remote commands and a snapshot stream. The con
 <a id="use-this-package"></a>
 ## Use this package
 
-The account namespace exposes getState, getProfile / getBalance, startSignIn, cancelSignIn, signOut, and watch. watch emits an initial complete state and subsequent complete states; disconnecting stops observation, not the login attempt. Cancellation names the attempt ID so a stale screen cannot cancel a newer login.
+The account namespace exposes getState, getProfile / getBalance, getUnnotifiedBonuses, ackBonusNotified, startSignIn, cancelSignIn, signOut, and watch. watch emits an initial complete state and subsequent complete states; disconnecting stops observation, not the login attempt. Cancellation names the attempt ID so a stale screen cannot cancel a newer login. getUnnotifiedBonuses returns null and ackBonusNotified returns false while the account is absent or has changed; failures the caller should retry arrive as thrown Remote errors.
 
-Profile, balance, sign-in, and sign-out commands take the calling UI's `AccountClientMetadata`: client version, active language, and UTC offset in seconds. Cancellation retains the original attempt's metadata; state reads and subscriptions require none.
+Every operation that reaches Platform takes the calling UI's `AccountClientMetadata` — client version, active language, and UTC offset in seconds — so the Host reports the requesting UI rather than the last caller it saw. Cancellation and watch remain identity-free because they never reach Platform.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

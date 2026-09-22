@@ -56,6 +56,8 @@ The embedded Platform document stays hidden during loading because native child 
 
 Separate accountRequestHeaders route account data and embedded Platform traffic independently of authorization and logout. Cookie overrides merge by name, retaining deployment authentication. Host passes the resolved headers over private process IPC; Electron injects them only at the configured origin and omits them from bootstrap.
 
+Bonus notices use Platform-provided text and order identities. Reads occur on signed-in startup, successful sign-in, and explicit balance refresh. The settings dialog defers sidebar display until it closes; there is no periodic polling. The client acknowledges an order only after its card becomes visible, and persists the displayed order with pending acknowledgment before sending the request. Account- and origin-scoped local records prevent repeat display after restart; failed acknowledgments retry with capped exponential backoff. Platform acknowledgments suppress delivery on other devices, but concurrent displays before acknowledgment are possible because the API does not reserve delivery. Fetch success alone never records a display.
+
 The Host binds private Platform sessions to the account provider lifetime. Removal or watch termination clears Electron’s session; replacement subscribes to the new provider, and disposed reads cannot publish old credentials.
 
 The client distinguishes plugin disposal from terminal account-stream failure. RemoteStream aborts its signal after either outcome, so the plugin owns a separate disposal flag to preserve failure feedback while suppressing reports after unload.

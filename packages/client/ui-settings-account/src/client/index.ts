@@ -12,6 +12,7 @@ import { contactUrl } from './contact-url.ts'
 import { AccountOnboarding } from './AccountOnboarding.tsx'
 import { AccountMenu } from './AccountMenu.tsx'
 import { AccountSection, type AccountSnapshot, type AccountSectionInjected } from './AccountSection.tsx'
+import { createBonusNoticeController } from './bonus-notices.ts'
 import { accountClientMetadata } from './client-metadata.ts'
 import { en, zh, type AccountKey } from './locales.ts'
 export type { AccountSectionInjected, AccountSectionProps } from './AccountSection.tsx'
@@ -34,8 +35,34 @@ export function apply(ctx: Context): void {
   let snapshot: AccountSnapshot = { view: undefined, details: undefined, failed: false, loginVisible: false }
   const listeners = new Set<() => void>()
   const publish = (value: AccountSnapshot) => { snapshot = value; for (const listener of listeners) listener() }
-  /** @returns the client identity sampled for one account call. */
+  /** @returns the client identity for one account call, read at call time so it carries the language and zone in effect then. */
   const client = () => accountClientMetadata(ctx.locale.getSnapshot().active, process.env.DSH_CLIENT_VERSION)
+  /** @param view - latest account state. @returns the Platform origin that scopes local notice records. */
+  const platformOriginOf = (view: AccountView): string => new URL(view.links.usageUrl).origin
+  // The browser half of the notice lifecycle: reads when the account becomes
+  // active and on an explicit refresh, and acknowledges an order only after its
+  // card reports a presented frame. The Host owns which bonus is unnotified and
+  // the server owns the copy.
+  const notices = createBonusNoticeController({
+    ackRetryDelayMs: config.bonusAckRetryDelayMs,
+    ackRetryMaxDelayMs: config.bonusAckRetryMaxDelayMs,
+    read: async () => {
+      const result = await ctx.remote.account.getUnnotifiedBonuses(client())
+      if (!result.ok) throw new Error('account bonus read failed')
+      return result.value
+    },
+    acknowledge: async (accountId, orderId) => {
+      const result = await ctx.remote.account.ackBonusNotified(accountId, orderId, client())
+      if (!result.ok) throw new Error('account bonus acknowledgement failed')
+      return result.value
+    },
+    publish: (notice) => {
+      const { notice: _replaced, ...withoutNotice } = snapshot
+      // exactOptionalPropertyTypes distinguishes an absent notice from an undefined one.
+      publish(notice === null ? withoutNotice : { ...withoutNotice, notice })
+    },
+  })
+  ctx.effect(() => () => { notices.end() }, 'account: bonus notice lifetime')
   let revision = 0
   let refreshing: Promise<void> | undefined
   const refresh = (): Promise<void> => {
@@ -75,8 +102,12 @@ export function apply(ctx: Context): void {
     for await (const frame of stream) {
       revision++
       refreshing = undefined
-      publish({ ...snapshot, view: frame.value, details: undefined, failed: false })
+      const { notice, ...previous } = snapshot
+      publish({ ...previous, view: frame.value, details: undefined, failed: false,
+        ...(frame.value.status === 'credential-stored' && notice ? { notice } : {}) })
       frame.accept()
+      if (frame.value.status === 'credential-stored') notices.begin(platformOriginOf(frame.value))
+      else notices.end()
       void refresh()
     }
   })().catch(() => { if (!disposed) publish({ ...snapshot, failed: true }) })
@@ -84,6 +115,25 @@ export function apply(ctx: Context): void {
   const operations: AccountSectionInjected = {
     ...nativePlatform === undefined ? {} : { platform: nativePlatform },
     refresh,
+    async refreshBonus() {
+      // The user's refresh: recharge/bonus balances and the unnotified-bonus read.
+      const generation = revision
+      await Promise.all([
+        (async () => {
+          let balance: AccountDetails['balance']
+          try {
+            const result = await ctx.remote.account.getBalance(client())
+            if (!result.ok) throw new Error('account balance failed')
+            if (result.value === null) return
+            balance = result.value
+          } catch { balance = { status: 'failed' } }
+          // A response for an account that signed out mid-request must not publish.
+          if (generation !== revision) return
+          publish({ ...snapshot, details: { ...snapshot.details, balance } })
+        })(),
+        notices.refresh(),
+      ])
+    },
     contactUs() {
       const url = contactUrl(config, {
         version: process.env.DSH_CLIENT_VERSION,
@@ -94,6 +144,8 @@ export function apply(ctx: Context): void {
     },
     showLogin(visible) { publish({ ...snapshot, loginVisible: visible }) },
     setOnboarding(active) { publish({ ...snapshot, onboarding: active }) },
+    bonusNoticeShown(orderId) { notices.shown(orderId) },
+    bonusNoticeDismissed(orderId) { notices.dismiss(orderId) },
     hooks: {
       account: {
         getSnapshot: () => snapshot,

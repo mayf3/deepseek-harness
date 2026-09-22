@@ -54,3 +54,25 @@ export interface AccountDetails {
   readonly profile: { readonly status: 'ready'; readonly value: AccountProfile } | { readonly status: 'failed' }
   readonly balance: { readonly status: 'ready'; readonly value: readonly AccountWallet[]; readonly bonusWallets: readonly AccountWallet[] } | { readonly status: 'failed' }
 }
+
+/** Identity of one granted bonus order; stable across devices and sign-ins. */
+export type AccountBonusOrderId = Branded<'AccountBonusOrderId'>
+/** One granted bonus Platform has not yet recorded as displayed; copy is server-authored. */
+export interface AccountBonusNotification {
+  readonly orderId: AccountBonusOrderId
+  readonly campaign: string
+  /** Granted decimal amount, preserving server precision; never the remaining balance. */
+  readonly amount: string
+  readonly currency: 'CNY' | 'USD'
+  /** Grant time as supplied by Platform. */
+  readonly grantedAt: string
+  /** Expiry as supplied by Platform. */
+  readonly expiresAt: string
+  /** Server-localized plain text ready for display. */
+  readonly message: string
+}
+/** Unnotified bonuses with the account they belong to, in Platform order. */
+export interface AccountBonusBatch {
+  readonly accountId: AccountUserId
+  readonly bonuses: readonly AccountBonusNotification[]
+}

@@ -1,7 +1,7 @@
 /** Account settings renders safe Host state and explicit login actions. */
 import { Big } from 'big.js'
 import { useEffect, useState } from 'react'
-import { Button, IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconRefreshOutlineRegular, IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { PropsRuntime, PropsLocale, InjectFace, HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
@@ -9,10 +9,14 @@ import { PlatformOverlay, type PlatformBridge } from './PlatformOverlay.tsx'
 import { formatBalance } from './formatBalance.ts'
 import { AccountAvatar } from './AccountAvatar.tsx'
 import { authorizeUrlWithTheme } from './authorize-url.ts'
+import type { BonusNotice } from './bonus-notices.ts'
 import css from './AccountSection.module.css'
 
 /** Safe account snapshot shared by the settings page and launcher. */
 export interface AccountSnapshot {
+  /** Server-authored bonus notice awaiting display, absent when none is available. */
+  notice?: BonusNotice
+
   /** Latest Host state, absent until the stream responds. */
   view: AccountView | undefined
   /** Sanitized profile and balance query outcomes, absent while loading. */
@@ -40,12 +44,18 @@ export interface AccountSectionInjected {
   }
   /** @returns after account details are refreshed; concurrent refreshes share a request. */
   refresh: () => Promise<void>
+  /** @returns after the recharge/bonus balances and the unnotified-bonus read are refreshed. */
+  refreshBonus: () => Promise<void>
   /** Open the external support questionnaire with the current build and browser environment. */
   contactUs: () => void
   /** Open or dismiss the login dialog. */
   showLogin: (visible: boolean) => void
   /** Claim dialog ownership for the onboarding step. */
   setOnboarding: (active: boolean) => void
+  /** @param orderId - notice whose card finished a presented frame while visible. */
+  bonusNoticeShown: (orderId: BonusNotice['orderId']) => void
+  /** @param orderId - notice the user closed. */
+  bonusNoticeDismissed: (orderId: BonusNotice['orderId']) => void
   /** @returns after the login attempt is created. */
   start: () => Promise<void>
   /** @param id - attempt to cancel. @returns after cancellation or an already-admitted commit. */
@@ -57,12 +67,13 @@ export interface AccountSectionInjected {
 export type AccountSectionProps =
   PropsRuntime<'settings.section'> & PropsLocale<'settings.account'> & InjectFace<AccountSectionInjected>
 /** @param props - localized actions and account subscription. @returns account settings UI. */
-export function AccountSection({ t, useAccount, useTheme, start, cancel, refresh, platform }: AccountSectionProps) {
+export function AccountSection({ t, useAccount, useTheme, start, cancel, refresh, refreshBonus, platform }: AccountSectionProps) {
   const { view: state, details, failed: streamFailed } = useAccount(value => value)
   const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
   const [platformPage, setPlatformPage] = useState<'usage' | 'top-up'>()
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [refreshingBonus, setRefreshingBonus] = useState(false)
   useEffect(() => { void refresh() }, [refresh])
   const profile = details?.profile?.status === 'ready' ? details.profile.value : undefined
   const wallets = details?.balance?.status === 'ready' ? details.balance.value : undefined
@@ -77,6 +88,17 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, refresh
     setBusy(true)
     setFailed(false)
     try { await action() } catch { setFailed(true) } finally { setBusy(false) }
+  }
+  // Both reads are independent: a failed bonus payout read still publishes a
+  // refreshed wallet, and the action reports only that it settled.
+  const reloadBonus = async (): Promise<void> => {
+    setRefreshingBonus(true)
+    try { await refreshBonus() }
+    catch {
+      // Each read already reports its own failure in its row; this catch only
+      // keeps a rejected action from escaping as an unhandled rejection.
+    }
+    finally { setRefreshingBonus(false) }
   }
   const status = failed || streamFailed || attempt?.phase === 'failed' ? t('failed')
     : attempt?.phase === 'expired' ? t('expired')
@@ -131,13 +153,21 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, refresh
             : <span className={css.unavailable}>{t(!signedIn ? 'balanceSignedOut'
               : details?.balance === undefined ? 'loading' : 'balanceUnavailable')}</span>}
         </div>
-        {signedIn && bonusWallets.length > 0 && <>
+        {signedIn && <>
           <div className={css.divider} />
           <div className={css.row}>
             <span>{t('bonusBalance')}</span>
-            <span className={css.amount}>{bonusWallets.map(wallet => <span key={wallet.currency}>
-              {formatBalance(wallet.balance, wallet.currency === 'CNY' ? '¥' : '$')}
-            </span>)}</span>
+            <span className={css.bonusValue}>
+              {bonusWallets.length > 0
+                ? <span className={css.amount}>{bonusWallets.map(wallet => <span key={wallet.currency}>
+                  {formatBalance(wallet.balance, wallet.currency === 'CNY' ? '¥' : '$')}
+                </span>)}</span>
+                : <span className={css.unavailable}>{t(details?.balance === undefined ? 'loading'
+                  : details.balance.status === 'failed' ? 'balanceUnavailable' : 'bonusEmpty')}</span>}
+              <button type="button" className={css.refresh} title={t('refreshBonus')}
+                aria-label={t('refreshBonus')} disabled={refreshingBonus}
+                onClick={() => { void reloadBonus() }}><IconRefreshOutlineRegular size={14} /></button>
+            </span>
           </div>
         </>}
         <div className={css.divider} />

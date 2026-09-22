@@ -11,6 +11,8 @@ getPlatformSession 为原生 Platform 内嵌提供仅限 Host 的 origin/token �
 
 `platformClientHeaders` 依据单次调用的 `AccountClientMetadata` 与组合出的桌面平台生成五个 Platform 客户端请求头：`x-client-bundle-id` 有意保持为空字符串，`x-client-platform` 在没有 Desktop profile 提供 `darwin` 或 `win32` 时为 `web`，`x-client-version` 为调用方构建的版本，`x-client-locale` 将当前界面语言归约为 `zh_CN` 或 `en_US`，`x-client-timezone-offset` 为东为正的整秒偏移。
 
+getUnnotifiedBonuses 返回平台尚未记录为已展示的赠金及其所属账号；ackBonusNotified 记录用户实际看到的那一笔赠金。确认请求携带该账号，因此在一个账号下读取的通知绝不会被确认到另一个账号。
+
 ## 概述
 
 账号使用方可读取本地登录状态、发起或取消浏览器登录，并在保留 API Key 的情况下退出。Host 模型使用方仅能为提供者配置的推理来源解析账号凭证。

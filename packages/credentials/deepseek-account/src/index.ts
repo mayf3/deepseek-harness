@@ -1,7 +1,7 @@
 /** Account Service Definition shared by platform, API, and model consumers. */
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { AccountClientMetadata, AccountDetails, AccountView, SignInAttemptId } from './types.ts'
-export type { AccountClientMetadata, AccountDetails, AccountProfile, AccountWallet, AccountLinks, AccountView, SignInAttemptId, SignInAttemptView, SignInErrorCode } from './types.ts'
+import type { AccountBonusBatch, AccountBonusOrderId, AccountClientMetadata, AccountDetails, AccountUserId, AccountView, SignInAttemptId } from './types.ts'
+export type { AccountBonusBatch, AccountBonusNotification, AccountBonusOrderId, AccountClientMetadata, AccountDetails, AccountProfile, AccountUserId, AccountWallet, AccountLinks, AccountView, SignInAttemptId, SignInAttemptView, SignInErrorCode } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -40,6 +40,20 @@ export abstract class DeepSeekAccount extends Service {
    * @returns balance outcome, or null if signed out or the grant changed during the query.
    */
   abstract getBalance(client: AccountClientMetadata): Promise<AccountDetails['balance'] | null>
+  /**
+   * Query the granted bonuses Platform has not yet recorded as displayed.
+   * @param client - identity of the requesting UI for this call; its language selects the server-authored message.
+   * @returns bonuses with their account, or null if signed out or the grant changed during the query.
+   */
+  abstract getUnnotifiedBonuses(client: AccountClientMetadata): Promise<AccountBonusBatch | null>
+  /**
+   * Record one displayed bonus as notified for the account it belongs to.
+   * @param accountId - account the notification was read for; a different current account is never acknowledged.
+   * @param orderId - granted bonus order the user saw.
+   * @param client - identity of the requesting UI for this call.
+   * @returns true once Platform records the acknowledgement; false if signed out or the account changed.
+   */
+  abstract ackBonusNotified(accountId: AccountUserId, orderId: AccountBonusOrderId, client: AccountClientMetadata): Promise<boolean>
   /**
    * Join an active attempt or start browser authorization.
    * @param client - identity of the requesting UI; a new attempt captures it, and joining retains the original attempt's identity.

@@ -221,7 +221,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   return (
     <>
       <div ref={triggerRow} className={clsx(css.triggerRow, !wide && css.railRow)}>
-        {renderSlot('settings.launcher', { wide, openSettings: () => { setOpen(true) }, openOnboarding: (id) => { setOpen(false); setRequestedOnboarding(id) } }, { fallback: <button
+        {renderSlot('settings.launcher', { wide, settingsOpen: open, openSettings: () => { setOpen(true) }, openOnboarding: (id) => { setOpen(false); setRequestedOnboarding(id) } }, { fallback: <button
           ref={triggerButton}
           type="button"
           className={clsx(css.trigger, !wide && css.rail)}

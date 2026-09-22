@@ -30,6 +30,8 @@ getPlatformSession 仅在已存授权的 issuer 与 platformOrigin 一致时导�
 
 getProfile / getBalance 将保存的授权 token 通过 x-dsh-auth-token 请求头，向 platformOrigin 上的 GET /auth-api/v0/users/current 和 GET /api/v0/users/get_user_summary 发起请求。授权签发来源必须与该来源一致。Host 只投影账号 UID、资料名称、头像 URL、由 Platform 脱敏的手机号或邮箱（原样保留），以及 normal_wallets / bonus_wallets 的币种和余额字符串，丢弃响应 token 与其他字段。赠送钱包不计入充值余额。凭证变化和销毁会使进行中的查询失效。
 
+getUnnotifiedBonuses 读取同一来源上的 GET /api/v0/users/get_unnotified_bonuses，ackBonusNotified 向 POST /api/v0/users/ack_bonus_notified?order_id=… 发请求，两者都按调用方元数据组装这五个客户端请求头。二者都先为捕获到的授权解析账号身份，因此退登或切号时返回 null 或 false，而不会确认另一个账号的赠金；一次读取只有在同一凭证生命周期内全部结算后才发布。Host 按 Platform 返回顺序转发赠金列表，把每条的 msg 映射为 message，其余字段不额外丢弃；格式错误、HTTP 失败和业务失败都会抛出。
+
 在插件行配置 platformOrigin、allowLoopbackHttp、requestTimeoutMs 和 attemptTimeoutMs。HTTP 仅用于显式启用的本机开发。提供者先在现有 Host webServer 注册 /oauth/callback，再调用 auth_init；校验 state、使用 S256 PKCE 授权码兑换一次，并在跳转 auth_exchange.biz_data.authorized_url 前提交授权记录。浏览器地址默认要求匹配配置的平台来源，并始终要求固定的 /dsh/authorize 或 /dsh/authorized 路径。完成页地址将 `login_source` 设为发起登录的客户端类型（`web` 或 `desktop`），并保留平台返回的其他查询参数。设备标识是独立的随机 UUID 记录，由使用同一凭证存储的进程共享；device_model 报告操作系统和架构。
 
 开放平台 URL 统一由 `platformOrigin` 配置管理。授权请求、浏览器地址校验、完成跳转、用量和充值入口都使用该来源。将配置放在私有的 `$DSH_HOME/cordis.patch.yml`，部署地址不进入源码仓库。默认要求 HTTPS；只有本机 HTTP 可通过 `allowLoopbackHttp: true` 显式启用。模型及文件 token 的目标由独立的 `inferenceOrigin` 配置管理。

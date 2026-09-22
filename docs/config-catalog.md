@@ -504,12 +504,16 @@ Source: [`packages/client/ui-plugin-manager/src/index.ts:15`](../packages/client
 ## `@deepseek-ai/dsh-client-ui-settings-account`
 
 ```ts config-catalog
-/** Questionnaire destination and its supported source option. */
+/** Questionnaire destination and bonus notice timings shared by Host and Client. */
 export interface Config {
   /** HTTPS questionnaire URL; override for a test form. */
   contactFormUrl: string
   /** Questionnaire source option; empty until Harness is supported by the form. */
   contactSource: string
+  /** First delay before retrying a failed bonus acknowledgement. */
+  bonusAckRetryDelayMs: number
+  /** Ceiling for the acknowledgement retry backoff. */
+  bonusAckRetryMaxDelayMs: number
 }
 ```
 

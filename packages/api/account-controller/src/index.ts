@@ -2,7 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-deepseek-account'
-import type { AccountClientMetadata, AccountDetails } from '@deepseek-ai/dsh-deepseek-account/types'
+import type { AccountBonusBatch, AccountBonusOrderId, AccountClientMetadata, AccountDetails, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { AccountView, SignInAttemptId } from './types.ts'
 
 /** Account commands and reconnect-safe state stream. */
@@ -33,6 +33,26 @@ export class AccountController extends TypertRemoteService {
   @Remote
   getBalance(client: AccountClientMetadata): Promise<AccountDetails['balance'] | null> {
     return this.ctx.deepseekAccount.getBalance(client)
+  }
+  /**
+   * Query the granted bonuses Platform has not yet recorded as displayed.
+   * @param client - identity of the requesting UI; its language selects the server-authored message.
+   * @returns bonuses with their account, or null when the account grant is absent or changed.
+   */
+  @Remote
+  getUnnotifiedBonuses(client: AccountClientMetadata): Promise<AccountBonusBatch | null> {
+    return this.ctx.deepseekAccount.getUnnotifiedBonuses(client)
+  }
+  /**
+   * Record one displayed bonus as notified for the account it belongs to.
+   * @param accountId - account the notification was read for.
+   * @param orderId - granted bonus order the user saw.
+   * @param client - identity of the requesting UI; the Host derives Platform request headers from it.
+   * @returns true once Platform records the acknowledgement; false when the account is absent or changed.
+   */
+  @Remote
+  ackBonusNotified(accountId: AccountUserId, orderId: AccountBonusOrderId, client: AccountClientMetadata): Promise<boolean> {
+    return this.ctx.deepseekAccount.ackBonusNotified(accountId, orderId, client)
   }
   /**
    * Begin browser sign-in.

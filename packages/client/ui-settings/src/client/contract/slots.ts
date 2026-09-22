@@ -144,6 +144,8 @@ export interface SettingsOnboardingOwnerProps {
 export interface SettingsLauncherOwnerProps {
   /** Whether the sidebar shows labels. */
   wide: boolean
+  /** Whether the settings dialog covers the sidebar; defer launcher notices until it closes. */
+  settingsOpen: boolean
   /** Open the settings panel. */
   openSettings: () => void
   /** @param id - registered onboarding editor to open explicitly. */

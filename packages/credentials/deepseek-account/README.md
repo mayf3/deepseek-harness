@@ -11,6 +11,8 @@ getPlatformSession returns a Host-only origin/token snapshot for native Platform
 
 `platformClientHeaders` builds the five Platform client headers for one call from its `AccountClientMetadata` and the composition's desktop platform: `x-client-bundle-id` is intentionally empty, `x-client-platform` is `web` unless the Desktop profile supplies `darwin` or `win32`, `x-client-version` is the calling build's version, `x-client-locale` reduces the active UI language to `zh_CN` or `en_US`, and `x-client-timezone-offset` is whole seconds east of UTC.
 
+getUnnotifiedBonuses returns the granted bonuses Platform has not yet recorded as displayed, together with the account they belong to; ackBonusNotified records one bonus the user actually saw. The acknowledgement names that account, so a notification read under one account is never confirmed for another.
+
 ## Summary
 
 Account consumers read stored login state, start or cancel a browser login, and sign out without editing API keys. Host model consumers resolve account credentials only for the provider-configured inference origin.
