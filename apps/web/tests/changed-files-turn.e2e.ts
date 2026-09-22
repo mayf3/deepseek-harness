@@ -351,7 +351,8 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       if (number === undefined || text === null) throw new Error('added diff line is incomplete')
       const left = line.getBoundingClientRect().left
       return {
-        shadow: getComputedStyle(line).boxShadow,
+        shadow: getComputedStyle(number).boxShadow,
+        markerColour: getComputedStyle(number).color,
         textColour: getComputedStyle(text).color,
         numberLeft: number.getBoundingClientRect().left - left,
         textLeft: text.getBoundingClientRect().left - left,
@@ -367,7 +368,8 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
         textLeft: text.getBoundingClientRect().left - left,
       }
     })
-    expect(addedRule.shadow).toContain(addedRule.textColour)
+    expect(addedRule.shadow).toContain(addedRule.markerColour)
+    expect(addedRule.textColour).not.toBe(addedRule.markerColour)
     expect(addedRule.numberLeft).toBeCloseTo(rightContextRule.numberLeft, 1)
     expect(addedRule.textLeft).toBeCloseTo(rightContextRule.textLeft, 1)
     // The ignored file has no snapshot; its comparison comes from the copies captured around the write call.
@@ -402,7 +404,8 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       if (number === undefined || text === null) throw new Error('deleted diff line is incomplete')
       const left = line.getBoundingClientRect().left
       return {
-        shadow: getComputedStyle(line).boxShadow,
+        shadow: getComputedStyle(number).boxShadow,
+        markerColour: getComputedStyle(number).color,
         textColour: getComputedStyle(text).color,
         numberLeft: number.getBoundingClientRect().left - left,
         textLeft: text.getBoundingClientRect().left - left,
@@ -418,7 +421,8 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
         textLeft: text.getBoundingClientRect().left - left,
       }
     })
-    expect(deletedRule.shadow).toContain(deletedRule.textColour)
+    expect(deletedRule.shadow).toContain(deletedRule.markerColour)
+    expect(deletedRule.textColour).not.toBe(deletedRule.markerColour)
     expect(deletedRule.numberLeft).toBeCloseTo(leftContextRule.numberLeft, 1)
     expect(deletedRule.textLeft).toBeCloseTo(leftContextRule.textLeft, 1)
     await compareTool.click()
@@ -472,9 +476,15 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     const wrappedAdditionRule = await wrappedAddition.evaluate((cell) => {
       const text = cell.querySelector<HTMLElement>('[data-diff-code]')
       if (text === null) throw new Error('wrapped addition has no text')
-      return { shadow: getComputedStyle(cell).boxShadow, textColour: getComputedStyle(text).color }
+      const number = cell.firstElementChild!
+      return {
+        shadow: getComputedStyle(number).boxShadow,
+        markerColour: getComputedStyle(number).color,
+        textColour: getComputedStyle(text).color,
+      }
     })
-    expect(wrappedAdditionRule.shadow).toContain(wrappedAdditionRule.textColour)
+    expect(wrappedAdditionRule.shadow).toContain(wrappedAdditionRule.markerColour)
+    expect(wrappedAdditionRule.textColour).not.toBe(wrappedAdditionRule.markerColour)
     // No desktop, so the tools offer the sidebar file but no native open.
     expect(await review.locator('[data-review-tool="open-file"]').count()).toBe(1)
     expect(await review.locator('[data-review-tool="open-native"]').count()).toBe(0)
