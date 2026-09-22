@@ -1,9 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import type { MessageBoxOptions } from 'electron'
-import { DesktopFatalRecovery } from '../src/fatal-recovery.ts'
+import { CRASH_REPORT_WAIT_MS, DesktopFatalRecovery } from '../src/fatal-recovery.ts'
+import type { CrashReportSource } from '../src/crash-report.ts'
 import { resolveDesktopLocale } from '../src/locale.ts'
 
-function fixture(locale = 'en') {
+function fixture(locale = 'en', writeReport?: (error: unknown, source: CrashReportSource) => Promise<string | undefined>) {
   const choice = Promise.withResolvers<{ response: number; checkboxChecked: boolean }>()
   const stopped = Promise.withResolvers<undefined>()
   const operations = {
@@ -13,9 +14,12 @@ function fixture(locale = 'en') {
     disablePlugins: vi.fn(async () => {}),
     exit: vi.fn(),
     restart: vi.fn(),
+    ...(writeReport === undefined ? {} : { writeReport: vi.fn(writeReport) }),
   }
   return { operations, choice, stopped, recovery: new DesktopFatalRecovery(operations) }
 }
+
+const REPORT_PATH = 'C:\\Users\\someone\\AppData\\Roaming\\DeepSeek Harness\\logs\\crash-2026-09-22T10-30-00-000Z-host.log'
 
 afterEach(() => { vi.restoreAllMocks() })
 
@@ -130,4 +134,92 @@ it.each(['en', 'zh-CN'])('bounds long diagnostics and recovery-operation errors 
   }
   expect(operations.show.mock.calls[0]![0].detail).toContain('final backend failure')
   expect(operations.show.mock.calls[1]![0].detail).toContain('final write failure')
+})
+
+it.each(['en', 'zh-CN'])('names the report file even when the error is short enough to show whole, in %s', async (locale) => {
+  const { operations, choice, stopped, recovery } = fixture(locale, async () => REPORT_PATH)
+  const pending = recovery.report(new Error('Desktop Host failed\nPlugin initialization failed'), 'host')
+  await vi.waitFor(() => { expect(operations.show).toHaveBeenCalledOnce() })
+  expect(operations.writeReport).toHaveBeenCalledWith(expect.any(Error), 'host')
+  const options = operations.show.mock.calls[0]![0]
+  expect(options.detail).not.toContain(operations.messages().diagnosticTruncated)
+  expect(options.detail).toContain(REPORT_PATH)
+  await expect([options.title, options.message, options.detail, ...options.buttons!].join('\n') + '\n')
+    .toMatchFileSnapshot(`expected/fatal-dialog-with-report-${locale}.txt`)
+  choice.resolve({ response: 0, checkboxChecked: false })
+  stopped.resolve(undefined)
+  await pending
+})
+
+it('keeps the report line inside the detail budget when the error is long', async () => {
+  const { operations, choice, stopped, recovery } = fixture('en', async () => REPORT_PATH)
+  const pending = recovery.report(new Error('😀'.repeat(32768) + '\nfinal backend failure'), 'web-boot')
+  await vi.waitFor(() => { expect(operations.show).toHaveBeenCalledOnce() })
+  const detail = operations.show.mock.calls[0]![0].detail!
+  expect(detail.length).toBeLessThanOrEqual(1200)
+  expect(detail.split('\n').length).toBeLessThanOrEqual(12)
+  expect(detail.isWellFormed()).toBe(true)
+  expect(detail).toContain(operations.messages().diagnosticTruncated)
+  expect(detail).toContain('final backend failure')
+  expect(detail).toContain(REPORT_PATH)
+  expect(detail.indexOf(REPORT_PATH)).toBeLessThan(detail.indexOf(operations.messages().startupReinstallAdvice))
+  choice.resolve({ response: 0, checkboxChecked: false })
+  stopped.resolve(undefined)
+  await pending
+})
+
+it('names the report file in the listener-conflict dialog too', async () => {
+  const { operations, choice, stopped, recovery } = fixture('en', async () => REPORT_PATH)
+  const pending = recovery.report(new Error('listen EADDRINUSE: address already in use 127.0.0.1:19387'), 'host')
+  await vi.waitFor(() => { expect(operations.show).toHaveBeenCalledOnce() })
+  const options = operations.show.mock.calls[0]![0]
+  expect(options.buttons).toHaveLength(2)
+  expect(options.detail).toBe(`${operations.messages().startupAddressInUse}\n${operations.messages().reportWrittenTo.replace('{path}', REPORT_PATH)}`)
+  choice.resolve({ response: 0, checkboxChecked: false })
+  stopped.resolve(undefined)
+  await pending
+})
+
+it('shows the dialog without a path when the report write fails or returns nothing', async () => {
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  for (const writeReport of [async () => undefined, async () => { throw new Error('disk full') }]) {
+    const { operations, choice, stopped, recovery } = fixture('en', writeReport)
+    const pending = recovery.report(new Error('fatal'), 'main')
+    await vi.waitFor(() => { expect(operations.show).toHaveBeenCalledOnce() })
+    expect(operations.show.mock.calls[0]![0].detail).toBe(`fatal\n\n${operations.messages().startupReinstallAdvice}`)
+    choice.resolve({ response: 0, checkboxChecked: false })
+    stopped.resolve(undefined)
+    await pending
+  }
+})
+
+it('does not wait longer than the report deadline before showing the dialog', async () => {
+  vi.useFakeTimers()
+  try {
+    const { operations, choice, stopped, recovery } = fixture('en', () => new Promise<string>(() => {}))
+    const pending = recovery.report(new Error('fatal'), 'main')
+    await vi.advanceTimersByTimeAsync(CRASH_REPORT_WAIT_MS - 1)
+    expect(operations.show).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(operations.show).toHaveBeenCalledOnce()
+    expect(operations.show.mock.calls[0]![0].detail).not.toContain('crash-')
+    choice.resolve({ response: 0, checkboxChecked: false })
+    stopped.resolve(undefined)
+    await pending
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('writes the report once for the first fatal failure and not for the recovery-failure redisplay', async () => {
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  const { operations, stopped, recovery } = fixture('en', async () => REPORT_PATH)
+  operations.show.mockResolvedValueOnce({ response: 2, checkboxChecked: false })
+    .mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+  operations.disablePlugins.mockRejectedValueOnce(new Error('profile is read-only'))
+  stopped.resolve(undefined)
+  await recovery.report(new Error('fatal'), 'host')
+  expect(operations.show).toHaveBeenCalledTimes(2)
+  expect(operations.writeReport).toHaveBeenCalledOnce()
+  expect(operations.show.mock.calls[1]![0].detail).toContain(REPORT_PATH)
 })
