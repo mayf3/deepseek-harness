@@ -658,14 +658,17 @@ describe('ConversationNodeAssembler', () => {
     })
   })
 
-  it('rejects a transient event classified as a Context start', () => {
-    const definition: ConversationNodeDefinition<null> = {
-      kind: 'invalid-transient-start',
+  it('initializes from a transient start and clears it when the attempt is withdrawn', () => {
+    const start = vi.fn((_context: ConversationNodeContext<number>, match: ConversationMatch) => match.event.seq)
+    const definition: ConversationNodeDefinition<number> = {
+      kind: 'transient-start',
       match: event => event.type === 'assistant/live-chunk'
         ? { id: 'one', role: 'start' }
         : null,
-      start: () => null,
+      start,
       update: context => context.state,
+      target: 'test',
+      buildViewNode: context => node(context, context.state ?? null),
     }
     const assembler = new ConversationNodeAssembler(
       new TestEventDefinitions([definition]),
@@ -673,9 +676,13 @@ describe('ConversationNodeAssembler', () => {
     )
     const delta = transientChunk(1, 1, 1, { type: 'text-delta', index: 0, text: 'abc' })
 
-    expect(() => assembler.replaceWindow([delta], false)).toThrow(
-      'conversation Context 23:invalid-transient-startone received a transient start Match',
-    )
+    assembler.replaceWindow([delta], false)
+    assembler.flush()
+    expect(start).toHaveBeenCalledOnce()
+    expect([...testSnapshot(assembler)?.nodes.values() ?? []][0]?.data).toBe(1)
+    assembler.settleAssistant(LlmAttemptId('test-attempt'))
+    assembler.flush()
+    expect([...testSnapshot(assembler)?.nodes.values() ?? []][0]?.data).toBeNull()
   })
 
   it('merges an older page and replays its affected Context once', () => {
@@ -1537,12 +1544,14 @@ describe('ConversationNodeAssembler', () => {
     )).toThrow(/Definition "undefined-update" returned undefined from update/)
   })
 
-  it('rejects a duplicate start before mutating the existing Context', () => {
-    const definition: ConversationNodeDefinition<number> = {
+  it('updates the same Context for later start matches and reselects an earlier prepended start', () => {
+    const start = vi.fn((_context: ConversationNodeContext<number[]>, match: ConversationMatch) => [match.event.seq])
+    const update = vi.fn((context: { state: number[] }, match: ConversationMatch) => [...context.state, match.event.seq])
+    const definition: ConversationNodeDefinition<number[]> = {
       kind: 'single-start',
       match: event => (event.type as string) === 'command/run' ? { id: 'one', role: 'start' } : null,
-      start: (_context, match) => match.event.seq,
-      update: context => context.state,
+      start,
+      update,
       target: 'test',
       buildViewNode: context => node(context, context.state),
     }
@@ -1555,10 +1564,16 @@ describe('ConversationNodeAssembler', () => {
     ], false)
     assembler.flush()
 
-    expect(() => assembler.append(
+    assembler.append(
       input(at(SessionSeq(2), 'command/run', { commandId: 'two', name: 'x' })),
-    )).toThrow(/received more than one start Match/)
+    )
     assembler.flush()
-    expect([...testSnapshot(assembler)?.nodes.values() ?? []][0]?.data).toBe(1)
+    expect(start).toHaveBeenCalledOnce()
+    expect(update).toHaveBeenCalledOnce()
+    expect([...testSnapshot(assembler)?.nodes.values() ?? []][0]?.data).toEqual([1, 2])
+    assembler.prepend([input(at(SessionSeq(0), 'command/run', { commandId: 'zero', name: 'x' }))], false)
+    assembler.flush()
+    expect(start).toHaveBeenCalledTimes(2)
+    expect([...testSnapshot(assembler)?.nodes.values() ?? []][0]?.data).toEqual([0, 1, 2])
   })
 })
