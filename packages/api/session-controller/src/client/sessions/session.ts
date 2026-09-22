@@ -812,12 +812,12 @@ export class Session implements SessionFace {
     this.retireAdmittedSubmission(source.rpcId)
   }
 
-  /** Retire admitted Chat identities only after stale Dock rows can no longer reappear. */
+  /** Retire admitted Chat identities only after stale Inbox rows can no longer reappear. */
   private retireAdmittedSubmission(requestId: SessionRequestId): void {
     const settlement = this.submissionSettlements.get(requestId)
     if (settlement?.admitted === undefined) return
     const receipt = settlement.receipt
-    if (settlement.placement === 'transcript' && receipt?.target === 'next-turn' && receipt.index === null
+    if (receipt?.index === null
       && (this.projections.seqOf('inbox') ?? -1) < receipt.seq) return
     this.scheduleObservedRetirement(requestId, settlement.admitted)
   }

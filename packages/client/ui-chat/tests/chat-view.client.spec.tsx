@@ -1825,6 +1825,39 @@ describe('ChatView', () => {
     expect(view.getByLabelText('回到底部')).toBeTruthy()
   })
 
+  it.each(['compact', 'detailed', 'expanded'] as const)(
+    'hides an admitted local steer while its Inbox claim projection is delayed (%s)', (mode) => {
+      const pending: InboxState['next-step'] = ['first', 'second'].map(text => ({
+        id: text as never, role: 'user', source: { kind: 'user', rpcId: text as never },
+        content: [{ type: 'text', text: `steer ${text}` }],
+      }))
+      const submissions: SessionSnapshot['pendingSubmissions'] = ['first', 'second'].map(text => ({
+        requestId: text as never, placement: 'steering', time: 5_000,
+        text: `steer ${text}`, attachments: [],
+      }))
+      const h = makeHarness({ nodes: [assistant(1, 'working')] }, {
+        running: true, pendingSubmissions: submissions,
+        testInbox: { 'next-turn': [], 'next-step': pending },
+      })
+      h.setTranscriptView(mode)
+      const view = render(<h.ChatView {...h.props} />)
+      const second = view.getByText('steer second').closest('[data-submission-echo]')
+      expect(view.getAllByText('steer first')).toHaveLength(1)
+
+      act(() => { h.setChat({ nodes: [assistant(1, 'working'), {
+        ...steering(2, 'steer first', 1), source: pending[0]!.source,
+      }] }) })
+      expect(view.getAllByText('steer first')).toHaveLength(1)
+      expect(view.getByText('steer first').closest('[data-pending-steering]')).toBeNull()
+      expect(view.getByText('steer second').closest('[data-submission-echo]')).toBe(second)
+
+      act(() => { h.setSession({ testInbox: { 'next-turn': [], 'next-step': [pending[1]!] } }) })
+      act(() => { h.setSession({ pendingSubmissions: [submissions[1]!] }) })
+      expect(view.getAllByText('steer first')).toHaveLength(1)
+      expect(view.getByText('steer second').closest('[data-submission-echo]')).toBe(second)
+    },
+  )
+
   it('retains the same local steer bubble through Host acceptance and claim until its durable node arrives', () => {
     const h = makeHarness(
       { nodes: [assistant(1, 'working')] },

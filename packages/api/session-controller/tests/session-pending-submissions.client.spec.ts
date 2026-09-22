@@ -215,27 +215,33 @@ describe('observed retirement', () => {
     expect(onRetire).toHaveBeenCalledExactlyOnceWith({ reason: 'observed', attachments: refs })
   })
 
-  for (const order of ['inbox-first', 'transcript-first'] as const) {
-    it(`keeps an idle Chat identity until admission and the Inbox claim watermark (${order})`, async ({ mock, start }) => {
+  for (const { mode, target, order } of [
+    { mode: 'queue', target: 'next-turn', order: 'inbox-first' },
+    { mode: 'queue', target: 'next-turn', order: 'transcript-first' },
+    { mode: 'steer', target: 'next-step', order: 'inbox-first' },
+    { mode: 'steer', target: 'next-step', order: 'transcript-first' },
+  ] as const) {
+    it(`keeps a ${mode} Chat identity until admission and the Inbox claim watermark (${order})`, async ({ mock, start }) => {
       const session = await sessionBench(mock, start, SID)
       await session.open()
       session.projections.apply('inbox', { 'next-turn': [], 'next-step': [] }, -1)
       const frames: FrameRequestCallback[] = []
       vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
       const onRetire = vi.fn()
-      const handle = session.beginSubmission({ mode: 'queue', text: 'idle', attachments: [], onRetire })
+      session.handleRunning(mode === 'steer')
+      const handle = session.beginSubmission({ mode, text: 'local input', attachments: [], onRetire })
       const refs = [imageRef('idle-image'), fileRef('idle-file')]
       const message = queuedItem(handle.requestId, refs)
-      const queued = { 'next-turn': [message], 'next-step': [] }
+      const queued = { 'next-turn': [], 'next-step': [], [target]: [message] }
       const empty = { 'next-turn': [], 'next-step': [] }
       if (order === 'inbox-first') session.projections.apply('inbox', queued, SessionSeq(0))
       await pushEvent(mock, {
         type: 'agent/inbox/spliced', seq: SessionSeq(0), time: 1,
-        data: { target: 'next-turn', start: 0, inserted: [message] },
+        data: { target, start: 0, inserted: [message] },
       })
       await pushEvent(mock, {
         type: 'agent/inbox/spliced', seq: SessionSeq(1), time: 2,
-        data: { target: 'next-turn', start: 0, removedCount: 1, inserted: [] },
+        data: { target, start: 0, removedCount: 1, inserted: [] },
       })
       expect(session.getSnapshot().pendingSubmissions).toHaveLength(1)
       expect(frames).toHaveLength(0)
@@ -298,15 +304,13 @@ describe('observed retirement', () => {
       await pushEvent(mock, ev.stepStart(SessionSeq(5), 1, 1))
       await pushEvent(mock, { type: 'user/message', seq: SessionSeq(6), time: 7, surfaceOp: 'append', data: steerMessage })
       flush()
-      expect(pending()).toEqual(['opening'])
+      expect(pending()).toEqual(projectionFirst ? ['opening'] : ['opening', 'steering'])
       expect(normalRetired).not.toHaveBeenCalled()
-      expect(steerRetired).toHaveBeenCalledExactlyOnceWith({
-        reason: 'observed', attachments: [imageRef('steer-image'), fileRef('steer-file')],
-      })
+      if (!projectionFirst) expect(steerRetired).not.toHaveBeenCalled()
       await pushEvent(mock, { type: 'user/message', seq: SessionSeq(7), time: 8, surfaceOp: 'append', data: normalMessage })
       flush()
       if (!projectionFirst) {
-        expect(pending()).toEqual(['opening'])
+        expect(pending()).toEqual(['opening', 'steering'])
         session.projections.apply('inbox', accepted, SessionSeq(1))
         flush()
         expect(normalRetired).not.toHaveBeenCalled()
@@ -316,6 +320,9 @@ describe('observed retirement', () => {
       }
       expect(pending()).toEqual([])
       expect(normalRetired).toHaveBeenCalledExactlyOnceWith({ reason: 'observed', attachments: [fileRef('opening-file')] })
+      expect(steerRetired).toHaveBeenCalledExactlyOnceWith({
+        reason: 'observed', attachments: [imageRef('steer-image'), fileRef('steer-file')],
+      })
       await pushEvent(mock, ev.stepEnd(SessionSeq(8), 1, 1))
       await pushEvent(mock, ev.turnEnd(SessionSeq(9), 1))
       await pushEvent(mock, ev.turnStart(SessionSeq(10), 2))

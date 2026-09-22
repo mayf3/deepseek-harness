@@ -13,8 +13,8 @@ These transitions concern display ownership, not scrolling or composer geometry.
 ## Decision
 
 - A submission keeps its locally selected placement: idle input stays in Chat, running steering stays at the process tail, and explicitly queued input stays in QueueDock. Inbox acceptance does not change that placement.
-- Chat hides an echo by matching the durable input's rpcId in the same render. QueueDock excludes only Inbox rows matched by local transcript echoes; unrelated queued messages remain visible and actionable.
-- Session retains an admitted transcript's local suppression identity until the Inbox projection watermark reaches its claim sequence. Higher-sequence projection retention then prevents an older accepted row from reappearing after that identity retires. Claim tracking and cancellation use the existing per-submission receipt for both Inbox targets; no new SessionSnapshot field, Host event, or persisted format is needed.
+- Chat hides an echo by matching the durable input's rpcId in the same render, and excludes stale next-step Inbox rows matched by admitted local Chat submissions. QueueDock excludes only Inbox rows matched by local transcript echoes; unrelated queued messages remain visible and actionable.
+- Session retains an admitted transcript or steering submission's local suppression identity until the Inbox projection watermark reaches its claim sequence. Higher-sequence projection retention then prevents an older accepted row from reappearing after that identity retires. Claim tracking and cancellation use the existing per-submission receipt for both Inbox targets; no new SessionSnapshot field, Host event, or persisted format is needed.
 - At an open, input-free progress control at the end of Chat, the first transcript echo precedes the control. Other echoes remain at the tail. Last-input Turn tracking shares the existing rpcId scan; it does not add a history traversal or predict a sequence of future Turns.
 - Pending bubbles and durable seats share one keyed React list. Inserting a progress title preserves the pending bubble's mounted identity. Once admitted, the durable node owns ordering and ordinary Group segmentation.
 
@@ -26,7 +26,7 @@ The [durable Inbox recovery decision](2026-08-17-durable-web-queue-recovery.md) 
 
 **Retain the echo without changing the other readers.** Chat-side Inbox deduplication can still remove the echo, and QueueDock can still display it. The Session lifetime, Chat handoff and Dock exclusion must agree.
 
-**Delete the suppression identity as soon as user/message arrives.** A later Inbox acceptance projection can resurrect a Dock row. The claim watermark supplies the required ordering evidence without assuming the streams publish together.
+**Delete the suppression identity as soon as user/message arrives.** A later Inbox acceptance projection can resurrect a Dock or pending-steering row. The claim watermark supplies the required ordering evidence without assuming the streams publish together.
 
 **Move all pending inputs before the newest Turn control.** Running steering belongs after existing process content, and several ordinary submissions can target different Turns. Only the first local transcript echo receives the empty-control placement adjustment.
 
@@ -41,11 +41,13 @@ The [durable Inbox recovery decision](2026-08-17-durable-web-queue-recovery.md) 
 | [Chat rendering](../../../../packages/client/ui-chat/tests/chat-view.client.spec.tsx) | Same-render rpcId replacement, stable echo mounting, title-before-input delivery in all three modes, steering remaining behind the title, historical empty Turns, and six local-versus-Host orderings. |
 | [QueueDock](../../../../packages/client/ui-conversation/tests/queue-dock.client.spec.tsx) | Local transcript exclusion, unrelated rows/actions, and all six three-message acceptance orders followed by FIFO claims. |
 | [Recorded Web replay](../../../../apps/web/tests/idle-submission-handoff.e2e.ts) | Real Web composition with FIFO-preserving delivery barriers: both Inbox/history arrival orders at 6× CPU throttling, an explicit turn/start-to-user/message gap, and complete three-Turn handoff for all six request orders. |
+| [Steering Web replay](../../../../apps/web/tests/steering.e2e.ts) | Local shortcut steering remains unique when durable admission precedes its Inbox claim projection. |
 
 The single-input regression fails before the fix: Inbox acceptance moves the bubble into Dock, and a separately delivered Turn title precedes the echo. The corrected path retains one Chat representation at a stable vertical position. Multi-input replay verifies durable order and absence of duplicate or residual echoes; it does not assert that optimistic ordering predicts Host order.
 
 ## Consequences
 
+- Steering without a locally tracked submission still follows the Inbox projection; a delayed projection can briefly duplicate its durable row. Local deduplication adds no history scan for other clients' submissions.
 - Reconnect may discard receipt-confirmed optimistic echoes and display the new authoritative baseline. A claimed input outside that baseline can briefly have no bubble; reconnect does not promise DOM continuity.
 - Submissions made before the local running update can all remain transcript echoes. If A, B and C are submitted locally in that order but B or C enters first, durable admission changes their visible order. Even when A enters first, remaining local echoes can differ from the Host queue order.
 - Cross-client competition and request-preparation races can change the actual opening input. The client does not migrate an idle-classified echo into Dock merely because the Host queued it behind another Turn.

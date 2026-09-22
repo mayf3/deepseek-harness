@@ -177,16 +177,19 @@ export function ChatView({
   }, [pendingSubmissions, order, nodeStore])
   const pendingInputs = useMemo(() => {
     const local = new Map(visibleSubmissions.map(submission => [submission.requestId, submission]))
-    const pending = inboxSteering.map((item) => {
+    // Admitted local identities outlive their bubbles until the Inbox claim watermark.
+    const localIds = new Set(pendingSubmissions.filter(submission => submission.placement !== 'queued')
+      .map(submission => submission.requestId))
+    const pending = inboxSteering.flatMap<PendingInput>((item) => {
       const source = item.source
-      if (source.kind !== 'user' || !('rpcId' in source)) return item
+      if (source.kind !== 'user' || !('rpcId' in source)) return [item]
       const submission = local.get(source.rpcId)
-      if (submission === undefined) return item
+      if (submission === undefined) return localIds.has(source.rpcId) ? [] : [item]
       local.delete(source.rpcId)
-      return submission
+      return [submission]
     })
     return [...pending, ...local.values()]
-  }, [inboxSteering, visibleSubmissions])
+  }, [inboxSteering, pendingSubmissions, visibleSubmissions])
   const renderMessageImages = useCallback<RenderMessageImages>(
     owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
     [loadImage, renderSlot],
