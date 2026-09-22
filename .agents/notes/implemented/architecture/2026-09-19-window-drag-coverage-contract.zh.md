@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-macOS 桌面窗口的可拖区域被写了两遍。布局决定 chrome 行在哪——它们多高、装了什么；手写的 app-region 声明决定什么能拖：每个 chrome 行一条行声明（侧栏顶条与 logo 行、ui-dockkit 的 strip 行、会话 header、插件管理的页头），加上散落在 ui-web、ui-settings-general、ui-sidebar-right 的逐盒减除。两份描述靠人肉保持一致，于是会漂：盒子与 band 不匹配的行，要么有 chrome 落在拖拽面之外（就是反馈里的"header 能拖，但有些空白与控制不能"），要么有内容落进拖拽面（点偏几个像素就变成拖窗口，双击那里还会触发系统标题栏行为）。
+macOS 桌面窗口的可拖区域被写了两遍。布局决定 chrome 行在哪——它们多高、装了什么；手写的 app-region 声明决定什么能拖：每个 chrome 行一条行声明（侧栏顶条与 logo 行、ui-dockkit 的 strip 行、会话 header、插件管理的页头、Platform 浮层的返回栏），加上散落在 ui-web、ui-settings-general、ui-sidebar-right 的逐盒减除。两份描述靠人肉保持一致，于是会漂：盒子与 band 不匹配的行，要么有 chrome 落在拖拽面之外（就是反馈里的"header 能拖，但有些空白与控制不能"），要么有内容落进拖拽面（点偏几个像素就变成拖窗口，双击那里还会触发系统标题栏行为）。
 
 ## Decision
 

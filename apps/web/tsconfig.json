@@ -22,11 +22,14 @@
   // this client-registered project must not also hold them (one program
   // cannot see both sides of the cordis Context merges).
   "exclude": [
+    "tests/connection-recovery.e2e.ts",
+    "tests/server-restart.e2e.ts",
     "tests/default-product-isolation.e2e.ts",
     "tests/diff-context.e2e.ts",
     "tests/scaffold.ts",
     "tests/voice-input.e2e.ts",
     "tests/voice-setup.e2e.ts",
+    "tests/voice-download.e2e.ts",
     "tests/prefix-proxy.ts",
     "tests/auto-review-fixture.ts",
     "tests/scaffold-generation.spec.ts",
@@ -60,6 +63,7 @@
     "tests/plugin-install-registry.e2e.ts",
     "tests/client-plugin-live.e2e.ts",
     "tests/settings-chrome.e2e.ts",
+    "tests/desktop-locale.e2e.ts",
     "tests/settings-import.e2e.ts",
     "tests/desktop-updates.e2e.ts",
     "tests/developer-tools-settings.e2e.ts",
@@ -74,6 +78,7 @@
     "tests/streaming-fence-highlight.e2e.ts",
     "tests/declared-reasoning.e2e.ts",
     "tests/onboarding-deepseek-config.e2e.ts",
+    "tests/onboarding-native.e2e.ts",
     "tests/onboarding-usable-provider.e2e.ts",
     "tests/remote-welcome.e2e.ts",
     "tests/public-mount.e2e.ts",

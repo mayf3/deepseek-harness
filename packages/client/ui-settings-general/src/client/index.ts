@@ -172,6 +172,7 @@ export function apply(ctx: ClientContext): void {
     name: 'sidebar.settings',
     locale: NS,
     children: {
+      'settings.launcher': { kind: 'single', scope: 'root' },
       'settings.trigger': { kind: 'single', scope: 'root' },
       'settings.header': { kind: 'single', scope: 'root' },
       'settings.action': { kind: 'list', scope: 'root' },

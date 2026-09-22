@@ -1,7 +1,7 @@
 /** Assistant reasoning disclosure, independent of Tool-call presentation. */
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useMemo } from 'react'
 import { DisclosureRow, IconThinkOutlineRegular, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChatViewSlotProps, UsePresentation } from '../contract/slots.ts'
+import type { ChatViewSlotProps, UseDisclosure, UsePresentation } from '../contract/slots.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import a11yCss from './accessibility.module.css'
 import css from './ReasoningRow.module.css'
@@ -40,18 +40,19 @@ function latestCompletedParagraphFirstLine(text: string): string {
  * @param props.text - complete or streaming reasoning text.
  * @param props.running - whether this block is the streaming tail.
  * @param props.usePresentation - live display-policy selector for this reasoning row.
+ * @param props.useDisclosure - independent open state with enclosing-Turn resets.
  * @param props.t - conversation locale seat for status and Markdown actions.
  * @returns the reasoning disclosure.
  */
-export const ReasoningRow = memo(function ReasoningRow({ text, running, usePresentation, t }: {
+export const ReasoningRow = memo(function ReasoningRow({ text, running, usePresentation, useDisclosure, t }: {
   text: string
   running: boolean
+  useDisclosure: UseDisclosure
   usePresentation: UsePresentation
   t: ChatViewSlotProps['t']
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const { expanded, toggle } = useDisclosure()
   const labels = useMemo(() => markdownLabels(t), [t])
-  const toggle = useCallback(() => { setExpanded(value => !value) }, [])
   const summaryText = running ? latestCompletedParagraphFirstLine(text) : firstLine(text)
   const summary = useMemo(() => summaryText.replaceAll('**', ''), [summaryText])
   const preview = usePresentation(policy => !expanded && summary !== ''

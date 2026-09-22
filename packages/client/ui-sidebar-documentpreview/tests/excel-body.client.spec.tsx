@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { Config } from '../src/config.ts'
-import { en } from '../src/client/excel/locales.ts'
+import { en, zh } from '../src/client/excel/locales.ts'
 import type { ExcelBodyProps, LoadedExcelBodyProps } from '../src/client/excel/LazyExcelBody.tsx'
 
 const mocked = vi.hoisted(() => ({ parse: vi.fn(), workbook: vi.fn((_props: unknown) => null) }))
@@ -15,8 +15,8 @@ import { LazyExcelBody } from '../src/client/excel/LazyExcelBody.tsx'
 
 const props = { content: { kind: 'bytes', data: new Uint8Array([1]) }, limits: Config({}).excel, t: makeTranslate(en), resourceAddress: 'dsh-resource://file/session/s1/book.xlsx' } as ExcelBodyProps
 const loadedProps = { ...props, format: 'xlsx' } as LoadedExcelBodyProps
-const value = { sheets: [{ name: 'Budget', celldata: [] }], missingResults: 0 }
-const formulaValue = { sheets: [{ name: 'Budget', celldata: [{ r: 0, c: 0, v: { f: '=SUM(1,2)', m: '' } }] }], missingResults: 1 }
+const value = { sheets: [{ name: 'Budget', celldata: [] }], missingResults: 0, unsupportedFeatures: [] }
+const formulaValue = { sheets: [{ name: 'Budget', celldata: [{ r: 0, c: 0, v: { f: '=SUM(1,2)', m: '' } }] }], missingResults: 1, unsupportedFeatures: [] }
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 
 it('shows loading then a workbook with editing and recalculation disabled', async () => {
@@ -25,10 +25,32 @@ it('shows loading then a workbook with editing and recalculation disabled', asyn
   expect(screen.getByRole('status', { name: en.loading })).toBeDefined()
   await waitFor(() => { expect(mocked.workbook).toHaveBeenCalledOnce() })
   expect(screen.getByRole('button', { name: en.formulaWarning })).toBeDefined()
+  expect(screen.queryByRole('note')).toBeNull()
   expect(mocked.workbook.mock.calls[0]![0]).toMatchObject({ data: formulaValue.sheets, allowEdit: false, forceCalculation: false, showToolbar: false, showSheetTabs: true, lang: 'en', cellContextMenu: ['copy'] })
   const signal = mocked.parse.mock.calls[0]![3] as AbortSignal
   view.unmount()
   expect(signal.aborted).toBe(true)
+})
+
+it.each([en, zh])('lists only detected unsupported content and clears the notice on file replacement', async (dictionary) => {
+  const t = makeTranslate(dictionary)
+  mocked.parse.mockResolvedValueOnce({ ...formulaValue, unsupportedFeatures: ['charts', 'images', 'shapes', 'conditionalFormatting'] })
+    .mockResolvedValueOnce(value)
+  const view = render(<ExcelBody {...loadedProps} t={t} />)
+  const notice = await screen.findByRole('note')
+  expect(notice.textContent).toBe(t('unsupportedNotice', {
+    features: [dictionary.charts, dictionary.images, dictionary.shapes, dictionary.conditionalFormatting].join(dictionary.featureSeparator),
+  }))
+  expect(screen.getByRole('button', { name: dictionary.formulaWarning })).toBeDefined()
+  view.rerender(<ExcelBody {...loadedProps} t={t} content={{ kind: 'bytes', data: new Uint8Array([2]) }} />)
+  await waitFor(() => { expect(mocked.workbook).toHaveBeenCalledTimes(2) })
+  expect(screen.queryByRole('note')).toBeNull()
+})
+
+it('does not list undetected unsupported features', async () => {
+  mocked.parse.mockResolvedValueOnce({ ...value, unsupportedFeatures: ['charts'] })
+  render(<ExcelBody {...loadedProps} />)
+  expect((await screen.findByRole('note')).textContent).toBe(makeTranslate(en)('unsupportedNotice', { features: en.charts }))
 })
 
 it('ignores a retired file result and cancels parsing when the bytes change', async () => {

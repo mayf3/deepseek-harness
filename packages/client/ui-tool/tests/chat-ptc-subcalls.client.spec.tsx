@@ -109,6 +109,7 @@ async function bench(snapshot: ChatSnapshot) {
   ctx.provide('uiConversation', {
     events,
     views,
+    groups: { register: () => () => {} },
     binding: () => ({ target: () => chat, snapshot: conversation }),
   } as never)
   ctx.uiSession.provide({

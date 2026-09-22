@@ -10,11 +10,14 @@
   "files": [],
   "include": [
     "apps/web/product-isolation.ts",
+    "apps/web/tests/connection-recovery.e2e.ts",
+    "apps/web/tests/server-restart.e2e.ts",
     "apps/web/tests/default-product-isolation.e2e.ts",
     "apps/web/tests/diff-context.e2e.ts",
     "apps/web/tests/scaffold.ts",
     "apps/web/tests/voice-input.e2e.ts",
     "apps/web/tests/voice-setup.e2e.ts",
+    "apps/web/tests/voice-download.e2e.ts",
     "apps/web/tests/prefix-proxy.ts",
     "apps/web/tests/developer-tools-settings.e2e.ts",
     "apps/web/tests/auto-review-fixture.ts",
@@ -55,12 +58,15 @@
     "apps/web/tests/plugin-install-registry.e2e.ts",
     "apps/web/tests/client-plugin-live.e2e.ts",
     "apps/web/tests/settings-chrome.e2e.ts",
+    "apps/web/tests/desktop-locale.e2e.ts",
+    "apps/web/tests/window-controls.e2e.ts",
     "apps/web/tests/settings-import.e2e.ts",
     "apps/web/tests/models-settings.e2e.ts",
     "apps/web/tests/deepseek-messages-settings.e2e.ts",
     "apps/web/tests/deepseek-messages-chat.e2e.ts",
     "apps/web/tests/models-settings-recovery.e2e.ts",
     "apps/web/tests/onboarding-deepseek-config.e2e.ts",
+    "apps/web/tests/onboarding-native.e2e.ts",
     "apps/web/tests/onboarding-usable-provider.e2e.ts",
     "apps/web/tests/remote-welcome.e2e.ts",
     "apps/web/tests/public-mount.e2e.ts",
@@ -204,6 +210,10 @@
     { "path": "./packages/client/ui-sidebar-browser/tsconfig.host.json" },
     { "path": "./packages/client/ui-settings-general/tsconfig.host.json" },
     { "path": "./packages/document/office-to-pdf" },
+
+    { "path": "./packages/api/account-controller" },
+    { "path": "./packages/credentials/deepseek-account-platform" },
+    { "path": "./packages/credentials/deepseek-account" },
     { "path": "./packages/client/ui-deliverables/tsconfig.host.json" },
     { "path": "./vendor/cosmokit" },
     { "path": "./vendor/schemastery" },
@@ -438,6 +448,6 @@
     { "path": "./packages/lsp/tool-lsp" },
     { "path": "./apps/cli" },
     { "path": "./apps/desktop-host" },
-    { "path": "./apps/desktop" }
+    { "path": "./apps/desktop/tsconfig.host.json" }
   ]
 }

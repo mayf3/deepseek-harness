@@ -10,6 +10,10 @@ Desktop’s local native directory flow opens an Electron folder dialog attached
 
 Creator and the Web Plugin Manager use Desktop’s bundled pnpm under Electron Node mode without requiring pnpm on PATH. The private Node launcher environment applies only to package operations.
 
+Embedded Platform documents use a dedicated non-persistent WebContentsView session. Host sends account credentials through private Node IPC; account RPC and the Harness renderer receive no token. Before page scripts execute, the Platform preload performs one synchronous IPC to read the prepared main-process credential. It exposes displayMode, synchronous getAuthToken() and getLocale() getters, and onLocaleChange(listener), which returns an unsubscribe function. Both getters read preload memory without further IPC. The bootstrap includes the resolved Desktop language (`zh_CN` or `en_US`); Settings language changes update the preload cache and notify the open Platform document without reloading. Platform applies this language before its first render and does not persist it as a browser preference. The main-process handler performs only sender validation and an in-memory read; it never waits for Host, disk, or network. Trusted-page initialization failures retain embedded mode and make the getter throw, preventing browser-credential fallback. Only the owned Platform main frame on the configured issuer origin can initialize. Sign-out, credential replacement, Host shutdown, and view closure destroy the document. Cross-origin document navigation is blocked. HTTPS links requesting a new window open in the system browser without the embedded session or token; other schemes and URL credentials are rejected. Native views occupy the viewport below the Account feature’s return bar.
+
+Desktop Host Platform API requests use the same `x-client-platform` mapping as update-policy requests. The account provider owns [API-only header configuration](../../packages/credentials/deepseek-account-platform/README.md#use-this-package).
+
 Desktop microphone access is restricted to audio requests from the primary `dsh-app://app` frame. macOS uses system microphone authorization and a packaged usage description.
 
 Press F12 (Fn+F12 on media-key keyboards), Command+Option+I on macOS, or Ctrl+Shift+I on Windows to toggle DevTools for the focused application page, including in packaged builds. These native shortcuts use hidden application-menu items. Update overlays and packaged embedded browser guests disable DevTools.
@@ -68,7 +72,7 @@ On macOS the custom application menu also declares the standard File, Window, an
 
 The signed `resources/app.asar/dsh/desktop-runtime.json` binds the shell version, Electron's Node version, platform, architecture, shared package versions, and final file inventory. Startup reads the metadata and checks shared package records. Release schema, shell version, target compatibility, and file integrity are verified during packaging. Core packages are never copied into profile storage or installed by pnpm at first launch.
 
-1. The main window displays the shared Web loading page from packaged static assets before profile preparation or backend startup. Shared profile initialization creates missing manifest, empty user patch, and pnpm workspace files without overwriting existing files.
+1. The main window loads the shared Web loading page offscreen from packaged static assets before profile preparation or backend startup. Shared profile initialization creates missing manifest, empty user patch, and pnpm workspace files without overwriting existing files.
 2. Before Host startup, Desktop validates the runtime descriptor and prepares the profile without modifying installed packages, declarations, or the lockfile; it removes only the `.dsh-module-fallback` projections earlier link-backend launches wrote, and startup never runs pnpm. Packages inside the profile keep native precedence, and installation package names resolve through the runtime resolution ([lookup order](../../.agents/notes/implemented/architecture/2026-09-19-profile-resolution-lookup-order.md); [cleanup removal](../../.agents/notes/implemented/simplification/2026-09-19-remove-desktop-profile-core-cleanup.md)).
 3. Changes to Electron's Node version, platform, or architecture preserve installed plugins. Native incompatibilities surface during loading and can be repaired through pnpm.
 4. The main application’s Plugins page uses the shared [plugin manager](../../packages/boot/plugin-manager/README.md) against the Desktop profile. Package operations use bundled pnpm with normal user and profile configuration.
@@ -85,6 +89,8 @@ Recovery waits for Host shutdown before changing plugin activation. The native r
 
 ## Develop
 
+The development application menu offers Reload Page (Cmd+R on macOS, Ctrl+R elsewhere) and Restart App and Host. Restart waits for Host shutdown before relaunching Electron and starting a new Host; neither action rebuilds source files.
+
 `dev:desktop` builds the current Host, client bundles, Web frontend, and Electron shell, projects the built CLI and private Desktop Host packages with their workspace dependencies into a disposable desktop npm project, and launches Electron without resolving dsh from npm:
 
 ```sh
@@ -100,6 +106,21 @@ pnpm run start:desktop
 ```
 
 The Web counterparts are `pnpm run dev:web` and `pnpm run start:web`, documented in the [development guide](../../docs/development.md). Workspace development runs the current CLI and private Desktop Host packages under Electron RunAsNode. Plugin management and recovery use `$DSH_HOME/profiles/desktop`, separate from the disposable workspace runtime. The Host uses runtime module resolution in both development and packaged builds without creating official-package fallback links; developer-installed packages, including links, retain native priority. Use an unpacked application to exercise Electron RunAsNode, bundled pnpm, bundled dsh resources, plugin installation and repair paths.
+
+
+### Startup onboarding
+
+Repeated launches and `dsh://open` keep the workspace hidden until the startup credential check or a welcome action permits entry. Entering from Welcome places keyboard focus on the document without selecting a sidebar control; Tab navigation remains available.
+
+Desktop checks configured model API-key references after the Host starts and before opening the workspace. With no configured key, the welcome window offers the [API-key page](https://www.figma.com/design/jRBBK7zBgcszdVWQ0Fh5J8/Harness?node-id=2138-44626). Save and continue writes through the existing credential service using the official DeepSeek provider's configured reference, then opens the workspace. Set up later opens the workspace without saving the draft or a completion setting; the next process launch checks credentials again. Back to sign in returns to the entry and clears the unsaved key and validation message. Buttons keep their labels and block competing actions while saving or opening the workspace. The Desktop preload marker suppresses the Web credential dialog, while retaining the Models settings page and the welcome notice.
+
+The welcome window reads the shared `locale.preference` before it appears. An explicit English or Chinese choice wins; otherwise Desktop picks the first supported OS language and falls back to English. The main UI reads the same preference and OS language order through its isolated preload before mounting. Language changes in Settings update the shell’s current dictionary and menu; automatic selection writes no preference. The welcome window has no language selector.
+
+The browser-login waiting page offers a copy-link action for the current pending authorization, a loading indicator, and cancellation. Clipboard failures leave the copy action available for retry. Copy feedback resets after two seconds; the copied state disables the link until it resets. Welcome text uses Montserrat Light with system fallbacks; large action buttons keep the system font, while text buttons use Montserrat Light. English introductory copy is 24px throughout. Chinese introductory copy is 24px with a 26px product name. Login action buttons are 240px wide with 14px labels. Authorization status headings use 20px Montserrat Regular text. The API-key page uses a 20px heading and a 14px back action, with 84px between the secondary button’s bottom edge and the window bottom.
+
+### Welcome window appearance
+
+The welcome window follows system appearance with the design’s Platform light/dark colors and shows the 600 × 700 [entry layout](https://www.figma.com/design/jRBBK7zBgcszdVWQ0Fh5J8/Harness?node-id=2121-39334) and the API-key form, with native window controls, a draggable title area, a local brand SVG, system sans-serif fallbacks, and locally bundled Montserrat Light for non-button text. The window uses macOS menu vibrancy or Windows acrylic with the onboarding window tint: 40% white in light mode and 50% rgb(24 25 28) in dark mode. The local React welcome entry bundles React and the shared `StateDot` loading indicator with its CSS; it uses the isolated preload without loading the main Web application. The entry, sign-in status and API-key pages share a fixed bottom action row; the back-to-sign-in link sits below it. Buttons share the platform motion timings, and Reduce Motion disables their transitions. The OS owns blur strength and outer corners. macOS Reduce Transparency suppresses translucency, and Increase Contrast forces that setting on. Save and continue writes to the development credential store; Set up later opens the real workspace without saving a key or completion flag. The generated project links the declared workspace dependency closure as well as pnpm’s hoisted packages, so unhoisted configured plugins remain resolvable. [The window note](../../.agents/notes/implemented/architecture/2026-09-08-desktop-welcome-window-material.md) owns the material and onboarding decisions.
 
 ## Package
 
@@ -378,9 +399,21 @@ An unpackaged Electron process uses `.desktop-build/development/project` under i
 
 ## Known limitations
 
+- Account sign-in is not connected; the Sign in button is disabled. Windows material rendering still requires platform QA.
+
 - Release signing, notarization, update hosting, and previous-version installed-artifact qualification require the production release environment.
 - Dependency lifecycle scripts follow pnpm’s build permissions; Desktop provides no separate approval dialog.
 - The desktop shell shares sessions, settings, credentials, workspaces, and storage under `$DSH_HOME` with CLI dsh, while executable packages, plugin activation, and lockfiles remain separate.
+
+Sign in opens the configured platform page in the system browser. The Host owns PKCE and a temporary loopback callback, saves the credential before entering the workspace, and redirects the browser to the platform completion page. Cancel withdraws the local attempt even if the platform page later approves it. Settings offers Account sign-out; without a separate API key, sign-out returns to the welcome window. Packaged applications register dsh://open to show the window without passing credentials. On macOS, the development launcher prepares an ad-hoc-signed `Harness Dev.app` under `.desktop-build/development`, declares `dsh` in its Info.plist, and registers it with Launch Services. It loads the current workspace and records the selected development home, browser-data path, and debug settings for cold starts. Starting this bundle makes it the default `dsh://` handler; starting the packaged application registers the packaged handler again. The generated bundle does not contain account tokens and requires the workspace and prepared runtime to remain available.
+
+An expired login displays a timeout heading with explicit Sign in again and Add API Key actions. Opening the API-key form dismisses the authorization view; late account-state notifications do not replace an in-progress key entry.
+
+Embedded Platform views remain hidden until document loading completes so the renderer loading indicator stays visible. Closing or replacing a pending view prevents it from appearing later. Reloading or replacing the owning application document, renderer termination, and window closure also destroy the native view without relying on React cleanup.
+
+Private Platform deployment headers are injected by the embedded browser session only for its configured origin, including document and API requests. Cookie overrides merge by name. Cross-origin requests discard deployment headers; bootstrap exposes only origin, token, and resolved language.
+
+The account provider’s `embeddedPageDist` configuration adds a `dist` query parameter to embedded Usage and Top-up URLs. Its default is empty; private frontend branch selectors belong in the local profile patch. It does not change API URLs or credential delivery.
 
 ## Dev Note
 

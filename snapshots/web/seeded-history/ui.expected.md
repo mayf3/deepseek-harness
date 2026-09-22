@@ -10,7 +10,8 @@
   - button "Jump to turn 2"
 - text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. {{clock}}"
 - button "Copy"
-- button "2 tool calls"
+- status: Worked
+- button "Took {{duration}}"
 - paragraph: DONE
 - button "Copy"
 - button "Good response"
@@ -18,7 +19,8 @@
 - button "Branch into a new conversation"
 - text: {{clock}}
 - button "compact Compacted 5 history items (~{{tokens}} tokens)"
-- button "Context injection AGENTS.md"
+- status: Worked
+- button "Took {{duration}}" [disabled]
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write

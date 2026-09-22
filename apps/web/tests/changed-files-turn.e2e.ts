@@ -14,7 +14,7 @@ import {
   fixtureUserPrompts, launchWebScaffold, recordFixture, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspaceZh, ZH_BROWSER_LOCALE } from './support.ts'
+import { openSettings, connectFreshWorkspaceZh, ZH_BROWSER_LOCALE } from './support.ts'
 
 const DIR = fileURLToPath(new URL('../../../snapshots/web/changed-files-turn', import.meta.url))
 const FIXTURE = join(DIR, 'session.v3.jsonl')
@@ -136,7 +136,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(await header.getByRole('tablist').count()).toBe(0)
     const compactHeight = await header.evaluate(element => element.getBoundingClientRect().height)
     expect(compactHeight).toBeLessThan(60)
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openSettings(page, 'zh')
     const settings = page.getByRole('dialog', { name: '设置' })
     await settings.getByRole('switch', { name: '开发者工具' }).click()
     await expect.poll(() => settings.getByRole('switch', { name: '开发者工具' }).getAttribute('aria-checked')).toBe('true')

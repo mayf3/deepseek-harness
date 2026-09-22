@@ -6,7 +6,7 @@ English | [中文](2026-09-19-window-drag-coverage-contract.zh.md)
 
 ## Problem
 
-The macOS desktop window's draggable area is authored twice. The layout decides where chrome rows are — their heights and what they contain — while hand-written app-region declarations decide what drags: one row declaration per chrome row (the sidebar's top strip and logo row, ui-dockkit's strip row, the Conversation header, the plugin manager's page heads) plus per-box subtractions spread across ui-web, ui-settings-general and ui-sidebar-right. The two descriptions are kept in step by hand, so they drift: a row whose box does not match the band leaves chrome outside the drag surface (the reported "the header drags, but some blank runs and controls do not") or puts content inside it (a press that misses a control by a few pixels drags the window, and a double click there runs the system's title-bar action).
+The macOS desktop window's draggable area is authored twice. The layout decides where chrome rows are — their heights and what they contain — while hand-written app-region declarations decide what drags: one row declaration per chrome row (the sidebar's top strip and logo row, ui-dockkit's strip row, the Conversation header, the plugin manager's page heads, the Platform overlay's return bar) plus per-box subtractions spread across ui-web, ui-settings-general and ui-sidebar-right. The two descriptions are kept in step by hand, so they drift: a row whose box does not match the band leaves chrome outside the drag surface (the reported "the header drags, but some blank runs and controls do not") or puts content inside it (a press that misses a control by a few pixels drags the window, and a double click there runs the system's title-bar action).
 
 ## Decision
 

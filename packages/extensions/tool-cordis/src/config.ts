@@ -2,6 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
+// Declares `Context.pluginPackages`, the profile package lookup that resolves an entry's package directory.
 import { createConfigProjector, isNativeConfigSchema, LOADER_EXPRESSION_SCHEMA, type NativeConfigSchema } from '@deepseek-ai/dsh-app-boot'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
@@ -68,6 +69,13 @@ function parseQuery(input: JsonValue | undefined): ConfigQuery {
   return { entry: text('entry'), name: text('name'), offset, limit }
 }
 
+/** Resolve the package directory behind an entry's plugin name through the profile package lookup. */
+function packageDir(ctx: Context, entry: Entry): { packageDir?: string } {
+  const baseUrl = entry.parent.tree.ctx.baseUrl
+  const dir = baseUrl === undefined ? undefined : ctx.get('pluginPackages')?.packageOf(entry.options.name, baseUrl)?.dir
+  return dir === undefined ? {} : { packageDir: dir }
+}
+
 /** Projection output is JSON by construction; the CLI schema dump serializes the same values. */
 function toJson(value: object): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue
@@ -77,8 +85,10 @@ function toJson(value: object): JsonValue {
  * Answer the `Config.listConfigs` inspect query from the live Loader tree.
  * Without `entry`, return one page of the directory: each entry's Loader id, patch id, plugin name, and Config
  * status, optionally filtered to one exact plugin `name`, with `total` and `nextOffset` (null on the last page).
- * With `entry`, project that entry's native Config into one self-contained JSON Schema 2020-12 document whose
- * `$defs` carry the shared and `loaderExpression` definitions, plus omission acceptance and projection limitations.
+ * With `entry`, return that entry with its resolved `packageDir` (the directory holding the package README and
+ * built `lib/`, when the profile package lookup resolves it) and project its native Config into one self-contained
+ * JSON Schema 2020-12 document whose `$defs` carry the shared and `loaderExpression` definitions, plus omission
+ * acceptance and projection limitations.
  * Validators and transform callbacks are not executed; runtime-created Agent preset trees are outside the Loader.
  * @param ctx - Host context; its `loader`, when the profile was mounted by one, owns the entry tree.
  * @param input - model-supplied query: `entry` (Loader entry id), or `name`, `offset` (default 0), and `limit` (1 to 100, default 25).
@@ -98,7 +108,7 @@ export async function queryLiveConfig(ctx: Context, input: JsonValue | undefined
   }
   const entry = entries.find(candidate => candidate.id === query.entry)
   if (entry === undefined) throw new Error(`unknown entry id ${JSON.stringify(query.entry)}`)
-  const listed = listing(entry)
+  const listed = { ...listing(entry), ...packageDir(ctx, loader.resolve(query.entry)) }
   if (entry.native === undefined) return listed
   const project = await createConfigProjector()
   const { schema, definitions, acceptsMissing, limitations } = project(entry.native, 'config')
