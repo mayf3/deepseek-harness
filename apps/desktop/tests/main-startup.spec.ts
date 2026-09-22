@@ -8,14 +8,22 @@ import { tmpdir } from 'node:os'
 import type { MenuItemConstructorOptions, MessageBoxOptions } from 'electron'
 import { DESKTOP_IPC, type DesktopUpdateState } from '../src/ipc.ts'
 import { MANDATORY_IPC } from '../src/mandatory-update-ipc.ts'
-import { DesktopHostUncleanExitError } from '../src/host-process.ts'
+import { DesktopHostFatalError, DesktopHostUncleanExitError } from '../src/host-process.ts'
 import { en } from '../src/locale.ts'
 import { DesktopUpdatePreparationError } from '../src/update-error.ts'
+import { writeCrashReport } from '../src/crash-report.ts'
 
 type InvokeEvent = { sender?: unknown; senderFrame: { url: string } }
 type InvokeHandler = (event: InvokeEvent, ...args: unknown[]) => unknown
 
 vi.mock('../src/web-document.ts', () => ({ authenticateWebHost: async () => 'test-cookie', serveWebDocument: vi.fn(), forwardWebRequest: vi.fn() }))
+// Report persistence has its own unit tests; here it resolves within microtasks so the fatal
+// dialog never outlives the test that triggered it.
+vi.mock('../src/crash-report.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/crash-report.ts')>(),
+  writeCrashReport: vi.fn(async () => 'desktop-test-logs/crash-test.log'),
+  pruneCrashReports: vi.fn(async () => {}),
+}))
 
 const harness = await vi.hoisted(async () => {
   const { EventEmitter } = await import('node:events')
@@ -131,6 +139,8 @@ const harness = await vi.hoisted(async () => {
     getPreferredSystemLanguages: () => ['en-US'],
     getVersion: () => '1.0.0',
     getAppPath: (): string => 'desktop-test-app',
+    setAppLogsPath: vi.fn(),
+    getPath: (name: string): string => `desktop-test-${name}`,
     setAboutPanelOptions: vi.fn<(options: Electron.AboutPanelOptionsOptions) => void>(),
     requestSingleInstanceLock: () => true,
     setAsDefaultProtocolClient: vi.fn(),
@@ -1426,7 +1436,10 @@ describe('desktop main startup', () => {
     expect(() => { handler(event, {}) }).toThrow('must be text')
     expect(harness.dialog.showMessageBox).not.toHaveBeenCalled()
     handler(event, 'client mount failed')
+    await harness.dialogShown.promise
     expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).detail).toContain('client mount failed')
+    expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).detail).toContain('desktop-test-logs/crash-test.log')
+    expect(writeCrashReport).toHaveBeenCalledWith('desktop-test-logs', expect.objectContaining({ source: 'web-boot', phase: 'startup' }))
     expect(window.urls).toEqual(['dsh-app://app/'])
   })
 
@@ -1438,7 +1451,9 @@ describe('desktop main startup', () => {
     window.webContents.emit('did-fail-load', {}, -3, 'aborted', 'dsh-app://app/', true)
     expect(harness.dialog.showMessageBox).not.toHaveBeenCalled()
     window.webContents.emit('did-fail-load', {}, -2, 'failed', 'dsh-app://app/', true)
+    await harness.dialogShown.promise
     expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).detail).toContain('Desktop page failed to load')
+    expect(writeCrashReport).toHaveBeenCalledWith('desktop-test-logs', expect.objectContaining({ source: 'renderer' }))
   })
 
   it('offers all recovery choices when resources fail before the Host starts', async () => {
@@ -1484,6 +1499,60 @@ describe('desktop main startup', () => {
     expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
     expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).detail).toContain('document missing')
     expect(harness.hosts).toHaveLength(0)
+  })
+
+  it('writes the Host\'s own diagnostic into a startup-phase crash report when the Host reports a fatal error before ready', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    const host = harness.hosts[0]!
+    const diagnostic = "Error: profile has no cordis.yml\n    at loadProfileDirectory (app-boot/lib/index.js:12:3) {\n  code: 'ENOENT',\n  path: '/profiles/desktop/cordis.yml'\n}"
+    // DesktopHostProcess.fail() rejects start() and calls onFailure with the same error object.
+    const failure = new DesktopHostFatalError('profile has no cordis.yml', diagnostic)
+    host.onFailure!(failure)
+    host.ready.reject(failure)
+    await host.stopping.promise
+    host.exited.resolve()
+    await harness.dialogShown.promise
+    const [directory, report] = vi.mocked(writeCrashReport).mock.calls[0]!
+    expect(directory).toBe('desktop-test-logs')
+    expect(report.source).toBe('host')
+    expect(report.phase).toBe('startup')
+    expect(report.error).toBeInstanceOf(DesktopHostFatalError)
+    expect(report.hostDiagnostic).toBe(diagnostic)
+    expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).detail).toContain('profile has no cordis.yml')
+  })
+
+  it('attaches the primary window\'s error-level console output to a running-phase Host crash report', async () => {
+    harness.dialog.showMessageBox.mockResolvedValue({ response: 0, checkboxChecked: false })
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    const host = harness.hosts[0]!
+    host.ready.resolve()
+    await Promise.resolve(invoke(DESKTOP_IPC.boot))
+    const window = harness.windows[0]!
+    window.webContents.emit('console-message', { level: 'info', message: 'boot ok', sourceId: 'dsh-app://app/assets/entry.js', lineNumber: 1 })
+    window.webContents.emit('console-message', {
+      level: 'error', message: 'client-modules: bundle script plugins/??a/client.js&rev=1 failed to load',
+      sourceId: 'dsh-app://app/assets/entry.js', lineNumber: 12,
+    })
+    host.onFailure!(new Error('dsh desktop host exited with 1: fatal uncaught exception: ENOENT'))
+    await host.stopping.promise
+    expect(writeCrashReport).toHaveBeenCalledOnce()
+    const [directory, report] = vi.mocked(writeCrashReport).mock.calls[0]!
+    expect(directory).toBe('desktop-test-logs')
+    expect(report.source).toBe('host')
+    expect(report.phase).toBe('running')
+    expect(report.error).toBeInstanceOf(Error)
+    expect((report.error as Error).message).toContain('fatal uncaught exception: ENOENT')
+    expect(report.rendererConsole).toEqual(['dsh-app://app/assets/entry.js:12 client-modules: bundle script plugins/??a/client.js&rev=1 failed to load'])
+    expect(report.app).toMatchObject({ name: 'Desktop test', version: '1.0.0', platform: process.platform, locale: 'en' })
+    expect(report.time).toBeInstanceOf(Date)
+    host.exited.resolve()
+    await harness.quitCompleted.promise
   })
 
   it.each([0, 1, 2])('waits for Host exit before recovery action %s', async (response) => {
