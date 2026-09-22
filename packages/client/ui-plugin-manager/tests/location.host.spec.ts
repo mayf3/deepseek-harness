@@ -56,7 +56,7 @@ it.each(['timeout', 'dispose'] as const)('settles a pending request on %s', asyn
   if (cause === 'timeout') await vi.advanceTimersByTimeAsync(50)
   else await ctx.fiber.dispose()
   expect(await result).toBeNull()
-  if (cause === 'dispose') expect(() => location.country()).toThrow()
+  if (cause === 'dispose') await expect(location.country()).rejects.toThrow()
 })
 
 it.each(['file:///tmp/country', 'https://user:secret@country.example/', 'invalid'])('rejects endpoint %s at load', async (countryEndpoint) => {

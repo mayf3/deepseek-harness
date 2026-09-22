@@ -1158,6 +1158,40 @@ describe('PluginManagerController', () => {
 })
 
 describe('Host country recommendation', () => {
+  it('inspects the remembered registry when the offered choice becomes custom during the initial read', async () => {
+    const key = 'dsh.plugin-manager.install-registry'
+    const registry = 'https://old.example/'
+    const storage = new Map([[key, JSON.stringify({ kind: 'offered', registry })]])
+    const registries = deferred<ReturnType<typeof ok<typeof REGISTRIES>>>()
+    vi.stubGlobal('localStorage', {
+      getItem: (name: string) => storage.get(name) ?? null,
+      setItem: (name: string, value: string) => { storage.set(name, value) },
+      removeItem: (name: string) => { storage.delete(name) },
+    })
+    try {
+      const { face, state, plugins, location } = bench({
+        registries: vi.fn(() => registries.promise),
+        inspect: vi.fn(async () => ok({ ...INSPECTED, registry })),
+      })
+      face.openInstall()
+      face.editInstallSpec('dsh-new')
+      face.runInstall()
+      expect(state().install.phase).toBe('checking')
+      expect(plugins.inspect).not.toHaveBeenCalled()
+      registries.resolve(ok(REGISTRIES))
+      await vi.waitFor(() => { expect(plugins.inspect).toHaveBeenCalled() })
+      expect(plugins.inspect).toHaveBeenCalledWith('dsh-new', { registry }, expect.any(AbortSignal))
+      expect(state().install.registry).toEqual({ kind: 'custom', url: registry })
+      expect(JSON.parse(storage.get(key)!)).toEqual({ kind: 'custom', url: registry })
+      expect(location.country).not.toHaveBeenCalled()
+      await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
+      expect(plugins.installBundle).toHaveBeenCalledWith('dsh-new', expect.objectContaining({ registry }))
+    } finally {
+      registries.resolve(ok(REGISTRIES))
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('selects the mainland mirror before the first inspection, even when install was clicked during lookup', async () => {
     const country = deferred<ReturnType<typeof ok<string | null>>>()
     const { face, state, plugins, location } = bench({ country: vi.fn(() => country.promise) })

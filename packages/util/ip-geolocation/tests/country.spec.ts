@@ -45,6 +45,31 @@ it('bounds the complete streamed body and cancels oversized responses', async ()
   expect(cancel).toHaveBeenCalledOnce()
 })
 
+it.each([1, 15])('cancels after one oversized chunk with a %i-byte limit', async (limit) => {
+  const cancel = vi.fn()
+  const pull = vi.fn((controller: ReadableStreamDefaultController<Uint8Array>) => {
+    controller.enqueue(new TextEncoder().encode('unread data'))
+    controller.close()
+  })
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) { controller.enqueue(new TextEncoder().encode('{"country":"CN"}')) },
+    pull,
+    cancel,
+  }, { highWaterMark: 0 })
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(body)))
+  await expect(lookup(limit)).rejects.toThrow('maxResponseBytes')
+  expect(cancel).toHaveBeenCalledOnce()
+  expect(pull).not.toHaveBeenCalled()
+})
+
+it('counts UTF-8 bytes including multibyte fields outside the country code', async () => {
+  const body = '{"country":"CN","label":"中国"}'
+  const bytes = new TextEncoder().encode(body)
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(bytes)))
+  await expect(lookup(body.length)).rejects.toThrow('maxResponseBytes')
+  expect(await lookup(bytes.byteLength)).toBe('CN')
+})
+
 it('accepts a body exactly at the byte limit, across multiple chunks', async () => {
   const body = '{"country":"CN"}'
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ReadableStream({

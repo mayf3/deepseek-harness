@@ -24,7 +24,7 @@ import type {
   ReadOnlyReason,
   Registry,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import { normalizeRegistry, OFFICIAL_NPM_REGISTRY, REGISTRY_URL } from '@deepseek-ai/dsh-plugin-manager/registry'
+import { normalizeRegistry, NPMMIRROR_REGISTRY, OFFICIAL_NPM_REGISTRY, REGISTRY_URL } from '@deepseek-ai/dsh-plugin-manager/registry'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalizedText, PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
@@ -392,6 +392,7 @@ function reconciled(remembered: RegistryChoice | null, registries: PluginRegistr
 interface RegistryRead {
   /** Last automatically assigned choice; a different object belongs to a manual selection. */
   choice: RegistryChoice
+  /** Pending initial registry and country lookup; an untouched installation waits until it settles. */
   done?: Promise<void>
 }
 
@@ -405,7 +406,7 @@ function mainlandMirror(registries: PluginRegistries): string | undefined {
     return undefined
   }
   if (resolved !== OFFICIAL_NPM_REGISTRY) return undefined
-  return registries.fallbackRegistries.find(registry => registry === 'https://registry.npmmirror.com/')
+  return registries.fallbackRegistries.find(registry => registry === NPMMIRROR_REGISTRY)
 }
 
 /** One installation owns acceptance, response recovery, and every cancellation attempt. */
@@ -720,9 +721,10 @@ export class PluginManagerController {
       await read.done
       if (this.gone(controller.signal) || this.registryRead !== read) return
     }
-    const selected = this.getSnapshot().install.registry
-    const registry: Registry = typed ?? (selected as Extract<RegistryChoice, { kind: 'offered' }>).registry
-    this.registryMemory.set(typed === undefined ? selected : { kind: 'custom', url: typed })
+    const currentChoice = this.getSnapshot().install.registry
+    const selected = currentChoice.kind === 'custom' ? { ...currentChoice, url: currentChoice.url.trim() } : currentChoice
+    const registry: Registry = selected.kind === 'custom' ? selected.url : selected.registry
+    this.registryMemory.set(selected)
     const inspected = await this.ctx.remote.pluginManager.inspect(spec, { registry }, controller.signal)
     if (this.gone(controller.signal)) return
     this.inspectAbort = undefined

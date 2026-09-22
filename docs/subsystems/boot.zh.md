@@ -93,8 +93,9 @@ Shares a bounded Host lookup across installation dialogs; source-selection polic
  * Read the Host's exit country through its configured outbound fetch transport.
  * Concurrent callers share one lookup; caller disconnects do not cancel other readers.
  * @returns country code, or null when disabled, unavailable, or the lookup fails; both outcomes are cached.
+ * @throws rejects when the service has been unloaded.
  */
-@Remote country(): Promise<string | null>
+@Remote async country(): Promise<string | null>
 ```
 
 Source: [`packages/client/ui-plugin-manager/src/index.ts`](../../packages/client/ui-plugin-manager/src/index.ts)

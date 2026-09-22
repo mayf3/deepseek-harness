@@ -56,12 +56,13 @@ export default class PluginInstallLocation extends TypertRemoteService {
    * Read the Host's exit country through its configured outbound fetch transport.
    * Concurrent callers share one lookup; caller disconnects do not cancel other readers.
    * @returns country code, or null when disabled, unavailable, or the lookup fails; both outcomes are cached.
+   * @throws rejects when the service has been unloaded.
    */
   @Remote
-  country(): Promise<string | null> {
+  async country(): Promise<string | null> {
     this.lifetime.signal.throwIfAborted()
-    if (!this.config.countryLookupEnabled) return Promise.resolve(null)
-    if (this.cached !== undefined && this.cached.expiresAt > Date.now()) return Promise.resolve(this.cached.country)
+    if (!this.config.countryLookupEnabled) return null
+    if (this.cached !== undefined && this.cached.expiresAt > Date.now()) return this.cached.country
     this.pending ??= this.lookup(this.config.countryEndpoint).finally(() => { this.pending = undefined })
     return this.pending
   }
