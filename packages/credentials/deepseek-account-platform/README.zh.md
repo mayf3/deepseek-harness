@@ -11,7 +11,7 @@ kind: "package-reference"
 
 getPlatformSession 仅在已存授权的 issuer 与 platformOrigin 一致时导出该授权。这个仅限 Host 的操作支持原生 Platform 内嵌，不扩大 resolveToken 配置的模型及文件请求来源。
 
-`desktopPlatform` 默认为 `null`。Desktop profile 提供 `darwin` 或 `win32`，使 Host 的授权、资料、余额和退登请求携带 `x-client-platform: desktop-mac` 或 `desktop-win`，覆盖部署配置中的同名请求头。内嵌 Platform 的文档与 API 请求仅向配置来源发送相同的平台请求头，同时保留其他部署请求头；其他 profile 不自动添加平台请求头。
+`desktopPlatform` 默认为 `null`。此时所有 profile 的 Host 授权、资料、余额和退登请求都携带 `x-client-platform: web`；Desktop profile 提供 `darwin` 或 `win32`，改为携带 `x-client-platform: desktop-mac` 或 `desktop-win`。该请求头由 provider 拥有，部署配置无法覆盖。内嵌 Platform 的文档与 API 请求仅向配置来源发送相同的平台请求头，同时保留其他部署请求头。
 
 资料和余额接口返回 HTTP 401 时清除被拒绝的本地凭据，并发布 `signOutReason: expired`。并发响应共用一次清除操作；已失效凭据代次的响应不能清除替换后的凭据。其他 HTTP 错误保留凭据。
 
