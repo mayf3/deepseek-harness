@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { CODE_HIGHLIGHT_EXTENSIONS, languageForPath } from '@deepseek-ai/dsh-util-code-language'
+import { languageForPath } from '@deepseek-ai/dsh-util-code-language'
 import { buildWindow, langFromPath, readMetaFromMeta, READ_MAX_BYTES, READ_MAX_LINE_LENGTH } from '../src/read-render.ts'
 import type { ReadWindow } from '../src/read-render.ts'
 
@@ -145,27 +145,26 @@ describe('langFromPath', () => {
     }
   })
 
-  it('uses the shared canonical id for every suffix the old read table did not know', () => {
-    // The legacy projection is keyed by exactly the old extensions, so a suffix
-    // the shared table adds later must fall through to its canonical id instead
-    // of inheriting a stale short hint.
-    const legacy = new Set(Object.keys(MASTER_READ_LANG_BY_EXTENSION))
-    for (const extension of CODE_HIGHLIGHT_EXTENSIONS) {
-      if (legacy.has(extension)) continue
-      expect(langFromPath(`file.${extension}`), extension).toBe(languageForPath(`file.${extension}`))
-    }
-  })
-
-  it('gives a newly added suffix its shared canonical id', () => {
-    // These suffixes were undefined in the old build, so they are free to carry
-    // the canonical grammar id instead of a short hint.
-    expect(langFromPath('build.ps1')).toBe('powershell')
+  it('gives a suffix added after the old read table the language short id', () => {
+    // A suffix the old read table did not know used to persist the canonical
+    // grammar id; it now persists the language's short name.
+    expect(langFromPath('build.ps1')).toBe('ps1')
     expect(langFromPath('deploy.bat')).toBe('bat')
-    expect(langFromPath('.env')).toBe('dotenv')
+    expect(langFromPath('.env')).toBe('env')
     expect(langFromPath('server.log')).toBe('log')
     expect(langFromPath('message.proto')).toBe('proto')
-    expect(langFromPath('infra.tf')).toBe('hcl')
-    expect(langFromPath('paper.tex')).toBe('latex')
+    expect(langFromPath('infra.tf')).toBe('tf')
+    expect(langFromPath('paper.tex')).toBe('tex')
+    expect(langFromPath('model.jl')).toBe('jl')
+    expect(langFromPath('top.v')).toBe('v')
+    expect(langFromPath('build.gradle')).toBe('gradle')
+    // A later suffix of an already-known language follows that language's short name.
+    expect(langFromPath('app.conf')).toBe('ini')
+    expect(langFromPath('task.rake')).toBe('rb')
+    expect(langFromPath('events.jsonl')).toBe('json')
+    expect(langFromPath('page.xhtml')).toBe('html')
+    expect(langFromPath('logo.svg')).toBe('xml')
+    expect(langFromPath('notebook.ipynb')).toBe('json')
   })
 
   it('maps a known extension to its old short hint, case-insensitively', () => {

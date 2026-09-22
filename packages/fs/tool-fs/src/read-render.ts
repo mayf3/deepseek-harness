@@ -176,7 +176,7 @@ ${body}
  * prototype-key safety); `readLangHintForPath` projects the read card's
  * historical short ids over it, so a suffix the pre-unification read table
  * recognized keeps its byte-identical old value while a newly added suffix uses
- * the canonical id.
+ * its language's short name.
  * @param path - the model-facing path the read reported.
  * @returns the persisted language hint, or `undefined` when the extension maps to none.
  */

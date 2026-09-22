@@ -6,8 +6,9 @@
  * `highlightLines`/`highlightToHtml` unchanged; a filename outside the table, or
  * one naming a language the highlighter does not register, renders as plain text.
  * The read card predates the shared table, so {@link readLangHintForPath} projects
- * its historical short ids over this table for the suffixes the old read table
- * already recognized, keeping those persisted values byte-identical.
+ * short ids over this table: the suffixes the old read table already recognized
+ * keep their historical values byte-identical, and every later suffix persists the
+ * canonical language's short name rather than its grammar id.
  * @module @deepseek-ai/dsh-util-code-language
  */
 
@@ -104,7 +105,8 @@ export const CODE_HIGHLIGHT_EXTENSIONS: readonly string[] = [...LANGUAGES.keys()
  * pre-unification table recognized. Keys are shared-table extensions, so the
  * recognized set still derives from {@link LANGUAGE_EXTENSIONS}; values preserve
  * the old persisted `lang` strings byte for byte. An extension absent here but
- * present in the shared table is new and uses its canonical id.
+ * present in the shared table falls back to {@link SHORT_BY_LANGUAGE}, so every
+ * persisted hint is a short id.
  */
 const READ_LANG_BY_EXTENSION = new Map<string, string>(Object.entries({
   ts: 'ts', tsx: 'tsx', mts: 'ts', cts: 'ts',
@@ -119,6 +121,78 @@ const READ_LANG_BY_EXTENSION = new Map<string, string>(Object.entries({
   html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
   sql: 'sql', xml: 'xml', lua: 'lua',
 }))
+
+/**
+ * The short `lang` id the read card persists for each canonical language the
+ * pre-unification read table did not recognize. Keys are exactly the languages
+ * in {@link LANGUAGE_EXTENSIONS}: the 27 languages the old read table covered
+ * repeat their historical short id, and the remaining 33 shorten the grammar id
+ * (`powershell` to `ps1`, `hcl` to `tf`, `system-verilog` to `sv`).
+ * Keys are canonical ids, not untrusted extensions, so an object lookup cannot
+ * reach an `Object.prototype` member the way the extension tables can.
+ */
+const SHORT_BY_LANGUAGE: Readonly<Record<string, string>> = {
+  typescript: 'ts',
+  javascript: 'js',
+  shellscript: 'sh',
+  fish: 'fish',
+  json: 'json',
+  python: 'py',
+  ruby: 'rb',
+  go: 'go',
+  rust: 'rs',
+  java: 'java',
+  c: 'c',
+  cpp: 'cpp',
+  csharp: 'cs',
+  kotlin: 'kotlin',
+  swift: 'swift',
+  php: 'php',
+  yaml: 'yaml',
+  toml: 'toml',
+  ini: 'ini',
+  dotenv: 'env',
+  log: 'log',
+  diff: 'diff',
+  http: 'http',
+  markdown: 'md',
+  mdx: 'mdx',
+  rst: 'rst',
+  latex: 'tex',
+  bibtex: 'bib',
+  asciidoc: 'adoc',
+  html: 'html',
+  css: 'css',
+  scss: 'scss',
+  less: 'less',
+  sql: 'sql',
+  xml: 'xml',
+  lua: 'lua',
+  bat: 'bat',
+  powershell: 'ps1',
+  r: 'r',
+  julia: 'jl',
+  dart: 'dart',
+  scala: 'scala',
+  clojure: 'clj',
+  erlang: 'erl',
+  elixir: 'ex',
+  haskell: 'hs',
+  fsharp: 'fs',
+  vb: 'vb',
+  perl: 'pl',
+  verilog: 'v',
+  'system-verilog': 'sv',
+  graphql: 'graphql',
+  proto: 'proto',
+  hcl: 'tf',
+  nix: 'nix',
+  vue: 'vue',
+  svelte: 'svelte',
+  make: 'make',
+  cmake: 'cmake',
+  groovy: 'gradle',
+}
 
 function extensionForPath(path: string): string | undefined {
   const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
@@ -144,11 +218,11 @@ export function languageForPath(path: string): string | undefined {
 
 /**
  * Derive the Host read card's persisted `lang` hint from a read path's
- * extension. This is the legacy projection the read card writes: a suffix the
- * pre-unification read table recognized keeps its old short id (`ts`, `md`,
- * `cpp`, …), while a suffix only the shared table knows (`.ps1`, `.env`,
- * `.tf`, …) yields its canonical id. An unrecognized suffix stays
- * `undefined`, so the card renders as plain text.
+ * extension. The hint is always a short id: a suffix the pre-unification read
+ * table recognized keeps its old value (`ts`, `md`, `cpp`, …), while a suffix
+ * only the shared table knows (`.ps1`, `.env`, `.tf`, …) uses its language's
+ * short name (`ps1`, `env`, `tf`, …) rather than the canonical grammar id. An
+ * unrecognized suffix stays `undefined`, so the card renders as plain text.
  * @param path - the model-facing path the read reported.
  * @returns the persisted language hint, or `undefined` when the extension maps to none.
  */
@@ -156,5 +230,5 @@ export function readLangHintForPath(path: string): string | undefined {
   const extension = extensionForPath(path)
   if (extension === undefined) return undefined
   const canonical = LANGUAGES.get(extension)
-  return canonical === undefined ? undefined : READ_LANG_BY_EXTENSION.get(extension) ?? canonical
+  return canonical === undefined ? undefined : READ_LANG_BY_EXTENSION.get(extension) ?? SHORT_BY_LANGUAGE[canonical]
 }

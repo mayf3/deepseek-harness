@@ -110,13 +110,44 @@ describe('readLangHintForPath', () => {
     expect(readLangHintForPath('page.htm')).toBe('html')
   })
 
-  it('uses the canonical id for a suffix added after the old read table', () => {
-    expect(readLangHintForPath('build.ps1')).toBe('powershell')
-    expect(readLangHintForPath('.env')).toBe('dotenv')
-    expect(readLangHintForPath('infra.tf')).toBe('hcl')
-    expect(readLangHintForPath('paper.tex')).toBe('latex')
+  it('uses the language short id for a suffix added after the old read table', () => {
+    expect(readLangHintForPath('build.ps1')).toBe('ps1')
+    expect(readLangHintForPath('.env')).toBe('env')
+    expect(readLangHintForPath('infra.tf')).toBe('tf')
+    expect(readLangHintForPath('paper.tex')).toBe('tex')
     expect(readLangHintForPath('server.log')).toBe('log')
     expect(readLangHintForPath('message.proto')).toBe('proto')
+  })
+
+  // The short id each canonical language persists. Transcribed rather than
+  // imported so this test fails when a canonical grammar id is put back into the
+  // persisted value, which reading the implementation's own table would not catch.
+  const SHORT_BY_LANGUAGE: Readonly<Record<string, string>> = {
+    typescript: 'ts', javascript: 'js', shellscript: 'sh', fish: 'fish', json: 'json',
+    python: 'py', ruby: 'rb', go: 'go', rust: 'rs', java: 'java', c: 'c', cpp: 'cpp',
+    csharp: 'cs', kotlin: 'kotlin', swift: 'swift', php: 'php', yaml: 'yaml',
+    toml: 'toml', ini: 'ini', dotenv: 'env', log: 'log', diff: 'diff', http: 'http',
+    markdown: 'md', mdx: 'mdx', rst: 'rst', latex: 'tex', bibtex: 'bib',
+    asciidoc: 'adoc', html: 'html', css: 'css', scss: 'scss', less: 'less', sql: 'sql',
+    xml: 'xml', lua: 'lua', bat: 'bat', powershell: 'ps1', r: 'r', julia: 'jl',
+    dart: 'dart', scala: 'scala', clojure: 'clj', erlang: 'erl', elixir: 'ex',
+    haskell: 'hs', fsharp: 'fs', vb: 'vb', perl: 'pl', verilog: 'v',
+    'system-verilog': 'sv', graphql: 'graphql', proto: 'proto', hcl: 'tf', nix: 'nix',
+    vue: 'vue', svelte: 'svelte', make: 'make', cmake: 'cmake', groovy: 'gradle',
+  }
+
+  it('persists a short id for every suffix, never a canonical grammar id', () => {
+    // The persisted `lang` has one style: the historical short id for the
+    // suffixes the old read table knew, the language's short name otherwise. A
+    // result outside both sets is a canonical grammar id leaking back in
+    // (`powershell`, `dotenv`, `latex`, `hcl`). The old table's `tsx`/`jsx`
+    // hints are the only legacy values absent from the short-name table.
+    const allowed = new Set([...Object.values(SHORT_BY_LANGUAGE), 'tsx', 'jsx'])
+    for (const extension of CODE_HIGHLIGHT_EXTENSIONS) {
+      const hint = readLangHintForPath(`file.${extension}`)
+      expect(hint, extension).toBeDefined()
+      expect(allowed.has(hint ?? ''), extension).toBe(true)
+    }
   })
 
   it('returns undefined exactly when the shared table does not recognize the suffix', () => {

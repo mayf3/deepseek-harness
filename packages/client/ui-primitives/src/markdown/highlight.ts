@@ -208,6 +208,7 @@ const LANG_ALIASES = new Map<string, string>([
   ['pl', 'perl'],
   ['pm', 'perl'],
   ['verilog', 'verilog'],
+  ['v', 'verilog'],
   ['system-verilog', 'system-verilog'],
   ['systemverilog', 'system-verilog'],
   ['sv', 'system-verilog'],
