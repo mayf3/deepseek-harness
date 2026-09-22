@@ -8,6 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $Makensis = [System.IO.Path]::GetFullPath($Makensis)
 $SevenZip = [System.IO.Path]::GetFullPath($SevenZip)
+if ($FrameLibrary) { $FrameLibrary = [System.IO.Path]::GetFullPath($FrameLibrary) }
 $scratch = [System.IO.Directory]::CreateTempSubdirectory('dsh-directory-smoke-').FullName
 $fixture = Join-Path $PSScriptRoot '../tests/fixtures/installer-directory-smoke.nsi'
 
@@ -84,7 +85,7 @@ try {
       # Only an extraction failure writes a report; it must quote 7-Zip's verdict so support can read the cause.
       $reports = @(if (Test-Path -LiteralPath $reportDir) { Get-ChildItem -LiteralPath $reportDir -File })
       if ($mode -eq 'broken') {
-        if ($reports.Count -ne 1 -or $reports[0].Name -notmatch '^extract-failure-\d{8}-\d{6}\.log$') {
+        if ($reports.Count -ne 1 -or $reports[0].Name -notmatch '^extract-failure-20\d{6}-\d{6}\.log$') {
           throw "Directory smoke $mode did not save exactly one extraction report"
         }
         $report = Get-Content -LiteralPath $reports[0].FullName -Raw -Encoding UTF8

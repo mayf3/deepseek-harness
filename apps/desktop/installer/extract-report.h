@@ -10,11 +10,13 @@
 
 namespace extract_report {
 
-constexpr size_t kOutputLimit = 256 * 1024;
+constexpr size_t kOutputLimit = 16 * 1024 * 1024;
 constexpr size_t kHeadlineLimit = 160;
 constexpr size_t kExcerptLineLimit = 120;
 constexpr size_t kExcerptLines = 10;
 constexpr size_t kExcerptChars = 1000;
+constexpr wchar_t kEllipsis = 0x2026;
+constexpr wchar_t kOutputMarker[] = L"7-Zip output:";
 
 // Exit codes documented by 7-Zip; the installer treats every non-zero value as fatal.
 inline const wchar_t* SevenZipMeaning(int code) {
@@ -49,8 +51,6 @@ inline std::vector<std::wstring> Lines(const std::wstring& text) {
     return lines;
 }
 
-constexpr wchar_t kEllipsis = 0x2026;
-
 inline std::wstring Truncate(const std::wstring& text, size_t limit) {
     if (text.size() <= limit) return text;
     return text.substr(0, limit - 1) + kEllipsis;
@@ -65,24 +65,47 @@ inline std::wstring Win32Message(DWORD error) {
     return message;
 }
 
-// Positive results are 7-Zip exit codes; negative results are negated Win32 errors from launching or supervising it.
-inline std::wstring DescribeResult(int code) {
-    if (code >= 0) return L"7-Zip exit code " + std::to_wstring(code) + L" (" + SevenZipMeaning(code) + L")";
-    const DWORD error = static_cast<DWORD>(-static_cast<long long>(code));
-    std::wstring message = Win32Message(error);
-    return L"Windows error " + std::to_wstring(error) + L" while running 7-Zip" + (message.empty() ? L"" : L" (" + message + L")");
+// Positive results up to 255 are 7-Zip exit codes and small negative results are negated Win32 errors from launching or
+// supervising it; anything else is the raw process status (for example an NTSTATUS from a crash), printed in hex.
+constexpr int kMaxSevenZipExitCode = 255;
+constexpr int kMaxWin32Error = 0xFFFF;
+
+inline std::wstring HexStatus(int code) {
+    WCHAR text[16];
+    wsprintfW(text, L"0x%08X", static_cast<unsigned>(code));
+    return text;
 }
 
-// 7-Zip prefixes the failing operation and path with "ERROR:"; the bare archive name it prints first says nothing.
-inline std::wstring Headline(int code, const std::wstring& output) {
+inline std::wstring DescribeResult(int code) {
+    if (code >= 0 && code <= kMaxSevenZipExitCode) {
+        return L"7-Zip exit code " + std::to_wstring(code) + L" (" + SevenZipMeaning(code) + L")";
+    }
+    if (code < 0 && -static_cast<long long>(code) <= kMaxWin32Error) {
+        const DWORD error = static_cast<DWORD>(-static_cast<long long>(code));
+        std::wstring message = Win32Message(error);
+        return L"Windows error " + std::to_wstring(error) + L" while running 7-Zip" + (message.empty() ? L"" : L" (" + message + L")");
+    }
+    return L"7-Zip terminated with status " + HexStatus(code);
+}
+
+inline bool EqualsIgnoreCase(const std::wstring& left, const std::wstring& right) {
+    return left.size() == right.size() && _wcsnicmp(left.c_str(), right.c_str(), left.size()) == 0;
+}
+
+// 7-Zip reports failures as "<operation> ERROR: <reason>" or "ERROR: <operation> : <reason> : <path>"; it also echoes the
+// bare archive path after "ERROR:" before an open failure, which names nothing and is skipped.
+inline std::wstring Headline(int code, const std::wstring& output, const std::wstring& archive) {
+    const auto separator = archive.find_last_of(L"\\/");
+    const std::wstring archiveName = separator == std::wstring::npos ? archive : archive.substr(separator + 1);
     std::wstring fallback;
     for (const std::wstring& raw : Lines(output)) {
         const std::wstring line = Trim(raw);
         const auto marker = line.find(L"ERROR");
         if (marker == std::wstring::npos) continue;
-        const std::wstring detail = Trim(line.substr(line.find(L':', marker) == std::wstring::npos ? line.size() : line.find(L':', marker) + 1));
-        if (detail.empty()) continue;
-        if (detail.find(L" : ") != std::wstring::npos || detail.find(L' ') != std::wstring::npos) return Truncate(line, kHeadlineLimit);
+        const auto colon = line.find(L':', marker);
+        const std::wstring detail = colon == std::wstring::npos ? L"" : Trim(line.substr(colon + 1));
+        if (detail.empty() || EqualsIgnoreCase(detail, archive) || EqualsIgnoreCase(detail, archiveName)) continue;
+        if (detail.find(L" : ") != std::wstring::npos) return Truncate(line, kHeadlineLimit);
         if (fallback.empty()) fallback = line;
     }
     if (!fallback.empty()) return Truncate(fallback, kHeadlineLimit);
@@ -97,7 +120,7 @@ inline std::wstring Compose(int code, const std::wstring& archive, const std::ws
     report += L"Archive: " + archive + L"\r\n";
     report += L"Destination: " + destination + L"\r\n";
     report += L"Windows: " + windowsVersion + L"\r\n";
-    report += L"\r\n7-Zip output:\r\n";
+    report += L"\r\n" + std::wstring(kOutputMarker) + L"\r\n";
     const std::wstring trimmed = Trim(output);
     if (trimmed.empty()) {
         report += L"(none)\r\n";
@@ -107,9 +130,16 @@ inline std::wstring Compose(int code, const std::wstring& archive, const std::ws
     return report;
 }
 
-// The dialog stays compact: long lines are cut and a trailing note counts what the report still holds.
+// The expanded panel adds 7-Zip's own lines beneath the result; long lines are cut and a trailing note counts what the
+// saved report still holds. Header fields already appear in the report file and clipboard.
 inline std::wstring Excerpt(const std::wstring& report, size_t maxLines = kExcerptLines, size_t maxChars = kExcerptChars) {
-    const std::vector<std::wstring> lines = Lines(Trim(report));
+    std::vector<std::wstring> lines;
+    bool inOutput = false;
+    for (const std::wstring& line : Lines(Trim(report))) {
+        if (inOutput) lines.push_back(line);
+        else if (line.rfind(L"Result: ", 0) == 0) lines.push_back(line);
+        else if (line == kOutputMarker) inOutput = true;
+    }
     std::wstring excerpt;
     size_t shown = 0;
     for (const std::wstring& line : lines) {
@@ -122,6 +152,16 @@ inline std::wstring Excerpt(const std::wstring& report, size_t maxLines = kExcer
         excerpt += L"\r\n" + std::wstring(1, kEllipsis) + L" (" + std::to_wstring(lines.size() - shown) + L" more lines in the saved report)";
     }
     return excerpt;
+}
+
+// A cut inside a multi-byte sequence would make the whole UTF-8 attempt fail; drop the incomplete tail first.
+inline void TrimPartialUtf8(std::string& bytes) {
+    size_t trailing = 0;
+    while (trailing < 3 && trailing < bytes.size() && (static_cast<unsigned char>(bytes[bytes.size() - 1 - trailing]) & 0xC0) == 0x80) ++trailing;
+    if (trailing >= bytes.size()) return;
+    const unsigned char lead = static_cast<unsigned char>(bytes[bytes.size() - 1 - trailing]);
+    const size_t expected = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+    if (expected > trailing + 1) bytes.resize(bytes.size() - 1 - trailing);
 }
 
 inline std::wstring Decode(const std::string& bytes) {
@@ -137,17 +177,27 @@ inline std::wstring Decode(const std::string& bytes) {
     return L"(undecodable 7-Zip output)";
 }
 
+// The saved report keeps everything 7-Zip wrote; only pathological output beyond kOutputLimit is cut, and the cut is recorded.
 inline std::wstring ReadOutput(LPCWSTR path) {
     HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) return L"";
     std::string bytes;
     char buffer[8192];
     DWORD count = 0;
-    while (bytes.size() < kOutputLimit && ReadFile(file, buffer, sizeof(buffer), &count, nullptr) && count) {
-        bytes.append(buffer, std::min<size_t>(count, kOutputLimit - bytes.size()));
+    bool truncated = false;
+    while (ReadFile(file, buffer, sizeof(buffer), &count, nullptr) && count) {
+        if (bytes.size() + count > kOutputLimit) {
+            bytes.append(buffer, kOutputLimit - bytes.size());
+            truncated = true;
+            break;
+        }
+        bytes.append(buffer, count);
     }
     CloseHandle(file);
-    return Decode(bytes);
+    if (truncated) TrimPartialUtf8(bytes);
+    std::wstring output = Decode(bytes);
+    if (truncated) output += L"\r\n[7-Zip output truncated after " + std::to_wstring(kOutputLimit / (1024 * 1024)) + L" MiB]\r\n";
+    return output;
 }
 
 inline std::wstring Timestamp() {

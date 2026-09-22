@@ -1,6 +1,5 @@
 // The pinned 7-Zip executable owns extraction; this pipe reader publishes its work percentage.
 #pragma once
-#include <climits>
 #include <string>
 #include <vector>
 #include "extract-progress.h"
@@ -92,11 +91,13 @@ static int ExtractApplication(HWND parent, LPCWSTR tool, LPCWSTR archive, LPCWST
     DWORD result;
     if (!GetExitCodeProcess(process.value, &result)) return LaunchFailure(GetLastError());
     if (result == 0 && parent) SetPropW(parent, L"HarnessInstaller.ExtractProgress", reinterpret_cast<HANDLE>(100));
-    return result > INT_MAX ? INT_MAX : static_cast<int>(result);
+    // A crash status such as 0xC0000005 comes back bit-for-bit; the report prints anything beyond 7-Zip's exit codes in hex.
+    return static_cast<int>(result);
 }
 
 // Runs on the NSIS worker; only an exit code of zero permits directory promotion.
-// Positive results are 7-Zip exit codes; negative results are negated Win32 errors from launching or supervising it.
+// Results 0-255 are 7-Zip exit codes, small negative results are negated Win32 errors from launching or supervising it,
+// and any other value is the raw process status.
 extern "C" __declspec(dllexport) int __cdecl InstallerExtract(HWND parent, LPCWSTR tool, LPCWSTR archive, LPCWSTR destination, LPCWSTR log) {
     try { return ExtractApplication(parent, tool, archive, destination, log); }
     catch (const std::bad_alloc&) { return LaunchFailure(ERROR_NOT_ENOUGH_MEMORY); }

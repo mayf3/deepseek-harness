@@ -32,7 +32,7 @@ extern "C" __declspec(dllexport) int __cdecl InstallerReportExtractFailure(
             const auto placeholder = footer.find(L"%s");
             if (saved && placeholder != std::wstring::npos) footer.replace(placeholder, 2, reportPath);
             const extract_report::DialogStrings strings{title, heading, copy, expand, collapse, footer.c_str(), copied};
-            const std::wstring content = extract_report::Headline(code, output) + L"\r\n\r\n" + hint;
+            const std::wstring content = extract_report::Headline(code, output, archive) + L"\r\n\r\n" + hint;
             extract_report::Show(parent, content, extract_report::Excerpt(report), report, strings);
         }
         return saved ? 1 : 0;

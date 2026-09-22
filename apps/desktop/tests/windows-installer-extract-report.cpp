@@ -36,21 +36,28 @@ static void WriteBytes(const std::wstring& path, const std::string& bytes) {
 int wmain() {
     using namespace extract_report;
 
-    // Result codes distinguish 7-Zip's own exit codes from Win32 failures around its process.
+    // Result codes distinguish 7-Zip's own exit codes, Win32 failures around its process, and raw crash statuses.
     assert(DescribeResult(2) == L"7-Zip exit code 2 (fatal error)");
     assert(DescribeResult(9) == L"7-Zip exit code 9 (unexpected exit code)");
     assert(DescribeResult(-5).rfind(L"Windows error 5 while running 7-Zip", 0) == 0);
     assert(Contains(DescribeResult(-ERROR_FILE_NOT_FOUND), L"Windows error 2"));
+    assert(DescribeResult(static_cast<int>(0xC0000005)) == L"7-Zip terminated with status 0xC0000005");
+    assert(DescribeResult(1000) == L"7-Zip terminated with status 0x000003E8");
 
-    // The headline prefers the line naming the failing operation over the archive name 7-Zip prints first.
-    const std::wstring broken = L"ERROR: broken.7z\r\nbroken.7z\r\nOpen ERROR: Cannot open the file as [7z] archive\r\n\r\n\r\nERRORS:\r\nIs not archive\r\n";
-    assert(Headline(2, broken) == L"Open ERROR: Cannot open the file as [7z] archive");
+    // The headline prefers the line naming the failing operation; the archive path 7-Zip echoes first is skipped
+    // even when it contains spaces.
+    const std::wstring spacedArchive = L"C:\\Users\\Jane Doe\\AppData\\Local\\Temp\\nsa1F2C.tmp\\app-64.7z";
+    const std::wstring broken = L"ERROR: " + spacedArchive + L"\r\napp-64.7z\r\nOpen ERROR: Cannot open the file as [7z] archive\r\n\r\n\r\nERRORS:\r\nIs not archive\r\n";
+    assert(Headline(2, broken, spacedArchive) == L"Open ERROR: Cannot open the file as [7z] archive");
+    assert(Headline(2, L"ERROR: app-64.7z\r\nOpen ERROR: Is not archive\r\n", spacedArchive) == L"Open ERROR: Is not archive");
     const std::wstring locked = L"ERROR: Cannot delete output file : The process cannot access the file. : C:\\Apps\\Harness.new-1\\resources\\app.node\r\n";
-    assert(Headline(2, locked) == Trim(locked));
-    assert(Headline(-ERROR_ACCESS_DENIED, L"") == DescribeResult(-ERROR_ACCESS_DENIED));
-    assert(Headline(1, L"ERROR: only-a-path\r\n") == L"ERROR: only-a-path");
+    assert(Headline(2, locked, spacedArchive) == Trim(locked));
+    assert(Headline(2, L"ERROR: " + spacedArchive + L"\r\n" + locked, spacedArchive) == Trim(locked));
+    assert(Headline(-ERROR_ACCESS_DENIED, L"", spacedArchive) == DescribeResult(-ERROR_ACCESS_DENIED));
+    assert(Headline(2, L"ERROR: " + spacedArchive + L"\r\n", spacedArchive) == DescribeResult(2));
+    assert(Headline(1, L"ERROR: only a note\r\n", spacedArchive) == L"ERROR: only a note");
     const std::wstring longLine = L"ERROR: Cannot open output file : " + std::wstring(400, L'x');
-    const std::wstring headline = Headline(2, longLine);
+    const std::wstring headline = Headline(2, longLine, spacedArchive);
     assert(headline.size() == kHeadlineLimit && headline.back() == kEllipsis);
 
     // The report carries the result, both paths, and 7-Zip's output verbatim.
@@ -62,15 +69,30 @@ int wmain() {
     assert(Contains(report, L"\r\n7-Zip output:\r\n" + Trim(locked) + L"\r\n"));
     assert(Contains(Compose(2, L"a", L"b", L"   \r\n", L"t", L"w"), L"7-Zip output:\r\n(none)\r\n"));
 
-    // The excerpt is bounded by lines and characters and tells how much the saved report still holds.
+    // The excerpt shows the result and 7-Zip's own lines, bounded by lines and characters, and counts what it left out.
     std::wstring manyErrors;
     for (int i = 0; i < 40; ++i) manyErrors += L"ERROR: Cannot open output file : Access is denied. : C:\\Apps\\file" + std::to_wstring(i) + L".dll\r\n";
     const std::wstring excerpt = Excerpt(Compose(2, L"a", L"b", manyErrors, L"t", L"w"));
-    assert(Lines(excerpt).size() == kExcerptLines + 1);
+    const std::vector<std::wstring> excerptLines = Lines(excerpt);
+    assert(excerptLines.size() == kExcerptLines + 1);
+    assert(excerptLines[0] == L"Result: 7-Zip exit code 2 (fatal error)");
+    assert(excerptLines[1].rfind(L"ERROR: Cannot open output file", 0) == 0);
     assert(excerpt.size() <= kExcerptChars + 64);
-    assert(Contains(excerpt, L" (" + std::to_wstring(48 - kExcerptLines) + L" more lines in the saved report)"));
-    assert(Excerpt(L"one\r\ntwo") == L"one\r\ntwo");
-    assert(Excerpt(std::wstring(2000, L'x') + L"\r\nnext").size() < kExcerptLineLimit + 64);
+    assert(Contains(excerpt, L" (" + std::to_wstring(41 - kExcerptLines) + L" more lines in the saved report)"));
+    assert(!Contains(excerpt, L"Archive: "));
+    assert(Excerpt(Compose(2, L"a", L"b", L"one\r\ntwo", L"t", L"w")) == L"Result: 7-Zip exit code 2 (fatal error)\r\none\r\ntwo");
+    assert(Excerpt(Compose(2, L"a", L"b", std::wstring(2000, L'x'), L"t", L"w")).size() < 64 + kExcerptLineLimit + 64);
+
+    // A cut inside a multi-byte sequence is trimmed back to a code point boundary.
+    std::string partial("abc\xE6\x96\x87\xE4\xBB");
+    TrimPartialUtf8(partial);
+    assert(partial == "abc\xE6\x96\x87");
+    std::string complete("abc\xE6\x96\x87");
+    TrimPartialUtf8(complete);
+    assert(complete == "abc\xE6\x96\x87");
+    std::string ascii("abc");
+    TrimPartialUtf8(ascii);
+    assert(ascii == "abc");
 
     // 7-Zip output arrives as UTF-8; anything else falls back to the system code page instead of vanishing.
     assert(Decode("Access denied: \xE6\x96\x87\xE4\xBB\xB6") == L"Access denied: \x6587\x4EF6");

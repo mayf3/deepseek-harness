@@ -195,7 +195,7 @@ pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Makensis $Makensis
 
 The Windows installer extracts the new version beside the installation directory, stops the old application, and replaces directories through same-volume renames. Same-path upgrades preserve the old directory until promotion succeeds; extraction failure leaves it intact, and promotion failure attempts to restore it. The installer removes the old backup before launch. Forced termination or power loss can leave `.new-*` or `.old-*` directories; installation-location and scope migrations retain electron-builder's old-uninstaller flow.
 
-When extraction fails, the installer writes a report with the 7-Zip result and its complete error output to `%LOCALAPPDATA%\deepseek harness-updater\installer-logs\extract-failure-<timestamp>.log` and shows the first error line with a **Copy error details** button; silent installs write only the report. Unsigned Windows builds (`DSH_DESKTOP_UNSIGNED=1`) name their installer `deepseek-harness-<version>-win-x64-unsigned.exe` so they cannot be mistaken for release artifacts.
+When extraction fails, the installer writes a report with the 7-Zip result and its complete error output to the updater cache directory as `%LOCALAPPDATA%\<package-derived name>-updater\installer-logs\extract-failure-<timestamp>.log` (currently `@deepseek-aidsh-desktop-updater`) and shows the first error line with a **Copy error details** button; silent installs write only the report. Unsigned Windows builds (`DSH_DESKTOP_UNSIGNED=1`) name their installer `deepseek-harness-<version>-win-x64-unsigned.exe` so they cannot be mistaken for release artifacts.
 
 <a id="upload-updates"></a>
 
