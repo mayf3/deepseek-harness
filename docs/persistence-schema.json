@@ -22575,7 +22575,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:227"
+        "packages/experimental/agent-team/src/types.ts:216"
       ]
     },
     {
@@ -29438,7 +29438,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleDeleteChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:79"
+        "packages/schedule/schedule/src/types.ts:81"
       ]
     },
     {
@@ -32684,7 +32684,7 @@
         "packages/schedule/schedule/src/types.ts#AfterScheduleRecord"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:13"
+        "packages/schedule/schedule/src/types.ts:15"
       ]
     },
     {
@@ -36275,7 +36275,7 @@
         "packages/core/tools/src/index.ts#ToolRestriction"
       ],
       "sources": [
-        "packages/core/tools/src/index.ts:689"
+        "packages/core/tools/src/index.ts:699"
       ]
     },
     {
@@ -44608,7 +44608,7 @@
         "packages/workflow/workflow/src/types.ts#WorkflowRunId"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:394",
+        "packages/api/session-controller/src/types.ts:396",
         "packages/attachment/attachment/src/brand.ts:6",
         "packages/compaction/compaction/src/brand.ts:4",
         "packages/core/session/src/types.ts:20",
@@ -44624,7 +44624,7 @@
         "packages/llm/llm/src/brand.ts:31",
         "packages/llm/llm/src/brand.ts:43",
         "packages/llm/llm/src/brand.ts:67",
-        "packages/schedule/schedule/src/types.ts:10",
+        "packages/schedule/schedule/src/types.ts:12",
         "packages/session/session-title/src/index.ts:42",
         "packages/session/session-title/src/types.ts:17",
         "packages/webhook/webhook/src/brand.ts:12",
@@ -54375,7 +54375,7 @@
         "packages/schedule/schedule/src/types.ts#AtScheduleRecord"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:27"
+        "packages/schedule/schedule/src/types.ts:29"
       ]
     },
     {
@@ -54617,7 +54617,7 @@
         "packages/schedule/schedule/src/types.ts#EveryScheduleRecord"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:39"
+        "packages/schedule/schedule/src/types.ts:41"
       ]
     },
     {
@@ -58191,7 +58191,7 @@
       },
       "names": [],
       "sources": [
-        "packages/api/session-controller/src/types.ts:399"
+        "packages/api/session-controller/src/types.ts:401"
       ]
     },
     {
@@ -58852,7 +58852,7 @@
       },
       "names": [],
       "sources": [
-        "packages/preset/agent-presets/src/session.ts:28"
+        "packages/preset/agent-preset-registry/src/session.ts:28"
       ]
     },
     {
@@ -63338,7 +63338,7 @@
       },
       "names": [],
       "sources": [
-        "packages/interaction/permission-presets/src/index.ts:57"
+        "packages/interaction/permission-presets/src/index.ts:59"
       ]
     },
     {
@@ -63758,7 +63758,7 @@
         "packages/schedule/schedule/src/types.ts#OneShotScheduleDispatchChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:86"
+        "packages/schedule/schedule/src/types.ts:88"
       ]
     },
     {
@@ -64330,7 +64330,7 @@
         "packages/core/agent/src/types.ts#InboxTarget"
       ],
       "sources": [
-        "packages/core/agent/src/types.ts:30"
+        "packages/core/agent/src/types.ts:39"
       ]
     },
     {
@@ -69181,7 +69181,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:223"
+        "packages/experimental/agent-team/src/types.ts:212"
       ]
     },
     {
@@ -71163,7 +71163,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:221"
+        "packages/experimental/agent-team/src/types.ts:210"
       ]
     },
     {
@@ -74172,7 +74172,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleCreateChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:72"
+        "packages/schedule/schedule/src/types.ts:74"
       ]
     },
     {
@@ -78164,7 +78164,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleRecord"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:69"
+        "packages/schedule/schedule/src/types.ts:71"
       ]
     },
     {
@@ -81193,7 +81193,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/agent/src/types.ts:87"
+        "packages/core/agent/src/types.ts:96"
       ]
     },
     {
@@ -81796,7 +81796,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:105"
+        "packages/schedule/schedule/src/types.ts:107"
       ]
     },
     {
@@ -82985,7 +82985,7 @@
         "packages/schedule/schedule/src/types.ts#EveryScheduleDispatchChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:93"
+        "packages/schedule/schedule/src/types.ts:95"
       ]
     },
     {
@@ -83593,7 +83593,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:225"
+        "packages/experimental/agent-team/src/types.ts:214"
       ]
     },
     {

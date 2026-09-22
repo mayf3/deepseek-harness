@@ -1,1 +1,1 @@
-- alert: "新建会话失败：agent-preset/invalid: agent-presets: preset \"renamed-plugin\" failed to mount: row \"ghost\" names a plugin that cannot be resolved: @deepseek-ai/dsh-no-such-plugin"
+- alert: "新建会话失败：agent-preset/invalid: ghost (@deepseek-ai/dsh-no-such-plugin): never started"

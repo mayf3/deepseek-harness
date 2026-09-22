@@ -24,13 +24,13 @@
       "path": "../../host/open-in-app"
     },
     {
-      "path": "../locale"
+      "path": "../locale/tsconfig.client.json"
     },
     {
       "path": "../store"
     },
     {
-      "path": "../ui-conversation"
+      "path": "../ui-conversation/tsconfig.client.json"
     },
     {
       "path": "../ui-primitives"
@@ -46,6 +46,12 @@
     },
     {
       "path": "../ui-slots"
+    },
+    {
+      "path": "../ui-deliverables/tsconfig.client.json"
+    },
+    {
+      "path": "../../util/native-command"
     }
   ]
 }

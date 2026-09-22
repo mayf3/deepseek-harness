@@ -628,7 +628,7 @@ export function defineCoverageCases(group: CoverageGroup): void {
       // Force the executor to reject (an infrastructure fault) so runHook's catch
       // yields a HookOutput with exitCode undefined → the `exitCode` spread false arm.
       const bash = ctx.shell
-      bash.run = (() => Promise.reject(new Error('executor down')))
+      bash.execute = (() => ({ result: () => Promise.reject(new Error('executor down')) }) as never)
       ctx.tools.register(defineContentToolFixture({ name: 'echo', description: 'e', parameters: {}, async execute() { return [{ type: 'text', text: 'ok' }] } }))
       const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
       agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))

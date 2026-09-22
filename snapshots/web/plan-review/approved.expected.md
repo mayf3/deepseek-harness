@@ -5,12 +5,10 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- text: plan Plan mode on. Use /plan off to leave.
-- button "System prompt"
-- text: "Plan a small change: add a --greeting flag to a CLI. Do not read or write any files. Call exit_plan_mode with a short plan of at most five bullet points. Once the plan is approved, reply with the single word DONE and stop. {{clock}}"
+- text: "plan Plan mode on. Use /plan off to leave. Plan a small change: add a --greeting flag to a CLI. Do not read or write any files. Call exit_plan_mode with a short plan of at most five bullet points. Once the plan is approved, reply with the single word DONE and stop. {{clock}}"
 - button "Copy"
-- button "1 tool call · 1 message"
-- button "System prompt"
+- status: Worked
+- button "Took {{duration}}"
 - paragraph: DONE
 - 'button "Open plan: Add `--greeting` flag to CLI"': "Add `--greeting` flag to CLI Plan · Markdown Open"
 - button "Copy"

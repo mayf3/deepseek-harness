@@ -44,7 +44,7 @@ describe('FilesBody', () => {
     expect(view.container.querySelector('[data-files-state="tree"]')?.getAttribute('data-files-root')).toBe(ROOT)
     const path = view.container.querySelector('[data-files-path]')
     expect(path?.getAttribute('title')).toBe(ROOT)
-    expect([...path?.querySelectorAll('span > span') ?? []].map(span => span.textContent)).toEqual(['/work/', 'app'])
+    expect([...path?.firstElementChild?.children ?? []].map(span => span.textContent)).toEqual(['/work/', 'app'])
     expect(names(view.container)).toEqual([`${ROOT}/src`, `${ROOT}/.env`, `${ROOT}/pipe`, `${ROOT}/README.md`])
     const envIcon = view.container.querySelector(`[data-files-path="${ROOT}/.env"] svg`)?.innerHTML
     const readmeIcon = view.container.querySelector(`[data-files-path="${ROOT}/README.md"] svg`)?.innerHTML
@@ -56,7 +56,7 @@ describe('FilesBody', () => {
     await act(() => script.watches.ready('/'))
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
     const path = view.container.querySelector('[data-files-path]')
-    expect([...path?.querySelectorAll('span > span') ?? []].map(span => span.textContent)).toEqual(['/'])
+    expect([...path?.firstElementChild?.children ?? []].map(span => span.textContent)).toEqual(['/'])
     expect(names(view.container)).toEqual(['/src', '/.env', '/pipe', '/README.md'])
   })
 
@@ -86,7 +86,7 @@ describe('FilesBody', () => {
       await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
       const path = view.container.querySelector<HTMLElement>('[data-files-path]')
       const text = path?.firstElementChild
-      expect(path?.hasAttribute('data-files-path-clipped')).toBe(false)
+      expect(path?.hasAttribute('data-path-clipped')).toBe(false)
       const observer = FakeResizeObserver.latest
       if (observer === undefined) throw new Error('expected the path to observe its size')
       expect(observer.observe).toHaveBeenCalledWith(path)
@@ -94,11 +94,11 @@ describe('FilesBody', () => {
 
       boxWidth = 120
       act(() => { observer.fire() })
-      expect(path?.hasAttribute('data-files-path-clipped')).toBe(true)
+      expect(path?.hasAttribute('data-path-clipped')).toBe(true)
 
       boxWidth = 300
       act(() => { observer.fire() })
-      expect(path?.hasAttribute('data-files-path-clipped')).toBe(false)
+      expect(path?.hasAttribute('data-path-clipped')).toBe(false)
       view.unmount()
       expect(observer.disconnect).toHaveBeenCalledTimes(1)
     } finally {
