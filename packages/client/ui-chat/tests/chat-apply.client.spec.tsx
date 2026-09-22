@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, vi } from 'vitest'
-import { act, render } from '@testing-library/react'
+import { act, fireEvent, render } from '@testing-library/react'
 import {
   SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
@@ -21,7 +21,7 @@ import {
   apply as applyChat, EMPTY_CHAT_SNAPSHOT, inject as injectChat,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
-  ChatNodeTurnDataInjected, ChatSnapshot, TranscriptViewRowInjected, UseChatNodeTurnData,
+  ChatNodeInjected, ChatSnapshot, TranscriptViewRowInjected, UseChatNodeTurnData, UseDisclosure,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { PerformanceUsageRowInjected } from '../src/client/settings/PerformanceUsageRow.tsx'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
@@ -195,7 +195,7 @@ describe('Chat apply wiring', () => {
   it('binds Turn data directly to its keyed Location source', async () => {
     const b = await bench()
     const spec = b.runtime.slots.spec('conversation.chat.node') as unknown as {
-      inject: ChatNodeTurnDataInjected
+      inject: ChatNodeInjected
     }
     let value: number | undefined = 42
     const listeners = new Set<() => void>()
@@ -213,7 +213,7 @@ describe('Chat apply wiring', () => {
     const useChat = vi.fn(() => { throw new Error('Turn data must not read the Chat snapshot') })
     const useTurnData = spec.inject.hooks.turnData(
       { useChat } as unknown as Parameters<typeof spec.inject.hooks.turnData>[0],
-      data,
+      { turnData: data, disclosureReset: createSnapshotStore(0) },
     )
     const Probe = ({ useData }: { useData: UseChatNodeTurnData }) => (
       <output>{useData('metric') ?? 'missing'}</output>
@@ -231,12 +231,41 @@ describe('Chat apply wiring', () => {
 
     view.rerender(<Probe useData={spec.inject.hooks.turnData(
       { useChat } as unknown as Parameters<typeof spec.inject.hooks.turnData>[0],
-      undefined,
+      { turnData: undefined, disclosureReset: createSnapshotStore(0) },
     )} />)
     expect(view.getByText('missing')).toBeTruthy()
     expect(useChat).not.toHaveBeenCalled()
 
     view.unmount()
     await b.runtime.dispose()
+  })
+
+  it('injects local disclosures bound to their Chat seat reset source', async () => {
+    const b = await bench()
+    try {
+      const spec = b.runtime.slots.spec('conversation.chat.node') as { inject: ChatNodeInjected }
+      const reset = createSnapshotStore(0)
+      const useDisclosure = spec.inject.hooks.disclosure(
+        {} as Parameters<typeof spec.inject.hooks.disclosure>[0],
+        { turnData: undefined, disclosureReset: reset },
+      )
+      function Probe({ useDisclosure }: { useDisclosure: UseDisclosure }) {
+        const { expanded, toggle } = useDisclosure()
+        return <button aria-expanded={expanded} onClick={toggle}>Details</button>
+      }
+      const view = render(<Probe useDisclosure={useDisclosure} />)
+      try {
+        const button = view.getByRole('button', { name: 'Details' })
+        fireEvent.click(button)
+        expect(button.getAttribute('aria-expanded')).toBe('true')
+        act(() => { reset.set(1) })
+        expect(button.getAttribute('aria-expanded')).toBe('false')
+        expect(view.getByRole('button', { name: 'Details' })).toBe(button)
+      } finally {
+        view.unmount()
+      }
+    } finally {
+      await b.runtime.dispose()
+    }
   })
 })

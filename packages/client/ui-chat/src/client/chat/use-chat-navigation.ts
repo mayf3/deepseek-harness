@@ -2,7 +2,7 @@
 import { useLayoutEffect, useState } from 'react'
 import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { ChatNode } from '../contract/chat-nodes.ts'
-import type { ChatScrollPosition, ChatViewSlotProps } from '../contract/slots.ts'
+import type { ChatViewSlotProps } from '../contract/slots.ts'
 import type { TurnRailItem } from './turn-rail-items.ts'
 import type { ChatReading, ReadingSample } from './use-chat-reading.ts'
 import type { ChatViewport } from './use-chat-viewport.ts'
@@ -25,8 +25,6 @@ interface TurnJump {
 /** Owns one replaceable turn jump and the anchor retained while history loads. */
 export class ChatNavigation {
   private jump: TurnJump | null = null
-  private anchor: ChatScrollPosition | null = null
-  private committed: Pick<ChatNavigationInput, 'firstSeq' | 'loadingOlder'>
   private settleFrame: number | null = null
 
   constructor(
@@ -34,9 +32,7 @@ export class ChatNavigation {
     private readonly reading: ChatReading,
     private input: ChatNavigationInput,
     private readonly onBusyTurn: (turn: number | null) => void,
-  ) {
-    this.committed = input
-  }
+  ) {}
 
   /**
    * Adopt committed history availability without starting a request.
@@ -44,10 +40,9 @@ export class ChatNavigation {
    */
   setInput(input: ChatNavigationInput): void { this.input = input }
 
-  /** Cancel navigation and establish the current history window as the baseline. */
+  /** Cancel navigation when opening a Chat view. */
   reset(): void {
     this.cancel()
-    this.committed = this.input
   }
 
   /** Cancel local callbacks; late history completions cannot revive a task. */
@@ -64,7 +59,7 @@ export class ChatNavigation {
   private clearTask(): void {
     this.cancelFrame()
     this.jump = null
-    this.anchor = null
+    this.viewport.stopPreserving()
   }
 
   /**
@@ -73,15 +68,15 @@ export class ChatNavigation {
    */
   readonly navigateToTurn = (item: TurnRailItem): void => {
     if (item.anchor.kind === 'loaded') {
+      this.cancel()
       const landing = this.viewport.scrollToTurn(item.turn)
       if (landing === null) return
-      this.cancel()
       this.reading.acceptNavigation(landing)
-      this.anchor = this.input.loadingOlder ? landing.position : null
+      if (this.input.loadingOlder) this.viewport.beginPreserving(landing.position)
       return
     }
-    this.cancelFrame()
-    this.anchor = this.viewport.capturePosition()
+    this.cancel()
+    this.viewport.beginPreserving()
     this.reading.pauseFollowing()
     const jump: TurnJump = {
       turn: item.turn,
@@ -97,7 +92,9 @@ export class ChatNavigation {
 
   /** Request one older page while retaining the current semantic position. */
   readonly loadEarlier = (): void => {
-    this.anchor = this.viewport.capturePosition()
+    this.cancel()
+    this.viewport.beginPaging()
+    this.reading.pauseFollowing()
     this.input.loadOlder()
   }
 
@@ -107,27 +104,27 @@ export class ChatNavigation {
    */
   readerSampled(sample: ReadingSample): void {
     if (sample.movedByReader && this.jump?.landing === 'landed') this.jump.landing = 'interrupted'
-    if (sample.followingTail) this.anchor = null
-    else if (this.anchor !== null && sample.position !== null) this.anchor = sample.position
+    if (sample.followingTail || sample.movedByReader) this.viewport.stopPreserving()
   }
 
   /**
-   * Reconcile a newly committed history head with any retained anchor.
-   * @returns whether a prepended window consumed the current position-preservation operation.
+   * Preserve one paging anchor after a commit or a later size change, regardless of head identity.
+   * @returns whether the retained anchor handled the layout change.
    */
   contentCommitted(): boolean {
-    const previous = this.committed
-    this.committed = this.input
-    if (this.anchor !== null && this.input.firstSeq !== null && previous.firstSeq !== null
-      && this.input.firstSeq < previous.firstSeq) {
-      if (this.landJump(false)) return true
-      const landing = this.viewport.preserve(this.anchor)
-      this.anchor = this.jump === null ? null : landing?.position ?? null
-      if (landing !== null) this.reading.preservePosition(landing)
-      return true
+    if (!this.viewport.preserving || this.reading.pending) return false
+    if (this.landJump(false)) return true
+    const landing = this.viewport.preserve()
+    if (landing === null) return false
+    this.reading.preservePosition(landing)
+    return true
+  }
+
+  /** Retarget a still-loading page only after inner or outer reader scrolling ends. */
+  readerSettled(): void {
+    if (this.input.loadingOlder && this.jump === null && !this.viewport.preserving && !this.reading.followingTail) {
+      this.viewport.beginPreserving()
     }
-    if (previous.loadingOlder && !this.input.loadingOlder && this.jump === null) this.anchor = null
-    return false
   }
 
   /** Land, retry, or complete the current jump against the committed window. */
@@ -143,7 +140,7 @@ export class ChatNavigation {
     const uncovered = this.input.firstSeq === null || this.input.firstSeq > jump.seq
     if (uncovered && this.input.hasMore && jump.repageHead !== this.input.firstSeq) {
       jump.repageHead = this.input.firstSeq
-      this.anchor = this.viewport.capturePosition()
+      this.viewport.beginPreserving()
       this.request(jump)
       return
     }
@@ -164,7 +161,7 @@ export class ChatNavigation {
     this.reading.acceptNavigation(landing)
     if (settle) this.cancel()
     else {
-      this.anchor = landing.position
+      this.viewport.beginPreserving(landing.position)
       jump.landing = 'landed'
     }
     return true

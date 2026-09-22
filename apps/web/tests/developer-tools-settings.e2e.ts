@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { expect, it, onTestFinished } from 'vitest'
 import { launchWebScaffold } from './scaffold.ts'
-import { openSettingsFromAccountMenu, newEnglishPage } from './support.ts'
+import { openSettings, newEnglishPage } from './support.ts'
 
 it('persists developer tools in the Host settings document and restores the accepted choice', async () => {
   const scaffold = await launchWebScaffold()
@@ -13,7 +13,7 @@ it('persists developer tools in the Host settings document and restores the acce
   onTestFinished(() => browser.close())
   const page = await newEnglishPage(browser)
   await page.goto(scaffold.authenticatedUrl)
-  await openSettingsFromAccountMenu(page, 'en')
+  await openSettings(page, 'en')
   const toggle = page.getByRole('switch', { name: 'Developer tools' })
   expect(await toggle.getAttribute('aria-checked')).toBe('true')
   expect(await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')).not.toMatch(/id: ui-settings(?:\r?\n|$)/)
@@ -21,7 +21,7 @@ it('persists developer tools in the Host settings document and restores the acce
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
   expect(await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')).toContain('enabled: false')
   await page.reload()
-  await openSettingsFromAccountMenu(page, 'en')
+  await openSettings(page, 'en')
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
 
   await page.getByRole('button', { name: 'Agent presets', exact: true }).click()

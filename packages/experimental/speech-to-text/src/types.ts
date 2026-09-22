@@ -32,12 +32,21 @@ export interface SpeechPreparationStep {
   readonly startedAt?: number
 }
 
+/** Safe download diagnostics for localized preparation guidance; URLs omit credentials and query strings. */
+export interface SpeechDownloadFailure {
+  readonly resource: string
+  readonly source: string
+  readonly reason: 'network' | 'dns' | 'timeout' | 'certificate' | 'http' | 'integrity' | 'storage' | 'unknown'
+  readonly code?: string
+  readonly status?: number
+}
+
 /** Host-owned preparation state; byte totals describe downloads, never estimated installation percentages. */
 export type SpeechPreparationState = (
   | { readonly phase: 'unprepared' | 'ready' | 'standby' | 'cancelled' }
   | { readonly phase: 'downloading'; readonly resource: string; readonly completedBytes: number; readonly totalBytes?: number }
   | { readonly phase: 'checking' | 'loading' | 'waking' | 'cancelling'; readonly startedAt: number }
-  | { readonly phase: 'failed'; readonly message: string }
+  | { readonly phase: 'failed'; readonly message: string; readonly download?: SpeechDownloadFailure }
 ) & {
   readonly step?: SpeechPreparationStepKind
   readonly steps?: readonly SpeechPreparationStep[]
