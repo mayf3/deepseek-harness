@@ -4,6 +4,8 @@ Status: implemented
 
 Update: the `reported` bit and `onJobDone` this note relies on left the registry with the [jobs seam consolidation](../architecture/2026-09-03-jobs-seam-consolidation.md): `dsh-tool-jobs` now keeps the delivery ledger (a wait or an accepted `job_kill` claims the task) and skips teardown settlements by their `settled` cause, so the wake-or-inject decision below stands while the mechanism it names is the tool's ledger, not a registry flag.
 
+Update: `maxConsecutiveWakes` no longer defaults to 3; unset, every idle completion wakes its owner. The accepted risk below — a spent budget is restored only by user input — was reported as a bug ([dsh-external/issues#641](https://github.com/dsh-external/issues/issues/641)): a session mixing background commands and one-shot subagents exhausted the budget after three wakes, the fourth notice parked silently in the next-step inbox with nothing visible in the client, and the model's "you are notified when a job finishes" promise turned false exactly when the user was away. An invisible stall costs more than an unbounded chain of model requests the user can watch and stop, so the cap is opt-in. The self-exciting rationale for the field stands for deployments that set it.
+
 English | [中文](2026-08-11-background-job-completion-wakes-an-idle-owner.zh.md)
 
 ## Problem

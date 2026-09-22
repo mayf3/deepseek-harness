@@ -4,6 +4,8 @@ Status: implemented
 
 Update：本文依赖的 `reported` 位与 `onJobDone` 已随 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md)离开注册表：`dsh-tool-jobs` 现在持有投递台账（等待或被接受的 `job_kill` 认领任务），并按 `settled` 事件的 cause 跳过 teardown 结算，因此下文唤醒或注入的决策仍然成立，只是它提到的机制是工具的台账而非注册表标志。
 
+Update：`maxConsecutiveWakes` 不再默认为 3；未设置时每次空闲完成都会唤醒所有者。下文"已花掉的预算只由用户输入恢复"这条接受的风险被报告为缺陷（[dsh-external/issues#641](https://github.com/dsh-external/issues/issues/641)）：一个会话混用后台命令与一次性子代理，三次唤醒后预算耗尽，第四条通知静默停在 next-step inbox 里，客户端毫无显示，而模型得到的"任务完成会通知你"承诺恰好在用户离开时失效。不可见的停摆比一条用户能看到并能停止的、无上限的模型请求链代价更高，因此上限改为可选。自激链的理由对设置了该字段的部署依然成立。
+
 [English](2026-08-11-background-job-completion-wakes-an-idle-owner.md) | 中文
 
 ## 问题
