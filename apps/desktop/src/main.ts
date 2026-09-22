@@ -127,6 +127,20 @@ function chromeFallbackFill(): string {
   return nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb'
 }
 
+/**
+ * Add the effective Desktop palette to a Platform authorization URL so the
+ * login page opens in the application's theme. `system` resolves through
+ * `nativeTheme.shouldUseDarkColors`, which follows the theme source the
+ * application preload publishes.
+ * @param authorizeUrl - validated Platform authorization URL.
+ * @returns the authorization URL carrying `theme=light` or `theme=dark`.
+ */
+function platformLoginUrl(authorizeUrl: string): string {
+  const url = new URL(authorizeUrl)
+  url.searchParams.set('theme', nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
+  return url.href
+}
+
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
@@ -340,7 +354,7 @@ async function main(): Promise<void> {
           const attempt = state.attempt
           if (attempt?.phase === 'waiting-browser' && attempt.authorizeUrl !== undefined && openedAttempt !== attempt.id) {
             openedAttempt = attempt.id
-            void shell.openExternal(attempt.authorizeUrl).catch(() => undefined)
+            void shell.openExternal(platformLoginUrl(attempt.authorizeUrl)).catch(() => undefined)
           }
           if ((attempt?.phase === 'failed' || attempt?.phase === 'expired') && returnedAttempt !== attempt.id) {
             returnedAttempt = attempt.id
@@ -904,7 +918,7 @@ async function main(): Promise<void> {
           if (state?.attempt?.id !== id || state.attempt.phase !== 'waiting-browser' || state.attempt.authorizeUrl === undefined) {
             throw new Error('desktop welcome: login link is unavailable')
           }
-          await clipboard.writeText(state.attempt.authorizeUrl)
+          await clipboard.writeText(platformLoginUrl(state.attempt.authorizeUrl))
         },
         saveApiKey: async (apiKey) => {
           if (backend.host === undefined || welcomeBackend === undefined) return { ok: false }
