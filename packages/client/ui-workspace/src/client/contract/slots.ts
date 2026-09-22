@@ -42,8 +42,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionSearchResultItem } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
-import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionActivity, WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { WorkspaceShortcutState } from '../shortcuts.ts'
 import type { createWorkspaceViewStore } from '../stores.ts'
 
 /**
@@ -135,7 +137,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'root'
       owner: SessionRowOwnerProps
       hookContext: MenuOpenState
-      inject: { hooks: { menuOpenState: SlotHookFactory<'sidebar.workspaces.session.menu.item', UseMenuOpenState> } }
+      inject: { hooks: {
+        menuOpenState: SlotHookFactory<'sidebar.workspaces.session.menu.item', UseMenuOpenState>
+        shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
+      } }
     }
     /**
      * The hover buttons at the end of one Session row, in ascending `order`,
@@ -185,7 +190,19 @@ export type WorkspaceBrowserInjected = {
      * saw. Select the field the surface needs (`info => info.home`).
      */
     hostInfo: HostObservable<RemoteHostFacts>
+    workspaceShortcuts: HostObservable<WorkspaceShortcutState>
+    shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
   }
+  /** Open the browser search and focus its input. */
+  requestSearch: () => void
+  /** Request the existing directory picker. */
+  requestAddWorkspace: () => void
+  /** Consume the directory-picker opening request. */
+  closeAddWorkspace: () => void
+  /** Publish directory interaction occupancy for command availability. */
+  setDirectoryBusy: (busy: boolean) => void
+  /** Dismiss the shortcut's fork-failure notification. */
+  dismissForkError: () => void
   /**
    * Start a New Session in a Workspace: reuse-or-create its blank session and
    * open it; without an explicit workspace, inherit the current Session
@@ -241,6 +258,7 @@ export type SessionRowActionProps<Injected extends object = object> =
 /** One transient Workspace notice rendered by the overlay toast entry. */
 export type RowToast =
   | { kind: 'archived'; sessionId: SessionId }
+  | { kind: 'stoppedAndArchived'; sessionId: SessionId }
   | { kind: 'pinFailed' }
   | { kind: 'unpinFailed' }
   | { kind: 'archivedNotOpenable' }
@@ -276,8 +294,9 @@ export interface PinSessionInjected {
 
 /**
  * Archive action share (menu row and hover button). The callbacks carry the
- * whole behavior: the Host call, the notice a success raises, and the
- * diagnostics for a rejection.
+ * whole behavior: the Host call, the notice a success raises, the
+ * stop-and-archive confirmation a Host refusal for running work raises, and
+ * the diagnostics for any other rejection.
  */
 export interface ArchiveSessionInjected {
   hooks: {
@@ -288,10 +307,44 @@ export interface ArchiveSessionInjected {
    * Archive a Session into the registry-global set: the row keeps its
    * account position and shows per the archived filter; archiving the
    * current session clears the selection into the New Session view state.
+   * A Session with running work is not archived by this call: the Host's
+   * refusal opens the stop-and-archive confirmation instead.
    */
   archiveSession: (sessionId: SessionId) => void
   /** Remove a Session from the registry-global archived set. */
   unarchiveSession: (sessionId: SessionId) => void
+}
+
+/**
+ * A stop-and-archive confirmation the archive action asked for: the Host
+ * refused the plain archive because this work still runs.
+ */
+export interface SessionArchiveConfirmRequest {
+  /** Session to stop and archive. */
+  sessionId: SessionId
+  /** The row's display title, named in the dialog. */
+  displayTitle: string
+  /** What the Host reported running, in family order. */
+  activity: readonly SessionActivity[]
+}
+
+/**
+ * Stop-and-archive dialog share: the pending confirmation, its settlement,
+ * and the archive hop that asks the Host to stop the work first.
+ */
+export interface SessionArchiveConfirmInjected {
+  hooks: {
+    /** The confirmation asked for, until the dialog consumes or cancels it. */
+    archiveRequest: HostObservable<SessionArchiveConfirmRequest | null>
+  }
+  /** Consume or cancel the pending confirmation. */
+  settleSessionArchive: () => void
+  /**
+   * Archive a Session after the Host stops its running work; resolves once
+   * the archive set is durable (the stops settle in the background) and
+   * raises the stopped-and-archived notice.
+   */
+  stopAndArchiveSession: (sessionId: SessionId) => Promise<void>
 }
 
 /** Fork action share. */
@@ -346,6 +399,13 @@ export type SessionRenameDialogProps =
   & PropsLocale<'workspace'>
   & Omit<SessionRenameDialogInjected, 'hooks'>
   & PropsHooks<SessionRenameDialogInjected['hooks']>
+
+/** Props of the stop-and-archive dialog entry in `shell.overlay`. */
+export type SessionArchiveConfirmProps =
+  PropsRuntime<'shell.overlay'>
+  & PropsLocale<'workspace'>
+  & Omit<SessionArchiveConfirmInjected, 'hooks'>
+  & PropsHooks<SessionArchiveConfirmInjected['hooks']>
 
 /** Props of the row toast entry in `shell.overlay`. */
 export type RowToastProps =

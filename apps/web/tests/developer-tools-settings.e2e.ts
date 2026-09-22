@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { expect, it, onTestFinished } from 'vitest'
 import { launchWebScaffold } from './scaffold.ts'
-import { newEnglishPage } from './support.ts'
+import { openSettingsFromAccountMenu, newEnglishPage } from './support.ts'
 
 it('persists developer tools in the Host settings document and restores the accepted choice', async () => {
   const scaffold = await launchWebScaffold()
@@ -13,28 +13,28 @@ it('persists developer tools in the Host settings document and restores the acce
   onTestFinished(() => browser.close())
   const page = await newEnglishPage(browser)
   await page.goto(scaffold.authenticatedUrl)
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await openSettingsFromAccountMenu(page, 'en')
   const toggle = page.getByRole('switch', { name: 'Developer tools' })
   expect(await toggle.getAttribute('aria-checked')).toBe('true')
-  expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).not.toContain('ui-developer-tools:')
+  expect(await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')).not.toMatch(/id: ui-settings(?:\r?\n|$)/)
   await toggle.click()
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
-  expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).toContain('ui-developer-tools:\n  enabled: false')
+  expect(await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')).toContain('enabled: false')
   await page.reload()
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await openSettingsFromAccountMenu(page, 'en')
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
 
   await page.getByRole('button', { name: 'Agent presets', exact: true }).click()
   const pickerToggle = page.getByRole('switch', { name: 'Choose a mode for new tasks' })
   await expect.poll(() => page.getByRole('heading', { name: 'Agent presets', exact: true }).count()).toBe(1)
   expect(await pickerToggle.count()).toBe(0)
-  await scaffold.ctx.settings.update('ui-developer-tools', { enabled: true })
+  await scaffold.ctx.settings.update('ui-settings', { enabled: true })
   await expect.poll(() => pickerToggle.count()).toBe(1)
   await expect.poll(() => pickerToggle.isEnabled()).toBe(true)
   const pickerEnabled = await pickerToggle.getAttribute('aria-checked')
-  await scaffold.ctx.settings.update('ui-developer-tools', { enabled: false })
+  await scaffold.ctx.settings.update('ui-settings', { enabled: false })
   await expect.poll(() => pickerToggle.count()).toBe(0)
-  await scaffold.ctx.settings.update('ui-developer-tools', { enabled: true })
+  await scaffold.ctx.settings.update('ui-settings', { enabled: true })
   await expect.poll(() => pickerToggle.isEnabled()).toBe(true)
   await expect.poll(() => pickerToggle.getAttribute('aria-checked')).toBe(pickerEnabled)
 })

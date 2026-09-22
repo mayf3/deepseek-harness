@@ -15,12 +15,12 @@
 
 /* jscpd:ignore-start -- this executor mirrors dsh-bash-local call-for-call by
    design (see this package's README), so the two import the same seam surface */
+import type { Volatile } from '@deepseek-ai/cordis'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from '@deepseek-ai/dsh-shell'
+import { ShellExecutor } from '@deepseek-ai/dsh-shell'
 import type { CollectedOutput, ShellExecRequest, ShellExecSpec, ShellExecution, ShellProcess, ShellProcessRead, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import type {} from '@deepseek-ai/dsh-settings'
 import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
 /* jscpd:ignore-end */
 import { resolvePwshPath } from './resolve.ts'
@@ -54,31 +54,28 @@ const DEFAULT_GRACE_MS = 3_000
 /** Default per-stream spill cap (the `maxSpillBytes` config). */
 const DEFAULT_MAX_SPILL_BYTES = 64 * 1024 * 1024
 
-/** Plugin config (all optional — `static Config` supplies the defaults). */
+/** Validated plugin configuration with live command budgets. */
 export interface Config {
   /** Default working directory for commands (default: process.cwd()). */
-  cwd?: string
+  cwd: Volatile<string | undefined>
   /** Default foreground timeout in milliseconds. */
-  timeoutMs?: number
+  timeoutMs: Volatile<number>
   /** Upper bound for per-call timeout overrides. */
-  maxTimeoutMs?: number
+  maxTimeoutMs: Volatile<number>
   /** Per-stream in-memory output cap; overflow spills to a temp file. */
-  maxOutputBytes?: number
+  maxOutputBytes: Volatile<number>
   /** Per-stream spill-file cap; larger streams retain only their in-memory tail. */
-  maxSpillBytes?: number
+  maxSpillBytes: Volatile<number>
   /** Grace period for kill escalation and inherited pipes; at most `MAX_TIMER_DELAY_MS`. */
-  graceMs?: number
+  graceMs: Volatile<number>
   /**
    * Explicit pwsh executable. When omitted, well-known Windows install
    * locations and PATH entries are probed in order (PowerShell 7 install,
    * PATH entries such as the Microsoft Store install, then Windows
    * PowerShell 5.1), falling back to a bare `pwsh` resolved through PATH.
    */
-  pwshPath?: string
+  pwshPath: Volatile<string | undefined>
 }
-
-/** The shape after schemastery applied the defaults (cwd/pwshPath have none). */
-type ResolvedConfig = Required<Omit<Config, 'cwd' | 'pwshPath'>> & Pick<Config, 'cwd' | 'pwshPath'>
 
 // Resolution lives in its own dependency-free module so the repository's
 // coverage-gate probe shares the exact definition the suites use.
@@ -103,19 +100,17 @@ function assertPositiveFinite(name: string, value: number): void {
 /**
  * Reject a resolved section this executor could not run with. The schema
  * expresses neither "positive and finite" nor the timer bound `graceMs` has to
- * fit, so a stored value is refused where it is written instead of failing at
- * the next command.
- * @param config - the resolved section, schema-valid by construction.
+ * fit, so a stored value that cannot be used fails at the next command.
+ * @param config - the live configuration, schema-valid by construction.
  * @throws Error naming the field that cannot be used.
  */
 export function assertServiceablePwshConfig(config: Config): void {
-  const resolved = config as ResolvedConfig
-  assertPositiveFinite('timeoutMs', resolved.timeoutMs)
-  assertPositiveFinite('maxTimeoutMs', resolved.maxTimeoutMs)
-  assertPositiveFinite('maxOutputBytes', resolved.maxOutputBytes)
-  assertPositiveFinite('maxSpillBytes', resolved.maxSpillBytes)
-  assertPositiveFinite('graceMs', resolved.graceMs)
-  if (resolved.graceMs > MAX_TIMER_DELAY_MS) {
+  assertPositiveFinite('timeoutMs', config.timeoutMs.get())
+  assertPositiveFinite('maxTimeoutMs', config.maxTimeoutMs.get())
+  assertPositiveFinite('maxOutputBytes', config.maxOutputBytes.get())
+  assertPositiveFinite('maxSpillBytes', config.maxSpillBytes.get())
+  assertPositiveFinite('graceMs', config.graceMs.get())
+  if (config.graceMs.get() > MAX_TIMER_DELAY_MS) {
     throw new Error(`pwsh-local: graceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
   }
 }
@@ -128,18 +123,15 @@ export function assertServiceablePwshConfig(config: Config): void {
 export class PwshLocalExecutor extends ShellExecutor {
   static inject = ['subprocess']
 
-  static Config: z<Config> = z.object({
-    cwd: z.string(),
-    timeoutMs: z.number().default(120_000),
-    maxTimeoutMs: z.number().default(600_000),
-    maxOutputBytes: z.number().default(64_000),
-    maxSpillBytes: z.number().default(DEFAULT_MAX_SPILL_BYTES),
-    graceMs: z.number().default(DEFAULT_GRACE_MS),
-    pwshPath: z.string(),
+  static Config = z.object({
+    cwd: z.string().volatile(),
+    timeoutMs: z.number().default(120_000).volatile(),
+    maxTimeoutMs: z.number().default(600_000).volatile(),
+    maxOutputBytes: z.number().default(64_000).volatile(),
+    maxSpillBytes: z.number().default(DEFAULT_MAX_SPILL_BYTES).volatile(),
+    graceMs: z.number().default(DEFAULT_GRACE_MS).volatile(),
+    pwshPath: z.string().volatile(),
   })
-
-  /** The currently authoritative config: the settings section, or the composition entry. */
-  private source: () => ResolvedConfig
 
   /** The declared executable the current {@link pwshPath} was resolved from. */
   private declaredPwshPath: string | undefined
@@ -147,40 +139,20 @@ export class PwshLocalExecutor extends ShellExecutor {
   /** The pwsh executable resolved from the current config. */
   private resolvedPwshPath: string
 
-  /** Validated config (schemastery applied the defaults before construction). */
-  get config(): ResolvedConfig {
-    return this.source()
-  }
-
-  /** The pwsh executable every command runs through. */
+  /** The pwsh executable every command runs through; a changed declared path is probed again on the next read. */
   get pwshPath(): string {
+    const declared = this.config.pwshPath.get()
+    if (declared !== this.declaredPwshPath) {
+      this.resolvedPwshPath = resolvePwshPath(declared)
+      this.declaredPwshPath = declared
+    }
     return this.resolvedPwshPath
   }
 
-  constructor(ctx: Context, config: Config) {
+  constructor(ctx: Context, readonly config: Config) {
     super(ctx)
-    // Schemastery fills these fields before construction; the type does not encode that step.
-    const entry = config as ResolvedConfig
-    assertServiceablePwshConfig(entry)
-    this.source = () => entry
-    this.declaredPwshPath = entry.pwshPath
-    this.resolvedPwshPath = resolvePwshPath(entry.pwshPath)
-    ctx.inject(['settings'], (settingsCtx) => {
-      settingsCtx.settings.installSection(ctx, SHELL_SETTINGS_NAMESPACE, PwshLocalExecutor.Config, entry, {
-        validate: assertServiceablePwshConfig,
-        setSource: (current) => {
-          this.source = current as () => ResolvedConfig
-        },
-        // Probing the filesystem is the one fact derived from the source: every
-        // other field is read through the getter at each command.
-        onChange: () => {
-          const declared = this.source().pwshPath
-          if (declared === this.declaredPwshPath) return
-          this.declaredPwshPath = declared
-          this.resolvedPwshPath = resolvePwshPath(declared)
-        },
-      })
-    })
+    this.declaredPwshPath = config.pwshPath.get()
+    this.resolvedPwshPath = resolvePwshPath(this.declaredPwshPath)
   }
 
   /**
@@ -189,17 +161,18 @@ export class PwshLocalExecutor extends ShellExecutor {
    * `config.timeoutMs`, capped at `config.maxTimeoutMs`.
    */
   resolve(request: ShellExecRequest): ShellExecSpec {
+    assertServiceablePwshConfig(this.config)
     const timeoutMs = clampTimeout(
       request.timeoutMs,
-      this.config.timeoutMs,
-      this.config.maxTimeoutMs,
+      this.config.timeoutMs.get(),
+      this.config.maxTimeoutMs.get(),
       'pwsh-local: request.timeoutMs',
     )
-    const stdoutMaxBytes = request.stdoutMaxBytes ?? this.config.maxOutputBytes
+    const stdoutMaxBytes = request.stdoutMaxBytes ?? this.config.maxOutputBytes.get()
     assertPositiveFinite('request.stdoutMaxBytes', stdoutMaxBytes)
     return {
       command: request.command,
-      workdir: request.workdir ?? this.config.cwd ?? process.cwd(),
+      workdir: request.workdir ?? this.config.cwd.get() ?? process.cwd(),
       timeoutMs,
       onExpiry: request.onExpiry ?? 'kill',
       stdoutMaxBytes,
@@ -229,16 +202,16 @@ export class PwshLocalExecutor extends ShellExecutor {
     argv: readonly string[],
   ): SubprocessSpawnSpec {
     const collect = (maxBytes: number): SubprocessCollect =>
-      ({ maxBytes, spill: { maxBytes: this.config.maxSpillBytes } })
+      ({ maxBytes, spill: { maxBytes: this.config.maxSpillBytes.get() } })
     return {
       argv: [...argv],
       cwd: spec.workdir,
       stdio: {
         stdin: spec.stdin !== undefined ? { data: spec.stdin } : 'ignore',
         stdout: collect(stdoutMaxBytes),
-        stderr: collect(this.config.maxOutputBytes),
+        stderr: collect(this.config.maxOutputBytes.get()),
       },
-      graceMs: this.config.graceMs,
+      graceMs: this.config.graceMs.get(),
       signal,
       env: { ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv },
     }

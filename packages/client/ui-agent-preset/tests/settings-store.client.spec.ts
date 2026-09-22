@@ -68,13 +68,13 @@ function fakeApi(
   } = {},
 ): ClientContext {
   const settings = {
-    update: (ns: string, patch: { default?: unknown; modeSelectionEnabled?: unknown }) => {
+    update: (ns: string, patch: { selectedDefault?: unknown; modeSelectionEnabled?: unknown }) => {
       options.writes?.push({ ns, ops: patch })
       if (options.failWrite !== undefined) {
         return Promise.resolve({ ok: false as const, error: new RemoteError('gateway/internal', options.failWrite, {}) })
       }
-      if (patch.default !== undefined) {
-        for (const preset of presets) preset.isDefault = preset.id === patch.default
+      if (patch.selectedDefault !== undefined) {
+        for (const preset of presets) preset.isDefault = preset.id === patch.selectedDefault
       }
       return Promise.resolve({ ok: true as const, value: {} })
     },
@@ -163,7 +163,7 @@ describe('the agent-preset roster store', () => {
 
     expect(writes).toEqual([{
       ns: AGENT_PRESET_SETTINGS_NS,
-      ops: { default: 'minimal' },
+      ops: { selectedDefault: 'minimal' },
     }])
   })
 

@@ -23,7 +23,8 @@
       "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./brand-font.css": "./lib/styles/brand-font.css"
   },
   "dsh": {
     "client": {
@@ -56,8 +57,8 @@
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@types/react": "~18.3.1",
     "react": "^18.2.0",
-    "@deepseek-ai/dsh-settings": "workspace:^",
-    "clsx": "^2.0.0"
+    "clsx": "^2.0.0",
+    "@deepseek-ai/dsh-settings": "workspace:^"
   },
   "files": [
     "lib/index.js",

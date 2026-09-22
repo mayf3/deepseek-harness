@@ -258,7 +258,11 @@ describe('web e2e: resident question composer round trip', () => {
       const originalRow = page.locator('[role="treeitem"]')
         .filter({ hasText: 'Use the ask_user_question tool' }).first()
       await page.getByRole('button', { name: 'New session', exact: true }).last().click()
-      await page.getByText('New Session', { exact: true }).waitFor({ timeout: 15_000 })
+      // Scope to the tree: the wide sidebar's New Session button carries the
+      // same visible label, and an unscoped match would either settle on the
+      // button before the row exists or trip strict mode once it does.
+      await page.getByRole('tree', { name: 'Sessions' })
+        .getByText('New Session', { exact: true }).waitFor({ timeout: 15_000 })
       await expect.poll(() => composer.count(), { timeout: 10_000 }).toBe(0)
       await originalRow.click()
       await composer.waitFor({ timeout: 15_000 })
@@ -387,6 +391,7 @@ describe.skipIf(MODE === 'record')('web e2e: cancelled question transcript', () 
 
   it('expands to the cancellation verdict and original questions', async () => {
     onTestFailed(() => saveFailureShot(cancelledPage, 'web-e2e-question-cancelled-row'))
+    await expandTurnProcesses(cancelledPage)
     const row = cancelledPage.getByRole('button', { name: 'Ask question cancelled', exact: true })
     await row.waitFor({ timeout: 15_000 })
     await row.click()

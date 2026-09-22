@@ -144,9 +144,9 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       'settings/describe': ok({
         ...fixture.settingsDescribe.value,
         namespaces: [...fixture.settingsDescribe.value.namespaces, {
-          ns: 'ui-developer-tools',
+          ns: 'ui-settings',
           schema: { type: 'object', dict: { enabled: { type: 'boolean' } } },
-          value: { enabled: options.developerTools ?? true }, applies: 'live', secrets: [], revision: 0,
+          value: { enabled: options.developerTools ?? true }, autoGenerate: false, applies: 'live', secrets: [], revision: 0,
         }],
       }),
       'credentials/describe': structuredClone(fixture.credentialsDescribe),

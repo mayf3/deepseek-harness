@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState, type KeyboardEvent } from 'react'
+import { memo, useCallback, useMemo, type KeyboardEvent } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import clsx from 'clsx'
 import {
@@ -38,7 +38,7 @@ function stateStatus(state: ToolRowState, t: BashRowProps['t']): string | null {
  * @param props - tool call, Session sources, locale, and inspection callback.
  * @returns the Bash output row.
  */
-export const BashRow = memo(function BashRow({ toolName, block, sessionId, useSessions, inspect, t }: BashRowProps) {
+export const BashRow = memo(function BashRow({ toolName, block, sessionId, useSessions, inspect, useDisclosure, t }: BashRowProps) {
   const model = useMemo(() => toolRowModel(toolName, block), [toolName, block])
   // An omitted shell workdir is the session workspace; relative values resolve
   // against it before reaching the terminal primitive.
@@ -52,7 +52,7 @@ export const BashRow = memo(function BashRow({ toolName, block, sessionId, useSe
     ? 'error'
     : model.state
   const status = stateStatus(state, t)
-  const [expanded, setExpanded] = useState(false)
+  const { expanded, toggle: toggleExpand } = useDisclosure()
   // Failures, persistent-shell results, and spill previews use a generic body;
   // background acknowledgements and malformed calls remain collapsed.
   const genericBody = terminal === null
@@ -71,9 +71,6 @@ export const BashRow = memo(function BashRow({ toolName, block, sessionId, useSe
     ? model.errorSummary ?? normalSummary
     : state === 'stopped' ? t('bash.stopped') : null
   const running = state === 'running'
-  const toggleExpand = useCallback(() => {
-    setExpanded(v => !v)
-  }, [])
   const toggleFromKeyboard = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     if (!expandable || (event.key !== 'Enter' && event.key !== ' ')) return
     event.preventDefault()

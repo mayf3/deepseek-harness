@@ -22,6 +22,8 @@ Use this package to give the dsh web client a Settings panel, connection-recover
 
 -----
 
+The Settings panel uses a shared 760 × 500 layout, bounded by the viewport. Longer sections scroll inside the content column; the Account entry uses the account icon.
+
 <a id="use-this-package"></a>
 ## Use this package
 
@@ -30,6 +32,8 @@ Users reach the shell through the sidebar's bottom Settings control; feature plu
 When the section navigation exceeds the panel's available height, the list scrolls independently of the settings content and keeps the Settings title fixed.
 
 In Desktop, the account-row update control shows availability, progress, verification, readiness, and persistent retry feedback. The preload carries semantic phase, version, progress, and classified failures; the component resolves every visible and accessible string from the active `settings` locale, including after an in-application language change. Selecting an available update starts downloading; installation requires a separate shell-owned confirmation. A collapsed sidebar shows the same status as a dot on its top expand button. Connection feedback takes priority except during shell-reported installation, when the expected backend disconnect must not hide update status. Failure restores connection feedback. Both controls share one carrier subscription; browser code cannot choose packages or authorize installation. [Desktop updates](../../../apps/desktop/README.md) owns the release workflow.
+
+Settings visibility and section selection live in the shell owner store. The shell supplies the effective Settings binding to the contributed launcher for menu keycaps and `aria-keyshortcuts`; the fallback button uses the same binding for hover and keyboard-focus hints and `aria-keyshortcuts`. Desktop Mod+, and the sidebar control open the same dialog; repeated commands keep it open. Settings and the shortcut reference use body portals at the same modal layer. The last opened dialog appears above the other and owns keyboard focus and Escape; closing it restores its invoking control.
 
 ### The General section
 
@@ -52,6 +56,8 @@ The onboarding ledger projects in ascending order and mounts exactly one step at
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+The shell declares settings.launcher for an account-owned sidebar menu and retains the Settings button as its fallback. Closing the dialog returns focus to the active launcher.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 
@@ -71,7 +77,7 @@ On a loopback page, the Client loads the provider's `hasDocument` capability thr
 
 ### Host half
 
-The Host half registers `ui-onboarding` in the user-settings seam. The welcome step contributed by ui-settings-models reads and writes its `welcomeNoticeVersion` through the existing public settings boundary; the shell itself remains policy-free.
+The Host half declares `welcomeNoticeVersion` as a volatile field of the `ui-settings-general` entry Config. The welcome step contributed by ui-settings-models reads and writes its `welcomeNoticeVersion` through the existing public settings boundary; the shell itself remains policy-free.
 
 </details>
 

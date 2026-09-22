@@ -11,7 +11,7 @@
 - tree "Sessions":
   - treeitem "workspace" [expanded]
   - treeitem "New Session" [selected]
-- button "Settings"
+- button "Account menu": Not signed in
 - banner:
   - button "Open right sidebar"
 - text: Into the Unknown Preview

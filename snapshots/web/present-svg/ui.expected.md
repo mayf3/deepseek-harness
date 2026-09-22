@@ -1,9 +1,11 @@
 - text: 简单画一个 SVG 表示冯诺依曼架构, 保存为 von-neumann.svg {{clock}}
 - button "复制"
-- button "2 次工具调用 · 1 条消息" [expanded]
-- button "上下文注入 runtime-context"
+- status: 已完成工作
+- button "用时 {{duration}}" [expanded]
+- button "已完成分析" [expanded]
 - button "思考"
 - paragraph: 我来创建一个冯诺依曼架构的 SVG 示意图。
+- button "修改了文件并已调用工具" [expanded]
 - button "写入 von-neumann.svg +83 -0":
   - text: 写入
   - button "von-neumann.svg"

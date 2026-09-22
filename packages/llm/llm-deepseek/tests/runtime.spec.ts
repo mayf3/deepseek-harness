@@ -70,7 +70,7 @@ function noExtensions(): Promise<PreparedDeepSeekLlmApiExtensions> {
 
 /** Direct adapter over the plugin's real resolve step, with a static key. */
 function adapterOf(
-  config: Partial<LlmDeepSeek.Config> & { apiKey?: string } = {},
+  config: Partial<LlmDeepSeek.Options> & { apiKey?: string } = {},
   attachments?: AttachmentStore,
   files?: LlmDeepSeek.DeepSeekFileStore,
 ): DeepSeekAdapter {
@@ -1860,7 +1860,7 @@ describe('plugin registration and config', () => {
   it('uses the default model catalog when apply is called directly', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    LlmDeepSeek.apply(ctx, { baseURL: 'http://127.0.0.1:1' })
+    LlmDeepSeek.apply(ctx, LlmDeepSeek.Config({ baseURL: 'http://127.0.0.1:1' }))
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
       { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'] },
       {
@@ -2060,11 +2060,11 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     expect(() => {
-      LlmDeepSeek.apply(ctx, {
+      LlmDeepSeek.apply(ctx, LlmDeepSeek.Config({
         baseURL: 'http://127.0.0.1:1',
         models: [{ id: 'invalid-context', contextWindow: 0 }],
-      })
-    }).toThrow(/contextWindow must be a positive integer/)
+      }))
+    }).toThrow(/contextWindow/)
     expect(ctx.llm.listProviders()).toEqual([])
   })
 

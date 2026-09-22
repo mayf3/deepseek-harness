@@ -39,5 +39,6 @@ export function convertDelimited(bytes: Uint8Array<ArrayBuffer>, format: 'csv' |
     sheets: [{ id: '1', name: format.toUpperCase(), order: 0, status: 1, hide: 0,
       row: Math.max(1, row), column, celldata, config: {}, luckysheet_select_save: initialSelection({}) }],
     missingResults: 0,
+    unsupportedFeatures: [],
   }
 }

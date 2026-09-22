@@ -17,22 +17,29 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { GlobalStandardProps, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type {
-  MenuOpenState, RowToast, RowToastState, SessionRenameDialogInjected, SessionRenameTarget,
+  MenuOpenState, RowToast, RowToastState, SessionArchiveConfirmInjected, SessionArchiveConfirmRequest,
+  SessionRenameDialogInjected, SessionRenameTarget,
 } from '../src/client/contract/slots.ts'
-import { ArchiveSessionMenuItem, ArchiveSessionRowButton } from '../src/client/session-actions/ArchiveSession.tsx'
+import {
+  ArchiveSessionMenuItem, ArchiveSessionRowButton, SessionArchiveConfirmDialog,
+} from '../src/client/session-actions/ArchiveSession.tsx'
 import { ForkSessionMenuItem } from '../src/client/session-actions/ForkSession.tsx'
 import { PinSessionMenuItem, PinSessionRowButton } from '../src/client/session-actions/PinSession.tsx'
 import { RenameSessionMenuItem, SessionRenameDialog } from '../src/client/session-actions/RenameSession.tsx'
 import { RowActionToast } from '../src/client/session-actions/RowActionToast.tsx'
-import { zh } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
+import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
+import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 
 afterEach(cleanup)
 
 // The seat's key domain is workspace ∪ common; the stub mirrors the real
 // lookup chain (namespace, then common vocabulary, then the key).
 const t: PropsLocale<'workspace'>['t'] = makeTranslate(zh, commonZh)
+const tEn: PropsLocale<'workspace'>['t'] = makeTranslate(en, commonEn)
 
 const sid = (id: string) => id as SessionId
 /** Selector hook over one fixed snapshot: how the renderer binds a standard or injected `hooks` source. */
@@ -80,7 +87,7 @@ type OverlayProps = PropsRuntime<'shell.overlay'> & PropsLocale<'workspace'>
 
 /** Owner share, standard seat, locale seat, and the bound open-state hook of one menu row. */
 function menuRow(menu: MenuOpenState): MenuRowProps {
-  return { ...ROW, useMenuOpenState: () => menu, t, ...standard }
+  return { ...ROW, useMenuOpenState: () => menu, useShortcuts: hook([]), t, ...standard }
 }
 
 /** Owner share, standard seat, and locale seat of one hover button. */
@@ -334,6 +341,122 @@ describe('SessionRenameDialog', () => {
   })
 })
 
+describe('SessionArchiveConfirmDialog', () => {
+  /** The dialog over a test-owned request source; settling clears the request the way apply does. */
+  function archiveDialog(stopAndArchiveSession: SessionArchiveConfirmInjected['stopAndArchiveSession'], translate = t) {
+    const request = createSnapshotStore<SessionArchiveConfirmRequest | null>(null)
+    const settleSessionArchive = vi.fn(() => { request.set(null) })
+    render(
+      <SessionArchiveConfirmDialog
+        {...overlay}
+        t={translate}
+        useArchiveRequest={bindSnapshotSelector(request)}
+        settleSessionArchive={settleSessionArchive}
+        stopAndArchiveSession={stopAndArchiveSession}
+      />,
+    )
+    const ask = (activity: SessionArchiveConfirmRequest['activity']): void => {
+      act(() => { request.set({ sessionId: sid('one'), displayTitle: 'Busy session', activity }) })
+    }
+    return { settleSessionArchive, ask }
+  }
+
+  it('renders nothing until a confirmation is requested', () => {
+    archiveDialog(vi.fn(async () => {}))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('names the session and lists every reported family with its items, then stops and archives on confirm', async () => {
+    const pending = Promise.withResolvers<undefined>()
+    const stopAndArchiveSession = vi.fn(() => pending.promise)
+    const { settleSessionArchive, ask } = archiveDialog(stopAndArchiveSession)
+    ask([
+      { kind: 'turn' },
+      { kind: 'subagent', items: [{ id: 'child-1', label: 'reviewer' }, { id: 'child-2' }] },
+      { kind: 'job', items: [{ id: 'bash-1', label: 'pnpm run build' }] },
+      { kind: 'schedule', items: [{ id: 'schedule-1', label: 'check the build' }] },
+    ])
+    const dialog = screen.getByRole('dialog', { name: '停止并归档此会话？' })
+    expect(dialog.textContent).toContain('“Busy session”仍有正在进行的工作')
+    const lines = [...screen.getByRole('list', { name: '将被停止的工作' }).querySelectorAll('li')].map(li => li.textContent)
+    expect(lines).toEqual([
+      '进行中的回合',
+      '2 个运行中的子代理：reviewer、child-2',
+      '1 个后台任务：pnpm run build',
+      '1 条定时提醒：check the build',
+    ])
+    fireEvent.click(screen.getByRole('button', { name: '停止并归档' }))
+    expect(stopAndArchiveSession).toHaveBeenCalledWith(sid('one'))
+    // While the Host call is pending, closing is blocked and the status shows.
+    expect(screen.getByRole('status').textContent).toBe('正在停止并归档…')
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(settleSessionArchive).not.toHaveBeenCalled()
+    await act(async () => { pending.resolve(undefined) })
+    expect(settleSessionArchive).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps the dialog open with a rejection surfaced, and Cancel settles without archiving', async () => {
+    const stopAndArchiveSession = vi.fn<SessionArchiveConfirmInjected['stopAndArchiveSession']>()
+      .mockRejectedValueOnce(new Error('stop exploded'))
+    const { settleSessionArchive, ask } = archiveDialog(stopAndArchiveSession)
+    ask([{ kind: 'turn' }])
+    fireEvent.click(screen.getByRole('button', { name: '停止并归档' }))
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('stop exploded') })
+    expect(settleSessionArchive).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(settleSessionArchive).toHaveBeenCalledOnce()
+    expect(stopAndArchiveSession).toHaveBeenCalledOnce()
+  })
+
+  it('ignores Escape while the Host call is pending and reports a non-Error reason as text', async () => {
+    const pending = Promise.withResolvers<undefined>()
+    const stopAndArchiveSession = vi.fn<SessionArchiveConfirmInjected['stopAndArchiveSession']>()
+      .mockReturnValueOnce(pending.promise)
+    const { settleSessionArchive, ask } = archiveDialog(stopAndArchiveSession)
+    ask([{ kind: 'turn' }])
+    fireEvent.click(screen.getByRole('button', { name: '停止并归档' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(settleSessionArchive).not.toHaveBeenCalled()
+    await act(async () => { pending.reject('plain failure') })
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('plain failure') })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(settleSessionArchive).toHaveBeenCalledOnce()
+  })
+
+  it('describes a family merged by another provider with the generic line', () => {
+    const { ask } = archiveDialog(vi.fn(async () => {}))
+    ask([{ kind: 'probe', items: [{ id: 'probe-1' }] }])
+    const lines = [...screen.getByRole('list', { name: '将被停止的工作' }).querySelectorAll('li')].map(li => li.textContent)
+    expect(lines).toEqual(['1 项其他工作（probe）'])
+  })
+
+  it('selects the singular or plural English line by item count', () => {
+    const { ask } = archiveDialog(vi.fn(async () => {}), tEn)
+    ask([
+      { kind: 'subagent', items: [{ id: 'child-1', label: 'reviewer' }] },
+      { kind: 'job', items: [{ id: 'bash-1' }, { id: 'bash-2' }] },
+      { kind: 'schedule', items: [{ id: 'schedule-1', label: 'check the build' }, { id: 'schedule-2', label: 'stand-up' }] },
+      { kind: 'probe', items: [{ id: 'probe-1' }] },
+    ])
+    const lines = [...screen.getByRole('list', { name: 'Work that will be stopped' }).querySelectorAll('li')].map(li => li.textContent)
+    expect(lines).toEqual([
+      '1 running subagent: reviewer',
+      '2 background jobs: bash-1, bash-2',
+      '2 scheduled reminders: check the build, stand-up',
+      '1 other item of work (probe)',
+    ])
+  })
+})
+
+// A provider outside this package may merge its own family into the kind map;
+// the dialog must describe it without knowing its copy.
+declare module '@deepseek-ai/dsh-workspace/types' {
+  interface SessionActivityKindMap {
+    probe: true
+  }
+}
+
 describe('RowActionToast', () => {
   /** The notice surface over a test-owned notice source; dismissal clears the notice the way apply does. */
   function toastSurface() {
@@ -361,6 +484,14 @@ describe('RowActionToast', () => {
     toastSurface()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(document.body.textContent).toBe('')
+  })
+
+  it('the stopped-and-archived notice offers the same undo and filter actions under its own wording', () => {
+    const { undoArchive, notify } = toastSurface()
+    notify({ kind: 'stoppedAndArchived', sessionId: sid('one') })
+    expect(screen.getByRole('alert').textContent).toBe('已停止并归档，可撤销或筛选已归档会话')
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }))
+    expect(undoArchive).toHaveBeenCalledWith(sid('one'))
   })
 
   it('the archived notice takes itself down, then undoes the archive or shows the archived rows', () => {
@@ -439,4 +570,34 @@ describe('RowActionToast', () => {
       vi.useRealTimers()
     }
   })
+})
+
+it('shows effective Session shortcuts while menu clicks keep the row target', () => {
+  const shortcuts = new ShortcutRegistry('desktop', 'macos')
+  for (const [action, code] of [['rename', 'KeyR'], ['fork', 'KeyF'], ['archive', 'KeyA']] as const) {
+    shortcuts.register({ id: `session.${action}` as ShortcutCommandId, label: () => action, aliases: [],
+      defaults: {
+        'desktop:macos': { code, modifiers: ['primary', action === 'archive' ? 'shift' : 'alt'] },
+        'desktop:windows': { code, modifiers: ['primary', action === 'archive' ? 'shift' : 'alt'] },
+        'desktop:linux': { code, modifiers: ['primary', action === 'archive' ? 'shift' : 'alt'] },
+      },
+      regions: ['page'], modals: [], resolve: () => ({ status: 'pass' }) })
+  }
+  const requestSessionRename = vi.fn()
+  const forkSession = vi.fn()
+  const archiveSession = vi.fn()
+  const props = { ...menuRow([true, vi.fn()]), useShortcuts: hook(shortcuts.catalog.getSnapshot()) }
+  render(<>
+    <RenameSessionMenuItem {...props} requestSessionRename={requestSessionRename} />
+    <ForkSessionMenuItem {...props} forkSession={forkSession} />
+    <ArchiveSessionMenuItem {...props} useArchived={hook(idSet())} archiveSession={archiveSession} unarchiveSession={vi.fn()} />
+  </>)
+  expect(screen.getAllByRole('menuitem').map(item => item.getAttribute('aria-keyshortcuts')))
+    .toEqual(['Alt+Meta+R', 'Alt+Meta+F', 'Shift+Meta+A'])
+  fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '分叉会话' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
+  expect(requestSessionRename).toHaveBeenCalledWith(ROW.sessionId, ROW.displayTitle)
+  expect(forkSession).toHaveBeenCalledWith(ROW.sessionId)
+  expect(archiveSession).toHaveBeenCalledWith(ROW.sessionId)
 })

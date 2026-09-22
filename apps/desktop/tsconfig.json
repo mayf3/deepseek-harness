@@ -1,13 +1,11 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "lib/types"
-  },
-  "include": ["src"],
+  "files": [],
   "references": [
-    { "path": "../../packages/boot/app-boot" },
-    { "path": "../../packages/client/ui-sidebar-browser/tsconfig.host.json" },
-    { "path": "../../packages/util/home-paths" }
+    {
+      "path": "./tsconfig.host.json"
+    },
+    {
+      "path": "./tsconfig.client.json"
+    }
   ]
 }

@@ -17,6 +17,20 @@ export class WorkspaceCreateError extends Error {
   }
 }
 
+/**
+ * Archive failed on the Host. `rpcError.code` distinguishes the active-session
+ * refusal (`workspace/session-active`, whose details name what still runs)
+ * from a missing session or a carrier fault.
+ */
+export class WorkspaceArchiveError extends Error {
+  override readonly name = 'WorkspaceArchiveError'
+
+  /** @param rpcError - Host business or folded carrier failure. */
+  constructor(readonly rpcError: RemoteFailure) {
+    super(`workspace session archive failed: ${rpcError.code}: ${rpcError.message}`)
+  }
+}
+
 /** Bare observable source for the Workspace Controller snapshot. */
 export interface WorkspaceSource {
   /** Read the identity-stable current snapshot. */
@@ -67,8 +81,11 @@ export interface IWorkspaces {
   /**
    * Archive a Session from Workspace grouping surfaces.
    * @param sessionId - Session to archive.
+   * @param options - `stopActivity` asks the Host to stop the Session's running work instead of refusing.
+   * @throws {WorkspaceArchiveError} when the Host refuses; without `stopActivity` a Session with
+   *   running work fails as `workspace/session-active`, its details naming what runs.
    */
-  archiveSession(sessionId: SessionId): Promise<void>
+  archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>
   /**
    * Unarchive a Session from the archived Session list.
    * @param sessionId - Session to unarchive.
@@ -139,9 +156,9 @@ export class WorkspaceController extends Service implements IWorkspaces {
     if (!result.ok) throw commandError('reorder', result.error)
   }
 
-  async archiveSession(sessionId: SessionId): Promise<void> {
-    const result = await this.model.archiveSession(sessionId)
-    if (!result.ok) throw commandError('session archive', result.error)
+  async archiveSession(sessionId: SessionId, options: { readonly stopActivity?: boolean } = {}): Promise<void> {
+    const result = await this.model.archiveSession(sessionId, options)
+    if (!result.ok) throw new WorkspaceArchiveError(result.error)
   }
 
   async unarchiveSession(sessionId: SessionId): Promise<void> {

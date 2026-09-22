@@ -143,6 +143,39 @@ async function bootRegistries(): Promise<{
 }
 
 describe('Conversation registries', () => {
+  it('publishes lifecycle timeline without an active view and retains the captured completed turn', async () => {
+    const { uiConversation, binding } = await bootRegistries()
+    const conversation = uiConversation.binding(binding)
+    const source = binding.eventSource as MutableSessionEventSource
+    const listener = vi.fn()
+    const unsubscribe = conversation.timeline.subscribe(listener)
+    const initial = conversation.timeline.getSnapshot()
+    expect(initial.turnOrder).toEqual([])
+    source.append({ type: 'event', event: {
+      type: 'turn/start', seq: SessionSeq(1), time: 1, data: { turn: 1 },
+    } })
+    expect(conversation.timeline.getSnapshot().turns.get(1)).toMatchObject({ status: 'open', start: { seq: 1 } })
+    expect(listener).toHaveBeenCalledOnce()
+    source.append({ type: 'event', event: {
+      type: 'turn/end', seq: SessionSeq(2), time: 2, data: { turn: 1, reason: { kind: 'completed' } },
+    } })
+    const completed = conversation.timeline.getSnapshot()
+    expect(completed.turns.get(1)).toMatchObject({ status: 'closed', end: { seq: 2 } })
+    source.append({ type: 'event', event: {
+      type: 'turn/start', seq: SessionSeq(3), time: 3, data: { turn: 2 },
+    } })
+    expect(conversation.timeline.getSnapshot().turnOrder).toEqual([1, 2])
+    expect(completed.turnOrder).toEqual([1])
+    expect(completed.turns.get(1)?.end?.seq).toBe(2)
+    expect(conversation.timeline).toBe(uiConversation.binding(binding).timeline)
+    unsubscribe()
+    listener.mockClear()
+    source.append({ type: 'event', event: {
+      type: 'turn/start', seq: SessionSeq(4), time: 4, data: { turn: 3 },
+    } })
+    expect(listener).not.toHaveBeenCalled()
+  })
+
   it('publishes frame-paced updates after three animation frames and lets immediate updates preempt them', async () => {
     let nextFrame = 0
     const frames = new Map<number, FrameRequestCallback>()

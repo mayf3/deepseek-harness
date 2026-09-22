@@ -18,10 +18,11 @@ function excelLicenseBanner(): string {
   const excel = readFileSync(join(dirname(require.resolve('exceljs/package.json')), 'LICENSE'), 'utf8')
   const xml = readFileSync(join(dirname(dirname(require.resolve('fast-xml-parser'))), 'LICENSE'), 'utf8')
   const csv = readFileSync(join(dirname(require.resolve('papaparse/package.json')), 'LICENSE'), 'utf8')
+  const zip = readFileSync(join(dirname(require.resolve('fflate/package.json')), 'LICENSE'), 'utf8')
   const xlsRoot = dirname(require.resolve('xlsx'))
   const xls = readdirSync(xlsRoot).filter(name => /^(LICENSE|NOTICE)(\.|$)/u.test(name)).sort()
     .map(name => readFileSync(join(xlsRoot, name), 'utf8')).join('\n')
-  return ['//! Bundled spreadsheet license notices', ...`${fortune}\n${excel}\n${xml}\n${csv}\n${xls}`.trimEnd().split('\n').map(line => `// ${line}`)].join('\n')
+  return ['//! Bundled spreadsheet license notices', ...`${fortune}\n${excel}\n${xml}\n${csv}\n${zip}\n${xls}`.trimEnd().split('\n').map(line => `// ${line}`)].join('\n')
 }
 
 /** License files for PDF.js and the data embedded beside its runtime. */

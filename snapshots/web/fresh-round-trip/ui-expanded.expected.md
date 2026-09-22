@@ -8,8 +8,9 @@
     - tab "Trajectory"
 - text: "Use the bash tool to run exactly: echo WEB_E2E_OK. Then reply with the single word DONE and stop. {{clock}}"
 - button "Copy"
-- button "1 tool call" [expanded]
-- button "Context injection runtime-context"
+- status: Worked
+- button "Took {{duration}}" [expanded]
+- button "Ran commands" [expanded]
 - button "Think"
 - button "Bash Echo the test string"
 - button "Think"

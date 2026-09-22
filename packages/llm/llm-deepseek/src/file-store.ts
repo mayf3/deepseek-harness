@@ -23,6 +23,8 @@ export interface DeepSeekFilePolicy {
 export interface DeepSeekFileConnection {
   baseURL: string
   apiKey: string
+  /** Use the DSH account header; omitted for ordinary API keys. */
+  accountCredential?: boolean
 }
 
 /** Result of one file-id resolution. */
@@ -136,6 +138,7 @@ export class DeepSeekFileStore {
     return new DeepSeekFilesClient({
       baseURL: connection.baseURL,
       apiKey: connection.apiKey,
+      ...connection.accountCredential === undefined ? {} : { accountCredential: connection.accountCredential },
       ...this.fetchImpl === undefined ? {} : { fetch: this.fetchImpl },
     })
   }
