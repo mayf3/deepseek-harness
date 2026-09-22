@@ -21,7 +21,7 @@ export function apply(ctx: Context, config: Config): void {
   for (const path of [config.dataRoot, config.modelDirectory, config.vadModelPath]) {
     if (path !== undefined && !isAbsolute(path)) throw new Error(`SenseVoice paths must be absolute: ${path}`)
   }
-  new URL(config.modelOrigin)
+  for (const origin of config.modelOrigin === undefined ? config.modelOrigins : [config.modelOrigin]) new URL(origin)
   const worker = new SenseVoiceWorker(ctx, config)
   const estimatedBytes = config.precision === 'int8' ? 1_000_000_000 : 2_000_000_000
   ctx.effect(() => {
