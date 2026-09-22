@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-ip-geolocation",
   "description": "Bounded lookup of the calling process network exit country through a JSON country endpoint",
-  "version": "0.1.6-alpha.2",
+  "version": "0.1.7-alpha.1",
   "publishConfig": {
     "access": "public"
   },
