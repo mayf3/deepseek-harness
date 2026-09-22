@@ -72,7 +72,9 @@ The completed-turn action footer follows the recorded Turn end. Its action row s
 <a id="turn-process-folding"></a>
 ## Turn Process Folding
 
-During uninterrupted following, local steering echoes remain mounted through Inbox acceptance and claim until the durable message arrives, without triggering tail following twice. Pending inputs follow Inbox order across clients, using matching local echoes in place. After reconnect, Host-owned rows replace receipt-confirmed local echoes; a claim awaiting admission may briefly have no bubble.
+During uninterrupted following, local transcript and steering echoes remain mounted through Inbox acceptance and claim until the durable message arrives, without triggering tail following twice. Pending steering follows Inbox order across clients, using matching local echoes in place. After reconnect, Host-owned rows replace receipt-confirmed local echoes; a claim awaiting admission may briefly have no bubble.
+
+When Chat ends with an open Turn control and that Turn has no visible input, the first local transcript echo precedes the control. Other echoes remain at the flow tail. The control and echoes share one keyed list, so arrival of the control preserves the echo's mounted identity. Durable inputs replace their matching echoes in the same render.
 
 Work-details modes control process-group display and reasoning previews; eligible completed Turns fold their process without hiding the final answer. The [business-rule reference](src/client/conversation-nodes/README.md#display-modes) contains the mode table, title behavior, whole-Turn eligibility, clocks, and disclosure resets.
 
@@ -147,6 +149,8 @@ None; Chat presentation does not assemble or mutate provider requests.
 
 
 - **Developer messages are not displayed** — presentation is intentionally deferred; encountering `developer/message` throws instead of rendering a fallback row.
+
+- **Opening echoes predict local order** — several submissions made before the running update can all remain in Chat. Their initial order follows local submission order, not Host queue order; admission can reposition them when the Host receives requests in a different order.
 
 - **The transcript reflects the loaded Session window** — older transcript nodes become available only after Session Controller loads the preceding event page. Turn navigation is wider than the window: the rail merges the loaded Turns with the host `turnOutline` projection, so every started Turn gets a fixed-pitch mark (10px apart; a ladder taller than the frame scrolls inside it with gradient fades), and activating an unloaded mark pages history through the Turn's `turn/start` seq before landing on its row. Without the projection (assemblies not mounting `dsh-session-turn-outline`) the rail falls back to loaded Turns only.
 - **Rail previews are card-sized** — one prompt line (50 characters) and up to three response lines (120), on loaded and unloaded Turns alike; an unloaded Turn's response arrives from the outline only once the Turn settled, so an open Turn previews its prompt (or just the Turn number) until then.

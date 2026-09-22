@@ -1685,6 +1685,14 @@ describe('ChatView', () => {
     )
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByText('即发即显').closest('[data-submission-echo]')).not.toBeNull()
+    const echo = view.getByText('即发即显').closest('[data-submission-echo]')
+    act(() => { h.setSession({ testInbox: { 'next-step': [], 'next-turn': [{
+      id: 'idle-occurrence' as never, role: 'user', source: { kind: 'user', rpcId: 'req-1' as never },
+      content: [{ type: 'text', text: '即发即显' }],
+    }] } }) })
+    expect(view.getByText('即发即显').closest('[data-submission-echo]')).toBe(echo)
+    act(() => { h.setSession({ testInbox: { 'next-step': [], 'next-turn': [] } }) })
+    expect(view.getByText('即发即显').closest('[data-submission-echo]')).toBe(echo)
 
     // The durable node arrives while the echo is STILL in the session
     // snapshot: the render-time rpcId dedupe keeps exactly one bubble.
@@ -1706,6 +1714,95 @@ describe('ChatView', () => {
     // The delayed snapshot retirement changes nothing visible.
     act(() => { h.setSession({ pendingSubmissions: [] }) })
     expect(view.getAllByText('即发即显')).toHaveLength(1)
+  })
+
+  it.each(['compact', 'detailed', 'expanded'] as const)(
+    'keeps the opening echo above a new Turn title and steering below it (%s)', (mode) => {
+      const opening = {
+        requestId: 'opening' as never, placement: 'transcript' as const,
+        time: 5_000, text: 'opening input', attachments: [],
+      }
+      const steer = {
+        requestId: 'steer' as never, placement: 'steering' as const,
+        time: 6_000, text: 'later steering', attachments: [],
+      }
+      const h = makeHarness({}, { pendingSubmissions: [opening, steer] })
+      h.setTranscriptView(mode)
+      const view = render(<h.ChatView {...h.props} />)
+      const echo = view.getByText(opening.text).closest('[data-submission-echo]')!
+      const steeringEcho = view.getByText(steer.text).closest('[data-submission-echo]')!
+      act(() => { h.setChat({ turnTimings: new Map([[1, { startTime: 1_000 }]]) }) })
+      const title = view.container.querySelector('[data-chat-flow-kind="turn-process"]')!
+      expect(title).not.toBeNull()
+      expect(view.getByText(opening.text).closest('[data-submission-echo]')).toBe(echo)
+      expect(echo.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(title.compareDocumentPosition(steeringEcho) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      const admitted: UserMessageNode & { turn: number } = {
+        ...user(2, opening.text), turn: 1, source: { kind: 'user', rpcId: opening.requestId },
+      }
+      act(() => { h.setChat({ nodes: [admitted] }) })
+      expect(view.getAllByText(opening.text)).toHaveLength(1)
+      expect(view.getByText(steer.text).closest('[data-submission-echo]')).toBe(steeringEcho)
+      expect(view.getByText(opening.text).compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    },
+  )
+
+  it('hands off an opening echo when the Turn and input arrive in one render', () => {
+    const h = makeHarness({}, { pendingSubmissions: [{
+      requestId: 'same-frame' as never, placement: 'transcript', time: 1_000, text: 'same frame', attachments: [],
+    }] })
+    const view = render(<h.ChatView {...h.props} />)
+    const admitted: UserMessageNode & { turn: number } = {
+      ...user(2, 'same frame'), turn: 1, source: { kind: 'user', rpcId: 'same-frame' },
+    }
+    act(() => { h.setChat({ nodes: [admitted], turnTimings: new Map([[1, { startTime: 1_000 }]]) }) })
+    expect(view.getAllByText('same frame')).toHaveLength(1)
+    expect(view.container.querySelector('[data-submission-echo]')).toBeNull()
+    expect(renderedFlowKinds(view.container)).toEqual(['user', 'turn-process'])
+  })
+
+  it.each(['ABC', 'ACB', 'BAC', 'BCA', 'CAB', 'CBA'])(
+    'uses the first local opening echo until Host admission identifies the input (%s)', (hostOrder) => {
+      const pending: SessionSnapshot['pendingSubmissions'] = ['A', 'B', 'C'].map(text => ({
+        requestId: text as never, placement: 'transcript' as const,
+        time: 1_000, text: `input ${text}`, attachments: [],
+      }))
+      const h = makeHarness({}, { pendingSubmissions: pending })
+      const view = render(<h.ChatView {...h.props} />)
+      const flow = () => [...view.container.querySelectorAll<HTMLElement>(
+        '[data-submission-echo], [data-chat-flow-kind="user"], [data-chat-flow-kind="turn-process"]',
+      )].map(element => element.matches('[data-chat-flow-kind="turn-process"]') ? 'title'
+        : pending.find(input => element.textContent?.includes(input.text))!.requestId
+          + (element.hasAttribute('data-submission-echo') ? '*' : ''))
+      expect(flow()).toEqual(['A*', 'B*', 'C*'])
+      const inbox: InboxState = { 'next-step': [], 'next-turn': hostOrder.split('').map(id => ({
+        id: id as never, role: 'user', source: { kind: 'user', rpcId: id as never },
+        content: [{ type: 'text', text: `input ${id}` }],
+      })) }
+      act(() => { h.setSession({ testInbox: inbox }) })
+      act(() => { h.setChat({ turnTimings: new Map([[1, { startTime: 1_000 }]]) }) })
+      expect(flow()).toEqual(['A*', 'title', 'B*', 'C*'])
+      const admitted: UserMessageNode & { turn: number } = {
+        ...user(2, `input ${hostOrder[0]}`), turn: 1,
+        source: { kind: 'user', rpcId: hostOrder[0] },
+      }
+      act(() => { h.setChat({ nodes: [admitted] }) })
+      expect(flow()).toEqual([hostOrder[0], 'title', ...pending
+        .filter(input => input.requestId !== hostOrder[0]).map(input => `${input.requestId}*`)])
+      act(() => { h.setSession({ pendingSubmissions: pending.filter(input => input.requestId !== hostOrder[0]) }) })
+      expect(view.getAllByText(`input ${hostOrder[0]}`)).toHaveLength(1)
+    },
+  )
+
+  it('leaves an opening echo below an empty historical Turn title', () => {
+    const h = makeHarness({ turnTimings: new Map([[1, { startTime: 1_000 }]]), turnEnds: new Map([[1, 2]]) }, {
+      pendingSubmissions: [{ requestId: 'opening' as never, placement: 'transcript',
+        time: 3_000, text: 'next input', attachments: [] }],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const title = view.container.querySelector('[data-chat-flow-kind="turn-process"]')!
+    const echo = view.getByText('next input').closest('[data-submission-echo]')!
+    expect(title.compareDocumentPosition(echo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('does not pull the reader back to the tail when a local steer becomes Host-pending', () => {

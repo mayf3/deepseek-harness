@@ -68,9 +68,10 @@ export interface ISession {
   /**
    * Register one local submission echo in `snapshot.pendingSubmissions`,
    * synchronously, before the caller serializes and sends the prompt. The
-   * echo retires when a durable `user/message` event or queue occurrence
-   * carrying the returned identity arrives, or when the identified prompt
-   * call fails.
+   * Chat echoes persist until durable admission; transcript identities also
+   * wait for the Inbox claim watermark so stale queue rows stay suppressed.
+   * Queued echoes retire on queue acceptance. Identified failures retire
+   * submissions that have not already reached durable admission.
    * @param input - echo content and the optional settlement callback.
    * @returns the minted identity for {@link prompt} plus the pre-prompt abandon path.
    */
