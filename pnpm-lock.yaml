@@ -51,6 +51,9 @@ importers:
       '@deepseek-ai/dsh-llm-replay':
         specifier: workspace:^
         version: link:packages/test-support/llm-replay
+      '@deepseek-ai/dsh-mcp-client':
+        specifier: workspace:^
+        version: link:packages/mcp/mcp-client
       '@deepseek-ai/dsh-skill-office':
         specifier: workspace:^
         version: link:packages/skill/skill-office

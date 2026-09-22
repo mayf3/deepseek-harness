@@ -1475,7 +1475,6 @@ export class ToolRuntime extends Service {
     } catch (error: unknown) {
       const execution: MutableToolRunContext = { ...base, arguments: undefined }
       this.contentFinalizers.set(execution, finalizerFor())
-      if (!collapsed) this.contentProjectors.set(execution, capturedProjector)
       return { kind: 'final-result', exec: execution, result: toolErrorResult(error) }
     }
   }
