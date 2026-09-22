@@ -1,5 +1,6 @@
 /** Register DeepSeek Messages with live configuration and request-local credentials. */
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-deepseek-account'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { Context } from '@deepseek-ai/cordis'
 import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
@@ -91,6 +92,7 @@ export function apply(ctx: Context, config: Config): void {
       ctx.logger.warn(`llm-deepseek: unusable Messages replay state on assistant history for route "${provider}/${model}"; sending provider-neutral content (${reason})`)
     },
     resolveApiKey,
+    resolveAccountToken: connection => ctx.get('deepseekAccount')?.resolveToken(connection.baseURL) ?? Promise.resolve(undefined),
     resolveUserId,
     resolveAttachments: () => ctx.get('attachments'),
     resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(

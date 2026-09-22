@@ -80,6 +80,9 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'vendor/schemastery/src/index.ts', upstream: ['schemastery'] },
   // Narrows a Standard Schema by the same upstream `vendor:` identifier.
   { file: 'vendor/loader/src/config/diff.ts', upstream: ['schemastery'] },
+  // Native schema detection and its fixture share the vendored runtime's Symbol.for identifier.
+  { file: 'packages/boot/app-boot/src/config-schema/native.ts', upstream: ['schemastery'] },
+  { file: 'packages/boot/app-boot/tests/config-schema.spec.ts', upstream: ['schemastery'] },
   // Asserts the vendored-manifest table, which gains an upstream-name column.
   { file: 'scripts/gen-third-party-notices.spec.ts', upstream: RENAMES.map(rename => rename.upstream) },
   // `cordis` is also an agent-preset id, so in these files the bare name is

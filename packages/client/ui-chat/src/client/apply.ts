@@ -21,7 +21,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {
-  ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected,
+  ChatNodeInjected, ChatScrollPosition, ChatViewInjected,
   TurnTailOwnerProps,
 } from './contract/slots.ts'
 import type { ChatSnapshot } from './contract/snapshot.ts'
@@ -41,12 +41,14 @@ import { LinkOpeningRow, type LinkOpeningRowInjected } from './settings/LinkOpen
 import { PerformanceUsageRow, type PerformanceUsageRowInjected } from './settings/PerformanceUsageRow.tsx'
 import { PerformanceUsagePolicy } from './performance-usage.ts'
 import { useTurnDataValue } from './chat/use-turn-data.ts'
+import { bindDisclosure } from './chat/use-disclosure.ts'
 
-const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
+const CHAT_NODE_INJECT: ChatNodeInjected = {
   hooks: {
-    turnData: (_standard, data) => function useTurnData(key) {
-      return useTurnDataValue(data, key)
+    turnData: (_standard, { turnData }) => function useTurnData(key) {
+      return useTurnDataValue(turnData, key)
     },
+    disclosure: (_standard, { disclosureReset }) => bindDisclosure(disclosureReset),
   },
 }
 

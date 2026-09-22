@@ -42,6 +42,10 @@ export function ExcelBody({ content, format, limits, t }: LoadedExcelBodyProps):
   const hasFormulas = state.value.sheets.some(sheet => sheet.celldata?.some(cell => cell.v?.f !== undefined))
   return <section className={css.body} data-excel-preview aria-label={t('title')}>
     <style>{scopedStyles}</style>
+    {state.value.unsupportedFeatures.length > 0 && <div className={css.notice} role="note" data-excel-unsupported-notice>
+      <IconWarningTriangleOutlineRegular size={16} />
+      <span>{t('unsupportedNotice', { features: state.value.unsupportedFeatures.map(feature => t(feature)).join(t('featureSeparator')) })}</span>
+    </div>}
     <div className={`${css.workbook} ${hasFormulas ? css.withFormulaWarning : ''}`}>
       {hasFormulas && <Tooltip portal label={t('formulaWarning')} side="bottom" delayMs={500}>
         <button type="button" className={css.formulaWarning} aria-label={t('formulaWarning')} data-excel-formula-warning>

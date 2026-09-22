@@ -63,6 +63,18 @@ const SEED_ID = 'seeded-history-web-e2e'
 
 const PROMPT = 'Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop.'
 
+/** Trajectory visibility confirms Client receipt; Host persistence alone does not. */
+async function waitForContextInClient(page: Page, seq: number): Promise<void> {
+  await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+  try {
+    await page.locator(`[data-trajectory-scroll] tr[data-trajectory-row-key="context%00seq%00${seq}"]`)
+      .waitFor({ state: 'visible', timeout: 10_000 })
+  } finally {
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click()
+  }
+  await page.locator('[data-conversation-scroll]').waitFor({ state: 'visible' })
+}
+
 /**
  * Append a complete manual `/compact` lifecycle and valid compaction transaction
  * over the recorded turn's own surface. The recording stays model-authentic and
@@ -346,7 +358,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     ).toBe(true)
     const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
     if (agent === undefined) throw new Error('seeded session did not attach an agent')
-    agent.session.append('user/message', createUserMessage({
+    const injected = agent.session.append('user/message', createUserMessage({
       content: [{
         type: 'text',
         text: '<system-reminder>\n'
@@ -367,10 +379,10 @@ describe('web e2e: seeded history renders through cold resume', () => {
         }],
       },
     }), { surfaceOp: 'append' })
-    // The header names the producer the durable source records, so the
-    // reconciled instruction file is readable without expanding the row.
-    await page.getByRole('button', { name: 'Context injection AGENTS.md', exact: true })
-      .waitFor({ timeout: 10_000 })
+    await scaffold.ctx.sessions.flush(agent.session)
+    expect(agent.session.snapshotEvents()).toContainEqual(injected)
+    await waitForContextInClient(page, injected.seq)
+    expect(await page.locator('[data-chat-flow-kind="context"]').count()).toBe(0)
   }, 60_000)
 
   it.skipIf(MODE === 'record')('matches the historical conversation aria golden', async () => {
@@ -397,6 +409,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     const wasExpanded = await turnProcess.getAttribute('aria-expanded') === 'true'
     if (!wasExpanded) await turnProcess.click()
     const thinking = page.locator('[data-variant="think"]').first()
+    await expandOwningTurnProcess(page, thinking)
     const toggle = thinking.getByRole('button').first()
     const secondarySize = await thinking.locator('[class*="summaryText"]').evaluate(element => getComputedStyle(element).fontSize)
     await toggle.click()
@@ -425,60 +438,15 @@ describe('web e2e: seeded history renders through cold resume', () => {
     }
   })
 
-  it.skipIf(MODE === 'record')('matches the Figma context disclosure geometry', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-context-injection'))
-    const disclosure = page.getByRole('button', { name: 'Context injection AGENTS.md', exact: true })
-    expect(await disclosure.getAttribute('aria-expanded')).toBe('false')
-    const collapsedIcon = disclosure.locator('svg').first()
-    const collapsedIconBox = await collapsedIcon.boundingBox()
-    expect(collapsedIconBox?.width).toBe(14)
-    expect(collapsedIconBox?.height).toBe(14)
-
-    await disclosure.click()
-    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('true')
-    const body = page.locator('[data-context-injection-body]')
-    await body.waitFor({ timeout: 5_000 })
-    // The instructions form names the file it reconciled above the text, and
-    // the text keeps the framing the model read rather than a cleaned excerpt.
-    expect(await body.locator('[data-context-files] li').allInnerTexts()).toEqual(['AGENTS.md\nloaded'])
-    expect(await body.locator('[data-context-text]').innerText()).toContain('<system-reminder>')
-    const headerBox = await disclosure.boundingBox()
-    const bodyBox = await body.boundingBox()
-    if (headerBox === null || bodyBox === null) throw new Error('context disclosure geometry is not measurable')
-    expect(headerBox.height).toBe(24)
-    expect(bodyBox.x - headerBox.x).toBe(22)
-    expect(bodyBox.y - headerBox.y - headerBox.height).toBe(4)
-    expect(bodyBox.height).toBe(141)
-
-    const style = await body.evaluate((element) => {
-      const computed = getComputedStyle(element)
-      return {
-        backgroundColor: computed.backgroundColor,
-        borderRadius: computed.borderRadius,
-        color: computed.color,
-        fontSize: computed.fontSize,
-        lineHeight: computed.lineHeight,
-        padding: [
-          computed.paddingTop,
-          computed.paddingRight,
-          computed.paddingBottom,
-          computed.paddingLeft,
-        ],
-        scrolls: element.scrollHeight > element.clientHeight,
-      }
-    })
-    expect(style).toEqual({
-      backgroundColor: 'rgb(249, 250, 251)',
-      borderRadius: '8px',
-      color: 'rgb(129, 133, 140)',
-      fontSize: '11px',
-      lineHeight: '16px',
-      padding: ['10px', '16px', '12px', '12px'],
-      scrolls: true,
-    })
-
-    await disclosure.click()
-    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
+  it.skipIf(MODE === 'record')('omits ordinary instructions from Chat while retaining their logged content', async () => {
+    const session = scaffold.ctx.sessions.get(SessionId(SEED_ID))
+    if (session === undefined) throw new Error('seeded session is unavailable')
+    const instructions = session.snapshotEvents().filter(event => event.type === 'user/message'
+      && event.data.source.kind === 'agent-instructions')
+    expect(instructions).toHaveLength(1)
+    expect(instructions[0]?.data).toMatchObject({ source: { form: 'instructions', changes: [{ path: 'AGENTS.md' }] } })
+    expect(JSON.stringify(instructions[0]?.data)).toContain('Instruction 24: preserve the logged context contract.')
+    expect(await page.locator('[data-chat-flow-kind="context"], [data-context-injection-body]').count()).toBe(0)
   })
 
   it.skipIf(MODE === 'record')('restores the active turn rail mark across Chat and Trajectory', async () => {
@@ -788,26 +756,19 @@ describe('web e2e: seeded history renders through cold resume', () => {
     }
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('fits short logged context without a scrollport', async () => {
+  it.skipIf(MODE === 'record')('keeps short injected context out of Chat without dropping the event', async () => {
     const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
     if (agent === undefined) throw new Error('seeded session did not attach an agent')
-    agent.session.append('user/message', createUserMessage({
+    const injected = agent.session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'Short injected context.' }],
       source: { kind: 'fixture' },
     }), { surfaceOp: 'append' })
 
-    const disclosure = page.getByRole('button', { name: 'Context injection fixture', exact: true })
-    await disclosure.waitFor({ timeout: 10_000 })
-    await disclosure.click()
-    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('true')
-
-    // The instructions row above stays expanded from the geometry case; the
-    // opaque body is the one without a declared form.
-    const body = page.locator('[data-context-injection-body]:not([data-context-form])')
-    const bodyBox = await body.boundingBox()
-    if (bodyBox === null) throw new Error('short context disclosure geometry is not measurable')
-    expect(bodyBox.height).toBeLessThan(141)
-    expect(await body.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(false)
+    await scaffold.ctx.sessions.flush(agent.session)
+    expect(agent.session.snapshotEvents()).toContainEqual(injected)
+    await waitForContextInClient(page, injected.seq)
+    expect(await page.locator('[data-chat-flow-kind="context"]').count()).toBe(0)
+    expect(await page.getByText('Short injected context.', { exact: true }).count()).toBe(0)
   })
 
   it.skipIf(MODE === 'record')('restores the recorded file preview in its original tab after page reload', async () => {

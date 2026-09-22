@@ -22,6 +22,8 @@ kind: "package-reference"
 
 -----
 
+设置面板采用各页面共享的 760 × 500 布局，并受视口大小约束。较长的页面在内容栏内部滚动；账号入口使用账号图标。
+
 <a id="use-this-package"></a>
 ## 使用本包
 
@@ -51,6 +53,8 @@ Web 与桌面端的通用设置底部显示当前发布版本，使用构建注�
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
+
+外壳声明 settings.launcher，供账号功能提供侧边栏菜单，并以设置按钮作为回退。关闭对话框后，焦点返回当前入口。
 
 <details>
 <summary>实现细节——点击展开</summary>

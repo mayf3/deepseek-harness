@@ -1,7 +1,7 @@
 /** Browser lifetime for the isolated spreadsheet parser. */
 import workerSource from './worker.ts?raw'
 import type { ExcelFormat } from './format.ts'
-import type { ExcelLimits, ExcelPreview } from './model.ts'
+import { EXCEL_UNSUPPORTED_FEATURES, type ExcelLimits, type ExcelPreview } from './model.ts'
 
 /**
  * Parse workbook bytes in a disposable Worker, copying the retained preview buffer.
@@ -62,6 +62,8 @@ export function parseExcel(
 function validPreview(value: unknown): value is ExcelPreview {
   if (typeof value !== 'object' || value === null || !('sheets' in value) || !('missingResults' in value)) return false
   return typeof value.missingResults === 'number' && Number.isSafeInteger(value.missingResults) && value.missingResults >= 0
+    && 'unsupportedFeatures' in value && Array.isArray(value.unsupportedFeatures)
+    && value.unsupportedFeatures.every((feature: unknown) => EXCEL_UNSUPPORTED_FEATURES.some(known => known === feature))
     && Array.isArray(value.sheets) && value.sheets.length > 0
     && value.sheets.every((sheet: unknown) => typeof sheet === 'object' && sheet !== null && 'name' in sheet && typeof sheet.name === 'string'
       && 'celldata' in sheet && Array.isArray(sheet.celldata))

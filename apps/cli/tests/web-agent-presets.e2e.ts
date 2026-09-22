@@ -668,7 +668,7 @@ describe('a user preset declared from the shipped cordis rows', () => {
         expect(listed.isError).toBe(false)
         const providers = (JSON.parse(resultText(listed)) as { providers: Array<{ id: string; platform: string }> }).providers
         expect(providers.filter(provider => provider.platform === 'host').map(provider => provider.id))
-          .toEqual(['Service', 'Event', 'Builtin', 'Tool'])
+          .toEqual(['Service', 'Event', 'Config', 'Tool'])
 
         // The `Tool` provider is the one built over the host context: it
         // answers with the shared registry's view of the REQUESTING agent,
@@ -685,6 +685,44 @@ describe('a user preset declared from the shipped cordis rows', () => {
         expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
           'bash', 'cordis_inspect_list', 'cordis_inspect_query', 'plugin_manager',
         ]))
+
+        // The `Config` provider reads the booted profile tree: the shipped `tools` row declares a Config,
+        // and the bootstrap include row is a carrier. The name filter keeps each page small.
+        type ConfigRow = { id: string; patchId: string; name: string; status: string }
+        type ConfigPage = { data: { entries: ConfigRow[]; total: number; nextOffset: number | null } }
+        const listConfigs = async (input: Record<string, string | number>, callId: string): Promise<ConfigPage['data']> => {
+          const page = await copyCtx.tools.execute({
+            callId: ToolCallId(callId),
+            name: 'cordis_inspect_query',
+            arguments: { platform: 'host', provider: 'Config', method: 'listConfigs', input },
+            signal,
+            agent: copied.agent,
+          })
+          expect(page.isError, resultText(page)).toBe(false)
+          return (JSON.parse(resultText(page)) as ConfigPage).data
+        }
+        const toolsRows = await listConfigs({ name: '@deepseek-ai/dsh-tools' }, 'copied-preset-inspect-configs')
+        const toolsRow = toolsRows.entries[0]
+        expect(toolsRow).toMatchObject({ patchId: 'tools', status: 'schema' })
+        expect(toolsRows).toMatchObject({ total: 1, nextOffset: null })
+        const includes = await listConfigs({ name: 'cordis:include' }, 'copied-preset-inspect-includes')
+        expect(includes.entries.find(entry => entry.patchId === 'include')).toMatchObject({ status: 'tree' })
+        const firstPage = await listConfigs({ limit: 5 }, 'copied-preset-inspect-page')
+        expect(firstPage.entries).toHaveLength(5)
+        expect(firstPage.nextOffset).toBe(5)
+        const projected = await copyCtx.tools.execute({
+          callId: ToolCallId('copied-preset-inspect-config'),
+          name: 'cordis_inspect_query',
+          arguments: { platform: 'host', provider: 'Config', method: 'listConfigs', input: { entry: toolsRow!.id } },
+          signal,
+          agent: copied.agent,
+        })
+        expect(projected.isError).toBe(false)
+        type Projected = { status: string; acceptsMissing: unknown; schema: { $defs: Record<string, unknown> } }
+        const { data } = JSON.parse(resultText(projected)) as { data: Projected }
+        expect(data.status).toBe('schema')
+        expect(data.schema.$defs).toHaveProperty('loaderExpression')
+        expect(JSON.stringify(data.schema)).toContain('"mode"')
       } finally {
         await copied.dispose()
         await shipped.dispose()
