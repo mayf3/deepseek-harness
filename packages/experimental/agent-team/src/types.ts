@@ -96,12 +96,6 @@ export interface TeamTaskView {
   readonly writeScopeWarnings: string[]
 }
 
-/** Point-in-time roster and task-board projection returned to browser clients. */
-export interface TeamView {
-  readonly members: TeamMemberView[]
-  readonly tasks: TeamTaskView[]
-}
-
 /** One durable roster row published through the `agentTeam` Session projection. */
 export interface TeamMemberProjection {
   readonly id: SessionId

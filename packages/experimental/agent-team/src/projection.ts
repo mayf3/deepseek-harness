@@ -369,6 +369,8 @@ function buildTeamProjection(state: TeamProjectionState): TeamProjection {
 /**
  * Durable client view of one Team state. Mailbox-only state changes reuse the
  * previous view reference, so the live drive publishes nothing for them.
+ * A failure is terminal: later events retain the failed state reference and
+ * do not republish its view.
  * @param state - current Team state.
  * @returns the roster and non-deleted task board, plus any projection failure.
  */

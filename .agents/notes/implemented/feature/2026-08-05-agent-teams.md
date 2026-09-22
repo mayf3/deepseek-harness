@@ -56,7 +56,11 @@ Worktree isolation is not a harness runtime behavior. A deployment or prompt may
 
 ## Web projection
 
-The Web panel reads the Lead Session's `agentTeam` wire projection instead of polling a Remote read, because the projection registry already broadcasts one Host-wide frame per changed client view to every connected browser, and the subagent catalog panel proves that path needs no refresh control. The wire view carries durable facts only: roster rows with their durable phase, non-deleted task views with the same owner-name, readiness, and write-overlap derivation the task board returns to agents, and the projection `failure` beside the last valid state so a rejected persisted record is visible instead of appearing as a stale but healthy board. Live turn activity and the model stay out of the view because they are process-local; the browser overlays Session status and the member Session's `modelSelection` projection, and shows no model before a durable selection or request exists. Publication requires the projection `apply` to return a new state object per applied Team event and to replace only the touched collection, so mailbox-only events keep the previous view reference and publish nothing. The `agentTeams/view` Remote method remains for callers that need live availability and the configured model.
+The Web panel reads the Lead Session's `agentTeam` wire projection because the existing projection stream keeps browser state current without a separate Team read API. Current-session values use the standard `useProjection` hook; a teammate conversation reads its Lead through the shared cross-Session store.
+
+The wire view carries durable roster phases, non-deleted task views with shared readiness and overlap derivation, and `failure` beside the last valid state. Live activity comes from Session status. Model selection has its own durable projection; opening the panel requests other active members' baselines without opening their conversations, and no model is shown before a durable selection or request exists.
+
+Publication requires `apply` to return a new state object per applied Team event and replace only the touched collection. Mailbox-only events retain the view reference and publish nothing. The existing carrier sends each changed complete view to every connected browser; the package README records that cost.
 
 ## Alternatives considered
 

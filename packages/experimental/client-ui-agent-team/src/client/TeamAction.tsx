@@ -17,8 +17,8 @@ import css from './TeamAction.module.css'
 
 /** Business actions injected by the browser plugin. */
 export interface TeamActionInjected {
-  /** Request the Lead's projection baseline once per connection, or retry a failed read. */
-  loadProjections: (leadSessionId: SessionId) => void
+  /** Request another Session's projection baseline once per connection, or retry a failed read. */
+  loadProjections: (sessionId: SessionId) => void
   openTeammate: (sessionId: SessionId, member: TeamMemberProjection) => void
 }
 
@@ -71,6 +71,52 @@ function taskDotState(task: TeamTask): StateDotState {
   }
 }
 
+type TeamMemberRowProps = Pick<TeamActionProps,
+  'sessionId' | 'useProjection' | 'useSessions' | 'useSessionStatus' | 'openTeammate' | 't'
+> & {
+  member: TeamMemberProjection
+  onError: (message: string) => void
+}
+
+function TeamMemberRow({
+  member, sessionId, useProjection, useSessions, useSessionStatus, openTeammate, onError, t,
+}: TeamMemberRowProps) {
+  const currentModel = useProjection('modelSelection', value =>
+    member.id === sessionId ? value?.next?.model : undefined)
+  const otherModel = useSessions(state => member.id === sessionId
+    ? undefined
+    : state.projectionsBySession[member.id]?.values.modelSelection?.next?.model)
+  const running = useSessionStatus(state => state.get(member.id)?.running)
+  const summaryRunning = useSessions(state => state.byId[member.id]?.running)
+  const status: MemberStatus = member.phase === 'active'
+    ? (running ?? summaryRunning) === true ? 'running' : 'inactive'
+    : member.phase
+  const model = member.id === sessionId ? currentModel : otherModel
+
+  return (
+    <button
+      type="button"
+      className={css.member}
+      disabled={member.role === 'lead' || status === 'failed' || status === 'provisioning'}
+      title={member.role === 'teammate' ? t('open') : undefined}
+      onClick={() => {
+        try {
+          openTeammate(sessionId, member)
+        } catch (reason) {
+          onError(String(reason))
+        }
+      }}
+    >
+      <StateDot state={memberDotState(status)} />
+      <span className={css.memberText}>
+        <span>{member.name}</span>
+        <small>{t(memberStatusKey(status))}{model === undefined ? '' : ` · ${t('model')}: ${model}`}</small>
+        {member.error !== undefined && <small className={css.diagnostic}>{member.error}</small>}
+      </span>
+    </button>
+  )
+}
+
 /** Render the Team roster and read-only task board from the Lead Session's `agentTeam` projection. */
 export function TeamAction({
   sessionId, useSession, useProjection, useSessions, useSessionStatus, loadProjections, openTeammate, t,
@@ -87,14 +133,25 @@ export function TeamAction({
   useDismissOnOutsidePointer(rootRef, open, setOpen, panelRef)
 
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
+  const isLead = leadSessionId === sessionId
   const currentTeam = useProjection('agentTeam')
-  const currentModel = useProjection('modelSelection', value => value?.next?.model)
-  const projections = useSessions(state => state.projectionsBySession)
-  const summaries = useSessions(state => state.byId)
-  const statuses = useSessionStatus(snapshot => snapshot)
-  const projection = projections[leadSessionId]
-  const team = leadSessionId === sessionId ? currentTeam : projection?.values.agentTeam
-  const readError = team === undefined && projection?.state === 'error' ? projection.error : null
+  const openState = useSession(snapshot => snapshot.openState)
+  const openError = useSession(snapshot => snapshot.openError)
+  const parentTeam = useSessions(state => isLead
+    ? undefined
+    : state.projectionsBySession[leadSessionId]?.values.agentTeam)
+  const parentState = useSessions(state => isLead
+    ? undefined
+    : state.projectionsBySession[leadSessionId]?.state)
+  const parentError = useSessions(state => isLead
+    ? null
+    : state.projectionsBySession[leadSessionId]?.error ?? null)
+  const team = isLead ? currentTeam : parentTeam
+  const readError = isLead
+    ? openState === 'error' ? openError : null
+    : parentState === 'error' ? parentError : null
+  const ready = isLead ? openState === 'open' : parentState === 'ready'
+  const members = team?.members
 
   useEffect(() => {
     setOpen(false)
@@ -102,8 +159,15 @@ export function TeamAction({
   }, [sessionId])
 
   useEffect(() => {
-    if (open) loadProjections(leadSessionId)
-  }, [open, leadSessionId, loadProjections])
+    if (open && !isLead) loadProjections(leadSessionId)
+  }, [open, isLead, leadSessionId, loadProjections])
+
+  useEffect(() => {
+    if (!open) return
+    for (const member of members ?? []) {
+      if (member.id !== sessionId && member.id !== leadSessionId && member.phase === 'active') loadProjections(member.id)
+    }
+  }, [open, sessionId, leadSessionId, members, loadProjections])
 
   useLayoutEffect(() => {
     if (open && positioned) panelRef.current?.focus()
@@ -113,14 +177,6 @@ export function TeamAction({
     setOpen(false)
     triggerRef.current?.focus()
   }
-
-  const memberStatus = (member: TeamMemberProjection): MemberStatus => {
-    if (member.phase === 'failed') return 'failed'
-    if (member.phase === 'provisioning') return 'provisioning'
-    return (statuses.get(member.id)?.running ?? summaries[member.id]?.running) === true ? 'running' : 'inactive'
-  }
-  const memberModel = (member: TeamMemberProjection): string | undefined =>
-    member.id === sessionId ? currentModel : projections[member.id]?.values.modelSelection?.next?.model
 
   const teammates = team?.members.filter(member => member.role === 'teammate') ?? []
 
@@ -171,13 +227,18 @@ export function TeamAction({
             <div className={css.error} role="alert">
               <StateDot state="error" />
               <span className={css.spacer}>{failureText(readError)}</span>
-              <button type="button" className={css.iconButton} aria-label={t('retry')} onClick={() => { loadProjections(leadSessionId) }}>
-                <IconRefreshOutlineRegular size={14} />
-              </button>
+              {!isLead && (
+                <button type="button" className={css.iconButton} aria-label={t('retry')} onClick={() => { loadProjections(leadSessionId) }}>
+                  <IconRefreshOutlineRegular size={14} />
+                </button>
+              )}
             </div>
           )}
           {team === undefined && readError === null && (
-            <div className={css.notice} role="status"><StateDot state="ongoing" />{t('loading')}</div>
+            <div className={css.notice} role="status">
+              <StateDot state={ready ? 'warning' : 'ongoing'} />
+              {t(ready ? 'unavailable' : 'loading')}
+            </div>
           )}
           {team !== undefined && (
             <>
@@ -187,33 +248,19 @@ export function TeamAction({
               <section>
                 <h3>{t('roster')}</h3>
                 <div className={css.roster}>
-                  {team.members.map((member) => {
-                    const status = memberStatus(member)
-                    const model = memberModel(member)
-                    return (
-                      <button
-                        key={member.id}
-                        type="button"
-                        className={css.member}
-                        disabled={member.role === 'lead' || status === 'failed' || status === 'provisioning'}
-                        title={member.role === 'teammate' ? t('open') : undefined}
-                        onClick={() => {
-                          try {
-                            openTeammate(sessionId, member)
-                          } catch (reason) {
-                            setError(String(reason))
-                          }
-                        }}
-                      >
-                        <StateDot state={memberDotState(status)} />
-                        <span className={css.memberText}>
-                          <span>{member.name}</span>
-                          <small>{t(memberStatusKey(status))}{model === undefined ? '' : ` · ${t('model')}: ${model}`}</small>
-                          {member.error !== undefined && <small className={css.diagnostic}>{member.error}</small>}
-                        </span>
-                      </button>
-                    )
-                  })}
+                  {team.members.map(member => (
+                    <TeamMemberRow
+                      key={member.id}
+                      member={member}
+                      sessionId={sessionId}
+                      useProjection={useProjection}
+                      useSessions={useSessions}
+                      useSessionStatus={useSessionStatus}
+                      openTeammate={openTeammate}
+                      onError={setError}
+                      t={t}
+                    />
+                  ))}
                 </div>
               </section>
               <section>

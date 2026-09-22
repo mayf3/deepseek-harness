@@ -873,24 +873,6 @@ describe('Team shared task DAG', () => {
   })
 })
 
-describe('Team Remote API', () => {
-  it('reads tasks created and updated by Team agents', async () => {
-    const { ctx, lead } = await setup([])
-    expect(ctx.agentTeams.typertRemote).toMatchObject({ serviceKey: 'agentTeams', namespace: 'agentTeams' })
-    expect(ctx.agentTeams.remoteView(lead)).toEqual({
-      members: [expect.objectContaining({ name: 'lead', role: 'lead', status: 'inactive' })],
-      tasks: [],
-    })
-    const created = await ctx.agentTeams.createTask(lead, {
-      subject: 'Agent task', description: 'Created by the Team Lead',
-    })
-    const updated = await ctx.agentTeams.updateTask(lead, {
-      taskId: created.id, expectedRevision: 1, action: 'claim',
-    })
-    expect(ctx.agentTeams.remoteView(lead).tasks).toEqual([updated])
-  })
-})
-
 describe('Team mailbox and waiting', () => {
   it('steers a message addressed to the Lead and checkpoints its receipt', async () => {
     const { ctx, lead } = await setup(['hang'])

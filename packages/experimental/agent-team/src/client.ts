@@ -8,5 +8,4 @@ export type {
   TeamTaskId,
   TeamTaskStatus,
   TeamTaskView,
-  TeamView,
 } from './types.ts'

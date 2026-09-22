@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { Profiler } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -48,6 +49,7 @@ function bench(options: {
   projections?: Projections
   sessionId?: SessionId
   parentSessionId?: SessionId
+  openState?: SessionSnapshot['openState']
   statuses?: SessionStatusSnapshot
   running?: Record<SessionId, boolean>
 } = {}) {
@@ -67,7 +69,7 @@ function bench(options: {
       ? null
       : { address: { parentSessionId: options.parentSessionId, childSessionId: sessionId, mode: 'continuable' } },
     removed: false,
-    openState: 'open',
+    openState: options.openState ?? 'open',
     openError: null,
     hasMore: false,
     loadingOlder: false,
@@ -123,7 +125,7 @@ describe('TeamAction', () => {
     openPanel()
     expect(await screen.findByText('Implement runtime')).toBeTruthy()
     expect(screen.getByText('write scopes overlap with task-2')).toBeTruthy()
-    expect(b.injected.loadProjections).toHaveBeenCalledWith(SESSION)
+    expect(b.injected.loadProjections).not.toHaveBeenCalledWith(SESSION)
     expect(screen.queryByRole('button', { name: /刷新|Refresh/u })).toBeNull()
 
     setProjection(b.sessions, SESSION, {
@@ -195,8 +197,8 @@ describe('TeamAction', () => {
     expect(b.injected.openTeammate).toHaveBeenCalledWith(WORKER, worker)
   })
 
-  it('shows loading until the projection arrives and a retryable read failure', () => {
-    const b = bench({ projections: {} })
+  it('loads the parent Team and retries failed parent baseline reads', () => {
+    const b = bench({ sessionId: WORKER, parentSessionId: SESSION, projections: {} })
     render(<TeamAction {...b.props} />)
     openPanel()
     expect(screen.getByRole('status').textContent).toBe(zh.loading)
@@ -213,6 +215,109 @@ describe('TeamAction', () => {
     setProjection(b.sessions, SESSION, { members: [lead], tasks: [] })
     expect(screen.getByText(zh.empty)).toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('uses the current Session opening state without requesting its projection baseline', () => {
+    const b = bench({ projections: {}, openState: 'loading' })
+    render(<TeamAction {...b.props} />)
+    openPanel()
+    expect(screen.getByRole('status').textContent).toBe(zh.loading)
+    expect(b.injected.loadProjections).not.toHaveBeenCalled()
+
+    act(() => {
+      b.session.update((draft) => {
+        draft.openState = 'error'
+        draft.openError = new RemoteError('gateway/internal', 'history unavailable', {})
+      })
+    })
+    expect(screen.getByRole('alert').textContent).toBe('history unavailable (gateway/internal)')
+    expect(screen.queryByRole('button', { name: zh.retry })).toBeNull()
+    expect(b.injected.loadProjections).not.toHaveBeenCalled()
+
+    act(() => {
+      b.session.update((draft) => {
+        draft.openState = 'open'
+        draft.openError = null
+      })
+    })
+    expect(screen.getByRole('status').textContent).toBe(zh.unavailable)
+    setProjection(b.sessions, SESSION, team)
+    expect(screen.getByText('Implement runtime')).toBeTruthy()
+    expect(b.injected.loadProjections).not.toHaveBeenCalledWith(SESSION)
+  })
+
+  it.each([false, true])('ignores unrelated Session updates (teammate page: %s)', (addressed) => {
+    const b = bench(addressed ? { sessionId: WORKER, parentSessionId: SESSION } : {})
+    const onRender = vi.fn()
+    render(<Profiler id="team" onRender={onRender}><TeamAction {...b.props} /></Profiler>)
+    openPanel()
+    onRender.mockClear()
+
+    act(() => {
+      const current = b.sessions.getSnapshot()
+      const projectionsBySession = Object.fromEntries(Object.entries(current.projectionsBySession)
+        .map(([id, snapshot]) => [id, { ...snapshot }]))
+      b.sessions.set({
+        ...current,
+        byId: { ...current.byId, unrelated: summary('unrelated' as SessionId, true) },
+        projectionsBySession: {
+          ...projectionsBySession,
+          unrelated: { state: 'ready', error: null, values: { agentTeam: { members: [], tasks: [] } } },
+        },
+      })
+      b.statuses.set(new Map([['unrelated' as SessionId, { running: true, pendingInteraction: undefined, completionUnread: false }]]))
+    })
+    expect(onRender).not.toHaveBeenCalled()
+
+    setProjectionSnapshot(b.sessions, WORKER, {
+      state: 'ready', error: null,
+      values: { modelSelection: { lastUsed: null, next: { provider: 'p', model: 'updated-worker-model' } } },
+    })
+    expect(screen.getByRole('button', { name: /worker.*updated-worker-model/u })).toBeTruthy()
+    setProjection(b.sessions, SESSION, { ...team, tasks: [{ ...task, subject: 'Updated parent task' }] })
+    expect(screen.getByText('Updated parent task')).toBeTruthy()
+    expect(b.injected.loadProjections).not.toHaveBeenCalledWith(addressed ? WORKER : SESSION)
+  })
+
+  it('shows capability absence after a successful read instead of loading forever', () => {
+    const b = bench({ projections: { [SESSION]: { state: 'ready', error: null, values: {} } } })
+    render(<TeamAction {...b.props} />)
+    openPanel()
+    expect(screen.queryByText(zh.loading)).toBeNull()
+    expect(screen.getByRole('status').textContent).toBe('Team 暂不可用')
+  })
+
+  it('keeps the last parent Team visible beside a retryable baseline failure', () => {
+    const b = bench({ sessionId: WORKER, parentSessionId: SESSION })
+    render(<TeamAction {...b.props} />)
+    openPanel()
+    setProjectionSnapshot(b.sessions, SESSION, {
+      state: 'error', error: new RemoteError('gateway/internal', 'offline', {}), values: { agentTeam: team },
+    })
+    expect(screen.getByText('Implement runtime')).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toBe('offline (gateway/internal)')
+    fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+    expect(b.injected.loadProjections).toHaveBeenLastCalledWith(SESSION)
+  })
+
+  it('loads active members models without opening their conversations', () => {
+    const nextMember = { ...worker, id: 'new-worker' as SessionId, name: 'new-worker', phase: 'provisioning' as const }
+    const failed = { ...worker, id: 'failed-worker' as SessionId, name: 'failed-worker', phase: 'failed' as const }
+    const b = bench()
+    render(<TeamAction {...b.props} />)
+    expect(b.injected.loadProjections).not.toHaveBeenCalled()
+    openPanel()
+    expect(b.injected.loadProjections).toHaveBeenCalledWith(WORKER)
+    setProjectionSnapshot(b.sessions, WORKER, {
+      state: 'ready', error: null,
+      values: { modelSelection: { lastUsed: null, next: { provider: 'p', model: 'cold-worker-model' } } },
+    })
+    expect(screen.getByRole('button', { name: /worker.*cold-worker-model/u })).toBeTruthy()
+    setProjection(b.sessions, SESSION, { ...team, members: [...team.members, nextMember, failed] })
+    expect(b.injected.loadProjections).not.toHaveBeenCalledWith(nextMember.id)
+    expect(b.injected.loadProjections).not.toHaveBeenCalledWith(failed.id)
+    setProjection(b.sessions, SESSION, { ...team, members: [...team.members, { ...nextMember, phase: 'active' }] })
+    expect(b.injected.loadProjections).toHaveBeenCalledWith(nextMember.id)
   })
 
   it('surfaces a Team projection failure beside the last valid state', () => {
@@ -284,13 +389,13 @@ describe('TeamAction', () => {
     fireEvent.click(screen.getByRole('button', { name: /^worker/u }))
     expect(screen.getByRole('alert')).toBeTruthy()
 
-    const next = bench({ sessionId: 'next-lead' as SessionId, projections: {} })
+    const next = bench({ sessionId: 'next-lead' as SessionId, projections: {}, openState: 'loading' })
     rendered.rerender(<TeamAction {...next.props} />)
     expect(screen.queryByRole('dialog')).toBeNull()
     openPanel()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByRole('status').textContent).toBe(zh.loading)
-    expect(next.injected.loadProjections).toHaveBeenCalledWith('next-lead')
+    expect(next.injected.loadProjections).not.toHaveBeenCalled()
   })
 
   it('keeps panel interactions open and dismisses on outside pointer or Escape', () => {

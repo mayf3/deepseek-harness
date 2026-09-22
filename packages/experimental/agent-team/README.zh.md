@@ -172,9 +172,11 @@ dispose 会关闭准入、中止并等待已获准的创建与 mailbox dispatch 
 
 <a id="model-experience"></a>
 
-### 浏览器投影与 Remote
+### 浏览器投影
 
-`agentTeam` Session 投影发布 Lead Session 的持久客户端视图：带每个成员持久 phase 的 roster、带 owner 名称、就绪状态与写入范围重叠警告的未删除任务板，以及在某条持久 Team 记录被拒绝时的 `failure`，此后 roster 与任务停留在最后有效状态。每个已应用的 Team 事件都会替换投影 state 对象，且只替换它触及的集合，因此投影注册表对每次 roster 或任务变化发布一帧 Host 级 frame，对仅邮箱的变化不发布。实时轮次活动与所选模型不在视图内；Web UI 从 Session 状态和成员 Session 的 `modelSelection` 投影叠加它们。`TeamService` 同时公开只读的 `agentTeams/view` Remote method，它额外提供实时可用性与配置的模型；任务创建与更新由 Team agent 通过服务和模型工具执行。`./remote` 导出生成的 Client contribution，`./client` 导出可供浏览器使用的 roster、任务与投影类型。
+`agentTeam` Session 投影发布 Lead Session 的持久 roster、未删除任务视图，以及最后有效状态旁的 `failure`。其 `apply` 只替换被触及的集合；仅邮箱的变化保留客户端视图引用，不产生 frame。[子系统参考](../../../docs/subsystems/agent-team.zh.md#web-projection) 定义传输类型。
+
+Web UI 通过标准投影钩子读取当前会话的值，并从 Session 状态叠加活动信息。当前 Session 通过会话加载提供基线；其他 active 成员的基线用于读取持久模型选择，无需打开它们的会话。任务创建与更新由 Team agent 通过服务和模型工具完成。`./client` 导出可供浏览器使用的 roster、任务与投影类型。
 
 ## 模型体验
 
@@ -199,6 +201,7 @@ Peer 消息追加在 target 可复用历史前缀之后。冷恢复会先复用�
 
 这些限制说明一支团队目前不能做什么、或哪些方面需要特别的运维关注。它们是当前包约束，不是与其他协作机制的对比。
 
+- **完整视图广播** — 每次 roster 或任务变化都会把完整 roster 和未删除任务板（含描述）发给所有已连接浏览器，即使它正在查看其他 Session。
 - **实验原型，无稳定性承诺**——本包公开发布，但孵化期间约定仍可自由变更。
 - **单进程、共享 checkout**——成员共享 cwd，修改立即可见；本包不提供 worktree、远端成员、merge 或文件锁。
 - **write scope 仅作提示**——Bash、formatter、代码生成器与直接外部写入可以绕过文件版本检查；Lead 必须协调 owner 并检查最终 diff。

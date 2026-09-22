@@ -172,9 +172,11 @@ Read these pages when the package-level contract is not enough. They move from t
 
 <a id="model-experience"></a>
 
-### Browser projection and Remote
+### Browser projection
 
-The `agentTeam` Session projection publishes a durable client view of the Lead Session: the roster with each member's durable phase, the non-deleted task board with owner names, readiness, and write-scope overlap warnings, and `failure` when a persisted Team record was rejected, after which the roster and tasks stay at the last valid state. Every applied Team event replaces the projection state object and only the collection it touched, so the projection registry publishes one Host-wide frame per roster or task change and none for mailbox-only changes. Live turn activity and the selected model are not part of the view; the Web UI overlays them from Session status and the member Session's `modelSelection` projection. `TeamService` also exposes the read-only `agentTeams/view` Remote method, which adds live availability and the configured model; task creation and updates belong to Team agents through the service and model tools. The `./remote` export supplies the generated Client contribution, and `./client` exports the browser-safe roster, task, and projection types.
+The `agentTeam` Session projection publishes the Lead Session's durable roster, non-deleted task views, and any `failure` beside the last valid state. Its `apply` replaces only the touched collection; mailbox-only changes retain the client view reference and produce no frame. The [subsystem reference](../../../docs/subsystems/agent-team.md#web-projection) defines the wire types.
+
+The Web UI reads current-session values through the standard projection hook and overlays activity from Session status. The current Session supplies its baseline through conversation loading; other active members' baselines are loaded for durable model selection without opening their conversations. Task creation and updates belong to Team agents through the service and model tools. The `./client` export supplies browser-safe roster, task, and projection types.
 
 ## Model Experience
 
@@ -199,6 +201,7 @@ Peer messages append after the target's reusable history prefix. Cold resume reu
 
 These limits describe what a team cannot do yet or what needs special operational care. They are current package constraints, not a comparison with other coordination mechanisms.
 
+- **Whole-view broadcasts** — each roster or task change sends the complete roster and non-deleted task board, including descriptions, to every connected browser, even when it is viewing another Session.
 - **Experimental prototype with no stability promise** — the package is public, but its contracts can change freely while it incubates.
 - **One process and one shared checkout** — members share cwd and observe edits immediately; this package provides no worktree, remote member, merge, or filesystem lock.
 - **Advisory write scopes** — Bash, formatters, code generators, and direct external writers can bypass filesystem version checks; Leads must coordinate ownership and review the final diff.

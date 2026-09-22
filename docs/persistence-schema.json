@@ -22575,7 +22575,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:247"
+        "packages/experimental/agent-team/src/types.ts:241"
       ]
     },
     {
@@ -31770,7 +31770,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamMessageSource"
       ],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:146"
+        "packages/experimental/agent-team/src/types.ts:140"
       ]
     },
     {
@@ -33739,7 +33739,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamMessageSnapshot"
       ],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:137"
+        "packages/experimental/agent-team/src/types.ts:131"
       ]
     },
     {
@@ -69181,7 +69181,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:243"
+        "packages/experimental/agent-team/src/types.ts:237"
       ]
     },
     {
@@ -71163,7 +71163,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:241"
+        "packages/experimental/agent-team/src/types.ts:235"
       ]
     },
     {
@@ -83593,7 +83593,7 @@
       },
       "names": [],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:245"
+        "packages/experimental/agent-team/src/types.ts:239"
       ]
     },
     {
