@@ -65,6 +65,9 @@
     "@deepseek-ai/dsh-mcp-client": "workspace:^",
     "@deepseek-ai/dsh-spill-local": "workspace:^",
     "@deepseek-ai/dsh-llm-deepseek": "workspace:^",
-    "@deepseek-ai/dsh-ptc-runtime": "workspace:^"
+    "@deepseek-ai/dsh-ptc-runtime": "workspace:^",
+    "@deepseek-ai/dsh-attachment-local": "workspace:^",
+    "@deepseek-ai/dsh-tool-fs": "workspace:^",
+    "sharp": "^0.35.3"
   }
 }
