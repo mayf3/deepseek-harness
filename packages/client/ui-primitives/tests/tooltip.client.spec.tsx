@@ -48,6 +48,9 @@ describe('Tooltip', () => {
     const bubble = view.container.querySelector<HTMLElement>('[role="tooltip"]')!
     expect(measured.mock.contexts).toEqual([anchor])
     expect(bubble.style.visibility).toBe('hidden')
+    fireEvent(window, new Event('resize'))
+    expect(bubble.style.visibility).toBe('hidden')
+    expect(measured.mock.contexts).toEqual([anchor])
     bubbleSize = { inlineSize: 100, blockSize: 20 }
     act(() => { observers[0]!.deliver() })
     expect(screen.getByRole('tooltip').style.left).toBe('62px')

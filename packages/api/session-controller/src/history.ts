@@ -393,7 +393,7 @@ function paginate(
   events: readonly SessionEvent[],
   beforeSeq: SessionLogOffsetType | undefined,
   maxMessages: number,
-  throughSeq: SessionSeqCursor = events.at(-1)?.seq ?? -1,
+  throughSeq: SessionSeqCursor,
   turnWindow?: SessionPageRequest['turnWindow'],
 ): { readonly events: SessionEvent[]; readonly hasMore: boolean } {
   const end = SessionLogOffset(Math.min(throughSeq + 1, beforeSeq ?? throughSeq + 1))
