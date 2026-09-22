@@ -10,8 +10,9 @@ const THEME_SOURCE_ATTRIBUTE = 'data-ds-theme-source'
  * Watches `html[data-ds-theme-source]` and forwards each value to the main
  * process, which sets `nativeTheme.themeSource`. The macOS sidebar vibrancy
  * material then follows the app's theme preference instead of the OS
- * appearance while `system` keeps following the OS, and the resolved
- * `shouldUseDarkColors` palette travels with the Platform login link.
+ * appearance while `system` keeps following the OS; the main process reads
+ * the same value back as `shouldUseDarkColors` when it needs the resolved
+ * palette for a Platform login link.
  */
 export function syncNativeTheme(): void {
   let sent: string | undefined

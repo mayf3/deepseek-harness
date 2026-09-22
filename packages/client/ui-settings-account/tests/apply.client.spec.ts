@@ -5,6 +5,7 @@ import { ok } from '@deepseek-ai/dsh-remote-mock'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import type { AccountDetails, AccountView, AccountUserId, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
+import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountSectionInjected } from '../src/client/AccountSection.tsx'
 import { CONTACT_CONFIG_GLOBAL } from '../src/contact-config.ts'
@@ -40,6 +41,16 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
   const c = await start()
   const actions = operations(c)
   expect(c.ctx.slots.entries('settings.models.sign-in')[0]!.inject!()).toBe(actions)
+  // The account UI follows the live theme service through the framework hook channel.
+  const theme = c.ctx.get('theme') as ThemeRuntime
+  const onTheme = vi.fn()
+  const offTheme = actions.hooks.theme.subscribe(onTheme)
+  expect(actions.hooks.theme.getSnapshot()).toBe(theme.getTheme())
+  const probe = theme.register({ id: 'probe', colorScheme: 'dark', tokens: {} })
+  expect(onTheme).toHaveBeenCalledOnce()
+  probe()
+  offTheme()
+  expect(theme.getTheme().themes.map(candidate => candidate.id)).toEqual(['light', 'dark'])
   await actions.refresh()
   expect(c.mock.remote.account.getProfile).not.toHaveBeenCalled()
   const listener = vi.fn()

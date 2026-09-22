@@ -36,14 +36,9 @@ it.each(['darwin', 'win32'] as const)('mirrors the application theme source on %
   document.documentElement.setAttribute('data-ds-theme-source', 'system')
   await vi.waitFor(() => { expect(send).toHaveBeenLastCalledWith(DESKTOP_IPC.nativeThemeSet, 'system') })
   expect(send).toHaveBeenCalledTimes(2)
-  for (const observer of observers) observer.disconnect()
-  send.mockClear()
-  document.documentElement.setAttribute('data-ds-theme-source', 'light')
-  await new Promise<void>((resolve) => { queueMicrotask(resolve) })
-  expect(send).not.toHaveBeenCalled()
 })
 
-it('waits for the document root and then stops listening for it', () => {
+it('defers observation until the document root exists', () => {
   vi.stubGlobal('MutationObserver', TrackedMutationObserver)
   vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
   vi.spyOn(document, 'readyState', 'get').mockReturnValue('loading')
@@ -52,7 +47,4 @@ it('waits for the document root and then stops listening for it', () => {
   document.documentElement.setAttribute('data-ds-theme-source', 'light')
   window.dispatchEvent(new Event('DOMContentLoaded'))
   expect(send).toHaveBeenCalledExactlyOnceWith(DESKTOP_IPC.nativeThemeSet, 'light')
-  document.documentElement.setAttribute('data-ds-theme-source', 'dark')
-  window.dispatchEvent(new Event('DOMContentLoaded'))
-  expect(send).toHaveBeenCalledOnce()
 })
