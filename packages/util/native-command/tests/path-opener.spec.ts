@@ -91,10 +91,31 @@ describe('native path opener', () => {
     ['C:\\work\\my report.txt', 'file:///C:/work/my%20report.txt'],
     ['C:\\my files\\报告,#%.txt', 'file:///C:/my%20files/%E6%8A%A5%E5%91%8A%2C%23%25.txt'],
     ['\\\\server\\share\\a,b.txt', 'file://server/share/a%2Cb.txt'],
+    // Node resolves the path before encoding it, so a verbatim prefix is not
+    // part of the target: `\\?\` and `\\?\UNC\` arrive as the ordinary drive or
+    // UNC URI. A device-namespace path takes that same UNC handling; it names a
+    // device rather than a shell item, which this opener does not open.
+    ['\\\\?\\C:\\work\\a,b.txt', 'file:///C:/work/a%2Cb.txt'],
+    ['\\\\?\\UNC\\server\\share\\a,b.txt', 'file://server/share/a%2Cb.txt'],
+    ['\\\\.\\C:\\work\\a,b.txt', 'file://./C:/work/a%2Cb.txt'],
+    ['\\\\wsl$\\Ubuntu\\home\\t,est a.txt', 'file://wsl$/Ubuntu/home/t%2Cest%20a.txt'],
   ] as const)('opens %s through the one encoded Explorer target', async (path, target) => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
     await openNativePath(path, signal(), { platform: 'win32', run })
     expect(run).toHaveBeenCalledExactlyOnceWith('explorer.exe', [target], expect.any(AbortSignal))
+  })
+
+  // Node restores a trailing separator against the host's `path.sep`, so a
+  // separator-terminated Windows path encodes differently on the Windows host
+  // this opener runs on than on the POSIX host a test run may use.
+  it('encodes a separator-terminated drive root as the hosting platform resolves it', async () => {
+    const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
+    await openNativePath('C:\\', signal(), { platform: 'win32', run })
+    expect(run).toHaveBeenCalledExactlyOnceWith(
+      'explorer.exe',
+      [process.platform === 'win32' ? 'file:///C:/' : 'file:///C://'],
+      expect.any(AbortSignal),
+    )
   })
 
   it('encodes a directory target the same way it encodes a file target', async () => {
