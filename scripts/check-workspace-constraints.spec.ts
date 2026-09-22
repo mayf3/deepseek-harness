@@ -32,19 +32,22 @@ describe('workspace dependency ranges', () => {
   const cli = { dir: 'apps/cli', manifest: { name: '@deepseek-ai/dsh' } }
   const vendor = { dir: 'vendor/cordis', manifest: { name: '@deepseek-ai/cordis' } }
   const native = { dir: 'native/system', manifest: { name: '@deepseek-ai/node-addon-system' } }
+  const platform = { dir: 'native/system/packages/darwin-arm64', manifest: { name: '@deepseek-ai/node-addon-system-darwin-arm64' } }
+  const unrelated = { dir: 'tools/helper', manifest: { name: '@other/helper' } }
 
   describe.each([
     '.', 'packages/core/probe', 'packages/experimental/probe', 'apps/cli', 'apps/web',
     'apps/desktop', 'apps/desktop-host', 'benchmarks', 'website', 'python/sdk-runtime', 'tools/probe',
+    'vendor/loader', 'native/system', 'native/system/packages/entry',
   ])('consumer %s', (dir) => {
     it.each(['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const)(
-      'requires exact DSH and caret vendor %s independently of the consumer name',
+      'requires exact DSH and tilde vendor/native %s independently of the consumer name',
       (section) => {
         const consumer = (name: string, range: string): WorkspaceManifest => ({
           dir, manifest: { name: 'consumer', [section]: { [name]: range } },
         })
         const check = (name: string, range: string): string[] =>
-          checkWorkspaceProtocol([dependency, cli, vendor, native, consumer(name, range)])
+          checkWorkspaceProtocol([dependency, cli, vendor, native, platform, unrelated, consumer(name, range)])
         for (const name of ['@deepseek-ai/dsh', '@deepseek-ai/dsh-runtime']) {
           expect(check(name, 'workspace:*')).toEqual([])
           for (const range of ['workspace:^', 'workspace:~', 'workspace:^0.1.7', '^0.1.7', '*']) {
@@ -53,17 +56,19 @@ describe('workspace dependency ranges', () => {
             ])
           }
         }
-        expect(check('@deepseek-ai/cordis', 'workspace:^')).toEqual([])
-        for (const range of ['workspace:*', 'workspace:~', '^4.0.3']) {
-          expect(check('@deepseek-ai/cordis', range)).toEqual([
-            `consumer: ${section}.@deepseek-ai/cordis must use workspace:^, got ${range}`,
-          ])
+        for (const name of ['@deepseek-ai/cordis', '@deepseek-ai/node-addon-system', '@deepseek-ai/node-addon-system-darwin-arm64']) {
+          expect(check(name, 'workspace:~')).toEqual([])
+          for (const range of ['workspace:*', 'workspace:^', '^4.0.3', '~4.0.3']) {
+            expect(check(name, range)).toEqual([
+              `consumer: ${section}.${name} must use workspace:~, got ${range}`,
+            ])
+          }
         }
         for (const range of ['workspace:*', 'workspace:^']) {
-          expect(check('@deepseek-ai/node-addon-system', range)).toEqual([])
+          expect(check('@other/helper', range)).toEqual([])
         }
-        expect(check('@deepseek-ai/node-addon-system', '^0.1.0')).toEqual([
-          `consumer: ${section}.@deepseek-ai/node-addon-system must use the workspace: protocol, got ^0.1.0`,
+        expect(check('@other/helper', '^0.1.0')).toEqual([
+          `consumer: ${section}.@other/helper must use the workspace: protocol, got ^0.1.0`,
         ])
         expect(check('external', '^1.2.3')).toEqual([])
       },

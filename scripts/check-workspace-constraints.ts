@@ -574,7 +574,7 @@ export function checkExperimentalDependencyIsolation(
 }
 
 /**
- * Require exact DSH ranges, caret vendor ranges, and the workspace protocol elsewhere.
+ * Require exact DSH ranges, tilde vendor/native ranges, and the workspace protocol elsewhere.
  *
  * A hand-written range says nothing about the version the workspace actually
  * carries, and `pnpm pack` leaves it alone: `^0.0.1` published from version
@@ -586,7 +586,8 @@ export function checkExperimentalDependencyIsolation(
  */
 export function checkWorkspaceProtocol(manifests: readonly WorkspaceManifest[]): string[] {
   const members = new Set(manifests.map(entry => entry.manifest.name).filter(name => name !== undefined))
-  const vendors = new Set(manifests.filter(entry => entry.dir.startsWith('vendor/')).map(entry => entry.manifest.name))
+  const vendors = new Set(manifests.filter(entry => entry.dir.startsWith('vendor/')
+    || entry.dir === 'native/system' || entry.dir.startsWith('native/system/packages/')).map(entry => entry.manifest.name))
   const errors: string[] = []
   for (const { dir, manifest } of manifests) {
     for (const section of dependencySections) {
@@ -594,7 +595,7 @@ export function checkWorkspaceProtocol(manifests: readonly WorkspaceManifest[]):
         if (!members.has(name)) continue
         const expected = name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')
           ? 'workspace:*'
-          : vendors.has(name) ? 'workspace:^' : undefined
+          : vendors.has(name) ? 'workspace:~' : undefined
         if (expected !== undefined ? range === expected : range.startsWith('workspace:')) continue
         errors.push(`${manifest.name ?? dir}: ${section}.${name} must use ${expected ?? 'the workspace: protocol'}, got ${range}`)
       }

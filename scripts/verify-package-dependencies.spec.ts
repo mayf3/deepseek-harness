@@ -121,8 +121,8 @@ function generatedHostFixture(mode: 'schema' | 'object'): { root: string; manife
     },
     files: ['lib/typert.host.js', 'lib/typert.host.d.ts'],
     dependencies: { zod: '^4.0.0' },
-    devDependencies: { [CORDIS]: 'workspace:^' },
-    peerDependencies: { [CORDIS]: 'workspace:^' },
+    devDependencies: { [CORDIS]: 'workspace:~' },
+    peerDependencies: { [CORDIS]: 'workspace:~' },
   }
   const files = {
     'tsconfig.base.json': JSON.stringify({
@@ -680,9 +680,9 @@ describe('dependency sections', () => {
       'src/index.ts': 'export function apply() {}',
       'src/client/index.ts': "import 'external'",
     }, {
-      devDependencies: { [CORDIS]: 'workspace:^' },
-      peerDependencies: { [CORDIS]: 'workspace:^' },
-      [section]: { [CORDIS]: 'workspace:^', external: '~1.2.3' },
+      devDependencies: { [CORDIS]: 'workspace:~' },
+      peerDependencies: { [CORDIS]: 'workspace:~' },
+      [section]: { [CORDIS]: 'workspace:~', external: '~1.2.3' },
       peerDependenciesMeta: { external: { optional: true } },
     })
     if (section === 'optionalDependencies') delete subject.manifest.optionalDependencies?.[CORDIS]
@@ -745,8 +745,8 @@ describe('dependency sections', () => {
     const manifest: PackageDependencyManifest = {
       name: '@deepseek-ai/dsh-probe',
       dependencies: { '@deepseek-ai/dsh-runtime': 'workspace:*', external: '^1.2.3' },
-      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-types': 'workspace:*' },
-      peerDependencies: { [CORDIS]: 'workspace:^' },
+      devDependencies: { [CORDIS]: 'workspace:~', '@deepseek-ai/dsh-types': 'workspace:*' },
+      peerDependencies: { [CORDIS]: 'workspace:~' },
     }
     const base = facts(manifest)
     const subject: PackageDependencyFacts = {
@@ -772,8 +772,8 @@ describe('dependency sections', () => {
     const manifest: PackageDependencyManifest = {
       name: '@deepseek-ai/dsh-client-locale',
       dependencies: { '@deepseek-ai/dsh-runtime': 'workspace:*' },
-      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-types': 'workspace:*' },
-      peerDependencies: { [CORDIS]: 'workspace:^' },
+      devDependencies: { [CORDIS]: 'workspace:~', '@deepseek-ai/dsh-types': 'workspace:*' },
+      peerDependencies: { [CORDIS]: 'workspace:~' },
     }
     const base = facts(manifest)
     const subject: PackageDependencyFacts = {
@@ -790,8 +790,8 @@ describe('dependency sections', () => {
     const manifest: PackageDependencyManifest = {
       name: '@deepseek-ai/dsh-probe',
       dependencies: { '@deepseek-ai/dsh-runtime': 'workspace:*' },
-      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-types': 'workspace:*', external: '^1.0.0' },
-      peerDependencies: { [CORDIS]: 'workspace:^' },
+      devDependencies: { [CORDIS]: 'workspace:~', '@deepseek-ai/dsh-types': 'workspace:*', external: '^1.0.0' },
+      peerDependencies: { [CORDIS]: 'workspace:~' },
     }
     const subject: PackageDependencyFacts = {
       ...facts(manifest),
@@ -831,14 +831,14 @@ describe('dependency sections', () => {
       name: '@deepseek-ai/dsh-probe',
       dependencies: {
         '@deepseek-ai/dsh-runtime': 'workspace:*',
-        '@deepseek-ai/schemastery': 'workspace:^',
+        '@deepseek-ai/schemastery': 'workspace:~',
         external: '^1.0.0',
       },
       devDependencies: {
         '@deepseek-ai/dsh-types': 'workspace:*',
-        [CORDIS]: 'workspace:^',
+        [CORDIS]: 'workspace:~',
       },
-      peerDependencies: { [CORDIS]: 'workspace:^' },
+      peerDependencies: { [CORDIS]: 'workspace:~' },
     }
     expect(collectPackageDependencyViolations({
       facts: [facts(manifest)], packages: [], policyViolations: [], workspaceNames: facts(manifest).workspaceNames,
@@ -859,8 +859,8 @@ describe('dependency sections', () => {
     const manifest: PackageDependencyManifest = {
       name: '@deepseek-ai/dsh-probe',
       dependencies: { '@deepseek-ai/dsh-runtime': 'workspace:*' },
-      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-types': 'workspace:*' },
-      peerDependencies: { [CORDIS]: 'workspace:^' },
+      devDependencies: { [CORDIS]: 'workspace:~', '@deepseek-ai/dsh-types': 'workspace:*' },
+      peerDependencies: { [CORDIS]: 'workspace:~' },
     }
     const subject = facts(manifest)
     const safetyViolations = collectHostDependencyExportPolicyViolations(
@@ -884,8 +884,8 @@ describe('dependency sections', () => {
     const manifest: PackageDependencyManifest = {
       name: '@deepseek-ai/dsh-probe',
       dependencies: { '@deepseek-ai/dsh-runtime': 'workspace:*' },
-      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-types': 'workspace:*' },
-      peerDependencies: { [CORDIS]: 'workspace:^' },
+      devDependencies: { [CORDIS]: 'workspace:~', '@deepseek-ai/dsh-types': 'workspace:*' },
+      peerDependencies: { [CORDIS]: 'workspace:~' },
     }
     const subject: PackageDependencyFacts = {
       ...facts(manifest),
@@ -905,11 +905,11 @@ describe('dependency sections', () => {
     repairPackageDependencyManifest(subject)
     expect(manifest.dependencies).toBeUndefined()
     expect(manifest.peerDependencies).toMatchObject({
-      [CORDIS]: 'workspace:^',
+      [CORDIS]: 'workspace:~',
       '@deepseek-ai/dsh-runtime': 'workspace:*',
     })
     expect(manifest.devDependencies).toMatchObject({
-      [CORDIS]: 'workspace:^',
+      [CORDIS]: 'workspace:~',
       '@deepseek-ai/dsh-runtime': 'workspace:*',
     })
     expect(formatPeerRequiredRuntimeDependencies({
@@ -924,7 +924,7 @@ describe('dependency sections', () => {
     const manifest: PackageDependencyManifest = {
       name: '@deepseek-ai/dsh-probe',
       dependencies: { '@deepseek-ai/dsh-types': 'workspace:^' },
-      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-runtime': 'workspace:*' },
+      devDependencies: { [CORDIS]: 'workspace:~', '@deepseek-ai/dsh-runtime': 'workspace:*' },
       peerDependencies: { [CORDIS]: 'workspace:*', '@deepseek-ai/dsh-runtime': 'workspace:*' },
       peerDependenciesMeta: { '@deepseek-ai/dsh-missing': { optional: true } },
     }
@@ -948,9 +948,9 @@ describe('dependency sections', () => {
     const manifest: PackageDependencyManifest = {
       name: '@deepseek-ai/dsh-probe',
       dependencies: { '@deepseek-ai/schemastery': 'workspace:*', external: '^1.0.0' },
-      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-runtime': 'workspace:*' },
+      devDependencies: { [CORDIS]: 'workspace:~', '@deepseek-ai/dsh-runtime': 'workspace:*' },
       peerDependencies: {
-        [CORDIS]: 'workspace:^',
+        [CORDIS]: 'workspace:~',
         '@deepseek-ai/dsh-runtime': 'workspace:*',
         '@deepseek-ai/dsh-stale': 'workspace:*',
       },
@@ -963,27 +963,27 @@ describe('dependency sections', () => {
     expect(fixPackageDependencies(root, state)).toEqual([manifestPath])
     const fixed = JSON.parse(readFileSync(join(root, manifestPath), 'utf8')) as PackageDependencyManifest
     expect(fixed.dependencies).toEqual({
-      '@deepseek-ai/schemastery': 'workspace:^',
+      '@deepseek-ai/schemastery': 'workspace:~',
       external: '^1.0.0',
       '@deepseek-ai/dsh-runtime': 'workspace:*',
     })
     expect(fixed.devDependencies).toEqual({
-      [CORDIS]: 'workspace:^',
+      [CORDIS]: 'workspace:~',
       '@deepseek-ai/dsh-types': 'workspace:*',
       '@deepseek-ai/dsh-stale': 'workspace:*',
     })
-    expect(fixed.peerDependencies).toEqual({ [CORDIS]: 'workspace:^' })
+    expect(fixed.peerDependencies).toEqual({ [CORDIS]: 'workspace:~' })
     expect(fixed.peerDependenciesMeta).toBeUndefined()
   })
 
   it('repairs an in-memory manifest for benchmark simulation', () => {
     const manifest: PackageDependencyManifest = {
       name: '@deepseek-ai/dsh-probe',
-      peerDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-runtime': 'workspace:*' },
-      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-runtime': 'workspace:*' },
+      peerDependencies: { [CORDIS]: 'workspace:~', '@deepseek-ai/dsh-runtime': 'workspace:*' },
+      devDependencies: { [CORDIS]: 'workspace:~', '@deepseek-ai/dsh-runtime': 'workspace:*' },
     }
     repairPackageDependencyManifest(facts(manifest))
     expect(manifest.dependencies).toEqual({ '@deepseek-ai/dsh-runtime': 'workspace:*' })
-    expect(manifest.peerDependencies).toEqual({ [CORDIS]: 'workspace:^' })
+    expect(manifest.peerDependencies).toEqual({ [CORDIS]: 'workspace:~' })
   })
 })
