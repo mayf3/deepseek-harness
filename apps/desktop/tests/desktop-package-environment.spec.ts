@@ -9,7 +9,8 @@ const WINDOWS = { platform: 'win32', arch: 'x64' } as const
 const MACOS = { platform: 'darwin', arch: 'arm64' } as const
 const POLICY = { DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
   DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }) }
-const RELEASE = { ...POLICY, DSH_DESKTOP_APP_ID: 'com.example.desktop', DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com' }
+const RELEASE = { ...POLICY, DSH_DESKTOP_APP_ID: 'com.example.desktop', DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com',
+  DOWNLOAD_TEST_RELEASE_ID: '0123456789abcdef0123456789abcdef' }
 const MAC_IDENTITY = { DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Example Company (TEAMID1234)', DSH_DESKTOP_MACOS_TEAM_ID: 'TEAMID1234' }
 
 async function withDirectory(action: (directory: string) => Promise<void>): Promise<void> {
@@ -58,6 +59,7 @@ describe('Desktop local packaging configuration', () => {
         dsh_desktop_mandatory_update_prod_origin: 'https://stale.example.com',
         DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'stale-pin', APPLE_ID: 'stale-apple-id',
         CSC_LINK: 'stale-certificate', DOWNLOAD_TEST_ORIGIN: 'https://stale.example.com',
+        DOWNLOAD_TEST_RELEASE_ID: 'a'.repeat(32), download_test_release_id: 'b'.repeat(32),
         dsh_desktop_windows_key_container: 'case-insensitive-stale-container',
       }
       expect(loadDesktopPackageEnvironment('win32', parent, directory)).toEqual({
@@ -71,6 +73,23 @@ describe('Desktop local packaging configuration', () => {
       })
       expect(parent.DSH_DESKTOP_WINDOWS_TOKEN_PIN).toBe('stale-pin')
       expect(parent.dsh_desktop_mandatory_update_config).toBe('stale-policy')
+    })
+  })
+
+  it.each(['win32', 'darwin'] as const)('owns the %s release ID in its platform file', async (platform) => {
+    await withDirectory(async (directory) => {
+      const settings = Object.entries(RELEASE).map(([name, value]) => `${name}='${value}'`).join('\n') + '\n'
+      const file = join(directory, platform === 'win32' ? '.env.windows' : '.env.macos')
+      const parent = { DOWNLOAD_TEST_RELEASE_ID: 'a'.repeat(32) }
+      await writeFile(file, settings)
+      expect(loadDesktopPackageEnvironment(platform, parent, directory).DOWNLOAD_TEST_RELEASE_ID).toBe(RELEASE.DOWNLOAD_TEST_RELEASE_ID)
+      await writeFile(file, settings.replace(`DOWNLOAD_TEST_RELEASE_ID='${RELEASE.DOWNLOAD_TEST_RELEASE_ID}'\n`, ''))
+      const missing = loadDesktopPackageEnvironment(platform, parent, directory)
+      expect(missing.DOWNLOAD_TEST_RELEASE_ID).toBeUndefined()
+      expect(() => {
+        validateDesktopPackageEnvironment(missing, platform === 'win32' ? WINDOWS : MACOS)
+      }).toThrow(/DOWNLOAD_TEST_RELEASE_ID/u)
+      expect(parent.DOWNLOAD_TEST_RELEASE_ID).toBe('a'.repeat(32))
     })
   })
 
@@ -118,6 +137,18 @@ describe('Desktop local packaging configuration', () => {
     expect(() => {
       validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { prepareOnly: true })
     }).not.toThrow()
+  })
+
+  it('accepts one local npm registry mirror and rejects other registry forms', () => {
+    const release = { ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }
+    expect(() => {
+      validateDesktopPackageEnvironment({ ...release, DSH_DESKTOP_NPM_REGISTRY: 'https://registry.npmmirror.com/' }, WINDOWS, { unsigned: true })
+    }).not.toThrow()
+    for (const value of ['http://registry.example.com/', 'https://registry.example.com/path', 'https://user:secret@registry.example.com/', 'not-a-url']) {
+      expect(() => {
+        validateDesktopPackageEnvironment({ ...release, DSH_DESKTOP_NPM_REGISTRY: value }, WINDOWS, { unsigned: true })
+      }).toThrow(/DSH_DESKTOP_NPM_REGISTRY/u)
+    }
   })
 
   it('rejects incomplete macOS identity and credentials and checks referenced files without contacting Apple', async () => {

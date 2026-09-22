@@ -18,8 +18,11 @@ import type {
   ConversationSessionInjected, DraftFileUploads,
 } from './contract/slots.ts'
 import type { InputNotice } from './contract/input.ts'
+import type { ReferenceInsert } from './contract/draft-editor.ts'
 import { createConversationStore, readConversationViewPreference } from './stores.ts'
-import { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'
+import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
+import { relativizeToCwd, workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
+import { ConversationController, UnsupportedImageMediaTypeError, isImageMediaType } from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
 import type { ComposerBlock } from './contract/composer-blocks.ts'
@@ -48,7 +51,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Services required by the Conversation plugin. */
 export const inject = [
-  'slots', 'sessions', 'fileUpload', 'uiSession', 'uiWorkspace', 'locale', 'settingsScope',
+  'slots', 'sessions', 'fileUpload', 'uiSession', 'uiWorkspace', 'locale', 'configForms',
 ]
 
 /** Conversation runtime configuration. */
@@ -85,6 +88,21 @@ const EMPTY_FILE_UPLOADS: DraftFileUploads = {}
 const ABSENT_FILE_UPLOADS = {
   getSnapshot: () => EMPTY_FILE_UPLOADS,
   subscribe: () => () => {},
+}
+
+/**
+ * Browser-shell bridge reporting the harness-host path of a picked file. The
+ * Desktop preload exposes it on the application document; a served Web page
+ * has none, so every non-image file uploads there.
+ */
+interface HostPathBridge {
+  /** Absolute harness-host path of one picked file, or empty when the shell has none for it. */
+  pathFor(file: File): string
+}
+
+/** The shell-installed bridge, when this document runs inside the Desktop application. */
+function hostPathBridge(): HostPathBridge | undefined {
+  return (globalThis as { __DSH_HOST_PATHS__?: HostPathBridge }).__DSH_HOST_PATHS__
 }
 
 interface WorkspaceNavigation {
@@ -140,8 +158,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const t = ctx.locale.bind(NS)
   const conversationStore = createConversationStore()
   const submissionPolicy = new ComposerSubmissionPolicy(
-    ctx.settingsScope.bind<ConversationSettings>({ namespace: CONVERSATION_SETTINGS_NAMESPACE }),
+    ctx.configForms.get<ConversationSettings>(CONVERSATION_SETTINGS_NAMESPACE),
   )
+
+  ctx.effect(() => () => { submissionPolicy.dispose() })
 
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item',
@@ -159,7 +179,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     for (const entry of slots.entries('conversation.view')) {
       /* v8 ignore next -- list registration validates id at load. */
       if (entry.options.id === undefined) continue
-      if (!ctx.settingsScope.developerTools.enabled.getSnapshot() && entry.options.id === DEVELOPER_TOOLS_VIEW_ID) continue
+      if (!ctx.configForms.developerTools.enabled.getSnapshot() && entry.options.id === DEVELOPER_TOOLS_VIEW_ID) continue
       tabs.push({
         id: entry.options.id,
         label: resolveSlotLabel(entry.options.label) ?? entry.options.id,
@@ -197,7 +217,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   ctx.effect(() => {
     const disposeViews = slots.subscribe('conversation.view', refreshViews)
     const disposeLocale = ctx.locale.subscribe(refreshViews)
-    const disposeDeveloperTools = ctx.settingsScope.developerTools.enabled.subscribe(refreshViews)
+    const disposeDeveloperTools = ctx.configForms.developerTools.enabled.subscribe(refreshViews)
     return () => {
       disposeDeveloperTools()
       disposeLocale()
@@ -368,6 +388,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       'conversation.input.plan': { kind: 'single', scope: 'session' },
       'conversation.input.right': { kind: 'list', scope: 'session' },
       'conversation.input.model': { kind: 'single', scope: 'session' },
+      'conversation.input.activity': { kind: 'single', scope: 'session' },
       'conversation.composer.dock': { kind: 'list', scope: 'session' },
     },
     inject: (sessionId: SessionId | undefined): ComposerBarInjected => {
@@ -392,14 +413,41 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       const conversation = concreteConversation(ctx)
       const shell = inputHub.shell(sessionId)
       const inputTriggers = inputHub.inputTriggers(sessionId)
+      const bridge = hostPathBridge()
       return {
         keyboard: shell,
-        addFiles: (files) => {
+        addFiles: (files, directories = new Set()) => {
           if (sessions.binding(sessionId) === undefined) return t('file.sessionUnavailable')
+          if (shell.snapshot.phase === 'adjudicating' || shell.snapshot.phase === 'submitting') {
+            return t('attachment.dropBlocked')
+          }
+          const uploads: File[] = []
+          const references: ReferenceInsert[] = []
+          const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
+          for (const file of files) {
+            const directory = directories.has(file)
+            if (bridge === undefined && directory) return t('attachment.directoryDesktopOnly')
+            const path = bridge?.pathFor(file) ?? ''
+            if (directory && path === '') return t('attachment.pathUnavailable')
+            if (path === '' || (!directory && isImageMediaType(file.type))) {
+              uploads.push(file)
+              continue
+            }
+            const relative = relativizeToCwd(path, cwd)
+            // A completed directory chip needs closed quotes; the directory grammar keeps them open for drill.
+            const mention = formatFileMention({ path: directory ? `${relative}/` : relative, kind: 'file' }, false)
+            if (mention === undefined) return t('attachment.pathUnsupported')
+            const label = workspaceTitleOf(path) || file.name
+            references.push({
+              source: 'reference', ref: mention, label: directory ? `${label}/` : label,
+              appearance: directory ? 'folder' : 'file', clipboardText: mention,
+            })
+          }
           try {
-            const drafts = conversation.createDrafts(sessionId, files)
-            if (!shell.addAttachments(drafts.map(draft => draft.id))) {
+            const drafts = conversation.createDrafts(sessionId, uploads)
+            if (!shell.addFiles(references, drafts.map(draft => draft.id))) {
               conversation.releaseDraftAttachments(drafts)
+              return t('attachment.dropBlocked')
             }
             return null
           } catch (error: unknown) {

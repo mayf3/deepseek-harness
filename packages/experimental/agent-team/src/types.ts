@@ -199,17 +199,6 @@ export interface UpdateTeamTaskRequest {
   readonly owner?: string
 }
 
-/** Browser task mutation result with stale revisions kept distinct from other Team rejections. */
-export type TeamTaskMutationResult =
-  | { readonly ok: true; readonly value: TeamTaskView }
-  | {
-    readonly ok: false
-    readonly error: {
-      readonly code: 'team-task-conflict' | 'team-rejected'
-      readonly message: string
-    }
-  }
-
 /** Result of waiting for Team activity. */
 export interface TeamWaitResult {
   readonly timedOut: boolean

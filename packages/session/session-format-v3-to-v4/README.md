@@ -1,5 +1,5 @@
 ---
-description: "Complete V3-to-V4 Session conversion and native admission: tool-role results, producer sources, parent catalogs, preserved references, and refusal."
+description: "Complete V3-to-V4 Session conversion and native admission: tool-role results, producer sources, parent catalogs, reference remapping, and refusal."
 kind: "package-library"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Restore supported released V3 Sessions as V4 without rewriting their stored generation. This page specifies the edge's transformations, preservation, prerequisites, and refusal, then separates native V4 admission. The conversion lifts tool results, renames message sources, and appends missing parent catalog facts. Persistence owns file reads and successor publication; this library owns conversion and target rules.
+Restore supported released V3 Sessions as V4 without rewriting their stored generation. This page specifies the edge's transformations, preservation, prerequisites, and refusal, then separates native V4 admission. The conversion lifts tool results, renames message sources, closes evidenced interrupted turns, and appends missing parent catalog facts. Persistence owns file reads and successor publication; this library owns conversion and target rules.
 
 ## Table of Contents
 
@@ -66,7 +66,7 @@ Every restore creates independent Stage state. Compact runs expand as iterables 
 <a id="v3-to-v4-specification"></a>
 ## V3-to-V4 specification
 
-This edge changes only the named representations below and appends available missing catalog facts. It namespaces unknown ignorable event types and retains each admitted source event's time, sequence, message identities, surface operation, references, and all fields outside those conversions. It creates no system prompt, developer event, tool execution, or replacement message. Earlier V0–V2 inputs first pass through their existing edges to V3; those edges retain their own transformations and refusal policies.
+This edge changes only the named representations below, closes evidenced interrupted turns, and appends available missing catalog facts. It namespaces unknown ignorable event types and retains each admitted source event's time, message identities, and all fields outside those conversions and the coordinate remapping below. It creates no system prompt, developer event, tool execution, or replacement message. Earlier V0–V2 inputs first pass through their existing edges to V3; those edges retain their own transformations and refusal policies.
 
 <a id="header-and-framing"></a>
 ### Header and physical framing
@@ -144,24 +144,26 @@ There is no recursive source search. Captured request text, assistant replay sta
 |---|---|
 | One descriptor with version 1 | Require string provider and label; derive `mode: 'continuable'`. |
 | One descriptor with version 2 or 3 | Require string provider; use its mode and optional label under catalog rules. |
-| Zero descriptors, or an unsupported descriptor version | May retain an existing parent entry; cannot create a missing entry. |
-| More than one own descriptor | Retain an existing parent entry without mode/label comparison; do not create a missing entry. |
+| Zero descriptors, or an unsupported descriptor version | Retain an existing parent entry; otherwise append unknown-mode membership. |
+| More than one own descriptor | Retain an existing parent entry without mode/label comparison; otherwise append unknown-mode membership. |
 | Existing own parent entry | Retain it and its extensions; require matching child creation time and mode/label from exactly one supported own descriptor, when available. |
 | Missing own parent entry with complete supported evidence | Append a version-0 catalog fact with child id, creation time, mode, and optional label. |
-| Missing own parent entry without complete evidence | Preserve the parent without inventing a catalog entry. |
+| Missing own parent entry without complete evidence | Append a version-1 `subagent/catalog` with header identity and unknown mode, without inventing a label. |
 
-Catalog version 0 requires string `childId`, nonnegative safe-integer `childCreatedAt`, mode `continuable` or `one-shot`, and a string label for continuable mode; a present one-shot label must also be a string. Duplicate own child ids are refused. Existing entries without a corresponding retained child remain in the parent. Descriptor collection does not restore a child's old continuation composition or recover deleted children from tool arguments.
+Catalog versions 0 and 1 require string `childId`, nonnegative safe-integer `childCreatedAt`, mode `continuable` or `one-shot` (version 1 additionally accepts `unknown`), and a string label for continuable mode; a present label in any mode must also be a string. Duplicate own child ids are refused. Existing entries without a corresponding retained child remain in the parent. Descriptor collection does not restore a child's old continuation composition or recover deleted children from tool arguments. Unknown-mode entries retain header identity without asserting a supported child descriptor.
 
 The stage considers parent catalog records only after the final inherited cut. Every inherited marker discards earlier catalog candidates without interpreting their payloads. Missing entries append after all source events, sorted by creation time then child id, with dense new sequences. Their time is the final source event's time, or header creation time for an empty log. They neither enter the model surface nor change the inherited count.
 
-Storage supplies the complete recognizable child set within its root and rechecks membership and physical revisions during preparation, memo reuse, and publication. Incomplete descriptor evidence only prevents that child’s backfill. Unreadable headers that prevent classifying membership, unsupported selected generations, or source drift refuse the operation. The package itself reads no files; [persistence](../session-persistence-jsonl/README.md) owns encoding, locks, cancellation, and publication.
+Storage supplies recognizable direct-child evidence and rechecks membership and physical revisions during preparation, memo reuse, and publication. The JSONL provider isolates unreadable child headers, child decoding failures, and invalid descriptor fields while retaining other catalog entries; it does not migrate child catalogs during parent preparation. The converter still rejects conflicting supplied facts and changed parent history. [JSONL persistence](../session-persistence-jsonl/README.md) owns warnings, source checks, and child-local failure handling. Current V4 reads never invoke this converter and validate native catalog fields, uniqueness, and delivery ownership directly.
 
 <a id="sequence-references"></a>
 ### Sequence references and inheritance
 
-This edge performs no coordinate remapping. Existing event sequences, `sourceEventSeqs`, replacement `startSeq/endSeq`, command and title references, compaction spans, captured Session references, delivery coordinates, turn/step numbers, stream indices, and all ids retain their values. Tool-result lifting and source conversion do not change source event count; appended catalog records only extend the suffix.
+An open turn with no open step can be closed when the next numbered `turn/start` immediately follows a nonempty `agent/inbox/spliced` for `next-turn`. The stage inserts `turn/end` with reason `interrupted` immediately before that start, using its timestamp. Open tails remain open. Other turn-order violations, unresolved tools, and active compactions still fail target validation. Native V4 never applies this repair.
 
-For a seeded Session, the last `session/end-seed` carrying `inherited: true` identifies the inherited event count, excluding that marker. It is unchanged from the V3-stage input, including when preceding V0–V2 migrations already remapped it. A supplied source cut must agree; a missing tagged marker, an inherited marker in an unseeded Session, or a cut outside the events is refused. Unseeded stages expose zero before EOF; seeded stages leave the count unknown until `finish()`. Untagged markers do not define fork inheritance.
+Insertion renumbers subsequent envelopes densely and remaps audited same-artifact references: `sourceEventSeqs`, replacement `startSeq/endSeq`, command completion `sourceEventSeq`, title `messageSeqs`, compaction `shadowedRange` and `shadowedSeqs`, and image-offload target `seq`. Captured Session references, generation-qualified delivery coordinates, turn/step numbers, stream and image indexes, ids, and arbitrary JSON retain their values. Unknown ignorable events retain opaque payload and surface metadata; only their envelope sequence is renumbered. Without insertion, source event coordinates remain unchanged; appended catalog records only extend the suffix.
+
+For a seeded Session, the last `session/end-seed` carrying `inherited: true` identifies the inherited event count, excluding that marker. The target count includes inserted events before that marker. A supplied source cut must agree with the original V3-stage marker position, including when preceding V0–V2 migrations already remapped it; a missing tagged marker, an inherited marker in an unseeded Session, or a cut outside the events is refused. Unseeded stages expose zero before EOF; seeded stages leave the count unknown until `finish()`. Untagged markers do not define fork inheritance.
 
 <a id="delivery-guards"></a>
 ### Delivery generations
@@ -171,11 +173,11 @@ For a seeded Session, the last `session/end-seed` carrying `inherited: true` ide
 | Any interpreted `session-log-deepseek/delivery-accepted` | Generation must be a nonnegative safe integer; omission identifies V0. |
 | V3 source marker claiming generation 4 | Refuse: advancing the header must not activate a target-generation watermark. |
 | V3 source marker for generation 3 | Require a nonempty Session id and nonnegative safe-integer `throughSeq` before the marker; a foreign id is allowed only before the inherited cut with `parentSession`. |
-| Other source generations, including values above 4 | Retain their event type, payload, and coordinates unchanged; they remain inactive in V4. |
+| Other source generations, including values above 4 | Retain their event type and payload coordinates unchanged; they remain inactive in V4. |
 | Native V4 marker for generation 4 | Apply the same earlier-coordinate and Session-ownership checks using V4 as current. |
 | Native V4 historical marker, including generation 3 | Retain recorded coordinates and identity; it is not a V4 acceptance watermark. |
 
-No delivery payload or event type is rewritten. Higher-version migrations own any future activation checks; this edge checks only promotion to V4. The marker’s envelope sequence remains unchanged.
+No delivery payload or event type is rewritten. Higher-version migrations own any future activation checks; this edge checks only promotion to V4. The marker’s envelope sequence follows insertion remapping; source-generation ownership is checked against the original V3 sequence and inherited cut.
 
 <a id="source-audit"></a>
 ### Source audit and refusal
@@ -243,7 +245,7 @@ Current common admission does not validate each user/tool/developer content bloc
 | `compaction/start`, `compaction/summary`, `compaction/end` | Match compaction id, source command, and the active turn context. Summary spans name exact current-surface nodes and exclude the protected head; successful completion has one summary. Inherited unfinished compactions expire at the end-seed marker. |
 | `compaction/prune` | Its span names exact current-surface nodes and excludes the protected head; it does not require a compaction transaction or its owner fields. |
 | Compact checkpoint replacement | Its `compact-checkpoint` source identifies the active compaction. |
-| Native `subagent/catalog` | Check own version-0 payload fields and unique child ids after the inherited cut. Native reads neither collect child logs nor compare their physical facts; inherited entries do not establish own membership. |
+| Native `subagent/catalog` | Check own version-0/version-1 payload fields and unique child ids after the inherited cut. Native reads neither collect child logs nor compare their physical facts; inherited entries do not establish own membership. |
 | Inherited cut and delivery | Apply the marker, coordinate, and generation-ownership rules stated above. |
 
 These checks are generation-owned in [relationships.ts](src/relationships.ts). Full common message/envelope acceptance and plugin-owned message projections additionally use the installed Session; the exported V4 restorer alone is not a replacement for complete catalog restoration.
@@ -290,7 +292,7 @@ Unknown required events are refused by vocabulary-aware restoration. Unknown ign
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The migration declaration creates independent streaming stages. Compact runs expand as iterables without an intermediate event array. The V3-to-V4 stage rewrites historical message sources and lifts historical tool-result wrappers once while emitting V4 events. The V4 codec uses the released V2 codec only for physical header and source-range framing, and validates native tool-role rows directly; it does not invoke the released V3 validator or source-conversion views. JSONL scanners call `assertV4RowAdmission` before suppressing recoverable rows and the shared mandatory relationship validator before returning the completed logical prefix.
+The migration declaration creates independent streaming stages. Compact runs expand as iterables without an intermediate event array. The V3-to-V4 stage rewrites historical message sources, lifts historical tool-result wrappers, and inserts evidenced interrupted turn endings while emitting V4 events. It retains one source-to-target sequence entry per source event for local reference remapping. The V4 codec uses the released V2 codec only for physical header and source-range framing, and validates native tool-role rows directly; it does not invoke the released V3 validator or source-conversion views. JSONL scanners call `assertV4RowAdmission` before suppressing recoverable rows and the shared mandatory relationship validator before returning the completed logical prefix.
 
 The target restorer validates native fields and mandatory cross-event relationships, then returns the original artifact. Unknown ignorable events remain opaque, and unfinished inherited compactions expire at the end-seed marker. No runtime invariant companion is published because this pure library owns no independently maintained runtime observations.
 
@@ -334,7 +336,7 @@ The edge preserves the recorded request prefix. Provider cache availability and 
 - **Nested historical tool results** — migration currently refuses results containing another tool-result wrapper. The original generation remains intact and no V4 successor is published. A later converter may support evidenced source cases without changing the established V4 format; the [migration cookbook](../../../docs/cookbook/adding-a-session-format-version.md#stages-and-validation) defines that distinction.
 - **Historical extension consumers** — prefixed message and result fields preserve JSON data without activating core fields. A consumer must explicitly understand those fields before interpreting them.
 - **Retained child logs required** — a parent alone cannot recover unrecorded child ids, creation times, or descriptors. Deleted children cannot be reconstructed from tool arguments; existing parent catalog records remain.
-- **Missing historical catalog entries** — without exactly one supported own descriptor, an absent parent entry is not backfilled. The child log remains readable by id; current V4 reads do not rescan children to repair that omission.
+- **Unknown historical modes** — without exactly one supported own descriptor, a missing parent entry records unknown mode. Current reads do not rewrite that entry; opening the child resolves available descriptor information or reports its own error.
 - **Storage scope** — facts cover recognizable children within the same persistence root. Cross-root import and corrupt-log repair are outside this migration.
 
 <a id="dev-note"></a>

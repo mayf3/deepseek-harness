@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import type { BrowserWindow } from 'electron'
 import { DesktopUpdateDialog, UPDATE_DIALOG_IPC } from '../src/update-dialog.ts'
-import { resolveDesktopLocale } from '../src/locale.ts'
+import { resolveDesktopLocale, type DesktopLocale } from '../src/locale.ts'
 
 const fixture = await vi.hoisted(async () => {
   const { EventEmitter } = await import('node:events')
@@ -43,9 +43,9 @@ afterEach(() => {
   fixture.handlers.clear()
 })
 
-function setup() {
+function setup(locale: DesktopLocale | (() => DesktopLocale) = resolveDesktopLocale('zh-CN')) {
   const parent = new fixture.FakeWindow({})
-  dialogs = new DesktopUpdateDialog('preload-update-dialog.cjs', resolveDesktopLocale('zh-CN'))
+  dialogs = new DesktopUpdateDialog('preload-update-dialog.cjs', locale)
   const show = (signal?: AbortSignal) => dialogs!.show(parent as unknown as BrowserWindow, {
     message: '下载完成', buttons: ['安装并重启'], cancelId: 1, ...(signal === undefined ? {} : { signal }),
   })
@@ -190,4 +190,21 @@ it.runIf(process.platform === 'darwin')('blocks parent keyboard input and redire
   dialogs!.dispose()
   await pending
   expect(f.parent.webContents.listenerCount('before-input-event')).toBe(0)
+})
+
+it('reads the current locale for each presentation', async () => {
+  let locale = resolveDesktopLocale('en')
+  const f = setup(() => locale)
+  for (const language of ['zh-CN', 'en']) {
+    locale = resolveDesktopLocale(language)
+    const pending = f.show()
+    const window = fixture.windows.at(-1)!
+    const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    expect(fixture.handlers.get(UPDATE_DIALOG_IPC.status)!(event)).toMatchObject({
+      locale: locale.id, closeLabel: locale.messages.updateClose,
+      technicalDetailsLabel: locale.messages.updateTechnicalDetails,
+    })
+    dialogs!.cancel()
+    await pending
+  }
 })
