@@ -198,7 +198,7 @@ describe('QueueDock', () => {
       expect((view.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(false)
     }
     fireEvent.click(view.getByRole('button', { name: '编辑排队消息' }))
-    expect((view.getByRole('textbox') as HTMLInputElement).value).toBe('等待上传')
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('等待上传')
   })
 
   it('loads the durable thumbnail after replacing a local image echo', async () => {
@@ -385,7 +385,8 @@ describe('QueueDock', () => {
     const editor = getByLabelText('编辑排队消息') as HTMLTextAreaElement
     expect(editor.value).toBe(text)
 
-    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true })
+    // Shift+Enter keeps the native line break: the handler must not consume it.
+    expect(fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true })).toBe(true)
     expect(updateQueue).not.toHaveBeenCalled()
 
     fireEvent.change(editor, { target: { value: `${text}\nline five` } })
