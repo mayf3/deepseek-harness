@@ -9,7 +9,7 @@ import { RecordingError, audioBase64, type Recording } from './audio.ts'
 import type { SpeechReadiness } from './readiness.ts'
 import { Waveform } from './Waveform.tsx'
 import { NS } from './locales.ts'
-import { Button, IconCloseOutlineRegular, IconStopFillRegular, IconMicrophoneOutlineRegular, StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseOutlineRegular, IconStopFillRegular, IconMicrophoneFillRegular, StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './VoiceInput.module.css'
 
 /** Host calls injected without exposing a Cordis Context to React. */
@@ -140,7 +140,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
   if (!expanded) return <Tooltip label={t(usable ? 'dictate' : 'prepareRequired')} side="top" portal>
     <span className={css.triggerAnchor}><Button className={css.trigger} size="sm" disabled={!usable || locked}
       aria-label={t('start')} onMouseDown={(event) => { event.preventDefault() }}
-      onClick={() => { void start() }}><IconMicrophoneOutlineRegular size={18} /></Button></span>
+      onClick={() => { void start() }}><IconMicrophoneFillRegular size={18} /></Button></span>
   </Tooltip>
   return <div className={css.captureRow} data-voice-activity={phase}>
     <Button type="button" className={css.roundButton} size="sm" aria-label={t(pending ? 'discard' : 'cancel')}
@@ -157,6 +157,6 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
         if (inputActions.insertText(pending, inputActions.captureInsertion())) { setPending(''); setPhase('idle') }
       }}>{t('insert')}</Button>
       : <Button className={css.roundButton} size="sm" type="button" aria-label={t('retryRecording')} disabled={!usable || locked}
-        onClick={() => { void start() }}><IconMicrophoneOutlineRegular size={18} /></Button>)}
+        onClick={() => { void start() }}><IconMicrophoneFillRegular size={18} /></Button>)}
   </div>
 }
