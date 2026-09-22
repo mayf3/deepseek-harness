@@ -53,7 +53,11 @@ let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
 let shuttingDown = false
 let windowsLanguage: string | undefined
-/** Set once the backend reports ready; a fatal failure before that is a startup failure. */
+/**
+ * Whether the backend has reached ready: false until the first ready, back to
+ * false when a restart returns it to starting, frozen during shutdown so a
+ * failure while tearing down a ready backend still reads as `running`.
+ */
 let backendReady = false
 /** Error-level console output of the primary window, attached to crash reports. */
 const rendererConsole = new RendererConsoleTail()
@@ -413,9 +417,8 @@ async function main(): Promise<void> {
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
     }
   }, (state) => {
-    // An error keeps the phase it happened in; a restart returns the backend to startup.
     if (state.phase === 'error') reportFatal(state.failure, 'host')
-    else backendReady = state.phase === 'ready'
+    else if (!shuttingDown) backendReady = state.phase === 'ready'
   })
 
   const updateErrors = new WeakMap<DesktopUpdateState, Promise<void>>()

@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
-  CRASH_REPORTS_RETAINED, crashReportFileName, pruneCrashReports, renderCrashReport, RendererConsoleTail, writeCrashReport,
+  CRASH_REPORTS_RETAINED, crashReportFileName, ERROR_SECTION_MAX_CHARS, pruneCrashReports, renderCrashReport, RendererConsoleTail,
+  writeCrashReport,
   type CrashReportInput,
 } from '../src/crash-report.ts'
 
@@ -85,11 +86,18 @@ it('prunes only the oldest crash reports and leaves other files alone', async ()
   const names = Array.from({ length: CRASH_REPORTS_RETAINED + 3 }, (_, index) =>
     crashReportFileName(new Date(Date.UTC(2026, 8, 1 + index)), 'main'))
   for (const name of names) await writeFile(join(root, name), '')
-  await writeFile(join(root, 'crash-notes.txt'), '')
-  await writeFile(join(root, 'update-journal.jsonl'), '')
+  const foreign = ['crash-notes.txt', 'crash-notes.log', 'crash-2026-09-01T00-00-00-000Z-unknown.log', 'update-journal.jsonl']
+  for (const name of foreign) await writeFile(join(root, name), '')
   await pruneCrashReports(root)
   const remaining = (await readdir(root)).sort()
-  expect(remaining).toEqual([...names.slice(3), 'crash-notes.txt', 'update-journal.jsonl'].sort())
+  expect(remaining).toEqual([...names.slice(3), ...foreign].sort())
+})
+
+it('cuts an oversized error section and says so', () => {
+  const text = renderCrashReport(input({ error: new Error('y'.repeat(300 * 1024)) }))
+  const section = text.slice(text.indexOf('--- error ---'), text.indexOf('--- renderer console'))
+  expect(section.length).toBeLessThan(ERROR_SECTION_MAX_CHARS + 200)
+  expect(section).toContain(`… (error section cut at ${String(ERROR_SECTION_MAX_CHARS)} characters)`)
 })
 
 it('treats a missing logs directory as nothing to prune', async () => {

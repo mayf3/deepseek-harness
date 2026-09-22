@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { removeOwnedStyles } from '../src/client/entry-lifecycle.ts'
-import { describeError } from '../src/client/system.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -466,8 +465,6 @@ describe('import error record', () => {
     await expect(b.loader.import('a', '', {})).rejects.toBe('factory rejected a string')
     expect(b.loader.importError('a')).toBeInstanceOf(Error)
     expect(b.loader.importError('a')?.message).toBe('factory rejected a string')
-    expect(describeError('plain')).toBe('plain')
-    expect(describeError(new Error('wrapped'))).toBe('wrapped')
   })
 
   it('records a prefetch failure and invalidate clears the record', async () => {

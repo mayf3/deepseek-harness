@@ -38,12 +38,8 @@ function atRevision(url: string, rev: string): string {
 
 const CLIENT_CHUNK = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
 
-/**
- * The message of a thrown value.
- * @param error - an Error or any other thrown value.
- * @returns the Error's message, or the value stringified.
- */
-export function describeError(error: unknown): string {
+/** The message of a thrown value: an Error's message, anything else stringified. */
+function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 

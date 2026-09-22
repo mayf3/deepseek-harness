@@ -26,9 +26,13 @@ macOS 上，启动审计把一组 Web 客户端行列为 `import failed (see con
 
 **batch 脚本失败是按行的问题，不是启动失败。** 在 `ClientModuleSystem.arrive` 中，传输失败（脚本 `error` 事件；什么都没执行）在同一 URL 上重试一次，等待该 batch 的所有行共享这次重试。加载成功但没有注册某行的脚本绝不重新执行：batch 按顺序注册各包，`register()` 拒绝重复，重放会在原次运行已注册的第一个包处停止。每个已执行的 batch URL 都会被记住，因此即使首个从该 batch 导入的是它已注册的行、之后另一行发现自己缺失，这一点仍然成立。两种情况下每条仍缺失的行随后加载自己的单资源 combo URL，Host 为每个包都提供该 URL；失败的 batch URL 会被记住，后续行直接走回退，而单资源 URL 跨 import 保持可重试（一次启动内 Loader 对每个条目只 import 一次，因此缺失行只有一次回退尝试）。依赖失败用消费者与依赖的名字包装。模块系统在最外层操作按行记录最后一次 `import()` 或 `prefetch()` 失败，因此 factory 执行错误与到达错误一样被捕获，`assertEntriesActive` 按无 fiber 的条目报告该文本。
 
+## 与既有决定的关系
+
+本 note 部分取代 [Desktop 原生致命恢复](2026-09-15-desktop-native-fatal-recovery.zh.md)：对话框指向的记录现在是崩溃报告文件而非 Electron 控制台，对话框详情多出报告路径一行；该 note 对对话框归属、按钮集合与 profile 恢复的决定仍然有效。`uncaughtException` 的处理把 [fail-loud release](../bug-fix/2026-07-31-fail-loud-releases-the-terminal.zh.md) note 的 release 机制扩展到同步抛出。
+
 ## 与 Desktop 日志体系设计的关系
 
-Desktop 本地日志设计（Worker 独占写入的滚动 JSONL 日志、封闭事件词汇、脱敏与限流）是持续日志设计，仍是未来工作。它规定 Host stderr 与渲染进程 console 输出永不持久化、错误只以固定分类进入日志。本决定划出一个例外：致命失败的一次性崩溃报告保留原始错误以及保留的 stderr 与 console 尾部，因为两次现场定位需要的正是这些原始内容，而报告有界、本地、仅所有者可读，且只在应用已经弹出致命对话框时写入。对话框标明文件名，用户知道自己会分享什么。任何非崩溃报告的内容仍遵循持续日志的隐私姿态。
+Desktop 本地日志设计（Worker 独占写入的滚动 JSONL 日志、封闭事件词汇、脱敏与限流）是持续日志设计，仍是未来工作。它规定 Host stderr 与渲染进程 console 输出永不持久化、错误只以固定分类进入日志。本决定划出一个例外：致命失败的一次性崩溃报告保留原始错误以及保留的 stderr 与 console 尾部，因为两次现场定位需要的正是这些原始内容，而报告有界（error 段截至 256 KiB、Host 诊断 64 KiB、渲染进程 console 尾部 64 KiB）、本地、仅所有者可读，且只在应用已经弹出致命对话框时写入。对话框标明文件名，用户知道自己会分享什么。任何非崩溃报告的内容仍遵循持续日志的隐私姿态。
 
 ## Testing
 

@@ -40,14 +40,20 @@ export interface CrashReportInput {
   readonly time: Date
 }
 
-/** File name prefix every report shares; pruning touches only these. */
+/** File name prefix every report shares. */
 export const CRASH_REPORT_PREFIX = 'crash-'
+
+/** The exact generated file name syntax; pruning touches only files that match it. */
+const CRASH_REPORT_NAME = /^crash-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-(?:host|web-boot|renderer|main)\.log$/u
 
 /** Reports kept after pruning, newest first by file name. */
 export const CRASH_REPORTS_RETAINED = 10
 
 /** Retained bytes of renderer error-level console output. */
 export const RENDERER_CONSOLE_MAX_BYTES = 64 * 1024
+
+/** Upper bound of the rendered error section; a Host exit error already carries a 64 KiB stderr tail in its message. */
+export const ERROR_SECTION_MAX_CHARS = 256 * 1024
 
 /**
  * Bounded tail of renderer error-level console lines. Lines are dropped from
@@ -114,13 +120,20 @@ export function renderCrashReport(input: CrashReportInput): string {
     header.join('\n'),
     '',
     '--- error ---',
-    inspect(input.error, { depth: 6, maxStringLength: Infinity, breakLength: 120 }),
+    boundedErrorSection(input.error),
     '',
     ...(input.hostDiagnostic === undefined ? [] : ['--- host diagnostic (as reported by the Host process) ---', input.hostDiagnostic, '']),
     '--- renderer console (error level, oldest first) ---',
     consoleSection,
     '',
   ].join('\n')
+}
+
+function boundedErrorSection(error: unknown): string {
+  const rendered = inspect(error, { depth: 6, maxStringLength: 64 * 1024, maxArrayLength: 100, breakLength: 120 })
+  return rendered.length <= ERROR_SECTION_MAX_CHARS
+    ? rendered
+    : `${rendered.slice(0, ERROR_SECTION_MAX_CHARS)}\n… (error section cut at ${String(ERROR_SECTION_MAX_CHARS)} characters)`
 }
 
 /**
@@ -159,7 +172,7 @@ export async function pruneCrashReports(directory: string, retained = CRASH_REPO
     console.error('dsh desktop: crash report directory could not be listed', directory, error)
     return
   }
-  const reports = names.filter(name => name.startsWith(CRASH_REPORT_PREFIX) && name.endsWith('.log')).sort()
+  const reports = names.filter(name => CRASH_REPORT_NAME.test(name)).sort()
   const excess = reports.slice(0, Math.max(0, reports.length - retained))
   for (const name of excess) {
     try {

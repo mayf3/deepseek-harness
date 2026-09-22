@@ -100,7 +100,7 @@ export interface WebBootGraph {
 export interface BootModuleRow {
   /** Entry name == package name (module-table key). */
   id: string
-  /** Revisioned single-resource combo reference used after HMR invalidation. */
+  /** Revisioned single-resource combo reference: the fallback when the row's batch fails and the reload target after HMR invalidation. */
   url: string
   /** Content-addressed combo reference used before the first HMR invalidation. */
   initialUrl: string
