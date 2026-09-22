@@ -65,7 +65,6 @@ it('offers a mirror after GitHub fails and waits for replacement input', async (
   )
   expect(await readFile(join(profile, '.attempts'), 'utf8')).toBe(attempts)
   expect(await readFile(manifestPath, 'utf8')).toBe(manifestBefore)
-  expect(await dialog.getByRole('button', { name: '恢复 GitHub 链接', exact: true }).count()).toBe(0)
   await input.fill(spec)
   await dialog.getByRole('button', { name: '安装', exact: true }).click()
   dialog = page.getByRole('dialog', { name: '无法访问 GitHub', exact: true })

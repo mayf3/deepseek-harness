@@ -1077,14 +1077,20 @@ describe('PluginManagerPage', () => {
     setLanguage(zh)
     expect(screen.getByRole('dialog', { name: '无法访问 GitHub' })).toBeTruthy()
     expect(screen.getByText('请尝试其他安装来源。')).toBeTruthy()
-    expect(screen.queryByText('通过国内镜像安装，需要填写插件包名。')).toBeNull()
     set({ install: { ...IDLE_INSTALL, open: true, mirrorRecovery: true, registries: REGISTRIES, registry: { kind: 'offered', registry: MIRROR } } })
+    const form = within(screen.getByRole('dialog', { name: zh.installTitle }))
+    expect(form.queryByText(zh.installDescription)).toBeNull()
+    expect(form.queryByRole('textbox', { name: zh.installSpecLabel })).toBeNull()
     const input = screen.getByRole('textbox', { name: zh.installPackageLabel })
     expect(input).toHaveProperty('value', '')
     expect(document.activeElement).toBe(input)
-    expect(screen.getByRole('button', { name: '安装源 中国大陆镜像源' })).toBeTruthy()
     expect(screen.getByRole('button', { name: zh.installRun })).toHaveProperty('disabled', true)
-    expect(screen.queryByRole('button', { name: '恢复 GitHub 链接' })).toBeNull()
+    expect(form.getAllByRole('button')).toEqual([
+      form.getByRole('button', { name: zh.close }),
+      form.getByRole('button', { name: zh.installGuideToggle }),
+      form.getByRole('button', { name: '安装源 中国大陆镜像源' }),
+      form.getByRole('button', { name: zh.installRun }),
+    ])
   })
 
   it('keeps the ordinary failure view for registry errors, other hosts, and unavailable mirrors', () => {
