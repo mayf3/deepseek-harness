@@ -7,6 +7,7 @@ import { dirname, extname, join, normalize, relative, resolve, sep } from 'node:
 import ts from 'typescript'
 import { WorkspaceTypertGenerator } from '../packages/typert/generator/src/workspace.ts'
 import { writeModuleGraph } from './gen-module-graph.ts'
+import { releaseFamily } from './release/families.ts'
 import {
   hasClientDeclaration,
   PACKAGE_DEPENDENCY_POLICY,
@@ -20,7 +21,8 @@ import {
 
 const GATE = 'verify-package-dependencies'
 const CORDIS = '@deepseek-ai/cordis'
-const WORKSPACE_RANGE = 'workspace:^'
+const VENDOR_PACKAGES = new Set(releaseFamily('vendor').members(resolve(import.meta.dirname, '..'))
+  .map(member => member.name))
 const RELEASE_MANIFEST_GLOB = 'packages/!(experimental)/*/package.json'
 const WORKSPACE_MANIFEST_GLOBS = [
   'apps/*/package.json',
@@ -664,6 +666,12 @@ function describeSections(sections: readonly DependencySection[]): string {
   return sections.length === 0 ? 'no dependency section' : sections.join(' + ')
 }
 
+function workspaceRange(facts: PackageDependencyFacts, name: string): string {
+  const pinned = VENDOR_PACKAGES.has(name)
+    && declaredSections(facts.manifest, name).some(sectionName => section(facts.manifest, sectionName)[name] === 'workspace:*')
+  return pinned ? 'workspace:*' : 'workspace:^'
+}
+
 /** Return all manifest and policy violations in stable order. */
 export function collectPackageDependencyViolations(state: PackageDependencyState): string[] {
   const violations = [...state.policyViolations]
@@ -671,15 +679,16 @@ export function collectPackageDependencyViolations(state: PackageDependencyState
   for (const facts of state.facts) {
     for (const [name, rule] of expectedPackageDependencies(facts)) {
       const actual = declaredSections(facts.manifest, name)
+      const expectedRange = workspaceRange(facts, name)
       if (rule.section === 'peer-dev') {
         if (actual.length === 2
           && actual.includes('peerDependencies')
           && actual.includes('devDependencies')
-          && section(facts.manifest, 'peerDependencies')[name] === WORKSPACE_RANGE
-          && section(facts.manifest, 'devDependencies')[name] === WORKSPACE_RANGE
+          && section(facts.manifest, 'peerDependencies')[name] === expectedRange
+          && section(facts.manifest, 'devDependencies')[name] === expectedRange
           && facts.manifest.peerDependenciesMeta?.[name] === undefined) continue
         violations.push(
-          `${facts.manifestPath}: ${name} must be matching peerDependencies + devDependencies at ${WORKSPACE_RANGE}; found ${describeSections(actual)}`,
+          `${facts.manifestPath}: ${name} must be matching peerDependencies + devDependencies at ${expectedRange}; found ${describeSections(actual)}`,
         )
         continue
       }
@@ -687,17 +696,18 @@ export function collectPackageDependencyViolations(state: PackageDependencyState
       const range = section(facts.manifest, expectedSection)[name]
       if (actual.length === 1
         && actual[0] === expectedSection
-        && (!facts.workspaceNames.has(name) || range === WORKSPACE_RANGE)) continue
+        && (!facts.workspaceNames.has(name) || range === expectedRange)) continue
       violations.push(
         `${facts.manifestPath}: ${name} (${rule.origins.join(', ')}) must be ${expectedSection}-only`
-        + (facts.workspaceNames.has(name) ? ` at ${WORKSPACE_RANGE}` : '')
+        + (facts.workspaceNames.has(name) ? ` at ${expectedRange}` : '')
         + `; found ${describeSections(actual)}`,
       )
     }
     for (const sectionName of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as const) {
       for (const [name, range] of Object.entries(section(facts.manifest, sectionName))) {
-        if (!facts.workspaceNames.has(name) || range === WORKSPACE_RANGE) continue
-        violations.push(`${facts.manifestPath}: ${sectionName}.${name} must use ${WORKSPACE_RANGE}, found ${range}`)
+        const expectedRange = workspaceRange(facts, name)
+        if (!facts.workspaceNames.has(name) || range === expectedRange) continue
+        violations.push(`${facts.manifestPath}: ${sectionName}.${name} must use ${expectedRange}, found ${range}`)
       }
     }
     for (const name of Object.keys(facts.manifest.peerDependenciesMeta ?? {})) {
@@ -742,7 +752,7 @@ function preferredRange(
   name: string,
   target: ExpectedPackageDependency['section'],
 ): string {
-  if (name === CORDIS || facts.workspaceNames.has(name)) return WORKSPACE_RANGE
+  if (name === CORDIS || facts.workspaceNames.has(name)) return workspaceRange(facts, name)
   const order: readonly DependencySection[] = target === 'dependencies'
     ? ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
     : ['devDependencies', 'peerDependencies', 'dependencies', 'optionalDependencies']
@@ -767,8 +777,8 @@ export function repairPackageDependencyManifest(facts: PackageDependencyFacts): 
       for (const sectionName of ['dependencies', 'optionalDependencies'] as const) {
         deleteDependency(facts.manifest, sectionName, name)
       }
-      mutableSection(facts.manifest, 'peerDependencies')[name] = WORKSPACE_RANGE
-      mutableSection(facts.manifest, 'devDependencies')[name] = WORKSPACE_RANGE
+      mutableSection(facts.manifest, 'peerDependencies')[name] = range
+      mutableSection(facts.manifest, 'devDependencies')[name] = range
       deletePeerMeta(facts.manifest, name)
       continue
     }
@@ -783,7 +793,7 @@ export function repairPackageDependencyManifest(facts: PackageDependencyFacts): 
   }
   for (const sectionName of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as const) {
     for (const name of Object.keys(section(facts.manifest, sectionName))) {
-      if (facts.workspaceNames.has(name)) mutableSection(facts.manifest, sectionName)[name] = WORKSPACE_RANGE
+      if (facts.workspaceNames.has(name)) mutableSection(facts.manifest, sectionName)[name] = workspaceRange(facts, name)
     }
   }
 }

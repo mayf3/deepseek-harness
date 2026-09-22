@@ -61,11 +61,11 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:*"
   },
   "dependencies": {
     "@deepseek-ai/dsh-util-crypto": "workspace:^",
-    "@deepseek-ai/schemastery": "workspace:^",
+    "@deepseek-ai/schemastery": "workspace:*",
     "zod": "^4.4.3",
     "@deepseek-ai/dsh-timeout": "workspace:^",
     "@deepseek-ai/dsh-brand": "workspace:^",
@@ -75,6 +75,6 @@
   "devDependencies": {
     "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:*"
   }
 }

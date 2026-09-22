@@ -29,13 +29,13 @@
   "peerDependencies": {
     "@deepseek-ai/dsh-subprocess": "workspace:^",
     "@deepseek-ai/dsh-sandbox": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis": "workspace:*",
     "@deepseek-ai/dsh-settings": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-subprocess": "workspace:^",
     "@deepseek-ai/dsh-sandbox": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis": "workspace:*",
     "@deepseek-ai/dsh-settings": "workspace:^"
   }
 }

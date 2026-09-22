@@ -11,8 +11,8 @@
     "config/desktop.cordis.patch.yml"
   ],
   "dependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/cordis": "workspace:*",
+    "@deepseek-ai/cordis-plugin-include": "workspace:*",
     "@deepseek-ai/dsh": "workspace:^",
     "@deepseek-ai/dsh-api-gateway": "workspace:^",
     "@deepseek-ai/dsh-app-boot": "workspace:^",

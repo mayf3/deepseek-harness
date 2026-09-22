@@ -932,6 +932,37 @@ describe('dependency sections', () => {
     ]))
   })
 
+  it.each([
+    CORDIS,
+    '@deepseek-ai/cosmokit',
+    '@deepseek-ai/schemastery',
+    '@deepseek-ai/cordis-plugin-loader',
+    '@deepseek-ai/cordis-plugin-include',
+    '@deepseek-ai/cordis-plugin-group',
+    '@deepseek-ai/cordis-plugin-timer',
+    '@deepseek-ai/cordis-plugin-hmr',
+    '@deepseek-ai/cordis-plugin-logger-console',
+  ])('preserves a release-line vendor pin on %s', (name) => {
+    const manifest: PackageDependencyManifest = {
+      name: '@deepseek-ai/dsh-probe',
+      dependencies: { [name]: 'workspace:*' },
+      devDependencies: { [CORDIS]: 'workspace:*' },
+      peerDependencies: { [CORDIS]: 'workspace:*' },
+    }
+    const base = facts(manifest)
+    const subject = { ...base, workspaceNames: new Set([...base.workspaceNames, name]) }
+    const state = { facts: [subject], packages: [], policyViolations: [], workspaceNames: subject.workspaceNames }
+
+    repairPackageDependencyManifest(subject)
+    expect(manifest[name === CORDIS ? 'peerDependencies' : 'dependencies']?.[name]).toBe('workspace:*')
+    expect(manifest.devDependencies?.[CORDIS]).toBe('workspace:*')
+    expect(manifest.dependencies?.['@deepseek-ai/dsh-runtime']).toBe('workspace:^')
+    expect(collectPackageDependencyViolations(state)).toEqual([])
+    const repaired = structuredClone(manifest)
+    repairPackageDependencyManifest(subject)
+    expect(manifest).toEqual(repaired)
+  })
+
   it('repairs owned relationships without changing unrelated dependencies', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-package-dependencies-'))
     roots.push(root)
@@ -954,7 +985,7 @@ describe('dependency sections', () => {
     expect(fixPackageDependencies(root, state)).toEqual([manifestPath])
     const fixed = JSON.parse(readFileSync(join(root, manifestPath), 'utf8')) as PackageDependencyManifest
     expect(fixed.dependencies).toEqual({
-      '@deepseek-ai/schemastery': 'workspace:^',
+      '@deepseek-ai/schemastery': 'workspace:*',
       external: '^1.0.0',
       '@deepseek-ai/dsh-runtime': 'workspace:^',
     })
