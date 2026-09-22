@@ -22,6 +22,8 @@ Account screens use authenticated Remote commands and a snapshot stream. The con
 
 The account namespace exposes getState, getProfile / getBalance, startSignIn, cancelSignIn, signOut, and watch. watch emits an initial complete state and subsequent complete states; disconnecting stops observation, not the login attempt. Cancellation names the attempt ID so a stale screen cannot cancel a newer login.
 
+Profile, balance, sign-in, and sign-out commands take the calling UI's `AccountClientMetadata`: client version, active language, and UTC offset in seconds. Cancellation retains the original attempt's metadata; state reads and subscriptions require none.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

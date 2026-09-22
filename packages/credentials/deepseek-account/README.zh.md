@@ -7,9 +7,9 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-getPlatformSession 为原生 Platform 内嵌提供仅限 Host 的 origin/token 快照，退登时返回 null。账号控制器 RPC 和 Client 状态不包含此方法及快照。账号变化时，使用方销毁持有旧快照的文档。
+getPlatformSession 为原生 Platform 内嵌提供仅限 Host 的 origin/token 快照，退登时返回 null。账号控制器 RPC 和 Client 状态不包含此方法及快照。账号变化时，使用方销毁持有旧快照的文档。快照只携带部署请求头；Platform 客户端身份由发起请求的内嵌客户端自行组装。
 
-`desktopClientHeaders` 将原生平台 `darwin` 和 `win32` 映射为 Desktop 账号与更新策略请求共用的请求头；`null` 不添加请求头。
+`platformClientHeaders` 依据单次调用的 `AccountClientMetadata` 与组合出的桌面平台生成五个 Platform 客户端请求头：`x-client-bundle-id` 有意保持为空字符串，`x-client-platform` 在没有 Desktop profile 提供 `darwin` 或 `win32` 时为 `web`，`x-client-version` 为调用方构建的版本，`x-client-locale` 将当前界面语言归约为 `zh_CN` 或 `en_US`，`x-client-timezone-offset` 为东为正的整秒偏移。
 
 ## 概述
 
@@ -60,4 +60,4 @@ AccountDetails.balance 就绪时，value 保存充值钱包，bonusWallets 保�
 
 [桌面登录决策](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.zh.md)记录取消和存储的职责。
 
-PlatformSession 可将仅限 Host 的 requestHeaders 从 Host 传至 Electron 主进程，其中包含部署请求头和 provider 提供的 x-client-platform。消费者必须从渲染层 bootstrap 排除这些请求头，并将其限定于配置来源。mergePlatformCookies 替换同名 Cookie，同时保留其他 Cookie。
+PlatformSession 可将仅限 Host 的 requestHeaders 从 Host 传至 Electron 主进程，其中只有部署请求头，因为内嵌文档的客户端身份在其语言、时区和版本可知处组装。消费者必须从渲染层 bootstrap 排除这些请求头，并将其限定于配置来源。mergePlatformCookies 替换同名 Cookie，同时保留其他 Cookie。

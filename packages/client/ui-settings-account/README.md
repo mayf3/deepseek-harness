@@ -26,6 +26,8 @@ The sidebar and Account settings display the profile avatar as a circular image,
 
 The section registers through settings.section and uses the account Remote namespace. The stream survives carrier reconnects through the shared Remote supervisor. The page renders feature-owned English and Chinese copy and keeps API keys separate from account state.
 
+Account operations carry this UI's client identity to the Host: build version, active language, and the current UTC offset in seconds sampled as the operation is issued.
+
 Balances use Platform Web currency formatting: two decimal places and digit grouping, positive amounts truncated to cents, positive sub-cent amounts shown as <0.01, and negative amounts rounded with a minimum displayed magnitude of 0.01. Raw Host balance strings remain unchanged.
 
 Desktop usage and top-up actions open an isolated native Platform view below a 48px return bar. Back destroys the view and preserves the Account settings page. Loading failures retain the return action and show a centered localized error with Retry. Retry reloads the same destination; renderer commands never receive the account token.

@@ -7,11 +7,11 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
-New attempts map the caller’s UI language to Platform en_US or zh_CN; active attempts retain their initial language.
+Every operation that reaches Platform takes the caller's `AccountClientMetadata`: the client version, the active UI language, and the UTC offset in seconds. The provider derives the five Platform client headers from that metadata and the composition's platform, so each request reports the UI that made it instead of the last caller the Host saw. A new sign-in attempt captures the metadata for its initialization, exchange, and cancellation, and a joining caller never replaces it; sign-out captures the metadata for the revocation retries that outlive the request.
 
 getPlatformSession exports the stored grant only when its issuer matches platformOrigin. This Host-only operation supports native Platform embedding without widening the model/file origin configured for resolveToken.
 
-`desktopPlatform` defaults to `null`. Every profile then sends `x-client-platform: web` on Host authorization, profile, balance, and logout requests; the Desktop profile supplies `darwin` or `win32`, replacing it with `x-client-platform: desktop-mac` or `desktop-win`. The provider owns that header, so deployment configuration cannot override it. Embedded Platform document and API requests receive the same platform header alongside their deployment headers, only at the configured origin.
+`desktopPlatform` defaults to `null`, which sends `x-client-platform: web`; the Desktop profile supplies `darwin` or `win32`, becoming `desktop-mac` or `desktop-win`. The provider owns all five headers, so deployment configuration cannot override them; `x-client-bundle-id` is intentionally empty, and `x-client-locale` reduces the caller's language to `zh_CN` or `en_US`. PlatformSession carries deployment headers only, and the embedding client composes the same five headers for the Platform documents and API requests it opens, only at the configured origin.
 
 ## Summary
 
@@ -34,7 +34,7 @@ Configure platformOrigin, allowLoopbackHttp, requestTimeoutMs, and attemptTimeou
 
 Platform URLs have one configuration owner: `platformOrigin`. Authorization requests, browser validation, completion redirects, usage, and top-up destinations all use that origin. Set it in a private `$DSH_HOME/cordis.patch.yml`; deployment addresses do not belong in source control. HTTPS is required except for loopback HTTP with `allowLoopbackHttp: true`. Model and file token destinations use the separate `inferenceOrigin` configuration.
 
-`requestHeaders` adds Host-only headers to authorization, profile, balance, and logout requests on `platformOrigin`. Header values are secret configuration; they are excluded from account UI state. Authorization, X-DSH-Auth-Token, Host, Content-Type and connection/framing headers are reserved. Redirects fail without forwarding headers. Store deployment cookies in private configuration or environment variables; browser cookies are not collected automatically.
+`requestHeaders` adds Host-only headers to authorization, profile, balance, and logout requests on `platformOrigin`. Header values are secret configuration; they are excluded from account UI state. Authorization, X-DSH-Auth-Token, Host, Content-Type and connection/framing headers are reserved. Client identity headers override same-named deployment headers. Redirects fail without forwarding headers. Store deployment cookies in private configuration or environment variables; browser cookies are not collected automatically.
 
 A private patch can read environment variables through Cordis expressions:
 

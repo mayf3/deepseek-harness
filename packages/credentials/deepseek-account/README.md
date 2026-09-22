@@ -7,9 +7,9 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
-getPlatformSession returns a Host-only origin/token snapshot for native Platform embedding, or null when signed out. It is absent from account-controller RPC and Client state. Consumers destroy documents holding a snapshot when the account changes.
+getPlatformSession returns a Host-only origin/token snapshot for native Platform embedding, or null when signed out. It is absent from account-controller RPC and Client state. Consumers destroy documents holding a snapshot when the account changes. The snapshot carries deployment request headers only; the embedding client composes the Platform client identity of its own UI.
 
-`desktopClientHeaders` maps the native `darwin` and `win32` platforms to the shared Desktop account and update-policy request header; `null` adds no header.
+`platformClientHeaders` builds the five Platform client headers for one call from its `AccountClientMetadata` and the composition's desktop platform: `x-client-bundle-id` is intentionally empty, `x-client-platform` is `web` unless the Desktop profile supplies `darwin` or `win32`, `x-client-version` is the calling build's version, `x-client-locale` reduces the active UI language to `zh_CN` or `en_US`, and `x-client-timezone-offset` is whole seconds east of UTC.
 
 ## Summary
 
@@ -60,4 +60,4 @@ No model request prefix changes.
 
 The [desktop login decision](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.md) records cancellation and storage ownership.
 
-PlatformSession may carry Host-only requestHeaders from Host to Electron main: deployment headers plus the provider's x-client-platform. Consumers must exclude those headers from renderer bootstrap and restrict them to the configured origin. mergePlatformCookies preserves unrelated cookie pairs while replacing matching names.
+PlatformSession may carry Host-only requestHeaders from Host to Electron main: deployment headers only, because the embedded document's client identity is composed where its locale, timezone and version are known. Consumers must exclude those headers from renderer bootstrap and restrict them to the configured origin. mergePlatformCookies preserves unrelated cookie pairs while replacing matching names.

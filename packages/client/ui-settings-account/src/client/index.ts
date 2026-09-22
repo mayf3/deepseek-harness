@@ -12,6 +12,7 @@ import { contactUrl } from './contact-url.ts'
 import { AccountOnboarding } from './AccountOnboarding.tsx'
 import { AccountMenu } from './AccountMenu.tsx'
 import { AccountSection, type AccountSnapshot, type AccountSectionInjected } from './AccountSection.tsx'
+import { accountClientMetadata } from './client-metadata.ts'
 import { en, zh, type AccountKey } from './locales.ts'
 export type { AccountSectionInjected, AccountSectionProps } from './AccountSection.tsx'
 export type { AccountMenuProps } from './AccountMenu.tsx'
@@ -33,6 +34,8 @@ export function apply(ctx: Context): void {
   let snapshot: AccountSnapshot = { view: undefined, details: undefined, failed: false, loginVisible: false }
   const listeners = new Set<() => void>()
   const publish = (value: AccountSnapshot) => { snapshot = value; for (const listener of listeners) listener() }
+  /** @returns the client identity sampled for one account call. */
+  const client = () => accountClientMetadata(ctx.locale.getSnapshot().active, process.env.DSH_CLIENT_VERSION)
   let revision = 0
   let refreshing: Promise<void> | undefined
   const refresh = (): Promise<void> => {
@@ -48,12 +51,12 @@ export function apply(ctx: Context): void {
     }
     const request = Promise.all([
       read('profile', async () => {
-        const result = await ctx.remote.account.getProfile()
+        const result = await ctx.remote.account.getProfile(client())
         if (!result.ok) throw new Error('account profile failed')
         return result.value
       }),
       read('balance', async () => {
-        const result = await ctx.remote.account.getBalance()
+        const result = await ctx.remote.account.getBalance(client())
         if (!result.ok) throw new Error('account balance failed')
         return result.value
       }),
@@ -107,7 +110,7 @@ export function apply(ctx: Context): void {
         __DSH_TRANSPORT__?: { streamBaseUrl?: string }
       }).__DSH_TRANSPORT__
       try {
-        const result = await ctx.remote.account.startSignIn(ctx.locale.getSnapshot().active,
+        const result = await ctx.remote.account.startSignIn(client(),
           transport?.streamBaseUrl !== undefined ? new URL(transport.streamBaseUrl).origin : window.location.origin,
           'desktop')
         if (!result.ok) throw new Error('account start failed')
@@ -117,7 +120,7 @@ export function apply(ctx: Context): void {
       }
     },
     async cancel(id) { const result = await ctx.remote.account.cancelSignIn(id); if (!result.ok) throw new Error('account cancel failed') },
-    async signOut() { const result = await ctx.remote.account.signOut(); if (!result.ok) throw new Error('account sign-out failed') },
+    async signOut() { const result = await ctx.remote.account.signOut(client()); if (!result.ok) throw new Error('account sign-out failed') },
   }
   ctx.slots.inject('settings.models.sign-in', () => ctx.slots.register({
     name: 'settings.models.sign-in', locale: 'settings.account', inject: () => operations,

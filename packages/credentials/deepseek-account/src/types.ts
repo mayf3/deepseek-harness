@@ -1,5 +1,14 @@
-/** Client-safe account state; credentials never cross this projection. */
+/** Client-supplied request identity and client-safe account state; credentials never cross this projection. */
 import type { Branded } from '@deepseek-ai/dsh-brand'
+
+/** Identity of the requesting UI for one account operation; the Host derives Platform request headers from it. */
+export interface AccountClientMetadata {
+  readonly version: string
+  /** Active UI language; only its primary subtag selects the Platform wire locale. */
+  readonly locale: string
+  /** Offset from UTC in seconds, positive east of Greenwich. */
+  readonly timezoneOffsetSeconds: number
+}
 
 /** Identity of one local login attempt, unrelated to the platform request ID. */
 export type SignInAttemptId = Branded<'SignInAttemptId'>

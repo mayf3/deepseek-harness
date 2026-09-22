@@ -274,24 +274,26 @@ abstract getState(): Promise<AccountView>
 
 /**
  * Query Platform profile independently of wallet balances.
+ * @param client - identity of the requesting UI for this call.
  * @returns profile outcome, or null if signed out or the grant changed during the query.
  */
-abstract getProfile(): Promise<AccountDetails['profile'] | null>
+abstract getProfile(client: AccountClientMetadata): Promise<AccountDetails['profile'] | null>
 
 /**
  * Query Platform recharge and bonus wallet balances independently of profile data.
+ * @param client - identity of the requesting UI for this call.
  * @returns balance outcome, or null if signed out or the grant changed during the query.
  */
-abstract getBalance(): Promise<AccountDetails['balance'] | null>
+abstract getBalance(client: AccountClientMetadata): Promise<AccountDetails['balance'] | null>
 
 /**
  * Join an active attempt or start browser authorization.
- * @param locale - active UI language for a new attempt; joining retains its original language.
+ * @param client - identity of the requesting UI; a new attempt captures it, and joining retains the original attempt's identity.
  * @param callbackOrigin - browser-accessible loopback HTTP origin, including any SSH local port.
  * @param loginSource - initiating UI, used to return from a failed exchange.
  * @returns the initial snapshot without waiting for browser approval.
  */
-abstract startSignIn(locale: string, callbackOrigin: string, loginSource: 'web' | 'desktop'): Promise<AccountView>
+abstract startSignIn(client: AccountClientMetadata, callbackOrigin: string, loginSource: 'web' | 'desktop'): Promise<AccountView>
 
 /**
  * Cancel only the named attempt; committing attempts settle before returning.
@@ -302,9 +304,10 @@ abstract cancelSignIn(id: SignInAttemptId): Promise<AccountView>
 
 /**
  * Remove the local grant while retaining API keys and tasks; the provider revokes it in the background.
+ * @param client - identity of the requesting UI, captured for the background revocation retries.
  * @returns the signed-out state after local removal; remote failures never restore the grant.
  */
-abstract signOut(): Promise<AccountView>
+abstract signOut(client: AccountClientMetadata): Promise<AccountView>
 
 /**
  * Subscribe to snapshots including a complete initial state.
@@ -405,3 +408,5 @@ Source: [`packages/credentials/credentials/src/types.ts`](../../packages/credent
 <!-- END GENERATED cordis-surface -->
 
 账号服务定义提供 getState、getProfile、getBalance、startSignIn、cancelSignIn、signOut、watch 及仅限 Host 的 resolveToken 和 getPlatformSession。平台提供者使用 AuthorizationFlow 和私有 GrantRecord 实现这些操作。AccountView 区分本地存在与服务器验证；尝试 ID 将取消绑定到单次本地流程。参见[账号包](../../packages/credentials/deepseek-account/README.zh.md)。
+
+`AccountClientMetadata` 携带调用方 `DSH_CLIENT_VERSION` 提供的 `version`、当前界面 `locale`，以及操作发起时采样的 `timezoneOffsetSeconds`。偏移为本地时间减 UTC 的秒数：UTC+8 对应 `28800`。其中不含凭证。登录申请在兑换及取消期间保留发起时的元数据；退出操作为撤销重试保留其元数据。

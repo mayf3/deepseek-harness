@@ -21,6 +21,11 @@ it('uses account Remote commands without returning additional wire fields', asyn
     requests.push(request)
     return Promise.resolve({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null, token: 'private' })
   }, () => Promise.resolve(''))
-  expect(await backend.start('en')).toEqual({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null })
-  expect(requests).toEqual([{ namespace: 'account', method: 'startSignIn', args: { locale: 'en', callbackOrigin: 'http://127.0.0.1:1234', loginSource: 'desktop' } }])
+  const client = { version: '1.2.3', locale: 'en', timezoneOffsetSeconds: 28_800 }
+  expect(await backend.start(client)).toEqual({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null })
+  expect(await backend.signOut(client)).toMatchObject({ status: 'signed-out' })
+  expect(requests).toEqual([
+    { namespace: 'account', method: 'startSignIn', args: { client, callbackOrigin: 'http://127.0.0.1:1234', loginSource: 'desktop' } },
+    { namespace: 'account', method: 'signOut', args: { client } },
+  ])
 })

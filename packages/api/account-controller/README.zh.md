@@ -22,6 +22,8 @@ kind: "package-reference"
 
 account 命名空间提供 getState、getProfile / getBalance、startSignIn、cancelSignIn、signOut 和 watch。watch 先发送完整初始状态，随后发送完整状态变化；断开连接只停止观察，不取消登录。取消操作必须指定尝试 ID，防止旧页面取消新登录。
 
+资料、余额、登录和退出命令接收调用界面的 `AccountClientMetadata`：客户端版本、当前语言和以秒为单位的 UTC 偏移。取消操作沿用原登录尝试的元数据；状态读取和订阅无需该参数。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

@@ -20,11 +20,11 @@ Authorization registers a temporary /oauth/callback route on the Host webServer.
 
 Platform navigation and authorization share one validated platformOrigin from Cordis configuration. Private profile patches or environment expressions supply deployment-specific origins without committing development addresses.
 
-The Desktop profile supplies the native platform for Host API headers. Account and update-policy clients share one mapping to avoid different client identities for the same installation. This identity does not depend on a login attempt, since stored grants also issue requests after restart. Embedded pages use the same platform identity and retain their other separately configured headers.
+Platform client identity belongs to the calling UI rather than to the Host. Every account operation carries the caller's client version, active language, and current UTC offset, and the provider derives the five Platform client headers for that call from them plus the composed native platform. Client identity headers override same-named deployment headers, so one Host shared by several callers reports the UI that made each request instead of the last one it saw, and the update-policy client keeps the same header meanings for the installed shell. PlatformSession deliberately omits caller identity; the embedding client composes its own five headers and limits them to the configured origin.
 
 ## Alternatives considered
 
-Putting the protocol in Electron duplicates the implementation for Web consumers and gives the shell credential ownership. Putting tokens in DEEPSEEK_API_KEY loses the distinction between account grants and user API keys. Treating a browser callback as success before persistence admits false success. Waiting for a remote cancel acknowledgment leaves local cancellation dependent on network availability. These alternatives are rejected.
+Putting the protocol in Electron duplicates the implementation for Web consumers and gives the shell credential ownership. Putting tokens in DEEPSEEK_API_KEY loses the distinction between account grants and user API keys. Treating a browser callback as success before persistence admits false success. Waiting for a remote cancel acknowledgment leaves local cancellation dependent on network availability. Remembering one client identity in the Host would mislabel every other caller that shares it or reaches it through a forward. These alternatives are rejected.
 
 ## Consequences
 
