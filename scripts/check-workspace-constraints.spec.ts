@@ -1,7 +1,9 @@
-/** Experimental-package publication and dependency constraints. */
+/** Workspace dependency ranges and package publication constraints. */
 
-import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import {
   isPublicExperimentalPackageDirectory,
   PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES,
@@ -13,6 +15,7 @@ import {
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
   expectedDshPackageFiles,
+  readWorkspaceManifests,
   type WorkspaceManifest,
 } from './check-workspace-constraints.ts'
 
@@ -26,45 +29,84 @@ const experimental = {
 
 describe('workspace dependency ranges', () => {
   const dependency = { dir: 'packages/core/runtime', manifest: { name: '@deepseek-ai/dsh-runtime' } }
+  const cli = { dir: 'apps/cli', manifest: { name: '@deepseek-ai/dsh' } }
   const vendor = { dir: 'vendor/cordis', manifest: { name: '@deepseek-ai/cordis' } }
   const native = { dir: 'native/system', manifest: { name: '@deepseek-ai/node-addon-system' } }
 
-  it.each(['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const)(
-    'pins DSH %s while preserving vendor and native ranges',
-    (section) => {
-      for (const dir of ['packages/core/probe', 'packages/experimental/probe']) {
-        const consumer = (range: string): WorkspaceManifest => ({
-          dir,
-          manifest: { name: '@deepseek-ai/dsh-probe', [section]: {
-            '@deepseek-ai/dsh-runtime': range,
-            '@deepseek-ai/cordis': 'workspace:^',
-            '@deepseek-ai/node-addon-system': 'workspace:^',
-            external: '^1.2.3',
-          } },
+  describe.each([
+    '.', 'packages/core/probe', 'packages/experimental/probe', 'apps/cli', 'apps/web',
+    'apps/desktop', 'apps/desktop-host', 'benchmarks', 'website', 'python/sdk-runtime', 'tools/probe',
+  ])('consumer %s', (dir) => {
+    it.each(['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const)(
+      'requires exact DSH and caret vendor %s independently of the consumer name',
+      (section) => {
+        const consumer = (name: string, range: string): WorkspaceManifest => ({
+          dir, manifest: { name: 'consumer', [section]: { [name]: range } },
         })
-        expect(checkWorkspaceProtocol([dependency, vendor, native, consumer('workspace:*')])).toEqual([])
-        for (const range of ['workspace:^', 'workspace:~', 'workspace:^4.0.3', '^4.0.3']) {
-          expect(checkWorkspaceProtocol([dependency, vendor, native, consumer(range)])).toEqual([
-            `@deepseek-ai/dsh-probe: ${section}.@deepseek-ai/dsh-runtime must use workspace:*, got ${range}`,
+        const check = (name: string, range: string): string[] =>
+          checkWorkspaceProtocol([dependency, cli, vendor, native, consumer(name, range)])
+        for (const name of ['@deepseek-ai/dsh', '@deepseek-ai/dsh-runtime']) {
+          expect(check(name, 'workspace:*')).toEqual([])
+          for (const range of ['workspace:^', 'workspace:~', 'workspace:^0.1.7', '^0.1.7', '*']) {
+            expect(check(name, range)).toEqual([
+              `consumer: ${section}.${name} must use workspace:*, got ${range}`,
+            ])
+          }
+        }
+        expect(check('@deepseek-ai/cordis', 'workspace:^')).toEqual([])
+        for (const range of ['workspace:*', 'workspace:~', '^4.0.3']) {
+          expect(check('@deepseek-ai/cordis', range)).toEqual([
+            `consumer: ${section}.@deepseek-ai/cordis must use workspace:^, got ${range}`,
           ])
         }
-      }
+        for (const range of ['workspace:*', 'workspace:^']) {
+          expect(check('@deepseek-ai/node-addon-system', range)).toEqual([])
+        }
+        expect(check('@deepseek-ai/node-addon-system', '^0.1.0')).toEqual([
+          `consumer: ${section}.@deepseek-ai/node-addon-system must use the workspace: protocol, got ^0.1.0`,
+        ])
+        expect(check('external', '^1.2.3')).toEqual([])
+      },
+    )
+  })
+})
+
+describe('workspace manifest discovery', () => {
+  it('checks root, app, runtime, tooling, and newly declared members while honoring exclusions', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-workspace-ranges-'))
+    onTestFinished(() => { rmSync(root, { recursive: true, force: true }) })
+    const consumers = ['.', 'apps/cli', 'apps/web', 'apps/desktop', 'apps/desktop-host', 'benchmarks', 'website', 'python/sdk-runtime', 'tools/probe']
+    writeFileSync(join(root, 'pnpm-workspace.yaml'), [
+      'packages:', '  - packages/*/*', '  - apps/*', '  - apps/cli', '  - benchmarks',
+      '  - website', '  - python/sdk-runtime', '  - tools/*', '  - "!tools/excluded"',
+    ].join('\n'))
+    for (const dir of [...consumers, 'tools/excluded', 'unlisted/probe', 'packages/core/runtime']) {
+      mkdirSync(join(root, dir), { recursive: true })
+      writeFileSync(join(root, dir, 'package.json'), JSON.stringify(dir === 'packages/core/runtime'
+        ? { name: '@deepseek-ai/dsh-runtime' }
+        : { dependencies: { '@deepseek-ai/dsh-runtime': 'workspace:^' } }))
+    }
+    const manifests = readWorkspaceManifests(root)
+    expect(manifests.map(entry => entry.dir).sort()).toEqual([...consumers, 'packages/core/runtime'].sort())
+    expect(checkWorkspaceProtocol(manifests).sort()).toEqual(consumers.map(dir =>
+      `${dir}: dependencies.@deepseek-ai/dsh-runtime must use workspace:*, got workspace:^`).sort())
+  })
+
+  it.each(['', 'null', '{}', 'packages: []', 'packages: [false]', 'packages: [""]', 'packages: wrong'])(
+    'rejects an invalid workspace declaration: %s', (contents) => {
+      const root = mkdtempSync(join(tmpdir(), 'dsh-workspace-ranges-'))
+      onTestFinished(() => { rmSync(root, { recursive: true, force: true }) })
+      writeFileSync(join(root, 'pnpm-workspace.yaml'), contents)
+      expect(() => readWorkspaceManifests(root)).toThrow('packages must be a non-empty list of workspace patterns')
     },
   )
 
-  it.each(['.', 'apps/cli', 'vendor/probe', 'native/system', 'python/sdk-runtime'])(
-    'retains workspace range choices outside packages: %s',
-    (dir) => {
-      const consumer = (range: string): WorkspaceManifest => ({
-        dir, manifest: { dependencies: { '@deepseek-ai/dsh-runtime': range } },
-      })
-      expect(checkWorkspaceProtocol([dependency, consumer('workspace:^')])).toEqual([])
-      expect(checkWorkspaceProtocol([dependency, consumer('workspace:*')])).toEqual([])
-      expect(checkWorkspaceProtocol([dependency, consumer('^4.0.3')])).toEqual([
-        `${dir}: dependencies.@deepseek-ai/dsh-runtime must use the workspace: protocol, got ^4.0.3`,
-      ])
-    },
-  )
+  it('rejects a declaration that matches no workspace members', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-workspace-ranges-'))
+    onTestFinished(() => { rmSync(root, { recursive: true, force: true }) })
+    writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages: [missing/*]')
+    expect(() => readWorkspaceManifests(root)).toThrow('packages matched no workspace manifests')
+  })
 })
 
 describe('experimental workspace constraints', () => {
