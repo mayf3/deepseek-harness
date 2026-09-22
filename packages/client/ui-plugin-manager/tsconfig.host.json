@@ -16,9 +16,6 @@
       "path": "../../../vendor/schemastery"
     },
     {
-      "path": "../../util/ip-geolocation"
-    },
-    {
       "path": "../../util/timeout"
     },
     {

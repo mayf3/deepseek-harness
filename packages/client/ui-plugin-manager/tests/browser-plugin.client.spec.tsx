@@ -31,7 +31,7 @@ async function bench() {
   const remote = new TestRemote(ctx, {
     settings: { describe: vi.fn(async () => ({ ok: true as const, value: { writable: true, hasDocument: true, namespaces: [] } })) },
     pluginInventory: { list },
-    pluginInstallLocation: { country: vi.fn(async () => ({ ok: true as const, value: null })) },
+    pluginRegistryProbe: { fastest: vi.fn(async () => ({ ok: true as const, value: null })) },
     pluginManager: {
       listBundles: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
       listPlugins: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
@@ -54,7 +54,7 @@ function declare(slots: SlotRegistry): () => void {
 
 describe('ui-plugin-manager browser plugin', () => {
   it('declares only the services the page and its Remote methods use', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginManager', 'remote.pluginInventory', 'remote.pluginInstallLocation', 'configForms'])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginManager', 'remote.pluginInventory', 'remote.pluginRegistryProbe', 'configForms'])
   })
 
   it('registers the sidebar entry and its page, which reads the Host only once rendered and follows Host changes', async () => {

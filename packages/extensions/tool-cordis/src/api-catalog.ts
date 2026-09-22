@@ -1587,20 +1587,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'pluginInstallLocation',
-    summary: 'Shares a bounded Host lookup across installation dialogs; source-selection policy belongs to the Client.',
-    description: 'Shares a bounded Host lookup across installation dialogs; source-selection policy belongs to the Client.',
-    methods: [
-      {
-        signature: '@Remote async country(): Promise<string | null>',
-        description: 'Read the Host\'s exit country through its configured outbound fetch transport. Concurrent callers share one lookup; caller disconnects do not cancel other readers.',
-        parameters: [],
-        returns: 'country code, or null when disabled, unavailable, or the lookup fails; both outcomes are cached.',
-        throws: ['rejects when the service has been unloaded.'],
-      },
-    ],
-  },
-  {
     key: 'pluginManager',
     summary: 'Manage profile files and apply their declared reload lifecycle.',
     description: 'Manage profile files and apply their declared reload lifecycle.',
@@ -1664,6 +1650,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Unload and remove a profile-owned bundle dependency through dsh plugin\'s pnpm path.',
         parameters: [{ name: 'name', description: 'Installed dependency name.' }],
         returns: 'Removal diagnostics and the remaining profile state.',
+      },
+    ],
+  },
+  {
+    key: 'pluginRegistryProbe',
+    summary: 'Compares public registry responses on the Host; the Client owns the initial selection.',
+    description: 'Compares public registry responses on the Host; the Client owns the initial selection.',
+    methods: [
+      {
+        signature: '@Remote async fastest(): Promise<string | null>',
+        description: 'Race npm and npmmirror HTTPS ping responses through the Host\'s fetch proxy. Concurrent readers share a probe; a winner cancels and awaits the other request.',
+        parameters: [],
+        returns: 'the first registry with a successful response, or null when disabled or neither responds successfully; results are cached.',
+        throws: ['rejects when the service has been unloaded.'],
       },
     ],
   },

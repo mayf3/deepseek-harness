@@ -82,24 +82,6 @@ async getLinked(url: string): Promise<string[]>
 
 Source: [`packages/boot/hmr/src/index.ts`](../../packages/boot/hmr/src/index.ts)
 
-<a id="ctxplugininstalllocation--plugininstalllocation"></a>
-
-### `ctx.pluginInstallLocation` — `PluginInstallLocation`
-
-Shares a bounded Host lookup across installation dialogs; source-selection policy belongs to the Client.
-
-```ts cordis-catalog
-/**
- * Read the Host's exit country through its configured outbound fetch transport.
- * Concurrent callers share one lookup; caller disconnects do not cancel other readers.
- * @returns country code, or null when disabled, unavailable, or the lookup fails; both outcomes are cached.
- * @throws rejects when the service has been unloaded.
- */
-@Remote async country(): Promise<string | null>
-```
-
-Source: [`packages/client/ui-plugin-manager/src/index.ts`](../../packages/client/ui-plugin-manager/src/index.ts)
-
 <a id="ctxpluginmanager--pluginmanager"></a>
 
 ### `ctx.pluginManager` — `PluginManager`
@@ -179,6 +161,24 @@ Manage profile files and apply their declared reload lifecycle.
 ```
 
 Source: [`packages/boot/plugin-manager/src/index.ts`](../../packages/boot/plugin-manager/src/index.ts)
+
+<a id="ctxpluginregistryprobe--pluginregistryprobe"></a>
+
+### `ctx.pluginRegistryProbe` — `PluginRegistryProbe`
+
+Compares public registry responses on the Host; the Client owns the initial selection.
+
+```ts cordis-catalog
+/**
+ * Race npm and npmmirror HTTPS ping responses through the Host's fetch proxy.
+ * Concurrent readers share a probe; a winner cancels and awaits the other request.
+ * @returns the first registry with a successful response, or null when disabled or neither responds successfully; results are cached.
+ * @throws rejects when the service has been unloaded.
+ */
+@Remote async fastest(): Promise<string | null>
+```
+
+Source: [`packages/client/ui-plugin-manager/src/index.ts`](../../packages/client/ui-plugin-manager/src/index.ts)
 
 <a id="ctxprofilecontext--profilecontext"></a>
 

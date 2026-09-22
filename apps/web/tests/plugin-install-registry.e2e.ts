@@ -5,7 +5,6 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createServer } from 'node:http'
 import { chromium } from 'playwright'
 import { expect, it, onTestFinished } from 'vitest'
 import { launchWebScaffold, captureStableAria, compareOrRefreshGolden, webSnapshotMode, watchConsole, type WebScaffold } from './scaffold.ts'
@@ -13,22 +12,16 @@ import { ZH_BROWSER_LOCALE } from './support.ts'
 
 const MIRROR = 'https://registry.npmmirror.com/'
 
-it.each([null, 'CN'])('selects an installation source for Host country %s, remembers it, and falls back after a registry failure', async (country) => {
+it.each(['https://registry.npmjs.org/', MIRROR])('selects the fastest responding registry %s, remembers it, and falls back after a registry failure', async (winner) => {
   const scratch = await mkdtemp(join(tmpdir(), 'dsh-install-registry-'))
+  onTestFinished(() => rm(scratch, { recursive: true, force: true }))
+  const requestLog = join(scratch, 'registry-pings.jsonl')
+  await writeFile(requestLog, '')
   const overlay = join(scratch, 'cordis.patch.yml')
-  const countryServer = createServer((_request, response) => {
-    response.writeHead(200, { 'content-type': 'application/json' })
-    response.end(JSON.stringify({ country }))
-  })
-  await new Promise<void>((resolve) => { countryServer.listen(0, '127.0.0.1', resolve) })
-  onTestFinished(() => new Promise<void>((resolve, reject) => {
-    countryServer.close((error) => { if (error === undefined) resolve(); else reject(error) })
-    countryServer.closeAllConnections()
-  }))
-  const address = countryServer.address()
-  if (address === null || typeof address === 'string') throw new Error('Expected a TCP listener')
+  const fixture = new URL('./fixtures/registry-ping.mjs', import.meta.url).href
   await writeFile(overlay, `- id: plugin-manager\n  config: ${JSON.stringify({ pnpmCommand: process.execPath })}\n`
-    + `- id: ui-plugin-manager\n  config: ${JSON.stringify({ countryLookupEnabled: true, countryEndpoint: `http://127.0.0.1:${address.port}/` })}\n`)
+    + `- insert:\n    - id: registry-ping-fixture\n      name: ${JSON.stringify(fixture)}\n      config: ${JSON.stringify({ winner, requestLog })}\n`
+    + `- id: ui-plugin-manager\n  config: ${JSON.stringify({ registryProbeEnabled: true })}\n`)
   let scaffold: WebScaffold | undefined
   try {
     scaffold = await launchWebScaffold({ profile: { packages: [] }, extraOverlayPath: overlay })
@@ -77,17 +70,25 @@ it.each([null, 'CN'])('selects an installation source for Host country %s, remem
       const dialog = page.getByRole('dialog')
       // Folded, the registry control names pnpm's own registry; unfolded, its options float from it and offer the configured
       // mirror and a typed address.
-      const registryToggle = dialog.getByRole('button', { name: country === 'CN' ? '安装源 中国大陆镜像源' : '安装源 默认安装源', exact: true })
+      const registryToggle = dialog.getByRole('button', { name: winner === MIRROR ? '安装源 中国大陆镜像源' : '安装源 默认安装源', exact: true })
       await registryToggle.waitFor()
       expect(await page.getByRole('radio').count()).toBe(0)
       await registryToggle.click()
       const options = page.getByRole('group', { name: '从哪个 npm 源下载插件', exact: true })
       const mirror = options.getByRole('radio', { name: '中国大陆镜像源（registry.npmmirror.com）', exact: true })
-      if (country === 'CN') {
+      await expect.poll(async () => (await readFile(requestLog, 'utf8')).trim().split('\n').filter(Boolean)).toHaveLength(2)
+      const pingUrls = (await readFile(requestLog, 'utf8')).trim().split('\n').sort()
+      expect(pingUrls).toEqual(['https://registry.npmjs.org/-/ping', 'https://registry.npmmirror.com/-/ping'].map(url => JSON.stringify(url)))
+      if (winner === MIRROR) {
         expect(await mirror.isChecked()).toBe(true)
-        await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-registry/country-default.expected.md', import.meta.url)),
+        await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-registry/fastest-default.expected.md', import.meta.url)),
           await captureStableAria(page, '[data-install-registry]', scaffold.workspaceCwd), webSnapshotMode())
-      } else await mirror.click()
+      } else {
+        expect(await options.getByRole('radio', { name: '默认安装源（registry.npmjs.org）', exact: true }).isChecked()).toBe(true)
+        await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-registry/official-default.expected.md', import.meta.url)),
+          await captureStableAria(page, '[data-install-registry]', scaffold.workspaceCwd), webSnapshotMode())
+        await mirror.click()
+      }
       expect(await options.getByRole('radio').count()).toBe(3)
       await dialog.getByRole('button', { name: '安装源 中国大陆镜像源', exact: true }).waitFor()
       await dialog.getByRole('textbox', { name: '包名或地址' }).fill('mirrored-package')
@@ -125,6 +126,5 @@ it.each([null, 'CN'])('selects an installation source for Host country %s, remem
     } finally { await browser.close() }
   } finally {
     await scaffold?.close()
-    await rm(scratch, { recursive: true, force: true })
   }
 })

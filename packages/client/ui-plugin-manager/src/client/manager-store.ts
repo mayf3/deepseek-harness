@@ -392,12 +392,12 @@ function reconciled(remembered: RegistryChoice | null, registries: PluginRegistr
 interface RegistryRead {
   /** Last automatically assigned choice; a different object belongs to a manual selection. */
   choice: RegistryChoice
-  /** Pending initial registry and country lookup; an untouched installation waits until it settles. */
+  /** Pending initial registry list and response probes; an untouched installation waits until it settles. */
   done?: Promise<void>
 }
 
 /** Only the shipped public mirror can replace an unconfigured official npm default. */
-function mainlandMirror(registries: PluginRegistries): string | undefined {
+function eligibleMirror(registries: PluginRegistries): string | undefined {
   if (registries.registry !== null || registries.resolved === null) return undefined
   let resolved: string
   try { resolved = normalizeRegistry(registries.resolved) }
@@ -581,12 +581,12 @@ export class PluginManagerController {
     const untouched = install.registry === read.choice && (install.phase === 'idle' || install.phase === 'checking')
     if (untouched) read.choice = reconciled(remembered, answer.value)
     this.patchInstall({ registries: answer.value, ...untouched ? { registry: read.choice } : {} })
-    const mirror = mainlandMirror(answer.value)
+    const mirror = eligibleMirror(answer.value)
     if (!untouched || remembered !== null || mirror === undefined) return
-    const country = await this.ctx.remote.pluginInstallLocation.country()
+    const fastest = await this.ctx.remote.pluginRegistryProbe.fastest()
     const current = this.getSnapshot().install
     if (!this.currentRegistryRead(read) || !current.open || (current.phase !== 'idle' && current.phase !== 'checking')
-      || current.registry !== read.choice || !country.ok || country.value !== 'CN') return
+      || current.registry !== read.choice || !fastest.ok || fastest.value !== mirror) return
     read.choice = { kind: 'offered', registry: mirror }
     this.patchInstall({ registry: read.choice })
   }

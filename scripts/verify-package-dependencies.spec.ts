@@ -204,7 +204,6 @@ describe('package dependency scope', () => {
     })
     expect(PACKAGE_DEPENDENCY_POLICY.duplicateSafePackages).toEqual([
       '@deepseek-ai/dsh-brand',
-      '@deepseek-ai/dsh-ip-geolocation',
       '@deepseek-ai/dsh-lazy-require',
       '@deepseek-ai/dsh-typert-protocol',
       '@deepseek-ai/dsh-util-crypto',

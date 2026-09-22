@@ -14,7 +14,6 @@ flowchart TD
     pkg_deque["deque"]
     pkg_home_paths["home-paths"]
     pkg_http_proxy["http-proxy"]
-    pkg_ip_geolocation["ip-geolocation"]
     pkg_launch_environment["launch-environment"]
     pkg_lazy_require["lazy-require"]
     pkg_native_command["native-command"]
@@ -1353,7 +1352,6 @@ flowchart TD
 | [`deque`](../packages/util/deque) | `util` | — |
 | [`home-paths`](../packages/util/home-paths) | `util` | — |
 | [`http-proxy`](../packages/util/http-proxy) | `util` | — |
-| [`ip-geolocation`](../packages/util/ip-geolocation) | `util` | — |
 | [`launch-environment`](../packages/util/launch-environment) | `util` | — |
 | [`lazy-require`](../packages/util/lazy-require) | `util` | — |
 | [`native-command`](../packages/util/native-command) | `util` | — |

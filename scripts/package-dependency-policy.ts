@@ -32,7 +32,6 @@ const CONFIGURATION_ONLY_DEV_DEPENDENCIES = {
 /** Workspace packages whose complete runtime surface is safe across duplicate installations. */
 const DUPLICATE_SAFE_PACKAGES: readonly string[] = [
   '@deepseek-ai/dsh-brand',
-  '@deepseek-ai/dsh-ip-geolocation',
   '@deepseek-ai/dsh-lazy-require',
   '@deepseek-ai/dsh-typert-protocol',
   '@deepseek-ai/dsh-util-crypto',

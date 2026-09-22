@@ -488,22 +488,18 @@ export interface Config {
 ## `@deepseek-ai/dsh-client-ui-plugin-manager`
 
 ```ts config-catalog
-/** Country lookup endpoint, request bounds, and process-local cache policy. */
+/** Registry-probe deadline and process-local cache policy. */
 export interface Config {
-  /** Whether the dialog can query the Host network country. */
-  countryLookupEnabled: boolean
-  /** HTTP(S) endpoint returning a two-letter `country` field. */
-  countryEndpoint: string
-  /** Deadline for one lookup, including its body. */
-  countryTimeoutMs: number
-  /** Maximum country lookup response-body bytes. */
-  countryMaxResponseBytes: number
-  /** Lifetime of a known or unavailable country reading. */
-  countryCacheTtlMs: number
+  /** Whether the dialog can compare the public npm registries. */
+  registryProbeEnabled: boolean
+  /** Deadline for the parallel HTTPS probes, including response cleanup. */
+  registryProbeTimeoutMs: number
+  /** Lifetime of a winning registry or unavailable result. */
+  registryProbeCacheTtlMs: number
 }
 ```
 
-来源： [`packages/client/ui-plugin-manager/src/index.ts:16`](../packages/client/ui-plugin-manager/src/index.ts)
+来源： [`packages/client/ui-plugin-manager/src/index.ts:15`](../packages/client/ui-plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-client-ui-settings-account"></a>
 
@@ -4249,7 +4245,6 @@ export interface Config {
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）
 - `@deepseek-ai/dsh-hook-protocol`（[`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts)）
 - `@deepseek-ai/dsh-http-proxy`（[`packages/util/http-proxy/src/index.ts`](../packages/util/http-proxy/src/index.ts)）
-- `@deepseek-ai/dsh-ip-geolocation`（[`packages/util/ip-geolocation/src/index.ts`](../packages/util/ip-geolocation/src/index.ts)）
 - `@deepseek-ai/dsh-launch-environment`（[`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts)）
 - `@deepseek-ai/dsh-lazy-require`（[`packages/util/lazy-require/src/index.ts`](../packages/util/lazy-require/src/index.ts)）
 - `@deepseek-ai/dsh-llm-mock-server`（[`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts)）

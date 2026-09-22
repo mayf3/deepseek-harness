@@ -85,10 +85,10 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
     setPluginEnabled: vi.fn(() => Promise.resolve(ok(APPLIED))),
     ...overrides,
   }
-  const location = { country: overrides.country ?? vi.fn(() => Promise.resolve(ok(null))) }
+  const probe = { fastest: overrides.fastest ?? vi.fn(() => Promise.resolve(ok(null))) }
   const ctx = {
     configForms: { describe: () => ({ getSnapshot: () => ({ view: { namespaces: [] } }), subscribe: () => () => {} }), get: vi.fn((id: string) => `form:${id}`) },
-    remote: { pluginManager: plugins, pluginInventory: inventory, pluginInstallLocation: location },
+    remote: { pluginManager: plugins, pluginInventory: inventory, pluginRegistryProbe: probe },
   } as never
   const controller = new PluginManagerController(ctx)
   onTestFinished(() => { controller.dispose() })
@@ -99,7 +99,7 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
     await vi.waitFor(() => { expect(state().install.phase).toBe('starting') })
     return state().install.requestId as PluginInstallRequestId
   }
-  return { plugins, inventory, location, controller, face, state, started }
+  return { plugins, inventory, probe, controller, face, state, started }
 }
 
 it('hands a custom page the shared configuration form of its entry', () => {
@@ -1157,7 +1157,7 @@ describe('PluginManagerController', () => {
   })
 })
 
-describe('Host country recommendation', () => {
+describe('Host registry response recommendation', () => {
   it('inspects the remembered registry when the offered choice becomes custom during the initial read', async () => {
     const key = 'dsh.plugin-manager.install-registry'
     const registry = 'https://old.example/'
@@ -1169,7 +1169,7 @@ describe('Host country recommendation', () => {
       removeItem: (name: string) => { storage.delete(name) },
     })
     try {
-      const { face, state, plugins, location } = bench({
+      const { face, state, plugins, probe } = bench({
         registries: vi.fn(() => registries.promise),
         inspect: vi.fn(async () => ok({ ...INSPECTED, registry })),
       })
@@ -1183,7 +1183,7 @@ describe('Host country recommendation', () => {
       expect(plugins.inspect).toHaveBeenCalledWith('dsh-new', { registry }, expect.any(AbortSignal))
       expect(state().install.registry).toEqual({ kind: 'custom', url: registry })
       expect(JSON.parse(storage.get(key)!)).toEqual({ kind: 'custom', url: registry })
-      expect(location.country).not.toHaveBeenCalled()
+      expect(probe.fastest).not.toHaveBeenCalled()
       await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
       expect(plugins.installBundle).toHaveBeenCalledWith('dsh-new', expect.objectContaining({ registry }))
     } finally {
@@ -1193,30 +1193,30 @@ describe('Host country recommendation', () => {
   })
 
   it('selects the mainland mirror before the first inspection, even when install was clicked during lookup', async () => {
-    const country = deferred<ReturnType<typeof ok<string | null>>>()
-    const { face, state, plugins, location } = bench({ country: vi.fn(() => country.promise) })
+    const fastest = deferred<ReturnType<typeof ok<string | null>>>()
+    const { face, state, plugins, probe } = bench({ fastest: vi.fn(() => fastest.promise) })
     face.openInstall()
     face.editInstallSpec('dsh-new')
     face.runInstall()
-    await vi.waitFor(() => { expect(location.country).toHaveBeenCalledOnce() })
+    await vi.waitFor(() => { expect(probe.fastest).toHaveBeenCalledOnce() })
     expect(plugins.inspect).not.toHaveBeenCalled()
-    country.resolve(ok('CN'))
+    fastest.resolve(ok(MIRROR))
     await vi.waitFor(() => { expect(plugins.inspect).toHaveBeenCalled() })
     expect(plugins.inspect).toHaveBeenCalledWith('dsh-new', { registry: MIRROR }, expect.any(AbortSignal))
     expect(state().install.registry).toEqual({ kind: 'offered', registry: MIRROR })
   })
 
-  it.each(['US', 'HK', 'MO', 'TW', null])('keeps the default for country %s', async (country) => {
-    const { face, state, location } = bench({ country: vi.fn(() => Promise.resolve(ok(country))) })
+  it.each([OFFICIAL, null])('keeps the default for probe result %s', async (winner) => {
+    const { face, state, probe } = bench({ fastest: vi.fn(() => Promise.resolve(ok(winner))) })
     face.openInstall()
-    await vi.waitFor(() => { expect(location.country).toHaveBeenCalledOnce() })
+    await vi.waitFor(() => { expect(probe.fastest).toHaveBeenCalledOnce() })
     expect(state().install.registry).toEqual({ kind: 'offered', registry: null })
   })
 
   it('keeps the default when the Host lookup is unavailable', async () => {
-    const { face, state, location } = bench({ country: vi.fn(() => Promise.resolve(refused('gateway/internal', 'offline'))) })
+    const { face, state, probe } = bench({ fastest: vi.fn(() => Promise.resolve(refused('gateway/internal', 'offline'))) })
     face.openInstall()
-    await vi.waitFor(() => { expect(location.country).toHaveBeenCalledOnce() })
+    await vi.waitFor(() => { expect(probe.fastest).toHaveBeenCalledOnce() })
     expect(state().install.registry).toEqual({ kind: 'offered', registry: null })
   })
 
@@ -1226,51 +1226,51 @@ describe('Host country recommendation', () => {
     { registry: null, resolved: null, fallbackRegistries: [MIRROR] },
     { registry: null, resolved: 'invalid', fallbackRegistries: [MIRROR] },
     { registry: null, resolved: OFFICIAL, fallbackRegistries: [] },
-  ])('does not query a country for an ineligible registry configuration %j', async (registries) => {
-    const { face, state, location } = bench({ registries: vi.fn(() => Promise.resolve(ok(registries))) })
+  ])('does not probe registries for an ineligible registry configuration %j', async (registries) => {
+    const { face, state, probe } = bench({ registries: vi.fn(() => Promise.resolve(ok(registries))) })
     face.openInstall()
     await vi.waitFor(() => { expect(state().install.registries).toEqual(registries) })
     expect(state().install.registry).toEqual({ kind: 'offered', registry: registries.registry })
-    expect(location.country).not.toHaveBeenCalled()
+    expect(probe.fastest).not.toHaveBeenCalled()
   })
 
   it('preserves a manual choice made before the registry list arrives', async () => {
     const registries = deferred<ReturnType<typeof ok<typeof REGISTRIES>>>()
-    const { face, state, location } = bench({ registries: vi.fn(() => registries.promise) })
+    const { face, state, probe } = bench({ registries: vi.fn(() => registries.promise) })
     face.openInstall()
     face.chooseRegistry({ kind: 'custom', url: CORP })
     registries.resolve(ok(REGISTRIES))
     await vi.waitFor(() => { expect(state().install.registries).toEqual(REGISTRIES) })
     expect(state().install.registry).toEqual({ kind: 'custom', url: CORP })
-    expect(location.country).not.toHaveBeenCalled()
+    expect(probe.fastest).not.toHaveBeenCalled()
   })
 
-  it('does not overwrite a manual choice or wait for country detection after that choice', async () => {
-    const country = deferred<ReturnType<typeof ok<string | null>>>()
-    const { face, state, plugins, location } = bench({ country: vi.fn(() => country.promise) })
+  it('does not overwrite a manual choice or wait for registry probing after that choice', async () => {
+    const fastest = deferred<ReturnType<typeof ok<string | null>>>()
+    const { face, state, plugins, probe } = bench({ fastest: vi.fn(() => fastest.promise) })
     face.openInstall()
-    await vi.waitFor(() => { expect(location.country).toHaveBeenCalledOnce() })
+    await vi.waitFor(() => { expect(probe.fastest).toHaveBeenCalledOnce() })
     face.chooseRegistry({ kind: 'custom', url: CORP })
     face.editInstallSpec('dsh-new')
     face.runInstall()
     await vi.waitFor(() => { expect(plugins.inspect).toHaveBeenCalled() })
-    country.resolve(ok('CN'))
-    await country.promise
+    fastest.resolve(ok(MIRROR))
+    await fastest.promise
     expect(state().install.registry).toEqual({ kind: 'custom', url: CORP })
     expect(plugins.inspect).toHaveBeenCalledWith('dsh-new', { registry: CORP }, expect.any(AbortSignal))
   })
 
   it.each(['close', 'dispose'] as const)('discards a waiting install after %s', async (action) => {
-    const country = deferred<ReturnType<typeof ok<string | null>>>()
-    const { face, controller, plugins, location } = bench({ country: vi.fn(() => country.promise) })
+    const fastest = deferred<ReturnType<typeof ok<string | null>>>()
+    const { face, controller, plugins, probe } = bench({ fastest: vi.fn(() => fastest.promise) })
     face.openInstall()
     face.editInstallSpec('dsh-new')
     face.runInstall()
-    await vi.waitFor(() => { expect(location.country).toHaveBeenCalledOnce() })
+    await vi.waitFor(() => { expect(probe.fastest).toHaveBeenCalledOnce() })
     if (action === 'close') face.closeInstall()
     else controller.dispose()
-    country.resolve(ok('CN'))
-    await country.promise
+    fastest.resolve(ok(MIRROR))
+    await fastest.promise
     await Promise.resolve()
     expect(plugins.inspect).not.toHaveBeenCalled()
   })
@@ -1279,7 +1279,7 @@ describe('Host country recommendation', () => {
 it('recognizes the official registry without a trailing slash and with uppercase host letters', async () => {
   const { face, state } = bench({
     registries: vi.fn(async () => ok({ ...REGISTRIES, resolved: 'https://REGISTRY.NPMJS.ORG' })),
-    country: vi.fn(async () => ok('CN')),
+    fastest: vi.fn(async () => ok(MIRROR)),
   })
   face.openInstall()
   await vi.waitFor(() => { expect(state().install.registry).toEqual({ kind: 'offered', registry: MIRROR }) })

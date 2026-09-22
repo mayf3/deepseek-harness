@@ -108,12 +108,12 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns module and exact configuration watchers; application mutations share its queue and automatic reloads await the application file lock.',
   },
   {
-    key: 'pluginInstallLocation',
+    key: 'pluginRegistryProbe',
     pkg: 'client-ui-plugin-manager',
-    title: 'Host exit country for plugin installation',
+    title: 'Host registry response comparison',
     mode: 'core',
     consumers: ['client-ui-plugin-manager'],
-    note: 'Shares a bounded country lookup across dialogs; the Client owns the initial registry recommendation.',
+    note: 'Races public registry responses on the Host; the Client owns the initial registry recommendation.',
   },
   {
     key: 'pluginManager',
