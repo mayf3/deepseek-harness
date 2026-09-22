@@ -33,6 +33,7 @@ export function useProcessScroll(
       const initial = cause === 'resize' ? initialPosition.current : null
       if (initial !== null) {
         metrics = follow.jump(body, metrics, initial === 'bottom' ? metrics.floor : 0)
+        if (initial === 'top') follow.setFollowing(false)
         initialPosition.current = null
       } else {
         const wasAnimating = follow.animating
@@ -69,15 +70,17 @@ export function useProcessScroll(
   useLayoutEffect(() => {
     const body = bodyRef.current
     if (body === null || !open || typeof ResizeObserver === 'undefined') return
+    const unbind = follow.bind(body)
     const observer = new ResizeObserver(() => { sync('resize') })
     const onScrollEnd = (event: Event): void => { if (event.target === body) sync('scrollend') }
     body.addEventListener('scrollend', onScrollEnd)
     observer.observe(body)
     if (contentRef.current !== null) observer.observe(contentRef.current)
     return () => {
+      unbind()
       observer.disconnect()
       body.removeEventListener('scrollend', onScrollEnd)
     }
-  }, [bodyRef, contentRef, open, sync])
+  }, [bodyRef, contentRef, follow, open, sync])
   return { edges, events, initialize }
 }

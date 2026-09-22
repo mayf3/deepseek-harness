@@ -19,6 +19,44 @@ function scrollport() {
 }
 
 describe('ScrollFollow', () => {
+  it('does not await native events for a fractional floor that cannot move', () => {
+    const world = scrollport()
+    let top = 399.6
+    Object.defineProperty(world.element, 'scrollTop', {
+      get: () => top, set: (value: number) => { top = Math.min(value, world.metrics().floor - 0.4) },
+    })
+    const follow = new ScrollFollow(true, 1)
+    follow.toBottom(world.element, world.metrics(), 'smooth')
+    expect(world.scrollTo).not.toHaveBeenCalled()
+    expect(follow.animating).toBe(false)
+    expect(follow.active).toBe(true)
+    world.grow(800)
+    follow.toBottom(world.element, world.metrics(), 'smooth')
+    expect(world.scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 600, behavior: 'smooth' })
+    top = 599.6
+    follow.sample(world.metrics())
+    follow.toBottom(world.element, world.metrics(), 'smooth')
+    expect(follow.animating).toBe(true)
+    expect(world.scrollTo).toHaveBeenCalledTimes(1)
+    follow.settle(world.metrics())
+    follow.toBottom(world.element, world.metrics(), 'smooth')
+    expect(follow.animating).toBe(false)
+    expect(world.scrollTo).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases only its own scrollport binding', () => {
+    const { element } = scrollport()
+    const first = new ScrollFollow(false, 1)
+    const second = new ScrollFollow(false, 1)
+    expect(ScrollFollow.forElement(element)).toBeUndefined()
+    const releaseFirst = first.bind(element)
+    const releaseSecond = second.bind(element)
+    releaseFirst()
+    expect(ScrollFollow.forElement(element)).toBe(second)
+    releaseSecond()
+    expect(ScrollFollow.forElement(element)).toBeUndefined()
+  })
+
   it('keeps independent thresholds and adopts only attributed reader movement', () => {
     const outer = new ScrollFollow(true, 25)
     const inner = new ScrollFollow(true, 1)

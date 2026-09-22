@@ -20,6 +20,7 @@ export function scrollMetrics(element: HTMLElement): ViewportMetrics {
 
 /** One scrollport's follow intent; native animation progress does not count as reader movement. */
 export class ScrollFollow {
+  private static readonly owners = new WeakMap<HTMLElement, ScrollFollow>()
   private target: number | null = null
   private sampledTop: number | undefined
 
@@ -28,6 +29,23 @@ export class ScrollFollow {
    * @param threshold - accepted distance from the floor, in pixels.
    */
   constructor(private following: boolean, private readonly threshold: number) {}
+
+  /**
+   * Find the mounted controller for reading-position compensation.
+   * @param element - scrollport with an optional follow owner.
+   * @returns its controller, when bound.
+   */
+  static forElement(element: HTMLElement): ScrollFollow | undefined { return this.owners.get(element) }
+
+  /**
+   * Share this controller with reading-position compensation for the same scrollport.
+   * @param element - owned scrollport.
+   * @returns release the association on unmount or close.
+   */
+  bind(element: HTMLElement): () => void {
+    ScrollFollow.owners.set(element, this)
+    return () => { if (ScrollFollow.owners.get(element) === this) ScrollFollow.owners.delete(element) }
+  }
 
   /**
    * Expose follow intent independently of the current offset.
@@ -110,6 +128,7 @@ export class ScrollFollow {
   /**
    * Follow the measured floor, respecting reduced motion for smooth requests.
    * An outstanding smooth target finishes before another is issued.
+   * Within-tolerance positioning is immediate while no animation is outstanding.
    * @param element - scrolling element.
    * @param metrics - current geometry.
    * @param behavior - native animation for growth, or immediate positioning.
@@ -117,7 +136,8 @@ export class ScrollFollow {
    */
   toBottom(element: HTMLElement, metrics: ViewportMetrics, behavior: 'instant' | 'smooth'): ViewportMetrics {
     this.following = true
-    if (behavior === 'instant' || metrics.top >= metrics.floor) return this.jump(element, metrics, metrics.floor)
+    if (behavior === 'instant' || metrics.top >= metrics.floor
+      || (!this.animating && this.nearBottom(metrics))) return this.jump(element, metrics, metrics.floor)
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
       return this.jump(element, metrics, metrics.floor)
     }

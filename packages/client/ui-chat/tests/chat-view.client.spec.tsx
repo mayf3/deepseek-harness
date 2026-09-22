@@ -818,7 +818,7 @@ describe('ChatView', () => {
     height = 800
     act(() => { observer.callback([], observer) })
     finishScroll()
-    expect(top).toBe(!closed || initialHeight === 200 ? 600 : 0)
+    expect(top).toBe(closed ? 0 : 600)
 
     top = 400
     fireEvent.scroll(body)
