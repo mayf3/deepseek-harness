@@ -678,6 +678,7 @@ describe('web e2e: long Chat scroll contract', () => {
       replay: [replayEntry(chunks)],
       seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
     }, async (world) => {
+      await world.page.emulateMedia({ reducedMotion: 'no-preference' })
       await openSeed(world.page, HISTORY_FIXTURE, HISTORY_FIXTURE.markers.assistant(HISTORY_FIXTURE.turns))
       const gates = parts.slice(1).map(() => Promise.withResolvers<undefined>())
       const dispose = world.scaffold.ctx.on('llm/stream', async function* (_options, next) {
@@ -720,6 +721,29 @@ describe('web e2e: long Chat scroll contract', () => {
         await grow(0)
         await expectGroupBottom()
         await expectBottom(world.page)
+        // Per-frame growth exercises the real observer and native animation
+        // independently of transport batching while the next model chunk waits.
+        const content = group.locator('[data-step-process-content]')
+        const heightStyle = await content.evaluate(element => element.style.height)
+        const beforeGrowth = await top()
+        try {
+          const duringGrowth = await body.evaluate(async (scroller) => {
+            const content = scroller.querySelector<HTMLElement>('[data-step-process-content]')!
+            const initialHeight = content.getBoundingClientRect().height
+            let halfway = scroller.scrollTop
+            for (let frame = 1; frame <= 60; frame++) {
+              content.style.height = `${initialHeight + frame * 20}px`
+              await new Promise<void>(resolve => requestAnimationFrame(() => { resolve() }))
+              if (frame === 30) halfway = scroller.scrollTop
+            }
+            return halfway
+          })
+          expect(duringGrowth).toBeGreaterThan(beforeGrowth + 20)
+          await expectGroupBottom()
+        } finally {
+          await content.evaluate((element, previous) => { element.style.height = previous }, heightStyle)
+        }
+        await expectGroupBottom()
         await wheelTranscript(world.page, -800)
         await backToBottom.waitFor()
         const outerTop = (await scrollGeometry(world.page)).scrollTop

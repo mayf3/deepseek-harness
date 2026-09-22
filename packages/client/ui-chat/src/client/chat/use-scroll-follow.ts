@@ -71,11 +71,21 @@ export class ScrollFollow {
    */
   sample(metrics: ViewportMetrics, movedByReader = this.sampledTop === undefined
     || Math.abs(metrics.top - this.sampledTop) > 0.5): boolean {
-    const animated = this.animating
     this.sampledTop = metrics.top
-    if (this.nearBottom(metrics)) this.target = null
-    if (!animated && movedByReader) this.following = this.nearBottom(metrics)
+    if (!this.animating && movedByReader) this.following = this.nearBottom(metrics)
     return this.active
+  }
+
+  /**
+   * Settle native scrolling; an off-target stop releases follow intent.
+   * @param metrics - actual geometry delivered at scrollend.
+   * @returns follow intent after completing or interrupting native motion.
+   */
+  settle(metrics: ViewportMetrics): boolean {
+    const target = this.target
+    this.target = null
+    return this.sample(metrics, target === null ? undefined
+      : Math.abs(metrics.top - Math.min(target, metrics.floor)) > this.threshold)
   }
 
   /**
@@ -99,6 +109,7 @@ export class ScrollFollow {
 
   /**
    * Follow the measured floor, respecting reduced motion for smooth requests.
+   * An outstanding smooth target finishes before another is issued.
    * @param element - scrolling element.
    * @param metrics - current geometry.
    * @param behavior - native animation for growth, or immediate positioning.
@@ -110,7 +121,7 @@ export class ScrollFollow {
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
       return this.jump(element, metrics, metrics.floor)
     }
-    if (this.target !== metrics.floor) {
+    if (this.target === null) {
       this.target = metrics.floor
       element.scrollTo({ top: metrics.floor, behavior: 'smooth' })
     }

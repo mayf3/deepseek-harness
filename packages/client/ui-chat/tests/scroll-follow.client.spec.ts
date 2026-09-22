@@ -33,7 +33,7 @@ describe('ScrollFollow', () => {
     expect(outer.active).toBe(true)
   })
 
-  it('retains follow during native progress and retargets only a changed floor', () => {
+  it('finishes native motion before following the latest grown floor', () => {
     const world = scrollport()
     const follow = new ScrollFollow(false, 1)
     expect(follow.toBottom(world.element, world.metrics(), 'smooth').top).toBe(0)
@@ -44,11 +44,46 @@ describe('ScrollFollow', () => {
     expect(world.scrollTo).toHaveBeenCalledTimes(1)
     world.grow(800)
     follow.toBottom(world.element, world.metrics(), 'smooth')
-    expect(world.scrollTo).toHaveBeenLastCalledWith({ top: 600, behavior: 'smooth' })
-    world.element.scrollTop = 600
+    world.grow(1_000)
+    follow.toBottom(world.element, world.metrics(), 'smooth')
+    expect(world.scrollTo).toHaveBeenCalledTimes(1)
+    world.element.scrollTop = 400
     expect(follow.sample(world.metrics())).toBe(true)
+    expect(follow.animating).toBe(true)
+    expect(follow.settle(world.metrics())).toBe(true)
+    expect(follow.animating).toBe(false)
+    follow.toBottom(world.element, world.metrics(), 'smooth')
+    expect(world.scrollTo).toHaveBeenCalledTimes(2)
+    expect(world.scrollTo).toHaveBeenLastCalledWith({ top: 800, behavior: 'smooth' })
+    world.element.scrollTop = 800
+    expect(follow.sample(world.metrics())).toBe(true)
+    expect(follow.settle(world.metrics())).toBe(true)
     expect(follow.animating).toBe(false)
     world.element.scrollTop = 300
+    expect(follow.sample(world.metrics())).toBe(false)
+  })
+
+  it('finishes native motion when shrinking content clamps its target', () => {
+    const world = scrollport()
+    const follow = new ScrollFollow(true, 1)
+    follow.toBottom(world.element, world.metrics(), 'smooth')
+    world.grow(300)
+    world.element.scrollTop = 100
+    expect(follow.sample(world.metrics())).toBe(true)
+    expect(follow.settle(world.metrics())).toBe(true)
+    expect(follow.animating).toBe(false)
+  })
+
+  it.each([150, 600])('releases following after a native stop at %i instead of its target', (top) => {
+    const world = scrollport()
+    const follow = new ScrollFollow(true, 1)
+    follow.toBottom(world.element, world.metrics(), 'smooth')
+    world.grow(1_000)
+    world.element.scrollTop = top
+    expect(follow.sample(world.metrics())).toBe(true)
+    expect(follow.settle(world.metrics())).toBe(false)
+    expect(follow.animating).toBe(false)
+    world.grow(1_200)
     expect(follow.sample(world.metrics())).toBe(false)
   })
 
@@ -64,6 +99,7 @@ describe('ScrollFollow', () => {
     expect(world.scrollTo).toHaveBeenLastCalledWith({ top: 150, behavior: 'instant' })
     expect(follow.animating).toBe(false)
     expect(follow.sample(world.metrics())).toBe(true)
+    expect(follow.settle(world.metrics())).toBe(true)
     world.element.scrollTop = 100
     expect(follow.sample(world.metrics())).toBe(false)
     world.element.scrollTop = 400

@@ -788,11 +788,22 @@ describe('ChatView', () => {
     let reads = 0
     let top = 0
     let height = initialHeight
+    let animatedTop: number | null = null
+    const scrollTo = vi.fn((options: ScrollToOptions) => {
+      if (options.behavior === 'smooth') animatedTop = options.top ?? top
+      else { animatedTop = null; top = options.top ?? top }
+    })
+    const finishScroll = (): void => {
+      top = animatedTop ?? top
+      animatedTop = null
+      fireEvent.scroll(body)
+      fireEvent(body, new Event('scrollend'))
+    }
     Object.defineProperties(body, {
       scrollTop: { get: () => { reads++; return top }, set: (value: number) => { top = value } },
       clientHeight: { get: () => { reads++; return 200 } },
       scrollHeight: { get: () => { reads++; return height } },
-      scrollTo: { value: (options: ScrollToOptions) => { top = options.top ?? top } },
+      scrollTo: { value: scrollTo },
     })
 
     fireEvent.click(header)
@@ -806,7 +817,7 @@ describe('ChatView', () => {
 
     height = 800
     act(() => { observer.callback([], observer) })
-    fireEvent.scroll(body)
+    finishScroll()
     expect(top).toBe(!closed || initialHeight === 200 ? 600 : 0)
 
     top = 400
@@ -821,9 +832,27 @@ describe('ChatView', () => {
     fireEvent.scroll(body)
     height = 1_200
     act(() => { observer.callback([], observer) })
-    fireEvent.scroll(body)
+    finishScroll()
     expect(top).toBe(1_000)
     expect(body.hasAttribute('data-scroll-down')).toBe(false)
+
+    height = 1_400
+    act(() => { observer.callback([], observer) })
+    expect(animatedTop).toBe(1_200)
+    const beforeNestedEnd = reads
+    fireEvent(body.firstElementChild!, new Event('scrollend', { bubbles: true }))
+    expect(reads).toBe(beforeNestedEnd)
+    // Find/focus can reposition the body without firing its input handlers.
+    top = 900
+    animatedTop = null
+    const requests = scrollTo.mock.calls.length
+    finishScroll()
+    expect(animatedTop).toBeNull()
+    expect(scrollTo).toHaveBeenCalledTimes(requests)
+    height = 1_600
+    act(() => { observer.callback([], observer) })
+    expect(top).toBe(900)
+    expect(scrollTo).toHaveBeenCalledTimes(requests)
     const measured = reads
     fireEvent.click(header)
     expect(reads).toBe(measured)
