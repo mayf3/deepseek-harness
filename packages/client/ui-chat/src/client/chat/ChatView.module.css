@@ -4,6 +4,8 @@
   flex-direction: column;
   min-height: 0;
   flex: 1 1 auto;
+  /* Floating controls query this frame outside the clipped transcript. */
+  container-type: inline-size;
 }
 
 .root {
