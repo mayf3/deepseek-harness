@@ -84,9 +84,7 @@ export function apply(ctx: Context): void {
     ...nativePlatform === undefined ? {} : { platform: nativePlatform },
     refresh,
     contactUs() {
-      const profile = snapshot.details?.profile
       const url = contactUrl(config, {
-        uid: profile?.status === 'ready' ? profile.value.id : null,
         version: process.env.DSH_CLIENT_VERSION,
         locale: ctx.locale.getSnapshot().active === 'zh' ? 'zh-CN' : 'en',
         width: window.screen.width, height: window.screen.height, pixelRatio: window.devicePixelRatio,
