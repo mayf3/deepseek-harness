@@ -56,7 +56,7 @@ describe('native path opener', () => {
     })
     expect(run.mock.calls).toEqual([
       ['wslpath', ['-w', '/home/test user/settings.yaml'], requestSignal],
-      ['explorer.exe', ['\\\\wsl.localhost\\Ubuntu\\home\\test user\\settings.yaml'], requestSignal],
+      ['explorer.exe', ['file://wsl.localhost/Ubuntu/home/test%20user/settings.yaml'], requestSignal],
     ])
   })
 
@@ -80,14 +80,25 @@ describe('native path opener', () => {
     expect(run).toHaveBeenCalledOnce()
   })
 
-  it('hands Windows one argv path with no command string to escape', async () => {
+  it('encodes the target Explorer parses so a comma stays inside the path', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
-    // Quotes, commas, a percent, and an ampersand reach Explorer as a single
-    // argument: there is no PowerShell literal and no shell to interpret them.
+    // Explorer parses its own command line and splits it at commas, so the path
+    // crosses as a file URI with the comma percent-encoded. The apostrophe,
+    // ampersand, space, and percent need no escaping: no shell interprets them.
     await openNativePath("C:\\work\\o'reilly, & 100%.txt", signal(), { platform: 'win32', run })
     expect(run).toHaveBeenCalledWith(
       'explorer.exe',
-      ["C:\\work\\o'reilly, & 100%.txt"],
+      ["file:///C:/work/o'reilly%2C%20&%20100%25.txt"],
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('encodes a directory target the same way it encodes a file target', async () => {
+    const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
+    await openNativeAssociatedPath('C:\\work\\dir,comma', signal(), { platform: 'win32', run })
+    expect(run).toHaveBeenCalledWith(
+      'explorer.exe',
+      ['file:///C:/work/dir%2Ccomma'],
       expect.any(AbortSignal),
     )
   })
@@ -97,7 +108,7 @@ describe('native path opener', () => {
     await openNativeTextFile('C:\\work\\settings.yaml', signal(), { platform: 'win32', run })
     expect(run).toHaveBeenCalledWith(
       'explorer.exe',
-      ['C:\\work\\settings.yaml'],
+      ['file:///C:/work/settings.yaml'],
       expect.any(AbortSignal),
     )
   })
@@ -273,7 +284,7 @@ describe('browser-renderable documents', () => {
     })
     expect(calls).toEqual([
       ['wslpath', '-w', '/home/test/page.html'],
-      ['explorer.exe', 'C:\\workspace\\page.html'],
+      ['explorer.exe', 'file:///C:/workspace/page.html'],
     ])
   })
 })

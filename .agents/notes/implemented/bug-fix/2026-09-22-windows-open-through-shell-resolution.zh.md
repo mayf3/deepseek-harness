@@ -12,9 +12,9 @@ Windows 桌面客户端设置页的「打开配置文件」会准备当前 profi
 
 ## 决策
 
-`openWindowsPath` 将路径作为**一个** argv 元素交给 `explorer.exe`，`revealNativePath` 经共享的 `runExplorer` 帮助函数走到同一个 shell。资源管理器执行的是双击所执行的默认应用解析，因此由 shell 的答案选择应用——包括只记录在较新的按用户记录里的默认值；而完全没有处理程序的机器会得到资源管理器自己的「你要如何打开这个文件?」选择框，而不是毫无反应。
+`openWindowsPath` 将路径作为**一个** argv 元素交给 `explorer.exe`，`revealNativePath` 经共享的 `runExplorer` 帮助函数走到同一个 shell。两者都把目标编码成文件 URI 并对逗号做百分号编码，因为资源管理器自己解析命令行并以逗号分段——含逗号的原始路径会打开另一个目标且不作任何提示。资源管理器执行的是双击所执行的默认应用解析，因此由 shell 的答案选择应用——包括只记录在较新的按用户记录里的默认值；而完全没有处理程序的机器会得到资源管理器自己的「你要如何打开这个文件?」选择框，而不是毫无反应。
 
-`runExplorer` 为两种操作持有唯一一条 Explorer 调用规则：退出码 1 是 Explorer 把请求转交给已在运行的桌面进程后返回的交接码，它照常兑现调用方的 Promise；其余失败和取消仍然报错。该帮助函数取代了 PowerShell 命令字符串，同时删掉了 `powershellLiteral` 及其单引号翻倍逻辑：路径现在以 argv 元素跨进程边界，不存在可能写错的转义步骤。
+`runExplorer` 为两种操作持有唯一一条 Explorer 调用规则：退出码 1 是 Explorer 把请求转交给已在运行的桌面进程后返回的交接码，它照常兑现调用方的 Promise；其余失败和取消仍然报错。该帮助函数取代了 PowerShell 命令字符串，同时删掉了 `powershellLiteral` 及其单引号翻倍逻辑：路径以 argv 元素跨进程边界，去掉的是 shell 层转义，而不是资源管理器自身解析所需的编码；该编码由 `explorerTarget` 为两种意图统一持有。
 
 Windows 对 HTML 与 SVG 仍然无法命名浏览器，因此 `openInBrowser` 继续拒绝该平台，默认意图、关联意图与文本编辑器意图都走同一个 Explorer 交接。
 
@@ -34,8 +34,8 @@ Windows 对 HTML 与 SVG 仍然无法命名浏览器，因此 `openInBrowser` �
 
 打开器再也无法区分「shell 打开了」与「shell 拒绝了」：两种情况 Explorer 都返回 0 或 1，因此 Remote 依旧回答 `{ opened: true }`，完全没有处理程序的机器只能看到 shell 的选择框。此处不校验窗口是否真的出现。
 
-目录走同一条路径。[open-in-app 记录](../feature/2026-08-25-promote-open-anywhere-plugin.zh.md)中被否决的方案是 detached 且经过凭据清洗的 `explorer.exe <dir>` 派生进程，那不是本交接的做法：运行器继承宿主环境，也不创建 detached 进程。
+目录走同一条路径。[open-in-app 记录](../feature/2026-08-25-promote-open-anywhere-plugin.zh.md)中被否决的方案是 detached 且经过凭据清洗的 `explorer.exe <dir>` 派生进程，那不是本交接的做法：`explorer.exe` 子进程继承宿主环境，也不创建 detached 进程；而它转交给桌面会话启动的应用或文件夹窗口，继承的是桌面会话环境而不是宿主进程环境。
 
 ## 验证
 
-`path-opener.spec.ts` 固定两种意图交给 Explorer 的 argv、打开与选中都可接受的交接退出码 1、仍然报错的普通失败与取消，以及不存在任何转义步骤。`resolver.spec.ts` 固定 open-in-app 路由在 Windows 上的命令。按该包测试策略，原生桌面验证留在 Windows；在 Windows 11 build 26340 上已观察到文件与目录打开分别启动了关联应用和文件夹窗口。
+`path-opener.spec.ts` 固定两种意图交给 Explorer 的编码文件 URI、打开与选中都可接受的交接退出码 1，以及仍然报错的普通失败与取消。`resolver.spec.ts` 固定 open-in-app 路由在 Windows 上的命令。按该包测试策略，原生桌面验证留在 Windows：在 Windows 11 ARM64 build 26200 上，一个探针关联记录了每次交接实际收到的参数——打开器自身的命令对普通文件、以及文件名含逗号的文件都启动了关联应用；而同一个含逗号文件若以原始路径交接，则会打开用户的「文档」文件夹，shell 在逗号处分段且不作任何提示。名称含逗号的目录会以该目录为根打开窗口。上述每一次交接（包括成功的那些）退出码都是 1。

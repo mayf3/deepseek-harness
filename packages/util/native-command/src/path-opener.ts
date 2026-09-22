@@ -98,12 +98,27 @@ function isWsl(internals: PathOpenerInternals): boolean {
 }
 
 /**
+ * Encode one Windows path as the target Explorer can receive intact.
+ *
+ * Explorer parses its own command line and treats commas as field separators,
+ * so a path handed over raw loses everything after its first comma and the
+ * shell opens a different target without reporting it. A file URI has `,`
+ * percent-encoded and keeps whitespace, and Explorer resolves it to the shell
+ * item the path names.
+ * @param windowsPath - path already translated for the Windows desktop.
+ * @returns the target for an open, or the object of a `/select,` reveal.
+ */
+function explorerTarget(windowsPath: string): string {
+  return pathToFileURL(windowsPath, { windows: true }).href.replaceAll(',', '%2C')
+}
+
+/**
  * Hand one target to Explorer, accepting its delegated-handoff exit code.
  *
  * Explorer exits 1 after handing the request to the desktop process already
  * running, so exit 1 means the shell took it. Every other failure still
  * rejects, and cancellation wins over a delegate's exit 1.
- * @param args - Explorer argv: the target path alone to open it, or `/select,<target>` to reveal it.
+ * @param args - Explorer argv: the encoded target alone to open it, or `/select,<encoded target>` to reveal it.
  * @param signal - caller lifetime; abort terminates the command.
  * @param run - shell-free command runner.
  * @throws The runner's failure unless it is Explorer's delegate exit 1.
@@ -121,12 +136,12 @@ async function runExplorer(args: readonly string[], signal: AbortSignal, run: Pa
 /**
  * Open one Windows-resolvable path through Explorer, the shell that owns the
  * default-application resolution a double-click uses.
- * @param path - Windows-resolvable path; passed as one argv element, never a command string.
+ * @param path - Windows-resolvable path; Explorer receives its encoded file URI as one argv element, never a command string.
  * @param signal - caller lifetime; abort terminates the command.
  * @param run - shell-free command runner.
  */
 async function openWindowsPath(path: string, signal: AbortSignal, run: PathOpenerRunner): Promise<void> {
-  await runExplorer([path], signal, run)
+  await runExplorer([explorerTarget(path)], signal, run)
 }
 
 /** Translate a WSL path before handing it to the Windows desktop. */
@@ -278,9 +293,7 @@ export async function revealNativePath(
       windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
       if (windowsPath === '') throw new Error('wslpath returned no Windows path')
     }
-    // Explorer parses commas itself; a file URI preserves commas and whitespace in the path.
-    const target = pathToFileURL(windowsPath, { windows: true }).href.replaceAll(',', '%2C')
-    await runExplorer(['/select,', target], signal, run)
+    await runExplorer(['/select,', explorerTarget(windowsPath)], signal, run)
     return
   }
   if (manager === 'directory') {

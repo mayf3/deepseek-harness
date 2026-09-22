@@ -584,7 +584,7 @@ describe('launchResolved', () => {
     // The opener is the shipped Explorer channel; the detached spawner never runs.
     expect(spawns).toEqual([])
     expect(commands).toEqual([
-      ['explorer.exe', 'C:\\w\\dir'],
+      ['explorer.exe', 'file:///C:/w/dir'],
     ])
   })
 
