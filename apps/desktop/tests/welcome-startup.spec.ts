@@ -131,7 +131,8 @@ vi.mock('../src/welcome-window.ts', () => ({
     state.welcomeLocale = locale
     state.operations = operations
     await state.beforeWelcome()
-    return { once: vi.fn(), close: state.closeWelcome }
+    return { once: vi.fn(), close: state.closeWelcome, isDestroyed: () => false,
+      show: vi.fn(), focus: vi.fn(), webContents: { send: vi.fn() } }
   },
 }))
 
@@ -179,6 +180,7 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   expect(state.showWorkspace).not.toHaveBeenCalled()
   state.loadWorkspace.mockClear()
   expect(state.welcomeLocale).toMatchObject({ id: 'zh-CN' })
+  expect(await state.operations!.takeNotice()).toBeUndefined()
   expect(state.dialogLocale!().id).toBe('zh-CN')
   const attemptId = 'login' as NonNullable<AccountView['attempt']>['id']
   const account: AccountView = { status: 'signed-out', links: { usageUrl: '', topUpUrl: '' },
@@ -228,9 +230,19 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   state.accountListener!({ ...account, status: 'signed-out', attempt: null, signOutReason: 'expired' })
   await vi.advanceTimersByTimeAsync(0)
   expect(state.beforeWelcome).toHaveBeenCalledTimes(welcomeCount)
+  expect(await state.operations!.takeNotice()).toBeUndefined()
   state.hasApiKey = false
   state.accountListener!({ ...account, status: 'credential-stored', attempt: null })
   state.accountListener!({ ...account, status: 'signed-out', attempt: null, signOutReason: 'expired' })
   await vi.waitFor(() => { expect(state.beforeWelcome).toHaveBeenCalledTimes(welcomeCount + 1) })
+  expect(await state.operations!.takeNotice()).toBe('session-expired')
+  expect(await state.operations!.takeNotice()).toBeUndefined()
+  state.accountListener!({ ...account, status: 'signed-out', attempt: null, signOutReason: 'expired' })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(await state.operations!.takeNotice()).toBeUndefined()
+  state.accountListener!({ ...account, status: 'credential-stored', attempt: null })
+  state.accountListener!({ ...account, status: 'signed-out', attempt: null })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(await state.operations!.takeNotice()).toBeUndefined()
 
 })

@@ -34,7 +34,7 @@ import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
 import { DesktopFatalRecovery } from './fatal-recovery.ts'
 import { openWelcomeWindow } from './welcome-window.ts'
-import { WELCOME_IPC, needsWelcome } from './welcome-api.ts'
+import { WELCOME_IPC, needsWelcome, type WelcomeNotice } from './welcome-api.ts'
 import { connectDesktopWelcome, type DesktopWelcomeBackend } from './welcome-backend.ts'
 import { DesktopUpdateJournal } from './update-journal.ts'
 import { DesktopUpdatePreparationError } from './update-error.ts'
@@ -307,6 +307,7 @@ async function main(): Promise<void> {
   let stopAccount: (() => void) | undefined
   let openedAttempt: string | undefined
   let returnedAttempt: string | undefined
+  let pendingWelcomeNotice: WelcomeNotice | undefined
   let previousAccountStatus: string | undefined
   const assertProductSender = (event: IpcMainInvokeEvent): void => {
     assertDesktopSender(event, ['app'])
@@ -362,8 +363,13 @@ async function main(): Promise<void> {
           }
           if (attempt?.phase === 'succeeded' && welcomeWindow !== undefined) void enterWorkspace().catch(() => undefined)
           if (previousAccountStatus === 'credential-stored' && state.status === 'signed-out') {
-            void readWelcomeState().then((value) => {
-              if (!value.hasApiKey && !quitting) { enteredWorkspace = false; return showWelcome() }
+            void readWelcomeState().then(async (value) => {
+              if (needsWelcome(value) && !quitting) {
+                if (state.signOutReason === 'expired') pendingWelcomeNotice = 'session-expired'
+                enteredWorkspace = false
+                await showWelcome()
+                if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
+              }
               return undefined
             }).catch(() => undefined)
           }
@@ -905,6 +911,11 @@ async function main(): Promise<void> {
     }
     openingWelcome ??= (async () => {
       welcomeWindow = await openWelcomeWindow(locale, {
+        takeNotice: () => {
+          const notice = pendingWelcomeNotice
+          pendingWelcomeNotice = undefined
+          return Promise.resolve(notice)
+        },
         startSignIn: async () => {
           if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
           return welcomeBackend.account.start(locale.id)

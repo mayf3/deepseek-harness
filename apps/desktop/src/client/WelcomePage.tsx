@@ -15,9 +15,7 @@ type Page = 'entry' | 'key' | 'account'
  */
 export function Welcome({ api }: { api: WelcomeApi }) {
   const { messages: m } = api
-  const [expired, setExpired] = useState(false)
   const [expiryNotice, setExpiryNotice] = useState(false)
-  useEffect(() => { setExpiryNotice(expired) }, [expired])
   const [page, setPage] = useState<Page>('entry')
   const pageRef = useRef<Page>('entry')
   const [attempt, setAttempt] = useState<AccountView['attempt']>(null)
@@ -53,9 +51,17 @@ export function Welcome({ api }: { api: WelcomeApi }) {
     mounted.current = true
     document.documentElement.lang = api.id
     document.title = m.welcomeTitle
+    const takeNotice = (): void => {
+      void api.takeNotice().then((notice) => {
+        if (mounted.current && notice === 'session-expired') setExpiryNotice(true)
+      }).catch((_closedChannel: unknown) => {
+        // A closed Welcome IPC channel must not interrupt the sign-in page.
+      })
+    }
+    takeNotice()
     const stop = api.onAccountState((state) => {
       revision.current++
-      setExpired(state.status === 'signed-out' && state.signOutReason === 'expired')
+      takeNotice()
       showAccount(state)
     })
     return () => { mounted.current = false; stop() }
