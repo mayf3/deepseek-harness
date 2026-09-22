@@ -28,5 +28,7 @@ export function contactUrl(config: Config, context: {
     url.searchParams.delete(`prefill_${name}`)
     if (value) url.searchParams.set(`prefill_${name}`, value)
   }
+  url.searchParams.delete('prefill_uid')
+  url.searchParams.delete('hide_uid')
   return url.href
 }

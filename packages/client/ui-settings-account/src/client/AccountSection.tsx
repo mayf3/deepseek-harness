@@ -40,7 +40,7 @@ export interface AccountSectionInjected {
   }
   /** @returns after account details are refreshed; concurrent refreshes share a request. */
   refresh: () => Promise<void>
-  /** Open the external support questionnaire with the current account and environment. */
+  /** Open the external support questionnaire with the current build and browser environment. */
   contactUs: () => void
   /** Open or dismiss the login dialog. */
   showLogin: (visible: boolean) => void
