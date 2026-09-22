@@ -24,3 +24,10 @@ it('uses account Remote commands without returning additional wire fields', asyn
   expect(await backend.start('en')).toEqual({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null })
   expect(requests).toEqual([{ namespace: 'account', method: 'startSignIn', args: { locale: 'en', callbackOrigin: 'http://127.0.0.1:1234', loginSource: 'desktop' } }])
 })
+
+it('preserves the safe expiration reason and rejects unknown reasons', () => {
+  const state = { status: 'signed-out', attempt: null, signOutReason: 'expired',
+    links: { usageUrl: 'https://platform.deepseek.com/usage', topUpUrl: 'https://platform.deepseek.com/top_up' } }
+  expect(accountView(state)).toEqual(state)
+  expect(() => accountView({ ...state, signOutReason: 'unexpected' })).toThrow('invalid sign-out reason')
+})

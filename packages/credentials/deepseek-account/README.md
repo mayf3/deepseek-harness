@@ -11,6 +11,8 @@ getPlatformSession returns a Host-only origin/token snapshot for native Platform
 
 `desktopClientHeaders` maps the native `darwin` and `win32` platforms to the shared Desktop account and update-policy request header; `null` adds no header.
 
+`AccountView.signOutReason` identifies a server-expired credential separately from explicit sign-out; it is absent while signed in.
+
 ## Summary
 
 Account consumers read stored login state, start or cancel a browser login, and sign out without editing API keys. Host model consumers resolve account credentials only for the provider-configured inference origin.

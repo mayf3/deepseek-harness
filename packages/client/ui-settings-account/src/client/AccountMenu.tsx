@@ -1,6 +1,6 @@
 /** Sidebar account launcher and locally authoritative sign-out action. */
-import { useState } from 'react'
-import { Menu, IconPaperPlaneOutlineMedium, IconSettingsOutlineMedium, IconUserOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useState } from 'react'
+import { Toast, Menu, IconPaperPlaneOutlineMedium, IconSettingsOutlineMedium, IconUserOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountSectionInjected } from './AccountSection.tsx'
 import { SignOutDialog } from './SignOutDialog.tsx'
@@ -21,6 +21,9 @@ export function AccountMenu({
 }: AccountMenuProps) {
   const account = useAccount(state => state)
   const signedIn = account.view?.status === 'credential-stored'
+  const expired = account.view?.status === 'signed-out' && account.view.signOutReason === 'expired'
+  const [expiryNotice, setExpiryNotice] = useState(false)
+  useEffect(() => { setExpiryNotice(expired) }, [expired])
   const profile = account.details?.profile
   const label = profile === undefined ? null : profile.status === 'ready'
     ? profile.value.name ?? profile.value.contact ?? t('signedIn') : t('signedIn')
@@ -36,6 +39,7 @@ export function AccountMenu({
     finally { setBusy(false) }
   }
   return <div className={css.root}>
+    {expiryNotice && <Toast text={t('sessionExpired')} onDone={() => { setExpiryNotice(false) }} />}
     <Menu open={open} side="top" portal autoFocus className={css.anchor}
       anchor={<button type="button" className={css.trigger} data-collapsed={!wide} aria-label={t('menu')}
         aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>

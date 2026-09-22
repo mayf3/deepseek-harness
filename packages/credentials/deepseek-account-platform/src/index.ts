@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { DeepSeekAccount, desktopClientHeaders, mergePlatformCookies, type PlatformSession, type AccountDetails, type AccountView, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
+import { AccountUnauthorizedError } from './protocol.ts'
 import { profile, readAccountDetail } from './details.ts'
 import { revokeAccount, type LogoutRetryPolicy } from './logout.ts'
 import { PlatformAuthError, platformHeaders, platformOrigin, browserUrl, requestPlatform, initialization, exchange, loginOrigin } from './protocol.ts'
@@ -98,6 +99,7 @@ export class PlatformAccount extends DeepSeekAccount {
   private detailsLifetime = new AbortController()
   private closed = false
   private removing: Promise<AccountView> | undefined
+  private signOutReason: 'expired' | undefined
 
   /** @param ctx - Host with authorization and credentials services. @param config - deployment options. */
   constructor(ctx: Context, config: Config = {}) {
@@ -170,6 +172,7 @@ export class PlatformAccount extends DeepSeekAccount {
       throw new PlatformAuthError('storage')
     }
     return {
+      ...(record === undefined && this.signOutReason !== undefined ? { signOutReason: this.signOutReason } : {}),
       status: record === undefined ? 'signed-out' : 'credential-stored', attempt: this.attempt?.view ?? null,
       links: { usageUrl: new URL('/usage', this.origin).href, topUpUrl: new URL('/top_up', this.origin).href },
     }
@@ -200,10 +203,34 @@ export class PlatformAccount extends DeepSeekAccount {
       delete this.attempt.initialProfile
       return initial as AccountDetails[K]
     }
-    const details = await readAccountDetail(field, this.origin, parsed.data.token,
-      AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]),
-      { ...this.accountRequestHeaders, ...this.clientHeaders })
-    return this.detailsLifetime !== lifetime ? null : details
+    try {
+      const details = await readAccountDetail(field, this.origin, parsed.data.token,
+        AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]),
+        { ...this.accountRequestHeaders, ...this.clientHeaders })
+      return this.detailsLifetime !== lifetime ? null : details
+    } catch (error) {
+      if (!(error instanceof AccountUnauthorizedError)) throw error
+      if (this.detailsLifetime === lifetime) await this.expireCredential(parsed.data.token, lifetime)
+      return null
+    }
+  }
+
+  private async expireCredential(token: string, lifetime: AbortController): Promise<void> {
+    this.removing ??= (async () => {
+      if (this.attempt !== undefined) await this.cancelSignIn(this.attempt.view.id)
+      const record = await this.ctx.credentials.readRecord(KEY)
+      if (this.closed || this.detailsLifetime !== lifetime || record?.kind !== 'grant') return this.getState()
+      const current = grant.parse(record.payload)
+      if (current.token !== token || current.issuer !== this.origin) return this.getState()
+      this.signOutReason = 'expired'
+      try { await this.ctx.credentials.deleteRecord(KEY) }
+      catch (error) { this.signOutReason = undefined; throw error }
+      this.attempt = undefined
+      this.ctx.emit('deepseek-account/signed-out')
+      this.changed()
+      return this.getState()
+    })().finally(() => { this.removing = undefined })
+    await this.removing
   }
 
   override async getPlatformSession(): Promise<PlatformSession | null> {
@@ -241,6 +268,7 @@ export class PlatformAccount extends DeepSeekAccount {
 
   override async startSignIn(locale: string, callbackOrigin: string, loginSource: 'web' | 'desktop'): Promise<AccountView> {
     if (this.removing !== undefined) await this.removing
+    this.signOutReason = undefined
     const origin = loginOrigin(callbackOrigin)
     if (this.closed) throw new PlatformAuthError('protocol')
     if (this.attempt !== undefined && ['initializing', 'waiting-browser', 'exchanging', 'committing'].includes(this.attempt.view.phase)) {
@@ -299,6 +327,7 @@ export class PlatformAccount extends DeepSeekAccount {
   }
 
   override signOut(): Promise<AccountView> {
+    this.signOutReason = undefined
     this.removing ??= (async () => {
       if (this.closed) throw new PlatformAuthError('protocol')
       if (this.attempt !== undefined) await this.cancelSignIn(this.attempt.view.id)

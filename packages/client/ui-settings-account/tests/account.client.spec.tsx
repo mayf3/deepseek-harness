@@ -243,3 +243,14 @@ it('opens more account information externally without invoking the embedded Plat
   fireEvent.click(link)
   expect(platform.open).not.toHaveBeenCalled()
 })
+
+it.each([en, zh])('shows a localized toast when the account credential expires', async (copy) => {
+  const operations = mount({ status: 'signed-out', attempt: null, signOutReason: 'expired' }, copy)
+  cleanup()
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())} wide openOnboarding={() => {}} openSettings={() => {}}
+    t={key => key in copy ? copy[key as AccountKey] : key} />)
+  expect(screen.getByRole('alert').textContent).toContain(copy.sessionExpired)
+  await expect(`${screen.getByRole('alert').textContent}\n`).toMatchFileSnapshot(`./expected/expired-${copy === en ? 'en' : 'zh'}.txt`)
+})

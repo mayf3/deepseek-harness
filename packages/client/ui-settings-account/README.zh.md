@@ -7,6 +7,8 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
+账号凭据被服务端判定失效后，显示本地化的重新登录提示 toast，并清空显示的账号详情。
+
 ## 概述
 
 设置中的账号页面显示 DeepSeek 登录状态，并提供浏览器登录和取消；侧边栏账号菜单提供 Platform 退出登录。

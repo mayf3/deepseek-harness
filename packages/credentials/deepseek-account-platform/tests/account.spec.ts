@@ -45,6 +45,7 @@ async function fixture(
   let origin = ''
   let detailsHold = false
   let balanceHold = false
+  let detailStatus = 200
   let profileFailed = false
   let summaryFailed = false
   let logoutFailed = false
@@ -75,8 +76,10 @@ async function fixture(
     }
     if (req.method === 'GET') {
       detailRequests.push({ path: req.url!, authorization: req.headers['x-dsh-auth-token'] as string | undefined })
+      const status = detailStatus
       detailsStarted.resolve(undefined)
       if (detailsHold || (balanceHold && req.url === '/api/v0/users/get_user_summary')) await release.promise
+      if (status !== 200) { res.writeHead(status).end(); return }
       const value = req.url === '/auth-api/v0/users/current'
         ? { id: 'test-user', token: 'never-copy-response-token', ...contact,
           id_profile: { name: 'Test Account', picture: null } }
@@ -151,6 +154,7 @@ async function fixture(
     ctx, account, home, origin, callbackOrigin, wait, receivedHeaders, logoutHeaders, logoutCount: () => logoutCount,
     holdLogout: () => { logoutHold = true },
     failLogout: (failed: boolean) => { logoutFailed = failed }, detailRequests, detailsStarted,
+    detailStatus: (status: number) => { detailStatus = status },
     failProfile: (failed: boolean) => { profileFailed = failed },
     holdBalance: () => { balanceHold = true },
     holdDetails: () => { detailsHold = true }, failSummary: () => { summaryFailed = true },
@@ -801,3 +805,54 @@ it.each([undefined, [{ currency: 'EUR', balance: '1' }], [{ currency: 'CNY', bal
     expect(await f.account.getBalance()).toEqual({ status: 'failed' })
   },
 )
+
+it.each(['profile', 'balance'] as const)('clears the rejected account grant after a %s HTTP 401', async (field) => {
+  const f = await fixture()
+  await storeAccount(f)
+  let signedOut = 0
+  f.ctx.on('deepseek-account/signed-out', () => { signedOut++ })
+  f.detailStatus(401)
+  expect(await (field === 'profile' ? f.account.getProfile() : f.account.getBalance())).toBeNull()
+  expect(await f.account.getState()).toMatchObject({ status: 'signed-out', signOutReason: 'expired', attempt: null })
+  expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default'))).toBeUndefined()
+  expect(signedOut).toBe(1)
+})
+
+it('coalesces simultaneous unauthorized profile and balance responses', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  let signedOut = 0
+  f.ctx.on('deepseek-account/signed-out', () => { signedOut++ })
+  f.detailStatus(401)
+  await Promise.all([f.account.getProfile(), f.account.getBalance()])
+  expect(signedOut).toBe(1)
+  expect(await f.account.getState()).toMatchObject({ status: 'signed-out', signOutReason: 'expired' })
+})
+
+it.each([403, 500])('retains the account grant after HTTP %s', async (status) => {
+  const f = await fixture()
+  await storeAccount(f)
+  f.detailStatus(status)
+  expect(await f.account.getBalance()).toEqual({ status: 'failed' })
+  expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
+})
+
+it('does not remove a replacement grant when an older request is rejected', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  f.detailStatus(401)
+  f.holdDetails()
+  const pending = f.account.getBalance()
+  try {
+    await f.detailsStarted.promise
+    await f.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'default'), () => Promise.resolve({
+      kind: 'grant', payload: { version: 1, issuer: f.origin, token: 'replacement-grant' },
+    }))
+  } finally {
+    f.release.resolve(undefined)
+  }
+  expect(await pending).toBeNull()
+  expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
+  expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default')))
+    .toMatchObject({ kind: 'grant', payload: { token: 'replacement-grant' } })
+})

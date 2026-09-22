@@ -4130,7 +4130,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountView',
-    declaration: 'export interface AccountView {\n    readonly status: \'signed-out\' | \'credential-stored\';\n    readonly links: AccountLinks;\n    readonly attempt: SignInAttemptView | null;\n}',
+    declaration: 'export interface AccountView {\n    readonly status: \'signed-out\' | \'credential-stored\';\n    readonly signOutReason?: \'expired\';\n    readonly links: AccountLinks;\n    readonly attempt: SignInAttemptView | null;\n}',
   },
   {
     name: 'AccountWallet',

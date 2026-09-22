@@ -7,6 +7,8 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
+Server-expired account credentials show a localized sign-in reminder toast and clear the displayed account details.
+
 ## Summary
 
 The Account settings section displays DeepSeek login state and offers browser sign-in and cancellation; the sidebar account menu provides Platform sign-out.

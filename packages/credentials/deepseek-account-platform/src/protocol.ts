@@ -7,6 +7,11 @@ export class PlatformAuthError extends Error {
   constructor(readonly code: 'network' | 'protocol' | 'expired' | 'storage') { super(`account: ${code}`) }
 }
 
+/** An authenticated Platform request was rejected with HTTP 401. */
+export class AccountUnauthorizedError extends PlatformAuthError {
+  constructor() { super('expired') }
+}
+
 /**
  * Accept HTTPS platform endpoints, or explicitly configured loopback development HTTP.
  * @param value - configured origin.
@@ -132,6 +137,10 @@ async function platformRequest(url: string, init: RequestInit, signal: AbortSign
     throw new PlatformAuthError('network')
   }
   console.info('[deepseek-account] response', { path, status: response.status })
+  if (response.status === 401 && new Headers(init.headers).has('x-dsh-auth-token')) {
+    await response.body?.cancel()
+    throw new AccountUnauthorizedError()
+  }
   if (!response.ok || response.body === null) {
     await response.body?.cancel()
     throw new PlatformAuthError('network')

@@ -11,6 +11,8 @@ getPlatformSession 为原生 Platform 内嵌提供仅限 Host 的 origin/token �
 
 `desktopClientHeaders` 将原生平台 `darwin` 和 `win32` 映射为 Desktop 账号与更新策略请求共用的请求头；`null` 不添加请求头。
 
+`AccountView.signOutReason` 区分服务端判定凭据失效和主动退登；登录状态下不携带该字段。
+
 ## 概述
 
 账号使用方可读取本地登录状态、发起或取消浏览器登录，并在保留 API Key 的情况下退出。Host 模型使用方仅能为提供者配置的推理来源解析账号凭证。

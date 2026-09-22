@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   beforeRead: vi.fn(async () => {}),
   beforeWelcome: vi.fn(async () => {}),
   copy: vi.fn(),
+  accountListener: undefined as ((value: AccountView) => void) | undefined,
   accountState: vi.fn<() => Promise<AccountView>>().mockResolvedValue({
     status: 'signed-out', attempt: null, links: { usageUrl: '', topUpUrl: '' },
   }),
@@ -24,6 +25,7 @@ const state = vi.hoisted(() => ({
   closeWelcome: vi.fn(),
   welcomeLocale: undefined as DesktopLocale | undefined,
   preference: 'zh',
+  hasApiKey: false,
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   listeners: new Map<string, (...args: unknown[]) => void>(),
   contents: undefined as { mainFrame: { url: string } } | undefined,
@@ -87,7 +89,9 @@ vi.mock('../src/host-process.ts', () => ({
     start = state.startHost
     stop = state.stopHost
     fetch() {
-      return Promise.resolve(Response.json({ loggedIn: false, hasApiKey: false, writable: true, localePreference: state.preference }))
+      return Promise.resolve(Response.json({
+        loggedIn: false, hasApiKey: state.hasApiKey, writable: true, localePreference: state.preference,
+      }))
     }
   },
 }))
@@ -95,10 +99,13 @@ vi.mock('../src/welcome-backend.ts', () => ({
   connectDesktopWelcome: async () => ({
     read: async () => {
       await state.beforeRead()
-      return { loggedIn: false, hasApiKey: false, writable: true, localePreference: state.preference }
+      return { loggedIn: false, hasApiKey: state.hasApiKey, writable: true, localePreference: state.preference }
     },
     save: async () => ({ ok: true }),
-    account: { watch: () => () => {}, state: state.accountState },
+    account: {
+      watch: (listener: (value: AccountView) => void) => { state.accountListener = listener; return () => {} },
+      state: state.accountState,
+    },
   }),
 }))
 vi.mock('node:fs/promises', async importOriginal => ({
@@ -201,4 +208,15 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   changed(event, 'en')
   expect(state.menu).toHaveBeenCalledTimes(initialMenus + 1)
   expect(await bootstrap(event)).toEqual({ languages: ['en-US'], preference: 'en' })
+  const welcomeCount = state.beforeWelcome.mock.calls.length
+  state.hasApiKey = true
+  state.accountListener!({ ...account, status: 'credential-stored', attempt: null })
+  state.accountListener!({ ...account, status: 'signed-out', attempt: null, signOutReason: 'expired' })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(state.beforeWelcome).toHaveBeenCalledTimes(welcomeCount)
+  state.hasApiKey = false
+  state.accountListener!({ ...account, status: 'credential-stored', attempt: null })
+  state.accountListener!({ ...account, status: 'signed-out', attempt: null, signOutReason: 'expired' })
+  await vi.waitFor(() => { expect(state.beforeWelcome).toHaveBeenCalledTimes(welcomeCount + 1) })
+
 })

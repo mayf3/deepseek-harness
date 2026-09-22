@@ -14,6 +14,8 @@ Embedded Platform documents use a dedicated non-persistent WebContentsView sessi
 
 Desktop Host Platform API requests use the same `x-client-platform` mapping as update-policy requests. The account provider owns [API-only header configuration](../../packages/credentials/deepseek-account-platform/README.md#use-this-package).
 
+A server-expired account credential returns to Welcome when no official API key is configured; an available API key keeps the workspace open. Explicit sign-out follows the same rule.
+
 ## Key technical decisions
 
 The original artwork lives in `resources/icon.png` and `resources/icon.svg`; platform adaptations retain the whale and gradients in `resources/icon-windows.*` and `resources/icon-macos.*`. Export each platform SVG as a transparent 1024×1024 PNG. Electron-builder generates the multi-size ICO for the Windows application, installer, and uninstaller ([Windows icon requirements](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)). The installation pages use matching artwork in both themes; the uninstaller's welcome and finish pages share `installer/assets/uninstaller-sidebar.png`, converted to a 164×314 BMP during preparation.

@@ -21,6 +21,8 @@ export interface AccountLinks {
 /** Stored-account presence is not a claim that the server has validated its token. */
 export interface AccountView {
   readonly status: 'signed-out' | 'credential-stored'
+  /** Server rejection cleared the local credential. */
+  readonly signOutReason?: 'expired'
   readonly links: AccountLinks
   readonly attempt: SignInAttemptView | null
 }

@@ -350,8 +350,28 @@ it.each([false, true])('uses account availability without asking for an API key:
   }] }) })
   const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
   await store.load()
-  const row = store.store.getSnapshot().rows[0]!
-  expect(row).toMatchObject({ accountAvailable, apiKeyEnv: undefined, credential: undefined })
-  expect(providerUsable(row)).toBe(accountAvailable)
+  const rows = store.store.getSnapshot().rows
+  expect(rows).toHaveLength(accountAvailable ? 1 : 0)
+  if (accountAvailable) {
+    expect(rows[0]).toMatchObject({ accountAvailable: true, apiKeyEnv: undefined, credential: undefined })
+    expect(providerUsable(rows[0]!)).toBe(true)
+  }
   expect(seenRefs).toEqual([])
+})
+
+it('removes the account row after sign-out and restores it after sign-in', async () => {
+  const overrides = { accountAvailable: true, providers: async () => ok({ providers: [{
+    provider: 'deepseek-account', displayName: 'DeepSeek Account', settingsNs: 'llm-deepseek', settingsPath: [], active: true,
+  }, ...DIRECTORY] }) }
+  const { ctx, mirror } = api(overrides)
+  const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+  await store.load()
+  expect(store.store.getSnapshot().rows[0]?.entry.provider).toBe('deepseek-account')
+  overrides.accountAvailable = false
+  await store.load()
+  expect(store.store.getSnapshot().rows.map(row => row.entry.provider)).not.toContain('deepseek-account')
+  expect(store.store.getSnapshot().rows).toHaveLength(DIRECTORY.length)
+  overrides.accountAvailable = true
+  await store.load()
+  expect(store.store.getSnapshot().rows[0]?.entry.provider).toBe('deepseek-account')
 })

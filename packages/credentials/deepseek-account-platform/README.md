@@ -13,6 +13,8 @@ getPlatformSession exports the stored grant only when its issuer matches platfor
 
 `desktopPlatform` defaults to `null`. The Desktop profile supplies `darwin` or `win32`; Host authorization, profile, balance, and logout requests then carry `x-client-platform: desktop-mac` or `desktop-win`, overriding that header in deployment configuration. Embedded Platform document and API requests receive the same platform header alongside their deployment headers, only at the configured origin. Other profiles omit the automatic header.
 
+Profile and balance HTTP 401 responses clear the rejected local grant and publish `signOutReason: expired`. Concurrent responses share one removal; responses from an invalidated credential generation cannot clear its replacement. Other HTTP failures retain the grant.
+
 ## Summary
 
 Sign in through the system browser and keep the account credential in the existing local credential store. Local cancellation prevents late callbacks and exchange responses from signing the user in.

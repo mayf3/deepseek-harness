@@ -639,7 +639,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/credentials/deepseek-account-platform/src/index.ts:23`](../packages/credentials/deepseek-account-platform/src/index.ts)
+Source: [`packages/credentials/deepseek-account-platform/src/index.ts:24`](../packages/credentials/deepseek-account-platform/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-agent-team"></a>
 
