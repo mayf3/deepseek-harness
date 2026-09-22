@@ -1,7 +1,7 @@
 /**
  * The staged form model behind a plugin's settings page.
  *
- * A page stages what the user types and writes it only when they save. Each
+ * A card stages what the user types and writes it only when they save. Each
  * settings write is a durable, revision-fenced document mutation, so a control
  * that committed as it settled turned one edit into a write the user never
  * asked for and could not preview; staged text makes what is on screen exactly
@@ -15,9 +15,9 @@
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
-/** What the model reads of one settings namespace. */
+/** What the model reads of one Host entry's form. */
 export interface SettingsFormScopeSnapshot<T> {
-  /** `ready` while the Host serves the namespace to this client; the form renders nothing otherwise. */
+  /** `ready` while the Host serves the entry to this client; the form renders nothing otherwise. */
   status: 'loading' | 'ready' | 'unavailable'
   /** Last accepted schema-resolved section; undefined before the first acceptance. */
   value: T | undefined
@@ -27,13 +27,16 @@ export interface SettingsFormScopeSnapshot<T> {
   user: unknown
   /** Whether the Host document accepts writes. */
   writable: boolean
+  /** Revision the snapshot was read at; a save fences its mutation with the revision its drafts started from. */
+  revision: number | undefined
 }
 
-/**
- * The namespace scope the model stages over: the reads and the two field
- * writes of the scope `ui-settings` binds for a namespace, which a page passes
- * as it is.
- */
+/** One path edit a save sends, as the shared configuration form's `mutate` accepts it. */
+export type SettingsFormPathOp =
+  | { op: 'set'; path: readonly string[]; value: unknown }
+  | { op: 'unset'; path: readonly string[] }
+
+/** The entry form the model stages over: the reads and the atomic write of the form `ui-settings` shares per Host entry. */
 export interface SettingsFormScope<T> {
   /** @returns the current sync snapshot. */
   getSnapshot(): SettingsFormScopeSnapshot<T>
@@ -44,21 +47,15 @@ export interface SettingsFormScope<T> {
    */
   subscribe(listener: () => void): () => void
   /**
-   * Queue one field write.
-   * @param field - scalar field inside the namespace section.
-   * @param value - JSON-shaped value selected by the user.
-   * @returns true for Host acceptance, false for refusal or skipped writes, after any recovery read.
+   * Apply ordered field edits in one revision-fenced write.
+   * @param ops - the edits, in staging order.
+   * @param expectedRevision - the revision the drafts were staged against, when known.
+   * @returns true for Host acceptance, false for refusal, after any recovery read.
    */
-  set(field: string, value: unknown): Promise<boolean>
-  /**
-   * Queue one field clear, so the field re-inherits the composition layer.
-   * @param field - scalar field inside the namespace section.
-   * @returns true for Host acceptance, false for refusal or skipped writes, after any recovery read.
-   */
-  unset(field: string): Promise<boolean>
+  mutate(ops: readonly SettingsFormPathOp[], expectedRevision?: number): Promise<boolean>
 }
 
-/** The write one field's staged text performs when the form is saved. */
+/** The write one field's staged text performs when the card is saved. */
 export type SettingsFieldWrite =
   | { kind: 'set'; value: unknown }
   | { kind: 'clear' }
@@ -82,13 +79,13 @@ export interface SettingsFieldSpec {
  * blank until typed, and a blank draft writes nothing.
  */
 export interface SettingsSecretSpec {
-  /** Field name addressing this control inside the form. */
+  /** Field name addressing this control inside the card's form. */
   field: string
   /** Write the staged text; resolves to whether the Host accepted it. */
   write: (text: string) => Promise<boolean>
 }
 
-/** One field as a form's control renders it. */
+/** One field as a card's control renders it. */
 export interface SettingsFieldState {
   /** Draft text the control renders. */
   text: string
@@ -102,9 +99,9 @@ export interface SettingsFieldState {
   invalid: boolean
 }
 
-/** Form state every settings page shares. */
+/** Form state every plugin card shares. */
 export interface SettingsFormShell {
-  /** False while the namespace is not served to this client; the form renders nothing. */
+  /** False while the namespace is not served to this client; the card renders nothing. */
   available: boolean
   /** Whether the Host document accepts writes. */
   writable: boolean
@@ -118,7 +115,7 @@ export interface SettingsFormShell {
   failed: boolean
 }
 
-/** The write actions a settings page's slot entry injects. */
+/** The write actions every plugin card's slot entry injects. */
 export interface SettingsFormActions {
   /** Stage draft text for one field. */
   edit: (field: string, text: string) => void
@@ -146,7 +143,8 @@ interface PlannedWrite {
    * Perform the write and report whether the Host holds the staged value
    * afterwards; undefined when the draft is not a value the field accepts.
    */
-  run: (() => Promise<boolean>) | undefined
+  run?: () => Promise<boolean>
+  op?: SettingsFormPathOp
 }
 
 /**
@@ -188,7 +186,7 @@ export function settingsTextField(field: string): SettingsFieldSpec {
 }
 
 /**
- * Stages one page's edits over one settings namespace and writes them on save.
+ * Stages one card's edits over one settings namespace and writes them on save.
  *
  * The form publishes through a snapshot store because slot components read
  * through a snapshot selector, while both the scope and the local drafts
@@ -199,13 +197,15 @@ export class SettingsFormModel<T> {
   private readonly secretSpecs: Map<string, SettingsSecretSpec>
   private readonly staged = new Map<string, StagedEdit>()
   private readonly listeners = new Set<() => void>()
+  private baseline: SettingsFormScopeSnapshot<T> | undefined
+  private readonly unsubscribe: () => void
   private saving = false
   private failed = false
 
   /**
-   * @param scope - the bound settings scope for the page's namespace.
-   * @param specs - the section fields the page edits.
-   * @param secrets - the page's write-only controls, written outside the section.
+   * @param scope - the shared configuration form for this card's namespace.
+   * @param specs - the section fields this card edits.
+   * @param secrets - the card's write-only controls, written outside the section.
    */
   constructor(
     private readonly scope: SettingsFormScope<T>,
@@ -214,13 +214,13 @@ export class SettingsFormModel<T> {
   ) {
     this.specs = new Map(specs.map(spec => [spec.field, spec]))
     this.secretSpecs = new Map(secrets.map(spec => [spec.field, spec]))
-    scope.subscribe(() => { this.publish() })
+    this.unsubscribe = scope.subscribe(() => { this.publish() })
   }
 
   /**
    * Publish a projection of this form, rebuilt whenever the scope or a draft changes.
-   * @param project - build the page's state from the form's current reads.
-   * @returns the store the page's component reads through its bound selector.
+   * @param project - build the card's state from the form's current reads.
+   * @returns the store the card's component reads through its bound selector.
    */
   bind<S>(project: () => S): SnapshotStore<S> {
     const store = createSnapshotStore(project())
@@ -229,8 +229,8 @@ export class SettingsFormModel<T> {
   }
 
   /**
-   * Read the form-level state: what the Host serves, and what a save would do.
-   * @returns the form state every page shares.
+   * Read the card-level state: what the Host serves, and what a save would do.
+   * @returns the form state every card shares.
    */
   shell(): SettingsFormShell {
     const snapshot = this.scope.getSnapshot()
@@ -239,7 +239,7 @@ export class SettingsFormModel<T> {
       available: snapshot.status === 'ready',
       writable: snapshot.writable,
       dirty: plan.length > 0,
-      invalid: plan.some(item => item.run === undefined),
+      invalid: plan.some(item => item.run === undefined && item.op === undefined),
       saving: this.saving,
       failed: this.failed,
     }
@@ -269,7 +269,7 @@ export class SettingsFormModel<T> {
 
   /**
    * Build the edit, reset, save, and discard actions bound to this form.
-   * @returns the actions a page's slot entry injects.
+   * @returns the actions a card's slot entry injects.
    */
   actions(): SettingsFormActions {
     return {
@@ -281,6 +281,7 @@ export class SettingsFormModel<T> {
       discard: () => {
         if (this.staged.size === 0 && !this.failed) return
         this.staged.clear()
+        this.baseline = undefined
         this.failed = false
         this.publish()
       },
@@ -298,20 +299,28 @@ export class SettingsFormModel<T> {
    */
   async save(): Promise<void> {
     const plan = this.plan()
-    const writes = plan.flatMap(item => item.run === undefined ? [] : [item.run])
-    if (plan.length === 0 || this.saving || writes.length !== plan.length) return
+    if (!plan.length || this.saving || !this.scope.getSnapshot().writable
+      || plan.some(item => item.run === undefined && item.op === undefined)) return
     this.saving = true
     this.failed = false
     this.publish()
-    let landed = true
-    for (const write of writes) {
-      landed = await write() && landed
+    try {
+      const ops = plan.flatMap(item => item.op === undefined ? [] : [item.op])
+      let landed = !ops.length || await this.scope.mutate(ops, this.baseline?.revision)
+      if (!landed) { this.failed = true; return }
+      for (const item of plan) if (item.run) landed = await item.run() && landed
+      if (landed) { this.staged.clear(); this.baseline = undefined }
+      this.failed = !landed
+    } catch (_error) {
+      this.failed = true
+    } finally {
+      this.saving = false
+      this.publish()
     }
-    if (landed) this.staged.clear()
-    this.saving = false
-    this.failed = !landed
-    this.publish()
   }
+
+  /** Release the form's accepted-value subscription. */
+  dispose(): void { this.unsubscribe(); this.listeners.clear() }
 
   /**
    * Every staged edit a save would write. An entry whose draft is not a value
@@ -330,29 +339,20 @@ export class SettingsFormModel<T> {
       }
       const spec = this.spec(field)
       if (staged.clear) {
-        if (this.stored(field)) plan.push({ field, run: () => this.clear(field) })
+        if (this.stored(field)) plan.push({ field, op: { op: 'unset', path: [field] } })
         continue
       }
       if (staged.text === spec.format(this.sectionValue(field))) continue
       const write = spec.parse(staged.text)
-      if (write === undefined) plan.push({ field, run: undefined })
-      else if (write.kind === 'clear') plan.push({ field, run: () => this.clear(field) })
-      else plan.push({ field, run: () => this.store(field, write.value) })
+      if (write === undefined) plan.push({ field })
+      else if (write.kind === 'clear') plan.push({ field, op: { op: 'unset', path: [field] } })
+      else plan.push({ field, op: { op: 'set', path: [field], value: write.value } })
     }
     return plan
   }
 
-  private async clear(field: string): Promise<boolean> {
-    await this.scope.unset(field)
-    return !this.stored(field)
-  }
-
-  private async store(field: string, value: unknown): Promise<boolean> {
-    await this.scope.set(field, value)
-    return this.userLayer()?.[field] === value
-  }
-
   private stage(field: string, edit: StagedEdit): void {
+    this.baseline ??= this.scope.getSnapshot()
     this.staged.set(field, edit)
     this.failed = false
     this.publish()
@@ -360,9 +360,9 @@ export class SettingsFormModel<T> {
 
   private spec(field: string): SettingsFieldSpec {
     const spec = this.specs.get(field)
-    // Every call site names a field the page declared; a missing one is a
+    // Every call site names a field this card declared; a missing one is a
     // wiring mistake that must not degrade into a silently inert control.
-    if (spec === undefined) throw new Error(`settings form has no field ${field}`)
+    if (spec === undefined) throw new Error(`plugin card has no field ${field}`)
     return spec
   }
 

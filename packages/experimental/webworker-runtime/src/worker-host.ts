@@ -17,11 +17,12 @@
  *
  * The tree itself boots through the host's own `boot()` glue loaded from the
  * image, so entry mounting, the activation audit, and its diagnostics are the
- * same code the Node deployment runs. Only the module seam and the command line
- * are supplied from here.
+ * same code the Node deployment runs. The Worker supplies module loading,
+ * profile locations, and the command line.
  * @module @deepseek-ai/dsh-experimental-webworker-runtime/src/worker-host
  */
 import { setActiveModuleLoader, WorkerModuleLoader, type StaticModuleFactory } from './module-system/module-loader.ts'
+import type { ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
 import type { AlsCausality } from './polyfill/async-context/als-runtime.ts'
@@ -230,8 +231,10 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
         provideCmdline(ctx: unknown, host: { args: readonly string[]; exit: (code: number) => void }): void
       }
 
-      const { patches } = bootPatches(loader, mounted, configPath, root)
-      const ctx = await appBoot.boot('dsh-webworker', configPath, patches, (hostCtx) => {
+      const { patches, profile } = bootPatches(loader, mounted, configPath, root)
+      const profileConfig = join(profile.dir, 'cordis.yml')
+      const ctx = await appBoot.boot('dsh-webworker', profileConfig, patches, (hostCtx) => {
+        hostCtx.provide('profileContext', profile)
         // Before any entry mounts: the Loader would otherwise fall back to the
         // runtime's own dynamic import for every row.
         hostCtx.loader.internal = loader.internal
@@ -348,27 +351,33 @@ function requireLoweredImage(vfs: MemoryVfs, path: string): void {
   }
 }
 
-/** Select plaintext session persistence for the in-memory Worker filesystem.
- * @param loader Module loader for the image's YAML reader.
- * @param vfs Filesystem holding the composed configuration.
- * @param configPath Composed configuration path.
- * @param root Virtual root used to resolve YAML packages.
- * @returns Boot patches for the configured JSONL provider.
+/**
+ * Prepare an editable VFS profile from the packed rows and deployment overlays.
+ * ConfigEditor writes overrides beside the insertion rows; reconciliation starts
+ * at the empty profile root and retains the Worker deployment overlays.
+ * @param loader - Module loader, for the image's YAML reader.
+ * @param vfs - Filesystem holding the composed configuration.
+ * @param configPath - Composed configuration path.
+ * @param root - Virtual root.
+ * @returns Profile locations and effective boot patches.
  */
 function bootPatches(
   loader: WorkerModuleLoader,
   vfs: MemoryVfs,
   configPath: string,
   root: string,
-): { patches: unknown[] } {
+): { patches: unknown[]; profile: ProfileContext } {
   const text = vfs.readFileSync(configPath, 'utf8') as string
+  const include = loader.load(loader.resolve('@deepseek-ai/cordis-plugin-include', root)) as { entryListSchema: unknown }
+  const yaml = loader.load(loader.resolve('js-yaml', root)) as {
+    load(source: string, options: { schema: unknown }): unknown
+    dump(value: unknown, options: { schema: unknown }): string
+  }
   let rows: unknown
   if (configPath.endsWith('.json')) {
     rows = JSON.parse(text)
   } else {
     // The roster's `!!js` scalars need Include's own YAML dialect.
-    const include = loader.load(loader.resolve('@deepseek-ai/cordis-plugin-include', root)) as { entryListSchema: unknown }
-    const yaml = loader.load(loader.resolve('js-yaml', root)) as { load(source: string, options: { schema: unknown }): unknown }
     rows = yaml.load(text, { schema: include.entryListSchema })
   }
   const find = (entries: unknown, id: string): Record<string, unknown> | undefined => {
@@ -385,14 +394,34 @@ function bootPatches(
       ? row.config
       : {}) as Record<string, unknown>
 
-  const patches: unknown[] = []
+  const patches: Array<ProfileContext['overlays'][number]> = []
+  // The image has no package manager or Node module-reload cache. ConfigEditor
+  // reconciles writes directly; Loader commits accepted live values.
+  for (const id of ['hmr', 'plugin-manager']) {
+    if (find(rows, id) !== undefined) patches.push({ id, disabled: true })
+  }
   // The worker carries no compression codec, and the VFS is in-memory anyway:
   // the JSONL backend's plaintext path is the composition's one legal encoding.
   const jsonl = find(rows, 'session-persistence-jsonl')
   if (jsonl !== undefined) {
     patches.push({ id: 'session-persistence-jsonl', config: { ...configOf(jsonl), compression: 'none' } })
   }
-  return { patches }
+  const dir = join(root, IMAGE_HOME_DIRECTORY, 'profiles/preview')
+  const profile: ProfileContext = {
+    name: 'preview', dir, patchPath: join(dir, 'cordis.patch.yml'),
+    installAnchor: join(dir, 'package.json'), cwd: root,
+    home: join(root, IMAGE_HOME_DIRECTORY), startedBundles: [],
+    overlays: patches, telemetryDisabledEnv: undefined,
+  }
+  vfs.seed(join(dir, 'package.json'), '{"private":true,"dsh":{"profile":{"bundles":[]}}}\n')
+  vfs.seed(join(dir, 'cordis.yml'), '[]\n')
+  if (!vfs.existsSync(profile.patchPath)) {
+    vfs.seed(profile.patchPath, yaml.dump([{ insert: rows }], { schema: include.entryListSchema }))
+  }
+  const appBoot = loader.load(loader.resolve('@deepseek-ai/dsh-app-boot', root)) as {
+    readProfilePatches(binName: string, profile: ProfileContext): unknown[]
+  }
+  return { patches: appBoot.readProfilePatches('dsh-webworker', profile), profile }
 }
 
 /**

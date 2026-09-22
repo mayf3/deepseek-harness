@@ -3,11 +3,10 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ModelProviderGroup } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { SettingsFormShell } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SettingsFormScope, SettingsFormShell } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** Namespace of the Host-owned subagent model-selection preference. */
-export const SUBAGENT_MODEL_SELECTION_NS = 'subagent-model-selection'
+export const SUBAGENT_MODEL_SELECTION_NS = 'subagent-model-selection-settings'
 
 /** One exact provider/model route stored as user authorization. */
 export interface AllowedSubagentModel {
@@ -124,7 +123,7 @@ function sameRoutes(left: readonly AllowedSubagentModel[], right: readonly Allow
   return left.every(route => rightKeys.has(subagentModelKey(route)))
 }
 
-/** Bridges one settings scope and the live adapter directory onto a staged card. */
+/** Bridges one configuration form and the live adapter directory onto a staged card. */
 export class SubagentModelSelectionCardController {
   private catalogGroups: readonly ModelProviderGroup[] = []
   private catalogPartial = false
@@ -142,12 +141,12 @@ export class SubagentModelSelectionCardController {
   private readonly unsubscribe: () => void
 
   /**
-   * @param scope - bound `subagent-model-selection` settings scope.
+   * @param scope - bound `subagent-model-selection` configuration form.
    * @param ctx - the card plugin's context, whose `remote.session` namespace
    * answers the Host model catalog.
    */
   constructor(
-    private readonly scope: SettingsScope<SubagentModelSelectionSettings>,
+    private readonly scope: SettingsFormScope<SubagentModelSelectionSettings>,
     private readonly ctx: ClientContext,
   ) {
     this.store = createSnapshotStore(this.projection())

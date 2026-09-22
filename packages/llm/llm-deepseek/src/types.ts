@@ -95,6 +95,8 @@ export interface DeepSeekAdapterOptions {
    * `MISSING_CREDENTIAL` when no key is available anywhere.
    */
   resolveApiKey: (connection: DeepSeekConnectionOptions) => Promise<string>
+  /** Resolve a DSH account token only for an eligible official endpoint. */
+  resolveAccountToken?: (connection: DeepSeekConnectionOptions) => Promise<string | undefined>
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
   /** Resolve the current durable attachment service; absence rejects image input. */

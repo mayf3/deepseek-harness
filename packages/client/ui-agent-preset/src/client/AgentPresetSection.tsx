@@ -1,7 +1,7 @@
 /** Preset selection settings: the roster, its default, mode help and the Creator-mode entry. */
 import type { ReactNode } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Button, IconQuestionOutlineRegular, Modal, Switch, Tag, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutlineRegular, Switch, Tag, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentPresetSectionState } from './section-store.ts'
@@ -60,7 +60,6 @@ export function AgentPresetSection({
 }: AgentPresetSectionProps) {
   const state = useAgentPresetSection(value => value)
   const developerTools = useDeveloperTools(enabled => enabled)
-  const [authoring, setAuthoring] = useState(false)
   const [guide, setGuide] = useState<{
     content: NonNullable<ReturnType<typeof presetGuide>>
     page: PresetGuidePage
@@ -69,14 +68,24 @@ export function AgentPresetSection({
   // Creator mode authors presets in conversation; it needs the flow to land a
   // session in and the self-referential preset on the roster.
   const creator = startCreatorDraft !== undefined && state.rows.some(row => row.id === 'cordis') ? startCreatorDraft : undefined
-  return <section className={css.section}>
-    <div className={css.titleRow}>
-      <h2 className={css.title}>{t('nav')}</h2>
-      <button type="button" className={css.iconButton} data-tip={t('authoringHelp')} aria-label={t('authoringHelp')}
-        onClick={() => { setAuthoring(true) }}>
-        <IconQuestionOutlineRegular />
+  /* The custom group is where a preset of one's own appears, so its entry
+     stays on screen even while the group is empty. */
+  const creatorButton = creator === undefined
+    ? null
+    : (
+      <button
+        type="button"
+        className={css.creatorButton}
+        disabled={!state.showPicker || state.policySaving}
+        title={state.showPicker ? undefined : t('enablePickerToCreate')}
+        onClick={() => { creator(); closeSettings() }}
+      >
+        <IconPlusOutlineRegular size={14} />
+        {t('creatorDraft')}
       </button>
-    </div>
+    )
+  return <section className={css.section}>
+    <h2 className={css.title}>{t('nav')}</h2>
     <p className={css.intro}>{t('sectionIntro')}</p>
     {developerTools && (
       <div className={css.pickerPreference}>
@@ -94,10 +103,11 @@ export function AgentPresetSection({
     {state.error === null ? null : <p className={css.error} role="alert">{state.error}</p>}
     {([true, false] as const).map((builtIn) => {
       const rows = state.rows.filter(row => isBuiltInPreset(row) === builtIn)
-      if (rows.length === 0) return null
+      const entry = builtIn ? null : creatorButton
+      if (rows.length === 0 && entry === null) return null
       return <section key={String(builtIn)} className={css.group}>
         <h3 className={css.groupHead}>{t(builtIn ? 'builtInGroup' : 'customGroup')}</h3>
-        <ul className={css.cards}>
+        {rows.length === 0 ? null : <ul className={css.cards}>
           {rows.map((row) => {
             const display = presetDisplayText(row, t)
             const help = presetGuide(row.id, builtIn ? 'system' : 'user')
@@ -138,18 +148,10 @@ export function AgentPresetSection({
               </div>}
             </li>
           })}
-        </ul>
+        </ul>}
+        {entry}
       </section>
     })}
     {guide === null ? null : <PresetGuideDialog guide={guide.content} initialPage={guide.page} t={t} onClose={() => { setGuide(null) }} />}
-    <Modal open={authoring} title={t('authoringTitle')} closeLabel={t('close')} onClose={() => { setAuthoring(false) }}
-      footer={<>
-        <Button variant="outline" onClick={() => { setAuthoring(false) }}>{t('close')}</Button>
-        {creator === undefined ? null : <Button disabled={!state.showPicker || state.policySaving}
-          title={state.showPicker ? undefined : t('enablePickerToCreate')}
-          onClick={() => { setAuthoring(false); creator(); closeSettings() }}>{t('creatorDraft')}</Button>}
-      </>}>
-      <p>{t('authoringBody')}</p>
-    </Modal>
   </section>
 }

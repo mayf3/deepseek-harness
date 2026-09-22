@@ -67,7 +67,7 @@ Resolve with `onExpiry: 'none'` and await `execute` to run a command in the back
 <a id="adjusting-budgets-at-runtime"></a>
 ### Adjusting budgets at runtime
 
-When a settings provider is composed, this executor registers the capability's shared `shell` settings namespace with the composition entry as its base, so a user section in `settings.yaml` layers over it and the next command runs with the new budgets. Values the schema cannot judge — positive and finite numbers, and the `graceMs` timer bound — are refused at the write, leaving the running executor on its last good section; without a provider, the composition entry is what runs.
+Execution budgets are volatile Config fields sampled when resolving each command. The Plugins page edits the active executor’s profile entry. Complete Config validation rejects invalid numbers and timer limits before a form write reaches disk.
 
 -----
 

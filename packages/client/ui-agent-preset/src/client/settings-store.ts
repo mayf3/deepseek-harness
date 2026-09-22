@@ -13,12 +13,12 @@ import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client
 import type { AgentPresetRoster } from '@deepseek-ai/dsh-agent-preset-registry/types'
 
 /** The agent-preset settings namespace on the host wire. */
-export const AGENT_PRESET_SETTINGS_NS = 'agent-presets'
+export const AGENT_PRESET_SETTINGS_NS = 'agent-preset-registry'
 
 /** Write only the named agent-preset settings fields. */
 async function writeAgentPresetSettings(
   ctx: ClientContext,
-  patch: { default?: string; modeSelectionEnabled?: boolean },
+  patch: { selectedDefault?: string; modeSelectionEnabled?: boolean },
 ): Promise<string | undefined> {
   const response = await ctx.remote.settings.update(AGENT_PRESET_SETTINGS_NS, patch, undefined)
   return response.ok ? undefined : response.error.message
@@ -38,7 +38,7 @@ export function writeDefaultPreset(
   ctx: ClientContext,
   id: string,
 ): Promise<string | undefined> {
-  return writeAgentPresetSettings(ctx, { default: id })
+  return writeAgentPresetSettings(ctx, { selectedDefault: id })
 }
 
 /**

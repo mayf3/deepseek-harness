@@ -57,4 +57,7 @@ export class AgentLoopCardController {
   inject(): AgentLoopCardFace {
     return { hooks: { agentLoopCard: this.store }, ...this.form.actions() }
   }
+  /** Release accepted-value subscriptions. */
+  dispose(): void { this.form.dispose() }
+
 }

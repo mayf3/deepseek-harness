@@ -17,11 +17,13 @@ import css from '../rows/WorkspaceBrowser.module.css'
  * @returns the row.
  */
 export function RenameSessionMenuItem({
-  sessionId, displayTitle, useMenuOpenState, requestSessionRename, t,
+  sessionId, displayTitle, useMenuOpenState, useShortcuts, requestSessionRename, t,
 }: SessionMenuItemProps<RenameSessionInjected>) {
   const [, setMenuOpen] = useMenuOpenState()
+  const shortcut = useShortcuts(rows => rows.find(row => row.id === 'session.rename'))
   return (
     <MenuItemButton
+      shortcut={shortcut}
       icon={<IconEditOutlineRegular />}
       onSelect={() => {
         setMenuOpen(false)

@@ -23,8 +23,8 @@ vi.mock('../src/client/office/face.ts', async (importOriginal) => {
 
 const file = { sessionId: 's1' as SessionId, path: 'report.DOCX' }
 const generation = ('renderer' as OfficeToPdfGeneration)
-const source = { absolutePath: '/report.docx', version: 'v1', offset: 0, eof: true, bytes: 4, data: 'JVBERg==' }
 const pdf = new Uint8Array([37, 80, 68, 70])
+const source = { absolutePath: '/report.docx', version: 'v1', offset: 0, eof: true, bytes: 4, data: pdf }
 const converted = { ok: true as const, value: { ...source, generation, missingFonts: ['Missing Serif'] } }
 
 it('retains Office view state across remounts and releases it on tab close or plugin disposal', async () => {

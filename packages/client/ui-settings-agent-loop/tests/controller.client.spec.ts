@@ -1,15 +1,43 @@
-/** The agent-loop page's form over a scripted settings scope. */
-
 import { describe, expect, it, vi } from 'vitest'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+import { stubConfigForm, type StubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 
+/** Make the stub behave like a Host that accepts every write. */
+function acceptWrites<T>(host: StubConfigForm<T>): void {
+  const section = (): Record<string, unknown> => ({ ...host.scope.getSnapshot().value as object })
+  const layer = (): Record<string, unknown> => ({ ...host.scope.getSnapshot().user as object })
+  host.set.mockImplementation((field: string, value: unknown) => {
+    host.publish({ value: { ...section(), [field]: value } as T, user: { ...layer(), [field]: value } })
+  })
+  host.mutate.mockImplementation((ops: readonly SettingsPathOpView[]) => {
+    const value = { ...section() }
+    const user = { ...layer() }
+    for (const op of ops) {
+      const field = op.path[0]!
+      if (op.op === 'set') {
+        value[field] = op.value
+        user[field] = op.value
+      } else {
+        Reflect.deleteProperty(user, field)
+        value[field] = (host.scope.getSnapshot().base as Record<string, unknown> | undefined)?.[field]
+      }
+    }
+    host.publish({ value: value as T, user })
+    return Promise.resolve(true)
+  })
+  host.unset.mockImplementation((field: string) => {
+    const user = Object.fromEntries(Object.entries(layer()).filter(([key]) => key !== field))
+    const base = host.scope.getSnapshot().base as Record<string, unknown> | undefined
+    host.publish({ value: { ...section(), [field]: base?.[field] } as T, user })
+  })
+}
+
+/** The card plugin's context, scripted down to the namespaces a card reaches. */
 describe('AgentLoopCardController', () => {
   it('saves the only field it owns', async () => {
-    const host = stubSettingsScope<AgentLoopSettings>()
-    host.set.mockImplementation((field: string, value: unknown) => {
-      host.publish({ value: { [field]: value }, user: { [field]: value } })
-    })
+    const host = stubConfigForm<AgentLoopSettings>()
+    acceptWrites(host)
     const controller = new AgentLoopCardController(host.scope)
     host.publish({
       status: 'ready',
@@ -22,7 +50,7 @@ describe('AgentLoopCardController', () => {
 
     face.edit('maxParallelToolCalls', '4')
     face.save()
-    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('maxParallelToolCalls', 4) })
+    await vi.waitFor(() => { expect(host.mutate).toHaveBeenCalledWith([{ op: 'set', path: ['maxParallelToolCalls'], value: 4 }], undefined) })
 
     expect(face.hooks.agentLoopCard.getSnapshot()).toMatchObject({
       dirty: false,
@@ -30,8 +58,8 @@ describe('AgentLoopCardController', () => {
     })
   })
 
-  it('reports a read-only document so the page can disable its controls', () => {
-    const host = stubSettingsScope<AgentLoopSettings>()
+  it('reports a read-only document so the card can disable its controls', () => {
+    const host = stubConfigForm<AgentLoopSettings>()
     const controller = new AgentLoopCardController(host.scope)
 
     host.publish({ status: 'ready', writable: false, value: { maxParallelToolCalls: 10 } })

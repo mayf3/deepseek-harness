@@ -15,6 +15,7 @@ export { SegmentedTabs } from './SegmentedTabs.tsx'
 export type { SegmentedTab } from './SegmentedTabs.tsx'
 export { Tag } from './Tag.tsx'
 export type { TagTone } from './Tag.tsx'
+export { PathLabel } from './PathLabel.tsx'
 export { Switch } from './Switch.tsx'
 export { SegmentedControl } from './SegmentedControl.tsx'
 export type { SegmentedControlOption } from './SegmentedControl.tsx'
@@ -27,6 +28,9 @@ export { useAnchoredPosition } from './useAnchoredPosition.ts'
 export type { AnchoredPositionOptions } from './useAnchoredPosition.ts'
 export { useDismissOnOutsidePointer } from './useDismissOnOutsidePointer.ts'
 export { HoverCard } from './HoverCard.tsx'
+export { ShortcutKeys } from './ShortcutKeys.tsx'
+export { observeComposition } from './keyboard-composition.ts'
+export { isBehindModal, useModalLayer } from './useModalLayer.ts'
 export { Modal } from './Modal.tsx'
 export { OnboardingSurface } from './OnboardingSurface.tsx'
 export { RiskConfirmation } from './RiskConfirmation.tsx'
@@ -61,7 +65,7 @@ export { SettingsSecretField, SettingsValueField } from './settings-form/fields.
 export type { SettingsFieldProps } from './settings-form/fields.tsx'
 export { SettingsFormModel, settingsNumberField, settingsTextField } from './settings-form/form-model.ts'
 export type {
-  SettingsFieldSpec, SettingsFieldState, SettingsFieldWrite, SettingsFormActions, SettingsFormScope,
+  SettingsFieldSpec, SettingsFieldState, SettingsFieldWrite, SettingsFormActions, SettingsFormPathOp, SettingsFormScope,
   SettingsFormScopeSnapshot, SettingsFormShell, SettingsSecretSpec,
 } from './settings-form/form-model.ts'
 export { CODE_HIGHLIGHT_EXTENSIONS, languageForPath, useCodeHighlighter } from './code-highlighting.ts'

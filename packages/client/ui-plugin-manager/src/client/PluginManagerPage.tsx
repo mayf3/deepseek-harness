@@ -31,6 +31,7 @@ import {
 } from './manager-store.ts'
 import { managementText, noticeText, packageText, registryText, rowText, type Translate } from './presentation.ts'
 import type { PluginPackageRef, PluginRowRef, PluginsSubject } from './slot-contract.ts'
+import type { ConfigPageForm } from './slot-contract.ts'
 import css from './PluginManagerPage.module.css'
 
 /** Full component props assembled by the main slot renderer. */
@@ -425,11 +426,12 @@ function packageRef(pkg: PackageView): PluginPackageRef {
  * contributed actions, its title with the contributed badges over its
  * one-liner, the form the entry renders, and the contributed sections.
  */
-function ItemDetail({ item, t, onBack, renderSlot }: {
+function ItemDetail({ item, t, onBack, renderSlot, form }: {
   readonly item: OfficialItem
   readonly t: Translate
   readonly onBack: () => void
   readonly renderSlot: RenderConfig
+  readonly form: ConfigPageForm | undefined
 }): ReactNode {
   const subject: PluginsSubject = { kind: 'item', id: item.id }
   return (
@@ -450,7 +452,7 @@ function ItemDetail({ item, t, onBack, renderSlot }: {
       </div>
       <div className={css.detailSections}>
         <section className={css.detailSection} data-plugin-config>
-          {renderSlot('plugins.item', { view: 'page' }, { only: item.id })}
+          {renderSlot('plugins.item', { view: 'page', form }, { only: item.id })}
         </section>
         {renderSlot('plugins.detail.section', { subject })}
       </div>
@@ -462,13 +464,14 @@ function ItemDetail({ item, t, onBack, renderSlot }: {
  * A row's configuration page keeps its technical identity beside local package
  * text and the form supplied by its configuration entry.
  */
-function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot }: {
+function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot, form }: {
   readonly pkg: PackageView
   readonly row: PackageRow
   readonly t: Translate
   readonly resolveText: ResolveText
   readonly onBack: () => void
   readonly renderSlot: RenderConfig
+  readonly form: ConfigPageForm | undefined
 }): ReactNode {
   const { title } = packageText(pkg, resolveText)
   const { title: rowTitle, description } = rowText(row, resolveText)
@@ -494,7 +497,7 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot }: {
       </div>
       <MetadataError error={row.meta?.error} t={t} />
       <div className={css.detailSections} data-plugin-config>
-        {renderSlot('plugins.row.config', { view: 'page' }, { entryKey: key })}
+        {renderSlot('plugins.row.config', { view: 'page', form }, { entryKey: key })}
         {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
@@ -1115,6 +1118,12 @@ function ConfirmDialog({ name, t, onConfirm, onCancel }: {
 /** Render the plugin manager: the official plugins and installed bundles, their pages, the install dialog, and the confirmation. */
 export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const { t, ensure, renderSlot, resolveText } = props
+  const configurations = props.useConfigurations(snapshot => snapshot.view?.namespaces)
+  const formFor = (id: string): ConfigPageForm | undefined => {
+    if (!configurations?.some(view => view.ns === id)) return undefined
+    const form = props.configForm<Record<string, unknown>>(id)
+    return { state: form.getSnapshot(), mutate: (ops, revision) => form.mutate(ops, revision) }
+  }
   const state = props.usePluginManager(snapshot => snapshot)
   const ledger = props.useConfigLedger(snapshot => snapshot)
   // What is open; a package that leaves the list (uninstalled) drops back to the cards.
@@ -1241,6 +1250,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           <RowDetail
             pkg={openPkg}
             row={openRow}
+            form={formFor(openRow.rowId)}
             t={t}
             resolveText={resolveText}
             renderSlot={renderSlot}
@@ -1267,7 +1277,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         )
         : null}
       {loaded && openItem !== undefined
-        ? <ItemDetail item={openItem} t={t} renderSlot={renderSlot} onBack={() => { setView({ kind: 'list' }) }} />
+        ? <ItemDetail form={formFor(openItem.id)} item={openItem} t={t} renderSlot={renderSlot} onBack={() => { setView({ kind: 'list' }) }} />
         : null}
       {loaded && showsCards
         ? officialCards.length === 0 && mine.length === 0 && state.status !== 'error'

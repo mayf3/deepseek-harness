@@ -87,6 +87,30 @@ describe('TranscriptViewRow', () => {
     expect(b.setTranscriptView).toHaveBeenLastCalledWith('expanded')
     expect(screen.getByRole('button', { name: '完全展开' })).toBeDefined()
   })
+
+  it('returns focus before publishing a mode change without refocusing after the menu closes', async () => {
+    const b = mount()
+    const trigger = screen.getByRole('button', { name: /Compact/ })
+    fireEvent.click(trigger)
+    const item = screen.getByRole('menuitem', { name: 'Detailed' })
+    item.focus()
+    const focus = vi.spyOn(trigger, 'focus')
+    const publish = b.setTranscriptView.getMockImplementation()!
+    let focusedAtPublication = false
+    b.setTranscriptView.mockImplementation((mode) => {
+      focusedAtPublication = document.activeElement === trigger
+      publish(mode)
+    })
+    try {
+      await act(async () => { fireEvent.click(item) })
+      expect(focusedAtPublication).toBe(true)
+      expect(document.activeElement).toBe(trigger)
+      expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true })
+      expect(screen.queryByRole('menu')).toBeNull()
+    } finally {
+      focus.mockRestore()
+    }
+  })
 })
 
 

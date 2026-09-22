@@ -16,6 +16,24 @@
   color-scheme: light;
 }
 
+.notice {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--dsw-alias-state-warn-label);
+  background: var(--dsw-alias-state-warn-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.notice > svg {
+  flex: none;
+  margin-top: 2px;
+}
+
 .formulaWarning {
   position: absolute;
   top: 4px;

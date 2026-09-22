@@ -50,11 +50,11 @@ describe('ui-settings-subagent apply', () => {
   })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.session', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.session', 'configForms'])
   })
 
   it('registers one page for both namespaces while the Host serves either, titled in the active locale', async () => {
-    const { ctx, slots } = await bench(['subagent', 'subagent-model-selection'])
+    const { ctx, slots } = await bench(['subagent', 'subagent-model-selection-settings'])
     declareRoot(slots)
 
     await ctx.plugin({ inject: [...inject], apply }).await()
@@ -69,7 +69,7 @@ describe('ui-settings-subagent apply', () => {
   })
 
   it('registers the page when only the model namespace is served, and nothing when neither is', async () => {
-    const { ctx, slots, describeSettings } = await bench(['subagent-model-selection'])
+    const { ctx, slots, describeSettings } = await bench(['subagent-model-selection-settings'])
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
     await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(1) })
@@ -87,7 +87,7 @@ describe('ui-settings-subagent apply', () => {
   it('refreshes the model catalogue after model inputs change or the connection resets', async () => {
     const refresh = vi.spyOn(SubagentModelSelectionCardController.prototype, 'refreshCatalog')
     const reset = vi.spyOn(SubagentModelSelectionCardController.prototype, 'resetConnection')
-    const { ctx, slots, remote } = await bench(['subagent-model-selection'])
+    const { ctx, slots, remote } = await bench(['subagent-model-selection-settings'])
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
     refresh.mockClear()

@@ -5,15 +5,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest'
 import type {} from '@deepseek-ai/dsh-workspace-changes'
+import type { ChangesSummary } from '@deepseek-ai/dsh-client-ui-deliverables/src/changes.ts'
 import { deriveReplayScript, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import {
   assertFinalWorkspaceSnapshot, captureExpandedTurnProcessAria, compareOrRefreshGolden,
   fixtureUserPrompts, launchWebScaffold, recordFixture, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspaceZh, ZH_BROWSER_LOCALE } from './support.ts'
+import { openSettingsFromAccountMenu, connectFreshWorkspaceZh, ZH_BROWSER_LOCALE } from './support.ts'
 
 const DIR = fileURLToPath(new URL('../../../snapshots/web/changed-files-turn', import.meta.url))
 const FIXTURE = join(DIR, 'session.v3.jsonl')
@@ -80,9 +81,10 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     })
     await seedRepository(join(scaffold.workspaceCwd, 'workspace'))
     browser = await chromium.launch()
-    page = await browser.newPage({
+    const context = await browser.newContext({
       viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE, timezoneId: 'Asia/Shanghai',
     })
+    page = await context.newPage()
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]')
@@ -134,7 +136,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(await header.getByRole('tablist').count()).toBe(0)
     const compactHeight = await header.evaluate(element => element.getBoundingClientRect().height)
     expect(compactHeight).toBeLessThan(60)
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openSettingsFromAccountMenu(page, 'zh')
     const settings = page.getByRole('dialog', { name: '设置' })
     await settings.getByRole('switch', { name: '开发者工具' }).click()
     await expect.poll(() => settings.getByRole('switch', { name: '开发者工具' }).getAttribute('aria-checked')).toBe('true')
@@ -307,6 +309,40 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       return [center(text), center(caret), center(counts)].map(value => Math.abs(value - buttonCenter))
     })
     for (const offset of headerAlignment) expect(offset).toBeLessThanOrEqual(0.5)
+    // The appended row has no old-side text; constrain the columns so the hunk header overflows it.
+    const emptyRowLayout = await page.addStyleTag({ content: `
+      [data-diff-side="left"] { width: 90px; }
+      [data-diff-side="right"] { width: 120px; }
+    ` })
+    try {
+      const left = review.locator('[data-diff-side="left"]')
+      const emptyRow = left.locator('[data-diff-line="add"]')
+      const maximum = await left.evaluate(element => element.scrollWidth - element.clientWidth)
+      expect(maximum).toBeGreaterThan(0)
+      await left.evaluate((element) => { element.scrollLeft = element.scrollWidth })
+      await expect.poll(() => left.evaluate(element => element.scrollLeft)).toBe(maximum)
+      const fill = await emptyRow.evaluate((row) => {
+        const column = row.closest('[data-diff-side]')!
+        const columnBox = column.getBoundingClientRect()
+        const rowBox = row.getBoundingClientRect()
+        const y = rowBox.top + rowBox.height / 2
+        return {
+          rowWidth: rowBox.width,
+          contentWidth: column.scrollWidth,
+          background: getComputedStyle(row).backgroundColor,
+          coversViewport: [columnBox.left + 4, columnBox.right - 4].every(x =>
+            document.elementFromPoint(x, y)?.closest('[data-diff-line]') === row),
+        }
+      })
+      expect(fill.background).not.toBe('rgba(0, 0, 0, 0)')
+      expect(fill.rowWidth).toBeGreaterThanOrEqual(fill.contentWidth - 0.5)
+      expect(fill.coversViewport).toBe(true)
+    } finally {
+      await emptyRowLayout.evaluate(element => element.parentNode!.removeChild(element))
+      await review.locator('[data-diff-side]').evaluateAll((elements) => {
+        for (const element of elements) element.scrollLeft = 0
+      })
+    }
     const addedLine = review.locator('[data-diff-side="right"] [data-diff-line="add"]')
     const rightContextLine = review.locator('[data-diff-side="right"] [data-diff-line="context"]')
     const addedRule = await addedLine.evaluate((line) => {
@@ -446,9 +482,154 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(tripwire.warnings).toEqual([])
   })
 
+  it('keeps edge gestures inside either diff column and accepts reverse scrolling', async () => {
+    const review = page.locator('[data-changes-review]')
+    await review.getByRole('button', { name: '自动换行' }).click()
+    const body = review.locator('[data-review-view="split"]:not([data-review-wrap])')
+    await body.waitFor({ state: 'visible' })
+    // A scrollable parent makes escaped edge gestures observable without native trackpad rebound.
+    const layout = await page.addStyleTag({ content: `
+      [data-changes-review] { height: 220px !important; }
+      [data-review-view="split"] { display: block; max-width: 220px; }
+      [data-review-view="split"] > div { width: 160px; height: 60px; margin: 160px; }
+    ` })
+    onTestFinished(async () => {
+      await layout.evaluate(element => element.parentNode!.removeChild(element))
+      await body.evaluate((element) => { element.scrollTo(0, 0) })
+      await review.getByRole('button', { name: '自动换行' }).click()
+    })
+    const input = await page.context().newCDPSession(page)
+    try {
+      for (const side of ['left', 'right']) {
+        const column = review.locator(`[data-diff-side="${side}"]`)
+        for (const axis of ['x', 'y'] as const) {
+          for (const end of [false, true]) {
+            const parentPosition = await body.evaluate((element) => {
+              const x = (element.scrollWidth - element.clientWidth) / 2
+              const y = (element.scrollHeight - element.clientHeight) / 2
+              element.scrollTo(x, y)
+              return { x: element.scrollLeft, y: element.scrollTop }
+            })
+            expect(parentPosition.x).toBeGreaterThan(0)
+            expect(parentPosition.y).toBeGreaterThan(0)
+            const edge = await column.evaluate((element, { axis, end }) => {
+              const maximum = axis === 'x'
+                ? element.scrollWidth - element.clientWidth
+                : element.scrollHeight - element.clientHeight
+              element.scrollTo(axis === 'x' && end ? maximum : 0, axis === 'y' && end ? maximum : 0)
+              return { maximum, offset: end ? maximum : 0 }
+            }, { axis, end })
+            expect(edge.maximum).toBeGreaterThan(0)
+            const position = () => column.evaluate((element, axis) => axis === 'x' ? element.scrollLeft : element.scrollTop, axis)
+            await expect.poll(position).toBe(edge.offset)
+            const box = await column.boundingBox()
+            if (box === null) throw new Error('diff column has no visible bounds')
+            const gesture = { x: box.x + box.width / 2, y: box.y + box.height / 2, gestureSourceType: 'mouse' as const }
+            const distance = end ? -80 : 80
+            // CDP acknowledges the completed gesture, including default scrolling, before observation.
+            await input.send('Input.synthesizeScrollGesture', {
+              ...gesture, xDistance: axis === 'x' ? distance : 0, yDistance: axis === 'y' ? distance : 0,
+            })
+            expect(await body.evaluate(element => ({ x: element.scrollLeft, y: element.scrollTop }))).toEqual(parentPosition)
+            expect(await position()).toBe(edge.offset)
+            await input.send('Input.synthesizeScrollGesture', {
+              ...gesture, xDistance: axis === 'x' ? -distance : 0, yDistance: axis === 'y' ? -distance : 0,
+            })
+            await expect.poll(position).not.toBe(edge.offset)
+          }
+        }
+      }
+    } finally {
+      await input.detach()
+    }
+  })
+
   it.skipIf(MODE === 'record')('replays the workspace and the Chinese conversation', async () => {
     await assertFinalWorkspaceSnapshot(DIR, cwd, { ignoredRootEntries: ['.git'] })
     const aria = await captureExpandedTurnProcessAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(DIR, 'ui.expected.md'), aria, MODE)
   })
+
+  it('preserves filename endings when the review narrows and updates the fade after resizing or selecting another file', async () => {
+    const preview = await page.context().newPage()
+    onTestFinished(async () => { await preview.close() })
+    const previewTripwire = watchConsole(preview)
+    const prefix = 'src/components/review/' + 'long-filename-'.repeat(8)
+    const names = [`${prefix}before.ts`, `${prefix}after.ts`] as const
+    // Project long display names into a separate page; recorded paths, comparisons, and Session data stay intact.
+    await preview.route('**/api/changes.summary?*', async (route) => {
+      const response = await route.fetch()
+      const summary = await response.json() as ChangesSummary
+      await route.fulfill({ response, json: {
+        ...summary, files: summary.files.map((file, index) => ({ ...file, display: names[index] ?? file.display })),
+      } })
+    })
+    await preview.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    await preview.locator('[data-changed-files]').getByRole('button', { name: '在侧边栏查看本轮改动' }).click()
+    const review = preview.locator('[data-changes-review]')
+    const selector = review.getByRole('button', { name: '选择要查看的文件' })
+    const label = selector.locator('[data-path-label]')
+    const layout = await preview.addStyleTag({ content: '[data-sidebar-right-panel] { width: 340px !important; }' })
+    const resize = async (width: number) => {
+      await layout.evaluate((element, width) => {
+        element.textContent = `[data-sidebar-right-panel] { width: ${width}px !important; }`
+      }, width)
+    }
+    const metrics = () => label.evaluate((element) => {
+      const text = element.firstElementChild!
+      const box = element.getBoundingClientRect()
+      const textBox = text.getBoundingClientRect()
+      const filename = text.lastElementChild!
+      const suffix = document.createRange()
+      const node = filename.firstChild!
+      suffix.setStart(node, Math.max(0, node.textContent!.length - 'before.ts'.length))
+      suffix.setEnd(node, node.textContent!.length)
+      const suffixBox = suffix.getBoundingClientRect()
+      return {
+        clipped: element.hasAttribute('data-path-clipped'), mask: getComputedStyle(element).maskImage,
+        left: textBox.left - box.left, right: box.right - textBox.right,
+        suffixVisible: suffixBox.left >= box.left && suffixBox.right <= box.right + 0.5,
+        directoryColor: getComputedStyle(text.firstElementChild!).color,
+        nameColor: getComputedStyle(filename).color,
+      }
+    })
+    await expect.poll(async () => (await metrics()).clipped).toBe(true)
+    const clipped = await metrics()
+    expect(clipped.left).toBeLessThan(0)
+    expect(Math.abs(clipped.right)).toBeLessThanOrEqual(0.5)
+    expect(clipped.suffixVisible).toBe(true)
+    expect(clipped.mask).toContain('linear-gradient')
+    expect(clipped.directoryColor).not.toBe(clipped.nameColor)
+    expect(await label.getAttribute('title')).toBe(names[0])
+    const controls = await selector.evaluate((button) => {
+      const header = button.parentElement!.parentElement!
+      const bounds = header.getBoundingClientRect()
+      const caret = button.querySelector('svg')!
+      const counts = button.parentElement!.nextElementSibling!
+      return [caret, counts, ...header.querySelectorAll('[data-review-tool]')].map((element) => {
+        const box = element.getBoundingClientRect()
+        return box.width > 0 && box.left >= bounds.left && box.right <= bounds.right
+      })
+    })
+    expect(controls.every(Boolean)).toBe(true)
+    await selector.click()
+    await preview.getByRole('menuitem').filter({ hasText: names[1] }).click()
+    await expect.poll(() => label.getAttribute('title')).toBe(names[1])
+    expect((await metrics()).suffixVisible).toBe(true)
+    await resize(1400)
+    await expect.poll(async () => (await metrics()).clipped).toBe(false)
+    expect((await metrics()).left).toBeCloseTo(0, 1)
+    expect((await metrics()).mask).toBe('none')
+    await resize(340)
+    await expect.poll(async () => (await metrics()).clipped).toBe(true)
+    await selector.click()
+    await preview.getByRole('menuitem').filter({ hasText: 'src/util.ts' }).click()
+    await expect.poll(() => label.getAttribute('title')).toBe('src/util.ts')
+    await expect.poll(async () => (await metrics()).clipped).toBe(false)
+    expect((await metrics()).left).toBeCloseTo(0, 1)
+    expect((await metrics()).mask).toBe('none')
+    expect(previewTripwire.pageErrors).toEqual([])
+    expect(previewTripwire.warnings).toEqual([])
+  })
+
 })

@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { bindSnapshotSelector, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { DeveloperToolsPreference } from '@deepseek-ai/dsh-client-ui-settings/src/client/developer-tools.ts'
 import type { DeveloperToolsSettings } from '@deepseek-ai/dsh-client-ui-settings/src/developer-tools-settings.ts'
 import type { Resources, ResourceSnapshot } from '@deepseek-ai/dsh-client-resources/client'
@@ -50,7 +50,7 @@ function props(text = '<p>hello</p>'): HtmlBodyProps {
     content: { kind: 'bytes', data: utf8(text) },
     wrap: false,
     sessionId: 'html' as SessionId,
-    useTabInfo: () => ({ tab: { signal } }),
+    useTabInfo: () => ({ tab: { id: TAB_ID, signal } }),
     readRelated: vi.fn(),
     addResource: vi.fn(),
     setResources: vi.fn(),
@@ -139,6 +139,7 @@ describe('HtmlBody', () => {
     const basic = { ...initial, useInteractivePreview: ((select: (enabled: boolean) => unknown) => select(false)) as HtmlBodyProps['useInteractivePreview'] }
     const view = render(<HtmlBody {...basic} />)
     const frame = screen.getByTitle(en.frame)
+    expect(frame.getAttribute('name')).toBe(`dsh-sidebar-html-${TAB_ID}`)
     expect(frame.getAttribute('sandbox')).toBe('')
     expect(frame.getAttribute('srcdoc')).toContain("default-src 'none'")
     expect(frame.getAttribute('srcdoc')).not.toContain('<script')
@@ -148,6 +149,7 @@ describe('HtmlBody', () => {
     view.rerender(<HtmlBody {...scripted} />)
     const advanced = await screen.findByTitle(en.frame)
     expect(advanced).not.toBe(frame)
+    expect(advanced.getAttribute('name')).toBe(`dsh-sidebar-html-${TAB_ID}`)
     expect(advanced.getAttribute('sandbox')).toBe('allow-scripts')
     view.rerender(<HtmlBody {...basic} />)
     expect(advanced.isConnected).toBe(false)
@@ -157,7 +159,7 @@ describe('HtmlBody', () => {
   })
 
   it('follows the shared developer-tools preference from loading through a stored false to enabled', async () => {
-    const host = stubSettingsScope<DeveloperToolsSettings>()
+    const host = stubConfigForm<DeveloperToolsSettings>()
     const preference = new DeveloperToolsPreference(host.scope)
     const readRelated = vi.fn<HtmlBodyProps['readRelated']>().mockResolvedValue({ ok: true, value: {
       absolutePath: '/workspace/asset.js', version: 'asset-v1', offset: 0, eof: true,

@@ -4,7 +4,7 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { composeEntries, createRuntimeResolution, readProfileManifest, skippedProfileBundles, type Profile } from '../profile.ts'
 import { collectConfigSchemas } from './collect.ts'
 import type { ConfigSchemaDiagnostic, ConfigSchemaDump } from './types.ts'
-export type { ConfigSchemaDump } from './types.ts'
+export type { ConfigSchemaDump, NativeConfigSchema } from './types.ts'
 
 /**
  * Generate JSON Schema for a prepared profile's ordered patch layers without mounting plugins or evaluating expressions.
