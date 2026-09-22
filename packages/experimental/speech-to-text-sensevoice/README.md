@@ -27,6 +27,8 @@ This provider recognizes speech with SenseVoiceSmall ONNX and Silero VAD on the 
 
 The [bundle](../voice-input-bundle/README.md) supplies an absolute `dataRoot` under the DSH home. Preparation downloads revision-pinned model files, verifies their sizes and SHA-256 hashes, then loads them. `precision` defaults to `int8`; `fp32` selects the larger reference weights. `modelDirectory` supplies an existing absolute directory containing the selected ONNX file and `tokens.txt`; `vadModelPath` selects an existing Silero ONNX file. `modelOrigin` selects a Hugging Face-compatible download origin while preserving pinned paths and checksums. Verified completed files remain reusable after cancellation or failure.
 
+Download failures identify the asset and source origin, with a classified cause and HTTP status or diagnostic code when available. The public state omits URL credentials, query strings and raw cause messages. Retry reuses verified files; partial downloads restart.
+
 Every activation checks the selected model, tokens and VAD on disk. Complete verified caches restore readiness immediately after inspection; the first recording wakes the worker. Missing files or mismatched managed checksums require explicit preparation, while unreadable paths report an error. Explicit deployment paths are checked for accessibility; their contents remain the deployer's responsibility. Disabling the plugin or restarting the Host does not require downloading intact caches again.
 
 -----

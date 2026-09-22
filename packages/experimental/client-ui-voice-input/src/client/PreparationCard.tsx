@@ -29,6 +29,17 @@ function DownloadProgress({ state, t }: { state: SpeechPreparationState } & Prop
     ? <progress className={css.progress} aria-label={t('downloadProgress')} value={state.completedBytes} max={state.totalBytes} /> : null
 }
 
+function PreparationFailure({ state, t }: { state: Extract<SpeechPreparationState, { phase: 'failed' }> } & PropsLocale<typeof NS>) {
+  const failure = state.download
+  if (!failure) return <p className={css.preparationError} role="alert">{t('preparationFailed', { message: state.message })}</p>
+  return <div className={css.downloadFailure} role="alert">
+    <p className={css.preparationError}>{t(`download.${failure.reason}`, { resource: failure.resource, status: String(failure.status) })}</p>
+    <p>{t(`downloadAdvice.${failure.reason}`)}</p>
+    <small className={css.metric}>{t('downloadSource', { source: failure.source })}</small>
+    {failure.code && <small className={css.metric}>{t('downloadCode', { code: failure.code })}</small>}
+  </div>
+}
+
 /** Render a collapsed current-step summary or all Host-owned preparation steps. */
 export function PreparationCard({ provider, connected, prepare, cancelPreparation, t }: PreparationCardProps) {
   const state = provider.preparation
@@ -88,7 +99,7 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
       </ol>
     </DisclosureRow>
     {!expanded && <DownloadProgress state={state} t={t} />}
-    {state.phase === 'failed' && <p className={css.preparationError} role="alert">{t('preparationFailed', { message: state.message })}</p>}
+    {state.phase === 'failed' && <PreparationFailure state={state} t={t} />}
     <div className={css.preparationActions}>
       {['unprepared', 'cancelled', 'failed'].includes(state.phase) && <Button variant="outline" size="sm" disabled={!connected}
         onClick={() => { void run(() => prepare(provider.id)) }}>{t(state.phase === 'unprepared' ? 'prepare' : 'retryPrepare')}</Button>}
