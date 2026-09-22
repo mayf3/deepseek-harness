@@ -64,7 +64,7 @@ Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversati
 ## 进一步探索
 
 - [Agent Teams bundle](../agent-team-profile/README.zh.md)——挂载本 Client plugin 的公开 opt-in bundle。
-- [Agent Teams service](../agent-team/README.zh.md)——权威 roster、task、投影与 Remote 行为。
+- [Agent Teams service](../agent-team/README.zh.md)——权威 roster、task 与投影行为。
 - [会话 UI](../../client/ui-conversation/README.zh.md)——稳定 header slot 与 addressed-subagent 导航表层。
 - [实验性包](../README.zh.md)——孵化状态与发布规则。
 
@@ -84,6 +84,7 @@ Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversati
 <a id="known-limitations-and-deferred-work"></a>
 
 - **能力缺失的缓存** — 如果其他 UI 在启用 Agent Teams 前已读取 Lead 的投影基线，打开本面板会复用该基线；重新连接后才能加载新启用的能力。
+- **成员基线读取失败** — 面板只显示 Lead 的读取错误。其他 active 成员的读取失败会在重新打开面板或收到 roster、任务更新时重试；Team 活跃期间，持续失败可能反复发出请求。
 - **没有 mailbox timeline**——投影视图只承载 roster 与任务；不显示 peer 消息。
 - **首次请求前的模型** — 没有持久模型选择或请求的成员不显示模型。未运行的持久成员可通过显式投影读取提供模型；实时活动仍需要正在运行的 Host agent。
 - **普通 child continuation**——导航后发送的人类消息使用稳定 addressed-subagent 提示词路径，而不是 Team peer mailbox。

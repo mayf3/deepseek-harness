@@ -64,7 +64,7 @@ The panel renders outside the conversation container and stays within the viewpo
 ## Further Exploration
 
 - [Agent Teams bundle](../agent-team-profile/README.md) — the published opt-in bundle that mounts this Client plugin.
-- [Agent Teams service](../agent-team/README.md) — authoritative roster, task, projection, and Remote behavior.
+- [Agent Teams service](../agent-team/README.md) — authoritative roster, task, and projection behavior.
 - [Conversation UI](../../client/ui-conversation/README.md) — the stable header slot and addressed-subagent navigation surface.
 - [Experimental packages](../README.md) — incubation status and publication policy.
 
@@ -84,6 +84,7 @@ No direct effect; the Team tools and ordinary conversation submission own any la
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Cached capability absence** — if another UI loaded the Lead projection baseline before Agent Teams was enabled, opening this panel reuses that baseline; reconnect to load the newly enabled capability.
+- **Member baseline failures** — the panel shows read errors only for the Lead. Failed reads for other active members retry when the panel reopens or receives a roster or task update; persistent failures can issue repeated requests while the Team is active.
 - **No mailbox timeline** — the projection view carries roster and tasks only; peer messages are not shown.
 - **Model before the first request** — a member without a durable model selection or request shows no model. Inactive persisted members can supply their model through the explicit projection read; live activity still requires a running Host agent.
 - **Ordinary child continuation** — a human message sent after navigation uses the stable addressed-subagent prompt path, not the Team peer mailbox.
