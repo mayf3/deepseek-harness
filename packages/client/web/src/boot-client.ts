@@ -60,15 +60,15 @@ export async function bootClient(options: ClientBootOptions): Promise<void> {
  * Reject entries that failed import/apply or still wait on missing services.
  * @param ctx - root Context carrying the Loader.
  * @param modules - the module system whose recorded import failures name why an entry
- *   has no fiber; without it the report points at the console.
+ *   has no fiber; a row with no record points at the console.
  * @throws {Error} listing every non-active entry with its reason.
  */
-export function assertEntriesActive(ctx: Context, modules?: Pick<ClientModuleLoader, 'importError'>): void {
+export function assertEntriesActive(ctx: Context, modules: Pick<ClientModuleLoader, 'importError'>): void {
   const failures: string[] = []
   for (const entry of ctx.loader.entries()) {
     const name = entry.options.name
     if (entry.fiber === undefined) {
-      const importError = modules?.importError(name)
+      const importError = modules.importError(name)
       failures.push(importError === undefined
         ? `${name}: import failed (see console for the import error)`
         : `${name}: import failed: ${importError.message}`)

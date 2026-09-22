@@ -76,7 +76,11 @@ const recovery = new DesktopFatalRecovery({
   },
   exit: () => { app.quit() },
   restart: () => { app.relaunch(); app.quit() },
-  writeReport: (error, source) => writeCrashReport(app.getPath('logs'), {
+  writeReport: (error, source) => persistCrashReport(error, source),
+})
+
+function persistCrashReport(error: unknown, source: CrashReportSource): Promise<string | undefined> {
+  return writeCrashReport(app.getPath('logs'), {
     source,
     phase: backendReady ? 'running' : 'startup',
     error,
@@ -86,12 +90,16 @@ const recovery = new DesktopFatalRecovery({
       electron: process.versions.electron, node: process.versions.node, locale: currentDesktopLocale().id,
     },
     time: new Date(),
-  }),
-})
+  })
+}
 
 function reportFatal(error: unknown, source: CrashReportSource): void {
   console.error(error)
-  if (shuttingDown) return
+  if (shuttingDown) {
+    // No dialog during shutdown, but the report still records what failed on the way out.
+    void persistCrashReport(error, source)
+    return
+  }
   void recovery.report(error, source).catch((failure: unknown) => { console.error(failure); app.exit(1) })
 }
 
@@ -383,8 +391,9 @@ async function main(): Promise<void> {
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
     }
   }, (state) => {
-    if (state.phase === 'ready') backendReady = true
+    // An error keeps the phase it happened in; a restart returns the backend to startup.
     if (state.phase === 'error') reportFatal(new Error(state.message), 'host')
+    else backendReady = state.phase === 'ready'
   })
 
   const updateErrors = new WeakMap<DesktopUpdateState, Promise<void>>()

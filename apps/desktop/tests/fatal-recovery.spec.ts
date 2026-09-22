@@ -4,7 +4,10 @@ import { CRASH_REPORT_WAIT_MS, DesktopFatalRecovery } from '../src/fatal-recover
 import type { CrashReportSource } from '../src/crash-report.ts'
 import { resolveDesktopLocale } from '../src/locale.ts'
 
-function fixture(locale = 'en', writeReport?: (error: unknown, source: CrashReportSource) => Promise<string | undefined>) {
+function fixture(
+  locale = 'en',
+  writeReport: (error: unknown, source: CrashReportSource) => Promise<string | undefined> = async () => undefined,
+) {
   const choice = Promise.withResolvers<{ response: number; checkboxChecked: boolean }>()
   const stopped = Promise.withResolvers<undefined>()
   const operations = {
@@ -14,9 +17,14 @@ function fixture(locale = 'en', writeReport?: (error: unknown, source: CrashRepo
     disablePlugins: vi.fn(async () => {}),
     exit: vi.fn(),
     restart: vi.fn(),
-    ...(writeReport === undefined ? {} : { writeReport: vi.fn(writeReport) }),
+    writeReport: vi.fn(writeReport),
   }
   return { operations, choice, stopped, recovery: new DesktopFatalRecovery(operations) }
+}
+
+/** The dialog opens only after the report write settles, so tests wait for the first show() call. */
+async function shown(operations: { show: ReturnType<typeof vi.fn> }): Promise<void> {
+  await vi.waitFor(() => { expect(operations.show).toHaveBeenCalled() })
 }
 
 const REPORT_PATH = 'C:\\Users\\someone\\AppData\\Roaming\\DeepSeek Harness\\logs\\crash-2026-09-22T10-30-00-000Z-host.log'
@@ -27,7 +35,8 @@ it.each(['en', 'zh-CN'])('offers only exit and restart for a listener conflict i
   const { operations, choice, stopped, recovery } = fixture(locale)
   const pending = recovery.report(new AggregateError([
     new Error('webserver (@deepseek-ai/dsh-host-webserver): Error: listen EADDRINUSE: address already in use 127.0.0.1:19387'),
-  ], 'required startup failure'))
+  ], 'required startup failure'), 'host')
+  await shown(operations)
   const options = operations.show.mock.calls[0]![0]
   expect(options.buttons).toEqual([operations.messages().exitApplication, operations.messages().restartApplication])
   await expect([options.title, options.message, options.detail, ...options.buttons!].join('\n') + '\n')
@@ -42,7 +51,8 @@ it.each(['en', 'zh-CN'])('offers only exit and restart for a listener conflict i
 it.each(['win32', 'darwin', 'linux'] as const)('offers the same listener conflict recovery on %s', async (platform) => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
   const { operations, choice, stopped, recovery } = fixture()
-  const pending = recovery.report(new Error('listen EADDRINUSE: address already in use'))
+  const pending = recovery.report(new Error('listen EADDRINUSE: address already in use'), 'main')
+  await shown(operations)
   expect(operations.show.mock.calls[0]![0].buttons).toEqual([
     operations.messages().exitApplication, operations.messages().restartApplication,
   ])
@@ -54,7 +64,8 @@ it.each(['win32', 'darwin', 'linux'] as const)('offers the same listener conflic
 
 it.each(['en', 'zh-CN'])('records the %s native recovery dialog', async (locale) => {
   const { operations, choice, stopped, recovery } = fixture(locale)
-  const pending = recovery.report(new AggregateError([new Error('Plugin initialization failed')], 'Desktop Host failed'))
+  const pending = recovery.report(new AggregateError([new Error('Plugin initialization failed')], 'Desktop Host failed'), 'main')
+  await shown(operations)
   const options = operations.show.mock.calls[0]![0]
   await expect([options.title, options.message, options.detail, ...options.buttons!].join('\n') + '\n')
     .toMatchFileSnapshot(`expected/fatal-dialog-${locale}.txt`)
@@ -65,14 +76,15 @@ it.each(['en', 'zh-CN'])('records the %s native recovery dialog', async (locale)
 
 it('locks the first report before the dialog settles and never resets after an action', async () => {
   const { operations, choice, stopped, recovery } = fixture()
-  const pending = recovery.report(new Error('first failure'))
-  await recovery.report(new Error('second failure'))
+  const pending = recovery.report(new Error('first failure'), 'main')
+  await shown(operations)
+  await recovery.report(new Error('second failure'), 'main')
   expect(operations.show).toHaveBeenCalledOnce()
   expect(operations.show.mock.calls[0]![0].detail).toContain('first failure')
   choice.resolve({ response: 1, checkboxChecked: false })
   stopped.resolve(undefined)
   await pending
-  await recovery.report(new Error('third failure'))
+  await recovery.report(new Error('third failure'), 'main')
   expect(operations.show).toHaveBeenCalledOnce()
 })
 
@@ -80,7 +92,7 @@ it.each([0, 1, 2])('waits for shutdown before executing choice %s', async (respo
   const { operations, choice, stopped, recovery } = fixture()
   const stopping = Promise.withResolvers<undefined>()
   operations.stop.mockImplementation(() => { stopping.resolve(undefined); return stopped.promise })
-  const pending = recovery.report(new Error('fatal'))
+  const pending = recovery.report(new Error('fatal'), 'main')
   choice.resolve({ response, checkboxChecked: false })
   await stopping.promise
   expect(operations.exit).not.toHaveBeenCalled()
@@ -100,7 +112,7 @@ it('reports a user-requested disable failure and allows exit without restarting'
     .mockResolvedValueOnce({ response: 0, checkboxChecked: false })
   operations.disablePlugins.mockRejectedValueOnce(new Error('profile is read-only'))
   stopped.resolve(undefined)
-  await recovery.report(new Error('fatal'))
+  await recovery.report(new Error('fatal'), 'main')
   expect(operations.show).toHaveBeenCalledTimes(2)
   expect(operations.show.mock.calls[1]![0].detail).toContain('profile is read-only')
   expect(operations.restart).not.toHaveBeenCalled()
@@ -110,7 +122,7 @@ it('reports a user-requested disable failure and allows exit without restarting'
 it('allows exit after shutdown cleanup fails', async () => {
   vi.spyOn(console, 'error').mockImplementation(() => {})
   const { operations, choice, stopped, recovery } = fixture()
-  const pending = recovery.report(new Error('fatal'))
+  const pending = recovery.report(new Error('fatal'), 'main')
   choice.resolve({ response: 0, checkboxChecked: false })
   stopped.reject(new Error('cleanup failed'))
   await pending
@@ -124,7 +136,7 @@ it.each(['en', 'zh-CN'])('bounds long diagnostics and recovery-operation errors 
     .mockResolvedValueOnce({ response: 0, checkboxChecked: false })
   operations.disablePlugins.mockRejectedValueOnce(new Error('read-only\n'.repeat(5000) + 'final write failure'))
   stopped.resolve(undefined)
-  await recovery.report(new Error('😀'.repeat(32768) + '\nfinal backend failure'))
+  await recovery.report(new Error('😀'.repeat(32768) + '\nfinal backend failure'), 'main')
   for (const [options] of operations.show.mock.calls) {
     expect(options.detail!.length).toBeLessThanOrEqual(1200)
     expect(options.detail!.split('\n').length).toBeLessThanOrEqual(12)
@@ -139,6 +151,7 @@ it.each(['en', 'zh-CN'])('bounds long diagnostics and recovery-operation errors 
 it.each(['en', 'zh-CN'])('names the report file even when the error is short enough to show whole, in %s', async (locale) => {
   const { operations, choice, stopped, recovery } = fixture(locale, async () => REPORT_PATH)
   const pending = recovery.report(new Error('Desktop Host failed\nPlugin initialization failed'), 'host')
+  await shown(operations)
   await vi.waitFor(() => { expect(operations.show).toHaveBeenCalledOnce() })
   expect(operations.writeReport).toHaveBeenCalledWith(expect.any(Error), 'host')
   const options = operations.show.mock.calls[0]![0]
@@ -154,6 +167,7 @@ it.each(['en', 'zh-CN'])('names the report file even when the error is short eno
 it('keeps the report line inside the detail budget when the error is long', async () => {
   const { operations, choice, stopped, recovery } = fixture('en', async () => REPORT_PATH)
   const pending = recovery.report(new Error('😀'.repeat(32768) + '\nfinal backend failure'), 'web-boot')
+  await shown(operations)
   await vi.waitFor(() => { expect(operations.show).toHaveBeenCalledOnce() })
   const detail = operations.show.mock.calls[0]![0].detail!
   expect(detail.length).toBeLessThanOrEqual(1200)
@@ -171,6 +185,7 @@ it('keeps the report line inside the detail budget when the error is long', asyn
 it('names the report file in the listener-conflict dialog too', async () => {
   const { operations, choice, stopped, recovery } = fixture('en', async () => REPORT_PATH)
   const pending = recovery.report(new Error('listen EADDRINUSE: address already in use 127.0.0.1:19387'), 'host')
+  await shown(operations)
   await vi.waitFor(() => { expect(operations.show).toHaveBeenCalledOnce() })
   const options = operations.show.mock.calls[0]![0]
   expect(options.buttons).toHaveLength(2)
@@ -185,6 +200,7 @@ it('shows the dialog without a path when the report write fails or returns nothi
   for (const writeReport of [async () => undefined, async () => { throw new Error('disk full') }]) {
     const { operations, choice, stopped, recovery } = fixture('en', writeReport)
     const pending = recovery.report(new Error('fatal'), 'main')
+    await shown(operations)
     await vi.waitFor(() => { expect(operations.show).toHaveBeenCalledOnce() })
     expect(operations.show.mock.calls[0]![0].detail).toBe(`fatal\n\n${operations.messages().startupReinstallAdvice}`)
     choice.resolve({ response: 0, checkboxChecked: false })

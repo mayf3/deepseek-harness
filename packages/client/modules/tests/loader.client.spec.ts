@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { removeOwnedStyles } from '../src/client/entry-lifecycle.ts'
+import { describeError } from '../src/client/system.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -395,6 +396,16 @@ describe('bundle arrival recovery', () => {
     expect(b.fetched).toHaveLength(2)
   })
 
+  it('never re-executes a batch that already ran, even when its first importer was one of the rows it did register', async () => {
+    const b = bench([row('a'), row('b')], { a: () => ({ a: 1 }), b: () => ({ b: 2 }) }, {
+      registerOnly: { [APPLICATION_URL]: ['a'] },
+    })
+    expect(await b.loader.import('a', '', {})).toEqual({ a: 1 })
+    expect(b.fetched).toEqual([APPLICATION_URL])
+    expect(await b.loader.import('b', '', {})).toEqual({ b: 2 })
+    expect(b.fetched).toEqual([APPLICATION_URL, single('b')])
+  })
+
   it('reports every attempt when the one-resource fallback fails too', async () => {
     const b = bench([row('a')], { a: () => ({ a: 1 }) }, {
       transportFailures: { [APPLICATION_URL]: 2, [single('a')]: 1 },
@@ -448,6 +459,15 @@ describe('import error record', () => {
     expect(b.loader.importError('consumer')?.message).toContain('dependency "dep" failed')
     expect(b.loader.importError('dep')).toBeUndefined()
     expect(b.loader.importError('consumer')?.cause).toBeInstanceOf(Error)
+  })
+
+  it('records a non-Error thrown by a factory as an Error carrying its text', async () => {
+    const b = bench([row('a')], { a: () => { throw 'factory rejected a string' } })
+    await expect(b.loader.import('a', '', {})).rejects.toBe('factory rejected a string')
+    expect(b.loader.importError('a')).toBeInstanceOf(Error)
+    expect(b.loader.importError('a')?.message).toBe('factory rejected a string')
+    expect(describeError('plain')).toBe('plain')
+    expect(describeError(new Error('wrapped'))).toBe('wrapped')
   })
 
   it('records a prefetch failure and invalidate clears the record', async () => {

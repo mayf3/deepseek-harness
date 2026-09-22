@@ -13,7 +13,7 @@ interface RecoveryOperations {
   exit(): void
   restart(): void
   /** Persist the complete diagnostic; resolves with the file path, or `undefined` when nothing was written. */
-  writeReport?(error: unknown, source: CrashReportSource): Promise<string | undefined>
+  writeReport(error: unknown, source: CrashReportSource): Promise<string | undefined>
 }
 
 /** Upper bound on waiting for the crash report before the dialog opens. */
@@ -62,11 +62,11 @@ export class DesktopFatalRecovery {
    * @param source - Where the failure surfaced, recorded in the report.
    * @returns Completion of the user's recovery action; duplicate reports resolve immediately.
    */
-  async report(error: unknown, source: CrashReportSource = 'main'): Promise<void> {
+  async report(error: unknown, source: CrashReportSource): Promise<void> {
     if (this.reported) return
     this.reported = true
     const messages = this.operations.messages()
-    const reportPath = this.operations.writeReport === undefined ? undefined : await this.persist(error, source)
+    const reportPath = await this.persist(error, source)
     let detail = desktopErrorState(error).message
     let message = messages.fatalSummary
     for (;;) {
@@ -107,7 +107,7 @@ export class DesktopFatalRecovery {
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       return await Promise.race([
-        this.operations.writeReport?.(error, source),
+        this.operations.writeReport(error, source),
         new Promise<undefined>((resolve) => { timer = setTimeout(() => { resolve(undefined) }, CRASH_REPORT_WAIT_MS) }),
       ])
     } catch (failure) {

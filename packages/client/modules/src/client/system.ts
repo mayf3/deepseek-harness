@@ -38,6 +38,15 @@ function atRevision(url: string, rev: string): string {
 
 const CLIENT_CHUNK = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
 
+/**
+ * The message of a thrown value.
+ * @param error - an Error or any other thrown value.
+ * @returns the Error's message, or the value stringified.
+ */
+export function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /** Internal module-table key for one package-local chunk. */
 function chunkId(ownerId: string, fileName: string): string {
   return `${ownerId}/${fileName}`
@@ -105,6 +114,8 @@ export class ClientModuleSystem implements ClientModuleLoader {
   private readonly importErrors = new Map<string, Error>()
   /** Batch URLs whose transport or execution already failed; rows still missing from them go straight to their one-resource URL. */
   private readonly failedBundleUrls = new Set<string>()
+  /** Every URL whose script has executed once; a batch among them is never requested again. */
+  private readonly executedBundleUrls = new Set<string>()
 
   /**
    * Build the module system over the parsed boot rows.
@@ -169,7 +180,9 @@ export class ClientModuleSystem implements ClientModuleLoader {
   private loadShared(url: string): Promise<void> {
     let transport = this.pendingArrival.get(url)
     if (transport === undefined) {
-      transport = this.loadBundle(url).finally(() => { this.pendingArrival.delete(url) })
+      transport = this.loadBundle(url)
+        .then(() => { this.executedBundleUrls.add(url) })
+        .finally(() => { this.pendingArrival.delete(url) })
       this.pendingArrival.set(url, transport)
     }
     return transport
@@ -183,10 +196,12 @@ export class ClientModuleSystem implements ClientModuleLoader {
    * executed) is retried once on the same URL; a script that loaded without
    * registering this row (a parse error registered nothing, or a runtime throw
    * stopped it after registering others) is never re-executed, because a replay
-   * would stop again at the first duplicate registration. Either way the row
-   * then falls back to its own one-resource URL, which the Host serves for every
-   * package, so one failed batch costs at most three requests per missing row
-   * and never fails the rows that were registered.
+   * would stop again at the first duplicate registration; that holds even when
+   * the row that first imports from the batch is one it did register, because
+   * every executed batch URL is remembered. Either way the row then falls back
+   * to its own one-resource URL, which the Host serves for every package, so one
+   * failed batch costs at most three requests per missing row and never fails
+   * the rows that were registered.
    */
   private async arrive(row: BootModuleRow): Promise<void> {
     const { id } = row
@@ -199,7 +214,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
       try {
         await this.loadShared(url)
       } catch (error) {
-        failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`)
+        failures.push(`${url}: ${describeError(error)}`)
         return 'transport-failed'
       }
       if (this.factories.has(id)) return 'registered'
@@ -209,6 +224,13 @@ export class ClientModuleSystem implements ClientModuleLoader {
     let outcome: Awaited<ReturnType<typeof attempt>> = 'transport-failed'
     if (this.failedBundleUrls.has(preferred)) {
       failures.push(`${preferred}: skipped after an earlier failure of this bundle`)
+    } else if (fallback !== undefined && this.executedBundleUrls.has(preferred)) {
+      // The batch already ran (an earlier importer was a row it did register)
+      // and this row is still missing: a replay would stop at the first
+      // duplicate registration.
+      failures.push(`${preferred}: already executed without registering "${id}"`)
+      outcome = 'not-registered'
+      this.failedBundleUrls.add(preferred)
     } else {
       outcome = await attempt(preferred)
       if (outcome === 'transport-failed') outcome = await attempt(preferred)
@@ -264,8 +286,10 @@ export class ClientModuleSystem implements ClientModuleLoader {
     try {
       await this.arriveGraphRow(dependency, open, visited)
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      throw new Error(`client-modules: "${consumerId}" not loaded because dependency "${dependency.id}" failed: ${reason}`, { cause: error })
+      throw new Error(
+        `client-modules: "${consumerId}" not loaded because dependency "${dependency.id}" failed: ${describeError(error)}`,
+        { cause: error },
+      )
     }
   }
 
@@ -393,7 +417,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
       this.importErrors.delete(id)
       return result
     } catch (error) {
-      this.importErrors.set(id, error instanceof Error ? error : new Error(String(error)))
+      this.importErrors.set(id, error instanceof Error ? error : new Error(describeError(error)))
       throw error
     }
   }

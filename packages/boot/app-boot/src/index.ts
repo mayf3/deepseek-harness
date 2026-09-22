@@ -623,11 +623,12 @@ export const FAIL_LOUD_RELEASE_TIMEOUT_MS = 2_000
  * at any point in the process lifetime, into one labelled stderr diagnostic and
  * `exit(1)`. A rejection already included by {@link auditStartupEntries} is
  * ignored during its process checkpoint; every other rejection and every
- * uncaught exception remains fatal. The process never resumes after either:
- * only the throw site knows which state is intact, and a listener that threw
- * mid-update (a stream `'data'` handler, a half-applied registry write) leaves
- * silently wrong results behind if execution continues. Stdout remains
- * untouched for ACP; the returned function removes both handlers.
+ * uncaught exception remains fatal. Control never returns to the failed
+ * operation after either: only the throw site knows which state is intact, and
+ * a listener that threw mid-update (a stream `'data'` handler, a half-applied
+ * registry write) leaves silently wrong results behind if it were resumed. The
+ * event loop keeps running only until the release hook settles or times out.
+ * Stdout remains untouched for ACP; the returned function removes both handlers.
  *
  * The diagnostic is `util.inspect(err)`, not `err.stack`: a `node:fs` error's
  * `code`, `syscall`, and `path` and any `cause` chain are enumerable properties
@@ -669,7 +670,7 @@ export function installFailLoud(
     // real one or letting Node kill the process before the terminal is back.
     if (exiting) return
     exiting = true
-    proc.stderr.write(`${binName}: ${label}: ${inspect(err, { depth: 4 })}\n`)
+    proc.stderr.write(`${binName}: ${label}: ${inspect(err, { depth: 4, maxArrayLength: 50 })}\n`)
     if (release === undefined) {
       proc.exit(1)
       return

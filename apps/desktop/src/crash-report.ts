@@ -103,7 +103,7 @@ export function renderCrashReport(input: CrashReportInput): string {
     `electron: ${input.app.electron}`,
     `node: ${input.app.node}`,
     `locale: ${input.app.locale}`,
-    `pid: ${String(process.pid)}`,
+    `shell pid: ${String(process.pid)}`,
   ]
   const consoleSection = input.rendererConsole.length === 0
     ? '(no error-level renderer console output was captured)'
