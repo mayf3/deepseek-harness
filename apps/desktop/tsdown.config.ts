@@ -1,11 +1,25 @@
 import { defineConfig } from 'tsdown'
 import { build } from 'vite'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { packagedImportsPlugin } from './scripts/desktop-bundle-imports.mjs'
+
+// This config runs after the workspace tsdown pass, not inside it: the main bundle inlines
+// workspace devDependencies from their lib/ output, which the concurrent workspace pass does
+// not order ahead of this package (root package.json build:lib:host).
+const manifest = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
+  dependencies: Record<string, string>
+}
+/** electron-builder ships these next to the main bundle; Electron itself provides `electron`. */
+const mainProcessImports = new Set(['electron', ...Object.keys(manifest.dependencies)])
+/** Sandboxed preloads can require nothing but `electron`. */
+const preloadImports = new Set(['electron'])
 
 export default defineConfig([
   {
     entry: ['lib/types/main.js'],
+    plugins: [packagedImportsPlugin(mainProcessImports)],
     onSuccess: async () => {
       await build({
         configFile: false,
@@ -49,6 +63,7 @@ export default defineConfig([
   ...(['preload-app', 'preload-welcome', 'preload-platform-account', 'preload-mandatory', 'preload-update-dialog'] as const).map(name => ({
     // Sandboxed Electron preloads run as CommonJS even though the application package is ESM.
     entry: { [name]: `lib/types/${name}.js` },
+    plugins: [packagedImportsPlugin(preloadImports)],
     outDir: 'lib',
     format: 'cjs' as const,
     codeSplitting: false,
