@@ -290,6 +290,13 @@ async function main(): Promise<void> {
     }
     finally { ordinaryDialogs.delete(controller) }
   }
+  // Copy comes from the same locale as the update prompts so the dialog
+  // chrome and its content never mix languages.
+  const showAbout = async (): Promise<void> => {
+    await ordinaryMessageBox({ type: 'info', title: locale.messages.aboutMenu, message: locale.messages.aboutProduct,
+      detail: formatDesktopMessage(locale.messages.aboutVersion, { version: app.getVersion() }),
+      buttons: [locale.messages.updateAcknowledge], cancelId: 0 })
+  }
   const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
   const applicationUrl = `${SCHEME}://app/`
   let hostUrl: string | undefined
@@ -767,7 +774,12 @@ async function main(): Promise<void> {
       { role: 'unhide', label: currentDesktopLocale().messages.showAllApplications }, { type: 'separator' }]
     : []
   const applicationItems = (): MenuItemConstructorOptions[] => [
-    { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
+    // Windows has no system About panel; Electron's fallback is a plain
+    // message box, so the shell shows its own dimmed dialog instead.
+    process.platform === 'win32'
+      ? { label: currentDesktopLocale().messages.aboutMenu,
+        click: () => { void showAbout().catch((error: unknown) => { console.error(error) }) } }
+      : { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
     { type: 'separator' },
     { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
     ...development ? [
