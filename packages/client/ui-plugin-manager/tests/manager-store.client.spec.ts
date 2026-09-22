@@ -85,7 +85,10 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
     setPluginEnabled: vi.fn(() => Promise.resolve(ok(APPLIED))),
     ...overrides,
   }
-  const ctx = { remote: { pluginManager: plugins, pluginInventory: inventory } } as never
+  const ctx = {
+    configForms: { describe: () => ({ getSnapshot: () => ({ view: { namespaces: [] } }), subscribe: () => () => {} }), get: vi.fn((id: string) => `form:${id}`) },
+    remote: { pluginManager: plugins, pluginInventory: inventory },
+  } as never
   const controller = new PluginManagerController(ctx)
   onTestFinished(() => { controller.dispose() })
   const face = controller.inject(NO_CONFIG, text => typeof text === 'string' ? text : text.en)
@@ -97,6 +100,11 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
   }
   return { plugins, inventory, controller, face, state, started }
 }
+
+it('hands a custom page the shared configuration form of its entry', () => {
+  const { face } = bench()
+  expect(face.configForm('bundle#row')).toBe('form:bundle#row' as never)
+})
 
 describe('packageView', () => {
   it('joins a bundle with the entries its rows run as', () => {

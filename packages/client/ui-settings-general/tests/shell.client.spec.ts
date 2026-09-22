@@ -11,7 +11,7 @@ import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-clie
 import { inject } from '../src/client/index.ts'
 import type { SettingsRootInjected } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
-import type { DesktopUpdatePresentation } from '../src/client/desktop-update-bridge.ts'
+import type { DesktopUpdatePresentation } from '../src/types.ts'
 
 const SELF = '@deepseek-ai/dsh-client-ui-settings-general'
 const SIDEBAR = '@deepseek-ai/dsh-client-ui-sidebar'
@@ -76,7 +76,7 @@ describe('ui-settings-general shell', () => {
   }, COLD_BOOT_TIMEOUT_MS)
 
   it('declares its services', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms'])
   })
 
   it('occupies sidebar.settings, declared by ui-sidebar, and declares every child slot', async ({ start }) => {

@@ -101,7 +101,7 @@ interface TabReads {
 /**
  * Bind the preview's face to one paged read and one complete-byte read.
  * @param read - the bound `workspaceFiles.read` call.
- * @param readAll - ordinary complete-byte Remote read.
+ * @param readAll - complete-byte workspace Remote read.
  * @param resources - shared metadata sources for the document and its dependencies.
  * @returns the Slot `inject` factory: bound actions in, face out. The slot's session id is unused because the address carries its own.
  */

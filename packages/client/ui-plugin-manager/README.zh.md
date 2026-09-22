@@ -45,7 +45,7 @@ kind: "package-reference"
 
 ### 配置页
 
-自带配置的插件把配置渲染在本页而不是设置里，通过本页声明的三个 slot：`plugins.item`（list）用于官方插件，按其 `label` 列在官方分组里；`plugins.bundle.config`（以组合包的包名为键）用于组合包自己的配置，显示在组合包页面的描述与行之间；`plugins.row.config`（以 `<包名>#<行 id>` 为键）用于某一行的配置，这一行由此多出一个**配置**控件，打开该行自己的页面。页面用 `view: 'page'` 渲染带自己保存控件的表单。官方插件卡片还在标题下渲染 `view: 'summary'`；行详情页只在缺少包描述时使用该视图。只有保存才写入：页面负责画标题、图标与面包屑，条目的表单在离开页面时丢弃暂存的修改。安装随附的四个宿主平面配置页——shell 执行器、agent loop、subagent 模型选择、DeepSeek 搜索提供方——来自 [ui-settings-plugins](../ui-settings-plugins/README.zh.md)，在 Host 服务其命名空间期间注册。组合包的浏览器半侧用同样的方式注册：
+自带配置的插件把配置渲染在本页而不是设置里，通过本页声明的三个 slot：`plugins.item`（list）用于官方插件，按其 `label` 列在官方分组里；`plugins.bundle.config`（以组合包的包名为键）用于组合包自己的配置，显示在组合包页面的描述与行之间；`plugins.row.config`（以 `<包名>#<行 id>` 为键）用于某一行的配置，这一行由此多出一个**配置**控件，打开该行自己的页面。页面用 `view: 'page'` 渲染带自己保存控件的表单。官方插件卡片还在标题下渲染 `view: 'summary'`；行详情页只在缺少包描述时使用该视图。只有保存才写入：页面负责画标题、图标与面包屑，条目的表单在离开页面时丢弃暂存的修改。安装随附的四个宿主平面配置页——shell 执行器、agent loop、Subagent、DeepSeek 搜索提供方——各来自一个伴生包：[ui-settings-shell](../ui-settings-shell/README.zh.md)、[ui-settings-agent-loop](../ui-settings-agent-loop/README.zh.md)、[ui-settings-subagent](../ui-settings-subagent/README.zh.md) 与 [ui-settings-web-search](../ui-settings-web-search/README.zh.md)，在 Host 服务其命名空间期间注册。组合包的浏览器半侧用同样的方式注册：
 
 ```tsx ignore-check
 ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
@@ -56,6 +56,20 @@ ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
 ```
 
 组合包的 patch 必须以该 id 声明这一行；注册只在组合包开启期间存在，因此关闭的组合包不显示配置控件。
+
+### 详情页扩展点
+
+对某个不属于自己的组合包、行或官方插件有话要说的插件，通过本页声明的三个 list slot 向该对象的页面贡献内容：`plugins.detail.actions` 在页头放一个控件，位于页面自己的开关和卸载之前；`plugins.detail.badge` 在标题旁放一个标签，位于版本、Beta 和异常标签之后；`plugins.detail.section` 在页面自身内容之下放一个区块——组合包页在组件列表之后，行页和官方插件页在配置之后。每个条目都以页面的 `subject` 渲染：`{ kind: 'bundle', pkg }`、`{ kind: 'row', pkg, row }` 或 `{ kind: 'item', id }`，其中 `pkg` 与 `row` 携带包名、版本、是否已安装、是否启用以及行列表这些供贡献者判断的事实。条目对无话可说的 subject 返回 null，自绘区块外观；页面按 `order` 排列条目。
+
+```tsx ignore-check
+ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
+  name: 'plugins.detail.section',
+  id: 'acme-health',
+  locale: 'acmeHealth',
+}, ({ t, subject }) => subject.kind === 'bundle' ? <HealthSection pkg={subject.pkg} t={t} /> : null))
+```
+
+行页只在某个 `plugins.row.config` 条目点名这一行时存在，因此给行的贡献渲染在该配置打开的页面上。
 
 -----
 
@@ -77,7 +91,11 @@ ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
 
 ### 配置 slot
 
-页面的 `main` 注册把 `plugins.item`、`plugins.bundle.config` 与 `plugins.row.config` 声明为子 slot，因此它们与页面同生，注册方的 `ctx.slots.inject` 会等到它们出现。`configLedgerSource` 把三份账本投影成一个可观察对象——按账本顺序排列、标签按当前语言解析的官方条目，以及组合包与行的键——在账本或语言变化前保持缓存；页面把它作为 `useConfigLedger` 绑在 store 旁边，自身从不点名任何可配置插件。打开的是哪一页是页面本地状态：卡片、某个组合包、某个官方插件，或组合包的某一行。注册与做出它的浏览器半侧同生共死。`dsh-client-modules` 只把一个包的浏览器半侧挂在说明符恰为包名的那一行 Loader 行上，所以组合包为自己或任一行注册的页面，都会在那一行被关闭时一起消失；需要在其他行关闭时仍保留页面的子插件，应作为独立的包发布。
+自定义条目页以 Host 条目 id 作为注册 id；行页面使用 bundle 包名和行 id。当条目提供可编辑 Config 字段时，页面宿主传入 `form.state` 和 `form.mutate(operations, expectedRevision)`。自定义页面负责草稿和校验提示，并可复用 ui-primitives 的 `ConfigField`。整个 bundle 的页面可以包含多个条目，因此没有单一表单。
+
+页面的 `main` 注册把 `plugins.item`、`plugins.bundle.config` 与 `plugins.row.config` 声明为子 slot，因此它们与页面同生，注册方的 `ctx.slots.inject` 会等到它们出现。`configLedgerSource` 把三份账本投影成一个可观察对象——按账本顺序排列、标签按当前语言解析的官方条目，以及组合包与行的键——在账本或语言变化前保持缓存；页面把它作为 `useConfigLedger` 绑在 store 旁边，自身从不点名任何可配置插件。打开的是哪一页是页面本地状态：卡片、某个组合包、某个官方插件，或组合包的某一行。注册与做出它的浏览器半侧同生共死。`dsh-client-modules` 只把一个包的浏览器半侧挂在说明符恰为包名的那一行 Loader 行上，所以组合包为自己或任一行注册的页面，都会在那一行被关闭时一起消失；需要在其他行关闭时仍保留页面的子插件，应作为独立的包发布。 名称以 `@deepseek-ai/dsh-experimental-` 开头的官方包显示 Beta 标记。
+
+`plugins.bundle.config` 以 npm 包名为 key，提供 Bundle 详情配置。`plugins.bundle.activation` 在用户从列表显式启用后提供 Bundle 自有引导，并传入关闭引导和打开详情的回调。仅列出已启用的 Bundle 不会触发引导。
 
 </details>
 
@@ -91,7 +109,7 @@ ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
 - [ui-sidebar](../ui-sidebar/README.zh.md)——插件入口注册进的面板列表；[ui-layout](../ui-layout/README.zh.md)——页面占用的主 slot。
 - [api-remotes](../../api/remotes/README.zh.md)——`pluginManager.*` 与 `pluginInventory.*` 背后的 Remote BFF 面。
 - [plugin-manager](../../boot/plugin-manager/README.zh.md)——本页驱动的 Host 侧管理器。
-- [ui-settings-plugins](../ui-settings-plugins/README.zh.md)——注册进本页 slot 的官方配置页。
+- [ui-settings-shell](../ui-settings-shell/README.zh.md)、[ui-settings-agent-loop](../ui-settings-agent-loop/README.zh.md)、[ui-settings-subagent](../ui-settings-subagent/README.zh.md)、[ui-settings-web-search](../ui-settings-web-search/README.zh.md)——注册进本页 `plugins.item` slot 的官方配置页。
 
 -----
 

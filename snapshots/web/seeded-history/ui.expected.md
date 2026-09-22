@@ -8,7 +8,6 @@
 - navigation "Turn navigation":
   - button "Jump to turn 1"
   - button "Jump to turn 2"
-- button "System prompt"
 - text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. {{clock}}"
 - button "Copy"
 - button "2 tool calls"

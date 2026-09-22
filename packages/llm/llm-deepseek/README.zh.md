@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-当组合需要通过 harness LLM（大语言模型）服务流式调用 DeepSeek 模型时挂载本插件。它注册唯一的 `deepseek-official` 路由，并按请求解析连接事实，因此组合条目加可选用户设置分节即可驱动整个适配器。
+将此插件与 harness LLM 服务一起挂载以提供 `deepseek-official`。它在每次操作开始时从 Config 引用捕获连接选项。
 
 适配器接受 LLM 服务的[仅供请求使用的 user 输入](../llm/README.zh.md#use-this-package)，并可将其与持久历史混用；省略请求输入的身份与来源不会改变提供方内容。
 
@@ -96,7 +96,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 ### 动态配置
 
-连接事实通过可选 settings 与凭据 seam 每次操作重新读取一次。用户设置文档中的 `llm-deepseek:` 分节无需重启即可覆盖任何字段；违反 schema 之外约束的快照会保留最后有效事实并记录失败。API 密钥从提供端点、图片与 Files 策略及空闲预算的同一快照按流调用解析，因此被拒绝的设置代际不会贡献其中任何事实。图片请求在请求时解析附件服务，因此加载顺序不会冻结图片可用性。
+连接选项在每次操作开始时从 volatile Config 引用捕获。Config 验证在表单持久化前拒绝无效候选值。凭据使用与端点、图像及 Files 策略、空闲预算相同的快照解析。附件服务在请求时解析。
 
 ### 提供方专用请求字段
 
@@ -192,7 +192,7 @@ loop 保留的响应块会追加到下一个请求，并保留其更早的可复
 
 这些限制说明适配器在哪里停止、由未来工作接续。它们是当前包约束，不是通用 DeepSeek 对比或任务积压。
 
-- **设置中的 `models` 列表会整体替换组合列表**——设置层按字段合并，数组只算一个字段；按条目合并目录需要带键的形状。
+- **替换 `models` 会替换完整目录列表**——修改单个模型条目时使用路径编辑。
 - **不映射 `tool_choice`**——不属于核心词汇（与 pi-ai 孪生共享）。
 - **请求使用原始 `fetch`，而非 `@cordisjs/plugin-http`**——没有共享代理或拦截配置。
 - **Messages 历史内 system 更新需要保留用户或工具结果轮次**——若更新后的全部用户输入都被省略，且前一个协议轮次是 assistant，序列化会在下一个 assistant 之前或请求结束处以 `UNSUPPORTED_CONTENT` 失败。文本或空工具结果可以保留该轮次。不支持将更新移到更早的轮次；[输入历史决策](../../../.agents/notes/implemented/bug-fix/2026-09-18-messages-input-history-compatibility.zh.md)记录了排序约束。

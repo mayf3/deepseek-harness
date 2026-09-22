@@ -87,6 +87,23 @@ it('loads both tarballs through plain Node and mounts their base image and overl
     assert.equal(readFileSync(worker, 'utf8').match(/^import[ \\t]/m), null)
     const base = packer.packVfsImage({ config: '[]\\n', profile: 'packed-consumer', workspaces: new Map(), resolveFrom: process.cwd(), entries: [] })
     assert.deepEqual(base.missing, [])
+    mkdirSync('subject/lib', { recursive: true })
+    const subject = '@deepseek-ai/dsh-image-export-fixture'
+    writeFileSync('subject/package.json', JSON.stringify({ name: subject, files: ['lib'], exports: {
+      '.': { default: './lib/index.js' }, './types': { types: './lib/index.d.ts' },
+    } }))
+    writeFileSync('subject/lib/index.js', 'export const value = 1')
+    writeFileSync('subject/lib/index.d.ts', 'export declare const value: number')
+    const typedOptions = { config: '- id: subject\\n  name: "' + subject + '"\\n', profile: 'typed-consumer',
+      workspaces: new Map([[subject, fileURLToPath(new URL('./subject', import.meta.url))]]),
+      resolveFrom: process.cwd(), entries: [] }
+    const typed = packer.packVfsImage(typedOptions)
+    assert.deepEqual(typed.missing, [])
+    assert.ok(Object.hasOwn(typed.files, 'node_modules/' + subject + '/lib/index.js'))
+    assert.equal(Object.hasOwn(typed.files, 'node_modules/' + subject + '/lib/index.d.ts'), false)
+    writeFileSync('subject/lib/index.js', 'export { value } from "' + subject + '/types"')
+    assert.throws(() => packer.packVfsImage(typedOptions),
+      error => error instanceof Error && error.message.includes('does not export "./types"'))
     const vfs = runtime.loadVfsImage(await runtime.inflateImage(base.image, 'packed base'))
     assert.ok(vfs.existsSync('/dsh/' + packer.MANIFEST_PATH))
     mkdirSync('overlay')

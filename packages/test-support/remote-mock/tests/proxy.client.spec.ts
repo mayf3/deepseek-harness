@@ -3,7 +3,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { RemoteMock, frames, ok, openStream, streamHandle, type StreamHandle } from '../src/index.ts'
 
 const describeValue = (hasDocument: boolean) => ok({ writable: true, hasDocument, namespaces: [] })
-const baseline = { type: 'baseline' as const, value: { queues: {}, jobs: {}, projections: {} } }
+const baseline = { type: 'baseline' as const, value: { projections: {} } }
 
 async function drain(source: AsyncIterable<unknown>): Promise<unknown[]> {
   const values: unknown[] = []
@@ -58,7 +58,7 @@ describe('RemoteMock.remote unary proxies', () => {
   it('records every business argument while the carrier keeps its signal out of positional args', async () => {
     const mock = RemoteMock.create()
     const mutate = mock.remote.settings.mutate
-    const result = ok({ ns: 'locale', schema: {}, value: { preference: 'en' }, applies: 'live' as const, secrets: [], revision: 8 })
+    const result = ok({ ns: 'locale', schema: {}, value: { preference: 'en' }, autoGenerate: true, applies: 'live' as const, secrets: [], revision: 8 })
     const ops = [{ op: 'set' as const, path: ['preference'], value: 'en' }]
     mutate.mockResolvedValue(result)
 

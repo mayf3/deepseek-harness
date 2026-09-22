@@ -1,8 +1,9 @@
 import { memo, useCallback, useMemo } from 'react'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
+import type { ChatNodeOwnerProps, ChatViewSlotProps, UsePresentation } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
+import type { ChatNodeStore } from '../contract/snapshot.ts'
 import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
@@ -10,10 +11,11 @@ import css from './ChatView.module.css'
 
 interface ChatNodeSeatProps extends ChatNodeOwnerProps {
   readonly nodeKey: string
+  /** A replaced Builder must rebind keyed hooks even when references and keys survive. */
+  readonly nodeStore: ChatNodeStore
   readonly useChatNode: ChatViewSlotProps['useChatNode']
   readonly useChatNodeProcess: ChatViewSlotProps['useChatNodeProcess']
-  readonly historyIncomplete: boolean
-  readonly compactTranscript: boolean
+  readonly usePresentation: UsePresentation
   readonly useStore: ChatViewSlotProps['useStore']
   readonly actions: ChatViewSlotProps['actions']
   readonly renderSlot: ChatViewSlotProps['renderSlot']
@@ -34,9 +36,13 @@ function turnOf(node: ChatNode | undefined): number | undefined {
   return location?.kind === 'turn' || location?.kind === 'step' ? location.turn.turn : undefined
 }
 
-/** Subscribe, apply Turn-process visibility, and dispatch one stable Context key. */
+/**
+ * Subscribe, apply Turn-process visibility, and dispatch one stable Context key.
+ * Policy reads select this seat's own conclusion, so a mode change re-renders
+ * only seats whose visibility actually changes.
+ */
 export const ChatNodeSeat = memo(function ChatNodeSeat({
-  nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
+  nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation,
   cwd, openFile, openSkill, inspectCall, forkAt,
   loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
 }: ChatNodeSeatProps) {
@@ -59,13 +65,15 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       actions.setTurnProcessOpen(processSpec.turn, processSpec.answerStep, open)
     }
   }, [actions, processSpec])
+  const foldCompleted = usePresentation(policy => policy.foldCompletedTurns)
+  // Folding is decided per Turn: the Turn is closed and its start is loaded.
   const processWindowReady = processSpec !== undefined
     && processPresentation !== undefined
-    && compactTranscript
+    && foldCompleted
     && processSpec.answerAnchorSeq !== null
     && processPresentation.turn === processSpec.turn
     && processPresentation.turnClosed
-    && !historyIncomplete
+    && processPresentation.turnStarted
   const processMember = routedNode !== undefined
     && processWindowReady
     && !TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind)
@@ -103,6 +111,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   const owner = useMemo<ChatNodeOwnerProps | null>(() => node === undefined
     ? null
     : {
+      ...groupPart === undefined ? {} : { groupPart },
       cwd,
       openFile,
       openSkill,
@@ -113,7 +122,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       fileMentions,
       turnProcess,
     }, [
-    node, cwd, openFile, openSkill, inspectCall, forkAt,
+    node, groupPart, cwd, openFile, openSkill, inspectCall, forkAt,
     loadImage, renderMessageImages, fileMentions, turnProcess,
   ])
   if (routedNode === undefined || owner === null) return null
@@ -122,12 +131,15 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   // keyed-slot entry passed alongside that same Node. TypeScript does not
   // distribute an object containing a union into a union of objects itself.
   const routedOwner = { ...owner, node: routedNode } as RoutedChatNodeOwner
+  const flowKey = groupPart === undefined ? routedNode.key : JSON.stringify([routedNode.key, groupPart])
   return (
     <div
       ref={wrapperRef}
       className={css.flowItem}
-      data-chat-anchor-key={routedNode.key}
-      data-chat-flow-key={routedNode.key}
+      data-chat-anchor-key={flowKey}
+      data-chat-flow-key={flowKey}
+      data-chat-node-key={routedNode.key}
+      data-chat-group-part={groupPart}
       data-chat-flow-kind={routedNode.kind}
       data-chat-turn={turn}
       data-turn-process-member={processMember || undefined}

@@ -25,7 +25,7 @@ type Catalogs = Readonly<Record<SessionId, SubagentCatalogSnapshot>>
 export interface SubagentCatalogInjected {
   openChild: (address: SubagentAddress) => void
   openChildAside: (address: SubagentAddress) => void
-  refresh: (parentSessionId: SessionId) => void
+  refreshProjection: (parentSessionId: SessionId) => void
 }
 
 /** Full props for the session-header lineage renderer. */
@@ -42,7 +42,7 @@ interface CatalogRowsProps {
   level: number
   openChild: (address: SubagentAddress) => void
   openChildAside: (address: SubagentAddress) => void
-  refresh: (parentSessionId: SessionId) => void
+  refreshProjection: (parentSessionId: SessionId) => void
   toggleBranch: (childSessionId: SessionId) => void
   closeCatalog: () => void
 }
@@ -200,7 +200,7 @@ function isKnownLeaf(catalog: SubagentCatalogSnapshot | undefined): boolean {
 /** Render one catalog level and recurse only through explicitly expanded rows. */
 function CatalogRows({
   parentSessionId, currentSessionId, catalog, catalogs, summaries, expanded, level,
-  openChild, openChildAside, refresh, toggleBranch, closeCatalog, t,
+  openChild, openChildAside, refreshProjection, toggleBranch, closeCatalog, t,
 }: CatalogRowsProps & { t: TranslateNS<typeof NS> }) {
   const [now, setNow] = useState(() => Date.now())
   const running = catalog.entries.some(entry => entry.activity === 'running')
@@ -222,7 +222,7 @@ function CatalogRows({
           <button
             type="button"
             className={css.refresh}
-            onClick={() => { refresh(parentSessionId) }}
+            onClick={() => { refreshProjection(parentSessionId) }}
           >
             <IconRefreshOutlineRegular size={14} />
             {t('retry')}
@@ -383,7 +383,7 @@ function CatalogRows({
                       level={level + 1}
                       openChild={openChild}
                       openChildAside={openChildAside}
-                      refresh={refresh}
+                      refreshProjection={refreshProjection}
                       toggleBranch={toggleBranch}
                       closeCatalog={closeCatalog}
                       t={t}
@@ -401,8 +401,6 @@ function CatalogRows({
 interface CatalogDropdownSharedProps extends SubagentCatalogInjected {
   /** Session whose direct catalog roots the tree. */
   rootSessionId: SessionId
-  /** Whether an ordinary title needs a breadcrumb separator before its count. */
-  separator?: boolean
   useSessions: SubagentHeaderLineageProps['useSessions']
   useSessionStatus: SubagentHeaderLineageProps['useSessionStatus']
   t: TranslateNS<typeof NS>
@@ -445,8 +443,8 @@ function catalogMenuPosition(trigger: HTMLButtonElement): CSSProperties {
 
 /** One trigger-plus-tree dropdown over the catalog rooted at `rootSessionId`. */
 function CatalogDropdown({
-  rootSessionId, currentSessionId, displayTitle, openTitle, variant, separator = false,
-  useSessions, useSessionStatus, openChild, openChildAside, refresh, t,
+  rootSessionId, currentSessionId, displayTitle, openTitle, variant,
+  useSessions, useSessionStatus, openChild, openChildAside, refreshProjection, t,
 }: CatalogDropdownProps) {
   const ancestorSwitcher = variant === 'switcher' && openTitle !== undefined
   const projections = useSessions(state => state.projectionsBySession)
@@ -506,7 +504,6 @@ function CatalogDropdown({
       if (trigger === null) return
       setOpen(true)
       setMenuPosition(catalogMenuPosition(trigger))
-      refresh(rootSessionId)
     }
     else {
       setOpen(false)
@@ -555,7 +552,7 @@ function CatalogDropdown({
       return
     }
     setExpanded(current => new Set(current).add(childSessionId))
-    refresh(childSessionId)
+    refreshProjection(childSessionId)
   }
 
   useEffect(() => {
@@ -646,7 +643,6 @@ function CatalogDropdown({
       onMouseEnter={scheduleHoverOpen}
       onMouseLeave={scheduleHoverClose}
     >
-      {separator && <span className={css.separator}>/</span>}
       <button
         ref={triggerRef}
         type="button"
@@ -711,7 +707,7 @@ function CatalogDropdown({
             level={1}
             openChild={openChild}
             openChildAside={openChildAside}
-            refresh={refresh}
+            refreshProjection={refreshProjection}
             toggleBranch={toggleBranch}
             closeCatalog={() => { changeOpen(false) }}
             t={t}
@@ -722,14 +718,46 @@ function CatalogDropdown({
   )
 }
 
+/** Full props for the root-session catalog entry in the header actions band. */
+export type SubagentCatalogActionProps =
+  PropsRuntime<'conversation.session.header.actions'> & SubagentCatalogInjected & PropsLocale<typeof NS>
+
+/**
+ * Session-header catalog action for root sessions: the descendant count and
+ * its dropdown, ordered after the task list. Child sessions render nothing
+ * here — their breadcrumb switcher in the lineage slot owns the same
+ * navigation.
+ * @param props - Session standard props plus the catalog actions and translator.
+ * @returns The count dropdown, or null on a child session.
+ */
+export function SubagentCatalogAction({
+  sessionId, useSessions, useSessionStatus, openChild, openChildAside, refreshProjection, t,
+}: SubagentCatalogActionProps) {
+  const isChild = useSessions(state => state.byId[sessionId]?.origin === 'subagent')
+  if (isChild) return null
+  return (
+    <CatalogDropdown
+      key={sessionId}
+      rootSessionId={sessionId}
+      variant="count"
+      useSessions={useSessions}
+      useSessionStatus={useSessionStatus}
+      openChild={openChild}
+      openChildAside={openChildAside}
+      refreshProjection={refreshProjection}
+      t={t}
+    />
+  )
+}
+
 /**
  * Render one breadcrumb title together with its subagent navigation.
  * @param props - Breadcrumb title, session standard props, and catalog actions.
- * @returns An ordinary-title direct-child count, or a title-and-chevron sibling switcher.
+ * @returns A title-and-chevron sibling switcher, or nothing on a root session.
  */
 export function SubagentHeaderLineage({
   lineageSessionId, displayTitle, openTitle,
-  useSessions, useSession, useSessionStatus, openChild, openChildAside, refresh, t,
+  useSessions, useSession, useSessionStatus, openChild, openChildAside, refreshProjection, t,
 }: SubagentHeaderLineageProps) {
   const address = useSession(session => session.subagent?.address)
   const parentId = useSessions((state) => {
@@ -739,18 +767,10 @@ export function SubagentHeaderLineage({
     }
     return undefined
   })
-  const shared = { useSessions, useSessionStatus, openChild, openChildAside, refresh, t }
-  if (parentId === undefined) {
-    return (
-      <CatalogDropdown
-        key={lineageSessionId}
-        rootSessionId={lineageSessionId}
-        variant="count"
-        separator
-        {...shared}
-      />
-    )
-  }
+  const shared = { useSessions, useSessionStatus, openChild, openChildAside, refreshProjection, t }
+  // Root sessions carry no breadcrumb; their descendant count lives in the
+  // header actions band (SubagentCatalogAction), after the task list.
+  if (parentId === undefined) return null
   return (
     <>
       <CatalogDropdown

@@ -11,7 +11,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { join } from 'node:path'
 import {
-  assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
+  SCAFFOLD_DEFAULTS_BUNDLE, assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE, connectFreshWorkspaceZh, saveFailureShot } from './support.ts'
@@ -23,6 +23,8 @@ const EXPORTS_EXPECTED = join(SNAPSHOT_DIR, 'exports.expected.md')
 const EXPORTS_EN_EXPECTED = join(SNAPSHOT_DIR, 'exports-en.expected.md')
 const FIXTURE_PLUGINS = fileURLToPath(new URL('./fixtures/plugins', import.meta.url))
 const MODE = webSnapshotMode()
+/** The profile manifest's bundles as the scaffold initializes them. */
+const SCAFFOLD_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', SCAFFOLD_DEFAULTS_BUNDLE]
 
 describe('web e2e: plugin manager', () => {
   let scaffold: WebScaffold
@@ -107,7 +109,7 @@ describe('web e2e: plugin manager', () => {
     await toggle.click()
     await expect.poll(async () => (JSON.parse(await homeFile('profiles', 'scaffold', 'package.json')) as {
       dsh: { profile: { bundles: string[] } }
-    }).dsh.profile.bundles, { timeout: 10_000 }).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    }).dsh.profile.bundles, { timeout: 10_000 }).toEqual(SCAFFOLD_BUNDLES)
     await expect.poll(() => panel.getByText(/cannot resolve profile bundle/).count(), { timeout: 10_000 }).toBe(0)
     expect((await scaffold.ctx.pluginManager.listBundles()).some(row => row.name === '@fixture/missing-bundle')).toBe(false)
     expect(tripwire.pageErrors).toEqual([])
@@ -120,13 +122,14 @@ describe('web e2e: plugin manager', () => {
     await panel.getByRole('button', { name: '查看 @fixture/bundle', exact: true }).waitFor({ timeout: 20_000 })
     const toggle = panel.getByRole('switch', { name: '启用 @fixture/bundle' })
     expect(await toggle.getAttribute('aria-checked')).toBe('false')
-    // The profile's own group holds its one bundle; the installation's optional bundles open the Official
-    // group, followed by the official plugins that registered their configuration, and its other bundles
-    // stay off the page.
-    expect(await panel.locator('[data-plugin-group="bundles"] [data-plugin-package]').count()).toBe(1)
-    expect(await panel.locator('[data-plugin-group="official"] [data-plugin-package]').count()).toBe(1)
+    // The profile's own group holds its fixture bundle and the scaffold's defaults bundle; the installation's
+    // optional bundles open the Official group, followed by the official plugins that registered their
+    // configuration, and its other bundles stay off the page.
+    expect(await panel.locator('[data-plugin-group="bundles"] [data-plugin-package]').count()).toBe(2)
+    expect(await panel.locator('[data-plugin-group="official"] [data-plugin-package]').count()).toBe(2)
     expect(await panel.locator('[data-plugin-group="official"] [data-plugin-item]').count()).toBe(4)
-    expect(await panel.getByText('Beta', { exact: true }).count()).toBe(1)
+    expect(await panel.getByText('Beta', { exact: true }).count()).toBe(2)
+    expect(await panel.getByRole('switch', { name: '启用 语音输入', exact: true }).getAttribute('aria-checked')).toBe('false')
     // A bundle that is off still shows the rows its patch declares, without switches.
     await panel.getByRole('button', { name: '查看 @fixture/bundle' }).click()
     await panel.locator('[data-plugin-row]', { hasText: 'fixture-row' }).waitFor({ timeout: 10_000 })
@@ -276,14 +279,13 @@ describe('web e2e: plugin manager', () => {
         await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
         await action.waitFor({ timeout: 20_000 })
         await action.getByRole('button', { name: /Agent Team/iu }).click()
-        await action.getByText('还没有共享任务').waitFor()
-        await action.getByText('lead', { exact: true }).waitFor()
+        const teamPanel = teamPage.getByRole('dialog', { name: 'Agent Team', exact: true })
+        await teamPanel.getByText('还没有共享任务').waitFor()
+        await teamPanel.getByText('lead', { exact: true }).waitFor()
         const manifest = JSON.parse(await homeFile('profiles', 'scaffold', 'package.json')) as {
           dsh: { profile: { bundles: string[] } }
         }
-        expect(manifest.dsh.profile.bundles).toEqual([
-          '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-experimental-agent-team-profile',
-        ])
+        expect(manifest.dsh.profile.bundles).toEqual([...SCAFFOLD_BUNDLES, '@deepseek-ai/dsh-experimental-agent-team-profile'])
         await panel.getByRole('button', { name: '查看 智能体团队', exact: true }).click()
         for (const id of ['agent-team', 'tool-agent-team', 'ui-agent-team']) {
           await panel.locator('[data-plugin-row]', { hasText: id }).first().waitFor()
@@ -345,7 +347,7 @@ describe('web e2e: plugin manager', () => {
     const bundles = async () => (JSON.parse(await homeFile('profiles', 'scaffold', 'package.json')) as {
       dsh: { profile: { bundles: string[] } }
     }).dsh.profile.bundles
-    await expect.poll(bundles, { timeout: 10_000 }).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@fixture/bundle'])
+    await expect.poll(bundles, { timeout: 10_000 }).toEqual([...SCAFFOLD_BUNDLES, '@fixture/bundle'])
     // A live profile: the row mounts once the whole tree recomposed, the switch is on, and nothing waits for a restart.
     await expect.poll(() => mounted()?.fiber?.state, { timeout: 20_000 }).toBe(2)
     await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: 10_000 }).toBe('true')
@@ -406,7 +408,7 @@ describe('web e2e: startup-applied plugin management', () => {
       expect(mounted()?.fiber?.state).toBeUndefined()
       await toggle.click()
       // The selection is saved and the switch turns on, but nothing mounts before the next start; a toast says so.
-      await expect.poll(bundles).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@fixture/bundle'])
+      await expect.poll(bundles).toEqual([...SCAFFOLD_BUNDLES, '@fixture/bundle'])
       await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
       await page.getByText('更改将在下次启动生效', { exact: true }).waitFor({ timeout: 10_000 })
       expect(mounted()?.fiber?.state).toBeUndefined()
@@ -417,7 +419,7 @@ describe('web e2e: startup-applied plugin management', () => {
       await panel.getByRole('button', { name: '返回插件列表' }).click()
 
       await toggle.click()
-      await expect.poll(bundles).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+      await expect.poll(bundles).toEqual(SCAFFOLD_BUNDLES)
       await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
       expect(tripwire.pageErrors).toEqual([])
     } finally {

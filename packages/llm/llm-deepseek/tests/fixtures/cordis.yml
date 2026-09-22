@@ -7,10 +7,6 @@
 - name: '@deepseek-ai/dsh-agent-loop'
   config:
     agents: []
-- name: '@deepseek-ai/dsh-settings-file'
-  config:
-    path: {{settings}}
-    watch: false
 - name: '@deepseek-ai/dsh-credentials-local'
   config:
     path: {{credentials}}

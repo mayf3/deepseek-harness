@@ -66,7 +66,6 @@ const SNAPSHOT = {
   agentPresets: [
     {
       id: 'standard',
-      trust: 'system',
       name: '标准模式',
       isDefault: true,
       rows: [
@@ -86,7 +85,6 @@ const SNAPSHOT = {
     },
     {
       id: 'ptc',
-      trust: 'system',
       isDefault: false,
       rows: [
         { entryId: 'bash', moduleName: '@deepseek-ai/dsh-tool-bash', enabled: true, fiberPhase: null },
@@ -94,7 +92,7 @@ const SNAPSHOT = {
         { entryId: 'fs', moduleName: '@deepseek-ai/dsh-tool-fs', enabled: 'conditional', fiberPhase: null },
       ],
     },
-    { id: 'shattered', trust: 'user', name: '坏预设', isDefault: false, broken: 'the composition file is missing', rows: [] },
+    { id: 'shattered', name: '坏预设', isDefault: false, broken: 'the composition file is missing', rows: [] },
   ],
 } as unknown as Snapshot
 
@@ -128,7 +126,7 @@ describe('PluginInventorySettingsTab', () => {
     })))
     const snapshot: Snapshot = scope === 'global'
       ? { entries: rows }
-      : { entries: [], agentPresets: [{ id: 'custom', trust: 'user', isDefault: true, rows }] }
+      : { entries: [], agentPresets: [{ id: 'custom', isDefault: true, rows }] }
     const view = await renderReady(snapshot)
     fireEvent.click(scope === 'global' ? globalToggle() : presetToggle())
     for (const [index, [moduleName, title]] of names.entries()) {
@@ -180,7 +178,7 @@ describe('PluginInventorySettingsTab', () => {
         },
       }],
       agentPresets: [{
-        id: 'custom', trust: 'user', name: 'My preset', isDefault: true,
+        id: 'custom', name: 'My preset', isDefault: true,
         rows: [{
           entryId: 'include:preset-runner', moduleName: '@acme/runner', enabled: true, fiberPhase: null,
           meta: {
@@ -253,7 +251,7 @@ describe('PluginInventorySettingsTab', () => {
     ]
     const snapshot: Snapshot = scope === 'global'
       ? { entries: rows }
-      : { entries: [], agentPresets: [{ id: 'custom', trust: 'user', isDefault: true, rows }] }
+      : { entries: [], agentPresets: [{ id: 'custom', isDefault: true, rows }] }
     const list = vi.fn(async () => snapshot)
     const { locale, pageProps } = localizedProps(list)
     const view = render(<PluginInventorySettingsTab {...pageProps} />)
@@ -376,7 +374,6 @@ describe('PluginInventorySettingsTab', () => {
       ],
       agentPresets: [{
         id: 'standard',
-        trust: 'system',
         isDefault: true,
         rows: [
           { entryId: 'stopping', moduleName: '@fixture/stopping', enabled: true, fiberPhase: 'unloading' },
@@ -402,7 +399,6 @@ describe('PluginInventorySettingsTab', () => {
       entries: [],
       agentPresets: [{
         id: 'same-module',
-        trust: 'user',
         isDefault: true,
         rows: [
           { entryId: 'tool-subagent-primary', moduleName: '@deepseek-ai/dsh-tool-subagent', enabled: true, fiberPhase: null },
@@ -511,7 +507,7 @@ describe('PluginInventorySettingsTab', () => {
     // The resolver stands in for presetDisplayText: shipped presets localize,
     // user-authored ones keep their own metadata.
     const localized: PluginInventorySettingsTabInjected['presetName'] = preset =>
-      preset.trust === 'system' ? `Localized ${preset.id}` : preset.name ?? preset.id
+      ['standard', 'ptc'].includes(preset.id) ? `Localized ${preset.id}` : preset.name ?? preset.id
     render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT, localized)} />)
     await screen.findByRole('searchbox', { name: en.search })
 
@@ -605,7 +601,6 @@ describe('PluginInventorySettingsTab', () => {
       entries: [],
       agentPresets: [{
         id: 'solo',
-        trust: 'user',
         isDefault: false,
         rows: [{ entryId: 'one', moduleName: '@fixture/one', enabled: true, fiberPhase: null }],
       }],

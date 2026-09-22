@@ -6,12 +6,13 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import {
-  SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
+  SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   apply as applyConversation, inject as injectConversation,
+  type GroupKey,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
   apply as applyChat, inject as injectChat, type ChatViewInjected,
@@ -21,6 +22,12 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { createChatStore } from '../src/client/stores.ts'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
 import type { LinkOpeningRowInjected } from '../src/client/settings/LinkOpeningRow.tsx'
+
+declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+  interface ConversationGroupDataMap {
+    chat: number
+  }
+}
 
 usePinnedBrowserLanguages('zh-CN')
 
@@ -51,13 +58,11 @@ function sessionFakeFor() {
 
 async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true) {
   const runtime = await SlotTestRuntime.create()
-  const chatSettings = stubSettingsScope<ChatSettings>()
+  const chatSettings = stubConfigForm<ChatSettings>()
   if (initialSettings !== undefined) chatSettings.publish({ value: initialSettings })
-  runtime.ctx.provide('settingsScope', {
+  runtime.ctx.provide('configForms', {
     developerTools: { enabled: createSnapshotStore(true) },
-    bind: ({ namespace }: { namespace: string }) => namespace === CHAT_SETTINGS_NAMESPACE
-      ? chatSettings.scope
-      : stubSettingsScope().scope,
+    get: (id: string) => id === CHAT_SETTINGS_NAMESPACE ? chatSettings.scope : stubConfigForm().scope,
   } as never)
   const layout = { closeRightbar: vi.fn(), openRightbar: vi.fn() }
   runtime.ctx.provide('layout', layout as never)
@@ -127,6 +132,36 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true)
 }
 
 describe('Chat inject API', () => {
+  it('resolves keyed Group sources across registration, activation, and removal', async () => {
+    const b = await bench()
+    try {
+      const { injected } = b.chatViewApi(b.rootReference)
+      const key = 'injected-group' as GroupKey
+      expect(injected.keyedHooks.chatGroup(key)).toBeUndefined()
+      const conversation = b.runtime.ctx.uiConversation
+      const remove = conversation.groups.register({
+        kind: 'test-group', target: 'chat',
+        create: () => null,
+        update: () => null,
+        buildGroups: () => ({
+          entries: [{ kind: 'group', key }],
+          groups: { kind: 'replace', snapshots: [{ key, data: 1, members: [] }] },
+        }),
+      })
+      await Promise.resolve()
+      conversation.binding(b.rootReference.binding).activate('chat')
+      const source = injected.keyedHooks.chatGroup(key)
+      expect(source?.getSnapshot()?.data).toBe(1)
+      expect(injected.keyedHooks.chatGroup(key)).toBe(source)
+      remove()
+      await Promise.resolve()
+      expect(source?.getSnapshot()).toBeUndefined()
+      expect(injected.keyedHooks.chatGroup(key)).toBeUndefined()
+    } finally {
+      await b.runtime.dispose()
+    }
+  })
+
   it('loads older history and forks through the Session Controller', async () => {
     const b = await bench()
     const { injected } = b.chatViewApi(b.rootReference)

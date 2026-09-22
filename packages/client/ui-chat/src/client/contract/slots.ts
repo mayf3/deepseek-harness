@@ -3,23 +3,25 @@ import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type {
   CommandNode, CompactionSummaryNode, ConversationLocationDataStore, ConversationTurnDataMap,
+  ConversationGroupData, GroupSnapshot,
   MessageImageLoader, MessageImagesOwnerProps, RenderMessageImages, TurnLocation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   InjectFace, KeyedSnapshotSelectorHook, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
   SlotHookFactory, SnapshotSelectorHook,
 } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { createChatStore } from '../stores.ts'
+import type { ChatPresentationPolicy } from '../presentation-policy.ts'
 import type { ToolCallId } from './store.ts'
 import type { ChatConversationViewNode, ChatNode, ChatNodeKind } from './chat-nodes.ts'
 import type {
   ChatNodeProcessSource, ChatNodeSource, ChatSnapshot, ChatTurnProcessPresentation,
 } from './snapshot.ts'
 import type { TurnProcessSpec } from './turn-process.ts'
-import type { PerformanceUsageMode, TranscriptViewMode } from '../../chat-settings.ts'
+import type { PerformanceUsageMode } from '../../chat-settings.ts'
 
 /** Selector hook over the current Conversation binding's Chat target. */
 export type UseChat = SnapshotSelectorHook<ChatSnapshot>
@@ -29,6 +31,13 @@ export type UseChatNode = KeyedSnapshotSelectorHook<ChatConversationViewNode | u
 
 /** Per-key selector hook over one Chat Node's Turn-process presentation. */
 export type UseChatNodeProcess = KeyedSnapshotSelectorHook<ChatTurnProcessPresentation | undefined>
+
+/**
+ * Selector hook over the live presentation policy. Callers select one field or
+ * a derived conclusion, never the whole policy, so a mode change re-renders
+ * only components whose selected value changed.
+ */
+export type UsePresentation = SnapshotSelectorHook<ChatPresentationPolicy>
 
 /** Where in a file an open should land. */
 export interface OpenFileOptions {
@@ -78,6 +87,8 @@ export interface ChatNodeTurnDataInjected {
 
 /** Stable owner currency delivered to a keyed Chat renderer. */
 export interface ChatNodeOwnerProps {
+  /** Renderer-owned Node portion selected by the grouping Definition. */
+  groupPart?: string
   cwd?: string | undefined
   /** Open the current source file of a skill referenced by a sent message. */
   openSkill: (name: string) => void
@@ -103,6 +114,14 @@ export interface TurnProcessOwnerProps {
   readonly foldable: boolean
   readonly open: boolean
   setOpen(open: boolean): void
+}
+
+/** Shared presentation policy source for renderers that depend on the work-details mode. */
+export interface PresentationInjected {
+  hooks: {
+    /** Live presentation policy derived from the accepted work-details mode. */
+    presentation: ObservableSnapshot<ChatPresentationPolicy>
+  }
 }
 
 /** Full props of one keyed Chat renderer. */
@@ -139,14 +158,16 @@ export interface PerformanceUsageInjected {
 /** Business callbacks injected into the Chat view. */
 export interface ChatViewInjected {
   hooks: {
-    /** Persisted completed-Turn transcript presentation. */
-    transcriptView: SnapshotStore<TranscriptViewMode>
+    /** Live presentation policy derived from the accepted work-details mode. */
+    presentation: ObservableSnapshot<ChatPresentationPolicy>
   }
   keyedHooks: {
     /** Resolve the stable source for one Chat Node key. */
     chatNode: (key: string) => ChatNodeSource
     /** Resolve the stable Turn-process source for one Chat Node key. */
     chatNodeProcess: (key: string) => ChatNodeProcessSource
+    /** Resolve one optional group without subscribing the root View to its data. */
+    chatGroup: (key: string) => ObservableSnapshot<GroupSnapshot<ConversationGroupData<'chat'>> | undefined> | undefined
   }
   /** Open the current source file of a skill referenced by a sent message. */
   openSkill: (name: string) => void

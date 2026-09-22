@@ -7,11 +7,11 @@ import type {
   ChatSnapshot, RunningToolCall, ToolCallBlock, ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { SlotTestRuntime, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  ConversationEventRegistry, ConversationViewRegistry, type ConvViewOwnerProps,
+  ConversationEventRegistry, ConversationViewRegistry, EMPTY_CONVERSATION_SNAPSHOT, type ConvViewOwnerProps,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { en as conversationEn, NS as CONVERSATION_NS, zh as conversationZh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import { apply as applyChat, inject as injectChat } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -102,14 +102,19 @@ async function bench(snapshot: ChatSnapshot) {
   runtimes.push(runtime)
   const ctx = runtime.ctx
   const chat = createSnapshotStore(snapshot)
+  const conversation = createSnapshotStore(EMPTY_CONVERSATION_SNAPSHOT)
   const events = new ConversationEventRegistry(ctx)
   const views = new ConversationViewRegistry(ctx)
-  ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
+  ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
   ctx.provide('uiConversation', {
     events,
     views,
-    binding: () => ({ target: () => chat }),
+    binding: () => ({ target: () => chat, snapshot: conversation }),
   } as never)
+  ctx.uiSession.provide({
+    hooks: ['conversation'],
+    resolve: () => ({ hooks: { conversation } }),
+  })
 
   await runtime.sessions.add({
     id: SID,
