@@ -182,7 +182,7 @@ describe('multimodal recovery through real providers', () => {
     await ctx.plugin(NodeRuntime)
     if (mode === 'parallel') {
       const overlap = Promise.withResolvers<undefined>()
-      onTestFinished(() => overlap.resolve(undefined))
+      onTestFinished(() => { overlap.resolve(undefined) })
       let entered = 0
       const gate = () => { if (++entered === 2) overlap.resolve(undefined); return overlap.promise }
       gates.set('ends', gate)
