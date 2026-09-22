@@ -12,9 +12,34 @@
 #include <algorithm>
 #include "progress.h"
 #include "extract.h"
+#include "extract-report.h"
 #include "uninstall-data.h"
 
 using namespace Gdiplus;
+
+// Saves the extraction failure report and, unless silent, presents its headline with a copy action.
+// Returns 1 when the report file was written and 0 otherwise; the dialog outcome never fails the caller.
+extern "C" __declspec(dllexport) int __cdecl InstallerReportExtractFailure(
+    HWND parent, int code, LPCWSTR archive, LPCWSTR destination, LPCWSTR log, LPCWSTR reportPath, int show,
+    LPCWSTR title, LPCWSTR heading, LPCWSTR hint, LPCWSTR copy, LPCWSTR expand, LPCWSTR collapse, LPCWSTR savedFormat, LPCWSTR unsaved, LPCWSTR copied) {
+    try {
+        const std::wstring output = extract_report::ReadOutput(log);
+        const std::wstring report = extract_report::Compose(code, archive, destination, output,
+            extract_report::Timestamp(), extract_report::WindowsVersion());
+        const bool saved = extract_report::WriteUtf8(reportPath, report);
+        if (show) {
+            std::wstring footer = saved ? savedFormat : unsaved;
+            const auto placeholder = footer.find(L"%s");
+            if (saved && placeholder != std::wstring::npos) footer.replace(placeholder, 2, reportPath);
+            const extract_report::DialogStrings strings{title, heading, copy, expand, collapse, footer.c_str(), copied};
+            const std::wstring content = extract_report::Headline(code, output) + L"\r\n\r\n" + hint;
+            extract_report::Show(parent, content, extract_report::Excerpt(report), report, strings);
+        }
+        return saved ? 1 : 0;
+    } catch (const std::bad_alloc&) {
+        return 0;
+    }
+}
 
 // Returns a Win32 error code; no cleanup request may traverse a linked root or touch the protected root.
 extern "C" __declspec(dllexport) DWORD __cdecl UninstallRemoveData(LPCWSTR path, LPCWSTR installation, LPCWSTR protectedRoot) {
