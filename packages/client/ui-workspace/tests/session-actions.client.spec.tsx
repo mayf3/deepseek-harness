@@ -31,6 +31,8 @@ import { PinSessionMenuItem, PinSessionRowButton } from '../src/client/session-a
 import { RenameSessionMenuItem, SessionRenameDialog } from '../src/client/session-actions/RenameSession.tsx'
 import { RowActionToast } from '../src/client/session-actions/RowActionToast.tsx'
 import { en, zh } from '../src/client/locales.ts'
+import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
+import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 
 afterEach(cleanup)
 
@@ -85,7 +87,7 @@ type OverlayProps = PropsRuntime<'shell.overlay'> & PropsLocale<'workspace'>
 
 /** Owner share, standard seat, locale seat, and the bound open-state hook of one menu row. */
 function menuRow(menu: MenuOpenState): MenuRowProps {
-  return { ...ROW, useMenuOpenState: () => menu, t, ...standard }
+  return { ...ROW, useMenuOpenState: () => menu, useShortcuts: hook([]), t, ...standard }
 }
 
 /** Owner share, standard seat, and locale seat of one hover button. */
@@ -568,4 +570,34 @@ describe('RowActionToast', () => {
       vi.useRealTimers()
     }
   })
+})
+
+it('shows effective Session shortcuts while menu clicks keep the row target', () => {
+  const shortcuts = new ShortcutRegistry('desktop', 'macos')
+  for (const [action, code] of [['rename', 'KeyR'], ['fork', 'KeyF'], ['archive', 'KeyA']] as const) {
+    shortcuts.register({ id: `session.${action}` as ShortcutCommandId, label: () => action, aliases: [],
+      defaults: {
+        'desktop:macos': { code, modifiers: ['primary', action === 'archive' ? 'shift' : 'alt'] },
+        'desktop:windows': { code, modifiers: ['primary', action === 'archive' ? 'shift' : 'alt'] },
+        'desktop:linux': { code, modifiers: ['primary', action === 'archive' ? 'shift' : 'alt'] },
+      },
+      regions: ['page'], modals: [], resolve: () => ({ status: 'pass' }) })
+  }
+  const requestSessionRename = vi.fn()
+  const forkSession = vi.fn()
+  const archiveSession = vi.fn()
+  const props = { ...menuRow([true, vi.fn()]), useShortcuts: hook(shortcuts.catalog.getSnapshot()) }
+  render(<>
+    <RenameSessionMenuItem {...props} requestSessionRename={requestSessionRename} />
+    <ForkSessionMenuItem {...props} forkSession={forkSession} />
+    <ArchiveSessionMenuItem {...props} useArchived={hook(idSet())} archiveSession={archiveSession} unarchiveSession={vi.fn()} />
+  </>)
+  expect(screen.getAllByRole('menuitem').map(item => item.getAttribute('aria-keyshortcuts')))
+    .toEqual(['Alt+Meta+R', 'Alt+Meta+F', 'Shift+Meta+A'])
+  fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '分叉会话' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
+  expect(requestSessionRename).toHaveBeenCalledWith(ROW.sessionId, ROW.displayTitle)
+  expect(forkSession).toHaveBeenCalledWith(ROW.sessionId)
+  expect(archiveSession).toHaveBeenCalledWith(ROW.sessionId)
 })
