@@ -48,11 +48,18 @@ function projectionsBaseline(value: SessionProjectionBaseline): ProjectionsBasel
   }
 }
 
-/** Messages requested per history page. */
+/** Minimum message count for ordinary history windows. */
 export const PAGE_MESSAGES = 50
 
-/** Messages requested per page while a turn jump loops backwards (fewer, larger round trips). */
+const HISTORY_PAGE_OPTIONS = { maxMessages: 500, turnWindow: { minMessages: PAGE_MESSAGES, minTurns: 2 } }
+
+/** Minimum messages per page while a turn jump loops backwards. */
 export const JUMP_PAGE_MESSAGES = 200
+
+const JUMP_PAGE_OPTIONS = {
+  ...HISTORY_PAGE_OPTIONS,
+  turnWindow: { ...HISTORY_PAGE_OPTIONS.turnWindow, minMessages: JUMP_PAGE_MESSAGES },
+}
 
 interface PendingHistory {
   beforeSeq: SessionLogOffset
@@ -392,7 +399,7 @@ export class Session implements SessionFace {
     return promise
   }
 
-  /** Page up: pull one earlier page with the window's first seq as beforeSeq and prepend. */
+  /** Prepend one Turn-aligned page: at least 50 messages and two Turn starts, capped at 500 messages. */
   async loadOlder(): Promise<void> {
     if (this.openState !== 'open' || !this.hasMore || this.loadingOlder) return
     const events = this.events
@@ -400,7 +407,10 @@ export class Session implements SessionFace {
     this.loadingOlder = true
     this.notifier.markDirty()
     try {
-      await events.prepend({ beforeSeq: this.baseSeq, maxMessages: PAGE_MESSAGES })
+      await events.prepend({
+        beforeSeq: this.baseSeq,
+        ...HISTORY_PAGE_OPTIONS,
+      })
     } catch (error) {
       if (!isRemoteFailure(error)) {
         console.error('[session-controller] loadOlder failed:', error)
@@ -444,7 +454,7 @@ export class Session implements SessionFace {
         while (pending.hasMore && this.jumpTargetSeq !== null && pending.beforeSeq > this.jumpTargetSeq) {
           if (generation !== this.openGeneration) return
           const before = pending.beforeSeq
-          await events.prepend({ beforeSeq: before, maxMessages: JUMP_PAGE_MESSAGES })
+          await events.prepend({ beforeSeq: before, ...JUMP_PAGE_OPTIONS })
           // No-progress guard: an empty or dropped page that still claims more
           // history must end the loop, not spin it.
           if (pending.beforeSeq >= before) return
@@ -615,7 +625,7 @@ export class Session implements SessionFace {
     })
     this.events = events
     try {
-      await events.open({ maxMessages: PAGE_MESSAGES })
+      await events.open(HISTORY_PAGE_OPTIONS)
       if (generation !== this.openGeneration || this.events !== events) return
       this.openState = 'open'
     } catch (error) {

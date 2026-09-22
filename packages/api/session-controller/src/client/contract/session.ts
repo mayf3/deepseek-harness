@@ -118,7 +118,9 @@ export interface ISession {
    */
   rename(title: string): Promise<RemoteResult<{ title: string; seq: SessionSeq }>>
   /**
-   * Extend the history window backwards (older messages pagination).
+   * Extend history by at least 50 messages and two Turn starts, including a
+   * partial Turn at the window's beginning. Stop at 500 messages or history
+   * exhaustion even when those minima cannot be met. Publish one prepend.
    * @returns completion; failures land in snapshot.openState/loadingOlder.
    */
   loadOlder(): Promise<void>
@@ -127,6 +129,8 @@ export interface ISession {
    * turn-jump loader. Repeated calls while a jump is paging lower its shared
    * target and return the in-flight completion; `snapshot.loadingOlder` is
    * the busy signal for the whole jump.
+   * Each page uses the same Turn alignment as loadOlder, with a 200-message
+   * minimum. The 500-message limit applies per page, not to the whole jump.
    * Older pages publish together at completion, including successful pages
    * before a later failure; live events remain independently visible.
    * @param seq - durable event seq the window must reach (a turn's `turn/start` seq).
