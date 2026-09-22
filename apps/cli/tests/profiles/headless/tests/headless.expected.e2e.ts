@@ -862,11 +862,11 @@ describe('headless stream-json snapshots', () => {
         "identityReminders": [
           "<system-reminder>
       You are teammate "implementer".
-      To send progress updates, questions, or blockers to the Team Lead, use send_message({ target: "lead", message: "..." }).
+      Your Team Lead is named "lead".
       </system-reminder>",
           "<system-reminder>
       You are teammate "researcher".
-      To send progress updates, questions, or blockers to the Team Lead, use send_message({ target: "lead", message: "..." }).
+      Your Team Lead is named "lead".
       </system-reminder>",
         ],
         "memberEdges": 4,
