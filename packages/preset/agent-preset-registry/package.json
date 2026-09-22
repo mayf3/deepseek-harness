@@ -53,6 +53,7 @@
   ],
   "license": "MIT",
   "peerDependencies": {
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
@@ -67,6 +68,7 @@
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:^",
+    "js-yaml": "^4.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -91,6 +93,7 @@
     "@deepseek-ai/dsh-sandbox": "workspace:^",
     "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
     "@deepseek-ai/dsh-user-approval": "workspace:^",
-    "@deepseek-ai/dsh-agent-preset": "workspace:^"
+    "@deepseek-ai/dsh-agent-preset": "workspace:^",
+    "@types/js-yaml": "^4.0.9"
   }
 }

@@ -1,7 +1,9 @@
-/** Preset selection settings: the roster, its default, mode help and the Creator-mode entry. */
+/** Preset selection settings: the roster, its default, mode help, a read-only view of each composition, and the Creator-mode entry. */
 import type { ReactNode } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Button, IconPlusOutlineRegular, Switch, Tag, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, IconBrowseOutlineRegular, IconPlusOutlineRegular, Modal, Switch, Tag, Tooltip,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentPresetSectionState } from './section-store.ts'
@@ -19,6 +21,10 @@ export interface AgentPresetSectionInjected {
   /** Stage the `cordis` preset and start a Creator-mode task; absent without a conversation flow. */
   startCreatorDraft?: () => void
   load: () => Promise<void>
+  /** Open one preset's declared composition in the read-only viewer. */
+  view: (id: string) => Promise<void>
+  /** Close the read-only viewer. */
+  closeView: () => void
   makeDefault: (id: string) => Promise<void>
   setPickerVisible: (visible: boolean) => Promise<void>
 }
@@ -51,12 +57,13 @@ function CardDescription({ text }: { text: string }): ReactNode {
   )
 }
 
-/** Render the roster with its default, mode help, and the guidance to Creator mode.
+/** Render the roster with its default, mode help, composition viewer, and the guidance to Creator mode.
  * @param props Settings actions, snapshot hooks and localized text.
  * @returns The preset settings section.
  */
 export function AgentPresetSection({
-  useAgentPresetSection, load, makeDefault, setPickerVisible, startCreatorDraft, close: closeSettings, useDeveloperTools, t,
+  useAgentPresetSection, load, view, closeView, makeDefault, setPickerVisible, startCreatorDraft,
+  close: closeSettings, useDeveloperTools, t,
 }: AgentPresetSectionProps) {
   const state = useAgentPresetSection(value => value)
   const developerTools = useDeveloperTools(enabled => enabled)
@@ -65,6 +72,9 @@ export function AgentPresetSection({
     page: PresetGuidePage
   } | null>(null)
   useEffect(() => { void load() }, [load])
+  const viewed = state.view
+  const viewedRow = viewed === null ? undefined : state.rows.find(row => row.id === viewed.id)
+  const viewedTitle = viewed === null ? '' : viewedRow === undefined ? viewed.title : presetDisplayText(viewedRow, t).name
   // Creator mode authors presets in conversation; it needs the flow to land a
   // session in and the self-referential preset on the roster.
   const creator = startCreatorDraft !== undefined && state.rows.some(row => row.id === 'cordis') ? startCreatorDraft : undefined
@@ -138,14 +148,21 @@ export function AgentPresetSection({
                 <CardDescription text={display.description ?? t('noDescription')} />
                 {row.broken === undefined ? null : <span className={css.cardBrokenReason} role="alert">{row.broken}</span>}
               </button>
-              {help === undefined ? null : <div className={css.cardFoot}>
-                <div className={css.cardHelp}>
+              <div className={css.cardFoot}>
+                {help === undefined ? null : <div className={css.cardHelp}>
                   <Button variant="ghost" className={css.helpButton} aria-label={`${t('modeExplanation')}: ${display.name}`}
                     onClick={() => { setGuide({ content: help, page: 'explanation' }) }}>{t('modeExplanation')}</Button>
                   <Button variant="ghost" className={css.helpButton} aria-label={`${t('howToUse')}: ${display.name}`}
                     onClick={() => { setGuide({ content: help, page: 'usage' }) }}>{t('howToUse')}</Button>
-                </div>
-              </div>}
+                </div>}
+                {/* Reading the declaration is the one thing this page offers
+                  beyond choosing: a broken preset's YAML is also where its
+                  diagnostic points, so the viewer stays available for it. */}
+                <button type="button" className={css.iconButton} data-tip={t('view')} aria-label={`${t('view')}: ${display.name}`}
+                  onClick={() => { void view(row.id) }}>
+                  <IconBrowseOutlineRegular />
+                </button>
+              </div>
             </li>
           })}
         </ul>}
@@ -153,5 +170,10 @@ export function AgentPresetSection({
       </section>
     })}
     {guide === null ? null : <PresetGuideDialog guide={guide.content} initialPage={guide.page} t={t} onClose={() => { setGuide(null) }} />}
+    <Modal open={viewed !== null} onClose={closeView} closeLabel={t('close')}
+      title={viewed === null ? '' : `${t('view')} · ${viewedTitle}`} className={css.dialog as string}
+      footer={<Button variant="outline" autoFocus onClick={closeView}>{t('close')}</Button>}>
+      {viewed === null ? null : <pre className={css.viewerCode}>{viewed.content}</pre>}
+    </Modal>
   </section>
 }

@@ -13,8 +13,9 @@ function unusedHook(): never {
 }
 function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void, developerTools = true) {
   const store = createSnapshotStore<AgentPresetSectionState>({ status: 'ready', error: null,
-    showPicker: true, policySaving: false, rows: [{ id: 'standard', isDefault: true }, { id: 'mine', name: 'Mine', isDefault: false }], ...partial })
-  const actions = { load: vi.fn(async () => {}), makeDefault: vi.fn(async () => {}),
+    showPicker: true, policySaving: false, rows: [{ id: 'standard', isDefault: true }, { id: 'mine', name: 'Mine', isDefault: false }],
+    view: null, ...partial })
+  const actions = { load: vi.fn(async () => {}), view: vi.fn(async () => {}), closeView: vi.fn(), makeDefault: vi.fn(async () => {}),
     setPickerVisible: vi.fn(async () => {}), close: vi.fn() }
   const props: AgentPresetSectionProps = { ...actions,
     ...(startCreatorDraft === undefined ? {} : { startCreatorDraft }),
@@ -86,6 +87,27 @@ it('disables the Creator entry when mode selection is hidden', () => {
   expect(button.title).toBe(en.enablePickerToCreate)
   fireEvent.click(button)
   expect(launch).not.toHaveBeenCalled()
+})
+it('reads a declared composition read-only from every card, broken ones included', () => {
+  const actions = view({ rows: [{ id: 'standard', isDefault: true }, { id: 'broken', isDefault: false, broken: 'Missing plugin' }] })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(within(rowFor('standard')).getByRole('button', { name: `${en.view}: ${en.presetStandardName}` }))
+  expect(actions.view).toHaveBeenCalledWith('standard')
+  fireEvent.click(within(rowFor('broken')).getByRole('button', { name: `${en.view}: broken` }))
+  expect(actions.view).toHaveBeenLastCalledWith('broken')
+  expect(actions.makeDefault).not.toHaveBeenCalled()
+})
+it('shows the open composition under the preset display name, without copy, and closes it from the footer', () => {
+  const actions = view({ view: { id: 'standard', title: 'standard', content: '- id: tool-fs\n  name: fs\n' } })
+  const dialog = screen.getByRole('dialog', { name: `${en.view} · ${en.presetStandardName}` })
+  expect(dialog.querySelector('pre')?.textContent).toBe('- id: tool-fs\n  name: fs\n')
+  expect(within(dialog).queryByRole('textbox')).toBeNull()
+  expect(dialog.querySelectorAll('p')).toHaveLength(0)
+  fireEvent.click(within(dialog).getAllByRole('button', { name: en.close }).at(-1)!)
+  expect(actions.closeView).toHaveBeenCalledOnce()
+  cleanup()
+  view({ view: { id: 'gone', title: 'Gone', content: '[]\n' } })
+  expect(screen.getByRole('dialog', { name: `${en.view} · Gone` })).toBeTruthy()
 })
 it('shows roster errors while the policy switch stays usable', () => {
   const actions = view({ error: 'Roster stale', rows: [{ id: 'broken', isDefault: false, broken: 'Missing plugin' }] })

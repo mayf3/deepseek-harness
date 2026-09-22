@@ -12,6 +12,7 @@ export type AgentPresetSettingsKey =
   | 'nav'
   | 'sectionIntro'
   | 'setDefault'
+  | 'view'
   | 'presetStandardName'
   | 'presetStandardDescription'
   | 'presetPtcName'
@@ -44,6 +45,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   nav: 'Agent presets',
 
   setDefault: 'Set as new task default',
+  view: 'View configuration',
 
   presetStandardName: 'Standard mode',
   presetStandardDescription:
@@ -89,6 +91,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   nav: 'Agent 预设',
 
   setDefault: '设为新任务默认',
+  view: '查看配置',
 
   presetStandardName: '标准模式',
   presetStandardDescription: '处理代码、文件和资料，适合大多数任务。Agent 会按需使用检索、编辑和终端等工具。',
