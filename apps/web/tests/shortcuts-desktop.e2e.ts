@@ -64,11 +64,11 @@ it.each([
         }, marker)
         const console = watchConsole(page)
         await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-        const deliverPrimary = (code: string) => page.evaluate((input) => {
+        const deliverPrimary = (code: string, alt = false) => page.evaluate((input) => {
           window.shortcutFixture.deliver(input)
         }, {
           kind: 'keyboard', frameName: '', revision: snapshot.revision, code,
-          control: platform === 'windows', meta: platform === 'macos', alt: false, shift: false, repeat: false,
+          control: platform === 'windows', meta: platform === 'macos', alt, shift: false, repeat: false,
         } satisfies DesktopShortcutInput)
         const openReference = () => deliverPrimary('Slash')
         const group = page.getByRole('treeitem').first()
@@ -79,14 +79,29 @@ it.each([
         const composer = page.locator('[data-composer-input]').first()
         await composer.focus()
         await page.keyboard.insertText('Desktop focus draft')
+        const panel = page.locator('[data-sidebar-right-panel][data-sidebar-right-open]')
+        const files = panel.locator('[data-dockkit-tab]').filter({ hasText: 'Files' })
+        for (const opening of [{ code: 'KeyP', alt: false }, { code: 'KeyB', alt: true }]) {
+          await composer.focus()
+          await deliverPrimary(opening.code, opening.alt)
+          await panel.waitFor()
+          const focusedAfterOpening = await panel.locator('[data-dockkit-pane]').evaluate(pane => document.activeElement === pane)
+          expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => getComputedStyle(pane).outlineStyle)).toBe('none')
+          await deliverPrimary('KeyW')
+          await expect.poll(() => page.evaluate(() => ({
+            closedWindows: window.shortcutFixture.closedWindows,
+            openPanels: document.querySelectorAll('[data-sidebar-right-open]').length,
+          }))).toEqual({ closedWindows: 0, openPanels: 0 })
+          expect(focusedAfterOpening).toBe(true)
+          expect(await composer.innerText()).toBe('Desktop focus draft')
+        }
+        await composer.focus()
         const selectDraft = () => composer.evaluate((element) => {
           const text = element.querySelector('[data-lexical-text]')!.firstChild!
           document.getSelection()!.setBaseAndExtent(text, 0, text, 7)
         })
         await selectDraft()
         await deliverPrimary('KeyP')
-        const panel = page.locator('[data-sidebar-right-panel][data-sidebar-right-open]')
-        const files = panel.locator('[data-dockkit-tab]').filter({ hasText: 'Files' })
         await files.waitFor()
         expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => document.activeElement === pane)).toBe(true)
         expect(await page.evaluate(() => document.getSelection()?.toString())).toBe('Desktop')
@@ -96,6 +111,15 @@ it.each([
         expect(await files.count()).toBe(1)
         expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => document.activeElement === pane)).toBe(true)
         expect(await page.evaluate(() => document.getSelection()?.toString())).toBe('Desktop')
+        await composer.click()
+        const pane = panel.locator('[data-dockkit-pane]')
+        await pane.click({ position: { x: 20, y: 2 } })
+        expect(await pane.evaluate(element => ({
+          focused: document.activeElement === element, outline: getComputedStyle(element).outlineStyle,
+        }))).toEqual({ focused: true, outline: 'none' })
+        await page.keyboard.press('Tab')
+        expect(await files.evaluate(element => element === document.activeElement && element.matches(':focus-visible'))).toBe(true)
+        expect(await files.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe('none')
         await deliverPrimary('KeyW')
         await expect.poll(() => page.locator('[data-sidebar-right-open]').count()).toBe(0)
         expect(await page.evaluate(() => window.shortcutFixture.closedWindows)).toBe(0)
@@ -247,6 +271,18 @@ it.each([
         await page.keyboard.up('a')
         await page.getByText('DONE', { exact: true }).waitFor({ state: 'hidden' })
         await expect.poll(() => page.getByRole('treeitem', { selected: true }).count()).toBe(0)
+        await page.getByRole('treeitem').nth(1).click()
+        await page.getByText('DONE', { exact: true }).waitFor()
+        await openReference()
+        await dialog.waitFor()
+        await dialog.getByRole('searchbox').focus()
+        await page.evaluate((input) => { window.shortcutFixture.deliver(input) }, {
+          kind: 'keyboard', frameName: '', revision: snapshot.revision, code: 'KeyA',
+          control: platform === 'windows', meta: platform === 'macos', alt: false, shift: true, repeat: false,
+        } satisfies DesktopShortcutInput)
+        await page.getByText('DONE', { exact: true }).waitFor({ state: 'hidden' })
+        await expect.poll(() => page.getByRole('treeitem', { selected: true }).count()).toBe(0)
+        expect(await dialog.isVisible()).toBe(true)
         expect(console.pageErrors).toEqual([])
         expect(console.warnings).toEqual([])
       } finally { await browser.close() }

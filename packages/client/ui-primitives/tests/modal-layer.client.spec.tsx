@@ -7,7 +7,7 @@ import { isBehindModal } from '../src/useModalLayer.ts'
 import { Menu } from '../src/Menu.tsx'
 
 afterEach(cleanup)
-function Nested() {
+function Nested({ withSearch = true }: { withSearch?: boolean }) {
   const [settings, setSettings] = useState(false)
   const [reference, setReference] = useState(false)
   const [menu, setMenu] = useState(false)
@@ -17,7 +17,7 @@ function Nested() {
       <button onClick={() => { setReference(true) }}>Reference</button>
     </Modal>
     <Modal open={reference} title="Reference" closeLabel="Close reference" onClose={() => { setReference(false) }}>
-      <input data-modal-autofocus aria-label="Search" />
+      {withSearch && <input data-modal-autofocus aria-label="Search" />}
       <Menu open={menu} autoFocus anchor={<button onClick={() => { setMenu(true) }}>Menu</button>}
         items={[{ id: 'item', label: 'Item' }]} onSelect={() => { setMenu(false) }} onClose={() => { setMenu(false) }} />
     </Modal>
@@ -65,6 +65,25 @@ it('keeps Tab within the top dialog and releases listeners after unmount', () =>
   const event = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
   document.dispatchEvent(event)
   expect(event.defaultPrevented).toBe(false)
+})
+
+it.each([
+  { direction: 'forward', shiftKey: false, target: 'Close reference' },
+  { direction: 'backward', shiftKey: true, target: 'Menu' },
+])('moves $direction from the top dialog container into its controls', ({ shiftKey, target }) => {
+  render(<Nested withSearch={false} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+  const reference = screen.getByRole('button', { name: 'Reference' })
+  reference.focus()
+  fireEvent.click(reference)
+  const dialog = screen.getByRole('dialog', { name: 'Reference' })
+  dialog.focus()
+
+  expect(fireEvent.keyDown(dialog, { key: 'Tab', shiftKey })).toBe(false)
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: target }))
+  escape()
+  expect(screen.queryByRole('dialog', { name: 'Reference' })).toBeNull()
+  expect(document.activeElement).toBe(reference)
 })
 
 it('keeps focus in a headless empty dialog and leaves portaled menu traversal to its owner', () => {

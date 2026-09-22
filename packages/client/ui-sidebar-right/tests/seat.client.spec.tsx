@@ -228,8 +228,15 @@ describe('RightbarSeat presentation', () => {
         alt: false, shift: false, repeat: false, composing: false, defaultPrevented: false },
       { target: document.activeElement, region: 'page', modal: null }, vi.fn()) })
     }
+    const composer = document.createElement('textarea')
+    h.view.container.append(composer)
+    composer.focus()
     act(() => { h.controller.toggleExpanded() })
-    element(h.view.container, '[data-dockkit-tab]').focus()
+    expect(focusedPane()).toBe(h.layout().activePaneId)
+    close()
+    expect(h.layout().expanded).toBe(false)
+    expect(closeWindow).not.toHaveBeenCalled()
+    act(() => { h.controller.toggleExpanded() })
     act(() => { h.controller.openTabFromTarget('browser', h.controller.commandTarget()!) })
     expect(Object.values(h.layout().tabs).map(tab => tab.kind)).toEqual(['browser'])
     expect(focusedPane()).toBe(h.layout().activePaneId)
@@ -272,6 +279,18 @@ describe('RightbarSeat presentation', () => {
     let created: PaneId | undefined
     act(() => { created = h.controller.split() })
     expect(document.activeElement?.getAttribute('data-dockkit-pane')).toBe(created)
+  })
+
+  it('focuses the dock on expansion while leaving floating focus alone on collapse', async () => {
+    const h = await mountSeat()
+    const tab = h.open()
+    act(() => { h.controller.float(tab.id) })
+    const floating = element(h.view.container, '[data-dockkit-float]')
+    floating.focus()
+    act(() => { h.controller.toggleExpanded() })
+    expect(document.activeElement).toBe(floating)
+    act(() => { h.controller.toggleExpanded() })
+    expect(document.activeElement?.getAttribute('data-dockkit-pane')).toBe(dockPaneIds(h.layout())[0])
   })
 
   it('retains the focused page when its body moves between docked and floating panes', async () => {

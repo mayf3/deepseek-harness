@@ -1,4 +1,5 @@
 /** Main-document keyboard adapter; local controls arbitrate before window bubbling. */
+import { observeComposition } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ShortcutContext, ShortcutFixedInput } from './types.ts'
 import type { ShortcutRegistry } from './registry.ts'
 import type { ShortcutPlatform, ShortcutRuntime } from '../protocol.ts'
@@ -30,16 +31,12 @@ export function detectEnvironment(document: Document, navigator: Navigator): {
 export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry, 'dispatch' | 'runtime' | 'platform'>,
   fixed?: (input: ShortcutFixedInput) => void, native = false): () => void {
   const document = window.document
+  const composition = observeComposition(document)
   let pending = false
   let pendingTimer: number | undefined
   const reset = (): void => { fixed?.({ type: 'reset' }) }
-  let composing = false
-  let compositionEnded = false
   let deadKey = false
-  const start = (): void => { composing = true; reset() }
-  const end = (): void => { composing = false; compositionEnded = true; reset() }
-  const release = (): void => { compositionEnded = false }
-  const blur = (): void => { composing = false; compositionEnded = false; deadKey = false; reset() }
+  const blur = (): void => { deadKey = false; reset() }
   const modalSelector = '[role="dialog"][aria-modal="true"], [role="menu"]'
   const containsModal = (node: Node): boolean => node instanceof Element
     && (node.matches(modalSelector) || node.querySelector(modalSelector) !== null)
@@ -74,14 +71,12 @@ export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry
     const dialogs = document.querySelectorAll<HTMLElement>(modalSelector)
     const top = [...dialogs].at(-1)
     const context: ShortcutContext = { region, modal: top === undefined ? null : top.dataset.shortcutModal ?? 'other', target: element }
-    // oxlint-disable-next-line typescript/no-deprecated -- IME 229 covers engines without isComposing.
-    const guarded = composing || compositionEnded || deadKey || event.isComposing || event.keyCode === 229
+    const guarded = composition.guards(event) || deadKey
       || event.getModifierState('AltGraph')
     const isDead = event.key === 'Dead'
     // macOS can report Option+Command+N as Dead outside input-method composition.
     const commandDeadKey = isDead && shortcuts.runtime === 'web' && shortcuts.platform === 'macos'
       && event.code === 'KeyN' && event.metaKey && event.altKey && !event.ctrlKey && !event.shiftKey
-    compositionEnded = false
     deadKey = isDead
     const gesture = { code: event.code, control: event.ctrlKey, alt: event.altKey, shift: event.shiftKey,
       meta: event.metaKey, repeat: event.repeat, composing: guarded || isDead, defaultPrevented: event.defaultPrevented }
@@ -94,25 +89,24 @@ export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry
     shortcuts.dispatch({ ...gesture, composing: guarded || (isDead && !commandDeadKey),
       defaultPrevented: event.defaultPrevented }, context, consume)
   }
-  document.addEventListener('compositionstart', start, true)
-  document.addEventListener('compositionend', end, true)
+  document.addEventListener('compositionstart', reset, true)
+  document.addEventListener('compositionend', reset, true)
   document.addEventListener('focusin', reset, true)
   document.addEventListener('pointerdown', reset, true)
   window.addEventListener('keydown', capture, true)
   window.addEventListener('keydown', keydown)
-  window.addEventListener('keyup', release)
   window.addEventListener('blur', blur)
   return () => {
     pending = false
     window.clearTimeout(pendingTimer)
     observer?.disconnect()
-    document.removeEventListener('compositionstart', start, true)
-    document.removeEventListener('compositionend', end, true)
+    composition.dispose()
+    document.removeEventListener('compositionstart', reset, true)
+    document.removeEventListener('compositionend', reset, true)
     document.removeEventListener('focusin', reset, true)
     document.removeEventListener('pointerdown', reset, true)
     window.removeEventListener('keydown', capture, true)
     window.removeEventListener('keydown', keydown)
-    window.removeEventListener('keyup', release)
     window.removeEventListener('blur', blur)
   }
 }

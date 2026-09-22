@@ -22,6 +22,9 @@
       "path": "../store"
     },
     {
+      "path": "../ui-primitives"
+    },
+    {
       "path": "../../util/crypto"
     },
     {

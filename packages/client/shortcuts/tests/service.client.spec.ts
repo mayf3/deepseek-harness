@@ -47,6 +47,24 @@ function mount() {
   return { ctx, service, dispose }
 }
 
+it('closes the Desktop window with the latest accepted revision and propagates bridge errors', async () => {
+  const f = desktop()
+  const { service } = mount()
+  await vi.waitFor(() => { expect(service.config.getSnapshot().status).toBe('ready') })
+  const latest = snapshot(10)
+  f.publish(latest)
+  await service.closeWindow()
+  expect(f.keyboard.closeWindow).toHaveBeenCalledExactlyOnceWith(latest.revision)
+  const failure = new Error('Window unavailable')
+  f.keyboard.closeWindow.mockRejectedValueOnce(failure)
+  await expect(service.closeWindow()).rejects.toBe(failure)
+})
+
+it('rejects a native window close outside Desktop', async () => {
+  const { service } = mount()
+  await expect(service.closeWindow()).rejects.toThrow('Desktop keyboard bridge unavailable')
+})
+
 it('describes registered binding conflicts on Linux Desktop', async () => {
   desktop()
   document.documentElement.dataset.platform = 'linux'

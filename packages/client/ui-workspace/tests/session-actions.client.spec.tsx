@@ -255,6 +255,36 @@ describe('SessionRenameDialog', () => {
     expect(document.body.textContent).toBe('')
   })
 
+  it('restores composer focus and selection after cancelling and accepting a rename', async () => {
+    const renameSession = vi.fn(async () => {})
+    const { ask } = renameDialog(renameSession)
+    render(<textarea aria-label="Composer" defaultValue="Keep this draft" />)
+    const composer = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Composer' })
+    composer.focus()
+    composer.setSelectionRange(5, 9)
+
+    ask('one', 'Session title')
+    const firstInput = screen.getByLabelText<HTMLInputElement>('会话名称')
+    expect(document.activeElement).toBe(firstInput)
+    expect([firstInput.selectionStart, firstInput.selectionEnd]).toEqual([0, 'Session title'.length])
+    fireEvent.keyDown(firstInput, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(composer)
+    expect([composer.selectionStart, composer.selectionEnd]).toEqual([5, 9])
+    expect(renameSession).not.toHaveBeenCalled()
+
+    ask('one', 'Session title')
+    const secondInput = screen.getByLabelText<HTMLInputElement>('会话名称')
+    expect(document.activeElement).toBe(secondInput)
+    fireEvent.change(secondInput, { target: { value: 'Renamed session' } })
+    await act(async () => { fireEvent.keyDown(secondInput, { key: 'Enter' }) })
+    expect(renameSession).toHaveBeenCalledWith(sid('one'), 'Renamed session')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(composer)
+    expect(composer.value).toBe('Keep this draft')
+    expect([composer.selectionStart, composer.selectionEnd]).toEqual([5, 9])
+  })
+
   it('seeds the draft from the request, renames with the trimmed title, and settles on acceptance', async () => {
     const pending = Promise.withResolvers<undefined>()
     const renameSession = vi.fn(() => pending.promise)

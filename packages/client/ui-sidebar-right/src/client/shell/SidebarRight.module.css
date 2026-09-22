@@ -172,6 +172,11 @@
   font-size: var(--dsh-content-font-size-secondary, 13px);
 }
 
+/* Keep the title's icon and text in dockkit's flex row while retaining occurrence markers. */
+.tabTitle {
+  display: contents;
+}
+
 .tabBody {
   display: flex;
   flex-direction: column;

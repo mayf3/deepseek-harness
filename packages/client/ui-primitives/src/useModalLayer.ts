@@ -19,6 +19,8 @@ const focusable = 'button:not(:disabled), input:not(:disabled), textarea:not(:di
 
 /**
  * Give only the top modal Escape and Tab ownership, then restore its previous focus.
+ * Controls mounted with the dialog use data-modal-autofocus for initial focus;
+ * React autoFocus runs before this layer can capture the invoking control.
  * Local menus handle their Escape during capture before this bubble listener.
  * @param dialog - mounted dialog element.
  * @param open - whether this layer is active.
@@ -55,7 +57,7 @@ export function useModalLayer(dialog: RefObject<HTMLElement | null>, open: boole
       const first = items[0] ?? element
       const last = items.at(-1) ?? element
       const atEdge = event.shiftKey ? document.activeElement === first : document.activeElement === last
-      if (!element.contains(document.activeElement) || atEdge) {
+      if (document.activeElement === element || !element.contains(document.activeElement) || atEdge) {
         event.preventDefault()
         const target = event.shiftKey ? last : first
         target.focus()

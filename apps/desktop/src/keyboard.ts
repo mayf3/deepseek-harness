@@ -12,10 +12,12 @@ import { DESKTOP_IPC, assertDesktopSender } from './ipc.ts'
  * @param userData - Electron-resolved device preference directory.
  * @param platform - local device platform.
  * @param updateMenu - rebuild the application menu when the close accelerator or availability changes.
+ * @param overlayInput - Current shell-owned input blocking state for the product window.
  * @returns menu construction, editor key delivery, window attachment, and teardown operations.
  */
 export function installDesktopShortcuts(
   getWindow: () => BrowserWindow | undefined, userData: string, platform: ShortcutPlatform, updateMenu: () => void,
+  overlayInput: (window: BrowserWindow) => { readonly revision: number; readonly blocked: boolean },
 ): {
   fileMenu(labels: { fileMenu: string; closePage: string }): MenuItemConstructorOptions
   /**
@@ -48,7 +50,7 @@ export function installDesktopShortcuts(
   const sendMenuClose = (): void => {
     const window = getWindow()
     if (window === undefined || window.isDestroyed() || !window.isFocused() || !window.isEnabled()
-      || revision === undefined || recording) return
+      || revision === undefined || recording || overlayInput(window).blocked) return
     window.webContents.send(DESKTOP_IPC.shortcutsInput, { kind: 'menu', commandId: 'page.close', revision })
   }
   let keys = new Set<string>()
@@ -81,10 +83,10 @@ export function installDesktopShortcuts(
     persistence.setDefinitions(definitions)
     return persistence.readCurrent()
   })
-  ipcMain.handle(DESKTOP_IPC.shortcutsEdit, async (event, input: unknown, revision: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.shortcutsEdit, async (event, input: unknown, expectedRevision: unknown) => {
     assertSender(event)
-    if (typeof revision !== 'string') throw new Error('desktop shortcuts: invalid revision')
-    return persistence.edit(parseShortcutEdit(input), revision as ShortcutRevision)
+    if (typeof expectedRevision !== 'string') throw new Error('desktop shortcuts: invalid revision')
+    return persistence.edit(parseShortcutEdit(input), expectedRevision as ShortcutRevision)
   })
   ipcMain.handle(DESKTOP_IPC.shortcutsRecording, (event, active: unknown) => {
     const window = assertSender(event)
@@ -94,7 +96,8 @@ export function installDesktopShortcuts(
   })
   ipcMain.handle(DESKTOP_IPC.shortcutsCloseWindow, (event, expected: unknown) => {
     const window = assertSender(event)
-    if (expected !== revision || revision === undefined || recording || !window.isFocused() || !window.isEnabled()) return
+    if (expected !== revision || revision === undefined || recording || !window.isFocused() || !window.isEnabled()
+      || overlayInput(window).blocked) return
     window.close()
   })
   function attachInput(window: BrowserWindow, contents: WebContents, guestName?: DesktopBrowserLeaseId): () => void {
@@ -103,6 +106,7 @@ export function installDesktopShortcuts(
     const consumed = new Map<string, 'press' | 'repeat'>()
     let inputFrame: typeof contents.focusedFrame = null
     let inputRevision: ShortcutRevision | undefined
+    let overlayRevision = overlayInput(window).revision
     const resetInput = (): void => {
       deadKey = false; held.clear(); consumed.clear(); inputFrame = null; inputRevision = undefined
       if (!contents.isDestroyed()) contents.setIgnoreMenuShortcuts(false)
@@ -122,6 +126,10 @@ export function installDesktopShortcuts(
       if (event.isMainFrame && !event.isSameDocument) clear()
     }
     const beforeInput = (event: Electron.Event, input: Input): void => {
+      const overlay = overlayInput(window)
+      if (overlay.revision !== overlayRevision) { resetInput(); overlayRevision = overlay.revision }
+      if (overlay.blocked) { event.preventDefault(); return }
+      if (event.defaultPrevented) { resetInput(); return }
       if (editingInput === contents) {
         held.clear()
         consumed.clear()
@@ -216,7 +224,7 @@ export function installDesktopShortcuts(
   return {
     sendEditingKey(keyCode, modifiers) {
       const window = getWindow()
-      if (window === undefined || window.isDestroyed()) return
+      if (window === undefined || window.isDestroyed() || overlayInput(window).blocked) return
       const contents = [...guestInputs].find(([guest, owner]) => owner.window === window && !guest.isDestroyed() && guest.isFocused())?.[0]
         ?? window.webContents
       contents.focus()

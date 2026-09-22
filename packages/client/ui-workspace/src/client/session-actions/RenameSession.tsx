@@ -105,7 +105,7 @@ function RenameForm({ request, renameSession, onSettle, t }: {
         className={css.renameInput}
         value={draft}
         aria-label={t('field.sessionName')}
-        autoFocus
+        data-modal-autofocus
         disabled={renaming}
         onFocus={(e) => { e.target.select() }}
         onChange={(e) => { setDraft(e.target.value); setError(null) }}

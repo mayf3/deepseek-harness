@@ -42,7 +42,7 @@ export function ShortcutsRow({ actions, t, useCatalog }: PropsRuntime<'settings.
 }
 
 /**
- * Render registered commands and fixed local input actions. A query matches within one label, alias, or key field.
+ * Render commands and fixed actions in stable ID order within each group. Search relevance takes precedence.
  * @param props - root store, effective catalog, and localized copy.
  * @returns the single reference dialog when open.
  */
@@ -115,7 +115,7 @@ export function ShortcutReference({
       group: 'application' as const,
     })),
     ...fixedCatalog.map(row => ({ ...row, names: [row.id, row.keys.join(' ')] })),
-  ]
+  ].sort((left, right) => Number(left.id > right.id) - Number(left.id < right.id))
   const ranked = rankByName(entries.flatMap(row => row.names.map(name => ({ name, label: row.label, row }))), query.trim())
   const matches = [...new Set(ranked.map(match => match.row))]
   const modifiedCount = Object.keys(config.document.profiles[`${runtime}:${platform}`] ?? {}).length

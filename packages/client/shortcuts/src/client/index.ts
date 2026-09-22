@@ -34,6 +34,7 @@ export default class ShortcutsService extends Service implements Shortcuts {
   readonly stopSequenceMs: number
   private readonly fixedListeners = new Set<(input: ShortcutFixedInput) => void>()
   private readonly adapter: DesktopShortcutsApi | undefined
+  private readonly keyboard: DesktopKeyboardApi | undefined
   private active = true
   private connected = false
   private readonly registry: ShortcutRegistry
@@ -44,6 +45,7 @@ export default class ShortcutsService extends Service implements Shortcuts {
       ? (window as Window & { dshDesktop?: { keyboard?: DesktopKeyboardApi } }).dshDesktop?.keyboard : undefined
     if (environment.runtime === 'desktop' && keyboard === undefined) throw new Error('Desktop keyboard bridge unavailable')
     super(ctx, 'shortcuts')
+    this.keyboard = keyboard
     this.runtime = environment.runtime
     this.platform = environment.platform
     const config = Config((globalThis as { __DSH_SHORTCUTS_CONFIG__?: unknown }).__DSH_SHORTCUTS_CONFIG__ ?? {})
@@ -148,5 +150,10 @@ export default class ShortcutsService extends Service implements Shortcuts {
   async recording(active: boolean): Promise<void> {
     if (this.adapter === undefined) throw new Error('Desktop shortcuts bridge unavailable')
     await this.adapter.recording(active)
+  }
+
+  async closeWindow(): Promise<void> {
+    if (this.keyboard === undefined) throw new Error('Desktop keyboard bridge unavailable')
+    await this.keyboard.closeWindow(this.config.getSnapshot().revision)
   }
 }

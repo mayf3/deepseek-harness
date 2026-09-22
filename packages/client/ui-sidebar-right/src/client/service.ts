@@ -203,7 +203,7 @@ export interface ISidebarRight {
    * @returns `true` while expanded; `false` while collapsed to its rail.
    */
   isExpanded(): boolean
-  /** Collapse an expanded column, or expand a collapsed one. Recorded in the sequence. */
+  /** Collapse the column, or expand it and focus its active dock pane. Recorded in the sequence. */
   toggleExpanded(): void
   /**
    * Focus a tab and the pane holding it, raising a floating one. Recorded.
@@ -472,10 +472,14 @@ export class SidebarRightController implements ISidebarRight {
     return this.mountedSurface()?.layout.expanded ?? false
   }
 
-  /** Collapse an expanded column, or expand a collapsed one. */
+  /** Collapse the column, or expand it and focus its active dock pane after rendering. */
   toggleExpanded(): void {
-    const { sessionId, actions } = this.require()
-    actions.toggleExpanded(sessionId)
+    const { sessionId, actions, openWithFocus } = this.require()
+    openWithFocus(() => {
+      actions.toggleExpanded(sessionId)
+      const layout = this.mountedSurface()?.layout
+      return layout?.expanded ? activeDockPaneId(layout) : undefined
+    })
   }
 
   /**

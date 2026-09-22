@@ -23,7 +23,10 @@ export interface ShortcutCommand {
   readonly aliases: readonly string[]
   readonly defaults: Readonly<Partial<Record<ShortcutProfile, ShortcutBinding>>>
   readonly regions: readonly ShortcutRegion[]
-  /** Modal identifiers in which this command may resolve; others block it. */
+  /**
+   * Allowed modal identifiers for Web/Linux keyboard input and explicit menu actions;
+   * Windows/macOS Desktop keyboard bindings take priority.
+   */
   readonly modals: readonly string[]
   resolve(context: ShortcutContext): ShortcutResolution
 }
@@ -121,6 +124,11 @@ export interface Shortcuts {
    * @returns completion of the native interception update.
    */
   recording(active: boolean): Promise<void>
+  /**
+   * Request closure of the Desktop window using the currently accepted shortcut revision.
+   * @returns completion of the native request; rejects outside Desktop or when the bridge request fails.
+   */
+  closeWindow(): Promise<void>
   /**
    * Register a command; duplicate ids and overlapping default bindings throw.
    * @param command - feature-owned labels, defaults, and target resolver.

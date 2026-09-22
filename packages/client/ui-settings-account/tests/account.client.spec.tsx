@@ -98,6 +98,7 @@ it.each([en, zh])('updates the Settings menu keycaps and accessible combination 
   const props: AccountMenuProps = {
     ...({} as GlobalStandardProps), ...operations, wide: true,
     useAccount: selector => selector(operations.hooks.account.getSnapshot()),
+    useTheme: selector => selector(operations.hooks.theme.getSnapshot()),
     openSettings: vi.fn(() => { expect(document.activeElement).toBe(screen.getByRole('button', { name: copy.menu })) }),
     openOnboarding: vi.fn(),
     t: key => key in copy ? copy[key as AccountKey] : key,

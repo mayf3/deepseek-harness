@@ -81,11 +81,28 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await page.keyboard.press(`${primary}+Alt+Enter`)
       expect(await composer.innerText()).toContain('T5 draft remains unsent')
       const eventCount = agent.session.seq
+      const panel = page.locator('[data-sidebar-right-panel][data-sidebar-right-open]')
 
-      await bind(page, primary, 'Toggle right sidebar')
+      for (const { label, previous } of [
+        { label: 'Browser', previous: undefined },
+        { label: 'New terminal', previous: 'Browser' },
+      ]) {
+        await bind(page, primary, label, previous)
+        await composer.click()
+        await page.keyboard.press(`${primary}+Shift+,`)
+        const openedPage = label === 'Browser' ? panel.getByPlaceholder('Enter an HTTP(S) address')
+          : panel.locator('[data-sidebar-terminal]')
+        await openedPage.waitFor()
+        const focusedAfterOpening = await panel.locator('[data-dockkit-pane]').evaluate(pane => pane.contains(document.activeElement))
+        await page.keyboard.press(`${primary}+Alt+W`)
+        await expect.poll(() => page.locator('[data-sidebar-right-open]').count(), { message: label }).toBe(0)
+        expect(focusedAfterOpening, label).toBe(true)
+        expect(await composer.innerText()).toBe('T5 draft remains unsent')
+      }
+
+      await bind(page, primary, 'Toggle right sidebar', 'New terminal')
       await composer.click()
       await page.keyboard.press(`${primary}+Shift+,`)
-      const panel = page.locator('[data-sidebar-right-panel][data-sidebar-right-open]')
       await panel.waitFor()
       expect(await panel.getByRole('button', { name: 'Collapse right sidebar' }).getAttribute('aria-keyshortcuts')).toBe(aria)
       await panel.getByRole('tab').focus()

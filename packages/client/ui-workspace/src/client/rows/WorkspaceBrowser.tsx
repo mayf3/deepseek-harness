@@ -1389,7 +1389,7 @@ export function WorkspaceBrowser({
           className={css.renameInput}
           value={renameDraft}
           aria-label={t('field.workspaceName')}
-          autoFocus
+          data-modal-autofocus
           disabled={renaming}
           onFocus={(e) => { e.target.select() }}
           onChange={(e) => { setRenameDraft(e.target.value); setRenameError(null) }}

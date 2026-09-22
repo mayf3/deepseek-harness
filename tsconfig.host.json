@@ -7,13 +7,6 @@
     "noEmit": true,
     "rewriteRelativeImportExtensions": false
   },
-  "files": [
-    // Native keyboard tests exercise the Cordis-free renderer adapters in the same event stream.
-    "packages/client/shortcuts/src/client/registry.ts",
-    "packages/client/shortcuts/src/client/dom.ts",
-    "packages/client/shortcuts/src/client/native.ts",
-    "packages/client/shortcuts/src/client/types.ts"
-  ],
   "include": [
     "apps/web/product-isolation.ts",
     "apps/web/tests/connection-recovery.e2e.ts",
@@ -180,6 +173,7 @@
   // suffixes are mutually exclusive, so each aggregate excludes the other's
   // and the package test glob above needs no per-file entry.
   "exclude": [
+    "apps/desktop/tests/keyboard.spec.ts",
     "packages/client/*/src/**",
     "benchmarks/**/*.client.ts",
     "benchmarks/**/*.client.tsx",

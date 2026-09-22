@@ -168,6 +168,16 @@ it('preserves composition, late closing keys, 229, AltGraph, and dead-key input'
   expect(press(input).defaultPrevented).toBe(true)
 })
 
+it('accepts a shortcut after the composition-closing key is released inside a local control', () => {
+  const { input, run } = mount()
+  fireEvent.compositionStart(input)
+  fireEvent.compositionEnd(input)
+  input.addEventListener('keyup', (event) => { event.stopPropagation() }, { once: true })
+  fireEvent.keyUp(input, { key: 'Enter', code: 'Enter' })
+  expect(press(input).defaultPrevented).toBe(true)
+  expect(run).toHaveBeenCalledOnce()
+})
+
 it('blocks background commands during dialogs and gives terminal input ownership', () => {
   const { input, run } = mount()
   const dialog = document.createElement('div'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true')

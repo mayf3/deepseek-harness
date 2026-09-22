@@ -168,6 +168,34 @@ function referenceFixture({ runtime = 'web', dictionary = en }: { runtime?: 'web
   return { store, catalog, fixedCatalog, config, edit, view }
 }
 
+it('keeps row and tied-search order stable across registration and remount order', () => {
+  const { catalog, fixedCatalog, store } = referenceFixture()
+  const template = catalog.getSnapshot()[0]!
+  const first = { ...template, id: 'first.command' as ShortcutCommandId, label: 'Zulu', aliases: ['action'] }
+  const last = { ...template, id: 'last.command' as ShortcutCommandId, label: 'Alpha', aliases: ['action'] }
+  const fixedFirst: ShortcutFixedCatalogEntry = { id: 'fixed.first' as ShortcutCommandId, label: 'Zulu input',
+    keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'input' }
+  const fixedLast = { ...fixedFirst, id: 'fixed.last' as ShortcutCommandId, label: 'Alpha input' }
+  const applicationRows = () => screen.getAllByRole('button', { name: /^Edit shortcut for/ })
+    .map(button => button.getAttribute('aria-label'))
+  const inputRows = () => within(screen.getByRole('region', { name: en.input })).getAllByRole('listitem')
+    .map(row => row.textContent)
+  for (const reversed of [true, false]) {
+    act(() => {
+      catalog.set(reversed ? [last, first] : [first, last])
+      fixedCatalog.set(reversed ? [fixedLast, fixedFirst] : [fixedFirst, fixedLast])
+    })
+    expect(applicationRows()).toEqual(['Edit shortcut for Zulu', 'Edit shortcut for Alpha'])
+    expect(inputRows()).toEqual(['Zulu inputEnter', 'Alpha inputEnter'])
+  }
+  act(() => { catalog.set([last]); fixedCatalog.set([fixedLast]) })
+  act(() => { catalog.set([last, first]); fixedCatalog.set([fixedLast, fixedFirst]) })
+  expect(applicationRows()).toEqual(['Edit shortcut for Zulu', 'Edit shortcut for Alpha'])
+  expect(inputRows()).toEqual(['Zulu inputEnter', 'Alpha inputEnter'])
+  act(() => { store.actions.search('action') })
+  expect(applicationRows()).toEqual(['Edit shortcut for Zulu', 'Edit shortcut for Alpha'])
+})
+
 it.each((['web', 'desktop'] as const).flatMap(runtime => (['invalid', 'future'] as const)
   .flatMap(error => [{ runtime, error, dictionary: en }, { runtime, error, dictionary: zh }])))
 ('identifies the $runtime document and preserves $error data in the selected locale', ({ runtime, error, dictionary }) => {

@@ -31,7 +31,8 @@ type ModalProps = ModalBaseProps & (
  * @param props.title - dialog heading (aria-label in every mode).
  * @param props.closeLabel - localized accessible close-button label.
  * @param props.description - optional supporting sentence under the title.
- * @param props.children - body (inputs, etc.).
+ * @param props.children - dialog body; mark its initial-focus control with
+ * data-modal-autofocus instead of React autoFocus to preserve return focus.
  * @param props.footer - action row (Cancel / Create).
  * @param props.contentClassName - optional class for a scrollable content region.
  * @param props.shortcutModal - command scope allowed by shortcut owners; unnamed
