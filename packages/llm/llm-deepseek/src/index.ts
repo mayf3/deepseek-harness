@@ -89,6 +89,7 @@ export function apply(ctx: Context, config: Config): void {
   const resolveUserId = (): AnonymousUserId => userId ??= getOrCreateAnonymousUserId()
   const adapter = (accountCredential: boolean): DeepSeekAdapter => new DeepSeekAdapter({
     accountCredential,
+    ...accountCredential ? { onInvalidAccountToken: async (token: string) => { await ctx.get('deepseekAccount')?.rejectToken(token) } } : {},
     options,
     onReplayDegrade: ({ provider, model, reason }) => {
       ctx.logger.warn(`llm-deepseek: unusable Messages replay state on assistant history for route "${provider}/${model}"; sending provider-neutral content (${reason})`)

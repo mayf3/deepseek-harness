@@ -1346,3 +1346,39 @@ it('ignores a 401 whose response cleanup overlaps a credential replacement', asy
       .toMatchObject({ kind: 'grant', payload: { token: 'new-login' } })
   } finally { cleanup.mockRestore(); fetchResponse.mockRestore() }
 })
+
+it('expires an inference-rejected token without another Platform request', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  const published: string[] = []
+  f.ctx.on('deepseek-account/signed-out', () => { published.push('signed-out') })
+  await f.account.rejectToken('test-platform-grant')
+  const state = await f.account.getState()
+  expect({ status: state.status, reason: state.signOutReason, published, detailRequests: f.detailRequests })
+    .toMatchInlineSnapshot(`
+      {
+        "detailRequests": [],
+        "published": [
+          "signed-out",
+        ],
+        "reason": "expired",
+        "status": "signed-out",
+      }
+    `)
+})
+
+it('retains a replacement login when inference rejects the previous token', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  await f.account.rejectToken('previous-platform-grant')
+  expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
+  expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default')))
+    .toMatchObject({ kind: 'grant', payload: { token: 'test-platform-grant' } })
+})
+
+it('ignores an inference rejection while already signed out', async () => {
+  const f = await fixture()
+  await f.account.rejectToken('previous-platform-grant')
+  expect(await f.account.getState()).toMatchObject({ status: 'signed-out' })
+  expect((await f.account.getState()).signOutReason).toBeUndefined()
+})

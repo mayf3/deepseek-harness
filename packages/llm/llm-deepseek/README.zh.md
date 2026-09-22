@@ -86,7 +86,7 @@ Messages 以内容块发送文本、思考、工具调用和工具结果，以 `
 
 `deepseek-official` 仅解析配置的 API Key 引用。`deepseek-account` 仅解析[账号提供者](../../credentials/deepseek-account-platform/README.zh.md)保存的授权，其允许的 `inferenceOrigin` 默认为 `https://api.deepseek.com`。两条路由均不回退到另一凭证。退出登录删除账号授权，保留 API Key。
 
-Messages 和 Files 请求通过 `x-dsh-auth-token` 发送账号 token，不加 Bearer 前缀；API Key 使用 `x-api-key`。两种凭据模式均拒绝重定向。
+Messages 和 Files 请求通过 `x-dsh-auth-token` 发送账号 token，不加 Bearer 前缀；API Key 使用 `x-api-key`。两种凭据模式均拒绝重定向。HTTP 401 且提供方消息为 `Authentication Fails (invalid dsh token)` 时归类为 `ACCOUNT_TOKEN_INVALID`。账号路由仅在请求 token 仍匹配已存登录凭据时删除它，并发布账号过期状态和 UI 退登通知。普通鉴权错误和 API Key 路由不会删除账号凭据。
 
 ### 带 thinking 与图片的流式调用
 

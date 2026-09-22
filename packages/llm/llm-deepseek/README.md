@@ -86,7 +86,7 @@ Messages sends text, thinking, tool calls, and tool results as content blocks, r
 
 `deepseek-official` resolves only its configured API-key reference. `deepseek-account` resolves only the stored grant from the [account provider](../../credentials/deepseek-account-platform/README.md), whose allowed `inferenceOrigin` defaults to `https://api.deepseek.com`. Neither route falls back to the other. Signing out removes the account grant and preserves API keys.
 
-Messages and Files requests send account tokens as `x-dsh-auth-token` without a Bearer prefix; API keys use `x-api-key`. Neither credential mode follows redirects.
+Messages and Files requests send account tokens as `x-dsh-auth-token` without a Bearer prefix; API keys use `x-api-key`. Neither credential mode follows redirects. HTTP 401 with the provider message `Authentication Fails (invalid dsh token)` becomes `ACCOUNT_TOKEN_INVALID`. On the account route, it removes the request token only if it still matches the stored login, then publishes account expiry and UI sign-out. Generic authentication errors and API-key routes do not remove account credentials.
 
 ### Streaming with thinking and images
 

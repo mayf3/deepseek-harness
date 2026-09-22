@@ -902,6 +902,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'stored token, or undefined for other origins or a signed-out account.',
       },
       {
+        signature: 'abstract rejectToken(token: string): Promise<void>',
+        description: 'Remove an inference-rejected token only while it still matches the stored login.',
+        parameters: [{ name: 'token', description: 'token captured by the rejected inference request.' }],
+        returns: 'after matching credentials are removed and expiry state is published.',
+      },
+      {
         signature: 'abstract getPlatformSession(): Promise<PlatformSession | null>',
         description: 'Read credentials for the configured Platform origin, bound to their issuing environment.',
         parameters: [],

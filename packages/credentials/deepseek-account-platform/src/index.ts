@@ -209,6 +209,13 @@ export class PlatformAccount extends DeepSeekAccount {
   }
 
 
+  override async rejectToken(token: string): Promise<void> {
+    const lifetime = this.detailsLifetime
+    const stored = await this.readCurrentGrant(lifetime)
+    if (stored?.token !== token || this.detailsLifetime !== lifetime) return
+    await this.expireCredential(token, lifetime)
+  }
+
   private async expireCredential(token: string, lifetime: AbortController): Promise<void> {
     this.removing ??= (async () => {
       if (this.attempt !== undefined) await this.cancelSignIn(this.attempt.view.id)

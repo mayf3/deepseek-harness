@@ -86,6 +86,8 @@ export interface DeepSeekConnectionOptions {
 export interface DeepSeekAdapterOptions {
   /** Report unusable native Messages replay metadata without exposing content or signatures. */
   onReplayDegrade?: (detail: { provider: string; model: string; reason: string }) => void
+  /** Remove a server-rejected account token if it still matches the current login; failures preserve the inference error. */
+  onInvalidAccountToken?: (token: string) => Promise<void>
   /** Current validated connection facts; called once per operation. */
   options: () => DeepSeekConnectionOptions
   /**

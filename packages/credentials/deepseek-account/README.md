@@ -11,6 +11,8 @@ getPlatformSession returns a Host-only origin/token snapshot for native Platform
 
 `desktopClientHeaders` maps the native `darwin` and `win32` platforms to the shared Desktop account and update-policy request header; `null` adds no header.
 
+`rejectToken` accepts a Host inference request’s rejected token and removes only the matching current login; a late rejection cannot clear a replacement credential.
+
 `AccountView.signOutReason` identifies a server-expired credential separately from explicit sign-out; it is absent while signed in.
 
 ## Summary

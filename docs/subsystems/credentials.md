@@ -321,6 +321,13 @@ abstract watch(signal: AbortSignal): AsyncIterable<AccountView>
 abstract resolveToken(url: string): Promise<string | undefined>
 
 /**
+ * Remove an inference-rejected token only while it still matches the stored login.
+ * @param token - token captured by the rejected inference request.
+ * @returns after matching credentials are removed and expiry state is published.
+ */
+abstract rejectToken(token: string): Promise<void>
+
+/**
  * Read credentials for the configured Platform origin, bound to their issuing environment.
  * @returns a Host-only snapshot, or null while signed out.
  */

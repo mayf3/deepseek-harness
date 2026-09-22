@@ -277,6 +277,61 @@ describe('Cordis provider composition', () => {
     return { ctx, http }
   }
 
+  it.each(['deepseek-account', 'deepseek-official'])('reports the rejected account token only for %s', async (provider) => {
+    const { ctx } = await boot((response) => {
+      response.writeHead(401, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ error: { type: 'authentication_error', message: 'Authentication Fails (invalid dsh token)' } }))
+    })
+    const rejectToken = vi.fn(async (_token: string) => {})
+    ctx.provide('deepseekAccount', { resolveToken: async (_url: string): Promise<string | undefined> => 'fixture-token',
+      rejectToken: (token: string): Promise<void> => rejectToken(token) } as DeepSeekAccount)
+    expect((await chunks(ctx.llm.stream(options({ provider })))).at(-1)).toMatchObject({
+      type: 'finish', reason: { kind: 'error', failure: { code: 'ACCOUNT_TOKEN_INVALID' } },
+    })
+    expect(rejectToken.mock.calls).toEqual(provider === 'deepseek-account' ? [['fixture-token']] : [])
+  })
+
+  it('finishes the active account turn when rejected credentials publish sign-out', async () => {
+    const { ctx } = await boot((response) => {
+      response.writeHead(401)
+      response.end(JSON.stringify({ error: { message: 'Authentication Fails (invalid dsh token)' } }))
+    })
+    ctx.provide('deepseekAccount', { resolveToken: async (_url: string): Promise<string | undefined> => 'fixture-token',
+      rejectToken: async (_token: string): Promise<void> => { ctx.emit('deepseek-account/signed-out') } } as DeepSeekAccount)
+    const agent = await ctx.agentLoop.create(SessionId('inference-account-expiry'), { provider: 'deepseek-account', model: MODEL })
+    agent.followup(user('hello'))
+    await agent.whenIdle()
+    expect(agent.session.snapshotEvents().at(-1)?.data).toMatchObject({
+      reason: { kind: 'aborted', reason: { kind: 'hook', reason: 'deepseek-account/signed-out' } },
+    })
+  })
+
+  it('preserves the inference error when rejected credential removal fails', async () => {
+    const { ctx } = await boot((response) => {
+      response.writeHead(401)
+      response.end(JSON.stringify({ error: { message: 'Authentication Fails (invalid dsh token)' } }))
+    })
+    ctx.provide('deepseekAccount', { resolveToken: async (_url: string): Promise<string | undefined> => 'fixture-token',
+      rejectToken: async (_token: string): Promise<void> => { throw new Error('credential storage unavailable') } } as DeepSeekAccount)
+    expect((await chunks(ctx.llm.stream(options({ provider: 'deepseek-account' })))).at(-1)).toMatchObject({
+      type: 'finish', reason: { kind: 'error', failure: { code: 'ACCOUNT_TOKEN_INVALID' } },
+    })
+  })
+
+  it('does not remove account credentials for a generic authentication error', async () => {
+    const { ctx } = await boot((response) => {
+      response.writeHead(401)
+      response.end(JSON.stringify({ error: { type: 'authentication_error', message: 'API key is invalid' } }))
+    })
+    const rejectToken = vi.fn(async (_token: string) => {})
+    ctx.provide('deepseekAccount', { resolveToken: async (_url: string): Promise<string | undefined> => 'fixture-token',
+      rejectToken: (token: string): Promise<void> => rejectToken(token) } as DeepSeekAccount)
+    expect((await chunks(ctx.llm.stream(options({ provider: 'deepseek-account' })))).at(-1)).toMatchObject({
+      type: 'finish', reason: { kind: 'error', failure: { code: 'AUTH' } },
+    })
+    expect(rejectToken).not.toHaveBeenCalled()
+  })
+
   it.each([
     { model: MODEL, inHistory: false },
     { model: MODEL, inHistory: true },
