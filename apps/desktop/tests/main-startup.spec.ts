@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import type { MenuItemConstructorOptions, MessageBoxOptions } from 'electron'
 import { DESKTOP_IPC, type DesktopUpdateState } from '../src/ipc.ts'
 import { MANDATORY_IPC } from '../src/mandatory-update-ipc.ts'
-import { DesktopHostUncleanExitError } from '../src/host-process.ts'
+import { DesktopHostFatalError, DesktopHostUncleanExitError } from '../src/host-process.ts'
 import { en } from '../src/locale.ts'
 import { DesktopUpdatePreparationError } from '../src/update-error.ts'
 import { writeCrashReport } from '../src/crash-report.ts'
@@ -1482,6 +1482,29 @@ describe('desktop main startup', () => {
     expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
     expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).detail).toContain('document missing')
     expect(harness.hosts).toHaveLength(0)
+  })
+
+  it('writes the Host\'s own diagnostic into a startup-phase crash report when the Host reports a fatal error before ready', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    const host = harness.hosts[0]!
+    const diagnostic = "Error: profile has no cordis.yml\n    at loadProfileDirectory (app-boot/lib/index.js:12:3) {\n  code: 'ENOENT',\n  path: '/profiles/desktop/cordis.yml'\n}"
+    // DesktopHostProcess.fail() rejects start() and calls onFailure with the same error object.
+    const failure = new DesktopHostFatalError('profile has no cordis.yml', diagnostic)
+    host.onFailure!(failure)
+    host.ready.reject(failure)
+    await host.stopping.promise
+    host.exited.resolve()
+    await harness.dialogShown.promise
+    const [directory, report] = vi.mocked(writeCrashReport).mock.calls[0]!
+    expect(directory).toBe('desktop-test-logs')
+    expect(report.source).toBe('host')
+    expect(report.phase).toBe('startup')
+    expect(report.error).toBeInstanceOf(DesktopHostFatalError)
+    expect(report.hostDiagnostic).toBe(diagnostic)
+    expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).detail).toContain('profile has no cordis.yml')
   })
 
   it('attaches the primary window\'s error-level console output to a running-phase Host crash report', async () => {

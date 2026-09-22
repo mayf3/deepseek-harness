@@ -22,7 +22,7 @@ macOS 上，启动审计把一组 Web 客户端行列为 `import failed (see con
 
 **spill 文件在每一步都是尽力而为。** `spillPath` 本来就是可选的，最终关闭失败时已经会撤回它。`spillAll` 现在包住打开或追加过程中的每一种文件系统失败：丢弃该 spill，通过所有者的 logger 报告一次（`SpillOptions.onFailure`，由运行时和 SSH helper 接到 `ctx.logger.error`），并让内存尾部继续收集。被删除的目录不会重建：该设计的安全性依赖于由本进程一次性创建的随机名称，重建一个已知名称就放弃了这一点。在 `ENOENT` 时新建随机目录是待办工作。
 
-**Desktop 致命失败在弹窗前写入崩溃报告。** 每个 `reportFatal` 调用方都标明来源（`host`、`web-boot`、`renderer`、`main`）。`DesktopFatalRecovery.report` 最多等待 `writeCrashReport` 一秒，然后弹出对话框并把文件路径单独占一行——与错误是否被截短无关，端口占用变体同样如此。报告包含来源、后端是否已就绪、应用与运行时版本、完整的 inspect 错误，以及从 `webContents` 的 `'console-message'` 捕获的主窗口最近 error 级 console 输出（64 KiB 尾部）。报告位于 `app.getPath('logs')` 下，平台允许时仅所有者可读，启动时保留最新十份。关闭过程中的致命失败只写报告、不弹窗。按钮与恢复操作不变。
+**Desktop 致命失败在弹窗前写入崩溃报告。** 每个 `reportFatal` 调用方都标明来源（`host`、`web-boot`、`renderer`、`main`）。`DesktopFatalRecovery.report` 最多等待 `writeCrashReport` 一秒，然后弹出对话框并把文件路径单独占一行——与错误是否被截短无关，端口占用变体同样如此。报告包含来源、后端是否已就绪、应用与运行时版本、完整的 inspect 错误（backend 状态携带原始错误对象；Host 启动失败通过 fatal IPC 事件携带 Host 自己的 inspect 错误，因为 Host 的 stderr 与该消息存在竞争，而壳只报告它看到的第一个失败），以及从 `webContents` 的 `'console-message'` 捕获的主窗口最近 error 级 console 输出（64 KiB 尾部）。报告位于 `app.getPath('logs')` 下，平台允许时仅所有者可读，启动时保留最新十份。关闭过程中的致命失败只写报告、不弹窗。按钮与恢复操作不变。
 
 **batch 脚本失败是按行的问题，不是启动失败。** 在 `ClientModuleSystem.arrive` 中，传输失败（脚本 `error` 事件；什么都没执行）在同一 URL 上重试一次，等待该 batch 的所有行共享这次重试。加载成功但没有注册某行的脚本绝不重新执行：batch 按顺序注册各包，`register()` 拒绝重复，重放会在原次运行已注册的第一个包处停止。每个已执行的 batch URL 都会被记住，因此即使首个从该 batch 导入的是它已注册的行、之后另一行发现自己缺失，这一点仍然成立。两种情况下每条仍缺失的行随后加载自己的单资源 combo URL，Host 为每个包都提供该 URL；失败的 batch URL 会被记住，后续行直接走回退，而单资源 URL 跨 import 保持可重试（一次启动内 Loader 对每个条目只 import 一次，因此缺失行只有一次回退尝试）。依赖失败用消费者与依赖的名字包装。模块系统在最外层操作按行记录最后一次 `import()` 或 `prefetch()` 失败，因此 factory 执行错误与到达错误一样被捕获，`assertEntriesActive` 按无 fiber 的条目报告该文本。
 

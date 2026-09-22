@@ -49,6 +49,13 @@ it('renders the facts header, the inspected error with its properties and cause,
   expect(text.endsWith('\n')).toBe(true)
 })
 
+it('prints the Host diagnostic verbatim in its own section when the Host reported one', () => {
+  const diagnostic = "Error: profile has no cordis.yml\n    at load (index.js:1:1) {\n  code: 'ENOENT'\n}"
+  const text = renderCrashReport(input({ error: new Error('profile has no cordis.yml'), hostDiagnostic: diagnostic }))
+  expect(text).toContain(`--- host diagnostic (as reported by the Host process) ---\n${diagnostic}\n\n--- renderer console`)
+  expect(renderCrashReport(input())).not.toContain('--- host diagnostic')
+})
+
 it('says so when no renderer console output was captured and keeps a long error message whole', () => {
   const text = renderCrashReport(input({ error: new Error('x'.repeat(20_000)) }))
   expect(text).toContain('(no error-level renderer console output was captured)')

@@ -32,6 +32,8 @@ export interface CrashReportInput {
   readonly source: CrashReportSource
   readonly phase: CrashReportPhase
   readonly error: unknown
+  /** The Host's own inspected error when it reported the failure over IPC before exiting. */
+  readonly hostDiagnostic?: string
   /** Recent renderer console lines at error level, oldest first. */
   readonly rendererConsole: readonly string[]
   readonly app: CrashReportApp
@@ -89,7 +91,7 @@ export function crashReportFileName(time: Date, source: CrashReportSource): stri
 
 /**
  * Render one report as plain text: a header of facts, the inspected error,
- * and the renderer console tail.
+ * the Host's own diagnostic when it reported one, and the renderer console tail.
  * @param input - the failure and its context.
  * @returns the complete file content.
  */
@@ -114,6 +116,7 @@ export function renderCrashReport(input: CrashReportInput): string {
     '--- error ---',
     inspect(input.error, { depth: 6, maxStringLength: Infinity, breakLength: 120 }),
     '',
+    ...(input.hostDiagnostic === undefined ? [] : ['--- host diagnostic (as reported by the Host process) ---', input.hostDiagnostic, '']),
     '--- renderer console (error level, oldest first) ---',
     consoleSection,
     '',

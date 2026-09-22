@@ -22,7 +22,7 @@ import {
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager } from './project-manager.ts'
-import { DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
+import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { DesktopPlatformView, PLATFORM_IPC, platformBounds } from './platform-view.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { installMicrophonePermissions } from './microphone-permissions.ts'
@@ -84,6 +84,7 @@ function persistCrashReport(error: unknown, source: CrashReportSource): Promise<
     source,
     phase: backendReady ? 'running' : 'startup',
     error,
+    ...(error instanceof DesktopHostFatalError && error.diagnostic !== undefined ? { hostDiagnostic: error.diagnostic } : {}),
     rendererConsole: rendererConsole.snapshot(),
     app: {
       name: app.name, version: app.getVersion(), platform: process.platform, arch: process.arch,
@@ -392,7 +393,7 @@ async function main(): Promise<void> {
     }
   }, (state) => {
     // An error keeps the phase it happened in; a restart returns the backend to startup.
-    if (state.phase === 'error') reportFatal(new Error(state.message), 'host')
+    if (state.phase === 'error') reportFatal(state.failure, 'host')
     else backendReady = state.phase === 'ready'
   })
 
