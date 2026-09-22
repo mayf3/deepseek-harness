@@ -7,7 +7,7 @@ export class PlatformAuthError extends Error {
   constructor(readonly code: 'network' | 'protocol' | 'expired' | 'storage') { super(`account: ${code}`) }
 }
 
-/** An authenticated Platform request was rejected with HTTP 401. */
+/** An authenticated Platform request was rejected with HTTP 401 or code 40003. */
 export class AccountUnauthorizedError extends PlatformAuthError {
   constructor() { super('expired') }
 }
@@ -162,6 +162,10 @@ async function platformRequest(url: string, init: RequestInit, signal: AbortSign
     }
     stage = 'parse-json'
     const payload: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    const authorization = z.object({ code: z.literal(40003) }).safeParse(payload)
+    if (authorization.success && new Headers(init.headers).has('x-dsh-auth-token')) {
+      throw new AccountUnauthorizedError()
+    }
     const codes = z.object({ code: z.number().int(), data: z.object({ biz_code: z.number().int() }).optional() }).safeParse(payload)
     if (codes.success) console.info('[deepseek-account] response codes', {
       path, code: codes.data.code, bizCode: codes.data.data?.biz_code,
@@ -182,7 +186,8 @@ async function platformRequest(url: string, init: RequestInit, signal: AbortSign
     }
     return parsed.data.data.biz_data
   } catch (error) {
-    console.info('[deepseek-account] response rejected', { path, stage, errorCode: 'protocol' })
+    console.info('[deepseek-account] response rejected', { path, stage,
+      errorCode: error instanceof PlatformAuthError ? error.code : 'protocol' })
     if (error instanceof PlatformAuthError) throw error
     throw new PlatformAuthError('protocol')
   } finally {

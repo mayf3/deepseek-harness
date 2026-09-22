@@ -48,7 +48,7 @@ const queries: { [K in keyof AccountDetails]: {
  * @param signal - request and credential lifetime.
  * @param headers - validated deployment headers for the configured origin.
  * @returns sanitized query outcome; failure never becomes a zero balance.
- * @throws AccountUnauthorizedError when Platform rejects the stored token with HTTP 401.
+ * @throws AccountUnauthorizedError when Platform rejects the stored token with HTTP 401 or response code 40003.
  */
 export async function readAccountDetail<K extends keyof AccountDetails>(field: K, origin: string, token: string,
   signal: AbortSignal, headers: Record<string, string>): Promise<AccountDetails[K]> {

@@ -202,7 +202,7 @@ export class PlatformAccount extends DeepSeekAccount {
         { ...this.accountRequestHeaders, ...this.clientHeaders })
       return this.detailsLifetime !== lifetime ? null : details
     } catch (_unauthorized) {
-      // readAccountDetail exposes only authenticated HTTP 401 failures.
+      // readAccountDetail exposes only authenticated credential rejection failures.
       if (this.detailsLifetime === lifetime) await this.expireCredential(stored.token, lifetime)
       return null
     }

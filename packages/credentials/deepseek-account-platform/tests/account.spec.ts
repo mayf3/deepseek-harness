@@ -49,6 +49,7 @@ async function fixture(
   let origin = ''
   let detailsHold = false
   let balanceHold = false
+  let detailCode = 0
   let detailStatus = 200
   let profileFailed = false
   let summaryFailed = false
@@ -84,6 +85,7 @@ async function fixture(
       detailsStarted.resolve(undefined)
       if (detailsHold || (balanceHold && req.url === '/api/v0/users/get_user_summary')) await release.promise
       if (status !== 200) { res.writeHead(status).end(); return }
+      if (detailCode !== 0) { res.end(JSON.stringify({ code: detailCode, data: null })); return }
       const value = req.url === '/auth-api/v0/users/current'
         ? { id: 'test-user', token: 'never-copy-response-token', ...contact,
           id_profile: { name: 'Test Account', picture: null } }
@@ -159,6 +161,7 @@ async function fixture(
     ctx, account, home, origin, callbackOrigin, wait, receivedHeaders, logoutHeaders, logoutCount: () => logoutCount,
     holdLogout: () => { logoutHold = true },
     failLogout: (failed: boolean) => { logoutFailed = failed }, detailRequests, detailsStarted,
+    detailCode: (code: number) => { detailCode = code },
     detailStatus: (status: number) => { detailStatus = status },
     failProfile: (failed: boolean) => { profileFailed = failed },
     holdBalance: () => { balanceHold = true },
@@ -877,6 +880,18 @@ it.each(['profile', 'balance'] as const)('clears the rejected account grant afte
   let signedOut = 0
   f.ctx.on('deepseek-account/signed-out', () => { signedOut++ })
   f.detailStatus(401)
+  expect(await (field === 'profile' ? f.account.getProfile() : f.account.getBalance())).toBeNull()
+  expect(await f.account.getState()).toMatchObject({ status: 'signed-out', signOutReason: 'expired', attempt: null })
+  expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default'))).toBeUndefined()
+  expect(signedOut).toBe(1)
+})
+
+it.each(['profile', 'balance'] as const)('clears the rejected account grant after a %s HTTP 200 with code 40003', async (field) => {
+  const f = await fixture()
+  await storeAccount(f)
+  let signedOut = 0
+  f.ctx.on('deepseek-account/signed-out', () => { signedOut++ })
+  f.detailCode(40003)
   expect(await (field === 'profile' ? f.account.getProfile() : f.account.getBalance())).toBeNull()
   expect(await f.account.getState()).toMatchObject({ status: 'signed-out', signOutReason: 'expired', attempt: null })
   expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default'))).toBeUndefined()
