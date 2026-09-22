@@ -1,0 +1,357 @@
+/** Real assembled UI plus source-compiled browser regressions for focus-ring paint. */
+import { join } from 'node:path'
+import { build } from 'vite'
+import { chromium, type Locator, type Page } from 'playwright'
+import { beforeAll, describe, expect, it, onTestFinished } from 'vitest'
+import { launchWebScaffold, watchConsole } from './scaffold.ts'
+import { connectFreshWorkspace, newEnglishPage, REPO_ROOT } from './support.ts'
+
+/** Read rendered paint and browser focus, not just the modality publisher's attribute. */
+async function paint(target: Locator) {
+  return target.evaluate((element) => {
+    const style = getComputedStyle(element)
+    const resolveColor = (value: string): string => {
+      const probe = document.createElement('span')
+      probe.style.color = value
+      document.body.append(probe)
+      const color = getComputedStyle(probe).color
+      probe.remove()
+      return color
+    }
+    return {
+      active: document.activeElement === element,
+      focusVisible: element.matches(':focus-visible'),
+      modality: document.documentElement.getAttribute('data-input-modality'),
+      brand: resolveColor(style.getPropertyValue('--dsw-alias-brand-primary').trim()),
+      hover: resolveColor(style.getPropertyValue('--dsw-alias-interactive-bg-hover').trim()),
+      outline: style.outlineColor,
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+      shadow: style.boxShadow,
+      background: style.backgroundColor,
+    }
+  })
+}
+
+async function expectSilent(target: Locator): Promise<void> {
+  const state = await paint(target)
+  expect(state.active).toBe(true)
+  expect(state.modality).toBe('pointer')
+  expect(state.brand).toMatch(/^rgb/)
+  expect(state.outlineStyle === 'none' || state.outline === 'rgba(0, 0, 0, 0)').toBe(true)
+  expect(state.shadow).not.toContain(state.brand)
+}
+
+async function expectBrand(target: Locator, kind: 'outline' | 'shadow'): Promise<void> {
+  await expect.poll(async () => {
+    const state = await paint(target)
+    return {
+      active: state.active,
+      visible: state.focusVisible,
+      modality: state.modality,
+      painted: kind === 'shadow'
+        ? state.shadow.includes(state.brand)
+        : state.outline === state.brand && state.outlineStyle === 'solid' && Number.parseFloat(state.outlineWidth) > 0,
+    }
+  }).toEqual({ active: true, visible: true, modality: 'keyboard', painted: true })
+}
+
+it('assembled app: pointer keys stay silent; keyboard navigation and menu activation retain feedback', async () => {
+  const scaffold = await launchWebScaffold()
+  onTestFinished(() => scaffold.close())
+  const browser = await chromium.launch({ headless: true })
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  const consoleWatch = watchConsole(page)
+  await page.goto(scaffold.authenticatedUrl)
+  await connectFreshWorkspace(page, scaffold.workspaceCwd)
+  const trigger = page.getByRole('button', { name: /^Access mode, current:/ })
+
+  await trigger.click()
+  await page.getByRole('menu').waitFor()
+  await expectSilent(trigger)
+  await page.keyboard.press('Shift')
+  await expectSilent(trigger)
+  await page.keyboard.press('Escape')
+  await page.getByRole('menu').waitFor({ state: 'hidden' })
+  await expectSilent(trigger)
+
+  for (const key of ['Home', 'End']) {
+    await trigger.click()
+    await page.keyboard.press('Escape')
+    await expectSilent(trigger)
+    await page.keyboard.press(key)
+    await expectBrand(trigger, 'shadow')
+  }
+
+  await trigger.click()
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Shift+Tab')
+  expect(await trigger.evaluate(element => element === document.activeElement)).toBe(false)
+  await page.keyboard.press('Tab')
+  await expectBrand(trigger, 'shadow')
+  for (const key of ['Enter', 'Space']) {
+    await page.keyboard.press(key)
+    await page.getByRole('menu').waitFor()
+    await expectBrand(trigger, 'shadow')
+    const menu = page.getByRole('menu')
+    for (const [navigation, index] of [['End', -1], ['Home', 0]] as const) {
+      await page.keyboard.press(navigation)
+      const row = menu.getByRole('menuitem').nth(index)
+      const state = await paint(row)
+      expect(state.active).toBe(true)
+      expect(state.focusVisible).toBe(true)
+      expect(state.modality).toBe('keyboard')
+      // Menu rows intentionally use the hover fill instead of a second outline.
+      expect(state.background).toBe(state.hover)
+      expect(state.background).not.toBe('rgba(0, 0, 0, 0)')
+    }
+    await page.keyboard.press('Escape')
+    await expectBrand(trigger, 'shadow')
+  }
+  expect(consoleWatch.warnings).toEqual([])
+  expect(consoleWatch.pageErrors).toEqual([])
+})
+
+/**
+ * Supplementary fixture, not an assembled app: Vite compiles the actual Menu,
+ * Switch, input-modality module and CSS Modules in memory. Only arrangement and
+ * state ownership belong to the fixture; no test writes the modality attribute.
+ */
+async function compileFixture(): Promise<{ script: string; css: string }> {
+  const source = (relative: string): string => JSON.stringify(join(REPO_ROOT, 'packages/client', relative).replaceAll('\\', '/'))
+  const entry = join(REPO_ROOT, 'apps/web/focus-rings-fixture.tsx').replaceAll('\\', '/')
+  const code = `
+    import React, { useState } from 'react'
+    import { createRoot } from 'react-dom/client'
+    import { Menu } from ${source('ui-primitives/src/Menu.tsx')}
+    import { Switch } from ${source('ui-primitives/src/Switch.tsx')}
+    import ${source('ui-primitives/src/input-modality.ts')}
+    import ${source('ui-theme/src/styles/base.css')}
+    import ${source('ui-theme/src/styles/design-platform.css')}
+    import ${source('ui-theme/src/styles/focus.css')}
+    import ${source('ui-theme/src/styles/gradient-shadow-text.css')}
+    import triggerCss from ${source('ui-permission-presets/src/client/PermissionSelect.module.css')}
+    import feedbackCss from ${source('ui-message-feedback/src/client/FeedbackDialog.module.css')}
+    import workflowCss from ${source('ui-workflow-run/src/client/WorkflowRunPanel.module.css')}
+    import cardCss from ${source('ui-primitives/src/HoverCard.module.css')}
+    import pillCss from ${source('ui-primitives/src/Pill.module.css')}
+    import trajectoryCss from ${source('ui-trajectory/src/client/TrajectoryTable.module.css')}
+    function Fixture() {
+      const [checked, setChecked] = useState(false)
+      const [open, setOpen] = useState(false)
+      return <main style={{ padding: 40, display: 'grid', gap: 24, width: 420 }}>
+        <Switch label="Toggle" checked={checked} onChange={setChecked} />
+        <button id="default-outline">Default browser outline</button>
+        <Menu open={open} autoFocus onClose={() => setOpen(false)}
+          anchor={<button className={triggerCss.trigger} onClick={() => setOpen(!open)}>Open menu</button>}
+          items={[{ id: 'first', label: 'First item' }, { id: 'last', label: 'Last item' }]} />
+        <textarea aria-label="Feedback" className={feedbackCss.detail} />
+        <button aria-label="Workflow member" className={workflowCss.memberButton}>
+          <span data-member-ring className={workflowCss.memberLabelWrap}>
+            <span className={workflowCss.memberLabel}>Member</span>
+          </span>
+        </button>
+        <button aria-label="Elevated card" className={cardCss.card + ' ' + cardCss.copyable}
+          style={{ position: 'relative' }}>Card</button>
+        <button aria-label="Selected pill" aria-pressed="true" className={pillCss.pill + ' ' + pillCss.active}>Selected</button>
+        <table className={trajectoryCss.table} data-scroll-ready="true"><tbody>
+          <tr aria-label="Trajectory row" tabIndex={0}><td>Row</td></tr>
+        </tbody></table>
+        <button aria-label="Selected request" aria-pressed="true"
+          className={trajectoryCss.requestBoundaryControl + ' ' + trajectoryCss.requestBoundaryControlActive}
+          style={{ position: 'relative', width: 40, height: 30 }} />
+      </main>
+    }
+    createRoot(document.getElementById('root')).render(<Fixture />)
+  `
+  const result = await build({
+    configFile: false,
+    root: join(REPO_ROOT, 'apps/web'),
+    logLevel: 'error',
+    plugins: [{
+      name: 'focus-rings-fixture',
+      resolveId(id) { if (id === entry) return entry },
+      load(id) { if (id === entry) return code },
+    }],
+    esbuild: { jsx: 'automatic', jsxDev: false },
+    define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+    build: {
+      write: false,
+      minify: false,
+      lib: { entry, name: 'FocusRingsFixture', formats: ['iife'] },
+    },
+  })
+  if ('on' in result) throw new Error('expected an in-memory build, not a watcher')
+  const outputs = (Array.isArray(result) ? result : [result]).flatMap(bundle => bundle.output)
+  return {
+    script: outputs.flatMap(output => output.type === 'chunk' ? [output.code] : []).join('\n'),
+    css: outputs.flatMap((output) => {
+      if (output.type !== 'asset' || !output.fileName.endsWith('.css')) return []
+      return [typeof output.source === 'string' ? output.source : new TextDecoder().decode(output.source)]
+    }).join('\n'),
+  }
+}
+
+describe('source-compiled supplementary focus paint', () => {
+  let fixture: Awaited<ReturnType<typeof compileFixture>>
+  beforeAll(async () => { fixture = await compileFixture() })
+
+  async function openFixture(): Promise<Page> {
+    const browser = await chromium.launch({ headless: true })
+    onTestFinished(() => browser.close())
+    const page = await newEnglishPage(browser)
+    const consoleWatch = watchConsole(page)
+    onTestFinished(() => { expect(consoleWatch.pageErrors).toEqual([]) })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.setContent('<!doctype html><html><body><div id="root"></div></body></html>')
+    await page.addStyleTag({ content: fixture.css })
+    await page.addScriptTag({ content: fixture.script })
+    expect(consoleWatch.pageErrors).toEqual([])
+    await page.getByRole('switch', { name: 'Toggle' }).waitFor()
+    return page
+  }
+
+  it('keeps Shift/Escape silent while Tab, Home, End and paging reveal a brand outline', async () => {
+    const page = await openFixture()
+    const toggle = page.getByRole('switch', { name: 'Toggle' })
+    await toggle.click()
+    for (const key of ['Shift', 'Escape']) {
+      await page.keyboard.press(key)
+      await expectSilent(toggle)
+    }
+    expect((await paint(toggle)).focusVisible).toBe(true)
+    for (const key of ['Home', 'End', 'PageUp', 'PageDown']) {
+      await toggle.click()
+      await page.keyboard.press(key)
+      await expectBrand(toggle, 'outline')
+    }
+    await toggle.click()
+    await page.keyboard.press('Tab')
+    const fallback = page.locator('#default-outline')
+    const state = await paint(fallback)
+    expect(state.active).toBe(true)
+    expect(state.focusVisible).toBe(true)
+    expect(state.outline).toBe(state.brand)
+    expect(Number.parseFloat(state.outlineWidth)).toBeGreaterThan(0)
+    await page.keyboard.press('Shift+Tab')
+    await expectBrand(toggle, 'outline')
+  })
+
+  it.each(['Enter', 'Space'])('%s opens the real autoFocus Menu after a pointer-owned trigger', async (key) => {
+    const page = await openFixture()
+    const trigger = page.getByRole('button', { name: 'Open menu' })
+    await trigger.click()
+    await page.getByRole('menuitem', { name: 'First item' }).waitFor()
+    await trigger.click()
+    await page.getByRole('menu').waitFor({ state: 'hidden' })
+    await expectSilent(trigger)
+    await page.keyboard.press(key)
+    const first = page.getByRole('menuitem', { name: 'First item' })
+    await expect.poll(async () => (await paint(first)).active).toBe(true)
+    const state = await paint(first)
+    expect(state.modality).toBe('keyboard')
+    expect(state.focusVisible).toBe(true)
+    expect(state.background).toBe(state.hover)
+    expect(state.background).not.toBe('rgba(0, 0, 0, 0)')
+    await page.keyboard.press('Escape')
+    await expectBrand(trigger, 'shadow')
+  })
+
+  it('negative control: blanket shadow suppression destroys input and card paint and misses descendants', async () => {
+    const page = await openFixture()
+    const input = page.getByRole('textbox', { name: 'Feedback' })
+    const card = page.getByRole('button', { name: 'Elevated card' })
+    const elevation = (await paint(card)).shadow
+    await input.click()
+    const focusedInput = await paint(input)
+    expect(focusedInput.active).toBe(true)
+    expect(focusedInput.shadow).toContain(focusedInput.brand)
+    // Restore direct-brand fallback and the rejected global eraser only in this page.
+    await page.addStyleTag({ content: `
+      html[data-input-modality='pointer'] body :focus-visible {
+        --dsw-focus-ring-color: initial !important;
+        outline-color: transparent !important;
+        box-shadow: none !important;
+      }
+    ` })
+    expect((await paint(input)).shadow).toBe('none')
+    await card.click()
+    await page.keyboard.press('Shift')
+    expect((await paint(card)).active).toBe(true)
+    expect((await paint(card)).shadow).toBe('none')
+    expect((await paint(card)).shadow).not.toBe(elevation)
+    const member = page.getByRole('button', { name: 'Workflow member' })
+    await member.click()
+    await page.keyboard.press('Shift')
+    expect((await paint(member)).active).toBe(true)
+    const descendant = await paint(member.locator('[data-member-ring]'))
+    expect(descendant.outlineStyle).toBe('solid')
+    expect(descendant.outline).toBe(descendant.brand)
+  })
+
+  it('silences high-specificity table rings without hiding selected-state shadows', async () => {
+    const page = await openFixture()
+    const row = page.getByRole('row', { name: 'Trajectory row' })
+    await row.click()
+    await page.keyboard.press('Shift')
+    await expectSilent(row)
+    expect((await paint(row)).focusVisible).toBe(true)
+    await page.keyboard.press('Home')
+    await expectBrand(row, 'shadow')
+
+    for (const [name, pseudo] of [['Selected pill', null], ['Selected request', '::before']] as const) {
+      const selected = page.getByRole('button', { name })
+      const shadow = (): Promise<string> => selected.evaluate((element, pseudo) => getComputedStyle(element, pseudo).boxShadow, pseudo)
+      await selected.click()
+      // The request marker animates its border; sample after its transition settles.
+      await selected.evaluate(async (element) => {
+        await Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished))
+      })
+      const before = await shadow()
+      expect(before).not.toBe('none')
+      expect(before).not.toContain('rgba(0, 0, 0, 0)')
+      await page.keyboard.press('Shift')
+      expect(await selected.getAttribute('aria-pressed')).toBe('true')
+      expect((await paint(selected)).active).toBe(true)
+      await expect.poll(shadow).toBe(before)
+    }
+  })
+
+  it('preserves clicked text-input paint and card elevation while suppressing descendant rings', async () => {
+    const page = await openFixture()
+    const input = page.getByRole('textbox', { name: 'Feedback' })
+    await input.click()
+    await page.keyboard.type('Still focused')
+    await expect.poll(async () => {
+      const state = await paint(input)
+      return { active: state.active, visible: state.focusVisible, modality: state.modality, ring: state.shadow.includes(state.brand) }
+    }).toEqual({ active: true, visible: true, modality: 'pointer', ring: true })
+
+    const member = page.getByRole('button', { name: 'Workflow member' })
+    const ring = member.locator('[data-member-ring]')
+    await member.click()
+    await page.keyboard.press('Shift')
+    expect((await paint(member)).active).toBe(true)
+    expect((await paint(member)).focusVisible).toBe(true)
+    expect((await paint(ring)).outline).toBe('rgba(0, 0, 0, 0)')
+    await page.keyboard.press('Home')
+    const descendant = await paint(ring)
+    expect((await paint(member)).active).toBe(true)
+    expect(descendant.outline).toBe(descendant.brand)
+    expect(descendant.outlineStyle).toBe('solid')
+    expect(Number.parseFloat(descendant.outlineWidth)).toBeGreaterThan(0)
+
+    const card = page.getByRole('button', { name: 'Elevated card' })
+    const elevation = (await paint(card)).shadow
+    expect(elevation).not.toBe('none')
+    await card.click()
+    await page.keyboard.press('Shift')
+    await expectSilent(card)
+    expect((await paint(card)).focusVisible).toBe(true)
+    expect((await paint(card)).shadow).toBe(elevation)
+    await page.keyboard.press('Home')
+    await expectBrand(card, 'outline')
+    expect((await paint(card)).shadow).toBe(elevation)
+  })
+})

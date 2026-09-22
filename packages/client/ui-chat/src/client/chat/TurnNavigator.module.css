@@ -139,7 +139,7 @@
   inset: 0 0 0 auto;
   width: 20px;
   border-radius: inherit;
-  outline: 1px solid var(--dsw-alias-brand-primary);
+  outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary));
   /* The scroller clips the right edge; keep the marker's ring inside it. */
   outline-offset: -1px;
   content: '';

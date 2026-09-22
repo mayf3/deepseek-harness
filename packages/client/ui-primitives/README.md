@@ -110,8 +110,14 @@ The package enforces one separation: presentational React atoms with zero Cordis
 | [`src/SearchBlock.tsx`](src/SearchBlock.tsx) / [`src/WebBlock.tsx`](src/WebBlock.tsx) | Search and web-retrieval cards |
 | [`src/icons/`](src/icons/) | Size-neutral `Regular` and `Medium` product glyph components |
 | [`src/code-highlighting.ts`](src/code-highlighting.ts) | Shared filename grammar selection and lazy line highlighting |
+| [`src/input-modality.ts`](src/input-modality.ts) | Document-wide input modality published on `<html>` |
 | [`src/plugin-artwork.tsx`](src/plugin-artwork.tsx) | Fixed-palette plugin artwork with per-instance SVG def ids |
 | [`src/useAnchoredPosition.ts`](src/useAnchoredPosition.ts) / [`src/useAnchoredMaxHeight.ts`](src/useAnchoredMaxHeight.ts) | Floating-panel and overlay geometry hooks |
+
+<a id="input-modality"></a>
+### Input modality
+
+[`input-modality.ts`](src/input-modality.ts) tracks input for tooltips and publishes `data-input-modality` on `<html>` for the [theme's focus styles](../ui-theme/README.md#understand-the-implementation). `pointerModality()` is true after pointer input and false after any key, including IME composition keys; `Tooltip` uses it to decide whether focus may show a bubble. The published attribute stays `pointer` until a non-composing navigation key (Tab, arrows, Home/End, PageUp/PageDown), or focus on a different control after a non-composing key. Refocusing the same control does not restore keyboard modality. Pointer input, an IME composition key, and window blur each clear the pending key; focus changes without a pending key leave the modality unchanged. The listeners live for the document lifetime; Node imports install none. The focus-change rule observes events exposed to window; components own additional navigation inside shadow roots that do not expose those events.
 
 ### Streaming markdown
 

@@ -51,7 +51,11 @@ kind: "package-reference"
 
 ### 样式表
 
-`src/styles/` 下有六张样式表，由 ui-theme 的动态客户端 entry 依次导入：`base.css`、`corner-shape.css`、`design-platform.css`、`scrollbar.css`、`gradient-shadow-text.css` 与 `shiki.css`。客户端 bundle 将其编译并注入为插件持有的全局样式，因此卸载与 HMR（热模块替换）会随 ui-theme 一同移除。`scrollbar.css` 消费 `--dsw-alias-scrollbar-*` token，必须排在声明这些 token 的 `design-platform.css` 之后。状态标记使用各自的语义状态 token。
+`src/styles/` 下有七张样式表，由 ui-theme 的动态客户端 entry 依次导入：`base.css`、`corner-shape.css`、`design-platform.css`、`focus.css`、`scrollbar.css`、`gradient-shadow-text.css` 与 `shiki.css`。客户端 bundle 将其编译并注入为插件持有的全局样式，因此卸载与 HMR（热模块替换）会随 ui-theme 一同移除。`scrollbar.css` 消费 `--dsw-alias-scrollbar-*` token，必须排在声明这些 token 的 `design-platform.css` 之后。状态标记使用各自的语义状态 token。
+
+[`focus.css`](src/styles/focus.css) 通过 `var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary))` 提供 `:focus-visible` 轮廓颜色兜底，不改变轮廓几何。组件轮廓与焦点环阴影使用同一颜色表达式，包括后代和伪元素上的环。`--dsw-focus-ring-width`（2px）是标准宽度；密集表格与工具栏可以保留 1px，offset 仍由组件决定。
+
+指针模态下，`html[data-input-modality='pointer'] body :focus-visible:not(:read-write)` 将焦点环颜色设为透明。后代与伪元素继承该值；规则不清除 `box-shadow`，因此 elevation 阴影与选中态边框独立于焦点环可见性。匹配 `:read-write` 的可编辑文本控件在点击时保留自身焦点反馈。[输入模态](../ui-primitives/README.zh.md#input-modality)决定何时恢复键盘焦点样式；它不移动 DOM 焦点。
 
 `corner-shape.css` 平滑所有圆角：在 `@supports (corner-shape: superellipse(1.5))` 内定义 `--dsw-corner-shape`，并通过通配选择器应用到所有元素及其 `::before`/`::after`，因此不支持 `corner-shape` 的引擎保持普通圆弧。正圆形状——`border-radius: 50%` 的圆与胶囊半径——因超级椭圆会使其变形，须在所属组件样式表中把 `corner-shape: round` 与半径声明配对；corner-shape 样式表 spec 跨全部包样式表强制这一配对。
 

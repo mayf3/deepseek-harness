@@ -6,28 +6,38 @@ English | [中文](2026-09-20-focus-ring-brand-primary.zh.md)
 
 ## Problem
 
-Keyboard focus rings carried at least five different colours across the client: `--dsw-alias-state-business-primary` on 31 declarations, `--dsw-alias-label-primary`, `--dsw-alias-label-tertiary`, `--dsw-alias-state-warn-label`, `--dsw-alias-border-l4` and two button fills elsewhere. Controls that declared no ring at all fell back to the browser default, whose colour follows the operating-system accent — so the same build shows orange on one machine and blue on another, and a control can change colour when nothing about the control changed.
+Different explicit focus colours and browser-default outlines do not provide a consistent keyboard-focus cue. Browser defaults can also depend on the operating-system accent.
+
+Focus feedback has separate interaction and geometry constraints. A browser's `:focus-visible` heuristic can reveal a pointer-focused button after a key that does not move focus, while editable text controls need focus feedback on click. Containers that clip their contents can hide an outer ring.
 
 ## Decision
 
-Every keyboard focus ring uses `--dsw-alias-brand-primary`.
+[The theme's focus stylesheet](../../../../packages/client/ui-theme/src/styles/focus.css) owns the shared ring colour and standard width. [Input modality](../../../../packages/client/ui-primitives/README.md#input-modality) distinguishes tooltip input from keyboard focus navigation.
 
-Two parts implement this, and both are required. `ui-theme/src/styles/focus.css` declares a global `:focus-visible { outline-color: var(--dsw-alias-brand-primary) }`, which reaches the controls that draw the browser default. The 49 component declarations that named another colour now name the same token. Only the colour changed: each declaration keeps its own width, style and offset.
+**One colour.** Global and component `:focus-visible` outlines and focus-ring shadows read `--dsw-focus-ring-color`, falling back to `--dsw-alias-brand-primary`. The global fallback sets only outline colour; it does not create an outline where the component disables one.
 
-The global sheet sets `outline-color` alone. A component that owns a focus ring keeps it, because its `.class:focus-visible` selector outweighs the bare `:focus-visible` rule; a control with no ring of its own inherits the brand colour instead of the system accent.
+**Context-owned geometry.** `--dsw-focus-ring-width` carries the standard 2px width. Dense tables and toolbars may keep 1px so the ring does not dominate compact content. Components own their offsets and use an inset ring where an outer ring would be clipped.
+
+**Pointer focus does not imply keyboard navigation.** In pointer modality, `:focus-visible:not(:read-write)` controls use a transparent ring colour. Descendant and pseudo-element rings inherit it. Only focus-ring paint is suppressed: selected-state borders and elevation shadows remain, and editable text controls keep their own focus feedback on click. DOM focus stays on the control.
+
+Tooltips follow the last input and treat any key as keyboard input. Rings instead resume keyboard styling on non-composing navigation keys, or on focus reaching a different control after a non-composing key. Refocusing the same control is not navigation; pointer input, composition keys, and window blur clear the pending key.
 
 ## Alternatives considered
 
-**Only rewrite the component declarations.** The 49 explicit rings would agree, but every control that relies on the browser default — the sidebar rail toggles among them — would still paint the operating-system accent, which is the visible symptom this change exists to remove.
+**Rewrite only the component declarations.** Explicit rings would agree, but controls using a browser-default outline would retain its colour. Requiring every control to declare its own ring would also leave new controls inconsistent until their authors add that rule.
 
-**Give each remaining control its own ring declaration.** This reaches the same result, but each new control reintroduces the defect until someone remembers to add a ring, and the shell styles would have to anticipate every interactive element it renders.
+**Unify width and offset globally.** Positive offsets can be clipped by a scrolling ancestor, while a uniform thick ring can overwhelm dense content. Neither colour consistency nor input modality requires identical geometry.
 
-**Unify width and offset as well.** The reported inconsistency included those, but the confirmed design decision covers colour. Width and offset stay per component until a design decision fixes them.
+**Suppress by moving focus instead of by style.** Calling `blur()` on a pointer-focused button would hide its ring but also remove the target for subsequent Enter or Space activation.
 
-**Replace every `outline: none` declaration with the shared ring.** Those declarations accompany deliberate alternatives (inset `box-shadow` rings, container-level focus treatment) or suppress focus on containers that must not show one. Removing them changes behaviour beyond colour.
+**Clear all shadows on pointer focus.** A `box-shadow` can contain elevation or selected-state paint as well as a focus ring. Suppressing its ring colour preserves those independent cues; exempting `:read-write` preserves text-entry feedback.
+
+**Replace every `outline: none` with a shared ring.** Some controls use an inset shadow or container-level focus treatment instead; some containers deliberately show no ring. Replacing those declarations would change their focus treatment, not merely its colour.
+
+**Give tooltips and rings the same modality rule.** A key can justify a tooltip on subsequent programmatic focus without justifying a ring on the same pointer-focused button. Keeping separate answers preserves both behaviours.
 
 ## Consequences
 
-The focus colour no longer tracks the operating-system accent, so a screen recording or screenshot is reproducible across machines. Components keep their geometry, and controls that never declared a ring now match those that did. The global rule is the only place that decides the fallback, so a future design change edits one token reference rather than every module.
+Focus rings share a theme colour while components retain their geometry and non-focus state cues. Ring visibility changes without changing the keyboard's active target. These rules do not guarantee identical browser rendering or eliminate component-specific clipping.
 
-`ui-theme/tests/client-styles.client.spec.ts` pins the sheet in the injection order. `pnpm run test:gui` covers the client suites; the recorded Web replay covers the assembled browser.
+[Stylesheet-order checks](../../../../packages/client/ui-theme/tests/client-styles.client.spec.ts), [focus-style checks](../../../../packages/client/ui-theme/tests/focus-styles.client.spec.ts), and [input-modality tests](../../../../packages/client/ui-primitives/tests/input-modality.client.spec.ts) cover stylesheet declarations and modality transitions. Static declarations and synthetic events do not establish rendered ring visibility or cross-platform behaviour.

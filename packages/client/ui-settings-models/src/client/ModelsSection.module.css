@@ -216,7 +216,7 @@
 .iconButton:focus-visible,
 .customizedSummary:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--dsw-alias-brand-primary);
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary));
 }
 
 /* Editing surface: a filled module on the panel, matching the settings

@@ -255,4 +255,4 @@
 }
 
 .path:hover { text-decoration: underline; }
-.path:focus-visible { outline: var(--dsw-focus-ring-width) solid var(--dsw-alias-brand-primary); outline-offset: 3px; }
+.path:focus-visible { outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary)); outline-offset: 3px; }

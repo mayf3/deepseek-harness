@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-20-focus-ring-brand-primary.md
-2026-09-20-focus-ring-brand-primary.md: 3c6c041ac04774e6f5f66085f4616467020bd40e
-2026-09-20-focus-ring-brand-primary.zh.md: 541537c54e3ee1016c133f99557a0f2fa9204587
+2026-09-20-focus-ring-brand-primary.md: 288f3722428a5dd52822c3fecbbaaea5c7c6310f
+2026-09-20-focus-ring-brand-primary.zh.md: 792374b92cbd056bf181b79f8b22e1aec572d3bb
