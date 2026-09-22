@@ -62,19 +62,19 @@
 
 /* The unavailable preview emphasizes the same actions with a labeled button. */
 .split[data-size='large'] {
-  height: 40px;
+  height: 36px;
   border-radius: 14px;
   border-color: var(--dsw-alias-border-l2);
 }
 
 .split[data-size='large'] .main {
   gap: 6px;
-  padding: 8px 14px;
+  padding: 6px 14px;
   font-size: 14px;
 }
 
 .split[data-size='large'] .chevron {
-  padding: 8px 10px;
+  padding: 6px 10px;
 }
 
 .skeleton { display: inline-block; flex: none; border-radius: 3px; background: var(--dsw-alias-interactive-bg-hover); }

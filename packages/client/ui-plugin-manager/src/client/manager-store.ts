@@ -28,6 +28,7 @@ import { REGISTRY_URL } from '@deepseek-ai/dsh-plugin-manager/registry'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalizedText, PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
+import type { SettingsDescribeFace, ConfigForms } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ConfigLedger } from './config-ledger.ts'
 import { shortName } from './presentation.ts'
 
@@ -227,7 +228,11 @@ export interface PluginManagerState {
 export interface PluginManagerFace {
   /** Resolve local package text in the current Client locale at render time. */
   resolveText: (text: LocalizedText) => string
+  /** Resolve a configuration form by the Host entry id. */
+  configForm: ConfigForms['get']
   hooks: {
+    /** Shared accepted configuration values. */
+    configurations: SettingsDescribeFace
     /** Tab snapshot bound by the renderer as usePluginManager. */
     pluginManager: SnapshotStore<PluginManagerState>
     /** The plugins carrying configuration, bound by the renderer as useConfigLedger. */
@@ -446,7 +451,8 @@ export class PluginManagerController {
   inject(configLedger: HostObservable<ConfigLedger>, resolveText: PluginManagerFace['resolveText']): PluginManagerFace {
     return {
       resolveText,
-      hooks: { pluginManager: this.store, configLedger },
+      hooks: { pluginManager: this.store, configLedger, configurations: this.ctx.configForms.describe() },
+      configForm: id => this.ctx.configForms.get(id),
       ensure: () => { if (this.getSnapshot().status === 'idle') void this.load() },
       refresh: () => { void this.load() },
       openInstall: () => {

@@ -11,9 +11,12 @@
   - button "Jump to turn 2"
 - group "Command input": /goal 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的
 - 'button "goal Goal created Status: active Objective: 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的 Rounds: 0/256 Activation: armed Commands: /goal edit <objective>, /goal pause, /goal clear"'
-- button "6 tool calls" [expanded]
-- button "Context injection goal"
-- button "Context injection runtime-context"
+- button "Continuing goal {{clock}}":
+  - text: Continuing goal
+  - time: {{clock}}
+- status: Worked
+- button "Took {{duration}}" [expanded]
+- button "Ran commands and updated the plan" [expanded]
 - button "Think"
 - button "Bash List package directories deterministically"
 - button "View goal 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的"
@@ -41,8 +44,12 @@
 - button "Bad response"
 - button "Branch into a new conversation"
 - text: {{clock}}
-- button "5 tool calls · 2 messages" [expanded]
-- button "Context injection goal"
+- button "Continuing goal {{clock}}":
+  - text: Continuing goal
+  - time: {{clock}}
+- status: Worked
+- button "Took {{duration}}" [expanded]
+- button "Ran commands" [expanded]
 - button "Think"
 - button "Bash Randomly select another package with Python"
 - button "Think"
@@ -64,10 +71,11 @@
   - text: ，turn 2：
   - code: token-meter
   - text: ）。这一轮到此结束。
+- button "Updated the plan" [expanded]
 - button "View goal 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的"
 - paragraph: 两个 turn 均已完成，目标达成，标记 goal 为完成。
+- button "Updated the plan" [expanded]
 - button "Update goal 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的"
-- 'button "Context injection tool-goal complete: 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的"'
 - paragraph: 两个 turn 都完成了 ✅
 - paragraph:
   - strong: 总结：

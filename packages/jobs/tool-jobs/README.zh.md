@@ -37,7 +37,7 @@ kind: "package-reference"
 
 ### 完成通知
 
-任务完成时，拥有它的 agent 会收到会话内消息 `background job <id> (<kind>: <label>) finished [status: ...]. Read its output with job_output.`。繁忙的 agent 会在下一步收到注入的通知——inbox 尚有内容时轮次无法结束，因此同时结算的多个任务只花掉一步，而不是各占一轮。空闲的 agent 则被一个 follow-up 轮次唤醒，因为无人领取的通知就是模型永远不会知道的完成。插件自己记着模型已经收走了什么：被接受的 `job_kill` 与返回终态的 `wait` 会认领该任务，之后不再有多余通知；所有者或服务 teardown 导致的结算会被跳过，因为没有人能读它。
+任务完成时，拥有它的 agent 会收到会话内消息 `background job <id> (<kind>: <label>) finished [status: ...]. Read its output with job_output.`。繁忙的 agent 会在下一步收到注入的通知——inbox 尚有内容时轮次无法结束，因此同时结算的多个任务只花掉一步，而不是各占一轮。空闲的 agent 则被一个 follow-up 轮次唤醒，因为无人领取的通知就是模型永远不会知道的完成。模型已经收走的完成不再通知：注册表把释放了存活 `wait` 的结算报告为 `awaited`——无论是 `job_output` 的等待，还是 shell 工具在等待自己的前台命令——插件则记着模型经 `job_kill` 请求的杀停；所有者或服务 teardown 导致的结算会被跳过，因为没有人能读它。
 
 唤醒是有界的：每个所有者最多可被唤醒 `maxConsecutiveWakes` 次，此后的通知降级为注入；领取任何用户撰写的消息都会恢复预算。设界是因为这条链会自激——被唤醒的一轮可能启动某个后台任务，而它的完成又会唤醒同一个所有者。`completionDelivery: quiet` 让空闲所有者也在注入通道上，确定性 transcript（文本记录）需要的正是这一点。
 
@@ -82,7 +82,7 @@ kind: "package-reference"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：工具注册、播报台账与结算订阅、提示词区段、输出上限 |
+| [`src/index.ts`](src/index.ts) | 插件入口：工具注册、结算订阅与模型杀停集合、提示词区段、输出上限 |
 | [`src/render.ts`](src/render.ts) | 面向模型的渲染：公共投影、状态行与消耗式增量（stdout、`[stderr]` 段、丢失输出提示） |
 | — | 不发布运行时不变式伴生入口；执行关系归能力 seam 所有。 |
 
@@ -92,7 +92,7 @@ kind: "package-reference"
 
 ### 通知投递通道
 
-结算订阅（`{ owners: 'scope' }`）跳过台账已认领的任务、无所有者的任务与 teardown 结算，然后解析登记在拥有者会话下的 agent。`wakeup` 投递在预算内为空闲所有者开启一轮，按确切 `Agent` 记录在 `WeakMap` 中；领取用户撰写的消息（`agent/inbox/claimed`）会重置该所有者的预算。繁忙的所有者——或超出预算的任何通知，以及 `quiet` 投递——改为注入 next-step inbox。等待在开始时认领、在超时或中止时撤回；移除会删除台账条目，因此台账只保有模型触碰过的存活任务。
+结算订阅（`{ owners: 'scope' }`）跳过注册表报告为 `awaited` 的结算、模型经 `job_kill` 杀停的任务、无所有者的任务与 teardown 结算，然后解析登记在拥有者会话下的 agent。`wakeup` 投递在预算内为空闲所有者开启一轮，按确切 `Agent` 记录在 `WeakMap` 中；领取用户撰写的消息（`agent/inbox/claimed`）会重置该所有者的预算。繁忙的所有者——或超出预算的任何通知，以及 `quiet` 投递——改为注入 next-step inbox。注册表只计入结算时仍被欠着投影的等待，因此超时或中止的等待会让之后的结算照常通知；移除会把任务从模型杀停集合里删掉，该集合只保有模型杀停过的存活任务。
 
 </details>
 

@@ -53,6 +53,8 @@ The chip occupies the conversation-declared `conversation.input.plan` single sea
 
 Plan cards derive from native `tool/call` or PTC dispatch arguments through a Conversation Definition, with each invocation’s resolved Turn location. They contribute to the additive `conversation.chat.turnTail` list alongside file deliveries. The plan resource address identifies the invocation and its complete ordinary or direct-parent subagent Session address; its provider reads existing Session history, including older pages, without storing document text in sidebar layout. The question plugin owns the review action slot and supplies its request key, complete text, and optional invocation identity. The automatic open reads `ctx.sidebarRight.mounted` through a bound hook and runs once a seat is on screen: a review arriving while a global panel is active mounts ahead of the returning seat in the same commit, before that seat binds. The [decision](../../../.agents/notes/implemented/feature/2026-09-17-persistent-plan-cards.md) explains why review lifetime and document lifetime remain separate. Subagent plan addresses also preserve unknown mode so history reads can resolve the child descriptor.
 
+The framework-bound `usePlans(turn)` exposes only submitted-plan data for that Turn. Chat indexes membership on Node updates and orders this collection when read; card rendering neither scans the transcript nor subscribes to other Turns or Node kinds.
+
 </details>
 
 -----

@@ -379,16 +379,22 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
       // Settings and credentials both answer over the Remote carrier, so this
       // half of the sweep posts the generated endpoints directly like the
       // session read above.
-      const settings = await remote<{ namespaces: { ns: string; revision: number }[] }>(
+      interface Setting { ns: string; revision: number; value: Record<string, unknown>; user: Record<string, unknown> }
+      const settings = await remote<{ writable: boolean; namespaces: Setting[] }>(
         'settings/describe', {},
       )
-      const shell = settings.namespaces.find(namespace => namespace.ns === 'shell')
-      if (shell === undefined) throw new Error('settings/describe omitted the shell namespace')
-      await remote('settings/update', {
-        ns: 'shell',
+      const shell = settings.namespaces.find(namespace => namespace.ns === 'bash-sandbox')
+      if (shell === undefined) throw new Error('settings/describe omitted the bash-sandbox namespace')
+      const saved = await remote<Setting>('settings/update', {
+        ns: 'bash-sandbox',
         patch: { timeoutMs: 61_000 },
         expectedRevision: shell.revision,
       })
+      const reread = await remote<{ namespaces: Setting[] }>('settings/describe', {})
+      const reset = await remote<Setting>('settings/mutate', {
+        ns: 'bash-sandbox', ops: [{ op: 'unset', path: ['timeoutMs'] }], expectedRevision: saved.revision,
+      })
+      await remote('settings/update', { ns: 'ui-theme', patch: { fontSize: 17 } })
       await remote('credentials/set', { ref: 'PREVIEW_TEST_SECRET', value: 'worker-only' })
       const credentials = await remote<Record<string, { configured: boolean }>>(
         'credentials/describe',
@@ -397,6 +403,13 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
       await remote('credentials/unset', { ref: 'PREVIEW_TEST_SECRET' })
       await new Promise((resolve) => { setTimeout(resolve, 250) })
       return {
+        settingsWritable: settings.writable,
+        settingIds: settings.namespaces.map(namespace => namespace.ns),
+        savedTimeout: saved.value.timeoutMs,
+        rereadTimeout: reread.namespaces.find(namespace => namespace.ns === 'bash-sandbox')?.value.timeoutMs,
+        resetTimeout: reset.value.timeoutMs,
+        initialTimeout: shell.value.timeoutMs,
+        resetOverrides: reset.user,
         renamedTitle: secondRename.title,
         renameAdvanced: secondRename.seq > firstRename.seq,
         skillCount: skills.skills.length,
@@ -406,6 +419,16 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
       seededSessionId: VFS_EXAMPLE_SESSION_IDS.main,
       seededSessionTitle: SHOWCASE_TITLE,
     })
+    expect(exercised.settingsWritable).toBe(true)
+    expect(exercised.settingIds).toEqual(expect.arrayContaining([
+      'bash-sandbox', 'locale', 'ui-theme', 'ui-chat', 'ui-conversation', 'ui-settings', 'ui-settings-general',
+    ]))
+    expect(exercised.savedTimeout).toBe(61_000)
+    expect(exercised.rereadTimeout).toBe(61_000)
+    expect(exercised.resetTimeout).toBe(exercised.initialTimeout)
+    expect(exercised.resetOverrides).not.toHaveProperty('timeoutMs')
+    await expect.poll(() => page.evaluate(() => document.body.style.getPropertyValue('--dsh-content-font-size')))
+      .toBe('17px')
     expect(exercised.renamedTitle).toBe(SHOWCASE_TITLE)
     expect(exercised.renameAdvanced).toBe(true)
     expect(exercised.skillCount).toBeGreaterThan(0)

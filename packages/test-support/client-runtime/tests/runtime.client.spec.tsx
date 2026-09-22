@@ -8,7 +8,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { stubSettingsScope } from '../src/settings-scope.ts'
+import { stubConfigForm } from '../src/config-form.ts'
 import { act, cleanup } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { createSnapshotStore, defineStore } from '@deepseek-ai/dsh-client-store'
@@ -912,7 +912,7 @@ describe('single-slot mounting edge arms', () => {
 
 describe('stubbed settings scope', () => {
   it('records both write kinds and publishes a Host acceptance to its listeners', async () => {
-    const host = stubSettingsScope<{ preference: string }>()
+    const host = stubConfigForm<{ preference: string }>()
     let notified = 0
     const stop = host.scope.subscribe(() => { notified += 1 })
     expect(host.listenerCount()).toBe(1)

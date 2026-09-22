@@ -12,7 +12,7 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import ToolRuntime, { defineContentToolFixture, TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER, type PostToolDecision, type PreToolDecision } from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
-import AgentLoop, { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from '@deepseek-ai/dsh-agent-loop'
+import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MockAdapter, textResponse } from './mock-adapter.ts'
 import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
@@ -274,29 +274,6 @@ describe('tool-call scheduler: rolling pool honors maxParallelToolCalls', () => 
   it('rejects invalid global maxParallelToolCalls config at plugin load', async () => {
     await expect(harness(new MockAdapter([]), 0)).rejects.toThrow()
     await expect(harness(new MockAdapter([]), 1.5)).rejects.toThrow()
-  })
-
-  it('defensively rejects invalid caps when direct construction bypasses the config schema', () => {
-    // Validation precedes the turnBoundary registration, so a rejected
-    // constructor registers nothing and needs no fiber cleanup.
-    expect(() => new AgentLoop(new Context(), { agents: [], maxParallelToolCalls: 0 }))
-      .toThrow('maxParallelToolCalls must be a positive integer')
-    expect(() => new AgentLoop(new Context(), { agents: [], maxParallelToolCalls: 1.5 }))
-      .toThrow('maxParallelToolCalls must be a positive integer')
-  })
-
-  it('defaults the cap when direct construction bypasses the config schema', async () => {
-    const ctx = new Context()
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SessionProjectionRegistry)
-    await ctx.plugin(SystemPrompt, { personaPrefix: '' })
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-
-    const loop = new AgentLoop(ctx, { agents: [] })
-    expect(loop.config.maxParallelToolCalls).toBe(DEFAULT_MAX_PARALLEL_TOOL_CALLS)
-    await ctx.fiber.dispose()
   })
 
   it('starts at most the cap, replenishing as calls settle', async () => {

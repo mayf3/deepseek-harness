@@ -1,7 +1,7 @@
 /** Prepared calls retain their endpoint and credential generation. */
 import { afterEach, expect, it } from 'vitest'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import { Config, DeepSeekAdapter, resolveAdapterOptions } from '../src/index.ts'
+import { Config, DeepSeekAdapter, plainOptions, resolveAdapterOptions } from '../src/index.ts'
 import type { DeepSeekConnectionOptions } from '../src/index.ts'
 import { assemble, chunks, MODEL, options, server } from './helpers.ts'
 
@@ -26,7 +26,7 @@ function adapter(connection: () => DeepSeekConnectionOptions) {
 it.each([false, true])('uses Messages, schema=%s', async (schema) => {
   const http = await endpoint()
   const raw = { baseURL: http.url }
-  const connection = resolveAdapterOptions(schema ? Config(raw) : raw)
+  const connection = resolveAdapterOptions(schema ? plainOptions(Config(raw)) : raw)
   const response = await assemble(adapter(() => connection).stream(options()))
 
   expect(response.message.content).toEqual([{ type: 'text', text: 'Hello 世界' }])

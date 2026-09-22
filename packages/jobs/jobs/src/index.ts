@@ -11,6 +11,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import { installJobArchiveAdmission } from './archive-admission.ts'
 import type { JobEvents, JobId, JobOutputRead, JobRead, JobSpec, JobView } from './types.ts'
 
 export { JobId } from './types.ts'
@@ -59,8 +60,12 @@ declare module '@deepseek-ai/cordis' {
  *   predictable, so authorization — not secrecy — is the boundary.
  * - Settlement is first-wins: one terminal record, released waiters, then one
  *   round of contained event delivery, even against a late producer outcome.
- *   The `settled` event follows every released waiter, so a consumer that
- *   claims a settlement while waiting always claims before the event.
+ *   The `settled` event follows every released waiter and reports whether it
+ *   released one (`awaited`), so a completion reporter can skip settlements a
+ *   waiting caller already collected.
+ * - A settled record stays listed until its owner's disposal, service
+ *   disposal, or an explicit {@link remove} by a caller that collected the
+ *   terminal state itself and never handed the id out.
  * - {@link start} refuses work while no attached job controller serves the
  *   spec's owner, so a producer cannot start work that owner cannot collect
  *   or stop. One registry serves every composition in the process, so this
@@ -86,6 +91,9 @@ export abstract class JobRegistry extends Service {
       throw new Error('@deepseek-ai/dsh-jobs is the abstract job registry seam; load an implementation such as @deepseek-ai/dsh-jobs-local instead')
     }
     super(ctx, 'jobs')
+    // Archive admission: the Workspace registry asks what still runs for a
+    // Session before hiding it; owned jobs answer here for every implementation.
+    installJobArchiveAdmission(ctx, this)
   }
 
   /** Lifecycle and output events, filtered per subscription. */
@@ -163,6 +171,16 @@ export abstract class JobRegistry extends Service {
    * @returns projection at settlement or timeout.
    */
   abstract wait(id: JobId, timeoutMs: number, caller?: SessionId, signal?: AbortSignal): Promise<JobView>
+
+  /**
+   * Drop one settled job's record from the visible set and announce
+   * `removed`. For a caller that collected the terminal state through its own
+   * {@link wait} and never handed the id to the model, such as a shell tool's
+   * foreground call. Throws for a job that is still live, unknown, or foreign.
+   * @param id - settled job to drop.
+   * @param caller - removing session checked against the owner.
+   */
+  abstract remove(id: JobId, caller?: SessionId): void
 
   /**
    * Attach an effect-scoped controller that can read and stop jobs. It serves the

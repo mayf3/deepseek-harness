@@ -30,11 +30,16 @@ function run(argv) {
       var png = bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({}));
       image = png.isNil() ? null : 'data:image/png;base64,' + ObjC.unwrap(png.base64EncodedStringWithOptions(0));
     }
+    var bundle = $.NSBundle.bundleWithURL(url);
+    var bundleId = bundle.isNil() || bundle.bundleIdentifier.isNil() ? null : ObjC.unwrap(bundle.bundleIdentifier);
+    var version = bundle.isNil() ? null : bundle.objectForInfoDictionaryKey('CFBundleShortVersionString');
     apps.push({
       id: path,
       name: ObjC.unwrap($.NSFileManager.defaultManager.displayNameAtPath(path)),
       default: path === preferredPath,
-      icon: image
+      icon: image,
+      bundle: bundleId,
+      version: version === null || version.isNil() ? null : String(ObjC.unwrap(version))
     });
   }
   return JSON.stringify(apps);
@@ -45,7 +50,8 @@ function run(argv) {
  * @param path - verified absolute local file path.
  * @param signal - caller lifetime, propagated to the OS query.
  * @param internals - platform and command adapter for deterministic tests.
- * @returns current file handlers; an empty list when the platform has no association query.
+ * @returns current file handlers; on macOS, copies sharing a bundle identifier and display name collapse
+ * to one entry; an empty list when the platform has no association query.
  */
 export async function nativeFileApplications(
   path: string, signal: AbortSignal, internals: PathOpenerInternals = {},
@@ -53,25 +59,109 @@ export async function nativeFileApplications(
   return queryFileApplications(path, signal, internals, true)
 }
 
-/** Query metadata with optional macOS icon rendering for display or launch authorization. */
+/**
+ * Query handler metadata; display queries render macOS icons and collapse duplicate copies,
+ * launch validation keeps every registered copy.
+ */
 async function queryFileApplications(
-  path: string, signal: AbortSignal, internals: PathOpenerInternals, icons: boolean,
+  path: string, signal: AbortSignal, internals: PathOpenerInternals, display: boolean,
 ): Promise<readonly NativeFileApplication[]> {
   signal.throwIfAborted()
   const target = await desktopTarget(path, signal, internals)
   const run = internals.run ?? runNativeCommand
   if (target.platform === 'linux') return linuxFileApplications(path, signal, run, internals.env ?? process.env)
-  let stdout: string
   if (target.platform === 'darwin') {
-    stdout = (await run('osascript', ['-l', 'JavaScript', '-e', MAC_APPLICATIONS, target.path, icons ? 'icons' : 'handlers'], signal)).stdout
-  } else if (target.platform === 'win32') {
-    stdout = await windowsFileApplications(target.path, null, signal, run)
-  } else return []
+    const { stdout } = await run('osascript', ['-l', 'JavaScript', '-e', MAC_APPLICATIONS, target.path, display ? 'icons' : 'handlers'], signal)
+    const applications = parseMacApplications(JSON.parse(stdout))
+    return display ? dedupeMacApplications(applications) : applications
+  }
+  if (target.platform !== 'win32') return []
+  const stdout = await windowsFileApplications(target.path, null, signal, run)
   return parseNativeFileApplications(JSON.parse(stdout))
+}
+
+/** One validated macOS handler with the grouping metadata the display query strips. */
+interface MacApplication extends NativeFileApplication {
+  readonly bundle: string | null
+  readonly version: string | null
+}
+
+/**
+ * Validate every entry of the decoded macOS query output, base fields and grouping metadata alike.
+ * @param value - decoded application list from the macOS query.
+ * @returns validated handlers in OS preference order.
+ * @throws Error when any entry is malformed, matching the other platform parsers.
+ */
+function parseMacApplications(value: unknown): readonly MacApplication[] {
+  if (!Array.isArray(value)) throw new Error('Invalid native application list')
+  const entries: readonly unknown[] = value
+  return entries.map((entry) => {
+    if (typeof entry !== 'object' || entry === null) throw new Error('Invalid native application entry')
+    const bundle = macField('bundle' in entry ? entry.bundle : null)
+    const version = macField('version' in entry ? entry.version : null)
+    const [base] = parseNativeFileApplications([entry])
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- a one-entry input parses to one entry
+    return { ...base!, bundle, version }
+  })
+}
+
+/** Validate one optional string field value of a macOS entry; missing fields, null, and empty strings read as null. */
+function macField(field: unknown): string | null {
+  if (field === null) return null
+  if (typeof field !== 'string') throw new Error('Invalid native application entry')
+  return field.length === 0 ? null : field
+}
+
+/**
+ * Collapse duplicate registrations of the same application for display. Self-updating
+ * apps leave extra copies on disk (an update staged under Application Support,
+ * per-version installs) and LaunchServices registers every one, so the raw handler
+ * list repeats the app. Finder shows one entry per app and splits only deliberate
+ * side-by-side installs, which carry distinct display names; matching that, copies
+ * sharing a bundle identifier and display name collapse to the system default, else
+ * the highest version, at the group's first position. Launch validation bypasses
+ * this collapse, so every registered copy stays openable.
+ * @param applications - validated handlers in OS preference order.
+ * @returns application metadata with one entry per application and no grouping metadata.
+ */
+function dedupeMacApplications(applications: readonly MacApplication[]): readonly NativeFileApplication[] {
+  const order: MacApplication[] = []
+  const groups = new Map<string, number>()
+  for (const app of applications) {
+    if (app.bundle === null) {
+      order.push(app)
+      continue
+    }
+    const key = `${app.bundle}\u0000${app.name}`
+    const index = groups.get(key)
+    if (index === undefined) {
+      groups.set(key, order.length)
+      order.push(app)
+      continue
+    }
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- group indices point at pushed entries
+    const held = order[index]!
+    if (held.default) continue
+    if (app.default || compareVersions(app.version, held.version) > 0) order[index] = app
+  }
+  return order.map(({ id, name, default: preferred, icon }) => ({ id, name, default: preferred, icon }))
+}
+
+/** Order two dotted version strings numerically; non-numeric segments count as 0, and a missing version sorts lowest. */
+function compareVersions(left: string | null, right: string | null): number {
+  if (left === null || right === null) return left === right ? 0 : left === null ? -1 : 1
+  const a = left.split('.')
+  const b = right.split('.')
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const difference = (Number(a[i]) || 0) - (Number(b[i]) || 0)
+    if (difference !== 0) return difference
+  }
+  return 0
 }
 
 /**
  * Open a file in a currently registered handler; stale or arbitrary application identifiers are rejected.
+ * Validation checks the complete registered list, so macOS copies collapsed out of the display list stay openable.
  * @param path - verified absolute local file path.
  * @param application - identifier returned by the file association query.
  * @param signal - caller lifetime, propagated to query and launch.

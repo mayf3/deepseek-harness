@@ -8,7 +8,8 @@
     - tab "Trajectory"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Thought for a while"
+- status: Stopped
+- button "Stopped" [disabled]
 - paragraph: partial
 - text: Stopped
 - button "Copy"

@@ -25,7 +25,7 @@ import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-e
 import * as PluginPackageInventoryDeepSeek from '@deepseek-ai/dsh-plugin-package-inventory-deepseek'
 import * as SessionLogDeepSeek from '@deepseek-ai/dsh-session-log-deepseek'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
-import type { Config } from '@deepseek-ai/dsh-llm-deepseek'
+import type { Options as Config } from '@deepseek-ai/dsh-llm-deepseek'
 import type { WireRequest } from '../src/wire-types.ts'
 import { assemble, type AssembledResult } from './assemble.ts'
 

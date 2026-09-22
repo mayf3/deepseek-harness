@@ -12,8 +12,19 @@
 #include <algorithm>
 #include "progress.h"
 #include "extract.h"
+#include "uninstall-data.h"
 
 using namespace Gdiplus;
+
+// Returns a Win32 error code; no cleanup request may traverse a linked root or touch the protected root.
+extern "C" __declspec(dllexport) DWORD __cdecl UninstallRemoveData(LPCWSTR path, LPCWSTR installation, LPCWSTR protectedRoot) {
+    return uninstall_data::Remove(path, installation, protectedRoot);
+}
+
+// Returns a Win32 error code; only ordinary empty directories strictly below the stop directory are removed.
+extern "C" __declspec(dllexport) DWORD __cdecl UninstallRemoveEmptyParents(LPCWSTR path, LPCWSTR stop) {
+    return uninstall_data::RemoveEmptyParents(path, stop);
+}
 
 // Match the affected executable, not another user's or directory's same-named application.
 // Returns 0 while running, 1 when absent, and -1 if the process list cannot be read.
@@ -108,6 +119,8 @@ static LRESULT CALLBACK ProgressProc(HWND window, UINT message, WPARAM wparam, L
             graphics.ScaleTransform(page->dpi / 96.0f, page->dpi / 96.0f);
             graphics.Clear(page->dark ? Color(255, 21, 21, 23) : Color(255, 255, 255, 255));
             graphics.SetSmoothingMode(SmoothingModeAntiAlias);
+            graphics.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+            graphics.SetPixelOffsetMode(PixelOffsetModeHalf);
             graphics.DrawImage(page->brand, Rect(0, 174, 600, 196));
             const int stage = static_cast<int>(reinterpret_cast<INT_PTR>(GetPropW(GetParent(window), L"HarnessInstaller.Stage")));
             const double fraction = reinterpret_cast<UINT_PTR>(GetPropW(GetParent(window), L"HarnessInstaller.ExtractProgress")) / 100.0;

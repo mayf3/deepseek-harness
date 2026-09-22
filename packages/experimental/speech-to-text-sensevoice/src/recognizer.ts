@@ -8,6 +8,7 @@ import { deadline } from '@deepseek-ai/dsh-timeout'
 import { z } from 'zod'
 import type { Config } from './config.ts'
 import { SpeechInputError } from './input.ts'
+import { SpeechDownloadError } from './download-error.ts'
 import { inspectRuntime, prepareRuntime, type RuntimePaths } from './runtime.ts'
 
 const transcriptSchema = z.object({
@@ -186,7 +187,8 @@ export class SenseVoiceWorker {
       .catch((error: unknown) => {
         if (this.lifetime.signal.aborted) return
         this.publish(abort.signal.aborted ? { phase: 'cancelled' }
-          : { phase: 'failed', message: error instanceof Error ? error.message : String(error) })
+          : { phase: 'failed', message: error instanceof Error ? error.message : String(error),
+            ...error instanceof SpeechDownloadError ? { download: error.download } : {} })
       }).finally(() => { this.preparing = undefined })
   }
 
