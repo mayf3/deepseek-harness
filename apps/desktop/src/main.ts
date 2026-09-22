@@ -276,12 +276,12 @@ async function main(): Promise<void> {
     }
     finally { ordinaryDialogs.delete(controller) }
   }
-  // Copy comes from the same startup locale as the update prompts so the
-  // dialog chrome and its content never mix languages.
+  // Copy comes from the same locale as the update prompts so the dialog
+  // chrome and its content never mix languages.
   const showAbout = async (): Promise<void> => {
-    await ordinaryMessageBox({ type: 'info', title: messages.aboutMenu, message: messages.aboutProduct,
-      detail: formatDesktopMessage(messages.aboutVersion, { version: app.getVersion() }),
-      buttons: [messages.updateAcknowledge], cancelId: 0 })
+    await ordinaryMessageBox({ type: 'info', title: locale.messages.aboutMenu, message: locale.messages.aboutProduct,
+      detail: formatDesktopMessage(locale.messages.aboutVersion, { version: app.getVersion() }),
+      buttons: [locale.messages.updateAcknowledge], cancelId: 0 })
   }
   const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
   const applicationUrl = `${SCHEME}://app/`
