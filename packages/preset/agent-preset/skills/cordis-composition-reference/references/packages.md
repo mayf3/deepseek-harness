@@ -402,7 +402,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | Package | Config | Description |
 |---|---|---|
 | `@deepseek-ai/dsh-spill-local` | yes | Local-filesystem implementation of the DeepSeek Harness spill storage seam (private session-scoped files) |
-| `@deepseek-ai/dsh-spill-policy` | yes | Tool-result spill policy for the DeepSeek Harness — replaces oversized plain-text tool results with a retained preview plus a spill-file path (no service API) |
+| `@deepseek-ai/dsh-spill-policy` | yes | Token-budgeted tool-result retention with recoverable text and image paths |
 
 ## ssh
 

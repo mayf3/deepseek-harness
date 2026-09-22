@@ -2803,18 +2803,14 @@ Source: [`packages/spill/spill-local/src/index.ts:31`](../packages/spill/spill-l
 Requires: `tools`
 
 ```ts config-catalog
-/** Plugin config. */
+/** Optional result-retention budget. */
 export interface Config {
-  /**
-   * The model-facing context cap for a plain-text tool result, in UTF-8 bytes.
-   * Omitted disables the policy entirely (no-op). When set, a result larger than
-   * this is spilled and replaced with a preview derived from this same budget.
-   */
-  maxInlineBytes?: number
+  /** Maximum estimated tokens in a retained result, including image descriptors and omission notices. Omitted disables retention. */
+  maxInlineTokens?: number
 }
 ```
 
-Source: [`packages/spill/spill-policy/src/index.ts:61`](../packages/spill/spill-policy/src/index.ts)
+Source: [`packages/spill/spill-policy/src/index.ts:25`](../packages/spill/spill-policy/src/index.ts)
 
 <a id="deepseek-aidsh-ssh"></a>
 
@@ -3830,7 +3826,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'ptc' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:663`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:673`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 
