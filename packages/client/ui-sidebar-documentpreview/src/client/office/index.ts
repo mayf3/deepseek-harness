@@ -5,7 +5,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-office-to-pdf/remote'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
-import { documentFileBytes } from '../rpc.ts'
 import { failureLine } from '../failure-line.ts'
 import { documentTabInfoFactory } from '../document/contract.ts'
 import { en, zh, type OfficePreviewKey } from './locales.ts'
@@ -73,14 +72,10 @@ export function apply(ctx: Context, config: Config['office']): void {
       signal.throwIfAborted()
       const result = await scope.remote.officeToPdf.render(file.sessionId, file.path, priority, signal)
       signal.throwIfAborted()
-      if (!result.ok) {
-        if (result.error.code === 'document-render/failed') {
-          throw new Error(t(conversionErrorKey(result.error.details.reason)), { cause: result.error })
-        }
-        return result
+      if (!result.ok && result.error.code === 'document-render/failed') {
+        throw new Error(t(conversionErrorKey(result.error.details.reason)), { cause: result.error })
       }
-      return { ok: true, value: { ...documentFileBytes(result.value),
-        missingFonts: result.value.missingFonts, generation: result.value.generation } }
+      return result
     }
     const createCache = () => new OfficePreviewCache(
       async (file, signal) => {

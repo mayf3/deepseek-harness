@@ -11,7 +11,7 @@ import { BlockAssembler, createAssistantMessage, createUserMessage } from '@deep
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { resolveAdapterOptions } from '../src/index.ts'
 import { DeepSeekAdapter } from '../src/adapter.ts'
-import type { Config } from '../src/config.ts'
+import type { Options as Config } from '../src/config.ts'
 import { DeepSeekFileStore } from '../src/file-store.ts'
 
 export const prepareExtensions = async () => ({ fields: {}, accept: async () => {} })
@@ -92,7 +92,7 @@ export function sourceModuleLoader(importModule: (specifier: string) => Promise<
   return {
     version: 'v2',
     import: importModule,
-    get loadCache(): never { throw new Error('unexpected module cache access') },
+    loadCache: new Map(),
     register(): never { throw new Error('unexpected module hook registration') },
     getOrCreateModuleJob(): never { throw new Error('unexpected module job creation') },
     resolveSync(): never { throw new Error('unexpected synchronous module resolution') },

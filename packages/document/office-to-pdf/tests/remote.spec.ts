@@ -11,7 +11,7 @@ import OfficeToPdf from '../src/index.ts'
 const scope = { sessionId: SessionId('document-test'), workspaceRoot: '/workspace' }
 const source = { absolutePath: '/workspace/report.DOCX', version: 'source-v1', bytes: 4 }
 const rawSource = { ...source, data: new Uint8Array([80, 75, 3, 4]) }
-const wireSource = { ...source, offset: 0, eof: true, data: 'UEsDBA==' }
+const wireSource = { ...source, offset: 0, eof: true, data: rawSource.data }
 let generation: OfficeToPdf['generation']
 const cacheKey = OfficeToPdfKey('test-result')
 const pdf = new Uint8Array([37, 80, 68, 70, 45])
@@ -51,7 +51,7 @@ it.each(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'])('converts authorized %s b
   expect(authorize).toHaveBeenCalledExactlyOnceWith(scope, path, { range: { offset: 0, length: 1 } }, expect.any(AbortSignal))
   expect(render).toHaveBeenCalledOnce()
   expect(render.mock.calls[0]?.[0]).toMatchObject({ extension, priority: 'foreground', source: { version: source.version, bytes: 4 } })
-  expect(result).toEqual({ ...wireSource, data: Buffer.from(pdf).toString('base64'), bytes: pdf.length, missingFonts: ['Missing Serif'], generation })
+  expect(result).toEqual({ ...wireSource, data: pdf, bytes: pdf.length, missingFonts: ['Missing Serif'], generation })
   expect(ctx.get('agents')).toBeUndefined()
 })
 

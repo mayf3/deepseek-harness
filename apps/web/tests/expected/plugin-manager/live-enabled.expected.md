@@ -26,9 +26,12 @@
     - button "查看 网页搜索": 网页搜索
     - text: 设置 DeepSeek 的搜索提供方。
 - heading "已安装" [level=3]
-- text: "1"
+- text: "2"
 - list:
   - listitem:
     - button "查看 @fixture/bundle": "@fixture/bundle"
     - text: Registry description for the fixture bundle.
     - switch "启用 @fixture/bundle" [checked]
+  - listitem:
+    - button "查看 dsh-web-scaffold-defaults": dsh-web-scaffold-defaults
+    - switch "启用 dsh-web-scaffold-defaults" [checked]

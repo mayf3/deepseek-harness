@@ -18,11 +18,11 @@
     { "path": "../ui-renderer" },
     { "path": "../ui-session" },
     { "path": "../store" },
-    { "path": "../ui-settings" },
-    { "path": "../locale" },
+    { "path": "../ui-settings/tsconfig.client.json" },
+    { "path": "../locale/tsconfig.client.json" },
     { "path": "../connection/tsconfig.client.json" },
-    { "path": "../../settings/settings" },
     { "path": "../../api/remotes/tsconfig.client.json" },
-    { "path": "../ui-sidebar" }
+    { "path": "../ui-sidebar" },
+    { "path": "../shortcuts/tsconfig.client.json" }
   ]
 }

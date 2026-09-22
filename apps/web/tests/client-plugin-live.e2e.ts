@@ -2,14 +2,14 @@
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { chromium, type Page } from 'playwright'
 import { expect, it, onTestFailed, onTestFinished } from 'vitest'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, launchWebScaffold,
   seedSession, watchConsole, webSnapshotMode,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
+import { openSettingsFromAccountMenu, newEnglishPage, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/plugins/fixture-live-client', import.meta.url))
 const EXPECTED = fileURLToPath(new URL('./expected/client-plugin-live', import.meta.url))
@@ -19,7 +19,7 @@ const SESSION_TITLE = 'Session action extension'
 
 async function openInventory(page: Page, url: string) {
   await page.goto(url, { waitUntil: 'load' })
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openSettingsFromAccountMenu(page, 'zh')
   const dialog = page.getByRole('dialog', { name: '设置' })
   await dialog.getByRole('button', { name: '内置插件', exact: true }).click()
   await dialog.getByRole('searchbox', { name: '搜索插件' }).waitFor()
@@ -256,6 +256,10 @@ it('reports bootstrap rebuilds without remounting the settings page or navigatin
     const originalInput = await draft.elementHandle()
     let navigations = 0
     page.on('framenavigated', () => { navigations++ })
+    const clientPath = scaffold.ctx.clientModules.clientPath('@deepseek-ai/dsh-client-modules')!
+    const originalStat = await stat(clientPath)
+    onTestFinished(() => utimes(clientPath, originalStat.atime, originalStat.mtime))
+    await utimes(clientPath, originalStat.atime, new Date(originalStat.mtimeMs + 1_000))
     scaffold.ctx.clientModules.rebuilt('@deepseek-ai/dsh-client-modules')
     const failure = page.locator('[data-client-sync-failure]')
     await failure.getByText(/replacing bootstrap module .* requires a page reload/).waitFor()

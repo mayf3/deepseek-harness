@@ -84,7 +84,7 @@ function samePath(actual: string, expected: string): boolean {
   return norm(actual) === norm(expected)
 }
 
-async function setup(config: ConstructorParameters<typeof PwshLocalExecutor>[1] = {}) {
+async function setup(config: Parameters<typeof PwshLocalExecutor.Config>[0] = {}) {
   const ctx = createContext()
   await ctx.plugin(LocalSubprocessRuntime)
   ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
@@ -466,14 +466,15 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
     expect(result.timeoutMs).toBe(2_000)
   })
 
-  it('rejects invalid numeric config and timeout overrides', async () => {
-    await expect(setup({ timeoutMs: Number.NaN })).rejects.toThrow(/timeoutMs/)
-    await expect(setup({ maxTimeoutMs: 0 })).rejects.toThrow(/maxTimeoutMs/)
-    await expect(setup({ maxOutputBytes: -1 })).rejects.toThrow(/maxOutputBytes/)
-    await expect(setup({ maxSpillBytes: 0 })).rejects.toThrow(/maxSpillBytes/)
-    await expect(setup({ graceMs: 0 })).rejects.toThrow(/graceMs/)
-    await expect(setup({ graceMs: MAX_TIMER_DELAY_MS + 1 }))
-      .rejects.toThrow(`graceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
+  it('rejects unusable numeric config at the next command and invalid timeout overrides at resolve', async () => {
+    for (const [config, field] of [
+      [{ timeoutMs: Number.NaN }, /timeoutMs/], [{ maxTimeoutMs: 0 }, /maxTimeoutMs/], [{ maxOutputBytes: -1 }, /maxOutputBytes/],
+      [{ maxSpillBytes: 0 }, /maxSpillBytes/], [{ graceMs: 0 }, /graceMs/],
+      [{ graceMs: MAX_TIMER_DELAY_MS + 1 }, `graceMs must be no greater than ${MAX_TIMER_DELAY_MS}`],
+    ] as const) {
+      const { bash: unusable } = await setup(config)
+      expect(() => unusable.resolve({ command: 'Write-Output ok' })).toThrow(field)
+    }
 
     const { bash } = await setup()
     expect(() => bash.resolve({ command: 'Write-Output ok', timeoutMs: Number.NaN })).toThrow(/request\.timeoutMs/)

@@ -11,7 +11,7 @@ import { Context } from '@deepseek-ai/cordis'
 import {
   openNativeTextFile,
 } from '@deepseek-ai/dsh-native-command'
-import type { SettingsDescriptor, SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings'
+import type { SettingsDescriptor, SettingsPathOp, SettingsForms } from '@deepseek-ai/dsh-settings'
 import type {
   SettingsDescribeValue, SettingsNamespaceView, SettingsPathOpView,
 } from '@deepseek-ai/dsh-settings/types'
@@ -48,6 +48,7 @@ export interface SettingsControllerInternals {
 function namespaceView(descriptor: SettingsDescriptor): SettingsNamespaceView {
   return {
     ns: String(descriptor.ns),
+    autoGenerate: descriptor.autoGenerate,
     schema: descriptor.schema as JsonValue,
     value: descriptor.value as JsonValue,
     ...descriptor.base === undefined ? {} : { base: descriptor.base as JsonValue },
@@ -98,7 +99,7 @@ export class SettingsController extends TypertRemoteService {
     const settings = this.provider()
     return {
       writable: settings.writable,
-      hasDocument: settings.documentPath !== undefined,
+      hasDocument: true,
       namespaces: settings.describe({ redactSecrets: true }).map(namespaceView),
     }
   }
@@ -166,15 +167,12 @@ export class SettingsController extends TypertRemoteService {
   async openSettingsDocument(signal: AbortSignal): Promise<SettingsDocumentOpenValue> {
     const settings = this.provider()
     if (isAborted(signal)) throw new RemoteError('gateway/cancelled', 'settings document open was aborted', {})
-    let path: string | undefined
+    let path: string
     try {
       path = await settings.prepareDocument()
     } catch (error: unknown) {
       if (isAborted(signal)) throw new RemoteError('gateway/cancelled', 'settings document preparation was aborted', {})
       throw new RemoteError('gateway/internal', `settings document preparation failed: ${messageOf(error)}`, {}, { cause: error })
-    }
-    if (path === undefined) {
-      throw new RemoteError('gateway/internal', 'settings provider has no local document to open', {})
     }
     if (isAborted(signal)) throw new RemoteError('gateway/cancelled', 'settings document open was aborted', {})
     try {
@@ -215,12 +213,12 @@ export class SettingsController extends TypertRemoteService {
   }
 
   /** Resolve the optional provider or report how to supply it. */
-  private provider(): SettingsProvider {
+  private provider(): SettingsForms {
     const settings = this.ctx.get('settings')
     if (settings === undefined) {
       throw new RemoteError(
         'gateway/internal',
-        'settings service is absent: this deployment does not mount a settings provider (e.g. @deepseek-ai/dsh-settings-file) in its composition',
+        'settings service is absent: mount @deepseek-ai/dsh-settings with @deepseek-ai/dsh-config-editor in the profile composition',
         {},
       )
     }

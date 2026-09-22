@@ -16,13 +16,37 @@ window.__ModuleLoader__.load({
         ctx.effect(() => ctx.locale.register('fixtureLive', {
           zh: {
             active: '动态插件已启用', configSummary: '示例配置项', configForm: '动态插件配置', configField: '问候语', configSave: '保存',
+            action: '夹具操作', badge: '夹具标签', section: '夹具区块', sectionBody: '来自夹具的区块内容',
             exportSession: '导出会话', copySessionId: '复制会话 ID',
           },
           en: {
             active: 'Live plugin enabled', configSummary: 'An example setting', configForm: 'Live plugin configuration', configField: 'Greeting', configSave: 'Save',
+            action: 'Fixture action', badge: 'Fixture badge', section: 'Fixture section', sectionBody: 'Section content from the fixture',
             exportSession: 'Export session', copySessionId: 'Copy session ID',
           },
         }))
+        // Detail contributions for this bundle's own page and its row's page: an
+        // action at the head, a badge beside the title, and a section below.
+        // The subject says what the open page is about; another bundle's page
+        // gets nothing from these entries.
+        const mine = (subject) => (subject.kind === 'bundle' || subject.kind === 'row') && subject.pkg.name === '@fixture/live-client'
+        ctx.slots.inject('plugins.detail.actions', () => ctx.slots.register({
+          name: 'plugins.detail.actions', id: 'fixture-live-client', locale: 'fixtureLive',
+        }, ({ t, subject }) => mine(subject)
+          ? React.createElement('button', { type: 'button', 'data-live-action': subject.kind }, t('action'))
+          : null))
+        ctx.slots.inject('plugins.detail.badge', () => ctx.slots.register({
+          name: 'plugins.detail.badge', id: 'fixture-live-client', locale: 'fixtureLive',
+        }, ({ t, subject }) => mine(subject)
+          ? React.createElement('span', { 'data-live-badge': subject.kind }, t('badge'))
+          : null))
+        ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
+          name: 'plugins.detail.section', id: 'fixture-live-client', locale: 'fixtureLive',
+        }, ({ t, subject }) => mine(subject)
+          ? React.createElement('section', { 'data-live-section': subject.kind, 'aria-label': t('section') },
+            React.createElement('h4', null, t('section')),
+            React.createElement('p', null, t('sectionBody')))
+          : null))
         ctx.slots.inject('shell.overlay', () => ctx.slots.register({
           name: 'shell.overlay', id: 'fixture-live-client', locale: 'fixtureLive',
         }, ({ t }) => React.createElement('div', { 'data-live-client': '' }, t('active'))))

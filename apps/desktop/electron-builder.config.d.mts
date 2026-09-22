@@ -3,6 +3,7 @@ import type { AfterPackContext, BeforePackContext } from 'app-builder-lib'
 /** Electron-builder fields asserted by the Desktop release tests. */
 export interface DesktopElectronBuilderConfig {
   readonly appId: string
+  readonly protocols: readonly [{ readonly name: 'DeepSeek Harness'; readonly schemes: readonly ['dsh'] }]
   readonly directories: {
     readonly output: string
   }
@@ -61,6 +62,7 @@ export interface DesktopElectronBuilderConfig {
  * @param hostPlatform - Build-host platform used when no explicit target is present.
  * @param hostArch - Build-host architecture used when no explicit target is present.
  * @param preparedRuntime - Verified private qualification runtime; ordinary releases use target-owned resources.
+ * @param preparedRuntimeVersion - Version that private runtime declares, which qualification rewrites away from the product version.
  * @returns electron-builder configuration.
  */
 export function createElectronBuilderConfig(
@@ -68,6 +70,7 @@ export function createElectronBuilderConfig(
   hostPlatform?: NodeJS.Platform,
   hostArch?: string,
   preparedRuntime?: string,
+  preparedRuntimeVersion?: string,
 ): DesktopElectronBuilderConfig
 
 declare const electronBuilderConfig: DesktopElectronBuilderConfig

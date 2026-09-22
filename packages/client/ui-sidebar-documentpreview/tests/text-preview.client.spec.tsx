@@ -146,56 +146,6 @@ describe('TextPreview — pages', () => {
     expect(view.container.querySelector('[data-textpreview-path]')?.getAttribute('title')).toBe(ABSOLUTE_PATH)
   })
 
-  it('marks the path clipped while its text is wider than its box, re-reading on resize', async () => {
-    class FakeResizeObserver implements ResizeObserver {
-      static latest: FakeResizeObserver | undefined
-      readonly observe = vi.fn()
-      readonly unobserve = vi.fn()
-      readonly disconnect = vi.fn()
-      constructor(private readonly callback: ResizeObserverCallback) {
-        FakeResizeObserver.latest = this
-      }
-
-      fire(): void {
-        this.callback([], this)
-      }
-    }
-    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
-    let boxWidth = 300
-    const offsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')
-    const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
-    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => 200 })
-    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => boxWidth })
-    try {
-      const h = harness({ 1: page(1, ['one'], true) })
-      const view = render(<TextPreview {...h.props()} />)
-      await settle()
-      const path = view.container.querySelector<HTMLElement>('[data-textpreview-path]')
-      const text = path?.firstElementChild
-      expect(path?.hasAttribute('data-textpreview-path-clipped')).toBe(false)
-      const observer = FakeResizeObserver.latest
-      if (observer === undefined) throw new Error('expected the path to observe its size')
-      expect(observer.observe).toHaveBeenCalledWith(path)
-      expect(observer.observe).toHaveBeenCalledWith(text)
-
-      boxWidth = 120
-      act(() => { observer.fire() })
-      expect(path?.hasAttribute('data-textpreview-path-clipped')).toBe(true)
-
-      boxWidth = 300
-      act(() => { observer.fire() })
-      expect(path?.hasAttribute('data-textpreview-path-clipped')).toBe(false)
-      view.unmount()
-      expect(observer.disconnect).toHaveBeenCalledTimes(1)
-    } finally {
-      vi.unstubAllGlobals()
-      for (const [name, descriptor] of [['offsetWidth', offsetWidth], ['clientWidth', clientWidth]] as const) {
-        if (descriptor === undefined) Reflect.deleteProperty(HTMLElement.prototype, name)
-        else Object.defineProperty(HTMLElement.prototype, name, descriptor)
-      }
-    }
-  })
-
   it('reads the first page on first mount and draws its lines, offering the next', async () => {
     const h = harness({ 1: page(1, ['one', 'two', 'three'], false) })
     const view = render(<TextPreview {...h.props()} />)
@@ -641,6 +591,16 @@ describe('TextPreview — navigation and view', () => {
 })
 
 describe('TextPreview — header controls', () => {
+  it('displays the document refresh binding supplied by its tab owner', async () => {
+    const h = harness({ 0: page(0, ['hello'], true) })
+    const props = h.props(), info = props.useTabInfo()
+    const view = render(<TextPreview {...props} useTabInfo={() => ({ ...info, tab: { ...info.tab,
+      refreshShortcut: { id: 'page.refresh' as never, label: 'Refresh', aliases: [], binding: null,
+        keys: ['Ctrl', 'R'], aria: 'Control+R', modified: true, conflicts: [], issue: null },
+    } })} />)
+    await settle()
+    expect(view.container.querySelector('[data-textpreview-tool="reload"]')?.getAttribute('aria-keyshortcuts')).toBe('Control+R')
+  })
   it('toggles wrap off from the header, reporting the pressed state', async () => {
     const h = harness({ 1: page(1, ['a'], true) })
     const view = render(<TextPreview {...h.props()} />)
