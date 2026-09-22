@@ -14,22 +14,22 @@ import type { RowToastProps, RowToastState } from '../contract/slots.ts'
 const LONG_TOAST_HOLD_MS = 6000
 
 /**
- * Render the current notice: the archived notice with its undo
- * and show-archived actions on a 6 s hold, a refused Session creation with
- * the Host's reason on the same hold, or a plain warning for a failed
- * pin, an archived row that was clicked, or default Workspace creation.
+ * Render the current notice: the archived and stopped-and-archived notices
+ * with their undo and show-archived actions on a 6 s hold, a refused Session
+ * creation with the Host's reason on the same hold, or a plain warning for a
+ * failed pin, an archived row that was clicked, or default Workspace creation.
  * @param props - the notice hook, its dismissal, the two archived-notice actions, and the locale seat.
  * @returns the notice on display, or null.
  */
 export function RowActionToast({ useToast, dismissToast, undoArchive, showArchived, t }: RowToastProps) {
   const toast = useToast(current => current)
   if (toast === null) return null
-  if (toast.kind === 'archived') {
+  if (toast.kind === 'archived' || toast.kind === 'stoppedAndArchived') {
     const { sessionId } = toast
     return (
       <Toast
         key={`toast-${String(toast.seq)}`}
-        text={t('toast.archived')}
+        text={t(toast.kind === 'archived' ? 'toast.archived' : 'toast.stoppedAndArchived')}
         tone="success"
         holdMs={LONG_TOAST_HOLD_MS}
         actions={[
@@ -63,7 +63,7 @@ export function RowActionToast({ useToast, dismissToast, undoArchive, showArchiv
 
 /** The copy of one plain warning, keyed by the notice kind the union closes over. */
 function plainNoticeText(
-  toast: Exclude<RowToastState, { kind: 'archived' | 'createFailed' }>,
+  toast: Exclude<RowToastState, { kind: 'archived' | 'stoppedAndArchived' | 'createFailed' }>,
   t: RowToastProps['t'],
 ): string {
   switch (toast.kind) {

@@ -1,11 +1,11 @@
-/** The preset settings page only views and selects; authoring is guided to Creator mode. */
+/** The preset settings page only selects a preset; creating one starts a Creator-mode task. */
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { captureStableAria, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
-import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
+import { openSettingsFromAccountMenu, ZH_BROWSER_LOCALE, connectFreshWorkspaceZh, saveFailureShot } from './support.ts'
 
 const EXPECTED = fileURLToPath(new URL('./expected/agent-preset-authoring', import.meta.url))
 const mode = webSnapshotMode()
@@ -21,7 +21,7 @@ describe('web e2e: preset roster guidance', () => {
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openSettingsFromAccountMenu(page, 'zh')
     await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: 'Agent 预设' }).click()
     await page.getByRole('heading', { name: 'Agent 预设' }).waitFor()
   }, 120_000)
@@ -32,8 +32,9 @@ describe('web e2e: preset roster guidance', () => {
     await expect.poll(() => page.locator('[data-agent-preset-id]').count()).toBe(4)
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(EXPECTED, 'section.expected.md'), snapshot, mode)
-    expect(snapshot).toContain('如何创建或修改预设')
-    expect(snapshot).not.toContain('新建预设')
+    expect(snapshot).toContain('让 Agent 帮我创建预设模式')
+    expect(snapshot).not.toContain('查看配置')
+    expect(snapshot).not.toContain('复制预设')
     expect(snapshot).not.toContain('编辑插件')
     expect(snapshot).not.toContain('打开目录')
     expect(snapshot).not.toContain('删除')
@@ -54,16 +55,33 @@ describe('web e2e: preset roster guidance', () => {
     expect(await settings.getByRole('button', { name: '新任务默认: 标准模式', exact: true }).getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('guides authoring to Creator mode instead of editing here', async () => {
-    onTestFailed(() => saveFailureShot(page, 'preset-roster-authoring-help'))
-    await page.getByRole('button', { name: '如何创建或修改预设', exact: true }).click()
-    const help = page.getByRole('dialog', { name: '创建和修改预设', exact: true })
-    await help.waitFor()
-    const snapshot = await captureStableAria(page, '[role="dialog"][aria-label="创建和修改预设"]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(join(EXPECTED, 'authoring-help.expected.md'), snapshot, mode)
-    expect(snapshot).toContain('让 Agent 帮我创建预设模式')
-    await help.getByRole('button', { name: '关闭', exact: true }).last().click()
-    await help.waitFor({ state: 'detached' })
+  it('starts a Creator-mode task from the section entry', async () => {
+    onTestFailed(() => saveFailureShot(page, 'preset-roster-creator'))
+    // The entry stages the self-referential preset and lands a new task on it,
+    // so the flow needs a connected workspace to enter.
+    await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '关闭', exact: true }).last().click()
+    await connectFreshWorkspaceZh(page, scaffold.workspaceCwd)
+    await openSettingsFromAccountMenu(page, 'zh')
+    const settings = page.getByRole('dialog', { name: '设置' })
+    await settings.getByRole('button', { name: 'Agent 预设' }).click()
+    await settings.getByRole('button', { name: '让 Agent 帮我创建预设模式', exact: true }).click()
+    await settings.waitFor({ state: 'detached', timeout: 10_000 })
+    await expect.poll(async () => {
+      const response = await scaffold.hostFetch('/api/session/list', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          type: 'client-request', rpcId: 'creator-draft-stage', method: 'session/list',
+          payload: { args: { _request: {} } },
+        }),
+      })
+      const body = await response.json() as {
+        result: { value?: { items: { projections?: { values: { agentPreset?: string | null } } }[] } }
+      }
+      return body.result.value?.items
+        .map(item => item.projections?.values.agentPreset)
+        .filter(preset => typeof preset === 'string') ?? []
+    }, { timeout: 15_000 }).toContain('cordis')
   })
 
   it('runs without page errors or model calls', () => { expect(tripwire.pageErrors).toEqual([]) })

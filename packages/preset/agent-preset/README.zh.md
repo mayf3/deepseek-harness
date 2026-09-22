@@ -47,6 +47,8 @@ kind: "package-reference"
 
 声明行的 `id` 是 Loader 编辑地址；`config.id` 是会话保存的 preset 标识符。子插件可省略行 ID，由 Loader 分配。
 
+本包还随包出货创造模式通过 `skill-filesystem` 挂载的 `skills/` 目录：`cordis-plugin-development`（简短流程，配合按需读取的 `references/` 与可复制的 `templates/` 组合包）、`editing-cordis-compositions`，以及 `cordis-composition-reference`，后者的 `references/packages.md` 由 `scripts/gen-plugin-packages.ts` 生成并在 `doc-sync` 中做新鲜度门禁。两个流程 skill 让 agent 先读检查结果，再读 `Config.listConfigs` 报告的 `packageDir` 下的包 README，最后读构建后的 `lib/` 或 checkout 源码。每个出货的 `SKILL.md` 作为 `skill` 工具结果渲染后都保持在 8192 字符阈值之下，标准 preset 的工具结果修剪器超过该阈值才会裁剪。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

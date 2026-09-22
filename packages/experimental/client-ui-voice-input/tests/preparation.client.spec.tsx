@@ -84,6 +84,30 @@ it('shows waking without an explicit preparation cancellation control', () => {
   expect(screen.getByText('已等待 5 秒')).toBeTruthy()
   expect(screen.queryByRole('button', { name: zh.cancelPrepare })).toBeNull()
 })
+it('explains download failures on the Host machine and retains an actionable retry', () => {
+  const b = fixture({ phase: 'failed', message: 'fetch failed', download: {
+    resource: 'model.int8.onnx', source: 'https://mirror.example', reason: 'dns', code: 'ENOTFOUND',
+  } })
+  const alert = screen.getByRole('alert')
+  expect(alert.textContent).toContain('无法下载 model.int8.onnx：无法解析下载地址。')
+  expect(alert.textContent).toContain('运行 DSH 的机器的 DNS 和代理设置')
+  expect(alert.textContent).toContain('下载来源：https://mirror.example')
+  expect(alert.textContent).toContain('错误码：ENOTFOUND')
+  expect(alert.textContent).not.toContain('fetch failed')
+  expect(alert.textContent).not.toContain('Hugging Face')
+  fireEvent.click(screen.getByRole('button', { name: zh.retryPrepare }))
+  expect(b.prepare).toHaveBeenCalledWith(id)
+  b.rerender(<PreparationCard {...b.props} provider={{ ...b.props.provider, preparation: {
+    phase: 'failed', message: 'download unavailable', download: {
+      resource: 'tokens.txt', source: 'https://huggingface.co', reason: 'http', status: 503,
+    },
+  } }} />)
+  expect(screen.getByRole('alert').textContent).toContain('无法下载 tokens.txt：下载服务返回 HTTP 503。')
+  expect(screen.getByRole('alert').textContent).not.toContain('错误码')
+  b.rerender(<PreparationCard {...b.props} provider={{ ...b.props.provider,
+    preparation: { phase: 'failed', message: 'runtime missing' } }} />)
+  expect(screen.getByRole('alert').textContent).toBe('准备失败：runtime missing')
+})
 it('persists settings and reports disconnection in the detail card', async () => {
   const store = createSnapshotStore<SpeechReadiness>({ connected: true, error: null, catalog: {
     selection: { providerId: id, language: 'auto' }, maxAudioBytes: 100, maxDurationSeconds: 120,

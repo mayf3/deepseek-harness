@@ -139,6 +139,18 @@ describe('Desktop local packaging configuration', () => {
     }).not.toThrow()
   })
 
+  it('accepts one local npm registry mirror and rejects other registry forms', () => {
+    const release = { ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }
+    expect(() => {
+      validateDesktopPackageEnvironment({ ...release, DSH_DESKTOP_NPM_REGISTRY: 'https://registry.npmmirror.com/' }, WINDOWS, { unsigned: true })
+    }).not.toThrow()
+    for (const value of ['http://registry.example.com/', 'https://registry.example.com/path', 'https://user:secret@registry.example.com/', 'not-a-url']) {
+      expect(() => {
+        validateDesktopPackageEnvironment({ ...release, DSH_DESKTOP_NPM_REGISTRY: value }, WINDOWS, { unsigned: true })
+      }).toThrow(/DSH_DESKTOP_NPM_REGISTRY/u)
+    }
+  })
+
   it('rejects incomplete macOS identity and credentials and checks referenced files without contacting Apple', async () => {
     expect(() => {
       validateDesktopPackageEnvironment(RELEASE, MACOS)

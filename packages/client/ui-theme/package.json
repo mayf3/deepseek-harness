@@ -23,7 +23,8 @@
       "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./brand-font.css": "./lib/styles/brand-font.css"
   },
   "dsh": {
     "client": {

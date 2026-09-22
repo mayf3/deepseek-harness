@@ -13,8 +13,10 @@ export interface ChatPresentationPolicy {
   readonly mode: TranscriptViewMode
   /** Whether a normally completed Turn folds its process rows behind the whole-Turn control. */
   readonly foldCompletedTurns: boolean
-  /** Reserved secondary-grouping preference; no renderer consumes this field yet. */
+  /** Whether running Turns' secondary groups expose a collapsible header; historical groups always do. */
   readonly stepGrouping: 'collapsed' | 'none'
+  /** Show the running command, path, query, or reasoning detail in group titles. */
+  readonly liveProcessDetail: boolean
   /** Whether a settled reasoning row previews its first line beside the Think title. */
   readonly settledReasoningPreview: boolean
 }
@@ -24,18 +26,21 @@ const POLICIES: Readonly<Record<TranscriptViewMode, ChatPresentationPolicy>> = {
     mode: 'compact',
     foldCompletedTurns: true,
     stepGrouping: 'collapsed',
+    liveProcessDetail: false,
     settledReasoningPreview: false,
   },
   detailed: {
     mode: 'detailed',
     foldCompletedTurns: true,
     stepGrouping: 'collapsed',
+    liveProcessDetail: true,
     settledReasoningPreview: true,
   },
   expanded: {
     mode: 'expanded',
     foldCompletedTurns: true,
     stepGrouping: 'none',
+    liveProcessDetail: true,
     settledReasoningPreview: true,
   },
 }

@@ -61,6 +61,8 @@ The package realizes one dispatch rule: atomic Tool views are keyed by wire Tool
 
 `ToolCallTree` receives one root `ToolCallBlock` that already contains recursive `subCalls`, the session `cwd`, and the owner's callbacks for opening files and inspecting calls. It recursively walks the standard call blocks and sends the root and children at every depth through the same atomic dispatch path, without subscribing to a separate parent-to-children map. Each root and child wrapper preserves the `data-chat-anchor-key="call:<id>"` and `data-chat-call-id` DOM contract used for paging and selection.
 
+Tool owner props forward Chat's stable `useDisclosure` Hook through root and nested calls. Rows invoke it where they own their expanded bodies; intermediate renderers do not subscribe. Each invocation has independent open state that resets when the enclosing Turn collapses, without replacing React identity. Presentation-mode switches preserve it.
+
 ### Cards
 
 

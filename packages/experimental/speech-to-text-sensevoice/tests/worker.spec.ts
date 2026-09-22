@@ -10,6 +10,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { Config } from '../src/config.ts'
 import { SenseVoiceWorker } from '../src/recognizer.ts'
 import { inspectRuntime, prepareRuntime } from '../src/runtime.ts'
+import { SpeechDownloadError } from '../src/download-error.ts'
 
 vi.mock('../src/runtime.ts', () => ({ inspectRuntime: vi.fn(), prepareRuntime: vi.fn() }))
 const cleanup: Array<() => Promise<void>> = []
@@ -215,6 +216,18 @@ it('recovers after a provider error or unexpected worker exit', async () => {
   await expect(worker.transcribe({ audio, language: 'error' }, signal())).rejects.toThrow('provider failed')
   await expect(worker.transcribe({ audio, language: 'crash' }, signal())).rejects.toThrow()
   expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+})
+
+it('publishes safe download diagnostics and clears them after a successful retry', async () => {
+  const { worker } = await fixture()
+  const download = { resource: 'model.int8.onnx', source: 'https://mirror.example', reason: 'dns' as const, code: 'ENOTFOUND' }
+  vi.mocked(prepareRuntime).mockRejectedValueOnce(new SpeechDownloadError(download, { cause: new Error('private details') }))
+  worker.prepare()
+  await vi.waitFor(() => { expect(worker.snapshot()).toMatchObject({ phase: 'failed', download }) })
+  expect(JSON.stringify(worker.snapshot())).not.toContain('private details')
+  await prepare(worker)
+  expect(worker.snapshot()).toMatchObject({ phase: 'ready' })
+  expect(worker.snapshot()).not.toHaveProperty('download')
 })
 
 it('applies inference deadlines and reports runtime preparation failure', async () => {

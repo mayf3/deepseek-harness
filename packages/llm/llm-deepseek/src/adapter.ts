@@ -80,9 +80,12 @@ export class DeepSeekAdapter extends LlmAdapter {
     const { messages, versions } = await prepareImages(
       options.messages, connection, options.model, this.dependencies.resolveAttachments?.(), this.imageAccess, signal,
     )
-    const key = await this.dependencies.resolveApiKey(connection)
-    const files = new RequestFiles(this.files, { baseURL: connection.baseURL, apiKey: key },
-      connection.filePolicy, connection.filesApiTimeoutMs, signal, activity)
+    const accountToken = await this.dependencies.resolveAccountToken?.(connection)
+    const key = accountToken ?? await this.dependencies.resolveApiKey(connection)
+    const files = new RequestFiles(this.files, {
+      baseURL: connection.baseURL, apiKey: key, accountCredential: accountToken !== undefined,
+    },
+    connection.filePolicy, connection.filesApiTimeoutMs, signal, activity)
     let inline = false
     while (true) {
       signal.throwIfAborted()
@@ -112,7 +115,8 @@ export class DeepSeekAdapter extends LlmAdapter {
         headers: {
           ...attributionHeaders(),
           'content-type': 'application/json', 'accept': 'text/event-stream',
-          'x-api-key': key, 'anthropic-version': '2023-06-01',
+          ...accountToken === undefined ? { 'x-api-key': key } : { 'x-dsh-auth-token': accountToken },
+          'anthropic-version': '2023-06-01',
           ...fileIds === undefined || fileIds.size === 0 ? {} : { 'anthropic-beta': MESSAGES_FILES_BETA },
           'x-deepseek-harness-user-id': this.dependencies.resolveUserId(),
           ...options.sessionId === undefined ? {} : { 'x-deepseek-harness-session-id': String(options.sessionId) },
