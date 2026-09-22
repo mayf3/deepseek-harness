@@ -60,8 +60,7 @@
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "@types/react": "~18.3.1",
-    "react": "^18.2.0",
-    "@deepseek-ai/dsh-client-shortcuts": "workspace:^"
+    "react": "^18.2.0"
   },
   "files": [
     "lib/index.js",

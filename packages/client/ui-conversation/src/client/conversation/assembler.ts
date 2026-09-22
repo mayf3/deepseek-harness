@@ -6,7 +6,7 @@ import type {
   ConversationContextReader, ConversationLocationData, ConversationMatch,
   ConversationNodeContext, ConversationNodeDefinition, ConversationPreviousContext,
   ConversationLocationDataScope, ConversationPublication, ConversationViewBuilder,
-  ConversationStartMatch, ConversationTimelineSnapshot,
+  ConversationStartMatch,
   ConversationViewDefinition, ConversationViewNode, ConversationViewSnapshotMap,
   ConversationViewSnapshotStore,
 } from '../contract/conversation.ts'
@@ -208,12 +208,6 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
   ) {
     this.resetViewBuilders()
   }
-
-  /**
-   * Read the assembled Turn/Step timeline without activating a presentation target.
-   * @returns the immutable timeline shared with target builders.
-   */
-  timeline(): ConversationTimelineSnapshot { return this.locationIndex.snapshot() }
 
   /**
    * Replace the complete loaded window after open, resync, or gap repair.

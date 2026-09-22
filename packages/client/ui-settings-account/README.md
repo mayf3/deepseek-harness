@@ -30,7 +30,7 @@ Desktop usage and top-up actions open an isolated native Platform view below a 4
 
 Contact us opens the Feishu questionnaire in the system browser on Desktop or a new browser tab on Web. It supplies the available Platform UID, build version, UI locale and physical screen resolution as prefill_* parameters, with hide_*=1 for every context field; tokens and contact details are excluded. Configure contactFormUrl on the ui-settings-account plugin to select another HTTPS form. contactSource defaults to empty until the questionnaire supports a Harness source option; OS and device fields remain unfilled, matching the Web implementation.
 
-The sidebar account menu uses the shared Menu surface, backdrop blur, spacing, and row typography; feature styles only size its launcher. Its Settings row shows the effective key combination supplied by the shell. Closing Settings returns focus to the sidebar account launcher.
+The sidebar account menu uses the shared Menu surface, backdrop blur, spacing, and row typography; feature styles only size its launcher.
 
 The account card’s More account information link opens `https://platform.deepseek.com` in the system browser on Desktop or a new tab on Web.
 

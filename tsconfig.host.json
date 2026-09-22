@@ -7,22 +7,11 @@
     "noEmit": true,
     "rewriteRelativeImportExtensions": false
   },
-  "files": [
-    // Native keyboard tests exercise the Cordis-free renderer adapters in the same event stream.
-    "packages/client/shortcuts/src/client/registry.ts",
-    "packages/client/shortcuts/src/client/dom.ts",
-    "packages/client/shortcuts/src/client/native.ts",
-    "packages/client/shortcuts/src/client/types.ts"
-  ],
+  "files": [],
   "include": [
     "apps/web/product-isolation.ts",
     "apps/web/tests/connection-recovery.e2e.ts",
     "apps/web/tests/server-restart.e2e.ts",
-    "apps/web/tests/shortcuts.e2e.ts",
-    "apps/web/tests/shortcuts-desktop.e2e.ts",
-    "apps/web/tests/shortcuts-workspace.e2e.ts",
-    "apps/web/tests/shortcuts-panels.e2e.ts",
-    "apps/web/tests/shortcuts-fixed.e2e.ts",
     "apps/web/tests/default-product-isolation.e2e.ts",
     "apps/web/tests/diff-context.e2e.ts",
     "apps/web/tests/scaffold.ts",
@@ -157,7 +146,6 @@
     "apps/web/tests/chat-long-interactions.e2e.ts",
     "apps/web/tests/chat-continuous-conversation.e2e.ts",
     "apps/web/tests/composer-tab-geometry.e2e.ts",
-    "apps/web/tests/composer-shortcuts.e2e.ts",
     "apps/web/tests/complex-history.perf.ts",
     "apps/web/tests/pwsh-terminal.e2e.ts",
     "apps/web/tests/workflow-run.e2e.ts",

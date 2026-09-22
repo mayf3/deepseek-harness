@@ -32,7 +32,7 @@ export interface ComposerKeymapHandlers {
   dismissPopup(): void
   /** Whether Enter may submit right now (locked/busy states refuse). */
   canSubmit(): boolean
-  /** Plain Enter submits; exactly Ctrl+Enter or Cmd+Enter selects accelerated delivery. */
+  /** The Enter gesture after every guard passed; `accelerated` = Ctrl/Cmd held. */
   submit(accelerated: boolean): void
   /**
    * Pasted files with directory metadata supplied by the clipboard entry API.
@@ -133,11 +133,8 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
       return false
     }, COMMAND_PRIORITY_CRITICAL),
     editor.registerCommand(KEY_ENTER_COMMAND, (event) => {
-      // Returning true stops Lexical's fallback line break without consuming
-      // the DOM event that application shortcuts need.
-      if (event !== null && (event.altKey || event.getModifierState('AltGraph')
-        || (event.ctrlKey && event.metaKey) || (event.shiftKey && (event.ctrlKey || event.metaKey)))) return true
-      // Plain Shift+Enter keeps its native line break, including during composition.
+      // Shift+Enter is the native line break UNCONDITIONALLY — decided before
+      // the IME guard so a composition-closing Shift+Enter still breaks the line.
       if (event?.shiftKey === true) return false
       if (event !== null && isComposingEvent(event, recentlyComposing)) {
         // The IME consumes this Enter (candidate pick); neither submit nor

@@ -10,7 +10,7 @@ import {
   createSnapshotStore, type ObservableSnapshot, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-store'
 import type {
-  ConversationPublication, ConversationTimelineSnapshot, ConversationViewSnapshotMap,
+  ConversationPublication, ConversationViewSnapshotMap,
   ConversationViewSnapshotStore,
 } from '../contract/conversation.ts'
 import type { ConversationSnapshot } from '../contract/snapshot.ts'
@@ -28,8 +28,6 @@ import { ConversationGroupRegistry } from './group-registry.ts'
 /** Observable faces published for one Session's Conversation assembly. */
 export interface ConversationBinding {
   readonly snapshot: ObservableSnapshot<ConversationSnapshot>
-  /** Loaded Turn/Step timeline; lifecycle events publish synchronously even without an active View. */
-  readonly timeline: ObservableSnapshot<ConversationTimelineSnapshot>
   /**
    * Add one selected target to the Session's monotonic active set.
    * @param target - registered or subsequently registered Conversation target.
@@ -49,7 +47,6 @@ export interface ConversationBinding {
 
 class BoundConversation implements ConversationBinding {
   readonly snapshot: SnapshotStore<ConversationSnapshot>
-  readonly timeline: SnapshotStore<ConversationTimelineSnapshot>
   private readonly viewStore: ConversationViewSnapshotStore
   private readonly targetSources = new Map<string, ObservableSnapshot<unknown>>()
   private revision = -1
@@ -62,7 +59,6 @@ class BoundConversation implements ConversationBinding {
   ) {
     this.viewStore = assembler
     this.snapshot = createSnapshotStore(this.currentSnapshot())
-    this.timeline = createSnapshotStore(assembler.timeline())
     this.replace(feed.getSnapshot())
     this.disposeFeed = feed.subscribe(() => {
       this.accept(feed.getSnapshot())
@@ -90,7 +86,6 @@ class BoundConversation implements ConversationBinding {
 
   activate(target: string): void {
     if (this.assembler.activateTarget(target)) this.snapshot.set(this.currentSnapshot())
-    this.timeline.set(this.assembler.timeline())
   }
 
   rebuild(): void { this.publish(this.assembler.rebuildRegistry()) }
@@ -162,7 +157,6 @@ class BoundConversation implements ConversationBinding {
 
   private flush(): void {
     if (this.assembler.flush()) this.snapshot.set(this.currentSnapshot())
-    this.timeline.set(this.assembler.timeline())
   }
 
   private currentSnapshot(): ConversationSnapshot {
