@@ -484,13 +484,16 @@ it('adds private deployment cookies to every Platform request without exposing t
   expect(JSON.stringify(await f.account.getState())).not.toContain('test_gate')
   await f.account.signOut()
   await expect.poll(f.logoutCount).toBe(1)
-  const paths = f.receivedHeaders.map(item => item.path)
+  const headers = f.receivedHeaders
+  const paths = headers.map(item => item.path)
+  // The profile and wallet queries are independent requests, so their arrival order is scheduler-dependent.
   expect(paths.slice(0, 2)).toEqual(['/auth-api/v0/dsh/auth_init', '/auth-api/v0/dsh/auth_exchange'])
-  // Profile and balance requests run concurrently.
   expect(paths.slice(2, -1).sort()).toEqual(['/api/v0/users/get_user_summary', '/auth-api/v0/users/current'])
-  expect(paths.slice(-1)).toEqual(['/auth-api/v0/users/logout'])
-  expect(f.receivedHeaders.every(item => item.cookie === 'test_gate=synthetic')).toBe(true)
-  expect(f.receivedHeaders.slice(2).every(item => item.authorization === 'dsh_mock_test')).toBe(true)
+  expect(paths.at(-1)).toBe('/auth-api/v0/users/logout')
+  expect(headers.every(item => item.cookie === 'test_gate=synthetic')).toBe(true)
+  const grantedPaths = new Set(['/auth-api/v0/users/current', '/api/v0/users/get_user_summary', '/auth-api/v0/users/logout'])
+  expect(headers.filter(item => grantedPaths.has(item.path ?? '')).every(item => item.authorization === 'dsh_mock_test')).toBe(true)
+  expect(headers.filter(item => !grantedPaths.has(item.path ?? '')).every(item => item.authorization === undefined)).toBe(true)
 })
 
 it('rejects reserved, duplicate and malformed deployment headers without disclosing values', () => {
