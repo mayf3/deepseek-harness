@@ -278,6 +278,24 @@ export const IconCloseFillMedium = (props: IconProps) => (
   <IconCloseFillArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
 )
 
+// A 7-unit disc with the cross knocked out of it (even-odd), so the cross
+// takes the color of whatever sits behind the glyph.
+const IconCloseCircleFillArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
+    <path fillRule="evenodd" clipRule="evenodd" d="M15 8A7 7 0 1 1 1 8A7 7 0 1 1 15 8ZM6.409 10.652L5.348 9.591L6.939 8L5.348 6.409L6.409 5.348L8 6.939L9.591 5.348L10.652 6.409L9.061 8L10.652 9.591L9.591 10.652L8 9.061Z" fill="currentColor" />
+  </svg>
+)
+
+/** Regular IconCloseCircleFill artwork (cross knocked out of a filled disc); its fill-only geometry is weight-independent. */
+export const IconCloseCircleFillRegular = (props: IconProps) => (
+  <IconCloseCircleFillArtwork {...props} strokeWidth={ICON_REGULAR_STROKE} />
+)
+
+/** Medium IconCloseCircleFill artwork; it matches Regular because the geometry is fill-only. */
+export const IconCloseCircleFillMedium = (props: IconProps) => (
+  <IconCloseCircleFillArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
+)
+
 const IconCopyOutlineArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
     <rect x="1.52075" y="4.07373" width="10.3932" height="10.3932" rx="2" stroke="currentColor" />
@@ -1574,4 +1592,21 @@ export const IconSlidersTwoOutlineRegular = (props: IconProps) => (
 /** Medium IconSlidersTwoOutline artwork with a 1.3px stroke. */
 export const IconSlidersTwoOutlineMedium = (props: IconProps) => (
   <IconSlidersTwoOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
+)
+
+const IconMicrophoneOutlineArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" className={className} fill="none" stroke="currentColor" strokeWidth={strokeWidth} aria-hidden="true">
+    <rect x={4.5 + strokeWidth / 2} y={1 + strokeWidth / 2} width={7 - strokeWidth} height={10 - strokeWidth} rx={(7 - strokeWidth) / 2} />
+    <path d="M2.35 8.675C3.075 11.3 5.2 13.125 8 13.125C10.8 13.125 12.925 11.3 13.65 8.675M8 13.125V15" />
+  </svg>
+)
+
+/** Microphone with uniform one-pixel strokes. */
+export const IconMicrophoneOutlineRegular = (props: IconProps) => (
+  <IconMicrophoneOutlineArtwork {...props} strokeWidth={ICON_REGULAR_STROKE} />
+)
+
+/** Microphone with uniform 1.3px strokes. */
+export const IconMicrophoneOutlineMedium = (props: IconProps) => (
+  <IconMicrophoneOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
 )

@@ -1,5 +1,9 @@
 /* Active plan status: a business accent pill at the control row's own height
-   (28px, like the + control and the sibling selects). */
+   (28px, like the + control and the sibling selects). The radius is half that
+   height — the compact Button geometry — under the theme's corner curvature,
+   the same corners as the sibling access-mode trigger; a 999px pill would
+   need the circular `corner-shape: round` opt-out and read rounder than
+   every neighbouring control. */
 
 .wrap {
   display: inline-flex;
@@ -15,8 +19,7 @@
   min-width: 34px;
   padding: 0 8px;
   border: none;
-  border-radius: 999px;
-  corner-shape: round;
+  border-radius: 14px;
   background: var(--dsw-alias-state-business-tertiary);
   color: var(--dsw-alias-state-business-primary);
   font-size: 13px;
@@ -43,10 +46,26 @@
   cursor: default;
 }
 
-.close {
+/* One 14px glyph slot ahead of the label (the access-mode trigger's layout):
+   the plan glyph at rest, the circled close while the enabled chip is hovered
+   or keyboard-focused, marking the pending click as turning plan mode off. */
+.glyph {
   display: inline-flex;
-  align-items: center;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
   color: currentColor;
+}
+
+.hoverGlyph,
+.chip:hover:not(:disabled) .restGlyph,
+.chip:focus-visible .restGlyph {
+  display: none;
+}
+
+.chip:hover:not(:disabled) .hoverGlyph,
+.chip:focus-visible .hoverGlyph {
+  display: block;
 }
 
 .error {

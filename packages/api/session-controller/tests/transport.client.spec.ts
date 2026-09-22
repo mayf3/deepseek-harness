@@ -5,9 +5,10 @@ import {
   type RemoteStreamOptions,
 } from '@deepseek-ai/dsh-api-gateway/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { streamHandle } from '@deepseek-ai/dsh-remote-mock'
 import { LlmAttemptId } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session/types'
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult, RemoteStreamHandle } from '@deepseek-ai/dsh-typert-protocol'
 import {
   createSessionControlStream,
   SessionEventStream,
@@ -106,7 +107,11 @@ class ScriptedSessionRemote implements SessionTransportRemote {
     private readonly holdControl = true,
   ) {}
 
-  async *follow(request: SessionFollowRequest, signal = new AbortController().signal): AsyncIterable<SessionFollowFrame> {
+  follow(request: SessionFollowRequest, signal = new AbortController().signal): RemoteStreamHandle<SessionFollowFrame, never> {
+    return streamHandle(this.followFrames(request, signal))
+  }
+
+  private async *followFrames(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
     const generation = this.generations.shift()
     if (generation === undefined) throw new Error('no scripted Session generation')
     this.followRequests.push(request)
@@ -128,7 +133,11 @@ class ScriptedSessionRemote implements SessionTransportRemote {
     return Promise.resolve(result)
   }
 
-  async *control(signal = new AbortController().signal): AsyncIterable<SessionControlFrame> {
+  control(signal = new AbortController().signal): RemoteStreamHandle<SessionControlFrame, never> {
+    return streamHandle(this.controlSequence(signal))
+  }
+
+  private async *controlSequence(signal: AbortSignal): AsyncIterable<SessionControlFrame> {
     for (const frame of this.controlFrames) yield frame
     if (this.holdControl && !signal.aborted) {
       await new Promise<void>((resolve) => {
@@ -657,10 +666,10 @@ describe('Session Client stream adapters', () => {
   it('maps the Host-wide control baseline and deltas into one snapshot stream', async () => {
     const baseline: SessionControlFrame = {
       type: 'baseline',
-      value: { jobs: {}, projections: {} },
+      value: { projections: {} },
     }
     const update: SessionControlFrame = {
-      type: 'jobs', sessionId: 'session-1' as never, jobs: [],
+      type: 'projection', sessionId: 'session-1' as never, key: 'title', value: 'updated', seq: 1,
     }
     const remote = new ScriptedSessionRemote([], [], [baseline, update])
     const accept = vi.fn<(frame: SessionControlFrame) => void>()
@@ -692,7 +701,7 @@ describe('Session Client stream adapters', () => {
 
     const baseline: SessionControlFrame = {
       type: 'baseline',
-      value: { jobs: {}, projections: {} },
+      value: { projections: {} },
     }
     const carrierFailed = vi.fn()
     const failed = vi.fn()

@@ -34,7 +34,7 @@ Sidebar 随包交付三个 tab 类型：**引导页**（`ui-sidebar-right`）、
 
 tab 使用 `dsh-resource://file/session/<sessionId>/<path>`，其中路径可以是相对路径或绝对路径（[Workspace Files](../architecture/2026-09-05-workspace-files-service.zh.md)负责该语法与 `fileAddressFor` / `parseFileAddress` 辅助函数）。`hostFileOf` 只接受这种 Session scope，并从地址取得 Session 与路径；不认领不带 Session 的 `absolute` 地址。被认领的地址若格式错误，则作为程序错误抛出。
 
-元数据与内容来自不同的地方。`useResource<'file'>(tab.contentId)`——[client 资源模型](../architecture/2026-09-05-client-resource-model.zh.md)提供的全局标准 hook——产生 `WorkspaceFileStat`；正文把其观察版本与已加载内容版本比较。Preview face 通过 `remote.workspaceFiles.read` 读取文本，通过 `readAll` 读取完整字节。后续文本页若来自更新版本，则从第一页重新开始；被重载或 tab 销毁淘汰的请求不能再写入。[Document Preview 决议](../architecture/2026-09-08-document-preview-operations.zh.md)负责各渲染器的加载方式。
+元数据与内容来自不同的地方。`useResource<'file'>(tab.contentId)`——[client 资源模型](../architecture/2026-09-05-client-resource-model.zh.md)提供的全局标准 hook——产生 `WorkspaceFileStat`；正文把其观察版本与已加载内容版本比较。Preview face 通过 `remote.workspaceFiles.read` 读取文本，通过带 `{}` 选项的 `readBytes` 读取完整字节。后续文本页若来自更新版本，则从第一页重新开始；被重载或 tab 销毁淘汰的请求不能再写入。[Document Preview 决议](../architecture/2026-09-08-document-preview-operations.zh.md)负责各渲染器的加载方式。
 
 store 是 Slot 标准件：每会话一个独占实例，按 tab id 分桶，持有 `{ version, pages, eof, loading, failure, scrollTop, wrap, revision }`。按 tab 而非按文件分桶是有意的——同一文件的两个 tab 各自滚动。face（`loadPage`、`reloadPages`）是唯一的异步半边：它标记读取进行中，等待 Remote 结果，再经 store 的 action 写入一页或一次失败；若 owner 的 `signal` 已触发则什么也不写。`signal` 同时终结这个桶：face 在 tab 首次读取时挂一个 abort 监听器，由它忘掉桶——不是体，体随 tab 切换反复挂载卸载；从未读过的 tab 没有桶也没有监听器，而 tab 记录可能在其体被另一 tab 挡住而卸载时结束。因此滚动位置、换行与已答过的导航都活得比体久：tab 回来时停在读者离开的地方，而不是重读或再跳一次。刷新页面后什么都不保留。
 

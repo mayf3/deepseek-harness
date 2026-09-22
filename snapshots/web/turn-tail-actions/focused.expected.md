@@ -6,13 +6,13 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: Begin your reply with the plain sentence "Reading the workspace now." as text, and in that same message call the bash tool with the command "echo alpha". After the tool result, reply with the single word DONE and stop. {{clock}}
 - button "Copy"
-- button "1 tool call · 1 message" [expanded]
-- button "Context injection runtime-context"
-- button "Think The user wants me to begin with \"Reading the workspace now.\" and call bash with \"echo alpha\" in the same message. Then after the tool result, reply with the single word DONE and stop."
+- status: Worked
+- button "Took {{duration}}" [expanded]
+- button "Analysis completed"
 - paragraph: Reading the workspace now.
+- button "Ran commands" [expanded]
 - button "Bash Print alpha to stdout"
 - paragraph: DONE
 - button "Copy"

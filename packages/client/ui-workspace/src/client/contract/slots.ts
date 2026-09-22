@@ -42,7 +42,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionSearchResultItem } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
-import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionActivity, WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { createWorkspaceViewStore } from '../stores.ts'
 
@@ -238,12 +238,20 @@ export type SessionRowActionProps<Injected extends object = object> =
   & PropsLocale<'workspace'>
   & InjectFace<Injected>
 
-/** One transient notice a row action raises; the overlay toast entry renders it. */
+/** One transient Workspace notice rendered by the overlay toast entry. */
 export type RowToast =
   | { kind: 'archived'; sessionId: SessionId }
+  | { kind: 'stoppedAndArchived'; sessionId: SessionId }
   | { kind: 'pinFailed' }
   | { kind: 'unpinFailed' }
   | { kind: 'archivedNotOpenable' }
+  | { kind: 'defaultWorkspaceFailed' }
+  /**
+   * An explicit New Session request that failed. `message` is untranslated:
+   * a Host refusal as `code: message` — the stable code stays in the copy so
+   * a report can be searched by it — and any other failure's own message.
+   */
+  | { kind: 'createFailed'; message: string }
 
 /** The notice on display; `seq` keys remounts so a repeated notice restarts its hold. */
 export type RowToastState = RowToast & { seq: number }
@@ -269,8 +277,9 @@ export interface PinSessionInjected {
 
 /**
  * Archive action share (menu row and hover button). The callbacks carry the
- * whole behavior: the Host call, the notice a success raises, and the
- * diagnostics for a rejection.
+ * whole behavior: the Host call, the notice a success raises, the
+ * stop-and-archive confirmation a Host refusal for running work raises, and
+ * the diagnostics for any other rejection.
  */
 export interface ArchiveSessionInjected {
   hooks: {
@@ -281,10 +290,44 @@ export interface ArchiveSessionInjected {
    * Archive a Session into the registry-global set: the row keeps its
    * account position and shows per the archived filter; archiving the
    * current session clears the selection into the New Session view state.
+   * A Session with running work is not archived by this call: the Host's
+   * refusal opens the stop-and-archive confirmation instead.
    */
   archiveSession: (sessionId: SessionId) => void
   /** Remove a Session from the registry-global archived set. */
   unarchiveSession: (sessionId: SessionId) => void
+}
+
+/**
+ * A stop-and-archive confirmation the archive action asked for: the Host
+ * refused the plain archive because this work still runs.
+ */
+export interface SessionArchiveConfirmRequest {
+  /** Session to stop and archive. */
+  sessionId: SessionId
+  /** The row's display title, named in the dialog. */
+  displayTitle: string
+  /** What the Host reported running, in family order. */
+  activity: readonly SessionActivity[]
+}
+
+/**
+ * Stop-and-archive dialog share: the pending confirmation, its settlement,
+ * and the archive hop that asks the Host to stop the work first.
+ */
+export interface SessionArchiveConfirmInjected {
+  hooks: {
+    /** The confirmation asked for, until the dialog consumes or cancels it. */
+    archiveRequest: HostObservable<SessionArchiveConfirmRequest | null>
+  }
+  /** Consume or cancel the pending confirmation. */
+  settleSessionArchive: () => void
+  /**
+   * Archive a Session after the Host stops its running work; resolves once
+   * the archive set is durable (the stops settle in the background) and
+   * raises the stopped-and-archived notice.
+   */
+  stopAndArchiveSession: (sessionId: SessionId) => Promise<void>
 }
 
 /** Fork action share. */
@@ -340,6 +383,13 @@ export type SessionRenameDialogProps =
   & Omit<SessionRenameDialogInjected, 'hooks'>
   & PropsHooks<SessionRenameDialogInjected['hooks']>
 
+/** Props of the stop-and-archive dialog entry in `shell.overlay`. */
+export type SessionArchiveConfirmProps =
+  PropsRuntime<'shell.overlay'>
+  & PropsLocale<'workspace'>
+  & Omit<SessionArchiveConfirmInjected, 'hooks'>
+  & PropsHooks<SessionArchiveConfirmInjected['hooks']>
+
 /** Props of the row toast entry in `shell.overlay`. */
 export type RowToastProps =
   PropsRuntime<'shell.overlay'>
@@ -377,5 +427,5 @@ export type WorkspacePickerProps =
   PropsRuntime<'conversation.hero.workspace'>
   & PropsRenderSlots<'conversation.hero.workspace.directoryFlow'>
   & Omit<WorkspacePickerInjected, 'hooks'>
-  & DirectoryPickingHooks
+  & PropsHooks<WorkspacePickerInjected['hooks']>
   & PropsLocale<'workspace'>

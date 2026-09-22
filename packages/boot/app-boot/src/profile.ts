@@ -7,10 +7,11 @@
  * `dsh.profile` with its ordered `bundles` list) and a `cordis.patch.yml`
  * (the user's own patch layer, applied after every bundle layer). Bundles are
  * npm packages whose manifest declares
- * `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`; the tree is
- * composed by applying each bundle's patch list in `dsh.profile.bundles` order over
- * an empty entry list, then the profile's own patches, then any launcher
- * layers (`--patch` files and flag-derived patches).
+ * `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }` (one file, or an
+ * ordered list of files); the tree is composed by applying each bundle's patch
+ * lists in `dsh.profile.bundles` order over an empty entry list, then the
+ * profile's own patches, then any launcher layers (`--patch` files and
+ * flag-derived patches).
  *
  * Module resolution is two-anchor by construction: a bundle name resolves
  * first from the dsh installation (the launcher's own package), then from the
@@ -21,12 +22,12 @@
  */
 
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import type { DshPackageManifest } from '@deepseek-ai/dsh-package-manifest'
+import type { DshBundleManifest, DshPackageManifest } from '@deepseek-ai/dsh-package-manifest'
 import { loadOverlayPatches } from './index.ts'
 import { realModuleDirectory } from './profile-resolution/legacy-links.ts'
 
@@ -45,15 +46,41 @@ export interface ProfileTemplate {
 /** Package metadata accepted by the profile reader; local profiles need no published identity. */
 export type ProfileManifest = Partial<DshPackageManifest>
 
+/**
+ * The patch files a bundle declares, as written: one file for a string
+ * `patch`, the listed files in order for an array.
+ * @param bundle - the bundle's `dsh.bundle` declaration, as read from package.json.
+ * @returns the package-relative patch file paths in application order.
+ * @throws {Error} when `patch` is neither a string nor a list of strings.
+ */
+export function bundlePatchFiles(bundle: DshBundleManifest): string[] {
+  const declared = typeof bundle.patch === 'string' ? [bundle.patch] : bundle.patch
+  if (!Array.isArray(declared) || !declared.every(file => typeof file === 'string')) {
+    throw new Error('dsh.bundle.patch must be a file path or a list of file paths')
+  }
+  return declared
+}
+
+/**
+ * Resolve a bundle declaration to its ordered absolute patch files.
+ * @param packageDir - absolute directory of the bundle package.
+ * @param bundle - the bundle's `dsh.bundle` declaration, as read from package.json.
+ * @returns the absolute patch file paths in application order.
+ * @throws {Error} when `patch` is neither a string nor a list of strings.
+ */
+export function bundlePatchPaths(packageDir: string, bundle: DshBundleManifest): string[] {
+  return bundlePatchFiles(bundle).map(file => join(packageDir, file))
+}
+
 /** One resolved bundle layer of a profile. */
 export interface ProfileLayer {
   /** The bundle's package name, as listed in `dsh.profile.bundles`. */
   packageName: string
   /** Absolute directory of the resolved bundle package. */
   packageDir: string
-  /** Absolute path of the bundle's patch file. */
-  patchPath: string
-  /** The parsed patch list. */
+  /** Absolute paths of the bundle's patch files, in application order. */
+  patchPaths: readonly string[]
+  /** The parsed patch lists of every file, concatenated in application order. */
   patches: PatchOptions[]
 }
 
@@ -85,6 +112,17 @@ export interface RuntimeResolutionEntry {
   readonly scope: 'installation' | 'profile'
 }
 
+/**
+ * A profile node_modules entry linked to a directory outside the shared profiles tree and the active profile.
+ * Importers below `realPath` use Node's real ancestor chain, with peer mappings read at each node_modules position.
+ */
+export interface LinkedRoot {
+  /** Package name of the profile `node_modules` entry, including its scope. */
+  readonly name: string
+  /** Real directory outside the shared profiles tree and active profile; a package.json is optional. */
+  readonly realPath: string
+}
+
 /** Complete immutable package table for one profile launch. */
 export interface RuntimeResolution {
   /** Directory containing every profile; its node_modules is the interception layer. */
@@ -95,6 +133,8 @@ export interface RuntimeResolution {
   readonly localPackageNames: readonly string[]
   /** Installation-scope entries followed by profile-scope entries in precedence order. */
   readonly entries: readonly RuntimeResolutionEntry[]
+  /** Active profile links to external directories, sorted by name. */
+  readonly linkedRoots: readonly LinkedRoot[]
 }
 
 /**
@@ -146,6 +186,7 @@ export const DEFAULT_PROFILE_BUNDLES: readonly string[] = ['@deepseek-ai/dsh-bas
  * manager ([rationale](../../../../.agents/notes/implemented/process/2026-09-15-shipped-optional-bundles.md)).
  */
 export const OPTIONAL_BUNDLES: readonly string[] = [
+  '@deepseek-ai/dsh-experimental-voice-input-bundle',
   '@deepseek-ai/dsh-experimental-agent-team-profile',
 ]
 
@@ -229,6 +270,40 @@ function symlinksUnder(modules: string): string[] {
     }
   }
   return links
+}
+
+/**
+ * Active profile `node_modules` entries linked outside the shared profiles tree and the active profile.
+ * Missing targets and files are not linked roots; invalid link chains retain Node's diagnostic.
+ */
+function linkedProfileRoots(profile: Profile, profilesDir: string): LinkedRoot[] {
+  const modules = join(profile.dir, 'node_modules')
+  const links = symlinksUnder(modules)
+  if (links.length === 0) return []
+  let tree: string
+  try {
+    tree = realModuleDirectory(profilesDir) + sep
+  } catch (error) {
+    // A profiles tree that is not materialized yet holds no links.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    tree = resolve(profilesDir) + sep
+  }
+  const excludedTrees = [tree, realModuleDirectory(profile.dir) + sep]
+  const roots: LinkedRoot[] = []
+  for (const linkPath of links) {
+    let realPath: string
+    try {
+      realPath = realModuleDirectory(linkPath)
+    } catch (error) {
+      // A dangling link is not a package Node can load from the profile.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      continue
+    }
+    if (excludedTrees.some(prefix => realPath + sep === prefix || realPath.startsWith(prefix))
+      || !statSync(realPath).isDirectory()) continue
+    roots.push({ name: relative(modules, linkPath).split(sep).join('/'), realPath })
+  }
+  return roots.sort((left, right) => left.name.localeCompare(right.name))
 }
 
 /** Whether a symlink's target directory is `root` or lies below it. */
@@ -341,11 +416,13 @@ export async function createRuntimeResolution(
   const profilePackages: ReadonlyMap<string, string> = profile === undefined
     ? new Map<string, string>()
     : collectProfileScopePackages(profile, packageNames, profileDeclarers, profileVersions)
+  const linkedRoots = profile === undefined ? [] : linkedProfileRoots(profile, profilesDir)
   // The Promise return type is the pre-stable API; construction has no asynchronous step.
   return await Promise.resolve(Object.freeze({
     profilesDir,
     profileDir: profile?.dir,
     localPackageNames: Object.freeze(localPackageNames),
+    linkedRoots: Object.freeze(linkedRoots.map(root => Object.freeze(root))),
     entries: Object.freeze([
       ...[...packageDirs].map(([name, packageDir]) => Object.freeze({
         name, packageDir, version: versions.get(name),
@@ -370,8 +447,13 @@ function readOptionalProfileManifest(profile: Profile | undefined): ProfileManif
   }
 }
 
-/** Broken selected manifests must not fail again during installation dependency traversal. */
-function skippedProfileBundles(profile: Profile | undefined, manifest: ProfileManifest | undefined): ReadonlySet<string> {
+/**
+ * Identify selected bundles that did not produce a loaded layer.
+ * @param profile - loaded profile, when present.
+ * @param manifest - its parsed manifest, when present.
+ * @returns selected bundle names missing from the loaded layers, for resolution and diagnostics.
+ */
+export function skippedProfileBundles(profile: Profile | undefined, manifest: ProfileManifest | undefined): ReadonlySet<string> {
   const selected = manifest?.dsh?.profile?.bundles ?? []
   const loaded = new Set(profile?.layers.map(layer => layer.packageName))
   return new Set(selected.filter(name => !loaded.has(name)))
@@ -567,12 +649,13 @@ export function loadProfileDirectory(
     try {
       const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
       const bundleManifest = readProfileManifest(binName, packageDir)
-      const declared = bundleManifest.dsh?.bundle?.patch
-      if (declared === undefined) {
+      const bundle = bundleManifest.dsh?.bundle
+      if (bundle === undefined) {
         throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
       }
-      const patchPath = join(packageDir, declared)
-      layers.push({ packageName, packageDir, patchPath, patches: loadOverlayPatches(binName, patchPath) })
+      const patchPaths = bundlePatchPaths(packageDir, bundle)
+      const patches = patchPaths.flatMap(patchPath => loadOverlayPatches(binName, patchPath))
+      layers.push({ packageName, packageDir, patchPaths, patches })
     } catch (error) {
       process.stderr.write(`${binName}: skipping profile bundle ${JSON.stringify(packageName)}: ${String(error)}\n`)
     }

@@ -11,9 +11,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
+import { EMPTY_CHAT_SNAPSHOT } from '../../ui-chat/src/client/contract/snapshot.ts'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { PlanChip } from '../src/client/PlanModeControl.tsx'
-import { PlanCards, PlanReviewOpen, type PlanOpenInjected, type PlanReviewOpenInjected } from '../src/client/PlanCard.tsx'
+import { PlanCards, PlanReviewOpen, type PlanCardsInjected, type PlanOpenInjected, type PlanReviewOpenInjected } from '../src/client/PlanCard.tsx'
 import { PlanPreview, PlanTitle } from '../src/client/PlanPreview.tsx'
 import { submittedPlan } from '../src/client/plan.ts'
 import type { PlanChipInjected } from '../src/client/index.ts'
@@ -25,19 +28,22 @@ import { createSidebarRightStore } from '@deepseek-ai/dsh-client-ui-sidebar-righ
 
 function providePreview(ctx: Context) {
   const events = new ConversationEventRegistry(ctx)
-  ctx.provide('uiConversation', { events })
+  const chat = createSnapshotStore<ChatSnapshot | undefined>(EMPTY_CHAT_SNAPSHOT)
+  ctx.provide('uiConversation', { events, binding: () => ({ target: () => chat }) })
   const removeResources = vi.fn()
   const removeType = vi.fn()
   const registerType = vi.fn<Context['sidebarRightTabs']['register']>(() => removeType)
   const openResourceIn = vi.fn<Context['sidebarRight']['openResourceIn']>()
   const openResource = vi.fn<Context['sidebarRight']['openResource']>()
+  const mounted = createSnapshotStore<SessionId | undefined>(undefined)
   const subagentAddress = vi.fn<Context['sessions']['subagentAddress']>(() => undefined)
-  ctx.provide('sessions', { subagentAddress })
+  const binding = vi.fn<() => object | undefined>(() => ({}))
+  ctx.provide('sessions', { subagentAddress, binding })
   ctx.provide('resources', { register: vi.fn(() => removeResources) })
   ctx.provide('sidebarRightTabs', { register: registerType })
-  ctx.provide('sidebarRight', { openResourceIn, openResource })
+  ctx.provide('sidebarRight', { openResourceIn, openResource, mounted })
   ctx.provide('remote.session', {})
-  return { events, removeResources, removeType, registerType, openResourceIn, openResource, subagentAddress }
+  return { events, removeResources, removeType, registerType, openResourceIn, openResource, mounted, subagentAddress, chat, binding }
 }
 
 const SID = 's-plan' as SessionId
@@ -67,6 +73,35 @@ async function bench() {
 }
 
 describe('ui-plan browser apply', () => {
+  it('binds plan cards to one Turn collection and reports unavailable bindings', async () => {
+    const b = await bench()
+    const turnDataSource = vi.fn<(turn: number, kind: string) => void>()
+    b.chat.set({ ...EMPTY_CHAT_SNAPSHOT, nodes: {
+      ...EMPTY_CHAT_SNAPSHOT.nodes,
+      turnDataSource: (turn, kind) => {
+        turnDataSource(turn, kind)
+        return EMPTY_CHAT_SNAPSHOT.nodes.turnDataSource(turn, kind)
+      },
+    } })
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    try {
+      await fiber.await()
+      const entry = b.slots.entries('conversation.chat.turnTail')[0]!
+      const resolve = entry.inject as NonNullable<typeof entry.inject> & ((sessionId: SessionId) => PlanCardsInjected)
+      const injected = resolve(SID)
+      const source = injected.keyedHooks.plans('7')
+      expect(turnDataSource).toHaveBeenCalledExactlyOnceWith(7, 'submitted-plan')
+      expect(source.getSnapshot()).toEqual([])
+      expect(injected.keyedHooks.plans('7')).toBe(source)
+      b.chat.set(undefined)
+      expect(() => injected.keyedHooks.plans('7')).toThrow('Chat target is unavailable')
+      b.binding.mockReturnValueOnce(undefined)
+      expect(() => resolve(SID)).toThrow('unknown session')
+    } finally {
+      await fiber.dispose()
+    }
+  })
+
   it('opens an embedded child plan in the visible parent sidebar without adopting a child store', async () => {
     const b = await bench()
     const parent = 'visible-parent' as SessionId
@@ -183,6 +218,8 @@ describe('ui-plan browser apply', () => {
       const review = b.slots.entries('conversation.plan-review.actions')[0]!
       expect(review.component).toBe(PlanReviewOpen)
       const reviewInjected = (review.inject as unknown as (sessionId: SessionId) => PlanReviewOpenInjected)(SID)
+      // The automatic open reads the service's mounted-seat source, not a copy.
+      expect(reviewInjected.hooks.sidebarMounted).toBe(b.mounted)
       const pending = { id: 'review', question: 'Approve?', plan: plan.markdown, callId: plan.callId, approve: { label: 'Approve' } }
       reviewInjected.openReview(pending, 'question:1')
       expect(b.openResource).toHaveBeenLastCalledWith(address)

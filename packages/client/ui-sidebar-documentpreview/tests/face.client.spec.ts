@@ -237,6 +237,7 @@ describe('textFace', () => {
     expect(tab()?.complete).toBeUndefined()
     await settleAll(result)
     expect(tab()).toMatchObject({ mode: 'bytes-complete', loading: false, complete: result.value, version: 'v1', eof: true, pages: {} })
+    expect(tab()?.complete?.data).toBe(result.value.data)
   })
 
   it('records a complete-read failure and clears it when the read is retried', async () => {

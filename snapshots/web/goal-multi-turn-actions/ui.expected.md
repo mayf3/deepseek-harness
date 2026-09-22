@@ -11,15 +11,22 @@
   - button "Jump to turn 2"
 - group "Command input": /goal 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的
 - 'button "goal Goal created Status: active Objective: 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的 Rounds: 0/256 Activation: armed Commands: /goal edit <objective>, /goal pause, /goal clear"'
-- button "System prompt"
-- button "6 tool calls"
+- button "Continuing goal {{clock}}":
+  - text: Continuing goal
+  - time: {{clock}}
+- status: Worked
+- button "Took {{duration}}"
 - paragraph:
   - strong: Turn 1 / 2
   - text: — 随机选中的包：
   - code: packages/context/session-reference
   - text: 📦
+- text: Code block
+- button "Wrap lines" [pressed]
 - button "Copy"
 - code: session-reference ├── README.md ├── package.json ├── src │ ├── index.ts │ └── uri.ts └── tests └── session-reference.spec.ts
+- text: Code block
+- button "Wrap lines" [pressed]
 - button "Copy"
 - code: "session-reference/ ├── README.md # 包说明文档 ├── package.json # 包元数据与依赖声明 ├── src/ │ ├── index.ts # 入口，导出公共 API │ └── uri.ts # 会话引用 URI 相关实现 └── tests/ └── session-reference.spec.ts # 单元测试"
 - paragraph: 这是一个很典型的轻量 TypeScript 包结构：入口 + 实现 + 测试。这一轮到此结束，等系统开启下一个 turn。
@@ -28,8 +35,11 @@
 - button "Bad response"
 - button "Branch into a new conversation"
 - text: {{clock}}
-- button "System prompt"
-- button "5 tool calls · 2 messages"
+- button "Continuing goal {{clock}}":
+  - text: Continuing goal
+  - time: {{clock}}
+- status: Worked
+- button "Took {{duration}}"
 - paragraph: 两个 turn 都完成了 ✅
 - paragraph:
   - strong: 总结：
@@ -38,14 +48,16 @@
     - strong: Turn 1
     - text: — 随机选中
     - code: packages/context/session-reference
-    - text: ，输出了文件结构：
+    - text: ，输出了文件结构： Code block
+    - button "Wrap lines" [pressed]
     - button "Copy"
     - code: session-reference/ ├── README.md ├── package.json ├── src/ │ ├── index.ts │ └── uri.ts └── tests/ └── session-reference.spec.ts
   - listitem:
     - strong: Turn 2
     - text: — 随机选中
     - code: packages/llm/token-meter
-    - text: ，输出了文件结构：
+    - text: ，输出了文件结构： Code block
+    - button "Wrap lines" [pressed]
     - button "Copy"
     - code: token-meter/ ├── README.md ├── package.json ├── src/ │ └── index.ts └── tests/ └── token-meter.spec.ts
 - paragraph:

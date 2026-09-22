@@ -6,11 +6,10 @@
   - tablist:
     - tab "对话" [selected]
     - tab "轨迹"
-- button "系统提示词"
 - text: 只回复 MESSAGES_WEB_READY，不调用工具。 {{clock}}
 - button "复制"
-- button "已思考"
-- button "思考"
+- status: 已完成工作
+- button "用时 {{duration}}" [disabled]
 - paragraph: MESSAGES_WEB_READY
 - button "复制"
 - button "好的回答"

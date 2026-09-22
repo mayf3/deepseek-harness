@@ -29,3 +29,8 @@ button.header:disabled { cursor: progress; }
 .toggle:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .toggle svg { flex: none; width: 14px; height: 14px; }
 @media (pointer: coarse) { .row, .toggle { min-height: 44px; } }
+
+.preview { max-height: 100%; overflow: hidden; }
+
+.previewPath { flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code); font-size: 12px; line-height: 20px; white-space: nowrap; }
+.preview [data-diff-note='metadata'], .preview [data-diff-hunk-header] { display: none; }

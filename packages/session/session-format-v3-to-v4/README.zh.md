@@ -1,5 +1,5 @@
 ---
-description: "完整的 V3 到 V4 Session 转换与原生接纳：工具角色结果、生产者来源、父目录、引用保留及拒绝规则。"
+description: "完整的 V3 到 V4 Session 转换与原生接纳：工具角色结果、生产者来源、父目录、引用重映射及拒绝规则。"
 kind: "package-library"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-在不改写已存储代际的前提下，将受支持的已发布 V3 Session 恢复为 V4。本页完整说明迁移边的转换、保留、前置证据与拒绝规则，再单独说明原生 V4 接纳。转换提升工具结果、重命名消息来源，并追加缺失的父目录事实。持久化层负责文件读取和后继代际发布；本库负责转换与目标规则。
+在不改写已存储代际的前提下，将受支持的已发布 V3 Session 恢复为 V4。本页完整说明迁移边的转换、保留、前置证据与拒绝规则，再单独说明原生 V4 接纳。转换提升工具结果、重命名消息来源、补齐有明确证据的中断回合，并追加缺失的父目录事实。持久化层负责文件读取和后继代际发布；本库负责转换与目标规则。
 
 ## 目录
 
@@ -66,7 +66,7 @@ const artifact = restore.finish()
 <a id="v3-to-v4-specification"></a>
 ## V3 到 V4 规范
 
-本边只改变下列明确命名的表示，并追加证据完整的缺失目录事实。未知可忽略事件的类型获得命名空间；每个获准源事件的 time、sequence、消息身份、表面操作、引用以及转换之外的字段均保留。它不创建 system prompt、developer 事件、工具执行或替换消息。更早的 V0–V2 输入先经过各自现有迁移边到达 V3；那些边保留自身的转换与拒绝策略。
+本边只改变下列明确命名的表示，补齐有明确证据的中断回合，并追加证据完整的缺失目录事实。未知可忽略事件的类型获得命名空间；每个获准源事件的 time、消息身份以及这些转换和下述坐标重映射之外的字段均保留。它不创建 system prompt、developer 事件、工具执行或替换消息。更早的 V0–V2 输入先经过各自现有迁移边到达 V3；那些边保留自身的转换与拒绝策略。
 
 <a id="header-and-framing"></a>
 ### Header 与物理分帧
@@ -144,24 +144,26 @@ V3 未知内容标签变为 `plugin:<original-type>`，其他字段原样保留�
 |---|---|
 | 一个 version 1 descriptor | 要求字符串 provider 与 label；导出 `mode: 'continuable'`。 |
 | 一个 version 2 或 3 descriptor | 要求字符串 provider；按目录规则使用其 mode 和可选 label。 |
-| 没有 descriptor，或 descriptor 版本不受支持 | 可以保留已有父目录项；不能创建缺失项。 |
-| 多个自身 descriptor | 保留已有父目录项，不比较 mode／label；不创建缺失项。 |
+| 没有 descriptor，或 descriptor 版本不受支持 | 保留已有父目录项；否则追加模式未知的目录项。 |
+| 多个自身 descriptor | 保留已有父目录项，不比较 mode／label；否则追加模式未知的目录项。 |
 | 已有自身父目录项 | 保留条目及其扩展；要求子创建时间一致，并在恰好一个受支持的自身 descriptor 可用时比较其 mode／label。 |
 | 缺少自身父目录项，且受支持证据完整 | 追加带 child id、创建时间、mode 和可选 label 的 version-0 目录事实。 |
-| 缺少自身父目录项，且证据不完整 | 保留父 Session，不凭空创建目录项。 |
+| 缺少自身父目录项，且证据不完整 | 追加 version-1 `subagent/catalog`，记录 header 身份和未知模式，不编造标签。 |
 
-Catalog version 0 要求字符串 `childId`、非负安全整数 `childCreatedAt`、`continuable` 或 `one-shot` mode，以及 continuable mode 下的字符串 label；存在的 one-shot label 也必须是字符串。重复的自身 child id 被拒绝。没有对应保留子日志的已有条目仍保留在父日志中。Descriptor 收集不恢复子级的旧 continuation composition，也不从工具参数恢复已删除子级。
+Catalog version 0 和 1 要求字符串 `childId`、非负安全整数 `childCreatedAt`、`continuable` 或 `one-shot` mode（version 1 还接受 `unknown`），以及 continuable mode 下的字符串 label；任何 mode 下存在的 label 都必须是字符串。重复的自身 child id 被拒绝。没有对应保留子日志的已有条目仍保留在父日志中。Descriptor 收集不恢复子级的旧 continuation composition，也不从工具参数恢复已删除子级。未知模式条目保留 header 身份信息，不声明子 descriptor 受支持。
 
 Stage 只把最终继承截点之后的父目录记录作为候选。每个 inherited marker 都会丢弃更早的目录候选，不解释其载荷。缺失项追加在所有源事件之后，按创建时间、child id 排序，并使用连续的新序号。时间取最后一个源事件的 time；空日志则取 header 创建时间。这些记录既不进入模型表面，也不改变继承计数。
 
-存储层提供其根目录内完整的可识别子级集合，并在准备、复用 memo 与发布时复查成员及物理版本。不完整的 descriptor 证据只阻止补填对应子 Session 的目录项。无法据此判断成员关系的不可读 header、不受支持的所选代际或源变化都会拒绝操作。本包不读取文件；[持久化层](../session-persistence-jsonl/README.zh.md)负责编码、锁、取消与发布。
+存储提供可识别的直属子证据，并在准备、memo 复用与发布时重新检查成员集合和物理修订。JSONL 提供方隔离不可读子 header、子日志解码失败和无效 descriptor 字段，同时保留其他目录项；准备父目录时不会迁移子目录。转换器仍拒绝冲突的已提供事实和发生变化的父历史。[JSONL 持久化](../session-persistence-jsonl/README.zh.md)拥有警告、来源检查与子会话错误隔离。当前 V4 读取不调用本转换器，直接校验原生目录字段、唯一性及投递归属。
 
 <a id="sequence-references"></a>
 ### 序号引用与继承
 
-本边不重映射坐标。已有事件序号、`sourceEventSeqs`、替换端点 `startSeq/endSeq`、command 与 title 引用、compaction 区间、捕获的 Session 引用、delivery 坐标、turn／step 编号、stream 索引以及所有 id 均保留。工具结果提升与来源转换不改变源事件数量；追加的目录记录只扩展后缀。
+当回合仍打开但没有打开的 step，且下一个连续编号的 `turn/start` 紧跟非空的 `next-turn` 类型 `agent/inbox/spliced` 时，Stage 可补齐该回合。它紧挨新 start 之前插入原因是 `interrupted` 的 `turn/end`，时间戳取该 start。开放尾部仍保持开放。其他回合顺序错误、未结算工具和进行中的 compaction 仍被目标校验拒绝。原生 V4 不执行此修复。
 
-对于 seeded Session，最后一个携带 `inherited: true` 的 `session/end-seed` 确定继承事件数量，且不计该 marker。本边保留 V3 Stage 输入中的该数值，即使先前 V0–V2 迁移已对其重映射。传入的源截点必须一致；缺少 tagged marker、unseeded Session 含 inherited marker、或截点超出事件范围时拒绝。Unseeded Stage 在 EOF 前公开零；seeded Stage 到 `finish()` 才确定计数。Untagged marker 不定义 fork 继承。
+插入后，后续信封重新连续编号，并重映射已审计的同日志引用：`sourceEventSeqs`、替换端点 `startSeq/endSeq`、命令完成的 `sourceEventSeq`、标题的 `messageSeqs`、compaction 的 `shadowedRange` 与 `shadowedSeqs`，以及图片 offload 目标的 `seq`。捕获的 Session 引用、带代际的 delivery 坐标、turn／step 编号、stream 与图片索引、id 和任意 JSON 保持原值。未知可忽略事件的载荷和表面元数据保持不透明，只重排其信封序号。没有插入时，源事件坐标不变；追加的目录记录只扩展后缀。
+
+对于 seeded Session，最后一个携带 `inherited: true` 的 `session/end-seed` 确定继承事件数量，且不计该 marker。目标计数包含该 marker 之前插入的事件。传入的源截点必须与 V3 Stage 原始 marker 位置一致，包括先前 V0–V2 迁移已对其重映射的情况；缺少 tagged marker、unseeded Session 含 inherited marker、或截点超出事件范围时拒绝。Unseeded Stage 在 EOF 前公开零；seeded Stage 到 `finish()` 才确定计数。Untagged marker 不定义 fork 继承。
 
 <a id="delivery-guards"></a>
 ### Delivery 代际
@@ -171,11 +173,11 @@ Stage 只把最终继承截点之后的父目录记录作为候选。每个 inhe
 | 任何被解释的 `session-log-deepseek/delivery-accepted` | 代际必须为非负安全整数；省略表示 V0。 |
 | V3 源 marker 声明 generation 4 | 拒绝：提升 header 不得激活目标代际的 watermark。 |
 | generation 3 的 V3 源 marker | 要求非空 Session id 和早于 marker 的非负安全整数 `throughSeq`；只有在继承截点之前且带 `parentSession` 时才允许其他 Session id。 |
-| 其他源代际，包括高于 4 的值 | 原样保留事件类型、payload 与坐标；它们在 V4 中仍未激活。 |
+| 其他源代际，包括高于 4 的值 | 原样保留事件类型及 payload 坐标；它们在 V4 中仍未激活。 |
 | generation 4 的原生 V4 marker | 以 V4 为当前代际，应用同样的较早坐标和 Session 归属检查。 |
 | 原生 V4 中的历史 marker，包括 generation 3 | 保留记录的坐标与身份；它不是 V4 接纳 watermark。 |
 
-不改写投递 payload 或事件类型。未来的激活检查归对应的更高版本迁移所有，本边只检查向 V4 的提升。标记的信封序号保持不变。
+不改写投递 payload 或事件类型。未来的激活检查归对应的更高版本迁移所有，本边只检查向 V4 的提升。标记的信封序号随插入重映射；源代际归属仍按原 V3 序号和继承截点校验。
 
 <a id="source-audit"></a>
 ### 源审计与拒绝
@@ -243,7 +245,7 @@ System image 接纳要求非空 attachment id、PNG／JPEG／WebP／GIF MIME 类
 | `compaction/start`、`compaction/summary`、`compaction/end` | 匹配 compaction id、源 command 和活动 turn 上下文。Summary 区间引用精确的当前表面节点且排除 protected head；成功完成需要一个 summary。继承的未完成 compaction 在 end-seed marker 处过期。 |
 | `compaction/prune` | 其区间引用精确的当前表面节点且排除 protected head；它不要求存在 compaction 事务或其所有者字段。 |
 | Compact checkpoint 替换 | 其 `compact-checkpoint` 来源标识活动 compaction。 |
-| 原生 `subagent/catalog` | 检查继承截点之后的自身 version-0 载荷字段与 child id 唯一性。原生读取既不收集子日志，也不比较其物理事实；继承项不建立自身成员关系。 |
+| 原生 `subagent/catalog` | 检查继承截点之后的自身 version-0/version-1 载荷字段与 child id 唯一性。原生读取既不收集子日志，也不比较其物理事实；继承项不建立自身成员关系。 |
 | 继承截点与 delivery | 应用上文的 marker、坐标及代际归属规则。 |
 
 这些检查由 [relationships.ts](src/relationships.ts) 按代际拥有。完整的通用消息／信封接纳与插件拥有的消息投影还使用已安装 Session；单独的导出 V4 恢复器不能替代完整 catalog 恢复。
@@ -290,7 +292,7 @@ Fork 种子构造归核心 Session 所有，不属于此迁移。原生 V4 接�
 <details>
 <summary>实现内部机制 — 点击展开</summary>
 
-迁移声明创建相互独立的流式 Stage。紧凑事件段通过迭代器展开，不生成中间事件数组。V3 到 V4 Stage 在发出 V4 事件时一次性重写历史消息来源并提升历史工具结果包装。V4 编解码器只为物理头部和源范围分帧使用已发布 V2 编解码器，并直接校验原生工具角色行；它不会调用已发布 V3 校验器或源转换视图。JSONL 扫描器在抑制可恢复行之前调用 `assertV4RowAdmission`，并在返回完整逻辑前缀之前调用共用的强制关系校验器。
+迁移声明创建相互独立的流式 Stage。紧凑事件段通过迭代器展开，不生成中间事件数组。V3 到 V4 Stage 在发出 V4 事件时重写历史消息来源、提升历史工具结果包装，并插入有明确证据的中断回合结束事件。它为每个源事件保留一个源到目标的序号映射项，用于本地引用重映射。V4 编解码器只为物理头部和源范围分帧使用已发布 V2 编解码器，并直接校验原生工具角色行；它不会调用已发布 V3 校验器或源转换视图。JSONL 扫描器在抑制可恢复行之前调用 `assertV4RowAdmission`，并在返回完整逻辑前缀之前调用共用的强制关系校验器。
 
 目标恢复器校验原生字段和强制跨事件关系，然后返回原始产物。未知的可忽略事件保持不透明，未完成的继承压缩事务在 end-seed 标记处结束。本包不发布运行时不变量伴随插件，因为这个纯函数库不拥有独立维护的运行时观测。
 
@@ -334,7 +336,7 @@ Fork 种子构造归核心 Session 所有，不属于此迁移。原生 V4 接�
 - **历史嵌套工具结果**——当前迁移拒绝包含另一个 tool-result wrapper 的结果。原始代际保持完整，且不发布 V4 successor。后续转换器可以支持有证据的源数据场景，而不改变既定 V4 格式；[迁移 cookbook](../../../docs/cookbook/adding-a-session-format-version.zh.md#stages-and-validation) 定义了这一区别。
 - **历史扩展消费者**——带前缀的消息与结果字段保留 JSON 数据，不激活核心字段。消费者必须明确理解这些字段后才能解释它们。
 - **依赖保留的子日志**——仅凭父日志无法恢复未记录的子 id、创建时间或 descriptor。删除的子 Session 无法从工具参数恢复；已存在的父目录记录仍保留。
-- **历史目录项缺失**——没有恰好一个受支持的自身 descriptor 时，不补填父目录缺失项。子日志仍可按 id 读取；当前 V4 读取不会重新扫描子日志来补齐该条目。
+- **历史模式未知**——没有恰好一个受支持的自身 descriptor 时，缺失的父目录项记录未知模式。当前读取不重写该项；打开子会话时解析可用的 descriptor 信息，或报告该子会话的错误。
 - **存储范围**——事实只覆盖同一持久化根目录内可识别的子 Session。跨根目录导入和损坏日志修复不属于此迁移。
 
 <a id="dev-note"></a>
