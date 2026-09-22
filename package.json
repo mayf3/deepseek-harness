@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-root",
-  "version": "0.1.6-alpha.2",
+  "version": "0.1.7-alpha.1",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -214,6 +214,7 @@
     "@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp": "workspace:^",
     "@deepseek-ai/dsh-experimental-computer-use-cua-driver-native": "workspace:^",
     "@deepseek-ai/dsh-llm-replay": "workspace:^",
+    "@deepseek-ai/dsh-mcp-client": "workspace:^",
     "@deepseek-ai/dsh-tool-session-query": "workspace:^",
     "@deepseek-ai/dsh-web-fetch-http": "workspace:^",
     "@stylistic/eslint-plugin": "^5.10.0",
