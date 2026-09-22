@@ -34,7 +34,7 @@ Windows 对 HTML 与 SVG 仍然无法命名浏览器，因此 `openInBrowser` �
 
 打开器再也无法区分「shell 打开了」与「shell 拒绝了」：两种情况 Explorer 都返回 0 或 1，因此 Remote 依旧回答 `{ opened: true }`，完全没有处理程序的机器只能看到 shell 的选择框。此处不校验窗口是否真的出现。
 
-交互桌面会话现在是前提。在非交互 Windows 会话（服务，或没有交互登录的计划任务）中，`explorer.exe` 在约 30 秒后以退出码 0 返回且不调用任何关联，而 `Invoke-Item` 命令在同一会话里约 0.35 秒就打开了文件：这样启动的 Host 既失去能力又要付等待代价，只有调用方的 abort 信号能给这段等待封顶。该会话下的兜底尚未实现。
+交互桌面会话现在是前提。在非交互 Windows 会话（服务，或没有交互登录的计划任务）中，`explorer.exe` 不调用任何关联，且同样以退出码 1 返回，因此该退出码无法与「已委派」区分：Windows 11 ARM64 build 26200 的 SSH session 0 实测约 1 秒后返回退出码 1，而同一会话里 `Invoke-Item` 命令能在进程内解析关联。这样启动的 Host 会失去能力且要付出等待，只有调用方的 abort 信号能给这段等待封顶。该会话下的兜底尚未实现。
 
 目录走同一条路径。[open-in-app 记录](../feature/2026-08-25-promote-open-anywhere-plugin.zh.md)中被否决的方案是 detached 且经过凭据清洗的 `explorer.exe <dir>` 派生进程，那不是本交接的做法：`explorer.exe` 子进程继承宿主环境，也不创建 detached 进程；而它转交给桌面会话启动的应用或文件夹窗口，继承的是桌面会话环境而不是宿主进程环境。
 

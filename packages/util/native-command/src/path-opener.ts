@@ -104,7 +104,10 @@ function isWsl(internals: PathOpenerInternals): boolean {
  * so a path handed over raw loses everything after its first comma and the
  * shell opens a different target without reporting it. A file URI has `,`
  * percent-encoded and keeps whitespace, and Explorer resolves it to the shell
- * item the path names.
+ * item the path names. Node resolves the path before encoding it, so a verbatim
+ * `\\?\` or `\\?\UNC\` prefix reaches Explorer as the ordinary drive or UNC
+ * URI; a `\\.\` device path keeps that same UNC handling and names a device
+ * rather than a shell item, which this opener does not open.
  * @param windowsPath - path already translated for the Windows desktop.
  * @returns the target for an open, or the object of a `/select,` reveal.
  */
