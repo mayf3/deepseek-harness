@@ -369,7 +369,34 @@ describe('QueueDock', () => {
     const view = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />)
     expect(view.getByText(`before ${'🙂'.repeat(193)}…`)).toBeTruthy()
     fireEvent.click(view.getByLabelText('编辑排队消息'))
-    expect((view.getByRole('textbox') as HTMLInputElement).value).toBe(text)
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe(text)
+  })
+
+  it('keeps line breaks while re-editing a multiline queued message', async () => {
+    const text = 'line one\n  line two\n\nline four'
+    const snap = snapshotWith([row('i-lines', text)])
+    const source = liveSession(snap)
+    const updateQueue = vi.fn(() => Promise.resolve())
+    const { getByLabelText } = render(
+      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} useProjection={source.useProjection} />,
+    )
+
+    fireEvent.click(getByLabelText('编辑排队消息'))
+    const editor = getByLabelText('编辑排队消息') as HTMLTextAreaElement
+    expect(editor.value).toBe(text)
+
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true })
+    expect(updateQueue).not.toHaveBeenCalled()
+
+    fireEvent.change(editor, { target: { value: `${text}\nline five` } })
+    fireEvent.keyDown(editor, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(updateQueue).toHaveBeenCalledWith(iid('i-lines'), {
+        kind: 'edit',
+        content: [{ type: 'text', text: `${text}\nline five` }],
+      })
+    })
   })
 
   it('renders active actions and disables editing for mixed-content rows', () => {
@@ -477,7 +504,7 @@ describe('QueueDock', () => {
     )
 
     fireEvent.click(getByLabelText('编辑排队消息'))
-    const editor = getByLabelText('编辑排队消息') as HTMLInputElement
+    const editor = getByLabelText('编辑排队消息') as HTMLTextAreaElement
     expect(getByLabelText('保存排队消息')).toBeTruthy()
     expect(getByLabelText('取消编辑')).toBeTruthy()
     expect(queryByLabelText('删除排队消息')).toBeNull()
