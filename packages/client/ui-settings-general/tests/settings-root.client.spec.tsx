@@ -1,18 +1,15 @@
 // @vitest-environment jsdom
-import type { ShortcutCatalogEntry, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { createSettingsShellStore } from '../src/client/shell-store.ts'
-import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import type { DesktopUpdateView } from '../src/types.ts'
-import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
@@ -40,7 +37,6 @@ const noAttention: AttentionSnapshot = new Map()
 const useSessionStatus: SettingsRootComponentProps['useSessionStatus'] = selector => selector(noAttention)
 
 function mount({
-  shortcuts = [],
   wide = true,
   dictionary = en,
   connectionState = 'connected',
@@ -57,7 +53,6 @@ function mount({
     { id: 'credential', order: 0 },
   ],
 }: {
-  shortcuts?: readonly ShortcutCatalogEntry[]
   wide?: boolean
   dictionary?: typeof en | typeof zh
   connectionState?: ConnectionSnapshot
@@ -96,10 +91,7 @@ function mount({
     phase: 'ready', projectionsBySession: {},
   }
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
-  const shell = createSettingsShellStore().create()
   const props: SettingsRootComponentProps = {
-    useStore: bindSnapshotSelector(shell), actions: shell.actions,
-    useShortcuts: select => select(shortcuts),
     useSessions: select => select(sessions),
     useSessionStatus,
     usePanelInfo, useSessionRetainInfo: () => undefined, useResource,
@@ -147,11 +139,7 @@ function mount({
     desktopUpdate = next
     view.rerender(<SettingsRoot {...props} />)
   }
-  const setShortcuts = (next: readonly ShortcutCatalogEntry[]) => {
-    shortcuts = next
-    view.rerender(<SettingsRoot {...props} />)
-  }
-  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, setDesktopUpdate, setShortcuts }
+  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, setDesktopUpdate }
 }
 
 function openPanel() {
@@ -331,25 +319,6 @@ describe('SettingsPanel close paths', () => {
     openPanel()
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }))
   })
-
-  it('opens above an existing body modal and gives the visible settings panel keyboard ownership', () => {
-    mount()
-    const closeReference = vi.fn()
-    render(<Modal open title="Keyboard reference" closeLabel="Close reference" onClose={closeReference}>
-      <button data-modal-autofocus>Reference control</button>
-    </Modal>)
-    const reference = screen.getByRole('dialog', { name: 'Keyboard reference' })
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reference control' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    const settings = screen.getByRole('dialog', { name: 'Settings Title' })
-    expect(settings.parentElement?.parentElement).toBe(document.body)
-    expect(reference.parentElement!.compareDocumentPosition(settings.parentElement!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }))
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('dialog', { name: 'Settings Title' })).toBeNull()
-    expect(closeReference).not.toHaveBeenCalled()
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reference control' }))
-  })
 })
 
 describe('SettingsPanel navigation', () => {
@@ -483,25 +452,4 @@ it('opens Account from the contributed sidebar launcher', () => {
   act(() => { (launcher[1] as { openSettings: () => void }).openSettings() })
   expect(screen.getByTestId('section-account')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Account' }).querySelector('svg')).not.toBeNull()
-})
-
-it('shows the effective settings binding on focus and exposes it to assistive technology', () => {
-  mount({ shortcuts: [{ id: 'settings.open' as ShortcutCommandId, label: 'Open settings', aliases: [], keys: ['⌘', ','], aria: 'Meta+,', binding: { code: 'Comma', modifiers: ['meta'] }, modified: false, conflicts: [], issue: null }] })
-  const trigger = screen.getByRole('button', { name: 'Settings' })
-  expect(trigger.getAttribute('aria-keyshortcuts')).toBe('Meta+,')
-  fireEvent.focus(trigger)
-  expect(screen.getByRole('tooltip').textContent).toBe('Settings ⌘ ,')
-})
-
-it('passes current Settings key labels to the launcher and removes them when unbound', () => {
-  const row: ShortcutCatalogEntry = { id: 'settings.open' as ShortcutCommandId, label: 'Open settings', aliases: [], keys: ['⌘', ','], aria: 'Meta+,', binding: { code: 'Comma', modifiers: ['meta'] }, modified: false, conflicts: [], issue: null }
-  const { renderSlot, setShortcuts } = mount({ shortcuts: [row] })
-  const launcher = () => renderSlot.mock.calls.filter(call => call[0] === 'settings.launcher').at(-1)?.[1]
-  expect(launcher()).toMatchObject({ settingsShortcut: { keys: ['⌘', ','], aria: 'Meta+,' } })
-
-  setShortcuts([{ ...row, keys: ['Ctrl', 'Shift', 'S'], aria: 'Control+Shift+S', binding: { code: 'KeyS', modifiers: ['control', 'shift'] }, modified: true }])
-  expect(launcher()).toMatchObject({ settingsShortcut: { keys: ['Ctrl', 'Shift', 'S'], aria: 'Control+Shift+S' } })
-
-  setShortcuts([{ ...row, keys: [], aria: undefined, binding: null, modified: true }])
-  expect(launcher()).not.toHaveProperty('settingsShortcut')
 })

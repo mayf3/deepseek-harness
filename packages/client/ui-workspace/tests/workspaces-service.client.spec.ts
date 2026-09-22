@@ -1,7 +1,6 @@
 import { setImmediate } from 'node:timers/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   ISessions, SessionListState, SessionReference, SessionSummary,
@@ -285,7 +284,7 @@ function bench(options: BenchOptions = {}) {
     selectPanel: vi.fn(), retainMainPanels: vi.fn(),
     setSidebar: vi.fn(), toggleSidebar: vi.fn(), setViewportWidth: vi.fn(),
     setRightbar: vi.fn(), openRightbar: vi.fn(), closeRightbar: vi.fn(),
-  }, () => true, createSnapshotStore({ activePanelId: null }))
+  }, () => true)
   const selectPanel = vi.spyOn(layout, 'selectPanel')
   ctx.provide('layout', layout)
   ctx.effect(() => () => { layout.dispose() })

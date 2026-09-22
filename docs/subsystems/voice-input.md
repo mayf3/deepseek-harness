@@ -20,6 +20,8 @@ The input facade captures a revision-bearing selection before recording. `InputA
 
 The Host provider owns one preparation task across page and Session changes. The Client shares one `follow()` subscription across the composer, setup prompt and bundle details. Optional `SpeechSetupEstimate` metadata supplies provider-specific planning hints, separate from measured progress. `SpeechPreparationStepKind` identifies ordered resource operations; `SpeechPreparationStep` records each status and start time. The complete `SpeechPreparationState` retains these steps after cancellation or failure. The collapsed UI shows the current operation; expanding lists all steps, with byte progress or elapsed time only for the running step. Closing an observer never cancels preparation. Verified files survive retries and idle worker reclamation.
 
+Failed preparation can include `SpeechDownloadFailure` with the asset, source origin, classified reason and optional diagnostic code or HTTP status. The Client localizes recovery advice; raw download causes remain on the Host.
+
 The microphone occupies `conversation.input.activity`, between the model selector and Send. Clicking starts capture and expands the toolbar; Stop transcribes and inserts into the draft. The activity preserves the editor and submit action, owns local feedback, and releases expansion on unmount. Cancel, Escape or hiding the page discards capture. Waveform history displays measured microphone amplitude. Bundle details contain recognition preferences, preparation state and progress. Explicit enablement uses `plugins.bundle.activation` to guide users with missing models to setup; the list shows only the bundle description and switch.
 
 ## Design rationale
