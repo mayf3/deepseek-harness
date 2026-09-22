@@ -934,11 +934,10 @@ describe('web e2e: shipped right Sidebar', () => {
       await expect.poll(async () => await tabTitles(paneAt(column, 1))).toContain(title)
 
       const splitButtons = column.locator('[data-dockkit-split-button]')
-      await expect.poll(async () => await splitButtons.count()).toBe(2)
-      expect(await splitButtons.evaluateAll(buttons => buttons.every(button => (button as HTMLButtonElement).disabled))).toBe(true)
+      await expect.poll(async () => await splitButtons.count()).toBe(0)
       expect(await panes.count()).toBe(2)
       await setPanelWidth(page, 560)
-      expect(await splitButtons.evaluateAll(buttons => buttons.every(button => (button as HTMLButtonElement).disabled))).toBe(true)
+      await expect.poll(async () => await splitButtons.count()).toBe(0)
 
       const outer = column.locator('[data-dockkit-divider]').first()
       const before = await width(paneAt(column, 1))
@@ -957,7 +956,7 @@ describe('web e2e: shipped right Sidebar', () => {
       await dragElement(page, outer, { x: surfaceBox.x + surfaceBox.width / 2, y: grip.y })
       await expect.poll(ratio).toBeCloseTo(0.5, 2)
       expect(await panes.count()).toBe(2)
-      expect(await splitButtons.evaluateAll(buttons => buttons.every(button => (button as HTMLButtonElement).disabled))).toBe(true)
+      expect(await splitButtons.count()).toBe(0)
 
       // 5. The split's guide and the document float while Files stays docked.
       const floatOne = paneAt(column, 1).locator('[data-dockkit-tab]').filter({ hasText: SAMPLE_NAME })
@@ -1097,7 +1096,6 @@ describe('web e2e: shipped right Sidebar', () => {
     // depends on a sibling block's setup passes only in the right order.
     it('renders the shipped Chinese copy on a Chinese page', async () => {
       const zhPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
-      await zhPage.addInitScript(() => { Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' }) })
       const zhTripwire = watchConsole(zhPage)
       onTestFailed(() => saveFailureShot(zhPage, 'web-e2e-sidebar-right-zh'))
       try {
@@ -1123,7 +1121,7 @@ describe('web e2e: shipped right Sidebar', () => {
         expect(await width(column)).toBeGreaterThan(300)
         await expect.poll(async () => await tabTitles(column)).toEqual(['文件', '开始'])
         await expect.poll(async () => await guide.locator('[data-sidebar-right-guide-entry="files"]').innerText())
-          .toBe('工作区文件\n浏览会话工作区的文件\n⌥\n⌘\nP')
+          .toBe('工作区文件\n浏览会话工作区的文件')
         await shot(zhPage, '05-guide-copy-zh')
 
         expect(zhTripwire.pageErrors).toEqual([])

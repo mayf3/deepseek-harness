@@ -9,7 +9,6 @@ interface GuestLease {
   readonly partition: string
   attached: boolean
   guest?: WebContents
-  releaseInput?: () => void
 }
 
 /** Owns workspace storage partitions independently from individual tab guests. */
@@ -52,7 +51,6 @@ export class DesktopBrowserGuests {
     const lease = this.leases.get(key)
     if (lease === undefined) return
     if (lease.owner !== owner) throw new Error('desktop browser: guest belongs to another window')
-    lease.releaseInput?.()
     this.leases.delete(key)
     const guest = lease.guest
     if (guest !== undefined && !guest.isDestroyed()) {
@@ -65,9 +63,8 @@ export class DesktopBrowserGuests {
   /**
    * Install attachment checks before the application document can create a webview.
    * @param window - primary application window.
-   * @param attachInput - attaches native input after guest ownership is verified and returns its disposer.
    */
-  bind(window: BrowserWindow, attachInput: (guest: WebContents, name: DesktopBrowserLeaseId) => () => void): void {
+  bind(window: BrowserWindow): void {
     const owner = window.webContents
     owner.on('will-attach-webview', (event, preferences, params) => {
       const id = typeof params.src === 'string' && params.src.startsWith('about:blank#')
@@ -105,8 +102,7 @@ export class DesktopBrowserGuests {
         }
         lease.guest = guest
         attachedLease = id
-        lease.releaseInput = attachInput(guest, id)
-        guest.once('destroyed', () => { lease.releaseInput?.(); this.leases.delete(id) })
+        guest.once('destroyed', () => { this.leases.delete(id) })
       })
       guest.setWindowOpenHandler(({ url, postBody }) => {
         const lease = attachedLease === undefined ? undefined : this.leases.get(attachedLease)

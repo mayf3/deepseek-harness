@@ -174,7 +174,7 @@ export function ConversationContent(props: ConversationContentProps) {
   // on the fallback alone would leave a business-owned takeover at the content
   // end off-screen when the user is not pinned to the floor.
   const composerSeat = (
-    <div ref={seatResizeRef} className={css.composerSeat} data-composer-seat="" data-conversation-region="composer">
+    <div ref={seatResizeRef} className={css.composerSeat} data-composer-seat="">
       {composer}
     </div>
   )
@@ -184,8 +184,6 @@ export function ConversationContent(props: ConversationContentProps) {
       ref={setBody}
       className={clsx(css.body, props.variant === 'embedded' && css.embeddedBody)}
       data-conversation-content=""
-      data-conversation-session={sessionId}
-      data-conversation-region="chat"
       data-content-phase={phase}
     >
       <div className={css.scrollBody} data-conversation-scroll="">

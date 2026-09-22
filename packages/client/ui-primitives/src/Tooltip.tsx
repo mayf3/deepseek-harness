@@ -9,10 +9,11 @@ import css from './Tooltip.module.css'
 export type TooltipSide = 'right' | 'bottom' | 'top'
 
 /**
- * Suppression channel for enclosing tooltip and hover-card anchors: a visible
- * tooltip within an anchor withdraws the enclosing preview while its bubble is shown.
+ * Suppression channel from a tooltip to the tooltips above it: a tooltip hands
+ * this setter to its own descendants, and a visible descendant bubble calls it
+ * so the ancestor withdraws its bubble for as long as the descendant shows one.
  */
-export const TooltipSuppression = createContext<((suppressed: boolean) => void) | null>(null)
+const TooltipSuppression = createContext<((suppressed: boolean) => void) | null>(null)
 
 /** Props Tooltip injects into its anchor child; the child's own handlers are chained ahead of the tooltip's. */
 interface AnchorProps {
