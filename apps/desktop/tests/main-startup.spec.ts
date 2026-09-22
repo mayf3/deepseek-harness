@@ -165,7 +165,7 @@ const harness = await vi.hoisted(async () => {
     get publishUpdate() { return publishUpdate! },
     set publishUpdate(value: (state: DesktopUpdateState) => DesktopUpdateState) { publishUpdate = value },
     dialog: { showOpenDialog: vi.fn(), showErrorBox: vi.fn(), showMessageBox: vi.fn() },
-    openExternal: vi.fn(),
+    openExternal: vi.fn(async () => {}),
     protocolHandle: vi.fn<(scheme: string, handler: (request: Request) => Response | Promise<Response>) => void>(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     disableAllPlugins: vi.fn(async () => {
@@ -405,7 +405,7 @@ describe('desktop main startup', () => {
     ['darwin', false, 'zh-CN'],
     ['win32', true, 'zh-CN'],
     ['win32', false, 'en-US'],
-  ] as const)('offers the native About panel before other commands on %s (packaged=%s, locale=%s)', async (platform, packaged, locale) => {
+  ] as const)('offers the About command before other commands on %s (packaged=%s, locale=%s)', async (platform, packaged, locale) => {
     vi.stubGlobal('process', { ...process, platform })
     harness.app.isPackaged = packaged
     vi.spyOn(harness.app, 'getLocale').mockReturnValue(locale)
@@ -415,9 +415,26 @@ describe('desktop main startup', () => {
     const submenu = applicationMenuItems()
     const options = harness.app.setAboutPanelOptions.mock.calls[0]![0]
     const expected = JSON.parse(readFileSync(new URL('./expected/about-panel.json', import.meta.url), 'utf8')) as Record<string, unknown>
-    expect({ menu: submenu.slice(0, 2), options: { ...options, iconPath: '<app icon>' } }).toEqual(expected[locale])
+    const [about, separator] = submenu
+    expect({ menu: [{ label: about!.label, role: about!.role }, separator], options: { ...options, iconPath: '<app icon>' } })
+      .toEqual(expected[`${platform}:${locale}`])
     expect(options.iconPath).toBe(packaged ? join('desktop-test-resources', 'icon.png')
       : join('desktop-test-app', 'resources', 'icon-windows.png'))
+    if (platform !== 'win32') { expect(about!.click).toBeUndefined(); return }
+    // Windows reuses the dimmed update dialog because Electron's fallback is a bare message box.
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
+    ;(about!.click as () => void)()
+    await vi.advanceTimersByTimeAsync(0)
+    const zh = locale === 'zh-CN'
+    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: 'info', title: zh ? '关于 DeepSeek Harness' : 'About DeepSeek Harness', message: 'DeepSeek Harness',
+      detail: zh ? '版本 V1.0.0' : 'Version V1.0.0', buttons: [zh ? '确定' : 'OK'], cancelId: 0,
+    }))
+    // A dialog that cannot open is logged, not surfaced as an unhandled rejection.
+    harness.dialog.showMessageBox.mockRejectedValueOnce(new Error('overlay unavailable'))
+    ;(about!.click as () => void)()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(console.error).toHaveBeenLastCalledWith(expect.objectContaining({ message: 'overlay unavailable' }))
   })
 
   it('shows one explained startup login before Host readiness and joins concurrent checks without reopening it', async () => {
@@ -1616,4 +1633,22 @@ it.each(['failed', 'expired'] as const)('focuses DSH once when browser authoriza
   harness.publishAccount(state)
   harness.publishAccount(state)
   expect(window.focus).toHaveBeenCalledTimes(1)
+})
+
+it.each([['light', false], ['dark', true]] as const)('opens Platform authorization in the effective %s palette', async (theme, shouldUseDarkColors) => {
+  await import('../src/main.ts')
+  await harness.preparing.promise
+  harness.prepared.resolve()
+  await harness.hostStarted.promise
+  harness.hosts[0]!.ready.resolve()
+  await Promise.resolve(invoke(DESKTOP_IPC.boot))
+  harness.nativeTheme.shouldUseDarkColors = shouldUseDarkColors
+  const state: AccountView = {
+    status: 'signed-out', links: { usageUrl: 'https://platform.deepseek.com/usage', topUpUrl: 'https://platform.deepseek.com/top_up' },
+    attempt: { id: 'test-theme-attempt' as NonNullable<AccountView['attempt']>['id'], phase: 'waiting-browser',
+      authorizeUrl: 'https://platform.deepseek.com/dsh/authorize?state=state-1' },
+  }
+  harness.publishAccount(state)
+  harness.publishAccount(state)
+  expect(harness.openExternal).toHaveBeenCalledExactlyOnceWith(`https://platform.deepseek.com/dsh/authorize?state=state-1&theme=${theme}`)
 })

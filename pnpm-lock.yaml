@@ -15,6 +15,7 @@ patchedDependencies:
   '@fortune-sheet/core@1.0.4': 488dad2a7648b7d4df31f6bd776b7849fd0fb85be8f1acf268efff758caba3c0
   '@fortune-sheet/react@1.0.4': c17549e117c8fb99f408497c1e84292c21f25516fb762a32518f91b4d9ab0f04
   '@yao-pkg/pkg@6.21.0': 75891fc22b277c145cafeab83e41baf4a70f5b8fe6dc0801c6a0b922d7ee88c7
+  exceljs@4.4.0: c1bf8ac8f319dab382f08e3a669b715e691d46c703ac5a4163eb383fbedd1d48
   node-pty@1.2.0-beta.15: b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0
 
 importers:
@@ -51,6 +52,9 @@ importers:
       '@deepseek-ai/dsh-llm-replay':
         specifier: workspace:^
         version: link:packages/test-support/llm-replay
+      '@deepseek-ai/dsh-mcp-client':
+        specifier: workspace:^
+        version: link:packages/mcp/mcp-client
       '@deepseek-ai/dsh-skill-office':
         specifier: workspace:^
         version: link:packages/skill/skill-office
@@ -4471,6 +4475,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:^
         version: link:../ui-slots
+      '@deepseek-ai/dsh-client-ui-theme':
+        specifier: workspace:^
+        version: link:../ui-theme
       '@deepseek-ai/dsh-deepseek-account':
         specifier: workspace:^
         version: link:../../credentials/deepseek-account
@@ -5034,7 +5041,7 @@ importers:
         version: 3.4.11
       exceljs:
         specifier: 4.4.0
-        version: 4.4.0
+        version: 4.4.0(patch_hash=c1bf8ac8f319dab382f08e3a669b715e691d46c703ac5a4163eb383fbedd1d48)
       fast-xml-parser:
         specifier: 5.11.1
         version: 5.11.1
@@ -5525,6 +5532,9 @@ importers:
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-token-meter':
+        specifier: workspace:^
+        version: link:../../llm/token-meter
       '@deepseek-ai/dsh-tool-jobs':
         specifier: workspace:^
         version: link:../../jobs/tool-jobs
@@ -11357,15 +11367,33 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:^
+        version: link:../../attachment/attachment
+      '@deepseek-ai/dsh-attachment-local':
+        specifier: workspace:^
+        version: link:../../attachment/attachment-local
+      '@deepseek-ai/dsh-fs':
+        specifier: workspace:^
+        version: link:../../fs/fs
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../fs/fs-local
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-llm-deepseek':
+        specifier: workspace:^
+        version: link:../../llm/llm-deepseek
+      '@deepseek-ai/dsh-mcp-client':
+        specifier: workspace:^
+        version: link:../../mcp/mcp-client
       '@deepseek-ai/dsh-output-retention':
         specifier: workspace:^
         version: link:../../util/output-retention
+      '@deepseek-ai/dsh-ptc-runtime':
+        specifier: workspace:^
+        version: link:../../ptc-runtime/ptc-runtime
       '@deepseek-ai/dsh-ptc-runtime-node':
         specifier: workspace:^
         version: link:../../ptc-runtime/ptc-runtime-node
@@ -11384,12 +11412,24 @@ importers:
       '@deepseek-ai/dsh-spill':
         specifier: workspace:^
         version: link:../spill
+      '@deepseek-ai/dsh-spill-local':
+        specifier: workspace:^
+        version: link:../spill-local
       '@deepseek-ai/dsh-subprocess-local':
         specifier: workspace:^
         version: link:../../subprocess/subprocess-local
+      '@deepseek-ai/dsh-token-meter':
+        specifier: workspace:^
+        version: link:../../llm/token-meter
+      '@deepseek-ai/dsh-tool-fs':
+        specifier: workspace:^
+        version: link:../../fs/tool-fs
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
+      sharp:
+        specifier: ^0.35.3
+        version: 0.35.3(@types/node@22.20.0)
 
   packages/ssh/fs-ssh:
     dependencies:
@@ -12933,6 +12973,9 @@ importers:
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-token-meter':
+        specifier: workspace:^
+        version: link:../../llm/token-meter
       '@deepseek-ai/dsh-tool-call-timeout-policy':
         specifier: workspace:^
         version: link:../../guard/timeout-policy
@@ -25645,7 +25688,7 @@ snapshots:
     dependencies:
       eventsource-parser: 3.1.0
 
-  exceljs@4.4.0:
+  exceljs@4.4.0(patch_hash=c1bf8ac8f319dab382f08e3a669b715e691d46c703ac5a4163eb383fbedd1d48):
     dependencies:
       archiver: 5.3.2
       dayjs: 1.11.21

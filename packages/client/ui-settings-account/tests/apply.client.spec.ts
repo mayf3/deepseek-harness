@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-/** Account operations and request lifetimes in the shipped web composition. */
+/** Desktop account operations and ordinary-browser isolation in the shipped client composition. */
 import { afterEach, expect, vi } from 'vitest'
 import { ok } from '@deepseek-ai/dsh-remote-mock'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import type { AccountDetails, AccountView, AccountUserId, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
+import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountSectionInjected } from '../src/client/AccountSection.tsx'
 import { CONTACT_CONFIG_GLOBAL } from '../src/contact-config.ts'
@@ -20,12 +21,36 @@ function operations(c: TestClient): AccountSectionInjected {
 }
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
+it('keeps account UI and account RPC inactive in a plain browser, including after reload', async ({ start, mock }) => {
+  const c = await start()
+  for (const reload of [false, true]) {
+    if (reload) await c.reload(SELF)
+    await c.flush()
+    expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)
+    expect(c.ctx.slots.entries('settings.models.sign-in')).toHaveLength(0)
+    expect(c.ctx.slots.entries('settings.section').some(entry => entry.options.id === 'account')).toBe(false)
+    expect(mock.log.calls().filter(call => call.endpoint.startsWith('account/'))).toEqual([])
+    expect(mock.log.streams().filter(stream => stream.endpoint.startsWith('account/'))).toEqual([])
+  }
+}, 60_000)
+
 it('shares account actions across seats, publishes dialog ownership, and opens contextual support', async ({ start }) => {
   vi.stubGlobal(CONTACT_CONFIG_GLOBAL, { contactFormUrl: 'https://example.test/form/', contactSource: 'harness' })
   const open = vi.spyOn(window, 'open').mockReturnValue(null)
+  vi.stubGlobal('dshDesktop', {})
   const c = await start()
   const actions = operations(c)
   expect(c.ctx.slots.entries('settings.models.sign-in')[0]!.inject!()).toBe(actions)
+  // The account UI follows the live theme service through the framework hook channel.
+  const theme = c.ctx.get('theme') as ThemeRuntime
+  const onTheme = vi.fn()
+  const offTheme = actions.hooks.theme.subscribe(onTheme)
+  expect(actions.hooks.theme.getSnapshot()).toBe(theme.getTheme())
+  const probe = theme.register({ id: 'probe', colorScheme: 'dark', tokens: {} })
+  expect(onTheme).toHaveBeenCalledOnce()
+  probe()
+  offTheme()
+  expect(theme.getTheme().themes.map(candidate => candidate.id)).toEqual(['light', 'dark'])
   await actions.refresh()
   expect(c.mock.remote.account.getProfile).not.toHaveBeenCalled()
   const listener = vi.fn()
@@ -58,6 +83,7 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
 }, 60_000)
 
 it('coalesces refreshes, publishes independent failures, and rejects stale responses after sign-out or unload', async ({ start }) => {
+  vi.stubGlobal('dshDesktop', {})
   const c = await start()
   const actions = operations(c)
   const pending = Promise.withResolvers<ReturnType<typeof ok<AccountDetails['profile'] | null>>>()
@@ -85,14 +111,14 @@ it('coalesces refreshes, publishes independent failures, and rejects stale respo
   expect(actions.hooks.account.getSnapshot().details?.profile).toEqual({ status: 'failed' })
 }, 60_000)
 
-for (const desktop of [false, true]) it(`uses the browser or Desktop login carrier (Desktop: ${desktop}) and exposes operation errors`, async ({ start, mock }) => {
+it('uses the Desktop login carrier and exposes operation errors', async ({ start, mock }) => {
   vi.spyOn(window, 'open').mockReturnValue(null)
-  if (desktop) vi.stubGlobal('dshDesktop', {})
+  vi.stubGlobal('dshDesktop', {})
   const c = await start()
   const actions = operations(c)
   mock.remote.account.startSignIn.mockResolvedValue(ok(view))
   await actions.start()
-  expect(mock.remote.account.startSignIn).toHaveBeenCalledWith('en', window.location.origin, desktop ? 'desktop' : 'web')
+  expect(mock.remote.account.startSignIn).toHaveBeenCalledWith('en', window.location.origin, 'desktop')
   const failure = { ok: false as const, error: new RemoteError('gateway/internal', 'offline', {}) }
   mock.remote.account.startSignIn.mockResolvedValueOnce(failure)
   await expect(actions.start()).rejects.toThrow('account start failed')
@@ -107,8 +133,8 @@ for (const desktop of [false, true]) it(`uses the browser or Desktop login carri
 }, 60_000)
 
 it('uses the Desktop stream origin and exposes the native platform bridge', async ({ start, mock }) => {
-  const c = await start()
   vi.stubGlobal('dshDesktop', {})
+  const c = await start()
   vi.stubGlobal('__DSH_TRANSPORT__', { streamBaseUrl: 'http://localhost:9876/stream' })
   const platform = { open: vi.fn(), setBounds: vi.fn(), close: vi.fn() }
   vi.stubGlobal('dshPlatform', platform)
@@ -122,6 +148,7 @@ it('uses the Desktop stream origin and exposes the native platform bridge', asyn
 
 
 it('publishes a terminal state-stream failure without mistaking it for plugin disposal', async ({ start }) => {
+  vi.stubGlobal('dshDesktop', {})
   const c = await start()
   const actions = operations(c)
   await c.mock.streams.opened('account/watch', 1)
@@ -130,6 +157,7 @@ it('publishes a terminal state-stream failure without mistaking it for plugin di
 }, 60_000)
 
 it('ignores a terminal stream error when plugin disposal already owns teardown', async ({ start }) => {
+  vi.stubGlobal('dshDesktop', {})
   const c = await start()
   let disposal: Promise<void> | undefined
   const original = c.ctx.remote.$stream.bind(c.ctx.remote)
