@@ -1,5 +1,5 @@
 /** Capped process-group scrolling and fades over the shared follow controller. */
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type DOMAttributes, type KeyboardEvent, type RefObject } from 'react'
 import { scrollMetrics, useScrollFollow } from './use-scroll-follow.ts'
 
 interface ScrollEdges { readonly canScrollUp: boolean; readonly canScrollDown: boolean }
@@ -16,7 +16,11 @@ const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home
  */
 export function useProcessScroll(
   bodyRef: RefObject<HTMLDivElement>, contentRef: RefObject<HTMLDivElement>, open: boolean, grouped: boolean,
-) {
+): {
+  edges: ScrollEdges
+  events: Pick<DOMAttributes<HTMLDivElement>, 'onScroll' | 'onWheel' | 'onTouchStart' | 'onPointerDown' | 'onKeyDown'>
+  initialize: (position: 'top' | 'bottom') => void
+} {
   const follow = useScrollFollow(false, 1)
   const initialPosition = useRef<'top' | 'bottom' | null>(null)
   const [edges, setEdges] = useState<ScrollEdges>(AT_REST)

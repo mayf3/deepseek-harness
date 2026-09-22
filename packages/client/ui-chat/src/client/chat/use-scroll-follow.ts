@@ -29,19 +29,29 @@ export class ScrollFollow {
    */
   constructor(private following: boolean, private readonly threshold: number) {}
 
-  /** @returns whether content growth should follow the floor. */
+  /**
+   * Expose follow intent independently of the current offset.
+   * @returns whether content growth should follow the floor.
+   */
   get active(): boolean { return this.following }
 
-  /** @returns whether a native follow animation has an outstanding target. */
+  /**
+   * Expose outstanding native motion before accepting reader input.
+   * @returns whether a native follow animation has an outstanding target.
+   */
   get animating(): boolean { return this.target !== null }
 
   /**
+   * Classify bottom arrivals using this scrollport's own tolerance.
    * @param metrics - current scroll geometry.
    * @returns whether the position is within the follow threshold.
    */
   nearBottom(metrics: ViewportMetrics): boolean { return metrics.floor - metrics.top <= this.threshold }
 
-  /** @param active - externally committed follow intent. */
+  /**
+   * Commit caller-owned follow decisions without moving the scrollport.
+   * @param active - externally committed follow intent.
+   */
   setFollowing(active: boolean): void {
     this.following = active
     if (!active) this.target = null
