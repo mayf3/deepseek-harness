@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/boot.md
-boot.md: a1e8917adaf80315d871081740e5a76e5cd1e6dd
-boot.zh.md: 1ba455d6ba9ff0053ff9d6f6d1313e7ae871a2a1
+boot.md: 41729df9ebb66354997b4fc75d8fc0e68cf90902
+boot.zh.md: 759679d82894f6e739a2a91d84f862fe92448b32

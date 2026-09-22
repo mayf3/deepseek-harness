@@ -129,7 +129,8 @@ Manage profile files and apply their declared reload lifecycle.
 @Remote setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult>
 
 /**
- * Install a package using the same pnpm implementation as dsh plugin. A run
+ * Install a package using the same pnpm implementation as dsh plugin. GitHub
+ * repositories must pass a Git connection check within githubConnectionTimeoutMs before pnpm starts. A run
  * that fails, is cancelled, or adds a package without a bundle patch restores
  * `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.
  * @param spec One package spec, including local paths relative to the invocation directory.
@@ -148,7 +149,7 @@ Manage profile files and apply their declared reload lifecycle.
 
 /** Stop an installation this manager owns and wait until its files are back.
  * @param requestId The id the installation was started with.
- * @returns `cancelled` once pnpm exited and the files are restored, `too-late` once the bundle is being
+ * @returns `cancelled` once the Git check or pnpm exited and the files are restored, `too-late` once the bundle is being
  * applied, `not-running` for any other id.
  */
 @Remote async cancelInstall(requestId: PluginInstallRequestId): Promise<PluginInstallCancellation>

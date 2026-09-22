@@ -2167,16 +2167,18 @@ export interface PlanModeConfig {
 需要： `loader` · `profileContext`
 
 ```ts config-catalog
-/** The pnpm executable, the registries asked, and the limits for package diagnostics and registry lookups. */
+/** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
 export interface Config {
   /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
   pnpmCommand?: string
-  /** Maximum retained pnpm diagnostic bytes per operation. */
+  /** Maximum retained package-operation diagnostic bytes. */
   outputBytes?: number
   /** Maximum time to wait for another process's profile package operation. */
   lockWaitMs?: number
   /** Bound on one registry lookup an inspection runs, in milliseconds. */
   inspectTimeoutMs?: number
+  /** Maximum duration of the GitHub repository connection check before installation, in milliseconds. */
+  githubConnectionTimeoutMs?: number
   /** The registry lookups and installations ask first, as an http(s) URL; absent, the one pnpm's own configuration names. */
   registry?: string
   /**
@@ -2188,7 +2190,7 @@ export interface Config {
 }
 ```
 
-来源： [`packages/boot/plugin-manager/src/index.ts:37`](../packages/boot/plugin-manager/src/index.ts)
+来源： [`packages/boot/plugin-manager/src/index.ts:38`](../packages/boot/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 

@@ -785,7 +785,7 @@ function InstallDialog({
       <Modal
         open={install.open}
         onClose={onClose}
-        title={t('installGithubFailedTitle')}
+        title={t(install.failure?.kind === 'timeout' ? 'installGithubTimeoutTitle' : 'installGithubFailedTitle')}
         closeLabel={t('close')}
         description={t('installGithubFailedDescription')}
         footer={(

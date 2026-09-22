@@ -24,6 +24,7 @@ import { attributeFailure, normalizeRegistry, NPMMIRROR_REGISTRY, registryPlan }
 import { writePluginEnabled } from './patch.ts'
 import { ManagementFailure } from './failure.ts'
 import { approveBuilds, readPendingBuilds } from './build-approval.ts'
+import { checkGithubConnection } from './github-connection.ts'
 import type {
   BundleInfo, BundleRowInfo, ChangeResult, InspectOptions, InstallBundleOptions, ManagementError, PackageResult, PluginChange,
   PluginEntryId, PluginInfo, PluginInspectProblem, PluginInstallCancellation, PluginInstallProgress, PluginInstallRequestId,
@@ -33,16 +34,18 @@ export type * from './types.ts'
 export { classifyInstallFailure, type InstallFailureFacts } from './install-failure.ts'
 export { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
 
-/** The pnpm executable, the registries asked, and the limits for package diagnostics and registry lookups. */
+/** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
 export interface Config {
   /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
   pnpmCommand?: string
-  /** Maximum retained pnpm diagnostic bytes per operation. */
+  /** Maximum retained package-operation diagnostic bytes. */
   outputBytes?: number
   /** Maximum time to wait for another process's profile package operation. */
   lockWaitMs?: number
   /** Bound on one registry lookup an inspection runs, in milliseconds. */
   inspectTimeoutMs?: number
+  /** Maximum duration of the GitHub repository connection check before installation, in milliseconds. */
+  githubConnectionTimeoutMs?: number
   /** The registry lookups and installations ask first, as an http(s) URL; absent, the one pnpm's own configuration names. */
   registry?: string
   /**
@@ -172,6 +175,7 @@ export class PluginManager extends TypertRemoteService {
     outputBytes: z.number().step(1).min(1).default(16384),
     lockWaitMs: z.number().step(1).min(0).default(120000),
     inspectTimeoutMs: z.number().step(1).min(1000).default(20000),
+    githubConnectionTimeoutMs: z.number().step(1).min(1000).default(5000),
     registry: z.string().pattern(REGISTRY_URL),
     fallbackRegistries: z.array(z.string().pattern(REGISTRY_URL)).default([NPMMIRROR_REGISTRY]),
   })
@@ -183,6 +187,7 @@ export class PluginManager extends TypertRemoteService {
   private readonly outputBytes: number
   private readonly lockWaitMs: number
   private readonly inspectTimeoutMs: number
+  private readonly githubConnectionTimeoutMs: number
   private readonly pnpmCommand: string
   private readonly configuredRegistries: Omit<PluginRegistries, 'resolved'>
   private readonly ownerContext: Context
@@ -199,6 +204,7 @@ export class PluginManager extends TypertRemoteService {
     this.outputBytes = (config as Required<Config>).outputBytes
     this.lockWaitMs = (config as Required<Config>).lockWaitMs
     this.inspectTimeoutMs = (config as Required<Config>).inspectTimeoutMs
+    this.githubConnectionTimeoutMs = (config as Required<Config>).githubConnectionTimeoutMs
     this.pnpmCommand = (config as Required<Config>).pnpmCommand
     this.configuredRegistries = {
       registry: config.registry === undefined ? null : normalizeRegistry(config.registry),
@@ -406,7 +412,8 @@ export class PluginManager extends TypertRemoteService {
   }
 
   /**
-   * Install a package using the same pnpm implementation as dsh plugin. A run
+   * Install a package using the same pnpm implementation as dsh plugin. GitHub
+   * repositories must pass a Git connection check within githubConnectionTimeoutMs before pnpm starts. A run
    * that fails, is cancelled, or adds a package without a bundle patch restores
    * `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.
    * @param spec One package spec, including local paths relative to the invocation directory.
@@ -432,12 +439,27 @@ export class PluginManager extends TypertRemoteService {
       }
       const files = await this.readRestoredFiles()
       const before = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
-      const plan = registryPlan(options?.registry, await this.registries())
       let name: string
       try {
-        // The last run is the result's; the registries asked stay listed whatever the outcome.
-        let run: PackageResult | undefined
         result.registries = []
+        const connection = checkGithubConnection(parsedForRegistry(spec), this.profile.dir, {
+          timeoutMs: this.githubConnectionTimeoutMs, outputBytes: this.outputBytes,
+          signal: AbortSignal.any([this.abort.signal, control.abort.signal]),
+          ...this.profile.packageManager?.env === undefined ? {} : { env: this.profile.packageManager.env },
+        })
+        this.packageOperations.add(connection)
+        let connectionFailure: PackageResult | undefined
+        try { connectionFailure = await connection }
+        finally { this.packageOperations.delete(connection) }
+        if (stopped()) throw new InstallCancelledError()
+        if (connectionFailure !== undefined) {
+          result.packageResult = connectionFailure
+          if (connectionFailure.kind === 'network' || connectionFailure.kind === 'timeout') result.failedAt = 'spec-host'
+          throw new Error(connectionFailure.output)
+        }
+        // The last run is the result's; the registries asked stay listed whatever the outcome.
+        const plan = registryPlan(options?.registry, await this.registries())
+        let run: PackageResult | undefined
         for (const [index, registry] of plan.entries()) {
           if (index > 0) await this.restoreFiles(files)
           // A stop that landed while the files went back, or before the first run, starts no run with a dead signal.
@@ -509,7 +531,7 @@ export class PluginManager extends TypertRemoteService {
 
   /** Stop an installation this manager owns and wait until its files are back.
    * @param requestId The id the installation was started with.
-   * @returns `cancelled` once pnpm exited and the files are restored, `too-late` once the bundle is being
+   * @returns `cancelled` once the Git check or pnpm exited and the files are restored, `too-late` once the bundle is being
    * applied, `not-running` for any other id.
    */
   @Remote
