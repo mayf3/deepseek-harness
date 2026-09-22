@@ -16,7 +16,7 @@ Status: implemented
 
 循环和压缩请求通过 `GenerateOptions.toolHistory` 携带此快照。适配器分发时，`projectToolUpdates` 使用已准备路由的 `toolUpdate`。不支持的路由接收有效定义，不携带 `deferLoading` 或 developer 消息。支持的路由延迟历史添加；`in-history` 保留已移除定义和移除块，`addition-only` 则省略两者。仅保留当前序列的更新标识。缺少历史或请求前缀遗漏已记录更新时，使用当前声明且不发送 developer 更新。显式延迟加载在支持的路由上仍然可用。
 
-DeepSeek 把投影后的更新转换为 system 角色的 `tool_addition` 和 `tool_removal` 块以及 `defer_loading` 声明，在存在更新块时发送工具变更 beta 请求头。默认 `deepseek-flash` 条目声明 `addition-only`；pi-ai 不声明模式。Chat 和 Trajectory 将 developer 消息显示为上下文节点，工具变更使用未知块渲染器。
+DeepSeek 把投影后的更新转换为 system 角色的 `tool_addition` 和 `tool_removal` 块以及 `defer_loading` 声明，在存在更新块时发送工具变更 beta 请求头。默认 `deepseek-flash` 条目声明 `addition-only`；pi-ai 不声明模式。Chat 和 Trajectory 将 developer 消息显示为上下文节点，工具变更使用本地化通知：单项变更显示工具名，多项变更显示数量及可展开的名称列表。
 
 ## Alternatives considered
 
@@ -30,4 +30,4 @@ DeepSeek 把投影后的更新转换为 system 角色的 `tool_addition` 和 `to
 
 ## Consequences
 
-工具列表和逻辑更新事件不依赖能力；只有发出的声明和消息不同。调用已移除但保留声明的工具时，通过现有 `UNKNOWN_TOOL` 路径失败。定义变化和不完整辅助前缀为保证声明一致而放弃前缀复用；未变化的恢复在 `in-history` 路由上保留缓存前缀。不增加持久字段或 Session 格式版本。
+工具列表和逻辑更新事件不依赖能力；只有发出的声明和消息不同。调用已移除但保留声明的工具时，通过现有 `UNKNOWN_TOOL` 路径失败。定义变化和不完整辅助前缀为保证声明一致而放弃前缀复用；仅当请求序列继续时，未变化的恢复才在 `in-history` 路由上保留缓存前缀。工具 schema 变化仍会触发系统提示词归并，不受 `toolUpdate` 影响；如果归并替换了系统节点，随之发生的序列重置会使用当前声明，而非增量工具更新。不增加持久字段或 Session 格式版本。

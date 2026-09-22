@@ -729,7 +729,7 @@ Source: [`packages/core/session/src/types.ts:402`](../packages/core/session/src/
 'request/header': {
   header: EpochHeader
   reason: RequestHeaderReason
-  /** A changed header also begins a distinct model-message series. */
+  /** This request begins a distinct model-message series, independently of the header reason. */
   startsSeries?: true
 }
 ```

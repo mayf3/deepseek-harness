@@ -216,6 +216,52 @@ describe('LlmRuntime', () => {
     expect(adapter.lastOptions?.messages.map(message => message.role)).toEqual(['user'])
   })
 
+  it.each(['in-history', 'addition-only'] as const)('projects additions and removals before %s adapter dispatch', async (mode) => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    class ToolUpdateAdapter extends RecordingAdapter {
+      override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return { provider, id: model, name: model, toolUpdate: mode }
+      }
+    }
+    const adapter = new ToolUpdateAdapter(SCRIPT)
+    ctx.llm.registerAdapter(['test-provider'], adapter)
+    try {
+      const search = { name: 'search', description: 'Search', parameters: {} }
+      const added = createDeveloperMessage({ source: { kind: 'test' }, content: [{ type: 'tool-addition', toolName: 'search' }] })
+      const removed = createDeveloperMessage({ source: { kind: 'test' }, content: [{ type: 'tool-removal', toolName: 'search' }] })
+      const prepared = await ctx.llm.prepareCall({ provider: 'test-provider', model: 'test-model' })
+      await collect(prepared.stream({
+        ...prepared.config,
+        messages: [added],
+        tools: [search],
+        toolHistory: { tools: [], updates: [{ messageId: added.id, additions: [search] }] },
+      }))
+      expect(adapter.lastOptions?.tools).toEqual([{ ...search, deferLoading: true }])
+      expect(adapter.lastOptions?.messages).toEqual([added])
+
+      const afterRemoval = await ctx.llm.prepareCall({ provider: 'test-provider', model: 'test-model' })
+      await collect(afterRemoval.stream({
+        ...afterRemoval.config,
+        messages: [added, removed],
+        tools: [],
+        toolHistory: { tools: [], updates: [
+          { messageId: added.id, additions: [search] },
+          { messageId: removed.id, additions: [] },
+        ] },
+      }))
+      if (mode === 'in-history') {
+        expect(adapter.lastOptions?.tools).toEqual([{ ...search, deferLoading: true }])
+        expect(adapter.lastOptions?.messages).toEqual([added, removed])
+      } else {
+        expect(adapter.lastOptions?.tools).toEqual([])
+        expect(adapter.lastOptions?.messages).toEqual([])
+      }
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('trusts the immutable message creation boundary for direct calls', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)

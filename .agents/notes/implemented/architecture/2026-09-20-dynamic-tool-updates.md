@@ -16,7 +16,7 @@ Plugin and MCP tools change during conversations. Providers differ in whether th
 
 Loop and compaction requests carry this snapshot as `GenerateOptions.toolHistory`. At adapter dispatch, `projectToolUpdates` uses the prepared route's `toolUpdate`. Unsupported routes receive active definitions without `deferLoading` or developer messages. Supported routes defer historical additions; `in-history` retains removed definitions and removal blocks, while `addition-only` omits both. Only current-series update identities survive. Missing history or a request prefix omitting recorded updates uses current declarations without developer updates. Explicit deferred loading remains available on capable routes.
 
-DeepSeek translates projected updates into system-role `tool_addition` and `tool_removal` blocks and `defer_loading` declarations, sending the tool-changes beta header when update blocks occur. The default `deepseek-flash` entry declares `addition-only`; pi-ai declares no mode. Chat and Trajectory display developer messages as context nodes, using the unknown-block renderer for tool changes.
+DeepSeek translates projected updates into system-role `tool_addition` and `tool_removal` blocks and `defer_loading` declarations, sending the tool-changes beta header when update blocks occur. The default `deepseek-flash` entry declares `addition-only`; pi-ai declares no mode. Chat and Trajectory display developer messages as context nodes, using localized tool-change notices: single changes show the tool name; multiple changes show counts and expandable name lists.
 
 ## Alternatives considered
 
@@ -30,4 +30,4 @@ DeepSeek translates projected updates into system-role `tool_addition` and `tool
 
 ## Consequences
 
-Tool lists and logical update events are capability-independent; only outgoing declarations and messages vary. Calls to removed retained tools fail through the existing `UNKNOWN_TOOL` path. Changed definitions and incomplete auxiliary prefixes sacrifice prefix reuse for coherent declarations; unchanged restoration keeps the cached prefix on `in-history` routes. No persisted fields or Session format revision are added.
+Tool lists and logical update events are capability-independent; only outgoing declarations and messages vary. Calls to removed retained tools fail through the existing `UNKNOWN_TOOL` path. Changed definitions and incomplete auxiliary prefixes sacrifice prefix reuse for coherent declarations; unchanged restoration keeps the cached prefix on `in-history` routes only while the request series continues. Tool-schema changes still trigger system-prompt consolidation regardless of `toolUpdate`; if consolidation replaces a system node, the resulting series reset uses current declarations instead of incremental tool updates. No persisted fields or Session format revision are added.
