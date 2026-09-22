@@ -24,7 +24,7 @@ import type {
   ReadOnlyReason,
   Registry,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import { REGISTRY_URL } from '@deepseek-ai/dsh-plugin-manager/registry'
+import { normalizeRegistry, OFFICIAL_NPM_REGISTRY, REGISTRY_URL } from '@deepseek-ai/dsh-plugin-manager/registry'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalizedText, PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
@@ -389,6 +389,25 @@ function reconciled(remembered: RegistryChoice | null, registries: PluginRegistr
     : remembered
 }
 
+interface RegistryRead {
+  /** Last automatically assigned choice; a different object belongs to a manual selection. */
+  choice: RegistryChoice
+  done?: Promise<void>
+}
+
+/** Only the shipped public mirror can replace an unconfigured official npm default. */
+function mainlandMirror(registries: PluginRegistries): string | undefined {
+  if (registries.registry !== null || registries.resolved === null) return undefined
+  let resolved: string
+  try { resolved = normalizeRegistry(registries.resolved) }
+  catch (_error) {
+    // An invalid pnpm registry cannot receive a public mirror recommendation.
+    return undefined
+  }
+  if (resolved !== OFFICIAL_NPM_REGISTRY) return undefined
+  return registries.fallbackRegistries.find(registry => registry === 'https://registry.npmmirror.com/')
+}
+
 /** One installation owns acceptance, response recovery, and every cancellation attempt. */
 interface InstallRequest {
   readonly requestId: PluginInstallRequestId
@@ -410,6 +429,7 @@ export class PluginManagerController {
   private inspectAbort: AbortController | undefined
   private request: InstallRequest | undefined
   private noticeSeq = 0
+  private registryRead: RegistryRead | undefined
   /** The registry last used from this browser, kept across dialogs and page loads; null until one was used. */
   private readonly registryMemory: SnapshotStore<RegistryChoice | null> = createSnapshotStore<RegistryChoice | null>(null, {
     persist: { name: 'dsh.plugin-manager.install-registry' },
@@ -438,6 +458,7 @@ export class PluginManagerController {
   /** Stop publishing and drop every late settlement. */
   dispose(): void {
     this.disposed = true
+    this.registryRead = undefined
     this.request = undefined
     this.generation += 1
   }
@@ -460,7 +481,9 @@ export class PluginManagerController {
         if (install.requestId === undefined) {
           // A new dialog starts from the registry last used here and reads what the Host offers; a hidden install reopens as it is.
           this.patch({ install: { ...IDLE_INSTALL, open: true, registry: this.registryMemory.getSnapshot() ?? OFFICIAL_REGISTRY } })
-          void this.readRegistries()
+          const read: RegistryRead = { choice: this.getSnapshot().install.registry }
+          this.registryRead = read
+          read.done = this.readRegistries(read).finally(() => { delete read.done })
         } else {
           this.patchInstall({ open: true })
         }
@@ -473,6 +496,7 @@ export class PluginManagerController {
           return
         }
         this.abortInspect()
+        this.registryRead = undefined
         this.patch({ install: IDLE_INSTALL })
       },
       editInstallSpec: (text) => {
@@ -543,12 +567,27 @@ export class PluginManagerController {
     })
   }
 
+  private currentRegistryRead(read: RegistryRead): boolean {
+    return !this.disposed && this.registryRead === read
+  }
+
   /** Read the registries the Host offers, for the dialog just opened; a refused read leaves pnpm's own and a typed one. */
-  private async readRegistries(): Promise<void> {
+  private async readRegistries(read: RegistryRead): Promise<void> {
     const answer = await this.ctx.remote.pluginManager.registries()
     const install = this.getSnapshot().install
-    if (this.disposed || !install.open || !answer.ok) return
-    this.patchInstall({ registries: answer.value, registry: reconciled(this.registryMemory.getSnapshot(), answer.value) })
+    if (!this.currentRegistryRead(read) || !install.open || !answer.ok) return
+    const remembered = this.registryMemory.getSnapshot()
+    const untouched = install.registry === read.choice && (install.phase === 'idle' || install.phase === 'checking')
+    if (untouched) read.choice = reconciled(remembered, answer.value)
+    this.patchInstall({ registries: answer.value, ...untouched ? { registry: read.choice } : {} })
+    const mirror = mainlandMirror(answer.value)
+    if (!untouched || remembered !== null || mirror === undefined) return
+    const country = await this.ctx.remote.pluginInstallLocation.country()
+    const current = this.getSnapshot().install
+    if (!this.currentRegistryRead(read) || !current.open || (current.phase !== 'idle' && current.phase !== 'checking')
+      || current.registry !== read.choice || !country.ok || country.value !== 'CN') return
+    read.choice = { kind: 'offered', registry: mirror }
+    this.patchInstall({ registry: read.choice })
   }
 
   /**
@@ -669,8 +708,6 @@ export class PluginManagerController {
       this.patchInstall({ phase: 'idle', registryError: true })
       return
     }
-    const registry: Registry = typed ?? (choice as Extract<RegistryChoice, { kind: 'offered' }>).registry
-    this.registryMemory.set(typed === undefined ? choice : { kind: 'custom', url: typed })
     this.abortInspect()
     const controller = new AbortController()
     this.inspectAbort = controller
@@ -678,6 +715,14 @@ export class PluginManagerController {
       phase: 'checking', inputError: null, subject: null, runs: [], detailsOpen: false, attempts: null, registryOpen: false,
       installed: null, restartRequired: false, failure: null, approvedBuilds: [],
     })
+    const read = this.registryRead
+    if (read !== undefined && choice === read.choice && read.done !== undefined) {
+      await read.done
+      if (this.gone(controller.signal) || this.registryRead !== read) return
+    }
+    const selected = this.getSnapshot().install.registry
+    const registry: Registry = typed ?? (selected as Extract<RegistryChoice, { kind: 'offered' }>).registry
+    this.registryMemory.set(typed === undefined ? selected : { kind: 'custom', url: typed })
     const inspected = await this.ctx.remote.pluginManager.inspect(spec, { registry }, controller.signal)
     if (this.gone(controller.signal)) return
     this.inspectAbort = undefined

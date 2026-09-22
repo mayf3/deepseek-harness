@@ -5,17 +5,30 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createServer } from 'node:http'
 import { chromium } from 'playwright'
-import { expect, it } from 'vitest'
+import { expect, it, onTestFinished } from 'vitest'
 import { launchWebScaffold, captureStableAria, compareOrRefreshGolden, webSnapshotMode, watchConsole, type WebScaffold } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE } from './support.ts'
 
 const MIRROR = 'https://registry.npmmirror.com/'
 
-it('offers the registries, remembers the one picked, and moves an install on to the next when a run loses its registry', async () => {
+it.each([null, 'CN'])('selects an installation source for Host country %s, remembers it, and falls back after a registry failure', async (country) => {
   const scratch = await mkdtemp(join(tmpdir(), 'dsh-install-registry-'))
   const overlay = join(scratch, 'cordis.patch.yml')
-  await writeFile(overlay, `- id: plugin-manager\n  config: ${JSON.stringify({ pnpmCommand: process.execPath })}\n`)
+  const countryServer = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({ country }))
+  })
+  await new Promise<void>((resolve) => { countryServer.listen(0, '127.0.0.1', resolve) })
+  onTestFinished(() => new Promise<void>((resolve, reject) => {
+    countryServer.close((error) => { if (error === undefined) resolve(); else reject(error) })
+    countryServer.closeAllConnections()
+  }))
+  const address = countryServer.address()
+  if (address === null || typeof address === 'string') throw new Error('Expected a TCP listener')
+  await writeFile(overlay, `- id: plugin-manager\n  config: ${JSON.stringify({ pnpmCommand: process.execPath })}\n`
+    + `- id: ui-plugin-manager\n  config: ${JSON.stringify({ countryLookupEnabled: true, countryEndpoint: `http://127.0.0.1:${address.port}/` })}\n`)
   let scaffold: WebScaffold | undefined
   try {
     scaffold = await launchWebScaffold({ profile: { packages: [] }, extraOverlayPath: overlay })
@@ -29,6 +42,7 @@ it('offers the registries, remembers the one picked, and moves an install on to 
       // it is asked, naming the registry, and installs the package on the next; the Host moves it on to the next registry.
       await writeFile(join(profile, 'config'), 'console.log("https://registry.npmjs.org/")\n')
       await writeFile(join(profile, 'view'), `
+        require('node:fs').appendFileSync('.registry-lookups', JSON.stringify(process.argv) + '\\n');
         if (!process.argv.includes('--registry=${MIRROR}')) {
           console.log(JSON.stringify({ error: { code: 'ERR_PNPM_META_FETCH_FAIL', message: 'GET https://registry.npmjs.org/mirrored-package: request timed out (ETIMEDOUT)' } }));
           process.exitCode = 1;
@@ -63,12 +77,17 @@ it('offers the registries, remembers the one picked, and moves an install on to 
       const dialog = page.getByRole('dialog')
       // Folded, the registry control names pnpm's own registry; unfolded, its options float from it and offer the configured
       // mirror and a typed address.
-      const registryToggle = dialog.getByRole('button', { name: '安装源 默认安装源', exact: true })
+      const registryToggle = dialog.getByRole('button', { name: country === 'CN' ? '安装源 中国大陆镜像源' : '安装源 默认安装源', exact: true })
       await registryToggle.waitFor()
       expect(await page.getByRole('radio').count()).toBe(0)
       await registryToggle.click()
       const options = page.getByRole('group', { name: '从哪个 npm 源下载插件', exact: true })
-      await options.getByRole('radio', { name: '中国大陆镜像源（registry.npmmirror.com）', exact: true }).click()
+      const mirror = options.getByRole('radio', { name: '中国大陆镜像源（registry.npmmirror.com）', exact: true })
+      if (country === 'CN') {
+        expect(await mirror.isChecked()).toBe(true)
+        await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-registry/country-default.expected.md', import.meta.url)),
+          await captureStableAria(page, '[data-install-registry]', scaffold.workspaceCwd), webSnapshotMode())
+      } else await mirror.click()
       expect(await options.getByRole('radio').count()).toBe(3)
       await dialog.getByRole('button', { name: '安装源 中国大陆镜像源', exact: true }).waitFor()
       await dialog.getByRole('textbox', { name: '包名或地址' }).fill('mirrored-package')
@@ -86,6 +105,9 @@ it('offers the registries, remembers the one picked, and moves an install on to 
       // the registry after it, which finished it. Each run shows behind the details with the registry it asked.
       await dialog.getByRole('button', { name: '立即启用', exact: true }).waitFor({ timeout: 20_000 })
       await dialog.getByText('版本 2.0.0', { exact: true }).waitFor()
+      const lookups = (await readFile(join(profile, '.registry-lookups'), 'utf8')).trim().split('\n')
+      expect(lookups).toHaveLength(1)
+      expect(JSON.parse(lookups[0]!)).toContain('--registry=' + MIRROR)
       await dialog.getByRole('button', { name: '查看安装详情', exact: true }).click()
       await dialog.getByText('Installed from the registry pnpm names', { exact: true }).waitFor()
       await dialog.getByText('第 1 次 · 中国大陆镜像源', { exact: true }).waitFor()

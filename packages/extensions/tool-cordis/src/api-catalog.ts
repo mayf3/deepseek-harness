@@ -1587,6 +1587,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'pluginInstallLocation',
+    summary: 'Shares a bounded Host lookup across installation dialogs; source-selection policy belongs to the Client.',
+    description: 'Shares a bounded Host lookup across installation dialogs; source-selection policy belongs to the Client.',
+    methods: [
+      {
+        signature: '@Remote country(): Promise<string | null>',
+        description: 'Read the Host\'s exit country through its configured outbound fetch transport. Concurrent callers share one lookup; caller disconnects do not cancel other readers.',
+        parameters: [],
+        returns: 'country code, or null when disabled, unavailable, or the lookup fails; both outcomes are cached.',
+      },
+    ],
+  },
+  {
     key: 'pluginManager',
     summary: 'Manage profile files and apply their declared reload lifecycle.',
     description: 'Manage profile files and apply their declared reload lifecycle.',
