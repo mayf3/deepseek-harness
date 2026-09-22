@@ -172,7 +172,6 @@ export function TextPreview({
     else if (mode === 'bytes-complete') reloadAll(tab.id, file, signal, observedVersion)
     else rendererReload()
   }, [canRead, mode, reloadPages, reloadAll, rendererReload, tab.id, file, signal, observedVersion])
-  useEffect(() => tab.actions.bindCommands({ refresh: reload }), [tab.actions, reload])
   useEffect(() => {
     if (state?.autoRefresh && changed && current !== undefined && !current.loading && meta.status === 'live') reload()
   }, [state?.autoRefresh, changed, current?.loading, meta.status, reload])
@@ -308,21 +307,17 @@ export function TextPreview({
             </button>
           </Tooltip>
         </span>
-        {/* Preview and file-tree refresh controls own different reload lifecycles and locale namespaces. */}
-        {/* jscpd:ignore-start */}
-        <Tooltip label={tab.refreshShortcut?.keys.length ? t('shortcut.hint', { label: t('reload'), keys: tab.refreshShortcut.keys.join(' ') }) : t('reload')} side="bottom" delayMs={500}>
+        <Tooltip label={t('reload')} side="bottom" delayMs={500}>
           <button
             type="button"
             className={css.tool}
             aria-label={t('reload')}
             data-textpreview-tool="reload"
-            aria-keyshortcuts={tab.refreshShortcut?.aria}
             onClick={reload}
           >
             <IconRefreshOutlineRegular />
           </button>
         </Tooltip>
-        {/* jscpd:ignore-end */}
         {fileOwner !== undefined && renderSlot('sidebar.right.tab.document.actions', fileOwner)}
       </div>
       <div

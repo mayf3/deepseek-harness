@@ -5,9 +5,6 @@ import clsx from 'clsx'
 import { IconCheckOutlineRegular } from './icons/index.tsx'
 import { overlayTopMargin } from './overlay-top-margin.ts'
 import { usePointerGrace } from './pointer-grace.ts'
-import { isBehindModal } from './useModalLayer.ts'
-import { observeComposition } from './keyboard-composition.ts'
-import { ShortcutKeys } from './ShortcutKeys.tsx'
 import css from './Menu.module.css'
 
 /** Selectable row (optionally with a nested submenu). */
@@ -15,8 +12,6 @@ export interface MenuItem {
   id: string
   label: ReactNode
   disabled?: boolean
-  /** Effective binding supplied by the command owner; omitted for unbound actions. */
-  shortcut?: { keys: readonly string[]; aria?: string | undefined }
   /** Leading icon (figma .Menu_cell gap 8). */
   icon?: ReactNode
   /** Destructive row: error-colored text/icon and danger hover fill. */
@@ -45,8 +40,6 @@ export type MenuEntry = MenuItem | MenuSeparator | MenuLabel
 export interface MenuItemButtonProps {
   /** Visible row label. */
   children: ReactNode
-  /** Effective binding supplied by the command owner; omitted for unbound actions. */
-  shortcut?: MenuItem['shortcut']
   /** Leading icon (figma .Menu_cell gap 8). */
   icon?: ReactNode
   /** Whether the row cannot be activated. */
@@ -71,7 +64,6 @@ export interface MenuItemButtonProps {
  * without any shared state. Closing the menu stays the owner's decision, as
  * it is for data rows.
  * @param props.children - visible row label.
- * @param props.shortcut - effective key labels and accessible combination.
  * @param props.icon - optional leading icon.
  * @param props.disabled - whether the row cannot be activated.
  * @param props.danger - whether to use the destructive row colors.
@@ -80,7 +72,7 @@ export interface MenuItemButtonProps {
  * @returns one menu-item row.
  */
 export function MenuItemButton({
-  children, shortcut, icon, disabled = false, danger = false, separatorBefore = false, onSelect,
+  children, icon, disabled = false, danger = false, separatorBefore = false, onSelect,
 }: MenuItemButtonProps) {
   return (
     <div className={css.itemWrap}>
@@ -90,12 +82,10 @@ export function MenuItemButton({
         role="menuitem"
         className={clsx(css.item, danger && css.danger)}
         disabled={disabled}
-        aria-keyshortcuts={shortcut?.aria}
         onClick={onSelect}
       >
         {icon !== undefined && <span className={css.itemIcon}>{icon}</span>}
         <span className={css.itemLabel}>{children}</span>
-        {shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys keys={shortcut.keys} className={css.shortcutKeys} /></span>}
       </button>
     </div>
   )
@@ -310,7 +300,6 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
       walkIndex.current = null
       return
     }
-    const composition = observeComposition(document)
     const onPointerDown = (e: PointerEvent) => {
       if (!(e.target instanceof Node)) return
       // The portaled list is outside the anchor subtree; check both.
@@ -319,15 +308,12 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
       onClose()
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (composition.guards(e) || isBehindModal(rootRef.current) || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return
       // Where the keyboard is, computed once: the menu owns it when it holds a
       // row or sits on its anchor region.
       const focused = document.activeElement
       const insideList = listRef.current?.contains(focused) === true
       const anchored = rootRef.current?.contains(focused) === true || insideList
-      if (e.key === 'Escape' && !e.shiftKey) {
-        e.preventDefault()
-        if (e.repeat) return
+      if (e.key === 'Escape') {
         // Closing hands the keyboard back when the menu had it — and, as this
         // primitive always did for autoFocus menus, when it held the keyboard
         // and lost it again (a row that unmounted under it).
@@ -396,16 +382,11 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
       if (document.activeElement instanceof HTMLIFrameElement) onClose()
     }
     document.addEventListener('pointerdown', onPointerDown)
-    const onEscape = (event: KeyboardEvent): void => { if (event.key === 'Escape') onKeyDown(event) }
-    const onOtherKey = (event: KeyboardEvent): void => { if (event.key !== 'Escape') onKeyDown(event) }
-    document.addEventListener('keydown', onOtherKey)
-    document.addEventListener('keydown', onEscape, true)
+    document.addEventListener('keydown', onKeyDown)
     window.addEventListener('blur', onWindowBlur)
     return () => {
-      composition.dispose()
       document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onOtherKey)
-      document.removeEventListener('keydown', onEscape, true)
+      document.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('blur', onWindowBlur)
     }
   }, [open, onClose, autoFocus])
@@ -444,7 +425,6 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
           role="menuitem"
           className={clsx(css.item, selected && (selection === 'fill' ? css.selectedFill : css.selected), entry.danger === true && css.danger)}
           disabled={entry.disabled}
-          aria-keyshortcuts={entry.shortcut?.aria}
           aria-haspopup={hasSub ? 'menu' : undefined}
           aria-expanded={hasSub ? subOpen : undefined}
           onFocus={hasSub ? () => { setOpenSubmenuId(entry.id) } : undefined}
@@ -458,7 +438,6 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
         >
           {entry.icon !== undefined && <span className={css.itemIcon}>{entry.icon}</span>}
           <span className={css.itemLabel}>{entry.label}</span>
-          {entry.shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys keys={entry.shortcut.keys} className={css.shortcutKeys} /></span>}
           {/* Selection marker is a trailing check (figma .Menu_cell) unless the fill mode carries it. */}
           {selected && selection === 'check' && <IconCheckOutlineRegular className={css.check} />}
         </button>
@@ -471,12 +450,10 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
                 role="menuitem"
                 className={css.item}
                 disabled={sub.disabled}
-                aria-keyshortcuts={sub.shortcut?.aria}
-                onClick={() => { onSelect?.(sub.id); refocusAfterSelection() }}
+                onClick={() => { onSelect?.(sub.id) }}
               >
                 {sub.icon !== undefined && <span className={css.itemIcon}>{sub.icon}</span>}
                 <span className={css.itemLabel}>{sub.label}</span>
-                {sub.shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys keys={sub.shortcut.keys} className={css.shortcutKeys} /></span>}
               </button>
             ))}
           </div>

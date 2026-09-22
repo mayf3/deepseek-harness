@@ -1,4 +1,3 @@
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type {
@@ -52,8 +51,6 @@ const workspaceState = (
 
 async function bench() {
   const ctx = new Context()
-  ctx.provide('shortcuts', { register: () => () => {}, catalog: createSnapshotStore([]) })
-  ctx.provide('uiConversation', {})
   await ctx.plugin(SlotRegistry).await()
   const create = vi.fn(async (input: { name: string } | { path: string }) => ({
     workspaceId: 'ws-new' as never,
@@ -184,7 +181,7 @@ describe('ui-workspace apply', () => {
 
   it('declares the services it drives', () => {
     expect(inject).toEqual([
-      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout', 'shortcuts',
+      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout',
     ])
   })
 
@@ -230,7 +227,7 @@ describe('ui-workspace apply', () => {
     // The menu list binds the row's open state into every entry's hook; the
     // hover-button list carries no common face.
     expect(b.slots.spec(MENU_ITEM)).toEqual({
-      kind: 'list', scope: 'root', inject: { hooks: { menuOpenState: menuOpenStateFactory, shortcuts: b.ctx.shortcuts.catalog } },
+      kind: 'list', scope: 'root', inject: { hooks: { menuOpenState: menuOpenStateFactory } },
     })
     expect(b.slots.spec(ROW_ACTION)).toEqual({ kind: 'list', scope: 'root' })
 

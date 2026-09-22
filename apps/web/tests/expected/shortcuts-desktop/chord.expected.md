@@ -1,5 +1,0 @@
-- listitem:
-  - text: New Session
-  - button "Remove shortcut for New Session"
-  - button "Edit shortcut for New Session"
-  - button "New Session A B": A B
