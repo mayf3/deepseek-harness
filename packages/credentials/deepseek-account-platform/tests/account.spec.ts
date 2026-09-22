@@ -239,7 +239,8 @@ it('stores a grant before redirecting, restores account presence, and signs out 
   expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=test&locale=zh_CN&login_source=desktop`)
   expect((await f.account.getState()).status).toBe('credential-stored')
   expect(await readFile(join(f.home, 'credentials.yaml'), 'utf8')).toContain('dsh_mock_test')
-  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test' })
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test',
+    requestHeaders: { 'x-client-platform': 'web' } })
   expect(await f.account.resolveToken('https://api.deepseek.com')).toBeUndefined()
   await f.account.signOut()
   expect((await f.account.getState()).status).toBe('signed-out')
@@ -780,13 +781,14 @@ it('carries the configured embedded frontend selector in the private Platform se
   await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
-  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test', embeddedPageDist: 'feat/test' })
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test', embeddedPageDist: 'feat/test',
+    requestHeaders: { 'x-client-platform': 'web' } })
 })
 
 it.each([
-  ['darwin', 'desktop-mac'], ['win32', 'desktop-win'], [null, undefined],
+  ['darwin', 'desktop-mac'], ['win32', 'desktop-win'], [null, 'web'],
 ] as const)('identifies %s Host API and embedded Platform requests', async (desktopPlatform, expected) => {
-  const f = await fixture(undefined, { Cookie: 'test_gate=synthetic', ...(desktopPlatform === null ? {} : { 'X-Client-Platform': 'web' }) },
+  const f = await fixture(undefined, { Cookie: 'test_gate=synthetic', 'X-Client-Platform': 'deployment-override' },
     false, {}, undefined, undefined, '', desktopPlatform)
   await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
@@ -797,8 +799,8 @@ it.each([
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
   await readDetails(f.account)
-  expect(await f.account.getPlatformSession()).toMatchObject({ requestHeaders: { cookie: 'test_gate=synthetic' } })
-  expect((await f.account.getPlatformSession())?.requestHeaders?.['x-client-platform']).toBe(expected)
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test',
+    requestHeaders: { cookie: 'test_gate=synthetic', 'x-client-platform': expected } })
   await f.account.signOut()
   await expect.poll(f.logoutCount).toBe(1)
   const paths = f.receivedHeaders.map(item => item.path)
