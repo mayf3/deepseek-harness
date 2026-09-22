@@ -14,7 +14,7 @@ import clsx from 'clsx'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  FileTypeIcon, IconFolderCloseRegular, IconFolderOpenRegular, IconRefreshOutlineRegular, Tooltip, classifyFileType,
+  FileTypeIcon, IconFolderCloseRegular, IconFolderOpenRegular, IconRefreshOutlineRegular, classifyFileType,
   IconPauseOutlineRegular, IconPlayOutlineRegular, PathLabel,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
@@ -138,7 +138,6 @@ export function FilesBody({
   useTabInfo, sessionId, useSessions, useStore, actions, start, refresh, setAutoRefresh, toggle, t,
 }: FilesBodyProps): ReactNode {
   const { tab } = useTabInfo()
-  useEffect(() => tab.actions.bindCommands({ refresh: () => { refresh(tab.id) } }), [tab.actions, tab.id, refresh])
   const { signal, actions: tabActions } = tab
   const cwd = useSessions(sessions => sessions.byId[sessionId]?.cwd)
   const state = useStore(store => store.byTab[tab.id])
@@ -198,18 +197,16 @@ export function FilesBody({
             {state.autoRefresh ? <IconPauseOutlineRegular /> : <IconPlayOutlineRegular />}
           </button>
         </span>
-        <Tooltip label={tab.refreshShortcut?.keys.length ? t('shortcut.hint', { label: t('reload'), keys: tab.refreshShortcut.keys.join(' ') }) : t('reload')} side="bottom" delayMs={500}>
-          <button
-            type="button"
-            className={css.tool}
-            aria-label={t('reload')}
-            aria-keyshortcuts={tab.refreshShortcut?.aria}
-            data-files-reload
-            onClick={reload}
-          >
-            <IconRefreshOutlineRegular />
-          </button>
-        </Tooltip>
+        <button
+          type="button"
+          className={css.tool}
+          aria-label={t('reload')}
+          title={t('reload')}
+          data-files-reload
+          onClick={reload}
+        >
+          <IconRefreshOutlineRegular />
+        </button>
       </div>
       <div
         ref={bodyRef}

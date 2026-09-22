@@ -21,7 +21,7 @@ import {
   IconChevronsUpDownOutlineRegular, IconClockOutlineRegular, IconCloseFillRegular,
   IconFlatListOutlineRegular, IconFolderCloseRegular, IconProjectAddOutlineRegular,
   IconSearchOutlineRegular, IconSlidersTwoOutlineRegular,
-  IconWorkspaceTreeOutlineRegular, Menu, Modal, Toast, Tooltip,
+  IconWorkspaceTreeOutlineRegular, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SessionListState, SessionSearchResultItem,
@@ -219,7 +219,6 @@ type SessionTreeProps = Pick<
   'useSessionStatus' | 'startSession' | 'open'
   | 'insertWorkspaceBefore' | 't' | 'usePanelInfo'
 > & PropsRenderSlots<'sidebar.workspaces.session.menu.item' | 'sidebar.workspaces.session.row.action'> & {
-  shortcuts: readonly import('@deepseek-ai/dsh-client-shortcuts/client').ShortcutCatalogEntry[]
   /** Always-mounted Session list snapshot. */
   list: SessionListState
   /** Host account home for POSIX hover-path abbreviation. */
@@ -264,7 +263,7 @@ function SessionTree({
   insertWorkspaceBefore,
   nestWorkspaces, groupExpansion, setGroupExpanded,
   setSessionOrder, home, t,
-  revealSessionId, onSessionRevealed, shortcuts,
+  revealSessionId, onSessionRevealed,
 }: SessionTreeProps) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
   const statuses = useSessionStatus(s => s)
@@ -467,7 +466,6 @@ function SessionTree({
           }}
       >
         <ProjectRowItem
-          newShortcut={shortcuts.find(row => row.id === 'session.new')}
           group={group}
           containsCurrentDescendant={currentAncestors.has(group.key)}
           home={home}
@@ -829,23 +827,10 @@ export function WorkspaceBrowser({
   searchResultLimit,
   useDirectoryFlow,
   useHostInfo,
-  useShortcuts,
-  useWorkspaceShortcuts,
-  requestSearch,
-  requestAddWorkspace,
-  closeAddWorkspace,
-  setDirectoryBusy,
-  dismissForkError,
   renderSlot,
   t,
 }: WorkspaceBrowserProps) {
   const home = useHostInfo(info => info.home)
-  const shortcuts = useShortcuts(rows => rows)
-  const searchShortcut = shortcuts.find(row => row.id === 'session.search')
-  const addShortcut = shortcuts.find(row => row.id === 'workspace.add')
-  const shortcutState = useWorkspaceShortcuts(state => state)
-  const hint = (label: string, keys: readonly string[] | undefined) => keys?.length
-    ? t('shortcut.hint', { label, keys: keys.join(' ') }) : label
   // Ordering remains live while the rail or search replaces the list body.
   const list = useSessions(state => state)
   const workspaces = useWorkspaces(state => state.items)
@@ -990,7 +975,7 @@ export function WorkspaceBrowser({
   const searchInput = useRef<HTMLInputElement | null>(null)
   // Section-header ＋ opens the picker menu (same popover in wide and rail
   // states; the menu anchors on this button).
-  const wsPickerOpen = shortcutState.addRequested
+  const [wsPickerOpen, setWsPickerOpen] = useState(false)
   const wsPlusRef = useRef<HTMLButtonElement>(null)
   const composingRef = useRef(false)
 
@@ -1023,15 +1008,6 @@ export function WorkspaceBrowser({
       return () => { window.clearTimeout(timer) }
     }
   }, [wide, searchOnExpand])
-  useEffect(() => {
-    if (shortcutState.searchRequest === 0) return
-    closeAddWorkspace()
-    setSearchExpanded(true)
-    if (!wide) {
-      setSearchOnExpand(true)
-      expandSidebar()
-    } else searchInput.current?.focus({ preventScroll: true })
-  }, [shortcutState.searchRequest])
 
   useEffect(() => {
     if (!wide || !searchExpanded || searchOnExpand) return
@@ -1177,20 +1153,20 @@ export function WorkspaceBrowser({
               ref={searchRoot}
               className={clsx(css.search, searchExpanded && css.searchExpanded)}
               onClick={() => {
-                closeAddWorkspace()
+                setWsPickerOpen(false)
                 setSearchExpanded(true)
                 searchInput.current?.focus()
               }}
             >
-              <Tooltip label={hint(t('search'), searchShortcut?.keys)} side="bottom" delayMs={500} disabled={searchExpanded}>
+              <Tooltip label={t('search')} side="bottom" delayMs={500} disabled={searchExpanded}>
                 <button
                   type="button"
                   className={css.searchButton}
                   aria-label={t('search.sessions.aria')}
-                  aria-keyshortcuts={searchShortcut?.aria}
                   aria-expanded={searchExpanded}
                   onClick={() => {
-                    requestSearch()
+                    setWsPickerOpen(false)
+                    setSearchExpanded(true)
                   }}
                 >
                   <IconSearchOutlineRegular size={searchExpanded ? 11 : 14} />
@@ -1244,15 +1220,14 @@ export function WorkspaceBrowser({
               picking affordance has nothing to offer here: the region hides the
               button rather than leaving a dead one in the header. */}
           {directoryFlowAvailable && (
-            <Tooltip label={hint(t('workspace.add'), addShortcut?.keys)} side="bottom" delayMs={500}>
+            <Tooltip label={t('workspace.add')} side="bottom" delayMs={500}>
               <button
                 ref={wsPlusRef}
                 type="button"
                 className={css.iconButton}
                 aria-label={t('workspace.add')}
-                aria-keyshortcuts={addShortcut?.aria}
                 onClick={() => {
-                  requestAddWorkspace()
+                  setWsPickerOpen(v => !v)
                 }}
               >
                 <IconProjectAddOutlineRegular size={wide ? 16 : 18} />
@@ -1270,26 +1245,26 @@ export function WorkspaceBrowser({
           useDirectoryFlow={useDirectoryFlow}
           renderDirectoryFlow={owner => renderSlot('sidebar.workspaces.directoryFlow', owner)}
           addOnly
-          onBusyChange={setDirectoryBusy}
           side="right"
           onPick={(workspaceId) => {
-            closeAddWorkspace()
+            setWsPickerOpen(false)
             startSession(workspaceId)
           }}
-          onClose={() => { closeAddWorkspace() }}
+          onClose={() => { setWsPickerOpen(false) }}
         />
       </div>
 
       {/* The collapsed rail keeps search as its own 36px control. */}
       {!wide && <div className={css.search}>
-        <Tooltip label={hint(t('search'), searchShortcut?.keys)}>
+        <Tooltip label={t('search')}>
           <button
             type="button"
             className={css.searchButton}
             aria-label={t('search.sessions.aria')}
-            aria-keyshortcuts={searchShortcut?.aria}
             onClick={() => {
-              requestSearch()
+              setSearchExpanded(true)
+              setSearchOnExpand(true)
+              expandSidebar()
             }}
           >
             <IconSearchOutlineRegular size={18} />
@@ -1340,7 +1315,6 @@ export function WorkspaceBrowser({
               <SessionTree
                 usePanelInfo={usePanelInfo}
                 list={list}
-                shortcuts={shortcuts}
                 useSessionStatus={useSessionStatus}
                 onSessionRenameRequest={requestSessionRename}
                 renderSlot={renderSlot}
@@ -1433,9 +1407,6 @@ export function WorkspaceBrowser({
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
-      {shortcutState.forkError !== null && <Toast key={shortcutState.forkError.seq}
-        text={t(shortcutState.forkError.reason === 'unavailable' ? 'shortcut.noCompletedTurn' : 'shortcut.forkFailed')}
-        onDone={dismissForkError} />}
     </div>
   )
 }

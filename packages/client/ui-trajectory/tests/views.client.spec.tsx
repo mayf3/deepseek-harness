@@ -279,7 +279,6 @@ async function bench(snapshot = historySnapshot(NODES)) {
   }
   const binding: ConversationBinding = {
     snapshot: conversationStore,
-    timeline: createSnapshotStore({ turnOrder: [], turns: new Map() }),
     activate: () => {},
     target: target => targetSources[target],
   }

@@ -40,7 +40,7 @@ function harness() {
     const occurrence = domain.occurrence(SESSION, { id: tabId })
     navigationSources.set(tabId, occurrence.navigation)
     return tabInfoFactory(standard, {
-      tabId, title: false, fullscreen: false, active: true, shortcuts: [],
+      tabId, title: false, fullscreen: false, active: true,
       signal: occurrence.signal, actions: occurrence.tabActions, useStore, useTabNavigation,
     })
   }
