@@ -10,7 +10,7 @@ import {
   createSnapshotStore, type ObservableSnapshot, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-store'
 import type {
-  ConversationPublication, ConversationTimelineSnapshot, ConversationViewSnapshotMap,
+  ConversationPublication, ConversationViewSnapshotMap,
   ConversationViewSnapshotStore,
 } from '../contract/conversation.ts'
 import type { ConversationSnapshot } from '../contract/snapshot.ts'
@@ -19,7 +19,7 @@ import type {
 } from '../contract/request-inspection.ts'
 import { inspectRequestPrompt } from '../contract/request-inspection.ts'
 import { inspectSystemPrompt, type SystemPromptState } from '../contract/system-prompt.ts'
-import { ConversationNodeAssembler } from './assembler.ts'
+import { assemblerOpenTurn, ConversationNodeAssembler } from './assembler.ts'
 import { ConversationEventRegistry } from './event-registry.ts'
 import { HistoricalImageCache } from './historical-images.ts'
 import { ConversationViewRegistry } from './view-registry.ts'
@@ -28,8 +28,6 @@ import { ConversationGroupRegistry } from './group-registry.ts'
 /** Observable faces published for one Session's Conversation assembly. */
 export interface ConversationBinding {
   readonly snapshot: ObservableSnapshot<ConversationSnapshot>
-  /** Loaded Turn/Step timeline; lifecycle events publish synchronously even without an active View. */
-  readonly timeline: ObservableSnapshot<ConversationTimelineSnapshot>
   /**
    * Add one selected target to the Session's monotonic active set.
    * @param target - registered or subsequently registered Conversation target.
@@ -49,7 +47,7 @@ export interface ConversationBinding {
 
 class BoundConversation implements ConversationBinding {
   readonly snapshot: SnapshotStore<ConversationSnapshot>
-  readonly timeline: SnapshotStore<ConversationTimelineSnapshot>
+  readonly openTurn: SnapshotStore<number | undefined>
   private readonly viewStore: ConversationViewSnapshotStore
   private readonly targetSources = new Map<string, ObservableSnapshot<unknown>>()
   private revision = -1
@@ -62,7 +60,7 @@ class BoundConversation implements ConversationBinding {
   ) {
     this.viewStore = assembler
     this.snapshot = createSnapshotStore(this.currentSnapshot())
-    this.timeline = createSnapshotStore(assembler.timeline())
+    this.openTurn = createSnapshotStore(assemblerOpenTurn(assembler))
     this.replace(feed.getSnapshot())
     this.disposeFeed = feed.subscribe(() => {
       this.accept(feed.getSnapshot())
@@ -90,7 +88,7 @@ class BoundConversation implements ConversationBinding {
 
   activate(target: string): void {
     if (this.assembler.activateTarget(target)) this.snapshot.set(this.currentSnapshot())
-    this.timeline.set(this.assembler.timeline())
+    this.openTurn.set(assemblerOpenTurn(this.assembler))
   }
 
   rebuild(): void { this.publish(this.assembler.rebuildRegistry()) }
@@ -162,7 +160,7 @@ class BoundConversation implements ConversationBinding {
 
   private flush(): void {
     if (this.assembler.flush()) this.snapshot.set(this.currentSnapshot())
-    this.timeline.set(this.assembler.timeline())
+    this.openTurn.set(assemblerOpenTurn(this.assembler))
   }
 
   private currentSnapshot(): ConversationSnapshot {
@@ -179,6 +177,20 @@ interface BindingRecord {
   disposeScope: () => void
 }
 
+// The class initializes package-internal access without exposing it on the service or public binding.
+let resolveOpenTurn: (conversation: UiConversation, binding: SessionBinding) => ObservableSnapshot<number | undefined>
+
+/**
+ * Resolve the open-turn source owned by one live Session binding.
+ * @param conversation - Conversation assembly owner.
+ * @param binding - active Session Controller binding.
+ * @returns stable source publishing turn changes synchronously, including without an active View.
+ * @throws if the binding is no longer current for its Session.
+ */
+export function conversationOpenTurn(conversation: UiConversation, binding: SessionBinding): ObservableSnapshot<number | undefined> {
+  return resolveOpenTurn(conversation, binding)
+}
+
 /** Root service owning Conversation registries and per-Session bindings. */
 export class UiConversation extends Service {
   /** Registry of event matchers and target snapshot builders. */
@@ -189,6 +201,10 @@ export class UiConversation extends Service {
   readonly groups: ConversationGroupRegistry
   private readonly bindings = new WeakMapWithValues<SessionBinding, BindingRecord>()
   private readonly images: HistoricalImageCache
+
+  static {
+    resolveOpenTurn = (conversation, binding) => conversation.resolveBinding(binding).openTurn
+  }
 
   /**
    * @param ctx - owning Client context.
@@ -231,6 +247,10 @@ export class UiConversation extends Service {
    * @returns stable Conversation binding.
    */
   binding(source: SessionBinding | SessionId): ConversationBinding {
+    return this.resolveBinding(source)
+  }
+
+  private resolveBinding(source: SessionBinding | SessionId): BoundConversation {
     const sessionId = typeof source === 'string' ? source : source.sessionId
     const owner = typeof source === 'string' ? this.sessions.binding(source) : source
     if (owner === undefined) throw new Error(`uiConversation.binding: unknown session "${sessionId}"`)

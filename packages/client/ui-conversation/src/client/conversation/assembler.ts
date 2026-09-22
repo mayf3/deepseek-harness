@@ -6,7 +6,7 @@ import type {
   ConversationContextReader, ConversationLocationData, ConversationMatch,
   ConversationNodeContext, ConversationNodeDefinition, ConversationPreviousContext,
   ConversationLocationDataScope, ConversationPublication, ConversationViewBuilder,
-  ConversationStartMatch, ConversationTimelineSnapshot,
+  ConversationStartMatch,
   ConversationViewDefinition, ConversationViewNode, ConversationViewSnapshotMap,
   ConversationViewSnapshotStore,
 } from '../contract/conversation.ts'
@@ -173,6 +173,18 @@ export interface ConversationGroupDefinitions {
 
 const NO_GROUPS: ConversationGroupDefinitions = { entries: () => [], forTarget: () => undefined }
 
+// The class initializes package-internal read access to its private location index.
+let readOpenTurn: (assembler: ConversationNodeAssembler) => number | undefined
+
+/**
+ * Read the current open turn without activating a View.
+ * @param assembler - Session-owned incremental assembler.
+ * @returns the latest turn number when its start is loaded and it remains open, otherwise undefined.
+ */
+export function assemblerOpenTurn(assembler: ConversationNodeAssembler): number | undefined {
+  return readOpenTurn(assembler)
+}
+
 /**
  * Session-owned incremental engine that assembles business Contexts from a
  * contiguous Event window and materializes registered view snapshots.
@@ -196,6 +208,15 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
   private replacePending = true
   private timelineDirty = true
 
+  static {
+    readOpenTurn = (assembler) => {
+      const snapshot = assembler.locationIndex.snapshot()
+      const latest = snapshot.turnOrder.at(-1)
+      const turn = latest === undefined ? undefined : snapshot.turns.get(latest)
+      return turn?.status === 'open' && turn.start !== undefined ? turn.turn : undefined
+    }
+  }
+
   /**
    * @param eventDefinitions - live Event Definition registry.
    * @param viewDefinitions - live view builder registry.
@@ -208,12 +229,6 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
   ) {
     this.resetViewBuilders()
   }
-
-  /**
-   * Read the assembled Turn/Step timeline without activating a presentation target.
-   * @returns the immutable timeline shared with target builders.
-   */
-  timeline(): ConversationTimelineSnapshot { return this.locationIndex.snapshot() }
 
   /**
    * Replace the complete loaded window after open, resync, or gap repair.

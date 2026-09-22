@@ -16,6 +16,7 @@ import {
 import type {
   ConversationNodeDefinition, ConversationViewDefinition, ConversationViewNode,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { conversationOpenTurn } from '../src/client/conversation/assembly.ts'
 
 const SESSION_ID = 'resident' as SessionId
 
@@ -143,37 +144,73 @@ async function bootRegistries(): Promise<{
 }
 
 describe('Conversation registries', () => {
-  it('publishes lifecycle timeline without an active view and retains the captured completed turn', async () => {
+  it('publishes open turns without an active view and detaches when the Session scope ends', async () => {
     const { uiConversation, binding } = await bootRegistries()
     const conversation = uiConversation.binding(binding)
     const source = binding.eventSource as MutableSessionEventSource
-    const listener = vi.fn()
-    const unsubscribe = conversation.timeline.subscribe(listener)
-    const initial = conversation.timeline.getSnapshot()
-    expect(initial.turnOrder).toEqual([])
+    const openTurn = conversationOpenTurn(uiConversation, binding)
+    const published: (number | undefined)[] = []
+    const listener = vi.fn(() => { published.push(openTurn.getSnapshot()) })
+    const unsubscribe = openTurn.subscribe(listener)
+    expect(openTurn.getSnapshot()).toBeUndefined()
+    expect(conversation.snapshot.getSnapshot().activeTargets.size).toBe(0)
     source.append({ type: 'event', event: {
       type: 'turn/start', seq: SessionSeq(1), time: 1, data: { turn: 1 },
     } })
-    expect(conversation.timeline.getSnapshot().turns.get(1)).toMatchObject({ status: 'open', start: { seq: 1 } })
+    expect(openTurn.getSnapshot()).toBe(1)
+    source.append({ type: 'event', event: {
+      type: 'step/start', seq: SessionSeq(2), time: 2, data: { turn: 1, step: 1 },
+    } })
     expect(listener).toHaveBeenCalledOnce()
     source.append({ type: 'event', event: {
-      type: 'turn/end', seq: SessionSeq(2), time: 2, data: { turn: 1, reason: { kind: 'completed' } },
+      type: 'turn/end', seq: SessionSeq(3), time: 3, data: { turn: 1, reason: { kind: 'completed' } },
     } })
-    const completed = conversation.timeline.getSnapshot()
-    expect(completed.turns.get(1)).toMatchObject({ status: 'closed', end: { seq: 2 } })
+    expect(openTurn.getSnapshot()).toBeUndefined()
     source.append({ type: 'event', event: {
-      type: 'turn/start', seq: SessionSeq(3), time: 3, data: { turn: 2 },
+      type: 'turn/start', seq: SessionSeq(4), time: 4, data: { turn: 2 },
     } })
-    expect(conversation.timeline.getSnapshot().turnOrder).toEqual([1, 2])
-    expect(completed.turnOrder).toEqual([1])
-    expect(completed.turns.get(1)?.end?.seq).toBe(2)
-    expect(conversation.timeline).toBe(uiConversation.binding(binding).timeline)
+    expect(openTurn.getSnapshot()).toBe(2)
+    expect(published).toEqual([1, undefined, 2])
+    expect(conversationOpenTurn(uiConversation, binding)).toBe(openTurn)
+    expect(conversation.snapshot.getSnapshot().activeTargets.size).toBe(0)
     unsubscribe()
     listener.mockClear()
     source.append({ type: 'event', event: {
-      type: 'turn/start', seq: SessionSeq(4), time: 4, data: { turn: 3 },
+      type: 'turn/end', seq: SessionSeq(5), time: 5, data: { turn: 2, reason: { kind: 'completed' } },
+    } })
+    expect(openTurn.getSnapshot()).toBeUndefined()
+    expect(listener).not.toHaveBeenCalled()
+    const unsubscribeAgain = openTurn.subscribe(listener)
+    await binding.ctx.fiber.dispose()
+    listener.mockClear()
+    source.append({ type: 'event', event: {
+      type: 'turn/start', seq: SessionSeq(6), time: 6, data: { turn: 3 },
     } })
     expect(listener).not.toHaveBeenCalled()
+    expect(openTurn.getSnapshot()).toBeUndefined()
+    unsubscribeAgain()
+  })
+
+  it('requires a loaded turn start and follows prepended history and replacement windows', async () => {
+    const { uiConversation, binding } = await bootRegistries()
+    const source = binding.eventSource as MutableSessionEventSource
+    source.replace([{ type: 'event', event: {
+      type: 'step/start', seq: SessionSeq(2), time: 2, data: { turn: 7, step: 1 },
+    } }], true)
+    const openTurn = conversationOpenTurn(uiConversation, binding)
+    expect(openTurn.getSnapshot()).toBeUndefined()
+    source.prepend([{ type: 'event', event: {
+      type: 'turn/start', seq: SessionSeq(1), time: 1, data: { turn: 7 },
+    } }], false)
+    expect(openTurn.getSnapshot()).toBe(7)
+    source.replace([{ type: 'event', event: {
+      type: 'turn/end', seq: SessionSeq(3), time: 3, data: { turn: 7, reason: { kind: 'completed' } },
+    } }], true)
+    expect(openTurn.getSnapshot()).toBeUndefined()
+    source.replace([{ type: 'event', event: {
+      type: 'turn/start', seq: SessionSeq(4), time: 4, data: { turn: 8 },
+    } }], false)
+    expect(openTurn.getSnapshot()).toBe(8)
   })
 
   it('publishes frame-paced updates after three animation frames and lets immediate updates preempt them', async () => {

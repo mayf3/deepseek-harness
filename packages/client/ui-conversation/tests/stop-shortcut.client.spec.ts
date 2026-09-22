@@ -5,7 +5,7 @@ import type { Shortcuts, ShortcutContext, ShortcutGesture } from '@deepseek-ai/d
 import { makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { MutableSessionEventSource } from '@deepseek-ai/dsh-api-session-controller/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
-import { UiConversation } from '../src/client/conversation/assembly.ts'
+import { conversationOpenTurn, UiConversation } from '../src/client/conversation/assembly.ts'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
 import { ConversationController } from '../src/client/service.ts'
@@ -46,7 +46,8 @@ async function bench() {
     const scoped = runtime.sessions.scope(sessionId)!.get('conversation') as ConversationController
     void scoped.cancel()
   }
-  const dispose = installStopShortcut(shortcuts, runtime.sessions, conversation, runtime.ctx.uiSession, stop)
+  const dispose = installStopShortcut(shortcuts, runtime.sessions,
+    binding => conversationOpenTurn(conversation, binding), runtime.ctx.uiSession, stop)
   disposers.push(dispose)
   const root = document.createElement('div')
   root.dataset.conversationSession = 's1'
