@@ -5,7 +5,7 @@ import type {
   TeamMemberProjection,
   TeamTaskView as TeamTask,
 } from '@deepseek-ai/dsh-experimental-agent-team/client'
-import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionProjectionRefreshOptions } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   IconCloseOutlineRegular, IconRefreshOutlineRegular, IconUserOutlineRegular, StateDot,
   useAnchoredPosition, useDismissOnOutsidePointer, type StateDotState,
@@ -17,8 +17,8 @@ import css from './TeamAction.module.css'
 
 /** Business actions injected by the browser plugin. */
 export interface TeamActionInjected {
-  /** Request another Session's projection baseline once per connection, or retry a failed read. */
-  loadProjections: (sessionId: SessionId) => void
+  /** Read a Session's baseline, optionally refreshing after any existing read. */
+  loadProjections: (sessionId: SessionId, options?: SessionProjectionRefreshOptions) => void
   openTeammate: (sessionId: SessionId, member: TeamMemberProjection) => void
 }
 
@@ -135,22 +135,14 @@ export function TeamAction({
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
   const isLead = leadSessionId === sessionId
   const currentTeam = useProjection('agentTeam')
-  const openState = useSession(snapshot => snapshot.openState)
-  const openError = useSession(snapshot => snapshot.openError)
   const parentTeam = useSessions(state => isLead
     ? undefined
     : state.projectionsBySession[leadSessionId]?.values.agentTeam)
-  const parentState = useSessions(state => isLead
-    ? undefined
-    : state.projectionsBySession[leadSessionId]?.state)
-  const parentError = useSessions(state => isLead
-    ? null
-    : state.projectionsBySession[leadSessionId]?.error ?? null)
+  const readState = useSessions(state => state.projectionsBySession[leadSessionId]?.state)
+  const projectionError = useSessions(state => state.projectionsBySession[leadSessionId]?.error ?? null)
   const team = isLead ? currentTeam : parentTeam
-  const readError = isLead
-    ? openState === 'error' ? openError : null
-    : parentState === 'error' ? parentError : null
-  const ready = isLead ? openState === 'open' : parentState === 'ready'
+  const readError = readState === 'error' ? projectionError : null
+  const ready = readState === 'ready'
   const members = team?.members
 
   useEffect(() => {
@@ -159,8 +151,8 @@ export function TeamAction({
   }, [sessionId])
 
   useEffect(() => {
-    if (open && !isLead) loadProjections(leadSessionId)
-  }, [open, isLead, leadSessionId, loadProjections])
+    if (open) loadProjections(leadSessionId, { force: true })
+  }, [open, leadSessionId, loadProjections])
 
   useEffect(() => {
     if (!open) return
@@ -227,11 +219,9 @@ export function TeamAction({
             <div className={css.error} role="alert">
               <StateDot state="error" />
               <span className={css.spacer}>{failureText(readError)}</span>
-              {!isLead && (
-                <button type="button" className={css.iconButton} aria-label={t('retry')} onClick={() => { loadProjections(leadSessionId) }}>
-                  <IconRefreshOutlineRegular size={14} />
-                </button>
-              )}
+              <button type="button" className={css.iconButton} aria-label={t('retry')} onClick={() => { loadProjections(leadSessionId, { force: true }) }}>
+                <IconRefreshOutlineRegular size={14} />
+              </button>
             </div>
           )}
           {team === undefined && readError === null && (

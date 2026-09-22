@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 检查并导航 roster
 
-触发按钮显示 teammate 数量，panel 显示 Lead Session `agentTeam` 投影中的 roster 与任务板，因此 agent 创建的任务或进入 `active` 的 teammate 会在 panel 打开期间直接出现。当前 Session 通过普通会话加载提供 Team 基线。在 teammate 会话中，打开 panel 时每次连接请求一次 Lead 的投影基线，之前读取成功则跳过；父会话读取失败会在最后有效 Team 旁显示重试控件，重连后会重新加载。当前 Session 的加载失败沿用会话生命周期，并显示在 panel 中，不提供单独的投影重试。读取成功但缺少 Team 能力时显示不可用提示。panel 还会请求当前 Session 与 Lead 之外 active 成员的投影基线，包括尚未打开的持久 Session，并在新成员进入 active 时加载它。Roster row 展示持久 name 与状态：`failed` 与 `provisioning` 来自持久成员 phase，`running` 或 `inactive` 来自成员 Session 的实时状态。当成员 Session 的 `modelSelection` 投影记录了持久选择或请求时显示 model。provisioning 和 running 成员使用共享 ongoing loading，inactive 成员使用 idle 灰点，failed 成员使用 error 红点。选择健康 teammate 时，系统直接根据其 Lead 与 roster 身份打开普通的 `{ parentSessionId, childSessionId, mode: 'continuable' }` address，不刷新或检查 parent catalog。Host 在打开历史时校验 parent、child 与 mode。History 与后续人类提示词继续使用稳定 addressed-subagent 会话路径；本包不会添加 Team 专用 address 字段。
+触发按钮显示 teammate 数量，panel 显示 Lead Session `agentTeam` 投影中的 roster 与任务板，因此 agent 创建的任务或进入 `active` 的 teammate 会在 panel 打开期间直接出现。打开 panel 时会刷新 Lead 的投影基线，包括在会话打开后才启用 Team 插件的情况。若已有读取正在进行，本次刷新会在其结束后开始。读取失败时，最后有效 Team 旁会显示重试控件；重连会重新加载已请求的投影。读取成功但缺少 Team 能力时显示不可用提示。panel 还会请求当前 Session 与 Lead 之外 active 成员的投影基线，包括尚未打开的持久 Session，并在新成员进入 active 时加载它。Roster row 展示持久 name 与状态：`failed` 与 `provisioning` 来自持久成员 phase，`running` 或 `inactive` 来自成员 Session 的实时状态。当成员 Session 的 `modelSelection` 投影记录了持久选择或请求时显示 model。provisioning 和 running 成员使用共享 ongoing loading，inactive 成员使用 idle 灰点，failed 成员使用 error 红点。选择健康 teammate 时，系统直接根据其 Lead 与 roster 身份打开普通的 `{ parentSessionId, childSessionId, mode: 'continuable' }` address，不刷新或检查 parent catalog。Host 在打开历史时校验 parent、child 与 mode。History 与后续人类提示词继续使用稳定 addressed-subagent 会话路径；本包不会添加 Team 专用 address 字段。
 
 ### 查看任务板
 
@@ -47,7 +47,7 @@ kind: "package-reference"
 
 Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversation-header slot；它不挂载任何 Remote namespace。Dispose plugin fiber 会移除这两项 registration。
 
-面板渲染在会话容器外，并保持在视口范围内。打开时焦点移入面板；按 Escape 或选择关闭按钮时，焦点返回触发按钮。点击外部或将焦点移出面板与触发按钮时，面板关闭，但不会将焦点移回。组件通过 `useProjection('agentTeam')` 读取当前 Session 的 Team，通过 `useProjection('modelSelection')` 读取其 model。在 teammate 会话中，`useSession` 提供 Lead 身份，独立的 `useSessions` selector 分别读取父会话的 Team 值、基线读取状态和错误。每个 roster row 只选择自己的 model 和运行状态；panel 不订阅完整投影集合，也不订阅完整摘要或状态集合。它仅有的注入回调是读取 Session 的投影基线与打开 teammate。切换会话会关闭面板并清除导航失败。
+面板渲染在会话容器外，并保持在视口范围内。打开时焦点移入面板；按 Escape 或选择关闭按钮时，焦点返回触发按钮。点击外部或将焦点移出面板与触发按钮时，面板关闭，但不会将焦点移回。组件通过 `useProjection('agentTeam')` 读取当前 Session 的 Team，通过 `useProjection('modelSelection')` 读取其 model。在 teammate 会话中，`useSession` 提供 Lead 身份，`useSessions` 选择父会话的 Team 值。两种会话都通过独立的 `useSessions` selector 读取 Lead 的基线读取状态和错误。每个 roster row 只选择自己的 model 和运行状态；panel 不订阅完整投影集合，也不订阅完整摘要或状态集合。它仅有的注入回调是读取 Session 的投影基线与打开 teammate。切换会话会关闭面板并清除导航失败。
 
 | 文件 | 职责 |
 |---|---|
@@ -64,7 +64,7 @@ Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversati
 ## 进一步探索
 
 - [Agent Teams bundle](../agent-team-profile/README.zh.md)——挂载本 Client plugin 的公开 opt-in bundle。
-- [Agent Teams service](../agent-team/README.zh.md)——权威 roster、task、投影与 Remote 行为。
+- [Agent Teams service](../agent-team/README.zh.md)——权威 roster、task 与投影行为。
 - [会话 UI](../../client/ui-conversation/README.zh.md)——稳定 header slot 与 addressed-subagent 导航表层。
 - [实验性包](../README.zh.md)——孵化状态与发布规则。
 

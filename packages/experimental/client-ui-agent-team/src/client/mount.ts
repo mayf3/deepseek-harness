@@ -36,8 +36,8 @@ export function registerAgentTeamUi(ctx: ClientContext): void {
   }
 
   const actions: TeamActionInjected = {
-    loadProjections(sessionId: SessionId): void {
-      void sessions.refreshProjections(sessionId)
+    loadProjections(sessionId, options): void {
+      void sessions.refreshProjections(sessionId, options)
     },
     openTeammate(sessionId: SessionId, member: TeamMemberProjection): void {
       if (member.role !== 'teammate') return

@@ -927,6 +927,63 @@ describe('subagent catalogs', () => {
     expect(remote.session.projections.mock.calls.map(([request]) => request)).toHaveLength(1)
   })
 
+  it('refreshes a successful baseline to discover a newly available projection', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    remote.session.projections.mockResolvedValueOnce(ok({ asOfSeq: 0, values: {} }))
+    await manager.refreshProjections(S1)
+    remote.session.projections.mockResolvedValueOnce(ok({ asOfSeq: 0, values: { title: 'new capability' } }))
+    await manager.refreshProjections(S1, { force: true })
+    expect(manager.getListSnapshot().projectionsBySession[S1]?.values.title).toBe('new capability')
+    await manager.refreshProjections(S1)
+    expect(remote.session.projections).toHaveBeenCalledTimes(2)
+  })
+
+  it('coalesces forced reads behind an older request without regressing newer frames', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    onTestFinished(() => manager.dispose())
+    const old = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.projections>>>()
+    const fresh = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.projections>>>()
+    remote.session.projections.mockImplementationOnce(() => old.promise)
+    remote.session.projections.mockImplementationOnce(() => fresh.promise)
+    const initial = manager.refreshProjections(S1)
+    const refresh = manager.refreshProjections(S1, { force: true })
+    expect(manager.refreshProjections(S1, { force: true })).toBe(refresh)
+    expect(manager.refreshProjections(S1)).toBe(refresh)
+    expect(remote.session.projections).toHaveBeenCalledOnce()
+    old.resolve(ok({ asOfSeq: 0, values: {} }))
+    await initial
+    expect(remote.session.projections).toHaveBeenCalledTimes(2)
+    manager.handleControlFrame({ type: 'projection', sessionId: S1, key: 'title', seq: 2, value: 'live title' })
+    fresh.resolve(ok({ asOfSeq: 1, values: { title: 'older title', subagentCatalog: [] } }))
+    await refresh
+    expect(manager.getListSnapshot().projectionsBySession[S1]).toMatchObject({
+      state: 'ready', values: { title: 'live title', subagentCatalog: [] },
+    })
+  })
+
+  it.for(['remove', 'reconnect', 'dispose'] as const)(
+    'cancels a queued forced read on %s',
+    async (action, { mock, remote }) => {
+      const manager = makeManager(mock, remote)
+      onTestFinished(() => manager.dispose())
+      const old = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.projections>>>()
+      remote.session.projections.mockImplementationOnce(() => old.promise)
+      remote.session.projections.mockResolvedValue(ok({ asOfSeq: 0, values: { title: 'new connection' } }))
+      const initial = manager.refreshProjections(S1)
+      const refresh = manager.refreshProjections(S1, { force: true })
+      let disposal: Promise<void> | undefined
+      if (action === 'remove') manager.handleSessionRemoved(S1)
+      else if (action === 'reconnect') manager.handleConnected()
+      else disposal = manager.dispose()
+      old.resolve(ok({ asOfSeq: 0, values: { title: 'old connection' } }))
+      await Promise.all([initial, refresh, disposal])
+      expect(remote.session.projections).toHaveBeenCalledTimes(action === 'reconnect' ? 2 : 1)
+      expect(manager.getListSnapshot().projectionsBySession[S1]?.values.title)
+        .toBe(action === 'reconnect' ? 'new connection' : undefined)
+    },
+  )
+
   it('uses current Session status rather than the time an initial catalog read started', async ({ mock, remote }) => {
     const response = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.projections>>>()
     remote.session.projections.mockImplementation(() => response.promise)

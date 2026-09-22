@@ -21,6 +21,12 @@ export type { AgentContext } from '../scope.ts'
 /** Known Session identity or durable direct-parent subagent address; an address owns no lifetime. */
 export type SessionTarget = SessionId | SubagentAddress
 
+/** Cache policy for an explicit Session projection read. */
+export interface SessionProjectionRefreshOptions {
+  /** Read again after any current request; concurrent forced reads share that follow-up. */
+  readonly force?: boolean
+}
+
 /** One independent use of an exact Client generation, without Host Agent ownership. */
 export interface SessionReference extends Disposable {
   readonly sessionId: SessionId
@@ -96,11 +102,12 @@ export interface ISessions {
   subagentAddress(id: SessionId): SubagentAddress | undefined
 
   /**
-   * Load all Session projections once per connection; retry an unsuccessful initial read.
+   * Load all Session projections once per connection; retry unsuccessful reads.
    * @param sessionId - Session to inspect without opening its conversation.
-   * @returns completion of the current or newly started refresh.
+   * @param options - force a fresh read even after a successful baseline; a running read finishes first.
+   * @returns completion of the requested read; removal, reconnect, or disposal cancels a queued refresh.
    */
-  refreshProjections(sessionId: SessionId): Promise<void>
+  refreshProjections(sessionId: SessionId, options?: SessionProjectionRefreshOptions): Promise<void>
 
   /**
    * Refresh the Host-authoritative Session list.

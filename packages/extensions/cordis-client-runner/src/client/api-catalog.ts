@@ -201,10 +201,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a stable read-only source across same-id generations, with zero counts when none is live.',
       },
       {
-        signature: 'refreshProjections(sessionId: SessionId): Promise<void>',
-        description: 'Load all Session projections once per connection; retry an unsuccessful initial read.',
-        parameters: [{ name: 'sessionId', description: 'Session to inspect without opening its conversation.' }],
-        returns: 'completion of the current or newly started refresh.',
+        signature: 'refreshProjections(sessionId: SessionId, options?: SessionProjectionRefreshOptions): Promise<void>',
+        description: 'Load all Session projections once per connection; retry unsuccessful reads.',
+        parameters: [{ name: 'sessionId', description: 'Session to inspect without opening its conversation.' }, { name: 'options', description: 'force a fresh read even after a successful baseline; a running read finishes first.' }],
+        returns: 'completion of the requested read; removal, reconnect, or disposal cancels a queued refresh.',
       },
       {
         signature: 'search( query: string, signal: AbortSignal, ): Promise<RemoteResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>>',
@@ -870,6 +870,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionMaybeStandardProps',
     declaration: 'export interface SessionMaybeStandardProps {\n}',
+  },
+  {
+    name: 'SessionProjectionRefreshOptions',
+    declaration: 'export interface SessionProjectionRefreshOptions {\n    readonly force?: boolean;\n}',
   },
   {
     name: 'SessionProviderComponent',

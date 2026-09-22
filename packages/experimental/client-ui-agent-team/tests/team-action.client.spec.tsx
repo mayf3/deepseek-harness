@@ -125,7 +125,7 @@ describe('TeamAction', () => {
     openPanel()
     expect(await screen.findByText('Implement runtime')).toBeTruthy()
     expect(screen.getByText('write scopes overlap with task-2')).toBeTruthy()
-    expect(b.injected.loadProjections).not.toHaveBeenCalledWith(SESSION)
+    expect(b.injected.loadProjections).toHaveBeenCalledWith(SESSION, { force: true })
     expect(screen.queryByRole('button', { name: /刷新|Refresh/u })).toBeNull()
 
     setProjection(b.sessions, SESSION, {
@@ -192,7 +192,7 @@ describe('TeamAction', () => {
     render(<TeamAction {...b.props} />)
     openPanel()
     expect(screen.getByText('Implement runtime')).toBeTruthy()
-    expect(b.injected.loadProjections).toHaveBeenCalledWith(SESSION)
+    expect(b.injected.loadProjections).toHaveBeenCalledWith(SESSION, { force: true })
     fireEvent.click(screen.getByRole('button', { name: /^worker/u }))
     expect(b.injected.openTeammate).toHaveBeenCalledWith(WORKER, worker)
   })
@@ -217,31 +217,34 @@ describe('TeamAction', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('uses the current Session opening state without requesting its projection baseline', () => {
-    const b = bench({ projections: {}, openState: 'loading' })
+  it('refreshes an already-open Lead on every panel opening and retries failed reads', () => {
+    const b = bench({ projections: {}, openState: 'open' })
     render(<TeamAction {...b.props} />)
+    expect(b.injected.loadProjections).not.toHaveBeenCalled()
     openPanel()
     expect(screen.getByRole('status').textContent).toBe(zh.loading)
-    expect(b.injected.loadProjections).not.toHaveBeenCalled()
+    expect(b.injected.loadProjections).toHaveBeenCalledExactlyOnceWith(SESSION, { force: true })
 
-    act(() => {
-      b.session.set({
-        ...b.session.getSnapshot(),
-        openState: 'error',
-        openError: new RemoteError('gateway/internal', 'history unavailable', {}),
-      })
+    setProjectionSnapshot(b.sessions, SESSION, {
+      state: 'error', error: new RemoteError('gateway/internal', 'offline', {}), values: {},
     })
-    expect(screen.getByRole('alert').textContent).toBe('history unavailable (gateway/internal)')
-    expect(screen.queryByRole('button', { name: zh.retry })).toBeNull()
-    expect(b.injected.loadProjections).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toBe('offline (gateway/internal)')
+    fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+    expect(b.injected.loadProjections).toHaveBeenCalledTimes(2)
+    expect(b.injected.loadProjections).toHaveBeenLastCalledWith(SESSION, { force: true })
 
-    act(() => {
-      b.session.set({ ...b.session.getSnapshot(), openState: 'open', openError: null })
-    })
-    expect(screen.getByRole('status').textContent).toBe(zh.unavailable)
-    setProjection(b.sessions, SESSION, team)
-    expect(screen.getByText('Implement runtime')).toBeTruthy()
-    expect(b.injected.loadProjections).not.toHaveBeenCalledWith(SESSION)
+    setProjectionSnapshot(b.sessions, SESSION, { state: 'loading', error: null, values: {} })
+    expect(screen.getByRole('status').textContent).toBe(zh.loading)
+    setProjection(b.sessions, SESSION, { members: [lead], tasks: [] })
+    expect(screen.getByText(zh.empty)).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(b.injected.loadProjections).toHaveBeenCalledTimes(2)
+
+    fireEvent.click(screen.getByRole('button', { name: zh.close }))
+    expect(b.injected.loadProjections).toHaveBeenCalledTimes(2)
+    openPanel()
+    expect(b.injected.loadProjections).toHaveBeenCalledTimes(3)
+    expect(b.injected.loadProjections).toHaveBeenLastCalledWith(SESSION, { force: true })
   })
 
   it.each([false, true])('ignores unrelated Session updates (teammate page: %s)', (addressed) => {
@@ -274,7 +277,8 @@ describe('TeamAction', () => {
     expect(screen.getByRole('button', { name: /worker.*updated-worker-model/u })).toBeTruthy()
     setProjection(b.sessions, SESSION, { ...team, tasks: [{ ...task, subject: 'Updated parent task' }] })
     expect(screen.getByText('Updated parent task')).toBeTruthy()
-    expect(b.injected.loadProjections).not.toHaveBeenCalledWith(addressed ? WORKER : SESSION)
+    expect(b.injected.loadProjections).toHaveBeenCalledWith(SESSION, { force: true })
+    expect(b.injected.loadProjections).not.toHaveBeenCalledWith(WORKER, { force: true })
   })
 
   it('shows capability absence after a successful read instead of loading forever', () => {
@@ -295,7 +299,7 @@ describe('TeamAction', () => {
     expect(screen.getByText('Implement runtime')).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toBe('offline (gateway/internal)')
     fireEvent.click(screen.getByRole('button', { name: zh.retry }))
-    expect(b.injected.loadProjections).toHaveBeenLastCalledWith(SESSION)
+    expect(b.injected.loadProjections).toHaveBeenLastCalledWith(SESSION, { force: true })
   })
 
   it('loads active members models without opening their conversations', () => {
@@ -393,7 +397,7 @@ describe('TeamAction', () => {
     openPanel()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByRole('status').textContent).toBe(zh.loading)
-    expect(next.injected.loadProjections).not.toHaveBeenCalled()
+    expect(next.injected.loadProjections).toHaveBeenCalledWith('next-lead', { force: true })
   })
 
   it('keeps panel interactions open and dismisses on outside pointer or Escape', () => {
