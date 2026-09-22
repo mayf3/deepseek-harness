@@ -6,7 +6,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   TeamMemberProjection, TeamProjection, TeamTaskId, TeamTaskView as TeamTask,
 } from '@deepseek-ai/dsh-experimental-agent-team/client'
-import type { SessionListState, SessionSnapshot, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionListState, SessionSnapshot, SessionSummary, UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
@@ -77,11 +77,18 @@ function bench(options: {
     promptAttempted: false,
     awaitingFirstTurn: false,
   })
+  const useSessions = bindSnapshotSelector(sessions)
   const injected: TeamActionInjected = { loadProjections: vi.fn(), openTeammate: vi.fn() }
   const props: TeamActionProps = {
     sessionId,
     useSession: bindSnapshotSelector(session),
-    useSessions: bindSnapshotSelector(sessions),
+    useProjection: ((key: string, select?: (value: unknown) => unknown) => {
+      const value = useSessions(state => state.projectionsBySession[sessionId]?.values[
+        key as keyof SessionListState['projectionsBySession'][SessionId]['values']
+      ])
+      return select === undefined ? value : select(value)
+    }) as UseProjection,
+    useSessions,
     useSessionStatus: bindSnapshotSelector(statuses),
     ...injected,
     t: makeTranslate(zh, commonZh),
@@ -126,6 +133,24 @@ describe('TeamAction', () => {
     expect(screen.getByText('Pushed task')).toBeTruthy()
     expect(screen.getByRole('button', { name: /worker-b/u })).toHaveProperty('disabled', true)
     expect(screen.getByRole('button', { name: /Agent Team/u }).textContent).toContain('2')
+  })
+
+  it('reads the current Team and model through the standard projection hook', () => {
+    const b = bench()
+    const projected = createSnapshotStore({ ...team, tasks: [{ ...task, subject: 'Scoped Team task' }] })
+    const useTeam = bindSnapshotSelector(projected)
+    const useProjection = ((key: string, select?: (value: unknown) => unknown) => {
+      const current = useTeam(value => value)
+      const value = key === 'agentTeam' ? current : { next: { model: 'scoped-model' } }
+      return select === undefined ? value : select(value)
+    }) as UseProjection
+    render(<TeamAction {...b.props} useProjection={useProjection} />)
+    openPanel()
+    expect(screen.getByText('Scoped Team task')).toBeTruthy()
+    expect(screen.queryByText('Implement runtime')).toBeNull()
+    expect(screen.getByRole('button', { name: /lead.*scoped-model/u })).toBeTruthy()
+    act(() => { projected.set({ ...team, tasks: [{ ...task, subject: 'Updated scoped task' }] }) })
+    expect(screen.getByText('Updated scoped task')).toBeTruthy()
   })
 
   it('overlays live Session status and the durable model selection on roster rows', () => {

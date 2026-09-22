@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 检查并导航 roster
 
-触发按钮显示 teammate 数量，panel 显示 Lead Session `agentTeam` 投影中的 roster 与任务板，因此 agent 创建的任务或进入 `active` 的 teammate 会在 panel 打开期间直接出现。打开 panel 时，若共享 store 尚无 Lead 的投影基线则请求一次；读取失败会显示失败原因与重试控件，重连后会重新加载。Roster row 展示持久 name 与状态：`failed` 与 `provisioning` 来自持久成员 phase，`running` 或 `inactive` 来自成员 Session 的实时状态。当成员 Session 的 `modelSelection` 投影记录了持久选择或请求时显示 model。provisioning 和 running 成员使用共享 ongoing loading，inactive 成员使用 idle 灰点，failed 成员使用 error 红点。选择健康 teammate 时，系统直接根据其 Lead 与 roster 身份打开普通的 `{ parentSessionId, childSessionId, mode: 'continuable' }` address，不刷新或检查 parent catalog。Host 在打开历史时校验 parent、child 与 mode。History 与后续人类提示词继续使用稳定 addressed-subagent 会话路径；本包不会添加 Team 专用 address 字段。
+触发按钮显示 teammate 数量，panel 显示 Lead Session `agentTeam` 投影中的 roster 与任务板，因此 agent 创建的任务或进入 `active` 的 teammate 会在 panel 打开期间直接出现。打开 panel 时，每次连接请求一次 Lead 的显式投影基线，之前读取成功则跳过；读取失败会显示失败原因与重试控件，重连后会重新加载。Roster row 展示持久 name 与状态：`failed` 与 `provisioning` 来自持久成员 phase，`running` 或 `inactive` 来自成员 Session 的实时状态。当成员 Session 的 `modelSelection` 投影记录了持久选择或请求时显示 model。provisioning 和 running 成员使用共享 ongoing loading，inactive 成员使用 idle 灰点，failed 成员使用 error 红点。选择健康 teammate 时，系统直接根据其 Lead 与 roster 身份打开普通的 `{ parentSessionId, childSessionId, mode: 'continuable' }` address，不刷新或检查 parent catalog。Host 在打开历史时校验 parent、child 与 mode。History 与后续人类提示词继续使用稳定 addressed-subagent 会话路径；本包不会添加 Team 专用 address 字段。
 
 ### 查看任务板
 
@@ -47,7 +47,7 @@ kind: "package-reference"
 
 Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversation-header slot；它不挂载任何 Remote namespace。Dispose plugin fiber 会移除这两项 registration。
 
-面板渲染在会话容器外，并保持在视口范围内。打开时焦点移入面板；按 Escape 或选择关闭按钮时，焦点返回触发按钮。点击外部或将焦点移出面板与触发按钮时，面板关闭，但不会将焦点移回。组件从 `useSessions`、`useSessionStatus` 与 `useSession` 座位派生每一行：Lead 身份来自当前 Session 的 subagent address，Team 视图来自 `projectionsBySession[lead].values.agentTeam`，成员活动来自 Session 状态并以列表摘要为后备，model 来自 `projectionsBySession[member].values.modelSelection.next`。它仅有的注入回调是读取 Lead 的投影基线与打开 teammate。切换会话会关闭面板并清除导航失败。
+面板渲染在会话容器外，并保持在视口范围内。打开时焦点移入面板；按 Escape 或选择关闭按钮时，焦点返回触发按钮。点击外部或将焦点移出面板与触发按钮时，面板关闭，但不会将焦点移回。组件通过 `useProjection('agentTeam')` 读取当前 Session 的 Team，通过 `useProjection('modelSelection')` 读取其 model。在 teammate 会话中，`useSession` 提供 Lead 身份，`useSessions` 提供该另一个 Session 的 Team 投影。其他成员的 model 也来自共享 Session 值；成员活动来自 `useSessionStatus`，并以列表摘要为后备。它仅有的注入回调是读取 Lead 的投影基线与打开 teammate。切换会话会关闭面板并清除导航失败。
 
 | 文件 | 职责 |
 |---|---|

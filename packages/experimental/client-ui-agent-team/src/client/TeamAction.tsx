@@ -17,7 +17,7 @@ import css from './TeamAction.module.css'
 
 /** Business actions injected by the browser plugin. */
 export interface TeamActionInjected {
-  /** Read the Lead Session's projection baseline when the shared store has none, or retry a failed read. */
+  /** Request the Lead's projection baseline once per connection, or retry a failed read. */
   loadProjections: (leadSessionId: SessionId) => void
   openTeammate: (sessionId: SessionId, member: TeamMemberProjection) => void
 }
@@ -73,7 +73,7 @@ function taskDotState(task: TeamTask): StateDotState {
 
 /** Render the Team roster and read-only task board from the Lead Session's `agentTeam` projection. */
 export function TeamAction({
-  sessionId, useSession, useSessions, useSessionStatus, loadProjections, openTeammate, t,
+  sessionId, useSession, useProjection, useSessions, useSessionStatus, loadProjections, openTeammate, t,
 }: TeamActionProps) {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -87,11 +87,13 @@ export function TeamAction({
   useDismissOnOutsidePointer(rootRef, open, setOpen, panelRef)
 
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
+  const currentTeam = useProjection('agentTeam')
+  const currentModel = useProjection('modelSelection', value => value?.next?.model)
   const projections = useSessions(state => state.projectionsBySession)
   const summaries = useSessions(state => state.byId)
   const statuses = useSessionStatus(snapshot => snapshot)
   const projection = projections[leadSessionId]
-  const team = projection?.values.agentTeam
+  const team = leadSessionId === sessionId ? currentTeam : projection?.values.agentTeam
   const readError = team === undefined && projection?.state === 'error' ? projection.error : null
 
   useEffect(() => {
@@ -118,7 +120,7 @@ export function TeamAction({
     return (statuses.get(member.id)?.running ?? summaries[member.id]?.running) === true ? 'running' : 'inactive'
   }
   const memberModel = (member: TeamMemberProjection): string | undefined =>
-    projections[member.id]?.values.modelSelection?.next?.model
+    member.id === sessionId ? currentModel : projections[member.id]?.values.modelSelection?.next?.model
 
   const teammates = team?.members.filter(member => member.role === 'teammate') ?? []
 
