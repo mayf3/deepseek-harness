@@ -24,7 +24,7 @@ import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import {
+import { openSettings,
   connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft,
 } from './support.ts'
 
@@ -254,7 +254,7 @@ describe('web e2e: agent-preset selection', () => {
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
     await page.getByRole('button', { name: 'Standard mode', exact: true }).waitFor({ timeout: 10_000 })
 
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await openSettings(page, 'en')
     const dialog = page.getByRole('dialog', { name: 'Settings' })
     await dialog.getByRole('button', { name: 'Agent presets' }).click()
     const toggle = dialog.getByRole('switch', { name: 'Choose a mode for new tasks' })
@@ -347,7 +347,7 @@ describe('web e2e: agent-preset selection', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-preset-disabled'))
     await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
 
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await openSettings(page, 'en')
     const dialog = page.getByRole('dialog', { name: 'Settings' })
     await dialog.getByRole('button', { name: 'Agent presets' }).click()
     await dialog.getByRole('button', { name: 'Set as new task default: Minimal mode' }).click()
@@ -364,7 +364,7 @@ describe('web e2e: agent-preset selection', () => {
 
     // The switch controls availability only: re-enabling restores the saved
     // default and aligns this same still-blank task with it.
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await openSettings(page, 'en')
     const reopened = page.getByRole('dialog', { name: 'Settings' })
     await reopened.getByRole('button', { name: 'Agent presets' }).click()
     const reopenedToggle = reopened.getByRole('switch', { name: 'Choose a mode for new tasks' })

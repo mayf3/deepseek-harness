@@ -10,6 +10,10 @@ Desktop 的本地原生目录流程打开绑定应用窗口的 Electron 文件�
 
 Creator 和 Web Plugin Manager 在 Electron Node 模式下使用 Desktop 内置 pnpm，无需 PATH 中存在 pnpm。私有 Node 启动器环境仅应用于包操作。
 
+内嵌 Platform 文档使用独立且不持久化的 WebContentsView 会话。Host 通过私有 Node IPC 发送账号凭证；账号 RPC 和 Harness 渲染进程不接收 token。Platform preload 在页面脚本执行前通过一次同步 IPC 读取主进程中已准备的凭证。它暴露 displayMode、同步的 getAuthToken() 和 getLocale() getter，以及返回取消订阅函数的 onLocaleChange(listener)。两个 getter 都只读取 preload 内存，不再调用 IPC。bootstrap 包含 Desktop 已解析的语言（`zh_CN` 或 `en_US`）；Settings 语言变更会更新 preload 缓存并通知已打开的 Platform 文档，无需重载。Platform 在首屏渲染前应用该语言，且不将其持久化为浏览器偏好。主进程处理器仅校验调用来源并读取内存，不等待 Host、磁盘或网络。可信页面初始化失败时保留内嵌模式，由 getter 抛错，避免回退到浏览器凭证。只有受控 Platform 页面中、位于所配置签发来源的主 frame 能完成初始化。退登、凭证替换、Host 关闭及视图关闭都会销毁文档。跨来源文档导航被阻止。请求新窗口的 HTTPS 链接在系统浏览器中打开，不携带内嵌会话或 token；其他协议及带 URL 凭证的链接被拒绝。原生视图占据 Account 功能返回栏下方的视口。
+
+Desktop Host 的 Platform API 请求与更新策略请求使用相同的 `x-client-platform` 映射。账号 provider 管理[仅 API 使用的请求头配置](../../packages/credentials/deepseek-account-platform/README.zh.md#use-this-package)。
+
 桌面麦克风访问仅允许主 `dsh-app://app` 页面发起的音频请求。macOS 使用系统麦克风授权与随包用途说明。
 
 按 F12（多媒体功能键键盘上为 Fn+F12）、macOS 的 Command+Option+I 或 Windows 的 Ctrl+Shift+I，可切换当前获得焦点的应用页面的 DevTools，打包版本同样支持。这些原生快捷键通过隐藏的应用菜单项注册。更新遮罩和打包版本的内嵌浏览器禁用 DevTools。
@@ -68,7 +72,7 @@ macOS 上自定义应用菜单还会声明标准的 File、Window 和应用菜�
 
 签名资源中的 `resources/app.asar/dsh/desktop-runtime.json` 绑定 shell 版本、Electron 的 Node 版本、平台、架构、共享包版本和最终文件清单。启动读取元数据，并检查共享包记录。发布 schema、shell 版本、目标兼容性和文件完整性在打包时验证。首次启动不会把核心包复制到 profile 存储或通过 pnpm 安装核心包。
 
-1. 主窗口在 profile 准备或后端启动前，从打包静态资源显示共享 Web 加载页。共享 profile 初始化创建缺失的 manifest、空用户 patch 与 pnpm workspace 文件，不覆盖现有文件。
+1. 主窗口在 profile 准备或后端启动前，从打包静态资源于屏幕外加载共享 Web 加载页。共享 profile 初始化创建缺失的 manifest、空用户 patch 与 pnpm workspace 文件，不覆盖现有文件。
 2. 启动 Host 前，Desktop 校验运行时描述符并准备 profile，不改动已安装的包、依赖声明与锁文件；只删除早期 Link 后端启动写下的 `.dsh-module-fallback` 投影，启动从不运行 pnpm。profile 内的包保持原生优先级，本体包名通过 runtime resolution 解析（[查找顺序](../../.agents/notes/implemented/architecture/2026-09-19-profile-resolution-lookup-order.zh.md)；[清理移除](../../.agents/notes/implemented/simplification/2026-09-19-remove-desktop-profile-core-cleanup.zh.md)）。
 3. Electron 的 Node 版本、平台或架构变化时保留已安装插件。原生兼容性问题在加载时报错，可通过 pnpm 修复。
 4. 主应用的“插件”页面通过共享[插件管理器](../../packages/boot/plugin-manager/README.zh.md)操作 Desktop profile。包操作使用内置 pnpm 及正常的用户和 profile 配置。
@@ -85,6 +89,8 @@ macOS 上自定义应用菜单还会声明标准的 File、Window 和应用菜�
 
 ## 开发
 
+开发环境应用菜单提供“刷新页面”（macOS 为 Cmd+R，其他平台为 Ctrl+R）和“重启应用与 Host”。重启会等待 Host 关闭，再重新启动 Electron 和新的 Host；这两项操作都不会重新构建源码。
+
 `dev:desktop` 会构建当前 Host、客户端 bundle、Web 前端和 Electron 壳，把已构建的 CLI 包、私有 Desktop Host 包及其 workspace 依赖投影为一次性桌面 npm 项目，然后直接启动 Electron；这条路径不从 npm 解析 dsh：
 
 ```sh
@@ -100,6 +106,21 @@ pnpm run start:desktop
 ```
 
 Web 侧的对应命令是 `pnpm run dev:web` 与 `pnpm run start:web`，见[开发指南](../../docs/development.zh.md)。Workspace 开发使用 Electron RunAsNode 运行当前 CLI 与私有 Desktop Host 包，插件管理和恢复使用 `$DSH_HOME/profiles/desktop`，与一次性工作区运行时分离。Host 在开发与打包构建中都使用 runtime 模块解析，不创建官方包的 fallback 链接；开发者安装的包（包括链接）保留原生优先级。需要验证 Electron RunAsNode、内置 pnpm、内置 dsh 资源、插件安装和修复时，应运行未封装安装器的应用目录。
+
+
+### 启动引导
+
+重复启动和 `dsh://open` 会保持工作区隐藏，直到启动凭据检查或欢迎页操作允许进入。从 Welcome 进入时，键盘焦点落在文档上，不选中侧边栏控件；Tab 导航仍可使用。
+
+Desktop 在 Host 启动后、打开工作区前检查模型 API Key 引用是否已配置。没有已配置的密钥时，欢迎窗口提供 [API Key 页面](https://www.figma.com/design/jRBBK7zBgcszdVWQ0Fh5J8/Harness?node-id=2138-44626)。“保存并继续”通过现有凭证服务写入 DeepSeek 官方提供方配置的引用，然后打开工作区。“稍后配置”打开工作区，但不保存草稿或完成标记；下次进程启动时会重新检查凭证。“返回登录”回到入口并清空未保存的密钥和校验提示。保存或打开工作区期间，按钮保持原文案并禁用竞争操作。Desktop preload 标记使 Web 凭证弹窗不再显示，同时保留模型设置页和欢迎须知。
+
+欢迎窗口在显示前读取共享的 `locale.preference`。用户明确选择的英文或中文优先；否则 Desktop 按系统语言顺序匹配支持的语言，并以英文兜底。主界面在挂载前通过隔离 preload 读取同一偏好和系统语言顺序。在设置中切换语言会更新桌面壳的当前词典和菜单；自动选择不会写入偏好。欢迎窗口不提供语言切换入口。
+
+等待浏览器登录时，欢迎页提供当前待授权请求的链接复制入口、加载指示和取消操作；剪贴板写入失败后可以重试复制，复制结果提示在两秒后恢复；已复制状态下链接禁用，恢复后可再次点击。Welcome 文字使用 Montserrat Light 并回退到系统字体，底部大按钮保留系统字体，文字按钮使用 Montserrat Light。英文欢迎正文及产品名均为 24px，中文欢迎正文为 24px、产品名为 26px。登录操作按钮宽 240px，文字为 14px。授权状态标题使用 20px Montserrat Regular 字重。API Key 页的标题为 20px，返回操作为 14px，次级按钮底边距窗口底部 84px。
+
+### 欢迎窗口外观
+
+欢迎窗口使用设计稿的 Platform light/dark 颜色跟随系统外观，展示 600 × 700 的[入口布局](https://www.figma.com/design/jRBBK7zBgcszdVWQ0Fh5J8/Harness?node-id=2121-39334)和 API Key 表单，包含原生窗口控件、可拖动标题区域、本地品牌 SVG、系统无衬线字体回退，以及非按钮文字使用的本地 Montserrat Light 字体。窗口使用 macOS menu vibrancy 或 Windows acrylic，叠加 onboarding 的窗口背景色：浅色模式为 40% 白色，深色模式为 50% rgb(24 25 28)。本地 React 欢迎入口将 React、公共 `StateDot` 加载指示器及其 CSS 一起打包；它通过隔离 preload 工作，不加载主 Web 应用。入口、登录状态和 API Key 页面共用固定的底部操作行；“返回登录”链接位于操作行下方。按钮共用平台的过渡时序，开启“减少动态效果”会禁用过渡。操作系统控制模糊强度和外部圆角。macOS 的“降低透明度”会抑制半透明效果，“增强对比度”会强制开启该设置。“保存并继续”写入开发环境的凭证存储；“稍后配置”打开真实工作区，不保存密钥或完成标记。生成的开发项目同时链接已声明的 workspace 依赖闭包和 pnpm 提升的包，因此未提升的配置插件仍能解析。[窗口记录](../../.agents/notes/implemented/architecture/2026-09-08-desktop-welcome-window-material.zh.md)负责材质与引导决策。
 
 ## 打包
 
@@ -378,9 +399,21 @@ node apps/desktop/node_modules/pnpm/bin/pnpm.mjs --dir apps/desktop run test:upd
 
 ## 已知限制
 
+- 账号登录尚未接入；登录按钮禁用。Windows 材质效果仍需平台验证。
+
 - 发布签名、公证、更新托管和跨上一版本的已安装产物验证需要生产发布环境。
 - 依赖的生命周期脚本遵循 pnpm 的构建权限；Desktop 不提供单独的审批对话框。
 - 桌面壳与 CLI dsh 共享 `$DSH_HOME` 下的会话、设置、凭据、工作区和存储，但可执行包、插件激活和锁文件彼此隔离。
+
+登录会在系统浏览器中打开配置的平台页面。Host 负责 PKCE 和临时本机回调，在进入工作区前保存凭证，再将浏览器跳转到平台完成页。即使平台页面随后批准，取消仍会撤销本地尝试。设置中的账号页面提供退出；没有独立 API Key 时，退出后返回欢迎窗。打包应用注册 dsh://open，只显示窗口而不传递凭证。macOS 开发启动器在 `.desktop-build/development` 下准备经临时签名的 `Harness Dev.app`，在 Info.plist 中声明 `dsh` 并注册到 Launch Services。它加载当前工作区，并记录选定的开发 home、浏览器数据路径和调试设置，以供冷启动使用。启动此应用会将其设为 `dsh://` 默认处理程序；启动打包应用会重新注册打包版处理程序。生成的应用包不包含账号 token，依赖工作区和已准备的运行环境继续存在。
+
+登录超时后显示超时标题，并提供重新登录和添加 API Key 按钮。打开 API Key 表单会关闭授权视图；后续账号状态通知不会覆盖正在填写的密钥。
+
+内嵌 Platform 视图在文档加载完成前保持隐藏，让渲染层加载图标可见。关闭或替换待加载视图后，该视图不会再次出现。 所属应用文档刷新或替换、渲染进程终止以及窗口关闭也会销毁原生视图，不依赖 React 清理。
+
+私有 Platform 部署请求头由内嵌浏览器会话注入，仅用于配置来源的文档和 API 请求。Cookie 覆盖按名称合并。跨来源请求移除部署请求头；bootstrap 仅暴露 origin、token 和已解析的语言。
+
+账号提供者的 `embeddedPageDist` 配置为内嵌用量和充值页面 URL 添加 `dist` 查询参数。默认值为空；私有前端分支选择值应写在本地 profile patch 中。此配置不改变 API 地址或凭证传递方式。
 
 ## 开发备注
 

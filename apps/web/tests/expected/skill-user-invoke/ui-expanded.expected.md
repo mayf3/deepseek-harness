@@ -10,9 +10,8 @@
 - button "meeting notes.md"
 - text: and confirm the fixture wiring {{clock}}
 - button "Copy"
-- button "Thought for a while" [expanded]
-- button "Context injection runtime-context"
-- button "Context injection user-invoke-demo"
+- status: Worked
+- button "Took {{duration}}" [disabled]
 - paragraph: USER_INVOKE_REPLY acknowledged; following the injected skill.
 - button "Copy"
 - button "Good response"

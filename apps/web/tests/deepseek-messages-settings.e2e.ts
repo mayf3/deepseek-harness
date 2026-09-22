@@ -8,7 +8,7 @@ import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold,
   watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspaceZh, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
+import { openSettings, connectFreshWorkspaceZh, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
 const EXPECTED = fileURLToPath(new URL('./expected/deepseek-messages-settings/', import.meta.url))
 
@@ -43,7 +43,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages sett
     await onboarding.getByLabel('API 密钥', { exact: true }).fill('sk-messages-onboarding')
     await onboarding.getByRole('button', { name: '保存并继续' }).click()
     await onboarding.waitFor({ state: 'detached' })
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openSettings(page, 'zh')
     const dialog = page.getByRole('dialog', { name: '设置', exact: true })
     await dialog.getByRole('button', { name: '模型', exact: true }).click()
     await dialog.getByText('DeepSeek', { exact: true }).waitFor()

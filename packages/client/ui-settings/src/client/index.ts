@@ -13,7 +13,7 @@ import { ConfigForms } from './config-form.ts'
 import { SettingsDescribeMirror } from './settings-mirror.ts'
 
 export type {
-  SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
+  SettingsLauncherOwnerProps, SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
   SettingsPluginsTabOwnerProps, SettingsSectionOwnerProps, SettingsTriggerOwnerProps,
 } from './contract/slots.ts'
 export type { ConfigForms } from './config-form.ts'

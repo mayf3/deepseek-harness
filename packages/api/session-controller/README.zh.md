@@ -48,6 +48,8 @@ Client 适配器提供 `SessionEventStream`，即绑定到一个普通 Session �
 Session 对象还承载本地提交回显：`session.beginSubmission` 在调用方序列化与提示词之前，同步把一条回显写入 `SessionSnapshot.pendingSubmissions`，会话 UI 因此能在点击提交的当帧显示消息。回显按顺序存放图片预览与持久文件引用。Session 根据当前运行状态与请求的投递模式推导其 `transcript`、`queued` 或 `steering` 位置，并在序列化期间保留该位置。提示词的 `requestId` 是关联标识：Host 把它回显为 durable user source 的 `rpcId`，`inbox` 投影中的待处理消息也保留同一 source。回显在观察到其 durable event 或 queue occurrence 后延迟一个动画帧退休，带标识的提示词失败或被放弃时立即退休，销毁时按 failed 退休。每次退休恰好触发一次 `onRetire`；observed 退休还会携带有序的持久附件引用，让 composer 释放成功卡片并保留失败草稿。回显只存在于 Client 内存；刷新与重连只从持久事件重建会话。
 
 
+正常在线时，steering 回显在 Inbox 接受与领取期间保持挂载，直到持久消息到达。新的 follow 基线会将此前已有接收回执的 steering 回显按 observed 撤去，使用已接受的附件引用完成结算；尚未确认接收的提交继续保留。待处理或已入档的消息随后由 Host 数据呈现。在领取与入档之间重连时，气泡可能短暂消失；撤去回显只确认接收，不代表执行或失败。
+
 面向用户调用的 `skills/list` 元数据包含胜出提供方可选的指令文件 `path`。输入框可据此预览文件，无需加载每个 skill 的正文或激活冷态 Agent。
 
 Fork 复制 `atSeq` 所选的精确事件前缀，包含切点事件，允许在开放轮次内截取。子会话在合成的 fork 结果和结束事件之前记录继承标记。省略 `atSeq` 时选择最近已结束轮次及其独立尾部，在下一轮次或排队输入之前停止；不存在的事件会被拒绝。聊天操作选择已结束轮次。

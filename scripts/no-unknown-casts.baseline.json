@@ -503,7 +503,6 @@
     "12a4fcbcbe9194fe012835a6c0346eab98441db62b74da62f80a8cd510774c5a": 1
   },
   "packages/client/ui-chat/tests/chat-view.client.spec.tsx": {
-    "5e81d253ded2bb3e281d730022707bacaa131618fcdfc55faa04be9a22f32956": 1,
     "6061de0a1e01547eb1abf9d4e1b5fa79fda112fa35dda980775491123413dcce": 3,
     "6787497d471fc8faaa78ffcbd497c36ceba82c1b8ee16d0d450b405ad4dddc25": 1
   },
@@ -621,13 +620,10 @@
     "b1db56322d2f3e549d59e65fd4b0a61e7c5d959f9f9bdfa5157a33e3ed1f3e9b": 1
   },
   "packages/client/ui-plan/tests/plan-preview.client.spec.tsx": {
-    "28772c6dac133ff70e4a6888fe587ace22036e384f547f65e8fa26f4cbf7e687": 1,
     "3b2258b8a75570daf0fa8c497d23f274d8e414f35508a6275932c3806c4c4484": 1,
-    "3cc0b750774bc690cd330554d82a673b6a5012af6da86c299dff0ecb6403dde9": 1,
     "3d9d4fce115bbdf1ad3ed4af51c49b19e7e1bcefefe25c373a7270dec8d73de3": 1,
     "41f50f1679049edf1f4a18e936df5a2ceb2de04f1e43a4fad07d8e93578d2cc6": 1,
     "53f1197af19938d444b06ebf666a8751240d0b5e5ea13edf6100316d1bc5ede2": 5,
-    "6b37aaa6c00e0f7146f39b3667a66eddcdb51601262fcf855e5a859783f2963b": 1,
     "9bb8efa3dd59e674ef31f5af43d4aac13ca59d96dd418fe3bf07199c8963c31c": 2,
     "bd4e8147a13bee681bd192d1558f4a79de23d5edeafb616e8acccd725465ef98": 1,
     "e01c2c40d53d557b621628de47a0a6677e11b4f151fbefd865c97be99a7b6c48": 1,
@@ -791,38 +787,17 @@
   "packages/client/ui-theme/tests/theme.client.spec.ts": {
     "6adc289cf963470891b9b4aea9e09db4c98d96d09a245bf41bf679f8f608ba49": 1
   },
-  "packages/client/ui-tool/tests/ask-question-row.client.spec.tsx": {
-    "6c5d515baefa7ae94d299082c4608ebf1baccf92b3dc05cc97cf34951628cf34": 1
-  },
-  "packages/client/ui-tool/tests/coverage-tails.client.spec.tsx": {
-    "7f912fda4081d62dbde16769dca200121033ea3b5fc93593ce6ede98cd3a4400": 1
-  },
-  "packages/client/ui-tool/tests/diff-card.client.spec.tsx": {
-    "31f883ce7d40cb93793940d43c9b4b9c68b4aa805511ef875c42c29847aacc5a": 1
-  },
   "packages/client/ui-tool/tests/image-card.client.spec.tsx": {
     "1a5ae4c2528dae3d43a3decbe30410647b6e60104341e070fd4de2c6a668a607": 1,
     "1d34efc5aadced56f018a7f1b453e5b2117ab13ab6e414a7bf32584a9b168af4": 1,
     "7266b2c682605ac318dad266d9371b6061a73746beac20f2fd94e9391eca5d4a": 1,
-    "9994235ebbd3c4d4d72805505a6d36e41399f4951237b25402a11dcf0ca925b1": 1,
     "a4968fcd795d3444b0896dcd7e9688e84335d4fcc72e138c46f951d157a421c7": 1
   },
   "packages/client/ui-tool/tests/read-card.client.spec.tsx": {
-    "ad325101d9586299adfd569b444e203060197b4613a9ca3b36671b96a635c569": 1,
-    "d321ccf1d92d73552e648e4573d724b9d2eacc7891293d59a99eb7d35bfe1e4e": 1
-  },
-  "packages/client/ui-tool/tests/search-card.client.spec.tsx": {
-    "10fd8811b2062bc69e6f8ee0a71a3445f52d6ea8f0eb3c7b3199032e61633ef0": 1
-  },
-  "packages/client/ui-tool/tests/terminal-card.client.spec.tsx": {
-    "dbb68ed1ba48d383c92929b0478380d0b06c7caa8e07f9d19ba921a33d78c890": 1
-  },
-  "packages/client/ui-tool/tests/todo-row.client.spec.tsx": {
-    "2de567342e3ab05a9bbb5956c42bfeea3ea95934b16a07bb1ff85965abdc7859": 1
+    "ad325101d9586299adfd569b444e203060197b4613a9ca3b36671b96a635c569": 1
   },
   "packages/client/ui-tool/tests/tool-call-tree.client.spec.tsx": {
-    "0579b8a3ceb3401991284810b465c683c710280c41f8e454e41183872b2475d1": 1,
-    "108b5ea1abc16a6931c62791ff63d28479332324a28b194ef063b26821ed33c1": 1
+    "0579b8a3ceb3401991284810b465c683c710280c41f8e454e41183872b2475d1": 1
   },
   "packages/client/ui-tool/tests/tool-fixtures.client.ts": {
     "9a6d99786c6afdc9d28a2984f465f14ddf09c84795c6c02abfad39c3013cec69": 1,
