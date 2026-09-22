@@ -192,6 +192,7 @@ body {
   top: calc(100% + 16px);
   left: 50%;
   transform: translateX(-50%);
+  white-space: nowrap;
   min-width: 58px;
   height: 28px;
   padding: 4px 10px;
