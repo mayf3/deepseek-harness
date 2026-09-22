@@ -1,6 +1,6 @@
 /** Capability-independent tool history folded from committed headers and developer messages. */
 import { describe, expect, it } from 'vitest'
-import { createDeveloperMessage } from '@deepseek-ai/dsh-llm'
+import { createDeveloperMessage, projectToolUpdates } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -73,9 +73,11 @@ describe('Session.toolHistory', () => {
     update(session, [add('fetch')], headerSeq)
     const restart = header(session, [search, fetch], extra)
     expect(session.toolHistory()).toEqual({ tools: [search, fetch], updates: [] })
-    // An addition bound to the baseline header is already declared by that header.
-    update(session, [add('fetch')], restart)
-    expect(session.toolHistory()).toEqual({ tools: [search, fetch], updates: [] })
+    const added = update(session, [add('fetch')], restart)
+    expect(session.toolHistory()).toEqual({ tools: [search, fetch], updates: [
+      { messageId: added.id, additions: [fetch] },
+    ] })
+    expect(projectToolUpdates([added], [search, fetch], 'in-history', session.toolHistory()).messages).toEqual([])
   })
 
   it('restarts declarations when a retained name returns with a changed definition', () => {
@@ -84,8 +86,28 @@ describe('Session.toolHistory', () => {
     update(session, [remove('fetch')])
     const changed = { ...fetch, description: 'Fetch v2' }
     const headerSeq = header(session, [search, changed])
-    update(session, [add('fetch')], headerSeq)
-    expect(session.toolHistory()).toEqual({ tools: [search, changed], updates: [] })
+    const added = update(session, [add('fetch')], headerSeq)
+    expect(session.toolHistory()).toEqual({ tools: [search, changed], updates: [
+      { messageId: added.id, additions: [changed] },
+    ] })
+  })
+
+  it.each(['addition-only', 'in-history'] as const)('activates deferred baseline tools through folded history on %s routes', (mode) => {
+    const deferred: ToolSchema = { ...fetch, deferLoading: true }
+    const tools = [search, deferred]
+    const session = opened(tools)
+    const baseline = session.snapshotEvents().find(event => event.type === 'request/header')!
+    const added = update(session, [add('search'), add('fetch')], baseline.seq)
+    const duplicate = update(session, [add('fetch')], baseline.seq)
+    const history = session.toolHistory()
+
+    expect(history.updates).toEqual([
+      { messageId: added.id, additions: [search, deferred] },
+      { messageId: duplicate.id, additions: [deferred] },
+    ])
+    const projected = projectToolUpdates([added, duplicate], tools, mode, history)
+    expect(projected.tools).toEqual(tools)
+    expect(projected.messages).toEqual([{ ...added, content: [add('fetch')] }])
   })
 
   it('continues the series when a retained name is restored unchanged', () => {

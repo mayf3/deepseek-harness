@@ -42,7 +42,6 @@ export class ToolHistoryProjection {
       this.active = tools
     } else if (event.type === 'developer/message') {
       const { message, headerSeq } = event.data
-      if (headerSeq !== undefined && headerSeq === this.baselineSeq) return
       const definitions = headerSeq === undefined ? [] : this.headers.get(headerSeq)
       const additions = message.content.flatMap((block) => {
         if (block.type !== 'tool-addition') return []
