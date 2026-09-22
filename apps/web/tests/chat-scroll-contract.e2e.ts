@@ -524,6 +524,54 @@ describe('web e2e: long Chat scroll contract', () => {
     await browser?.close()
   })
 
+  it.skipIf(MODE === 'record')('keeps floating controls anchored outside the clipped transcript', async () => {
+    await withScrollWorld({
+      failureShot: 'web-e2e-chat-floating-controls',
+      seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
+    }, async (world) => {
+      await openSeed(world.page, HISTORY_FIXTURE, HISTORY_FIXTURE.markers.assistant(HISTORY_FIXTURE.turns))
+      const host = world.page.locator('[data-conversation-scroll]')
+      const backToBottom = world.page.getByRole('button', { name: 'Back to bottom', exact: true })
+      const expectControls = async (): Promise<void> => {
+        await expect.poll(() => host.evaluate((element) => {
+          const rail = element.querySelector('nav[aria-label="Turn navigation"]')
+          const button = element.querySelector('button[aria-label="Back to bottom"]')
+          const composer = element.querySelector('[data-composer-seat]')
+          if (rail === null || button === null || composer === null) return Infinity
+          const viewport = element.getBoundingClientRect()
+          const railBox = rail.getBoundingClientRect()
+          const buttonBox = button.getBoundingClientRect()
+          const composerBox = composer.getBoundingClientRect()
+          const top = viewport.top + element.clientTop
+          return Math.max(
+            Math.abs((railBox.top + railBox.bottom) / 2 - (top + composerBox.top) / 2),
+            Math.abs(viewport.left + element.clientLeft + element.clientWidth - railBox.right - 12),
+            Math.abs(composerBox.top - buttonBox.bottom - 16),
+          )
+        }), { timeout: 10_000 }).toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
+      }
+
+      await wheelTranscript(world.page, -1_200)
+      await backToBottom.waitFor({ timeout: 10_000 })
+      await expectControls()
+      await wheelTranscript(world.page, -1_200)
+      await expectControls()
+
+      const seat = world.page.locator('[data-composer-seat]')
+      const initialHeight = await seat.evaluate(element => element.getBoundingClientRect().height)
+      const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
+      await composer.fill(Array.from({ length: 8 }, (_, index) => `draft line ${index}`).join('\n'))
+      await expect.poll(() => seat.evaluate(element => element.getBoundingClientRect().height))
+        .toBeGreaterThan(initialHeight + 40)
+      await expectControls()
+      await composer.fill('')
+      await expectControls()
+      await backToBottom.click()
+      await expectBottom(world.page)
+      assertClean(world)
+    })
+  })
+
   it.skipIf(MODE === 'record')('preserves the reader anchor when history and streaming arrive concurrently', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-history-stream',

@@ -972,7 +972,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const second = await view.findByRole('button', { name: '跳转到第 2 轮' })
 
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     const metrics = installScrollMetrics(scroller, 1_000, 300)
     metrics.setLayout(1_000, 700)
     vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 300 } as DOMRect)
@@ -1035,7 +1035,7 @@ describe('ChatView', () => {
       ] })
       const view = render(<h.ChatView {...h.props} />)
       const first = await view.findByRole('button', { name: '跳转到第 1 轮' })
-      const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+      const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
       installScrollMetrics(scroller, 1_500, 300)
       const row = view.container.querySelector('[data-chat-anchor-key="fixture:user:1"]') as HTMLElement
       vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 300))
@@ -1080,7 +1080,7 @@ describe('ChatView', () => {
     expect(view.getByRole('button', { name: '回到底部' })).toBeTruthy()
     // ...so a non-reader scroll delivery at the floor (the first prepend's
     // compensation fires one) no longer snaps to the tail and cancel the jump.
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLElement
     fireEvent.scroll(scroller)
     expect(first.getAttribute('aria-busy')).toBe('true')
     await act(async () => { releaseJump?.() })
@@ -1149,7 +1149,7 @@ describe('ChatView', () => {
     let releaseJump: (() => void) | undefined
     h.loadThrough.mockImplementation(() => new Promise<void>((resolve) => { releaseJump = resolve }))
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     installScrollMetrics(scroller, 1_000, 300)
     scroller.scrollTop = 700
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
@@ -1197,7 +1197,7 @@ describe('ChatView', () => {
       { hasMore: true },
     )
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     const first = view.container.querySelector('[data-chat-flow-key="fixture:user:9"]') as HTMLDivElement
     const next = view.container.querySelector('[data-chat-flow-key="fixture:user:10"]') as HTMLDivElement
     let firstTop = 100
@@ -1256,7 +1256,7 @@ describe('ChatView', () => {
       const pinned = anchor === 'group' ? group : old
       const expectedTop = anchor === 'group' ? 30 : 60
       const expectedScroll = anchor === 'group' ? 200 : 300
-      const scroller = view.container.querySelector<HTMLElement>('[class*="scroll"]')!
+      const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement!
       installScrollMetrics(scroller, 1500, 400)
       let paged = false
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
@@ -1326,7 +1326,7 @@ describe('ChatView', () => {
     h.setGrouped(groups)
     h.setTranscriptView(mode)
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector<HTMLElement>('[class*="scroll"]')!
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement!
     const column = scroller.querySelector<HTMLElement>('[data-chat-flow]')!
     const answer = view.container.querySelector<HTMLElement>('[data-chat-node-key="fixture:assistant:6"]')!
     const first = hasSteering ? view.container.querySelector<HTMLElement>('[data-chat-node-key="fixture:steering:5"]')! : answer
@@ -1380,7 +1380,7 @@ describe('ChatView', () => {
     try {
       const h = makeHarness({ nodes: [user(1, 'visible row')] })
       const view = render(<h.ChatView {...h.props} />)
-      const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+      const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
       const anchor = view.container.querySelector('[data-chat-anchor-key="fixture:user:1"]') as HTMLElement
       installScrollMetrics(scroller, 4_000, 2_000)
       vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({
@@ -1411,7 +1411,7 @@ describe('ChatView', () => {
       { hasMore: true },
     )
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     const rows = [...view.container.querySelectorAll<HTMLElement>('[data-chat-flow-key]')]
     let prepended = false
     let rowRectCalls = 0
@@ -1622,7 +1622,7 @@ describe('ChatView', () => {
   it('does not pull the reader back to the tail when a local steer becomes Host-pending', () => {
     const h = makeHarness({ nodes: [assistant(1, 'working')] }, { running: true })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector<HTMLElement>('[class*="scroll"]')!
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement!
     installScrollMetrics(scroller, 1_000, 300)
     act(() => { h.setSession({ pendingSubmissions: [{
       requestId: 'req-steer' as never, placement: 'steering', time: 5_000, text: 'continue here', attachments: [],
@@ -2307,7 +2307,7 @@ describe('ChatView', () => {
       turnTimings: new Map([[1, { startTime: 0 }]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     Object.defineProperty(scroller, 'scrollHeight', { value: 1_000, writable: true })
     Object.defineProperty(scroller, 'clientHeight', { value: 300, writable: true })
     const firstRow = view.getByText('first answer').closest('[data-chat-flow-kind="assistant-step"]') as HTMLElement
@@ -2331,7 +2331,7 @@ describe('ChatView', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     expect(turnProcessControl(view.container)).toBeNull()
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     Object.defineProperty(scroller, 'scrollHeight', { value: 1_000, writable: true })
     Object.defineProperty(scroller, 'clientHeight', { value: 300, writable: true })
     const processRow = view.container.querySelector<HTMLElement>('[data-chat-node-key="fixture:assistant:2"]')!
@@ -3199,7 +3199,7 @@ describe('ChatView', () => {
       { hasMore: true },
     )
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     // jsdom has no layout: fake the metrics the anchor math reads.
     Object.defineProperty(scroller, 'scrollHeight', { value: 1000, writable: true })
     Object.defineProperty(scroller, 'clientHeight', { value: 400, writable: true })
@@ -3229,7 +3229,7 @@ describe('ChatView', () => {
   it('back-to-bottom cancels an in-flight paging anchor', () => {
     const h = makeHarness({ nodes: [user(9, 'late')] }, { hasMore: true })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     Object.defineProperty(scroller, 'scrollHeight', { value: 800, writable: true })
     Object.defineProperty(scroller, 'clientHeight', { value: 200, writable: true })
     readerScroll(scroller, 50)
@@ -3244,7 +3244,7 @@ describe('ChatView', () => {
   it('scrolling away disables follow and shows the back-to-bottom button; clicking returns', () => {
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     Object.defineProperty(scroller, 'scrollHeight', { value: 1000, writable: true })
     Object.defineProperty(scroller, 'clientHeight', { value: 300, writable: true })
     readerScroll(scroller, 100) // far from bottom
@@ -3266,7 +3266,7 @@ describe('ChatView', () => {
   it('keeps following when a stream-finalization shrink clamp delivers its scroll', () => {
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     const metrics = installScrollMetrics(scroller, 1_000, 300)
     scroller.scrollTop = 700
     fireEvent.scroll(scroller)
@@ -3289,7 +3289,7 @@ describe('ChatView', () => {
   it('keeps following when a shrink clamp regrows before scrollend', () => {
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     const metrics = installScrollMetrics(scroller, 1_000, 300)
     scroller.scrollTop = 700
     fireEvent.scroll(scroller)
@@ -3319,7 +3319,7 @@ describe('ChatView', () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverStub)
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     const metrics = installScrollMetrics(scroller, 9_931, 300)
     expect(notify).toBeDefined()
     scroller.scrollTop = 9_631
@@ -3357,7 +3357,7 @@ describe('ChatView', () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverStub)
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     const metrics = installScrollMetrics(scroller, 1_000, 300)
     expect(notify).toBeDefined()
     scroller.scrollTop = 700
@@ -3380,7 +3380,7 @@ describe('ChatView', () => {
   it('keeps following when reader input reaches the floor before growth and scrollend', () => {
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     const metrics = installScrollMetrics(scroller, 1_000, 300)
     readerScroll(scroller, 100)
     expect(view.getByLabelText('回到底部')).toBeTruthy()
@@ -3400,7 +3400,7 @@ describe('ChatView', () => {
     const nodes = [user(1, 'q'), assistant(2, 'a')]
     const h = makeHarness({ nodes })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     const metrics = installScrollMetrics(scroller, 1_000, 300)
     readerScroll(scroller, 700)
     scroller.scrollTop = 650
@@ -3431,7 +3431,7 @@ describe('ChatView', () => {
   it('clears an away sample when a back-to-bottom delivery restores pinned ownership', () => {
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     const metrics = installScrollMetrics(scroller, 1_000, 300)
     scroller.scrollTop = 700
     fireEvent.scroll(scroller)
@@ -3453,7 +3453,7 @@ describe('ChatView', () => {
     try {
       const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
       const view = render(<h.ChatView {...h.props} />)
-      const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+      const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
       installScrollMetrics(scroller, 1_000, 300)
       scroller.scrollTop = 700
       fireEvent.scroll(scroller)
@@ -3496,7 +3496,7 @@ describe('ChatView', () => {
   it('uses the last delivered top when compositor scrolling precedes scroll delivery', () => {
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     installScrollMetrics(scroller, 1_000, 300)
     scroller.scrollTop = 700
     fireEvent.scroll(scroller)
@@ -3524,7 +3524,7 @@ describe('ChatView', () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverStub)
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     Object.defineProperty(scroller, 'scrollHeight', { value: 1_000, writable: true })
     Object.defineProperty(scroller, 'clientHeight', { value: 300, writable: true })
     scroller.scrollTop = 700
@@ -3578,7 +3578,7 @@ describe('ChatView', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     await view.findByRole('button', { name: '跳转到第 2 轮' })
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     const metrics = installScrollMetrics(scroller, 1_000, 300)
     scroller.scrollTop = 700
     act(() => {
@@ -3604,7 +3604,7 @@ describe('ChatView', () => {
   it('entering the at-bottom threshold does not snap the remaining scroll distance', () => {
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const scroller = view.container.querySelector('[data-chat-flow]')!.parentElement as HTMLDivElement
     Object.defineProperty(scroller, 'scrollHeight', { value: 1000, writable: true })
     Object.defineProperty(scroller, 'clientHeight', { value: 300, writable: true })
     // Inside FOLLOW_THRESHOLD (24) but not flush with the floor — the chrome

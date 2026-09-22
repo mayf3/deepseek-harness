@@ -191,85 +191,87 @@ export function ChatView({
   })
 
   return (
-    <div className={css.root} data-chat-following-tail={scroll.followingTail ? '' : undefined}>
-      <div ref={scroll.listRef} className={css.scroll}>
-        {scroll.initialized && (
-          <TurnNavigator
-            items={railItems}
-            activeTurn={scroll.activeTurn}
-            busyTurn={scroll.busyTurn}
-            onNavigate={scroll.navigateToTurn}
-            t={t}
-          />
-        )}
-        <div ref={scroll.columnRef} className={css.column} data-chat-flow="">
-          {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
-          {openState === 'error' && openError !== null && (
-            <div className={css.openError}>
-              {t('chat.loadError', { message: openError.message, code: openError.code })}
-            </div>
-          )}
-          {hasMore && (
-            <div className={css.older}>
-              <button type="button" disabled={loadingOlder} onClick={scroll.loadEarlier}>
-                {loadingOlder ? t('loading') : t('chat.loadOlder')}
-              </button>
-            </div>
-          )}
-          <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={requestOpenFile}>
-            <ChatNodeList
-              entries={entries}
-              nodeStore={nodeStore}
-              useChatGroup={useChatGroup}
-              useChatNode={useChatNode}
-              useChatNodeProcess={useChatNodeProcess}
-              usePresentation={usePresentation}
-              useStore={useStore}
-              actions={actions}
-              cwd={cwd}
-              openFile={requestOpenFile}
-              openSkill={openSkill}
-              inspectCall={inspectCall}
-              forkAt={forkAt}
-              loadImage={loadImage}
-              renderMessageImages={renderMessageImages}
-              fileMentions={fileMentions}
-              renderSlot={renderSlot}
-              t={t}
-            />
-          </MarkdownDelegateProvider>
-          {/* No pending placeholders: questions (ui-user-questions) and approvals
-              (ApprovalPanel) both take over the composer, so a flow card would
-              double-render the same wait. */}
-          {pendingInputs.map(item => 'requestId' in item ? (
-            <PendingSubmissionBubble
-              key={item.requestId}
-              submission={item}
-              renderMessageImages={renderMessageImages}
-              t={t}
-            />
-          ) : (
-            <PendingSteeringBubble
-              key={item.id}
-              content={item.content}
-              renderMessageImages={renderMessageImages}
-              t={t}
-            />
-          ))}
-        </div>
-        {!scroll.followingTail && (
-          <div className={css.toBottomSlot}>
-            <button
-              type="button"
-              className={css.toBottom}
-              aria-label={t('chat.toBottom')}
-              onClick={scroll.returnToBottom}
-            >
-              <IconChevronDownOutlineRegular />
-            </button>
+    <div className={css.frame}>
+      {scroll.initialized && (
+        <TurnNavigator
+          items={railItems}
+          activeTurn={scroll.activeTurn}
+          busyTurn={scroll.busyTurn}
+          onNavigate={scroll.navigateToTurn}
+          t={t}
+        />
+      )}
+      <div className={css.root} data-chat-following-tail={scroll.followingTail ? '' : undefined}>
+        <div ref={scroll.listRef} className={css.scroll}>
+          <div ref={scroll.columnRef} className={css.column} data-chat-flow="">
+            {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
+            {openState === 'error' && openError !== null && (
+              <div className={css.openError}>
+                {t('chat.loadError', { message: openError.message, code: openError.code })}
+              </div>
+            )}
+            {hasMore && (
+              <div className={css.older}>
+                <button type="button" disabled={loadingOlder} onClick={scroll.loadEarlier}>
+                  {loadingOlder ? t('loading') : t('chat.loadOlder')}
+                </button>
+              </div>
+            )}
+            <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={requestOpenFile}>
+              <ChatNodeList
+                entries={entries}
+                nodeStore={nodeStore}
+                useChatGroup={useChatGroup}
+                useChatNode={useChatNode}
+                useChatNodeProcess={useChatNodeProcess}
+                usePresentation={usePresentation}
+                useStore={useStore}
+                actions={actions}
+                cwd={cwd}
+                openFile={requestOpenFile}
+                openSkill={openSkill}
+                inspectCall={inspectCall}
+                forkAt={forkAt}
+                loadImage={loadImage}
+                renderMessageImages={renderMessageImages}
+                fileMentions={fileMentions}
+                renderSlot={renderSlot}
+                t={t}
+              />
+            </MarkdownDelegateProvider>
+            {/* No pending placeholders: questions (ui-user-questions) and approvals
+                (ApprovalPanel) both take over the composer, so a flow card would
+                double-render the same wait. */}
+            {pendingInputs.map(item => 'requestId' in item ? (
+              <PendingSubmissionBubble
+                key={item.requestId}
+                submission={item}
+                renderMessageImages={renderMessageImages}
+                t={t}
+              />
+            ) : (
+              <PendingSteeringBubble
+                key={item.id}
+                content={item.content}
+                renderMessageImages={renderMessageImages}
+                t={t}
+              />
+            ))}
           </div>
-        )}
+        </div>
       </div>
+      {!scroll.followingTail && (
+        <div className={css.toBottomSlot}>
+          <button
+            type="button"
+            className={css.toBottom}
+            aria-label={t('chat.toBottom')}
+            onClick={scroll.returnToBottom}
+          >
+            <IconChevronDownOutlineRegular />
+          </button>
+        </div>
+      )}
       {fileOpenError !== null && (
         <FileOpenErrorDialog
           message={fileOpenError.message}
