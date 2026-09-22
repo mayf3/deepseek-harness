@@ -202,7 +202,7 @@ export function apply(ctx: Context, config: Config): void {
     throw new Error(`tool-jobs: waitTimeoutMs (${waitDefault}) exceeds maxWaitTimeoutMs (${waitCap})`)
   }
   // A budget is a count of turns: a fraction never names a turn, and
-  // `Infinity` spells "unbounded" that omitting the field already means.
+  // `Infinity` would spell an "unbounded" that omitting the field already means.
   if (wakeBudget !== undefined && !Number.isSafeInteger(wakeBudget)) {
     throw new Error(`tool-jobs: maxConsecutiveWakes (${wakeBudget}) must be a whole number of turns`)
   }
@@ -292,11 +292,17 @@ export function apply(ctx: Context, config: Config): void {
         summary: completionSummary(event.job),
       },
     })
-    const spent = spentWakes.get(owner) ?? 0
-    if (delivery === 'wakeup' && owner.status === 'idle' && (wakeBudget === undefined || spent < wakeBudget)) {
-      spentWakes.set(owner, spent + 1)
-      owner.followup(message)
-      return
+    if (delivery === 'wakeup' && owner.status === 'idle') {
+      if (wakeBudget === undefined) {
+        owner.followup(message)
+        return
+      }
+      const spent = spentWakes.get(owner) ?? 0
+      if (spent < wakeBudget) {
+        spentWakes.set(owner, spent + 1)
+        owner.followup(message)
+        return
+      }
     }
     owner.inject(message)
   })

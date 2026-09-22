@@ -769,8 +769,8 @@ describe('completion notice delivery', () => {
     const followup = vi.fn()
     const owner = await fakeAgent(ctx, 'sess-1', { inject, followup, status: 'idle' })
 
-    // Four unattended completions in a row: the chain the former default
-    // budget of 3 cut off silently on the fourth.
+    // Four unattended completions in a row must each open a turn; no
+    // user input arrives in between to refill anything.
     await settleTasks(ctx, owner, 4)
     expect(followup).toHaveBeenCalledTimes(4)
     expect(inject).not.toHaveBeenCalled()
