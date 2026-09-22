@@ -266,6 +266,11 @@
   container-type: inline-size;
 }
 
+.row[data-model-compact] {
+  --dsh-composer-model-text-display: none;
+  --dsh-composer-model-icon-display: block;
+}
+
 .tools,
 .modes,
 .trailing {
@@ -296,10 +301,7 @@
   gap: 12px;
 }
 
-/* Narrow rows drop the roomy control gaps: the mode chips and the send circle
-   are fixed-width, so a long model name beside the plan chip wraps the
-   trailing group while the first line still has room to spare. The 8px rhythm
-   keeps the row on one line down to the icon-only model trigger. */
+/* Compact spacing preserves room for the fixed-width controls in narrow cards. */
 @container (max-width: 560px) {
   .tools,
   .modes,
@@ -407,3 +409,10 @@
   font-size: 12px;
   cursor: pointer;
 }
+
+.standardControls { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.tools[hidden], .standardControls[hidden] { display: none; }
+.trailingActive { flex: 1; margin-left: 0; }
+.activity { display: flex; align-items: center; flex: none; }
+.activity:empty { display: none; }
+.activityExpanded { flex: 1; min-width: 0; }

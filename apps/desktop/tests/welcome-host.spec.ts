@@ -24,7 +24,7 @@ function transport(preference?: string) {
     else value = Object.fromEntries(payload.args.refs.map(ref => [ref, { configured: keys.has(ref), writable: true }]))
     return Response.json({ type: 'server-response', rpcId, result: { ok: true, value } })
   })
-  return { send, keys }
+  return { send, keys, namespaces }
 }
 
 const url = 'http://127.0.0.1:19387/?token=fixture'
@@ -51,6 +51,26 @@ describe('desktop welcome Web operations', () => {
     host.keys.clear()
     expect(await backend.read()).toMatchObject({ hasApiKey: false })
     expect(host.send.mock.calls.every(([, init]) => !(init?.body as string | undefined)?.includes('credentials/set'))).toBe(true)
+  })
+
+  it('reads language without querying account or model providers', async () => {
+    const host = transport('zh')
+    const backend = await connectDesktopWelcome(url, host.send)
+    host.send.mockClear()
+    expect(await backend.readLocalePreference()).toBe('zh')
+    expect(host.send).toHaveBeenCalledOnce()
+    expect(host.send.mock.calls[0]![0]).toContain('/api/settings/describe')
+  })
+
+  it('allows profiles without the official provider and retains custom key detection', async () => {
+    const host = transport()
+    host.namespaces.splice(0, 1)
+    const backend = await connectDesktopWelcome(url, host.send)
+    expect(await backend.read()).toMatchObject({ hasApiKey: false, writable: false })
+    host.keys.set('EXAMPLE_API_KEY', 'custom-key')
+    expect(await backend.read()).toMatchObject({ hasApiKey: true, writable: false })
+    expect(await backend.save('official-key')).toEqual({ ok: false })
+    expect(host.keys.has('undefined')).toBe(false)
   })
 
   it.each(['', 'bad key', 'key\n'])('rejects malformed keys without contacting a provider: %s', async (value) => {

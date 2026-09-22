@@ -10,6 +10,7 @@ import { DESKTOP_IPC } from '../src/ipc.ts'
 
 const state = vi.hoisted(() => ({
   appListeners: new Map<string, (...args: unknown[]) => void>(),
+  dialogLocale: undefined as (() => DesktopLocale) | undefined,
   beforeRead: vi.fn(async () => {}),
   beforeWelcome: vi.fn(async () => {}),
   copy: vi.fn(),
@@ -55,7 +56,7 @@ vi.mock('electron', () => ({
   BrowserWindow: class {
     constructor(options: BrowserWindowConstructorOptions) { state.windowOptions = options }
     private ready: (() => void) | undefined
-    webContents = { mainFrame: { url: 'dsh-app://app/' }, setWindowOpenHandler: vi.fn(), on: vi.fn(), send: vi.fn(), openDevTools: vi.fn() }
+    webContents = { mainFrame: { url: 'dsh-app://app/' }, setWindowOpenHandler: vi.fn(), on: vi.fn(), once: vi.fn(), send: vi.fn(), openDevTools: vi.fn() }
     static getAllWindows() { return [] }
     once(name: string, callback: () => void) { if (name === 'ready-to-show') this.ready = callback; return this }
     on() { return this }
@@ -69,7 +70,9 @@ vi.mock('electron', () => ({
   },
   net: { fetch: vi.fn() },
   nativeTheme: { themeSource: 'system' },
-  session: { defaultSession: { webRequest: { onBeforeSendHeaders: vi.fn() } } },
+  session: { defaultSession: {
+    setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeSendHeaders: vi.fn() },
+  } },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
   ipcMain: {
     handle: (name: string, callback: (...args: unknown[]) => unknown) => { state.handlers.set(name, callback) },
@@ -97,6 +100,7 @@ vi.mock('../src/host-process.ts', () => ({
 }))
 vi.mock('../src/welcome-backend.ts', () => ({
   connectDesktopWelcome: async () => ({
+    readLocalePreference: async () => state.preference,
     read: async () => {
       await state.beforeRead()
       return { loggedIn: false, hasApiKey: state.hasApiKey, writable: true, localePreference: state.preference }
@@ -112,7 +116,10 @@ vi.mock('node:fs/promises', async importOriginal => ({
   ...await importOriginal<typeof import('node:fs/promises')>(),
   readFile: vi.fn(async () => '{}'),
 }))
-vi.mock('../src/update-dialog.ts', () => ({ DesktopUpdateDialog: class { dispose() {} } }))
+vi.mock('../src/update-dialog.ts', () => ({ DesktopUpdateDialog: class {
+  constructor(_preload: string, locale: () => DesktopLocale) { state.dialogLocale = locale }
+  dispose() {}
+} }))
 vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: class {
   state = { phase: 'idle' }
   check = vi.fn(async () => this.state)
@@ -171,6 +178,7 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   expect(state.showWorkspace).not.toHaveBeenCalled()
   state.loadWorkspace.mockClear()
   expect(state.welcomeLocale).toMatchObject({ id: 'zh-CN' })
+  expect(state.dialogLocale!().id).toBe('zh-CN')
   const attemptId = 'login' as NonNullable<AccountView['attempt']>['id']
   const account: AccountView = { status: 'signed-out', links: { usageUrl: '', topUpUrl: '' },
     attempt: { id: attemptId, phase: 'waiting-browser', authorizeUrl: 'https://example.test/login' } }
@@ -206,6 +214,7 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   changed(event, 42)
   expect(state.menu).toHaveBeenCalledTimes(initialMenus)
   changed(event, 'en')
+  expect(state.dialogLocale!().id).toBe('en')
   expect(state.menu).toHaveBeenCalledTimes(initialMenus + 1)
   expect(await bootstrap(event)).toEqual({ languages: ['en-US'], preference: 'en' })
   const welcomeCount = state.beforeWelcome.mock.calls.length

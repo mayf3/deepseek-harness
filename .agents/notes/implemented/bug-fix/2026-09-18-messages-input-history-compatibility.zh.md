@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-[Messages 序列化器](../../../../packages/llm/llm-deepseek/src/protocols/messages/serialize.ts)省略用户与工具结果输入中的 `reasoning` 和 `tool-call` 块。这两类块的处理与 Chat Completions、pi-ai 一致，不改变 Session 记录，也不把子级推理转换成父级用户文本。[提供方 README](../../../../packages/llm/llm-deepseek/README.zh.md#model-experience)统一说明输入规则，包括空用户消息、空工具结果，以及对其他不支持块的拒绝。
+[Messages 序列化器](../../../../packages/llm/llm-deepseek/src/serialize.ts)省略用户与工具结果输入中的 `reasoning` 和 `tool-call` 块。这两类块的处理与 Chat Completions、pi-ai 一致，不改变 Session 记录，也不把子级推理转换成父级用户文本。[提供方 README](../../../../packages/llm/llm-deepseek/README.zh.md#model-experience)统一说明输入规则，包括空用户消息、空工具结果，以及对其他不支持块的拒绝。
 
 这部分取代了结算决策对序列化器容错的拒绝，以及 [Messages 适配器决策](../feature/2026-09-07-deepseek-messages-adapter.zh.md)中的输入拒绝规则。通知构建仍为每种父级提供方投影子级的非空文本。子级的规范输出以及普通助手推理和工具调用仍可供现有消费者使用。省略依据是输入角色和块类型，而不是通知来源或创建日期，因此也适用于新提供的用户和工具结果内容。
 

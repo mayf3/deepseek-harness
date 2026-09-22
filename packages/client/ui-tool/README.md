@@ -27,6 +27,8 @@ English | [中文](README.zh.md)
 
 Tool calls appear in the conversation as cards: a root call tree with its nested subcalls, each atomic call rendered by its owning view. Every lifecycle state retains the tool's ordinary business glyph; failure and interruption remain explicit through the frozen call/result state, accessible status text, and failure summary. Users can open files or inspect calls through the Host callbacks.
 
+Shared Tool rows and Bash rows retain error and warning colors for failed and stopped summaries, including on hover. Hover darkens only summaries without those states.
+
 ### Registering a business tool view
 
 An owning business package registers its wire Tool name into `tool.call.toolview`:
@@ -58,6 +60,8 @@ The package realizes one dispatch rule: atomic Tool views are keyed by wire Tool
 ### Rendering contract
 
 `ToolCallTree` receives one root `ToolCallBlock` that already contains recursive `subCalls`, the session `cwd`, and the owner's callbacks for opening files and inspecting calls. It recursively walks the standard call blocks and sends the root and children at every depth through the same atomic dispatch path, without subscribing to a separate parent-to-children map. Each root and child wrapper preserves the `data-chat-anchor-key="call:<id>"` and `data-chat-call-id` DOM contract used for paging and selection.
+
+Tool owner props forward Chat's stable `useDisclosure` Hook through root and nested calls. Rows invoke it where they own their expanded bodies; intermediate renderers do not subscribe. Each invocation has independent open state that resets when the enclosing Turn collapses, without replacing React identity. Presentation-mode switches preserve it.
 
 ### Cards
 

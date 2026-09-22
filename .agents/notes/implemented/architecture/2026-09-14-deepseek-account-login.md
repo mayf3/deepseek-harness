@@ -30,7 +30,7 @@ Putting the protocol in Electron duplicates the implementation for Web consumers
 
 Sign out removes the local grant before starting Platform POST /auth-api/v0/users/logout with the captured token. Remote failure never restores login. The provider retries at most five times after the initial request, with configurable exponential backoff starting at one second by default. Retry jobs retain only their old token, cannot change later login state, and end at provider shutdown without durable storage. Local credential deletion must succeed before publishing signed-out state. Sign out belongs to the sidebar account menu; Account settings owns profile, balance and sign-in. Both read one plugin-owned Host stream through framework hooks.
 
-API keys and account grants remain separately stored. Account tokens have no expiry or refresh flow; exhausted logout retries can leave the removed token valid remotely. Provider initialization discards grants from a different configured Platform issuer locally, without remote revocation, so switching environments starts signed out instead of aborting Desktop startup. API keys and device identity survive this cleanup. Profile and balance query failures preserve login state; authorization-attempt deadlines apply only before token issuance. The same grant authenticates Platform current and get_user_summary queries on its configured issuer origin. Host preserves Platform-masked contact details and drops response tokens; account changes invalidate pending results. UI shows normal_wallets recharge balances and positive bonus_wallets in separate rows, so promotional credit is never presented as recharge funds.
+API keys and account grants remain separately stored. Account tokens have no proactive refresh flow; exhausted logout retries can leave the removed token valid remotely. Provider initialization discards grants from a different configured Platform issuer locally, without remote revocation, so switching environments starts signed out instead of aborting Desktop startup. API keys and device identity survive this cleanup. Profile and balance HTTP 401 responses clear the rejected credential; other query failures preserve login state; authorization-attempt deadlines apply only before token issuance. The same grant authenticates Platform current and get_user_summary queries on its configured issuer origin. Host preserves Platform-masked contact details and drops response tokens; account changes invalidate pending results. UI shows normal_wallets recharge balances and positive bonus_wallets in separate rows, so promotional credit is never presented as recharge funds.
 
 The account plugin supplies choice, waiting, failure and timeout dialogs through settings.models.sign-in. The model package owns credential readiness and the existing API-key editor; the settings shell coordinates explicit reopening so login and API-key onboarding do not mount competing dialogs.
 
@@ -44,17 +44,9 @@ DSH grants authenticate Platform, inference and Files requests with x-dsh-auth-t
 
 Profile and recharge-wallet queries use independent getProfile and getBalance operations. The client publishes each result as it arrives, so a slow or failed balance request cannot delay the sidebar username. Account changes invalidate both pending results.
 
-## Verification
-
-Provider tests exercise real loopback callbacks, invalid state, delayed exchange cancellation, credential persistence, sign-out, and official-origin restrictions. Desktop tests cover the native action bridge and localized entry. Manual development integration uses the platform dev middleware Mock and the real Electron Host, including cancellation before browser approval. Production backend credentials and installer scheme registration require release-environment validation.
-
-## Related
-
-[Credential records and flows](2026-08-13-credential-records-and-authorization-flows.md) remains the generic credential authority. [Desktop wrapper](2026-09-10-desktop-web-wrapper.md) owns the transport composition.
-
 Deployment authentication uses explicit Host-only requestHeaders on the configured Platform origin. The provider rejects redirects and reserved-header overrides so deployment cookies cannot replace account authorization or follow a browser destination. Environment-specific authentication protocols remain outside the account provider.
 
-The Host sends client_type (desktop or web) in auth_init so Platform can choose the completion experience. Web failures close the authorization tab while the original tab receives Host state; no Web UI return URL is used. The backend accepts localhost callbacks. DSH preserves the browser-supplied localhost hostname and port without DNS resolution or conversion to an IP literal.
+The bundled account UI is Desktop-only: its preload bridge enables the account launcher, settings and sign-in onboarding. Plain Web retains API-key onboarding and the standard Settings launcher without account subscription or login. The Host protocol accepts login_source (desktop or web) in auth_init; the bundled UI sends desktop. The backend accepts localhost callbacks. DSH preserves the browser-supplied localhost hostname and port without DNS resolution or conversion to an IP literal.
 
 The macOS development launcher registers an isolated, ad-hoc-signed application bundle for `dsh://open`. The bundle retains the workspace entry and development paths for Launch Services cold starts without copying credentials or changing the package-manager-owned Electron application. Protocol registration targets the latest launched development or packaged application.
 
@@ -64,4 +56,14 @@ The embedded Platform document stays hidden during loading because native child 
 
 Separate accountRequestHeaders route account data and embedded Platform traffic independently of authorization and logout. Cookie overrides merge by name, retaining deployment authentication. Host passes the resolved headers over private process IPC; Electron injects them only at the configured origin and omits them from bootstrap.
 
-Account inference route selection and active-task cancellation are defined by the [provider sign-out decision](2026-09-17-account-provider-signout.md).
+The Host binds private Platform sessions to the account provider lifetime. Removal or watch termination clears Electron’s session; replacement subscribes to the new provider, and disposed reads cannot publish old credentials.
+
+The client distinguishes plugin disposal from terminal account-stream failure. RemoteStream aborts its signal after either outcome, so the plugin owns a separate disposal flag to preserve failure feedback while suppressing reports after unload.
+
+## Verification
+
+Provider tests exercise real loopback callbacks, invalid state, delayed exchange cancellation, credential persistence, sign-out, and official-origin restrictions. Desktop tests cover the native action bridge and localized entry. Manual development integration uses the platform dev middleware Mock and the real Electron Host, including cancellation before browser approval. Production backend credentials and installer scheme registration require release-environment validation.
+
+## Related
+
+[Credential records and flows](2026-08-13-credential-records-and-authorization-flows.md) remains the generic credential authority. [Desktop wrapper](2026-09-10-desktop-web-wrapper.md) owns the transport composition.

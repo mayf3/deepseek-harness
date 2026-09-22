@@ -6,12 +6,12 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: "Using ONE run_code program: run bash `echo CODE_ROUND_OK`, then read the file missing.txt catching its error in the program. Return an object with both outcomes. Then reply DONE and stop. {{clock}}"
 - button "Copy"
-- button "1 tool call" [expanded]
-- button "Context injection runtime-context"
-- 'button "Think The user wants me to write a single `run_code` program that:"'
+- status: Worked
+- button "Took {{duration}}" [expanded]
+- button "Ran code, ran commands, read files" [expanded]
+- button "Think"
 - button "Code Run bash echo and catch missing file read"
 - button "Bash Echo CODE_ROUND_OK" [expanded]
 - text: Done workspace echo CODE_ROUND_OK
@@ -20,7 +20,7 @@
 - button "Inspect"
 - text: Failed
 - 'button "Read Error: cannot read \"{{cwd}}/workspace/missing.txt\": not found"'
-- button "Think The program ran successfully. Let me now reply DONE as instructed."
+- button "Think"
 - paragraph: DONE
 - button "Copy"
 - button "Good response"

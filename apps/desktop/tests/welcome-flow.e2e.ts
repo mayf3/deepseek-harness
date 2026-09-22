@@ -132,7 +132,8 @@ describe.skipIf(!existsSync(builtHost))('built Desktop welcome flow', () => {
       expect(await status()).toMatchObject({ hasApiKey: false, localePreference: null })
       const before = fingerprint()
       await host!.stop()
-      writeFileSync(join(home, 'settings.yaml'), 'locale:\n  preference: zh\n')
+      writeFileSync(join(paths.profile, 'cordis.patch.yml'),
+        readFileSync(join(paths.profile, 'cordis.patch.yml'), 'utf8') + '- id: locale\n  config:\n    preference: zh\n')
       await restart()
       expect(await status()).toMatchObject({ hasApiKey: false, localePreference: 'zh' })
       expect(fingerprint()).toBe(before)

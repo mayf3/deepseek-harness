@@ -2,7 +2,7 @@
 import z from '@deepseek-ai/schemastery'
 
 /** Namespace for developer UI and HTML preview capabilities. */
-export const DEVELOPER_TOOLS_NAMESPACE = 'ui-developer-tools'
+export const DEVELOPER_TOOLS_NAMESPACE = 'ui-settings'
 
 /** Persisted developer-tool choice. */
 export interface DeveloperToolsSettings {
@@ -10,7 +10,10 @@ export interface DeveloperToolsSettings {
   enabled: boolean
 }
 
-/** New installations and missing values use the basic interface. */
-export const DeveloperToolsSettingsSchema: z<DeveloperToolsSettings> = z.object({
-  enabled: z.boolean().default(false),
-})
+/** New installations and missing values enable the full interface. */
+export const DeveloperToolsSettingsFields = {
+  enabled: z.boolean().default(true),
+}
+
+/** Schema for shared configuration values. */
+export const DeveloperToolsSettingsSchema = z.object(DeveloperToolsSettingsFields)

@@ -758,6 +758,8 @@ The backends that consume this contract are on [persistence.md](persistence.md).
 
 `SessionOpenWorkspacePathRequest` carries an absolute or workspace-resolved `path`; optional `action: "reveal"` selects file-manager navigation instead of default-application opening. `SessionOpenWorkspacePathValue` confirms that the Host accepted the native handoff. A Session-aware Client resolves relative paths against its current Session cwd when known; the controller hands the path to the opener unchanged and reports invalid requests, cancellation, and opener failures through the Session Remote error vocabulary.
 
+The optional `application` selects a registered file handler without changing the system default; `workspacePathApplications({ path })` returns current handlers, names, icons, and default selection after Host path verification.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -851,6 +853,15 @@ workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 
  * @throws RemoteError when the request is invalid, has no verified Host mapping, is cancelled, or the opener fails.
  */
 @Remote('openWorkspacePath') async openWorkspacePath( request: SessionOpenWorkspacePathRequest, signal: AbortSignal, ): Promise<SessionOpenWorkspacePathValue>
+
+/**
+ * Query current file handlers on the serving desktop without activating an Agent.
+ * @param request - file path in Host filesystem syntax.
+ * @param signal - caller lifetime, propagated to filesystem and desktop queries.
+ * @returns OS application names, icons, and default selection; empty when desktop opening is unavailable.
+ * @throws RemoteError when the path is invalid, the query is cancelled, or native discovery fails.
+ */
+@Remote('workspacePathApplications') async workspacePathApplications( request: { readonly path: string }, signal: AbortSignal, ): Promise<readonly SessionWorkspacePathApplication[]>
 
 /**
  * Rename one Session after explicitly resuming it.

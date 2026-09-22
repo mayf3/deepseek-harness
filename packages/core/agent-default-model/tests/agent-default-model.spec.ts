@@ -1,109 +1,65 @@
-/** Default Agent model settings layered over a real settings provider. */
-
-import { describe, expect, it } from 'vitest'
+/** Default model references remain live without a settings service. */
 import { Context } from '@deepseek-ai/cordis'
-import AgentDefaultModelConfig, { AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE } from '../src/index.ts'
-import { SettingsProvider } from '@deepseek-ai/dsh-settings'
-import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { expect, it, onTestFinished } from 'vitest'
+import DefaultModel from '../src/index.ts'
+import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
 
-/** The smallest real provider: one in-memory document, always writable. */
-class MemorySettings extends SettingsProvider {
-  doc: Record<string, unknown> = {}
-
-  get writable(): boolean {
-    return true
-  }
-
-  protected load(): Promise<Record<string, unknown>> {
-    return Promise.resolve(structuredClone(this.doc))
-  }
-
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
-    this.doc = { ...this.doc, [ns]: structuredClone(section) }
-    return Promise.resolve()
-  }
-}
-
-async function boot(): Promise<{
-  ctx: Context
-  settingsFiber: Context['fiber']
-  defaultModel: AgentDefaultModelConfig
-}> {
+it('reads complete selections from volatile config and clears omitted reasoning effort', async () => {
   const ctx = new Context()
-  const settingsFiber = ctx.plugin(MemorySettings)
-  await settingsFiber.await()
-  await ctx.plugin(AgentDefaultModelConfig, {
-    provider: 'deepseek-official',
-    model: 'deepseek-v4-flash',
-  })
-  return { ctx, settingsFiber, defaultModel: ctx.agentDefaultModel }
-}
-
-describe('AgentDefaultModelConfig', () => {
-  it('resolves the user layer over the composition entry', async () => {
-    const bench = await boot()
-    expect(bench.defaultModel.currentSelection()).toEqual({
-      provider: 'deepseek-official', model: 'deepseek-v4-flash',
-    })
-
-    await bench.defaultModel.saveSelection({
-      provider: 'acme-gateway', model: 'acme-large', reasoningEffort: ReasoningEffortId('high'),
-    })
-    expect(bench.defaultModel.currentSelection()).toEqual({
-      provider: 'acme-gateway', model: 'acme-large', reasoningEffort: 'high',
-    })
-    await bench.ctx.fiber.dispose()
-  })
-
-  it('clears a stored effort when the saved selection has none', async () => {
-    const bench = await boot()
-    await bench.defaultModel.saveSelection({
-      provider: 'acme-gateway', model: 'acme-large', reasoningEffort: ReasoningEffortId('high'),
-    })
-    await bench.defaultModel.saveSelection({ provider: 'acme-gateway', model: 'acme-plain' })
-    expect(bench.defaultModel.currentSelection()).toEqual({ provider: 'acme-gateway', model: 'acme-plain' })
-    await bench.ctx.fiber.dispose()
-  })
-
-  it('layers a hand-written partial section over the entry', async () => {
-    const bench = await boot()
-    await bench.settingsFiber.ctx.settings.replace(AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, {
-      model: 'deepseek-reasoner',
-    })
-    expect(bench.defaultModel.currentSelection()).toEqual({
-      provider: 'deepseek-official', model: 'deepseek-reasoner',
-    })
-    await bench.ctx.fiber.dispose()
-  })
-
-  it('retains the saved selection when the settings provider detaches', async () => {
-    const bench = await boot()
-    await bench.defaultModel.saveSelection({ provider: 'acme-gateway', model: 'acme-large' })
-    expect(bench.defaultModel.currentSelection().provider).toBe('acme-gateway')
-    await bench.settingsFiber.dispose()
-    expect(bench.defaultModel.currentSelection()).toEqual({ provider: 'acme-gateway', model: 'acme-large' })
-    await bench.ctx.fiber.dispose()
-  })
-
-  it('retains a user selection when no settings provider is mounted', async () => {
-    const ctx = new Context()
-    await ctx.plugin(AgentDefaultModelConfig, { provider: 'p', model: 'm' })
-    await ctx.agentDefaultModel.saveSelection({ provider: 'other', model: 'other' })
-    expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'other', model: 'other' })
-    await ctx.fiber.dispose()
-  })
+  onTestFinished(() => ctx.fiber.dispose())
+  const live = await liveConfig(ctx, DefaultModel, { provider: 'p', model: 'm' })
+  const consumer = ctx.agentDefaultModel
+  await live.update({ provider: 'q', model: 'n', reasoningEffort: 'high' })
+  expect(consumer.currentSelection()).toEqual({ provider: 'q', model: 'n', reasoningEffort: 'high' })
+  await live.replace({ provider: 'p', model: 'm' })
+  expect(consumer.currentSelection()).toEqual({ provider: 'p', model: 'm' })
+  await consumer.saveSelection({ provider: 'unsaved', model: 'unsaved' })
+  expect(consumer.currentSelection()).toEqual({ provider: 'p', model: 'm' })
 })
 
-it('initializes once and retains an unavailable user selection instead of replacing it', async () => {
-  const bench = await boot()
-  try {
-    await bench.defaultModel.initializeSelection({ provider: 'deepseek-account', model: 'deepseek-v4-flash' })
-    expect(bench.defaultModel.currentSelection().provider).toBe('deepseek-account')
-    await bench.defaultModel.initializeSelection({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
-    expect(bench.defaultModel.currentSelection().provider).toBe('deepseek-account')
-    await bench.defaultModel.saveSelection({ provider: 'deleted-provider', model: 'removed-model' })
-    await bench.defaultModel.initializeSelection({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
-    expect(bench.defaultModel.currentSelection()).toEqual({ provider: 'deleted-provider', model: 'removed-model' })
-  } finally { await bench.ctx.fiber.dispose() }
+it('persists complete selections through its owning profile entry', async () => {
+  const { configurationFixture } = await import('../../../settings/settings/tests/configuration-fixture.ts')
+  const { ReasoningEffortId } = await import('@deepseek-ai/dsh-llm')
+  const { ctx } = await configurationFixture({ hmr: false })
+  await ctx.agentDefaultModel.saveSelection({ provider: 'test', model: 'next', reasoningEffort: ReasoningEffortId('high') })
+  expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'test', model: 'next', reasoningEffort: 'high' })
+  await ctx.agentDefaultModel.saveSelection({ provider: 'test', model: 'final' })
+  expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'test', model: 'final' })
+  const standalone = new Context()
+  onTestFinished(() => standalone.fiber.dispose())
+  await standalone.plugin(DefaultModel, { provider: 'test', model: 'original' })
+  await standalone.agentDefaultModel.saveSelection({ provider: 'test', model: 'ignored' })
+  expect(standalone.agentDefaultModel.currentSelection().model).toBe('original')
+})
+
+it('initializes once and retains explicit profile choices after restart', async () => {
+  const { configurationFixture } = await import('../../../settings/settings/tests/configuration-fixture.ts')
+  const { ctx, start } = await configurationFixture({ hmr: false })
+  const defaults = ctx.agentDefaultModel
+  await Promise.all([
+    defaults.initializeSelection({ provider: 'deepseek-account', model: 'deepseek-flash' }),
+    defaults.initializeSelection({ provider: 'third-party', model: 'other' }),
+  ])
+  expect(defaults.currentSelection()).toEqual({ provider: 'deepseek-account', model: 'deepseek-flash' })
+  await defaults.saveSelection({ provider: 'third-party', model: 'chosen' })
+  const restarted = await start()
+  await restarted.agentDefaultModel.initializeSelection({ provider: 'deepseek-account', model: 'deepseek-flash' })
+  expect(restarted.agentDefaultModel.currentSelection()).toEqual({ provider: 'third-party', model: 'chosen' })
+})
+
+it('allows initialization after a refused write and retains a model-only override', async () => {
+  const { configurationFixture } = await import('../../../settings/settings/tests/configuration-fixture.ts')
+  const { vi } = await import('vitest')
+  const { ctx, start } = await configurationFixture({ hmr: false })
+  const edit = vi.spyOn(ctx.configEditor, 'edit').mockRejectedValueOnce(new Error('write failed'))
+  onTestFinished(() => { edit.mockRestore() })
+  await expect(ctx.agentDefaultModel.saveSelection({ provider: 'test', model: 'refused' })).rejects.toThrow('write failed')
+  await ctx.agentDefaultModel.initializeSelection({ provider: 'test', model: 'initialized' })
+  expect(ctx.agentDefaultModel.currentSelection().model).toBe('initialized')
+  const restarted = await start()
+  const rows = restarted.configEditor.configuration().map(row => ({ ...row, override: { model: 'initialized' } }))
+  const source = vi.spyOn(restarted.configEditor, 'configuration').mockReturnValue(rows)
+  onTestFinished(() => { source.mockRestore() })
+  await restarted.agentDefaultModel.initializeSelection({ provider: 'test', model: 'ignored' })
+  expect(restarted.agentDefaultModel.currentSelection().model).toBe('initialized')
 })

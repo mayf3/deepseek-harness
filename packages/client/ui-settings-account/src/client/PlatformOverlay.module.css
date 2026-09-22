@@ -12,7 +12,7 @@
   height: 48px;
   flex: none;
   padding: 6px 16px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
   app-region: drag;
 }
 
@@ -64,8 +64,30 @@
 .status {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.failure {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+}
+
+.retry.retry {
+  box-sizing: border-box;
+  height: 32px;
+  min-width: 58px;
+  padding: 0 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 18px;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
 }
 
 .spinner {

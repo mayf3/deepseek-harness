@@ -12,6 +12,7 @@ import type {
   WorkspaceCreateValue,
   WorkspaceDeleteValue,
   WorkspaceInsertSessionBeforeRequest,
+  WorkspaceInitializeDefaultRequest,
   WorkspaceOrderValue,
   WorkspacePinSessionRequest,
   WorkspacePinValue,
@@ -102,6 +103,20 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   }
 
   /**
+   * Initialize the default Workspace and merge its authoritative row.
+   * @param request - initial directory name and title.
+   * @param signal - caller lifetime.
+   * @returns generated Remote result.
+   */
+  async initializeDefault(
+    request: WorkspaceInitializeDefaultRequest, signal?: AbortSignal,
+  ): Promise<RemoteResult<WorkspaceValue | undefined>> {
+    const result = await this.remote.initializeDefault(request, signal)
+    if (result.ok && result.value !== undefined) this.upsert(result.value.workspace)
+    return result
+  }
+
+  /**
    * Rename a Workspace and merge the unary result immediately.
    * @param workspaceId - target Workspace.
    * @param title - new display title.
@@ -174,13 +189,18 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * Archive one Session and install the returned complete archive set.
    * A reply superseded by a later archive request or a pushed set installs nothing.
    * @param sessionId - Session to archive.
+   * @param options - Whether the Host stops the Session's running work instead of refusing.
    * @returns generated Remote result.
    */
   async archiveSession(
     sessionId: WorkspaceArchiveSessionRequest['sessionId'],
+    options: Pick<WorkspaceArchiveSessionRequest, 'stopActivity'> = {},
   ): Promise<RemoteResult<WorkspaceArchiveValue>> {
     const requestSeq = ++this.archiveRequestSeq
-    const result = await this.remote.archiveSession({ sessionId })
+    const result = await this.remote.archiveSession({
+      sessionId,
+      ...(options.stopActivity === true ? { stopActivity: true } : {}),
+    })
     if (result.ok && requestSeq === this.archiveRequestSeq) {
       this.installArchived(result.value.archivedSessionIds)
       // The Host drops an archived session's pin in the same durable write;

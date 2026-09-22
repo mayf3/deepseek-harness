@@ -9,7 +9,7 @@ import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 import { en, zh } from '../src/client/locales.ts'
-import type { DesktopUpdateView } from '../src/client/desktop-update-bridge.ts'
+import type { DesktopUpdateView } from '../src/types.ts'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
@@ -88,7 +88,7 @@ function mount({
         updatedAt: 0,
       },
     },
-    phase: 'ready', projectionsBySession: {}, jobsBySession: {},
+    phase: 'ready', projectionsBySession: {},
   }
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
   const props: SettingsRootComponentProps = {
@@ -444,4 +444,12 @@ it('explicitly reopens one onboarding editor during an existing session', () => 
   act(() => { (call?.[1] as { complete: () => void }).complete() })
   renderSlot.mockClear()
   expect(screen.queryByTestId('onboarding')).toBeNull()
+})
+
+it('opens Account from the contributed sidebar launcher', () => {
+  const { renderSlot } = mount({ rows: [{ id: 'account', order: -10, label: 'Account' }] })
+  const launcher = renderSlot.mock.calls.find(call => call[0] === 'settings.launcher')!
+  act(() => { (launcher[1] as { openSettings: () => void }).openSettings() })
+  expect(screen.getByTestId('section-account')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Account' }).querySelector('svg')).not.toBeNull()
 })

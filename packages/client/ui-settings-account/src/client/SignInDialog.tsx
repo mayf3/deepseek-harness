@@ -1,4 +1,4 @@
-/** Account authorization dialog shared by onboarding and explicit login. */
+/** Account authorization dialog; errors allow retry after cancelling any active attempt. */
 import { useEffect, useState } from 'react'
 import { Button, IconCloseOutlineRegular, IconLoadingOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountSnapshot } from './AccountSection.tsx'
@@ -25,10 +25,12 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
     const timer = setTimeout(() => { setCopyResult(null) }, 2000)
     return () => { clearTimeout(timer) }
   }, [copyResult])
+  const authorizeUrl = attempt?.authorizeUrl
   const phase = attempt?.phase
   const active = busy || phase === 'initializing' || phase === 'waiting-browser' || phase === 'exchanging' || phase === 'committing'
   const expired = phase === 'expired'
   const error = failed || account.loginFailed || account.failed || phase === 'failed'
+  const waiting = active && !error
   const committing = phase === 'committing'
   useEffect(() => { if (account.view?.status === 'credential-stored') close() }, [account.view?.status, close])
   const run = async (action: () => Promise<void>) => {
@@ -41,14 +43,17 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
     if (active && attempt) void run(async () => { await cancel(attempt.id); close() })
     else close()
   }
-  const copyLink = async () => {
-    if (!attempt?.authorizeUrl) return
+  const retry = async () => {
+    if (active && attempt) await cancel(attempt.id)
+    await start()
+  }
+  const copyLink = async (authorizeUrl: string) => {
     try {
-      await navigator.clipboard.writeText(attempt.authorizeUrl)
+      await navigator.clipboard.writeText(authorizeUrl)
       setCopyResult({ messageKey: 'copiedLink' })
     } catch { setCopyResult({ messageKey: 'copyFailed' }) }
   }
-  const title = active ? t('browserTitle') : expired ? t('timeoutTitle') : error ? t('failureTitle') : t('loginTitle')
+  const title = error ? t('failureTitle') : active ? t('browserTitle') : expired ? t('timeoutTitle') : t('loginTitle')
   return <Modal open headless title={title} onClose={dismiss} className={css.dialog as string}>
     <div className={css.content}>
       <div className={css.header}>
@@ -57,21 +62,21 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
           <IconCloseOutlineRegular size={14} />
         </button>
       </div>
-      {active ? <p className={css.description}>
-        {t('browserPrompt')}<button type="button" className={css.link} disabled={!attempt?.authorizeUrl}
-          onClick={() => { void copyLink() }}>
+      {waiting ? <p className={css.description}>
+        {t('browserPrompt')}<button type="button" className={css.link} disabled={!authorizeUrl}
+          onClick={authorizeUrl ? () => { void copyLink(authorizeUrl) } : undefined}>
           {t(copyResult?.messageKey ?? 'copyLink')}
         </button>{t('browserDescription')}
       </p> : <p className={css.description}>
-        {expired ? t('timeoutDescription') : error ? t('failed') : t('loginDescription')}
+        {error ? t('failed') : expired ? t('timeoutDescription') : t('loginDescription')}
       </p>}
     </div>
     <div className={css.actions}>
       <Button variant="outline" className={css.secondaryButton} disabled={committing || busy}
         onClick={active ? dismiss : useApiKey}>{t(active ? 'cancel' : 'addApiKey')}</Button>
-      <Button variant="primary" className={css.primaryButton} disabled={active || account.view === undefined}
-        aria-label={active ? t('waiting') : undefined} onClick={() => { void run(start) }}>
-        {active ? <IconLoadingOutlineRegular className={css.spinner} /> : t(expired || error ? 'retry' : 'signIn')}
+      <Button variant="primary" className={css.primaryButton} disabled={busy || committing || waiting || account.view === undefined}
+        aria-label={waiting ? t('waiting') : undefined} onClick={() => { void run(retry) }}>
+        {waiting ? <IconLoadingOutlineRegular className={css.spinner} /> : t(expired || error ? 'retry' : 'signIn')}
       </Button>
     </div>
   </Modal>

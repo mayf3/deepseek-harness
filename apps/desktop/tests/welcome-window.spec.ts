@@ -12,7 +12,10 @@ vi.mock('electron', () => ({
   app: { getAppPath: () => electron.root },
   BrowserWindow: vi.fn(function (options: unknown) { return electron.create(options) }),
   ipcMain: {
-    handle: (name: string, handler: (event: unknown, value?: unknown) => Promise<unknown>) => electron.handlers.set(name, handler),
+    handle: (name: string, handler: (event: unknown, value?: unknown) => Promise<unknown>) => {
+      if (electron.handlers.has(name)) throw new Error(`duplicate IPC handler: ${name}`)
+      electron.handlers.set(name, handler)
+    },
     removeHandler: (name: string) => electron.handlers.delete(name),
   },
 }))
@@ -93,6 +96,7 @@ describe('desktop welcome window', () => {
     electron.create.mockReturnValue(window)
     await expect(openWelcomeWindow(resolveDesktopLocale('en'), operations)).rejects.toThrow('missing welcome document')
     expect(window.destroy).toHaveBeenCalledOnce()
+    expect(electron.handlers.size).toBe(0)
     expect(window.show).not.toHaveBeenCalled()
   })
 
@@ -127,6 +131,44 @@ describe('desktop welcome window', () => {
     await copy(own, 'attempt')
     expect(copySignInLink).toHaveBeenCalledExactlyOnceWith('attempt')
     window.once.mock.calls[0]![1]()
+    expect(electron.handlers.size).toBe(0)
+  })
+
+  it('does not show a superseded window when its delayed document finishes loading', async () => {
+    const previous = createWindow()
+    const current = createWindow()
+    const loaded = Promise.withResolvers<undefined>()
+    previous.loadFile.mockReturnValue(loaded.promise)
+    electron.create.mockReturnValueOnce(previous).mockReturnValueOnce(current)
+    const opening = openWelcomeWindow(resolveDesktopLocale('en'), operations)
+    await openWelcomeWindow(resolveDesktopLocale('en'), operations)
+    loaded.resolve(undefined)
+    await opening
+    expect(previous.show).not.toHaveBeenCalled()
+    expect(current.show).toHaveBeenCalledOnce()
+    previous.once.mock.calls[0]![1]()
+    current.once.mock.calls[0]![1]()
+  })
+
+  it('replaces handlers before the previous native window emits closed', async () => {
+    const previous = createWindow()
+    const current = createWindow()
+    electron.create.mockReturnValueOnce(previous).mockReturnValueOnce(current)
+    const previousStart = vi.fn(operations.startSignIn)
+    const currentStart = vi.fn(operations.startSignIn)
+    await openWelcomeWindow(resolveDesktopLocale('en'), { ...operations, startSignIn: previousStart })
+    const previousHandler = electron.handlers.get(WELCOME_IPC.start)!
+    const previousSender = { sender: previous.webContents, senderFrame: previous.webContents.mainFrame }
+    await openWelcomeWindow(resolveDesktopLocale('en'), { ...operations, startSignIn: currentStart })
+    const currentHandler = electron.handlers.get(WELCOME_IPC.start)!
+    await expect(previousHandler(previousSender)).rejects.toThrow('unowned frame')
+    await expect(currentHandler(previousSender)).rejects.toThrow('unowned frame')
+    previous.once.mock.calls[0]![1]()
+    expect(electron.handlers.get(WELCOME_IPC.start)).toBe(currentHandler)
+    await currentHandler({ sender: current.webContents, senderFrame: current.webContents.mainFrame })
+    expect(currentStart).toHaveBeenCalledOnce()
+    expect(previousStart).not.toHaveBeenCalled()
+    current.once.mock.calls[0]![1]()
     expect(electron.handlers.size).toBe(0)
   })
 

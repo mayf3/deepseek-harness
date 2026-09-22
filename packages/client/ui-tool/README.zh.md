@@ -27,6 +27,8 @@ kind: "package-reference"
 
 工具调用在对话中显示为卡片：一个根调用树带其嵌套子调用，每个原子调用由所属视图渲染。所有生命周期状态都保留工具的普通业务图标；失败与中断仍通过冻结调用／结果状态、无障碍状态文本和失败摘要明确表达。用户可通过宿主回调打开文件或检查调用。
 
+共享工具行和 Bash 行的失败、停止摘要在悬停时仍保留错误色和警告色；只有不处于这两种状态的摘要会在悬停时加深。
+
 ### 注册业务工具视图
 
 拥有该视图的业务包将其 wire 工具名称注册进 `tool.call.toolview`：
@@ -58,6 +60,8 @@ owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、冻结的 `block`
 ### 渲染约定
 
 `ToolCallTree` 接收一个已经包含递归 `subCalls` 的 root `ToolCallBlock`、会话 `cwd`，以及属主用于打开文件和检查调用的回调。它递归遍历标准调用块，让 root 与任意深度的 child 经过同一条原子分发路径，不订阅独立的 parent-to-children map。每个 root 和 child 包装层都保留 `data-chat-anchor-key="call:<id>"` 与 `data-chat-call-id` DOM 约定，供分页和 selection 使用。
+
+Tool 所有者属性将 Chat 注入的稳定 `useDisclosure` 钩子传给根调用及嵌套调用。工具行在拥有展开正文的位置调用它，中间 renderer 不订阅。每次调用拥有独立展开状态，外层轮次收起时重置该状态，不替换 React 身份；展示模式切换保留该状态。
 
 ### 卡片
 

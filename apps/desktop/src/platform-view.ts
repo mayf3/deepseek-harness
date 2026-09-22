@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto'
 import { WebContentsView, session, shell, type View, type WebFrameMain } from 'electron'
 import { mergePlatformCookies, type PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 
+import { PLATFORM_IPC, type PlatformLocale } from './platform-ipc.ts'
+
 export { PLATFORM_IPC } from './platform-ipc.ts'
 
 /** Bounds in desktop content coordinates, supplied by the owned application renderer. */
@@ -42,8 +44,11 @@ export class DesktopPlatformView {
   private releaseOwner: (() => void) | undefined
   private generation = 0
 
-  /** @param preload - bundled sandboxed Platform preload path. */
-  constructor(private readonly preload: string) {}
+  /**
+   * @param preload - bundled sandboxed Platform preload path.
+   * @param getLocale - current resolved Desktop language.
+   */
+  constructor(private readonly preload: string, private readonly getLocale: () => PlatformLocale) {}
 
   /** @param next - private Host credential snapshot; replacement invalidates the current document. */
   setSession(next: PlatformSession | null): void {
@@ -70,15 +75,19 @@ export class DesktopPlatformView {
     browserSession.setPermissionRequestHandler((_contents, _permission, callback) => { callback(false) })
     browserSession.setPermissionCheckHandler(() => false)
     const deploymentHeaders = account.requestHeaders ?? {}
+    const injectedRequests = new Set<number>()
+    browserSession.webRequest.onCompleted((details) => { injectedRequests.delete(details.id) })
+    browserSession.webRequest.onErrorOccurred((details) => { injectedRequests.delete(details.id) })
     browserSession.webRequest.onBeforeSendHeaders((details, callback) => {
       let headers = Object.fromEntries(Object.entries(details.requestHeaders).map(([name, value]) => [name.toLowerCase(), value]))
       if (new URL(details.url).origin === account.origin) {
+        injectedRequests.add(details.id)
         const cookie = headers.cookie ?? ''
         Object.assign(headers, deploymentHeaders)
         if (deploymentHeaders.cookie !== undefined) headers.cookie = mergePlatformCookies(cookie, deploymentHeaders.cookie)
-      } else {
+      } else if (injectedRequests.has(details.id)) {
         // Redirected subresources must not carry deployment headers to another origin.
-        headers = Object.fromEntries(Object.entries(headers).filter(([name]) => !(name in deploymentHeaders)))
+        headers = Object.fromEntries(Object.entries(headers).filter(([name]) => !Object.hasOwn(deploymentHeaders, name)))
       }
       callback({ requestHeaders: headers })
     })
@@ -149,18 +158,26 @@ export class DesktopPlatformView {
   setBounds(bounds: PlatformBounds): void { this.view?.setBounds(bounds) }
 
   /**
-   * Return prepared credentials only to the current Platform main frame.
+   * Return prepared credentials and resolved language only to the current Platform main frame.
    * @param event - Electron-provided sender identity.
-   * @returns credentials copied once into the isolated preload.
+   * @returns credentials and current language copied into the isolated preload.
    */
-  bootstrap(event: PlatformSender): Pick<PlatformSession, 'origin' | 'token'> {
+  bootstrap(event: PlatformSender): Pick<PlatformSession, 'origin' | 'token'> & { locale: PlatformLocale } {
     const view = this.view
     const account = this.account
     if (view === undefined || account === null || event.sender !== view.webContents
       || event.senderFrame !== view.webContents.mainFrame || new URL(event.senderFrame.url).origin !== account.origin) {
       throw new Error('Rejected Platform bootstrap')
     }
-    return { origin: account.origin, token: account.token }
+    return { origin: account.origin, token: account.token, locale: this.getLocale() }
+  }
+
+  /** Notify the current document after the Desktop language changes. */
+  notifyLocaleChanged(): void {
+    const view = this.view
+    if (view !== undefined && !view.webContents.isDestroyed()) {
+      view.webContents.send(PLATFORM_IPC.localeChanged, this.getLocale())
+    }
   }
 
   /** Destroy the document before releasing its temporary browser storage. */

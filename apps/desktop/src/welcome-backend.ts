@@ -16,6 +16,8 @@ export interface DesktopWelcomeBackend {
   readonly account: DesktopAccountBackend
   /** @returns Configured-key presence and the shared language preference, without credential values. */
   read(): Promise<WelcomeState>
+  /** @returns The saved UI language without account or provider requests. */
+  readLocalePreference(): Promise<string | null>
   /**
    * @param apiKey - User-entered official provider key.
    * @returns A safe write outcome without provider diagnostics.
@@ -63,10 +65,19 @@ export async function connectDesktopWelcome(
     const settings = await invoke({ namespace: 'settings', method: 'describe', args: {} })
     if (!record(settings) || !Array.isArray(settings.namespaces)) throw new Error('desktop welcome: missing settings namespaces')
     const official: unknown = settings.namespaces.find((item: unknown) => record(item) && item.ns === 'llm-deepseek')
+    if (official === undefined) return { settings: { namespaces: settings.namespaces }, ref: undefined }
     if (!record(official) || !record(official.value) || typeof official.value.apiKeyEnv !== 'string') {
       throw new Error('desktop welcome: missing official DeepSeek credential reference')
     }
     return { settings: { namespaces: settings.namespaces }, ref: official.value.apiKeyEnv }
+  }
+  const localePreference = (namespaces: unknown[]): string | null => {
+    const locale: unknown = namespaces.find((item: unknown) => record(item) && item.ns === 'locale')
+    if (!record(locale) || !record(locale.value)
+      || (locale.value.preference !== undefined && typeof locale.value.preference !== 'string')) {
+      throw new Error('desktop welcome: invalid locale preference')
+    }
+    return locale.value.preference ?? null
   }
   const read = async (): Promise<WelcomeState> => {
     const { settings, ref } = await settingsAndReference()
@@ -85,7 +96,7 @@ export async function connectDesktopWelcome(
       }
       return record(value) && typeof value.apiKeyEnv === 'string' ? [value.apiKeyEnv] : []
     })
-    const unique = [...new Set([ref, ...refs])]
+    const unique = [...new Set([...(ref === undefined ? [] : [ref]), ...refs])]
     const states: Record<string, unknown> = {}
     // credentials.describe accepts at most 64 references per request.
     for (let offset = 0; offset < unique.length; offset += 64) {
@@ -93,26 +104,27 @@ export async function connectDesktopWelcome(
       if (!record(batch)) throw new Error('desktop welcome: invalid credential metadata')
       Object.assign(states, batch)
     }
-    if (!record(states[ref])) throw new Error('desktop welcome: missing credential metadata')
-    const locale: unknown = namespaces.find((item: unknown) => record(item) && item.ns === 'locale')
-    if (!record(locale) || !record(locale.value)
-      || (locale.value.preference !== undefined && typeof locale.value.preference !== 'string')) {
-      throw new Error('desktop welcome: invalid locale preference')
-    }
+    if (ref !== undefined && !record(states[ref])) throw new Error('desktop welcome: missing credential metadata')
     return {
       loggedIn: (await account.state()).status === 'credential-stored',
       hasApiKey: Object.values(states).some(value => record(value) && value.configured === true),
-      writable: states[ref].writable === true,
-      localePreference: locale.value.preference ?? null,
+      writable: ref !== undefined && record(states[ref]) && states[ref].writable === true,
+      localePreference: localePreference(namespaces),
     }
   }
   return {
     account,
     read,
+    async readLocalePreference() {
+      const settings = await invoke({ namespace: 'settings', method: 'describe', args: {} })
+      if (!record(settings) || !Array.isArray(settings.namespaces)) throw new Error('desktop welcome: missing settings namespaces')
+      return localePreference(settings.namespaces)
+    },
     async save(apiKey) {
       if (!/^[\x21-\x7e]+$/.test(apiKey)) return { ok: false }
       try {
         const { ref } = await settingsAndReference()
+        if (ref === undefined) return { ok: false }
         await invoke({ namespace: 'credentials', method: 'set', args: { ref, value: apiKey } })
         return { ok: true }
       } catch {

@@ -30,7 +30,7 @@ Desktop profile 为 Host API 请求头提供原生平台信息。账号与更新
 
 退出登录先删除本地授权，再使用捕获的 token 调用 Platform POST /auth-api/v0/users/logout。远程失败不会恢复登录态。首次请求失败后，提供者最多重试五次，使用可配置的指数退避，默认从一秒开始。重试任务只保留旧 token，不改变后续登录态，并在提供者关闭时结束，不持久化。本地凭证删除成功后才发布已退出状态。退出登录位于侧边栏账号菜单；账号设置负责资料、余额和登录。两者通过框架 hook 读取插件持有的同一条 Host 状态流。
 
-API Key 与账号记录独立保存。账号 token 没有过期或刷新流程；退登重试耗尽后，已从本地删除的 token 在远端仍可能有效。提供者初始化时在本地丢弃与配置的 Platform 来源不同的授权，不调用远端撤销，使环境切换以未登录态启动，而不导致 Desktop 启动失败。API Key 和设备标识保留。资料与余额查询失败保留登录态；授权尝试的有效期仅适用于 token 签发前。同一授权 token 可认证已配置签发来源上的 Platform current 和 get_user_summary 查询。Host 原样保留 Platform 脱敏后的联系方式并丢弃响应 token；账号变化使未完成结果失效。UI 分行显示 normal_wallets 充值余额与正额 bonus_wallets 赠金余额，避免将赠金额度显示为充值资金。
+API Key 与账号记录独立保存。账号 token 没有主动刷新流程；退登重试耗尽后，已从本地删除的 token 在远端仍可能有效。提供者初始化时在本地丢弃与配置的 Platform 来源不同的授权，不调用远端撤销，使环境切换以未登录态启动，而不导致 Desktop 启动失败。API Key 和设备标识保留。资料与余额接口的 HTTP 401 响应清除被拒绝的凭据，其他查询错误保留登录态；授权尝试的有效期仅适用于 token 签发前。同一授权 token 可认证已配置签发来源上的 Platform current 和 get_user_summary 查询。Host 原样保留 Platform 脱敏后的联系方式并丢弃响应 token；账号变化使未完成结果失效。UI 分行显示 normal_wallets 充值余额与正额 bonus_wallets 赠金余额，避免将赠金额度显示为充值资金。
 
 账号插件通过 settings.models.sign-in 提供选择、等待、失败和超时对话框。模型包保留凭证就绪检查和现有 API Key 编辑器；设置外壳协调显式重开，避免登录与 API Key 引导同时挂载冲突的对话框。
 
@@ -44,17 +44,9 @@ DSH 授权通过 x-dsh-auth-token 请求头鉴权 Platform、推理和 Files 请
 
 资料和充值钱包余额分别通过 getProfile 与 getBalance 查询。客户端在各自返回时立即更新，余额请求慢或失败不会延迟侧边栏用户名显示。账号变化使两种进行中的查询结果失效。
 
-## 验证
-
-提供者测试覆盖真实本机回调、错误 state、延迟兑换取消、凭证持久化、退出和官方来源限制。桌面测试覆盖原生操作桥接与本地化入口。手动开发联调使用平台 dev middleware Mock 和真实 Electron Host，包括在浏览器批准前取消。生产后端凭证及安装器 scheme 注册仍需发布环境验证。
-
-## 相关记录
-
-[凭证记录与流程](2026-08-13-credential-records-and-authorization-flows.zh.md)仍是通用凭证依据。[桌面外壳](2026-09-10-desktop-web-wrapper.zh.md)负责传输组合。
-
 开发环境认证通过配置的平台来源上的显式 Host 请求头 requestHeaders 完成。提供者拒绝重定向和保留请求头覆盖，防止开发环境 Cookie 替换账号授权或跟随浏览器跳转地址。特定环境的认证协议不属于账号提供者。
 
-Host 在 auth_init 中发送 client_type（desktop 或 web），供 Platform 选择完成页交互。Web 失败时关闭授权标签页，原标签页接收 Host 状态，不使用 Web UI 返回地址。后端接受 localhost 回调。DSH 保留浏览器提供的 localhost 主机名和端口，不做 DNS 解析或 IP 字面量转换。
+内置账号界面仅用于 Desktop：preload 桥接启用账号入口、设置和登录引导。普通 Web 保留 API Key 引导及标准设置入口，不订阅账号状态或显示登录。Host 协议在 auth_init 中接受 login_source（desktop 或 web）；内置界面发送 desktop。后端接受 localhost 回调。DSH 保留浏览器提供的 localhost 主机名和端口，不做 DNS 解析或 IP 字面量转换。
 
 macOS 开发启动器为 `dsh://open` 注册独立、经临时签名的应用包。该应用包保留工作区入口和开发路径，使 Launch Services 能够冷启动；凭证不会被复制，也不修改包管理器安装的 Electron 应用。协议注册指向最近启动的开发版或打包版应用。
 
@@ -64,4 +56,14 @@ exchange 的 user 数据在凭证提交后供首次资料读取使用，展示�
 
 独立的 accountRequestHeaders 将账号资料及内嵌 Platform 流量与授权、退登分开路由。Cookie 覆盖按名称合并，保留部署认证。Host 通过私有进程 IPC 传递合并后的请求头；Electron 仅在配置来源注入，并从 bootstrap 排除。
 
-账号推理路由选择及运行任务取消由[提供方退登决策](2026-09-17-account-provider-signout.zh.md)定义。
+Host 将私有 Platform 会话绑定到账号提供者的生命周期。提供者移除或订阅结束时清空 Electron 会话；替换后订阅新的提供者，已释放的读取不得发布旧凭据。
+
+客户端区分插件卸载和账户状态流的终止错误。RemoteStream 在两种情况下都会中止其信号，因此插件独立记录卸载状态，保留错误反馈并抑制卸载后的报告。
+
+## 验证
+
+提供者测试覆盖真实本机回调、错误 state、延迟兑换取消、凭证持久化、退出和官方来源限制。桌面测试覆盖原生操作桥接与本地化入口。手动开发联调使用平台 dev middleware Mock 和真实 Electron Host，包括在浏览器批准前取消。生产后端凭证及安装器 scheme 注册仍需发布环境验证。
+
+## 相关记录
+
+[凭证记录与流程](2026-08-13-credential-records-and-authorization-flows.zh.md)仍是通用凭证依据。[桌面外壳](2026-09-10-desktop-web-wrapper.zh.md)负责传输组合。

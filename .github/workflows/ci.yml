@@ -357,6 +357,9 @@ jobs:
         if: vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]'
         run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install chromium
 
+      - name: Build and execute the Linux Office runtime
+        run: CI=true pnpm run prepare:primary-runtime --target linux-x64 --output "$RUNNER_TEMP/office-runtime" --cache "$RUNNER_TEMP/office-runtime-downloads"
+
       - name: Run compatibility, snapshot, and artifact gates
         run: pnpm run check:ci:consumers
 

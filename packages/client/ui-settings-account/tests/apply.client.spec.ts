@@ -1,75 +1,173 @@
 // @vitest-environment jsdom
-/** Account state updates continue after default-model initialization refuses. */
-import { expect, it, vi } from 'vitest'
-import type { AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
-import { apply, type AccountSectionInjected } from '../src/client/index.ts'
+/** Desktop account operations and ordinary-browser isolation in the shipped client composition. */
+import { afterEach, expect, vi } from 'vitest'
+import { ok } from '@deepseek-ai/dsh-remote-mock'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
+import type { AccountDetails, AccountView, AccountUserId, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
+import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import type { AccountSectionInjected } from '../src/client/AccountSection.tsx'
+import { CONTACT_CONFIG_GLOBAL } from '../src/contact-config.ts'
 
-it.each(['accepted', 'refused', 'disconnected', 'pending'] as const)('initializes account models and keeps reading account state: %s', async (outcome) => {
-  const log = vi.spyOn(console, 'info').mockImplementation(() => {})
-  const observed: { status: string | undefined; failed: boolean | undefined }[] = []
-  const abort = new AbortController()
-  const done = Promise.withResolvers<undefined>()
-  const release = Promise.withResolvers<undefined>()
-  const initialization = Promise.withResolvers<undefined>()
-  const initializeDefaultModel = vi.fn(async () => {
-    if (outcome === 'pending') await initialization.promise
-    if (outcome === 'disconnected') throw new Error('connection lost')
-    return { ok: outcome === 'accepted' || outcome === 'pending', value: undefined }
+const it = createClientTest({ roster: webApp })
+const SELF = '@deepseek-ai/dsh-client-ui-settings-account'
+const view: AccountView = { status: 'signed-out', attempt: null, links: { usageUrl: '', topUpUrl: '' } }
+const stored: AccountView = { ...view, status: 'credential-stored' }
+const profile: AccountDetails['profile'] = { status: 'ready', value: { id: 'account-user' as AccountUserId, name: 'User', contact: null } }
+function operations(c: TestClient): AccountSectionInjected {
+  const injected: object = c.ctx.slots.entries('settings.launcher')[0]!.inject!()
+  return injected as AccountSectionInjected
+}
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+it('keeps account UI and account RPC inactive in a plain browser, including after reload', async ({ start, mock }) => {
+  const c = await start()
+  for (const reload of [false, true]) {
+    if (reload) await c.reload(SELF)
+    await c.flush()
+    expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)
+    expect(c.ctx.slots.entries('settings.models.sign-in')).toHaveLength(0)
+    expect(c.ctx.slots.entries('settings.section').some(entry => entry.options.id === 'account')).toBe(false)
+    expect(mock.log.calls().filter(call => call.endpoint.startsWith('account/'))).toEqual([])
+    expect(mock.log.streams().filter(stream => stream.endpoint.startsWith('account/'))).toEqual([])
+  }
+}, 60_000)
+
+it('shares account actions across seats, publishes dialog ownership, and opens contextual support', async ({ start }) => {
+  vi.stubGlobal(CONTACT_CONFIG_GLOBAL, { contactFormUrl: 'https://example.test/form/', contactSource: 'harness' })
+  const open = vi.spyOn(window, 'open').mockReturnValue(null)
+  vi.stubGlobal('dshDesktop', {})
+  const c = await start()
+  const actions = operations(c)
+  expect(c.ctx.slots.entries('settings.models.sign-in')[0]!.inject!()).toBe(actions)
+  await actions.refresh()
+  expect(c.mock.remote.account.getProfile).not.toHaveBeenCalled()
+  const listener = vi.fn()
+  const off = actions.hooks.account.subscribe(listener)
+  actions.showLogin(true)
+  actions.setOnboarding(true)
+  expect(actions.hooks.account.getSnapshot()).toMatchObject({ loginVisible: true, onboarding: true })
+  expect(listener).toHaveBeenCalledTimes(2)
+  off()
+  actions.showLogin(false)
+  expect(listener).toHaveBeenCalledTimes(2)
+  actions.contactUs()
+  expect(new URL(String(open.mock.calls.at(-1)![0])).searchParams.has('prefill_uid')).toBe(false)
+  c.mock.remote.account.getProfile.mockResolvedValue(ok(profile))
+  c.mock.streams.push('account/watch', stored)
+  await vi.waitFor(() => { expect(actions.hooks.account.getSnapshot().details?.profile).toEqual(profile) })
+  const entry = c.ctx.slots.entries('settings.section').find(entry => entry.options.id === 'account')!
+  expect(entry.inject!()).toBe(actions)
+  expect(resolveSlotLabel(entry.options.label)).toBe('Account')
+  vi.spyOn(c.ctx.locale, 'getSnapshot').mockReturnValue({ ...c.ctx.locale.getSnapshot(), active: 'zh' })
+  actions.contactUs()
+  const support = new URL(String(open.mock.calls.at(-1)![0]))
+  expect(support.searchParams.get('prefill_uid')).toBe('account-user')
+  expect(support.searchParams.get('prefill_app_locale')).toBe('zh-CN')
+  await c.unload(SELF)
+  expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)
+}, 60_000)
+
+it('coalesces refreshes, publishes independent failures, and rejects stale responses after sign-out or unload', async ({ start }) => {
+  vi.stubGlobal('dshDesktop', {})
+  const c = await start()
+  const actions = operations(c)
+  const pending = Promise.withResolvers<ReturnType<typeof ok<AccountDetails['profile'] | null>>>()
+  c.mock.remote.account.getProfile.mockReturnValueOnce(pending.promise)
+  c.mock.remote.account.getBalance.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'offline', {}) })
+  c.mock.streams.push('account/watch', stored)
+  await vi.waitFor(() => { expect(c.mock.remote.account.getProfile).toHaveBeenCalledOnce() })
+  const a = actions.refresh()
+  expect(actions.refresh()).toBe(a)
+  c.mock.streams.push('account/watch', view)
+  await vi.waitFor(() => { expect(actions.hooks.account.getSnapshot().view).toEqual(view) })
+  pending.resolve(ok(profile))
+  await a
+  expect(actions.hooks.account.getSnapshot().details).toBeUndefined()
+  c.mock.remote.account.getProfile.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'offline', {}) })
+  c.mock.remote.account.getBalance.mockRejectedValueOnce(new Error('offline'))
+  c.mock.streams.push('account/watch', stored)
+  await vi.waitFor(() => { expect(actions.hooks.account.getSnapshot().details).toEqual({ profile: { status: 'failed' }, balance: { status: 'failed' } }) })
+  const pendingAgain = Promise.withResolvers<ReturnType<typeof ok<AccountDetails['profile'] | null>>>()
+  c.mock.remote.account.getProfile.mockReturnValueOnce(pendingAgain.promise)
+  const request = actions.refresh()
+  await c.unload(SELF)
+  pendingAgain.resolve(ok(profile))
+  await request
+  expect(actions.hooks.account.getSnapshot().details?.profile).toEqual({ status: 'failed' })
+}, 60_000)
+
+it('uses the Desktop login carrier and exposes operation errors', async ({ start, mock }) => {
+  vi.spyOn(window, 'open').mockReturnValue(null)
+  vi.stubGlobal('dshDesktop', {})
+  const c = await start()
+  const actions = operations(c)
+  mock.remote.account.startSignIn.mockResolvedValue(ok(view))
+  await actions.start()
+  expect(mock.remote.account.startSignIn).toHaveBeenCalledWith('en', window.location.origin, 'desktop')
+  const failure = { ok: false as const, error: new RemoteError('gateway/internal', 'offline', {}) }
+  mock.remote.account.startSignIn.mockResolvedValueOnce(failure)
+  await expect(actions.start()).rejects.toThrow('account start failed')
+  expect(actions.hooks.account.getSnapshot()).toMatchObject({ loginVisible: true, loginFailed: true })
+  const id = 'cancel-me' as SignInAttemptId
+  mock.remote.account.cancelSignIn.mockResolvedValueOnce(ok(view)).mockResolvedValueOnce(failure)
+  await actions.cancel(id)
+  await expect(actions.cancel(id)).rejects.toThrow('account cancel failed')
+  mock.remote.account.signOut.mockResolvedValueOnce(ok(view)).mockResolvedValueOnce(failure)
+  await actions.signOut()
+  await expect(actions.signOut()).rejects.toThrow('account sign-out failed')
+}, 60_000)
+
+it('uses the Desktop stream origin and exposes the native platform bridge', async ({ start, mock }) => {
+  vi.stubGlobal('dshDesktop', {})
+  const c = await start()
+  vi.stubGlobal('__DSH_TRANSPORT__', { streamBaseUrl: 'http://localhost:9876/stream' })
+  const platform = { open: vi.fn(), setBounds: vi.fn(), close: vi.fn() }
+  vi.stubGlobal('dshPlatform', platform)
+  await c.reload(SELF)
+  const actions = operations(c)
+  expect(actions.platform).toBe(platform)
+  mock.remote.account.startSignIn.mockResolvedValue(ok(view))
+  await actions.start()
+  expect(mock.remote.account.startSignIn).toHaveBeenCalledWith('en', 'http://localhost:9876', 'desktop')
+}, 60_000)
+
+
+it('publishes a terminal state-stream failure without mistaking it for plugin disposal', async ({ start }) => {
+  vi.stubGlobal('dshDesktop', {})
+  const c = await start()
+  const actions = operations(c)
+  await c.mock.streams.opened('account/watch', 1)
+  c.mock.streams.end('account/watch')
+  await vi.waitFor(() => { expect(actions.hooks.account.getSnapshot().failed).toBe(true) })
+}, 60_000)
+
+it('ignores a terminal stream error when plugin disposal already owns teardown', async ({ start }) => {
+  vi.stubGlobal('dshDesktop', {})
+  const c = await start()
+  let disposal: Promise<void> | undefined
+  const original = c.ctx.remote.$stream.bind(c.ctx.remote)
+  const spy = vi.spyOn(c.ctx.remote, '$stream').mockImplementation((options) => {
+    const stream = original(options)
+    stream.signal.addEventListener('abort', () => { disposal = c.unload(SELF) }, { once: true })
+    return stream
   })
-  const links = { usageUrl: 'https://example.test/usage', topUpUrl: 'https://example.test/top_up' }
-  const signedIn: AccountView = {
-    status: 'credential-stored', links, attempt: { id: 'login' as SignInAttemptId, phase: 'succeeded' },
-  }
-  const frames: AccountView[] = [signedIn, signedIn, { status: 'signed-out', links, attempt: null }]
-  const disposers: (() => void)[] = []
-  let operations: AccountSectionInjected | undefined
-  const ctx = {
-    effect: (install: () => (() => void) | undefined) => { const dispose = install(); if (dispose) disposers.push(dispose) },
-    locale: { register: () => () => {}, bind: () => (key: string) => key },
-    slots: {
-      inject: (_name: string, install: () => (() => void) | undefined) => {
-        const dispose = install()
-        if (dispose) disposers.push(dispose)
-      },
-      register: (entry: { inject?: () => AccountSectionInjected }) => {
-        if (entry.inject) operations = entry.inject()
-        return () => {}
-      },
-    },
-    remote: {
-      session: { initializeDefaultModel },
-      account: { getProfile: async () => ({ ok: true, value: null }), getBalance: async () => ({ ok: true, value: null }) },
-      $stream: () => ({
-        signal: abort.signal, dispose: () => { abort.abort(); release.resolve(undefined) },
-        async *[Symbol.asyncIterator]() {
-          for (const value of frames) yield { value, accept: () => {
-            const snapshot = operations?.hooks.account.getSnapshot()
-            observed.push({ status: snapshot?.view?.status, failed: snapshot?.failed })
-            if (value.status === 'signed-out') done.resolve(undefined)
-          } }
-          await release.promise
-        },
-      }),
-    },
-  }
-  try {
-    apply(ctx as never)
-    await done.promise
-    expect(initializeDefaultModel).toHaveBeenCalledExactlyOnceWith('deepseek-account')
-    expect(observed).toEqual([
-      { status: 'credential-stored', failed: false },
-      { status: 'credential-stored', failed: false },
-      { status: 'signed-out', failed: false },
-    ])
-    if (outcome === 'accepted' || outcome === 'pending') expect(log).not.toHaveBeenCalled()
-    else expect(log).toHaveBeenCalledWith('[deepseek-account] default model initialization failed', {
-      reason: outcome === 'refused' ? 'refused' : 'disconnected',
-    })
-    expect(operations?.hooks.account.getSnapshot()).toMatchObject({ view: { status: 'signed-out' }, failed: false })
-  } finally {
-    initialization.resolve(undefined)
-    await Promise.resolve()
-    for (const dispose of disposers.reverse()) dispose()
-    log.mockRestore()
-  }
-})
+  await c.reload(SELF)
+  spy.mockRestore()
+  const actions = operations(c)
+  await c.mock.streams.opened('account/watch', 2)
+  c.mock.streams.end('account/watch')
+  await vi.waitFor(() => { expect(disposal).toBeDefined() })
+  await disposal
+  expect(actions.hooks.account.getSnapshot().failed).toBe(false)
+}, 60_000)
+
+it('reads the account task impact and reports a refused query', async ({ start, mock }) => {
+  vi.stubGlobal('dshDesktop', {})
+  const c = await start()
+  const actions = operations(c)
+  mock.remote.account.hasRunningAccountTasks.mockResolvedValueOnce(ok(true))
+  expect(await actions.hasRunningAccountTasks()).toBe(true)
+  mock.remote.account.hasRunningAccountTasks.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'offline', {}) })
+  await expect(actions.hasRunningAccountTasks()).rejects.toThrow('account task query failed')
+}, 60_000)

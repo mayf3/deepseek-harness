@@ -10,7 +10,6 @@ import { z } from 'zod'
 import { DeepSeekAccount, desktopClientHeaders, mergePlatformCookies, type PlatformSession, type AccountDetails, type AccountView, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
-import { AccountUnauthorizedError } from './protocol.ts'
 import { profile, readAccountDetail } from './details.ts'
 import { revokeAccount, type LogoutRetryPolicy } from './logout.ts'
 import { PlatformAuthError, platformHeaders, platformOrigin, browserUrl, requestPlatform, initialization, exchange, loginOrigin } from './protocol.ts'
@@ -131,7 +130,7 @@ export class PlatformAccount extends DeepSeekAccount {
       run: (session) => {
         const attempt = this.attempt
         if (attempt === undefined) return Promise.reject(new PlatformAuthError('protocol'))
-        attempt.running = this.run(session)
+        attempt.running = this.run(session, attempt)
         return attempt.running
       },
     })
@@ -190,30 +189,25 @@ export class PlatformAccount extends DeepSeekAccount {
 
   private async getDetail<K extends keyof AccountDetails>(field: K): Promise<AccountDetails[K] | null> {
     const lifetime = this.detailsLifetime
-    if (this.closed) return null
-    const record = await this.ctx.credentials.readRecord(KEY)
-    if (record === undefined || lifetime.signal.aborted) return null
-    if (record.kind !== 'grant') throw new PlatformAuthError('storage')
-    const parsed = grant.safeParse(record.payload)
-    if (!parsed.success) throw new PlatformAuthError('storage')
-    // A private origin override must never forward a grant issued by another environment.
-    if (parsed.data.issuer !== this.origin) throw new PlatformAuthError('protocol')
-    if (field === 'profile' && this.attempt?.initialProfile?.token === parsed.data.token) {
+    const stored = await this.readCurrentGrant(lifetime)
+    if (stored === null || lifetime.signal.aborted) return null
+    if (field === 'profile' && this.attempt?.initialProfile?.token === stored.token) {
       const initial = this.attempt.initialProfile.value
       delete this.attempt.initialProfile
       return initial as AccountDetails[K]
     }
     try {
-      const details = await readAccountDetail(field, this.origin, parsed.data.token,
+      const details = await readAccountDetail(field, this.origin, stored.token,
         AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]),
         { ...this.accountRequestHeaders, ...this.clientHeaders })
       return this.detailsLifetime !== lifetime ? null : details
-    } catch (error) {
-      if (!(error instanceof AccountUnauthorizedError)) throw error
-      if (this.detailsLifetime === lifetime) await this.expireCredential(parsed.data.token, lifetime)
+    } catch (_unauthorized) {
+      // readAccountDetail exposes only authenticated HTTP 401 failures.
+      if (this.detailsLifetime === lifetime) await this.expireCredential(stored.token, lifetime)
       return null
     }
   }
+
 
   private async expireCredential(token: string, lifetime: AbortController): Promise<void> {
     this.removing ??= (async () => {
@@ -233,19 +227,27 @@ export class PlatformAccount extends DeepSeekAccount {
     await this.removing
   }
 
+
   override async getPlatformSession(): Promise<PlatformSession | null> {
     const lifetime = this.detailsLifetime
+    const stored = await this.readCurrentGrant(lifetime)
+    if (stored === null || lifetime.signal.aborted) return null
+    const requestHeaders = { ...this.accountRequestHeaders, ...this.clientHeaders }
+    return { origin: this.origin, token: stored.token,
+      ...(this.embeddedPageDist ? { embeddedPageDist: this.embeddedPageDist } : {}),
+      ...(Object.keys(requestHeaders).length ? { requestHeaders } : {}) }
+  }
+
+  private async readCurrentGrant(lifetime: AbortController): Promise<z.infer<typeof grant> | null> {
     if (this.closed) return null
     const record = await this.ctx.credentials.readRecord(KEY)
     if (record === undefined || lifetime.signal.aborted) return null
     if (record.kind !== 'grant') throw new PlatformAuthError('storage')
     const parsed = grant.safeParse(record.payload)
     if (!parsed.success) throw new PlatformAuthError('storage')
+    // A private origin override must never forward a grant issued by another environment.
     if (parsed.data.issuer !== this.origin) throw new PlatformAuthError('protocol')
-    const requestHeaders = { ...this.accountRequestHeaders, ...this.clientHeaders }
-    return { origin: this.origin, token: parsed.data.token,
-      ...(this.embeddedPageDist ? { embeddedPageDist: this.embeddedPageDist } : {}),
-      ...(Object.keys(requestHeaders).length ? { requestHeaders } : {}) }
+    return parsed.data
   }
 
   override async resolveToken(url: string): Promise<string | undefined> {
@@ -381,15 +383,12 @@ export class PlatformAccount extends DeepSeekAccount {
   private changed(): void { for (const listener of this.listeners) listener() }
 
   private update(attempt: Attempt, value: Partial<SignInAttemptView>): void {
-    if (this.attempt !== attempt) return
     const { authorizeUrl: _url, ...rest } = attempt.view
     attempt.view = { ...rest, ...value }
     this.changed()
   }
 
-  private async run(session: AuthorizationSession): Promise<void> {
-    const attempt = this.attempt
-    if (attempt === undefined) throw new PlatformAuthError('protocol')
+  private async run(session: AuthorizationSession, attempt: Attempt): Promise<void> {
     const webServer = this.ctx.get('webServer')
     if (webServer === undefined) throw new PlatformAuthError('protocol')
     const verifier = randomBytes(32).toString('base64url')
@@ -400,6 +399,7 @@ export class PlatformAccount extends DeepSeekAccount {
     // Callback requests may precede initialization settlement; the rejection is observed immediately.
     void code.promise.catch(() => undefined)
     const deadline = new AbortController()
+    let expiresAt = Date.now() + this.attemptTimeout
     const signal = AbortSignal.any([session.signal, deadline.signal])
     let timer = setTimeout(() =>{  deadline.abort() }, this.attemptTimeout)
     const abort = (): void => { code.reject(new PlatformAuthError('expired')) }
@@ -431,22 +431,17 @@ export class PlatformAccount extends DeepSeekAccount {
         code_challenge: challenge, code_challenge_method: 'S256', state, redirect_uri: redirectUri, locale: attempt.locale,
         login_source: attempt.loginSource,
       }, signal), { reportInput: true })
-      if (!init.success) {
-        console.info('[deepseek-account] payload rejected', {
-          stage: 'auth_init', issues: init.error.issues.map(issue => ({
-            path: issue.path, code: issue.code,
-            receivedType: issue.input === null ? 'null' : Array.isArray(issue.input) ? 'array' : typeof issue.input,
-          })),
-        })
-        throw new PlatformAuthError('protocol')
-      }
+      if (!init.success) this.rejectPayload('auth_init', init.error)
       const authorizeUrl = browserUrl(init.data.authorize_url, this.origin, '/dsh/authorize', this.rewriteBrowserOrigin)
       authorizeId = init.data.authorize_id
       signal.throwIfAborted()
-      const expires = Math.min(this.attemptTimeout, init.data.expires_in * 1000)
+      const now = Date.now()
+      expiresAt = Math.min(expiresAt, now + init.data.expires_in * 1000)
+      const remaining = expiresAt - now
+      if (remaining <= 0) { deadline.abort(); signal.throwIfAborted() }
       clearTimeout(timer)
-      timer = setTimeout(() =>{  deadline.abort() }, expires)
-      this.update(attempt, { phase: 'waiting-browser', authorizeUrl, expiresAt: Date.now() + expires })
+      timer = setTimeout(() =>{  deadline.abort() }, remaining)
+      this.update(attempt, { phase: 'waiting-browser', authorizeUrl, expiresAt })
       const receivedCode = await code.promise
       signal.throwIfAborted()
       this.update(attempt, { phase: 'exchanging' })
@@ -458,18 +453,11 @@ export class PlatformAccount extends DeepSeekAccount {
         code: receivedCode, code_verifier: verifier, redirect_uri: redirectUri,
         device_id: identity.id, device_model: `${platform()}-${arch()}`, os_version: `${platform()} ${release()}`,
       }, signal), { reportInput: true })
-      if (!result.success) {
-        console.info('[deepseek-account] payload rejected', {
-          stage: 'auth_exchange', issues: result.error.issues.map(issue => ({
-            path: issue.path, code: issue.code,
-            receivedType: issue.input === null ? 'null' : Array.isArray(issue.input) ? 'array' : typeof issue.input,
-          })),
-        })
-        throw new PlatformAuthError('protocol')
-      }
+      if (!result.success) this.rejectPayload('auth_exchange', result.error)
       const completionUrl = new URL(browserUrl(result.data.authorized_url, this.origin, '/dsh/authorized', this.rewriteBrowserOrigin))
       completionUrl.searchParams.set('login_source', attempt.loginSource)
       attempt.completionUrl = completionUrl.href
+      if (Date.now() >= expiresAt) deadline.abort()
       signal.throwIfAborted()
       if (result.data.user != null) {
         try { attempt.initialProfile = { token: result.data.token, value: { status: 'ready', value: profile(result.data.user) } } }
@@ -490,6 +478,16 @@ export class PlatformAccount extends DeepSeekAccount {
       signal.removeEventListener('abort', abort)
       // begin() settles the browser response and removes only this attempt’s route.
     }
+  }
+
+  private rejectPayload(stage: string, error: z.ZodError): never {
+    console.info('[deepseek-account] payload rejected', {
+      stage, issues: error.issues.map(issue => ({
+        path: issue.path, code: issue.code,
+        receivedType: issue.input === null ? 'null' : Array.isArray(issue.input) ? 'array' : typeof issue.input,
+      })),
+    })
+    throw new PlatformAuthError('protocol')
   }
 
   private cancelRequest(authorizeId: string, verifier: string): void {

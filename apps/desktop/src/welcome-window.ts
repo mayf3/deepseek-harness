@@ -47,17 +47,30 @@ export function welcomeWindowOptions(platform: NodeJS.Platform, locale: DesktopL
   }
 }
 
+let disposeActiveHandlers: (() => void) | undefined
+
 /**
  * Open the process's sole welcome window with desktop-owned operations.
- * The caller closes an existing welcome window before opening another.
+ * Replaces IPC ownership immediately; the caller closes the previous native window.
  * @param locale - shell-owned localized copy.
  * @param operations - credential write and this-launch-only skip actions.
  * @returns the visible window; a failed load destroys it before rejecting.
  */
 export async function openWelcomeWindow(locale: DesktopLocale, operations: WelcomeOperations): Promise<BrowserWindow> {
   const window = new BrowserWindow(welcomeWindowOptions(process.platform, locale))
+  disposeActiveHandlers?.()
+  let active = true
+  const disposeHandlers = (): void => {
+    if (!active) return
+    active = false
+    for (const channel of [WELCOME_IPC.saveApiKey, WELCOME_IPC.skip, WELCOME_IPC.start, WELCOME_IPC.cancel, WELCOME_IPC.copyLink]) {
+      ipcMain.removeHandler(channel)
+    }
+    disposeActiveHandlers = undefined
+  }
+  disposeActiveHandlers = disposeHandlers
   const assertSender = (event: IpcMainInvokeEvent): void => {
-    if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {
+    if (!active || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {
       throw new Error('desktop welcome: rejected action from an unowned frame')
     }
   }
@@ -81,21 +94,17 @@ export async function openWelcomeWindow(locale: DesktopLocale, operations: Welco
     if (typeof id !== 'string') throw new Error('desktop welcome: invalid attempt')
     return operations.copySignInLink(id as SignInAttemptId)
   })
-  window.once('closed', () => {
-    ipcMain.removeHandler(WELCOME_IPC.saveApiKey)
-    ipcMain.removeHandler(WELCOME_IPC.skip)
-    ipcMain.removeHandler(WELCOME_IPC.start)
-    ipcMain.removeHandler(WELCOME_IPC.cancel)
-    ipcMain.removeHandler(WELCOME_IPC.copyLink)
-  })
+  window.once('closed', disposeHandlers)
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => { event.preventDefault() })
   try {
     await window.loadFile(join(app.getAppPath(), 'renderer', 'welcome.html'))
   } catch (error) {
+    disposeHandlers()
     if (!window.isDestroyed()) window.destroy()
     throw error
   }
-  if (!window.isDestroyed()) window.show()
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Another window can replace ownership during loadFile.
+  if (active && !window.isDestroyed()) window.show()
   return window
 }

@@ -24,7 +24,6 @@ async function harness(_model: string, config: Partial<PiAiProviderProfile> = {}
     providers: {
       deepseek: {
         ...process.env.DEEPSEEK_API_KEY === undefined ? {} : { apiKey: process.env.DEEPSEEK_API_KEY },
-        baseURL: LlmDeepSeek.PUBLIC_BASE_URL,
         ...config,
       },
     },

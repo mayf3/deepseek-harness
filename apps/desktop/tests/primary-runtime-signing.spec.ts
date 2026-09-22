@@ -26,6 +26,86 @@ async function fixture(names = ['a.exe', 'b.pyd', 'vendor.dll']): Promise<string
 
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
 
+it('bounds overlapping cache restores and verifies all hits before serial hardware misses', async () => {
+  const root = await fixture(['a.exe', 'b.exe', 'c.exe', 'd.exe'])
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const signed = new Set<string>()
+  const verified = new Set<string>()
+  let active = 0
+  let peak = 0
+  let hits = 0
+  const sign = vi.fn(async ({ path }: { path: string }) => {
+    expect(active).toBe(0)
+    expect(hits).toBe(2)
+    expect(verified.has(join(root, 'a.exe')) && verified.has(join(root, 'b.exe'))).toBe(true)
+    signed.add(path)
+  })
+  const operation = signWindowsCode(root, { thumbprint, record: () => {}, sign,
+    inspect: async (path) => {
+      if (!signed.has(path)) return unsigned
+      verified.add(path)
+      return valid
+    },
+    cache: { concurrency: 2, restore: async ({ path }) => {
+      active++
+      peak = Math.max(peak, active)
+      if (active === 2) entered.resolve(undefined)
+      await release.promise
+      active--
+      if (path.endsWith('a.exe') || path.endsWith('b.exe')) { signed.add(path); hits++; return true }
+      return false
+    } },
+  })
+  try {
+    await Promise.race([entered.promise, operation])
+    expect(sign).not.toHaveBeenCalled()
+  } finally { release.resolve(undefined); await operation }
+  expect(peak).toBe(2)
+  expect(sign.mock.calls.map(([request]) => request.path)).toEqual(['c.exe', 'd.exe'].map(name => join(root, name)))
+})
+
+it.each(['restore', 'verification', 'audit'])('drains active cache restores after %s failure without dispatching more work', async (failure) => {
+  const root = await fixture(['a.exe', 'b.exe', 'c.exe'])
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const failed = Promise.withResolvers<undefined>()
+  const restored = new Set<string>()
+  const calls: string[] = []
+  const sign = vi.fn(async () => {})
+  let settled = false
+  const operation = signWindowsCode(root, { thumbprint, sign,
+    record: (event) => {
+      if (failure === 'audit' && 'type' in event && event.type === 'windows-code-signature-verified') {
+        failed.resolve(undefined)
+        throw new Error('audit failed')
+      }
+    },
+    inspect: async (path) => {
+      if (!restored.has(path)) return unsigned
+      if (failure === 'verification' && path.endsWith('a.exe')) { failed.resolve(undefined); throw new Error('verification failed') }
+      return valid
+    },
+    cache: { concurrency: 2, restore: async ({ path }) => {
+      calls.push(path)
+      if (path.endsWith('b.exe')) { entered.resolve(undefined); await release.promise; return false }
+      await entered.promise
+      if (failure === 'restore') { failed.resolve(undefined); throw new Error('restore failed') }
+      restored.add(path)
+      return true
+    } },
+  }).then(() => { settled = true; return undefined }, (error: unknown) => { settled = true; return error })
+  try {
+    await Promise.race([failed.promise, operation])
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(settled).toBe(false)
+    expect(sign).not.toHaveBeenCalled()
+  } finally { release.resolve(undefined); await operation }
+  expect(await operation).toEqual(new Error(`${failure} failed`))
+  expect(calls).toEqual(['a.exe', 'b.exe'].map(name => join(root, name)))
+  expect(sign).not.toHaveBeenCalled()
+})
+
 it('selects real PE code, including .node, without signing foreign native modules or data', async () => {
   const root = await fixture(['runtime.node', 'python.exe', 'extensionless', 'custom.binary'])
   await mkdir(join(root, 'nested'))

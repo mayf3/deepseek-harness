@@ -26,7 +26,7 @@ async function harness() {
     await ctx.plugin(plugin)
   }
   await ctx.plugin(AgentLoop, { agents: [] })
-  await ctx.plugin(DeepSeek, { protocol: 'chat-completions' })
+  await ctx.plugin(DeepSeek, {})
   return ctx
 }
 
@@ -39,12 +39,12 @@ class ScriptedAdapter extends LlmAdapter {
   override stream(request: GenerateOptions) { return this.run(request) }
 }
 
-it.each(['chat-completions', 'messages'] as const)('never falls back to an API key while signed out: %s', async (protocol) => {
+it('never falls back to an API key while signed out', async () => {
   vi.stubEnv('DEEPSEEK_API_KEY', 'fixture-api-key')
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(DeepSeek, { protocol })
+  await ctx.plugin(DeepSeek, {})
   const fetch = vi.spyOn(globalThis, 'fetch')
   const result = await assemble(ctx, { provider: 'deepseek-account', model: 'deepseek-v4-flash', messages: [] })
   expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'ACCOUNT_SIGN_IN_REQUIRED' } })
@@ -151,14 +151,14 @@ it('does not infer a provider while the first request is still being prepared', 
 })
 
 
-it.each(['chat-completions', 'messages'] as const)('never borrows an account token for a missing API key: %s', async (protocol) => {
+it('never borrows an account token for a missing API key', async () => {
   vi.stubEnv('DEEPSEEK_API_KEY', '')
   const ctx = new Context()
   contexts.push(ctx)
-  const resolveToken = vi.fn(async () => 'fixture-account-token')
-  ctx.provide('deepseekAccount', { resolveToken } as unknown as DeepSeekAccount)
+  const resolveToken = vi.fn(async (_url: string) => 'fixture-account-token')
+  ctx.provide('deepseekAccount', { resolveToken: (url: string): Promise<string | undefined> => resolveToken(url) } as DeepSeekAccount)
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(DeepSeek, { protocol })
+  await ctx.plugin(DeepSeek, {})
   const fetch = vi.spyOn(globalThis, 'fetch')
   const result = await assemble(ctx, { provider: 'deepseek-official', model: 'deepseek-v4-flash', messages: [] })
   expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
@@ -169,7 +169,7 @@ it.each(['chat-completions', 'messages'] as const)('never borrows an account tok
 
 it('propagates account sign-out to the HTTP request signal', async () => {
   const ctx = await harness()
-  ctx.provide('deepseekAccount', { resolveToken: async () => 'fixture-account-token' } as unknown as DeepSeekAccount)
+  ctx.provide('deepseekAccount', { resolveToken: async (_url: string) => 'fixture-account-token' } as DeepSeekAccount)
   const started = Promise.withResolvers<AbortSignal>()
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
     const signal = init!.signal!
@@ -219,7 +219,7 @@ it('advertises account and API-key models only while their own credential is ava
   vi.stubEnv('DEEPSEEK_API_KEY', '')
   const ctx = await harness()
   let token: string | undefined
-  ctx.provide('deepseekAccount', { resolveToken: async (url: string) => url === 'https://api.deepseek.com' ? token : undefined } as DeepSeekAccount)
+  ctx.provide('deepseekAccount', { resolveToken: async (url: string) => new URL(url).origin === 'https://api.deepseek.com' ? token : undefined } as DeepSeekAccount)
   expect(await ctx.llm.listModels('deepseek-account')).toEqual([])
   expect(await ctx.llm.listModels('deepseek-official')).toEqual([])
   token = 'fixture-account-token'
@@ -230,4 +230,10 @@ it('advertises account and API-key models only while their own credential is ava
   token = undefined
   expect(await ctx.llm.listModels('deepseek-account')).toEqual([])
   expect(await ctx.llm.listModels('deepseek-official')).not.toHaveLength(0)
+})
+
+it('surfaces credential storage failures during catalog discovery', async () => {
+  const ctx = await harness()
+  ctx.provide('deepseekAccount', { resolveToken: async (_url: string): Promise<string | undefined> => { throw new Error('storage unavailable') } } as DeepSeekAccount)
+  await expect(ctx.llm.listModels('deepseek-account')).rejects.toThrow('storage unavailable')
 })

@@ -27,7 +27,7 @@ Use the **Plugins** entry in the Web sidebar to manage the profile's installed b
 
 Select **Plugins** in the sidebar. The page reads the inventory and the bundles through `api-remotes` when first opened; a Host without a managed profile shows the page as unavailable. **Official** comes first and lists the bundles the installation ships for switching on — off until switched on, without an uninstall, and tagged **Beta** where the feature is one — followed by the official plugins that registered a configuration page; **Installed** lists the bundles the profile holds. Cards are listed by name, so switching a bundle on or off does not move its card. A dependency without a bundle patch is not a plugin and is not listed unless the profile selects it, in which case it carries a problem tag. Global configuration remains in the Settings **Plugins** section.
 
-Installed bundles and their plugin rows display their own title and description in the current UI language on cards and detail pages. Each field falls back from exported locale `meta` to the accessible `package.json` at that plugin address; the final title is the full package or module name, with no package description when both sources omit it. See [Plugin display metadata](../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) for the author format. Installation previews still use registry or manifest information.
+Installed bundles and their plugin rows display their own title and description in the current UI language on cards and detail pages. Each field falls back from exported locale `meta` to the accessible `package.json` at that plugin address; the final title is the full package or module name, with no package description when both sources omit it. See [Plugin display metadata](../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) for the author format. Bundle cards, details, and component rows display the image declared by their own `package.json.icon`; absent or undecodable images retain the default artwork. Installation previews still use registry or manifest information.
 
 ### Installing a bundle
 
@@ -45,7 +45,7 @@ A row's switch on the bundle's page calls `pluginManager.setPluginEnabled`, whic
 
 ### Configuration pages
 
-A plugin that carries its own configuration renders it on this page rather than in Settings, through three slots the page declares: `plugins.item` (list) for an official plugin, listed in the Official group by its `label`; `plugins.bundle.config` (keyed by the bundle's package name) for a bundle's own configuration, shown on the bundle's page between its description and its rows; and `plugins.row.config` (keyed by `<package name>#<row id>`) for one row's configuration, which gives that row a **Configure** control opening the row's page. The page renders `view: 'page'` for forms with their own save controls. Official plugin cards also render `view: 'summary'` under the title; a row's detail page uses that view only when its package description is absent. Only a save writes: the page draws the title, icon, and crumb, and the entry's form drops its staged edits when the page is left. The four host-plane pages the installation ships — the shell executor, the agent loop, subagent model selection, and the DeepSeek search provider — come from [ui-settings-plugins](../ui-settings-plugins/README.md), registered while the Host serves their namespaces. A bundle's browser half registers the same way:
+A plugin that carries its own configuration renders it on this page rather than in Settings, through three slots the page declares: `plugins.item` (list) for an official plugin, listed in the Official group by its `label`; `plugins.bundle.config` (keyed by the bundle's package name) for a bundle's own configuration, shown on the bundle's page between its description and its rows; and `plugins.row.config` (keyed by `<package name>#<row id>`) for one row's configuration, which gives that row a **Configure** control opening the row's page. The page renders `view: 'page'` for forms with their own save controls. Official plugin cards also render `view: 'summary'` under the title; a row's detail page uses that view only when its package description is absent. Only a save writes: the page draws the title, icon, and crumb, and the entry's form drops its staged edits when the page is left. The four host-plane pages the installation ships — the shell executor, the agent loop, Subagent, and the DeepSeek search provider — come from one companion package each, [ui-settings-shell](../ui-settings-shell/README.md), [ui-settings-agent-loop](../ui-settings-agent-loop/README.md), [ui-settings-subagent](../ui-settings-subagent/README.md), and [ui-settings-web-search](../ui-settings-web-search/README.md), registered while the Host serves their namespaces. A bundle's browser half registers the same way:
 
 ```tsx ignore-check
 ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
@@ -56,6 +56,20 @@ ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
 ```
 
 The bundle's patch must declare the row under that id, and the registration exists while the bundle is on, so a bundle that is off shows no configure control.
+
+### Detail page extension points
+
+A plugin with something to say about a bundle, a row, or an official plugin it does not own contributes to that object's page through three list slots the page declares: `plugins.detail.actions` for a control at the head of the page, before the page's own switch and uninstall; `plugins.detail.badge` for a tag beside the title, after the version, beta, and problem tags; and `plugins.detail.section` for a section under the page's own content — after the rows on a bundle's page, after the configuration on a row's or an official plugin's page. Every entry is rendered with the page's `subject`: `{ kind: 'bundle', pkg }`, `{ kind: 'row', pkg, row }`, or `{ kind: 'item', id }`, where `pkg` and `row` carry the name, version, installed and enabled facts, and the row list a contribution decides on. An entry renders null for a subject it has nothing for and draws its own section chrome; the page orders entries by `order`.
+
+```tsx ignore-check
+ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
+  name: 'plugins.detail.section',
+  id: 'acme-health',
+  locale: 'acmeHealth',
+}, ({ t, subject }) => subject.kind === 'bundle' ? <HealthSection pkg={subject.pkg} t={t} /> : null))
+```
+
+A row's page exists only while a `plugins.row.config` entry names the row, so a contribution meant for a row renders on the page that configuration opens.
 
 -----
 
@@ -77,7 +91,11 @@ The browser plugin registers the `plugins` sidebar entry and its `main` panel th
 
 ### Configuration slots
 
-The page's `main` registration declares `plugins.item`, `plugins.bundle.config`, and `plugins.row.config` as its children, so the slots exist while the page does and a registrant's `ctx.slots.inject` waits for them. `configLedgerSource` projects the three ledgers into one observable — the official items in ledger order with their labels resolved in the active locale, and the bundle and row keys — cached until a ledger or the locale moves; the page binds it as `useConfigLedger` beside the store and never names a configurable plugin itself. Which page is open is page-local state: the cards, a bundle, an official plugin, or a row of a bundle. A registration lives with the browser half that made it. `dsh-client-modules` attaches a package's browser half to the Loader row whose specifier is the bare package name, so every page a bundle registers, for itself or for any of its rows, goes away when that row is switched off; a sub-plugin whose page must outlive the other rows ships as its own package.
+Custom item pages use the Host entry id as their registration id; row pages use the bundle package and row id. The page owner supplies `form.state` and `form.mutate(operations, expectedRevision)` when the entry exposes editable Config fields. A custom page owns its draft and validation display, and may reuse `ConfigField` from ui-primitives. Bundle-wide pages can contain several entries and have no single form.
+
+The page's `main` registration declares `plugins.item`, `plugins.bundle.config`, and `plugins.row.config` as its children, so the slots exist while the page does and a registrant's `ctx.slots.inject` waits for them. `configLedgerSource` projects the three ledgers into one observable — the official items in ledger order with their labels resolved in the active locale, and the bundle and row keys — cached until a ledger or the locale moves; the page binds it as `useConfigLedger` beside the store and never names a configurable plugin itself. Which page is open is page-local state: the cards, a bundle, an official plugin, or a row of a bundle. A registration lives with the browser half that made it. `dsh-client-modules` attaches a package's browser half to the Loader row whose specifier is the bare package name, so every page a bundle registers, for itself or for any of its rows, goes away when that row is switched off; a sub-plugin whose page must outlive the other rows ships as its own package. Official packages whose names begin with `@deepseek-ai/dsh-experimental-` display the Beta marker.
+
+`plugins.bundle.config` supplies bundle detail configuration, keyed by npm package name. `plugins.bundle.activation` offers bundle-owned guidance after explicit enablement from the list, with callbacks to dismiss it or open the bundle details. It does not appear merely because an enabled bundle was listed.
 
 </details>
 
@@ -91,7 +109,7 @@ These pages cover the sidebar, the Remote calls, and the Host-side manager.
 - [ui-sidebar](../ui-sidebar/README.md) — the panel list the Plugins entry registers into; [ui-layout](../ui-layout/README.md) — the main slot the page occupies.
 - [api-remotes](../../api/remotes/README.md) — the Remote BFF surface behind `pluginManager.*` and `pluginInventory.*`.
 - [plugin-manager](../../boot/plugin-manager/README.md) — the Host-side manager this page drives.
-- [ui-settings-plugins](../ui-settings-plugins/README.md) — the official configuration pages that register into this page's slots.
+- [ui-settings-shell](../ui-settings-shell/README.md), [ui-settings-agent-loop](../ui-settings-agent-loop/README.md), [ui-settings-subagent](../ui-settings-subagent/README.md), [ui-settings-web-search](../ui-settings-web-search/README.md) — the official configuration pages that register into this page's `plugins.item` slot.
 
 -----
 

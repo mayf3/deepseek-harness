@@ -1,6 +1,7 @@
 /** Desktop welcome presentation; account and credential operations stay in the preload. */
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Toast } from '@deepseek-ai/dsh-client-ui-primitives/src/Toast.tsx'
 import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives/src/StateDot.tsx'
 import type { AccountView } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { WelcomeApi } from '../welcome-api.ts'
@@ -14,13 +15,17 @@ type Page = 'entry' | 'key' | 'account'
  */
 export function Welcome({ api }: { api: WelcomeApi }) {
   const { messages: m } = api
+  const [expired, setExpired] = useState(false)
+  const [expiryNotice, setExpiryNotice] = useState(false)
+  useEffect(() => { setExpiryNotice(expired) }, [expired])
   const [page, setPage] = useState<Page>('entry')
   const pageRef = useRef<Page>('entry')
   const [attempt, setAttempt] = useState<AccountView['attempt']>(null)
   const attemptRef = useRef<AccountView['attempt']>(null)
   const [starting, setStarting] = useState(false)
   const [cancelling, setCancelling] = useState(false)
-  const [copyState, setCopyState] = useState<'idle' | 'busy' | 'copied' | 'failed'>('idle')
+  const [copyFeedback, setCopyFeedback] = useState<{ status: 'idle' | 'busy' | 'copied' | 'failed' }>({ status: 'idle' })
+  const copyState = copyFeedback.status
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -40,7 +45,7 @@ export function Welcome({ api }: { api: WelcomeApi }) {
     attemptRef.current = state.attempt
     setAttempt(state.attempt)
     setStarting(false)
-    setCopyState('idle')
+    setCopyFeedback({ status: 'idle' })
     navigate(state.attempt?.phase === 'cancelled' ? 'entry' : 'account')
   }
 
@@ -50,6 +55,7 @@ export function Welcome({ api }: { api: WelcomeApi }) {
     document.title = m.welcomeTitle
     const stop = api.onAccountState((state) => {
       revision.current++
+      setExpired(state.status === 'signed-out' && state.signOutReason === 'expired')
       showAccount(state)
     })
     return () => { mounted.current = false; stop() }
@@ -62,6 +68,12 @@ export function Welcome({ api }: { api: WelcomeApi }) {
       keyButton.current?.focus()
     }
   }, [page])
+
+  useEffect(() => {
+    if (copyState !== 'copied' && copyState !== 'failed') return
+    const timer = setTimeout(() => { setCopyFeedback({ status: 'idle' }) }, 2000)
+    return () => { clearTimeout(timer) }
+  }, [copyFeedback])
 
   async function saveKey(event: FormEvent) {
     event.preventDefault()
@@ -130,13 +142,13 @@ export function Welcome({ api }: { api: WelcomeApi }) {
   }
   async function copyLink() {
     const current = attemptRef.current
-    if (current?.phase !== 'waiting-browser' || copyState === 'busy') return
-    setCopyState('busy')
+    if (current?.phase !== 'waiting-browser' || (copyState === 'busy' || copyState === 'copied')) return
+    setCopyFeedback({ status: 'busy' })
     try {
       await api.copySignInLink(current.id)
-      if (mounted.current && attemptRef.current === current) setCopyState('copied')
+      if (mounted.current && attemptRef.current === current) setCopyFeedback({ status: 'copied' })
     } catch {
-      if (mounted.current && attemptRef.current === current) setCopyState('failed')
+      if (mounted.current && attemptRef.current === current) setCopyFeedback({ status: 'failed' })
     }
   }
 
@@ -149,6 +161,7 @@ export function Welcome({ api }: { api: WelcomeApi }) {
   const heading = page === 'entry' ? 'welcome-heading' : page === 'key' ? 'key-title' : 'auth-status'
 
   return <>
+    {expiryNotice && <Toast text={m.welcomeSessionExpired} onDone={() => { setExpiryNotice(false) }} />}
     <div className="titlebar" aria-hidden="true" />
     <main className="welcome" aria-labelledby={heading}>
       <img className="brand" src="assets/welcome-brand.svg" alt={m.welcomeBrand} width="472" height="40" />
@@ -170,7 +183,7 @@ export function Welcome({ api }: { api: WelcomeApi }) {
         hidden={page !== 'account'} aria-live="polite">
         <h1 id="auth-status">{title}</h1>
         <p id="auth-description" hidden={!waiting && phase !== 'expired'}>{waiting ? m.welcomeAuthWaitingDescription : m.welcomeAuthExpiredDescription}</p>
-        <button id="auth-copy" className="copy-link" type="button" hidden={!waiting} disabled={!waiting || copyState === 'busy'} onClick={() => { void copyLink() }}>
+        <button id="auth-copy" className="copy-link" type="button" hidden={!waiting} disabled={!waiting || (copyState === 'busy' || copyState === 'copied')} onClick={() => { void copyLink() }}>
           {copyState === 'copied' ? m.welcomeAuthCopied : copyState === 'failed' ? m.welcomeAuthCopyFailed : m.welcomeAuthCopyLink}
         </button>
       </section>

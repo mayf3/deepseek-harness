@@ -75,7 +75,7 @@
 }
 
 /* Settings uses a shared 800×800 panel; longer sections scroll
-   inside the options column without moving the navigation. One height for
+   inside the options column; the navigation scrolls independently. One height for
    every section, taken from the viewport rather than the content, because a
    content-sized panel would resize under the pointer on every nav click.
    The viewport height leaves 24px of air above and below, widened to the
@@ -128,6 +128,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow-y: auto;
 }
 
 /* Nav cell (figma .Setting-nav-cell 501:29962): 164x40, r12, pad

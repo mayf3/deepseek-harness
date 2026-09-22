@@ -23,7 +23,6 @@ import { ApiSessionAgentController } from '../src/agent.ts'
 import { buildModelCatalog } from '../src/catalog.ts'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import AgentDefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import { createSessionTestController, createSessionTestRemote } from './test-remote.ts'
 
 function request<P>(payload: P): P {
@@ -89,12 +88,11 @@ async function harness(logged?: {
   model: string
   reasoningEffort?: ReasoningEffortId
   adapterDefaults?: LlmCallConfigAdapterDefaults
-}): Promise<{
+}, ctx = new Context()): Promise<{
   ctx: Context
   agent: Agent
   sessionId: SessionId
 }> {
-  const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt, { personaPrefix: '' })
   await ctx.plugin(LlmRuntime)
@@ -348,8 +346,9 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
   it('initializes only the first explicitly configured provider and retains later user choices', async () => {
-    const { ctx } = await harness()
-    await ctx.plugin(AgentDefaultModel, { provider: 'missing', model: 'missing' })
+    const { configurationFixture } = await import('../../../settings/settings/tests/configuration-fixture.ts')
+    const configured = await configurationFixture({ hmr: false })
+    const { ctx } = await harness(undefined, configured.ctx)
     const controller = createSessionTestController(ctx, {
       defaultModelSelection: () => ctx.agentDefaultModel.currentSelection(), cwd: '/tmp',
     })
@@ -806,4 +805,28 @@ describe('Web session model selection', () => {
     })
     await ctx.fiber.dispose()
   })
+})
+
+it('initializes a provider without reasoning metadata', async () => {
+  const { configurationFixture } = await import('../../../settings/settings/tests/configuration-fixture.ts')
+  const configured = await configurationFixture({ hmr: false })
+  const { ctx } = await harness(undefined, configured.ctx)
+  ctx.llm.registerAdapter(['simple'], new CatalogAdapter('Simple', [
+    { provider: 'simple', id: 'basic', name: 'Basic' },
+  ]))
+  const controller = createSessionTestController(ctx, {
+    defaultModelSelection: () => ctx.agentDefaultModel.currentSelection(), cwd: '/tmp',
+  })
+  await controller.initializeDefaultModel('simple')
+  expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'simple', model: 'basic' })
+})
+
+it('reports a non-Error catalog rejection as an unavailable selection', async () => {
+  const { ctx } = await harness()
+  const { modelAvailable } = await import('../src/catalog.ts')
+  const read = vi.spyOn(ctx.llm, 'listModels').mockRejectedValueOnce('catalog disconnected')
+  try {
+    await expect(modelAvailable(ctx, { provider: 'deepseek-official', model: 'deepseek-chat' }))
+      .rejects.toMatchObject({ code: 'session/model-unavailable', message: 'catalog disconnected' })
+  } finally { read.mockRestore(); await ctx.fiber.dispose() }
 })

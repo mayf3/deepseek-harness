@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
+import type { ConfigPageForm } from '../src/client/slot-contract.ts'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PluginEntryId, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
+import type { ConfigForm, ConfigFormSnapshot, SettingsMirrorSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ReactNode } from 'react'
 import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
@@ -12,6 +14,7 @@ import type { PluginManagerPageProps } from '../src/client/index.ts'
 import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { rowKey, type InstallState, type PackageRow, type PackageView, type PluginManagerState } from '../src/client/manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
+import type { PluginActivationOwnerProps, PluginDetailProps, PluginsSubject } from '../src/client/slot-contract.ts'
 
 afterEach(cleanup)
 
@@ -65,12 +68,24 @@ const READY: PluginManagerState = {
   highlight: null,
 }
 
-/** Configuration entries a test supplies: what each slot cell renders, by `<slot>:<cell>` and the view asked for. */
-type SlotBodies = Record<string, (view: 'summary' | 'page') => ReactNode>
+/**
+ * Slot entries a test supplies: what each slot cell renders, by `<slot>:<cell>`
+ * (a list slot's cell is empty), the view asked for — `detail` for a detail
+ * contribution — and the owner props.
+ */
+type SlotBodies = Record<string, (view: 'summary' | 'page' | 'activation' | 'detail', owner: unknown, form?: ConfigPageForm) => ReactNode>
+
+/** The subject a detail contribution was rendered with. */
+function subjectOf(owner: unknown): PluginsSubject | undefined {
+  return typeof owner === 'object' && owner !== null && 'subject' in owner ? (owner as PluginDetailProps).subject : undefined
+}
 
 const NO_CONFIG: ConfigLedger = { items: [], bundles: new Set(), rows: new Set() }
 
-function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<ConfigLedger> = {}, bodies: SlotBodies = {}) {
+function renderTab(
+  state: Partial<PluginManagerState> = {}, config: Partial<ConfigLedger> = {},
+  bodies: SlotBodies = {}, forms: Record<string, ConfigPageForm> = {},
+) {
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose() })
   const locale = new LocaleRuntime(ctx)
@@ -101,20 +116,44 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     setRowEnabled: vi.fn(),
     dismissNotice: vi.fn(),
   }
-  const renderSlot: PluginManagerPageProps['renderSlot'] = (name, owner, opts) => {
-    if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
-      throw new Error('Configuration slot requires a summary or page view')
-    }
-    return bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]?.(owner.view) ?? null
+  const unusedStandardHook = (): never => { throw new Error('Plugin manager fixture does not provide global state') }
+  const standard = {
+    usePanelInfo: unusedStandardHook,
+    useWorkspaces: unusedStandardHook,
+    useSessions: unusedStandardHook,
+    useSessionStatus: unusedStandardHook,
+    useSessionRetainInfo: unusedStandardHook,
+    useResource: unusedStandardHook,
   }
-  const props = {
+  const props: PluginManagerPageProps = {
+    ...standard,
     t,
     resolveText,
     ...actions,
     usePluginManager: bindSnapshotSelector(store),
     useConfigLedger: bindSnapshotSelector(ledger),
-    renderSlot,
-  } as PluginManagerPageProps
+    useConfigurations: bindSnapshotSelector(createSnapshotStore<SettingsMirrorSnapshot>({
+      status: 'ready', error: null,
+      view: { writable: true, hasDocument: true, namespaces: Object.keys(forms).map(ns => ({
+        ns, schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0, autoGenerate: true,
+      })) },
+    })),
+    configForm: <T,>(id: string): ConfigForm<T> => {
+      const stub = stubConfigForm<T>()
+      stub.publish(forms[id]!.state as ConfigFormSnapshot<T>)
+      return { ...stub.scope, mutate: forms[id]!.mutate }
+    },
+    renderSlot: (name, owner, opts) => {
+      const body = bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]
+      if (body === undefined) return null
+      if (name === 'plugins.bundle.activation') return body('activation', owner)
+      if (name.startsWith('plugins.detail.')) return body('detail', owner)
+      if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
+        throw new Error('Plugin configuration fixture requires a summary or page view')
+      }
+      return body(owner.view, owner, 'form' in owner ? owner.form as ConfigPageForm | undefined : undefined)
+    },
+  }
   const { rerender } = render(<PluginManagerPage {...props} />)
   return {
     store,
@@ -245,6 +284,7 @@ describe('PluginManagerPage', () => {
   it.each([
     '@deepseek-ai/dsh-experimental-agent-team-profile',
     '@deepseek-ai/dsh-experimental-auto-review',
+    '@deepseek-ai/dsh-experimental-fixture-input',
     '@acme/dsh-local-tools',
   ])('localizes Host metadata for %s across cards, details, switches, and uninstall confirmation', (name) => {
     const meta = {
@@ -261,6 +301,7 @@ describe('PluginManagerPage', () => {
       expect(document.getElementById(card.getAttribute('aria-describedby')!)?.textContent).toBe(description(dict))
       expect(screen.getByRole('switch', { name: dict.enableToggle.replace('{name}', title(dict)) })).toBeTruthy()
       expect(screen.queryByText('Original metadata.')).toBeNull()
+      expect(screen.queryByText(dict.statusBeta) !== null).toBe(name.startsWith('@deepseek-ai/dsh-experimental-'))
     }
     assertCard(en)
     setLanguage(zh)
@@ -283,6 +324,38 @@ describe('PluginManagerPage', () => {
       setLanguage(dict)
       expect(screen.getByRole('dialog', { name: dict.confirmUninstallTitle.replace('{name}', title(dict)) })).toBeTruthy()
     }
+  })
+
+  it('renders manifest icons for arbitrary bundles and rows, with decode fallback and source recovery', () => {
+    const icon = 'data:image/svg+xml;base64,PHN2Zy8+'
+    const updatedIcon = 'data:image/png;base64,cG5n'
+    const bundle = pkg({ meta: { icon }, rows: [row({ meta: { icon } }), row({ entryId: 'plain' as PluginEntryId, rowId: 'plain', moduleName: 'plain' })] })
+    const { set } = renderTab({ packages: [bundle] }, { rows: new Set(['dsh-better-sidebar#sidebar']) })
+    const image = () => document.querySelector<HTMLImageElement>('[data-plugin-package] img, [data-plugin-detail] img')!
+    expect(image().getAttribute('src')).toBe(icon)
+    expect(image().getAttribute('alt')).toBe('')
+    expect(image().width).toBe(36)
+    fireEvent.error(image())
+    expect(document.querySelector('[data-plugin-package] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-package] svg')).not.toBeNull()
+    set({ packages: [{ ...bundle, meta: { icon: updatedIcon } }] })
+    expect(image().getAttribute('src')).toBe(updatedIcon)
+    set({ packages: [bundle] })
+    expect(image().getAttribute('src')).toBe(icon)
+    fireEvent.click(screen.getByRole('button', { name: 'View dsh-better-sidebar' }))
+    expect(image().getAttribute('src')).toBe(icon)
+    const rowImage = document.querySelector<HTMLImageElement>('[data-plugin-row] img')!
+    expect(rowImage.getAttribute('src')).toBe(icon)
+    expect(rowImage.width).toBe(30)
+    expect(document.querySelector('[data-plugin-row="plain"] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row="plain"] svg')).not.toBeNull()
+    fireEvent.error(rowImage)
+    expect(document.querySelector('[data-plugin-row] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row] svg')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Configure dsh-better-sidebar' }))
+    const detailImage = document.querySelector<HTMLImageElement>('[data-plugin-row-detail] img')!
+    expect(detailImage.getAttribute('src')).toBe(icon)
+    expect(detailImage.width).toBe(36)
   })
 
   it('shows metadata diagnostics without blocking management or displaying legacy descriptions', () => {
@@ -548,6 +621,74 @@ describe('PluginManagerPage', () => {
       fireEvent.click(within(page).getByRole('button', { name: en.backToPackage.replace('{name}', 'dsh-better-sidebar') }))
       expect(document.querySelector('[data-plugin-row-detail]')).toBeNull()
       expect(document.querySelector('[data-plugin-detail="dsh-better-sidebar"]')).toBeTruthy()
+    })
+  })
+
+  describe('detail contributions', () => {
+    const subjects: PluginsSubject[] = []
+    const label = (owner: unknown): string => {
+      const subject = subjectOf(owner)
+      if (subject === undefined) return 'none'
+      subjects.push(subject)
+      if (subject.kind === 'bundle') return `bundle ${subject.pkg.name}`
+      if (subject.kind === 'row') return `row ${subject.pkg.name}#${subject.row.rowId}`
+      return `item ${subject.id}`
+    }
+    const bodies: SlotBodies = {
+      'plugins.item:bash': view => view === 'summary' ? 'Limits every command.' : <form aria-label="bash form" />,
+      'plugins.row.config:dsh-better-sidebar#sidebar': view => view === 'summary' ? 'The sidebar row.' : <form aria-label="row form" />,
+      'plugins.detail.actions:': (_view, owner) => <button type="button">{`act ${label(owner)}`}</button>,
+      'plugins.detail.badge:': (_view, owner) => <span>{`badge ${label(owner)}`}</span>,
+      'plugins.detail.section:': (_view, owner) => <section aria-label={`section ${label(owner)}`} />,
+    }
+
+    it('renders the contributed actions, badges, and sections on each page, told what the page is about', () => {
+      renderTab(
+        { packages: [pkg({ rows: [row()] })] },
+        { items: [{ id: 'bash', label: 'Shell' }], rows: new Set(['dsh-better-sidebar#sidebar']) },
+        bodies,
+      )
+      // The cards carry none of it.
+      expect(screen.queryByRole('button', { name: /^act / })).toBeNull()
+
+      fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
+      const detail = document.querySelector('[data-plugin-detail]') as HTMLElement
+      const act = within(detail).getByRole('button', { name: 'act bundle dsh-better-sidebar' })
+      expect(within(detail).getByText('badge bundle dsh-better-sidebar')).toBeTruthy()
+      const section = within(detail).getByRole('region', { name: 'section bundle dsh-better-sidebar' })
+      // The contributed actions come before the page's own switch; the sections after the rows.
+      const toggle = within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-better-sidebar') })
+      expect(act.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      const rows = detail.querySelector('[data-plugin-rows]') as HTMLElement
+      expect(rows.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      // A contribution sees the bundle's facts, not the page's own state.
+      expect(subjects.at(-1)).toEqual({
+        kind: 'bundle',
+        pkg: { name: 'dsh-better-sidebar', version: '0.16.0', installed: true, enabled: true, rows: [{ rowId: 'sidebar', moduleName: 'dsh-better-sidebar', enabled: true }] },
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: en.configureRow.replace('{name}', 'dsh-better-sidebar') }))
+      const page = document.querySelector('[data-plugin-row-detail]') as HTMLElement
+      expect(within(page).getByRole('button', { name: 'act row dsh-better-sidebar#sidebar' })).toBeTruthy()
+      expect(within(page).getByText('badge row dsh-better-sidebar#sidebar')).toBeTruthy()
+      expect(within(page).getByRole('region', { name: 'section row dsh-better-sidebar#sidebar' })).toBeTruthy()
+      expect(subjects.at(-1)).toMatchObject({ kind: 'row', row: { rowId: 'sidebar', moduleName: 'dsh-better-sidebar', enabled: true } })
+      fireEvent.click(within(page).getByRole('button', { name: en.backToPackage.replace('{name}', 'dsh-better-sidebar') }))
+      fireEvent.click(screen.getByRole('button', { name: en.backToList }))
+
+      fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Shell') }))
+      const item = document.querySelector('[data-plugin-item-detail="bash"]') as HTMLElement
+      expect(within(item).getByRole('button', { name: 'act item bash' })).toBeTruthy()
+      expect(within(item).getByText('badge item bash')).toBeTruthy()
+      expect(within(item).getByRole('region', { name: 'section item bash' })).toBeTruthy()
+      expect(within(item).getByRole('form', { name: 'bash form' })).toBeTruthy()
+    })
+
+    it('leaves the version out of a bundle the Host reports none for', () => {
+      const unversioned: PackageView = { name: 'dsh-better-sidebar', installed: true, optional: false, enabled: true, rows: [] }
+      renderTab({ packages: [unversioned] }, {}, bodies)
+      fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
+      expect(subjects.at(-1)).toEqual({ kind: 'bundle', pkg: { name: 'dsh-better-sidebar', installed: true, enabled: true, rows: [] } })
     })
   })
 
@@ -1149,4 +1290,56 @@ describe('PluginManagerPage', () => {
     fireEvent.click(screen.getByRole('button', { name: en.installCloseCancels }))
     expect(actions.closeInstall).toHaveBeenCalledOnce()
   })
+})
+
+it('offers bundle-owned guidance only after explicit enablement and navigates to its detail page', () => {
+  const name = 'dsh-better-sidebar'
+  const { set, actions } = renderTab({ packages: [pkg({ enabled: false })] }, { bundles: new Set([name]) }, {
+    [`plugins.bundle.activation:${name}`]: (_view, owner) => <button onClick={(owner as PluginActivationOwnerProps).onOpenDetails}>Go to setup</button>,
+    [`plugins.bundle.config:${name}`]: () => <div>Bundle setup</div>,
+  })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg()] })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg({ enabled: false })] })
+  fireEvent.click(screen.getByRole('switch'))
+  expect(actions.setEnabled).toHaveBeenCalledWith(name, true)
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg()], busy: [name] })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ busy: [] })
+  fireEvent.click(screen.getByText('Go to setup'))
+  expect(screen.getByText('Bundle setup')).toBeTruthy()
+  expect(screen.queryByText('Go to setup')).toBeNull()
+})
+
+it('dismisses activation guidance until the user enables the bundle again', () => {
+  const name = 'dsh-better-sidebar'
+  const { set } = renderTab({ packages: [pkg({ enabled: false })] }, {}, {
+    [`plugins.bundle.activation:${name}`]: (_view, owner) => <button onClick={(owner as PluginActivationOwnerProps).onDismiss}>Later</button>,
+  })
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg()] })
+  fireEvent.click(screen.getByText('Later'))
+  set({ packages: [pkg()] })
+  expect(screen.queryByText('Later')).toBeNull()
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg({ enabled: false })] })
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg()] })
+  expect(screen.getByText('Later')).toBeTruthy()
+})
+
+it('supplies the accepted entry values and atomic mutation action to a custom plugin page', () => {
+  const mutate = vi.fn(async () => true)
+  const form: ConfigPageForm = {
+    state: { status: 'ready', value: { count: 2 }, base: {}, user: {}, revision: 7, writable: true, mode: 'host' }, mutate,
+  }
+  renderTab({}, { items: [{ id: 'custom', label: 'Custom' }] }, {
+    'plugins.item:custom': (view, _owner, supplied) => view === 'summary' ? 'Custom summary'
+      : <button onClick={() => { void supplied!.mutate([{ op: 'set', path: ['count'], value: 3 }], supplied!.state.revision) }}>Save custom</button>,
+  }, { custom: form })
+  fireEvent.click(screen.getByText('Custom'))
+  fireEvent.click(screen.getByText('Save custom'))
+  expect(mutate).toHaveBeenCalledWith([{ op: 'set', path: ['count'], value: 3 }], 7)
 })

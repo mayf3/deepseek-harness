@@ -35,6 +35,8 @@ Mount this plugin alongside `ui-conversation` and the commands package; the comp
 
 Models stay grouped by provider. The composer menu shows model and effort names only, with DeepSeek Account first and DeepSeek second; third-party providers retain their catalog order. The `/model` popup shows provider names and catalog descriptions; it localizes the two built-in DeepSeek descriptions and leaves external provider descriptions verbatim. The popup applies the selected model's default effort; the composer can then choose any advertised effort. An adapter without reasoning metadata leaves the Effort row absent; there is no arbitrary effort input.
 
+The composer replaces the model and effort text with the Models icon when the expanded controls cannot share one line, and restores the text when space permits. The full selection remains available in the trigger's accessible name, tooltip, and menu.
+
 ### Unroutable sessions
 
 The composer blocks sending while the exact provider/model pair is absent from the available catalog or availability is loading or unknown. It keeps the normal input placeholder and an enabled model picker. Refreshes and refresh failures retain the last displayed selection and groups while sending remains blocked; retry revalidates availability. A Host reset clears that display. The account provider name follows the active locale in both selectors. Sign-out, credential removal, and provider or model removal refresh availability without replacing the saved choice with another model. Existing session logs remain unchanged.

@@ -1,7 +1,7 @@
 /** Native initialization precedes Client mounting and does not persist automatic locale choices. */
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, LocaleRuntime } from '../src/client/index.ts'
 import { parseLocaleBootstrap } from '../src/client/bootstrap.ts'
 import type { LocaleSettings } from '../src/locale-settings.ts'
@@ -25,7 +25,7 @@ describe('native locale initialization', () => {
     vi.stubGlobal('window', {})
     vi.stubGlobal('navigator', { languages: ['en-US'], language: 'en-US' })
     const ctx = new Context()
-    const host = stubSettingsScope<LocaleSettings>()
+    const host = stubConfigForm<LocaleSettings>()
     try {
       const locale = new LocaleRuntime(ctx, host.scope, { languages: ['ja-JP', 'zh-Hant', 'en-US'], preference: null })
       expect(locale.getSnapshot().active).toBe('zh')

@@ -25,6 +25,7 @@ import { DesktopProjectManager } from './project-manager.ts'
 import { DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { DesktopPlatformView, PLATFORM_IPC, platformBounds } from './platform-view.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
+import { installMicrophonePermissions } from './microphone-permissions.ts'
 import { DesktopBackendController } from './backend-controller.ts'
 import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale, resolveDesktopStartupLocale } from './locale.ts'
@@ -45,6 +46,7 @@ import { DesktopMandatoryUpdateWindow } from './mandatory-update-window.ts'
 import { DesktopPolicyTestAuth } from './policy-test-auth.ts'
 import { DesktopUpdateDialog, type UpdateDialogOptions } from './update-dialog.ts'
 import { readDesktopRuntime } from './runtime-tree.ts'
+import { DesktopBrowserGuests } from './browser-guests.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -114,6 +116,17 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
   return port
 }
 
+/**
+ * Opaque chrome fallback matching the built-in sidebar palette (the resolved
+ * `--dsw-static-neutral-bluish-900` / `-50` tokens). An approximation for
+ * custom themes: Windows swaps in the renderer's measured palette over the
+ * windowsAppearance IPC, and macOS shows it only while minimized or hidden.
+ * @returns the sidebar fill hex for the active system color scheme.
+ */
+function chromeFallbackFill(): string {
+  return nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb'
+}
+
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
@@ -123,7 +136,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     show,
     ...(process.platform === 'win32' && primary ? {
       titleBarStyle: 'hidden' as const,
-      titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb',
+      titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: chromeFallbackFill(),
         symbolColor: nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115' },
     } : {}),
     // hiddenInset places traffic lights inside the sidebar; sidebar vibrancy
@@ -143,6 +156,8 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
+      webviewTag: primary,
+      devTools: true,
     },
   })
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -160,6 +175,26 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     // Reloads and navigations re-register the preload listener; resend the
     // current state so a fullscreen reload does not fall back to windowed CSS.
     window.webContents.on('did-finish-load', sendFullscreen)
+    // Deminiaturize reattaches the NSVisualEffectView material late
+    // (electron/electron#25368), so a transparent window shows the desktop
+    // through the sidebar until then. Paint an opaque base while minimized or
+    // hidden so the deminiaturize animation and the reattachment gap show a
+    // solid fill; restoring flips back, and the null -> 'sidebar' transition
+    // forces the material to reattach.
+    const applyBackdrop = (): void => {
+      if (window.isDestroyed()) return
+      if (window.isMinimized() || !window.isVisible()) {
+        window.setVibrancy(null)
+        window.setBackgroundColor(chromeFallbackFill())
+      } else {
+        window.setVibrancy('sidebar')
+        window.setBackgroundColor('#00000000')
+      }
+    }
+    window.on('minimize', applyBackdrop)
+    window.on('hide', applyBackdrop)
+    window.on('restore', applyBackdrop)
+    window.on('show', applyBackdrop)
   }
   window.webContents.on('context-menu', (_event, { isEditable, selectionText, editFlags }) => {
     const items: MenuItemConstructorOptions[] = []
@@ -228,15 +263,16 @@ async function main(): Promise<void> {
   const isQuitting = (): boolean => quitting
   const currentMainWindow = (): BrowserWindow | undefined => mainWindow
   const ordinaryDialogs = new Set<AbortController>()
-  const messages = locale.messages
-  const updateDialog = new DesktopUpdateDialog(fileURLToPath(new URL('./preload-update-dialog.cjs', import.meta.url)), locale)
+  const currentDialogWindow = (): BrowserWindow | undefined => welcomeWindow ?? mainWindow
+  const updateDialog = new DesktopUpdateDialog(fileURLToPath(new URL('./preload-update-dialog.cjs', import.meta.url)), () => locale)
   const isMandatory = (): boolean => mandatoryPolicy?.state.blocking === true
   const ordinaryMessageBox = async (options: UpdateDialogOptions): Promise<Electron.MessageBoxReturnValue> => {
     const controller = new AbortController()
     ordinaryDialogs.add(controller)
     try {
-      if (mainWindow === undefined) return { response: options.cancelId ?? 0, checkboxChecked: false }
-      return await updateDialog.show(mainWindow, { ...options, signal: controller.signal })
+      const parent = currentDialogWindow()
+      if (parent === undefined) return { response: options.cancelId ?? 0, checkboxChecked: false }
+      return await updateDialog.show(parent, { ...options, signal: controller.signal })
     }
     finally { ordinaryDialogs.delete(controller) }
   }
@@ -244,6 +280,7 @@ async function main(): Promise<void> {
   const applicationUrl = `${SCHEME}://app/`
   let hostUrl: string | undefined
   let hostCookie: string | undefined
+  const browserGuests = new DesktopBrowserGuests(() => hostUrl)
   let injections: readonly unknown[] = []
   let welcomeBackend: DesktopWelcomeBackend | undefined
   let stopAccount: (() => void) | undefined
@@ -272,7 +309,8 @@ async function main(): Promise<void> {
     navigation = next
     return next.promise
   }
-  const platformView = new DesktopPlatformView(join(app.getAppPath(), 'lib', 'preload-platform-account.cjs'))
+  const platformView = new DesktopPlatformView(join(app.getAppPath(), 'lib', 'preload-platform-account.cjs'),
+    () => locale.id === 'zh-CN' ? 'zh_CN' : 'en_US')
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
@@ -310,7 +348,7 @@ async function main(): Promise<void> {
           }
           previousAccountStatus = state.status
         }, () => {
-          if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, { status: 'signed-out', attempt: null })
+          // The stream reconnects; a transport failure does not change account state.
         })
       },
       stop: async () => {
@@ -333,8 +371,8 @@ async function main(): Promise<void> {
     if (isMandatory()) { mandatoryUI?.sync(); return Promise.resolve() }
     let shown = updateErrors.get(state)
     if (shown === undefined) {
-      shown = ordinaryMessageBox({ type: 'error', title: messages.updateFailedTitle,
-        message: desktopUpdateErrorSummary(state, messages),
+      shown = ordinaryMessageBox({ type: 'error', title: locale.messages.updateFailedTitle,
+        message: desktopUpdateErrorSummary(state, locale.messages),
         technicalDetails: state.technicalDetails ?? state.message ?? '' }).then(() => {})
       updateErrors.set(state, shown)
     }
@@ -402,27 +440,28 @@ async function main(): Promise<void> {
       await workspaceRecovery
       await startup?.catch(() => undefined)
       const host = backend.host
-      if (host === undefined) throw new DesktopUpdatePreparationError('tasks-unavailable', messages.updateTasksUnavailable)
+      if (host === undefined) throw new DesktopUpdatePreparationError('tasks-unavailable', locale.messages.updateTasksUnavailable)
       const active = await host.updateTasks('inspect')
       const confirmation: Electron.MessageBoxOptions = {
-        type: active ? 'warning' : 'info', title: messages.updateTitle,
-        message: active ? messages.updateActiveTasks : formatDesktopMessage(messages.updateDownloadedTitle, { version: updates.state.version ?? '' }),
-        detail: active ? messages.updateActiveTasksDetail
-          : messages.updateDownloadedDetail,
-        buttons: active ? [messages.updateStopTasks, messages.updateLater] : [messages.installAndRestart],
+        type: active ? 'warning' : 'info', title: locale.messages.updateTitle,
+        message: active ? locale.messages.updateActiveTasks : formatDesktopMessage(locale.messages.updateDownloadedTitle, { version: updates.state.version ?? '' }),
+        detail: active ? locale.messages.updateActiveTasksDetail
+          : locale.messages.updateDownloadedDetail,
+        buttons: active ? [locale.messages.updateStopTasks, locale.messages.updateLater] : [locale.messages.installAndRestart],
         defaultId: 1, cancelId: 1,
       }
       if (isMandatory()) {
         if (!await mandatoryUI?.confirm(updates.state.version ?? '', active)) return false
       } else {
-        if (mainWindow === undefined) return false
-        const result = await updateDialog.show(mainWindow, confirmation)
+        const parent = currentDialogWindow()
+        if (parent === undefined) return false
+        const result = await updateDialog.show(parent, confirmation)
         if (result.response !== 0 || isMandatory()) return false
       }
-      if (backend.host !== host) throw new DesktopUpdatePreparationError('tasks-unavailable', messages.updateTasksUnavailable)
+      if (backend.host !== host) throw new DesktopUpdatePreparationError('tasks-unavailable', locale.messages.updateTasksUnavailable)
       try {
         const stillActive = await host.updateTasks('lock')
-        if (stillActive && !active) throw new DesktopUpdatePreparationError('tasks-changed', messages.updateTasksChanged)
+        if (stillActive && !active) throw new DesktopUpdatePreparationError('tasks-changed', locale.messages.updateTasksChanged)
         mandatoryUI?.preparingRestart(stillActive)
         requireCleanStop = true
         updateStopFailure = undefined
@@ -430,7 +469,7 @@ async function main(): Promise<void> {
         updateStoppedHost = true
         // The backend's async cleanup callback can assign this after the reset above.
         const stopFailure = updateStopFailure as DesktopHostUncleanExitError | undefined
-        if (stopFailure !== undefined) throw new DesktopUpdatePreparationError('stop-failed', messages.updateStopFailed, stopFailure.message)
+        if (stopFailure !== undefined) throw new DesktopUpdatePreparationError('stop-failed', locale.messages.updateStopFailed, stopFailure.message)
         updateJournal?.action('install-confirmed')
         shellInstallerOwnsQuit = true
       } catch (error) {
@@ -471,6 +510,7 @@ async function main(): Promise<void> {
   })
 
   installDesktopDirectoryPicker(() => mainWindow)
+  installMicrophonePermissions(session.defaultSession, () => mainWindow?.webContents)
 
   ipcMain.handle(DESKTOP_IPC.boot, async (event) => {
     assertDesktopSender(event, ['app'])
@@ -486,6 +526,15 @@ async function main(): Promise<void> {
     }
     if (typeof message !== 'string') throw new Error('dsh desktop: startup failure must be text')
     reportFatal(new Error(message))
+  })
+
+  ipcMain.handle(DESKTOP_IPC.browserAcquire, (event, workspace: unknown) => {
+    assertProductSender(event)
+    return browserGuests.acquire(event.sender, workspace)
+  })
+  ipcMain.handle(DESKTOP_IPC.browserRelease, (event, lease: unknown) => {
+    assertProductSender(event)
+    return browserGuests.release(event.sender, lease)
   })
 
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*'] }, (details, callback) => {
@@ -531,8 +580,8 @@ async function main(): Promise<void> {
       || new URL(event.senderFrame.url).origin !== new URL(applicationUrl).origin) {
       throw new Error('desktop welcome: rejected locale request from an unowned frame')
     }
-    const current = await readWelcomeState()
-    return { languages: systemLanguages, preference: current.localePreference }
+    if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
+    return { languages: systemLanguages, preference: await welcomeBackend.readLocalePreference() }
   })
   ipcMain.on(DESKTOP_IPC.localeChanged, (event, next: unknown) => {
     const window = mainWindow
@@ -541,6 +590,7 @@ async function main(): Promise<void> {
     const current = resolveDesktopStartupLocale(next, systemLanguages)
     if (current.id === locale.id) return
     locale = current
+    platformView.notifyLocaleChanged()
     windowsLanguage = locale.id
     installMenu()
   })
@@ -576,8 +626,9 @@ async function main(): Promise<void> {
         if (manual || state.phase === 'idle' || (state.phase === 'error' && state.failedOperation === 'check')) {
           controller = new AbortController()
           ordinaryDialogs.add(controller)
-          progress = mainWindow === undefined ? Promise.resolve() : updateDialog.show(mainWindow, { type: 'info', title: messages.updateCheckTitle,
-            message: messages.updateChecking, buttons: [messages.later], cancelId: 0, signal: controller.signal })
+          const parent = currentDialogWindow()
+          progress = parent === undefined ? Promise.resolve() : updateDialog.show(parent, { type: 'info', title: locale.messages.updateCheckTitle,
+            message: locale.messages.updateChecking, buttons: [locale.messages.later], cancelId: 0, signal: controller.signal })
           if (!joinedPolicyAuthentication) {
             void checkPolicyManually('deferred').catch((error: unknown) => { console.error(error) })
           }
@@ -586,8 +637,8 @@ async function main(): Promise<void> {
         if (isMandatory()) { mandatoryUI?.focus(); return }
         if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
         if (state.phase === 'idle') {
-          await ordinaryMessageBox({ type: 'info', title: messages.updateCheckTitle,
-            message: formatDesktopMessage(messages.updateCurrent, { version: app.getVersion() }) })
+          await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
+            message: formatDesktopMessage(locale.messages.updateCurrent, { version: app.getVersion() }) })
           return
         }
         if (state.phase === 'ready' || (state.phase === 'error' && state.failedOperation === 'install')) {
@@ -599,9 +650,9 @@ async function main(): Promise<void> {
         }
         if (state.phase !== 'available' && !(state.phase === 'error' && state.failedOperation === 'download')) return
         if (manual) {
-          const result = await ordinaryMessageBox({ title: messages.updateCheckTitle, message: messages.updateAvailable,
-            detail: formatDesktopMessage(messages.updateDetail, { version: state.version ?? '' }),
-            buttons: [messages.updateDownload], cancelId: 1 })
+          const result = await ordinaryMessageBox({ title: locale.messages.updateCheckTitle, message: locale.messages.updateAvailable,
+            detail: formatDesktopMessage(locale.messages.updateDetail, { version: state.version ?? '' }),
+            buttons: [locale.messages.updateDownload], cancelId: 1 })
           if (result.response !== 0) return
         }
         if (!isMandatory() && state.version !== undefined) {
@@ -642,16 +693,16 @@ async function main(): Promise<void> {
   }
   const runPolicyAuthentication = async () => {
     if (policyAuth === undefined || mandatoryPolicy === undefined || quitting) return undefined
-    const parent = mandatoryUI?.confirmationWindow ?? mainWindow
+    const parent = mandatoryUI?.confirmationWindow ?? currentDialogWindow()
     if (parent === undefined) return undefined
-    const consent = await updateDialog.show(parent, { type: 'info', title: messages.policyLoginTitle,
-      message: messages.policyLoginRequired, buttons: [messages.policyLogin, messages.later], cancelId: 1 })
+    const consent = await updateDialog.show(parent, { type: 'info', title: locale.messages.policyLoginTitle,
+      message: locale.messages.policyLoginRequired, buttons: [locale.messages.policyLogin, locale.messages.later], cancelId: 1 })
     if (consent.response !== 0 || isQuitting()) return undefined
     const outcome = await policyAuth.login()
     if (isQuitting() || outcome === 'cancelled') return undefined
     if (outcome === 'failed') {
-      await updateDialog.show(parent, { type: 'error', title: messages.policyLoginTitle,
-        message: messages.policyLoginFailed, buttons: [messages.updateAcknowledge], cancelId: 0 })
+      await updateDialog.show(parent, { type: 'error', title: locale.messages.policyLoginTitle,
+        message: locale.messages.policyLoginFailed, buttons: [locale.messages.updateAcknowledge], cancelId: 0 })
       return undefined
     }
     // Drain a pre-login request before asking the server to evaluate the new cookies.
@@ -691,12 +742,15 @@ async function main(): Promise<void> {
   })
   // A custom application menu replaces Electron's default menu, so macOS needs
   // its standard menus and application hide commands declared explicitly.
+  // Keep app.name stable: Electron derives its default userData directory from it.
   const darwin = process.platform === 'darwin'
   const platformMenus: MenuItemConstructorOptions[] = darwin
     ? [{ role: 'fileMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]
     : [{ role: 'editMenu' }]
   const hideCommands: MenuItemConstructorOptions[] = darwin
-    ? [{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }]
+    ? [{ role: 'hide', label: currentDesktopLocale().messages.hideApplication },
+      { role: 'hideOthers', label: currentDesktopLocale().messages.hideOtherApplications },
+      { role: 'unhide', label: currentDesktopLocale().messages.showAllApplications }, { type: 'separator' }]
     : []
   const applicationItems = (): MenuItemConstructorOptions[] => [
     { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
@@ -713,12 +767,17 @@ async function main(): Promise<void> {
     ] : [],
     { type: 'separator' },
     ...hideCommands,
-    { role: 'quit', ...(process.platform === 'win32' ? { label: currentDesktopLocale().messages.exitApplication } : {}) },
+    { role: 'quit', ...(darwin ? { label: currentDesktopLocale().messages.quitApplication }
+      : process.platform === 'win32' ? { label: currentDesktopLocale().messages.exitApplication } : {}) },
+  ]
+  const devToolsItems: MenuItemConstructorOptions[] = [
+    { role: 'toggleDevTools', visible: false },
+    { role: 'toggleDevTools', visible: false, accelerator: 'F12' },
   ]
   const installMenu = (): void => {
-    Menu.setApplicationMenu(process.platform === 'win32' ? null : Menu.buildFromTemplate([{
-      label: process.platform === 'darwin' ? app.name : currentDesktopLocale().messages.application,
-      submenu: applicationItems(),
+    Menu.setApplicationMenu(Menu.buildFromTemplate(process.platform === 'win32' ? devToolsItems : [{
+      label: darwin ? app.name : currentDesktopLocale().messages.application,
+      submenu: [...applicationItems(), ...devToolsItems],
     }, ...platformMenus]))
   }
   installMenu()
@@ -775,6 +834,7 @@ async function main(): Promise<void> {
   const createMainWindow = (): BrowserWindow => {
     const window = createWindow(appPreload, false, true)
     mainWindow = window
+    browserGuests.bind(window)
     window.on('focus', automaticCheck)
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
     window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
@@ -797,9 +857,7 @@ async function main(): Promise<void> {
     if (quitting) return
     const window = mainWindow ?? createMainWindow()
     await navigateMain(applicationUrl)
-    // Window events can change startup state while navigation is pending.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (quitting || recovery.active || window.isDestroyed()) return
+    if (isQuitting() || recovery.active || window.isDestroyed()) return
     window.show()
     enteredWorkspace = true
     if (welcomeWindow !== undefined) {
@@ -814,6 +872,11 @@ async function main(): Promise<void> {
   let openingWelcome: Promise<void> | undefined
   const showWelcome = (): Promise<void> => {
     if (quitting) return Promise.resolve()
+    if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) {
+      welcomeWindow.show()
+      welcomeWindow.focus()
+      return Promise.resolve()
+    }
     openingWelcome ??= (async () => {
       welcomeWindow = await openWelcomeWindow(locale, {
         startSignIn: async () => {
@@ -851,9 +914,7 @@ async function main(): Promise<void> {
         if (welcomeWindow === window) welcomeWindow = undefined
         if (!enteredWorkspace && !recovery.active) mainWindow?.close()
       })
-      // Quit and backend failure callbacks can run while the welcome document loads.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      if (quitting || recovery.active) window.close()
+      if (isQuitting() || recovery.active || enteredWorkspace) window.close()
       else mainWindow?.hide()
     })().finally(() => { openingWelcome = undefined })
     return openingWelcome
@@ -861,9 +922,7 @@ async function main(): Promise<void> {
   const openInitialWindow = async (): Promise<void> => {
     if (quitting || recovery.active) return
     const state = await readWelcomeState()
-    // Quit or a backend failure can occur while the Host answers the preference request.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (quitting || backend.state.phase !== 'ready') return
+    if (isQuitting() || backend.state.phase !== 'ready') return
     locale = resolveDesktopStartupLocale(state.localePreference, systemLanguages)
     windowsLanguage = locale.id
     installMenu()
@@ -933,7 +992,7 @@ async function main(): Promise<void> {
   if (policyConfig !== undefined) {
     if (policyConfig.authentication === 'feishu-test') {
       policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, policyConfig.allowedAuthOrigins, locale,
-        () => mandatoryUI?.confirmationWindow ?? mainWindow,
+        () => mandatoryUI?.confirmationWindow ?? currentDialogWindow(),
         (event) => { console.info(`desktop policy authentication: ${event}`); updateJournal?.action(`policy-login-${event}`) })
     }
     const bundleId = app.isPackaged

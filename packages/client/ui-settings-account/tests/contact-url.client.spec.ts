@@ -29,3 +29,10 @@ it('opens a configured form without stale account context when signed out', () =
   expect(url.searchParams.get('hide_uid')).toBe('1')
   expect(() => Config({ contactFormUrl: 'javascript:alert(1)' })).toThrow()
 })
+
+it.each([NaN, Infinity])('uses CSS pixel dimensions when device pixel ratio is %s', (pixelRatio) => {
+  const url = new URL(contactUrl(Config({}), {
+    uid: null, version: undefined, locale: 'en', width: 800, height: 600, pixelRatio,
+  }))
+  expect(url.searchParams.get('prefill_screen_resolution')).toBe('800x600')
+})

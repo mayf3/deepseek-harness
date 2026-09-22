@@ -1,4 +1,4 @@
-/** Account settings slot registration and reconnecting Remote subscription. */
+/** Desktop account settings registration and reconnecting Remote subscription. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -8,7 +8,6 @@ import type { AccountView, AccountDetails } from '@deepseek-ai/dsh-deepseek-acco
 import type { PlatformBridge } from './PlatformOverlay.tsx'
 import { Config, CONTACT_CONFIG_GLOBAL } from '../contact-config.ts'
 import { contactUrl } from './contact-url.ts'
-import { BrowserLogin } from './browser-login.ts'
 import { AccountOnboarding } from './AccountOnboarding.tsx'
 import { AccountMenu } from './AccountMenu.tsx'
 import { AccountSection, type AccountSnapshot, type AccountSectionInjected } from './AccountSection.tsx'
@@ -25,13 +24,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const inject = ['slots', 'locale', 'remote', 'remote.account', 'remote.session']
 /** @param ctx - browser plugin context. */
 export function apply(ctx: Context): void {
+  if (!('dshDesktop' in globalThis)) return
   ctx.effect(() => ctx.locale.register('settings.account', { en, zh }), 'account: dictionaries')
   const t = ctx.locale.bind('settings.account')
   const page = globalThis as Partial<Record<typeof CONTACT_CONFIG_GLOBAL, unknown>>
   const config = Config(page[CONTACT_CONFIG_GLOBAL] ?? {})
   let snapshot: AccountSnapshot = { view: undefined, details: undefined, failed: false, loginVisible: false }
-  const browser = new BrowserLogin()
-  ctx.effect(() => () => { browser.dispose() }, 'account: pending browser window')
   const listeners = new Set<() => void>()
   const publish = (value: AccountSnapshot) => { snapshot = value; for (const listener of listeners) listener() }
   let revision = 0
@@ -67,7 +65,8 @@ export function apply(ctx: Context): void {
   const stream = ctx.remote.$stream<AccountView>({
     name: 'account', open: signal => ctx.remote.account.watch(signal), ended: () => new Error('account stream ended'),
   })
-  ctx.effect(() => () => stream.dispose(), 'account: state stream')
+  let disposed = false
+  ctx.effect(() => () => { disposed = true; return stream.dispose() }, 'account: state stream')
   void (async () => {
     for await (const frame of stream) {
       revision++
@@ -75,7 +74,6 @@ export function apply(ctx: Context): void {
       const initialize = frame.value.status === 'credential-stored' && frame.value.attempt?.phase === 'succeeded'
         && snapshot.view?.attempt?.phase !== 'succeeded'
       publish({ ...snapshot, view: frame.value, details: undefined, failed: false })
-      browser.update(frame.value)
       frame.accept()
       if (initialize) void (async () => {
         try {
@@ -87,7 +85,7 @@ export function apply(ctx: Context): void {
       })()
       void refresh()
     }
-  })().catch(() => { if (!stream.signal.aborted) publish({ ...snapshot, failed: true }) })
+  })().catch(() => { if (!disposed) publish({ ...snapshot, failed: true }) })
   const nativePlatform = (globalThis as typeof globalThis & { dshPlatform?: PlatformBridge }).dshPlatform
   const operations: AccountSectionInjected = {
     ...nativePlatform === undefined ? {} : { platform: nativePlatform },
@@ -113,17 +111,11 @@ export function apply(ctx: Context): void {
       const transport = (globalThis as typeof globalThis & {
         __DSH_TRANSPORT__?: { streamBaseUrl?: string }
       }).__DSH_TRANSPORT__
-      const desktop = transport?.streamBaseUrl
-      const request = async () => {
-        const result = await ctx.remote.account.startSignIn(ctx.locale.getSnapshot().active,
-          desktop === undefined ? window.location.origin : new URL(desktop).origin,
-          desktop === undefined ? 'web' : 'desktop')
-        if (!result.ok) throw new Error('account start failed')
-        return result.value
-      }
       try {
-        if (desktop === undefined) await browser.start(request, () => snapshot.view)
-        else await request()
+        const result = await ctx.remote.account.startSignIn(ctx.locale.getSnapshot().active,
+          transport?.streamBaseUrl !== undefined ? new URL(transport.streamBaseUrl).origin : window.location.origin,
+          'desktop')
+        if (!result.ok) throw new Error('account start failed')
       } catch (error) {
         publish({ ...snapshot, loginFailed: true })
         throw error

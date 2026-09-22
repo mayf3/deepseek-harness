@@ -10,10 +10,13 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import * as desktopOffice from './office.ts'
 
 import { installDesktopUpdateTaskControl } from './update-tasks.ts'
+import { installPlatformSessionPublisher } from './platform-session.ts'
+import { installOfficeEngineResolution } from './office-engine.ts'
 
 async function main(): Promise<void> {
   const runtimeDir = process.argv[2] as string
   const projectDir = process.argv[3] as string
+  installOfficeEngineResolution(runtimeDir)
   const installAnchor = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
   const profile = loadProfileDirectory('dsh', projectDir, installAnchor)
   const application = runProfile({
@@ -70,26 +73,9 @@ async function main(): Promise<void> {
     source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
     root: join(resolveDshHome(), 'dsh-runtimes', 'dsh-primary-runtime'),
   })
-  const account = ctx.get('deepseekAccount')
-  if (account !== undefined) {
-    const publish = async (): Promise<void> => {
-      const session = await account.getPlatformSession()
-      if (process.connected) process.send?.({ type: 'platform-session', session })
-    }
-    await publish()
-    ctx.effect(() => {
-      const lifetime = new AbortController()
-      const updates = (async () => {
-        for await (const _state of account.watch(lifetime.signal)) {
-          if (lifetime.signal.aborted) break
-          await publish()
-        }
-      })().catch(() => {
-        if (process.connected) process.send?.({ type: 'platform-session', session: null })
-      })
-      return async () => { lifetime.abort(); await updates }
-    })
-  }
+  installPlatformSessionPublisher(ctx, (session) => {
+    if (process.connected) process.send?.({ type: 'platform-session', session })
+  })
   const url = ctx.connection.authenticatedUrl(`http://127.0.0.1:${String(ctx.webServer.port)}`)
   if (process.connected) process.send?.({ type: 'ready', url, injections: ctx.webServer.collectIndexInjections() }, (error) => { if (error !== null) console.error(error) })
 }
