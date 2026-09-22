@@ -33,8 +33,7 @@
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-client-ui-workspace",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-shortcuts"
+        "@deepseek-ai/dsh-client-locale"
       ],
       "platform": "web"
     }
@@ -61,8 +60,7 @@
     "@types/react": "~18.3.1",
     "@deepseek-ai/cordis": "workspace:^",
     "react": "^18.2.0",
-    "clsx": "^2.0.0",
-    "@deepseek-ai/dsh-client-shortcuts": "workspace:^"
+    "clsx": "^2.0.0"
   },
   "files": [
     "lib/index.js",

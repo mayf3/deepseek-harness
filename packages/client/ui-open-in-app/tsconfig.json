@@ -33,9 +33,6 @@
       "path": "../ui-conversation/tsconfig.client.json"
     },
     {
-      "path": "../ui-layout"
-    },
-    {
       "path": "../ui-primitives"
     },
     {
@@ -55,9 +52,6 @@
     },
     {
       "path": "../../util/native-command"
-    },
-    {
-      "path": "../shortcuts/tsconfig.client.json"
     }
   ]
 }

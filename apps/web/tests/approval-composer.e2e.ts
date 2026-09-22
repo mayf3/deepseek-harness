@@ -30,7 +30,7 @@ const PROMPT = `Write a file named notes.txt in the workspace containing exactly
 /** Draft used to measure the composer's own text cap: enough lines to pass it. */
 const CAP_PROBE = Array.from({ length: 40 }, (_, index) => `line ${index}`).join('\n')
 
-describe.each(MODE === 'record' ? ['button'] as const : ['button', 'keyboard'] as const)('web e2e: approval takeover through %s', (method) => {
+describe('web e2e: approval takeover keeps its actions reachable', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -119,11 +119,7 @@ describe.each(MODE === 'record' ? ['button'] as const : ['button', 'keyboard'] a
       await page.setViewportSize(original)
     }
 
-    if (method === 'button') await panel.getByRole('button', { name: 'Allow once' }).click()
-    else {
-      await scroll.focus()
-      await page.keyboard.press('Enter')
-    }
+    await panel.getByRole('button', { name: 'Allow once' }).click()
 
     const sessionId = await settled
     if (MODE === 'record') {
