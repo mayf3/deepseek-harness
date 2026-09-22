@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { StartedToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ToolCallOwnerProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { SkillRow } from '../src/client/SkillRow.tsx'
@@ -36,15 +37,17 @@ function running(argsRaw = '{"name":"dsh-manage-issues"}'): StartedToolCall {
 }
 
 function props(block: SkillRowProps['block'], inspect?: () => void): SkillRowProps {
-  return {
+  const owner: ToolCallOwnerProps = {
     callId: block.callId,
     toolName: 'skill',
-    ...('kind' in block ? { phase: 'result' as const, block: block } : { phase: block.phase, block: block }),
-
+    ...('kind' in block ? { phase: 'result' as const, block }
+      : block.phase === 'preparing' ? { phase: 'preparing' as const, block } : { phase: 'start' as const, block }),
+    useDisclosure: () => ({ expanded: false, setExpanded: vi.fn(), toggle: vi.fn() }),
+    loadImage: vi.fn<ToolCallOwnerProps['loadImage']>(),
     openFile: vi.fn(),
     inspect,
-    t,
-  } as unknown as SkillRowProps
+  }
+  return { ...owner, t } as SkillRowProps
 }
 
 describe('SkillRow', () => {
