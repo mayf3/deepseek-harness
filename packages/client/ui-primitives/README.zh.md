@@ -100,6 +100,8 @@ kind: "package-library"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+Menu.listClassName 独立控制菜单卡片样式，不影响入口容器，也适用于 portal 模式。
+
 <details>
 <summary>实现细节——点击展开</summary>
 

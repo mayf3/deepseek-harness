@@ -97,4 +97,21 @@ describe('document language', () => {
     locale.setLocale('pt-BR')
     expect(langOf()).toBe('pt-BR')
   })
+
+  it('does not rewrite the document language for catalog changes with the same active locale', async () => {
+    const { locale } = await bench()
+    const observer = new MutationObserver(() => {})
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
+    try {
+      const remove = locale.addLanguage({ id: 'ja', label: '日本語', fallback: 'en' })
+      expect(observer.takeRecords()).toHaveLength(0)
+      remove()
+      expect(observer.takeRecords()).toHaveLength(0)
+      locale.setLocale('en')
+      expect(observer.takeRecords()).toHaveLength(1)
+      expect(langOf()).toBe('en')
+    } finally {
+      observer.disconnect()
+    }
+  })
 })

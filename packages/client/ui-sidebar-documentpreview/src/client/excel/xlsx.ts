@@ -3,7 +3,8 @@ import ExcelJS, { type Cell as ExcelCell, type Color, type Font, type BorderStyl
 import { type Cell, type CellStyle, type Sheet, type SheetConfig } from '@fortune-sheet/core'
 import { XMLParser } from 'fast-xml-parser'
 import { ExcelPreviewError } from './error.ts'
-import { formatCell, initialSelection, type ExcelLimits, type ExcelPreview } from './model.ts'
+import { EXCEL_UNSUPPORTED_FEATURES, formatCell, initialSelection, type ExcelLimits, type ExcelPreview, type ExcelUnsupportedFeature } from './model.ts'
+import { XlsxPreviewArchive } from './xlsx-archive.ts'
 
 const BORDER_STYLES: Record<BorderStyle, number> = {
   thin: 1, hair: 2, dotted: 3, dashed: 4, dashDot: 5, dashDotDot: 6,
@@ -13,17 +14,21 @@ const BORDER_STYLES: Record<BorderStyle, number> = {
 const THEME_ORDER = ['lt1', 'dk1', 'lt2', 'dk2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6', 'hlink', 'folHlink']
 
 /**
- * Decode an XLSX into display cells, retaining formulas without recalculation.
+ * Decode an XLSX into display cells, omitting drawings and retaining formulas without recalculation.
  * @param bytes - Complete borrowed workbook bytes.
  * @param limits - File and matrix allocation limits.
  * @returns Sheets ready for a read-only FortuneSheet workbook.
  */
 export async function convertXlsx(bytes: Uint8Array<ArrayBuffer>, limits: ExcelLimits): Promise<ExcelPreview> {
   const workbook = new ExcelJS.Workbook()
+  let unsupportedFeatures: Set<ExcelUnsupportedFeature>
   try {
-    const input = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
-      ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
-    await workbook.xlsx.load(input)
+    const archive = new XlsxPreviewArchive(bytes)
+    const preview = archive.withoutDrawings()
+    const input = preview.byteOffset === 0 && preview.byteLength === preview.buffer.byteLength
+      ? preview.buffer : preview.buffer.slice(preview.byteOffset, preview.byteOffset + preview.byteLength)
+    await workbook.xlsx.load(input, { ignoreNodes: ['drawing'] })
+    unsupportedFeatures = archive.unsupportedFeatures
   } catch (error) {
     throw new ExcelPreviewError('invalid', { cause: error })
   }
@@ -116,7 +121,7 @@ export async function convertXlsx(bytes: Uint8Array<ArrayBuffer>, limits: ExcelL
     }
     return sheet
   })
-  return { sheets, missingResults }
+  return { sheets, missingResults, unsupportedFeatures: EXCEL_UNSUPPORTED_FEATURES.filter(feature => unsupportedFeatures.has(feature)) }
 }
 
 function convertCell(

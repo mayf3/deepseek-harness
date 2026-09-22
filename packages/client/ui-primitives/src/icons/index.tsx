@@ -1596,16 +1596,17 @@ export const IconSlidersTwoOutlineMedium = (props: IconProps) => (
 
 const IconMicrophoneOutlineArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
   <svg width={size} height={size} viewBox="0 0 16 16" className={className} fill="none" stroke="currentColor" strokeWidth={strokeWidth} aria-hidden="true">
-    <rect x="6" y="1" width="4" height="8" rx="2" /><path d="M3 7v1a5 5 0 0 0 10 0V7M8 13v2m-3 0h6" />
+    <rect x={4.5 + strokeWidth / 2} y={1 + strokeWidth / 2} width={7 - strokeWidth} height={10 - strokeWidth} rx={(7 - strokeWidth) / 2} />
+    <path d="M2.35 8.675C3.075 11.3 5.2 13.125 8 13.125C10.8 13.125 12.925 11.3 13.65 8.675M8 13.125V15" />
   </svg>
 )
 
-/** Regular one-pixel microphone artwork. */
+/** Microphone with uniform one-pixel strokes. */
 export const IconMicrophoneOutlineRegular = (props: IconProps) => (
   <IconMicrophoneOutlineArtwork {...props} strokeWidth={ICON_REGULAR_STROKE} />
 )
 
-/** Medium microphone artwork with a 1.3px stroke. */
+/** Microphone with uniform 1.3px strokes. */
 export const IconMicrophoneOutlineMedium = (props: IconProps) => (
   <IconMicrophoneOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
 )

@@ -11,9 +11,6 @@ export type AgentPresetSettingsKey =
   | 'headerHint'
   | 'nav'
   | 'sectionIntro'
-  | 'authoringHelp'
-  | 'authoringTitle'
-  | 'authoringBody'
   | 'setDefault'
   | 'presetStandardName'
   | 'presetStandardDescription'
@@ -41,9 +38,6 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   ...guideEn,
   builtInGroup: 'Built-in', customGroup: 'Custom',
   sectionIntro: 'Choose the agent’s tools and how it works. Use Standard mode for everyday tasks, or Creator mode to add capabilities to DSH.',
-  authoringHelp: 'How to create or change a preset',
-  authoringTitle: 'Creating and changing presets',
-  authoringBody: 'Presets are declared by installed bundles, so this page only chooses among them. To create a preset or change one, start a task in Creator mode: the agent writes a bundle that declares or overrides the preset and installs it into the current profile.',
 
   seatHint: 'Choose the agent preset for your new task',
   headerHint: 'The agent preset chosen when this task started',
@@ -89,9 +83,6 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   ...guideZh,
   builtInGroup: '内置', customGroup: '自定义',
   sectionIntro: '选择 Agent 的工具和工作方式。日常任务用「标准模式」，扩展 DSH 的能力用「创造模式」。',
-  authoringHelp: '如何创建或修改预设',
-  authoringTitle: '创建和修改预设',
-  authoringBody: '预设由已安装的 bundle 声明，本页只负责选择。要创建或修改预设，请用「创造模式」开始一个任务：Agent 会编写一个声明或覆盖该预设的 bundle，并安装到当前 profile。',
 
   seatHint: '选择新任务使用的 Agent 预设',
   headerHint: '本任务的 Agent 预设，在任务开始时确定',

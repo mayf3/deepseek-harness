@@ -6,12 +6,6 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.titleRow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .title {
   margin: 0;
   font-size: 18px;
@@ -149,10 +143,10 @@
 }
 
 /* The discovery-reported reason, verbatim: it names the rows and the fix.
-   A real element rather than the icon row's `data-tip` pseudo-element, for two
-   reasons: generated content joins the card's accessible text, where this would
-   repeat what the alert already carries, and that tooltip is one `nowrap` line
-   for an icon label while this names package specifiers one per line. */
+   A real element rather than a generated tooltip, for two reasons: generated
+   content joins the card's accessible text, where this would repeat what the
+   alert already carries, and a tooltip is one `nowrap` line while this names
+   package specifiers one per line. */
 .brokenTip {
   position: absolute;
   top: calc(100% + 6px);
@@ -323,61 +317,38 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* Icon-only actions: the label rides `title` so the row stays quiet until
-   someone reaches for it. */
-.iconButton {
-  position: relative;
-  appearance: none;
-  border: 0;
-  border-radius: 7px;
-  padding: 6px;
-  background: none;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-}
-
-.iconButton:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.iconButton:hover:not(:disabled) {
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-}
-
-.iconButton:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
-  outline-offset: -1px;
-}
-
-.iconButton::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: var(--dsw-alias-label-primary);
-  color: var(--dsw-alias-bg-layer-3);
-  font-size: 11px;
-  line-height: 17px;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .12s;
-}
-
-.iconButton:hover::after,
-.iconButton:focus-visible::after {
-  opacity: 1;
-}
-
 .error {
   margin: 0;
   font-size: 12px;
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* The conversational authoring entry, after the card grid. Dashed like the
+   Models page's add affordances: it reads as a place a preset will appear,
+   not a command. */
+.creatorButton {
+  box-sizing: border-box;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 44px;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  border-radius: 20px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.creatorButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.creatorButton:disabled {
+  opacity: 0.4;
+  cursor: default;
 }

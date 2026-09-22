@@ -17,7 +17,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-resources/client'
 import { extractMarkdownPlainText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
-import { PlanCards, PlanReviewOpen, type PlanOpenInjected, type PlanReviewOpenInjected } from './PlanCard.tsx'
+import { PlanCards, PlanReviewOpen, type PlanCardsInjected, type PlanOpenInjected, type PlanReviewOpenInjected } from './PlanCard.tsx'
 import { PlanPreview, PlanTitle } from './PlanPreview.tsx'
 import { planDefinition } from './plan-definition.ts'
 import { planResourceProvider } from './plan-resource.ts'
@@ -77,7 +77,22 @@ export function apply(ctx: ClientContext): void {
   const reviewWindow = randomUUID()
   const reviewStore = createPlanReviewStore()
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
-    name: 'conversation.chat.turnTail', id: previewId, locale: NS, inject: open,
+    name: 'conversation.chat.turnTail', id: previewId, locale: NS,
+    inject: (sessionId: SessionId): PlanCardsInjected => {
+      const binding = ctx.sessions.binding(sessionId)
+      if (binding === undefined) throw new Error(`ui-plan: unknown session "${sessionId}"`)
+      const chat = ctx.uiConversation.binding(binding).target('chat')
+      return {
+        ...open(sessionId),
+        keyedHooks: {
+          plans: (turn) => {
+            const snapshot = chat.getSnapshot()
+            if (snapshot === undefined) throw new Error('ui-plan: Chat target is unavailable')
+            return snapshot.nodes.turnDataSource(Number(turn), 'submitted-plan')
+          },
+        },
+      }
+    },
   }, PlanCards))
   ctx.slots.inject('conversation.plan-review.actions', () => ctx.slots.register({
     name: 'conversation.plan-review.actions', id: previewId, locale: NS, store: reviewStore,
