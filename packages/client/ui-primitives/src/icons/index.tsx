@@ -1609,20 +1609,3 @@ export const IconMicrophoneOutlineRegular = (props: IconProps) => (
 export const IconMicrophoneOutlineMedium = (props: IconProps) => (
   <IconMicrophoneOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
 )
-
-const IconMicrophoneFillArtwork = ({ size = 16, className }: IconProps) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" className={className} fill="currentColor" aria-hidden="true">
-    <rect x="4.5" y="1" width="7" height="10" rx="3.5" />
-    <path d="M1.7 8.9C2.5 11.7 4.8 13.5 7.3 13.8V15H8.7V13.8C11.2 13.5 13.5 11.7 14.3 8.9L13 8.45C12.35 10.9 10.4 12.45 8 12.45C5.6 12.45 3.65 10.9 3 8.45L1.7 8.9Z" />
-  </svg>
-)
-
-/** Regular filled microphone with a capsule, curved support and short stem. */
-export const IconMicrophoneFillRegular = (props: IconProps) => (
-  <IconMicrophoneFillArtwork {...props} />
-)
-
-/** Medium filled microphone; it matches Regular because the geometry is fill-only. */
-export const IconMicrophoneFillMedium = (props: IconProps) => (
-  <IconMicrophoneFillArtwork {...props} />
-)
