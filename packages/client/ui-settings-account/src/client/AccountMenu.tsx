@@ -17,9 +17,10 @@ export type AccountMenuProps = PropsRuntime<'settings.launcher'> & PropsLocale<'
  * @returns account menu launcher.
  */
 export function AccountMenu({
-  wide, openSettings, openOnboarding, useAccount, signOut, hasRunningAccountTasks, contactUs, showLogin, start, cancel, t,
+  wide, openSettings, openOnboarding, useAccount, useTheme, signOut, hasRunningAccountTasks, contactUs, showLogin, start, cancel, t,
 }: AccountMenuProps) {
   const account = useAccount(state => state)
+  const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
   const signedIn = account.view?.status === 'credential-stored'
   const expired = account.view?.status === 'signed-out' && account.view.signOutReason === 'expired'
   const [expiryNotice, setExpiryNotice] = useState(false)
@@ -59,7 +60,8 @@ export function AccountMenu({
         else if (id === 'signin') beginSignIn()
         else void requestSignOut()
       }} />
-    {account.loginVisible && !account.onboarding && <SignInDialog account={account} start={start} cancel={cancel} t={t}
+    {account.loginVisible && !account.onboarding && <SignInDialog account={account} colorScheme={colorScheme}
+      start={start} cancel={cancel} t={t}
       close={() => { showLogin(false) }} useApiKey={() => { showLogin(false); openOnboarding('deepseek-official') }} />}
     {signedIn && signOutImpact !== undefined && <SignOutDialog running={signOutImpact} signOut={signOut}
       close={() => { setSignOutImpact(undefined) }} t={t} />}
