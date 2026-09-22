@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-22-windows-open-through-shell-resolution.md
-2026-09-22-windows-open-through-shell-resolution.md: 359d4163a06cc39b84f423940a22a1bf862dfbc8
-2026-09-22-windows-open-through-shell-resolution.zh.md: 755f9beacf8a635cccd63131acde5a6d072ee077
+2026-09-22-windows-open-through-shell-resolution.md: dac6b089d8d69d40a4cd7c92f4f74ee06f304329
+2026-09-22-windows-open-through-shell-resolution.zh.md: 8d2a00c6769906b568f605451d2afe339aed6dcf

@@ -34,8 +34,10 @@ Windows 对 HTML 与 SVG 仍然无法命名浏览器，因此 `openInBrowser` �
 
 打开器再也无法区分「shell 打开了」与「shell 拒绝了」：两种情况 Explorer 都返回 0 或 1，因此 Remote 依旧回答 `{ opened: true }`，完全没有处理程序的机器只能看到 shell 的选择框。此处不校验窗口是否真的出现。
 
+交互桌面会话现在是前提。在非交互 Windows 会话（服务，或没有交互登录的计划任务）中，`explorer.exe` 在约 30 秒后以退出码 0 返回且不调用任何关联，而 `Invoke-Item` 命令在同一会话里约 0.35 秒就打开了文件：这样启动的 Host 既失去能力又要付等待代价，只有调用方的 abort 信号能给这段等待封顶。该会话下的兜底尚未实现。
+
 目录走同一条路径。[open-in-app 记录](../feature/2026-08-25-promote-open-anywhere-plugin.zh.md)中被否决的方案是 detached 且经过凭据清洗的 `explorer.exe <dir>` 派生进程，那不是本交接的做法：`explorer.exe` 子进程继承宿主环境，也不创建 detached 进程；而它转交给桌面会话启动的应用或文件夹窗口，继承的是桌面会话环境而不是宿主进程环境。
 
 ## 验证
 
-`path-opener.spec.ts` 固定两种意图交给 Explorer 的编码文件 URI、打开与选中都可接受的交接退出码 1，以及仍然报错的普通失败与取消。`resolver.spec.ts` 固定 open-in-app 路由在 Windows 上的命令。按该包测试策略，原生桌面验证留在 Windows：在 Windows 11 ARM64 build 26200 上，一个探针关联记录了每次交接实际收到的参数——打开器自身的命令对普通文件、以及文件名含逗号的文件都启动了关联应用；而同一个含逗号文件若以原始路径交接，则会打开用户的「文档」文件夹，shell 在逗号处分段且不作任何提示。名称含逗号的目录会以该目录为根打开窗口。上述每一次交接（包括成功的那些）退出码都是 1。
+`path-opener.spec.ts` 固定两种意图交给 Explorer 的编码文件 URI、打开与选中都可接受的交接退出码 1，以及仍然报错的普通失败与取消。`resolver.spec.ts` 固定 open-in-app 路由在 Windows 上的命令。按该包测试策略，原生桌面验证留在 Windows。在 Windows 11 ARM64 build 26200 上，一次独立验证用 sha256 与源码一致的副本直接驱动模块自身的 `openNativeAssociatedPath`、`openNativePath`、`openNativeTextFile`，旁边挂一个记录 shell 实收参数的探针关联：每个含逗号的目标都以 `%2C` 完整到达、普通文件正常打开、名为 `dir,comma` 的目录打开为根目录正确的窗口。反证——同一个文件以逗号未编码的 file URI 交给 `explorer.exe`——没有触发任何关联、打开了用户的「文档」，而且**同样返回退出码 1**。因此退出码 1 记录的是委派而非结果，接受它不会把错误目标变成成功；真正保住路径完整的是那段编码。此处不观测窗口是否出现，选中路径的 `/select,` 高亮仍未验证。

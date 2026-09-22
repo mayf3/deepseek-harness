@@ -109,6 +109,7 @@ Linux association discovery and explicit launching require GIO. Missing native c
 These limits define when this runner is not the right tool. They are current package constraints, not a task backlog.
 
 - Command output uses Node’s `execFile` buffer limit; oversized replies reject. Use the subprocess capability for streaming output.
+- A Windows host needs an interactive desktop session. In a non-interactive session — a service, or a scheduled task without an interactive logon — `explorer.exe` returns exit code 0 after about 30 seconds without invoking any file association, so an open reports success having opened nothing; a caller's abort signal turns that wait into a timeout rather than a hang. An `Invoke-Item` command resolves the association in-process there in about 0.35 seconds, and its directory failure arrives as a non-zero exit code. No fallback for that session is implemented.
 
 <a id="dev-note"></a>
 ### Dev Note
