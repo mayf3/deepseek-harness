@@ -78,9 +78,9 @@ Two registry behaviours shape how a publish is attempted. Writes are spaced by a
 
 ### Workspace-internal references use the `workspace:` protocol
 
-Every reference to a workspace member uses `workspace:^`, so `pnpm pack` substitutes a range matching the target version: sibling `peerDependencies` follow the family version, and a reference to a vendored package follows that package's own line. The Landlock platform packages keep `workspace:*`, which publishes the exact version, because a platform package and its entry must agree exactly.
+Every reference to a workspace member uses the `workspace:` protocol. References from `packages/*/*` to DSH packages use `workspace:*`, including peers and development dependencies, so `pnpm pack` writes the target's exact release version. Vendored references, including Cordis, retain `workspace:^` and follow their independent version lines. App and native manifests retain their declared ranges; Landlock platform references remain exact. Local workspace linking is unchanged.
 
-`scripts/check-workspace-constraints.ts` requires the protocol, so a new package cannot reintroduce a hand-written range; the invariant-companion rule requires `workspace:^` for `@deepseek-ai/dsh-invariants` for the same reason.
+`scripts/check-workspace-constraints.ts` requires the protocol and exact DSH-to-DSH package ranges. The invariant-companion rule requires `workspace:*` for `@deepseek-ai/dsh-invariants`; the dependency repairer preserves vendored caret ranges. Published DSH peers therefore require the matching release instead of admitting later compatible versions.
 
 ### Published dependency faces use an explicit policy
 
@@ -133,7 +133,7 @@ The installed-consumer probe captures npm's HTTP diagnostics and includes them w
 |---|---|
 | release-set manifests | `private: true` removed; `publishConfig.access` per sequence and `repository` with each package's `directory` added |
 | release-set boundary | every member of `packages/*/*`, `apps/*`, and `vendor/*` |
-| dependency protocol | workspace-internal references are `workspace:^`, with `check-workspace-constraints.ts` and the invariant-companion rule requiring it |
+| dependency protocol | workspace references use the protocol; DSH-to-DSH package references and invariant companions use `workspace:*`, while vendor ranges remain independent |
 | root `AGENTS.md` | the convention that vendored packages are `private: true` no longer holds |
 | `vendor/README.md` | records `src` joining `cordis`'s `files` as a local modification |
 | the three native packages | `publishConfig.access: public`, and their workflow passes no `--access` |

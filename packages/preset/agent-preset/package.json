@@ -30,7 +30,7 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent-preset-registry": "workspace:^"
+    "@deepseek-ai/dsh-agent-preset-registry": "workspace:*"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:^"
@@ -39,9 +39,9 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent-preset-registry": "workspace:^",
-    "@deepseek-ai/dsh-compaction-tool-result-pruner": "workspace:^",
-    "@deepseek-ai/dsh-skill": "workspace:^",
+    "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
+    "@deepseek-ai/dsh-compaction-tool-result-pruner": "workspace:*",
+    "@deepseek-ai/dsh-skill": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:^",
     "@types/js-yaml": "^4.0.9",
     "js-yaml": "^4.2.0"

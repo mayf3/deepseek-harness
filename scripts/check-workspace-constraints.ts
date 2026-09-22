@@ -548,23 +548,27 @@ export function checkExperimentalDependencyIsolation(
 }
 
 /**
- * Require the `workspace:` protocol for every reference to a workspace member.
+ * Require exact DSH-to-DSH package ranges and the workspace protocol elsewhere.
  *
  * A hand-written range says nothing about the version the workspace actually
  * carries, and `pnpm pack` leaves it alone: `^0.0.1` published from version
  * `0.0.2` names a version that does not exist. The protocol makes pack
- * substitute the member's real version, so no release step rewrites ranges.
+ * substitute the member's real version. DSH-to-DSH references under packages/
+ * use `workspace:*`; references to vendor and native packages retain their ranges.
  * @param manifests - every workspace manifest.
- * @returns One error per reference that names a workspace member without the protocol.
+ * @returns One error per workspace reference with a disallowed range.
  */
-function checkWorkspaceProtocol(manifests: readonly WorkspaceManifest[]): string[] {
+export function checkWorkspaceProtocol(manifests: readonly WorkspaceManifest[]): string[] {
   const members = new Set(manifests.map(entry => entry.manifest.name).filter(name => name !== undefined))
   const errors: string[] = []
   for (const { dir, manifest } of manifests) {
+    const packageOwner = /^packages\/[^/]+\/[^/]+$/.test(dir)
     for (const section of dependencySections) {
       for (const [name, range] of Object.entries(manifest[section] ?? {})) {
-        if (!members.has(name) || range.startsWith('workspace:')) continue
-        errors.push(`${manifest.name ?? dir}: ${section}.${name} must use the workspace: protocol, got ${range}`)
+        if (!members.has(name)) continue
+        const exact = packageOwner && (name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-'))
+        if (exact ? range === 'workspace:*' : range.startsWith('workspace:')) continue
+        errors.push(`${manifest.name ?? dir}: ${section}.${name} must use ${exact ? 'workspace:*' : 'the workspace: protocol'}, got ${range}`)
       }
     }
   }

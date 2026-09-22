@@ -33,10 +33,10 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-experimental-speech-to-text": "workspace:^",
-    "@deepseek-ai/dsh-experimental-speech-to-text-sensevoice": "workspace:^",
-    "@deepseek-ai/dsh-experimental-api-speech-to-text": "workspace:^",
-    "@deepseek-ai/dsh-experimental-client-ui-voice-input": "workspace:^"
+    "@deepseek-ai/dsh-experimental-speech-to-text": "workspace:*",
+    "@deepseek-ai/dsh-experimental-speech-to-text-sensevoice": "workspace:*",
+    "@deepseek-ai/dsh-experimental-api-speech-to-text": "workspace:*",
+    "@deepseek-ai/dsh-experimental-client-ui-voice-input": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^"

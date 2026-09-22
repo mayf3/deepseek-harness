@@ -20,6 +20,7 @@ These package-specific rules supplement the repo-wide [conventions](../AGENTS.md
 
 [Naming rules](../docs/cookbook/adding-a-package.md#name-the-role-that-exists):
 
+- **Workspace ranges:** references from `packages/*/*` to DSH packages use `workspace:*` in every dependency section, including peers and development dependencies. Vendor and native ranges retain their existing policy; Cordis stays `workspace:^` ([publication rules](../.agents/notes/implemented/process/2026-08-10-npm-release-sequences.md#workspace-internal-references-use-the-workspace-protocol)).
 - **Package tsconfig:** extends `tsconfig.base.json` (Client: `tsconfig.base.client.json`), sets `rootDir: src` and `outDir: lib/types`, references workspace dependencies, references `runtime-diagnostics/invariants` only when the package publishes `./invariant`, and registers in one aggregate. Packages with distinct Host and Client compiler faces use `tsconfig.host.json` and `tsconfig.client.json` leaves plus a solution-only root; ordinary two-entry Client plugins do not split ([layout](../docs/development.md#typescript-project-layout)).
 - `src/types.ts` contains only types — no runtime code.
 - Tests live at package level under `tests/`, not `src/__tests__/`.

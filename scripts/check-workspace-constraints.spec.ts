@@ -9,6 +9,7 @@ import {
 import {
   checkDshFamilyVersion,
   checkWorkspaceManifest,
+  checkWorkspaceProtocol,
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
   expectedDshPackageFiles,
@@ -22,6 +23,49 @@ const experimental = {
     publishConfig: { access: 'public' },
   },
 } satisfies WorkspaceManifest
+
+describe('workspace dependency ranges', () => {
+  const dependency = { dir: 'packages/core/runtime', manifest: { name: '@deepseek-ai/dsh-runtime' } }
+  const vendor = { dir: 'vendor/cordis', manifest: { name: '@deepseek-ai/cordis' } }
+  const native = { dir: 'native/system', manifest: { name: '@deepseek-ai/node-addon-system' } }
+
+  it.each(['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const)(
+    'pins DSH %s while preserving vendor and native ranges',
+    (section) => {
+      for (const dir of ['packages/core/probe', 'packages/experimental/probe']) {
+        const consumer = (range: string): WorkspaceManifest => ({
+          dir,
+          manifest: { name: '@deepseek-ai/dsh-probe', [section]: {
+            '@deepseek-ai/dsh-runtime': range,
+            '@deepseek-ai/cordis': 'workspace:^',
+            '@deepseek-ai/node-addon-system': 'workspace:^',
+            external: '^1.2.3',
+          } },
+        })
+        expect(checkWorkspaceProtocol([dependency, vendor, native, consumer('workspace:*')])).toEqual([])
+        for (const range of ['workspace:^', 'workspace:~', 'workspace:^4.0.3', '^4.0.3']) {
+          expect(checkWorkspaceProtocol([dependency, vendor, native, consumer(range)])).toEqual([
+            `@deepseek-ai/dsh-probe: ${section}.@deepseek-ai/dsh-runtime must use workspace:*, got ${range}`,
+          ])
+        }
+      }
+    },
+  )
+
+  it.each(['.', 'apps/cli', 'vendor/probe', 'native/system', 'python/sdk-runtime'])(
+    'retains workspace range choices outside packages: %s',
+    (dir) => {
+      const consumer = (range: string): WorkspaceManifest => ({
+        dir, manifest: { dependencies: { '@deepseek-ai/dsh-runtime': range } },
+      })
+      expect(checkWorkspaceProtocol([dependency, consumer('workspace:^')])).toEqual([])
+      expect(checkWorkspaceProtocol([dependency, consumer('workspace:*')])).toEqual([])
+      expect(checkWorkspaceProtocol([dependency, consumer('^4.0.3')])).toEqual([
+        `${dir}: dependencies.@deepseek-ai/dsh-runtime must use the workspace: protocol, got ^4.0.3`,
+      ])
+    },
+  )
+})
 
 describe('experimental workspace constraints', () => {
   it('requires the experimental package-name prefix', () => {
