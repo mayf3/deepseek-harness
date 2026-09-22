@@ -1034,6 +1034,9 @@ importers:
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:^
         version: link:../../client/connection
+      '@deepseek-ai/dsh-cmdline':
+        specifier: workspace:^
+        version: link:../../boot/cmdline
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:^
         version: link:../../host/webserver

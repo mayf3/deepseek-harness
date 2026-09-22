@@ -196,7 +196,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/gateway/src/index.ts:144`](../packages/api/gateway/src/index.ts)
+来源：[`packages/api/gateway/src/index.ts:145`](../packages/api/gateway/src/index.ts)
 
 <a id="deepseek-aidsh-api-job-controller"></a>
 
