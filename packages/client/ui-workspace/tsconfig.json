@@ -70,9 +70,6 @@
     },
     {
       "path": "../../util/workspace-path"
-    },
-    {
-      "path": "../shortcuts/tsconfig.client.json"
     }
   ]
 }

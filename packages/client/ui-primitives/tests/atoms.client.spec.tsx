@@ -89,19 +89,18 @@ describe('Menu', () => {
           onSelect={() => {}}
           onClose={() => { setOpen(false) }}
         >
-          <MenuItemButton separatorBefore shortcut={{ keys: ['Ctrl', 'P'], aria: 'Control+P' }} onSelect={() => { onAction(); setOpen(false) }}>Publish</MenuItemButton>
+          <MenuItemButton separatorBefore onSelect={() => { onAction(); setOpen(false) }}>Publish</MenuItemButton>
         </Menu>
       )
     }
     render(<Harness />)
     const trigger = screen.getByRole('button', { name: 'trigger' })
-    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Alpha', 'PublishCtrlP'])
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Alpha', 'Publish'])
     // The component row starts a group: one hairline, between the data row and it.
     const publishWrap = screen.getByRole('menuitem', { name: 'Publish' }).parentElement
     expect(screen.getByRole('separator').nextElementSibling).toBe(screen.getByRole('menuitem', { name: 'Publish' }))
     expect(publishWrap?.contains(screen.getByRole('separator'))).toBe(true)
     const publish = screen.getByRole('menuitem', { name: 'Publish' })
-    expect(publish.getAttribute('aria-keyshortcuts')).toBe('Control+P')
     trigger.focus()
     fireEvent.keyDown(trigger, { key: 'End' })
     expect(document.activeElement).toBe(publish)
@@ -439,7 +438,7 @@ describe('Menu', () => {
             id: 'new',
             label: 'New Workspace',
             submenu: [
-              { id: 'ok', label: 'Create ok', icon: <svg data-testid="sub-ic" />, shortcut: { keys: ['⌘', 'N'], aria: 'Meta+N' } },
+              { id: 'ok', label: 'Create ok', icon: <svg data-testid="sub-ic" /> },
             ],
           },
         ]}
@@ -456,8 +455,6 @@ describe('Menu', () => {
     fireEvent.focus(parent)
     fireEvent.mouseEnter(wrap)
     expect(screen.getByTestId('sub-ic')).toBeDefined()
-    expect(screen.getByRole('menuitem', { name: 'Create ok' }).getAttribute('aria-keyshortcuts')).toBe('Meta+N')
-    expect(screen.getByRole('menuitem', { name: 'Create ok' }).querySelectorAll('kbd')).toHaveLength(2)
     fireEvent.click(screen.getByRole('menuitem', { name: 'Create ok' }))
     expect(onSelect).toHaveBeenCalledWith('ok')
     fireEvent.mouseLeave(wrap)

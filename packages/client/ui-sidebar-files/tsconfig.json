@@ -43,9 +43,6 @@
     },
     {
       "path": "../../api/workspace-files/tsconfig.client.json"
-    },
-    {
-      "path": "../shortcuts/tsconfig.client.json"
     }
   ]
 }

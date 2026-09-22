@@ -44,8 +44,6 @@ import type { SessionSearchResultItem } from '@deepseek-ai/dsh-api-session-contr
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionActivity, WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
-import type { WorkspaceShortcutState } from '../shortcuts.ts'
 import type { createWorkspaceViewStore } from '../stores.ts'
 
 /**
@@ -137,10 +135,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'root'
       owner: SessionRowOwnerProps
       hookContext: MenuOpenState
-      inject: { hooks: {
-        menuOpenState: SlotHookFactory<'sidebar.workspaces.session.menu.item', UseMenuOpenState>
-        shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
-      } }
+      inject: { hooks: { menuOpenState: SlotHookFactory<'sidebar.workspaces.session.menu.item', UseMenuOpenState> } }
     }
     /**
      * The hover buttons at the end of one Session row, in ascending `order`,
@@ -190,19 +185,7 @@ export type WorkspaceBrowserInjected = {
      * saw. Select the field the surface needs (`info => info.home`).
      */
     hostInfo: HostObservable<RemoteHostFacts>
-    workspaceShortcuts: HostObservable<WorkspaceShortcutState>
-    shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
   }
-  /** Open the browser search and focus its input. */
-  requestSearch: () => void
-  /** Request the existing directory picker. */
-  requestAddWorkspace: () => void
-  /** Consume the directory-picker opening request. */
-  closeAddWorkspace: () => void
-  /** Publish directory interaction occupancy for command availability. */
-  setDirectoryBusy: (busy: boolean) => void
-  /** Dismiss the shortcut's fork-failure notification. */
-  dismissForkError: () => void
   /**
    * Start a New Session in a Workspace: reuse-or-create its blank session and
    * open it; without an explicit workspace, inherit the current Session

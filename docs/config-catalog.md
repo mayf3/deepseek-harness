@@ -481,20 +481,6 @@ export interface Config {
 
 Source: [`packages/client/hmr/src/index.ts:30`](../packages/client/hmr/src/index.ts)
 
-<a id="deepseek-aidsh-client-shortcuts"></a>
-
-## `@deepseek-ai/dsh-client-shortcuts`
-
-```ts config-catalog
-/** Fixed shortcut sequence settings. */
-export interface Config {
-  /** Maximum interval between independent Escape presses for stopping a reply, in milliseconds. */
-  stopSequenceMs: number
-}
-```
-
-Source: [`packages/client/shortcuts/src/config.ts:5`](../packages/client/shortcuts/src/config.ts)
-
 <a id="deepseek-aidsh-client-ui-settings-account"></a>
 
 ## `@deepseek-ai/dsh-client-ui-settings-account`
@@ -2795,18 +2781,14 @@ Source: [`packages/spill/spill-local/src/index.ts:31`](../packages/spill/spill-l
 Requires: `tools`
 
 ```ts config-catalog
-/** Plugin config. */
+/** Optional result-retention budget. */
 export interface Config {
-  /**
-   * The model-facing context cap for a plain-text tool result, in UTF-8 bytes.
-   * Omitted disables the policy entirely (no-op). When set, a result larger than
-   * this is spilled and replaced with a preview derived from this same budget.
-   */
-  maxInlineBytes?: number
+  /** Maximum estimated tokens in a retained result, including image descriptors and omission notices. Omitted disables retention. */
+  maxInlineTokens?: number
 }
 ```
 
-Source: [`packages/spill/spill-policy/src/index.ts:61`](../packages/spill/spill-policy/src/index.ts)
+Source: [`packages/spill/spill-policy/src/index.ts:25`](../packages/spill/spill-policy/src/index.ts)
 
 <a id="deepseek-aidsh-ssh"></a>
 
@@ -3822,7 +3804,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'ptc' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:663`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:673`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 
@@ -4141,7 +4123,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-settings-shell` ([`packages/client/ui-settings-shell/src/index.ts`](../packages/client/ui-settings-shell/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-subagent` ([`packages/client/ui-settings-subagent/src/index.ts`](../packages/client/ui-settings-subagent/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-web-search` ([`packages/client/ui-settings-web-search/src/index.ts`](../packages/client/ui-settings-web-search/src/index.ts))
-- `@deepseek-ai/dsh-client-ui-shortcuts` ([`packages/client/ui-shortcuts/src/index.ts`](../packages/client/ui-shortcuts/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar` ([`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar-browser` ([`packages/client/ui-sidebar-browser/src/index.ts`](../packages/client/ui-sidebar-browser/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar-files` ([`packages/client/ui-sidebar-files/src/index.ts`](../packages/client/ui-sidebar-files/src/index.ts))

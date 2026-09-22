@@ -35,7 +35,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { openSettingsFromAccountMenu, expandTurnProcesses, newEnglishPage, saveFailureShot } from './support.ts'
+import { openSettings, expandTurnProcesses, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/clickable-links-gallery', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('./expected/clickable-links-gallery/ui.expected.md', import.meta.url))
@@ -453,7 +453,7 @@ describe('web e2e: clickable links gallery', () => {
     await markdown.locator(`a[href="${HTTP_URL}"]`).click()
     await expect.poll(() => browserAddress.inputValue()).toBe(HTTP_URL)
 
-    await openSettingsFromAccountMenu(page, 'en')
+    await openSettings(page, 'en')
     await page.getByRole('button', { name: 'Built-in browser', exact: true }).click()
     await page.getByRole('menuitem', { name: 'New browser tab', exact: true }).click()
     await expect.poll(() => scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ linkOpening: 'new-tab' })
@@ -470,7 +470,7 @@ describe('web e2e: clickable links gallery', () => {
     }
 
     await page.reload()
-    await openSettingsFromAccountMenu(page, 'en')
+    await openSettings(page, 'en')
     await page.getByRole('button', { name: 'New browser tab', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Built-in browser', exact: true }).click()
     await expect.poll(() => scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ linkOpening: 'sidebar' })

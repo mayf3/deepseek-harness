@@ -220,12 +220,6 @@
     - id: locale
       name: '@deepseek-ai/dsh-client-locale'
 
-    - id: shortcuts
-      name: '@deepseek-ai/dsh-client-shortcuts'
-
-    - id: ui-shortcuts
-      name: '@deepseek-ai/dsh-client-ui-shortcuts'
-
     - id: ui-layout
       name: '@deepseek-ai/dsh-client-ui-layout'
 
