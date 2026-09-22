@@ -34,6 +34,11 @@ const state = vi.hoisted(() => ({
   nativeTheme: { themeSource: 'system', shouldUseDarkColors: false },
 }))
 
+vi.mock('../src/crash-report.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/crash-report.ts')>(),
+  writeCrashReport: vi.fn(async () => undefined),
+  pruneCrashReports: vi.fn(async () => {}),
+}))
 vi.mock('electron', () => ({
   clipboard: { writeText: state.copy },
   app: {
@@ -46,6 +51,8 @@ vi.mock('electron', () => ({
     getVersion: () => '1.0.0',
     setAboutPanelOptions: vi.fn(),
     getAppPath: () => '/development-app',
+    getPath: (name: string) => `/development-${name}`,
+    setAppLogsPath: vi.fn(),
     getPreferredSystemLanguages: () => ['en-US'],
     on: (name: string, callback: (...args: unknown[]) => void) => { state.appListeners.set(name, callback) },
     quit: state.quit,

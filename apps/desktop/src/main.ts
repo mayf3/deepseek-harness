@@ -22,7 +22,7 @@ import {
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager } from './project-manager.ts'
-import { DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
+import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { DesktopPlatformView, PLATFORM_IPC, platformBounds } from './platform-view.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { installMicrophonePermissions } from './microphone-permissions.ts'
@@ -33,6 +33,7 @@ import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
 import { DesktopFatalRecovery } from './fatal-recovery.ts'
+import { pruneCrashReports, RendererConsoleTail, writeCrashReport, type CrashReportSource } from './crash-report.ts'
 import { openWelcomeWindow } from './welcome-window.ts'
 import { WELCOME_IPC, needsWelcome } from './welcome-api.ts'
 import { connectDesktopWelcome, type DesktopWelcomeBackend } from './welcome-backend.ts'
@@ -52,6 +53,18 @@ let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
 let shuttingDown = false
 let windowsLanguage: string | undefined
+/**
+ * Whether the backend has reached ready: false until the first ready, back to
+ * false when a restart returns it to starting, frozen during shutdown so a
+ * failure while tearing down a ready backend still reads as `running`.
+ */
+let backendReady = false
+/** Error-level console output of the primary window, attached to crash reports. */
+const rendererConsole = new RendererConsoleTail()
+
+// Platform-conventional logs directory (macOS ~/Library/Logs/<name>, otherwise under userData);
+// set before ready so the first fatal report already resolves under it.
+app.setAppLogsPath()
 
 function currentDesktopLocale(): ReturnType<typeof resolveDesktopLocale> {
   return resolveDesktopLocale(windowsLanguage ?? app.getLocale())
@@ -67,12 +80,32 @@ const recovery = new DesktopFatalRecovery({
   },
   exit: () => { app.quit() },
   restart: () => { app.relaunch(); app.quit() },
+  writeReport: (error, source) => persistCrashReport(error, source),
 })
 
-function reportFatal(error: unknown): void {
+function persistCrashReport(error: unknown, source: CrashReportSource): Promise<string | undefined> {
+  return writeCrashReport(app.getPath('logs'), {
+    source,
+    phase: backendReady ? 'running' : 'startup',
+    error,
+    ...(error instanceof DesktopHostFatalError && error.diagnostic !== undefined ? { hostDiagnostic: error.diagnostic } : {}),
+    rendererConsole: rendererConsole.snapshot(),
+    app: {
+      name: app.name, version: app.getVersion(), platform: process.platform, arch: process.arch,
+      electron: process.versions.electron, node: process.versions.node, locale: currentDesktopLocale().id,
+    },
+    time: new Date(),
+  })
+}
+
+function reportFatal(error: unknown, source: CrashReportSource): void {
   console.error(error)
-  if (shuttingDown) return
-  void recovery.report(error).catch((failure: unknown) => { console.error(failure); app.exit(1) })
+  if (shuttingDown) {
+    // No dialog during shutdown, but the report still records what failed on the way out.
+    void persistCrashReport(error, source)
+    return
+  }
+  void recovery.report(error, source).catch((failure: unknown) => { console.error(failure); app.exit(1) })
 }
 
 protocol.registerSchemesAsPrivileged([{
@@ -250,6 +283,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
 }
 
 async function main(): Promise<void> {
+  void pruneCrashReports(app.getPath('logs'))
   const journalDirectory = process.env.DSH_DESKTOP_UPDATE_JOURNAL_DIR
   const updateJournal = journalDirectory === undefined ? undefined : new DesktopUpdateJournal(journalDirectory, app.getVersion())
   const resources = runtimeResources()
@@ -383,7 +417,8 @@ async function main(): Promise<void> {
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
     }
   }, (state) => {
-    if (state.phase === 'error') reportFatal(new Error(state.message))
+    if (state.phase === 'error') reportFatal(state.failure, 'host')
+    else if (!shuttingDown) backendReady = state.phase === 'ready'
   })
 
   const updateErrors = new WeakMap<DesktopUpdateState, Promise<void>>()
@@ -422,7 +457,7 @@ async function main(): Promise<void> {
           if (backend.host !== undefined) updateJournal?.action('workspace-ready')
         })
         workspaceRecovery = recovery
-        void recovery.catch(reportFatal).finally(() => {
+        void recovery.catch((error: unknown) => { reportFatal(error, 'main') }).finally(() => {
           if (startup === hostReady) startup = undefined
           if (workspaceRecovery === recovery) workspaceRecovery = undefined
         })
@@ -449,7 +484,7 @@ async function main(): Promise<void> {
       // The existing Web document resumes through the boot IPC response.
     })().catch((error: unknown) => {
       updateJournal?.action('workspace-failed')
-      reportFatal(error)
+      reportFatal(error, 'main')
       throw error
     }).finally(() => { startup = undefined })
     return startup
@@ -546,7 +581,7 @@ async function main(): Promise<void> {
       throw new Error('dsh desktop: rejected startup failure from a non-primary frame')
     }
     if (typeof message !== 'string') throw new Error('dsh desktop: startup failure must be text')
-    reportFatal(new Error(message))
+    reportFatal(new Error(message), 'web-boot')
   })
 
   ipcMain.handle(DESKTOP_IPC.browserAcquire, (event, workspace: unknown) => {
@@ -863,18 +898,22 @@ async function main(): Promise<void> {
     browserGuests.bind(window)
     window.on('focus', automaticCheck)
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
+    window.webContents.on('console-message', (details) => {
+      if (details.level !== 'error') return
+      rendererConsole.push(`${details.sourceId}:${String(details.lineNumber)} ${details.message}`)
+    })
     window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
       if (isMainFrame && code !== -3 && !quitting && !window.isDestroyed()) {
-        reportFatal(new Error(`Desktop page failed to load: ${url} (${String(code)}: ${description})`))
+        reportFatal(new Error(`Desktop page failed to load: ${url} (${String(code)}: ${description})`), 'renderer')
       }
     })
     window.webContents.on('preload-error', (_event, _path, error) => {
-      if (!quitting && !window.isDestroyed()) reportFatal(error)
+      if (!quitting && !window.isDestroyed()) reportFatal(error, 'renderer')
     })
     window.webContents.on('render-process-gone', (_event, details) => {
       navigation = undefined
       if (!quitting && !window.isDestroyed() && details.reason !== 'clean-exit') {
-        reportFatal(new Error(`Desktop renderer exited: ${details.reason}`))
+        reportFatal(new Error(`Desktop renderer exited: ${details.reason}`), 'renderer')
       }
     })
     return window
@@ -963,8 +1002,8 @@ async function main(): Promise<void> {
     if (isMandatory()) { mandatoryUI?.focus(); return }
     const window = welcomeWindow ?? mainWindow
     if (window === undefined || window.isDestroyed()) {
-      try { createMainWindow() } catch (error) { reportFatal(error); return }
-      void (backend.state.phase === 'ready' ? openInitialWindow() : navigateMain(applicationUrl)).catch(reportFatal)
+      try { createMainWindow() } catch (error) { reportFatal(error, 'main'); return }
+      void (backend.state.phase === 'ready' ? openInitialWindow() : navigateMain(applicationUrl)).catch((error: unknown) => { reportFatal(error, 'main') })
       return
     }
     // Startup and sign-out select the visible window before activation may reveal the workspace.
@@ -1073,7 +1112,7 @@ if (ownsDesktopInstance) void app.whenReady().then(main).catch(async (error: unk
   if (diagnosticFile !== undefined) {
     await writeFile(diagnosticFile, `${error instanceof Error ? error.stack ?? message : message}\n`).catch(() => undefined)
   }
-  reportFatal(error)
+  reportFatal(error, 'main')
 }).catch((error: unknown) => {
   console.error(error)
   app.exit(1)
