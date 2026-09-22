@@ -8,6 +8,9 @@
      the composer, so its preview never needs to cross the footer. */
   z-index: 7;
   height: 0;
+  /* Query the transcript's usable width while keeping the rail full-bleed. */
+  padding-inline: calc(var(--dsh-composer-side-clearance) + 16px);
+  container-type: inline-size;
   pointer-events: none;
 }
 
@@ -201,7 +204,7 @@
 }
 
 @container (max-width: 900px) {
-  .slot {
+  .frame {
     display: none;
   }
 }

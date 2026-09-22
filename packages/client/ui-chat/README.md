@@ -102,7 +102,7 @@ The Chat-node slot injects a reset-bound `useDisclosure` Hook for reasoning and 
 
 Chat restores semantic anchors across history prepend and renderer remounts, with browser scroll anchoring disabled on its scrollport only while following the tail. Pinned scroll deliveries without reader movement, and reader input that reaches the exact floor, update follow ownership immediately, before subsequent layout changes can invalidate their floor. Other reader movement remains pending until the sampling interval or `scrollend`, even inside the follow threshold, so layout growth cannot erase small scroll gestures. Submitting transcript input or steering immediately restores tail following and clears an older pending reader sample. While the reader is pinned to the floor, `ResizeObserver` follows the new floor and selects the latest loaded Turn without reading row geometry. Once the reader moves away, flow-height changes preserve the top position and the reading-line geometry selects the active Turn. Turn-rail previews paint above sticky Markdown code-block banners, while the rail frame remains inside the transcript band above the composer.
 
-The turn rail and back-to-bottom button sit outside the clipped transcript. They use the shared conversation scrollport for sticky positioning, or the Chat frame for absolute positioning when Chat owns its scrollport.
+The turn rail and back-to-bottom button sit outside the clipped transcript. They use the shared conversation scrollport for sticky positioning, or the Chat frame for absolute positioning when Chat owns its scrollport. The rail hides when the transcript's available width, excluding its horizontal padding, is at most 900px; the browser viewport width is not the criterion.
 
 The transcript root uses `overflow-x: visible; overflow-y: clip`: vertical overflow is clipped without creating a scroll container. Sticky Markdown code banners and expanded compaction headers therefore retain the actual conversation scrollport as their reference when no nearer scrolling ancestor exists. Capped process groups and terminal sections keep their own scrollports.
 
@@ -121,6 +121,8 @@ While the pointer is outside the rail, automatic follow keeps the rail still whe
 
 <details>
 <summary>Scroll implementation — click to expand</summary>
+
+Within a process group, wheel, touchstart, and any pointerdown interrupt an active smooth animation, including presses on tool cards. ArrowUp/ArrowDown, PageUp/PageDown, Home/End, and Space keys also interrupt it unless a child has prevented the key's default action; editable controls are not excluded. These events stop the animation without requiring a scroll displacement. Subsequent position sampling determines whether following continues.
 
 `useScrollFollow` supplies independent controllers for shared bottom thresholds, follow intent, and native scrolling. `useProcessScroll` owns group observation, initial placement, and edge fades. Outer following remains immediate; group growth uses native smooth scrolling unless reduced motion is requested. Growth retains an in-flight target until `scrollend`; arrival at that target or its shrink-clamped position continues toward the latest floor, while another endpoint releases following. Opening placement remains immediate. A bottom-follow request within tolerance uses immediate positioning when no animation is outstanding, so a fractional no-op cannot leave a pending smooth target.
 

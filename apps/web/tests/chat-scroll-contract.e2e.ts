@@ -566,6 +566,27 @@ describe('web e2e: long Chat scroll contract', () => {
       await expectControls()
       await composer.fill('')
       await expectControls()
+
+      const rail = world.page.getByRole('navigation', { name: 'Turn navigation', includeHidden: true })
+      const frame = rail.locator('../..')
+      const originalStyle = await frame.getAttribute('style')
+      try {
+        for (const clearance of [16, 8]) {
+          for (const contentWidth of [901, 900, 899, 901]) {
+            await frame.evaluate((element, { clearance, contentWidth }) => {
+              element.style.width = `${contentWidth + 2 * (clearance + 16)}px`
+              element.style.setProperty('--dsh-composer-side-clearance', `${clearance}px`)
+            }, { clearance, contentWidth })
+            await expect.poll(() => rail.isVisible()).toBe(contentWidth > 900)
+          }
+        }
+      } finally {
+        await frame.evaluate((element, style) => {
+          if (style === null) element.removeAttribute('style')
+          else element.setAttribute('style', style)
+        }, originalStyle)
+      }
+      await expectControls()
       await backToBottom.click()
       await expectBottom(world.page)
       assertClean(world)

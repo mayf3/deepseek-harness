@@ -8,6 +8,8 @@ const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home
 
 /**
  * Observe one group's body and content without coupling its follow intent to the outer transcript.
+ * Wheel, touchstart, any pointerdown, and unprevented scroll keys interrupt active animations,
+ * including events from editable controls; subsequent position sampling determines follow intent.
  * @param bodyRef - capped scrolling body.
  * @param contentRef - uncapped content whose size reports growth.
  * @param open - local disclosure state.
