@@ -171,9 +171,8 @@ export const ToolRow = memo(function ToolRow({
   // amber while retaining the business icon and hidden state announcement.
   const failureLine = state === 'error' ? errorSummary ?? normalSummary : null
   const summaryText = failureLine ?? normalSummary
-  // A diff row's collapsed line carries the card's +/- totals (the same
-  // numbers the expanded footer prints) so the change size reads without
-  // expanding; an explicit summarySuffix (none today on diff rows) wins.
+  // The tool row keeps the diff's +/- totals visible while its body is collapsed.
+  // An explicit summarySuffix overrides the diff totals.
   const diffStat = useMemo(() => {
     if (diffBody === null) return null
     const { added, removed } = diffTotals(diffBody.card.diffs)

@@ -78,11 +78,13 @@ describe('code-card controls', () => {
     }
   })
 
-  it('preserves compact Markdown and owner-styled source controls', () => {
+  it('shows compact Markdown icon actions and preserves custom source controls', () => {
     const view = render(<MarkdownText text={'```ts\nconst x = 1\n```'} variant="compact" labels={{ code: labels, footnotes: 'Footnotes' }} />)
-    expect(screen.queryByRole('button', { name: 'Wrap lines' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Do not wrap lines' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Copy' }).textContent).toBe('Copy')
+    const wrap = screen.getByRole('button', { name: 'Wrap lines' })
+    expect(wrap.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(wrap)
+    expect(wrap.getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByRole('button', { name: 'Copy' }).textContent).toBe('')
     view.rerender(<CodeBlock code="source" copyLabel="Copy" copiedLabel="Copied" />)
     expect(screen.getByRole('button', { name: 'Copy' }).textContent).toBe('Copy')
   })

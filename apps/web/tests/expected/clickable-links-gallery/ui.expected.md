@@ -37,7 +37,7 @@
 - text: css
 - button "Wrap lines"
 - button "Copy"
-- text: "src/tokens.css - --inline-code: #EBEEF2; + --inline-code: #F5F5F5; └ +1 -1 · 1 file"
+- text: "src/tokens.css - --inline-code: #EBEEF2; + --inline-code: #F5F5F5;"
 - button "Inspect"
 - button "Tool call str_replace_editor · create" [expanded]
 - text: "IN { \"command\": \"create\", \"path\": \"docs/press.md\", \"file_text\": \"# Press kit\\n\" } OUT Created docs/press.md"

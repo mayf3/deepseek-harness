@@ -105,7 +105,7 @@
 }
 
 .card :where(pre) {
-  padding: 6px 18px 16px;
+  padding: 6px 22px 20px;
   word-break: normal;
   overflow-wrap: anywhere;
 }

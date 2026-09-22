@@ -5,5 +5,5 @@
 - text: Code block
 - button "Wrap lines"
 - button "Copy"
-- text: config.txt - mode=DEBUG + mode=RELEASE level=info └ +1 -1 · 1 file
+- text: config.txt - mode=DEBUG + mode=RELEASE level=info
 - button "Inspect"

@@ -172,7 +172,7 @@ class StreamingRenderer {
  * absolute HTTP(S) images render directly.
  */
 export const MarkdownText = memo(function MarkdownText({
-  text, streaming = false, labels: providedLabels, fileMentions, pathImages, variant = 'body',
+  text, streaming = false, labels, fileMentions, pathImages, variant = 'body',
 }: {
   text: string
   streaming?: boolean
@@ -181,9 +181,6 @@ export const MarkdownText = memo(function MarkdownText({
   pathImages?: MarkdownPathImages | undefined
   variant?: 'body' | 'compact'
 }) {
-  const labels = useMemo(() => variant === 'compact'
-    ? { ...providedLabels, code: { ...providedLabels.code, toolbarLabels: undefined } }
-    : providedLabels, [providedLabels, variant])
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownLabels>(labels)
   const children = useMemo(() => {

@@ -36,7 +36,7 @@ export interface CodeBlockProps {
   copyLabel: string
   /** Copy-button label during the post-copy confirmation window. */
   copiedLabel: string
-  /** Enable the shared card toolbar and spacing; omit for owner-styled source or compact views. */
+  /** Enable the shared card toolbar and spacing; omit for custom toolbar layouts. */
   toolbarLabels?: CodeToolbarLabels | undefined
   /** With toolbarLabels, use the owner's wrapping preference and omit the toolbar's local wrap action. */
   wrap?: boolean | undefined

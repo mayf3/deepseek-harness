@@ -37,7 +37,7 @@ export interface MarkdownCodeLabels {
   copyLabel: string
   /** Copy-button label during the post-copy confirmation window. */
   copiedLabel: string
-  /** Shared card controls; omitted in compact and owner-styled source views. */
+  /** Shared card controls; omitted for custom toolbar layouts. */
   toolbarLabels?: CodeToolbarLabels | undefined
 }
 

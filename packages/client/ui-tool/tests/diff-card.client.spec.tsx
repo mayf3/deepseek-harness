@@ -246,9 +246,9 @@ describe('FileMutationRow diff card', () => {
     }), 'write')} />)
     // The collapsed row already carries the card's +/- totals beside the path.
     expect(view.getByText('+1 -0')).toBeTruthy()
-    // The footer counts live inside the collapsed diff card.
     toggleRow(view)
-    expect(view.getByText('└ +1 -0 · 1 个文件')).toBeTruthy()
+    expect(view.getAllByText('+1 -0')).toHaveLength(1)
+    expect(view.getByText('hello fixture')).toBeTruthy()
   })
 
   it('reflects the run state on its leading slot', () => {
