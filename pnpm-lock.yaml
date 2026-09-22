@@ -7512,6 +7512,12 @@ importers:
       '@deepseek-ai/cordis-plugin-loader':
         specifier: workspace:^
         version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:^
+        version: link:../../boot/app-boot
+      '@deepseek-ai/dsh-config-editor':
+        specifier: workspace:^
+        version: link:../../boot/config-editor
       '@deepseek-ai/dsh-settings':
         specifier: workspace:^
         version: link:../../settings/settings
