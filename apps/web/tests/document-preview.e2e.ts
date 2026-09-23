@@ -14,7 +14,7 @@ import { excelDrawingFixture } from '../../../packages/client/ui-sidebar-documen
 import { xlsFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/xls-fixture.ts'
 import { pdfFixture, selectionPdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
-import { openSettings, connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { openSettings, connectFreshWorkspace, newEnglishPage, saveFailureShot, scrollIntoView } from './support.ts'
 
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v3.jsonl', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/document-preview', import.meta.url))
@@ -396,13 +396,13 @@ else process.exit(1);
     const markdownImages: string[] = []
     for (const alt of ['relative image', 'absolute image', 'reference image']) {
       const image = preview.getByRole('img', { name: alt, exact: true })
-      await image.scrollIntoViewIfNeeded()
+      await scrollIntoView(image)
       await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0)).toBe(true)
       const source = new URL(await image.getAttribute('src') ?? '')
       expect(source.pathname).toBe('/api/file')
       markdownImages.push(alt)
     }
-    await preview.getByRole('heading', { name: heading, exact: true }).scrollIntoViewIfNeeded()
+    await scrollIntoView(preview.getByRole('heading', { name: heading, exact: true }))
     await successShot(page, 'markdown')
     const markdownTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('smoke.md', { exact: true }) })
     const markdownTabId = await markdownTab.getAttribute('data-dockkit-tab')
@@ -567,7 +567,7 @@ else process.exit(1);
     expect(firstColor).toBe('red')
     const workerNames = await Promise.all(page.workers().map(worker => worker.evaluate(() => self.name)))
     expect(workerNames).toContain('dsh-pdf')
-    await preview.locator('[data-pdf-page="2"]').scrollIntoViewIfNeeded()
+    await scrollIntoView(preview.locator('[data-pdf-page="2"]'))
     const secondPage = preview.getByRole('img', { name: 'PDF page 2', exact: true })
     await secondPage.waitFor({ state: 'visible', timeout: 30_000 })
     await expect.poll(() => canvasColor(secondPage), { timeout: 30_000 }).toBe('blue')
@@ -580,7 +580,7 @@ else process.exit(1);
     await filesTab.click()
     await column.locator('[data-files-state="tree"]').waitFor({ state: 'visible' })
     await pdfTab.click()
-    await preview.locator('[data-pdf-page="2"]').scrollIntoViewIfNeeded()
+    await scrollIntoView(preview.locator('[data-pdf-page="2"]'))
     await secondPage.waitFor({ state: 'visible', timeout: 30_000 })
     await expect.poll(() => canvasColor(secondPage), { timeout: 30_000 }).toBe('blue')
     const restoredColor = await canvasColor(secondPage)
