@@ -60,8 +60,8 @@ let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
 let shuttingDown = false
 /**
- * Set by quit entries that must not ask: crash recovery, the development restart
- * command, and the installer handoff. Ordinary quits inspect the Host first.
+ * Set by quit entries that must not ask: crash recovery exit and restart, and the
+ * development restart command. The installer handoff has its own before-quit branch.
  */
 let skipQuitConfirmation = false
 let windowsLanguage: string | undefined
@@ -339,7 +339,11 @@ async function main(): Promise<void> {
   let mandatoryUI: DesktopMandatoryUpdateWindow | undefined
   let policyAuth: DesktopPolicyTestAuth | undefined
   let tray: DesktopTray | undefined
-  /** The operating system is shutting down or logging off: windows close and the quit skips its confirmation. */
+  /**
+   * The operating system is ending the session: the quit skips its confirmation. Windows sets it
+   * on the definitive session-end message. macOS sets it on the power-off notification, which
+   * another application can still cancel, so the next focus or show of the main window clears it.
+   */
   let sessionEnding = false
   const isQuitting = (): boolean => quitting
   const currentMainWindow = (): BrowserWindow | undefined => mainWindow
@@ -607,6 +611,7 @@ async function main(): Promise<void> {
     const window = currentDialogWindow()
     if (window === undefined || window.isDestroyed() || window.isVisible()) { resolve(); return }
     window.once('show', () => { resolve() })
+    window.once('closed', () => { resolve() })
   })
 
   protocol.handle(SCHEME, (request) => {
@@ -923,13 +928,12 @@ async function main(): Promise<void> {
     tray?.relabel()
   }
   refreshApplicationMenu()
+  const trayIconPath = development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico')
   if (process.platform === 'win32') {
     // The tray is the way back to a hidden window; without it, relaunching the application still focuses it.
     try {
-      tray = new DesktopTray({
-        iconPath: development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico'),
-        locale: currentDesktopLocale, open: () => { focusPrimaryWindow() }, quit: () => { app.quit() },
-      })
+      tray = new DesktopTray({ iconPath: trayIconPath, locale: currentDesktopLocale,
+        open: () => { focusPrimaryWindow() }, quit: () => { app.quit() } })
     } catch (error) { console.warn('desktop tray: unavailable', error) }
   }
   const backgroundNotice = process.platform === 'win32'
@@ -941,9 +945,12 @@ async function main(): Promise<void> {
     inspect: () => backend.host?.inspectQuit(),
     // No owner window: a hidden window stays hidden and the native box is its own top-level window.
     show: options => dialog.showMessageBox(options),
-    // macOS can raise the open alert with the application; the Windows task dialog owns its own activation.
+    // macOS raises the open alert with the application; Electron exposes no handle to the Windows task
+    // dialog, so a repeated request there only joins the open decision.
     focus: () => { if (process.platform === 'darwin') app.focus({ steal: true }) },
-    ...(process.platform === 'win32' ? { icon: nativeImage.createFromPath(applicationIconPath) } : {}),
+    // The task dialog draws its main icon at the system icon size; the multi-size ICO yields that
+    // size directly, where the 1024 px PNG would be scaled down by GDI.
+    ...(process.platform === 'win32' ? { icon: nativeImage.createFromPath(trayIconPath) } : {}),
   })
 
   if (process.platform === 'win32') {
@@ -1016,9 +1023,14 @@ async function main(): Promise<void> {
       hideMainWindow(window)
     })
     if (process.platform === 'win32') {
-      // Shutdown, restart, and log-off must not wait on a confirmation.
-      window.on('query-session-end', () => { sessionEnding = true })
+      // Shutdown, restart, and log-off must not wait on a confirmation. query-session-end is only a
+      // question that another application can veto without any follow-up message, so it does not count.
       window.on('session-end', () => { sessionEnding = true })
+    } else {
+      // The macOS power-off notification arrives before the terminate request; a cancelled shutdown
+      // leaves the process running, and user attention on the window shows the session continues.
+      window.on('focus', () => { sessionEnding = false })
+      window.on('show', () => { sessionEnding = false })
     }
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
     window.webContents.on('console-message', (details) => {
@@ -1170,6 +1182,7 @@ async function main(): Promise<void> {
     quitting = true
     shuttingDown = true
     updateJournal?.action('quit-requested')
+    quitConfirmation.dispose()
     tray?.dispose()
     stopAccount?.()
     if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.hide()
@@ -1197,7 +1210,10 @@ async function main(): Promise<void> {
     event.preventDefault()
     if (skipQuitConfirmation || sessionEnding) { finishQuit(); return }
     void quitConfirmation.confirm().then((approved) => {
-      if (approved && !quitting) finishQuit()
+      if (quitting) return
+      if (approved) { finishQuit(); return }
+      // A quit that started from closing the welcome window destroyed it; a cancelled quit needs it back.
+      if (!enteredWorkspace && !recovery.active) void showWelcome().catch((error: unknown) => { reportFatal(error, 'main') })
     }).catch((error: unknown) => { console.error(error); if (!quitting) finishQuit() })
   })
 

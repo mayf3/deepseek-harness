@@ -1,6 +1,6 @@
 /** One-time Windows notice that closing the window left the application running in the tray. */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { Notification } from 'electron'
 import type { DesktopLocale } from './locale.ts'
@@ -8,8 +8,8 @@ import type { DesktopLocale } from './locale.ts'
 /** Marker location and the actions the notice can trigger. */
 export interface DesktopBackgroundNoticeOptions {
   /**
-   * Marker written the first time the notice is shown. Lives under Electron's userData, which the
-   * uninstaller removes and in-place updates keep, so each installation sees the notice once.
+   * Marker written once the notice has been handed to the system. Lives under Electron's userData,
+   * which the uninstaller removes and in-place updates keep, so each installation sees the notice once.
    */
   readonly markerPath: string
   readonly locale: () => DesktopLocale
@@ -26,17 +26,15 @@ export class DesktopBackgroundNotice {
   constructor(private readonly options: DesktopBackgroundNoticeOptions) {}
 
   /**
-   * Show the notice after the first hide of this installation. System notification permissions or a
-   * focus mode can suppress it; the window stays hidden and the tray stays available either way.
+   * Show the notice after the first hide of this installation. The marker is written only after the
+   * notice reaches the system, and a delivery failure removes it again, so an unsupported or failed
+   * notification retries on a later launch. A focus mode can still swallow a delivered notice; the
+   * window stays hidden and the tray stays available either way.
    */
   show(): void {
     if (this.shown) return
     this.shown = true
     if (existsSync(this.options.markerPath)) return
-    try {
-      mkdirSync(dirname(this.options.markerPath), { recursive: true })
-      writeFileSync(this.options.markerPath, '')
-    } catch (error) { console.warn('desktop tray: could not record the background notice', error) }
     try {
       if (!Notification.isSupported()) return
       const { messages } = this.options.locale()
@@ -45,6 +43,7 @@ export class DesktopBackgroundNotice {
       notification.on('failed', () => {
         if (this.notification === notification) this.notification = undefined
         notification.removeAllListeners()
+        this.forget()
       })
       notification.once('click', () => {
         if (this.notification !== notification) return
@@ -53,6 +52,18 @@ export class DesktopBackgroundNotice {
         this.options.open()
       })
       notification.show()
-    } catch (error) { console.warn('desktop tray: background notice unavailable', error) }
+    } catch (error) {
+      console.warn('desktop tray: background notice unavailable', error)
+      return
+    }
+    try {
+      mkdirSync(dirname(this.options.markerPath), { recursive: true })
+      writeFileSync(this.options.markerPath, '')
+    } catch (error) { console.warn('desktop tray: could not record the background notice', error) }
+  }
+
+  private forget(): void {
+    try { rmSync(this.options.markerPath, { force: true }) }
+    catch (error) { console.warn('desktop tray: could not reset the background notice', error) }
   }
 }

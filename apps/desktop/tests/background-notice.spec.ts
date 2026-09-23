@@ -66,16 +66,32 @@ it('still notifies once in this process when the marker cannot be written', () =
   expect(native.notices).toHaveLength(1)
 })
 
-it('does nothing visible without notification support or after a delivery failure', () => {
+it('keeps the notice for a later launch when notifications are unsupported or delivery fails', () => {
   native.Notice.isSupported.mockReturnValue(false)
   const f = setup()
   f.notice.show()
+  f.notice.show()
   expect(native.notices).toHaveLength(0)
-  expect(existsSync(f.markerPath)).toBe(true)
+  expect(existsSync(f.markerPath)).toBe(false)
   native.Notice.isSupported.mockReturnValue(true)
   const g = setup()
   g.notice.show()
+  expect(existsSync(g.markerPath)).toBe(true)
   native.notices[0]!.emit('failed')
+  expect(existsSync(g.markerPath)).toBe(false)
   native.notices[0]!.emit('click')
   expect(g.open).not.toHaveBeenCalled()
+  // One attempt per process even after the marker was withdrawn.
+  g.notice.show()
+  expect(native.notices).toHaveLength(1)
+})
+
+it('does not record a notice the system refused to construct', () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const f = setup()
+  native.Notice.isSupported.mockImplementation(() => { throw new Error('toast host unavailable') })
+  f.notice.show()
+  expect(native.notices).toHaveLength(0)
+  expect(existsSync(f.markerPath)).toBe(false)
+  expect(console.warn).toHaveBeenCalledWith('desktop tray: background notice unavailable', expect.any(Error))
 })

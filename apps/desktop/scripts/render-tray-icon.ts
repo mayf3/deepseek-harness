@@ -5,8 +5,7 @@
  * bundled bitmaps by display scale. Each size is rasterized from the vector
  * source separately instead of downscaling one large bitmap, which keeps edges
  * crisp at every scale. The committed `resources/tray-windows.ico` is the output;
- * rerun `pnpm --filter @deepseek-ai/dsh-desktop exec tsx scripts/render-tray-icon.ts`
- * after changing the vector source.
+ * rerun `pnpm run render:tray-icon` in `apps/desktop` after changing the vector source.
  */
 
 import { readFile, writeFile } from 'node:fs/promises'

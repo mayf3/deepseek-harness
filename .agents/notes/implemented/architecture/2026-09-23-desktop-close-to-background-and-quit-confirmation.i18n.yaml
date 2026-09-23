@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-23-desktop-close-to-background-and-quit-confirmation.md
-2026-09-23-desktop-close-to-background-and-quit-confirmation.md: 972edca121d00a39bc0f3439e8493d460a3b4095
-2026-09-23-desktop-close-to-background-and-quit-confirmation.zh.md: 3f43fa3d6051c92e89a2c420e18be13650d51c4b
+2026-09-23-desktop-close-to-background-and-quit-confirmation.md: b26b040613f154185b7b98436d30cb4fb0171f46
+2026-09-23-desktop-close-to-background-and-quit-confirmation.zh.md: e4391a49a8079316bc2111b90344f3bcdad5800c

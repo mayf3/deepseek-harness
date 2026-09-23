@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-09-23-desktop-close-to-background-and-quit-confirmation.md) | 中文
 
-窗口时序和关闭归属仍遵循[在 Host 启动前显示窗口](2026-09-09-desktop-immediate-window-and-direct-start.zh.md)；任务判定复用[更新重启检查](2026-08-25-electron-desktop-packaging-and-updates.zh.md)。
+窗口时序和关闭归属仍遵循[在 Host 启动前显示窗口](2026-09-09-desktop-immediate-window-and-direct-start.zh.md)；任务判定复用[更新重启检查](2026-08-25-electron-desktop-packaging-and-updates.zh.md)。本记录部分取代[标准 macOS 窗口菜单](../bug-fix/2026-09-16-desktop-window-menus.zh.md)决策：⌘W 不再通过 Electron 的 role 销毁窗口，Dock 激活在没有可见窗口时重新打开隐藏窗口，而不再只在没有任何窗口时才创建。该记录中的菜单声明仍然有效。
 
 ## 问题
 
@@ -16,7 +16,7 @@ Status: implemented
 
 所有普通退出入口都通过私有 IPC 通道向 Host 询问两项事实：按更新重启口径判定的运行中任务，以及本次运行中已加载会话里由 `workspace/session-activity` 的 `schedule` family 报告的已挂定时器的提醒。两项都没有时直接退出；否则弹出一个没有父窗口的原生消息框，显示三种固定说明之一，"退出"为默认按钮，Esc 对应"取消"。重复的退出请求并入已打开的弹框，弹框打开期间文案冻结，批准后不再重新查询。Host 未就绪时不可能有任务在跑，直接退出；查询失败或超过两秒截止时间按运行中任务处理，因为多提示一次的代价低于无声中断。安装更新的重启、致命错误恢复、开发版重启命令和操作系统会话结束跳过确认。
 
-Windows 托盘位图由矢量图标按七种尺寸分别渲染并提交为 ICO；Windows 上的确认框在任务对话框中显示应用图标，且始终为浅色，因为该系统控件不跟随应用主题。安装程序和卸载程序针对应用仍在运行的文案改为指向托盘。
+Windows 托盘位图由矢量图标按七种尺寸分别渲染并提交为 ICO；Windows 上的确认框在任务对话框中显示应用图标，且始终为浅色，因为该系统控件不跟随应用主题。安装程序和卸载程序针对应用仍在运行的文案指向托盘。
 
 ## 备选方案
 

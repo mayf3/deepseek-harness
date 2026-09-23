@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-09-23-desktop-close-to-background-and-quit-confirmation.zh.md)
 
-Window timing and shutdown ownership otherwise follow [showing the window before the Host starts](2026-09-09-desktop-immediate-window-and-direct-start.md); the task rule reuses the [update restart check](2026-08-25-electron-desktop-packaging-and-updates.md).
+Window timing and shutdown ownership otherwise follow [showing the window before the Host starts](2026-09-09-desktop-immediate-window-and-direct-start.md); the task rule reuses the [update restart check](2026-08-25-electron-desktop-packaging-and-updates.md). This partially supersedes the [standard macOS window menus](../bug-fix/2026-09-16-desktop-window-menus.md) decision: ⌘W no longer destroys the window through Electron's role, and Dock activation reopens the hidden window when no window is visible instead of only when none exists. That note's menu declarations stay in force.
 
 ## Problem
 
@@ -16,7 +16,7 @@ Closing the main window hides it on both platforms; the page and the Host keep r
 
 Every ordinary quit entry asks the Host over the private IPC channel for two facts: active tasks under the update-restart rule, and armed scheduled reminders reported by the `schedule` family of `workspace/session-activity` for the sessions loaded in this run. Both absent, the quit proceeds silently; otherwise a native message box without an owner window shows one of three fixed explanations with Quit as the default and Cancel on Esc. Repeated quit requests join the open box, the copy is frozen while it is open, and approval does not re-inspect. A Host that is not ready cannot run tasks and the quit proceeds; an inspection failure or a missed two-second deadline counts as running tasks because a needless prompt is cheaper than a silent interruption. The installer restart, fatal recovery, the development restart command, and operating-system session end skip the confirmation.
 
-The Windows tray bitmaps are rendered from the vector icon at seven sizes and committed as an ICO; the confirmation on Windows uses the application icon in a task dialog and stays light because the control does not follow the application theme. The installer and uninstaller copy for a running application now points at the tray.
+The Windows tray bitmaps are rendered from the vector icon at seven sizes and committed as an ICO; the confirmation on Windows uses the application icon in a task dialog and stays light because the control does not follow the application theme. The installer and uninstaller copy for a running application points at the tray.
 
 ## Alternatives considered
 

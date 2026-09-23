@@ -1133,6 +1133,48 @@ describe('desktop main startup', () => {
     expect(window.show).toHaveBeenCalledOnce()
   })
 
+  it('skips the confirmation during a macOS shutdown but asks again once a cancelled shutdown returns focus', async () => {
+    vi.stubGlobal('process', { ...process, platform: 'darwin', arch: 'arm64', resourcesPath: 'desktop-test-resources' })
+    const host = await readyWorkspace()
+    const window = harness.windows[0]!
+    host.inspectQuit.mockResolvedValue({ activeTasks: true, scheduledTasks: false })
+    harness.dialog.showMessageBox.mockResolvedValue({ response: 1, checkboxChecked: false })
+    harness.powerMonitor.emit('shutdown')
+    // Another application vetoed the shutdown; the user comes back to the window.
+    window.emit('focus')
+    window.close()
+    expect(window.isDestroyed()).toBe(false)
+    harness.app.quit()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
+    expect(host.stop).not.toHaveBeenCalled()
+    harness.powerMonitor.emit('shutdown')
+    harness.app.quit()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
+    await host.stopping.promise
+    host.exited.resolve()
+    await harness.quitCompleted.promise
+  })
+
+  it('drops a pending confirmation when a bypassing quit starts first', async () => {
+    harness.app.isPackaged = false
+    const host = await readyWorkspace()
+    const inspected = Promise.withResolvers<{ activeTasks: boolean; scheduledTasks: boolean }>()
+    host.inspectQuit.mockReturnValue(inspected.promise)
+    harness.app.quit()
+    await vi.advanceTimersByTimeAsync(0)
+    const restart = applicationMenuItems().find(item => item.label === en.restartAppHostMenu)!
+    ;(restart as { click: () => void }).click()
+    await vi.advanceTimersByTimeAsync(0)
+    inspected.resolve({ activeTasks: true, scheduledTasks: true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(harness.dialog.showMessageBox).not.toHaveBeenCalled()
+    await host.stopping.promise
+    host.exited.resolve()
+    await harness.quitCompleted.promise
+  })
+
   it('asks before quitting when the Host reports interruptible work and cancels without stopping anything', async () => {
     const host = await readyWorkspace()
     const window = harness.windows[0]!
@@ -1187,7 +1229,12 @@ describe('desktop main startup', () => {
     const host = await readyWorkspace()
     const window = harness.windows[0]!
     host.inspectQuit.mockResolvedValue({ activeTasks: true, scheduledTasks: false })
+    // The session-end question alone proves nothing: another application can veto it silently.
     window.emit('query-session-end', { reasons: ['shutdown'] })
+    window.close()
+    expect(window.isDestroyed()).toBe(false)
+    expect(window.hide).toHaveBeenCalledOnce()
+    window.emit('session-end', { reasons: ['shutdown'] })
     window.close()
     expect(window.isDestroyed()).toBe(true)
     // Electron follows the last closed window with window-all-closed, which quits on Windows.
@@ -1813,13 +1860,14 @@ describe('desktop main startup', () => {
     expect(window.urls).toEqual(['dsh-app://app/'])
   })
 
-  it('ignores clean renderer exits and exits of a closed window', async () => {
+  it('ignores clean renderer exits and exits of a destroyed window', async () => {
     await import('../src/main.ts')
     await harness.preparing.promise
     const window = harness.windows[0]!
     window.webContents.emit('render-process-gone', {}, { reason: 'clean-exit' })
-    window.close()
+    window.destroy()
     window.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
+    await vi.advanceTimersByTimeAsync(0)
     expect(harness.dialog.showMessageBox).not.toHaveBeenCalled()
   })
 

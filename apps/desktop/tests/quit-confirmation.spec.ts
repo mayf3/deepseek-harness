@@ -85,4 +85,29 @@ describe('DesktopQuitConfirmation', () => {
     expect(f.confirmation.confirm()).not.toBe(first)
     expect(inspect).toHaveBeenCalledTimes(2)
   })
+
+  it('resolves a pending decision to false without a box once disposed, and refuses later requests', async () => {
+    const inspected = Promise.withResolvers<DesktopQuitInspection>()
+    const f = setup('darwin', () => inspected.promise)
+    const pending = f.confirmation.confirm()
+    f.confirmation.dispose()
+    inspected.resolve({ activeTasks: true, scheduledTasks: false })
+    expect(await pending).toBe(false)
+    expect(f.shown).toEqual([])
+    expect(await f.confirmation.confirm()).toBe(false)
+    expect(f.focus).not.toHaveBeenCalled()
+  })
+
+  it('does not approve a quit from a box answered after disposal', async () => {
+    const answered = Promise.withResolvers<MessageBoxReturnValue>()
+    const confirmation = new DesktopQuitConfirmation({
+      locale: () => resolveDesktopLocale('en'), inspect: async () => ({ activeTasks: true, scheduledTasks: false }),
+      focus: () => {}, platform: 'darwin', show: () => answered.promise,
+    })
+    const pending = confirmation.confirm()
+    await Promise.resolve()
+    confirmation.dispose()
+    answered.resolve({ response: 0, checkboxChecked: false })
+    expect(await pending).toBe(false)
+  })
 })
