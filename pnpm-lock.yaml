@@ -506,6 +506,9 @@ importers:
       '@deepseek-ai/dsh-sandbox-policy':
         specifier: workspace:*
         version: link:../../packages/sandbox/sandbox-policy
+      '@deepseek-ai/dsh-sdk-client':
+        specifier: workspace:*
+        version: link:../../packages/sdk/client
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
         version: link:../../packages/core/session

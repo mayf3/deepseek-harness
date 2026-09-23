@@ -22492,7 +22492,7 @@
         "packages/llm/llm/src/types.ts#ReplayEnvelope"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:418"
+        "packages/llm/llm/src/types.ts:430"
       ]
     },
     {
@@ -31011,7 +31011,7 @@
       },
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:158"
+        "packages/llm/llm/src/types.ts:157"
       ]
     },
     {
@@ -32669,7 +32669,7 @@
       },
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:159"
+        "packages/llm/llm/src/types.ts:158"
       ]
     },
     {
@@ -32963,7 +32963,7 @@
       },
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:443"
+        "packages/llm/llm/src/types.ts:455"
       ]
     },
     {
@@ -36078,7 +36078,7 @@
       },
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:441"
+        "packages/llm/llm/src/types.ts:453"
       ]
     },
     {
@@ -43014,7 +43014,7 @@
         "packages/llm/llm/src/types.ts#StreamChunk"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:440"
+        "packages/llm/llm/src/types.ts:452"
       ]
     },
     {
@@ -50759,7 +50759,7 @@
         "packages/llm/llm/src/types.ts#FinishReason"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:166"
+        "packages/llm/llm/src/types.ts:165"
       ]
     },
     {
@@ -54657,7 +54657,7 @@
         "packages/llm/llm/src/types.ts#ToolSchema"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:461"
+        "packages/llm/llm/src/types.ts:473"
       ]
     },
     {
@@ -58176,7 +58176,7 @@
       },
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:162"
+        "packages/llm/llm/src/types.ts:161"
       ]
     },
     {
@@ -60937,7 +60937,7 @@
         "packages/llm/llm/src/types.ts#ContentBlockType"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:149"
+        "packages/llm/llm/src/types.ts:148"
       ]
     },
     {
@@ -61524,7 +61524,7 @@
         "packages/llm/llm/src/types.ts#ContentBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:151"
+        "packages/llm/llm/src/types.ts:150"
       ]
     },
     {
@@ -63223,7 +63223,7 @@
       },
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:444"
+        "packages/llm/llm/src/types.ts:456"
       ]
     },
     {
@@ -63690,7 +63690,7 @@
       },
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:161"
+        "packages/llm/llm/src/types.ts:160"
       ]
     },
     {
@@ -64293,7 +64293,7 @@
       },
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:442"
+        "packages/llm/llm/src/types.ts:454"
       ]
     },
     {
@@ -69310,7 +69310,7 @@
       },
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:447"
+        "packages/llm/llm/src/types.ts:459"
       ]
     },
     {
@@ -70736,7 +70736,7 @@
       "names": [],
       "sources": [
         "packages/core/session/src/types.ts:214",
-        "packages/llm/llm/src/types.ts:160"
+        "packages/llm/llm/src/types.ts:159"
       ]
     },
     {
@@ -78027,7 +78027,7 @@
       },
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:445"
+        "packages/llm/llm/src/types.ts:457"
       ]
     },
     {
@@ -87244,7 +87244,7 @@
       },
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:446"
+        "packages/llm/llm/src/types.ts:458"
       ]
     },
     {
@@ -87413,7 +87413,7 @@
         "packages/llm/llm/src/types.ts#SystemPromptUpdate"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:397"
+        "packages/llm/llm/src/types.ts:396"
       ]
     },
     {
@@ -97036,7 +97036,7 @@
         "packages/llm/llm/src/types.ts#TokenUsage"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:176"
+        "packages/llm/llm/src/types.ts:175"
       ]
     },
     {
