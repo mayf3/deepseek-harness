@@ -9,7 +9,7 @@ export type OnboardingStep = 'welcome' | 'credit' | 'purpose' | 'process' | 'don
 /** Work scenarios offered by the desktop introduction. */
 export type OnboardingPurpose = 'office' | 'development' | 'both'
 /** Work-detail mode applied to Chat when onboarding completes. */
-export type OnboardingProcess = 'compact' | 'detailed' | 'expanded'
+export type OnboardingProcess = 'compact' | 'standard' | 'detailed'
 /** One installation's resumable choices and terminal outcome. */
 export interface OnboardingProgress {
   version: 1
@@ -33,7 +33,7 @@ export const OnboardingSettingsFields = {
   version: z.const(1).default(1),
   step: z.union(['welcome', 'credit', 'purpose', 'process', 'done']).default('welcome'),
   purpose: z.union(['office', 'development', 'both', z.const(null)]),
-  process: z.union(['compact', 'detailed', 'expanded', z.const(null)]),
+  process: z.union(['compact', 'standard', 'detailed', z.const(null)]),
   completion: z.union(['completed', 'skipped', 'api-key', z.const(null)]),
   usage: z.union(['compact', 'detailed']).default('compact'),
   developerTools: z.boolean().default(false),

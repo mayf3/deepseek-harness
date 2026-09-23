@@ -12,7 +12,7 @@
   },
   {
     "purpose": "office",
-    "process": "detailed",
+    "process": "standard",
     "chat": {
       "transcriptView": "compact",
       "performanceUsage": "compact"
@@ -23,7 +23,7 @@
   },
   {
     "purpose": "office",
-    "process": "expanded",
+    "process": "detailed",
     "chat": {
       "transcriptView": "compact",
       "performanceUsage": "compact"
@@ -45,9 +45,9 @@
   },
   {
     "purpose": "development",
-    "process": "detailed",
+    "process": "standard",
     "chat": {
-      "transcriptView": "detailed",
+      "transcriptView": "standard",
       "performanceUsage": "detailed"
     },
     "developer": {
@@ -56,9 +56,9 @@
   },
   {
     "purpose": "development",
-    "process": "expanded",
+    "process": "detailed",
     "chat": {
-      "transcriptView": "expanded",
+      "transcriptView": "detailed",
       "performanceUsage": "detailed"
     },
     "developer": {
@@ -78,9 +78,9 @@
   },
   {
     "purpose": "both",
-    "process": "detailed",
+    "process": "standard",
     "chat": {
-      "transcriptView": "detailed",
+      "transcriptView": "standard",
       "performanceUsage": "detailed"
     },
     "developer": {
@@ -89,9 +89,9 @@
   },
   {
     "purpose": "both",
-    "process": "expanded",
+    "process": "detailed",
     "chat": {
-      "transcriptView": "expanded",
+      "transcriptView": "detailed",
       "performanceUsage": "detailed"
     },
     "developer": {

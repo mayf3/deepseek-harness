@@ -186,7 +186,7 @@
 .selected::after, .selected:hover::after { opacity: 1; }
 .selected::after { animation: borderSweep 14s linear infinite; }
 .officeCard, .card[data-process='compact'] { --card-border-stops: var(--dsw-gradient-onboarding-violet-stops); }
-.card[data-process='expanded'] { --card-border-stops: var(--dsw-gradient-onboarding-cyan-stops); }
+.card[data-process='detailed'] { --card-border-stops: var(--dsw-gradient-onboarding-cyan-stops); }
 
 @property --dsh-onboarding-border-angle {
   syntax: '<angle>';

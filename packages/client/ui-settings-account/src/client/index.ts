@@ -1,4 +1,5 @@
 /** Desktop account settings registration and reconnecting Remote subscription. */
+import type { ChatSettings } from '@deepseek-ai/dsh-client-ui-chat/src/chat-settings.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -145,7 +146,7 @@ export function apply(ctx: Context): void {
   if ('dshDesktop' in globalThis) {
     const controller = new DesktopOnboardingController(
       ctx.configForms.get<OnboardingSettings>(DESKTOP_ONBOARDING_NAMESPACE),
-      ctx.configForms.get<{ transcriptView: 'compact' | 'detailed' | 'expanded'; performanceUsage: 'compact' | 'detailed' }>('ui-chat'),
+      ctx.configForms.get<Pick<ChatSettings, 'transcriptView' | 'performanceUsage'>>('ui-chat'),
       enabled => ctx.configForms.developerTools.setEnabled(enabled),
       operations.hooks.account,
       readOnboardingApiKeyPresence,

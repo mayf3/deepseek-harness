@@ -259,5 +259,5 @@ it('applies API-key defaults through the desktop slot and shared configuration o
   await vi.waitFor(() => { expect(injected.hooks.onboarding.getSnapshot().progress.step).toBe('done') })
   expect(hasApiKey).toHaveBeenCalled()
   expect(values['ui-settings']).toEqual({ enabled: true })
-  expect(values['ui-chat']).toMatchObject({ transcriptView: 'detailed' })
+  expect(values['ui-chat']).toMatchObject({ transcriptView: 'standard' })
 }, 60_000)

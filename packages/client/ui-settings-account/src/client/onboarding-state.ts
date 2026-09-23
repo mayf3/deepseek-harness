@@ -1,4 +1,5 @@
 /** Resumable desktop onboarding and preference application over Host settings. */
+import type { ChatSettings } from '@deepseek-ai/dsh-client-ui-chat/src/chat-settings.ts'
 import { createSnapshotStore, shallowEqual } from '@deepseek-ai/dsh-client-store'
 import { hasOnboardingCredit } from './onboarding-balance.ts'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
@@ -40,7 +41,7 @@ export class DesktopOnboardingController {
    */
   constructor(
     private readonly progress: ConfigForm<OnboardingSettings>,
-    private readonly chat: ConfigForm<{ transcriptView: 'compact' | 'detailed' | 'expanded'; performanceUsage: 'compact' | 'detailed' }>,
+    private readonly chat: ConfigForm<Pick<ChatSettings, 'transcriptView' | 'performanceUsage'>>,
     private readonly setDeveloperTools: (enabled: boolean) => Promise<void>,
     private readonly account: HostObservable<AccountSnapshot>,
     private readonly readApiKeyPresence: () => Promise<boolean>,
@@ -118,7 +119,7 @@ export class DesktopOnboardingController {
     if (development && current.process === null) return false
     return this.save({
       ...current, step: 'done', completion: reason,
-      process: office ? 'compact' : reason === 'skipped' ? 'detailed' : current.process,
+      process: office ? 'compact' : reason === 'skipped' ? 'standard' : current.process,
       usage: development ? 'detailed' : 'compact', developerTools: development,
     }, true)
   }
@@ -226,7 +227,7 @@ export class DesktopOnboardingController {
     if (done || this.saving || this.completing || this.draft !== undefined || unavailable || host.status !== 'ready' || this.chat.getSnapshot().status !== 'ready'
       || account?.status !== 'signed-out') return
     if (this.hasApiKey === true && this.error === null) {
-      void this.save({ ...progress, step: 'done', process: 'detailed', usage: 'detailed', developerTools: true, completion: 'api-key' }, true)
+      void this.save({ ...progress, step: 'done', process: 'standard', usage: 'detailed', developerTools: true, completion: 'api-key' }, true)
     } else if (this.hasApiKey === undefined && !this.checkingKeys) {
       this.checkingKeys = true
       const generation = this.credentialGeneration

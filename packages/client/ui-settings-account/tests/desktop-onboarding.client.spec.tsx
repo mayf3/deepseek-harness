@@ -102,7 +102,7 @@ it('supports radio arrow keys and requires a process choice before finishing', a
   const operations = mount('process')
   expect(screen.queryByRole('button', { name: zh.onboardingEnter })).toBeNull()
   await act(async () => { fireEvent.keyDown(screen.getAllByRole('radio')[0]!, { key: 'ArrowRight' }) })
-  expect(operations.update).toHaveBeenCalledWith({ process: 'detailed' })
+  expect(operations.update).toHaveBeenCalledWith({ process: 'standard' })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingEnter })) })
   expect(operations.complete).toHaveBeenCalledWith('completed')
 })
@@ -231,7 +231,7 @@ it('supports both radio arrow directions, wraps around, and ignores other keys o
   const radios = screen.getAllByRole('radio')
   for (const key of ['ArrowLeft', 'ArrowUp', 'ArrowDown', 'ArrowRight']) {
     await act(async () => { fireEvent.keyDown(radios[0]!, { key }) })
-    expect(h.update).toHaveBeenLastCalledWith({ process: key === 'ArrowLeft' || key === 'ArrowUp' ? 'expanded' : 'detailed' })
+    expect(h.update).toHaveBeenLastCalledWith({ process: key === 'ArrowLeft' || key === 'ArrowUp' ? 'detailed' : 'standard' })
   }
   const count = h.update.mock.calls.length
   fireEvent.keyDown(radios[0]!, { key: 'a' })

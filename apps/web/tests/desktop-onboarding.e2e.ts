@@ -322,7 +322,7 @@ describe.skipIf(MODE === 'record')('web e2e: App-only desktop onboarding', () =>
     await page.getByRole('button', { name: '继续', exact: true }).click()
     await page.getByRole('radiogroup').waitFor()
     await page.getByRole('radio', { name: /聚焦结果/ }).focus()
-    for (const [name, process] of [['关键细节', 'detailed'], ['完整过程', 'expanded']] as const) {
+    for (const [name, process] of [['关键细节', 'standard'], ['完整过程', 'detailed']] as const) {
       const [saved] = await Promise.all([
         page.waitForResponse('**/api/settings/mutate'),
         page.keyboard.press('ArrowRight'),
@@ -341,12 +341,12 @@ describe.skipIf(MODE === 'record')('web e2e: App-only desktop onboarding', () =>
     await snapshot('process')
     await page.getByRole('button', { name: '进入应用', exact: true }).click()
     await page.locator('[data-desktop-onboarding]').waitFor({ state: 'detached' })
-    expect(scaffold.ctx.settings.describe().find(row => row.ns === NS)?.value).toMatchObject({ step: 'done', process: 'expanded', usage: 'detailed', developerTools: true })
-    expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ transcriptView: 'expanded', performanceUsage: 'detailed' })
+    expect(scaffold.ctx.settings.describe().find(row => row.ns === NS)?.value).toMatchObject({ step: 'done', process: 'detailed', usage: 'detailed', developerTools: true })
+    expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ transcriptView: 'detailed', performanceUsage: 'detailed' })
     expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-settings')?.value).toMatchObject({ enabled: true })
     const persisted = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
     expect(persisted).toContain('id: ui-settings-account')
-    expect(persisted).toContain('expanded')
+    expect(persisted).toContain('detailed')
     const warningsAfter = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     acknowledgeReloadConnectionLoss(tripwire, warningsAfter)
@@ -409,8 +409,8 @@ describe.skipIf(MODE === 'record')('web e2e: App-only desktop onboarding', () =>
     expect(await response.json()).toMatchObject({ result: { ok: true } })
     expect((scaffold.ctx.settings.describe().find(row => row.ns === NS)?.value as { step: string }).step).toBe('done')
     expect(await page.locator('[data-desktop-onboarding]').count()).toBe(0)
-    expect(scaffold.ctx.settings.describe().find(row => row.ns === NS)?.value).toMatchObject({ completion: 'api-key', process: 'detailed', usage: 'detailed', developerTools: true })
-    expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ transcriptView: 'detailed', performanceUsage: 'detailed' })
+    expect(scaffold.ctx.settings.describe().find(row => row.ns === NS)?.value).toMatchObject({ completion: 'api-key', process: 'standard', usage: 'detailed', developerTools: true })
+    expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ transcriptView: 'standard', performanceUsage: 'detailed' })
     expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-settings')?.value).toMatchObject({ enabled: true })
     await scaffold.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'default'), async () => ({
       kind: 'grant', payload: { version: 1, issuer: origin, token: 'onboarding-fixture-token' },

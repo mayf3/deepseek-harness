@@ -539,7 +539,7 @@ export type OnboardingStep = 'welcome' | 'credit' | 'purpose' | 'process' | 'don
 export type OnboardingPurpose = 'office' | 'development' | 'both'
 
 /** Work-detail mode applied to Chat when onboarding completes. */
-export type OnboardingProcess = 'compact' | 'detailed' | 'expanded'
+export type OnboardingProcess = 'compact' | 'standard' | 'detailed'
 ```
 
 依赖： `Volatile` (`@deepseek-ai/cordis`)

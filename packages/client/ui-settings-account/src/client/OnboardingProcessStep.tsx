@@ -10,8 +10,8 @@ import css from './DesktopOnboarding.module.css'
 
 const options = [
   { value: 'compact', titleKey: 'onboardingCompact', descriptionKey: 'onboardingCompactDescription', icon: compactIcon, size: 40 },
-  { value: 'detailed', titleKey: 'onboardingDetailed', descriptionKey: 'onboardingDetailedDescription', icon: detailedIcon, size: 36 },
-  { value: 'expanded', titleKey: 'onboardingExpanded', descriptionKey: 'onboardingExpandedDescription', icon: expandedIcon, size: 36 },
+  { value: 'standard', titleKey: 'onboardingDetailed', descriptionKey: 'onboardingDetailedDescription', icon: detailedIcon, size: 36 },
+  { value: 'detailed', titleKey: 'onboardingExpanded', descriptionKey: 'onboardingExpandedDescription', icon: expandedIcon, size: 36 },
 ] as const
 
 /** @param props - selected detail, localized copy and persistence callbacks. @returns the process step. */

@@ -1,3 +1,4 @@
+import type { ChatSettings } from '@deepseek-ai/dsh-client-ui-chat/src/chat-settings.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -64,8 +65,8 @@ async function harness(options: {
     namespace: DESKTOP_ONBOARDING_NAMESPACE,
     decode: value => OnboardingSettingsSchema(value as OnboardingSettings),
   }, mirror, 'host', schema)
-  const chat = new ConfigFormController<{ transcriptView: 'compact' | 'detailed' | 'expanded'; performanceUsage: 'compact' | 'detailed' }>(ctx, {
-    namespace: 'ui-chat', decode: value => value as { transcriptView: 'compact' | 'detailed' | 'expanded'; performanceUsage: 'compact' | 'detailed' },
+  const chat = new ConfigFormController<Pick<ChatSettings, 'transcriptView' | 'performanceUsage'>>(ctx, {
+    namespace: 'ui-chat', decode: value => value as Pick<ChatSettings, 'transcriptView' | 'performanceUsage'>,
   }, mirror, 'host', schema)
   const developerScope = new ConfigFormController<{ enabled: boolean }>(ctx, {
     namespace: 'ui-settings', decode: value => value as { enabled: boolean },
@@ -204,9 +205,9 @@ describe('desktop onboarding lifecycle', () => {
   it('applies API-key defaults once and does not rerun onboarding after a later account login', async () => {
     const h = await harness({ status: 'signed-out', keys: async () => true })
     await vi.waitFor(() => { expect(h.controller.state.getSnapshot().progress.step).toBe('done') })
-    expect(h.data['ui-chat']).toEqual({ transcriptView: 'detailed', performanceUsage: 'detailed' })
+    expect(h.data['ui-chat']).toEqual({ transcriptView: 'standard', performanceUsage: 'detailed' })
     expect(h.data['ui-settings']).toEqual({ enabled: true })
-    expect(h.data[DESKTOP_ONBOARDING_NAMESPACE]).toMatchObject({ completion: 'api-key', process: 'detailed', usage: 'detailed', developerTools: true })
+    expect(h.data[DESKTOP_ONBOARDING_NAMESPACE]).toMatchObject({ completion: 'api-key', process: 'standard', usage: 'detailed', developerTools: true })
     h.account.set(accountState('credential-stored'))
     h.controller.invalidateCredentials()
     expect(h.controller.state.getSnapshot().visible).toBe(false)
@@ -274,8 +275,8 @@ describe('desktop onboarding lifecycle', () => {
   it.each([
     ['office', null, 'compact', 'compact', false],
     ['development', 'compact', 'compact', 'detailed', true],
-    ['development', 'detailed', 'detailed', 'detailed', true],
-    ['both', 'expanded', 'expanded', 'detailed', true],
+    ['development', 'standard', 'standard', 'detailed', true],
+    ['both', 'detailed', 'detailed', 'detailed', true],
   ] as const)('applies %s / %s choices through the preference owners', async (purpose, process, transcriptView, usage, developerTools) => {
     const h = await harness({ status: 'credential-stored', progress: { step: 'process', purpose, process } })
     expect(await h.controller.complete('completed')).toBe(true)
@@ -285,11 +286,11 @@ describe('desktop onboarding lifecycle', () => {
   })
 
   it.each([
-    ['purpose', 'detailed'], ['credit', 'detailed'], ['process', 'detailed'],
+    ['purpose', 'standard'], ['credit', 'standard'], ['process', 'standard'],
   ] as const)('applies the shared skip defaults from %s', async (step, process) => {
-    const h = await harness({ status: 'credential-stored', progress: { step, purpose: 'office', process: 'expanded' } })
+    const h = await harness({ status: 'credential-stored', progress: { step, purpose: 'office', process: 'detailed' } })
     expect(await h.controller.complete('skipped')).toBe(true)
-    expect(h.data['ui-chat']).toEqual({ transcriptView: 'detailed', performanceUsage: 'compact' })
+    expect(h.data['ui-chat']).toEqual({ transcriptView: 'standard', performanceUsage: 'compact' })
     expect(h.data['ui-settings']).toEqual({ enabled: false })
     expect(h.data[DESKTOP_ONBOARDING_NAMESPACE]).toMatchObject({ step: 'done', completion: 'skipped', process, usage: 'compact', developerTools: false })
   })
@@ -297,7 +298,7 @@ describe('desktop onboarding lifecycle', () => {
   it('records the preference defaults applied before onboarding completion', async () => {
     const results = []
     for (const purpose of ['office', 'development', 'both'] as const) {
-      for (const process of ['compact', 'detailed', 'expanded'] as const) {
+      for (const process of ['compact', 'standard', 'detailed'] as const) {
         const h = await harness({ status: 'credential-stored', progress: { step: 'process', purpose, process } })
         expect(await h.controller.complete('completed')).toBe(true)
         results.push({ purpose, process, chat: h.data['ui-chat'], developer: h.data['ui-settings'] })
@@ -324,7 +325,7 @@ describe('desktop onboarding lifecycle', () => {
 
   it.each(['ui-chat', 'ui-settings', DESKTOP_ONBOARDING_NAMESPACE])('retries completion after %s persistence fails', async (namespace) => {
     const h = await harness({
-      status: 'credential-stored', progress: { step: 'process', purpose: 'development', process: 'expanded' },
+      status: 'credential-stored', progress: { step: 'process', purpose: 'development', process: 'detailed' },
     })
     h.refuse(namespace)
     expect(await h.controller.complete('completed')).toBe(false)
@@ -335,11 +336,11 @@ describe('desktop onboarding lifecycle', () => {
     expect(h.mutate).toHaveBeenCalledTimes(writesBefore)
     expect(await h.controller.retry()).toBe(true)
     expect(h.mutate.mock.calls.slice(writesBefore).map(([ns]) => ns)).toEqual(['ui-chat', 'ui-settings', DESKTOP_ONBOARDING_NAMESPACE])
-    expect(h.data['ui-chat']).toEqual({ transcriptView: 'expanded', performanceUsage: 'detailed' })
+    expect(h.data['ui-chat']).toEqual({ transcriptView: 'detailed', performanceUsage: 'detailed' })
     expect(h.data['ui-settings']).toEqual({ enabled: true })
     expect(h.controller.state.getSnapshot()).toMatchObject({
       status: 'ready', visible: false,
-      progress: { step: 'done', completion: 'completed', process: 'expanded', usage: 'detailed', developerTools: true },
+      progress: { step: 'done', completion: 'completed', process: 'detailed', usage: 'detailed', developerTools: true },
     })
     expect(await h.controller.retry()).toBe(false)
   })
@@ -376,7 +377,7 @@ describe('desktop onboarding lifecycle', () => {
   })
 
   it('never records completion when Chat preference persistence fails', async () => {
-    const h = await harness({ status: 'credential-stored', progress: { step: 'process', purpose: 'development', process: 'detailed' } })
+    const h = await harness({ status: 'credential-stored', progress: { step: 'process', purpose: 'development', process: 'standard' } })
     h.refuse('ui-chat')
     expect(await h.controller.complete('completed')).toBe(false)
     expect(h.data[DESKTOP_ONBOARDING_NAMESPACE]).toMatchObject({ step: 'process', completion: null })
@@ -402,15 +403,15 @@ describe('desktop onboarding lifecycle', () => {
     const pending = Promise.withResolvers<undefined>()
     h.wait(pending.promise)
     const first = h.controller.update({ process: 'compact' })
-    const second = h.controller.update({ process: 'expanded' })
+    const second = h.controller.update({ process: 'detailed' })
     const completion = h.controller.complete('completed')
     expect(h.controller.state.getSnapshot().status).toBe('saving')
-    expect(await h.controller.update({ process: 'detailed' })).toBe(false)
+    expect(await h.controller.update({ process: 'standard' })).toBe(false)
     pending.resolve(undefined)
     expect(await first).toBe(true)
     expect(await second).toBe(true)
     expect(await completion).toBe(true)
-    expect(h.data['ui-chat']).toMatchObject({ transcriptView: 'expanded' })
+    expect(h.data['ui-chat']).toMatchObject({ transcriptView: 'detailed' })
   })
 
   it('restores saved progress after queued refusal and retries the latest choice', async () => {
