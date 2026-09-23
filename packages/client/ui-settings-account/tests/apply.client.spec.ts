@@ -185,3 +185,28 @@ it('reads the account task impact and reports a refused query', async ({ start, 
   mock.remote.account.hasRunningAccountTasks.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'offline', {}) })
   await expect(actions.hasRunningAccountTasks()).rejects.toThrow('account task query failed')
 }, 60_000)
+
+
+it('forwards live account notices and removes their subscriptions', async ({ start }) => {
+  vi.stubGlobal('dshDesktop', {})
+  const c = await start()
+  const actions = operations(c)
+  const expired = vi.fn()
+  const unavailable = vi.fn()
+  const offExpired = actions.subscribeSessionExpired!(expired)
+  const offUnavailable = actions.subscribeModelSignInRequired!(unavailable)
+  for (const event of ['deepseek-account/session-expired', 'deepseek-account/model-sign-in-required']) {
+    c.mock.streams.push('$events', { type: 'emit', event, args: [] })
+  }
+  await c.flush()
+  expect(expired).toHaveBeenCalledOnce()
+  expect(unavailable).toHaveBeenCalledOnce()
+  offExpired()
+  offUnavailable()
+  for (const event of ['deepseek-account/session-expired', 'deepseek-account/model-sign-in-required']) {
+    c.mock.streams.push('$events', { type: 'emit', event, args: [] })
+  }
+  await c.flush()
+  expect(expired).toHaveBeenCalledOnce()
+  expect(unavailable).toHaveBeenCalledOnce()
+})

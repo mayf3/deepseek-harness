@@ -503,6 +503,8 @@ it('reports resize failure, ignores late native failures, and tolerates a remove
 })
 
 it.each([en, zh])('shows live model sign-in guidance without replaying it after remount', async (copy) => {
+  vi.useFakeTimers()
+  onTestFinished(() => { vi.useRealTimers() })
   const operations = operationsOf({ status: 'signed-out', attempt: null })
   let listener: (() => void) | undefined
   const unsubscribe = vi.fn(() => { listener = undefined })
@@ -518,6 +520,10 @@ it.each([en, zh])('shows live model sign-in guidance without replaying it after 
   expect(screen.getByRole('alert').textContent).toBe(copy.modelSignInRequired)
   act(() => { listener?.() })
   expect(screen.getAllByRole('alert')).toHaveLength(1)
+  await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  act(() => { listener?.() })
+  expect(screen.getByRole('alert').textContent).toBe(copy.modelSignInRequired)
   view.unmount()
   expect(unsubscribe).toHaveBeenCalledOnce()
   render(element)

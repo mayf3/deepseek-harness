@@ -38,7 +38,7 @@ it('receives live expiry separately from account snapshots', async () => {
   await once(server, 'listening')
   onTestFinished(async () => {
     for (const client of server.clients) client.terminate()
-    await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()) })
+    await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
   })
   const address = server.address()
   if (typeof address === 'string' || address === null) throw new Error('missing server address')
@@ -56,7 +56,8 @@ it('receives live expiry separately from account snapshots', async () => {
   const opened = Promise.withResolvers<undefined>()
   const socket = [...server.clients][0]!
   socket.on('message', (data) => {
-    const frame = JSON.parse(data.toString()) as { endpoint: string; streamId: string }
+    if (!Buffer.isBuffer(data)) throw new Error('expected a Buffer WebSocket frame')
+    const frame = JSON.parse(data.toString('utf8')) as { endpoint: string; streamId: string }
     streams.set(frame.endpoint, frame.streamId)
     if (streams.size === 2) opened.resolve(undefined)
   })

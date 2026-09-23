@@ -39,9 +39,9 @@ export function apply(ctx: Context, config: Config): void {
   registerDeepSeekProvider(ctx, PROVIDER, {
     options, providerName: 'DeepSeek',
     resolveAuth: async connection => ({ headers: { 'x-api-key': await resolveApiKey(connection) } }),
-    discoverModels: async (provider) => {
+    discoverModels: (provider) => {
       const connection = options()
-      return connection.models.map(model => catalogModelInfo(provider, model))
+      return Promise.resolve(connection.models.map(model => catalogModelInfo(provider, model)))
     },
   })
 }
