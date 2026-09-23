@@ -254,7 +254,7 @@ it('traps Tab in confirmation, closes it, and keeps the selected page', async ()
   const buttons = dialog.querySelectorAll('button')
   const first = buttons[0]!
   const last = buttons[buttons.length - 1]!
-  first.focus()
+  expect(document.activeElement).toBe(first)
   fireEvent.keyDown(first, { key: 'Tab', shiftKey: true })
   expect(document.activeElement).toBe(last)
   fireEvent.keyDown(last, { key: 'Tab' })

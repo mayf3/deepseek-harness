@@ -1,5 +1,4 @@
 /** Credit and setup confirmations with contained keyboard focus. */
-import { useEffect, useRef } from 'react'
 import { Button, IconCloseOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DesktopOnboardingProps } from './onboarding-contract.ts'
 import css from './DesktopOnboarding.module.css'
@@ -18,23 +17,10 @@ export function OnboardingConfirmation({ kind, t, busy, canRecharge, onClose, on
     onRecharge: () => void
     onSkip: () => void
   }) {
-  const content = useRef<HTMLDivElement>(null)
   const credit = kind !== 'skip'
   const title = t(credit ? 'onboardingNoCreditTitle' : 'onboardingSkipTitle')
-  useEffect(() => {
-    const previous = document.activeElement
-    content.current?.querySelector('button')?.focus()
-    return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
-  }, [])
   return <Modal open headless backdropBlur={false} title={title} onClose={onClose}>
-    <div ref={content} className={css.confirmation} onKeyDown={(event) => {
-      if (event.key !== 'Tab') return
-      const buttons = content.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
-      const first = buttons?.[0]
-      const last = buttons?.[buttons.length - 1]
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
-    }}>
+    <div className={css.confirmation}>
       <div className={css.confirmationHeading}><h2>{title}</h2>
         <button type="button" className={css.confirmationClose} aria-label={t('close')} onClick={onClose}><IconCloseOutlineRegular size={14} /></button>
       </div>
