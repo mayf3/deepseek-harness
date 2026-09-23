@@ -7,8 +7,6 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
-`initializeSelection()` serializes the first setup choice with user writes and checks the persisted profile override before writing. It preserves explicit selections, including unavailable models.
-
 ## Summary
 
 Give newly created agents a shared default provider and model when their sessions do not specify one. Provider, model, and reasoning effort are live Config fields. Saved selections update the active profile patch and apply to subsequent reads; per-session selection remains owned by the entry point.

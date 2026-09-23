@@ -298,7 +298,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     if (keyValue.length > 0) {
       const stored = await operations.storeCredential(keyRef, keyValue)
       if (stored !== undefined) return stored
-      void operations.initializeModel(props.provider)
     }
     setKeyDraft('')
     return undefined

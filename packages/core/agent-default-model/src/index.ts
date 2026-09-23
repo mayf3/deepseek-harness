@@ -52,8 +52,6 @@ export class AgentDefaultModelConfig extends Service {
     reasoningEffort: z.string().volatile(),
   })
 
-  private writes: Promise<void> = Promise.resolve()
-
   constructor(private readonly ownerContext: Context, private config: Config) {
     super(ownerContext, 'agentDefaultModel')
 
@@ -79,32 +77,12 @@ export class AgentDefaultModelConfig extends Service {
    * @returns fulfillment after the optional profile write settles.
    */
   async saveSelection(next: ModelSelection): Promise<void> {
-    return this.writeSelection(next, false)
-  }
-
-  /**
-   * Store the initial setup choice only before an explicit profile selection exists.
-   * @param next - available model belonging to the initialized provider.
-   * @returns after the initial choice is saved or an existing choice is retained.
-   */
-  async initializeSelection(next: ModelSelection): Promise<void> {
-    return this.writeSelection(next, true)
-  }
-
-  private writeSelection(next: ModelSelection, initialize: boolean): Promise<void> {
-    const operation = this.writes.then(async () => {
-      const entry = this.ownerContext.fiber.entry
-      const editor = this.ctx.get('configEditor')
-      if (entry === undefined || editor === undefined) return
-      const override = editor.configuration().find(row => row.entry === entry)?.override
-      if (initialize && override !== undefined && ('provider' in override || 'model' in override)) return
-      await editor.edit(entry, () => ({
-        provider: next.provider, model: next.model,
-        ...next.reasoningEffort === undefined ? {} : { reasoningEffort: String(next.reasoningEffort) },
-      }))
-    })
-    this.writes = operation.catch(() => { /* A refused write does not block the next user choice. */ })
-    return operation
+    const entry = this.ownerContext.fiber.entry
+    if (entry === undefined) return
+    await this.ctx.get('configEditor')?.edit(entry, () => ({
+      provider: next.provider, model: next.model,
+      ...next.reasoningEffort === undefined ? {} : { reasoningEffort: String(next.reasoningEffort) },
+    }))
   }
 }
 

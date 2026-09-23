@@ -31,35 +31,3 @@ it('persists complete selections through its owning profile entry', async () => 
   await standalone.agentDefaultModel.saveSelection({ provider: 'test', model: 'ignored' })
   expect(standalone.agentDefaultModel.currentSelection().model).toBe('original')
 })
-
-it('initializes once and retains explicit profile choices after restart', async () => {
-  const { configurationFixture } = await import('../../../settings/settings/tests/configuration-fixture.ts')
-  const { ctx, start } = await configurationFixture({ hmr: false })
-  const defaults = ctx.agentDefaultModel
-  await Promise.all([
-    defaults.initializeSelection({ provider: 'deepseek-account', model: 'deepseek-flash' }),
-    defaults.initializeSelection({ provider: 'third-party', model: 'other' }),
-  ])
-  expect(defaults.currentSelection()).toEqual({ provider: 'deepseek-account', model: 'deepseek-flash' })
-  await defaults.saveSelection({ provider: 'third-party', model: 'chosen' })
-  const restarted = await start()
-  await restarted.agentDefaultModel.initializeSelection({ provider: 'deepseek-account', model: 'deepseek-flash' })
-  expect(restarted.agentDefaultModel.currentSelection()).toEqual({ provider: 'third-party', model: 'chosen' })
-})
-
-it('allows initialization after a refused write and retains a model-only override', async () => {
-  const { configurationFixture } = await import('../../../settings/settings/tests/configuration-fixture.ts')
-  const { vi } = await import('vitest')
-  const { ctx, start } = await configurationFixture({ hmr: false })
-  const edit = vi.spyOn(ctx.configEditor, 'edit').mockRejectedValueOnce(new Error('write failed'))
-  onTestFinished(() => { edit.mockRestore() })
-  await expect(ctx.agentDefaultModel.saveSelection({ provider: 'test', model: 'refused' })).rejects.toThrow('write failed')
-  await ctx.agentDefaultModel.initializeSelection({ provider: 'test', model: 'initialized' })
-  expect(ctx.agentDefaultModel.currentSelection().model).toBe('initialized')
-  const restarted = await start()
-  const rows = restarted.configEditor.configuration().map(row => ({ ...row, override: { model: 'initialized' } }))
-  const source = vi.spyOn(restarted.configEditor, 'configuration').mockReturnValue(rows)
-  onTestFinished(() => { source.mockRestore() })
-  await restarted.agentDefaultModel.initializeSelection({ provider: 'test', model: 'ignored' })
-  expect(restarted.agentDefaultModel.currentSelection().model).toBe('initialized')
-})

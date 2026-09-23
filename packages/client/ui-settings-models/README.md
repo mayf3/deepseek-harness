@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Saving credentials or a custom provider completes independently of default-model initialization. Initialization failures are logged; they do not report a successful save as failed or prevent closing the editor. The user can select an available model from the composer.
+Saving credentials or a custom provider preserves the selected model. The user can select an available model from the composer.
 
 DeepSeek Account appears first and DeepSeek second in the provider list; third-party providers retain their directory order.
 
@@ -59,7 +59,7 @@ After the versioned notice step completes, the DeepSeek step projects first-run 
 
 The section declares two seats for plugins distributed outside this repository, typed in [`src/client/slot-contract.ts`](src/client/slot-contract.ts) and exported from `./client`. `settings.models.provider-card` (keyed) renders inside every card that shows a directory row — a saved row's card, its first-run setup posture, and the add-provider draft — dispatched with `entryKey = settingsNs` and owner props carrying the row's `ConfigurableProviderView`, its configured state, and its confirmed api-key credential state, so one registration under an adapter family's namespace receives every card of that family, hand-declared routes included; the hand-declared draft card has no directory row yet and dispatches nothing until saved. `settings.models.footer` (list) renders after the rows and the add controls. A registrant activates through `ctx.slots.inject` with a type-only import of this package's `/client` entry; without registrants both seats render nothing.
 
-The Models page includes **DeepSeek Account** (`deepseek-account`, **DeepSeek 账号** in Chinese). Its editor exposes the shared DeepSeek model catalog without API-key or base-URL inputs. The account row is hidden when its available model catalog is empty, including before sign-in and after sign-out; it returns when account models become available. The first successful API-key setup initializes the default from its own provider; later setup preserves the user’s saved model choice.
+The Models page includes **DeepSeek Account** (`deepseek-account`, **DeepSeek 账号** in Chinese). Its editor exposes the shared DeepSeek model catalog without API-key or base-URL inputs. The account row is hidden when its available model catalog is empty, including before sign-in and after sign-out; it returns when account models become available.
 
 -----
 

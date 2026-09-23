@@ -78,7 +78,7 @@ export function apply(ctx: Context): void {
       frame.accept()
       if (initialize) void (async () => {
         try {
-          const initialized = await ctx.remote.session.initializeDefaultModel('deepseek-account')
+          const initialized = await ctx.remote.session.initializeDefaultModel()
           if (!initialized.ok) console.info('[deepseek-account] default model initialization failed', { reason: 'refused' })
         } catch (_error) {
           console.info('[deepseek-account] default model initialization failed', { reason: 'disconnected' })

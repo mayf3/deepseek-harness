@@ -33,11 +33,6 @@ export type ModelDiscoveryOutcome =
 /** The Host operations the Models page and its cards invoke. */
 export interface ModelsOperations {
   /**
-   * @param provider - newly configured provider.
-   * @returns after optional initialization; failures are logged without changing the save outcome.
-   */
-  initializeModel(provider: string): Promise<void>
-  /**
    * Read one credential reference's state.
    * @param ref - credential reference name.
    * @returns the state, or undefined when the reference is unknown or the read was refused.
@@ -86,14 +81,6 @@ export interface ModelsOperations {
  */
 export function createModelsOperations(ctx: ClientContext): ModelsOperations {
   return {
-    initializeModel: async (provider) => {
-      try {
-        const response = await ctx.remote.session.initializeDefaultModel(provider)
-        if (!response.ok) console.info('[models] default model initialization failed', { provider, reason: 'refused' })
-      } catch (_error) {
-        console.info('[models] default model initialization failed', { provider, reason: 'disconnected' })
-      }
-    },
     describeCredential: async (ref) => {
       const response = await ctx.remote.credentials.describe([ref])
       return response.ok ? response.value[ref] : undefined

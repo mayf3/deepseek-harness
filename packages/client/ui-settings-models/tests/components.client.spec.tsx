@@ -1114,27 +1114,14 @@ describe('ModelsSection', () => {
     expect(baseURL.value).toBe('')
   })
 
-  it.each(['refused', 'disconnected', 'pending'] as const)('finishes credential saving when default initialization is %s', async (outcome) => {
-    const log = vi.spyOn(console, 'info').mockImplementation(() => {})
-    const pending = Promise.withResolvers<never>()
+  it('saves credentials without changing the default model', async () => {
     const { ctx, set } = await mountDeepSeekCard()
     const initialize = vi.spyOn(ctx.remote.session, 'initializeDefaultModel')
-    if (outcome === 'pending') initialize.mockReturnValue(pending.promise)
-    else if (outcome === 'disconnected') initialize.mockRejectedValue(new Error('offline'))
-    else initialize.mockResolvedValue({ ok: false,
-      error: new RemoteError('session/provider-models-unavailable', 'empty catalog', { provider: 'deepseek-official' }) })
-    try {
-      fireEvent.change(await screen.findByLabelText(en.keyInput), { target: { value: 'test-key' } })
-      fireEvent.click(screen.getByText(en.apply))
-      await waitFor(() => { expect(screen.queryByText(en.apply)).toBeNull() })
-      expect(set).toHaveBeenCalledOnce()
-      expect(initialize).toHaveBeenCalledExactlyOnceWith('deepseek-official')
-      expect(screen.queryByText('empty catalog')).toBeNull()
-    } finally {
-      if (outcome === 'pending') { pending.reject(new Error('closed')); await Promise.resolve() }
-      initialize.mockRestore()
-      log.mockRestore()
-    }
+    fireEvent.change(await screen.findByLabelText(en.keyInput), { target: { value: 'test-key' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(screen.queryByText(en.apply)).toBeNull() })
+    expect(set).toHaveBeenCalledOnce()
+    expect(initialize).not.toHaveBeenCalled()
   })
 
   it('rejects an invalid draft before writing', async () => {

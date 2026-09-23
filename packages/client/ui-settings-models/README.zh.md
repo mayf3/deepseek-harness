@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-凭据或自定义提供方保存成功后，不等待默认模型初始化即可完成操作。初始化失败记录日志，不会将已成功的保存报告为失败，也不会阻止编辑器关闭。用户可在 composer 中选择可用模型。
+保存凭据或自定义提供方时保留已选模型。用户可在 composer 中选择可用模型。
 
 提供方列表中 DeepSeek 账号排第一，DeepSeek 排第二；第三方提供方保留目录中的相对顺序。
 
@@ -59,7 +59,7 @@ Host 配置 `credentialOnboarding` 默认为 `true`。Electron preload 标记会
 
 本分区为仓库外分发的插件声明两个席位，类型定义在 [`src/client/slot-contract.ts`](src/client/slot-contract.ts) 并从 `./client` 导出。`settings.models.provider-card`（keyed）渲染在每张展示目录行的卡片内部——已保存行的卡片、其首次运行 setup 形态、以及「添加提供商」草稿卡——以 `entryKey = settingsNs` 分发，owner props 携带该行的 `ConfigurableProviderView`、其 configured 状态与已确认的 api-key 凭据状态，因此以某适配器家族的 namespace 注册一次即可收到该家族的全部卡片，含手工声明的路由；手工声明的草稿卡尚无目录行，保存之前不分发。`settings.models.footer`（list）渲染在行列表与新增控件之后。注册方通过 `ctx.slots.inject` 激活，并以 type-only import 引入本包 `/client` 入口；没有注册方时两个席位均不渲染任何内容。
 
-Models 页面包含 **DeepSeek 账号**（`deepseek-account`，英文为 **DeepSeek Account**）。其编辑器展示共享的 DeepSeek 模型目录，不提供 API Key 或 Base URL 输入框。账号可用模型目录为空时隐藏账号行，包括登录前和退登后；账号模型恢复可用时重新显示。首次成功配置 API Key 时，从对应提供方初始化默认模型；后续配置保留用户已保存的模型选择。
+Models 页面包含 **DeepSeek 账号**（`deepseek-account`，英文为 **DeepSeek Account**）。其编辑器展示共享的 DeepSeek 模型目录，不提供 API Key 或 Base URL 输入框。账号可用模型目录为空时隐藏账号行，包括登录前和退登后；账号模型恢复可用时重新显示。
 
 -----
 

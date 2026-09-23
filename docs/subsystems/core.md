@@ -437,13 +437,6 @@ currentSelection(): ModelSelection
  * @returns fulfillment after the optional profile write settles.
  */
 async saveSelection(next: ModelSelection): Promise<void>
-
-/**
- * Store the initial setup choice only before an explicit profile selection exists.
- * @param next - available model belonging to the initialized provider.
- * @returns after the initial choice is saved or an existing choice is retained.
- */
-async initializeSelection(next: ModelSelection): Promise<void>
 ```
 
 Source: [`packages/core/agent-default-model/src/index.ts`](../../packages/core/agent-default-model/src/index.ts)

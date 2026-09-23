@@ -98,12 +98,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'next', description: 'resolved selection accepted by an entry point.' }],
         returns: 'fulfillment after the optional profile write settles.',
       },
-      {
-        signature: 'async initializeSelection(next: ModelSelection): Promise<void>',
-        description: 'Store the initial setup choice only before an explicit profile selection exists.',
-        parameters: [{ name: 'next', description: 'available model belonging to the initialized provider.' }],
-        returns: 'after the initial choice is saved or an existing choice is retained.',
-      },
     ],
   },
   {
@@ -1832,9 +1826,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the normalized selection installed for the Session.',
       },
       {
-        signature: '@Remote async initializeDefaultModel(provider: string): Promise<void>',
-        description: 'Initialize a provider default; account login replaces it only when no provider API key is configured.',
-        parameters: [{ name: 'provider', description: 'the provider whose credential was configured.' }],
+        signature: '@Remote async initializeDefaultModel(): Promise<void>',
+        description: 'Select the first available account model after login when no provider API key is configured.',
+        parameters: [],
         returns: 'after saving the first available model or retaining the existing default.',
       },
       {

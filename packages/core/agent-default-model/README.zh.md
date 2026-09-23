@@ -7,8 +7,6 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-`initializeSelection()` 将首次配置选择与用户写入串行处理，并在写入前检查持久化的 profile override。它保留显式选择，包括暂不可用的模型。
-
 ## 概述
 
 为会话未指定模型的新 agent 提供共享默认 provider 和模型。Provider、模型和推理强度都是即时 Config 字段。保存的选择更新当前 profile patch，并用于后续读取；会话级选择仍由入口负责。

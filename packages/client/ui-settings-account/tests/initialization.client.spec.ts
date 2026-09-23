@@ -58,7 +58,7 @@ it.each(['accepted', 'refused', 'disconnected', 'pending'] as const)('initialize
   try {
     apply(ctx as never)
     await done.promise
-    expect(initializeDefaultModel).toHaveBeenCalledExactlyOnceWith('deepseek-account')
+    expect(initializeDefaultModel).toHaveBeenCalledExactlyOnceWith()
     expect(observed).toEqual([
       { status: 'credential-stored', failed: false },
       { status: 'credential-stored', failed: false },
