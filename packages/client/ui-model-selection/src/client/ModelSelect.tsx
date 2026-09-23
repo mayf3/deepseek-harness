@@ -193,6 +193,7 @@ export function ModelSelect(
   if (!available) return null
 
   const show = (): void => {
+    triggerRef.current?.focus()
     if (state.current === null) paneFocus.current = 'drill'
     setPane(state.current === null ? 'model' : 'root')
     setOpen(true)
@@ -295,13 +296,19 @@ export function ModelSelect(
     })
   }
 
+  const submit = (selection: ModelSelection): void => {
+    lastActionRef.current = 'select'
+    // Disabled option rows cannot retain focus while a selection is pending.
+    triggerRef.current?.focus()
+    void select(selection).then(settleSelection)
+  }
+
   const choose = (selection: ModelSelection): void => {
     if (state.current?.provider === selection.provider && state.current.model === selection.model) {
       close(true)
       return
     }
-    lastActionRef.current = 'select'
-    void select(selection).then(settleSelection)
+    submit(selection)
   }
 
   const chooseEffort = (effort: string | undefined): void => {
@@ -315,8 +322,7 @@ export function ModelSelect(
       model: state.current.model,
       ...effort === undefined ? {} : { reasoningEffort: effort },
     }
-    lastActionRef.current = 'select'
-    void select(selection).then(settleSelection)
+    submit(selection)
   }
 
   const waiting = state.current === null && state.status === 'loading'
@@ -340,7 +346,16 @@ export function ModelSelect(
   }
 
   return (
-    <div ref={rootRef} className={css.root} onKeyDown={onRootKeyDown} onBlur={onBlur}>
+    <div
+      ref={rootRef}
+      className={css.root}
+      onKeyDown={onRootKeyDown}
+      onBlur={onBlur}
+      onMouseDown={(event) => {
+        // WebKit blurs a focused row before click unless the button's mousedown keeps focus.
+        if (event.target instanceof Element && event.target.closest('button') !== null) event.preventDefault()
+      }}
+    >
       <button
         ref={triggerRef}
         type="button"
@@ -353,7 +368,7 @@ export function ModelSelect(
         disabled={locked}
         onClick={() => {
           if (open) {
-            close()
+            close(true)
           } else {
             show()
           }

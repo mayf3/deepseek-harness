@@ -12,7 +12,7 @@ overrides:
 patchedDependencies:
   '@earendil-works/pi-ai@0.85.1': b9bcce474fb2ac44633dff0fa722816a5bff5451b4575d5874035ea14ba70a4f
   '@electron/osx-sign@1.3.3': 280e7b2816caf01423097d24e79107a66afeb563a348630ce9928ae8499a5861
-  '@fortune-sheet/core@1.0.4': 488dad2a7648b7d4df31f6bd776b7849fd0fb85be8f1acf268efff758caba3c0
+  '@fortune-sheet/core@1.0.4': 7d369e6feca3c674aeb089624e38e0a79ad61e695d6bdae89711876cbd178f24
   '@fortune-sheet/react@1.0.4': c17549e117c8fb99f408497c1e84292c21f25516fb762a32518f91b4d9ab0f04
   '@yao-pkg/pkg@6.21.0': 75891fc22b277c145cafeab83e41baf4a70f5b8fe6dc0801c6a0b922d7ee88c7
   exceljs@4.4.0: c1bf8ac8f319dab382f08e3a669b715e691d46c703ac5a4163eb383fbedd1d48
@@ -5060,7 +5060,7 @@ importers:
         version: link:../../util/workspace-path
       '@fortune-sheet/core':
         specifier: 1.0.4
-        version: 1.0.4(patch_hash=488dad2a7648b7d4df31f6bd776b7849fd0fb85be8f1acf268efff758caba3c0)
+        version: 1.0.4(patch_hash=7d369e6feca3c674aeb089624e38e0a79ad61e695d6bdae89711876cbd178f24)
       '@fortune-sheet/react':
         specifier: 1.0.4
         version: 1.0.4(patch_hash=c17549e117c8fb99f408497c1e84292c21f25516fb762a32518f91b4d9ab0f04)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -6904,9 +6904,6 @@ importers:
       '@deepseek-ai/dsh-subagent-spawn-in-process':
         specifier: workspace:*
         version: link:../../subagent/subagent-spawn-in-process
-      '@deepseek-ai/dsh-typert-protocol':
-        specifier: workspace:*
-        version: link:../../typert/protocol
 
   packages/experimental/agent-team-profile:
     dependencies:
@@ -7268,15 +7265,15 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-api-remotes':
-        specifier: workspace:*
-        version: link:../../api/remotes
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:*
         version: link:../../api/session-controller
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../../client/locale
+      '@deepseek-ai/dsh-client-store':
+        specifier: workspace:*
+        version: link:../../client/store
       '@deepseek-ai/dsh-client-test-runtime':
         specifier: workspace:*
         version: link:../../test-support/client-runtime
@@ -7304,9 +7301,6 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
         version: link:../../core/session
-      '@deepseek-ai/dsh-typert-protocol':
-        specifier: workspace:*
-        version: link:../../typert/protocol
       '@testing-library/react':
         specifier: ^16.1.0
         version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -22603,7 +22597,7 @@ snapshots:
       bessel: 1.0.2
       jstat: 1.9.6
 
-  '@fortune-sheet/core@1.0.4(patch_hash=488dad2a7648b7d4df31f6bd776b7849fd0fb85be8f1acf268efff758caba3c0)':
+  '@fortune-sheet/core@1.0.4(patch_hash=7d369e6feca3c674aeb089624e38e0a79ad61e695d6bdae89711876cbd178f24)':
     dependencies:
       '@fortune-sheet/formula-parser': 0.2.13
       dayjs: 1.11.21
@@ -22619,7 +22613,7 @@ snapshots:
 
   '@fortune-sheet/react@1.0.4(patch_hash=c17549e117c8fb99f408497c1e84292c21f25516fb762a32518f91b4d9ab0f04)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
-      '@fortune-sheet/core': 1.0.4(patch_hash=488dad2a7648b7d4df31f6bd776b7849fd0fb85be8f1acf268efff758caba3c0)
+      '@fortune-sheet/core': 1.0.4(patch_hash=7d369e6feca3c674aeb089624e38e0a79ad61e695d6bdae89711876cbd178f24)
       '@types/regenerator-runtime': 0.13.8
       immer: 9.0.21
       lodash: 4.18.1

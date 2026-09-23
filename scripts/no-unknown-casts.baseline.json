@@ -1139,13 +1139,6 @@
     "019c354b579e6d5cfa63e106e3b3047817fe5a37eee532abd7ab4aa80d28676a": 1,
     "4777453719b1a12ac03d7405a7cc1662ac1873b8eb0016a08ccd11f27076e803": 1
   },
-  "packages/experimental/client-ui-agent-team/tests/browser-plugin.client.spec.ts": {
-    "22baf2573ca146a7904b9ffc8b34a43692c4e042f01f43016d85443828bc88b1": 1,
-    "87ef7d60538b938bd8b5748cf4c0a5956ecedb860826c57d9ec789daea2f0355": 5
-  },
-  "packages/experimental/client-ui-agent-team/tests/team-action.client.spec.tsx": {
-    "032fa1f91833ea216b76d2724f073741e70ad3eafebe4fbfcb166b950618e415": 1
-  },
   "packages/experimental/computer-use-cua-driver-mcp/tests/composition.spec.ts": {
     "154da39139a0074bad3d13a624e5fa62d1f7ce19dc8b9c28a73af3263cd7f10e": 1
   },
