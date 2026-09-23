@@ -46,6 +46,8 @@ export interface Config {
   inspectTimeoutMs?: number
   /** Maximum duration of the GitHub repository connection check before installation, in milliseconds. */
   githubConnectionTimeoutMs?: number
+  /** Maximum time one captured package run may print nothing before the manager terminates it, in milliseconds. */
+  idleTimeoutMs?: number
   /** The registry lookups and installations ask first, as an http(s) URL; absent, the one pnpm's own configuration names. */
   registry?: string
   /**
@@ -176,6 +178,7 @@ export class PluginManager extends TypertRemoteService {
     lockWaitMs: z.number().step(1).min(0).default(120000),
     inspectTimeoutMs: z.number().step(1).min(1000).default(20000),
     githubConnectionTimeoutMs: z.number().step(1).min(1000).default(5000),
+    idleTimeoutMs: z.number().step(1).min(1000).default(600000),
     registry: z.string().pattern(REGISTRY_URL),
     fallbackRegistries: z.array(z.string().pattern(REGISTRY_URL)).default([NPMMIRROR_REGISTRY]),
   })
@@ -188,6 +191,7 @@ export class PluginManager extends TypertRemoteService {
   private readonly lockWaitMs: number
   private readonly inspectTimeoutMs: number
   private readonly githubConnectionTimeoutMs: number
+  private readonly idleTimeoutMs: number
   private readonly pnpmCommand: string
   private readonly configuredRegistries: Omit<PluginRegistries, 'resolved'>
   private readonly ownerContext: Context
@@ -205,6 +209,7 @@ export class PluginManager extends TypertRemoteService {
     this.lockWaitMs = (config as Required<Config>).lockWaitMs
     this.inspectTimeoutMs = (config as Required<Config>).inspectTimeoutMs
     this.githubConnectionTimeoutMs = (config as Required<Config>).githubConnectionTimeoutMs
+    this.idleTimeoutMs = (config as Required<Config>).idleTimeoutMs
     this.pnpmCommand = (config as Required<Config>).pnpmCommand
     this.configuredRegistries = {
       registry: config.registry === undefined ? null : normalizeRegistry(config.registry),
@@ -470,18 +475,24 @@ export class PluginManager extends TypertRemoteService {
           run = await this.runPnpm(['add', spec, ...registryArguments(registry)], control.abort.signal, requestId)
           result.packageResult = run
           if (stopped()) throw new InstallCancelledError()
-          /* v8 ignore next 2 -- runPnpm classifies every failed run, so kind is never absent here */
-          if (run.exitCode === 0 || run.kind === undefined) break
-          const failedAt = attributeFailure(run.kind, run.output, parsedForRegistry(spec))
+          // A run this manager terminated is not a success, even when pnpm trapped the signal and exited 0.
+          if (run.exitCode === 0 && run.timedOut !== true) break
+          /* v8 ignore next 2 -- runPnpm classifies every run it does not report as succeeded */
+          if (run.kind === undefined) break
           // What the last failed run could not reach; a later run that succeeds leaves nothing to say.
           delete result.failedAt
+          // A run this manager terminated got no answer from the registry at all, so no registry explains it.
+          if (run.timedOut === true) break
+          const failedAt = attributeFailure(run.kind, run.output, parsedForRegistry(spec))
           if (failedAt !== 'other') result.failedAt = failedAt
           if (failedAt !== 'registry' || index === plan.length - 1) break
         }
         /* v8 ignore next -- the plan is never empty, so a run always settled */
         if (run === undefined) throw new Error('no registry was asked')
-        if (run.exitCode === 0) delete result.failedAt
-        if (run.exitCode !== 0) {
+        // A terminated run reports no usable exit status, so neither its files nor its bundle are trusted.
+        const succeeded = run.exitCode === 0 && run.timedOut !== true
+        if (succeeded) delete result.failedAt
+        if (!succeeded) {
           // pnpm-workspace.yaml is not restored, so the names pnpm left undecided there can be offered for approval.
           try { result.pendingBuilds = await readPendingBuilds(this.profile.dir) }
           catch (error) {
@@ -573,7 +584,9 @@ export class PluginManager extends TypertRemoteService {
         }
       })
       result.packageResult = await this.runPnpm(['remove', name])
-      if (result.packageResult.exitCode !== 0) throw new Error(result.packageResult.output)
+      if (result.packageResult.exitCode !== 0 || result.packageResult.timedOut === true) {
+        throw new Error(result.packageResult.output)
+      }
     }, { stage: 'remove', target: name }, 'remove')
   }
 
@@ -620,7 +633,7 @@ export class PluginManager extends TypertRemoteService {
     const task = runProfilePnpm({ ...this.profile, profile: this.profile.name }, args, {
       execution: 'service', ...this.profile.packageManager ?? { command: this.pnpmCommand },
       signal: signal === undefined ? this.abort.signal : AbortSignal.any([this.abort.signal, signal]),
-      outputBytes: this.outputBytes, activateNewBundles: false,
+      outputBytes: this.outputBytes, activateNewBundles: false, idleTimeoutMs: this.idleTimeoutMs,
       onOutput: (text, stream) => {
         this.ownerContext.emit('plugin-manager/install-log', { ...identity, jobId, argv, cwd, stream, text })
       },
@@ -631,7 +644,12 @@ export class PluginManager extends TypertRemoteService {
       this.ownerContext.emit('plugin-manager/install-log', {
         ...identity, jobId, argv, cwd, stream: 'stdout', text: '', exitCode: signal?.aborted === true ? null : result.exitCode,
       })
-      return result.exitCode === 0 ? result : { ...result, kind: classifyInstallFailure({ log: result.output }) }
+      // A terminated run keeps its own kind even when pnpm trapped the signal and exited 0.
+      if (result.exitCode === 0 && result.timedOut !== true) return result
+      return {
+        ...result,
+        kind: classifyInstallFailure({ log: result.output, ...result.timedOut === true ? { timedOut: true } : {} }),
+      }
     } catch (error) {
       this.ownerContext.emit('plugin-manager/install-log', { ...identity, jobId, argv, cwd, stream: 'stderr', text: messageOf(error), exitCode: null })
       throw error

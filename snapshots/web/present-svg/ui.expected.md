@@ -5,7 +5,7 @@
 - button "已完成分析" [expanded]
 - button "思考"
 - paragraph: 我来创建一个冯诺依曼架构的 SVG 示意图。
-- button "修改了文件并已调用工具" [expanded]
+- button "已写入文件并调用工具" [expanded]
 - button "写入 von-neumann.svg +83 -0":
   - text: 写入
   - button "von-neumann.svg"
