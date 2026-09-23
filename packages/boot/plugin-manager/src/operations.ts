@@ -1,17 +1,21 @@
 /** Shared profile package operations used by dsh plugin and the running manager. */
 import { once } from 'node:events'
-import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, open } from 'node:fs/promises'
+import { existsSync, readFileSync } from 'node:fs'
+import { mkdir, mkdtemp, open, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { execa } from 'execa'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import {
   DEFAULT_PROFILE_BUNDLES, bundlePatchPaths, initProfile, PROFILE_TEMPLATES, readProfileManifest,
-  resolveBundleDir, resolveProfileDir, loadOverlayPatches, type ProfileManifest,
+  resolveBundleDir, resolveProfileDir, loadOverlayPatches, composeEntries, readProfileVersionExemptions,
+  evaluatePluginCompatibility, pluginCompatibilityWarning, type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
+import { parseInstallSpec } from './install-spec.ts'
 import { awaitTreeGone, leadsOwnGroup } from './run-tree.ts'
 import type { PackageResult, Registry } from './types.ts'
+export { setProfileVersionExemption, readProfileVersionExemptions } from '@deepseek-ai/dsh-app-boot'
 
 /** Profile and invocation locations supplied by the launcher. */
 export interface PackageOperationContext {
@@ -45,6 +49,8 @@ export interface PackageOperationOptions {
    * with inherited descriptors captures nothing and is never bound.
    */
   idleTimeoutMs?: number
+  /** Bound on the pre-install registry lookup, in milliseconds; without one a fixed bound applies. */
+  lookupTimeoutMs?: number
 }
 
 /** Resolve relative package specs against the caller's directory.
@@ -132,18 +138,112 @@ async function drainWithin(collectors: readonly Promise<void>[], ms: number): Pr
   }
 }
 
+/** Install commands that take the packages to install as positionals. */
+const INSTALL_COMMANDS = new Set(['add', 'install', 'i'])
+
+/** Bound on a pre-install registry lookup when the caller names none. */
+const LOOKUP_TIMEOUT_MS = 20_000
+
+/** Package specs an install command names explicitly, in order. */
+function namedSpecs(args: readonly string[]): string[] {
+  const index = args.findIndex(argument => !argument.startsWith('-'))
+  const command = index < 0 ? undefined : args[index]
+  if (command === undefined || !INSTALL_COMMANDS.has(command)) return []
+  return args.slice(index + 1).filter(argument => !argument.startsWith('-'))
+}
+
+/** The manifest a named spec would install, read without installing it.
+ * A path spec is read from disk. A registry spec asks pnpm's own configuration for the version the
+ * range selects and its peer requirements. A git or tarball spec needs the fetch itself, so the
+ * check after installation is what judges it.
+ * @param dir Profile directory the lookup runs in.
+ * @param spec Anchored install spec.
+ * @param options Pnpm executable, prefix arguments, the caller's bound and signal.
+ * @param environment Environment of the caller's pnpm invocations.
+ * @param flags Flags of the run itself, so the lookup asks the registry that run will use.
+ * @returns The package manifest, or undefined when reading it would need the installation itself.
+ */
+async function namedSpecManifest(
+  dir: string, spec: string, options: PackageOperationOptions, environment: Readonly<Record<string, string | undefined>>,
+  flags: readonly string[],
+): Promise<object | undefined> {
+  const parsed = parseInstallSpec(spec)
+  if (parsed.kind === 'path') {
+    const filename = join(parsed.path, 'package.json')
+    return existsSync(filename) ? JSON.parse(readFileSync(filename, 'utf8')) as object : undefined
+  }
+  if (parsed.kind !== 'registry') return undefined
+  const viewed = await execa(options.command ?? 'pnpm', [
+    ...options.args ?? [], 'view', parsed.spec, 'name', 'version', 'peerDependencies', '--json',
+    ...flags, '--config.fetch-retries=0',
+  ], {
+    cwd: dir, env: environment, extendEnv: false, reject: false, stdin: 'ignore',
+    ...options.signal === undefined ? {} : { cancelSignal: options.signal },
+    timeout: options.lookupTimeoutMs ?? LOOKUP_TIMEOUT_MS,
+  })
+  if (viewed.exitCode !== 0) return undefined
+  const value: unknown = JSON.parse(viewed.stdout)
+  return (Array.isArray(value) ? value.at(-1) : value) as object
+}
+
+/** Missing installed packages are repairable; their absence is part of the before/after comparison. */
+function optionalFile(path: string): string | undefined {
+  try { return readFileSync(path, 'utf8') } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+}
+
+/** pnpm can install plugins through any direct-dependency field. */
+function directDependencies(manifest: ProfileManifest): Record<string, string> {
+  const extra = manifest as ProfileManifest & { devDependencies?: Record<string, string>; optionalDependencies?: Record<string, string> }
+  return { ...extra.devDependencies, ...manifest.dependencies, ...extra.optionalDependencies }
+}
+
+/** Inspect only plugin rows contributed by the changed bundle, not its dependency closure. */
+function bundleComponentManifests(manifest: ProfileManifest, dir: string, anchor: string): ProfileManifest[] {
+  const bundle = manifest.dsh?.bundle
+  if (bundle === undefined) return []
+  const patches = bundlePatchPaths(dir, bundle).flatMap(file => loadOverlayPatches('dsh', file))
+  const names = new Set<string>()
+  const visit = (rows: EntryOptions[]) => {
+    for (const row of rows) {
+      if (row.group && Array.isArray(row.config)) visit(row.config as EntryOptions[])
+      if (typeof row.name !== 'string' || row.name.startsWith('.') || row.name.startsWith('/') || row.name.includes(':')) continue
+      const parts = row.name.split('/')
+      names.add(parts.slice(0, row.name.startsWith('@') ? 2 : 1).join('/'))
+    }
+  }
+  visit(composeEntries([patches.filter(patch => patch.insert !== undefined)]))
+  return [...names].flatMap((name) => {
+    let packageDir: string
+    try { packageDir = resolveBundleDir('dsh', name, anchor, dir) } catch (error) {
+      // Resolution errors for uninstalled or dynamic rows remain subject to the startup loader's checks.
+      void error
+      return []
+    }
+    return [readProfileManifest('dsh', packageDir)]
+  })
+}
+
 /** Execute pnpm inside a profile whose caller already holds the profile write lock.
+ * Newly installed or updated direct dependencies are checked even when activation is disabled;
+ * an untouched dependency never blocks an unrelated operation and stays denied at startup.
+ * Compatibility denial restores the profile manifest and lockfile, but leaves downloaded modules on disk.
  * @param context Launcher-owned profile and resolution locations.
  * @param args Pnpm arguments, before relative path anchoring.
  * @param options Output, activation and cancellation policy.
  * @returns Exit status, whether the silence bound stopped the run, and the diagnostic path.
- * Service output is bounded; CLI output uses inherited descriptors.
+ * A compatibility denial returns exit code 1. Service output is bounded; CLI output uses inherited descriptors.
  */
 export async function runProfilePnpm(
   context: PackageOperationContext, args: readonly string[], options: PackageOperationOptions,
 ): Promise<PackageResult> {
   const dir = context.dir ?? resolveProfileDir(context.profile, context.home)
   const before = readProfileManifest('dsh', dir)
+  const savedFiles = ['package.json', 'pnpm-lock.yaml'].map(name => ({ path: join(dir, name), text: optionalFile(join(dir, name)) }))
+  const beforeDependencies = directDependencies(before)
+  const installedBefore = new Map(Object.keys(beforeDependencies).map(name => [name, optionalFile(join(dir, 'node_modules', name, 'package.json'))]))
   const logRoot = join(dir, '.plugin-manager', 'logs')
   await mkdir(logRoot, { recursive: true, mode: 0o700 })
   const logDir = await mkdtemp(join(logRoot, 'operation-'))
@@ -151,19 +251,6 @@ export async function runProfilePnpm(
   const log = await open(logPath, 'wx', 0o600)
   let output = Buffer.alloc(0)
   let truncated = false
-  const cancellation = new AbortController()
-  // A service run captures output, so execa terminates the tree it leads when the
-  // run is killed: a lifecycle script outlives the pnpm process that started it.
-  // The CLI keeps the caller's process group, so an interrupt still reaches it.
-  const grouped = leadsOwnGroup(options.execution)
-  const child = execa(options.command ?? 'pnpm', [...options.args ?? [], ...args.map(arg => anchorPathSpec(arg, context.cwd))], {
-    cwd: dir, env: { ...(options.execution === 'cli' ? process.env : scrubbedParentEnv()), ...options.env }, extendEnv: false, reject: false,
-    stdout: options.execution === 'cli' ? 'inherit' : 'pipe',
-    stderr: options.execution === 'cli' ? 'inherit' : 'pipe',
-    killDescendants: options.execution === 'service',
-    buffer: false, stdin: options.execution === 'cli' ? 'inherit' : 'ignore', cancelSignal: options.signal === undefined
-      ? cancellation.signal : AbortSignal.any([cancellation.signal, options.signal]),
-  })
   const append = (bytes: Buffer): void => {
     output = Buffer.concat([output, bytes])
     if (output.length > options.outputBytes) {
@@ -171,6 +258,51 @@ export async function runProfilePnpm(
       output = output.subarray(output.length - options.outputBytes)
     }
   }
+  const environment = { ...(options.execution === 'cli' ? process.env : scrubbedParentEnv()), ...options.env }
+  const restore = async (): Promise<void> => {
+    for (const file of savedFiles) {
+      if (file.text === undefined) await rm(file.path, { force: true })
+      else await writeFileAtomic(file.path, file.text, { mode: 0o600 })
+    }
+  }
+  const rejected = async (warnings: readonly string[], restoration: string): Promise<PackageResult> => {
+    const diagnostic = `\ndsh: installation rejected: ${warnings.join('\n')}\ndsh: ${restoration}.\n`
+    await log.write(diagnostic)
+    options.onOutput?.(diagnostic, 'stderr')
+    append(Buffer.from(diagnostic))
+    await log.close()
+    return { exitCode: 1, output: output.toString('utf8'), truncated, logPath }
+  }
+  // An install command names the packages it adds, so their manifests are read and checked before
+  // pnpm runs: an incompatible version is never installed, and the one already in use keeps working.
+  const preflight: string[] = []
+  const exemptions = readProfileVersionExemptions(dir)
+  // The run's own registry flags, so the lookup asks the registry the installation will use.
+  const registryFlags = args.filter(argument => argument.startsWith('--registry='))
+  for (const raw of namedSpecs(args)) {
+    // A spec whose manifest cannot be read or validated is left to the run itself and to the check
+    // after installation, which reports what it could not validate.
+    try {
+      const manifest = await namedSpecManifest(dir, anchorPathSpec(raw, context.cwd), options, environment, registryFlags)
+      if (manifest === undefined) continue
+      const issue = evaluatePluginCompatibility(manifest, exemptions)
+      if (issue !== undefined && !issue.exempted) preflight.push(pluginCompatibilityWarning(issue))
+    } catch (error) { void error; continue }
+  }
+  if (preflight.length > 0) return rejected(preflight, 'nothing was installed')
+  const cancellation = new AbortController()
+  // A service run captures output, so execa terminates the tree it leads when the
+  // run is killed: a lifecycle script outlives the pnpm process that started it.
+  // The CLI keeps the caller's process group, so an interrupt still reaches it.
+  const grouped = leadsOwnGroup(options.execution)
+  const child = execa(options.command ?? 'pnpm', [...options.args ?? [], ...args.map(arg => anchorPathSpec(arg, context.cwd))], {
+    cwd: dir, env: environment, extendEnv: false, reject: false,
+    stdout: options.execution === 'cli' ? 'inherit' : 'pipe',
+    stderr: options.execution === 'cli' ? 'inherit' : 'pipe',
+    killDescendants: options.execution === 'service',
+    buffer: false, stdin: options.execution === 'cli' ? 'inherit' : 'ignore', cancelSignal: options.signal === undefined
+      ? cancellation.signal : AbortSignal.any([cancellation.signal, options.signal]),
+  })
   let writes = Promise.resolve()
   /** `settled` records that the process outcome is known; `stalled` that the silence bound stopped the run. */
   const control = { settled: false, stalled: false }
@@ -268,8 +400,53 @@ export async function runProfilePnpm(
       output = Buffer.from(diagnostic).subarray(0, options.outputBytes)
     }
     // A terminated run's exit status says nothing about what it wrote, so it never reconciles the selection.
-    if (exitCode === 0 && !control.stalled && options.activateNewBundles !== false) {
-      await reconcile(before, dir, context.installAnchor, options)
+    if (exitCode === 0 && !control.stalled) {
+      const after = readProfileManifest('dsh', dir)
+      const warnings: string[] = []
+      for (const [name, spec] of Object.entries(directDependencies(after))) {
+        const packageDir = join(dir, 'node_modules', name)
+        const installed = optionalFile(join(packageDir, 'package.json'))
+        if (installed === undefined) continue
+        // A dependency this run did not touch never blocks an unrelated operation; profile startup denies it.
+        const untouched = beforeDependencies[name] === spec && installedBefore.get(name) === installed
+        const found: string[] = []
+        try {
+          const manifest = readProfileManifest('dsh', packageDir)
+          for (const candidate of [manifest, ...bundleComponentManifests(manifest, packageDir, context.installAnchor)]) {
+            const issue = evaluatePluginCompatibility(candidate, readProfileVersionExemptions(dir))
+            if (issue !== undefined && !issue.exempted) found.push(pluginCompatibilityWarning(issue))
+          }
+        } catch (error) {
+          found.push(`Cannot validate installed package ${name}: ${String(error)}`)
+        }
+        if (found.length === 0) continue
+        if (!untouched) warnings.push(...found)
+        else {
+          const notice = `\ndsh: warning: ${found.join('\n')}\ndsh: it stays installed but profile startup denies it until you grant an exemption for those exact versions.\n`
+          await log.write(notice)
+          options.onOutput?.(notice, 'stderr')
+        }
+      }
+      if (warnings.length > 0) {
+        // A bundle component's peers need installed contents, so this rejection lands after pnpm
+        // replaced the tree: restore the files, then reinstall the restored lockfile so the version
+        // that worked before this run keeps loading.
+        await restore()
+        const repaired = await execa(options.command ?? 'pnpm', [...options.args ?? [], 'install', '--frozen-lockfile'], {
+          cwd: dir, env: environment, extendEnv: false, reject: false, stdin: 'ignore',
+          ...options.idleTimeoutMs === undefined ? {} : { timeout: options.idleTimeoutMs },
+        })
+        exitCode = 1
+        const restoration = repaired.exitCode === 0
+          ? 'restored package.json, pnpm-lock.yaml, and node_modules'
+          : "restored package.json and pnpm-lock.yaml, but node_modules could not be reinstalled; run 'dsh plugin install'"
+        const diagnostic = `\ndsh: installation rejected: ${warnings.join('\n')}\ndsh: ${restoration}.\n`
+        await log.write(diagnostic)
+        options.onOutput?.(diagnostic, 'stderr')
+        append(Buffer.from(diagnostic))
+      } else if (options.activateNewBundles !== false) {
+        await reconcile(before, dir, context.installAnchor, options)
+      }
     }
   } finally {
     control.settled = true

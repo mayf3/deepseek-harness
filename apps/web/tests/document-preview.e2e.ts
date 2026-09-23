@@ -250,6 +250,16 @@ it.skipIf(MODE === 'record').each(['en-US', 'zh-CN'])('fills the spreadsheet pan
       expect(await selection.innerText()).toBe('A1')
       await expect.poll(() => excel.locator('.fortune-sheettab-scroll').count()).toBe(width === 360 ? 2 : 0)
     }
+    const gridOffset = await excel.locator('.luckysheet-scrollbar-x').evaluate(node => node.scrollLeft)
+    await tabScroller.hover()
+    await page.mouse.wheel(180, 0)
+    await expect.poll(() => tabScroller.evaluate(node => node.scrollLeft)).toBeGreaterThan(0)
+    await page.mouse.wheel(-1000, 0)
+    await expect.poll(() => tabScroller.evaluate(node => node.scrollLeft)).toBe(0)
+    expect(await activeSheet.innerText()).toBe('会议信息')
+    expect(await selection.innerText()).toBe('A1')
+    expect(await zoom.innerText()).toBe('100%')
+    expect(await excel.locator('.luckysheet-scrollbar-x').evaluate(node => node.scrollLeft)).toBe(gridOffset)
     for (const direction of ['right', 'left'] as const) {
       const arrow = excel.locator(`#fortune-sheettab-${direction}scroll`)
       for (let step = 0; step < 8; step += 1) {
@@ -289,6 +299,9 @@ it.skipIf(MODE === 'record').each(['en-US', 'zh-CN'])('fills the spreadsheet pan
         await openPreviewFile(column, filesTab, preview, name)
         await excel.locator('.fortune-sheet-overlay').waitFor()
         await expectExcelLayout(excel)
+        expect(await selection.evaluate(node => ({
+          text: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor,
+        }))).toEqual({ text: 'rgb(0, 0, 0)', background: 'rgb(255, 255, 255)' })
         if (name === 'values.csv') {
           await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
           await expect.poll(() => formula.textContent()).toBe(longCellText)
@@ -317,6 +330,38 @@ it.skipIf(MODE === 'record').each(['en-US', 'zh-CN'])('fills the spreadsheet pan
     try { await browser?.close() } finally { await scaffold.close() }
   }
 })
+
+/** Pan with native pixel wheel input in every direction and along the sheet edges. */
+async function expectExcelPanning(page: Page, excel: Locator): Promise<void> {
+  // Chromium's CDP wheel distances scale with the emulated device pixel ratio.
+  const scale = await page.evaluate(() => window.devicePixelRatio)
+  const wheel = async (x: number, y: number) => { await page.mouse.wheel(x * scale, y * scale) }
+  const offset = async () => await excel.evaluate(node => ({
+    x: node.querySelector('.luckysheet-scrollbar-x')!.scrollLeft,
+    y: node.querySelector('.luckysheet-scrollbar-y')!.scrollTop,
+  }))
+  const selection = await excel.locator('.fortune-name-box').innerText()
+  await excel.evaluate((node) => {
+    node.querySelector('.luckysheet-scrollbar-x')!.scrollLeft = 240
+    node.querySelector('.luckysheet-scrollbar-y')!.scrollTop = 240
+  })
+  await expect.poll(offset).toEqual({ x: 240, y: 240 })
+  await excel.locator('.fortune-sheet-overlay').hover({ position: { x: 260, y: 160 } })
+  for (const [dx, dy] of [[37, 19], [-13, 27], [-19, -11], [23, -17], [11, 0], [0, 13], [-9, 0], [0, -7]] as const) {
+    const before = await offset()
+    await wheel(dx, dy)
+    await expect.poll(offset).toEqual({ x: before.x + dx, y: before.y + dy })
+  }
+  expect(await excel.locator('.fortune-name-box').innerText()).toBe(selection)
+  await wheel(-10000, -10000)
+  await expect.poll(offset).toEqual({ x: 0, y: 0 })
+  await wheel(-20, 20)
+  await expect.poll(offset).toEqual({ x: 0, y: 20 })
+  await wheel(20, -20)
+  await expect.poll(offset).toEqual({ x: 20, y: 0 })
+  await wheel(-20, 0)
+  await expect.poll(offset).toEqual({ x: 0, y: 0 })
+}
 
 /** Sample the pixel band before the divider center, excluding the adjacent cell grid line. */
 async function freezeDividerInk(excel: Locator, axis: 'x' | 'y'): Promise<number> {
@@ -386,6 +431,7 @@ it.skipIf(MODE === 'record').each([1, 2])('keeps frozen headings without divider
             await expect.poll(() => freezeDividerInk(excel, axis)).toBe(0)
           }
         }
+        await expectExcelPanning(page, excel)
         await successShot(page, `excel-freeze-${sheet}-${ratio}-${deviceScaleFactor}`)
       }
       await excel.locator('.luckysheet-scrollbar-x').evaluate((node) => { node.scrollLeft = 240 })
