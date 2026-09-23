@@ -150,6 +150,7 @@ describe('langFromPath', () => {
     // A suffix with no persisted value has none to preserve, so the projection
     // applies the language's short name instead of the canonical grammar id.
     expect(langFromPath('build.ps1')).toBe('ps1')
+    expect(langFromPath('table.csv')).toBe('csv')
     expect(langFromPath('deploy.bat')).toBe('bat')
     expect(langFromPath('.env')).toBe('env')
     expect(langFromPath('server.log')).toBe('log')

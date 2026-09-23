@@ -22,9 +22,9 @@
  * grammar does not exist map to the nearest available grammar
  * (`properties` to `ini`, whose registration carries the `properties` alias) or
  * stay unlisted. Certificate and lock extensions (`pem`, `crt`, `key`, `cer`,
- * `lock`) stay unlisted, and `csv` is deliberately absent: the Spreadsheet
- * preview declares it and must keep it, so listing it here would let the earlier
- * Code registration take the suffix. `makefile` covers only the suffix
+ * `lock`) stay unlisted. Preview registries order specialized viewers before
+ * Code so CSV can default to Spreadsheet while retaining syntax highlighting.
+ * `makefile` covers only the suffix
  * (`foo.makefile`); the extensionless `Makefile` name stays unlisted.
  */
 const LANGUAGE_EXTENSIONS: Readonly<Record<string, readonly string[]>> = {
@@ -33,6 +33,7 @@ const LANGUAGE_EXTENSIONS: Readonly<Record<string, readonly string[]>> = {
   shellscript: ['sh', 'bash', 'zsh'],
   fish: ['fish'],
   json: ['json', 'jsonc', 'jsonl', 'ndjson', 'ipynb'],
+  csv: ['csv'],
   python: ['py', 'pyw', 'pyi'],
   ruby: ['rb', 'rake', 'gemspec'],
   go: ['go'],
@@ -133,6 +134,7 @@ const SHORT_BY_LANGUAGE: Readonly<Record<string, string>> = {
   shellscript: 'sh',
   fish: 'fish',
   json: 'json',
+  csv: 'csv',
   python: 'py',
   ruby: 'rb',
   go: 'go',

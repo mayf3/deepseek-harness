@@ -10,7 +10,7 @@ describe('languageForPath', () => {
     ['app.properties', 'ini'], ['app.conf', 'ini'], ['app.cfg', 'ini'],
     ['.env', 'dotenv'], ['server.log', 'log'],
     ['change.diff', 'diff'], ['fix.patch', 'diff'], ['api.http', 'http'],
-    ['notebook.ipynb', 'json'],
+    ['notebook.ipynb', 'json'], ['table.csv', 'csv'],
     // Documentation and markup extensions.
     ['guide.rst', 'rst'], ['paper.tex', 'latex'], ['style.sty', 'latex'],
     ['doc.cls', 'latex'], ['refs.bib', 'bibtex'], ['Info.plist', 'xml'],
@@ -80,13 +80,8 @@ describe('languageForPath', () => {
     }
   })
 
-  it('leaves delimited-spreadsheet suffixes to the Spreadsheet preview', () => {
-    // The Code preview registers before the Spreadsheet preview, so listing csv
-    // here would make Code the earlier candidate and steal the suffix from the
-    // viewer that must render it.
-    for (const extension of ['csv', 'tsv']) {
-      expect(languageForPath(`table.${extension}`), extension).toBeUndefined()
-    }
+  it('leaves TSV unlisted because the highlighter has no TSV grammar', () => {
+    expect(languageForPath('table.tsv')).toBeUndefined()
   })
 })
 
@@ -112,6 +107,7 @@ describe('readLangHintForPath', () => {
 
   it('uses the language short id for a suffix with no persisted value', () => {
     expect(readLangHintForPath('build.ps1')).toBe('ps1')
+    expect(readLangHintForPath('table.csv')).toBe('csv')
     expect(readLangHintForPath('.env')).toBe('env')
     expect(readLangHintForPath('infra.tf')).toBe('tf')
     expect(readLangHintForPath('paper.tex')).toBe('tex')
@@ -130,7 +126,7 @@ describe('readLangHintForPath', () => {
   // imported so this test fails when a canonical grammar id is put back into the
   // persisted value, which reading the implementation's own table would not catch.
   const SHORT_BY_LANGUAGE: Readonly<Record<string, string>> = {
-    typescript: 'ts', javascript: 'js', shellscript: 'sh', fish: 'fish', json: 'json',
+    typescript: 'ts', javascript: 'js', shellscript: 'sh', fish: 'fish', json: 'json', csv: 'csv',
     python: 'py', ruby: 'rb', go: 'go', rust: 'rs', java: 'java', c: 'c', cpp: 'cpp',
     csharp: 'cs', kotlin: 'kotlin', swift: 'swift', php: 'php', yaml: 'yaml',
     toml: 'toml', ini: 'ini', dotenv: 'env', log: 'log', diff: 'diff', http: 'http',

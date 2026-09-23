@@ -96,11 +96,11 @@ describe('ui-sidebar-documentpreview apply', () => {
       ['sidebar.right.tab.document', HTML_BODY_ID, 'documentHtml', HtmlBody],
       ['sidebar.right.tab.document', IMAGE_BODY_ID, 'sidebarImage', ImageBody],
       ['sidebar.right.tab.document', PDF_BODY_ID, 'sidebarPdf', LazyPdfBody],
-      ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code', 'sidebarCodePreview', CodeBody],
       ['sidebar.right.tab.document.action', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', 'sidebarOffice', OfficeFontAction],
       ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', 'sidebarOffice', OfficeBody],
       ['sidebar.right.tab.document.office.pdf', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', 'sidebarPdf', LazyPdfBody],
       ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/excel', 'sidebarExcel', LazyExcelBody],
+      ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code', 'sidebarCodePreview', CodeBody],
     ])
     expect(registered[0]?.store).toBeDefined()
     expect(typeof registered[0]?.inject).toBe('function')
@@ -114,15 +114,10 @@ describe('ui-sidebar-documentpreview apply', () => {
     expect(dictionaries.size).toBe(0)
   })
 
-  it('leaves every declared suffix with its owning preview and never lets the shared highlighter claim a later viewer\'s suffix', async () => {
+  it('keeps specialized previews first and offers Code for shared highlighting suffixes', async () => {
     const { ctx } = await boot()
     const previews = ctx.get('documentPreviews')
     if (previews === undefined) throw new Error('documentPreviews was not provided')
-    // apply() registers in production order: text, markdown, html, image, pdf,
-    // code, office, excel. The shared Code body is the generic highlighter, so
-    // where it collides with an EARLIER dedicated body the earlier body keeps the
-    // suffix; any other collision means a later dedicated viewer lost a suffix it
-    // must render. Listing csv under Code makes Spreadsheet the loser.
     const sharedHighlighter = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code'
     const owners = new Map<string, string>()
     for (const definition of previews.getSnapshot()) {
@@ -138,9 +133,8 @@ describe('ui-sidebar-documentpreview apply', () => {
         owners.set(extension, earlier ?? definition.id)
       }
     }
-    // Delimited spreadsheets stay with the Spreadsheet viewer, not the Code body.
     const excel = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/excel'
-    expect(previews.candidates('table.csv')[0]?.id).toBe(excel)
+    expect(previews.candidates('table.csv').map(candidate => candidate.id)).toEqual([excel, sharedHighlighter])
     expect(previews.candidates('table.tsv')[0]?.id).toBe(excel)
   })
 
