@@ -55,7 +55,7 @@ interface CredentialInfo {
 
 ## 内嵌 Platform 凭证
 
-PlatformSession 是 getPlatformSession 返回的仅限 Host 快照：origin 指定所配置的 Platform 签发来源，token 包含其已存账号凭证。退登账号返回 null；签发来源不匹配时失败。原生使用方负责在凭证变化时使文档失效。账号控制器 RPC、AccountView 和 AccountDetails 均不包含此快照。
+PlatformSession 是 getPlatformSession 返回的仅限 Host 快照：origin 指定所配置的 Platform 签发来源，token 包含其已存账号凭证。userId 携带该凭证背后的稳定账号 ID；资料读取失败或资料不含 ID 时为 null。使用方以 origin 和 userId 作为持久化浏览器存储的键，为 null 时退回临时存储。账号已退登或读取资料期间凭证变化时不返回快照；签发来源不匹配时失败。原生使用方负责在凭证变化时使文档失效。账号控制器 RPC、AccountView 和 AccountDetails 均不包含此快照。
 
 AccountDetails.balance 将充值钱包投影为 value、赠送钱包投影为 bonusWallets，分别保留币种和十进制余额字符串。查询失败不包含钱包数组。
 
@@ -321,7 +321,7 @@ abstract watch(signal: AbortSignal): AsyncIterable<AccountView>
 abstract resolveToken(url: string): Promise<string | undefined>
 
 /**
- * Read credentials for the configured Platform origin, bound to their issuing environment.
+ * Read credentials and profile identity for the configured Platform origin, bound to their issuing environment.
  * @returns a Host-only snapshot, or null while signed out.
  */
 abstract getPlatformSession(): Promise<PlatformSession | null>

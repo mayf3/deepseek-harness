@@ -55,7 +55,7 @@ interface CredentialInfo {
 
 ## Embedded Platform credentials
 
-PlatformSession is a Host-only snapshot from getPlatformSession: origin names the configured Platform issuer and token contains its stored account credential. Signed-out accounts return null; a mismatched issuer fails. Native consumers own document invalidation when credentials change. This snapshot is excluded from account-controller RPC, AccountView, and AccountDetails.
+PlatformSession is a Host-only snapshot from getPlatformSession: origin names the configured Platform issuer and token contains its stored account credential. userId carries the stable account ID behind that credential, or null when the profile read fails or the profile has no ID; consumers key persistent browser storage by origin and userId and fall back to temporary storage for null. Signed-out accounts and credentials changed during the profile read return no snapshot; a mismatched issuer fails. Native consumers own document invalidation when credentials change. This snapshot is excluded from account-controller RPC, AccountView, and AccountDetails.
 
 AccountDetails.balance projects recharge wallets in value and promotional wallets in bonusWallets, with independent currency and decimal balance strings. Failed queries contain no wallet arrays.
 
@@ -321,7 +321,7 @@ abstract watch(signal: AbortSignal): AsyncIterable<AccountView>
 abstract resolveToken(url: string): Promise<string | undefined>
 
 /**
- * Read credentials for the configured Platform origin, bound to their issuing environment.
+ * Read credentials and profile identity for the configured Platform origin, bound to their issuing environment.
  * @returns a Host-only snapshot, or null while signed out.
  */
 abstract getPlatformSession(): Promise<PlatformSession | null>

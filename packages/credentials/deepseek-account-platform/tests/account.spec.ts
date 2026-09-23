@@ -20,7 +20,7 @@ afterEach(async () => {
 })
 
 async function fixture(
-  contact: { email: string; mobile?: string; mobile_number?: string } = {
+  contact: { email: string; mobile?: string; mobile_number?: string; id?: string | null } = {
     email: 't***@example.invalid', mobile: '138****5678',
   },
   requestHeaders: Record<string, string> = {},
@@ -239,7 +239,7 @@ it('stores a grant before redirecting, restores account presence, and signs out 
   expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=test&locale=zh_CN&login_source=desktop`)
   expect((await f.account.getState()).status).toBe('credential-stored')
   expect(await readFile(join(f.home, 'credentials.yaml'), 'utf8')).toContain('dsh_mock_test')
-  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test',
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, userId: 'test-user', token: 'dsh_mock_test',
     requestHeaders: { 'x-client-platform': 'web' } })
   expect(await f.account.resolveToken('https://api.deepseek.com')).toBeUndefined()
   await f.account.signOut()
@@ -784,7 +784,7 @@ it('carries the configured embedded frontend selector in the private Platform se
   await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
-  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test', embeddedPageDist: 'feat/test',
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, userId: 'test-user', token: 'dsh_mock_test', embeddedPageDist: 'feat/test',
     requestHeaders: { 'x-client-platform': 'web' } })
 })
 
@@ -802,7 +802,7 @@ it.each([
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
   await readDetails(f.account)
-  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test',
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, userId: 'test-user', token: 'dsh_mock_test',
     requestHeaders: { cookie: 'test_gate=synthetic', 'x-client-platform': expected } })
   await f.account.signOut()
   await expect.poll(f.logoutCount).toBe(1)
@@ -1195,4 +1195,39 @@ it('invalidates account reads before the shared grant lookup returns to its call
     expect(await f.account.getProfile()).toBeNull()
     expect(f.detailRequests).toEqual([])
   } finally { read.mockRestore() }
+})
+
+
+it.each([null, '', 'stable-user'])('exports the stable profile ID for native storage: %s', async (id) => {
+  const f = await fixture({ email: 'test@example.invalid', id })
+  await storeAccount(f)
+  expect(await f.account.getPlatformSession()).toMatchObject({ userId: id || null, token: 'test-platform-grant' })
+})
+
+it('uses temporary native storage when the profile cannot be read', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  f.failProfile(true)
+  expect(await f.account.getPlatformSession()).toMatchObject({ userId: null, token: 'test-platform-grant' })
+})
+
+it('discards native credentials when sign-out races the profile lookup', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  f.holdDetails()
+  const pending = f.account.getPlatformSession()
+  await f.detailsStarted.promise
+  await f.account.signOut()
+  expect(await pending).toBeNull()
+  f.release.resolve(undefined)
+})
+
+
+it('reuses the current credential profile when preparing native browser storage', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  await f.account.getProfile()
+  f.failProfile(true)
+  expect(await f.account.getPlatformSession()).toMatchObject({ userId: 'test-user' })
+  expect(f.detailRequests).toHaveLength(1)
 })

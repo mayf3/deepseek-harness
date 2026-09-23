@@ -205,7 +205,10 @@ export class PlatformAccount extends DeepSeekAccount {
     const stored = await this.readCurrentGrant(lifetime)
     if (stored === null || lifetime.signal.aborted) return null
     const requestHeaders = { ...this.accountRequestHeaders, ...this.clientHeaders }
+    const details = this.lastProfile ?? await this.getProfile()
+    if (this.detailsLifetime !== lifetime) return null
     return { origin: this.origin, token: stored.token,
+      userId: details?.status === 'ready' ? details.value.id || null : null,
       ...(this.embeddedPageDist ? { embeddedPageDist: this.embeddedPageDist } : {}),
       requestHeaders }
   }

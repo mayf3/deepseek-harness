@@ -1,6 +1,6 @@
 /** Isolated Platform documents owned by the desktop account lifetime. */
 import type { EventEmitter } from 'node:events'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { WebContentsView, session, shell, type View, type WebFrameMain } from 'electron'
 import { mergePlatformCookies, type PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 
@@ -43,6 +43,7 @@ export class DesktopPlatformView {
   private owner: PlatformOwner | undefined
   private releaseOwner: (() => void) | undefined
   private generation = 0
+  private storageCleanup: Promise<{ error: unknown } | null> | undefined
 
   /**
    * @param preload - bundled sandboxed Platform preload path.
@@ -53,6 +54,7 @@ export class DesktopPlatformView {
   /** @param next - private Host credential snapshot; replacement invalidates the current document. */
   setSession(next: PlatformSession | null): void {
     if (next?.token === this.account?.token && next?.origin === this.account?.origin
+      && next?.userId === this.account?.userId
       && next?.embeddedPageDist === this.account?.embeddedPageDist
       && JSON.stringify(next?.requestHeaders) === JSON.stringify(this.account?.requestHeaders)) return
     this.close()
@@ -60,7 +62,7 @@ export class DesktopPlatformView {
   }
 
   /**
-   * Create an in-memory browser session after account preparation has completed.
+   * Open account-scoped persistent storage, or temporary storage when the account ID is unavailable.
    * @param owner - application window containing the view.
    * @param page - explicit supported Platform page.
    * @param bounds - owned renderer rectangle.
@@ -71,7 +73,14 @@ export class DesktopPlatformView {
     const account = this.account
     if (account === null) throw new Error('Platform account unavailable')
     const generation = this.generation
-    const browserSession = session.fromPartition(`dsh-platform-${randomUUID()}`)
+    if (this.storageCleanup !== undefined) {
+      const failure = await this.storageCleanup
+      if (generation !== this.generation) return
+      if (failure !== null) throw failure.error
+    }
+    const partition = account.userId === null ? `dsh-platform-${randomUUID()}`
+      : `persist:dsh-platform-${createHash('sha256').update(JSON.stringify([account.origin, account.userId])).digest('hex')}`
+    const browserSession = session.fromPartition(partition)
     browserSession.setPermissionRequestHandler((_contents, _permission, callback) => { callback(false) })
     browserSession.setPermissionCheckHandler(() => false)
     const deploymentHeaders = account.requestHeaders ?? {}
@@ -180,7 +189,7 @@ export class DesktopPlatformView {
     }
   }
 
-  /** Destroy the document before releasing its temporary browser storage. */
+  /** Destroy the document and clear authentication; account-scoped page preferences survive reopening. */
   close(): void {
     this.generation++
     const view = this.view
@@ -191,9 +200,24 @@ export class DesktopPlatformView {
     if (this.owner !== undefined && !this.owner.isDestroyed()) this.owner.contentView.removeChildView(view)
     this.owner = undefined
     const browserSession = view.webContents.session
-    if (!view.webContents.isDestroyed()) view.webContents.close()
-    void browserSession.clearStorageData().catch(() => {
-      // The non-persistent partition is unreachable after its only view is closed.
+    const destroyed = new Promise<void>((resolve) => {
+      if (view.webContents.isDestroyed()) resolve()
+      else {
+        view.webContents.once('destroyed', resolve)
+        view.webContents.close()
+      }
     })
+    browserSession.webRequest.onBeforeSendHeaders(null)
+    browserSession.webRequest.onCompleted(null)
+    browserSession.webRequest.onErrorOccurred(null)
+    browserSession.flushStorageData()
+    // Reopening waits for cleanup so an old document cannot clear the new document's cookies.
+    this.storageCleanup = destroyed.then(async () => {
+      await Promise.all([
+        browserSession.clearStorageData(browserSession.isPersistent() ? { storages: ['cookies'] } : undefined),
+        browserSession.clearAuthCache(),
+        browserSession.closeAllConnections(),
+      ])
+    }).then(() => null, (error: unknown) => ({ error }))
   }
 }

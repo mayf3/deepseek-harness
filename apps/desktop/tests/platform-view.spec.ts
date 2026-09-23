@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, expect, it, vi } from 'vitest'
+import type { AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
 import { DesktopPlatformView, platformBounds } from '../src/platform-view.ts'
 
 const state = vi.hoisted(() => ({
@@ -11,7 +12,9 @@ vi.mock('electron', () => ({
     const value = {
       partition, webRequest: { onBeforeSendHeaders: vi.fn(), onCompleted: vi.fn(), onErrorOccurred: vi.fn() },
       setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(),
-      clearStorageData: vi.fn(async () => {}),
+      clearStorageData: vi.fn(async (_options?: { storages: string[] }) => {}),
+      flushStorageData: vi.fn(), clearAuthCache: vi.fn(async () => {}), closeAllConnections: vi.fn(async () => {}),
+      isPersistent: () => partition.startsWith('persist:'),
     }
     state.sessions.push(value)
     return value
@@ -19,14 +22,17 @@ vi.mock('electron', () => ({
   WebContentsView: class {
     webContents = Object.assign(new EventEmitter(), {
       mainFrame: { url: 'https://platform.deepseek.com/usage' },
-      session: { clearStorageData: vi.fn(async () => {}) },
+      session: undefined as object | undefined,
       setWindowOpenHandler: vi.fn(),
       loadURL: vi.fn(async (_url: string) => { if (state.loadFailure !== undefined) throw state.loadFailure }),
-      isDestroyed: () => false, close: vi.fn(), send: vi.fn(),
+      isDestroyed: () => false, close: vi.fn(() => { this.webContents.emit('destroyed') }), send: vi.fn(),
     })
     setVisible = vi.fn()
     setBounds = vi.fn()
-    constructor() { state.views.push(this) }
+    constructor(options: { webPreferences: { session: object } }) {
+      this.webContents.session = options.webPreferences.session
+      state.views.push(this)
+    }
   },
 }))
 
@@ -37,7 +43,7 @@ function setup() {
     webContents: new EventEmitter(), contentView: { addChildView: vi.fn(), removeChildView }, isDestroyed: () => false,
   })
   const manager = new DesktopPlatformView('/bundled/preload.cjs', () => 'en_US')
-  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'fixture-secret' })
   return { manager, owner, removeChildView }
 }
 function view() {
@@ -71,7 +77,7 @@ it('destroys old documents on sign-out or credential replacement', async () => {
   const { manager, owner } = setup()
   await manager.open(owner, 'usage', bounds)
   const first = view().webContents
-  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'replacement' })
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'replacement' })
   expect(first.close).toHaveBeenCalledOnce()
   expect(() => manager.bootstrap({ sender: first, senderFrame: first.mainFrame })).toThrow()
   await manager.open(owner, 'top-up', bounds)
@@ -149,7 +155,7 @@ it('does not reveal a document closed before its load settles', async () => {
 
 it('injects deployment headers only at the Platform origin and excludes them from bootstrap', async () => {
   const { manager, owner } = setup()
-  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret',
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'fixture-secret',
     requestHeaders: { cookie: 'route=new; gate=private', 'x-private-gate': 'private', 'x-client-platform': 'desktop-mac' } })
   await manager.open(owner, 'usage', bounds)
   const browserSession = state.sessions.at(-1) as { webRequest: { onBeforeSendHeaders: ReturnType<typeof vi.fn> } }
@@ -178,14 +184,14 @@ it('injects deployment headers only at the Platform origin and excludes them fro
 
 it.each(['usage', 'top-up'] as const)('selects the configured frontend deployment for %s', async (page) => {
   const { manager, owner } = setup()
-  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret', embeddedPageDist: 'feat/test&other=value' })
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'fixture-secret', embeddedPageDist: 'feat/test&other=value' })
   await manager.open(owner, page, bounds)
   const url = new URL(view().webContents.loadURL.mock.calls[0]![0] as string)
   expect(url.origin).toBe('https://platform.deepseek.com')
   expect(url.pathname).toBe(page === 'usage' ? '/usage' : '/top_up')
   expect([...url.searchParams]).toEqual([['dist', 'feat/test&other=value']])
   const previous = view().webContents
-  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret', embeddedPageDist: 'another' })
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'fixture-secret', embeddedPageDist: 'another' })
   expect(previous.close).toHaveBeenCalledOnce()
   manager.close()
 })
@@ -243,7 +249,7 @@ it('bootstraps the current language and updates an open view without reloading',
   const { owner } = setup()
   let locale: 'en_US' | 'zh_CN' = 'zh_CN'
   const manager = new DesktopPlatformView('/bundled/preload.cjs', () => locale)
-  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'fixture-secret' })
   manager.notifyLocaleChanged()
   await manager.open(owner, 'usage', bounds)
   const sender = view().webContents
@@ -260,4 +266,105 @@ it('bootstraps the current language and updates an open view without reloading',
   const reopened = view().webContents
   expect(manager.bootstrap({ sender: reopened, senderFrame: reopened.mainFrame }).locale).toBe('en_US')
   manager.close()
+})
+
+function browserSession() {
+  return state.sessions.at(-1) as {
+    partition: string
+    clearStorageData: ReturnType<typeof vi.fn<(options?: { storages: string[] }) => Promise<void>>>
+    clearAuthCache: ReturnType<typeof vi.fn<() => Promise<void>>>
+    closeAllConnections: ReturnType<typeof vi.fn<() => Promise<void>>>
+    flushStorageData: ReturnType<typeof vi.fn>
+    webRequest: {
+      onBeforeSendHeaders: ReturnType<typeof vi.fn>
+      onCompleted: ReturnType<typeof vi.fn>
+      onErrorOccurred: ReturnType<typeof vi.fn>
+    }
+  }
+}
+
+it('reuses persistent storage across closes, token replacement, and manager recreation', async () => {
+  const { manager, owner } = setup()
+  await manager.open(owner, 'usage', bounds)
+  const first = browserSession()
+  expect(first.partition).toMatch(/^persist:dsh-platform-[a-f0-9]{64}$/)
+  expect(first.partition).not.toContain('fixture-user')
+  expect(first.partition).not.toContain('fixture-secret')
+  manager.close()
+  await manager.open(owner, 'top-up', bounds)
+  expect(browserSession().partition).toBe(first.partition)
+  expect(first.flushStorageData).toHaveBeenCalledOnce()
+  expect(first.clearStorageData).toHaveBeenCalledWith({ storages: ['cookies'] })
+  expect(first.clearAuthCache).toHaveBeenCalledOnce()
+  expect(first.closeAllConnections).toHaveBeenCalledOnce()
+  expect(first.webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(null)
+  expect(first.webRequest.onCompleted).toHaveBeenLastCalledWith(null)
+  expect(first.webRequest.onErrorOccurred).toHaveBeenLastCalledWith(null)
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'rotated' })
+  await manager.open(owner, 'usage', bounds)
+  expect(browserSession().partition).toBe(first.partition)
+  manager.close()
+  const restarted = setup().manager
+  await restarted.open(owner, 'usage', bounds)
+  expect(browserSession().partition).toBe(first.partition)
+  restarted.close()
+})
+
+it('isolates accounts and issuers and restores the original account partition after sign-out', async () => {
+  const { manager, owner } = setup()
+  await manager.open(owner, 'usage', bounds)
+  const first = browserSession().partition
+  // The ID must invalidate even an otherwise identical credential snapshot.
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'other-user' as AccountUserId, token: 'fixture-secret' })
+  expect(view().webContents.close).toHaveBeenCalledOnce()
+  await manager.open(owner, 'usage', bounds)
+  const second = browserSession().partition
+  expect(second).not.toBe(first)
+  manager.setSession({ origin: 'https://another.example', userId: 'fixture-user' as AccountUserId, token: 'fixture-secret' })
+  await manager.open(owner, 'usage', bounds)
+  expect(browserSession().partition).not.toBe(first)
+  expect(browserSession().partition).not.toBe(second)
+  manager.setSession(null)
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'signed-in-again' })
+  await manager.open(owner, 'usage', bounds)
+  expect(browserSession().partition).toBe(first)
+  manager.close()
+})
+
+it('uses disposable storage when no stable account ID is available', async () => {
+  const { manager, owner } = setup()
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: null, token: 'fixture-secret' })
+  await manager.open(owner, 'usage', bounds)
+  const first = browserSession()
+  expect(first.partition).not.toMatch(/^persist:/)
+  manager.close()
+  await manager.open(owner, 'usage', bounds)
+  expect(browserSession().partition).not.toBe(first.partition)
+  expect(first.clearStorageData).toHaveBeenCalledWith(undefined)
+  manager.close()
+})
+
+it('waits for authentication cleanup before reopening and ignores superseded opens', async () => {
+  const { manager, owner } = setup()
+  await manager.open(owner, 'usage', bounds)
+  const cleared = Promise.withResolvers<undefined>()
+  browserSession().clearStorageData.mockReturnValueOnce(cleared.promise)
+  manager.close()
+  const obsolete = manager.open(owner, 'usage', bounds)
+  const current = manager.open(owner, 'top-up', bounds)
+  expect(state.views).toHaveLength(1)
+  cleared.resolve(undefined)
+  await Promise.all([obsolete, current])
+  expect(state.views).toHaveLength(2)
+  expect(view().webContents.loadURL).toHaveBeenCalledWith('https://platform.deepseek.com/top_up')
+  manager.close()
+})
+
+it('does not open a view when authentication cleanup fails', async () => {
+  const { manager, owner } = setup()
+  await manager.open(owner, 'usage', bounds)
+  browserSession().clearAuthCache.mockRejectedValueOnce(new Error('authentication cleanup failed'))
+  manager.close()
+  await expect(manager.open(owner, 'usage', bounds)).rejects.toThrow('authentication cleanup failed')
+  expect(state.views).toHaveLength(1)
 })

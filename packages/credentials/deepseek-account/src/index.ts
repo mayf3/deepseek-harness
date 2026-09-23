@@ -1,6 +1,6 @@
 /** Account Service Definition shared by platform, API, and model consumers. */
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { AccountDetails, AccountView, SignInAttemptId } from './types.ts'
+import type { AccountDetails, AccountUserId, AccountView, SignInAttemptId } from './types.ts'
 export type { AccountDetails, AccountProfile, AccountWallet, AccountLinks, AccountView, SignInAttemptId, SignInAttemptView, SignInErrorCode } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -13,6 +13,8 @@ declare module '@deepseek-ai/cordis' {
 export interface PlatformSession {
   readonly origin: string
   readonly token: string
+  /** Stable issuer account ID; null requires disposable browser storage. */
+  readonly userId: AccountUserId | null
   /** Optional dist query value selecting the embedded frontend deployment. */
   readonly embeddedPageDist?: string
   /** Host-only request headers: deployment headers and the provider client identity; never exposed through renderer bootstrap. */
@@ -70,7 +72,7 @@ export abstract class DeepSeekAccount extends Service {
    */
   abstract resolveToken(url: string): Promise<string | undefined>
   /**
-   * Read credentials for the configured Platform origin, bound to their issuing environment.
+   * Read credentials and profile identity for the configured Platform origin, bound to their issuing environment.
    * @returns a Host-only snapshot, or null while signed out.
    */
   abstract getPlatformSession(): Promise<PlatformSession | null>

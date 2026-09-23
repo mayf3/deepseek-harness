@@ -7,7 +7,7 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
-getPlatformSession returns a Host-only origin/token snapshot for native Platform embedding, or null when signed out. It is absent from account-controller RPC and Client state. Consumers destroy documents holding a snapshot when the account changes.
+getPlatformSession returns a Host-only origin/token snapshot for native Platform embedding, or null when signed out. The snapshot carries userId, the stable account ID for the stored grant, or null while the profile is unavailable or holds no ID; consumers key persistent browser preference storage by origin and userId and use temporary storage while userId is null. It is absent from account-controller RPC and Client state. Consumers destroy documents holding a snapshot when the account changes.
 
 `desktopClientHeaders` maps the native `darwin` and `win32` platforms to the shared Desktop account and update-policy request header; `null` adds no header.
 
@@ -60,4 +60,4 @@ No model request prefix changes.
 
 The [desktop login decision](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.md) records cancellation and storage ownership.
 
-PlatformSession may carry Host-only requestHeaders from Host to Electron main: deployment headers plus the provider's x-client-platform. Consumers must exclude those headers from renderer bootstrap and restrict them to the configured origin. mergePlatformCookies preserves unrelated cookie pairs while replacing matching names.
+PlatformSession may carry Host-only requestHeaders from Host to Electron main: deployment headers plus the provider's x-client-platform. Consumers must exclude those headers from renderer bootstrap and restrict them to the configured origin; userId is Host-only on the same terms and never enters renderer bootstrap. mergePlatformCookies preserves unrelated cookie pairs while replacing matching names.
