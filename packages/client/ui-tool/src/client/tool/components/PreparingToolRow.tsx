@@ -8,15 +8,16 @@ import { ToolRow, type ToolRowProps } from './ToolRow.tsx'
 type PreparingToolRowProps = Pick<ToolCallViewProps, 'toolName' | 'useDisclosure'> & {
   readonly icon: ReactNode
   readonly title: string
+  readonly summary?: string
   readonly t: ToolRowProps['t']
 }
 
 /**
- * Render an argument-free, non-expandable tool prefix.
+ * Render a non-expandable tool prefix with an optional preparation summary.
  * @param props - tool prefix and locale.
  * @returns the preparation row.
  */
-export function PreparingToolRow({ toolName, useDisclosure, icon, title, t }: PreparingToolRowProps) {
+export function PreparingToolRow({ toolName, useDisclosure, icon, title, summary = '', t }: PreparingToolRowProps) {
   return <ToolRow useDisclosure={useDisclosure} t={t} variant={classifyTool(toolName)} toolName={toolName}
-    icon={icon} title={title} summary="" state="preparing" />
+    icon={icon} title={title} summary={summary} state="preparing" />
 }
