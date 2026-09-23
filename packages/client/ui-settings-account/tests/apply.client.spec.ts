@@ -215,6 +215,25 @@ it('keeps the notice and its acknowledgement retry across repeated signed-in fra
   await vi.waitFor(() => { expect(c.mock.remote.account.ackBonusNotified.mock.calls.length).toBeGreaterThan(1) }, { timeout: 30_000 })
 }, 60_000)
 
+it('keeps the notice absent when the bonus read is refused, then shows the next read', async ({ start }) => {
+  vi.stubGlobal('dshDesktop', {})
+  const c = await start()
+  const actions = operations(c)
+  const orderId = '4c1b0000-0000-4000-8000-000000000000'
+  c.mock.remote.account.getUnnotifiedBonuses.mockResolvedValueOnce({
+    ok: false, error: new RemoteError('gateway/internal', 'offline', {}),
+  })
+  c.mock.streams.push('account/watch', stored)
+  await vi.waitFor(() => { expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenCalledOnce() })
+  expect(actions.hooks.account.getSnapshot().notice).toBeUndefined()
+  expect(c.mock.remote.account.ackBonusNotified).not.toHaveBeenCalled()
+  c.mock.remote.account.getUnnotifiedBonuses.mockResolvedValue(ok(bonus(orderId)))
+  await actions.refreshAccount()
+  await vi.waitFor(() => {
+    expect(actions.hooks.account.getSnapshot().notice).toMatchObject({ orderId, message: 'Awarded 5.00' })
+  })
+}, 60_000)
+
 it('drops the previous account notice and stops reading after sign-out', async ({ start }) => {
   vi.stubGlobal('dshDesktop', {})
   const c = await start()

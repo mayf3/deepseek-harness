@@ -1,6 +1,6 @@
 /* The sidebar's default width (ui-layout SIDEBAR_DEFAULT, 280px) less 10px per
    side. The width stays fixed when the sidebar is dragged wider or narrower. */
-.card { position: fixed; z-index: 40; box-sizing: border-box; width: 260px; max-width: calc(100vw - 16px); padding: 20px; border: 1px solid var(--dsw-alias-border-l2-darkmode-thin); border-radius: 16px; background: var(--dsw-specific-input-major); box-shadow: 0 2px 4px #0000000d; color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 22px; }
+.card { position: fixed; z-index: 40; box-sizing: border-box; width: 260px; max-width: calc(100vw - 16px); padding: 20px; border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin); border-radius: 16px; background: var(--dsw-specific-input-major); box-shadow: 0 2px 4px #0000000d; color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 22px; }
 .copy { display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .copy p { margin: 0; white-space: pre-wrap; }
 .title { display: flex; align-items: flex-start; gap: 2px; line-height: 20px; font-weight: 500; }

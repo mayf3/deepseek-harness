@@ -262,6 +262,33 @@ it.each([
   expect(expired).toHaveBeenCalledOnce()
 })
 
+it.each([
+  ['read', (f: Awaited<ReturnType<typeof fixture>>) => f.account.getUnnotifiedBonuses(clientMetadata('en')), null],
+  ['acknowledgement', (f: Awaited<ReturnType<typeof fixture>>) =>
+    f.account.ackBonusNotified(USER as AccountUserId, ORDER as AccountBonusOrderId, clientMetadata('en')), false],
+])('ignores a bonus %s rejection whose response cleanup overlaps a credential replacement', async (_name, run, outcome) => {
+  const f = await fixture()
+  await f.grant('test-account-token')
+  await f.account.getProfile(clientMetadata())
+  const response = new Response('', { status: 401 })
+  const cancel = response.body!.cancel.bind(response.body)
+  // Credential changes can arrive while the response reader releases a rejected response body.
+  const cleanup = vi.spyOn(response.body!, 'cancel').mockImplementation(async () => {
+    await f.grant('replacement-token')
+    await cancel()
+  })
+  const fetchResponse = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response)
+  const expired = vi.fn()
+  f.ctx.on('deepseek-account/session-expired', expired)
+  try {
+    expect(await run(f)).toBe(outcome)
+    expect(cleanup).toHaveBeenCalledOnce()
+    expect(expired).not.toHaveBeenCalled()
+    expect(await f.ctx.credentials.readRecord(f.key)).toMatchObject({ payload: { token: 'replacement-token' } })
+    expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
+  } finally { cleanup.mockRestore(); fetchResponse.mockRestore() }
+})
+
 it('retains the grant when an acknowledgement returns HTTP 500', async () => {
   const f = await fixture()
   await f.grant('test-account-token')

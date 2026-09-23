@@ -29,7 +29,7 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', (callback: () => void) => { frames.push(callback); return frames.length })
   vi.stubGlobal('cancelAnimationFrame', () => {})
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); disconnect.mockClear() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks(); disconnect.mockClear() })
 
 function mount(id: string, onShown = vi.fn(), onDismiss = vi.fn()) {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect = disconnect })
@@ -113,5 +113,28 @@ it('does not render an award that expired before the card mounted', async () => 
   mount('order-1', onShown)
   expect(screen.queryByRole('status')).toBeNull()
   await presentFrames()
+  expect(onShown).not.toHaveBeenCalled()
+})
+
+it('reports display from the following task when the host has no frame clock', () => {
+  vi.useFakeTimers()
+  vi.stubGlobal('requestAnimationFrame', undefined)
+  const { onShown } = mount('order-1')
+  expect(onShown).not.toHaveBeenCalled()
+  act(() => { vi.runAllTimers() })
+  expect(onShown).toHaveBeenCalledExactlyOnceWith('order-1')
+})
+
+it.each([true, false])('cancels the presentation task when the card unmounts first (frame clock: %s)', (frameClock) => {
+  vi.useFakeTimers()
+  if (frameClock) {
+    vi.stubGlobal('requestAnimationFrame', (callback: () => void) => { frames.push(callback); return frames.length })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+  } else vi.stubGlobal('requestAnimationFrame', undefined)
+  const onShown = vi.fn()
+  const { view } = mount('order-1', onShown)
+  act(() => { for (const frame of frames.splice(0)) frame() })
+  view.unmount()
+  act(() => { vi.runAllTimers() })
   expect(onShown).not.toHaveBeenCalled()
 })

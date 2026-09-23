@@ -1417,8 +1417,11 @@ it('retains the grant when local expiry removal fails and permits a later retry'
   } finally { remove.mockRestore() }
 })
 
-it.each(['invalidated', 'missing', 'other-kind', 'token', 'issuer'] as const)(
-  'rechecks the stored grant before expiry removal: %s', async (change) => {
+it.each([
+  ['balance', 'invalidated'], ['balance', 'missing'], ['balance', 'other-kind'],
+  ['balance', 'token'], ['balance', 'issuer'], ['profile', 'missing'],
+] as const)(
+  'rechecks the stored grant before %s expiry removal: %s', async (field, change) => {
     const f = await fixture()
     await storeAccount(f)
     f.detailStatus(401)
@@ -1438,7 +1441,7 @@ it.each(['invalidated', 'missing', 'other-kind', 'token', 'issuer'] as const)(
     })
     const remove = vi.spyOn(f.ctx.credentials, 'deleteRecord')
     try {
-      expect(await f.account.getBalance(clientMetadata())).toBeNull()
+      expect(await (field === 'profile' ? f.account.getProfile(clientMetadata()) : f.account.getBalance(clientMetadata()))).toBeNull()
       expect(remove).not.toHaveBeenCalled()
       expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
     } finally { read.mockRestore(); remove.mockRestore() }
