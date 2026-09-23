@@ -9,7 +9,7 @@ vi.mock('electron', () => ({ BrowserWindow: function (options: object) { return 
 afterEach(() => { vi.restoreAllMocks() })
 
 function visibilityFixture(visible = true) {
-  const parent = Object.assign(new EventEmitter(), {
+  const parent: ParentFixture & { visible: boolean; isVisible: () => boolean } = Object.assign(new EventEmitter(), {
     visible,
     getContentBounds: () => ({ x: 0, y: 0, width: 1000, height: 700 }),
     webContents: Object.assign(new EventEmitter(), { insertCSS: vi.fn(async () => 'blur'), removeInsertedCSS: vi.fn(async () => {}) }),
