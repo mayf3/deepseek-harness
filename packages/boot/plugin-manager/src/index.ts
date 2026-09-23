@@ -413,7 +413,8 @@ export class PluginManager extends TypertRemoteService {
 
   /**
    * Install a package using the same pnpm implementation as dsh plugin. GitHub
-   * repositories must pass a Git connection check within githubConnectionTimeoutMs before pnpm starts. A run
+   * repositories get a connection check bounded by githubConnectionTimeoutMs before pnpm starts;
+   * only network failures or timeouts stop installation, while pnpm owns authentication and transport fallback. A run
    * that fails, is cancelled, or adds a package without a bundle patch restores
    * `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.
    * @param spec One package spec, including local paths relative to the invocation directory.
@@ -425,7 +426,7 @@ export class PluginManager extends TypertRemoteService {
   installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult> {
     const requestId = options?.requestId
     const control: InstallControl = { abort: new AbortController(), phase: 'installing', result: Promise.resolve(null) }
-    const stopped = (): boolean => control.abort.signal.aborted
+    const stopped = (): boolean => control.abort.signal.aborted || this.abort.signal.aborted
     if (requestId !== undefined) this.installs.set(requestId, control)
     const announce = (phase: PluginInstallProgress['phase'], attempt?: PluginInstallProgress['attempt']): void => {
       if (requestId !== undefined) this.ownerContext.emit('plugin-manager/install-state', { requestId, phase, ...attempt === undefined ? {} : { attempt } })
@@ -452,9 +453,9 @@ export class PluginManager extends TypertRemoteService {
         try { connectionFailure = await connection }
         finally { this.packageOperations.delete(connection) }
         if (stopped()) throw new InstallCancelledError()
-        if (connectionFailure !== undefined) {
+        if (connectionFailure?.kind === 'network' || connectionFailure?.kind === 'timeout') {
           result.packageResult = connectionFailure
-          if (connectionFailure.kind === 'network' || connectionFailure.kind === 'timeout') result.failedAt = 'spec-host'
+          result.failedAt = 'spec-host'
           throw new Error(connectionFailure.output)
         }
         // The last run is the result's; the registries asked stay listed whatever the outcome.

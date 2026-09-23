@@ -19,12 +19,12 @@ it.each(['network', 'timeout'] as const)('offers a mirror after a GitHub %s and 
   const proxy = createServer((socket) => {
     sockets.add(socket)
     socket.on('error', () => {})
-    socket.once('close', () => sockets.delete(socket))
+    socket.once('close', () => { sockets.delete(socket) })
     socket.once('data', () => { connections++; if (failure === 'network') socket.destroy() })
   })
   onTestFinished(async () => {
     for (const socket of sockets) socket.destroy()
-    await new Promise<void>((resolve, reject) => proxy.close(error => error ? reject(error) : resolve()))
+    await new Promise<void>((resolve, reject) => { proxy.close((error) => { if (error) reject(error); else resolve() }) })
   })
   proxy.listen(0, '127.0.0.1')
   await once(proxy, 'listening')

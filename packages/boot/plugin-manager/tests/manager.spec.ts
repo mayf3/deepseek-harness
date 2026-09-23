@@ -1,6 +1,9 @@
 /** Persistent manager behavior through a real profile Include and Loader. */
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
+import { once } from 'node:events'
+import { createServer } from 'node:http'
+import type { Socket } from 'node:net'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -80,7 +83,7 @@ it.each(['network', 'timeout'] as const)('stops a GitHub %s before pnpm and attr
   const failure = { exitCode: 1, output: 'GitHub check failed', truncated: false, logPath: join(dir, 'git.log'), kind }
   connection.mockResolvedValue(failure)
   const pnpm = vi.spyOn(operations, 'runProfilePnpm')
-  onTestFinished(() => pnpm.mockRestore())
+  onTestFinished(() => { pnpm.mockRestore() })
   expect(await manager.installBundle('https://github.com/acme/dsh-plugin.git')).toMatchObject({
     application: 'failed', changed: false, stage: 'install', failedAt: 'spec-host', packageResult: failure,
   })
@@ -89,12 +92,17 @@ it.each(['network', 'timeout'] as const)('stops a GitHub %s before pnpm and attr
   expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(before)
 })
 
-it('keeps non-network GitHub errors out of mirror recovery and forwards profile Git environment and deadline', async () => {
+it('leaves non-network GitHub errors to pnpm and forwards profile Git environment and deadline', async () => {
   const env = { GIT_CONFIG_GLOBAL: '/application/git.config' }
   const { manager, connection } = await fixture('live', false, undefined, { githubConnectionTimeoutMs: 8000 }, { command: 'pnpm', args: [], env })
   connection.mockResolvedValue({ exitCode: 128, output: 'fatal: Authentication failed', truncated: false, logPath: 'git.log', kind: 'unknown' })
+  const failure = { exitCode: 1, output: 'pnpm owns authentication', truncated: false, logPath: 'pnpm.log', kind: 'unknown' as const }
+  const pnpm = vi.spyOn(operations, 'runProfilePnpm').mockResolvedValue(failure)
+  onTestFinished(() => { pnpm.mockRestore() })
   const result = await manager.installBundle('github:acme/private-plugin')
   expect(result.application).toBe('failed')
+  expect(result.packageResult).toEqual(failure)
+  expect(pnpm).toHaveBeenCalledOnce()
   expect(result.failedAt).toBeUndefined()
   expect(connection).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ timeoutMs: 8000, env }))
 })
@@ -104,11 +112,11 @@ it('cancels an active GitHub check before starting pnpm', async () => {
   const entered = Promise.withResolvers<undefined>()
   connection.mockImplementation(async (_spec, _dir, options) => {
     entered.resolve(undefined)
-    await new Promise<void>(resolve => options.signal.addEventListener('abort', () => resolve(), { once: true }))
+    await new Promise<void>((resolve) => { options.signal.addEventListener('abort', () => { resolve() }, { once: true }) })
     return { exitCode: 1, output: 'cancelled', truncated: false, logPath: 'git.log', kind: 'unknown' }
   })
   const pnpm = vi.spyOn(operations, 'runProfilePnpm')
-  onTestFinished(() => pnpm.mockRestore())
+  onTestFinished(() => { pnpm.mockRestore() })
   const requestId = '824103ec-bc45-489d-bb85-5b4fe0aefc78' as PluginInstallRequestId
   const installing = manager.installBundle('github:acme/dsh-plugin', { requestId })
   await entered.promise
@@ -144,46 +152,76 @@ it('disposal waits for an active GitHub check to stop', async () => {
   const released = Promise.withResolvers<undefined>()
   connection.mockImplementation(async (_spec, _dir, options) => {
     entered.resolve(undefined)
-    await new Promise<void>(resolve => options.signal.addEventListener('abort', () => resolve(), { once: true }))
+    await new Promise<void>((resolve) => { options.signal.addEventListener('abort', () => { resolve() }, { once: true }) })
     released.resolve(undefined)
     return { exitCode: 1, output: 'cancelled', truncated: false, logPath: 'git.log', kind: 'unknown' }
   })
+  const pnpm = vi.spyOn(operations, 'runProfilePnpm')
+  onTestFinished(() => { pnpm.mockRestore() })
   const installing = manager.installBundle('github:acme/addon')
   await entered.promise
   await ctx.fiber.dispose()
   await released.promise
-  expect(await installing).toMatchObject({ application: 'failed', changed: false })
+  expect(await installing).toMatchObject({ application: 'cancelled', changed: false })
+  expect(pnpm).not.toHaveBeenCalled()
 })
 
-it('installs through real Git and pnpm after a successful GitHub connection check', async () => {
-  const pnpm = fileURLToPath(new URL('../../../../apps/desktop/node_modules/pnpm/bin/pnpm.mjs', import.meta.url))
-  const env = { GIT_CONFIG_GLOBAL: '', GIT_CONFIG_NOSYSTEM: '1' }
-  const { manager, dir, connection } = await fixture('startup', false, undefined, {}, {
-    command: process.execPath, args: ['--expose-internals', pnpm], env,
-  })
-  connection.mockRestore()
-  const repository = join(dir, 'repository')
-  mkdirSync(repository)
-  env.GIT_CONFIG_GLOBAL = join(dir, 'git.config')
-  writeFileSync(env.GIT_CONFIG_GLOBAL, '')
-  const git = (args: string[]) => execa('git', args, { cwd: repository, env })
-  await git(['init', '--initial-branch=main'])
-  const name = '@test/github-connected'
-  writeFileSync(join(repository, 'package.json'), JSON.stringify({ name, version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
-  writeFileSync(join(repository, 'cordis.patch.yml'), '[]\n')
-  await git(['add', '.'])
-  await git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', 'fixture bundle'])
-  writeFileSync(env.GIT_CONFIG_GLOBAL, `[url "${pathToFileURL(repository).href}"]\n insteadOf = ssh://git@github.com/acme/connected.git\n insteadOf = git@github.com:acme/connected.git\n`)
-  // SSH keeps pnpm on Git transport; Git's URL rewrite makes this success path entirely local.
-  const manifest = readProfileManifest('test', dir)
-  delete manifest.dependencies
-  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
-  writeFileSync(join(dir, '.npmrc'), `store-dir=${join(dir, 'store').replaceAll('\\', '/')}\n`)
-  const result = await manager.installBundle('git+ssh://git@github.com/acme/connected.git', { enabled: false })
-  expect(result.error).toBeUndefined()
-  expect(result).toMatchObject({ changed: true, bundle: name, packageResult: { exitCode: 0 } })
-  expect(readProfileManifest('test', dir).dependencies).toHaveProperty(name)
-})
+it.each(['github:acme/connected', 'https://github.com/acme/connected.git', 'git+ssh://git@github.com/acme/connected.git'])(
+  'installs %s through real Git and pnpm with private repository SSH fallback', async (spec) => {
+    const pnpm = fileURLToPath(new URL('../../../../apps/desktop/node_modules/pnpm/bin/pnpm.mjs', import.meta.url))
+    const env = { GIT_CONFIG_GLOBAL: '', GIT_CONFIG_NOSYSTEM: '1' }
+    const { manager, dir, connection } = await fixture('startup', false, undefined, {}, {
+      command: process.execPath, args: ['--expose-internals', pnpm], env,
+    })
+    connection.mockRestore()
+    const repository = join(dir, 'repository')
+    mkdirSync(repository)
+    env.GIT_CONFIG_GLOBAL = join(dir, 'git.config')
+    writeFileSync(env.GIT_CONFIG_GLOBAL, '')
+    const git = (args: string[]) => execa('git', args, { cwd: repository, env })
+    await git(['init', '--initial-branch=main'])
+    const name = '@test/github-connected'
+    writeFileSync(join(repository, 'package.json'), JSON.stringify({ name, version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+    writeFileSync(join(repository, 'cordis.patch.yml'), '[]\n')
+    await git(['add', '.'])
+    await git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', 'fixture bundle'])
+    const requests: string[] = []
+    const sockets = new Set<Socket>()
+    const proxy = createServer((_request, response) => {
+      response.writeHead(401, { 'WWW-Authenticate': 'Basic realm="fixture"' })
+      response.end()
+    })
+    proxy.on('connection', (socket) => {
+      sockets.add(socket)
+      socket.once('close', () => { sockets.delete(socket) })
+    })
+    proxy.on('connect', (request, socket) => {
+      requests.push(request.url ?? '')
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
+    })
+    onTestFinished(async () => {
+      for (const socket of sockets) socket.destroy()
+      await new Promise<void>((resolve, reject) => { proxy.close((error) => { if (error) reject(error); else resolve() }) })
+    })
+    proxy.listen(0, '127.0.0.1')
+    await once(proxy, 'listening')
+    const address = proxy.address()
+    if (address === null || typeof address === 'string') throw new Error('proxy did not bind a TCP port')
+    const proxyUrl = `http://127.0.0.1:${String(address.port)}`
+    writeFileSync(env.GIT_CONFIG_GLOBAL, `[url "${pathToFileURL(repository).href}"]\n insteadOf = ssh://git@github.com/acme/connected.git\n insteadOf = git@github.com:acme/connected.git\n[url "${proxyUrl}/"]\n insteadOf = https://github.com/\n[http]\n proxy =\n`)
+    // pnpm probes HTTPS with Node before falling back to SSH, even for an SSH spec.
+    // Route that HTTP request to our proxy too; Git's URL rewrite alone cannot isolate it.
+    const manifest = readProfileManifest('test', dir)
+    delete manifest.dependencies
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+    writeFileSync(join(dir, '.npmrc'), `store-dir=${join(dir, 'store').replaceAll('\\', '/')}\nhttps-proxy=${proxyUrl}\nproxy=${proxyUrl}\nnoproxy=\n`)
+    const result = await manager.installBundle(spec, { enabled: false })
+    expect(result.error).toBeUndefined()
+    expect(result).toMatchObject({ changed: true, bundle: name, packageResult: { exitCode: 0 } })
+    expect(readProfileManifest('test', dir).dependencies).toHaveProperty(name)
+    expect(requests).toContain('github.com:443')
+  },
+)
 
 it.each(['missing package', 'invalid manifest', 'not a bundle', 'missing patch', 'invalid patch'])(
   'boots with %s, lists its error, and permits deselection without enabling the broken bundle', async (failure) => {

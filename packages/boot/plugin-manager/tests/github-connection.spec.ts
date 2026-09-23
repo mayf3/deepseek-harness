@@ -3,6 +3,7 @@ import { once } from 'node:events'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { appendFileSync } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
+import { createServer as createHttpServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -24,15 +25,16 @@ async function fixture() {
   onTestFinished(async () => { controller.abort(); await Promise.allSettled(tasks) })
   const config = join(dir, 'git.config')
   await writeFile(config, '')
+  const env = { GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: '1' }
   const check = (spec: string, timeoutMs = 3000, outputBytes = 4096) => {
     const task = checkGithubConnection(parseInstallSpec(spec), dir, {
       timeoutMs, outputBytes, signal: controller.signal,
-      env: { GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: '1' },
+      env,
     })
     tasks.push(task)
     return task
   }
-  return { dir, config, controller, check }
+  return { dir, config, controller, check, env }
 }
 
 async function proxy(config: string, fail: boolean) {
@@ -47,7 +49,7 @@ async function proxy(config: string, fail: boolean) {
   })
   onTestFinished(async () => {
     for (const socket of sockets) socket.destroy()
-    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
   })
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
@@ -118,7 +120,7 @@ it('cancels a connected Git probe and closes its transport before the deadline',
 it.each([undefined, 'Git could not start'])('retains a diagnostic when Git writes no stderr (%s)', async (shortMessage) => {
   const { check } = await fixture()
   const run = vi.spyOn(subprocess, 'execa').mockResolvedValue({ failed: true, shortMessage } as Awaited<ReturnType<typeof subprocess.execa>>)
-  onTestFinished(() => run.mockRestore())
+  onTestFinished(() => { run.mockRestore() })
   const result = await check('github:acme/plugin')
   expect(result).toMatchObject({ exitCode: 1, kind: 'unknown', output: shortMessage ?? 'GitHub connection check failed' })
   expect(await readFile(result!.logPath, 'utf8')).toBe(result!.output)
@@ -131,8 +133,51 @@ it('bounds returned diagnostics while retaining Git stderr in the operation log'
     appendFileSync(options.stderr.file, '0123456789')
     return Promise.resolve({ failed: true, exitCode: 128 }) as ReturnType<typeof subprocess.execa>
   })
-  onTestFinished(() => run.mockRestore())
+  onTestFinished(() => { run.mockRestore() })
   const result = await check('github:acme/plugin', 3000, 4)
   expect(result).toMatchObject({ output: '6789', truncated: true })
   expect(await readFile(result!.logPath, 'utf8')).toBe('0123456789')
+})
+
+it('reports a missing Git executable without classifying it as a network failure', async () => {
+  const { check } = await fixture()
+  const run = vi.spyOn(subprocess, 'execa').mockResolvedValue({ failed: true, code: 'ENOENT', shortMessage: 'spawn git ENOENT' } as Awaited<ReturnType<typeof subprocess.execa>>)
+  onTestFinished(() => { run.mockRestore() })
+  expect(await check('github:acme/plugin')).toMatchObject({ exitCode: 127, kind: 'unknown', output: 'spawn git ENOENT' })
+})
+
+it('does not invoke configured credential helpers or askpass for an authentication challenge', async () => {
+  const { check, dir, config, env } = await fixture()
+  const server = createHttpServer((_request, response) => {
+    response.writeHead(401, { 'WWW-Authenticate': 'Basic realm="fixture"' })
+    response.end()
+  })
+  onTestFinished(async () => {
+    server.closeAllConnections()
+    await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('server did not bind a TCP port')
+  const marker = join(dir, 'prompted')
+  const helper = join(dir, 'credential-helper.cjs')
+  await writeFile(helper, `require('node:fs').appendFileSync(${JSON.stringify(marker)}, process.argv.slice(2).join(' ') + '\\n')`)
+  const helperCommand = `"${process.execPath.replaceAll('\\', '/')}" "${helper.replaceAll('\\', '/')}"`
+  const askpass = join(dir, 'askpass.sh')
+  await writeFile(askpass, `#!/bin/sh\nexec ${helperCommand} "$@"\n`, { mode: 0o700 })
+  await writeFile(config, `[url "http://127.0.0.1:${String(address.port)}/"]\n insteadOf = https://github.com/\n[http]\n proxy =\n`)
+  await subprocess.execa('git', ['config', '--file', config, 'credential.helper', `!${helperCommand}`])
+  await subprocess.execa('git', ['config', '--file', config, 'core.askPass', askpass])
+  Object.assign(env, { GIT_ASKPASS: askpass, SSH_ASKPASS: askpass })
+  // The same Git configuration really prompts without the probe's noninteractive overrides.
+  await subprocess.execa('git', ['ls-remote', '--', 'https://github.com/acme/private.git', 'HEAD'], {
+    cwd: dir, env: { ...env, GIT_TERMINAL_PROMPT: '0' }, reject: false,
+  })
+  const prompted = await readFile(marker, 'utf8')
+  expect(prompted).toContain('get')
+  expect(prompted).toContain('Username')
+  await rm(marker)
+  expect(await check('github:acme/private.git')).toMatchObject({ exitCode: 128, kind: 'unknown' })
+  await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' })
 })
