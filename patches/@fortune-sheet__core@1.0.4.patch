@@ -1,5 +1,5 @@
 diff --git a/dist/index.esm.js b/dist/index.esm.js
-index 5c9820b1a261305d500e69eeaf350821872beaf4..db803c7d59c0951198157c0e6c46aad3af3bfadc 100644
+index 5c9820b1a261305d500e69eeaf350821872beaf4..c0e1bf786c0333fa56edc007c3fd700d834fa40f 100644
 --- a/dist/index.esm.js
 +++ b/dist/index.esm.js
 @@ -62866,7 +62866,7 @@ function rangeValueToHtml(ctx, sheetId, ranges) {
@@ -11,8 +11,16 @@ index 5c9820b1a261305d500e69eeaf350821872beaf4..db803c7d59c0951198157c0e6c46aad3
        } else {
          var _style = "";
          if (borderInfoCompute && borderInfoCompute["".concat(r, "_").concat(c)]) {
+@@ -73869,6 +73869,7 @@ var Canvas = /*#__PURE__*/function () {
+   }, {
+     key: "drawFreezeLine",
+     value: function drawFreezeLine(_ref2) {
++      if (this.sheetCtx.allowEdit === false) return;
+       var horizontalTop = _ref2.horizontalTop,
+         verticalLeft = _ref2.verticalLeft;
+       var renderCtx = this.canvasElement.getContext("2d");
 diff --git a/dist/index.js b/dist/index.js
-index 04113a18dee9feee28e9434ee3023626c800e7d3..8304933d13c14e87d8f0c4e84d0a7a02546b0b5b 100644
+index 04113a18dee9feee28e9434ee3023626c800e7d3..8e68fb2436e7662e3c26ba0308e70b7be1567767 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -62876,7 +62876,7 @@ function rangeValueToHtml(ctx, sheetId, ranges) {
@@ -24,3 +32,11 @@ index 04113a18dee9feee28e9434ee3023626c800e7d3..8304933d13c14e87d8f0c4e84d0a7a02
        } else {
          var _style = "";
          if (borderInfoCompute && borderInfoCompute["".concat(r, "_").concat(c)]) {
+@@ -73879,6 +73879,7 @@ var Canvas = /*#__PURE__*/function () {
+   }, {
+     key: "drawFreezeLine",
+     value: function drawFreezeLine(_ref2) {
++      if (this.sheetCtx.allowEdit === false) return;
+       var horizontalTop = _ref2.horizontalTop,
+         verticalLeft = _ref2.verticalLeft;
+       var renderCtx = this.canvasElement.getContext("2d");

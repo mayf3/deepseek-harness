@@ -122,13 +122,17 @@ A closed group's header names the first three categories from its ranked summary
 
 ### Group-title rules
 
+All three stages share the tool-name classification below. A preparing Tool node uses its category's preparation label: read files for `read`, read images for `read_image`, write files for `write`, edit files for `edit` and `apply_patch`, and update the plan for `todo_write` and goal tools. Only the generic “Preparing tool calls” category appends the wire tool name in Detailed mode; other categories omit it. It contributes one call without parsing arguments and renders one non-expandable row. A named live delta can create this node; historical calls start directly from tool/call without replaying preparation.
+
 The labels below describe recorded activity, not successful outcomes. For example, a failed read still participates in the “Read files” category.
 
 | Category | Running label | Closed label |
 |---|---|---|
 | No live category / no counted categories | Analyzing the request | Analysis completed |
 | `read` | Reading files | Read files |
+| `readImage` | Reading images | Read images |
 | `search` | Searching code | Searched code |
+| `write` | Writing files | Wrote files |
 | `edit` | Editing files | Edited files |
 | `commands` | Running commands | Ran commands |
 | `code` | Running code | Ran code |
@@ -152,6 +156,8 @@ The labels below describe recorded activity, not successful outcomes. For exampl
 English lowercases the initial letter of joined labels after the first. Closing a group immediately selects the completed summary; the 150ms minimum applies to running-title changes, not to delaying completion. Expanded hides group headers in running Turns, including groups ended by a reply or steering before their Turn ends.
 
 Group headers show a category icon, replace it with a down arrow on hover or keyboard focus, and show an up arrow while open. Manually expanded group bodies use 8px row spacing, a `min(400px, 50vh)` height cap, and 24px directional fades. Wheel scrolling can continue into the outer transcript at an edge. Expanded mode removes the group-level cap and uses 16px row spacing only in running Turns.
+
+An open capped group follows content growth only while its own scroll position is at the bottom. Scrolling away pauses that group's following; returning to the bottom resumes it, independently of outer transcript following. Manually opening an unclosed group starts at the bottom and follows growth; manually opening a closed group starts at the top with following disabled, even when its initial content fits without scrolling. Closing the group in the data or restoring its height cap through a mode change does not reset an already-open reader's position. Browser find retains its own reveal position.
 
 Individual reasoning starts collapsed, including while streaming. All modes preview the latest paragraph whose first line ends with a newline; an unfinished single line has no preview. Later text in that paragraph does not change the preview. After settlement, the mode table applies. Expanded reasoning uses compact Markdown typography.
 
@@ -208,7 +214,7 @@ Counts describe calls in this group, not successful operations, files changed, c
 
 | Call evidence in this group | Counting rule |
 |---|---|
-| Running call, successful result, failed result, or projected interrupted result with its original call | Count one call in the category selected by its recorded tool name. Settlement and failure do not add or subtract a call. |
+| Preparing call, running call, successful result, failed result, or projected interrupted result with its original call | Count one call in the category selected by its recorded tool name. Settlement and failure do not add or subtract a call. |
 | Repeated `callId` | Count only the first occurrence, including when it appears both as a root and as a nested call. Later occurrences and their subtrees are skipped. |
 | Parent and child with different `callId` values | Count both, in their own categories; visit the parent before its children and siblings in recorded order. |
 | Repeated calls to the same tool with different `callId` values | Count each call, even with identical arguments or the same terminal/session target. |
@@ -223,9 +229,11 @@ Classification uses the recorded tool name exactly: no case folding, namespace s
 
 | Category | Tool-name match |
 |---|---|
-| `read` | `read`, `read_image`, `list_mcp_resources`, `list_mcp_resource_templates`, `read_mcp_resource` |
+| `read` | `read` |
+| `readImage` | `read_image` |
 | `search` | `grep`, `glob`, or suffix `_inspect` |
-| `edit` | `write`, `edit`, `apply_patch` |
+| `write` | `write` |
+| `edit` | `edit`, `apply_patch` |
 | `commands` | `bash`, `pwsh`, `exec_command`, `write_stdin`, or prefix `terminal_` |
 | `code` | `run_code` |
 | `webSearch` | `web_search` |
@@ -233,7 +241,7 @@ Classification uses the recorded tool name exactly: no case folding, namespace s
 | `subagents` | `subagent` or prefix `subagent_` |
 | `plan` | `todo_write`, `create_goal`, `update_goal`, `get_goal` |
 | `questions` | `ask_user_question`, `request_user_input` |
-| `tools` | Every other name |
+| `tools` | Every other name, including `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource` |
 
 ### Subagents, background jobs, and nested calls
 
@@ -253,6 +261,8 @@ A `run_code` root counts once as `code`; its recorded PTC subcalls each count in
 Exact-name rules also mean that a recorded name such as `functions.read`, `mcp.read`, or `Read` falls into `tools`, while `browser_inspect` falls into `search`. A `terminal_*` name follows the command rule even when its operation only inspects or closes a terminal, unless the earlier `_inspect` rule matches.
 
 ### Live activity and detail
+
+Preparing calls use their first named delta time; only the generic tool category provides the tool name as detail. Dispatched calls use their tool/call time and complete arguments.
 
 Among running calls, the greatest `time` selects the live category and detail; equal times select the later visited call. With no running call, the category is absent and detail comes from the last nonempty reasoning paragraph of the latest running Assistant with nonempty reasoning, in member order. Reasoning detail removes `**` markers and does not require a newline-terminated first line; the individual reasoning-row preview has separate rules.
 

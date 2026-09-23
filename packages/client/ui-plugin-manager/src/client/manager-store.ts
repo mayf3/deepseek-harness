@@ -147,6 +147,8 @@ export interface InstallState {
   readonly open: boolean
   /** The package spec as typed. */
   readonly spec: string
+  /** The spec form was reopened after switching away from a failed GitHub address. */
+  readonly mirrorRecovery?: boolean
   /** The registries the Host configured, read when the dialog opens; null until the Host answered. */
   readonly registries: PluginRegistries | null
   /** The registry this install asks first: the one last used, else the Host's first. */
@@ -204,6 +206,20 @@ export function isInstallPending(phase: InstallState['phase']): boolean {
   return phase === 'starting' || phase === 'running' || phase === 'cancelling' || phase === 'applying' || phase === 'unconfirmed'
 }
 
+/**
+ * Offer the configured mainland mirror after a confirmed GitHub connection failure.
+ * @param install - the installation and the Host's failure attribution.
+ * @returns the offered mirror URL, or undefined when this recovery does not apply.
+ */
+export function githubRecoveryRegistry(install: InstallState): string | undefined {
+  if (install.phase !== 'failed' || install.failure?.failedAt !== 'spec-host'
+    || (install.failure.kind !== 'network' && install.failure.kind !== 'timeout')) return undefined
+  const host = install.subject?.host?.toLowerCase().split(':')[0]
+  if (host !== 'github.com' && !host?.endsWith('.github.com')) return undefined
+  return offeredRegistries(install.registries).find((registry): registry is string =>
+    registry !== null && new URL(registry).hostname === 'registry.npmmirror.com')
+}
+
 /** A destructive action waiting for the user's confirmation: a package's uninstall. */
 export interface ConfirmState {
   readonly action: 'uninstall'
@@ -254,6 +270,8 @@ export interface PluginManagerFace {
   chooseRegistry: (choice: RegistryChoice) => void
   /** From the failed screen: back to the spec with the registry options unfolded. */
   changeRegistry: () => void
+  /** Return from a GitHub connection failure to an empty spec with the offered mainland mirror selected. */
+  useGithubMirror: () => void
   /** Allow the install scripts the failed run left pending, saved for this profile, and run the same spec again. */
   approveBuildsAndRetry: () => void
   /** Leave the check or the failed screen for the spec, or ask the Host to stop the run and wait for its cleanup. */
@@ -374,8 +392,8 @@ const IDLE_INSTALL: InstallState = {
 
 /** The dialog back at its spec: the run and its outcome forgotten, the spec and the registries kept. */
 function specAgain(install: InstallState): InstallState {
-  const { open, spec, registries, registry } = install
-  return { ...IDLE_INSTALL, open, spec, registries, registry }
+  const { open, spec, registries, registry, mirrorRecovery } = install
+  return { ...IDLE_INSTALL, open, spec, registries, registry, ...mirrorRecovery === undefined ? {} : { mirrorRecovery } }
 }
 
 /**
@@ -514,6 +532,14 @@ export class PluginManagerController {
       changeRegistry: () => {
         const install = this.getSnapshot().install
         if (install.phase === 'failed') this.patch({ install: { ...specAgain(install), registryOpen: true } })
+      },
+      useGithubMirror: () => {
+        const install = this.getSnapshot().install
+        const mirror = githubRecoveryRegistry(install)
+        if (mirror === undefined) return
+        const registry: RegistryChoice = { kind: 'offered', registry: mirror }
+        this.registryMemory.set(registry)
+        this.patch({ install: { ...specAgain(install), spec: '', mirrorRecovery: true, registry } })
       },
       approveBuildsAndRetry: () => { void this.approveBuildsAndRetry() },
       cancelInstall: () => { void this.cancelInstall() },
