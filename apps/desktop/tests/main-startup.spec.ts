@@ -78,6 +78,8 @@ const harness = await vi.hoisted(async () => {
     readonly show = vi.fn()
     readonly hide = vi.fn()
     readonly focus = vi.fn()
+    readonly moveTop = vi.fn()
+    readonly setAlwaysOnTop = vi.fn()
     readonly restore = vi.fn()
     readonly setSize = vi.fn()
     readonly setTitleBarOverlay = vi.fn()
@@ -931,6 +933,51 @@ describe('desktop main startup', () => {
     await harness.navigated.promise
     return harness.hosts[0]!
   }
+
+  it.each([
+    ['win32', ['--updated'], true],
+    ['win32', [], false],
+    ['darwin', ['--updated'], false],
+    ['linux', ['--updated'], false],
+  ] as const)('raises the first workspace only for a Windows installer restart (%s, %j)', async (platform, args, raises) => {
+    vi.stubGlobal('process', { ...process, platform, argv: ['desktop', ...args] })
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    expect(window.moveTop).not.toHaveBeenCalled()
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    harness.hosts[0]!.ready.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(window.show).toHaveBeenCalledOnce()
+    expect(window.moveTop).toHaveBeenCalledTimes(raises ? 1 : 0)
+    expect(window.focus).toHaveBeenCalledTimes(raises ? 1 : 0)
+    expect(window.setAlwaysOnTop).not.toHaveBeenCalled()
+    if (raises) {
+      expect(window.show.mock.invocationCallOrder[0]).toBeLessThan(window.moveTop.mock.invocationCallOrder[0]!)
+    }
+    window.destroy()
+    harness.app.emit('second-instance')
+    await vi.advanceTimersByTimeAsync(0)
+    const replacement = harness.windows[1]!
+    expect(replacement.show).toHaveBeenCalledOnce()
+    expect(replacement.moveTop).not.toHaveBeenCalled()
+    expect(replacement.setAlwaysOnTop).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['win32', 'zh-CN'], ['win32', 'en-US'], ['darwin', 'zh-CN'], ['darwin', 'en-US'],
+  ] as const)('records the restart confirmation on %s in %s', async (platform, language) => {
+    vi.stubGlobal('process', { ...process, platform })
+    vi.spyOn(harness.app, 'getPreferredSystemLanguages').mockReturnValue([language])
+    await readyForUpdate()
+    harness.updateState = { phase: 'ready', version: '0.1.99' }
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 1 })
+    await expect(harness.prepareUpdate()).resolves.toBe(false)
+    const { message, detail, buttons } = harness.dialog.showMessageBox.mock.lastCall![0] as MessageBoxOptions
+    await expect(JSON.stringify({ message, detail, buttons }, null, 2) + '\n')
+      .toMatchFileSnapshot(`./expected/update-restart-${platform}-${language}.json`)
+  })
 
   it('hides the workspace before intentional Host shutdown can look like reconnection', async () => {
     const host = await readyForUpdate()

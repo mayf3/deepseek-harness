@@ -308,6 +308,8 @@ async function main(): Promise<void> {
   let mainWindow: BrowserWindow | undefined
   let welcomeWindow: BrowserWindow | undefined
   let enteredWorkspace = false
+  // NSIS passes --updated when it launches the application after installation.
+  let raiseAfterUpdate = process.platform === 'win32' && process.argv.includes('--updated')
   let shellInstallerOwnsQuit = false
   let requireCleanStop = false
   let updateStoppedHost = false
@@ -510,9 +512,11 @@ async function main(): Promise<void> {
       const active = await host.updateTasks('inspect')
       const confirmation: Electron.MessageBoxOptions = {
         type: active ? 'warning' : 'info', title: locale.messages.updateTitle,
-        message: active ? locale.messages.updateActiveTasks : formatDesktopMessage(locale.messages.updateDownloadedTitle, { version: updates.state.version ?? '' }),
+        message: active ? locale.messages.updateActiveTasks : formatDesktopMessage(
+          process.platform === 'win32' ? locale.messages.updateDownloadedTitleWindows : locale.messages.updateDownloadedTitle,
+          { version: updates.state.version ?? '' }),
         detail: active ? locale.messages.updateActiveTasksDetail
-          : locale.messages.updateDownloadedDetail,
+          : process.platform === 'win32' ? locale.messages.updateDownloadedDetailWindows : locale.messages.updateDownloadedDetail,
         buttons: active ? [locale.messages.updateStopTasks, locale.messages.updateLater] : [locale.messages.installAndRestart],
         defaultId: 1, cancelId: 1,
       }
@@ -940,6 +944,11 @@ async function main(): Promise<void> {
       window.webContents.send(DESKTOP_IPC.enterWorkspace)
     }
     welcomeWindow = undefined
+    if (raiseAfterUpdate) {
+      raiseAfterUpdate = false
+      window.moveTop()
+      window.focus()
+    }
     if (development && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
       window.webContents.openDevTools({ mode: 'detach' })
     }

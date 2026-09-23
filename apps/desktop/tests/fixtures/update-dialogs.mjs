@@ -40,8 +40,11 @@ export async function qualifyUpdateDialogs(root, fixture) {
     for (const active of [false, true]) {
       const options = {
         title: messages.updateTitle,
-        message: active ? messages.updateActiveTasks : formatDesktopMessage(messages.updateDownloadedTitle, { version: available.version }),
-        detail: active ? messages.updateActiveTasksDetail : messages.updateDownloadedDetail,
+        message: active ? messages.updateActiveTasks : formatDesktopMessage(
+          process.platform === 'win32' ? messages.updateDownloadedTitleWindows : messages.updateDownloadedTitle,
+          { version: available.version }),
+        detail: active ? messages.updateActiveTasksDetail
+          : process.platform === 'win32' ? messages.updateDownloadedDetailWindows : messages.updateDownloadedDetail,
         buttons: active ? [messages.updateStopTasks, messages.updateLater] : [messages.installAndRestart], cancelId: 1,
       }
       f.restart(async () => (await dialogs.show(parent, options)).response === 0)
