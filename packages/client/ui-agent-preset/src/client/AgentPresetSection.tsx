@@ -8,7 +8,7 @@ import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentPresetSectionState } from './section-store.ts'
 import { isBuiltInPreset, presetDisplayText } from './locales.ts'
-import { PresetGuideDialog, presetGuide, type PresetGuidePage } from './PresetGuideDialog.tsx'
+import { PresetGuideDialog, presetGuide, trapPresetReaderTab, type PresetGuidePage } from './PresetGuideDialog.tsx'
 import css from './AgentPresetSection.module.css'
 
 /** Settings actions and their shared controller state. */
@@ -181,20 +181,7 @@ export function AgentPresetSection({
           event.preventDefault()
           event.stopPropagation()
           closeViewer()
-        } else if (event.key === 'Tab') {
-          const targets = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
-            'button:not([disabled]):not([tabindex="-1"]), [tabindex="0"]',
-          ))
-          const first = targets[0]
-          const last = targets[targets.length - 1]
-          if (event.shiftKey && document.activeElement === first) {
-            event.preventDefault()
-            last?.focus()
-          } else if (!event.shiftKey && document.activeElement === last) {
-            event.preventDefault()
-            first?.focus()
-          }
-        }
+        } else trapPresetReaderTab(event)
       }}
       title={viewed === null ? '' : `${t('view')} · ${viewedTitle}`} className={css.dialog as string}
       footer={<Button variant="outline" autoFocus onClick={closeViewer}>{t('close')}</Button>}>
