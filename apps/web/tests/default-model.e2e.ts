@@ -127,7 +127,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('goes inert when the route the default names stops being served', async () => {
+  it('retains the saved route and editable composer when its provider is removed', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-default-model-blocked'))
     const box = page.locator('[data-composer-input]').first()
     await expect.poll(async () => box.isEnabled(), { timeout: 10_000 }).toBe(true)
@@ -139,28 +139,14 @@ describe('web e2e: the composer model switch is the default for later sessions',
         baseURL: 'https://gateway.origin.example/v1', models: [{ id: START_MODEL, name: 'Origin Large' }] },
     } })
 
-    await expect.poll(async () => box.isEnabled(), { timeout: 15_000 }).toBe(false)
-    const unset = page.getByRole('button', { name: '请选择模型', exact: true })
-    await unset.waitFor()
-    expect(await unset.evaluate(element => getComputedStyle(element).fontWeight)).toBe('400')
-    expect(await page.getByRole('button', { name: '发送消息', exact: true }).isEnabled()).toBe(false)
+    const seat = page.getByRole('button', { name: new RegExp(`^选择模型.*${ROUTE}/${MODEL}`) })
+    await seat.waitFor()
+    expect(await box.isEnabled()).toBe(true)
+    expect(scaffold.ctx.agentDefaultModel.currentSelection()).toMatchObject({ provider: ROUTE, model: MODEL })
     const aria = await captureStableAria(page, '[data-composer-card]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(fileURLToPath(new URL('./expected/default-model/unselected.expected.md', import.meta.url)), aria, webSnapshotMode())
-
-    // The block is an affordance; the refusal is the Host's. A client that
-    // never disabled anything still cannot start a turn on a dead route.
-    await expect(scaffold.ctx.sessionController.prompt({
-      requestId: 'default-model-refused' as never,
-      sessionId: SessionId(await createSession('default-model-refusal')),
-      mode: 'queue',
-      content: [{ type: 'text', text: 'hi' }],
-    }, new AbortController().signal)).rejects.toMatchObject({ code: 'session/model-unavailable' })
-
-    // The way out stays open. Locking the model seat with everything else
-    // would leave the composer asking for the one thing it prevents.
-    const seat = page.getByRole('button', { name: '请选择模型', exact: true })
-    expect(await seat.isEnabled()).toBe(true)
     await seat.click()
+    await page.getByRole('menuitem', { name: /模型/ }).click()
     await page.getByRole('menuitemradio').first().click()
     await expect.poll(async () => box.isEnabled(), { timeout: 15_000 }).toBe(true)
     expect(tripwire.pageErrors).toEqual([])
