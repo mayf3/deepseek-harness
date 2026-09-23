@@ -82,18 +82,17 @@
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-stats": "workspace:*",
     "@deepseek-ai/dsh-session-turn-outline": "workspace:*",
-    "@deepseek-ai/dsh-settings": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-token-meter": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
-    "@deepseek-ai/dsh-util-values": "workspace:*",
     "@deepseek-ai/dsh-util-workspace-path": "workspace:*",
+    "@deepseek-ai/dsh-util-values": "workspace:*",
     "@tanstack/react-virtual": "^3.14.9",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
-    "lottie-web": "^5.13.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@deepseek-ai/dsh-settings": "workspace:*"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:~"

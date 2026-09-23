@@ -7,8 +7,8 @@
     - tab "Trajectory"
 - text: Render this mathematical proof. {{clock}}
 - button "Copy"
-- status: Completed
-- button "Completed in {{duration}}" [disabled]
+- status: Worked
+- button "Took {{duration}}" [disabled]
 - heading "Math rendering" [level=2]
 - paragraph:
   - text: Inline dollar

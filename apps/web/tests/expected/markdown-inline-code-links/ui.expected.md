@@ -6,8 +6,8 @@
     - tab "Trajectory"
 - text: Show the local preview URL. {{clock}}
 - button "Copy"
-- status: Completed
-- button "Completed in {{duration}}" [disabled]
+- status: Worked
+- button "Took {{duration}}" [disabled]
 - heading "Inline code links" [level=2]
 - paragraph:
   - text: "Preview:"

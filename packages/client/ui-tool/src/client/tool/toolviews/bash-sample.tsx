@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import clsx from 'clsx'
 import {
   IconApiOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconInspectOutlineRegular,
-  TerminalBlock, Shimmer, ShimmerText,
+  TerminalBlock, TextShimmer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -107,19 +107,17 @@ const StartedBashRow = memo(function StartedBashRow({ toolName, block, sessionId
         onClick={expandable ? toggleExpand : undefined}
         onKeyDown={expandable ? toggleFromKeyboard : undefined}
       >
-        {status !== null && <span className={css.visuallyHidden}>{status}</span>}
         <span className={css.leading}>{leading}</span>
-        <Shimmer active={running}>
-          <ShimmerText className={css.title}>{t(model.titleKey)}</ShimmerText>
-          <span className={css.sep} data-shimmer-decoration aria-hidden />
-          <span className={clsx(
-            css.summary,
-            state === 'error' && css.errorSummary,
-            state === 'stopped' && css.stoppedSummary,
-          )}>
-            <ShimmerText>{settlementLine ?? normalSummary}</ShimmerText>
-          </span>
-        </Shimmer>
+        {status !== null && <span className={css.visuallyHidden}>{status}</span>}
+        <TextShimmer className={css.title} active={running}>{t(model.titleKey)}</TextShimmer>
+        <span className={css.sep} aria-hidden />
+        <span className={clsx(
+          css.summary,
+          state === 'error' && css.errorSummary,
+          state === 'stopped' && css.stoppedSummary,
+        )}>
+          <TextShimmer active={running}>{settlementLine ?? normalSummary}</TextShimmer>
+        </span>
       </div>
       {open && (
         <div className={css.bodyWrap}>

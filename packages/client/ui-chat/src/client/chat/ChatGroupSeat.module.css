@@ -10,7 +10,7 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font: inherit;
   font-size: var(--dsh-content-font-size, 14px);
   text-align: left;
@@ -19,30 +19,18 @@
 }
 
 .title:hover {
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
 }
 
-/* The leading box and its glyph ride the body font-size delta so the icon
-   keeps its optical share of the row at every Settings size. */
 .leading {
   position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: calc(16px + var(--dsh-content-font-delta, 0px));
-  height: calc(16px + var(--dsh-content-font-delta, 0px));
-  color: inherit;
-}
-
-.leading svg {
-  width: calc(14px + var(--dsh-content-font-delta, 0px));
-  height: calc(14px + var(--dsh-content-font-delta, 0px));
-}
-
-.leading svg[width="16"] {
-  width: calc(16px + var(--dsh-content-font-delta, 0px));
-  height: calc(16px + var(--dsh-content-font-delta, 0px));
+  width: 16px;
+  height: 16px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .activityIcon,
@@ -80,7 +68,7 @@
 }
 
 .title[aria-expanded="true"] {
-  padding-bottom: 8px;
+  padding-bottom: 16px;
 }
 
 .body {
@@ -133,6 +121,7 @@
   margin-top: var(--dsh-chat-flow-gap, 8px);
 }
 .expandedBody {
+  --dsh-chat-flow-gap: 16px;
   max-height: none;
   overflow: visible;
   scrollbar-gutter: auto;

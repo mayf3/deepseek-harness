@@ -309,11 +309,10 @@ describe('ToolRow', () => {
         newText: 'start\nsecond\nthird\nnew\nfourth\nfifth\nend',
       }] },
     }} />)
-    expect(view.container.querySelector('[data-disclosure-row]')?.textContent).toContain('+1 -1')
+    expect(view.getByText('+1 -1')).toBeTruthy()
     expect(view.container.querySelector('[data-diff]')).toBeNull()
     fireEvent.click(view.getByRole('button'))
-    expect(view.getAllByText('+1')).toHaveLength(1)
-    expect(view.getAllByText('-1')).toHaveLength(1)
+    expect(view.getAllByText('+1 -1')).toHaveLength(1)
     expect(view.getAllByText('start')).toHaveLength(1)
     expect(view.getAllByText('end')).toHaveLength(1)
     expect(view.getByText('old', { exact: true })).toBeTruthy()
@@ -345,7 +344,7 @@ describe('ToolRow', () => {
 
   it('keeps the business icon across running and error states', () => {
     const runningView = render(<ToolRow {...rowProps} state="running" />)
-    expect(runningView.container.querySelector('[data-testid="tool-icon"]:not([inert] *)')).not.toBeNull()
+    expect(runningView.queryByTestId('tool-icon')).not.toBeNull()
     expect(runningView.container.querySelector('[data-state="running"]')).not.toBeNull()
     const errorView = render(<ToolRow {...rowProps} state="error" />)
     expect(errorView.container.querySelector('[data-testid="tool-icon"]')).not.toBeNull()

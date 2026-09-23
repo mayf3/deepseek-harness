@@ -40,7 +40,7 @@ Settings → General → Open chat links in selects the destination for ordinary
 <a id="system-prompt-row"></a>
 ## Hidden Chat rows
 
-Chat omits system-prompt, ordinary Context injection, and `permission` command rows in every work-details mode. The filter changes neither recorded Session events nor Trajectory inspection. Non-human Turn triggers remain independent, bordered notices with a contrasting neutral background; other command rows remain in Chat.
+Chat omits system-prompt, ordinary Context injection, and `permission` command rows in every work-details mode. The filter changes neither recorded Session events nor Trajectory inspection. Non-human Turn triggers remain independent notices; other command rows remain in Chat.
 
 When an Assistant attempt retires without a visible message, Chat hides its already-published Node instead of removing its key. A retry in the same Step reuses that key when visible content returns. This also applies when the loaded window lacks the Step start.
 
@@ -98,8 +98,6 @@ Scroll-edge fades initialize when `ResizeObserver` reports the open group's layo
 Each group owns local `useDisclosure` state that survives mode changes while its component stays mounted.
 
 The Chat-node slot injects a reset-bound `useDisclosure` Hook for reasoning and tools. Intermediate renderers forward it without subscribing; each invocation owns independent open state. Source callbacks retain their receiver and stable identity. When an enclosing Turn actually hides a process member, its seat resets those disclosures without replacing component keys or changing the Hook reference. Display-mode changes preserve their open state.
-
-Process rows share one text and icon color in every Work details mode: tertiary at rest and secondary on hover, while error and warning text keeps its semantic color. Running group titles, reasoning previews, tool and command rows, the active retry line, and the bottom running status use the shared [Shimmer](../ui-primitives/README.md#component-catalog). Each row’s text shares one left-to-right highlight, including collapsed group titles; icons and hover chevrons retain their base appearance. Non-response rows sit 8px apart; anything beside an Assistant response is 16px away, and a closed Turn control keeps its answer 16px below the summary. Leading icons, disclosure chevrons, and their boxes scale with the content font-size delta.
 
 -----
 
