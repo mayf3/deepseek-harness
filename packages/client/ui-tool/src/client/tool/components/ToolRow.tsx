@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, type KeyboardEvent, type MouseEvent, type R
 import clsx from 'clsx'
 import {
   CodeBlock, DiffBlock, DisclosureRow, IconInspectOutlineRegular, ReadBlock, SearchBlock,
-  TerminalBlock, ShimmerText, WebBlock,
+  TerminalBlock, TextShimmer, WebBlock,
   diffTotals,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -55,7 +55,6 @@ export interface ToolRowProps {
   errorSummary?: string | null | undefined
   /** Terminal card; card fields are mutually exclusive and replace text sections. */
   terminal?: TerminalCardModel | null | undefined
-  /** Diff card with inline totals colored on header hover and while expanded. */
   diff?: DiffCardModel | null | undefined
   read?: ReadCardModel | null | undefined
   /**
@@ -176,7 +175,11 @@ export const ToolRow = memo(function ToolRow({
   const summaryText = failureLine ?? normalSummary
   // The tool row keeps the diff's +/- totals visible while its body is collapsed.
   // An explicit summarySuffix overrides the diff totals.
-  const diffStat = useMemo(() => diffBody === null ? null : diffTotals(diffBody.card.diffs), [diffBody])
+  const diffStat = useMemo(() => {
+    if (diffBody === null) return null
+    const { added, removed } = diffTotals(diffBody.card.diffs)
+    return `+${added} -${removed}`
+  }, [diffBody])
   const settledWithCue = state === 'error' || state === 'stopped'
   const suffix = settledWithCue ? null : summarySuffix ?? diffStat
   const openFile = useMemo(() => filePath !== undefined && onOpenFile !== undefined && !settledWithCue
@@ -200,7 +203,7 @@ export const ToolRow = memo(function ToolRow({
     /* An empty summary drops the separator with it (a row that is only
        its title shows no trailing dot). */
     <>
-      <span className={css.sep} data-shimmer-decoration aria-hidden />
+      <span className={css.sep} aria-hidden />
       {openFile !== undefined ? (
         <button
           type="button"
@@ -208,7 +211,7 @@ export const ToolRow = memo(function ToolRow({
           onClick={openFile}
           onKeyDown={fileLinkKeyDown}
         >
-          <ShimmerText>{summaryText}</ShimmerText>
+          <TextShimmer active={running}>{summaryText}</TextShimmer>
         </button>
       ) : (
         <span
@@ -218,20 +221,14 @@ export const ToolRow = memo(function ToolRow({
             state === 'stopped' && css.stoppedSummary,
           )}
         >
-          <ShimmerText>{summaryText}</ShimmerText>
+          <TextShimmer active={running}>{summaryText}</TextShimmer>
         </span>
       )}
-      {suffix !== null && (typeof suffix === 'string'
-        ? <ShimmerText className={css.summarySuffix}>{suffix}</ShimmerText>
-        : (
-          <span className={clsx(css.summarySuffix, css.diffStat)}>
-            <ShimmerText className={css.diffAdded}>{`+${suffix.added}`}</ShimmerText>
-            {' '}
-            <ShimmerText className={css.diffRemoved}>{`-${suffix.removed}`}</ShimmerText>
-          </span>
-        ))}
+      {suffix !== null && (
+        <TextShimmer className={clsx(css.summarySuffix, suffix === diffStat && css.diffStat)} active={running}>{suffix}</TextShimmer>
+      )}
     </>
-  ), [fileLinkKeyDown, openFile, state, suffix, summaryText])
+  ), [diffStat, fileLinkKeyDown, openFile, running, state, suffix, summaryText])
   const expandedContent = useMemo(() => open ? (
     <div className={clsx(css.bodyWrap, detailsBody !== null && css.detailsBodyWrap)}>
       {askQuestionBody !== null
@@ -343,6 +340,7 @@ export const ToolRow = memo(function ToolRow({
         rowClassName={css.row}
         leadingClassName={css.leading}
         titleClassName={css.title}
+        chevronClassName={css.chevron}
         icon={icon}
         title={title}
         running={running}

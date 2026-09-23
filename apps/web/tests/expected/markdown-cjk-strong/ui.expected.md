@@ -7,8 +7,8 @@
     - tab "Trajectory"
 - text: Render adjacent CJK strong emphasis. {{clock}}
 - button "Copy"
-- status: Completed
-- button "Completed in {{duration}}" [disabled]
+- status: Worked
+- button "Took {{duration}}" [disabled]
 - heading "CJK strong emphasis" [level=2]
 - paragraph:
   - strong: 注意：

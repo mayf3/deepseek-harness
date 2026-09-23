@@ -13,15 +13,18 @@
 - button "Copy"
 - tooltip "Copy"
 - status: Stopped
-- button "Stopped"
+- button "Stopped" [disabled] [expanded]
+- button "Analysis completed"
+- paragraph: I will read both files before answering.
+- button "Read files"
 - button "Copy"
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation" [disabled]
 - text: Available only on the last message of a completed turn {{clock}} Now give the final answer. {{clock}}
 - button "Copy"
-- status: Completed
-- button "Completed in {{duration}}" [disabled]
+- status: Worked
+- button "Took {{duration}}" [disabled]
 - paragraph: DONE
 - button "Copy"
 - button "Good response"
@@ -29,8 +32,8 @@
 - button "Branch into a new conversation"
 - text: {{clock}} Keep this later input in the original conversation. {{clock}}
 - button "Copy"
-- status: Completed
-- button "Completed in {{duration}}" [disabled]
+- status: Worked
+- button "Took {{duration}}" [disabled]
 - paragraph: ORIGINAL ONLY
 - button "Copy"
 - button "Good response"

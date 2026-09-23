@@ -20,16 +20,10 @@
   align-items: center;
   height: calc(24px + var(--dsh-content-font-delta, 0px));
   min-width: 0;
-  color: var(--dsw-alias-label-tertiary);
-  transition: color 100ms ease;
 }
 
 .row[data-expandable] {
   cursor: pointer;
-}
-
-.row:hover {
-  color: var(--dsw-alias-label-secondary);
 }
 
 .leading {
@@ -44,7 +38,7 @@
   padding: 0;
   border: none;
   background: none;
-  color: inherit;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* Flow-row glyphs render at 14px inside the 16px box; the CSS edge overrides
@@ -82,25 +76,9 @@ button.leading {
   opacity: 1;
 }
 
-.rowContent {
-  flex: 1;
-  width: 0;
-  column-gap: inherit;
-}
-
-.rowContentLayout {
-  column-gap: inherit;
-}
-
 .title {
   flex: none;
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
-  color: inherit;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .row {
-    transition: none;
-  }
+  color: var(--dsw-alias-label-secondary);
 }

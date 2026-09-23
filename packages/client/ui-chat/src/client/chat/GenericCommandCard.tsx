@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 import type { ChatViewSlotProps, CommandRowOwnerProps } from '../contract/slots.ts'
-import { DisclosureRow, IconApiOutlineRegular, ShimmerText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconApiOutlineRegular, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
 import a11yCss from './accessibility.module.css'
 import css from './GenericCommandCard.module.css'
 
@@ -42,12 +42,12 @@ export const GenericCommandCard = memo(function GenericCommandCard({ node, t, ru
   const toggle = useCallback(() => { setExpanded(value => !value) }, [])
   const collapsedContent = useMemo(() => (
     <>
-      <span className={css.separator} data-shimmer-decoration aria-hidden />
+      <span className={css.separator} aria-hidden />
       <span className={css.summary} data-error={state === 'error' || undefined}>
-        <ShimmerText>{summary}</ShimmerText>
+        <TextShimmer active={running}>{summary}</TextShimmer>
       </span>
     </>
-  ), [state, summary])
+  ), [running, state, summary])
   const content = useMemo(() => open
     ? <pre className={css.body} data-error={state === 'error' || undefined}>{body}</pre>
     : undefined, [body, open, state])
@@ -56,8 +56,10 @@ export const GenericCommandCard = memo(function GenericCommandCard({ node, t, ru
       {state === 'running' && <span className={a11yCss.visuallyHidden}>{t('row.running')}</span>}
       {state === 'error' && <span className={a11yCss.visuallyHidden}>{t('row.failed')}</span>}
       <DisclosureRow
+        rowClassName={css.row}
         leadingClassName={css.leading}
         titleClassName={css.title}
+        chevronClassName={css.chevron}
         icon={COMMAND_ICON}
         title={title}
         running={running}

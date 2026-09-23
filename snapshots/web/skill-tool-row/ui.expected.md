@@ -7,8 +7,8 @@
     - tab "Trajectory"
 - text: Load the editing-cordis-compositions skill with the skill tool, then reply DONE. {{date}} {{clock}}
 - button "Copy"
-- status: Completed
-- button "Completed in {{duration}}" [expanded]
+- status: Worked
+- button "Took {{duration}}" [expanded]
 - button "Called tools" [expanded]
 - button "Think"
 - button "Skill editing-cordis-compositions" [expanded]

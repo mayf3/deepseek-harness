@@ -7,8 +7,8 @@
     - tab "Trajectory"
 - text: Show the Markdown image policy. {{clock}}
 - button "Copy"
-- status: Completed
-- button "Completed in {{duration}}" [disabled]
+- status: Worked
+- button "Took {{duration}}" [disabled]
 - heading "Markdown images" [level=2]
 - paragraph:
   - 'button "View full image: Remote test image"':

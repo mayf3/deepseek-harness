@@ -10,8 +10,8 @@
   - button "Jump to turn 2"
 - text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. {{clock}}"
 - button "Copy"
-- status: Completed
-- button "Completed in {{duration}}" [expanded]
+- status: Worked
+- button "Took {{duration}}" [expanded]
 - button "Read files" [expanded]
 - button "Think"
 - button "Read a.txt":
@@ -28,8 +28,8 @@
 - button "Branch into a new conversation"
 - text: {{clock}}
 - button "compact Compacted 5 history items (~{{tokens}} tokens)"
-- status: Completed
-- button "Completed in {{duration}}" [disabled]
+- status: Worked
+- button "Took {{duration}}" [disabled]
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Read Only"': Read Only

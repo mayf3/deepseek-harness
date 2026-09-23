@@ -218,7 +218,6 @@ export function installAssembledBootEnv(): void {
     })
   }
   let fontsDescriptor: PropertyDescriptor | undefined
-  let canvasContextDescriptor: PropertyDescriptor | undefined
   beforeEach(() => {
     fontsDescriptor = Object.getOwnPropertyDescriptor(document, 'fonts')
     Object.defineProperty(document, 'fonts', { configurable: true, value: new EventTarget() })
@@ -234,18 +233,6 @@ export function installAssembledBootEnv(): void {
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
       setTimeout(() => { callback(0) }, 0) as unknown as number)
     vi.stubGlobal('cancelAnimationFrame', (id: number) => { clearTimeout(id) })
-    vi.stubGlobal('matchMedia', (media: string) => Object.assign(new EventTarget(), {
-      media, matches: false, onchange: null, addListener: () => {}, removeListener: () => {},
-    }))
-    // Lottie's SVG player creates one transparent Canvas placeholder while importing.
-    canvasContextDescriptor = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext')
-    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
-      configurable: true,
-      value: (contextId: string) => {
-        if (contextId !== '2d') throw new Error(`assembled boot: unsupported Canvas context ${contextId}`)
-        return { fillStyle: '', fillRect: () => {} }
-      },
-    })
   })
 
   afterEach(async () => {
@@ -276,8 +263,6 @@ export function installAssembledBootEnv(): void {
     delete ownNavigator.languages
     delete ownNavigator.language
     vi.unstubAllGlobals()
-    if (canvasContextDescriptor === undefined) Reflect.deleteProperty(HTMLCanvasElement.prototype, 'getContext')
-    else Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', canvasContextDescriptor)
     if (fontsDescriptor === undefined) Reflect.deleteProperty(document, 'fonts')
     else Object.defineProperty(document, 'fonts', fontsDescriptor)
     if (failures.length > 0) throw new AggregateError(failures, 'assembled boot teardown failed')

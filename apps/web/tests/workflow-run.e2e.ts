@@ -134,7 +134,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       const disclosures = element.querySelectorAll('[data-disclosure-row]')
       const runHeader = disclosures[0]
       const phaseHeader = disclosures[1]
-      const phaseTitle = phaseHeader?.querySelector<HTMLElement>('[data-shimmer] > span > span') ?? null
+      const phaseTitle = phaseHeader?.children.item(1) as HTMLElement | null
       const phaseStatus = element.querySelector('[data-phase-status-text]')
       const originalPhaseTitle = phaseTitle?.textContent ?? ''
       if (phaseTitle !== null) phaseTitle.textContent = 'A phase name long enough to require ellipsis in the narrow layout'
@@ -153,10 +153,6 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
         phaseHeight: phaseHeader?.getBoundingClientRect().height ?? 0,
         phaseTitleRight,
         phaseStatusLeft,
-        phaseStatusRight: phaseStatus?.getBoundingClientRect().right ?? 0,
-        phaseHeaderRight: phaseHeader?.getBoundingClientRect().right ?? 0,
-        contentGap: phaseTitle?.parentElement === null || phaseTitle?.parentElement === undefined
-          ? '' : getComputedStyle(phaseTitle.parentElement).columnGap,
       }
     })
     expect(darkNarrow.clientWidth).toBe(356)
@@ -169,8 +165,6 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     expect(darkNarrow.runHeight).toBe(32)
     expect(darkNarrow.phaseHeight).toBe(32)
     expect(darkNarrow.phaseTitleRight).toBeLessThanOrEqual(darkNarrow.phaseStatusLeft)
-    expect(darkNarrow.phaseStatusRight).toBe(darkNarrow.phaseHeaderRight)
-    expect(darkNarrow.contentGap).toBe('6px')
     await page.locator('[data-workflow-run]').evaluate((element) => {
       (element as HTMLElement).style.removeProperty('width')
       document.body.removeAttribute('data-ds-dark-theme')

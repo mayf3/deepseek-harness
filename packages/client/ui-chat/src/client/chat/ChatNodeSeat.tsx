@@ -153,7 +153,6 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       data-chat-node-key={routedNode.key}
       data-chat-group-part={groupPart}
       data-chat-flow-kind={routedNode.kind}
-      data-chat-flow-response={groupPart === 'response' || undefined}
       data-chat-turn={turn}
       data-turn-process-member={processMember || undefined}
       data-turn-process-hidden={processHidden || undefined}

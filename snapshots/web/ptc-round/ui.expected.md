@@ -8,8 +8,8 @@
     - tab "Trajectory"
 - text: "Using ONE run_code program: run bash `echo CODE_ROUND_OK`, then read the file missing.txt catching its error in the program. Return an object with both outcomes. Then reply DONE and stop. {{clock}}"
 - button "Copy"
-- status: Completed
-- button "Completed in {{duration}}" [expanded]
+- status: Worked
+- button "Took {{duration}}" [expanded]
 - button "Ran code, ran commands, read files" [expanded]
 - button "Think"
 - button "Code Run bash echo and catch missing file read"
