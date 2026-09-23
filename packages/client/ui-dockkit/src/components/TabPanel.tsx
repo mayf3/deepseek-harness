@@ -238,7 +238,12 @@ export function TabStrip({ state, pane, callbacks }: TabPanelProps): ReactNode {
   }
 
   return (
-    <div className={css.tabStrip} role="tablist" data-dockkit-strip={pane.id}>
+    // The window drag claim is withdrawn while any pane floats: a floating pane
+    // renders among this surface's cells in tab-id order, so one sorted before this
+    // row would sit earlier in the document, where this row's drag box overrides the
+    // float's own subtraction and swallows the panel's header and controls.
+    <div className={css.tabStrip} role="tablist" data-dockkit-strip={pane.id}
+      data-window-drag={state.floats.length === 0 ? true : undefined}>
       <div ref={stripTabs} className={css.stripTabs} role="presentation" data-dockkit-strip-tabs={pane.id}>
         {pane.tabs.map((tabId, index) => {
           const tab = getTab(state, tabId)

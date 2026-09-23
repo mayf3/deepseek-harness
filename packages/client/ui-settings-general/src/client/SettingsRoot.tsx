@@ -11,8 +11,8 @@
  * to the step, so a mounted-but-deciding step paints nothing here.
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import clsx from 'clsx'
 import { createPortal } from 'react-dom'
+import clsx from 'clsx'
 import {
   ConnectionIndicator, Tooltip, useModalLayer,
   IconAgentPresetOutlineMedium, IconArchiveOutlineMedium, IconCloseOutlineRegular, IconDataOutlineMedium,
@@ -60,6 +60,10 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
   const panel = useRef<HTMLDivElement>(null)
   useModalLayer(panel, true, onClose)
 
+  // Portalled beside #root like the Modal primitive: a covering surface mounted
+  // inside the root would precede the columns' chrome in document order, so a
+  // chrome row that declares window drag after it would override its subtraction.
+  // Beside the root, base.css's `body > :not(#root)` rule subtracts it instead.
   return createPortal((
     <div className={css.overlay} role="presentation">
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
@@ -142,6 +146,16 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     if (onboardingActive) return
     setCompletedOnboarding(new Set())
   }, [onboardingActive])
+
+  const onboardingStepSeen = useRef(onboardingStep)
+  // An onboarding step owns the viewport and marks `#root` inert. The panel portals
+  // beside `#root`, outside that mark, so a step that appears while the panel is open
+  // takes the panel down rather than leaving it focusable behind the onboarding mask.
+  useEffect(() => {
+    const appeared = onboardingStepSeen.current === undefined && onboardingStep !== undefined
+    onboardingStepSeen.current = onboardingStep
+    if (appeared && open) close()
+  }, [onboardingStep, open, close])
 
   useLayoutEffect(() => {
     const previous = previousConnectionState.current
