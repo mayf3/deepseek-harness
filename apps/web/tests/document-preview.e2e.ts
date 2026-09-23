@@ -164,8 +164,13 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
   let outsideRoot: string | undefined
   let nativeRoot: string | undefined
   let openLog = ''
+  let launchLog = ''
+  let appsCatalog = ''
   const opened = async (): Promise<Array<{ path: string; action: 'open' | 'reveal' | 'application' }>> =>
     (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; action: 'open' | 'reveal' | 'application' })
+  /** The application each `open -a` gesture named; the opened log keeps only the file path. */
+  const launched = async (): Promise<Array<{ app: string; path: string }>> =>
+    (await readFile(launchLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { app: string; path: string })
 
   beforeAll(async () => {
     outsideRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-outside-'))
@@ -173,20 +178,24 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       // Exercise the built Host through its actual OS command, replacing only the desktop application.
       nativeRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-native-'))
       openLog = join(nativeRoot, 'opened.jsonl')
+      launchLog = join(nativeRoot, 'launched.jsonl')
+      appsCatalog = join(nativeRoot, 'applications.json')
       await writeFile(openLog, '')
+      await writeFile(launchLog, '')
       const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
       await writeFile(join(nativeRoot, command), `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = process.argv[2] === '-a' ? process.argv[4] : process.argv[2] === '-R' ? process.argv[3] : process.argv[2];
 const action = process.argv[2] === '-a' ? 'application' : process.argv[2] === '-R' || fs.statSync(path).isDirectory() ? 'reveal' : 'open';
 fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) + '\\n');
+if (process.argv[2] === '-a') fs.appendFileSync(${JSON.stringify(launchLog)}, JSON.stringify({ app: process.argv[3], path: process.argv[4] }) + '\\n');
 `, { mode: 0o700 })
       if (process.platform === 'darwin') {
-        const apps = [
+        await writeFile(appsCatalog, JSON.stringify([
           { id: '/Applications/Test Player.app', name: 'Test Player', default: true, icon: `data:image/png;base64,${TINY_PNG.toString('base64')}` },
           { id: '/Applications/Other Player.app', name: 'Other Player', default: false, icon: null },
-        ]
-        await writeFile(join(nativeRoot, 'osascript'), `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(apps))});\n`, { mode: 0o700 })
+        ]))
+        await writeFile(join(nativeRoot, 'osascript'), `#!/usr/bin/env node\nprocess.stdout.write(require('node:fs').readFileSync(${JSON.stringify(appsCatalog)}, 'utf8'));\n`, { mode: 0o700 })
       }
       if (process.platform === 'linux') {
         const data = join(nativeRoot, 'data')
@@ -1075,6 +1084,29 @@ else process.exit(1);
         await headerOpen.click()
         await expect.poll(async () => (await opened()).length).toBe(4)
         expect((await opened())[3]).toEqual({ path: clip, action: 'open' })
+        // The reported defect: the Shell lists applications but marks none as the OS default.
+        await writeFile(appsCatalog, JSON.stringify([
+          { id: '/Applications/Test Player.app', name: 'Test Player', default: false, icon: `data:image/png;base64,${TINY_PNG.toString('base64')}` },
+          { id: '/Applications/Other Player.app', name: 'Other Player', default: false, icon: null },
+        ]))
+        await prominent.getByRole('button', { name: 'More ways to open' }).click()
+        await page.getByRole('menuitem', { name: 'Test Player (default)', exact: true }).waitFor()
+        await page.keyboard.press('Escape')
+        expect(await emptyOpen.innerText()).toBe('Open')
+        expect(await headerOpen.getAttribute('aria-label')).toBe('Open in Test Player')
+        await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'applications-no-default.expected.md'), await prominent.ariaSnapshot(), MODE)
+        const gesturesBefore = (await opened()).length
+        await emptyOpen.click()
+        await expect.poll(async () => (await opened()).length).toBe(gesturesBefore + 1)
+        // Without an OS-marked default the main action still opens the file instead of revealing it.
+        expect((await opened()).at(-1)).toEqual({ path: clip, action: 'open' })
+        const launchesBefore = (await launched()).length
+        await prominent.getByRole('button', { name: 'More ways to open' }).click()
+        await page.getByRole('menuitem', { name: 'Test Player (default)', exact: true }).click()
+        await expect.poll(async () => (await launched()).length).toBe(launchesBefore + 1)
+        expect((await launched()).at(-1)?.app).toBe('/Applications/Test Player.app')
+        await expect.poll(async () => (await opened()).length).toBe(gesturesBefore + 2)
+        expect((await opened()).at(-1)).toEqual({ path: clip, action: 'application' })
       }
       // Gesture facts stay out of the golden: the stub does not run on Windows.
       expect(await page.getByRole('alert').count()).toBe(0)
@@ -1082,7 +1114,7 @@ else process.exit(1);
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await compareOrRefreshGolden(EXPECTED, sections.join('\n\n'), MODE)
-    await assertFixtureInventory(SNAPSHOT_DIR, ['document.expected.md', 'applications.expected.md', 'paging.patch.yml'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['document.expected.md', 'applications.expected.md', 'applications-no-default.expected.md', 'paging.patch.yml'])
   })
 })
 
