@@ -121,7 +121,7 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, refresh
             <span className={css.status} role="status">{status}</span>
           </div>
         </div>
-        {signedIn && <a className={css.accountInfo} href="https://platform.deepseek.com" target="_blank" rel="noopener noreferrer">
+        {signedIn && <a className={css.accountInfo} href={new URL('/', state.links.usageUrl).href} target="_blank" rel="noopener noreferrer">
           {t('accountInfo')}<IconRightUpOutlineRegular size={12} />
         </a>}
       </div>

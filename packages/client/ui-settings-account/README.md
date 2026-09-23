@@ -38,7 +38,7 @@ The account menu's Feedback entry opens the Feishu questionnaire in the system b
 
 The sidebar account menu uses the shared Menu surface and backdrop blur. The signed-in menu keeps the shared row typography; the signed-out menu carries its own wider rows and its Contact us copy for the Feedback entry.
 
-The account card’s More account information link opens `https://platform.deepseek.com` in the system browser.
+The account card’s More account information link opens the root of the Host-provided Platform usage URL in the system browser, following `platformOrigin`.
 
 Sign out first queries running account-token tasks and opens a confirmation dialog. The warning describes interruption when such tasks exist; otherwise it explains that data is retained and the account can be signed in again. Cancel, close, and Escape dismiss without signing out. Failed impact queries still open confirmation with an explicit unknown-task warning; failed sign-out keeps the dialog available for retry.
 
