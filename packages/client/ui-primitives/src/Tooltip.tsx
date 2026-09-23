@@ -47,7 +47,7 @@ if (typeof window !== 'undefined') {
  * the bubble's right edge to the anchor's (for anchors beside other hover surfaces the centered
  * bubble would overlap); default 'center'. Ignored for side 'right'.
  * @param props.portal - render the bubble under document.body, so an ancestor's clipping or its
- * stacking context (which resolves the bubble's z-index against its siblings) cannot hide it.
+ * stacking context (which confines the bubble's z-index to that context) cannot hide it.
  * @param props.delayMs - hover delay in milliseconds; keyboard focus remains immediate.
  * @param props.disabled - suppress the bubble while true; the anchor renders identically so
  * toggling never remounts it (which would cut its CSS transitions).

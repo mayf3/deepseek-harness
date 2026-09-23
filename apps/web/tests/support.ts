@@ -227,22 +227,26 @@ export async function saveFailureShot(page: Page, name: string): Promise<void> {
 
 /**
  * Assert a visible tooltip paints above the element a user would read through
- * it: both probes must hit the bubble itself. The bubble ignores pointer events
- * by design, so the measurement enables them for its own duration.
+ * it, at the bubble's center and bottom edge. The bubble ignores pointer events
+ * by design, so the measurement enables them for its own duration; each probe
+ * reports the bubble or the covering element, so a failure names its cover.
  * @param tooltip - locator for the visible `[role="tooltip"]` bubble.
  */
 export async function expectTooltipOnTop(tooltip: Locator): Promise<void> {
-  expect(await tooltip.evaluate((element) => {
-    const bubble = element as HTMLElement
+  const probes = await tooltip.evaluate((bubble) => {
     const rect = bubble.getBoundingClientRect()
     const previous = bubble.style.pointerEvents
     bubble.style.pointerEvents = 'auto'
-    const hitsBubble = (y: number): boolean =>
-      document.elementFromPoint(rect.left + rect.width / 2, y) === bubble
-    const onTop = hitsBubble(rect.top + rect.height / 2) && hitsBubble(rect.bottom - 1)
+    const probe = (y: number): string => {
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, y)
+      if (hit === null) return 'none'
+      return bubble.contains(hit) ? 'tooltip' : `${hit.tagName}.${hit.classList.value}`.slice(0, 120)
+    }
+    const probes = { center: probe(rect.top + rect.height / 2), bottom: probe(rect.bottom - 1) }
     bubble.style.pointerEvents = previous
-    return onTop
-  })).toBe(true)
+    return probes
+  })
+  expect(probes).toEqual({ center: 'tooltip', bottom: 'tooltip' })
 }
 
 /**
