@@ -12,7 +12,7 @@ const translations: ReadonlyMap<string, string> = new Map(Object.entries(en))
 function unusedHook(): never {
   throw new Error('This section does not read global slot sources')
 }
-function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void, developerTools = true,
+function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void, showPickerPolicy = true,
   outerClose?: () => void) {
   const store = createSnapshotStore<AgentPresetSectionState>({ status: 'ready', error: null,
     showPicker: true, policySaving: false, rows: [{ id: 'standard', isDefault: true }, { id: 'mine', name: 'Mine', isDefault: false }],
@@ -24,7 +24,7 @@ function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?
     usePanelInfo: unusedHook, useSessions: unusedHook, useSessionStatus: unusedHook, useSessionRetainInfo: unusedHook,
     useWorkspaces: unusedHook, useResource: unusedHook,
     useAgentPresetSection: bindSnapshotSelector(store),
-    useDeveloperTools: bindSnapshotSelector(createSnapshotStore(developerTools)),
+    useShowPickerPolicy: bindSnapshotSelector(createSnapshotStore(showPickerPolicy)),
     t: key => translations.get(key) ?? key }
   render(outerClose === undefined ? <AgentPresetSection {...props} />
     : <Modal open onClose={outerClose} title="Settings" closeLabel="Close"><AgentPresetSection {...props} /></Modal>)

@@ -1,7 +1,11 @@
 /** Account settings copy, owned by the account feature. */
+import { onboardingCopy, onboardingEnglishCopy } from './locales/onboarding.ts'
+
+/** English account dictionary. */
 export const en = {
   modelSignInRequired: 'Model unavailable. Please sign in and try again.',
   sessionExpired: 'You have signed out of your account, please log in again.',
+  ...onboardingEnglishCopy,
   close: 'Close', addApiKey: 'Add API Key', retry: 'Sign in again',
   loginTitle: 'Get started', loginDescription: 'Sign in to your DeepSeek account or add an API Key to get started. Your projects and files are stored locally.',
   browserTitle: 'Waiting for sign in', browserPrompt: 'Page did not open automatically? ', copyLink: 'Copy sign-in link', copiedLink: 'Link copied', copyFailed: 'Copy failed',
@@ -34,6 +38,7 @@ export type AccountKey = keyof typeof en
 export const zh: Record<AccountKey, string> = {
   modelSignInRequired: '当前模型暂不可用，请登录后再试',
   sessionExpired: '登录信息已失效，请重新登录',
+  ...onboardingCopy,
   close: '关闭', addApiKey: '添加 API Key', retry: '重新登录',
   loginTitle: '开始使用', loginDescription: '登录 DeepSeek 账号，或添加 API Key，即可开始使用。你的项目和文件保存在本地。',
   browserTitle: '等待登录', browserPrompt: '没有自动打开新页面？', copyLink: '复制登录链接', copiedLink: '链接已复制', copyFailed: '复制失败',

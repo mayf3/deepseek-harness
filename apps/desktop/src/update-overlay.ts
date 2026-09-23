@@ -20,7 +20,7 @@ export class DesktopUpdateOverlays {
    * @param preload - Isolated shell-only preload.
    * @param title - Localized window title.
    * @param nativeModal - Use a native modal; false keeps overlays out of macOS sheets.
-   * @returns A transparent child that follows its parent's content bounds and releases its listeners on close.
+   * @returns A transparent child that follows its parent's bounds and visibility after loading and releases its listeners on close.
    */
   create(parent: BrowserWindow, preload: string, title: string, nativeModal = true): BrowserWindow {
     const window = new BrowserWindow({
@@ -42,7 +42,7 @@ export class DesktopUpdateOverlays {
       parent.webContents.prependListener('before-input-event', blockInput)
       window.once('closed', () => {
         parent.off('focus', focus)
-        parent.webContents.off('before-input-event', blockInput)
+        if (!parent.isDestroyed()) parent.webContents.off('before-input-event', blockInput)
       })
     }
     const follow = (): void => { if (!window.isDestroyed()) window.setBounds(parent.getContentBounds()) }
@@ -61,7 +61,13 @@ export class DesktopUpdateOverlays {
     }).catch((error: unknown) => { console.warn('desktop update: could not blur background', error) })
     window.once('closed', () => { closed = true; unblur() })
     window.once('closed', () => { parent.off('move', follow); parent.off('resize', follow) })
-    window.once('ready-to-show', () => { if (!window.isDestroyed()) window.show() })
+    let ready = false
+    const show = (): void => {
+      if (ready && !window.isDestroyed() && !parent.isDestroyed() && parent.isVisible()) window.show()
+    }
+    parent.on('show', show)
+    window.once('closed', () => { parent.off('show', show) })
+    window.once('ready-to-show', () => { ready = true; show() })
     window.setMenu(null)
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     return window

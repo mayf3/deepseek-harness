@@ -14,6 +14,8 @@ export const DESKTOP_IPC = {
   shortcutsRecording: 'dsh-desktop:shortcuts-recording',
   boot: 'dsh-desktop:boot',
   enterWorkspace: 'dsh-desktop:enter-workspace',
+  onboardingActive: 'dsh-desktop:onboarding-active',
+  onboardingApiKey: 'dsh-desktop:onboarding-api-key',
   bootFailed: 'dsh-desktop:boot-failed',
   browserAcquire: 'dsh-desktop:browser-acquire',
   browserRelease: 'dsh-desktop:browser-release',

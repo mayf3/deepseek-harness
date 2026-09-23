@@ -63,6 +63,10 @@ kind: "package-reference"
 
 `gradient-shadow-text.css` 从 `--dsh-content-font-size` 派生 `--dsh-content-font-delta`，并以该增量移动 Markdown 标题与基础文本阶梯。它同时派生低一档变量 `--dsh-content-font-size-secondary`（设置 ≤14 时为设置值 −1，>14 时为设置值 −2；默认设置下为 13 px）及配套的 `--dsh-content-font-delta-secondary`，供表格变体与比正文低一档的流内行使用。紧凑的小号文本与代码变体保持固定字号。阶梯之外，用户气泡与 composer 草稿直接读取正文字号变量对，流内行的标题及摘要读取低一档变量对。该表还持有阴影阶（`--dsw-shadow-lv*`）、半透明菜单使用的 `--dsw-menu-backdrop-filter` 与 elevation token：`--dsw-elevation-stroke` 经可重绑的 `--dsw-elevation-stroke-color` 画 0.5 px 发丝描边，`--dsw-elevation-panel`/`--dsw-elevation-prominent`/`--dsw-elevation-soft`（composer 专用的更大模糊、更低透明度档）在描边之上叠两层极淡柔光，因此高层级表面设 `border: 0`，不会产生占布局的轮廓；派生 token 逐元素重声明，使表面对描边色的重绑真实生效。绘制 `--dsw-specific-menu` 的高层级表面还会应用 `backdrop-filter: var(--dsw-menu-backdrop-filter)`（[决定](../../../.agents/notes/implemented/feature/2026-09-17-compact-translucent-menu-surfaces.zh.md)）。
 
+`brand-font.css` 引用随包提供的 `montserrat-regular.woff2` / `montserrat-light.woff2` / `montserrat-medium.woff2`，其中包含 Montserrat Regular、Light 和 Medium 字体，SIL Open Font License 与样式表和 WOFF2 一同随包保存在 `lib/styles/`。`--dsw-font-family-brand` 为品牌文字选择该字体，普通界面仍使用系统字体栈。源文件来自 Google Fonts 的 Montserrat 发布。Web 入口导入包的 `./brand-font.css` 导出，由 Vite 输出并解析字体资源，Web 构建也包含其许可。Web 应用（包括 Desktop 引导）可离线加载字体；原生凭证欢迎页保留系统字体。
+
+`onboarding.css` 管理引导强调色、以紫色/蓝色/青色命名的渐变，以及卡片、复选框和次要操作的浅色与暗黑配色。卡片阴影的偏移与模糊尺寸由业务组件管理。
+
 ### 滚动条重新绑定
 
 `scrollbar.css` 在 `body` 上把 `--dsh-scrollbar-thumb` 与 `--dsh-scrollbar-thumb-hover` 绑定到 l1 基础表面 token；高层级表面（菜单、浮层、对话框）在自己的容器上把它们重新绑定为 l2 token；这组变量的另一个合法目标是 `transparent`（ui-sidebar 在指针不在栏内时就这样重新绑定自己的列）。WebKit 系浏览器默认使用 5px 的 `--dsh-scrollbar-width`，并读取 `--dsh-scrollbar-thumb-border` 与 `--dsh-scrollbar-track-margin`；滚动表面可重新绑定它们，在较窄的可见滑块外保留较宽的拖动区域，或让轨道避开圆角两端。两条渲染路径在构造上互斥：Firefox 走 `@supports not selector(::-webkit-scrollbar)` 内的标准细滚动条，WebKit 系引擎走伪元素，因此几何与 hover 定制只经由伪元素路径生效。

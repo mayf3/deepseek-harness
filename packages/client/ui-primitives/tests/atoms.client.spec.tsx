@@ -623,11 +623,12 @@ describe('Modal', () => {
 
   it('renders headless content without the default close chrome', () => {
     render(
-      <Modal open onClose={() => {}} title="Custom surface" headless>
+      <Modal open onClose={() => {}} title="Custom surface" headless backdropBlur={false}>
         <span>Custom body</span>
       </Modal>,
     )
     expect(screen.getByRole('dialog', { name: 'Custom surface' })).toBeDefined()
+    expect((screen.getByRole('dialog').previousElementSibling as HTMLElement).style.backdropFilter).toBe('none')
     expect(screen.getByText('Custom body')).toBeDefined()
     expect(screen.queryByRole('button')).toBeNull()
   })

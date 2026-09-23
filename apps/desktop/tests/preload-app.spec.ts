@@ -19,6 +19,24 @@ vi.mock('../src/preload-mandatory-overlay.ts', () => ({ installMandatoryUpdateOv
 beforeEach(() => { vi.stubGlobal('process', { ...process, isMainFrame: true }) })
 afterEach(() => { document.body.replaceChildren(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks(); vi.resetModules() })
 
+it('reads only native login API-key presence through the onboarding bridge', async () => {
+  vi.stubGlobal('location', new URL('dsh-app://app/'))
+  electron.ipcRenderer.invoke.mockResolvedValueOnce(true)
+  await import('../src/preload-app.ts')
+  const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === 'dshOnboarding')?.[1] as { hasApiKey(): Promise<boolean> }
+  expect(await api.hasApiKey()).toBe(true)
+  expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(DESKTOP_IPC.onboardingApiKey)
+})
+
+it('exposes onboarding size activation to the application document', async () => {
+  vi.stubGlobal('location', new URL('dsh-app://app/'))
+  await import('../src/preload-app.ts')
+  const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === 'dshOnboarding')?.[1] as { setActive(active: boolean): void }
+  api.setActive(true)
+  api.setActive(false)
+  expect(electron.ipcRenderer.send.mock.calls).toEqual([[DESKTOP_IPC.onboardingActive, true], [DESKTOP_IPC.onboardingActive, false]])
+})
+
 it('limits product documents to update status and a native confirmation action', async () => {
   vi.stubGlobal('location', new URL('dsh-app://app/index.html'))
   await import('../src/preload-app.ts')

@@ -82,6 +82,8 @@ const harness = await vi.hoisted(async () => {
     readonly focus = vi.fn()
     readonly restore = vi.fn()
     readonly setSize = vi.fn()
+    readonly getBounds = vi.fn(() => ({ x: 0, y: 0, width: 800, height: 700 }))
+    readonly setMinimumSize = vi.fn()
     readonly setTitleBarOverlay = vi.fn()
     readonly setVibrancy = vi.fn()
     readonly setBackgroundColor = vi.fn()
@@ -848,6 +850,39 @@ describe('desktop main startup', () => {
     expect(callback).toHaveBeenLastCalledWith({})
     handler({ ...details, url: 'ws://127.0.0.1:9999/api/remote.mux' }, callback)
     expect(callback).toHaveBeenLastCalledWith({})
+  })
+
+  it('shares login key discovery with onboarding and rejects foreign renderers', async () => {
+    await readyForUpdate()
+    const window = harness.windows[0]!
+    const handler = harness.handlers.get(DESKTOP_IPC.onboardingApiKey)!
+    const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    await vi.waitFor(async () => { expect(await handler(event)).toBe(true) })
+    harness.hosts.at(-1)!.fetch.mockResolvedValueOnce(Response.json({ hasApiKey: false }))
+    await expect(handler(event)).resolves.toBe(false)
+    await expect(handler({ ...event, sender: {} })).rejects.toThrow()
+  })
+
+  it('enlarges only an active onboarding window and keeps its size after completion', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    const listener = harness.ipcOn.mock.calls.find(([channel]) => channel === DESKTOP_IPC.onboardingActive)![1]
+    const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    expect(window.setMinimumSize).not.toHaveBeenCalled()
+    listener({ ...event, sender: {} }, true)
+    listener(event, 'true')
+    expect(window.setMinimumSize).not.toHaveBeenCalled()
+    listener(event, true)
+    expect(window.setMinimumSize).toHaveBeenLastCalledWith(960, 600)
+    expect(window.setSize).toHaveBeenLastCalledWith(960, 700)
+    window.setSize.mockClear()
+    window.getBounds.mockReturnValue({ x: 0, y: 0, width: 1200, height: 800 })
+    listener(event, true)
+    expect(window.setSize).not.toHaveBeenCalled()
+    listener(event, false)
+    expect(window.setMinimumSize).toHaveBeenLastCalledWith(520, 600)
+    expect(window.setSize).not.toHaveBeenCalled()
   })
 
   it('registers the window-owned directory picker during startup and rejects foreign callers', async () => {

@@ -3,7 +3,7 @@ import { randomBytes, randomUUID, createHash, timingSafeEqual } from 'node:crypt
 import type { ServerResponse } from 'node:http'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { arch, platform, release } from 'node:os'
-import { finished } from 'node:stream/promises'
+import { promises as streamPromises } from 'node:stream'
 import { Context, Service } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
@@ -39,6 +39,8 @@ export interface Config {
   accountRequestHeaders?: Record<string, string>
   /** Deadline for each platform HTTP request. */
   requestTimeoutMs?: number
+  /** Deadline for recharge-wallet queries; timeout returns a failed balance outcome. */
+  balanceTimeoutMs?: number
   /** Additional logout attempts after the first request fails, at most five. */
   logoutMaxRetries?: number
   /** Delay before the first logout retry; each later delay doubles. */
@@ -57,6 +59,7 @@ export const Config = Schema.object({
   requestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
   accountRequestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
   requestTimeoutMs: Schema.number().min(1).max(120_000).default(30_000),
+  balanceTimeoutMs: Schema.number().min(1).max(120_000).default(2_000),
   logoutMaxRetries: Schema.number().min(0).max(5).step(1).default(5),
   logoutRetryDelayMs: Schema.number().min(1).max(60_000).default(1_000),
   attemptTimeoutMs: Schema.number().min(1).max(3_600_000).default(600_000),
@@ -89,6 +92,7 @@ export class PlatformAccount extends DeepSeekAccount {
   private readonly requestHeaders: Record<string, string>
   private readonly accountRequestHeaders: Record<string, string>
   private readonly requestTimeout: number
+  private readonly balanceTimeout: number
   private readonly attemptTimeout: number
   private readonly logoutPolicy: LogoutRetryPolicy
   private readonly logoutLifetime = new AbortController()
@@ -126,6 +130,7 @@ export class PlatformAccount extends DeepSeekAccount {
       this.accountRequestHeaders.cookie = mergePlatformCookies(this.requestHeaders.cookie ?? '', accountHeaders.cookie)
     }
     this.requestTimeout = resolved.requestTimeoutMs
+    this.balanceTimeout = resolved.balanceTimeoutMs
     this.attemptTimeout = resolved.attemptTimeoutMs
     this.logoutPolicy = {
       maxRetries: resolved.logoutMaxRetries, delayMs: resolved.logoutRetryDelayMs, requestTimeoutMs: this.requestTimeout,
@@ -295,7 +300,7 @@ export class PlatformAccount extends DeepSeekAccount {
     }
     try {
       const details = await readAccountDetail(field, this.origin, stored.token,
-        AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), headers)
+        AbortSignal.any([lifetime.signal, AbortSignal.timeout(field === 'balance' ? this.balanceTimeout : this.requestTimeout)]), headers)
       return this.detailsLifetime !== lifetime ? null : details
     } catch (_unauthorized) {
       // readAccountDetail exposes only authenticated credential rejection failures.
@@ -414,7 +419,7 @@ export class PlatformAccount extends DeepSeekAccount {
       // begin() may report cancellation before the HTTP work observes its signal.
       await attempt.running.catch(() => undefined)
       if (attempt.callback !== undefined) {
-        await finished(attempt.callback, { cleanup: true }).catch(() => undefined)
+        await streamPromises.finished(attempt.callback, { cleanup: true }).catch(() => undefined)
       }
       await attempt.disposeCallback?.()
     })
