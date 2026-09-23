@@ -77,6 +77,18 @@ async function canvasColor(canvas: Locator): Promise<string> {
   })
 }
 
+/** Wait for device resolution, subject to the page bitmap allocation limit. */
+async function expectPdfResolution(canvas: Locator): Promise<void> {
+  await expect.poll(() => canvas.evaluate((node) => {
+    const bitmap = node as HTMLCanvasElement
+    const width = Number.parseFloat(bitmap.style.getPropertyValue('--pdf-page-width'))
+    const height = Number.parseFloat(bitmap.style.getPropertyValue('--pdf-page-height'))
+    const expected = Math.min(bitmap.getBoundingClientRect().width * window.devicePixelRatio,
+      Math.sqrt(16_777_216 * width / height))
+    return Math.abs(bitmap.width - expected)
+  })).toBeLessThanOrEqual(1)
+}
+
 /** Select a workspace file through the Files tab and wait for its preview identity. */
 async function openPreviewFile(column: Locator, filesTab: Locator, preview: Locator, name: string): Promise<void> {
   await filesTab.click()
@@ -808,10 +820,12 @@ else process.exit(1);
     await pdfZoom.click()
     await page.getByRole('menuitem', { name: '150%', exact: true }).click()
     await expect.poll(async () => (await canvas.boundingBox())!.width / pdfIntrinsicWidth).toBeCloseTo(1.5, 1)
+    await expectPdfResolution(canvas)
     pdfZoom = await revealDocumentZoom(page, preview)
     await pdfZoom.click()
     await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
     await expect.poll(async () => (await canvas.boundingBox())!.width).toBeCloseTo(pdfWidth, 0)
+    await expectPdfResolution(canvas)
     expect(await preview.locator('[data-pdf-page]').count()).toBe(2)
     await expect.poll(() => canvasColor(canvas), { timeout: 30_000 }).toBe('red')
     const firstColor = await canvasColor(canvas)
@@ -846,6 +860,7 @@ else process.exit(1);
       `- Continuous pages: ${await preview.locator('[data-pdf-page]').count()}`,
       '- Zoom reveal: hidden -> bottom hover -> delayed hidden',
       '- Zoom modes: fit width -> 100% -> 150% -> fit width',
+      '- Settled zoom redraws the page at device resolution',
       `- Horizontal overflow: ${String(await body.evaluate(node => node.scrollWidth > node.clientWidth))}`,
       `- Canvas fills: ${[firstColor, secondColor, restoredColor].join(' -> ')}`,
       `- Same tab: ${String(await pdfTab.getAttribute('data-dockkit-tab') === pdfTabId)}`,
@@ -1354,7 +1369,8 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       ],
     })
     browser = await chromium.launch()
-    page = await newEnglishPage(browser)
+    page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, deviceScaleFactor: 2,
+      locale: 'en-US', timezoneId: 'Asia/Shanghai' })
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
@@ -1430,6 +1446,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       await page.getByRole('menuitem', { name: '150%', exact: true }).click()
       await expect.poll(() => zoomMenu.innerText()).toBe('150%')
       await expect.poll(async () => (await canvas.boundingBox())!.width / intrinsicWidth).toBeCloseTo(1.5, 1)
+      await expectPdfResolution(canvas)
       const zoomScrollport = preview.locator('[data-document-zoom-scrollport]')
       await zoomScrollport.evaluate((node) => {
         const bounds = node.getBoundingClientRect()
@@ -1438,10 +1455,31 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       })
       await expect.poll(() => zoomMenu.innerText()).toBe('166%')
       await expect.poll(async () => (await canvas.boundingBox())!.width / intrinsicWidth).toBeCloseTo(1.66, 1)
+      await expectPdfResolution(canvas)
+      await zoomScrollport.evaluate((node) => { node.scrollTop = 0; node.scrollLeft = 0 })
+      await copyPdfText(page, preview, '中文文档')
+      await successShot(page, 'office-zoom-redrawn')
       await zoomMenu.click()
       await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
       await expect.poll(() => zoomMenu.innerText()).toBe(fitPercent)
+      await expectPdfResolution(canvas)
       await zoomScrollport.evaluate((node) => { node.scrollTop = 0; node.scrollLeft = 0 })
+      await zoomScrollport.evaluate(async (node) => {
+        const bounds = node.getBoundingClientRect()
+        for (let step = 0; step < 8; step++) {
+          node.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true,
+            deltaY: -40, clientX: bounds.left + bounds.width / 2, clientY: bounds.top + bounds.height / 2 }))
+          await new Promise<void>(resolve => requestAnimationFrame(() => { resolve() }))
+        }
+      })
+      await expect.poll(() => zoomMenu.innerText()).toBe('400%')
+      expect(await zoomScrollport.evaluate(node => node.scrollLeft > node.clientWidth)).toBe(true)
+      await expectPdfResolution(canvas)
+      await zoomScrollport.evaluate((node) => { node.scrollTop = 0; node.scrollLeft = 0 })
+      await successShot(page, 'office-pinch-400')
+      await zoomMenu.click()
+      await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
+      await expectPdfResolution(canvas)
       expect(convert).toHaveBeenCalledTimes(1)
       await preview.getByRole('button', { name: 'Read the file again', exact: true }).click()
       await canvas.waitFor({ state: 'visible' })
@@ -1494,6 +1532,8 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
         '- Escape restores focus to the warning: true',
         '- Closing details preserves the warning and document position: true',
         '- Fit width, presets, and pinch resize the Office PDF continuously: true',
+        '- Settled zoom redraws the Office PDF at device resolution: true',
+        '- Continuous pinch to 400% redraws the page after horizontal panning: true',
         '- Pinch updates the displayed percentage during the gesture: 166%',
         `- Document top inset: ${topInset}px`,
       ].join('\n'), MODE)
@@ -1502,6 +1542,10 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
         await openPreviewFile(column, filesTab, preview, `chinese.${extension}`)
         await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible', timeout: 60_000 })
         await expect.poll(async () => (await preview.locator('[data-pdf-text]').allTextContents()).join(''), { timeout: 30_000 }).toContain('中文文档')
+        const officeZoom = await revealDocumentZoom(page, preview)
+        await officeZoom.click()
+        await page.getByRole('menuitem', { name: '150%', exact: true }).click()
+        await expectPdfResolution(canvas)
         if (['doc', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
         await successShot(page, `office-${extension}`)
       }
