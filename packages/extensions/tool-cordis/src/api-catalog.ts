@@ -2549,9 +2549,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'after preferences are saved.',
       },
       {
-        signature: '@Remote prepare(providerId: SpeechProviderId): void',
+        signature: '@Remote prepare(providerId: SpeechProviderId, options?: SpeechPreparationOptions): void',
         description: 'Start or join one Host-owned preparation task.',
-        parameters: [{ name: 'providerId', description: 'selected recognizer.' }],
+        parameters: [{ name: 'providerId', description: 'selected recognizer.' }, { name: 'options', description: 'task-local source selection validated by the provider.' }],
       },
       {
         signature: '@Remote cancelPreparation(providerId: SpeechProviderId): Promise<void>',
@@ -2603,9 +2603,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'after the profile write and the live update it applies.',
       },
       {
-        signature: 'prepare(id: SpeechProviderId): void',
+        signature: 'prepare(id: SpeechProviderId, options?: SpeechPreparationOptions): void',
         description: 'Start or join provider-owned preparation.',
-        parameters: [{ name: 'id', description: 'exact registered provider identity.' }],
+        parameters: [{ name: 'id', description: 'exact registered provider identity.' }, { name: 'options', description: 'task-local source selection validated by the provider.' }],
       },
       {
         signature: 'async cancelPreparation(id: SpeechProviderId): Promise<void>',
@@ -6211,7 +6211,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionFollowRequest',
-    declaration: 'export interface SessionFollowRequest {\n    readonly address: SessionAddress;\n    readonly maxMessages?: number;\n    readonly assistantStream?: true;\n}',
+    declaration: 'export interface SessionFollowRequest extends Pick<SessionPageRequest, \'maxMessages\' | \'turnWindow\'> {\n    readonly address: SessionAddress;\n    readonly assistantStream?: true;\n}',
   },
   {
     name: 'SessionForkRequest',
@@ -6315,7 +6315,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionPageRequest',
-    declaration: 'export interface SessionPageRequest {\n    readonly address: SessionAddress;\n    readonly throughSeq: number;\n    readonly beforeSeq?: number;\n    readonly maxMessages?: number;\n}',
+    declaration: 'export interface SessionPageRequest {\n    readonly address: SessionAddress;\n    readonly throughSeq: number;\n    readonly beforeSeq?: number;\n    readonly maxMessages?: number;\n    readonly turnWindow?: {\n        readonly minMessages: number;\n        readonly minTurns: number;\n    };\n}',
   },
   {
     name: 'SessionPersistenceCreateOptions',
@@ -6735,7 +6735,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpeechPreparation',
-    declaration: 'export interface SpeechPreparation {\n    snapshot(): SpeechPreparationState;\n    subscribe(listener: () => void): () => void;\n    prepare(): void;\n    cancel(): Promise<void>;\n}',
+    declaration: 'export interface SpeechPreparation {\n    snapshot(): SpeechPreparationState;\n    subscribe(listener: () => void): () => void;\n    prepare(options?: SpeechPreparationOptions): void;\n    cancel(): Promise<void>;\n}',
+  },
+  {
+    name: 'SpeechPreparationOptions',
+    declaration: 'export interface SpeechPreparationOptions {\n    readonly downloadSource?: string;\n}',
   },
   {
     name: 'SpeechPreparationState',
@@ -6759,7 +6763,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpeechProviderInfo',
-    declaration: 'export interface SpeechProviderInfo {\n    readonly id: SpeechProviderId;\n    readonly name: string;\n    readonly location: \'host-local\' | \'cloud\';\n    readonly languages: readonly string[];\n    readonly setupEstimate?: SpeechSetupEstimate;\n}',
+    declaration: 'export interface SpeechProviderInfo {\n    readonly id: SpeechProviderId;\n    readonly name: string;\n    readonly location: \'host-local\' | \'cloud\';\n    readonly languages: readonly string[];\n    readonly setupEstimate?: SpeechSetupEstimate;\n    readonly downloadSources?: readonly string[];\n}',
   },
   {
     name: 'SpeechProviderView',

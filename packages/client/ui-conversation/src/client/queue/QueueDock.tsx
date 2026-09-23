@@ -150,13 +150,19 @@ export type QueueDockProps = PropsRuntime<'conversation.input.dock'> & QueueDock
 
 /**
  * Queue strip: one item renders directly; multiple items default to a
- * collapsible count header; an empty queue renders nothing. Local submissions
+ * collapsible count header; an empty queue renders nothing. Local queued submissions
  * show sending status and disabled actions until their Host queue rows arrive.
  */
 export function QueueDock({ useSession, useProjection, updateQueue, notify, loadImage, t }: QueueDockProps) {
   const inbox = useProjection('inbox') as unknown as InboxState | undefined
-  const queue = inbox?.['next-turn'] ?? EMPTY_QUEUE
   const pendingSubmissions = useSession(s => s.pendingSubmissions)
+  const queue = useMemo(() => {
+    const rows = inbox?.['next-turn'] ?? EMPTY_QUEUE
+    const inChat = new Set(pendingSubmissions.filter(item => item.placement === 'transcript').map(item => item.requestId))
+    return inChat.size === 0 ? rows : rows.filter(({ source }) => (
+      source.kind !== 'user' || !('rpcId' in source) || !inChat.has(source.rpcId)
+    ))
+  }, [inbox, pendingSubmissions])
   const pendingQueue = useMemo(() => {
     const admitted = new Set(queue.flatMap(({ source }) => (
       source.kind === 'user' && 'rpcId' in source ? [source.rpcId] : []
