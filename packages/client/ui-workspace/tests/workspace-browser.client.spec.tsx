@@ -559,6 +559,23 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('beta')).toBeTruthy()
   })
 
+  it('the empty 仅显示已归档 view names its filter and offers the way back', () => {
+    const b = mount({
+      useSessions: hook(sessionState([summary('kept', 2)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['kept'])])),
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '仅显示已归档' }))
+    expect(screen.getByText('暂无已归档会话')).toBeTruthy()
+    expect(screen.queryByText('暂无会话')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '查看其他会话' }))
+    expect(b.store.getSnapshot().archivedFilter).toBe('default')
+    fireEvent.click(screen.getByText('alpha'))
+    expect(screen.getByText('kept')).toBeTruthy()
+    expect(screen.queryByText('暂无已归档会话')).toBeNull()
+  })
+
   it('仅显示已归档 nests tree children of hidden Workspaces under the nearest shown ancestor', () => {
     mount({
       useSessions: hook(sessionState([summary('live', 2), summary('stored', 1)])),
