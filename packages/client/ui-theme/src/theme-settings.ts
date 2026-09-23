@@ -24,7 +24,7 @@ export const DEFAULT_PREFERENCE: ThemePreference = 'system'
 export const FONT_SIZE_MIN = 12
 
 /** Largest accepted content font size (px). */
-export const FONT_SIZE_MAX = 17
+export const FONT_SIZE_MAX = 24
 
 /** Content font size when the user-settings document has no override (px). */
 export const DEFAULT_FONT_SIZE = 14

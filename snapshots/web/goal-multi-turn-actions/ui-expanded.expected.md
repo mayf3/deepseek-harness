@@ -14,8 +14,8 @@
 - button "Continuing goal {{clock}}":
   - text: Continuing goal
   - time: {{clock}}
-- status: Worked
-- button "Took {{duration}}" [expanded]
+- status: Completed
+- button "Completed in {{duration}}" [expanded]
 - button "Ran commands and updated the plan" [expanded]
 - button "Think"
 - button "Bash List package directories deterministically"
@@ -51,8 +51,8 @@
 - button "Continuing goal {{clock}}":
   - text: Continuing goal
   - time: {{clock}}
-- status: Worked
-- button "Took {{duration}}" [expanded]
+- status: Completed
+- button "Completed in {{duration}}" [expanded]
 - button "Ran commands" [expanded]
 - button "Think"
 - button "Bash Randomly select another package with Python"

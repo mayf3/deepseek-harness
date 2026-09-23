@@ -36,10 +36,10 @@ describe('ThemeRuntime', () => {
   it('seeds the initial font size from the boot-script body variable, ignoring junk', () => {
     // The Host boot script writes the durable size on body before any plugin
     // runs; the first snapshot must match it so activation never flashes 14.
-    document.body.style.setProperty('--dsh-content-font-size', '16px')
+    document.body.style.setProperty('--dsh-content-font-size', '24px')
     try {
-      expect(make().theme.getTheme().fontSize).toBe(16)
-      document.body.style.setProperty('--dsh-content-font-size', '99px')
+      expect(make().theme.getTheme().fontSize).toBe(24)
+      document.body.style.setProperty('--dsh-content-font-size', '25px')
       expect(make().theme.getTheme().fontSize).toBe(14)
     } finally {
       document.body.style.removeProperty('--dsh-content-font-size')
@@ -48,19 +48,19 @@ describe('ThemeRuntime', () => {
 
   it('setFontSize switches, writes through the scope, and republishes; same value is a no-op', () => {
     const { theme, events, host } = make()
-    theme.setFontSize(17)
-    expect(theme.getTheme().fontSize).toBe(17)
-    expect(host.set).toHaveBeenCalledWith('fontSize', 17)
+    theme.setFontSize(24)
+    expect(theme.getTheme().fontSize).toBe(24)
+    expect(host.set).toHaveBeenCalledWith('fontSize', 24)
     expect(events).toHaveLength(1)
-    theme.setFontSize(17)
+    theme.setFontSize(24)
     expect(events).toHaveLength(1)
     expect(host.set).toHaveBeenCalledOnce()
   })
 
   it('rejects out-of-range and fractional font sizes', () => {
     const { theme, events, host } = make()
-    for (const px of [11, 18, 14.5, Number.NaN]) {
-      expect(() => { theme.setFontSize(px) }).toThrow('outside 12..17')
+    for (const px of [11, 25, 14.5, Number.NaN]) {
+      expect(() => { theme.setFontSize(px) }).toThrow('outside 12..24')
     }
     expect(events).toHaveLength(0)
     expect(host.set).not.toHaveBeenCalled()

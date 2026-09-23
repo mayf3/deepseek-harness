@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
+import { expectSharedShimmer } from './shimmer.ts'
 import { afterEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import type { ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -144,16 +145,84 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     // so the first step's message and tool result are already durable.
     await expect.poll(() => existsSync(marker), { timeout: 20_000 }).toBe(true)
     const runningProcess = page.locator('[data-turn-process]')
-    expect(await runningProcess.count()).toBe(1)
-    expect(await runningProcess.isDisabled()).toBe(true)
-    expect(await runningProcess.getAttribute('aria-expanded')).toBe('true')
+    expect(await runningProcess.count()).toBe(0)
     await expect.poll(
-      () => page.getByRole('status').filter({ hasText: 'Deep diving...' }).isVisible(),
+      () => page.getByRole('status').filter({ hasText: 'Deep diving' }).isVisible(),
       { timeout: 10_000 },
     ).toBe(true)
     await page.locator('[data-streaming="true"]')
       .getByText('partial', { exact: true })
       .waitFor({ timeout: 10_000 })
+    const runningStatus = page.locator('[data-chat-running]')
+    expect(await runningStatus.innerText()).toMatch(/Deep diving for \d+s/)
+    await expectSharedShimmer(runningStatus)
+    expect(await runningStatus.evaluate(element => getComputedStyle(element).fontSize)).toBe('12px')
+    const contentBottom = await page.locator('[data-streaming="true"]').evaluate(element =>
+      element.closest<HTMLElement>('[data-chat-flow-kind="assistant-step"]')!.getBoundingClientRect().bottom)
+    expect(await runningStatus.evaluate(element => element.getBoundingClientRect().top)).toBe(contentBottom + 32)
+    const originalFontSize = await page.evaluate(() => document.body.style.getPropertyValue('--dsh-content-font-size'))
+    try {
+      for (const fontSize of [14, 17, 24]) {
+        await scaffold!.ctx.settings.update('ui-theme', { fontSize })
+        await expect.poll(() => page.evaluate(() => document.body.style.getPropertyValue('--dsh-content-font-size')))
+          .toBe(`${String(fontSize)}px`)
+        const layout = await runningStatus.evaluate((status) => {
+          const icon = status.querySelector('svg')!
+          const label = status.querySelector('[data-shimmer] > span > span')!
+          const group = document.querySelector('[data-process-activity]')!
+          const groupIcon = group.querySelector('[data-step-process-icon]')!
+          return {
+            iconSize: icon.getBoundingClientRect().width,
+            groupIconSize: groupIcon.getBoundingClientRect().width,
+            gap: label.getBoundingClientRect().left - icon.getBoundingClientRect().right,
+            iconColor: getComputedStyle(icon).color,
+            textColor: getComputedStyle(label).color,
+          }
+        })
+        expect(layout.iconSize).toBe(layout.groupIconSize - 2)
+        expect(layout.gap).toBe(6)
+        expect(layout.iconColor).toBe(layout.textColor)
+      }
+    } finally {
+      await scaffold!.ctx.settings.update('ui-theme', { fontSize: Number.parseFloat(originalFontSize) })
+      await expect.poll(() => page.evaluate(() => document.body.style.getPropertyValue('--dsh-content-font-size')))
+        .toBe(originalFontSize)
+    }
+    const originalDarkTheme = await page.locator('body').getAttribute('data-ds-dark-theme')
+    try {
+      await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
+      const colors = await runningStatus.evaluate((element) => {
+        const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
+        const rgb = (color: string) => {
+          context.fillStyle = color
+          context.fillRect(0, 0, 1, 1)
+          return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map(channel => channel / 255)
+        }
+        const luminance = (channels: number[]) => channels
+          .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+          .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0)
+        const base = rgb(getComputedStyle(element).color)
+        const sweep = rgb(getComputedStyle(element.querySelector('[data-shimmer] > [inert] > span')!).color)
+        const max = Math.max(...base)
+        const min = Math.min(...base)
+        return {
+          baseLight: luminance(base),
+          sweepLight: luminance(sweep),
+          saturation: (max - min) / (1 - Math.abs(max + min - 1)),
+          blueSweep: sweep[2]! > sweep[1]! && sweep[1]! > sweep[0]!,
+        }
+      })
+      expect(colors.saturation).toBeLessThan(0.7)
+      expect(colors.baseLight).toBeGreaterThan(0.25)
+      expect(colors.sweepLight).toBeGreaterThan(colors.baseLight * 1.3)
+      expect(colors.blueSweep).toBe(true)
+      await expectSharedShimmer(runningStatus)
+    } finally {
+      await page.evaluate((value) => {
+        if (value === null) document.body.removeAttribute('data-ds-dark-theme')
+        else document.body.setAttribute('data-ds-dark-theme', value)
+      }, originalDarkTheme)
+    }
     // Only the user bubble owns a footer (clock + copy; user bubbles carry no
     // branch action): the narration is not the answer yet.
     const copyButtons = page.getByRole('button', { name: 'Copy' })
@@ -170,6 +239,19 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     await settled
     expect(sessionEvents.filter(e => e.type === 'turn/end').map(e => e.data.reason.kind)).toEqual(['aborted'])
     await page.locator('[data-turn-process]').waitFor({ timeout: 10_000 })
+    const stopped = page.getByRole('button', { name: 'Stopped', exact: true })
+    expect(await stopped.isEnabled()).toBe(true)
+    expect(await stopped.evaluate(element => getComputedStyle(element).fontSize)).toBe('14px')
+    expect(await stopped.getAttribute('aria-expanded')).toBe('false')
+    expect(await runningStatus.count()).toBe(0)
+    const processGroup = page.locator('[data-process-activity]').first()
+    expect(await processGroup.isVisible()).toBe(false)
+    await stopped.click()
+    expect(await stopped.getAttribute('aria-expanded')).toBe('true')
+    expect(await processGroup.isVisible()).toBe(true)
+    await stopped.click()
+    expect(await stopped.getAttribute('aria-expanded')).toBe('false')
+    expect(await processGroup.isVisible()).toBe(false)
     await expect.poll(() => copyButtons.count(), { timeout: 10_000 }).toBe(2)
     await expect.poll(() => page.locator('[data-streaming="true"]').count(), { timeout: 10_000 }).toBe(0)
     await copyButtons.last().focus()
@@ -235,7 +317,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
       element.closest<HTMLElement>('[data-chat-flow-kind="turn-process"]')?.getBoundingClientRect().bottom)
     const answerTop = await page.getByText('DONE', { exact: true }).evaluate(element =>
       element.closest<HTMLElement>('[data-chat-flow-kind="assistant-step"]')?.getBoundingClientRect().top)
-    expect(answerTop).toBe((processBottom ?? 0) + 8)
+    expect(answerTop).toBe((processBottom ?? 0) + 16)
     await process.focus()
     const completed = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(COMPLETED_EXPECTED, completed, MODE)

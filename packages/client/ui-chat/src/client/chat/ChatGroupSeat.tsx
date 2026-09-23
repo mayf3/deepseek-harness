@@ -4,7 +4,7 @@ import {
   IconAgentPresetOutlineRegular, IconApiOutlineRegular, IconBrowseOutlineRegular, IconChevronDownOutlineRegular,
   IconChevronUpOutlineRegular, IconCodeOutlineRegular, IconEditOutlineRegular, IconGlobeOutlineRegular,
   IconPlanOutlineRegular, IconQuestionOutlineRegular, IconSearchOutlineRegular, IconSparkleRegular,
-  IconThinkOutlineRegular, TextShimmer,
+  IconThinkOutlineRegular, Shimmer, ShimmerText,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GroupKey, NodeReference } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ProcessActivity } from '../contract/process-groups.ts'
@@ -120,7 +120,9 @@ const ProcessGroupHeader = memo(function ProcessGroupHeader({ groupKey, useChatG
           {open ? <IconChevronUpOutlineRegular /> : <IconChevronDownOutlineRegular />}
         </span>
       </span>
-      <TextShimmer active={!data.closed} className={css.label}>{title}</TextShimmer>
+      <Shimmer active={!data.closed}>
+        <ShimmerText className={css.label}>{title}</ShimmerText>
+      </Shimmer>
     </button>
   )
 })
@@ -141,7 +143,7 @@ export const ChatGroupSeat = memo(function ChatGroupSeat({ groupKey, useChatGrou
   const grouped = props.usePresentation(policy => turnLocation?.status !== 'open' || policy.stepGrouping !== 'none')
   const reason = turnLocation?.end?.data.reason.kind
   const alwaysOpen = presentation?.turnClosed === false || presentation?.hasInterleavedInput === true
-    || reason === 'aborted' || reason === 'error'
+    || reason === 'error'
   const spec = presentation?.spec
   const selectStored = useCallback((state: Readonly<ChatStoreState>) => turn === undefined
     ? undefined : storedTurnProcessEntry(state, turn), [turn])

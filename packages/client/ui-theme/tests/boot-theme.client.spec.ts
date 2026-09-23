@@ -77,8 +77,8 @@ describe('theme bootstrap row', () => {
 
   it('writes the durable content font size and defaults it to 14px', () => {
     mockSystemDark(false)
-    executeBootstrap('light', 17)
-    expect(document.body.style.getPropertyValue('--dsh-content-font-size')).toBe('17px')
+    executeBootstrap('light', 24)
+    expect(document.body.style.getPropertyValue('--dsh-content-font-size')).toBe('24px')
     executeBootstrap('light')
     expect(document.body.style.getPropertyValue('--dsh-content-font-size')).toBe('14px')
   })

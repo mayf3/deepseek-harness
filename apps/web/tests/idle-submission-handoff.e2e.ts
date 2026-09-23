@@ -144,8 +144,10 @@ it.skipIf(webSnapshotMode() === 'record').each(['inbox-first', 'transcript-first
 
       if (order === 'transcript-first') {
         await expect.poll(() => gate.turnStartDelivery()).toBeDefined()
-        gate.releaseThrough(gate.turnStartDelivery()!)
-        await page.locator('[data-turn-process]').last().filter({ hasText: 'Deep diving' }).waitFor()
+        const start = gate.turnStartDelivery()!
+        if (start.event?.type !== 'turn/start') throw new Error('expected a buffered turn/start')
+        gate.releaseThrough(start)
+        await page.locator(`[data-chat-flow-kind="turn-process"][data-chat-turn="${String(start.event.data.turn)}"]`).waitFor({ state: 'attached' })
         await expect.poll(() => placement(page)).toMatchObject({ echo: 1, dock: 0, durable: 0 })
         trace.push({ phase: 'turn-start', ...await placement(page) })
         await expect.poll(() => gate.admissionDelivery()).toBeDefined()
@@ -166,8 +168,10 @@ it.skipIf(webSnapshotMode() === 'record').each(['inbox-first', 'transcript-first
 
       if (order === 'inbox-first') {
         await expect.poll(() => gate.turnStartDelivery()).toBeDefined()
-        gate.releaseThrough(gate.turnStartDelivery()!)
-        await page.locator('[data-turn-process]').last().filter({ hasText: 'Deep diving' }).waitFor()
+        const start = gate.turnStartDelivery()!
+        if (start.event?.type !== 'turn/start') throw new Error('expected a buffered turn/start')
+        gate.releaseThrough(start)
+        await page.locator(`[data-chat-flow-kind="turn-process"][data-chat-turn="${String(start.event.data.turn)}"]`).waitFor({ state: 'attached' })
         await expect.poll(() => placement(page)).toMatchObject({ echo: 1, dock: 0, durable: 0 })
         trace.push({ phase: 'turn-start', ...await placement(page) })
       }

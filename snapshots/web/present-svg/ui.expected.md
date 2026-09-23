@@ -1,7 +1,7 @@
 - text: 简单画一个 SVG 表示冯诺依曼架构, 保存为 von-neumann.svg {{clock}}
 - button "复制"
-- status: 已完成工作
-- button "用时 {{duration}}" [expanded]
+- status: 已完成
+- button "已完成，用时 {{duration}}" [expanded]
 - button "已完成分析" [expanded]
 - button "思考"
 - paragraph: 我来创建一个冯诺依曼架构的 SVG 示意图。

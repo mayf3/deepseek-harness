@@ -8,6 +8,7 @@ import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode,
 } from './scaffold.ts'
 import { connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, writeComposerDraft } from './support.ts'
+import { expectSharedShimmer } from './shimmer.ts'
 
 const SUMMARY = `Next paragraph: ${'inspect the loaded context and pending tools '.repeat(8).trim()}`
 const DELTAS = ['First paragraph', `\nDetails\n\n\n${SUMMARY}`, '\nMore detail']
@@ -49,7 +50,7 @@ it('shows completed paragraph first lines across blank lines with a right-edge f
     const browser = await chromium.launch()
     try {
       const page = await newEnglishPage(browser)
-      const console = watchConsole(page)
+      const pageConsole = watchConsole(page)
       await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
       await connectFreshWorkspace(page, scaffold.workspaceCwd)
       await page.setViewportSize({ width: 480, height: 1000 })
@@ -68,9 +69,32 @@ it('shows completed paragraph first lines across blank lines with a right-edge f
 
       first.proceed.resolve(undefined)
       await second.arrived.promise
-      const preview = reasoning.locator('[data-streaming]')
+      const preview = reasoning.locator('[data-streaming]:not([inert] *)')
       await expect.poll(() => preview.textContent()).toBe('First paragraph')
       expect(await preview.isVisible()).toBe(true)
+      for (const fontSize of [14, 24]) {
+        await scaffold.ctx.settings.update('ui-theme', { fontSize })
+        await expect.poll(() => page.evaluate(() => document.body.style.getPropertyValue('--dsh-content-font-size')))
+          .toBe(`${String(fontSize)}px`)
+        const geometry = await preview.evaluate((element) => {
+          const text = element.firstElementChild
+          const header = element.closest('[data-disclosure-row]')!
+          const range = document.createRange()
+          range.selectNodeContents(text!)
+          return {
+            fadeStart: element.getBoundingClientRect().right - 48,
+            textRight: range.getBoundingClientRect().right,
+            previewRight: element.getBoundingClientRect().right,
+            headerRight: header.getBoundingClientRect().right,
+            headerHeight: header.getBoundingClientRect().height,
+          }
+        })
+        expect(geometry.textRight).toBeLessThanOrEqual(geometry.fadeStart)
+        expect(geometry.previewRight).toBe(geometry.headerRight)
+        expect(geometry.headerHeight).toBe(24 + fontSize - 14)
+      }
+      await scaffold.ctx.settings.update('ui-theme', { fontSize: 14 })
+      await expect.poll(() => page.evaluate(() => document.body.style.getPropertyValue('--dsh-content-font-size'))).toBe('14px')
       await preview.evaluate((element) => { element.setAttribute('data-retained-preview', 'true') })
 
       second.proceed.resolve(undefined)
@@ -79,15 +103,30 @@ it('shows completed paragraph first lines across blank lines with a right-edge f
       expect(await preview.getAttribute('data-retained-preview')).toBe('true')
       expect(await preview.evaluate(element => getComputedStyle(element).maskImage)).toContain('linear-gradient')
       expect(await preview.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
+      await expectSharedShimmer(reasoning)
+      const group = page.locator('[data-process-activity]').filter({ has: page.locator('[data-shimmer="true"]') })
+      await expectSharedShimmer(group)
+      await group.hover()
+      await expectSharedShimmer(group)
       expect(await reasoning.getByRole('button').getAttribute('aria-expanded')).toBe('false')
       await compareOrRefreshGolden(UI_EXPECTED,
         await captureStableAria(page, '[data-variant="think"]', scaffold.workspaceCwd), webSnapshotMode())
+      await group.click()
+      expect(await group.getAttribute('aria-expanded')).toBe('false')
+      await expectSharedShimmer(group)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      try {
+        expect(await group.locator('[inert]').evaluate(element => getComputedStyle(element).display)).toBe('none')
+        expect(await group.innerText()).toBe('Analyzing the request')
+      } finally {
+        await page.emulateMedia({ reducedMotion: null })
+      }
 
       third.proceed.resolve(undefined)
       await settled
       await page.getByText('Done', { exact: true }).waitFor()
-      expect(console.pageErrors).toEqual([])
-      expect(console.warnings).toEqual([])
+      expect(pageConsole.pageErrors).toEqual([])
+      expect(pageConsole.warnings).toEqual([])
     } finally {
       adapter.release()
       await browser.close()

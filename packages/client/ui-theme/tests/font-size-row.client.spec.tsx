@@ -87,7 +87,11 @@ describe('FontSizeRow', () => {
   })
 
   it('disables the outward arrow at each bound', () => {
-    mount(17)
+    const b = mount(23)
+    fireEvent.click(arrow('Increase font size'))
+    expect(b.setFontSize).toHaveBeenCalledWith(24)
+    act(() => { b.store.actions.sync(24, 1) })
+    expect(screen.getByText('24')).toBeDefined()
     expect(arrow('Increase font size').disabled).toBe(true)
     expect(arrow('Decrease font size').disabled).toBe(false)
     cleanup()

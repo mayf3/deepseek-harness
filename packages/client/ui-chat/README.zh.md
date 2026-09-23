@@ -40,7 +40,7 @@ Chat 在节点列表外通过一个 `MarkdownDelegateProvider` 提供文件及 H
 <a id="system-prompt-row"></a>
 ## Chat 隐藏的行
 
-Chat 在所有工作过程展示模式下都不显示系统提示词行、普通上下文注入和 `permission` 命令行。该过滤不改变已记录的 Session 事件或 Trajectory 查看能力。非人工轮次触发仍作为独立通知显示，其他命令行仍保留在 Chat 中。
+Chat 在所有工作过程展示模式下都不显示系统提示词行、普通上下文注入和 `permission` 命令行。该过滤不改变已记录的 Session 事件或 Trajectory 查看能力。非人工轮次触发仍作为独立通知显示，使用细边框和与周围有区分度的中性底色，其他命令行仍保留在 Chat 中。
 
 Assistant 尝试结束且没有可见消息时，Chat 隐藏已发布的 Node，不移除其 key。同一 Step 的重试再次产生可见内容时，复用该 key。已加载窗口缺少 Step 起点时也遵循此规则。
 
@@ -98,6 +98,8 @@ Chat 通过 `uiConversation.groups` 注册过程 Group Definition。React 通过
 每个组拥有本地 `useDisclosure` 状态，组件保持挂载时，模式切换保留该状态。
 
 Chat 节点 slot 为推理与工具注入绑定重置来源的 `useDisclosure` 钩子。中间 renderer 只透传、不订阅，每次调用拥有独立展开状态。来源回调保留接收对象及稳定引用。外层轮次实际隐藏过程成员时，所在节点重置这些开合状态，不替换组件 key，也不改变钩子引用。展示模式切换保留展开状态。
+
+过程行的文字与图标在所有工作过程展示模式下共用一种颜色：默认 tertiary、悬停 secondary，错误与警告文字保留语义色。运行中的分组标题、思考预览、工具与命令行、当前重试行以及底部运行状态使用共享的 [Shimmer](../ui-primitives/README.zh.md#component-catalog)。每行的文字共用一道从左到右的高光，包括折叠的分组标题；图标和悬停箭头保留底色。非回复条目之间相隔 8px；与 Assistant 回复相邻的条目相隔 16px，收起的整轮控件与其回答之间保持 16px。前置图标、折叠箭头及其容器随正文字号增量缩放。
 
 -----
 

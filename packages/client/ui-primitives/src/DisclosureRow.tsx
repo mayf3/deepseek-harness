@@ -1,17 +1,17 @@
 import { memo, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutlineRegular, IconChevronUpOutlineRegular } from './icons/index.tsx'
-import { TextShimmer } from './TextShimmer.tsx'
+import { Shimmer, ShimmerText } from './Shimmer.tsx'
 import css from './DisclosureRow.module.css'
 
-/** Shared 24px disclosure chrome for compact flow rows. */
+/** Shared 24px process row: tertiary text and icons, secondary on hover. */
 export interface DisclosureRowProps {
   icon: ReactNode
   title: string
   open: boolean
   expandable: boolean
   onToggle: () => void
-  /** Animate the title while its owning operation is running. */
+  /** Animate the complete header while its owning operation is running. */
   running?: boolean | undefined
   /** Makes the complete title row the disclosure target. */
   expandOnRowClick?: boolean | undefined
@@ -100,8 +100,10 @@ export const DisclosureRow = memo(function DisclosureRow({
             {leading}
           </span>
         )}
-        <TextShimmer className={clsx(css.title, titleClassName)} active={running}>{title}</TextShimmer>
-        {(keepContentWhenOpen || !open) && collapsedContent}
+        <Shimmer active={running} className={css.rowContent} contentClassName={css.rowContentLayout}>
+          <ShimmerText className={clsx(css.title, titleClassName)}>{title}</ShimmerText>
+          {(keepContentWhenOpen || !open) && collapsedContent}
+        </Shimmer>
       </div>
       {open && children}
     </div>
