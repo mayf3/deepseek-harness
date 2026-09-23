@@ -84,6 +84,11 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* The 40% share only protects a snippet; a snippetless match keeps the row. */
+.searchResultWorkspace:only-child {
+  max-width: 100%;
+}
+
 .searchResultSnippet {
   flex: 1;
   min-width: 0;
@@ -109,10 +114,6 @@
 
 .sessionRow .title {
   margin: 0 6px 0 4px;
-}
-
-.flatSessionRowWithoutStatus .title {
-  margin-left: 0;
 }
 
 .slot {
@@ -223,22 +224,6 @@
   font-size: 10px;
   line-height: 16px;
   color: var(--dsw-alias-label-caption);
-}
-
-.scheduleIndicator {
-  display: inline-flex;
-  flex: none;
-  width: 16px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  margin-right: 6px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.searchScheduleIndicator {
-  margin-right: 0;
-  margin-left: 4px;
 }
 
 .pinIndicator {

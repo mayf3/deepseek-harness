@@ -43,6 +43,18 @@
     },
     {
       "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../store"
+    },
+    {
+      "path": "../ui-layout"
+    },
+    {
+      "path": "../ui-chat/tsconfig.client.json"
     }
   ]
 }

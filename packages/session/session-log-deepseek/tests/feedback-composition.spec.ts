@@ -11,7 +11,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import MessageFeedback from '@deepseek-ai/dsh-message-feedback'
 import { recordFeedback } from '@deepseek-ai/dsh-command-feedback'
 import LlmRuntime, { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
+import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import DeepSeekLlmApiExtensions from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { startMockLlmServer, type MockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import * as SessionLogDeepSeek from '../src/index.ts'
@@ -41,7 +41,7 @@ it('uploads freeform feedback and message put/edit/delete through the unchanged 
     ['@deepseek-ai/dsh-session-persistence-jsonl', JsonlSessionPersistence],
     ['@deepseek-ai/dsh-message-feedback', MessageFeedback],
     ['@deepseek-ai/dsh-llm', LlmRuntime],
-    ['@deepseek-ai/dsh-llm-deepseek', LlmDeepSeek],
+    ['@deepseek-ai/dsh-llm-deepseek-api-key', LlmDeepSeek],
     ['@deepseek-ai/dsh-deepseek-llm-api-extensions', DeepSeekLlmApiExtensions],
     ['@deepseek-ai/dsh-session-log-deepseek', SessionLogDeepSeek],
   ])
@@ -52,7 +52,7 @@ it('uploads freeform feedback and message put/edit/delete through the unchanged 
       ? { config: { root: join(root!, 'sessions'), compression: 'none' } }
       : name === '@deepseek-ai/dsh-message-feedback'
         ? { config: { maxNoteBytes: 1024 } }
-        : name === '@deepseek-ai/dsh-llm-deepseek'
+        : name === '@deepseek-ai/dsh-llm-deepseek-api-key'
           ? { config: { baseURL: server!.baseURL } }
           : name === '@deepseek-ai/dsh-session-log-deepseek'
             ? { config: { enabled: true } }

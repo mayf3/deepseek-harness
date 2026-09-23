@@ -199,6 +199,19 @@
   white-space: nowrap;
 }
 
+.shortcut {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+.shortcut .shortcutKeys {
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .check {
   flex: none;
   color: var(--dsw-alias-label-primary);

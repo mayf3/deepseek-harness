@@ -40,7 +40,7 @@ Settings → General → Open chat links in selects the destination for ordinary
 <a id="system-prompt-row"></a>
 ## Hidden Chat rows
 
-Chat omits system-prompt, ordinary Context injection, and `permission` command rows in every work-details mode. The filter changes neither recorded Session events nor Trajectory inspection. Non-human Turn triggers remain independent notices; other command rows remain in Chat.
+Chat omits system-prompt, ordinary Context injection, and `permission` command rows in every work-details mode. Context containing tool additions or removals remains visible. The filter changes neither recorded Session events nor Trajectory inspection. Non-human Turn triggers remain independent notices; other command rows remain in Chat.
 
 When an Assistant attempt retires without a visible message, Chat hides its already-published Node instead of removing its key. A retry in the same Step reuses that key when visible content returns. This also applies when the loaded window lacks the Step start.
 
@@ -154,7 +154,7 @@ None; Chat presentation does not assemble or mutate provider requests.
 <a id="known-limitations-and-deferred-work"></a>
 
 
-- **Developer messages are not displayed** — presentation is intentionally deferred; encountering `developer/message` throws instead of rendering a fallback row.
+- **Tool-change presentation** — The `developer-message` Definition shares context presentation with `input-message`. Tool-only developer messages name a single added or removed tool inline without expansion. Multiple changes show added/removed counts and expand to comma-separated tool lists, one line per change kind. Mixed content uses the generic context presentation.
 
 - **Opening echoes predict local order** — several submissions made before the running update can all remain in Chat. Their initial order follows local submission order, not Host queue order; admission can reposition them when the Host receives requests in a different order.
 
