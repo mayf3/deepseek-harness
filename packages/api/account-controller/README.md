@@ -22,6 +22,8 @@ Account screens use authenticated Remote commands and a snapshot stream. The con
 
 The account namespace exposes getState, getProfile / getBalance, startSignIn, cancelSignIn, signOut, and watch. watch emits an initial complete state and subsequent complete states; disconnecting stops observation, not the login attempt. Cancellation names the attempt ID so a stale screen cannot cancel a newer login.
 
+`watchExpiry` delivers live credential-expiry notifications without an initial item or replay. Desktop uses this stream to hand off a one-shot toast when switching to Welcome.
+
 `hasRunningAccountTasks` checks running Agents through the account-owned predicate over their latest logged request context, including tools and retries. Idle Agents and API-key contexts are excluded. The account provider independently cancels matching tasks when credentials are removed.
 
 <a id="understand-the-implementation"></a>

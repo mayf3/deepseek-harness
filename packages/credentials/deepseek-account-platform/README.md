@@ -13,7 +13,7 @@ getPlatformSession exports the stored grant only when its issuer matches platfor
 
 `desktopPlatform` defaults to `null`. Every profile then sends `x-client-platform: web` on Host authorization, profile, balance, and logout requests; the Desktop profile supplies `darwin` or `win32`, replacing it with `x-client-platform: desktop-mac` or `desktop-win`. The provider owns that header, so deployment configuration cannot override it. Embedded Platform document and API requests receive the same platform header alongside their deployment headers, only at the configured origin.
 
-Profile and balance HTTP 401 responses or top-level response code `40003` (invalid authorization) clear the rejected local grant and publish `signOutReason: expired`. Concurrent responses share one removal; responses from an invalidated credential generation cannot clear its replacement. Other HTTP failures retain the grant. Host inference consumers can report a rejected request token through `rejectToken`; removal requires that it still matches the stored login.
+Profile and balance HTTP 401 responses or top-level response code `40003` (invalid authorization) clear the rejected local grant and emit the live `deepseek-account/session-expired` notification. Concurrent responses share one removal; responses from an invalidated credential generation cannot clear its replacement. Other HTTP failures retain the grant. Host inference consumers can report a rejected request token through `rejectToken`; removal requires that it still matches the stored login.
 
 ## Summary
 

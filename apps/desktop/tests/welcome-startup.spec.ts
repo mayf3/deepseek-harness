@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   beforeRead: vi.fn(async () => {}),
   beforeWelcome: vi.fn(async () => {}),
   copy: vi.fn(),
+  expiryListener: undefined as (() => void) | undefined,
   accountListener: undefined as ((value: AccountView) => void) | undefined,
   accountState: vi.fn<() => Promise<AccountView>>().mockResolvedValue({
     status: 'signed-out', attempt: null, links: { usageUrl: '', topUpUrl: '' },
@@ -120,7 +121,11 @@ vi.mock('../src/welcome-backend.ts', () => ({
     },
     save: async () => ({ ok: true }),
     account: {
-      watch: (listener: (value: AccountView) => void) => { state.accountListener = listener; return () => {} },
+      watch: (listener: (value: AccountView) => void, _failed: () => void, expired: () => void) => {
+        state.accountListener = listener
+        state.expiryListener = expired
+        return () => {}
+      },
       state: state.accountState,
     },
   }),
@@ -239,17 +244,19 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   const welcomeCount = state.beforeWelcome.mock.calls.length
   state.hasApiKey = true
   state.accountListener!({ ...account, status: 'credential-stored', attempt: null })
-  state.accountListener!({ ...account, status: 'signed-out', attempt: null, signOutReason: 'expired' })
+  state.accountListener!({ ...account, status: 'signed-out', attempt: null })
+  state.expiryListener!()
   await vi.advanceTimersByTimeAsync(0)
   expect(state.beforeWelcome).toHaveBeenCalledTimes(welcomeCount)
   expect(await state.operations!.takeNotice()).toBeUndefined()
   state.hasApiKey = false
   state.accountListener!({ ...account, status: 'credential-stored', attempt: null })
-  state.accountListener!({ ...account, status: 'signed-out', attempt: null, signOutReason: 'expired' })
+  state.accountListener!({ ...account, status: 'signed-out', attempt: null })
+  state.expiryListener!()
   await vi.waitFor(() => { expect(state.beforeWelcome).toHaveBeenCalledTimes(welcomeCount + 1) })
   expect(await state.operations!.takeNotice()).toBe('session-expired')
   expect(await state.operations!.takeNotice()).toBeUndefined()
-  state.accountListener!({ ...account, status: 'signed-out', attempt: null, signOutReason: 'expired' })
+  state.accountListener!({ ...account, status: 'signed-out', attempt: null })
   await vi.advanceTimersByTimeAsync(0)
   expect(await state.operations!.takeNotice()).toBeUndefined()
   state.accountListener!({ ...account, status: 'credential-stored', attempt: null })

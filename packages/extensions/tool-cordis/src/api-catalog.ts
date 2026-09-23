@@ -893,7 +893,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract rejectToken(token: string): Promise<void>',
         description: 'Remove an inference-rejected token only while it still matches the stored login.',
         parameters: [{ name: 'token', description: 'token captured by the rejected inference request.' }],
-        returns: 'after matching credentials are removed and expiry state is published.',
+        returns: 'after matching credentials are removed and the expiry notification is emitted.',
       },
       {
         signature: 'abstract getPlatformSession(): Promise<PlatformSession | null>',
@@ -3880,6 +3880,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [],
   },
   {
+    name: 'deepseek-account/session-expired',
+    mode: 'emit',
+    signature: '\'deepseek-account/session-expired\'(): void',
+    summary: 'Server rejection removed the current account credential; this notification is not replayed.',
+    description: 'Server rejection removed the current account credential; this notification is not replayed.',
+    parameters: [],
+  },
+  {
     name: 'deepseek-account/signed-out',
     mode: 'emit',
     signature: '\'deepseek-account/signed-out\'(): void',
@@ -4261,7 +4269,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountView',
-    declaration: 'export interface AccountView {\n    readonly status: \'signed-out\' | \'credential-stored\';\n    readonly signOutReason?: \'expired\';\n    readonly links: AccountLinks;\n    readonly attempt: SignInAttemptView | null;\n}',
+    declaration: 'export interface AccountView {\n    readonly status: \'signed-out\' | \'credential-stored\';\n    readonly links: AccountLinks;\n    readonly attempt: SignInAttemptView | null;\n}',
   },
   {
     name: 'AccountWallet',

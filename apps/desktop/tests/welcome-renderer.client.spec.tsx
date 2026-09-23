@@ -269,7 +269,7 @@ it.each(['zh-CN', 'en'])('keeps the expiry notice visible after returning to Wel
     const view = mount(language, takeNotice)
     await act(async () => {})
     const publish = view.api.onAccountState.mock.calls[0]![0]
-    const expired: AccountView = { status: 'signed-out', signOutReason: 'expired', attempt: null,
+    const expired: AccountView = { status: 'signed-out', attempt: null,
       links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' } }
     await act(async () => { publish(expired) })
     const notice = screen.getByRole('alert')
@@ -290,7 +290,7 @@ it.each(['zh-CN', 'en'])('keeps the expiry notice visible after returning to Wel
 it('does not infer a notification from a retained expired account snapshot', async () => {
   const view = mount()
   await act(async () => {
-    view.api.onAccountState.mock.calls[0]![0]({ status: 'signed-out', signOutReason: 'expired', attempt: null,
+    view.api.onAccountState.mock.calls[0]![0]({ status: 'signed-out', attempt: null,
       links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' } })
   })
   expect(screen.queryByRole('alert')).toBeNull()

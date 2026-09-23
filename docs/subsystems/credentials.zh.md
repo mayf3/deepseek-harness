@@ -323,7 +323,7 @@ abstract resolveToken(url: string): Promise<string | undefined>
 /**
  * Remove an inference-rejected token only while it still matches the stored login.
  * @param token - token captured by the rejected inference request.
- * @returns after matching credentials are removed and expiry state is published.
+ * @returns after matching credentials are removed and the expiry notification is emitted.
  */
 abstract rejectToken(token: string): Promise<void>
 
@@ -425,6 +425,21 @@ An account model request requires the user to sign in.
  * @mode emit
  */
 'deepseek-account/model-sign-in-required'(): void
+```
+
+Source: [`packages/credentials/deepseek-account/src/types.ts`](../../packages/credentials/deepseek-account/src/types.ts)
+
+<a id="deepseek-accountsession-expired--emit"></a>
+
+#### `deepseek-account/session-expired` — emit
+
+Server rejection removed the current account credential; this notification is not replayed.
+
+```ts cordis-catalog
+/** Server rejection removed the current account credential; this notification is not replayed.
+ * @mode emit
+ */
+'deepseek-account/session-expired'(): void
 ```
 
 Source: [`packages/credentials/deepseek-account/src/types.ts`](../../packages/credentials/deepseek-account/src/types.ts)

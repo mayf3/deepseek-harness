@@ -29,6 +29,11 @@ export interface AccountSnapshot {
 
 /** Host operations injected into the Cordis-free account component. */
 export interface AccountSectionInjected {
+  /** Subscribe to live credential-expiry notifications.
+   * @param listener - callback after the current credential is removed.
+   * @returns listener cleanup.
+   */
+  subscribeSessionExpired?: (listener: () => void) => () => void
   /** Subscribe to live model sign-in guidance; the returned function removes the listener.
    * @param listener - callback for one rejected account-model request.
    * @returns listener cleanup.

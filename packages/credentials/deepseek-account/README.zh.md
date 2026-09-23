@@ -13,7 +13,7 @@ getPlatformSession 为原生 Platform 内嵌提供仅限 Host 的 origin/token �
 
 `rejectToken` 接收 Host 推理请求被拒绝的 token，仅删除与它匹配的当前登录凭据；延迟返回的拒绝不能清除替换后的凭据。
 
-`AccountView.signOutReason` 区分服务端判定凭据失效和主动退登；登录状态下不携带该字段。
+`deepseek-account/session-expired` 在移除被拒绝的凭据后，向当前订阅方通知一次。账号快照不携带失效提示，因此重新连接不会重复弹出 toast。
 
 ## 概述
 

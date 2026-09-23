@@ -13,7 +13,7 @@ getPlatformSession returns a Host-only origin/token snapshot for native Platform
 
 `rejectToken` accepts a Host inference request’s rejected token and removes only the matching current login; a late rejection cannot clear a replacement credential.
 
-`AccountView.signOutReason` identifies a server-expired credential separately from explicit sign-out; it is absent while signed in.
+`deepseek-account/session-expired` notifies current subscribers once after a rejected credential is removed. Account snapshots carry no expiry notice, so reconnecting does not repeat the toast.
 
 ## Summary
 

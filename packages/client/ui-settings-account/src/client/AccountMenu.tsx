@@ -19,17 +19,17 @@ export type AccountMenuProps = PropsRuntime<'settings.launcher'> & PropsLocale<'
  * @returns account menu launcher.
  */
 export function AccountMenu({
-  subscribeModelSignInRequired, wide, openSettings, openOnboarding, useAccount, useTheme, signOut, hasRunningAccountTasks,
+  subscribeSessionExpired, subscribeModelSignInRequired, wide, openSettings, openOnboarding, useAccount, useTheme,
+  signOut, hasRunningAccountTasks,
   contactUs, showLogin, start, cancel, t,
 }: AccountMenuProps) {
   const account = useAccount(state => state)
   const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
   const signedIn = account.view?.status === 'credential-stored'
-  const expired = account.view?.status === 'signed-out' && account.view.signOutReason === 'expired'
   const [signInNotice, setSignInNotice] = useState(0)
   useEffect(() => subscribeModelSignInRequired?.(() => { setSignInNotice(value => value + 1) }), [subscribeModelSignInRequired])
   const [expiryNotice, setExpiryNotice] = useState(false)
-  useEffect(() => { setExpiryNotice(expired) }, [expired])
+  useEffect(() => subscribeSessionExpired?.(() => { setExpiryNotice(true) }), [subscribeSessionExpired])
   const profile = account.details?.profile
   const label = profile === undefined ? null : profile.status === 'ready'
     ? profile.value.name ?? profile.value.contact ?? t('signedIn') : t('signedIn')

@@ -60,6 +60,28 @@ export class AccountController extends TypertRemoteService {
   @Remote
   signOut(): Promise<AccountView> { return this.ctx.deepseekAccount.signOut() }
   /**
+   * Subscribe to credential expiry without replaying prior notifications.
+   * @param signal - stream lifetime.
+   * @returns notifications emitted while subscribed.
+   */
+  @Remote({ mode: 'stream' })
+  async *watchExpiry(signal: AbortSignal): AsyncIterable<'session-expired'> {
+    let pending = 0
+    let wake: (() => void) | undefined
+    const stop = this.ctx.on('deepseek-account/session-expired', () => { pending++; wake?.() })
+    const abort = (): void => { wake?.() }
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      while (!signal.aborted) {
+        if (pending > 0) { pending--; yield 'session-expired'; continue }
+        await new Promise<void>((resolve) => { wake = resolve })
+      }
+    } finally {
+      stop()
+      signal.removeEventListener('abort', abort)
+    }
+  }
+  /**
    * Stream the safe account projection.
    * @param signal - stream lifetime.
    * @returns initial snapshot and subsequent changes.

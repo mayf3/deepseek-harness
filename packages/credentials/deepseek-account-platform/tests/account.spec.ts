@@ -886,11 +886,14 @@ it.each(['profile', 'balance'] as const)('clears the rejected account grant afte
   await storeAccount(f)
   let signedOut = 0
   f.ctx.on('deepseek-account/signed-out', () => { signedOut++ })
+  const expired = vi.fn()
+  f.ctx.on('deepseek-account/session-expired', expired)
   f.detailStatus(401)
   expect(await (field === 'profile' ? f.account.getProfile() : f.account.getBalance())).toBeNull()
-  expect(await f.account.getState()).toMatchObject({ status: 'signed-out', signOutReason: 'expired', attempt: null })
+  expect(await f.account.getState()).toMatchObject({ status: 'signed-out', attempt: null })
   expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default'))).toBeUndefined()
   expect(signedOut).toBe(1)
+  expect(expired).toHaveBeenCalledOnce()
 })
 
 it.each(['profile', 'balance'] as const)('clears the rejected account grant after a %s HTTP 200 with code 40003', async (field) => {
@@ -898,11 +901,14 @@ it.each(['profile', 'balance'] as const)('clears the rejected account grant afte
   await storeAccount(f)
   let signedOut = 0
   f.ctx.on('deepseek-account/signed-out', () => { signedOut++ })
+  const expired = vi.fn()
+  f.ctx.on('deepseek-account/session-expired', expired)
   f.detailCode(40003)
   expect(await (field === 'profile' ? f.account.getProfile() : f.account.getBalance())).toBeNull()
-  expect(await f.account.getState()).toMatchObject({ status: 'signed-out', signOutReason: 'expired', attempt: null })
+  expect(await f.account.getState()).toMatchObject({ status: 'signed-out', attempt: null })
   expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default'))).toBeUndefined()
   expect(signedOut).toBe(1)
+  expect(expired).toHaveBeenCalledOnce()
 })
 
 it('coalesces simultaneous unauthorized profile and balance responses', async () => {
@@ -910,10 +916,13 @@ it('coalesces simultaneous unauthorized profile and balance responses', async ()
   await storeAccount(f)
   let signedOut = 0
   f.ctx.on('deepseek-account/signed-out', () => { signedOut++ })
+  const expired = vi.fn()
+  f.ctx.on('deepseek-account/session-expired', expired)
   f.detailStatus(401)
   await Promise.all([f.account.getProfile(), f.account.getBalance()])
   expect(signedOut).toBe(1)
-  expect(await f.account.getState()).toMatchObject({ status: 'signed-out', signOutReason: 'expired' })
+  expect(expired).toHaveBeenCalledOnce()
+  expect(await f.account.getState()).toMatchObject({ status: 'signed-out' })
 })
 
 it.each([403, 500])('retains the account grant after HTTP %s', async (status) => {
@@ -1289,7 +1298,7 @@ it('cancels a pending sign-in when the current stored grant expires', async () =
   await f.wait('waiting-browser')
   f.detailStatus(401)
   expect(await f.account.getBalance()).toBeNull()
-  expect(await f.account.getState()).toMatchObject({ status: 'signed-out', attempt: null, signOutReason: 'expired' })
+  expect(await f.account.getState()).toMatchObject({ status: 'signed-out', attempt: null })
 })
 
 it('retains the grant when local expiry removal fails and permits a later retry', async () => {
@@ -1300,9 +1309,9 @@ it('retains the grant when local expiry removal fails and permits a later retry'
   try {
     await expect(f.account.getBalance()).rejects.toThrow('storage failed')
     expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
-    expect((await f.account.getState()).signOutReason).toBeUndefined()
+    expect(await f.account.getState()).not.toHaveProperty('signOutReason')
     expect(await f.account.getBalance()).toBeNull()
-    expect(await f.account.getState()).toMatchObject({ status: 'signed-out', signOutReason: 'expired' })
+    expect(await f.account.getState()).toMatchObject({ status: 'signed-out' })
   } finally { remove.mockRestore() }
 })
 
@@ -1359,16 +1368,18 @@ it('expires an inference-rejected token without another Platform request', async
   await storeAccount(f)
   const published: string[] = []
   f.ctx.on('deepseek-account/signed-out', () => { published.push('signed-out') })
+  f.ctx.on('deepseek-account/session-expired', () => { published.push('session-expired') })
+  await f.account.rejectToken('test-platform-grant')
   await f.account.rejectToken('test-platform-grant')
   const state = await f.account.getState()
-  expect({ status: state.status, reason: state.signOutReason, published, detailRequests: f.detailRequests })
+  expect({ status: state.status, published, detailRequests: f.detailRequests })
     .toMatchInlineSnapshot(`
       {
         "detailRequests": [],
         "published": [
+          "session-expired",
           "signed-out",
         ],
-        "reason": "expired",
         "status": "signed-out",
       }
     `)
@@ -1387,7 +1398,7 @@ it('ignores an inference rejection while already signed out', async () => {
   const f = await fixture()
   await f.account.rejectToken('previous-platform-grant')
   expect(await f.account.getState()).toMatchObject({ status: 'signed-out' })
-  expect((await f.account.getState()).signOutReason).toBeUndefined()
+  expect(await f.account.getState()).not.toHaveProperty('signOutReason')
 })
 
 

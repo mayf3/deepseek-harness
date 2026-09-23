@@ -7,7 +7,7 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
-Server-expired account credentials show a localized sign-in reminder toast and clear the displayed account details.
+Server-expired account credentials clear the displayed account details and emit a localized sign-in reminder toast once; account snapshot replay does not repeat it.
 
 ## Summary
 

@@ -22,8 +22,6 @@ export interface AccountLinks {
 /** Stored-account presence is not a claim that the server has validated its token. */
 export interface AccountView {
   readonly status: 'signed-out' | 'credential-stored'
-  /** Server rejection cleared the local credential. */
-  readonly signOutReason?: 'expired'
   readonly links: AccountLinks
   readonly attempt: SignInAttemptView | null
 }
@@ -51,6 +49,10 @@ export interface AccountDetails {
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
+    /** Server rejection removed the current account credential; this notification is not replayed.
+     * @mode emit
+     */
+    'deepseek-account/session-expired'(): void
     /** An account model request requires the user to sign in.
      * @mode emit
      */

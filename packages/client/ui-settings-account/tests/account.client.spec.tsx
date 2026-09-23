@@ -373,16 +373,26 @@ it('opens more account information externally without invoking the embedded Plat
 it.each([en, zh])('shows a localized toast when the account credential expires', async (copy) => {
   vi.useFakeTimers()
   onTestFinished(() => { vi.useRealTimers() })
-  const operations = mount({ status: 'signed-out', attempt: null, signOutReason: 'expired' }, copy)
+  const operations = mount({ status: 'signed-out', attempt: null }, copy)
   cleanup()
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
-  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}
+  let expire: (() => void) | undefined
+  const unsubscribe = vi.fn()
+  const element = <AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    subscribeSessionExpired={(listener) => { expire = listener; return unsubscribe }}
     useAccount={selector => selector(operations.hooks.account.getSnapshot())}
     useTheme={selector => selector(operations.hooks.theme.getSnapshot())} wide openOnboarding={() => {}} openSettings={() => {}}
-    t={key => key in copy ? copy[key as AccountKey] : key} />)
+    t={key => key in copy ? copy[key as AccountKey] : key} />
+  const view = render(element)
+  expect(screen.queryByRole('alert')).toBeNull()
+  act(() => { expire!() })
   expect(screen.getByRole('alert').textContent).toContain(copy.sessionExpired)
   await expect(`${screen.getByRole('alert').textContent}\n`).toMatchFileSnapshot(`./expected/expired-${copy === en ? 'en' : 'zh'}.txt`)
   await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  view.unmount()
+  expect(unsubscribe).toHaveBeenCalledOnce()
+  render(element)
   expect(screen.queryByRole('alert')).toBeNull()
 })
 

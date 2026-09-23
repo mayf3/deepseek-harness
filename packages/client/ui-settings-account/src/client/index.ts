@@ -89,6 +89,7 @@ export function apply(ctx: Context): void {
   })().catch(() => { if (!disposed) publish({ ...snapshot, failed: true }) })
   const nativePlatform = (globalThis as typeof globalThis & { dshPlatform?: PlatformBridge }).dshPlatform
   const operations: AccountSectionInjected = {
+    subscribeSessionExpired: listener => ctx.remote.$on('deepseek-account/session-expired', listener),
     subscribeModelSignInRequired: listener => ctx.remote.$on('deepseek-account/model-sign-in-required', listener),
     ...nativePlatform === undefined ? {} : { platform: nativePlatform },
     refresh,

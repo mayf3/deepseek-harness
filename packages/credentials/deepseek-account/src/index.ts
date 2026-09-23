@@ -79,7 +79,7 @@ export abstract class DeepSeekAccount extends Service {
   /**
    * Remove an inference-rejected token only while it still matches the stored login.
    * @param token - token captured by the rejected inference request.
-   * @returns after matching credentials are removed and expiry state is published.
+   * @returns after matching credentials are removed and the expiry notification is emitted.
    */
   abstract rejectToken(token: string): Promise<void>
   /**

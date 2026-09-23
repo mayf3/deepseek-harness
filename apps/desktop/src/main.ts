@@ -383,7 +383,8 @@ async function main(): Promise<void> {
         injections = ready.injections
         welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
         stopAccount?.()
-        stopAccount = welcomeBackend.account.watch((state) => {
+        const accountBackend = welcomeBackend.account
+        stopAccount = accountBackend.watch((state) => {
           if (quitting) return
           if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
           const attempt = state.attempt
@@ -399,7 +400,6 @@ async function main(): Promise<void> {
           if (previousAccountStatus === 'credential-stored' && state.status === 'signed-out') {
             void readWelcomeState().then(async (value) => {
               if (needsWelcome(value) && !quitting) {
-                if (state.signOutReason === 'expired') pendingWelcomeNotice = 'session-expired'
                 enteredWorkspace = false
                 await showWelcome()
                 if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
@@ -410,6 +410,15 @@ async function main(): Promise<void> {
           previousAccountStatus = state.status
         }, () => {
           // The stream reconnects; a transport failure does not change account state.
+        }, () => {
+          void readWelcomeState().then(async (value) => {
+            if (!needsWelcome(value) || quitting) return
+            pendingWelcomeNotice = 'session-expired'
+            enteredWorkspace = false
+            await showWelcome()
+            const state = await accountBackend.state()
+            if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
+          }).catch(() => undefined)
         })
       },
       stop: async () => {
