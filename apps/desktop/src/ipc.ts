@@ -7,6 +7,8 @@ import type { DesktopBrowserBridge } from '@deepseek-ai/dsh-client-ui-sidebar-br
 export const DESKTOP_IPC = {
   boot: 'dsh-desktop:boot',
   enterWorkspace: 'dsh-desktop:enter-workspace',
+  onboardingActive: 'dsh-desktop:onboarding-active',
+  onboardingApiKey: 'dsh-desktop:onboarding-api-key',
   bootFailed: 'dsh-desktop:boot-failed',
   browserAcquire: 'dsh-desktop:browser-acquire',
   browserRelease: 'dsh-desktop:browser-release',

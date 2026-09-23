@@ -1,0 +1,101 @@
+[
+  {
+    "purpose": "office",
+    "process": "compact",
+    "chat": {
+      "transcriptView": "compact",
+      "performanceUsage": "compact"
+    },
+    "developer": {
+      "enabled": false
+    }
+  },
+  {
+    "purpose": "office",
+    "process": "detailed",
+    "chat": {
+      "transcriptView": "compact",
+      "performanceUsage": "compact"
+    },
+    "developer": {
+      "enabled": false
+    }
+  },
+  {
+    "purpose": "office",
+    "process": "expanded",
+    "chat": {
+      "transcriptView": "compact",
+      "performanceUsage": "compact"
+    },
+    "developer": {
+      "enabled": false
+    }
+  },
+  {
+    "purpose": "development",
+    "process": "compact",
+    "chat": {
+      "transcriptView": "compact",
+      "performanceUsage": "detailed"
+    },
+    "developer": {
+      "enabled": true
+    }
+  },
+  {
+    "purpose": "development",
+    "process": "detailed",
+    "chat": {
+      "transcriptView": "detailed",
+      "performanceUsage": "detailed"
+    },
+    "developer": {
+      "enabled": true
+    }
+  },
+  {
+    "purpose": "development",
+    "process": "expanded",
+    "chat": {
+      "transcriptView": "expanded",
+      "performanceUsage": "detailed"
+    },
+    "developer": {
+      "enabled": true
+    }
+  },
+  {
+    "purpose": "both",
+    "process": "compact",
+    "chat": {
+      "transcriptView": "compact",
+      "performanceUsage": "detailed"
+    },
+    "developer": {
+      "enabled": true
+    }
+  },
+  {
+    "purpose": "both",
+    "process": "detailed",
+    "chat": {
+      "transcriptView": "detailed",
+      "performanceUsage": "detailed"
+    },
+    "developer": {
+      "enabled": true
+    }
+  },
+  {
+    "purpose": "both",
+    "process": "expanded",
+    "chat": {
+      "transcriptView": "expanded",
+      "performanceUsage": "detailed"
+    },
+    "developer": {
+      "enabled": true
+    }
+  }
+]

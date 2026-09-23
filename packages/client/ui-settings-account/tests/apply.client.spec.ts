@@ -7,6 +7,11 @@ import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-clie
 import type { AccountDetails, AccountView, AccountUserId, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { Config as OnboardingConfig } from '../src/index.ts'
+import { ChatSettingsSchema as ChatConfig } from '../../ui-chat/src/chat-settings.ts'
+import { DeveloperToolsSettingsSchema as SettingsConfig } from '../../ui-settings/src/developer-tools-settings.ts'
+import type { DesktopOnboardingInjected } from '../src/client/DesktopOnboardingEntry.tsx'
 import type { AccountSectionInjected } from '../src/client/AccountSection.tsx'
 import { CONTACT_CONFIG_GLOBAL } from '../src/contact-config.ts'
 
@@ -210,3 +215,49 @@ it('forwards live account notices and removes their subscriptions', async ({ sta
   expect(expired).toHaveBeenCalledOnce()
   expect(unavailable).toHaveBeenCalledOnce()
 })
+for (const native of [false, true]) it(`exposes desktop progress actions and disposes its subscriptions (native platform: ${native})`, async ({ start, mock }) => {
+  vi.stubGlobal('dshDesktop', {})
+  const platform = { open: vi.fn(), setBounds: vi.fn(), close: vi.fn() }
+  if (native) vi.stubGlobal('dshPlatform', platform)
+  const c = await start()
+  const entry = c.ctx.slots.entries('shell.overlay').find(entry => entry.options.id === 'desktop-onboarding')!
+  const injected = (entry.inject!() as object) as DesktopOnboardingInjected
+  expect(injected.platform).toBe(native ? platform : undefined)
+  await injected.refresh()
+  expect(await injected.update({ step: 'credit' })).toBe(false)
+  expect(await injected.complete('skipped')).toBe(false)
+  expect(await injected.retry()).toBe(false)
+  expect(injected.hooks.onboarding.getSnapshot().visible).toBe(false)
+  await c.unload(SELF)
+  expect(c.ctx.slots.entries('shell.overlay').some(entry => entry.options.id === 'desktop-onboarding')).toBe(false)
+  expect(mock.remote.account.getBalance).not.toHaveBeenCalled()
+}, 60_000)
+
+it('applies API-key defaults through the desktop slot and shared configuration owners', async ({ start, mock }) => {
+  vi.stubGlobal('dshDesktop', {})
+  const values: Record<string, object> = {
+    'ui-settings-account': { version: 1, step: 'welcome', purpose: null, process: null, completion: null, usage: 'compact', developerTools: false },
+    'ui-chat': { transcriptView: 'compact', performanceUsage: 'detailed', linkOpening: 'sidebar' },
+    'ui-settings': { enabled: false },
+  }
+  const schemas = { 'ui-settings-account': OnboardingConfig, 'ui-chat': ChatConfig, 'ui-settings': SettingsConfig }
+  const namespace = (ns: keyof typeof schemas) => ({ ns, autoGenerate: false, schema: JSON.parse(JSON.stringify(schemas[ns].toJSON())) as JsonValue, value: values[ns] as JsonValue, applies: 'live' as const, secrets: [], revision: 0 })
+  mock.remote.settings.describe.mockResolvedValue(ok({
+    writable: true, hasDocument: true, namespaces: Object.keys(schemas).map(ns => namespace(ns as keyof typeof schemas)),
+  }))
+  const hasApiKey = vi.fn(async () => true)
+  vi.stubGlobal('dshOnboarding', { hasApiKey })
+  mock.remote.settings.mutate.mockImplementation(async (ns, ops) => {
+    const key = ns as keyof typeof schemas
+    const value: Record<string, unknown> = { ...values[key] }
+    for (const op of ops) if (op.op === 'set') value[String(op.path[0])] = op.value
+    values[key] = value
+    return ok(namespace(key))
+  })
+  const c = await start()
+  const injected = c.ctx.slots.entries('shell.overlay').find(entry => entry.options.id === 'desktop-onboarding')!.inject!() as object as DesktopOnboardingInjected
+  await vi.waitFor(() => { expect(injected.hooks.onboarding.getSnapshot().progress.step).toBe('done') })
+  expect(hasApiKey).toHaveBeenCalled()
+  expect(values['ui-settings']).toEqual({ enabled: true })
+  expect(values['ui-chat']).toMatchObject({ transcriptView: 'detailed' })
+}, 60_000)

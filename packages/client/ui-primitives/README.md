@@ -49,9 +49,8 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `StateDot` | Solid green `done`, amber `warning`, red `error`, and neutral-grey `idle` marks in a 10px slot, plus a tertiary-grey 14px rotating `ongoing` loader whose animations pin to document time zero so every visible loader rotates in phase. `aria-hidden`, so the render site owns the name. `appearance="step"` shows a filled check for completion and a hollow pending circle. |
 | `ConnectionIndicator` | Inline connection-recovery control across outage, retry, and recovered states. |
 | `DisclosureRow` | 24px compact disclosure that lays title and content side by side. Memoized with shallow prop comparison; keep callbacks and React-node props stable when their content is unchanged. |
-| `Modal` | Centered dialog over a page mask. A nested dialog can intercept keys with `onKeyDownCapture` before document Escape handlers. |
+| `Modal` | Centered dialog over a page mask. A nested dialog can intercept keys with `onKeyDownCapture` before document Escape handlers. The tint and dialog fade in while backdrop blur stays fully applied, honoring reduced motion. Set `backdropBlur={false}` when the caller already blurs the source page. |
 | `RiskConfirmation` | Sensitive action gated behind an explicit checkbox. |
-| `OnboardingSurface` | First-run stage that holds the application root inert. |
 | `Tooltip` | Hover text anchored to a cloned child; optional `portal` rendering escapes clipping containers and ancestor stacking contexts that cap the bubble's z-index. |
 | `HoverCard` | Hover preview the pointer can rest on and select from; optional copy button. |
 | `ImageLightbox` | Shared image modal with focus restoration and Escape dismissal. |

@@ -506,16 +506,45 @@ export interface Config {
 ## `@deepseek-ai/dsh-client-ui-settings-account`
 
 ```ts config-catalog
+/** Public contact options and live device-local onboarding progress. */
+export interface Config extends ContactConfig {
+  /** Onboarding progress format version. */
+  version: Volatile<1>
+  /** Last accepted onboarding page. */
+  step: Volatile<OnboardingStep>
+  /** Selected work scenario. */
+  purpose?: Volatile<OnboardingPurpose | null | undefined>
+  /** Selected transcript detail. */
+  process?: Volatile<OnboardingProcess | null | undefined>
+  /** Completion reason, absent until completion. */
+  completion?: Volatile<'completed' | 'skipped' | 'api-key' | null | undefined>
+  /** Selected usage detail. */
+  usage: Volatile<'compact' | 'detailed'>
+  /** Selected developer-tool visibility. */
+  developerTools: Volatile<boolean>
+}
+
 /** Questionnaire destination and its supported source option. */
-export interface Config {
+export interface ContactConfig {
   /** HTTPS questionnaire URL; override for a test form. */
   contactFormUrl: string
   /** Questionnaire source option; empty until Harness is supported by the form. */
   contactSource: string
 }
+
+/** Persisted steps; a native top-up page leaves the durable step at credit. */
+export type OnboardingStep = 'welcome' | 'credit' | 'purpose' | 'process' | 'done'
+
+/** Work scenarios offered by the desktop introduction. */
+export type OnboardingPurpose = 'office' | 'development' | 'both'
+
+/** Work-detail mode applied to Chat when onboarding completes. */
+export type OnboardingProcess = 'compact' | 'detailed' | 'expanded'
 ```
 
-来源： [`packages/client/ui-settings-account/src/contact-config.ts:5`](../packages/client/ui-settings-account/src/contact-config.ts)
+依赖： `Volatile` (`@deepseek-ai/cordis`)
+
+来源： [`packages/client/ui-settings-account/src/index.ts:9`](../packages/client/ui-settings-account/src/index.ts)
 
 <a id="deepseek-aidsh-client-ui-settings-models"></a>
 
@@ -715,6 +744,8 @@ export interface Config {
   accountRequestHeaders?: Record<string, string>
   /** Deadline for each platform HTTP request. */
   requestTimeoutMs?: number
+  /** Deadline for recharge-wallet queries; timeout returns a failed balance outcome. */
+  balanceTimeoutMs?: number
   /** Additional logout attempts after the first request fails, at most five. */
   logoutMaxRetries?: number
   /** Delay before the first logout retry; each later delay doubles. */

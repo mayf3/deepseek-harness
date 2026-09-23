@@ -15,6 +15,7 @@ interface ModalBaseProps {
   className?: string
   contentClassName?: string
   onKeyDownCapture?: KeyboardEventHandler<HTMLDivElement>
+  backdropBlur?: boolean
 }
 
 type ModalProps = ModalBaseProps & (
@@ -33,13 +34,15 @@ type ModalProps = ModalBaseProps & (
  * @param props.children - body (inputs, etc.).
  * @param props.footer - action row (Cancel / Create).
  * @param props.contentClassName - optional class for a scrollable content region.
+ * @param props.backdropBlur - disable when the caller already blurs the page; defaults to true.
  * @param props.headless - render children directly in the card (no default
  * header/close/body chrome); mask, card, Escape, and aria-label remain.
  * @param props.onKeyDownCapture - handle a nested dialog's keys before the document Escape listeners.
  * @returns null when closed; otherwise the overlay tree.
  */
 export function Modal({
-  open, onClose, title, closeLabel, description, children, footer, className, contentClassName, onKeyDownCapture, headless = false,
+  open, onClose, title, closeLabel, description, children, footer, className, contentClassName,
+  onKeyDownCapture, headless = false, backdropBlur = true,
 }: ModalProps) {
   useEffect(() => {
     if (!open) return
@@ -54,7 +57,7 @@ export function Modal({
 
   return createPortal((
     <div className={css.root} role="presentation" onKeyDownCapture={onKeyDownCapture}>
-      <div className={css.mask} aria-hidden="true" onClick={onClose} />
+      <div className={css.mask} style={backdropBlur ? undefined : { backdropFilter: 'none' }} aria-hidden="true" onClick={onClose} />
       <div
         className={clsx(css.dialog, className)}
         role="dialog"

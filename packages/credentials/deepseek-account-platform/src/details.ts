@@ -9,7 +9,7 @@ const user = z.object({
   id_profile: z.object({ name: z.string().nullable(), picture: z.string().nullish() }).nullish(),
 })
 const wallet = z.object({
-  currency: z.enum(['CNY', 'USD']), balance: z.string().regex(/^-?\d+(?:\.\d+)?$/),
+  currency: z.enum(['CNY', 'USD']), balance: z.string().regex(/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/),
 })
 const summary = z.object({ normal_wallets: z.array(wallet), bonus_wallets: z.array(wallet) })
 

@@ -11,7 +11,7 @@ Server-expired account credentials clear the displayed account details and emit 
 
 ## Summary
 
-Desktop Account settings display DeepSeek login state and offer browser authorization and cancellation; the sidebar account menu provides Platform sign-out.
+The Account settings section displays DeepSeek login state and offers browser sign-in and cancellation; the sidebar account menu provides Platform sign-out. Desktop users also receive a resumable introduction to account credit and presentation preferences.
 
 ## Table of Contents
 
@@ -42,10 +42,19 @@ The account card’s More account information link opens the root of the Host-pr
 
 Sign out first queries running account-token tasks and opens a confirmation dialog. The warning describes interruption when such tasks exist; otherwise it explains that data is retained and the account can be signed in again. Cancel, close, and Escape dismiss without signing out. Failed impact queries still open confirmation with an explicit unknown-task warning; failed sign-out keeps the dialog available for retry.
 
+<a id="desktop-onboarding"></a>
+### Desktop onboarding
+
+The Desktop preload marker enables the introduction after account credentials are stored. Progress belongs to the local Host settings document, not the Platform account: unfinished steps resume after restart, and completing or skipping the flow prevents another run on that installation. Browser clients do not mount it. API-key presence comes from the native welcome backend through the boolean-only Desktop preload bridge, using the same credential discovery as login. A signed-out installation with a configured model API key bypasses the pages and applies detailed process, detailed usage, and enabled developer tools.
+
+The welcome page requires Get started. The credit page always appears. A positive balance confirmed at first entry selects Continue as the primary action and Add credits as the secondary action. This choice stays fixed until the onboarding controller is recreated and is never persisted; late balance results cannot change the buttons. Only a confirmed absence of positive credit adds a confirmation before continuing without recharge; pending or failed queries do not block continuing. Purpose descriptions remain unchanged when selected. Returning from the native top-up view keeps the credit page and refreshes account details in the background, whether loading or payment succeeded. Next confirms only a known zero balance; Skip uses the credit warning on the credit page and the setup warning on the question pages. Office-only use completes with compact presentation; development or both purposes also ask for process detail. Back preserves selections, and explicit skip from any supported step applies detailed process, compact performance/usage, and disabled developer tools. This flow creates no workspace or demonstration task.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
 The Account section appears first in Settings only while signed in; it is hidden before account state loads and after sign-out. The plugin owns one Host snapshot stream shared through framework hooks by settings.section and settings.launcher. The launcher opens Settings and offers Sign out only while an account credential is stored. Platform failures leave the menu available for retry. It maintains no independent credential state, so no invariant companion is published.
+
+The desktop controller writes progress to `ui-settings-account` through Host settings. Completion first applies `ui-chat.transcriptView` and `ui-chat.performanceUsage` together, then calls the shared developer-tools preference to persist `ui-settings.enabled`, and finally saves the done marker; a rejected write keeps the flow available for retry. Successful completion reveals the workspace through a 180ms fade; choices and ordinary navigation preview immediately while writes run in order. A failed final queued write restores saved progress and allows retry. Completion waits for queued choices and retains the page until preferences persist; reduced motion skips the fade. Compact, detailed, and expanded map directly to the corresponding Chat work-detail modes. Complete Figma illustration layers are bundled as transparent, palette-compressed 3× PNG assets; welcome layers are merged with local sidebar blur; recharge uses a 70% opaque foreground window with local blur of the covered illustration, and headings use the bundled Montserrat brand font; English headings and descriptions use Light (300), except the DeepSeek Harness brand within headings uses Medium (500); card titles retain Regular (400) when selected. English footer navigation uses Light (300). Confirmed onboarding sets a 960px minimum window width and enlarges narrower windows; completion releases the minimum without restoring the previous size. Loading or already-completed onboarding does not resize the window. Empty footer navigation space passes pointer events through to the primary action. Cards exclude native window dragging and own the keyboard focus outline for their checkbox. The account package owns its onboarding overlay and control geometry. Each step and the confirmation dialog has a separate component; the flow coordinates navigation, transitions, and recharge. The overlay hides the workspace while initial account and progress state loads. Question headings and cards follow the Figma positions at 1440 × 920 and 960 × 600, independently of their action buttons. On macOS, content clears the body portal’s inherited no-drag region and a first-child drag band leaves an 8px native resize margin; interactive controls and later dialogs exclude their regions, and a native Platform page disables the underlying onboarding band. The upper workspace popup illustration has an opaque background in both languages and themes; the underlying sidebar omits its selected-row highlight. Welcome keeps its illustration at its original size, repositions and clips the artwork in narrow windows, and reveals the complete illustration on wide windows. The [onboarding decision](../../../.agents/notes/implemented/feature/2026-09-16-desktop-onboarding.md) owns persistence and presentation trade-offs.
 
 <a id="further-exploration"></a>
 ## Further Exploration
@@ -75,6 +84,8 @@ No model request prefix changes.
 <a id="known-limitations-and-deferred-work"></a>
 
 - Profile and recharge-wallet balances use the existing Platform Web endpoints through Host getProfile / getBalance. The page refreshes when opened and after login or reconnect, preserves server-masked contact data, and shows query failures independently without manufacturing a zero balance. Usage and top-up use Host-provided links derived from platformOrigin and the browser’s own login; the links never carry a DSH token.
+- Completed installations do not reapply defaults or overwrite later user preferences. Completion does not synchronize across devices or create a per-account history.
+- Onboarding follows the interface locale and theme, with four Figma PNG illustration sets covering Chinese and English in light and dark appearance. Export canvases include the full illustration geometry; Finder artwork uses the same vertical fade in both themes.
 
 - The Platform view’s dialog marks every other document child inert, including the Desktop-owned caption menu host, so the Application and Edit menu stays visible but cannot be operated until the view closes. Exempting that host needs an inertness contract owned by the Desktop.
 
@@ -86,3 +97,5 @@ The [desktop login decision](../../../.agents/notes/implemented/architecture/202
 Usage and top-up show a centered 24px loading indicator without visible loading text until the native document loads; the return action remains available. The loading SVG is embedded locally from Figma node 2957:72553.
 
 Default-model initialization runs after publishing and accepting the sign-in frame, without delaying subsequent account frames. Failures are recorded in diagnostics and do not mark the signed-in account as failed.
+
+Read-only onboarding settings and a failed initial account stream leave the workspace accessible. A failed initial settings read exposes Retry, which reissues the shared settings read. Overlapping onboarding and Platform overlays release background interaction only after their last owner unmounts.

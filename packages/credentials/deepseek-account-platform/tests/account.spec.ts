@@ -30,6 +30,7 @@ async function fixture(
   beforeAccount?: (ctx: Context, origin: string) => Promise<void>,
   embeddedPageDist = '',
   desktopPlatform: 'darwin' | 'win32' | null = null,
+  balanceTimeoutMs = 2_000,
 ) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-account-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
@@ -52,6 +53,8 @@ async function fixture(
   let detailCode = 0
   let detailStatus = 200
   let profileFailed = false
+
+  let walletBalance = '123.45'
   let summaryFailed = false
   let logoutFailed = false
   let logoutHold = false
@@ -89,7 +92,7 @@ async function fixture(
       const value = req.url === '/auth-api/v0/users/current'
         ? { id: 'test-user', token: 'never-copy-response-token', ...contact,
           id_profile: { name: 'Test Account', picture: null } }
-        : { normal_wallets: [{ currency: 'CNY', balance: invalidSummary ? 'not-a-decimal' : '123.45', token_estimation: '0' },
+        : { normal_wallets: [{ currency: 'CNY', balance: invalidSummary ? 'not-a-decimal' : walletBalance, token_estimation: '0' },
           { currency: 'USD', balance: '6.78', token_estimation: '0' }],
         bonus_wallets: bonusWallets }
       res.setHeader('content-type', 'application/json')
@@ -146,7 +149,7 @@ async function fixture(
   const provider = ctx.plugin(PlatformAccount, {
     platformOrigin: origin, inferenceOrigin, embeddedPageDist, desktopPlatform,
     allowLoopbackHttp: true, requestHeaders, accountRequestHeaders,
-    rewriteBrowserOrigin, logoutRetryDelayMs: 1,
+    rewriteBrowserOrigin, logoutRetryDelayMs: 1, balanceTimeoutMs,
   })
   await provider
   cleanups.push(async () => { await provider.dispose(); await authorization.dispose(); await credentials.dispose(); await web.dispose() })
@@ -165,6 +168,7 @@ async function fixture(
     detailStatus: (status: number) => { detailStatus = status },
     failProfile: (failed: boolean) => { profileFailed = failed },
     holdBalance: () => { balanceHold = true },
+    setBalance: (value: string) => { walletBalance = value },
     holdDetails: () => { detailsHold = true }, failSummary: () => { summaryFailed = true },
     invalidateSummary: () => { invalidSummary = true }, dispose: () => provider.dispose(), exchanged, release,
     redirect: () => { redirect = true },
@@ -663,6 +667,16 @@ async function readDetails(account: Pick<PlatformAccount, 'getProfile' | 'getBal
   return profile === null || balance === null ? null : { profile, balance }
 }
 
+it('fails a balance query after its configured deadline while profile queries remain available', async () => {
+  const f = await fixture(undefined, {}, false, {}, undefined, undefined, '', null, 50)
+  await storeAccount(f)
+  f.holdBalance()
+  try {
+    expect(await f.account.getBalance()).toEqual({ status: 'failed' })
+    expect(await f.account.getProfile()).toMatchObject({ status: 'ready' })
+  } finally { f.release.resolve(undefined) }
+})
+
 it('returns the profile while the balance request is still pending', async () => {
   const f = await fixture()
   await storeAccount(f)
@@ -951,6 +965,13 @@ it('does not remove a replacement grant when an older request is rejected', asyn
   expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
   expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default')))
     .toMatchObject({ kind: 'grant', payload: { token: 'replacement-grant' } })
+})
+
+it.each(['0E-16', '1.25e+2', '-3E-4'])('preserves scientific-notation wallet balance %s', async (balance) => {
+  const f = await fixture()
+  await storeAccount(f)
+  f.setBalance(balance)
+  expect(await f.account.getBalance()).toMatchObject({ status: 'ready', value: [{ currency: 'CNY', balance }, { currency: 'USD', balance: '6.78' }] })
 })
 
 it.each([{ kind: 'api-key' as const, key: 'wrong-kind' }, { kind: 'grant' as const, payload: { version: 0 } }])(

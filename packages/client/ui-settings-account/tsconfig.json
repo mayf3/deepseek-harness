@@ -43,6 +43,15 @@
     },
     {
       "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../store"
+    },
+    {
+      "path": "../ui-layout"
     }
   ]
 }
