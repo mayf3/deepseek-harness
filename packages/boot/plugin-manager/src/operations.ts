@@ -14,7 +14,8 @@ import {
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import { parseInstallSpec } from './install-spec.ts'
 import { awaitTreeGone, leadsOwnGroup } from './run-tree.ts'
-import type { PackageResult, Registry } from './types.ts'
+import { incompatiblePlugin } from './failure.ts'
+import type { IncompatiblePlugin, PackageResult, Registry } from './types.ts'
 export { setProfileVersionExemption, readProfileVersionExemptions } from '@deepseek-ai/dsh-app-boot'
 
 /** Profile and invocation locations supplied by the launcher. */
@@ -265,13 +266,15 @@ export async function runProfilePnpm(
       else await writeFileAtomic(file.path, file.text, { mode: 0o600 })
     }
   }
+  /** Packages a compatibility check refused; callers render them for their own surface. */
+  const incompatible: IncompatiblePlugin[] = []
   const rejected = async (warnings: readonly string[], restoration: string): Promise<PackageResult> => {
     const diagnostic = `\ndsh: installation rejected: ${warnings.join('\n')}\ndsh: ${restoration}.\n`
     await log.write(diagnostic)
     options.onOutput?.(diagnostic, 'stderr')
     append(Buffer.from(diagnostic))
     await log.close()
-    return { exitCode: 1, output: output.toString('utf8'), truncated, logPath }
+    return { exitCode: 1, output: output.toString('utf8'), truncated, logPath, incompatible }
   }
   // An install command names the packages it adds, so their manifests are read and checked before
   // pnpm runs: an incompatible version is never installed, and the one already in use keeps working.
@@ -286,7 +289,10 @@ export async function runProfilePnpm(
       const manifest = await namedSpecManifest(dir, anchorPathSpec(raw, context.cwd), options, environment, registryFlags)
       if (manifest === undefined) continue
       const issue = evaluatePluginCompatibility(manifest, exemptions)
-      if (issue !== undefined && !issue.exempted) preflight.push(pluginCompatibilityWarning(issue))
+      if (issue !== undefined && !issue.exempted) {
+        preflight.push(pluginCompatibilityWarning(issue))
+        incompatible.push(incompatiblePlugin(issue))
+      }
     } catch (error) { void error; continue }
   }
   if (preflight.length > 0) return rejected(preflight, 'nothing was installed')
@@ -410,17 +416,24 @@ export async function runProfilePnpm(
         // A dependency this run did not touch never blocks an unrelated operation; profile startup denies it.
         const untouched = beforeDependencies[name] === spec && installedBefore.get(name) === installed
         const found: string[] = []
+        const issues: IncompatiblePlugin[] = []
         try {
           const manifest = readProfileManifest('dsh', packageDir)
           for (const candidate of [manifest, ...bundleComponentManifests(manifest, packageDir, context.installAnchor)]) {
             const issue = evaluatePluginCompatibility(candidate, readProfileVersionExemptions(dir))
-            if (issue !== undefined && !issue.exempted) found.push(pluginCompatibilityWarning(issue))
+            if (issue !== undefined && !issue.exempted) {
+              found.push(pluginCompatibilityWarning(issue))
+              issues.push(incompatiblePlugin(issue))
+            }
           }
         } catch (error) {
           found.push(`Cannot validate installed package ${name}: ${String(error)}`)
         }
         if (found.length === 0) continue
-        if (!untouched) warnings.push(...found)
+        if (!untouched) {
+          warnings.push(...found)
+          incompatible.push(...issues)
+        }
         else {
           const notice = `\ndsh: warning: ${found.join('\n')}\ndsh: it stays installed but profile startup denies it until you grant an exemption for those exact versions.\n`
           await log.write(notice)
@@ -430,9 +443,12 @@ export async function runProfilePnpm(
       if (warnings.length > 0) {
         // A bundle component's peers need installed contents, so this rejection lands after pnpm
         // replaced the tree: restore the files, then reinstall the restored lockfile so the version
-        // that worked before this run keeps loading.
+        // that worked before this run keeps loading. A profile that had no lockfile is reinstalled
+        // from its restored manifest without creating one, which removes what this run added.
         await restore()
-        const repaired = await execa(options.command ?? 'pnpm', [...options.args ?? [], 'install', '--frozen-lockfile'], {
+        const hadLockfile = savedFiles.some(file => file.path.endsWith('pnpm-lock.yaml') && file.text !== undefined)
+        const repair = ['install', hadLockfile ? '--frozen-lockfile' : '--config.lockfile=false']
+        const repaired = await execa(options.command ?? 'pnpm', [...options.args ?? [], ...repair], {
           cwd: dir, env: environment, extendEnv: false, reject: false, stdin: 'ignore',
           ...options.idleTimeoutMs === undefined ? {} : { timeout: options.idleTimeoutMs },
         })
@@ -453,7 +469,10 @@ export async function runProfilePnpm(
     clearTimeout(idleTimer)
     await log.close()
   }
-  return { exitCode, output: output.toString('utf8'), truncated, logPath, ...control.stalled ? { timedOut: true } : {} }
+  return {
+    exitCode, output: output.toString('utf8'), truncated, logPath,
+    ...control.stalled ? { timedOut: true } : {}, ...incompatible.length > 0 ? { incompatible } : {},
+  }
 }
 
 /** Initialize and run the dsh plugin command with the same write lock as the service.

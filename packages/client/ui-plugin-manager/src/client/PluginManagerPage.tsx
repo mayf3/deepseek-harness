@@ -700,6 +700,10 @@ function registryOption(registry: Registry, t: Translate, resolved: string | nul
  */
 function failureText(failure: InstallState['failure'], t: Translate, install?: Pick<InstallState, 'attempts' | 'subject' | 'registries'>): string {
   if (failure === null) return t('installFailureGeneric')
+  // A compatibility refusal is the package's own answer, whatever pnpm's exit classified the run as.
+  if (failure.code === 'incompatible-version') {
+    return managementText({ code: failure.code, ...failure.incompatible === undefined ? {} : { incompatible: failure.incompatible } }, t)
+  }
   // Blocked scripts the Host could not name leave the person to allow them in the profile's pnpm settings by hand.
   if (failure.kind === 'build-blocked' && !failure.pendingBuilds?.length) return t('installFailureBuildBlockedManual')
   const host = install?.subject?.host
