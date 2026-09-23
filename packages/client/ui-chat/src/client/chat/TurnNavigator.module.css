@@ -127,7 +127,7 @@
    against a busy transcript. */
 .mark:focus-visible::before {
   transform: translateY(-50%) scaleX(1);
-  background: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary));
 }
 
 .mark:focus-visible {

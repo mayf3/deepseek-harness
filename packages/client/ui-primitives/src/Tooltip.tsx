@@ -4,6 +4,8 @@ import { cloneElement, createContext, useCallback, useContext, useEffect, useLay
 import type { FocusEventHandler, MouseEventHandler, MutableRefObject, ReactElement, Ref } from 'react'
 import { createPortal } from 'react-dom'
 import css from './Tooltip.module.css'
+// Tooltips take the wide answer — any key returns to the keyboard. Focus rings read the
+// narrower `data-input-modality` attribute the same module publishes.
 import { pointerModality } from './input-modality.ts'
 
 /** Bubble placement relative to the anchor. */

@@ -81,7 +81,7 @@
 }
 
 .search input:focus-visible {
-  border-color: var(--dsw-alias-state-business-primary);
+  border-color: var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary)) 18%, transparent);
 }
 
