@@ -16,6 +16,8 @@ Status: implemented
 
 **失败在事实所在处分类。** `classifyInstallFailure` 依据运行的结束方式和 pnpm 的输出——它的 `ERR_PNPM_*` 码和 Node 的 errno 名——给出 `packageResult.kind`。客户端把 kind 显示成一句话，把 pnpm 输出折叠进详情。对日志的解析只存在于这一个函数，用夹具驱动的测试钉住。
 
+**GitHub 连接失败在安装前有单独的短时限。** 宿主通过只读的 `git ls-remote` 检查连接，沿用 profile 的 Git 与代理配置，`githubConnectionTimeoutMs` 默认为 5000 毫秒。这次检查禁用凭据助手和认证提示，避免认证过程占用连接预算。只有网络失败与超时会阻止 pnpm 启动；认证、HTTPS 到 SSH 的回退、ref 解析及完整安装仍由 pnpm 负责。时限不约束下载或构建。已有的失败类型与 `failedAt: 'spec-host'` 让客户端显示连接失败或超时，并提供国内镜像供用户输入另一个包名。取消安装或销毁管理器会先终止检查及其子进程，再结束操作。
+
 **取消属于管理器，不属于信号。** 对话框为每次运行生成一个 request id；宿主在它之下流式转发运行的输出与阶段，`cancelInstall` 只在 pnpm 退出且文件恢复后才答复。对话框等到这个答复才把 spec 重新交回；中止的 RPC 或断开的连接都不算确认。只有检查末尾接受 `AbortSignal`：返回编辑或关闭会丢掉一次注册表查询，没有人等它的结果。
 
 **启用在事后。** 运行以 `enabled: false` 安装；完成画面为它新增的组合包提供**立即启用**，对话框关闭，列表滚动到它。在人看到装了什么之前，不会启用任何东西。
@@ -36,8 +38,10 @@ Status: implemented
 
 ## 后果
 
-`inspect`、`cancelInstall` 以及 `plugin-manager/changed`、`plugin-manager/install-log`、`plugin-manager/install-state` 事件加入管理器的 Remote；`listBundles` 携带标题、行与覆盖项；`ChangeResult` 增加 `cancelled`、`bundle` 与 `packageResult.kind`；配置增加 `pnpmCommand` 与 `inspectTimeoutMs`。对话框是围绕同一张主题卡的四个画面。
+`inspect`、`cancelInstall` 以及 `plugin-manager/changed`、`plugin-manager/install-log`、`plugin-manager/install-state` 事件加入管理器的 Remote；`listBundles` 携带标题、行与覆盖项；`ChangeResult` 增加 `cancelled`、`bundle` 与 `packageResult.kind`；配置增加 `pnpmCommand`、`inspectTimeoutMs` 与 `githubConnectionTimeoutMs`。对话框是围绕同一张主题卡的四个画面。
 
 ## 测试
 
 `packages/boot/plugin-manager/tests/install-spec.spec.ts` 钉住 spec 形式与失败分类器的输入；`manager.spec.ts` 用桩住的注册表查询和真实目录驱动 `inspect`，流式转发一次运行，停下一次运行并检查恢复后的文件，并检查变更事件；`operations.spec.ts` 覆盖注册表查询。`packages/client/ui-plugin-manager/tests` 覆盖 store 的阶段、经宿主确认的取消、装后启用、toast 与页面的四个画面；`apps/web/tests/plugin-manager.e2e.ts` 经真实宿主拒绝已装名字、不存在的路径和坏名字，并实时切换一个组合包及其中一行，`plugin-install-cancel.e2e.ts` 从对话框停下一个真实子进程、检查恢复后的文件，并在第二次尝试时装成，`plugin-install-approve.e2e.ts` 用假 pnpm 把脚本留作未决、从对话框允许后在重试中装上。
+
+`github-connection.spec.ts` 用真实 Git 和测试自有的本机网络端点覆盖立即失败、超时、取消与非交互认证。`manager.spec.ts` 还通过真实 Git 与 pnpm 安装本地仓库，覆盖 HTTPS、GitHub 简写和 SSH 地址，用自有代理隔离 pnpm 的 HTTPS 请求并验证其 SSH 回退。`plugin-install-github.e2e.ts` 检查连接失败及超时弹窗、子进程清理，以及切换镜像时不重试原 GitHub 地址。
