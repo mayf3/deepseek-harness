@@ -134,7 +134,9 @@
   gap: 8px;
   min-width: 0;
   padding: 10px 12px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
+  border: 0;
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-elevation-stroke);
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
@@ -146,17 +148,16 @@
   cursor: default;
 }
 
-/* The border echoes the Current tag's 'info' tint so the selected card and its
-   tag read as one state. The inset ring thickens the stroke without changing
-   the border width, so the card's box stays identical to its neighbors. */
+/* The Current tag and card share a tint; the inset ring adds emphasis
+   without changing the card's dimensions. */
 .memberCurrent {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, transparent);
+  --dsw-elevation-stroke-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, transparent);
+  box-shadow: var(--dsw-elevation-stroke), inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, transparent);
 }
 
 .member:not(:disabled):hover,
 .member:not(:disabled):focus-visible {
-  border-color: var(--dsw-alias-border-l3);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
   box-shadow: var(--dsw-elevation-panel);
 }
 
