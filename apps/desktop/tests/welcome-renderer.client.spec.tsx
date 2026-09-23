@@ -312,3 +312,17 @@ it('ignores a notification received after its renderer unmounts', async () => {
   await act(async () => { pending.resolve('session-expired') })
   expect(screen.queryByRole('alert')).toBeNull()
 })
+
+
+it.each(['zh-CN', 'en'])('returns from completed sign-in to the initial page after sign-out: %s', async (language) => {
+  const view = mount(language)
+  const publish = view.api.onAccountState.mock.calls[0]![0]
+  const links = { usageUrl: 'https://example.test/usage', topUpUrl: 'https://example.test/top_up' }
+  act(() => { publish({ status: 'credential-stored', links,
+    attempt: { id: 'completed' as NonNullable<AccountView['attempt']>['id'], phase: 'succeeded' } }) })
+  expect(view.document.querySelector<HTMLElement>('#auth-page')!.hidden).toBe(false)
+  act(() => { publish({ status: 'signed-out', links, attempt: null }) })
+  expect(view.button('#sign-in').closest('[hidden]')).toBeNull()
+  expect(view.document.querySelector<HTMLElement>('#auth-page')!.hidden).toBe(true)
+  await expect(view.copy()).toMatchFileSnapshot(`./expected/welcome/${language}.expected.txt`)
+})

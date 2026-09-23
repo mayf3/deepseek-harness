@@ -1389,3 +1389,29 @@ it('ignores an inference rejection while already signed out', async () => {
   expect(await f.account.getState()).toMatchObject({ status: 'signed-out' })
   expect((await f.account.getState()).signOutReason).toBeUndefined()
 })
+
+
+it('clears a completed login from snapshots while credential deletion is still settling', async () => {
+  const f = await fixture()
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  await fetch(f.callback(), { redirect: 'manual' })
+  await f.wait('succeeded')
+  const original = f.ctx.credentials.deleteRecord.bind(f.ctx.credentials)
+  const removed = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const deletion = vi.spyOn(f.ctx.credentials, 'deleteRecord').mockImplementation(async (key) => {
+    await original(key)
+    removed.resolve(undefined)
+    await release.promise
+  })
+  const signingOut = f.account.signOut()
+  try {
+    await removed.promise
+    expect(await f.account.getState()).toMatchObject({ status: 'signed-out', attempt: null })
+  } finally {
+    release.resolve(undefined)
+    await signingOut
+    deletion.mockRestore()
+  }
+})

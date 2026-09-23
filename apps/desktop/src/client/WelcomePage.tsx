@@ -10,6 +10,7 @@ type Page = 'entry' | 'key' | 'account'
 
 /**
  * Render the standalone welcome flow using shell-owned operations and localized copy.
+ * Clearing the account attempt returns the sign-in status page to the initial choices.
  * @param props.api - isolated preload API; no account credentials reach the renderer.
  * @returns welcome pages with fixed bottom actions.
  */
@@ -44,7 +45,7 @@ export function Welcome({ api }: { api: WelcomeApi }) {
     setAttempt(state.attempt)
     setStarting(false)
     setCopyFeedback({ status: 'idle' })
-    navigate(state.attempt?.phase === 'cancelled' ? 'entry' : 'account')
+    navigate(state.attempt === null || state.attempt.phase === 'cancelled' ? 'entry' : 'account')
   }
 
   useEffect(() => {

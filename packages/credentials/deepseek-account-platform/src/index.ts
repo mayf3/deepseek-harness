@@ -171,9 +171,12 @@ export class PlatformAccount extends DeepSeekAccount {
     if (record !== undefined && (record.kind !== 'grant' || !grant.safeParse(record.payload).success)) {
       throw new PlatformAuthError('storage')
     }
+    const attempt = this.attempt?.view ?? null
     return {
       ...(record === undefined && this.signOutReason !== undefined ? { signOutReason: this.signOutReason } : {}),
-      status: record === undefined ? 'signed-out' : 'credential-stored', attempt: this.attempt?.view ?? null,
+      status: record === undefined ? 'signed-out' : 'credential-stored',
+      // Credential removal can notify watchers before sign-out finishes clearing the attempt.
+      attempt: record === undefined && attempt?.phase === 'succeeded' ? null : attempt,
       links: { usageUrl: new URL('/usage', this.origin).href, topUpUrl: new URL('/top_up', this.origin).href },
     }
   }
