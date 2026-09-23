@@ -51,7 +51,7 @@ kind: "package-reference"
 
 ### 样式表
 
-`src/styles/` 下有七张样式表，由 ui-theme 的动态客户端 entry 依次导入：`base.css`、`corner-shape.css`、`design-platform.css`、`focus.css`、`scrollbar.css`、`gradient-shadow-text.css` 与 `shiki.css`。客户端 bundle 将其编译并注入为插件持有的全局样式，因此卸载与 HMR（热模块替换）会随 ui-theme 一同移除。`scrollbar.css` 消费 `--dsw-alias-scrollbar-*` token，必须排在声明这些 token 的 `design-platform.css` 之后。状态标记使用各自的语义状态 token。`design-platform.css` 还负责代码差异底色的别名及其静态透明度色阶；`shiki.css` 负责语法颜色。
+`src/styles/` 下有七张样式表，由 ui-theme 的动态客户端 entry 依次导入：`base.css`、`corner-shape.css`、`design-platform.css`、`focus.css`、`scrollbar.css`、`gradient-shadow-text.css` 与 `shiki.css`。客户端 bundle 将其编译并注入为插件持有的全局样式，因此卸载与 HMR（热模块替换）会随 ui-theme 一同移除。`scrollbar.css` 消费 `--dsw-alias-scrollbar-*` token，必须排在声明这些 token 的 `design-platform.css` 之后。状态标记使用各自的语义状态 token。`design-platform.css` 还负责代码差异底色的别名及其静态透明度色阶，以及文件对比所用的 `--dsw-alias-file-diff-*` 代码区、行号区和标记配色；`shiki.css` 负责语法颜色。
 
 [`focus.css`](src/styles/focus.css) 通过 `var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary))` 提供 `:focus-visible` 轮廓颜色兜底，不改变轮廓几何。组件轮廓与焦点环阴影使用同一颜色表达式，包括后代和伪元素上的环。`--dsw-focus-ring-width`（2px）是标准宽度；密集表格与工具栏可以保留 1px，offset 仍由组件决定。
 
