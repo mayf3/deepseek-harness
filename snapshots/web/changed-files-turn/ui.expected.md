@@ -2,7 +2,7 @@
 - button "复制"
 - status: 已完成工作
 - button "用时 {{duration}}" [expanded]
-- button "修改了文件，执行了命令，已读取文件等" [expanded]
+- button "执行了命令，已写入文件，已读取文件等" [expanded]
 - button "思考"
 - button "读取 intro.md":
   - text: 读取

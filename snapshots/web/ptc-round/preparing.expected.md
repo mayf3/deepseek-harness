@@ -1,0 +1,3 @@
+- button "Preparing to run code" [expanded]
+- button "Think"
+- text: Preparing tool call Code

@@ -30,7 +30,7 @@ Account operations carry this UI's client identity to the Host: build version, a
 
 Balances use Platform Web currency formatting: two decimal places and digit grouping, positive amounts truncated to cents, positive sub-cent amounts shown as <0.01, and negative amounts rounded with a minimum displayed magnitude of 0.01. Raw Host balance strings remain unchanged.
 
-Desktop usage and top-up actions open an isolated native Platform view below a 48px return bar. Back destroys the view and preserves the Account settings page. Loading failures retain the return action and show a centered localized error with Retry. Retry reloads the same destination; renderer commands never receive the account token.
+Desktop usage and top-up actions open an isolated native Platform view below a 48px return bar. On Windows Electron the return bar and the native view start below the Desktop caption strip, so the Application and Edit menu text cannot cover the Back to DeepSeek Harness label. Back destroys the view and preserves the Account settings page. Loading failures retain the return action and show a centered localized error with Retry. Retry reloads the same destination; renderer commands never receive the account token.
 
 The account menu's Feedback entry opens the Feishu questionnaire in the system browser. It supplies the available build version, UI locale and physical screen resolution as prefill_* parameters, with hide_*=1 for every context field; the account UID, tokens and contact details are excluded. Configure contactFormUrl on the ui-settings-account plugin to select another HTTPS form. contactSource defaults to empty until the questionnaire supports a Harness source option; OS and device fields remain unfilled, matching the Web implementation.
 
@@ -74,6 +74,8 @@ No model request prefix changes.
 - Profile and recharge-wallet balances use the existing Platform Web endpoints through Host getProfile / getBalance. The page refreshes when opened and after login or reconnect, preserves server-masked contact data, and shows query failures independently without manufacturing a zero balance. Usage and top-up use Host-provided links derived from platformOrigin and the browser’s own login; the links never carry a DSH token.
 
 - The notice copy is server-localized for the UI language in effect when the client reads it. Switching language does not itself re-read the unnotified bonus, so a notice already on screen keeps the copy the server sent for the earlier language until the user refreshes or the account lifecycle restarts.
+
+- The Platform view’s dialog marks every other document child inert, including the Desktop-owned caption menu host, so the Application and Edit menu stays visible but cannot be operated until the view closes. Exempting that host needs an inertness contract owned by the Desktop.
 
 <a id="dev-note"></a>
 ### Dev Note

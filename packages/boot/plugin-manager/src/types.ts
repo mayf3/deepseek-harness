@@ -69,7 +69,7 @@ export interface PluginRegistries {
   readonly resolved: string | null
 }
 
-/** How a pnpm run failed, read off how it ended and what it printed. */
+/** How a package operation failed, read off how it ended and what it printed. */
 export type PluginInstallFailureKind =
   | 'pnpm-missing'
   | 'timeout'
@@ -82,7 +82,7 @@ export type PluginInstallFailureKind =
   | 'integrity'
   | 'unknown'
 
-/** Pnpm completion, including a retrieval path for unabridged diagnostics. */
+/** Package operation completion, including Git checks and a retrieval path for unabridged diagnostics. */
 export interface PackageResult {
   exitCode: number
   output: string
@@ -90,6 +90,8 @@ export interface PackageResult {
   logPath: string
   /** Present when the run failed: what kind of failure its exit and output describe. */
   kind?: PluginInstallFailureKind
+  /** The manager terminated the run after it printed nothing for its silence bound; `exitCode` still reports how it ended. */
+  timedOut?: boolean
 }
 
 /** Persisted change and independently observed application outcome. */

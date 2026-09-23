@@ -1155,6 +1155,48 @@ describe('PluginManagerController', () => {
     face.changeRegistry()
     expect(state().install).toMatchObject({ phase: 'idle', spec: 'dsh-new', registryOpen: true, runs: [], failure: null })
   })
+
+  it.each(['network', 'timeout'] as const)('recovers a GitHub %s failure without retrying its URL through a mirror', async (kind) => {
+    const spec = 'https://github.com/example/dsh-plugin.git'
+    const inspect = vi.fn().mockResolvedValueOnce(ok({ status: 'accepted', kind: 'git', bundle: null, registry: null, host: 'github.com' }))
+      .mockResolvedValue(ok({ ...INSPECTED, registry: MIRROR }))
+    const { face, state, plugins } = bench({
+      inspect,
+      installBundle: vi.fn().mockResolvedValueOnce(ok({
+        ...failed(undefined, { exitCode: 1, output: 'Could not resolve host: github.com', truncated: false, logPath: '/l', kind }),
+        failedAt: 'spec-host',
+      })).mockResolvedValueOnce(ok({
+        ...failed(undefined, { exitCode: 1, output: 'Registry connection failed', truncated: false, logPath: '/l', kind: 'network' }),
+        failedAt: 'registry',
+      })).mockResolvedValue(ok({ ...APPLIED, bundle: 'dsh-new' })),
+    })
+    face.openInstall()
+    await vi.waitFor(() => { expect(state().install.registries).toEqual(REGISTRIES) })
+    face.editInstallSpec(spec)
+    face.useGithubMirror()
+    expect(state().install.spec).toBe(spec)
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
+    face.useGithubMirror()
+    expect(state().install).toMatchObject({
+      phase: 'idle', open: true, spec: '', mirrorRecovery: true, registry: { kind: 'offered', registry: MIRROR },
+      registryOpen: false, failure: null, runs: [],
+    })
+    expect(plugins.installBundle).toHaveBeenCalledTimes(1)
+    face.editInstallSpec('dsh-new')
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
+    face.changeRegistry()
+    expect(state().install).toMatchObject({ phase: 'idle', spec: 'dsh-new', mirrorRecovery: true, registryOpen: true })
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
+    expect(plugins.inspect).toHaveBeenLastCalledWith('dsh-new', { registry: MIRROR }, expect.any(AbortSignal))
+    expect(plugins.installBundle).toHaveBeenLastCalledWith('dsh-new', expect.objectContaining({ registry: MIRROR }))
+    face.closeInstall()
+    face.openInstall()
+    await vi.waitFor(() => { expect(state().install.registries).toEqual(REGISTRIES) })
+    expect(state().install.registry).toEqual({ kind: 'offered', registry: MIRROR })
+  })
 })
 
 describe('Host registry response recommendation', () => {
