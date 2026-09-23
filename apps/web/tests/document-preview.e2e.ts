@@ -1355,6 +1355,13 @@ else process.exit(1);
           { id: '/Applications/Test Player.app', name: 'Test Player', default: false, icon: `data:image/png;base64,${TINY_PNG.toString('base64')}` },
           { id: '/Applications/Other Player.app', name: 'Other Player', default: false, icon: null },
         ]))
+        // Leave the file and come back: the shared association state is discarded when the
+        // last control for a path unmounts, so the marker is read again instead of reused.
+        await openPreviewFile(column, filesTab, preview, 'notes.unknown')
+        await openPreviewFile(column, filesTab, preview, 'clip.mp4')
+        await unsupported.waitFor({ timeout: 15_000 })
+        await emptyOpen.waitFor({ timeout: 15_000 })
+        // Opening the menu settles the re-read association before the labels are compared.
         await prominent.getByRole('button', { name: 'More ways to open' }).click()
         await page.getByRole('menuitem', { name: 'Test Player (default)', exact: true }).waitFor()
         await page.keyboard.press('Escape')
@@ -1362,14 +1369,17 @@ else process.exit(1);
         expect(await headerOpen.getAttribute('aria-label')).toBe('Open in Test Player')
         await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'applications-no-default.expected.md'), await prominent.ariaSnapshot(), MODE)
         const gesturesBefore = (await opened()).length
+        const launchesBefore = (await launched()).length
         await emptyOpen.click()
         await expect.poll(async () => (await opened()).length).toBe(gesturesBefore + 1)
-        // Without an OS-marked default the main action still opens the file instead of revealing it.
-        expect((await opened()).at(-1)).toEqual({ path: clip, action: 'open' })
-        const launchesBefore = (await launched()).length
+        // Without an OS-marked default the main action opens the application this control
+        // names, rather than the OS association (which can prompt or pick another app).
+        expect((await opened()).at(-1)).toEqual({ path: clip, action: 'application' })
+        await expect.poll(async () => (await launched()).length).toBe(launchesBefore + 1)
+        expect((await launched()).at(-1)?.app).toBe(launchTarget)
         await prominent.getByRole('button', { name: 'More ways to open' }).click()
         await page.getByRole('menuitem', { name: 'Test Player (default)', exact: true }).click()
-        await expect.poll(async () => (await launched()).length).toBe(launchesBefore + 1)
+        await expect.poll(async () => (await launched()).length).toBe(launchesBefore + 2)
         expect((await launched()).at(-1)?.app).toBe(launchTarget)
         await expect.poll(async () => (await opened()).length).toBe(gesturesBefore + 2)
         expect((await opened()).at(-1)).toEqual({ path: clip, action: 'application' })

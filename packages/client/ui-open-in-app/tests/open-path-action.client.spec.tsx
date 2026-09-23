@@ -202,7 +202,7 @@ it('opens with the first registered application when none is marked default', as
   await act(async () => {})
   const main = screen.getByRole('button', { name: t('open.title', { app: 'Player' }) })
   await act(async () => { fireEvent.click(main) })
-  expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open', undefined)
+  expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open', '/Player.app')
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.more'] })) })
   expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Player（默认）', zh['path.reveal']])
 })

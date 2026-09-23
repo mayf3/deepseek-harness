@@ -92,7 +92,13 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
   const revealDefault = kind === 'file' && preferred === undefined && props.loading !== true
   const primaryLabel = preferred === undefined ? t('path.reveal') : t('open.title', { app: preferred.name })
   const run = (operation: OpenTargetOperation): void => { setMenuOpen(false); act(operation) }
-  const primary = (): void => { run({ kind: revealDefault ? 'reveal' : 'default' }) }
+  const primary = (): void => {
+    if (revealDefault) { run({ kind: 'reveal' }); return }
+    // The Host's default marker is best effort. With none, request the application
+    // this control names instead of letting the OS resolve the association again.
+    if (preferred !== undefined && preferred.id !== defaultId) { run({ kind: 'application', id: preferred.id }); return }
+    run({ kind: 'default' })
+  }
   const icon = props.loading === true && preferred === undefined
     ? <span className={css.skeleton} data-open-target-skeleton aria-hidden="true" style={{ width: props.prominent ? 18 : 13, height: props.prominent ? 18 : 13 }} />
     : revealDefault
