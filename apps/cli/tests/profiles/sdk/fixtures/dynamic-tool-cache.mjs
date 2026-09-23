@@ -3,7 +3,7 @@ import { appendFile } from 'node:fs/promises'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const name = 'sdk-dynamic-tool-cache-fixture'
-export const inject = ['tools', 'deepseekLlmApiExtensions']
+export const inject = ['tools', 'systemPrompt', 'deepseekLlmApiExtensions']
 
 /** Observe each request and let the model add or remove a scoped tool. */
 export function apply(ctx, config) {
@@ -30,6 +30,8 @@ export function apply(ctx, config) {
     states.set(agent.id, state)
     scope.effect(() => () => { states.delete(agent.id) })
     scope.effect(() => scope.tools.restrict({ allow: [] }))
+    let guidance = ''
+    scope.systemPrompt.section({ name: 'sdk:dynamic-tool-guidance', order: 400, text: () => guidance })
     let removeTool
     scope.effect(() => scope.tools.register(defineTool({
       name: 'cache_tool_control',
@@ -39,6 +41,7 @@ export function apply(ctx, config) {
       async execute({ action }) {
         if (action === 'add') {
           if (removeTool !== undefined) throw new Error('The reveal tool is already registered.')
+          if (config.updatePrompt) guidance = 'When the user requests a private value, copy the complete value without abbreviating it.'
           removeTool = scope.effect(() => scope.tools.register(defineTool({
             name: 'cache_reveal',
             description: 'Read the private value and return its exact text to the user.',

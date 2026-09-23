@@ -43,7 +43,7 @@ export interface SystemPromptDecisionInput {
   /**
    * Whether prompt admission must consolidate: a pre-step listener declared a
    * new series, the surface changed since the last request, or assembled tools
-   * differ from the logged header. Tool changes alone need not replace a node.
+   * changed on a route without tool-update support.
    */
   startsSeries: boolean
 }

@@ -12,6 +12,7 @@ import { describe, expect, it, onTestFinished } from 'vitest'
 const fixturePath = fileURLToPath(new URL('./fixtures/dynamic-tool-cache.mjs', import.meta.url))
 const dshBin = fileURLToPath(new URL('../../../lib/bin.js', import.meta.url))
 const revealTool = 'cache_reveal'
+const privateValueGuidance = 'When the user requests a private value, copy the complete value without abbreviating it.'
 // Provider cache blocks may leave a short uncached suffix of an unchanged request.
 const cacheSuffixTokens = 256
 
@@ -40,7 +41,7 @@ function totalInput(usage: TokenUsage): number {
 }
 
 describe.skipIf(!process.env.DEEPSEEK_API_KEY)('SDK native tool updates with real DeepSeek', () => {
-  it('keeps the preceding conversation cached on the first request after a tool addition', { retry: 0 }, async () => {
+  it.each([false, true])('keeps the preceding conversation cached after a tool addition (prompt update: %s)', { retry: 0 }, async (updatePrompt) => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-tool-cache-'))
     onTestFinished(async () => { await rm(root, { recursive: true, force: true }) })
     const secret = `CACHE_PRIVATE_${randomUUID()}`
@@ -56,7 +57,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('SDK native tool updates with rea
       { id: 'tools', config: { mode: 'native' } },
       { id: 'session-log-deepseek', disabled: true },
       { id: 'plugin-package-inventory-deepseek', disabled: true },
-      { insert: [{ id: 'sdk-dynamic-tool-cache-fixture', name: fixturePath, config: { evidencePath, callsPath, secret } }] },
+      { insert: [{ id: 'sdk-dynamic-tool-cache-fixture', name: fixturePath, config: { evidencePath, callsPath, secret, updatePrompt } }] },
     ]))
     const harness = new DeepSeekHarness({
       dshBin, profile: 'sdk', patches: [patch], dshHome: join(root, 'home'),
@@ -95,7 +96,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('SDK native tool updates with rea
     const historyInput = totalInput(usageFor(history, events))
     const precedingInput = totalInput(usageFor(before, events))
     const cached = usageFor(added, events).cacheReadTokens ?? 0
-    process.stdout.write(`SDK tool addition cache: ${JSON.stringify({ historyInput, precedingInput, cached, deficit: precedingInput - cached, removedCached: usageFor(removed, events).cacheReadTokens })}\n`)
+    process.stdout.write(`SDK tool addition cache: ${JSON.stringify({ updatePrompt, historyInput, precedingInput, cached, deficit: precedingInput - cached, removedCached: usageFor(removed, events).cacheReadTokens })}\n`)
     expect(historyInput - totalInput(usageFor(initial, events))).toBeGreaterThan(1024)
     expect(usageFor(warm, events).cacheReadTokens ?? 0).toBeGreaterThanOrEqual(historyInput - cacheSuffixTokens)
     expect(added.turn).toBe(before.turn)
@@ -103,6 +104,8 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('SDK native tool updates with rea
     expect(before.body.system).toBe(initial.body.system)
     expect(added.body.system).toBe(initial.body.system)
     expect(added.body.messages.slice(0, before.body.messages.length)).toEqual(before.body.messages)
+    expect(added.body.messages.some(message => message.role === 'system'
+      && message.content.some(block => block.type === 'text' && block.text?.includes(privateValueGuidance)))).toBe(updatePrompt)
     expect(cached, 'the first post-addition request must reuse the preceding conversation input').toBeGreaterThanOrEqual(precedingInput - cacheSuffixTokens)
     expect(initial.body.tools?.map(tool => tool.name)).toEqual(['cache_tool_control'])
     expect(added.body.tools?.slice(0, initial.body.tools?.length)).toEqual(initial.body.tools)
