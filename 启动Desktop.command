@@ -104,16 +104,39 @@ export DSH_DESKTOP_RENDERER_DEBUG_PORT="$renderer_debug_port"
 export DSH_DESKTOP_HOST_INSPECT_PORT="$host_inspect_port"
 export DSH_DESKTOP_OPEN_DEVTOOLS="${DSH_DESKTOP_OPEN_DEVTOOLS:-0}"
 
-# Node 的 fetch 默认不读代理环境变量；首次准备运行时访问 GitHub 时使用本地代理。
-if [[ -z "${https_proxy:-}" && -z "${http_proxy:-}" ]] && (( $+commands[nc] )) \
-  && nc -G 2 -z 127.0.0.1 7890 >/dev/null 2>&1; then
-  export https_proxy=http://127.0.0.1:7890
-  export http_proxy=http://127.0.0.1:7890
-  export all_proxy=socks5://127.0.0.1:7890
+# The preparation process alone may use a verified local proxy.
+typeset primary_manifest
+if ! primary_manifest="$("$node_path" --input-type=module -e '
+  import { resolveDesktopTargetBuildPaths } from "./apps/desktop/scripts/desktop-build-paths.mjs";
+  console.log(resolveDesktopTargetBuildPaths().runtime + "/primary-runtime/runtime.json");
+')"; then
+  print -u2 '无法确定 Desktop 运行时目录。'
+  exit 1
 fi
-if [[ -n "${https_proxy:-}${http_proxy:-}" ]]; then
-  export NODE_USE_ENV_PROXY=1
+if [[ ! -f "$primary_manifest" ]]; then
+  (
+    unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NODE_USE_ENV_PROXY
+    export no_proxy=127.0.0.1,localhost,::1
+    export NO_PROXY="$no_proxy"
+    if (( $+commands[nc] )); then
+      for proxy_port in 7890 7897 1087 8080; do
+        if nc -G 2 -z 127.0.0.1 "$proxy_port" >/dev/null 2>&1; then
+          export http_proxy="http://127.0.0.1:$proxy_port"
+          export https_proxy="$http_proxy"
+          export NODE_USE_ENV_PROXY=1
+          break
+        fi
+      done
+    fi
+    "${pnpm_command[@]}" --dir apps/desktop run prepare:primary-runtime
+  )
+  if (( $? != 0 )); then
+    print -u2 'Desktop 运行时准备失败。按回车键关闭窗口。'
+    read -r
+    exit 1
+  fi
 fi
+unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NODE_USE_ENV_PROXY
 
 # 分支切换可能留下指向已删除 workspace 包的悬空链接；它们会阻塞 Desktop 项目投影。
 if [[ -d node_modules/.pnpm/node_modules ]]; then

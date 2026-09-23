@@ -32,6 +32,7 @@ exec /bin/zsh -ilc '
     if (( exit_code == 0 )); then
       export DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
       export DSH_DESKTOP_OPEN_DEVTOOLS="${DSH_DESKTOP_OPEN_DEVTOOLS:-0}"
+      unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NODE_USE_ENV_PROXY
       "${pnpm_command[@]}" run dev:desktop
       exit_code=$?
     fi
