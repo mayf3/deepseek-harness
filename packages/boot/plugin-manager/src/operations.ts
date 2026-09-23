@@ -286,7 +286,7 @@ export async function runProfilePnpm(
       const manifest = await namedSpecManifest(dir, anchorPathSpec(raw, context.cwd), options, environment, registryFlags)
       if (manifest === undefined) continue
       const issue = evaluatePluginCompatibility(manifest, exemptions)
-      if (issue !== undefined && !issue.exempted) preflight.push(pluginCompatibilityWarning(issue))
+      if (issue !== undefined && !issue.exempted) preflight.push(pluginCompatibilityWarning(issue, context.profile))
     } catch (error) { void error; continue }
   }
   if (preflight.length > 0) return rejected(preflight, 'nothing was installed')
@@ -414,7 +414,7 @@ export async function runProfilePnpm(
           const manifest = readProfileManifest('dsh', packageDir)
           for (const candidate of [manifest, ...bundleComponentManifests(manifest, packageDir, context.installAnchor)]) {
             const issue = evaluatePluginCompatibility(candidate, readProfileVersionExemptions(dir))
-            if (issue !== undefined && !issue.exempted) found.push(pluginCompatibilityWarning(issue))
+            if (issue !== undefined && !issue.exempted) found.push(pluginCompatibilityWarning(issue, context.profile))
           }
         } catch (error) {
           found.push(`Cannot validate installed package ${name}: ${String(error)}`)
@@ -430,9 +430,12 @@ export async function runProfilePnpm(
       if (warnings.length > 0) {
         // A bundle component's peers need installed contents, so this rejection lands after pnpm
         // replaced the tree: restore the files, then reinstall the restored lockfile so the version
-        // that worked before this run keeps loading.
+        // that worked before this run keeps loading. A profile that had no lockfile is reinstalled
+        // from its restored manifest without creating one, which removes what this run added.
         await restore()
-        const repaired = await execa(options.command ?? 'pnpm', [...options.args ?? [], 'install', '--frozen-lockfile'], {
+        const hadLockfile = savedFiles.some(file => file.path.endsWith('pnpm-lock.yaml') && file.text !== undefined)
+        const repair = ['install', hadLockfile ? '--frozen-lockfile' : '--config.lockfile=false']
+        const repaired = await execa(options.command ?? 'pnpm', [...options.args ?? [], ...repair], {
           cwd: dir, env: environment, extendEnv: false, reject: false, stdin: 'ignore',
           ...options.idleTimeoutMs === undefined ? {} : { timeout: options.idleTimeoutMs },
         })

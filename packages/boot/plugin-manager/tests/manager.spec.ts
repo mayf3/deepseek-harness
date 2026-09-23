@@ -1332,8 +1332,8 @@ it.each(['live', 'startup'] as const)('requires exact risk acknowledgement and p
   })
   const runtime = getDshRuntimeVersion()
   const managed = () => [...ctx.loader.entries()].find(entry => entry.id === 'include:managed')
-  // Admission disables the incompatible row where it is composed: the Loader keeps its entry and gives it no fiber.
-  expect(managed()?.disabled).toBe(true)
+  // The bundle's own peers are incompatible, so its whole layer is skipped and contributes no row.
+  expect(managed()).toBeUndefined()
   expect((await manager.listBundles()).find(bundle => bundle.name === 'extra')?.error?.diagnostic).toContain('crashes or data loss')
   expect(await manager.setBundleEnabled('extra', true)).toMatchObject({ changed: false, application: 'failed' })
   expect(await manager.setVersionExemption('extra@1.0.0', runtime, true)).toMatchObject({ changed: false, application: 'failed' })
@@ -1346,14 +1346,14 @@ it.each(['live', 'startup'] as const)('requires exact risk acknowledgement and p
   // The grant is persisted only in the profile's compatibility file, never in its package manifest.
   expect(JSON.parse(readFileSync(join(dir, 'compatibility.json'), 'utf8'))).toEqual({ 'extra@1.0.0': [runtime] })
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core', 'extra'])
-  // `setVersionExemption` reconciles the profile itself, so a live tree re-admits the row here;
-  // no manifest watch or Loader instrumentation participates. A startup-only profile keeps it disabled until restart.
+  // `setVersionExemption` reconciles the profile itself, so a live tree re-admits the bundle here;
+  // no manifest watch or Loader instrumentation participates. A startup-only profile keeps it out until restart.
   if (mode === 'live') expect(managed()?.fiber?.state).toBe(2)
-  else expect(managed()?.disabled).toBe(true)
+  else expect(managed()).toBeUndefined()
   expect(await manager.setVersionExemption('extra@1.0.0', runtime, false)).toMatchObject({ changed: true })
   expect(manager.listVersionExemptions()).toEqual({ exemptions: {}, warnings: [] })
   expect(JSON.parse(readFileSync(join(dir, 'compatibility.json'), 'utf8'))).toEqual({})
-  if (mode === 'live') expect(managed()?.disabled).toBe(true)
+  if (mode === 'live') expect(managed()).toBeUndefined()
 })
 
 it.each([false, true])('rechecks installed bundle peers before accepting a disabled installation (exempted=%s)', async (exempted) => {

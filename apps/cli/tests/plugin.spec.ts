@@ -78,7 +78,7 @@ it.each([0, 1])('forwards ordinary pnpm output and exit status %s', async (exitC
   expect(await runPlugin('test', ['list'])).toBe(exitCode)
   expect(stdout).toHaveBeenCalledWith('pnpm output')
   if (exitCode === 0) expect(stderr).not.toHaveBeenCalled()
-  else expect(stderr).toHaveBeenCalledWith('dsh: pnpm failed; diagnostics: /profile/log\n')
+  else expect(stderr).toHaveBeenCalledWith('dsh: plugin command failed; diagnostics: /profile/log\n')
 })
 
 it('forwards all other commands unchanged and retains package diagnostics', async () => {

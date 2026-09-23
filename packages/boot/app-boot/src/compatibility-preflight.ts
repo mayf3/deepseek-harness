@@ -77,7 +77,9 @@ export function prepareProfileEntries(
   // Admission runs before the composed tree mounts, so no plugin-owned logger exporter exists yet;
   // composition-stage diagnostics go to stderr like the profile launcher's skipped-bundle report.
   return preflight(ctx, entries, parentURL, (row, reason) => {
-    process.stderr.write(`${binName}: disabling profile plugin ${row.name}: ${reason}\n`)
+    // Preset rows may omit ids, and a bundle row's name is its resolved module URL.
+    const label = typeof row.id === 'string' ? `row ${JSON.stringify(row.id)}` : row.name
+    process.stderr.write(`${binName}: disabling profile plugin ${label}: ${reason}\n`)
   }).rows
 }
 
@@ -101,7 +103,7 @@ function preflight(
       const manifest = manifestOf(ctx, row.name, base)
       if (manifest === undefined) return undefined
       const issue = evaluatePluginCompatibility(manifest, exemptions)
-      return issue === undefined || issue.exempted ? undefined : pluginCompatibilityWarning(issue)
+      return issue === undefined || issue.exempted ? undefined : pluginCompatibilityWarning(issue, profile.name)
     } catch (error) {
       // Peer metadata that cannot be read or validated is refused rather than silently admitted.
       /* v8 ignore next -- every reader and parser used here rejects with an Error. */
