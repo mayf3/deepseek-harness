@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createAssistantMessage, createToolResultMessage, LlmAttemptId, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm/assistant-stream'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -65,9 +65,9 @@ function settlement(): SessionAssistantSettlementEntry {
   } }
 }
 
-function harness(entries: readonly SessionEventLikeEntry[] = opening, hasMore = false) {
+function harness(entries: readonly SessionEventLikeEntry[] = opening, hasMore = false, tool = toolDefinition) {
   const assembler = new ConversationNodeAssembler(
-    { entries: () => [assistantDefinition, toolDefinition], fallbackEntry: () => undefined },
+    { entries: () => [assistantDefinition, tool], fallbackEntry: () => undefined },
     { entries: () => [chatViewDefinition] },
     { entries: () => [processGroupDefinition], forTarget: target => target === 'chat' ? processGroupDefinition : undefined },
   )
@@ -85,6 +85,23 @@ function harness(entries: readonly SessionEventLikeEntry[] = opening, hasMore = 
 }
 
 describe('Tool preparation and durable replay', () => {
+  it('batches repeated named deltas and retains the unchanged Tool node', () => {
+    const start = vi.fn(toolDefinition.start)
+    const h = harness(opening, false, { ...toolDefinition, start })
+    expect(h.assembler.append(delta(2.1, first, '{"file_path":"file.txt","content":"'))).toBe('animation-frame')
+    const original = h.tools()[0]!
+    for (let index = 0; index < 100; index++) {
+      expect(h.assembler.append(delta(2.2 + index / 1000, first, 'x'.repeat(128)))).toBe('animation-frame')
+      expect(h.tools()[0]).toBe(original)
+    }
+    expect(start).toHaveBeenCalledOnce()
+    expect(h.assembler.append(call(6))).toBe('immediate')
+    expect(h.phases()).toEqual([[first, 'start']])
+    expect(h.tools()[0]).not.toBe(original)
+    expect(h.assembler.append(result(7))).toBe('immediate')
+    expect(h.phases()).toEqual([[first, 'result']])
+  })
+
   it('creates two independent live preparations and updates each call under the same key', () => {
     const h = harness()
     h.assembler.append(delta(2.1, first, '', null))

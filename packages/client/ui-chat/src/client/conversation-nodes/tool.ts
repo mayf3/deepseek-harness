@@ -6,7 +6,7 @@ import type {
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type {} from '@deepseek-ai/dsh-tools/types'
 import type { ChatNode, ToolChatData } from '../contract/chat-nodes.ts'
-import { CHAT_SYNTHETIC_SEQ_OFFSETS, chatNode } from './common.ts'
+import { CHAT_SYNTHETIC_SEQ_OFFSETS, chatNode, contextLocation } from './common.ts'
 
 declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {
@@ -276,20 +276,24 @@ export const toolDefinition: ConversationNodeDefinition<ToolState> = {
     }
     return updateDispatch(context.state, match)
   },
+  publication: match => match.event.type === 'assistant/live-chunk' ? 'animation-frame' : 'immediate',
   buildViewNode: (context) => {
+    const current = context.current.get('chat') as ChatNode<'tool-call'> | null | undefined
     const state = context.state ?? fallbackState(context)
     if (state === undefined) {
-      const previous = context.current.get('chat') as ChatNode<'tool-call'> | null | undefined
-      return previous === undefined || previous === null ? null : { ...previous, visibility: 'hidden' }
+      return current == null ? null : current.visibility === 'hidden' ? current : { ...current, visibility: 'hidden' }
     }
     const interruptedAt = interruption(context)
     const projected = projectBlock(state.root, state, interruptedAt)
     const anchor = context.start?.event.seq
       ?? ('kind' in state.root ? state.root.seq : context.matches[0]?.event.seq ?? 0)
     const preparing = !('kind' in projected) && projected.phase === 'preparing'
-    return chatNode(context, 'tool-call', anchor, { root: projected } satisfies ToolChatData, {
-      visibility: preparing && interruptedAt !== undefined ? 'hidden' : 'visible',
-    })
+    const visibility = preparing && interruptedAt !== undefined ? 'hidden' : 'visible'
+    const location = contextLocation(context)
+    const data = current?.data.root === projected ? current.data : { root: projected } satisfies ToolChatData
+    if (current?.data === data && current.anchorSeq === anchor
+      && current.visibility === visibility && current.location === location) return current
+    return chatNode(context, 'tool-call', anchor, data, { visibility, location })
   },
 }
 
