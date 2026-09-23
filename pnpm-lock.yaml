@@ -12,7 +12,7 @@ overrides:
 patchedDependencies:
   '@earendil-works/pi-ai@0.85.1': b9bcce474fb2ac44633dff0fa722816a5bff5451b4575d5874035ea14ba70a4f
   '@electron/osx-sign@1.3.3': 280e7b2816caf01423097d24e79107a66afeb563a348630ce9928ae8499a5861
-  '@fortune-sheet/core@1.0.4': 7d369e6feca3c674aeb089624e38e0a79ad61e695d6bdae89711876cbd178f24
+  '@fortune-sheet/core@1.0.4': 886223a70a0cf76d4fa174608852763fe76bbdc9374db127665024c8c150dd68
   '@fortune-sheet/react@1.0.4': 2932e52e79afcd4ced08cfa123b5eded786c85043da32f622f3e80af6fc96c37
   '@yao-pkg/pkg@6.21.0': 75891fc22b277c145cafeab83e41baf4a70f5b8fe6dc0801c6a0b922d7ee88c7
   exceljs@4.4.0: c1bf8ac8f319dab382f08e3a669b715e691d46c703ac5a4163eb383fbedd1d48
@@ -5051,7 +5051,7 @@ importers:
         version: link:../../util/workspace-path
       '@fortune-sheet/core':
         specifier: 1.0.4
-        version: 1.0.4(patch_hash=7d369e6feca3c674aeb089624e38e0a79ad61e695d6bdae89711876cbd178f24)
+        version: 1.0.4(patch_hash=886223a70a0cf76d4fa174608852763fe76bbdc9374db127665024c8c150dd68)
       '@fortune-sheet/react':
         specifier: 1.0.4
         version: 1.0.4(patch_hash=2932e52e79afcd4ced08cfa123b5eded786c85043da32f622f3e80af6fc96c37)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -22494,7 +22494,7 @@ snapshots:
       bessel: 1.0.2
       jstat: 1.9.6
 
-  '@fortune-sheet/core@1.0.4(patch_hash=7d369e6feca3c674aeb089624e38e0a79ad61e695d6bdae89711876cbd178f24)':
+  '@fortune-sheet/core@1.0.4(patch_hash=886223a70a0cf76d4fa174608852763fe76bbdc9374db127665024c8c150dd68)':
     dependencies:
       '@fortune-sheet/formula-parser': 0.2.13
       dayjs: 1.11.21
@@ -22510,7 +22510,7 @@ snapshots:
 
   '@fortune-sheet/react@1.0.4(patch_hash=2932e52e79afcd4ced08cfa123b5eded786c85043da32f622f3e80af6fc96c37)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
-      '@fortune-sheet/core': 1.0.4(patch_hash=7d369e6feca3c674aeb089624e38e0a79ad61e695d6bdae89711876cbd178f24)
+      '@fortune-sheet/core': 1.0.4(patch_hash=886223a70a0cf76d4fa174608852763fe76bbdc9374db127665024c8c150dd68)
       '@types/regenerator-runtime': 0.13.8
       immer: 9.0.21
       lodash: 4.18.1
