@@ -6,3 +6,8 @@
   config:
     platformOrigin: "{{origin}}"
     allowLoopbackHttp: true
+# This scenario exercises the account launcher after initial setup.
+- id: ui-settings-account
+  config:
+    step: done
+    completion: completed
