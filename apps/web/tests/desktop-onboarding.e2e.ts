@@ -324,7 +324,14 @@ describe.skipIf(MODE === 'record')('web e2e: App-only desktop onboarding', () =>
     await page.getByRole('radio', { name: /聚焦结果/ }).focus()
     for (const [name, process] of [['关键细节', 'standard'], ['完整过程', 'detailed']] as const) {
       const [saved] = await Promise.all([
-        page.waitForResponse('**/api/settings/mutate'),
+        page.waitForResponse((response) => {
+          if (!response.url().endsWith('/api/settings/mutate')) return false
+          const request = response.request().postDataJSON() as {
+            payload: { args: { ns: string; ops: { op: string; path: string[]; value?: unknown }[] } }
+          }
+          return request.payload.args.ns === NS && request.payload.args.ops.some(op =>
+            op.op === 'set' && op.path[0] === 'process' && op.value === process)
+        }),
         page.keyboard.press('ArrowRight'),
       ])
       await saved.finished()
