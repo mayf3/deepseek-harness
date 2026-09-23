@@ -11,8 +11,8 @@ import { describe, expect, it, onTestFinished } from 'vitest'
 
 const fixturePath = fileURLToPath(new URL('./fixtures/dynamic-tool-cache.mjs', import.meta.url))
 const dshBin = fileURLToPath(new URL('../../../lib/bin.js', import.meta.url))
-const revealTool = 'cache_reveal'
-const privateValueGuidance = 'When the user requests a private value, copy the complete value without abbreviating it.'
+const sampleTool = 'cache_sample'
+const sampleLabelGuidance = 'Place each generated sample label on its own line.'
 // Provider cache blocks may leave a short uncached suffix of an unchanged request.
 const cacheSuffixTokens = 256
 
@@ -44,7 +44,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('SDK native tool updates with rea
   it.each([false, true])('keeps the preceding conversation cached after a tool addition (prompt update: %s)', { retry: 0 }, async (updatePrompt) => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-tool-cache-'))
     onTestFinished(async () => { await rm(root, { recursive: true, force: true }) })
-    const secret = `CACHE_PRIVATE_${randomUUID()}`
+    const sampleLabel = `CACHE_SAMPLE_${randomUUID()}`
     const evidencePath = join(root, 'requests.jsonl')
     const callsPath = join(root, 'calls.txt')
     const patch = join(root, 'dynamic-tool-cache.patch.yml')
@@ -57,7 +57,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('SDK native tool updates with rea
       { id: 'tools', config: { mode: 'native' } },
       { id: 'session-log-deepseek', disabled: true },
       { id: 'plugin-package-inventory-deepseek', disabled: true },
-      { insert: [{ id: 'sdk-dynamic-tool-cache-fixture', name: fixturePath, config: { evidencePath, callsPath, secret, updatePrompt } }] },
+      { insert: [{ id: 'sdk-dynamic-tool-cache-fixture', name: fixturePath, config: { evidencePath, callsPath, sampleLabel, updatePrompt } }] },
     ]))
     const harness = new DeepSeekHarness({
       dshBin, profile: 'sdk', patches: [patch], dshHome: join(root, 'home'),
@@ -79,10 +79,10 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('SDK native tool updates with rea
     const records = Array.from({ length: 96 }, (_, index) => `record-${index}: ${randomUUID()}`).join('\n')
     await run(`Keep these reference records. Do not call tools. Reply READY.\n${records}`)
     await run('Keep the reference records. Do not call tools. Reply READY.')
-    expect(await run(`Use cache_tool_control with action add. After it returns, call ${revealTool} exactly once and report its private value. Call these separately in order.`)).toContain(secret)
-    expect(await readFile(callsPath, 'utf8')).toBe('add\nreveal\n')
-    expect(await run('Use cache_tool_control with action remove. After it returns, reply REMOVED and do not call the reveal tool.')).toContain('REMOVED')
-    expect(await readFile(callsPath, 'utf8')).toBe('add\nreveal\nremove\n')
+    expect(await run(`Use cache_tool_control with action add. After it returns, call ${sampleTool} exactly once and report the generated sample label. This is synthetic example data for this run. Call these separately in order.`)).toContain(sampleLabel)
+    expect(await readFile(callsPath, 'utf8')).toBe('add\nsample\n')
+    expect(await run('Use cache_tool_control with action remove. After it returns, reply REMOVED and do not call the sample tool.')).toContain('REMOVED')
+    expect(await readFile(callsPath, 'utf8')).toBe('add\nsample\nremove\n')
 
     const requests = (await readFile(evidencePath, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as ObservedRequest)
     expect(events.filter(event => event.type === 'assistant/attempt')).toHaveLength(0)
@@ -105,17 +105,17 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('SDK native tool updates with rea
     expect(added.body.system).toBe(initial.body.system)
     expect(added.body.messages.slice(0, before.body.messages.length)).toEqual(before.body.messages)
     expect(added.body.messages.some(message => message.role === 'system'
-      && message.content.some(block => block.type === 'text' && block.text?.includes(privateValueGuidance)))).toBe(updatePrompt)
+      && message.content.some(block => block.type === 'text' && block.text?.includes(sampleLabelGuidance)))).toBe(updatePrompt)
     expect(cached, 'the first post-addition request must reuse the preceding conversation input').toBeGreaterThanOrEqual(precedingInput - cacheSuffixTokens)
     expect(initial.body.tools?.map(tool => tool.name)).toEqual(['cache_tool_control'])
     expect(added.body.tools?.slice(0, initial.body.tools?.length)).toEqual(initial.body.tools)
-    expect(added.body.tools?.find(tool => tool.name === revealTool)).toMatchObject({ name: revealTool, defer_loading: true })
-    expect(added.body.messages.flatMap(message => message.content)).toContainEqual({ type: 'tool_addition', tool: { type: 'tool_reference', name: revealTool } })
+    expect(added.body.tools?.find(tool => tool.name === sampleTool)).toMatchObject({ name: sampleTool, defer_loading: true })
+    expect(added.body.messages.flatMap(message => message.content)).toContainEqual({ type: 'tool_addition', tool: { type: 'tool_reference', name: sampleTool } })
     expect(removed.body.tools?.map(tool => tool.name)).toEqual(['cache_tool_control'])
     expect(removed.body.messages.flatMap(message => message.content).some(block => block.type === 'tool_addition')).toBe(false)
     expect(events.filter(event => event.type === 'developer/message').map(event => event.data.message.content)).toEqual([
-      [{ type: 'tool-addition', toolName: revealTool }],
-      [{ type: 'tool-removal', toolName: revealTool }],
+      [{ type: 'tool-addition', toolName: sampleTool }],
+      [{ type: 'tool-removal', toolName: sampleTool }],
     ])
   })
 })

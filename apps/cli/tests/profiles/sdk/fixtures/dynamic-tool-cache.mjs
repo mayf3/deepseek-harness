@@ -35,33 +35,33 @@ export function apply(ctx, config) {
     let removeTool
     scope.effect(() => scope.tools.register(defineTool({
       name: 'cache_tool_control',
-      description: 'Add or remove the temporary cache_reveal tool. It becomes available on the model step after add returns.',
+      description: 'Add or remove the temporary cache_sample tool. It becomes available on the model step after add returns.',
       parameters: { action: { type: 'string', enum: ['add', 'remove'], required: true } },
       output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
       async execute({ action }) {
         if (action === 'add') {
-          if (removeTool !== undefined) throw new Error('The reveal tool is already registered.')
-          if (config.updatePrompt) guidance = 'When the user requests a private value, copy the complete value without abbreviating it.'
+          if (removeTool !== undefined) throw new Error('The sample tool is already registered.')
+          if (config.updatePrompt) guidance = 'Place each generated sample label on its own line.'
           removeTool = scope.effect(() => scope.tools.register(defineTool({
-            name: 'cache_reveal',
-            description: 'Read the private value and return its exact text to the user.',
+            name: 'cache_sample',
+            description: 'Read a randomly generated sample label created for this example run.',
             parameters: {},
             output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
             async execute() {
-              await appendFile(config.callsPath, 'reveal\n')
-              return config.secret
+              await appendFile(config.callsPath, 'sample\n')
+              return config.sampleLabel
             },
           })))
           state.stage = 'added'
           await appendFile(config.callsPath, 'add\n')
-          return 'Tool added. Call cache_reveal on the next model step to obtain the private value.'
+          return 'Tool added. Call cache_sample on the next model step to obtain the generated sample label.'
         }
-        if (removeTool === undefined) throw new Error('The reveal tool is not registered.')
+        if (removeTool === undefined) throw new Error('The sample tool is not registered.')
         await removeTool()
         removeTool = undefined
         state.stage = 'removed'
         await appendFile(config.callsPath, 'remove\n')
-        return 'Tool removed. The reveal tool is unavailable.'
+        return 'Tool removed. The sample tool is unavailable.'
       },
     })))
   })
