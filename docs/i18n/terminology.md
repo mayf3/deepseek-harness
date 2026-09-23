@@ -64,7 +64,6 @@
 | spawn | spawn | | | |
 | steering | steering | steering（中途引导） | | |
 | job id | job id | | 任务 id | 保留英文 |
-| subagent | subagent | | | |
 | transcript | transcript | transcript（文本记录） | | 指会话渲染给用户或编辑器的完整文本，区别于事件日志 |
 | Typert | Typert | | TypeRT、typeRT、Type RT | DeepSeek Harness 类型图、生成器、loader 与运行时 registry 的产品拼写 |
 | waterfall | waterfall | waterfall（瀑布式事件） | | |
@@ -195,6 +194,7 @@
 | step | 步骤 | | | |
 | stream | 流 | | | |
 | structural signature | 结构签名 | | | i18n 配对机制用语：门禁比对两侧文件时提取的有序结构序列（标题层级、代码块、列表等） |
+| subagent | 子智能体 | | 子代理 | |
 | Summary | 概述 | | | 事故复盘标题用语 |
 | system prompt | 系统提示词 | | | |
 | taxonomy | 分类体系 | | | |
