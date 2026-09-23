@@ -16,13 +16,14 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
     ? node.location.turn
     : undefined
   const [now, setNow] = useState(Date.now)
-  const ticking = turn?.status === 'open'
+  const ticking = turn?.status === 'open' && turn.start !== undefined
   useEffect(() => {
     if (!ticking) return
     setNow(Date.now())
     const timer = setInterval(() => { setNow(Date.now()) }, LIVE_RUN_CLOCK_INTERVAL_MS)
     return () => { clearInterval(timer) }
   }, [ticking])
+  if (turn?.start === undefined && turn?.status !== 'closed') return null
   const canCollapse = turnProcess.foldable && turnProcess.hasContent && !turnProcessAlwaysOpen(node)
   const running = turn?.status === 'open'
   const reason = turn?.end?.data.reason.kind
