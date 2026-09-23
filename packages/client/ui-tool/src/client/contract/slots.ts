@@ -1,10 +1,10 @@
 /** Tool UI slot declarations and their composed component props. */
 import type {
-  HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
+  HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, SlotHookFactory,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
-  OpenFileOptions, PreparingToolCall, StartedToolCall,
+  AssistantChatData, OpenFileOptions, PreparingToolCall, StartedToolCall,
   ToolResultNode, UseDisclosure,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { MessageImageLoader, MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -21,7 +21,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * generic row. The owner supplies the call identity and frozen running
      * or settled node through explicit phase props; preparing inputs have no arguments.
      */
-    'tool.call.toolview': { kind: 'keyed'; scope: 'session'; owner: ToolCallOwnerProps }
+    'tool.call.toolview': {
+      kind: 'keyed'
+      scope: 'session'
+      owner: ToolCallOwnerProps
+      hookContext: ToolCallHookContext
+      inject: ToolCallInjected
+    }
     /**
      * Durable images of a settled image-bearing Tool call, rendered through
      * the attachment presentation plugin. The Tool layer never imports an
@@ -36,6 +42,23 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * slot.
      */
     'tool.call.images': { kind: 'single'; scope: 'session'; owner: ToolImagesOwnerProps }
+  }
+}
+
+/** Subscribe to this preparing call's raw argument prefix; other phases return an empty string. */
+export type UseToolCallArgumentsPartial = () => string
+
+/** Call-local sources supplied by the Tool tree to the slot's Hook binding. */
+export interface ToolCallHookContext {
+  readonly callId: string
+  /** This call's Step source, present only while preparing. */
+  readonly assistant: HostObservable<Readonly<AssistantChatData> | undefined> | undefined
+}
+
+/** Framework-bound subscriptions available to atomic Tool views on demand. */
+export interface ToolCallInjected {
+  hooks: {
+    toolCallArgumentsPartial: SlotHookFactory<'tool.call.toolview', UseToolCallArgumentsPartial>
   }
 }
 

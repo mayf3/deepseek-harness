@@ -12,9 +12,13 @@ type FileMutationRowProps = ToolCallViewProps & PropsLocale<'conversation'>
 /**
  * Lets users expand an applied file diff and open the reported path.
  */
-export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect, useDisclosure, t }: FileMutationRowProps) {
+export function FileMutationRow({ toolName, block, phase, cwd, home, openFile, inspect, useDisclosure, useToolCallArgumentsPartial, t }: FileMutationRowProps) {
+  const raw = useToolCallArgumentsPartial()
   const model = toolRowModel(toolName, block, cwd, home)
   const diff = diffCardModel(block)
+  const summary = phase === 'preparing'
+    ? t('tool.preparing.content', { kilobytes: Math.round(raw.length / 1024) })
+    : model.summary
   return (
     <ToolRow
       useDisclosure={useDisclosure}
@@ -23,7 +27,7 @@ export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect,
       toolName={toolName}
       icon={<IconEditOutlineRegular size={14} />}
       title={t(model.titleKey)}
-      summary={model.summary}
+      summary={summary}
       output={model.output}
       errorSummary={model.errorSummary}
       diff={diff}
