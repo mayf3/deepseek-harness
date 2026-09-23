@@ -137,7 +137,8 @@
   - code: notes.md
   - text: untouched.
 - paragraph:
-  - img "Token preview"
+  - 'button "View full image: Token preview"':
+    - img "Token preview"
 - text: css
 - button "Wrap lines" [pressed]
 - button "Copy"
