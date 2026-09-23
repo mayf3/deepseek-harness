@@ -35,10 +35,14 @@ function ringColorViolations(source: string): string[] {
 }
 
 describe('focus styles', () => {
-  it('defines standard geometry and a color-only browser fallback', () => {
+  it('defines standard geometry and a fallback that names colour and width but never style', () => {
     expect(rules.find(rule => rule.selectors.includes(':root'))?.declarations).toEqual([[WIDTH, '2px']])
+    // Naming the width is what keeps an undeclared ring at the standard geometry instead of
+    // Chromium's `auto 1px`; omitting the style is what keeps `outline: none` paintless.
     expect(rules.find(rule => rule.selectors.includes(':focus-visible'))?.declarations)
-      .toEqual([['outline-color', FALLBACK]])
+      .toEqual([['outline-color', FALLBACK], ['outline-width', `var(${WIDTH})`]])
+    expect(rules.flatMap(rule => rule.declarations).map(([property]) => property)).not.toContain('outline-style')
+    expect(rules.flatMap(rule => rule.declarations).map(([property]) => property)).not.toContain('outline')
   })
 
   it('pairs pointer suppression with the modality publisher and leaves editable controls alone', () => {

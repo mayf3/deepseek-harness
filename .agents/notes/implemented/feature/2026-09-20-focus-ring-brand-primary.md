@@ -14,7 +14,7 @@ Focus feedback has separate interaction and geometry constraints. A browser's `:
 
 [The theme's focus stylesheet](../../../../packages/client/ui-theme/src/styles/focus.css) owns the shared ring colour and standard width. [Input modality](../../../../packages/client/ui-primitives/README.md#input-modality) distinguishes tooltip input from keyboard focus navigation.
 
-**One colour.** Global and component `:focus-visible` outlines and focus-ring shadows read `--dsw-focus-ring-color`, falling back to `--dsw-alias-brand-primary`. The global fallback sets only outline colour; it does not create an outline where the component disables one.
+**One colour.** Global and component `:focus-visible` outlines and focus-ring shadows read `--dsw-focus-ring-color`, falling back to `--dsw-alias-brand-primary`. The global fallback names the colour and the standard width but never the style, so it cannot create an outline where the component disables one. Naming the width is what keeps a control with no ring of its own at the standard geometry instead of Chromium's `auto 1px`.
 
 **Context-owned geometry.** `--dsw-focus-ring-width` carries the standard 2px width. Dense tables and toolbars may keep 1px so the ring does not dominate compact content. Components own their offsets and use an inset ring where an outer ring would be clipped.
 

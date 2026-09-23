@@ -14,7 +14,7 @@ Status: implemented
 
 [主题焦点样式表](../../../../packages/client/ui-theme/src/styles/focus.css) 拥有共享焦点环颜色与标准宽度。[输入模态](../../../../packages/client/ui-primitives/README.zh.md#input-modality) 区分 tooltip 输入与键盘焦点导航。
 
-**一个颜色。** 全局与组件的 `:focus-visible` 轮廓和焦点环阴影读取 `--dsw-focus-ring-color`，回退到 `--dsw-alias-brand-primary`。全局兜底只设置轮廓颜色；组件禁用轮廓时，它不会创建轮廓。
+**一个颜色。** 全局与组件的 `:focus-visible` 轮廓和焦点环阴影读取 `--dsw-focus-ring-color`，回退到 `--dsw-alias-brand-primary`。全局兜底声明颜色与标准宽度、但不声明样式，因此组件禁用轮廓时它不会创建轮廓。声明宽度可让没有自有焦点环的控件保持标准几何，而不是落到 Chromium 的 `auto 1px`。
 
 **场景决定几何。** `--dsw-focus-ring-width` 提供标准的 2px 宽度。密集表格与工具栏可以保留 1px，避免焦点环压过紧凑内容。组件拥有自己的 offset，并在外扩环会被裁切时使用内嵌环。
 

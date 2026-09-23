@@ -143,6 +143,7 @@ async function compileFixture(): Promise<{ script: string; css: string }> {
       return <main style={{ padding: 40, display: 'grid', gap: 24, width: 420 }}>
         <Switch label="Toggle" checked={checked} onChange={setChecked} />
         <button id="default-outline">Default browser outline</button>
+        <button id="outline-none" aria-label="Outline disabled" style={{ outline: 'none' }}>No outline</button>
         <Menu open={open} autoFocus onClose={() => setOpen(false)}
           anchor={<button className={triggerCss.trigger} onClick={() => setOpen(!open)}>Open menu</button>}
           items={[{ id: 'first', label: 'First item' }, { id: 'last', label: 'Last item' }]} />
@@ -191,6 +192,48 @@ async function compileFixture(): Promise<{ script: string; css: string }> {
       return [typeof output.source === 'string' ? output.source : new TextDecoder().decode(output.source)]
     }).join('\n'),
   }
+}
+
+
+/**
+ * The painted ring's colour, style and width, plus its WCAG contrast against the surface the
+ * ring sits on. A control that disables its outline reports `style: 'none'` and null contrast.
+ */
+async function ringReport(target: Locator) {
+  return target.evaluate((element) => {
+    const style = getComputedStyle(element)
+    if (style.outlineStyle === 'none') return { color: null, style: style.outlineStyle, width: style.outlineWidth, offset: style.outlineOffset, contrast: null }
+    const resolve = (value: string): { text: string; rgb: [number, number, number] } => {
+      const probe = document.createElement('span')
+      probe.style.color = value
+      document.body.append(probe)
+      const text = getComputedStyle(probe).color
+      probe.remove()
+      const parts = /([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(text)
+      return { text, rgb: [Number(parts?.[1] ?? 0), Number(parts?.[2] ?? 0), Number(parts?.[3] ?? 0)] }
+    }
+    const ring = resolve(style.outlineColor)
+    // The ring is painted outside the border box unless the offset is negative.
+    const start = Number.parseFloat(style.outlineOffset) >= 0 ? element.parentElement : element
+    let behind = null
+    for (let node = start; node instanceof HTMLElement; node = node.parentElement) {
+      const candidate = getComputedStyle(node).backgroundColor
+      if (candidate && !/rgba\(0, 0, 0, 0\)/.test(candidate)) { behind = resolve(candidate); break }
+    }
+    if (behind === null) {
+      return { color: ring.text, style: style.outlineStyle, width: style.outlineWidth, offset: style.outlineOffset, contrast: null }
+    }
+    const luminance = (rgb: [number, number, number]): number => {
+      const channel = (value: number): number => { const c = value / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
+      return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2])
+    }
+    const a = luminance(ring.rgb); const b = luminance(behind.rgb)
+    return {
+      color: ring.text, style: style.outlineStyle, width: style.outlineWidth, offset: style.outlineOffset,
+      behind: behind.text,
+      contrast: Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100,
+    }
+  })
 }
 
 describe('source-compiled supplementary focus paint', () => {
@@ -353,5 +396,34 @@ describe('source-compiled supplementary focus paint', () => {
     await page.keyboard.press('Home')
     await expectBrand(card, 'outline')
     expect((await paint(card)).shadow).toBe(elevation)
+  })
+  it('gives an undeclared ring the standard width and legible contrast in both themes', async () => {
+    const page = await openFixture()
+    const button = page.locator('#default-outline')
+    await page.keyboard.press('Shift')
+    await button.focus()
+    const light = await ringReport(button)
+    expect(light.style).not.toBe('none')
+    expect(light.width).toBe('2px')
+    expect(light.contrast).not.toBeNull()
+    expect(light.contrast!).toBeGreaterThanOrEqual(3)
+
+    await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
+    await page.keyboard.press('Shift')
+    await button.focus()
+    const dark = await ringReport(button)
+    expect(dark.width).toBe('2px')
+    expect(dark.contrast).not.toBeNull()
+    expect(dark.contrast!).toBeGreaterThanOrEqual(3)
+    // The two themes paint different ink, so the dark ring is not the light one.
+    expect(dark.color).not.toBe(light.color)
+
+    // Naming the width must not create a ring where a control disables its outline.
+    const disabled = page.locator('#outline-none')
+    await page.keyboard.press('Shift')
+    await disabled.focus()
+    const none = await ringReport(disabled)
+    expect(none.style).toBe('none')
+    expect(none.contrast).toBeNull()
   })
 })
