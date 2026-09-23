@@ -1,16 +1,22 @@
-/** Real Chromium storage survives native view and Electron process lifetimes. */
+/**
+ * Real Chromium storage survives native view and Electron process lifetimes.
+ * Built-artifact regression: run after `pnpm run build:lib:host`, which emits
+ * apps/desktop/lib/types/platform-view.js; the fixture imports that artifact and resolves its
+ * workspace dependencies from this checkout's node_modules.
+ */
 import { createServer } from 'node:http'
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { execa } from 'execa'
-import { build } from 'tsdown'
 import { expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const repository = fileURLToPath(new URL('../../../', import.meta.url))
+const builtView = join(repository, 'apps/desktop/lib/types/platform-view.js')
 const hasDisplay = process.platform !== 'linux' || Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY)
 
 // Linux Electron needs a display server; the test runs under xvfb in headless environments.
@@ -37,14 +43,7 @@ it.skipIf(!hasDisplay)('retains dismissed notices across view and process restar
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('missing Platform fixture listener')
     const origin = `http://127.0.0.1:${String(address.port)}`
-    const outDir = join(root, 'bundle')
-    await build({
-      config: false, cwd: repository, logLevel: 'silent',
-      entry: { 'platform-view': join(repository, 'apps/desktop/src/platform-view.ts') },
-      tsconfig: join(repository, 'tsconfig.base.json'), outDir, format: 'esm', platform: 'node',
-      target: 'es2024', deps: { alwaysBundle: [/^@deepseek-ai\//], neverBundle: ['electron'] },
-      outExtensions: () => ({ js: '.mjs' }),
-    })
+    if (!existsSync(builtView)) throw new Error(`missing built Platform view ${builtView}; run pnpm run build:lib:host`)
     const userData = join(root, 'browser')
     await mkdir(userData)
     const electron: unknown = require('electron')
@@ -52,7 +51,7 @@ it.skipIf(!hasDisplay)('retains dismissed notices across view and process restar
     const fixture = fileURLToPath(new URL('./fixtures/platform-storage-smoke.mjs', import.meta.url))
     const observed: string[] = []
     for (const phase of ['first', 'restart']) {
-      const result = await execa(electron, [fixture, join(outDir, 'platform-view.mjs'), userData, origin, phase], {
+      const result = await execa(electron, [fixture, builtView, userData, origin, phase], {
         env: { ELECTRON_RUN_AS_NODE: undefined }, timeout: 45_000, forceKillAfterDelay: 5_000, reject: false,
       })
       expect(result.timedOut, result.stderr).toBe(false)

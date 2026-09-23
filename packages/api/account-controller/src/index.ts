@@ -1,13 +1,14 @@
 /** Authenticated Remote operations for account UI consumers. */
 import { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import type {} from '@deepseek-ai/dsh-deepseek-account'
+import { isRunningAccountTask } from '@deepseek-ai/dsh-deepseek-account'
+import type {} from '@deepseek-ai/dsh-agent'
 import type { AccountDetails } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { AccountView, SignInAttemptId } from './types.ts'
 
 /** Account commands and reconnect-safe state stream. */
 export class AccountController extends TypertRemoteService {
-  static inject = ['deepseekAccount']
+  static inject = ['deepseekAccount', 'agents']
   /** @param ctx - Host with the account provider mounted. */
   constructor(ctx: Context) { super(ctx, 'accountController', { namespace: 'account' }) }
   /**
@@ -45,11 +46,41 @@ export class AccountController extends TypertRemoteService {
   @Remote
   cancelSignIn(attemptId: SignInAttemptId): Promise<AccountView> { return this.ctx.deepseekAccount.cancelSignIn(attemptId) }
   /**
+   * Inspect the latest logged request providers of running tasks, including tools and retries.
+   * @returns whether running work has a latest request context on the account route.
+   */
+  @Remote
+  hasRunningAccountTasks(): boolean {
+    return this.ctx.agents.list().some(isRunningAccountTask)
+  }
+  /**
    * Remove the local account grant and revoke it through Platform in the background, without deleting API keys.
    * @returns state after removing the local account grant.
    */
   @Remote
   signOut(): Promise<AccountView> { return this.ctx.deepseekAccount.signOut() }
+  /**
+   * Subscribe to credential expiry without replaying prior notifications.
+   * @param signal - stream lifetime.
+   * @returns notifications emitted while subscribed.
+   */
+  @Remote({ mode: 'stream' })
+  async *watchExpiry(signal: AbortSignal): AsyncIterable<'session-expired'> {
+    let pending = 0
+    let wake: (() => void) | undefined
+    const stop = this.ctx.on('deepseek-account/session-expired', () => { pending++; wake?.() })
+    const abort = (): void => { wake?.() }
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      while (!signal.aborted) {
+        if (pending > 0) { pending--; yield 'session-expired'; continue }
+        await new Promise<void>((resolve) => { wake = resolve })
+      }
+    } finally {
+      stop()
+      signal.removeEventListener('abort', abort)
+    }
+  }
   /**
    * Stream the safe account projection.
    * @param signal - stream lifetime.

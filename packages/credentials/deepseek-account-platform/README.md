@@ -13,6 +13,8 @@ getPlatformSession exports the stored grant only when its issuer matches platfor
 
 `desktopPlatform` defaults to `null`. Every profile then sends `x-client-platform: web` on Host authorization, profile, balance, and logout requests; the Desktop profile supplies `darwin` or `win32`, replacing it with `x-client-platform: desktop-mac` or `desktop-win`. The provider owns that header, so deployment configuration cannot override it. Embedded Platform document and API requests receive the same platform header alongside their deployment headers, only at the configured origin.
 
+Profile and balance HTTP 401 responses or top-level response code `40003` (invalid authorization) clear the rejected local grant and emit the live `deepseek-account/session-expired` notification. Concurrent responses share one removal; responses from an invalidated credential generation cannot clear its replacement. Other HTTP failures retain the grant. Host inference consumers can report a rejected request token through `rejectToken`; removal requires that it still matches the stored login.
+
 ## Summary
 
 Sign in through the system browser and keep the account credential in the existing local credential store. Local cancellation prevents late callbacks and exchange responses from signing the user in.
@@ -27,6 +29,8 @@ Sign in through the system browser and keep the account credential in the existi
 ## Use this package
 
 The profile projection maps `id_profile.picture` to `avatarUrl`, using null when no picture is configured.
+
+Token resolution refuses requests while local sign-out is in progress. Successful local removal publishes `deepseek-account/signed-out` before returning the signed-out snapshot; remote revocation remains independent.
 
 getProfile / getBalance sends the stored grant in the x-dsh-auth-token header to GET /auth-api/v0/users/current and GET /api/v0/users/get_user_summary on platformOrigin. The grant issuer must match that origin. Host projects only the account UID, profile name, avatar URL, phone or email exactly as masked by Platform, and normal_wallets / bonus_wallets currency/balance strings; response tokens and other fields are discarded. Bonus wallets remain separate from recharge balances. Credential changes and disposal invalidate in-flight queries.
 

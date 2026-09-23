@@ -1,4 +1,5 @@
 /** Client-safe account state; credentials never cross this projection. */
+import type {} from '@deepseek-ai/cordis'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 
 /** Identity of one local login attempt, unrelated to the platform request ID. */
@@ -44,4 +45,17 @@ export interface AccountWallet {
 export interface AccountDetails {
   readonly profile: { readonly status: 'ready'; readonly value: AccountProfile } | { readonly status: 'failed' }
   readonly balance: { readonly status: 'ready'; readonly value: readonly AccountWallet[]; readonly bonusWallets: readonly AccountWallet[] } | { readonly status: 'failed' }
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Server rejection removed the current account credential; this notification is not replayed.
+     * @mode emit
+     */
+    'deepseek-account/session-expired'(): void
+    /** An account model request requires the user to sign in.
+     * @mode emit
+     */
+    'deepseek-account/model-sign-in-required'(): void
+  }
 }

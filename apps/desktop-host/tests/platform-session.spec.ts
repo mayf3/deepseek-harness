@@ -20,6 +20,7 @@ class Account extends DeepSeekAccount {
   override async startSignIn() { return state }
   override async cancelSignIn() { return state }
   override async signOut() { return state }
+  override async rejectToken() {}
   override async resolveToken() { return undefined }
   override async getPlatformSession() { this.reading.resolve(undefined); return this.read() }
   override async *watch(signal: AbortSignal) {

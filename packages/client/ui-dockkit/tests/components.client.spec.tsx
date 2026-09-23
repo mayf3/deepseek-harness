@@ -172,6 +172,28 @@ describe('DockSurface', () => {
     expect(screen.getByRole('tab', { name: /a\.txt/u }).getAttribute('aria-selected')).toBe('true')
   })
 
+  it('claims the window drag row while every pane is docked', () => {
+    const controller = seededController()
+    controller.setExpanded(true)
+    controller.splitPane()
+    renderSurface(controller, spyIntents())
+    expect(document.querySelector('[data-dockkit-strip]')?.hasAttribute('data-window-drag')).toBe(true)
+  })
+
+  it('withdraws the window drag claim while a pane floats', () => {
+    const controller = seededController()
+    controller.setExpanded(true)
+    controller.splitPane()
+    const [first] = dockPaneIds(controller.getSnapshot().state)
+    if (first === undefined) throw new Error('expected a docked pane')
+    controller.floatTab(getPane(controller.getSnapshot().state, first).tabs[0]!)
+
+    renderSurface(controller, spyIntents())
+    // A float can sort before this row in the document, where the row's drag box would
+    // override the floating pane's own subtraction.
+    expect(document.querySelector('[data-dockkit-strip]')?.hasAttribute('data-window-drag')).toBe(false)
+  })
+
   it('shows the empty-pane label when a pane holds nothing', () => {
     const controller = new DockController()
     renderSurface(controller, spyIntents())
@@ -462,7 +484,8 @@ describe('DockSurface', () => {
     expect(document.querySelector('[data-dockkit-split-button]')).toBeNull()
   })
 
-  it('names the chip box\'s hidden sides in data-dockkit-strip-scroll as it scrolls', () => {
+  it.each([true, false])('names the chip box\'s hidden sides as it scrolls with resize observation: %s', (observed) => {
+    if (!observed) vi.stubGlobal('ResizeObserver', undefined)
     let scrollLeft = 0
     const descriptors = ['scrollLeft', 'scrollWidth', 'clientWidth'].map(name =>
       [name, Object.getOwnPropertyDescriptor(Element.prototype, name)] as const)

@@ -43,15 +43,15 @@ async function dismissNotice(contents) {
 }
 
 async function run() {
-  const [bundleFile, userData, origin, phase] = process.argv.slice(2)
-  if (bundleFile === undefined || userData === undefined || origin === undefined || phase === undefined) {
-    throw new Error('expected <bundled-platform-view.mjs> <userDataDir> <origin> <first|restart>')
+  const [viewModule, userData, origin, phase] = process.argv.slice(2)
+  if (viewModule === undefined || userData === undefined || origin === undefined || phase === undefined) {
+    throw new Error('expected <built-platform-view.js> <userDataDir> <origin> <first|restart>')
   }
   if (phase !== 'first' && phase !== 'restart') throw new Error(`unknown phase ${phase}`)
   const base = new URL(origin).origin
   app.setPath('userData', userData)
   await app.whenReady()
-  const { DesktopPlatformView } = await import(pathToFileURL(bundleFile).href)
+  const { DesktopPlatformView } = await import(pathToFileURL(viewModule).href)
   const owner = new BrowserWindow({ show: false, width: 900, height: 700 })
   const manager = new DesktopPlatformView('', () => 'en_US')
   const account = userId => ({ origin: base, token: 'fixture-secret', userId })
