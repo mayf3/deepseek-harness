@@ -489,9 +489,9 @@ declare module '@deepseek-ai/dsh-workspace/types' {
 
 describe('RowActionToast', () => {
   /** The notice surface over a test-owned notice source; dismissal clears the notice the way apply does. */
-  function toastSurface(archivedFilter: 'default' | 'show' | 'only' = 'default') {
+  function toastSurface(viewState: { archivedFilter?: 'default' | 'show' | 'only' } = { archivedFilter: 'default' }) {
     const toast = createSnapshotStore<RowToastState | null>(null)
-    const view = createSnapshotStore<{ archivedFilter?: 'default' | 'show' | 'only' }>({ archivedFilter })
+    const view = createSnapshotStore<{ archivedFilter?: 'default' | 'show' | 'only' }>(viewState)
     const dismissToast = vi.fn(() => { toast.set(null) })
     const undoArchive = vi.fn()
     const showArchived = vi.fn()
@@ -546,8 +546,14 @@ describe('RowActionToast', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('treats a view without a persisted filter as the hidden default and keeps the filter action', () => {
+    const { notify } = toastSurface({})
+    notify({ kind: 'archived', sessionId: sid('one') })
+    expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销或筛选已归档会话')
+  })
+
   it.each(['show', 'only'] as const)('omits the filter action while the %s filter already shows archived rows', (archivedFilter) => {
-    const { notify } = toastSurface(archivedFilter)
+    const { notify } = toastSurface({ archivedFilter })
     notify({ kind: 'archived', sessionId: sid('one') })
     expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销')
     expect(screen.queryByRole('button', { name: '筛选已归档会话' })).toBeNull()
