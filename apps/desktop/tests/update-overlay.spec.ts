@@ -9,12 +9,12 @@ vi.mock('electron', () => ({ BrowserWindow: function (options: object) { return 
 afterEach(() => { vi.restoreAllMocks() })
 
 function visibilityFixture(visible = true) {
-  const parent: ParentFixture & { visible: boolean; isVisible: () => boolean } = Object.assign(new EventEmitter(), {
-    visible,
+  const visibility = { visible }
+  const parent: ParentFixture & Pick<BrowserWindow, 'isVisible'> = Object.assign(new EventEmitter(), {
     getContentBounds: () => ({ x: 0, y: 0, width: 1000, height: 700 }),
     webContents: Object.assign(new EventEmitter(), { insertCSS: vi.fn(async () => 'blur'), removeInsertedCSS: vi.fn(async () => {}) }),
     isDestroyed: (): boolean => false,
-    isVisible: () => parent.visible,
+    isVisible: () => visibility.visible,
   })
   const window = Object.assign(new EventEmitter(), {
     destroyed: false,
@@ -23,17 +23,17 @@ function visibilityFixture(visible = true) {
   })
   native.create.mockReturnValue(window)
   new DesktopUpdateOverlays().create(parent as BrowserWindow, 'owned', 'Update required', false)
-  return { parent, window }
+  return { parent, window, visibility }
 }
 
 it('restores a ready overlay each time its parent is shown and releases visibility ownership on close', async () => {
-  const { parent, window } = visibilityFixture()
+  const { parent, window, visibility } = visibilityFixture()
   window.emit('ready-to-show')
   expect(window.show).toHaveBeenCalledOnce()
   for (let index = 0; index < 2; index++) {
-    parent.visible = false
+    visibility.visible = false
     parent.emit('hide')
-    parent.visible = true
+    visibility.visible = true
     parent.emit('show')
     await Promise.resolve()
   }
@@ -50,11 +50,11 @@ it('restores a ready overlay each time its parent is shown and releases visibili
 
 it('waits for both a visible parent and a ready document, in either order', async () => {
   for (const readyFirst of [true, false]) {
-    const { parent, window } = visibilityFixture(false)
+    const { parent, window, visibility } = visibilityFixture(false)
     if (readyFirst) window.emit('ready-to-show')
-    else { parent.visible = true; parent.emit('show') }
+    else { visibility.visible = true; parent.emit('show') }
     expect(window.show).not.toHaveBeenCalled()
-    if (readyFirst) { parent.visible = true; parent.emit('show') }
+    if (readyFirst) { visibility.visible = true; parent.emit('show') }
     else window.emit('ready-to-show')
     await Promise.resolve()
     expect(window.show).toHaveBeenCalledOnce()
@@ -64,11 +64,11 @@ it('waits for both a visible parent and a ready document, in either order', asyn
 })
 
 it('does not show or retain blur when closed before its document and CSS insertion settle', async () => {
-  const { parent, window } = visibilityFixture(false)
+  const { parent, window, visibility } = visibilityFixture(false)
   window.destroyed = true
   window.emit('closed')
   window.emit('ready-to-show')
-  parent.visible = true
+  visibility.visible = true
   parent.emit('show')
   await Promise.resolve()
   expect(window.show).not.toHaveBeenCalled()
