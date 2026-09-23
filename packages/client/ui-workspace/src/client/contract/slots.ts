@@ -53,7 +53,6 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { WorkspaceShortcutState } from '../shortcuts.ts'
 import type { createWorkspaceViewStore } from '../stores.ts'
-import type { ArchivedFilter } from '../tree.ts'
 
 /**
  * Owner share of the directory-flow holes: the complete conversation between
@@ -416,8 +415,6 @@ export interface RowToastInjected {
   hooks: {
     /** The notice on display, or none. */
     toast: HostObservable<RowToastState | null>
-    /** The viewing state's archived filter; the archived notice omits its filter action when archived rows are already visible. */
-    view: HostObservable<{ archivedFilter?: ArchivedFilter }>
   }
   /** Take the notice down. */
   dismissToast: () => void
@@ -441,10 +438,15 @@ export type SessionArchiveConfirmProps =
   & Omit<SessionArchiveConfirmInjected, 'hooks'>
   & PropsHooks<SessionArchiveConfirmInjected['hooks']>
 
-/** Props of the row toast entry in `shell.overlay`. */
+/**
+ * Props of the row toast entry in `shell.overlay`. The declared viewing store
+ * carries the archived filter; the archived notice omits its filter action
+ * when archived rows are already visible.
+ */
 export type RowToastProps =
   PropsRuntime<'shell.overlay'>
   & PropsLocale<'workspace'>
+  & PropsStore<WorkspaceViewStoreHandle>
   & Omit<RowToastInjected, 'hooks'>
   & PropsHooks<RowToastInjected['hooks']>
 

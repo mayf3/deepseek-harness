@@ -251,13 +251,17 @@ describe('ui-workspace apply', () => {
       ['workspace.session-archive', undefined, SessionArchiveConfirmDialog, 'workspace'],
       ['workspace.row-toast', undefined, RowActionToast, 'workspace'],
     ])
-    // Only the browser declares the viewing store; its handle hands out the
-    // one instance the injected callbacks write view state through. The
-    // row actions and overlay surfaces declare none.
+    // The browser and the row toast declare the same viewing-store handle,
+    // which hands out one instance: the browser's injected callbacks write
+    // view state through it and the toast reads the archived filter from it.
+    // The row actions and the other overlay surfaces declare none.
     const browser = b.slots.entries('sidebar.workspaces')[0]!
     expect(browser.store).toBeDefined()
     expect(viewInstance(b.slots)).toBe(viewInstance(b.slots))
+    const rowToastEntry = entry(b.slots, 'shell.overlay', 'workspace.row-toast')
+    expect(rowToastEntry.store).toBe(browser.store)
     for (const registration of [...b.slots.entries(MENU_ITEM), ...b.slots.entries(ROW_ACTION), ...b.slots.entries('shell.overlay')]) {
+      if (registration === rowToastEntry) continue
       expect(registration.store).toBeUndefined()
     }
     // Each share raises its own notices inside its callbacks.

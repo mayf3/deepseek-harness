@@ -30,6 +30,7 @@ import { ForkSessionMenuItem } from '../src/client/session-actions/ForkSession.t
 import { PinSessionMenuItem, PinSessionRowButton } from '../src/client/session-actions/PinSession.tsx'
 import { RenameSessionMenuItem, SessionRenameDialog } from '../src/client/session-actions/RenameSession.tsx'
 import { RowActionToast } from '../src/client/session-actions/RowActionToast.tsx'
+import { createWorkspaceViewStore } from '../src/client/stores.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
@@ -491,7 +492,13 @@ describe('RowActionToast', () => {
   /** The notice surface over a test-owned notice source; dismissal clears the notice the way apply does. */
   function toastSurface(viewState: { archivedFilter?: 'default' | 'show' | 'only' } = { archivedFilter: 'default' }) {
     const toast = createSnapshotStore<RowToastState | null>(null)
-    const view = createSnapshotStore<{ archivedFilter?: 'default' | 'show' | 'only' }>(viewState)
+    const instance = createWorkspaceViewStore().create()
+    // A v5 snapshot hydrates without the filter key; mirror it by dropping the
+    // fresh store's default rather than writing an explicit undefined.
+    const state = { ...instance.store.getSnapshot() }
+    if (viewState.archivedFilter === undefined) delete state.archivedFilter
+    else state.archivedFilter = viewState.archivedFilter
+    const view = createSnapshotStore(state)
     const dismissToast = vi.fn(() => { toast.set(null) })
     const undoArchive = vi.fn()
     const showArchived = vi.fn()
@@ -499,7 +506,8 @@ describe('RowActionToast', () => {
       <RowActionToast
         {...overlay}
         useToast={bindSnapshotSelector(toast)}
-        useView={bindSnapshotSelector(view)}
+        useStore={bindSnapshotSelector(view)}
+        actions={instance.actions}
         dismissToast={dismissToast}
         undoArchive={undoArchive}
         showArchived={showArchived}

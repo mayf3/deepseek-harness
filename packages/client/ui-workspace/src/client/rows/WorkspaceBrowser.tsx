@@ -897,6 +897,7 @@ export function WorkspaceBrowser({
     }
     open(sessionId)
   }
+  const leaveArchivedOnly = (): void => { actions.setArchivedFilter('default') }
   const workspaceReady = workspacePhase === 'ready' && workspaceStreamState !== 'loading'
   const mainSessionId = Object.values(list.byId)
     .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
@@ -1349,7 +1350,7 @@ export function WorkspaceBrowser({
                 list={list}
                 sessionIds={orderedFlatSessionIds}
                 rowState={rowState}
-                onLeaveArchivedOnly={() => { actions.setArchivedFilter('default') }}
+                onLeaveArchivedOnly={leaveArchivedOnly}
                 workspaceReady={workspaceReady}
                 animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
                 useSessionStatus={useSessionStatus}
@@ -1379,7 +1380,7 @@ export function WorkspaceBrowser({
                 setGroupExpanded={actions.setGroupExpanded}
                 setSessionOrder={saveSessionOrder}
                 rowState={rowState}
-                onLeaveArchivedOnly={() => { actions.setArchivedFilter('default') }}
+                onLeaveArchivedOnly={leaveArchivedOnly}
                 startSession={startSession}
                 open={guardedOpen}
                 insertWorkspaceBefore={insertWorkspaceBefore}
