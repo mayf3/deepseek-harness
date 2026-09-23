@@ -16,7 +16,8 @@ import { dirname, join } from 'node:path'
 import { createDevelopmentProjectMetadata } from '../src/project-manager.ts'
 import type { DesktopRelease } from '../src/release.ts'
 import { DESKTOP_RUNTIME_FILE, type DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
-import { resolveDesktopBuildTarget } from './desktop-build-paths.mjs'
+import type { DesktopAutoUpdateTarget } from './desktop-auto-update-environment.mjs'
+import { desktopTargetPlatform } from './desktop-build-paths.mjs'
 
 interface PackageManifest {
   readonly name?: string
@@ -36,6 +37,8 @@ export interface DevelopmentProjectOptions {
   readonly dependencyDir: string
   /** Release identity written into the disposable project metadata. */
   readonly release: DesktopRelease
+  /** Build target whose prepared payload the disposable project runs against. */
+  readonly target: DesktopAutoUpdateTarget
 }
 
 function readManifest(path: string): PackageManifest {
@@ -116,7 +119,7 @@ function mirrorWorkspaceDependencies(roots: readonly string[], destinationRoot: 
 
 /**
  * Replace one disposable project with links to the current built workspace.
- * @param options - Project destination, CLI package, and release identity.
+ * @param options - Project destination, CLI package, release identity, and build target.
  * @returns the absolute project directory supplied by the caller.
  */
 export function prepareDevelopmentProject(options: DevelopmentProjectOptions): string {
@@ -159,10 +162,8 @@ export function prepareDevelopmentProject(options: DevelopmentProjectOptions): s
     const manifest = readManifest(join(destinationModules, name, 'package.json'))
     return typeof manifest.version === 'string' ? [{ name, version: manifest.version, path: `node_modules/${name}` }] : []
   })
-  const target = resolveDesktopBuildTarget()
   const runtime: DesktopRuntimeDescriptor = { schemaVersion: 1, release: options.release,
-    platform: target === 'win-x64' ? 'win32' : 'darwin',
-    arch: target === 'mac-arm64' ? 'arm64' : 'x64', sharedPackages, files: [] }
+    ...desktopTargetPlatform(options.target), sharedPackages, files: [] }
   writeFileSync(join(options.projectDir, DESKTOP_RUNTIME_FILE), `${JSON.stringify(runtime, undefined, 2)}\n`)
   return options.projectDir
 }
