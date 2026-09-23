@@ -349,6 +349,9 @@ function groupByWorkspace(
       if (!sessionVisible(summary, current, archived, archivedFilter)) continue
       members.push(summary)
     }
+    // The archived-only view lists archives, not the Workspace inventory, so
+    // a Workspace without archived Sessions contributes no group.
+    if (archivedFilter === 'only' && members.length === 0) continue
     groups.push(buildGroup(
       workspace.workspaceId, workspace.workspaceId, workspace.path,
       Date.parse(workspace.createdAt), workspace.title, members,
@@ -416,8 +419,9 @@ function sessionNode(
 /**
  * Derive the workspace browser groups with every session as a top-level row.
  *
- * Every group shows; sessions populate under expanded groups with pinned rows
- * leading in the selected local order. Blank sessions are
+ * Every group shows, except that the archived-only filter drops groups
+ * without visible members; sessions populate under expanded groups with
+ * pinned rows leading in the selected local order. Blank sessions are
  * excluded except for the selected provisional New Session row; archived
  * sessions keep their slots and appear per the archived filter. Content
  * search lives outside this derivation (see {@link deriveSearchResults}).

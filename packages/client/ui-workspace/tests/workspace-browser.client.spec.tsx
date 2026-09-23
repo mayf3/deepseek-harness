@@ -436,7 +436,7 @@ describe('WorkspaceBrowser', () => {
       expect(screen.getByText('alive')).toBeTruthy()
       expect(screen.queryByText('gone')).toBeNull()
       fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: '显示已归档' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: '全部对话（显示已归档）' }))
       expect(b.store.getSnapshot().archivedFilter).toBe('show')
       expect(screen.getByText('gone')).toBeTruthy()
     } finally {
@@ -461,7 +461,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
     expect(screen.getAllByRole('separator')).toHaveLength(2)
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '按工作区', '按工作区树', '单列表', '手动排序', '最近更新', '显示已归档', '仅显示已归档',
+      '按工作区', '按工作区树', '单列表', '手动排序', '最近更新', '隐藏已归档', '全部对话（显示已归档）', '仅显示已归档',
     ])
     expect(screen.getByRole('menuitem', { name: '按工作区' }).querySelector('svg')).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '手动排序' }).querySelector('svg')).toBeTruthy()
@@ -487,7 +487,7 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().groupBy).toBe('workspace')
   })
 
-  it('picking 显示已归档 keeps existing rows and reveals archived ones in place', () => {
+  it('picking 全部对话（显示已归档） keeps existing rows and reveals archived ones in place', () => {
     mount({
       useSessions: hook(sessionState([summary('kept', 2), summary('stored', 1)])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['kept', 'stored'])], [sid('stored')])),
@@ -497,12 +497,12 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('stored')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '显示已归档' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '全部对话（显示已归档）' }))
     expect(screen.getByText('kept')).toBeTruthy()
     expect(screen.getByText('stored')).toBeTruthy()
   })
 
-  it('the two archived filters are mutually exclusive and re-picking returns to default', () => {
+  it('the archived filters are one exclusive choice and re-picking keeps it', () => {
     const b = mount({
       useSessions: hook(sessionState([summary('kept', 2), summary('stored', 1)])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['kept', 'stored'])], [sid('stored')])),
@@ -519,24 +519,69 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('kept')).toBeNull()
     expect(screen.getByText('stored')).toBeTruthy()
 
-    // Picking the other filter replaces it: everything visible.
-    pick('显示已归档')
+    // Picking another filter replaces it: everything visible.
+    pick('全部对话（显示已归档）')
     expect(b.store.getSnapshot().archivedFilter).toBe('show')
     expect(screen.getByText('kept')).toBeTruthy()
     expect(screen.getByText('stored')).toBeTruthy()
 
-    // Re-picking the selected filter returns to the default hidden view.
-    pick('显示已归档')
-    expect(b.store.getSnapshot().archivedFilter).toBe('default')
+    // Re-picking the selected filter keeps it selected.
+    pick('全部对话（显示已归档）')
+    expect(b.store.getSnapshot().archivedFilter).toBe('show')
     expect(screen.getByText('kept')).toBeTruthy()
-    expect(screen.queryByText('stored')).toBeNull()
+    expect(screen.getByText('stored')).toBeTruthy()
 
-    // The same toggle-off applies to 仅显示已归档.
-    pick('仅显示已归档')
-    pick('仅显示已归档')
+    // 隐藏已归档 is the explicit way back to the default hidden view.
+    pick('隐藏已归档')
     expect(b.store.getSnapshot().archivedFilter).toBe('default')
     expect(screen.getByText('kept')).toBeTruthy()
     expect(screen.queryByText('stored')).toBeNull()
+  })
+
+  it('仅显示已归档 hides Workspaces without archived Sessions', () => {
+    mount({
+      useSessions: hook(sessionState([summary('kept', 2), summary('stored', 1)])),
+      useWorkspaces: hook(workspaceState(
+        [workspace('alpha', ['kept', 'stored']), workspace('beta', ['kept'])],
+        [sid('stored')],
+      )),
+    })
+    expect(screen.getByText('alpha')).toBeTruthy()
+    expect(screen.getByText('beta')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '仅显示已归档' }))
+    expect(screen.getByText('alpha')).toBeTruthy()
+    expect(screen.queryByText('beta')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '隐藏已归档' }))
+    expect(screen.getByText('beta')).toBeTruthy()
+  })
+
+  it('仅显示已归档 nests tree children of hidden Workspaces under the nearest shown ancestor', () => {
+    mount({
+      useSessions: hook(sessionState([summary('live', 2), summary('stored', 1)])),
+      useWorkspaces: hook(workspaceState(
+        [
+          { ...workspace('root', ['live'], 'Projects'), path: '/projects' },
+          workspace('child', ['stored'], 'Child'),
+        ],
+        [sid('stored')],
+      )),
+    })
+    const choose = (name: string) => {
+      fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+      fireEvent.click(screen.getByRole('menuitem', { name }))
+    }
+    choose('按工作区树')
+    const parentSection = screen.getByText('Projects').closest<HTMLElement>('[class*="groupSection"]')!
+    expect(within(parentSection).getByText('Child')).toBeTruthy()
+
+    // Projects keeps no archived Sessions, so Child rises to the top level.
+    choose('仅显示已归档')
+    expect(screen.queryByText('Projects')).toBeNull()
+    expect(screen.getByText('Child')).toBeTruthy()
   })
 
   it('keeps the picked archived filter across remounts through the view store', () => {
@@ -547,7 +592,7 @@ describe('WorkspaceBrowser', () => {
     const b = mount(seats)
     fireEvent.click(screen.getByText('alpha'))
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '显示已归档' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '全部对话（显示已归档）' }))
     expect(b.store.getSnapshot().archivedFilter).toBe('show')
 
     cleanup()
@@ -1154,7 +1199,7 @@ describe('WorkspaceBrowser', () => {
       unarchiveSession,
     })
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '显示已归档' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '全部对话（显示已归档）' }))
     fireEvent.click(screen.getByRole('button', { name: '搜索会话' }))
     fireEvent.change(screen.getByPlaceholderText('搜索会话名称'), { target: { value: 'e' } })
     await act(async () => { await Promise.resolve() })
