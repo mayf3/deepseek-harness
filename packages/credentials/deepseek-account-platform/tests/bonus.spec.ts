@@ -167,6 +167,19 @@ it('reads unnotified bonuses with the platform origin, grant header, and locale 
   ])
 })
 
+it('accepts exponent and full-precision bonus amounts through the Platform numeric grammar', async () => {
+  const f = await fixture()
+  await f.grant('test-account-token')
+  f.bonuses([
+    { order_id: ORDER, campaign: 'dsh_login_bonus', amount: '5.0000000000000000', currency: 'CNY',
+      granted_at: '2026-09-21T12:00:00Z', expires_at: '2026-10-21T12:00:00Z', msg: 'fixture' },
+    { order_id: SECOND_ORDER, campaign: 'dsh_login_bonus', amount: '1E+3', currency: 'CNY',
+      granted_at: '2026-09-20T12:00:00Z', expires_at: '2026-10-20T12:00:00Z', msg: 'fixture' },
+  ])
+  const batch = await f.account.getUnnotifiedBonuses(clientMetadata('en'))
+  expect(batch?.bonuses.map(bonus => bonus.amount)).toEqual(['5.0000000000000000', '1E+3'])
+})
+
 it.each([
   ['zh-CN', 'zh_CN'],
   ['en-US', 'en_US'],

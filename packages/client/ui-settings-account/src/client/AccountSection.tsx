@@ -1,6 +1,6 @@
 /** Account settings renders safe Host state and explicit login actions. */
 import { Big } from 'big.js'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
 import { Button, IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { PropsRuntime, PropsLocale, InjectFace, HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
@@ -44,8 +44,12 @@ export interface AccountSectionInjected {
   }
   /** @returns after account details are refreshed; concurrent refreshes share a request. */
   refresh: () => Promise<void>
-  /** @returns after one Settings entry refreshed the balance and the unnotified-bonus read. */
-  refreshOnSettingsOpen: () => Promise<void>
+  /**
+   * Read the balance, bonus wallets and unnotified bonus once. The Settings launcher
+   * calls it on each entry and the top-up view calls it when the user returns.
+   * @returns after both reads settle.
+   */
+  refreshAccount: () => Promise<void>
   /** Open the external support questionnaire with the current build and browser environment. */
   contactUs: () => void
   /** Open or dismiss the login dialog. */
@@ -67,7 +71,7 @@ export interface AccountSectionInjected {
 export type AccountSectionProps =
   PropsRuntime<'settings.section'> & PropsLocale<'settings.account'> & InjectFace<AccountSectionInjected>
 /** @param props - localized actions and account subscription. @returns account settings UI. */
-export function AccountSection({ t, useAccount, useTheme, start, cancel, platform }: AccountSectionProps) {
+export function AccountSection({ t, useAccount, useTheme, start, cancel, platform, refreshAccount }: AccountSectionProps) {
   const { view: state, details, failed: streamFailed } = useAccount(value => value)
   const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
   const [platformPage, setPlatformPage] = useState<'usage' | 'top-up'>()
@@ -87,6 +91,26 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, platfor
     setFailed(false)
     try { await action() } catch { setFailed(true) } finally { setBusy(false) }
   }
+  /**
+   * @param event - click on a Platform destination link.
+   * @returns nothing; on Desktop the embedded page replaces the pending navigation.
+   */
+  const openUsage = (event: MouseEvent<HTMLAnchorElement>): void => {
+    if (platform !== undefined && signedIn) { event.preventDefault(); setPlatformPage('usage') }
+  }
+  /**
+   * The Platform entry the balance rows share with the Usage action: an embedded page on
+   * Desktop, a new tab elsewhere. A wallet read that failed still reaches the same
+   * destination, so the user can inspect the balance the Harness could not load; the
+   * destination comes from the account links, not from the wallet response.
+   * @param label - localized link copy.
+   * @param className - link treatment for the row that renders it, absent when the sheet has no such rule.
+   * @returns the Platform anchor.
+   */
+  const platformLink = (label: string, className: string | undefined) => (
+    <a className={className} href={state?.links.usageUrl} aria-disabled={state === undefined}
+      target="_blank" rel="noreferrer" onClick={openUsage}>{label}</a>
+  )
   const status = failed || streamFailed || attempt?.phase === 'failed' ? t('failed')
     : attempt?.phase === 'expired' ? t('expired')
       : active ? t(attempt.phase === 'initializing' ? 'initializing' : attempt.phase === 'waiting-browser' ? 'waiting' : 'completing')
@@ -109,7 +133,15 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, platfor
     <section className={css.section} aria-label={t('nav')}>
       {platformPage !== undefined && platform !== undefined && signedIn && <PlatformOverlay
         bridge={platform} page={platformPage} backLabel={t('backToHarness')}
-        loadingLabel={t('loading')} failureLabel={t('platformFailed')} retryLabel={t('platformRetry')} onClose={() => { setPlatformPage(undefined) }} />}
+        loadingLabel={t('loading')} failureLabel={t('platformFailed')} retryLabel={t('platformRetry')}
+        onClose={() => {
+          // Returning from top-up may have changed what the account holds, so the
+          // page leaves immediately and the reads settle behind it. Usage changes
+          // no account state, so leaving it stays as cheap as it was.
+          const page = platformPage
+          setPlatformPage(undefined)
+          if (page === 'top-up') void refreshAccount()
+        }} />}
       <div className={css.card}>
         <div className={css.identity}>
           <span className={css.avatar}><AccountAvatar url={signedIn ? profile?.avatarUrl : null} /></span>
@@ -137,8 +169,9 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, platfor
             ? <span className={css.amount}>{wallets.map(wallet => <span key={wallet.currency}>
               {formatBalance(wallet.balance, wallet.currency === 'CNY' ? '¥' : '$')}
             </span>)}</span>
-            : <span className={css.unavailable}>{t(!signedIn ? 'balanceSignedOut'
-              : details?.balance === undefined ? 'loading' : 'balanceUnavailable')}</span>}
+            : !signedIn || details?.balance === undefined
+              ? <span className={css.unavailable}>{t(!signedIn ? 'balanceSignedOut' : 'loading')}</span>
+              : platformLink(t('balanceUnavailable'), css.unavailableLink)}
         </div>
         {signedIn && <>
           <div className={css.divider} />
@@ -149,8 +182,11 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, platfor
                 ? <span className={css.amount}>{bonusWallets.map(wallet => <span key={wallet.currency}>
                   {formatBalance(wallet.balance, wallet.currency === 'CNY' ? '¥' : '$')}
                 </span>)}</span>
-                : <span className={css.unavailable}>{t(details?.balance === undefined ? 'loading'
-                  : details.balance.status === 'failed' ? 'balanceUnavailable' : 'bonusEmpty')}</span>}
+                : details?.balance === undefined
+                  ? <span className={css.unavailable}>{t('loading')}</span>
+                  : details.balance.status === 'failed'
+                    ? platformLink(t('balanceUnavailable'), css.unavailableLink)
+                    : <span className={css.unavailable}>{t('bonusEmpty')}</span>}
             </span>
           </div>
         </>}
@@ -158,8 +194,7 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, platfor
         <div className={css.row}>
           <span className={css.secondary}>{t('more')}</span>
           <div className={css.links}>
-            <a className={css.linkButton} href={state?.links.usageUrl} aria-disabled={state === undefined} target="_blank" rel="noreferrer"
-              onClick={(event) => { if (platform !== undefined && signedIn) { event.preventDefault(); setPlatformPage('usage') } }}>{t('usage')}</a>
+            {platformLink(t('usage'), css.linkButton)}
             <a className={`${css.linkButton} ${css.primary}`} href={state?.links.topUpUrl} aria-disabled={state === undefined}
               target="_blank" rel="noreferrer"
               onClick={(event) => { if (platform !== undefined && signedIn) { event.preventDefault(); setPlatformPage('top-up') } }}>{t('topUp')}</a>

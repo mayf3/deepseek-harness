@@ -59,8 +59,9 @@ async function fixture(
   let logoutHold = false
   let logoutCount = 0
   const logoutHeaders: Array<string | undefined> = []
+  let normalWallets: unknown = [{ currency: 'CNY', balance: '123.45', token_estimation: '0' },
+    { currency: 'USD', balance: '6.78', token_estimation: '0' }]
   let bonusWallets: unknown = [{ currency: 'CNY', balance: '10.00' }]
-  let invalidSummary = false
   const detailsStarted = Promise.withResolvers<undefined>()
   const detailRequests: Array<{ path: string; authorization: string | undefined }> = []
   const receivedHeaders: Array<{
@@ -97,9 +98,7 @@ async function fixture(
       const value = req.url === '/auth-api/v0/users/current'
         ? { id: 'test-user', token: 'never-copy-response-token', ...contact,
           id_profile: { name: 'Test Account', picture: null } }
-        : { normal_wallets: [{ currency: 'CNY', balance: invalidSummary ? 'not-a-decimal' : '123.45', token_estimation: '0' },
-          { currency: 'USD', balance: '6.78', token_estimation: '0' }],
-        bonus_wallets: bonusWallets }
+        : { normal_wallets: normalWallets, bonus_wallets: bonusWallets }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ code: 0, data: {
         biz_code: (profileFailed && req.url === '/auth-api/v0/users/current')
@@ -172,7 +171,9 @@ async function fixture(
     failProfile: (failed: boolean) => { profileFailed = failed },
     holdBalance: () => { balanceHold = true },
     holdDetails: () => { detailsHold = true }, failSummary: () => { summaryFailed = true },
-    invalidateSummary: () => { invalidSummary = true }, dispose: () => provider.dispose(), exchanged, release,
+    invalidateSummary: () => { normalWallets = [{ currency: 'CNY', balance: 'not-a-decimal' }] },
+    normalWallets: (value: unknown) => { normalWallets = value },
+    dispose: () => provider.dispose(), exchanged, release,
     redirect: () => { redirect = true },
     hold: () => { hold = true },
     initResponse: (value: Record<string, unknown>) => { initOverride = value },
@@ -426,6 +427,46 @@ it('does not send an account grant to a different configured Platform environmen
   await expect(readDetails(f.account)).rejects.toThrow('account: protocol')
   expect(f.detailRequests).toEqual([])
 })
+
+it('accepts Platform exponent and full-precision balances that big.js parses', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  // The reported production value: a zero recharge wallet in exponent form beside a bonus wallet
+  // carrying more fractional digits than the old provider regex allowed.
+  f.normalWallets([{ currency: 'CNY', balance: '0E-16' }])
+  f.bonusWallets([{ currency: 'CNY', balance: '5.0000000000000000' }])
+  expect(await readDetails(f.account)).toMatchObject({
+    balance: {
+      status: 'ready',
+      value: [{ currency: 'CNY', balance: '0E-16' }],
+      bonusWallets: [{ currency: 'CNY', balance: '5.0000000000000000' }],
+    },
+  })
+})
+
+it.each([
+  ['1e+3', '1e+3'],
+  ['1E-3', '1E-3'],
+  ['.5', '.5'],
+  ['1.', '1.'],
+  ['-0.00', '-0.00'],
+])('keeps the original balance string %s readable when big.js accepts it', async (balance, preserved) => {
+  const f = await fixture()
+  await storeAccount(f)
+  f.normalWallets([{ currency: 'CNY', balance }])
+  expect(await readDetails(f.account)).toMatchObject({
+    balance: { status: 'ready', value: [{ currency: 'CNY', balance: preserved }] },
+  })
+})
+
+it.each(['NaN', 'Infinity', '-Infinity', '1e', 'e5', '1.2.3', '', ' 1', '+1', '0x10', '1,5'])(
+  'still rejects the malformed balance %s', async (balance) => {
+    const f = await fixture()
+    await storeAccount(f)
+    f.normalWallets([{ currency: 'CNY', balance }])
+    expect(await readDetails(f.account)).toMatchObject({ profile: { status: 'ready' }, balance: { status: 'failed' } })
+  },
+)
 
 it('rejects malformed wallet data independently of the profile response', async () => {
   const f = await fixture()

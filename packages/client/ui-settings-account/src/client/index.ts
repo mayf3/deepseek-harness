@@ -147,9 +147,10 @@ export function apply(ctx: Context): void {
   const operations: AccountSectionInjected = {
     ...nativePlatform === undefined ? {} : { platform: nativePlatform },
     refresh,
-    // One Settings entry: the recharge/bonus wallet and the unnotified-bonus read,
-    // whichever section the panel opens on. Both reads are independent.
-    async refreshOnSettingsOpen() { await Promise.all([refresh(), notices.refresh()]) },
+    // One account refresh: the recharge/bonus wallet and the unnotified-bonus read,
+    // whichever surface asks — a Settings entry, or returning from top-up. Both
+    // reads are independent, and a concurrent refresh shares the in-flight request.
+    async refreshAccount() { await Promise.all([refresh(), notices.refresh()]) },
     contactUs() {
       const url = contactUrl(config, {
         version: process.env.DSH_CLIENT_VERSION,

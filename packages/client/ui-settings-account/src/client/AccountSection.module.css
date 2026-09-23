@@ -117,6 +117,24 @@
   outline-offset: 2px;
 }
 
+/* A failed wallet read keeps its muted copy, but as a link: the user can still
+   inspect the balance on Platform through the same destination as Usage. */
+.unavailableLink {
+  color: var(--dsw-alias-label-tertiary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.unavailableLink:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.unavailableLink:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .primary {
   color: var(--dsw-alias-label-primary-foreground);
   background: var(--dsw-alias-button-primary-fill);

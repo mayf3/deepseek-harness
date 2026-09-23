@@ -240,7 +240,7 @@ it('refreshes balances and the bonus read on one Settings entry, without polling
   expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenCalledTimes(1)
   // Signing in already read the wallet once through the details refresh.
   const balances = c.mock.remote.account.getBalance.mock.calls.length
-  await actions.refreshOnSettingsOpen()
+  await actions.refreshAccount()
   expect(c.mock.remote.account.getBalance).toHaveBeenCalledTimes(balances + 1)
   expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenCalledTimes(2)
   // The bonus read carries the active UI language.
@@ -255,7 +255,7 @@ it('publishes a failed balance from a Settings entry without dropping the bonus 
   c.mock.remote.account.getUnnotifiedBonuses.mockResolvedValue(ok(null))
   c.mock.streams.push('account/watch', stored)
   await vi.waitFor(() => { expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenCalledTimes(1) })
-  await actions.refreshOnSettingsOpen()
+  await actions.refreshAccount()
   expect(actions.hooks.account.getSnapshot().details?.balance).toEqual({ status: 'failed' })
   // The bonus read still ran: a failed wallet read does not cancel it.
   expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenCalledTimes(2)
@@ -303,7 +303,7 @@ it('samples the build version, language, and UTC offset for every account call',
   })
   // The next call reads the zone again instead of reusing the first sample.
   offset.mockReturnValue(-300)
-  await actions.refreshOnSettingsOpen()
+  await actions.refreshAccount()
   expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenLastCalledWith({
     version: '0.0.0-test', locale: 'en', timezoneOffsetSeconds: 18_000,
   })

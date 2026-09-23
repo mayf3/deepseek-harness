@@ -30,7 +30,7 @@ function operationsOf(state: Omit<AccountView, 'links'>, details?: Partial<Accou
     },
     contactUs: vi.fn(), showLogin: vi.fn(), setOnboarding: vi.fn(),
     bonusNoticeShown: vi.fn(), bonusNoticeDismissed: vi.fn(),
-    refresh: vi.fn(() => Promise.resolve()), refreshOnSettingsOpen: vi.fn(() => Promise.resolve()),
+    refresh: vi.fn(() => Promise.resolve()), refreshAccount: vi.fn(() => Promise.resolve()),
     start: vi.fn(() => Promise.resolve()), cancel: vi.fn(() => Promise.resolve()), signOut: vi.fn(() => Promise.resolve()),
   }
 }
@@ -404,13 +404,28 @@ it('shows unavailable details and keeps external Platform links usable in a brow
     profile: { status: 'failed' }, balance: { status: 'failed' },
   })
   expect(screen.getByText(en.profileUnavailable)).toBeTruthy()
-  // The failed balance reports the same unavailable copy in both balance rows.
-  expect(screen.getAllByText(en.balanceUnavailable)).toHaveLength(2)
-  for (const name of [en.usage, en.topUp]) {
+  // The failed read keeps its copy in both balance rows, now as links into Platform.
+  const unavailable = screen.getAllByRole('link', { name: en.balanceUnavailable })
+  expect(unavailable).toHaveLength(2)
+  for (const link of unavailable) expect(link.getAttribute('href')).toBe('http://localhost:8081/usage')
+  for (const name of [en.usage, en.topUp, en.balanceUnavailable]) {
     const event = new MouseEvent('click', { bubbles: true, cancelable: true })
-    screen.getByRole('link', { name }).dispatchEvent(event)
+    screen.getAllByRole('link', { name })[0]!.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(false)
   }
+})
+
+it('opens the embedded Platform page from a failed balance row on Desktop', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const platform: PlatformBridge = { open: vi.fn(async () => {}), setBounds: vi.fn(async () => {}), close: vi.fn(async () => {}) }
+  mount({ status: 'credential-stored', attempt: null }, en, { balance: { status: 'failed' } }, platform)
+  // Both failed rows reach the same destination as the Usage action, so the user can
+  // inspect the balance the Harness could not load without leaving the app.
+  await act(async () => { fireEvent.click(screen.getAllByRole('link', { name: en.balanceUnavailable })[0]!) })
+  expect(platform.open).toHaveBeenCalledWith('usage', expect.anything())
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.backToHarness })) })
+  expect(platform.close).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('button', { name: en.backToHarness })).toBeNull()
 })
 
 it('reports a rejected settings login and disables login while initial state is unavailable', async () => {
@@ -487,18 +502,37 @@ it('reads once per Settings entry, whatever section the entry opens', async () =
   let snapshot: AccountSnapshot = operations.hooks.account.getSnapshot()
   const view = render(await accountMenu(operations, () => snapshot, false))
   // The sidebar launcher outlives the panel, so a closed panel reads nothing.
-  expect(operations.refreshOnSettingsOpen).not.toHaveBeenCalled()
+  expect(operations.refreshAccount).not.toHaveBeenCalled()
   view.rerender(await accountMenu(operations, () => snapshot, true))
-  expect(operations.refreshOnSettingsOpen).toHaveBeenCalledOnce()
+  expect(operations.refreshAccount).toHaveBeenCalledOnce()
   // Staying open — another section, a tab switch, or an unrelated re-render — is not a new entry.
   snapshot = { ...snapshot, details: { ...snapshot.details, balance: { status: 'ready', value: [], bonusWallets: [] } } }
   view.rerender(await accountMenu(operations, () => snapshot, true))
   view.rerender(await accountMenu(operations, () => snapshot, true))
-  expect(operations.refreshOnSettingsOpen).toHaveBeenCalledOnce()
+  expect(operations.refreshAccount).toHaveBeenCalledOnce()
   // Closing and reopening is a new entry, so it reads again.
   view.rerender(await accountMenu(operations, () => snapshot, false))
   view.rerender(await accountMenu(operations, () => snapshot, true))
-  expect(operations.refreshOnSettingsOpen).toHaveBeenCalledTimes(2)
+  expect(operations.refreshAccount).toHaveBeenCalledTimes(2)
+})
+
+it('reads the account again when the user returns from the top-up view, and not from usage', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const platform: PlatformBridge = { open: vi.fn(async () => {}), setBounds: vi.fn(async () => {}), close: vi.fn(async () => {}) }
+  const operations = mount({ status: 'credential-stored', attempt: null }, en, undefined, platform)
+  // Opening the view enters the top-up page; leaving it is the user coming back to Settings.
+  await act(async () => { fireEvent.click(screen.getByRole('link', { name: en.topUp })) })
+  expect(platform.open).toHaveBeenCalledWith('top-up', expect.anything())
+  expect(operations.refreshAccount).not.toHaveBeenCalled()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.backToHarness })) })
+  // The page leaves immediately and the account reads settle behind it.
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(operations.refreshAccount).toHaveBeenCalledOnce()
+  await act(async () => { fireEvent.click(screen.getByRole('link', { name: en.usage })) })
+  expect(platform.open).toHaveBeenCalledWith('usage', expect.anything())
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.backToHarness })) })
+  // Usage changed nothing the account owns, so returning from it reads nothing.
+  expect(operations.refreshAccount).toHaveBeenCalledOnce()
 })
 
 it('reports resize failure, ignores late native failures, and tolerates a removed IPC receiver', async () => {

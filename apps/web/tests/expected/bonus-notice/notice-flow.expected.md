@@ -16,10 +16,17 @@ open.dismissed cards=0 acks=2
 reopen.open gets=1 summaries=1 cards=0 acks=2
 reopen.section-switch gets=0 summaries=0 amount=true cards=0 acks=2
 reopen.closed cards=0 acks=2
+topup.open gets=1 summaries=1
+topup.returned bridge=open:top-up,close cards=0
+topup.notice=赠金已到账 / 已赠送您 11.00 元 DSH 体验赠金。
+topup.refresh gets=2 summaries=2 acks=1 recharge=true bonus=true
+topup.closed cards=1 acks=1
 retry.notice=赠金已到账 / 已赠送您 6.00 元 DSH 体验赠金。
 retry.attempts=2 backoff=true body-kept=true cards=1
 repeat.first=赠金已到账 / 已赠送您 7.00 元 DSH 体验赠金。
 repeat.reload=赠金已到账 / 已赠送您 7.00 元 DSH 体验赠金。
 repeat.acks=2 legacy-record={"66666666-6666-4666-8666-666666666666":"acknowledged"} cards=1
+failed.links count=2 hrefs={{origin}}/usage,{{origin}}/usage
+failed.reached usages=2 gets=1 summaries=1
 en.notice=Bonus credited / You received a CNY 9.00 DSH trial credit.
 en.get locale=en_US query=

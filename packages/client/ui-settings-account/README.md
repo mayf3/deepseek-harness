@@ -30,7 +30,7 @@ Account operations carry this UI's client identity to the Host: build version, a
 
 Balances use Platform Web currency formatting: two decimal places and digit grouping, positive amounts truncated to cents, positive sub-cent amounts shown as <0.01, and negative amounts rounded with a minimum displayed magnitude of 0.01. Raw Host balance strings remain unchanged.
 
-Desktop usage and top-up actions open an isolated native Platform view below a 48px return bar. On Windows Electron the return bar and the native view start below the Desktop caption strip, so the Application and Edit menu text cannot cover the Back to DeepSeek Harness label. Back destroys the view and preserves the Account settings page. Loading failures retain the return action and show a centered localized error with Retry. Retry reloads the same destination; renderer commands never receive the account token.
+Desktop usage and top-up actions open an isolated native Platform view below a 48px return bar. On Windows Electron the return bar and the native view start below the Desktop caption strip, so the Application and Edit menu text cannot cover the Back to DeepSeek Harness label. Back destroys the view and preserves the Account settings page; leaving the top-up view also reads the balance, bonus and unnotified bonus again, because a top-up may have changed them, while usage leaves them as read. Loading failures retain the return action and show a centered localized error with Retry. Retry reloads the same destination; renderer commands never receive the account token.
 
 The account menu's Feedback entry opens the Feishu questionnaire in the system browser. It supplies the available build version, UI locale and physical screen resolution as prefill_* parameters, with hide_*=1 for every context field; the account UID, tokens and contact details are excluded. Configure contactFormUrl on the ui-settings-account plugin to select another HTTPS form. contactSource defaults to empty until the questionnaire supports a Harness source option; OS and device fields remain unfilled, matching the Web implementation.
 
@@ -56,7 +56,7 @@ Account login uses a dismissible dialog before the model onboarding credential e
 
 A terminal account-state stream failure appears in the sign-in dialog or Account settings. Plugin unload suppresses late failure reports.
 
-The balance card shows recharge funds and bonus credit in separate rows. The bonus row is present while signed in and reads no bonus credit from the server; without positive bonus credit it states that no bonus is available, and a failed wallet read shows the existing unavailable copy. Currencies retain their own amounts, and a notice date is rendered only inside the server’s own message.
+The balance card shows recharge funds and bonus credit in separate rows. The bonus row is present while signed in; without positive bonus credit it states that no bonus is available. A failed wallet read shows the existing unavailable copy as a link to Platform — the same destination and behavior as the Usage action, so the embedded page opens on Desktop and a new tab elsewhere — while the loading and empty states stay plain text. Currencies retain their own amounts, and a notice date is rendered only inside the server’s own message.
 
 <a id="model-experience"></a>
 ## Model Experience

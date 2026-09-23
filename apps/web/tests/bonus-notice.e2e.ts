@@ -27,6 +27,7 @@ const ORDER_LATER = '33333333-3333-4333-8333-333333333333'
 const ORDER_EN = '44444444-4444-4444-8444-444444444444'
 const ORDER_RETRY = '55555555-5555-4555-8555-555555555555'
 const ORDER_REPEAT = '66666666-6666-4666-8666-666666666666'
+const ORDER_TOPUP = '77777777-7777-4777-8777-777777777777'
 
 const CLAIM_DAYS = 30
 
@@ -68,11 +69,14 @@ async function mockPlatform() {
   const acks: AckRecord[] = []
   /** Wallet reads, one per balance refresh the settings panel performs. */
   const summaries: GetRecord[] = []
+  let normalBalance = '12.34'
   let bonusBalance = '5.00'
   /** Order whose acknowledgement attempts the double fails, and how many failures it still owes. */
   let ackFailure: { orderId: string; remaining: number } | undefined
   /** Whether an acknowledged order stays unnotified, as a backend that has not applied the acknowledgement would serve it. */
   let keepUnnotified = false
+  /** Refuse the wallet read, which is how a Platform outage or an unparsable payload reaches the client. */
+  let failSummary = false
   /** Reply held back while the test controls when a read can answer. */
   let heldReply: (() => void) | undefined
   const grant = (orderId: string, amount: string): void => {
@@ -106,8 +110,9 @@ async function mockPlatform() {
     }
     if (url.pathname === '/api/v0/users/get_user_summary') {
       summaries.push({ locale, query: url.search })
+      if (failSummary) { res.writeHead(500, { 'content-type': 'text/plain' }).end('Internal Server Error'); return }
       reply({ code: 0, data: { biz_code: 0, biz_data: {
-        normal_wallets: [{ currency: 'CNY', balance: '12.34' }],
+        normal_wallets: [{ currency: 'CNY', balance: normalBalance }],
         bonus_wallets: [{ currency: 'CNY', balance: bonusBalance }],
       } } })
       return
@@ -155,8 +160,14 @@ async function mockPlatform() {
   return {
     origin: `http://127.0.0.1:${String(address.port)}`,
     grant, gets, served, acks, summaries,
+    /** @param value - recharge balance the settings page reads next. */
+    setNormalBalance: (value: string): void => { normalBalance = value },
     /** @param value - bonus balance the settings page reads next. */
     setBonusBalance: (value: string): void => { bonusBalance = value },
+    /** @param value - whether the wallet read fails. */
+    setFailSummary: (value: boolean): void => { failSummary = value },
+    /** Drop every unnotified grant, so a later scenario starts from a server with nothing to show. */
+    clearUnnotified: (): void => { unnotified.length = 0 },
     /** @param value - whether acknowledged orders keep arriving in the unnotified read. */
     setKeepUnnotified: (value: boolean): void => { keepUnnotified = value },
     /** @param orderId - order to refuse. @param count - its acknowledgement attempts that fail before one succeeds. */
@@ -191,6 +202,17 @@ async function acked(platform: { acks: AckRecord[] }, count: number): Promise<st
   return platform.acks.map(item => String(item.orderId)).join(',')
 }
 
+/**
+ * Native Platform bridge calls recorded in one page. `setBounds` is resize-driven and is
+ * deliberately not recorded, so the calls here are the opens and closes a user caused.
+ * @param page - page under test.
+ * @returns the recorded call log in order.
+ */
+async function platformCalls(page: Page): Promise<readonly string[]> {
+  return page.evaluate(() => (globalThis as typeof globalThis & { __bonusPlatformCalls?: readonly string[] })
+    .__bonusPlatformCalls ?? [])
+}
+
 describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
   let root: string | undefined
   let scaffold: WebScaffold
@@ -205,6 +227,18 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     tripwires.push(watchConsole(opened))
     await opened.addInitScript(() => {
       Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } })
+      // The embedded Platform view is a native child window owned by the Desktop shell.
+      // The double answers immediately and records the calls, so the scenario observes
+      // which page was opened and that returning destroyed the view.
+      const calls: string[] = []
+      Object.defineProperty(globalThis, '__bonusPlatformCalls', { value: calls })
+      Object.defineProperty(globalThis, 'dshPlatform', {
+        value: {
+          open: (page: string) => { calls.push(`open:${page}`); return Promise.resolve() },
+          setBounds: () => Promise.resolve(),
+          close: () => { calls.push('close'); return Promise.resolve() },
+        },
+      })
     })
     return opened
   }
@@ -377,6 +411,60 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     expect(await noticeCards(page).count()).toBe(0)
     expect(platform.acks).toHaveLength(2)
 
+    // Top-up runs in the native child view, so the account can change while the user is
+    // paying. Returning refreshes the wallet and the notice read once each; the panel
+    // returns as soon as the user asks for it, with the reads settling behind it.
+    const zhTopUp = '已赠送您 11.00 元 DSH 体验赠金。'
+    const topUpGetsBefore = platform.gets.length
+    const topUpSummariesBefore = platform.summaries.length
+    await openSettings(page, 'zh')
+    const topUpSettings = page.getByRole('dialog', { name: '设置', exact: true })
+    await topUpSettings.waitFor()
+    await expect.poll(() => platform.gets.length, { timeout: 30_000 }).toBe(topUpGetsBefore + 1)
+    await expect.poll(() => platform.summaries.length, { timeout: 30_000 }).toBe(topUpSummariesBefore + 1)
+    observations.push(`topup.open gets=${String(platform.gets.length - topUpGetsBefore)} summaries=${String(platform.summaries.length - topUpSummariesBefore)}`)
+    const callsBefore = (await platformCalls(page)).length
+    await topUpSettings.getByRole('link', { name: '充值', exact: true }).click()
+    const topUpOverlay = page.getByRole('dialog', { name: '返回 DeepSeek Harness', exact: true })
+    await topUpOverlay.waitFor()
+    // Opening the native view reads nothing by itself.
+    expect(platform.gets.length).toBe(topUpGetsBefore + 1)
+    expect(platform.summaries.length).toBe(topUpSummariesBefore + 1)
+    // The user pays while the view is open: the balance grows and a bonus is granted.
+    // Platform reports the spent-down recharge balance in scientific notation, so the
+    // refresh must render plain currency rather than reject the wallet payload.
+    platform.setNormalBalance('0E-16')
+    platform.setBonusBalance('2.4E+1')
+    platform.grant(ORDER_TOPUP, '11.00')
+    // Holding the notice read proves the return does not wait for the refresh it starts.
+    platform.holdNextGet()
+    await topUpOverlay.getByRole('button', { name: '返回 DeepSeek Harness', exact: true }).click()
+    await topUpOverlay.waitFor({ state: 'detached', timeout: 30_000 })
+    const topUpCalls = (await platformCalls(page)).slice(callsBefore).join(',')
+    observations.push(`topup.returned bridge=${topUpCalls} cards=${String(await noticeCards(page).count())}`)
+    expect(topUpCalls).toBe('open:top-up,close')
+    expect(await noticeCards(page).count()).toBe(0)
+    platform.releaseGet()
+    observations.push(`topup.notice=${await shownNotice(page, zhTopUp)}`)
+    const topUpAttempts = (): AckRecord[] => platform.acks.filter(item => item.orderId === ORDER_TOPUP)
+    await expect.poll(() => topUpAttempts().length, { timeout: 30_000 }).toBe(1)
+    await expect.poll(() => platform.gets.length, { timeout: 30_000 }).toBe(topUpGetsBefore + 2)
+    await expect.poll(() => platform.summaries.length, { timeout: 30_000 }).toBe(topUpSummariesBefore + 2)
+    const topUpPanel = (await topUpSettings.textContent()) ?? ''
+    const topUpAmounts = { recharge: topUpPanel.includes('¥0.00'), bonus: topUpPanel.includes('¥24.00') }
+    observations.push(`topup.refresh gets=${String(platform.gets.length - topUpGetsBefore)} summaries=${String(platform.summaries.length - topUpSummariesBefore)} acks=${String(topUpAttempts().length)} recharge=${String(topUpAmounts.recharge)} bonus=${String(topUpAmounts.bonus)}`)
+    expect(topUpAmounts).toEqual({ recharge: true, bonus: true })
+    expect(await topUpSettings.getByRole('button', { name: '刷新余额', exact: true }).count()).toBe(0)
+    // The card the user read through the mask survives closing the panel, and the
+    // acknowledgement already sent is not repeated.
+    await page.keyboard.press('Escape')
+    await topUpSettings.waitFor({ state: 'detached', timeout: 30_000 })
+    observations.push(`topup.closed cards=${String(await noticeCards(page).count())} acks=${String(topUpAttempts().length)}`)
+    expect(await noticeCards(page).count()).toBe(1)
+    expect(topUpAttempts()).toHaveLength(1)
+    await noticeCards(page).getByRole('button', { name: '关闭', exact: true }).click()
+    expect(await noticeCards(page).count()).toBe(0)
+
     // A transient acknowledgement failure keeps the displayed card and retries the same
     // order after the backoff. The pending retry is page state: no part of it reaches
     // browser storage, so restarting the client cannot resume it.
@@ -446,6 +534,42 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     observations.push(`repeat.acks=${String(repeatAttempts().length)} legacy-record=${String(await page.evaluate((key: string) => localStorage.getItem(key), legacyKey))} cards=${String(await noticeCards(page).count())}`)
     expect(await bonusStorageKeys()).toEqual([legacyKey])
     await noticeCards(page).getByRole('button', { name: '关闭', exact: true }).click()
+
+    // A wallet read that failed still leaves the user a way out: both balance rows become
+    // the Platform entry, which is where the balance the Harness could not load is shown.
+    platform.setKeepUnnotified(false)
+    platform.clearUnnotified()
+    platform.setFailSummary(true)
+    const failedGetsBefore = platform.gets.length
+    const failedSummariesBefore = platform.summaries.length
+    const failedUsagesBefore = (await platformCalls(page)).filter(call => call === 'open:usage').length
+    await openSettings(page, 'zh')
+    const failedSettings = page.getByRole('dialog', { name: '设置', exact: true })
+    await failedSettings.waitFor()
+    const failedLinks = failedSettings.getByRole('link', { name: '前往开放平台查看', exact: true })
+    await expect.poll(() => failedLinks.count(), { timeout: 30_000 }).toBe(2)
+    await expect.poll(() => platform.summaries.length, { timeout: 30_000 }).toBe(failedSummariesBefore + 1)
+    const failedHrefs = (await failedLinks.evaluateAll(nodes => nodes.map(node => node.getAttribute('href'))))
+      .map(href => String(href).replace(platform.origin, '{{origin}}'))
+    observations.push(`failed.links count=${String(await failedLinks.count())} hrefs=${failedHrefs.join(',')}`)
+    expect(failedHrefs).toEqual(['{{origin}}/usage', '{{origin}}/usage'])
+    // Each row reaches the same embedded page, and returning from it refreshes nothing:
+    // only a payment can change what the account holds.
+    for (const index of [0, 1]) {
+      await failedLinks.nth(index).click()
+      const usageOverlay = page.getByRole('dialog', { name: '返回 DeepSeek Harness', exact: true })
+      await usageOverlay.waitFor()
+      await usageOverlay.getByRole('button', { name: '返回 DeepSeek Harness', exact: true }).click()
+      await usageOverlay.waitFor({ state: 'detached', timeout: 30_000 })
+    }
+    const failedUsages = (await platformCalls(page)).filter(call => call === 'open:usage').length - failedUsagesBefore
+    observations.push(`failed.reached usages=${String(failedUsages)} gets=${String(platform.gets.length - failedGetsBefore)} summaries=${String(platform.summaries.length - failedSummariesBefore)}`)
+    expect(failedUsages).toBe(2)
+    expect(platform.gets.length).toBe(failedGetsBefore + 1)
+    expect(platform.summaries.length).toBe(failedSummariesBefore + 1)
+    platform.setFailSummary(false)
+    await page.keyboard.press('Escape')
+    await failedSettings.waitFor({ state: 'detached', timeout: 30_000 })
     await page.close()
 
     // Another device in another language gets the copy the server localized for it.
