@@ -2194,7 +2194,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/boot/plugin-manager/src/index.ts:38`](../packages/boot/plugin-manager/src/index.ts)
+Source: [`packages/boot/plugin-manager/src/index.ts:40`](../packages/boot/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 
