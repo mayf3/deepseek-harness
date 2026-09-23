@@ -176,8 +176,9 @@
 
 /* macOS hiddenInset titlebar: the strip spans the column's top edge (negative
    margins cancel the root padding) so it clears the traffic lights at
-   (16, 18). Window dragging over this run comes from ui-layout's .leadingBand
-   (same 52px geometry); the toggle subtracts via the base.css rule. */
+   (16, 18). The strip marks itself `data-window-drag` in markup (SidebarRoot), so
+   its own run is the column's draggable geometry and no frame band has to match
+   the strip's height; the toggle inside subtracts via the base.css rule. */
 .topStrip {
   flex: none;
   display: flex;
@@ -207,7 +208,15 @@
 
 /* Logo row (figma pad (4,8,4,8)): expanded keeps the panel toggle at the
    right edge; the rail gives every control the same base left anchor before
-   the shared entry translation is applied. */
+   the shared entry translation is applied. macOS hiddenInset titlebar: the row
+   is marked `data-window-drag` in markup (SidebarRoot), so ui-web base.css's
+   single darwin rule carries the drag over its own box — below the top strip
+   (40–100px: the strip's 52px foot with the row's -12px tuck). The brand rides
+   that box (SidebarRoot renders the wordmark as a plain span there, so the
+   global interactive no-drag rule never subtracts it); the dedicated New
+   Session button below keeps the pointer and keyboard paths. Safe as a drag
+   source: it precedes the sidebar's overlay slots in document order, so their
+   no-drag still wins. */
 .logoRow {
   flex: none;
   display: flex;
@@ -226,16 +235,6 @@
   padding: 0;
   margin-bottom: 12px;
   justify-content: flex-start;
-}
-
-/* macOS hiddenInset titlebar: the logo row extends the frame band's drag
-   below 52px, and the brand rides it — SidebarRoot renders the wordmark as a
-   plain span there, so the global interactive no-drag rule never subtracts
-   it; the dedicated New Session button below keeps the pointer and keyboard
-   paths. Safe as a drag source: it precedes the sidebar's overlay slots in
-   document order, so their no-drag still wins. */
-:global([data-platform='darwin']) .logoRow {
-  -webkit-app-region: drag;
 }
 
 /* Brand group (figma I133:7632): the full wordmark rides the text ink

@@ -170,7 +170,8 @@ describe('compatibility warning', () => {
       + 'peerDependencies {"@deepseek-ai/dsh":"^0.2.0","@deepseek-ai/dsh-session":"broken"}. '
       + 'Running it may cause crashes or data loss. '
       + 'Update the plugin or install a plugin version compatible with this dsh runtime. '
-      + 'To accept this risk explicitly, add the exact-version exemption {"@example/plugin@2.0.0":["0.1.7-alpha.1"]}. '
+      + 'To accept this risk explicitly, grant the exact-version exemption for @example/plugin@2.0.0 on dsh 0.1.7-alpha.1 '
+      + 'with `dsh plugin allow-version` or the plugin manager, then retry the installation or restart dsh. '
       + `Exact-version exemption: ${exempted ? 'active' : 'not active'}.`,
     )
   })

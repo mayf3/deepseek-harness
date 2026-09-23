@@ -8,7 +8,10 @@
   box-sizing: border-box;
   height: 100%;
   overflow: auto;
-  padding: 28px clamp(24px, 4vw, 48px) 48px;
+  /* Inline and bottom insets only: the 28px top inset belongs to the head row
+     (`.pageHead`, `.detailTop`). macOS window dragging is owned by a row's own box,
+     so an inset above that box leaves a top strip no drag region covers. */
+  padding: 0 clamp(24px, 4vw, 48px) 48px;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -23,12 +26,17 @@
   justify-content: space-between;
   gap: 16px;
   box-sizing: border-box;
+  /* The page's former top inset: the row starts at the window's top edge, so the whole
+     strip above the page content drags the window. */
+  padding-top: 28px;
 }
 
 /* macOS hiddenInset titlebar: the frame's top clearance keeps the head below
-   the window's top strip in both sidebar states so it never jumps. */
+   the window's top strip in both sidebar states so it never jumps, and the head
+   owns the window drag over its own box — clearance included — so this page's
+   top strip drags without a frame band. */
 :global([data-platform='darwin']) .pageHead {
-  padding-top: var(--dsh-frame-top-clearance, 0px);
+  padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px));
 }
 
 .pageTitle {
@@ -1047,10 +1055,22 @@ label.registryOption {
   flex-direction: column;
 }
 
-/* Same top clearance as .pageHead: the crumb is the detail views' leading
-   content and otherwise lands under the traffic lights. */
-:global([data-platform='darwin']) .detail {
-  padding-top: var(--dsh-frame-top-clearance, 0px);
+/* The head row every detail view shares: the crumb over the icon/actions row.
+   It carries the same top clearance as .pageHead — the crumb is the detail
+   views' leading content and otherwise lands under the traffic lights — and the
+   same drag ownership: it marks itself `data-window-drag`, so this row's own box
+   is the window's draggable geometry. The detail container below stays
+   content: marking it would drag the window over its text and form labels. */
+.detailTop {
+  display: flex;
+  flex-direction: column;
+  /* The same 28px top inset `.pageHead` carries, so the row starts at the window's
+     top edge and the strip above the detail content drags the window. */
+  padding-top: 28px;
+}
+
+:global([data-platform='darwin']) .detailTop {
+  padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px));
 }
 
 .crumb {

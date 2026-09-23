@@ -77,6 +77,18 @@ async function canvasColor(canvas: Locator): Promise<string> {
   })
 }
 
+/** Wait for device resolution, subject to the page bitmap allocation limit. */
+async function expectPdfResolution(canvas: Locator): Promise<void> {
+  await expect.poll(() => canvas.evaluate((node) => {
+    const bitmap = node as HTMLCanvasElement
+    const width = Number.parseFloat(bitmap.style.getPropertyValue('--pdf-page-width'))
+    const height = Number.parseFloat(bitmap.style.getPropertyValue('--pdf-page-height'))
+    const expected = Math.min(bitmap.getBoundingClientRect().width * window.devicePixelRatio,
+      Math.sqrt(16_777_216 * width / height))
+    return Math.abs(bitmap.width - expected)
+  })).toBeLessThanOrEqual(1)
+}
+
 /** Select a workspace file through the Files tab and wait for its preview identity. */
 async function openPreviewFile(column: Locator, filesTab: Locator, preview: Locator, name: string): Promise<void> {
   await filesTab.click()
@@ -461,8 +473,15 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
   let outsideRoot: string | undefined
   let nativeRoot: string | undefined
   let openLog = ''
+  let launchLog = ''
+  let appsCatalog = ''
+  let linuxMimeDefault = ''
+  let launchTarget = ''
   const opened = async (): Promise<Array<{ path: string; action: 'open' | 'reveal' | 'application' }>> =>
     (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; action: 'open' | 'reveal' | 'application' })
+  /** The application each `open -a` gesture named; the opened log keeps only the file path. */
+  const launched = async (): Promise<Array<{ app: string; path: string }>> =>
+    (await readFile(launchLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { app: string; path: string })
 
   beforeAll(async () => {
     outsideRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-outside-'))
@@ -470,35 +489,49 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       // Exercise the built Host through its actual OS command, replacing only the desktop application.
       nativeRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-native-'))
       openLog = join(nativeRoot, 'opened.jsonl')
+      launchLog = join(nativeRoot, 'launched.jsonl')
+      appsCatalog = join(nativeRoot, 'applications.json')
       await writeFile(openLog, '')
+      await writeFile(launchLog, '')
       const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
       await writeFile(join(nativeRoot, command), `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = process.argv[2] === '-a' ? process.argv[4] : process.argv[2] === '-R' ? process.argv[3] : process.argv[2];
 const action = process.argv[2] === '-a' ? 'application' : process.argv[2] === '-R' || fs.statSync(path).isDirectory() ? 'reveal' : 'open';
 fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) + '\\n');
+if (process.argv[2] === '-a') fs.appendFileSync(${JSON.stringify(launchLog)}, JSON.stringify({ app: process.argv[3], path: process.argv[4] }) + '\\n');
 `, { mode: 0o700 })
       if (process.platform === 'darwin') {
-        const apps = [
+        await writeFile(appsCatalog, JSON.stringify([
           { id: '/Applications/Test Player.app', name: 'Test Player', default: true, icon: `data:image/png;base64,${TINY_PNG.toString('base64')}` },
           { id: '/Applications/Other Player.app', name: 'Other Player', default: false, icon: null },
-        ]
-        await writeFile(join(nativeRoot, 'osascript'), `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(apps))});\n`, { mode: 0o700 })
+        ]))
+        await writeFile(join(nativeRoot, 'osascript'), `#!/usr/bin/env node\nprocess.stdout.write(require('node:fs').readFileSync(${JSON.stringify(appsCatalog)}, 'utf8'));\n`, { mode: 0o700 })
+        launchTarget = '/Applications/Test Player.app'
       }
       if (process.platform === 'linux') {
         const data = join(nativeRoot, 'data')
         await mkdir(join(data, 'applications'), { recursive: true })
         const icon = join(nativeRoot, 'icon.png')
         await writeFile(icon, TINY_PNG)
-        await writeFile(join(data, 'applications', 'test.desktop'), `[Desktop Entry]\nName=Test Player\nIcon=${icon}\n`)
+        const testDesktop = join(data, 'applications', 'test.desktop')
+        await writeFile(testDesktop, `[Desktop Entry]\nName=Test Player\nIcon=${icon}\n`)
         await writeFile(join(data, 'applications', 'other.desktop'), '[Desktop Entry]\nName=Other Player\n')
+        // `gio mime` owns the OS default here, so the marker file is what flips a run to "no default".
+        linuxMimeDefault = join(nativeRoot, 'mime-default')
+        await writeFile(linuxMimeDefault, 'test.desktop\n')
         await writeFile(join(nativeRoot, 'gio'), `#!/usr/bin/env node
 const fs = require('node:fs');
+const preferred = fs.readFileSync(${JSON.stringify(linuxMimeDefault)}, 'utf8').trim();
 if (process.argv[2] === 'info') process.stdout.write('standard::content-type: video/mp4');
-else if (process.argv[2] === 'mime') process.stdout.write('Default application for video/mp4: test.desktop\\nRegistered applications:\\n  test.desktop\\n  other.desktop\\n');
-else if (process.argv[2] === 'launch') fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.argv[4], action: 'application' }) + '\\n');
+else if (process.argv[2] === 'mime') process.stdout.write((preferred.length > 0 ? 'Default application for video/mp4: ' + preferred + '\\n' : '') + 'Registered applications:\\n  test.desktop\\n  other.desktop\\n');
+else if (process.argv[2] === 'launch') {
+  fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.argv[4], action: 'application' }) + '\\n');
+  fs.appendFileSync(${JSON.stringify(launchLog)}, JSON.stringify({ app: process.argv[3], path: process.argv[4] }) + '\\n');
+}
 else process.exit(1);
 `, { mode: 0o700 })
+        launchTarget = testDesktop
         vi.stubEnv('XDG_DATA_HOME', data)
         vi.stubEnv('XDG_DATA_DIRS', '')
       }
@@ -854,10 +887,12 @@ else process.exit(1);
     await pdfZoom.click()
     await page.getByRole('menuitem', { name: '150%', exact: true }).click()
     await expect.poll(async () => (await canvas.boundingBox())!.width / pdfIntrinsicWidth).toBeCloseTo(1.5, 1)
+    await expectPdfResolution(canvas)
     pdfZoom = await revealDocumentZoom(page, preview)
     await pdfZoom.click()
     await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
     await expect.poll(async () => (await canvas.boundingBox())!.width).toBeCloseTo(pdfWidth, 0)
+    await expectPdfResolution(canvas)
     expect(await preview.locator('[data-pdf-page]').count()).toBe(2)
     await expect.poll(() => canvasColor(canvas), { timeout: 30_000 }).toBe('red')
     const firstColor = await canvasColor(canvas)
@@ -892,6 +927,7 @@ else process.exit(1);
       `- Continuous pages: ${await preview.locator('[data-pdf-page]').count()}`,
       '- Zoom reveal: hidden -> bottom hover -> delayed hidden',
       '- Zoom modes: fit width -> 100% -> 150% -> fit width',
+      '- Settled zoom redraws the page at device resolution',
       `- Horizontal overflow: ${String(await body.evaluate(node => node.scrollWidth > node.clientWidth))}`,
       `- Canvas fills: ${[firstColor, secondColor, restoredColor].join(' -> ')}`,
       `- Same tab: ${String(await pdfTab.getAttribute('data-dockkit-tab') === pdfTabId)}`,
@@ -1372,6 +1408,42 @@ else process.exit(1);
         await headerOpen.click()
         await expect.poll(async () => (await opened()).length).toBe(4)
         expect((await opened())[3]).toEqual({ path: clip, action: 'open' })
+        // The reported defect: the Shell lists applications but marks none as the OS default.
+        // Clear the OS default marker for this platform: LaunchServices reports it inside the
+        // catalog on macOS, while `gio mime` owns it on Linux.
+        if (process.platform === 'linux') await writeFile(linuxMimeDefault, '')
+        else await writeFile(appsCatalog, JSON.stringify([
+          { id: '/Applications/Test Player.app', name: 'Test Player', default: false, icon: `data:image/png;base64,${TINY_PNG.toString('base64')}` },
+          { id: '/Applications/Other Player.app', name: 'Other Player', default: false, icon: null },
+        ]))
+        // Leave the file and come back: the shared association state is discarded when the
+        // last control for a path unmounts, so the marker is read again instead of reused.
+        await openPreviewFile(column, filesTab, preview, 'notes.unknown')
+        await openPreviewFile(column, filesTab, preview, 'clip.mp4')
+        await unsupported.waitFor({ timeout: 15_000 })
+        await emptyOpen.waitFor({ timeout: 15_000 })
+        // Opening the menu settles the re-read association before the labels are compared.
+        await prominent.getByRole('button', { name: 'More ways to open' }).click()
+        await page.getByRole('menuitem', { name: 'Test Player (default)', exact: true }).waitFor()
+        await page.keyboard.press('Escape')
+        expect(await emptyOpen.innerText()).toBe('Open')
+        expect(await headerOpen.getAttribute('aria-label')).toBe('Open in Test Player')
+        await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'applications-no-default.expected.md'), await prominent.ariaSnapshot(), MODE)
+        const gesturesBefore = (await opened()).length
+        const launchesBefore = (await launched()).length
+        await emptyOpen.click()
+        await expect.poll(async () => (await opened()).length).toBe(gesturesBefore + 1)
+        // Without an OS-marked default the main action opens the application this control
+        // names, rather than the OS association (which can prompt or pick another app).
+        expect((await opened()).at(-1)).toEqual({ path: clip, action: 'application' })
+        await expect.poll(async () => (await launched()).length).toBe(launchesBefore + 1)
+        expect((await launched()).at(-1)?.app).toBe(launchTarget)
+        await prominent.getByRole('button', { name: 'More ways to open' }).click()
+        await page.getByRole('menuitem', { name: 'Test Player (default)', exact: true }).click()
+        await expect.poll(async () => (await launched()).length).toBe(launchesBefore + 2)
+        expect((await launched()).at(-1)?.app).toBe(launchTarget)
+        await expect.poll(async () => (await opened()).length).toBe(gesturesBefore + 2)
+        expect((await opened()).at(-1)).toEqual({ path: clip, action: 'application' })
       }
       // Gesture facts stay out of the golden: the stub does not run on Windows.
       expect(await page.getByRole('alert').count()).toBe(0)
@@ -1379,7 +1451,7 @@ else process.exit(1);
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await compareOrRefreshGolden(EXPECTED, sections.join('\n\n'), MODE)
-    await assertFixtureInventory(SNAPSHOT_DIR, ['document.expected.md', 'applications.expected.md', 'paging.patch.yml'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['document.expected.md', 'applications.expected.md', 'applications-no-default.expected.md', 'paging.patch.yml'])
   })
 })
 
@@ -1400,7 +1472,8 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       ],
     })
     browser = await chromium.launch()
-    page = await newEnglishPage(browser)
+    page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, deviceScaleFactor: 2,
+      locale: 'en-US', timezoneId: 'Asia/Shanghai' })
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
@@ -1476,6 +1549,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       await page.getByRole('menuitem', { name: '150%', exact: true }).click()
       await expect.poll(() => zoomMenu.innerText()).toBe('150%')
       await expect.poll(async () => (await canvas.boundingBox())!.width / intrinsicWidth).toBeCloseTo(1.5, 1)
+      await expectPdfResolution(canvas)
       const zoomScrollport = preview.locator('[data-document-zoom-scrollport]')
       await zoomScrollport.evaluate((node) => {
         const bounds = node.getBoundingClientRect()
@@ -1484,10 +1558,31 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       })
       await expect.poll(() => zoomMenu.innerText()).toBe('166%')
       await expect.poll(async () => (await canvas.boundingBox())!.width / intrinsicWidth).toBeCloseTo(1.66, 1)
+      await expectPdfResolution(canvas)
+      await zoomScrollport.evaluate((node) => { node.scrollTop = 0; node.scrollLeft = 0 })
+      await copyPdfText(page, preview, '中文文档')
+      await successShot(page, 'office-zoom-redrawn')
       await zoomMenu.click()
       await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
       await expect.poll(() => zoomMenu.innerText()).toBe(fitPercent)
+      await expectPdfResolution(canvas)
       await zoomScrollport.evaluate((node) => { node.scrollTop = 0; node.scrollLeft = 0 })
+      await zoomScrollport.evaluate(async (node) => {
+        const bounds = node.getBoundingClientRect()
+        for (let step = 0; step < 8; step++) {
+          node.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true,
+            deltaY: -40, clientX: bounds.left + bounds.width / 2, clientY: bounds.top + bounds.height / 2 }))
+          await new Promise<void>(resolve => requestAnimationFrame(() => { resolve() }))
+        }
+      })
+      await expect.poll(() => zoomMenu.innerText()).toBe('400%')
+      expect(await zoomScrollport.evaluate(node => node.scrollLeft > node.clientWidth)).toBe(true)
+      await expectPdfResolution(canvas)
+      await zoomScrollport.evaluate((node) => { node.scrollTop = 0; node.scrollLeft = 0 })
+      await successShot(page, 'office-pinch-400')
+      await zoomMenu.click()
+      await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
+      await expectPdfResolution(canvas)
       expect(convert).toHaveBeenCalledTimes(1)
       await preview.getByRole('button', { name: 'Read the file again', exact: true }).click()
       await canvas.waitFor({ state: 'visible' })
@@ -1540,6 +1635,8 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
         '- Escape restores focus to the warning: true',
         '- Closing details preserves the warning and document position: true',
         '- Fit width, presets, and pinch resize the Office PDF continuously: true',
+        '- Settled zoom redraws the Office PDF at device resolution: true',
+        '- Continuous pinch to 400% redraws the page after horizontal panning: true',
         '- Pinch updates the displayed percentage during the gesture: 166%',
         `- Document top inset: ${topInset}px`,
       ].join('\n'), MODE)
@@ -1548,6 +1645,10 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
         await openPreviewFile(column, filesTab, preview, `chinese.${extension}`)
         await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible', timeout: 60_000 })
         await expect.poll(async () => (await preview.locator('[data-pdf-text]').allTextContents()).join(''), { timeout: 30_000 }).toContain('中文文档')
+        const officeZoom = await revealDocumentZoom(page, preview)
+        await officeZoom.click()
+        await page.getByRole('menuitem', { name: '150%', exact: true }).click()
+        await expectPdfResolution(canvas)
         if (['doc', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
         await successShot(page, `office-${extension}`)
       }

@@ -25,7 +25,11 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Open the Models page from the Settings navigation to see every configured provider as a row. The official DeepSeek provider (`deepseek-official`) always appears first; other providers retain their directory order. A whole-section provider whose key is not configured anywhere renders as its open setup card instead, but only in the first-run posture and only until the user closes that card. Each card kind owns its own open state, so closing one never discards a draft in another.
+Saving credentials or a custom provider preserves the selected model. The user can select an available model from the composer.
+
+DeepSeek Account appears first and DeepSeek second in the provider list; third-party providers retain their directory order.
+
+Open the Models page from the Settings navigation to see every configured provider as a row. A whole-section provider whose key is not configured anywhere renders as its open setup card instead, but only in the first-run posture and only until the user closes that card. Each card kind owns its own open state, so closing one never discards a draft in another.
 
 A provider with a stored catalog error remains visible with its diagnostic and edit/delete actions. Add actions are offered only for registered settings namespaces, so an unavailable namespace cannot leave a button that opens no editor. A rejected save leaves the editor open and displays the Host diagnostic.
 
@@ -54,6 +58,8 @@ After the versioned notice step completes, the DeepSeek step projects first-run 
 ### Extension slots
 
 The section declares two seats for plugins distributed outside this repository, typed in [`src/client/slot-contract.ts`](src/client/slot-contract.ts) and exported from `./client`. `settings.models.provider-card` (keyed) renders inside every card that shows a directory row — a saved row's card, its first-run setup posture, and the add-provider draft — dispatched with `entryKey = settingsNs` and owner props carrying the row's `ConfigurableProviderView`, its configured state, and its confirmed api-key credential state, so one registration under an adapter family's namespace receives every card of that family, hand-declared routes included; the hand-declared draft card has no directory row yet and dispatches nothing until saved. `settings.models.footer` (list) renders after the rows and the add controls. A registrant activates through `ctx.slots.inject` with a type-only import of this package's `/client` entry; without registrants both seats render nothing.
+
+The Models page includes **DeepSeek Account** (`deepseek-account`, **DeepSeek 账号** in Chinese). Its editor exposes the shared DeepSeek model catalog without API-key or base-URL inputs. The account row is hidden when its available model catalog is empty, including before sign-in and after sign-out; it returns when account models become available.
 
 -----
 
