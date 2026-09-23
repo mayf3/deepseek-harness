@@ -27,7 +27,7 @@ function packageVersion(path: string, subject: string): string {
   return manifest.version
 }
 
-function debugPort(name: string, fallback: number): number {
+function developmentPort(name: string, fallback: number): number {
   const value = process.env[name]
   if (value === undefined || value === '') return fallback
   const port = Number(value)
@@ -56,13 +56,13 @@ async function runPackageScript(script: string, cwd: string): Promise<void> {
   await run(process.execPath, [packageManager, 'run', script], cwd)
 }
 
-async function launchElectron(): Promise<void> {
+async function launchElectron(webPort: number): Promise<void> {
   const require = createRequire(import.meta.url)
   const electron: unknown = require('electron')
   if (typeof electron !== 'string') throw new Error('desktop development: electron executable is unavailable')
-  const mainPort = debugPort('DSH_DESKTOP_MAIN_INSPECT_PORT', 9229)
-  const rendererPort = debugPort('DSH_DESKTOP_RENDERER_DEBUG_PORT', 9222)
-  const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230)
+  const mainPort = developmentPort('DSH_DESKTOP_MAIN_INSPECT_PORT', 9229)
+  const rendererPort = developmentPort('DSH_DESKTOP_RENDERER_DEBUG_PORT', 9222)
+  const hostPort = developmentPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230)
   const home = resolve(process.env.DSH_HOME ?? join(DEVELOPMENT_ROOT, 'home'))
   const userData = resolve(process.env.DSH_DESKTOP_USER_DATA_DIR ?? join(DEVELOPMENT_ROOT, 'electron-user-data'))
   const environment: NodeJS.ProcessEnv = {
@@ -70,6 +70,7 @@ async function launchElectron(): Promise<void> {
     DSH_HOME: home,
     DSH_DESKTOP_PRIMARY_RUNTIME_DIR: process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR ?? developmentRuntimeDirectory(),
     DSH_DESKTOP_HOST_INSPECT_PORT: String(hostPort),
+    DSH_DESKTOP_WEB_PORT: String(webPort),
     DSH_DESKTOP_OPEN_DEVTOOLS: process.env.DSH_DESKTOP_OPEN_DEVTOOLS ?? '1',
     ELECTRON_ENABLE_LOGGING: process.env.ELECTRON_ENABLE_LOGGING ?? '1',
   }
@@ -78,7 +79,7 @@ async function launchElectron(): Promise<void> {
   console.log(`desktop development: inspectors main=${String(mainPort)}, renderer=${String(rendererPort)}, host=${String(hostPort)}`)
   if (process.platform === 'darwin') {
     const executable = prepareDevelopmentApp({ electron, appRoot: APP_ROOT, directory: DEVELOPMENT_ROOT, home, userData,
-      mainPort, rendererPort, hostPort, openDevtools: environment.DSH_DESKTOP_OPEN_DEVTOOLS! })
+      mainPort, rendererPort, hostPort, webPort, openDevtools: environment.DSH_DESKTOP_OPEN_DEVTOOLS! })
     await run(executable, [], APP_ROOT, environment)
     return
   }
@@ -92,6 +93,7 @@ async function launchElectron(): Promise<void> {
 
 async function main(): Promise<void> {
   const { values } = parseArgs({ options: { 'skip-build': { type: 'boolean', default: false } } })
+  const webPort = developmentPort('DSH_DESKTOP_WEB_PORT', 19387)
   if (!values['skip-build']) {
     await runPackageScript('build', REPOSITORY_ROOT)
     await runPackageScript('build', APP_ROOT)
@@ -121,7 +123,7 @@ async function main(): Promise<void> {
     target: resolveDesktopBuildTarget(),
   })
   await preparePrimaryRuntime()
-  await launchElectron()
+  await launchElectron(webPort)
 }
 
 await main().catch((error: unknown) => {

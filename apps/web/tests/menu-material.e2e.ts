@@ -40,6 +40,15 @@ it('shares menu transparency and blur across palettes and follows native menu bo
         else delete document.documentElement.dataset.platform
         document.body.toggleAttribute('data-ds-dark-theme', dark)
       }, { platform, dark })
+      const overlayFill = await page.evaluate(() => {
+        const overlay = document.createElement('div')
+        overlay.style.background = 'var(--dsw-specific-menu)'
+        document.body.appendChild(overlay)
+        try { return getComputedStyle(overlay).backgroundColor } finally { overlay.remove() }
+      })
+      expect(overlayFill).toBe(platform === 'darwin'
+        ? dark ? 'rgba(48, 49, 54, 0.94)' : 'rgba(248, 249, 250, 0.94)'
+        : dark ? 'rgba(67, 69, 74, 0.45)' : 'rgba(248, 249, 250, 0.58)')
       await account.click()
       const menu = page.getByRole('menu').filter({ has: page.getByRole('menuitem', { name: 'Settings', exact: true }) })
       await menu.waitFor()

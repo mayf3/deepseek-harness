@@ -7,6 +7,10 @@
   border-radius: var(--dsw-radius-md);
 }
 
+:where(.surface) {
+  position: relative;
+}
+
 .surface {
   anchor-name: var(--dsh-menu-anchor);
   isolation: isolate;
@@ -19,14 +23,9 @@
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: var(--dsw-specific-menu);
+  background: var(--dsw-menu-surface-fill);
   backdrop-filter: var(--dsw-menu-backdrop-filter);
   pointer-events: none;
-}
-
-.surface[data-menu-material='solid'] > .material {
-  background: var(--dsw-alias-bg-layer-2);
-  backdrop-filter: none;
 }
 
 .backing {

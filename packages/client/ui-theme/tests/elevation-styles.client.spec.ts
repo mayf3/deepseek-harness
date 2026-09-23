@@ -60,12 +60,15 @@ describe('elevation tokens', () => {
     expect(bodyOnly.get('--dsw-mask-blur')).toBe('none')
     expect(bodyOnly.get('--dsw-menu-backdrop-filter')).toBe('blur(40px) saturate(150%)')
     const platformRules = parseRules(platformCss)
-    const value = (selector: string): string | undefined => platformRules
+    const value = (selector: string, token = '--dsw-menu-surface-fill'): string | undefined => platformRules
       .filter(rule => rule.selectors.includes(selector))
       .flatMap(rule => rule.declarations)
-      .findLast(([property]) => property === '--dsw-specific-menu')?.[1]
+      .findLast(([property]) => property === token)?.[1]
     expect(value('body')).toBe('rgba(248, 249, 250, 0.58)')
     expect(value('body[data-ds-dark-theme]')).toBe('rgba(67, 69, 74, 0.45)')
+    expect(value('body', '--dsw-specific-menu')).toBe('var(--dsw-menu-surface-fill)')
+    expect(value("html[data-platform='darwin'] body", '--dsw-specific-menu')).toBe('rgba(248, 249, 250, 0.94)')
+    expect(value("html[data-platform='darwin'] body[data-ds-dark-theme]", '--dsw-specific-menu')).toBe('rgba(48, 49, 54, 0.94)')
   })
 })
 
@@ -74,7 +77,7 @@ function translucentMenusWithoutBackdrop(css: string): string[] {
   return parseRules(css)
     .filter(rule => rule.declarations.some(([property, value]) =>
       (property === 'background' || property === 'background-color')
-      && value === 'var(--dsw-specific-menu)'))
+      && /^var\(--dsw-(?:specific-menu|menu-surface-fill)\)$/.test(value)))
     .filter(rule => rule.declarations.some(([property, value]) =>
       property === 'box-shadow' && ELEVATED_SHADOW.test(value))
       || rule.selectors.some(selector => /::(?:before|after)$/.test(selector)))
@@ -96,6 +99,15 @@ describe('translucent menu surfaces pair fill and filter', () => {
     )).toEqual(['.a::before'])
     expect(translucentMenusWithoutBackdrop(
       '.a::before { background: var(--dsw-specific-menu); backdrop-filter: var(--dsw-menu-backdrop-filter); }',
+    )).toEqual([])
+  })
+
+  it('rejects a backed menu fill without the shared backdrop filter', () => {
+    expect(translucentMenusWithoutBackdrop(
+      '.a { background: var(--dsw-menu-surface-fill); box-shadow: var(--dsw-elevation-panel); }',
+    )).toEqual(['.a'])
+    expect(translucentMenusWithoutBackdrop(
+      '.a { background: var(--dsw-menu-surface-fill); box-shadow: var(--dsw-elevation-panel); backdrop-filter: var(--dsw-menu-backdrop-filter); }',
     )).toEqual([])
   })
 
@@ -122,7 +134,7 @@ describe('translucent menu surfaces pair fill and filter', () => {
         .filter(rule => rule.selectors.length === 1 && rule.selectors[0] === selector)
         .flatMap(rule => rule.declarations))
       expect(declarations(container).has('backdrop-filter'), container).toBe(false)
-      expect(declarations(background).get('background'), background).toBe('var(--dsw-specific-menu)')
+      expect(declarations(background).get('background'), background).toBe(container === '.surface' ? 'var(--dsw-menu-surface-fill)' : 'var(--dsw-specific-menu)')
       expect(declarations(background).get('backdrop-filter'), background)
         .toBe('var(--dsw-menu-backdrop-filter)')
     }

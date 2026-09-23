@@ -4,10 +4,8 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import css from './MenuSurface.module.css'
 
-/** Menu containers preserve native div props and refs; solid material is an explicit exception. */
+/** Menu containers preserve native div props and refs. */
 export interface MenuSurfaceProps extends ComponentPropsWithoutRef<'div'> {
-  /** Translucent theme fill with backdrop blur by default; document solid exceptions at the caller. */
-  material?: 'translucent' | 'solid'
   /** Match the shared compact menu's smaller outer radius. */
   compact?: boolean
 }
@@ -15,30 +13,31 @@ export interface MenuSurfaceProps extends ComponentPropsWithoutRef<'div'> {
 /**
  * Paint a menu and, on macOS, an opaque backing behind the page content within its bounds.
  * CSS anchors keep each backing aligned during placement, resizing, and nested-menu movement.
- * @param props - Div content and placement, menu material, and compact geometry.
+ * @param props - Div content and placement, and compact geometry.
  * @param ref - The visible menu div, excluding the non-interactive backing.
  * @returns Menu content plus a backing portal removed with the menu.
  */
 export const MenuSurface = forwardRef<HTMLDivElement, MenuSurfaceProps>(function MenuSurface({
-  material = 'translucent', compact = false, className, style, children, ...props
+  compact = false, className, style, children, ...props
 }, ref) {
   const id = useId()
   const backingRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     // Nested React portals can insert the backing before its anchor. CSS anchor
     // positioning requires the anchor to precede the positioned element.
-    if (backingRef.current !== null) document.body.appendChild(backingRef.current)
-  }, [material])
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- The portal ref is attached before layout effects run.
+    document.body.appendChild(backingRef.current!)
+  }, [])
   const anchorStyle: CSSProperties & { '--dsh-menu-anchor': string } = {
     '--dsh-menu-anchor': `--dsh-menu-${id.replaceAll(':', '')}`,
   }
   return <>
-    <div {...props} ref={ref} data-menu-material={material}
+    <div {...props} ref={ref} data-menu-material="translucent"
       className={clsx(css.surface, compact && css.compact, className)} style={{ ...style, ...anchorStyle }}>
       <div aria-hidden="true" className={css.material} />
       {children}
     </div>
-    {material === 'translucent' && createPortal(
+    {createPortal(
       <div ref={backingRef} aria-hidden="true" data-menu-backing="" className={clsx(css.backing, compact && css.compact)}
         style={{ ...anchorStyle, visibility: style?.visibility }} />,
       document.body,

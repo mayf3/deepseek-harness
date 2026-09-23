@@ -60,7 +60,6 @@ describe('shared menu material', () => {
     expect(menuViolations('<section><div role="listbox" /></section>')).toEqual(['listbox'])
     expect(menuViolations('<MenuSurface role="menu" />')).toEqual([])
     expect(menuViolations('<MenuSurface><div role="listbox" /></MenuSurface>')).toEqual([])
-    expect(menuViolations('<MenuSurface material="solid" role="menu" />')).toEqual([])
   })
 
   it('requires shared material for every package menu and listbox', () => {
@@ -104,7 +103,7 @@ describe('shared menu material', () => {
   it('keeps menu fill and blur tokens owned by the theme on every platform', () => {
     const failures = packageStylesheets().flatMap(file => parseRules(readFileSync(file, 'utf8'))
       .flatMap(rule => rule.declarations.filter(([name]) =>
-        (name === '--dsw-specific-menu' && !file.endsWith('/ui-theme/src/styles/design-platform.css'))
+        (['--dsw-specific-menu', '--dsw-menu-surface-fill'].includes(name) && !file.endsWith('/ui-theme/src/styles/design-platform.css'))
         || (name === '--dsw-menu-backdrop-filter' && !file.endsWith('/ui-theme/src/styles/gradient-shadow-text.css'))))
       .map(([name]) => `${file}: ${name}`))
     expect(failures).toEqual([])

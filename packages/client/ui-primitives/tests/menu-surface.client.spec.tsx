@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Menu backing lifetime, placement identity, and the explicit solid exception. */
+/** Menu backing lifetime and placement identity. */
 import { createRef } from 'react'
 import { createPortal } from 'react-dom'
 import { cleanup, render, screen } from '@testing-library/react'
@@ -21,14 +21,11 @@ it('keeps each backing after its menu anchor and removes it when unmounted', () 
   expect(document.querySelector('[data-menu-backing]')).toBeNull()
 })
 
-it('gives simultaneously open menus independent anchors and honors a solid exception', () => {
+it('gives simultaneously open menus independent anchors and follows visibility changes', () => {
   const view = render(<><MenuSurface role="menu" /><MenuSurface role="menu" /></>)
   const anchors = screen.getAllByRole('menu').map(menu => menu.style.getPropertyValue('--dsh-menu-anchor'))
   expect(new Set(anchors).size).toBe(2)
   expect(document.querySelectorAll('[data-menu-backing]')).toHaveLength(2)
-  view.rerender(<MenuSurface material="solid" role="menu" />)
-  expect(screen.getByRole('menu').dataset.menuMaterial).toBe('solid')
-  expect(document.querySelector('[data-menu-backing]')).toBeNull()
   view.rerender(<MenuSurface role="menu" style={{ visibility: 'hidden' }} />)
   expect(document.querySelector<HTMLElement>('[data-menu-backing]')!.style.visibility).toBe('hidden')
 })
