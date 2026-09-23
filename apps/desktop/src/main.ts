@@ -519,6 +519,8 @@ async function main(): Promise<void> {
         const stillActive = await host.updateTasks('lock')
         if (stillActive && !active) throw new DesktopUpdatePreparationError('tasks-changed', locale.messages.updateTasksChanged)
         mandatoryUI?.preparingRestart(stillActive)
+        // The embedded Platform document holds credentials issued by the Host that is about to stop.
+        await platformView.closeAndWait()
         requireCleanStop = true
         updateStopFailure = undefined
         await backend.stop()
@@ -1031,6 +1033,8 @@ async function main(): Promise<void> {
     if (shellInstallerOwnsQuit) {
       updateDialog.dispose()
       mandatoryUI?.dispose()
+      // Installation preparation already awaited Platform storage cleanup.
+      void platformView.dispose().catch((error: unknown) => { console.error(error) })
       return
     }
     if (quitting) return
@@ -1042,7 +1046,9 @@ async function main(): Promise<void> {
     updateSchedule.dispose()
     updateDialog.dispose()
     mandatoryUI?.dispose()
-    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close()])
+    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(),
+      // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
+      platformView.dispose().catch((error: unknown) => { console.error(error) })])
       .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
   })
 

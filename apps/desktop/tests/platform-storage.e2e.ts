@@ -53,7 +53,7 @@ it.skipIf(!hasDisplay)('retains dismissed notices across view and process restar
     const observed: string[] = []
     for (const phase of ['first', 'restart']) {
       const result = await execa(electron, [fixture, join(outDir, 'platform-view.mjs'), userData, origin, phase], {
-        env: { ELECTRON_RUN_AS_NODE: undefined }, timeout: 45_000, reject: false,
+        env: { ELECTRON_RUN_AS_NODE: undefined }, timeout: 45_000, forceKillAfterDelay: 5_000, reject: false,
       })
       expect(result.timedOut, result.stderr).toBe(false)
       expect(result.signal, result.stderr).toBeUndefined()

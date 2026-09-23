@@ -51,6 +51,12 @@ const harness = await vi.hoisted(async () => {
   let embeddedPolicy: unknown
   let closeWindowsOnQuit = false
   let updateState: DesktopUpdateState = { phase: 'idle' }
+  let platformDisposeDeferred: ReturnType<typeof deferred> | undefined
+  // The native Platform view owns persistent browser storage; Desktop startup tests replace it so
+  // each quit can control when that cleanup settles.
+  const platformDispose = vi.fn(() => platformDisposeDeferred?.promise ?? Promise.resolve())
+  let platformCloseDeferred: ReturnType<typeof deferred> | undefined
+  const platformCloseAndWait = vi.fn(() => platformCloseDeferred?.promise ?? Promise.resolve())
   const updateCheck = vi.fn(async (_manual?: boolean): Promise<DesktopUpdateState> => updateState)
   const updateDownload = vi.fn(async (_version: string): Promise<DesktopUpdateState> => updateState)
   const updateInstall = vi.fn(async (_version: string): Promise<DesktopUpdateState> => updateState)
@@ -161,6 +167,8 @@ const harness = await vi.hoisted(async () => {
     failWindow(error: Error) { windowFailure = error },
     windows, hosts, handlers, app, FakeWindow, FakeHost, powerMonitor, nativeTheme,
     menu, popup, socketHeaders: vi.fn(), updateCheck, updateDownload, updateInstall,
+    platformDispose,
+    platformCloseAndWait,
 
     watchAccount: (listener: (state: AccountView) => void) => {
       accountListener = listener
@@ -190,6 +198,8 @@ const harness = await vi.hoisted(async () => {
     set embeddedPolicy(value: unknown) { embeddedPolicy = value },
     nextNavigation() { navigated = deferred(); return navigated.promise },
     nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
+    deferPlatformDispose() { platformDisposeDeferred = deferred(); return platformDisposeDeferred },
+    deferPlatformClose() { platformCloseDeferred = deferred(); return platformCloseDeferred },
     get pluginsEnabled() { return pluginsEnabled },
     set pluginsEnabled(value: boolean) { pluginsEnabled = value },
     set closeWindowsOnQuit(value: boolean) { closeWindowsOnQuit = value },
@@ -212,6 +222,8 @@ const harness = await vi.hoisted(async () => {
       navigated = deferred(); dialogShown = deferred(); quitCompleted = deferred()
       policyBlocked = deferred()
       embeddedPolicy = undefined
+      platformDisposeDeferred = undefined
+      platformCloseDeferred = undefined
     },
   }
 })
@@ -288,6 +300,16 @@ vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: class
   readonly install = harness.updateInstall
   readonly dispose = vi.fn()
 } }))
+vi.mock('../src/platform-view.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/platform-view.ts')>(),
+  DesktopPlatformView: class {
+    setSession() {}
+    setBounds() {}
+    close() {}
+    closeAndWait(): Promise<void> { return harness.platformCloseAndWait() }
+    dispose(): Promise<void> { return harness.platformDispose() }
+  },
+}))
 vi.mock('../src/welcome-backend.ts', () => ({
   connectDesktopWelcome: async () => ({
     readLocalePreference: async () => null,
@@ -946,6 +968,33 @@ describe('desktop main startup', () => {
     await harness.quitCompleted.promise
   })
 
+  it('waits for Platform view storage cleanup before an ordinary quit completes', async () => {
+    const host = await readyForUpdate()
+    const disposal = harness.deferPlatformDispose()
+    harness.app.quit()
+    expect(harness.platformDispose).toHaveBeenCalledOnce()
+    await host.stopping.promise
+    host.exited.resolve()
+    expect(harness.app.quit).toHaveBeenCalledOnce()
+    disposal.resolve()
+    await harness.quitCompleted.promise
+    expect(harness.app.quit).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports a Platform cleanup failure without ending the Host shutdown early', async () => {
+    const host = await readyForUpdate()
+    const disposal = harness.deferPlatformDispose()
+    const failure = new Error('platform storage cleanup failed')
+    harness.app.quit()
+    await host.stopping.promise
+    disposal.reject(failure)
+    await vi.waitFor(() => { expect(console.error).toHaveBeenCalledWith(failure) })
+    expect(harness.app.quit).toHaveBeenCalledOnce()
+    host.exited.resolve()
+    await harness.quitCompleted.promise
+    expect(harness.app.quit).toHaveBeenCalledTimes(2)
+  })
+
   it('finishes quitting when the native window is destroyed before its closed listener clears ownership', async () => {
     const host = await readyForUpdate()
     const window = harness.windows[0]!
@@ -1246,6 +1295,33 @@ describe('desktop main startup', () => {
     expect(host.stop).not.toHaveBeenCalled()
   })
 
+  it('waits for Platform storage cleanup before the installer takes over', async () => {
+    const host = await readyForUpdate()
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
+    const cleanup = harness.deferPlatformClose()
+    const preparing = harness.prepareUpdate()
+    await vi.waitFor(() => { expect(harness.platformCloseAndWait).toHaveBeenCalledOnce() })
+    expect(host.updateTasks).toHaveBeenLastCalledWith('lock')
+    expect(host.stop).not.toHaveBeenCalled()
+    cleanup.resolve()
+    await host.stopping.promise
+    expect(host.stop).toHaveBeenCalledWith(true)
+    host.exited.resolve()
+    await expect(preparing).resolves.toBe(true)
+  })
+
+  it('reports a Platform storage cleanup failure as preparation failure without stopping the Host', async () => {
+    const host = await readyForUpdate()
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
+    const cleanup = harness.deferPlatformClose()
+    const preparing = harness.prepareUpdate()
+    await vi.waitFor(() => { expect(harness.platformCloseAndWait).toHaveBeenCalledOnce() })
+    cleanup.reject(new Error('platform storage cleanup failed'))
+    await expect(preparing).rejects.toThrow('platform storage cleanup failed')
+    expect(host.updateTasks.mock.calls).toEqual([['inspect'], ['lock'], ['unlock']])
+    expect(host.stop).not.toHaveBeenCalled()
+  })
+
   async function answerMandatory(action: 'install' | 'later') {
     const modal = harness.windows[0]!
     const event = { sender: modal.webContents, senderFrame: modal.webContents.mainFrame }
@@ -1270,10 +1346,14 @@ describe('desktop main startup', () => {
     host.exited.resolve()
     await expect(preparing).resolves.toBe(true)
     harness.closeWindowsOnQuit = true
+    const disposal = harness.deferPlatformDispose()
     harness.app.quit()
     await harness.quitCompleted.promise
     expect(modal.isDestroyed()).toBe(true)
     expect(harness.app.quit).toHaveBeenCalledOnce()
+    // The installer owns the exit, so Platform cleanup starts without holding the quit open.
+    expect(harness.platformDispose).toHaveBeenCalledOnce()
+    disposal.resolve()
   })
 
   it.each([false, true])('restores a cleanly stopped Host after installer failure and retains mandatory blocking: %s', async (mandatory) => {

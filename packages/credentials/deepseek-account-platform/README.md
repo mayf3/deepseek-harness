@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 New attempts map the caller’s UI language to Platform en_US or zh_CN; active attempts retain their initial language.
 
-getPlatformSession exports the stored grant only when its issuer matches platformOrigin. This Host-only operation supports native Platform embedding without widening the model/file origin configured for resolveToken. It resolves userId from the current profile under the same credential lifetime as the grant: a failed profile read or a profile without an ID yields userId: null, which consumers treat as temporary-storage mode. A credential change during the read discards the entire snapshot.
+getPlatformSession exports the stored grant only when its issuer matches platformOrigin. This Host-only operation supports native Platform embedding without widening the model/file origin configured for resolveToken. Its userId repeats the stable account ID from the most recent successful getProfile, and is null until one succeeds or when that profile carries no ID; the snapshot issues no profile request of its own, so a slow or failed profile request never delays it, and an unknown ID leaves userId null, which consumers treat as temporary-storage mode. A credential change during the grant read discards the snapshot.
 
 `desktopPlatform` defaults to `null`. Every profile then sends `x-client-platform: web` on Host authorization, profile, balance, and logout requests; the Desktop profile supplies `darwin` or `win32`, replacing it with `x-client-platform: desktop-mac` or `desktop-win`. The provider owns that header, so deployment configuration cannot override it. Embedded Platform document and API requests receive the same platform header alongside their deployment headers, only at the configured origin.
 
@@ -89,7 +89,7 @@ No model request prefix changes.
 
 The [desktop login decision](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.md) records cancellation and storage ownership.
 
-The first profile read after sign-in uses the sanitized user returned by auth_exchange. A null or malformed user falls back to current; subsequent refreshes and Host restarts also query current. Failed current requests retain the latest successful profile for the same credential in Host memory; credential changes and disposal clear it. Exchange registers the submitted device information.
+The first profile read after sign-in uses the sanitized user returned by auth_exchange. A null or malformed user falls back to current; subsequent refreshes and Host restarts also query current. Failed current requests retain the latest successful profile for the same credential in Host memory; credential changes and disposal clear it. A ready current response whose stable account ID first becomes available or changes notifies watch subscribers, so identity consumers re-read getPlatformSession; refreshes that repeat the same ID stay silent. Exchange registers the submitted device information.
 
 accountRequestHeaders overlays requestHeaders for current, balance and embedded Platform page/API requests. Cookie pairs merge by name so routing overrides retain other deployment cookies. Authorization initialization, exchange, cancellation and logout keep requestHeaders. Both maps remain private to Host and Electron main; the session's userId stays Host-only too, and renderer bootstrap receives only origin and token.
 

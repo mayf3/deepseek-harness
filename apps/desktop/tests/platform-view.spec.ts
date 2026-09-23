@@ -4,16 +4,20 @@ import type { AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
 import { DesktopPlatformView, platformBounds } from '../src/platform-view.ts'
 
 const state = vi.hoisted(() => ({
-  views: [] as unknown[], sessions: [] as unknown[], openExternal: vi.fn(async () => {}), loadFailure: undefined as Error | undefined,
+  views: [] as unknown[], sessions: [] as unknown[], openExternal: vi.fn(async () => {}),
+  loadFailure: undefined as Error | undefined, loadBarrier: undefined as Promise<void> | undefined,
 }))
 vi.mock('electron', () => ({
   shell: { openExternal: state.openExternal },
   session: { fromPartition: vi.fn((partition: string) => {
+    const existing = state.sessions.find(value => (value as { partition: string }).partition === partition)
+    if (existing !== undefined) return existing
     const value = {
       partition, webRequest: { onBeforeSendHeaders: vi.fn(), onCompleted: vi.fn(), onErrorOccurred: vi.fn() },
       setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(),
       clearStorageData: vi.fn(async (_options?: { storages: string[] }) => {}),
-      flushStorageData: vi.fn(), clearAuthCache: vi.fn(async () => {}), closeAllConnections: vi.fn(async () => {}),
+      clearCache: vi.fn(async () => {}), flushStorageData: vi.fn(),
+      clearAuthCache: vi.fn(async () => {}), closeAllConnections: vi.fn(async () => {}),
       isPersistent: () => partition.startsWith('persist:'),
     }
     state.sessions.push(value)
@@ -24,7 +28,7 @@ vi.mock('electron', () => ({
       mainFrame: { url: 'https://platform.deepseek.com/usage' },
       session: undefined as object | undefined,
       setWindowOpenHandler: vi.fn(),
-      loadURL: vi.fn(async (_url: string) => { if (state.loadFailure !== undefined) throw state.loadFailure }),
+      loadURL: vi.fn(async (_url: string) => { await state.loadBarrier; if (state.loadFailure !== undefined) throw state.loadFailure }),
       isDestroyed: () => false, close: vi.fn(() => { this.webContents.emit('destroyed') }), send: vi.fn(),
     })
     setVisible = vi.fn()
@@ -36,7 +40,9 @@ vi.mock('electron', () => ({
   },
 }))
 
-afterEach(() => { state.views.length = 0; state.sessions.length = 0; state.loadFailure = undefined; vi.clearAllMocks() })
+afterEach(() => {
+  state.views.length = 0; state.sessions.length = 0; state.loadFailure = undefined; state.loadBarrier = undefined; vi.clearAllMocks()
+})
 function setup() {
   const removeChildView = vi.fn()
   const owner = Object.assign(new EventEmitter(), {
@@ -117,7 +123,6 @@ it.each([null, {}, { ...bounds, width: NaN }, { ...bounds, x: -1 }, { ...bounds,
   expect(() => platformBounds(value)).toThrow()
 })
 
-
 it('opens HTTPS payment links in the system browser without an embedded child window', async () => {
   const { manager, owner } = setup()
   await manager.open(owner, 'top-up', bounds)
@@ -132,12 +137,15 @@ it('opens HTTPS payment links in the system browser without an embedded child wi
   manager.close()
 })
 
-
 it('reveals a loaded document only after loading finishes', async () => {
   const { manager, owner } = setup()
+  const loaded = Promise.withResolvers<undefined>()
+  state.loadBarrier = loaded.promise
   const loading = manager.open(owner, 'usage', bounds)
+  await vi.waitFor(() => { expect(state.views).toHaveLength(1) })
   const active = view()
   expect(active.setVisible.mock.calls).toEqual([[false]])
+  loaded.resolve(undefined)
   await loading
   expect(active.setVisible.mock.calls).toEqual([[false], [true]])
   manager.close()
@@ -145,13 +153,16 @@ it('reveals a loaded document only after loading finishes', async () => {
 
 it('does not reveal a document closed before its load settles', async () => {
   const { manager, owner } = setup()
+  const loaded = Promise.withResolvers<undefined>()
+  state.loadBarrier = loaded.promise
   const loading = manager.open(owner, 'usage', bounds)
+  await vi.waitFor(() => { expect(state.views).toHaveLength(1) })
   const active = view()
   manager.close()
+  loaded.resolve(undefined)
   await loading
   expect(active.setVisible.mock.calls).toEqual([[false]])
 })
-
 
 it('injects deployment headers only at the Platform origin and excludes them from bootstrap', async () => {
   const { manager, owner } = setup()
@@ -196,7 +207,6 @@ it.each(['usage', 'top-up'] as const)('selects the configured frontend deploymen
   manager.close()
 })
 
-
 it('removes the native view when its application document reloads, without renderer cleanup', async () => {
   const { manager, owner, removeChildView } = setup()
   await manager.open(owner, 'usage', bounds)
@@ -227,14 +237,18 @@ it.each(['render-process-gone', 'destroyed', 'closed'])('removes the view on own
   expect(owner.webContents.listenerCount('render-process-gone')).toBe(0)
 })
 
-
 it('does not reveal a pending view after the owner reloads or remove a replacement view', async () => {
   const { manager, owner } = setup()
+  const loaded = Promise.withResolvers<undefined>()
+  state.loadBarrier = loaded.promise
   const loading = manager.open(owner, 'usage', bounds)
+  await vi.waitFor(() => { expect(state.views).toHaveLength(1) })
   const previous = view()
   owner.webContents.emit('did-start-navigation', {}, 'dsh-app://app/', false, true)
+  state.loadBarrier = undefined
   await manager.open(owner, 'top-up', bounds)
   const current = view()
+  loaded.resolve(undefined)
   await loading
   expect(previous.setVisible.mock.calls).toEqual([[false]])
   expect(current.setVisible).toHaveBeenLastCalledWith(true)
@@ -243,7 +257,6 @@ it('does not reveal a pending view after the owner reloads or remove a replaceme
   manager.close()
   expect(owner.webContents.listenerCount('did-start-navigation')).toBe(0)
 })
-
 
 it('bootstraps the current language and updates an open view without reloading', async () => {
   const { owner } = setup()
@@ -269,7 +282,7 @@ it('bootstraps the current language and updates an open view without reloading',
 })
 
 function browserSession() {
-  return state.sessions.at(-1) as {
+  return (state.views.at(-1) as { webContents: { session: object } }).webContents.session as {
     partition: string
     clearStorageData: ReturnType<typeof vi.fn<(options?: { storages: string[] }) => Promise<void>>>
     clearAuthCache: ReturnType<typeof vi.fn<() => Promise<void>>>
@@ -294,12 +307,12 @@ it('reuses persistent storage across closes, token replacement, and manager recr
   await manager.open(owner, 'top-up', bounds)
   expect(browserSession().partition).toBe(first.partition)
   expect(first.flushStorageData).toHaveBeenCalledOnce()
-  expect(first.clearStorageData).toHaveBeenCalledWith({ storages: ['cookies'] })
-  expect(first.clearAuthCache).toHaveBeenCalledOnce()
-  expect(first.closeAllConnections).toHaveBeenCalledOnce()
-  expect(first.webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(null)
-  expect(first.webRequest.onCompleted).toHaveBeenLastCalledWith(null)
-  expect(first.webRequest.onErrorOccurred).toHaveBeenLastCalledWith(null)
+  expect(first.clearStorageData).toHaveBeenCalledWith({ storages: ['cookies', 'filesystem', 'indexdb', 'shadercache', 'serviceworkers', 'cachestorage'] })
+  expect(first.clearAuthCache).toHaveBeenCalledTimes(3)
+  expect(first.closeAllConnections).toHaveBeenCalledTimes(3)
+  expect(first.webRequest.onBeforeSendHeaders).toHaveBeenCalledWith(null)
+  expect(first.webRequest.onCompleted).toHaveBeenCalledWith(null)
+  expect(first.webRequest.onErrorOccurred).toHaveBeenCalledWith(null)
   manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'rotated' })
   await manager.open(owner, 'usage', bounds)
   expect(browserSession().partition).toBe(first.partition)
@@ -363,8 +376,64 @@ it('waits for authentication cleanup before reopening and ignores superseded ope
 it('does not open a view when authentication cleanup fails', async () => {
   const { manager, owner } = setup()
   await manager.open(owner, 'usage', bounds)
-  browserSession().clearAuthCache.mockRejectedValueOnce(new Error('authentication cleanup failed'))
+  browserSession().clearAuthCache.mockRejectedValue(new Error('authentication cleanup failed'))
   manager.close()
-  await expect(manager.open(owner, 'usage', bounds)).rejects.toThrow('authentication cleanup failed')
+  await expect(manager.open(owner, 'usage', bounds)).rejects.toThrow('Platform storage cleanup failed')
   expect(state.views).toHaveLength(1)
+  browserSession().clearAuthCache.mockResolvedValue(undefined)
+  await manager.open(owner, 'usage', bounds)
+  expect(state.views).toHaveLength(2)
+  await manager.dispose()
+})
+
+it.each(['did-start-navigation', 'closed', 'destroyed'])('cancels allocation when owner %s during storage cleanup', async (event) => {
+  const { manager, owner } = setup()
+  await manager.open(owner, 'usage', bounds)
+  const cleared = Promise.withResolvers<undefined>()
+  browserSession().clearStorageData.mockReturnValueOnce(cleared.promise)
+  const opening = manager.open(owner, 'usage', bounds)
+  if (event === 'closed') owner.emit(event)
+  else owner.webContents.emit(event, {}, 'dsh-app://app/', false, true)
+  cleared.resolve(undefined)
+  await opening
+  expect(state.views).toHaveLength(1)
+  expect(owner.listenerCount('closed')).toBe(0)
+  await manager.dispose()
+})
+
+it('keeps failed account cleanup isolated from other accounts', async () => {
+  const { manager, owner } = setup()
+  await manager.open(owner, 'usage', bounds)
+  browserSession().clearAuthCache.mockRejectedValue(new Error('failed'))
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'second' as AccountUserId, token: 'second' })
+  await manager.open(owner, 'usage', bounds)
+  expect(state.views).toHaveLength(2)
+  await expect(manager.dispose()).rejects.toThrow('Platform storage cleanup failed')
+})
+
+it('awaits cleanup on disposal and rejects subsequent opens', async () => {
+  const { manager, owner } = setup()
+  await manager.open(owner, 'usage', bounds)
+  const cleared = Promise.withResolvers<undefined>()
+  browserSession().clearStorageData.mockReturnValueOnce(cleared.promise)
+  const finished = vi.fn()
+  const disposing = manager.dispose().then(finished)
+  await Promise.resolve()
+  expect(finished).not.toHaveBeenCalled()
+  cleared.resolve(undefined)
+  await disposing
+  expect(view().webContents.close).toHaveBeenCalledWith({ waitForBeforeUnload: false })
+  await expect(manager.open(owner, 'usage', bounds)).rejects.toThrow('Platform view disposed')
+})
+
+it('keeps an open temporary document when its credential gains a stable identity', async () => {
+  const { manager, owner } = setup()
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: null, token: 'fixture-secret' })
+  await manager.open(owner, 'usage', bounds)
+  manager.setSession({ origin: 'https://platform.deepseek.com', userId: 'fixture-user' as AccountUserId, token: 'fixture-secret' })
+  expect(view().webContents.close).not.toHaveBeenCalled()
+  expect(browserSession().partition).not.toMatch(/^persist:/)
+  await manager.open(owner, 'usage', bounds)
+  expect(browserSession().partition).toMatch(/^persist:/)
+  await manager.dispose()
 })

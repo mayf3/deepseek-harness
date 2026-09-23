@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-22-platform-browser-storage.md
-2026-09-22-platform-browser-storage.md: f68e7b3f33b72c21df54a055de9dacbab35b1ded
-2026-09-22-platform-browser-storage.zh.md: 8ba1ef52d9e267d12c5b108a766a5691e926c225
+2026-09-22-platform-browser-storage.md: 31fd984af93cbb9948ba4e95aaf56ea3b594f0d3
+2026-09-22-platform-browser-storage.zh.md: ebaea7b642fa4d60aefdba4c589f801273939ffe

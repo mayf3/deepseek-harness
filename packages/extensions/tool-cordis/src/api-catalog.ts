@@ -855,7 +855,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract getProfile(): Promise<AccountDetails[\'profile\'] | null>',
-        description: 'Query Platform profile independently of wallet balances.',
+        description: 'Query Platform profile independently of wallet balances. A ready result whose stable profile ID first becomes available or changes notifies watch consumers, so identity consumers re-read getPlatformSession; repeated IDs stay silent.',
         parameters: [],
         returns: 'profile outcome, or null if signed out or the grant changed during the query.',
       },
@@ -897,9 +897,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract getPlatformSession(): Promise<PlatformSession | null>',
-        description: 'Read credentials and profile identity for the configured Platform origin, bound to their issuing environment.',
+        description: 'Read credentials for the configured Platform origin, bound to their issuing environment, and pair them with the account ID from the last successful profile read; no profile request is made.',
         parameters: [],
-        returns: 'a Host-only snapshot, or null while signed out.',
+        returns: 'a Host-only snapshot, or null while signed out or when the credential changed during the read.',
       },
     ],
   },

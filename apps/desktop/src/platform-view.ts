@@ -1,7 +1,7 @@
 /** Isolated Platform documents owned by the desktop account lifetime. */
 import type { EventEmitter } from 'node:events'
 import { createHash, randomUUID } from 'node:crypto'
-import { WebContentsView, session, shell, type View, type WebFrameMain } from 'electron'
+import { WebContentsView, session, shell, type Session, type View, type WebFrameMain } from 'electron'
 import { mergePlatformCookies, type PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 
 import { PLATFORM_IPC, type PlatformLocale } from './platform-ipc.ts'
@@ -43,7 +43,8 @@ export class DesktopPlatformView {
   private owner: PlatformOwner | undefined
   private releaseOwner: (() => void) | undefined
   private generation = 0
-  private storageCleanup: Promise<{ error: unknown } | null> | undefined
+  private readonly storageCleanup = new Map<Session, Promise<{ error: unknown } | null>>()
+  private disposed = false
 
   /**
    * @param preload - bundled sandboxed Platform preload path.
@@ -51,12 +52,16 @@ export class DesktopPlatformView {
    */
   constructor(private readonly preload: string, private readonly getLocale: () => PlatformLocale) {}
 
-  /** @param next - private Host credential snapshot; replacement invalidates the current document. */
+  /** @param next - private Host credentials; identity enrichment preserves an already open temporary document. */
   setSession(next: PlatformSession | null): void {
     if (next?.token === this.account?.token && next?.origin === this.account?.origin
-      && next?.userId === this.account?.userId
       && next?.embeddedPageDist === this.account?.embeddedPageDist
-      && JSON.stringify(next?.requestHeaders) === JSON.stringify(this.account?.requestHeaders)) return
+      && JSON.stringify(next?.requestHeaders) === JSON.stringify(this.account?.requestHeaders)) {
+      if (next?.userId === this.account?.userId || this.account?.userId === null) {
+        this.account = next
+        return
+      }
+    }
     this.close()
     this.account = next
   }
@@ -66,21 +71,40 @@ export class DesktopPlatformView {
    * @param owner - application window containing the view.
    * @param page - explicit supported Platform page.
    * @param bounds - owned renderer rectangle.
-   * @returns when the document finishes loading.
+   * @returns when loading finishes, or without a document when superseded or the owner closes or navigates.
    */
   async open(owner: PlatformOwner, page: 'usage' | 'top-up', bounds: PlatformBounds): Promise<void> {
+    if (this.disposed) throw new Error('Platform view disposed')
     this.close()
     const account = this.account
     if (account === null) throw new Error('Platform account unavailable')
+    if (owner.isDestroyed()) return
     const generation = this.generation
-    if (this.storageCleanup !== undefined) {
-      const failure = await this.storageCleanup
-      if (generation !== this.generation) return
-      if (failure !== null) throw failure.error
+    this.owner = owner
+    const closeOwnedView = () => { if (generation === this.generation) this.close() }
+    const navigateOwner = (_event: Electron.Event, _url: string, isInPlace: boolean, isMainFrame: boolean) => {
+      if (isMainFrame && !isInPlace) closeOwnedView()
+    }
+    owner.webContents.on('did-start-navigation', navigateOwner)
+    owner.webContents.on('render-process-gone', closeOwnedView)
+    owner.webContents.on('destroyed', closeOwnedView)
+    owner.on('closed', closeOwnedView)
+    this.releaseOwner = () => {
+      owner.webContents.removeListener('did-start-navigation', navigateOwner)
+      owner.webContents.removeListener('render-process-gone', closeOwnedView)
+      owner.webContents.removeListener('destroyed', closeOwnedView)
+      owner.removeListener('closed', closeOwnedView)
     }
     const partition = account.userId === null ? `dsh-platform-${randomUUID()}`
       : `persist:dsh-platform-${createHash('sha256').update(JSON.stringify([account.origin, account.userId])).digest('hex')}`
     const browserSession = session.fromPartition(partition)
+    // Sanitize persisted authentication even after an unclean previous process exit.
+    const failure = await this.cleanStorage(browserSession)
+    if (generation !== this.generation) return
+    if (failure !== null) {
+      this.close()
+      throw failure.error
+    }
     browserSession.setPermissionRequestHandler((_contents, _permission, callback) => { callback(false) })
     browserSession.setPermissionCheckHandler(() => false)
     const deploymentHeaders = account.requestHeaders ?? {}
@@ -106,22 +130,6 @@ export class DesktopPlatformView {
       nodeIntegration: false, webSecurity: true,
     } })
     this.view = view
-    this.owner = owner
-    const closeOwnedView = () => { if (this.view === view) this.close() }
-    const navigateOwner = (_event: Electron.Event, _url: string, isInPlace: boolean, isMainFrame: boolean) => {
-      if (isMainFrame && !isInPlace) closeOwnedView()
-    }
-    // Renderer document replacement does not run React effect cleanup.
-    owner.webContents.on('did-start-navigation', navigateOwner)
-    owner.webContents.on('render-process-gone', closeOwnedView)
-    owner.webContents.on('destroyed', closeOwnedView)
-    owner.on('closed', closeOwnedView)
-    this.releaseOwner = () => {
-      owner.webContents.removeListener('did-start-navigation', navigateOwner)
-      owner.webContents.removeListener('render-process-gone', closeOwnedView)
-      owner.webContents.removeListener('destroyed', closeOwnedView)
-      owner.removeListener('closed', closeOwnedView)
-    }
     // External payment and documentation pages open without the embedded session or token.
     view.webContents.setWindowOpenHandler(({ url }) => {
       const destination = new URL(url)
@@ -196,28 +204,54 @@ export class DesktopPlatformView {
     this.view = undefined
     this.releaseOwner?.()
     this.releaseOwner = undefined
-    if (view === undefined) return
-    if (this.owner !== undefined && !this.owner.isDestroyed()) this.owner.contentView.removeChildView(view)
+    const owner = this.owner
     this.owner = undefined
+    if (view === undefined) return
+    if (owner !== undefined && !owner.isDestroyed()) owner.contentView.removeChildView(view)
     const browserSession = view.webContents.session
     const destroyed = new Promise<void>((resolve) => {
       if (view.webContents.isDestroyed()) resolve()
       else {
         view.webContents.once('destroyed', resolve)
-        view.webContents.close()
+        view.webContents.close({ waitForBeforeUnload: false })
       }
     })
     browserSession.webRequest.onBeforeSendHeaders(null)
     browserSession.webRequest.onCompleted(null)
     browserSession.webRequest.onErrorOccurred(null)
     browserSession.flushStorageData()
-    // Reopening waits for cleanup so an old document cannot clear the new document's cookies.
-    this.storageCleanup = destroyed.then(async () => {
-      await Promise.all([
-        browserSession.clearStorageData(browserSession.isPersistent() ? { storages: ['cookies'] } : undefined),
+    void this.cleanStorage(browserSession, destroyed)
+  }
+
+  /** Stop accepting documents and await all scheduled authentication cleanup. */
+  async dispose(): Promise<void> {
+    this.disposed = true
+    this.account = null
+    await this.closeAndWait()
+  }
+
+  /** Destroy the current document and await authentication cleanup before an installer takes over. */
+  async closeAndWait(): Promise<void> {
+    this.close()
+    const results = await Promise.all(this.storageCleanup.values())
+    const failures = results.filter(result => result !== null)
+    if (failures.length > 0) throw new AggregateError(failures.map(result => result.error), 'Platform storage cleanup failed')
+  }
+
+  private cleanStorage(browserSession: Session, destroyed: Promise<void> = Promise.resolve()): Promise<{ error: unknown } | null> {
+    const previous = this.storageCleanup.get(browserSession)
+    const cleanup = Promise.all([previous, destroyed]).then(async () => {
+      await browserSession.closeAllConnections()
+      const results = await Promise.allSettled([
+        browserSession.clearStorageData(browserSession.isPersistent()
+          ? { storages: ['cookies', 'filesystem', 'indexdb', 'shadercache', 'serviceworkers', 'cachestorage'] } : undefined),
+        browserSession.clearCache(),
         browserSession.clearAuthCache(),
-        browserSession.closeAllConnections(),
       ])
+      const failures = results.filter(result => result.status === 'rejected')
+      if (failures.length > 0) throw new AggregateError(failures.map((result): unknown => result.reason), 'Platform storage cleanup failed')
     }).then(() => null, (error: unknown) => ({ error }))
+    this.storageCleanup.set(browserSession, cleanup)
+    return cleanup
   }
 }

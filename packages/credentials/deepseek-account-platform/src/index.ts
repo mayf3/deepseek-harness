@@ -179,7 +179,12 @@ export class PlatformAccount extends DeepSeekAccount {
     const lifetime = this.detailsLifetime
     const result = await this.getDetail('profile')
     if (this.detailsLifetime !== lifetime) return null
-    if (result?.status === 'ready') this.lastProfile = result
+    if (result?.status === 'ready') {
+      // Identity publishers re-read the session snapshot; wake them only when the stable ID changes.
+      const previous = this.lastProfile?.value.id || null
+      this.lastProfile = result
+      if (previous !== (result.value.id || null)) this.changed()
+    }
     return result?.status === 'failed' ? this.lastProfile ?? result : result
   }
 
@@ -205,10 +210,9 @@ export class PlatformAccount extends DeepSeekAccount {
     const stored = await this.readCurrentGrant(lifetime)
     if (stored === null || lifetime.signal.aborted) return null
     const requestHeaders = { ...this.accountRequestHeaders, ...this.clientHeaders }
-    const details = this.lastProfile ?? await this.getProfile()
-    if (this.detailsLifetime !== lifetime) return null
+    // Identity comes from the last explicit profile read; an unknown ID requires disposable browser storage.
     return { origin: this.origin, token: stored.token,
-      userId: details?.status === 'ready' ? details.value.id || null : null,
+      userId: this.lastProfile?.value.id || null,
       ...(this.embeddedPageDist ? { embeddedPageDist: this.embeddedPageDist } : {}),
       requestHeaders }
   }

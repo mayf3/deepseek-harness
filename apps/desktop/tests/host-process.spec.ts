@@ -208,7 +208,6 @@ it.each([null, 'stable-account'])('carries Platform identity %s over private IPC
   expect(changed).toHaveBeenLastCalledWith(null)
 })
 
-
 it.each([undefined, '', 7])('rejects malformed Platform account identity %s on private IPC', async (userId) => {
   const session = { origin: 'https://platform.deepseek.com', token: 'fixture-secret', userId }
   const runtime = projectWithHost(HTTP_HOST.replace("process.send({ type: 'ready'",
