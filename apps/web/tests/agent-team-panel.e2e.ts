@@ -1,11 +1,11 @@
 // Keyless assembled-browser coverage for the opt-in Agent Teams bundle
-// over the real Host Typert Remote flow.
+// over the real Host projection frame flow.
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished, vi } from 'vitest'
 import * as yaml from 'js-yaml'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
@@ -80,26 +80,29 @@ describe('web e2e: Agent Teams panel', () => {
     await scaffold?.close()
   })
 
-  it('displays agent-owned tasks through a read-only board', async () => {
+  it('displays agent-owned task changes through a read-only board without a refresh action', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-team-panel'))
+    const projectionReads = vi.spyOn(scaffold.ctx.sessionController, 'projections')
+    onTestFinished(() => { projectionReads.mockRestore() })
     await page.locator('[data-team-action]').getByRole('button', { name: /Agent Team/iu }).click()
     const action = page.getByRole('dialog', { name: 'Agent Team', exact: true })
     await action.getByText('No shared tasks yet').waitFor()
     await action.getByText('lead').waitFor()
+    expect(projectionReads).not.toHaveBeenCalled()
 
     expect(await action.getByRole('button', { name: 'New task' }).count()).toBe(0)
+    expect(await action.getByRole('button', { name: /Refresh/u }).count()).toBe(0)
 
+    // Host-side Team mutations reach the open panel through projection frames only.
     const agent = scaffold.ctx.agents.list()[0]!
     const task = await scaffold.ctx.agentTeams.createTask(agent, {
       subject: 'Agent task', description: 'Created by the Team Lead', writeScopes: ['src/web'],
     })
-    await action.getByRole('button', { name: 'Refresh Team' }).click()
     await action.getByText('Agent task', { exact: true }).waitFor()
     await action.getByText('Owner: Unowned', { exact: true }).waitFor()
     await scaffold.ctx.agentTeams.updateTask(agent, {
       taskId: task.id, expectedRevision: task.revision, action: 'claim',
     })
-    await action.getByRole('button', { name: 'Refresh Team' }).click()
     await action.getByText('In progress', { exact: true }).waitFor()
     await action.getByText('Owner: lead', { exact: true }).waitFor()
     expect(await action.getByRole('button', { name: /^(New task|Edit|Complete|Reopen|Delete)$/u }).count()).toBe(0)
@@ -107,6 +110,7 @@ describe('web e2e: Agent Teams panel', () => {
 
     const snapshot = await captureStableAria(page, '[data-team-panel]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(PANEL_EXPECTED, snapshot, MODE)
+    expect(projectionReads).not.toHaveBeenCalled()
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await action.getByRole('button', { name: 'Close' }).click()
@@ -141,9 +145,6 @@ describe('web e2e: Agent Teams panel', () => {
       await panel.getByRole('heading', { name: 'Shared tasks' }).waitFor()
       expect(await panel.evaluate(element => element === document.activeElement)).toBe(true)
       await page.keyboard.press('Tab')
-      expect(await panel.getByRole('button', { name: 'Refresh Team' })
-        .evaluate(element => element === document.activeElement)).toBe(true)
-      await page.keyboard.press('Tab')
       expect(await panel.getByRole('button', { name: 'Close', exact: true })
         .evaluate(element => element === document.activeElement)).toBe(true)
       await page.keyboard.press('Escape')
@@ -151,7 +152,6 @@ describe('web e2e: Agent Teams panel', () => {
       expect(await trigger.evaluate(element => element === document.activeElement)).toBe(true)
       await page.keyboard.press('Enter')
       await panel.waitFor()
-      await page.keyboard.press('Tab')
       await page.keyboard.press('Tab')
       await page.keyboard.press('Enter')
       await panel.waitFor({ state: 'detached' })

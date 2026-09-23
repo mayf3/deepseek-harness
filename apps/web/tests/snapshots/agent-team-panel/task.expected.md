@@ -1,9 +1,8 @@
 - dialog "Agent Team":
   - strong: Agent Team
-  - button "Refresh Team"
   - button "Close"
   - heading "Members" [level=3]
-  - 'button "lead Inactive · Model: deepseek-v4-flash" [disabled]'
+  - button "lead Inactive" [disabled]
   - heading "Shared tasks" [level=3]
   - article:
     - strong: Agent task
