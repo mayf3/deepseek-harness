@@ -703,10 +703,10 @@
         - listitem:
           - paragraph: task-demo-1
 - button "Inspect"
-- button "Wait for subagent Teammate activity" [expanded]
+- button "Wait for subagent Subagent activity" [expanded]
 - text: Recorded result
 - list:
-  - listitem: Teammate activity Change detected
+  - listitem: Subagent activity Change detected
 - button "Inspect"
 - button "Interrupt agent ui-review" [expanded]
 - text: Recorded result
