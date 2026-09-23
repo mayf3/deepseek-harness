@@ -14,7 +14,7 @@ import { pluginEntryId, readPluginInventory } from '@deepseek-ai/dsh-host-plugin
 import {
   readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries,
   reconcileProfilePatches, readProfilePatches, OPTIONAL_BUNDLES, bundlePatchPaths,
-  evaluatePluginCompatibility, pluginCompatibilityWarning, readProfileCompatibility, readProfileVersionExemptions,
+  evaluatePluginCompatibility, readProfileCompatibility, readProfileVersionExemptions,
   setProfileVersionExemption, PROFILE_COMPATIBILITY_FILENAME,
 } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-hmr'
@@ -24,7 +24,7 @@ import { classifyInstallFailure } from './install-failure.ts'
 import { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
 import { attributeFailure, normalizeRegistry, NPMMIRROR_REGISTRY, registryPlan } from './registry.ts'
 import { writePluginEnabled } from './patch.ts'
-import { ManagementFailure } from './failure.ts'
+import { incompatiblePlugin, ManagementFailure } from './failure.ts'
 import { approveBuilds, readPendingBuilds } from './build-approval.ts'
 import { checkGithubConnection } from './github-connection.ts'
 import type {
@@ -91,7 +91,8 @@ function messageOf(error: unknown): string { return error instanceof Error ? err
 
 /** An expected refusal keeps its code; anything else becomes an operation error carrying its exact diagnostic. */
 function managementError(error: unknown): ManagementError {
-  return error instanceof ManagementFailure ? { code: error.code } : { code: 'operation-error', diagnostic: messageOf(error) }
+  if (!(error instanceof ManagementFailure)) return { code: 'operation-error', diagnostic: messageOf(error) }
+  return { code: error.code, ...error.incompatible === undefined ? {} : { incompatible: error.incompatible } }
 }
 
 /** The caller stopped an installation; its files are restored before this is thrown. */
@@ -298,7 +299,7 @@ export class PluginManager extends TypertRemoteService {
           continue
         }
         const compatibility = evaluatePluginCompatibility(info, exemptions)
-        if (compatibility !== undefined && !compatibility.exempted) throw new Error(pluginCompatibilityWarning(compatibility))
+        if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
         const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
         const meta = readPluginMeta(info.name ?? name, pathToFileURL(join(dir, 'package.json')).href)
         bundles.push({ name, ...(info.version === undefined ? {} : { version: info.version }),
@@ -505,6 +506,8 @@ export class PluginManager extends TypertRemoteService {
           run = await this.runPnpm(['add', spec, ...registryArguments(registry)], control.abort.signal, requestId)
           result.packageResult = run
           if (stopped()) throw new InstallCancelledError()
+          // A compatibility refusal is the package's own answer, so no other registry is asked.
+          if (run.incompatible !== undefined) throw new ManagementFailure('incompatible-version', run.incompatible)
           // A run this manager terminated is not a success, even when pnpm trapped the signal and exited 0.
           if (run.exitCode === 0 && run.timedOut !== true) break
           /* v8 ignore next 2 -- runPnpm classifies every run it does not report as succeeded */
@@ -541,7 +544,7 @@ export class PluginManager extends TypertRemoteService {
         const manifest = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
         if (manifest?.dsh?.bundle === undefined) throw new ManagementFailure('not-bundle')
         const compatibility = evaluatePluginCompatibility(manifest, readProfileVersionExemptions(this.profile.dir))
-        if (compatibility !== undefined && !compatibility.exempted) throw new Error(pluginCompatibilityWarning(compatibility))
+        if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
         for (const file of bundlePatchPaths(dir, manifest.dsh.bundle)) loadOverlayPatches('dsh', file)
       } catch (error) {
         // pnpm has exited by now, so the files it rewrote go back as they were.
@@ -717,7 +720,7 @@ export class PluginManager extends TypertRemoteService {
       if (metadata === undefined) throw new ManagementFailure('not-bundle')
       if (enabled) {
         const compatibility = evaluatePluginCompatibility(metadata, readProfileVersionExemptions(this.profile.dir))
-        if (compatibility !== undefined && !compatibility.exempted) throw new Error(pluginCompatibilityWarning(compatibility))
+        if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
         this.bundleRows(name)
       }
     }

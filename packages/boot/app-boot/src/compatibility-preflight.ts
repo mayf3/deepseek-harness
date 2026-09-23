@@ -77,7 +77,9 @@ export function prepareProfileEntries(
   // Admission runs before the composed tree mounts, so no plugin-owned logger exporter exists yet;
   // composition-stage diagnostics go to stderr like the profile launcher's skipped-bundle report.
   return preflight(ctx, entries, parentURL, (row, reason) => {
-    process.stderr.write(`${binName}: disabling profile plugin ${row.name}: ${reason}\n`)
+    // Preset rows may omit ids, and a bundle row's name is its resolved module URL.
+    const label = typeof row.id === 'string' ? `row ${JSON.stringify(row.id)}` : row.name
+    process.stderr.write(`${binName}: disabling profile plugin ${label}: ${reason}\n`)
   }).rows
 }
 

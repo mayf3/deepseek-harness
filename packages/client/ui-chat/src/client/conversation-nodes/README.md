@@ -44,7 +44,7 @@ Every reply separates secondary groups; only the final answer is protected from 
 | Which rows belong together? | Group boundaries | The reply separates G1 and G2; changing from `read` to `bash` does not. |
 | What did a group do? | Category counts | G1 has `read=1, commands=1`; G2 has `code=1`. Reasoning adds no tool count. |
 | What does its title say? | Group state and summary | Running groups use their latest running activity; closed groups use their highest-count categories. Counts never decide folding. |
-| How much detail is visible? | Display mode and manual group opening | Completed Turns retain group headers and manual bodies in every mode; Expanded directly shows group bodies only in running Turns. |
+| How much detail is visible? | Display mode and manual group opening | Compact, Standard, and Detailed retain historical group headers; Detailed shows running bodies directly, while Verbose shows both running and historical bodies directly. |
 | Is the process visible at all? | Whole-Turn opening | Closing the Turn hides G1, the intermediate reply, and G2 together. |
 
 ### What the reader sees
@@ -53,21 +53,21 @@ Assume the Turn above completed normally, with no inner disclosure manually open
 
 | Viewing state | Visible content |
 |---|---|
-| Whole Turn collapsed, any mode | Input, whole-Turn control, final response, and footer. No process headers, bodies, or intermediate reply. |
-| Whole Turn open, Compact or Detailed | G1/G2 headers, the intermediate reply, and final response. Group bodies start collapsed. |
-| Whole Turn and G1 open, Detailed | G1's reasoning and tool rows with the settled reasoning preview; G2 remains a header. Full reasoning/tool bodies are still manual. |
-| Whole Turn open, Expanded | G1/G2 headers, intermediate reply, and final response. Completed Turns' group bodies still require manual opening. |
+| Whole Turn collapsed, Compact/Standard/Detailed | Input, whole-Turn control, final response, and footer. No process headers, bodies, or intermediate reply. |
+| Whole Turn open, Compact/Standard/Detailed | G1/G2 headers, the intermediate reply, and final response. Group bodies start collapsed. |
+| Whole Turn and G1 open, Standard or Detailed | G1's reasoning and tool rows with the settled reasoning preview; G2 remains a header. Full reasoning/tool bodies are still manual. |
+| Verbose | Whole-Turn duration/status header without a collapse action, all process rows, intermediate reply, and final response. No group headers; individual tool/reasoning bodies remain manual. |
 
 Visibility applies from outside inward: whole Turn → secondary group → individual reasoning/tool disclosure. Opening an inner layer cannot bypass a closed outer layer. Category changes never open or close a layer. Mode changes preserve membership and manual opening choices.
 
-If steering, a User message, or a trigger notice follows process output, the Turn offers only individual group disclosures, not whole-Turn collapse. In Compact/Detailed, `G1 → steering 1 → G2 → steering 2 → G3` retains all three headers and both inputs in that order, with intermediate replies visible; opening one group reveals only its body. Expanded directly shows group bodies only while the Turn runs; completed Turns retain headers and manual disclosure. The Turn control still shows duration or status, without a collapse action.
+If steering, a User message, or a trigger notice follows process output, the Turn offers only individual group disclosures, not whole-Turn collapse. In Compact/Standard, `G1 → steering 1 → G2 → steering 2 → G3` retains all three headers and both inputs in that order, with intermediate replies visible; opening one group reveals only its body. Detailed directly shows group bodies only while the Turn runs; completed Turns retain headers and manual disclosure. Verbose shows group bodies directly in both cases. The Turn control still shows duration or status, without a collapse action.
 
 -----
 
 <a id="whole-turn-folding"></a>
 ## Whole-Turn folding
 
-Whole-Turn folding controls the loaded process range, independently of secondary groups. A recorded Turn end makes that range eligible even when paging has not loaded the Turn start.
+Whole-Turn folding controls the loaded process range, independently of secondary groups, in Compact, Standard, and Detailed. Verbose keeps that range visible and retains the duration/status header without a collapse action. A recorded Turn end makes that range eligible even when paging has not loaded the Turn start.
 
 The Turn control follows all its opening inputs, including human steering and non-human trigger notices, while waiting for the first Assistant output and after that output arrives. Consecutive inputs before the first process evidence are opening inputs, anchored by the last one. Later inputs retain their positions: even when paging has not loaded their inbox insertions and they temporarily appear as ordinary User messages, preceding process content must not move after them.
 
@@ -108,21 +108,21 @@ Automatic collapse keeps the process open if hiding it would hide keyboard focus
 <a id="display-modes"></a>
 ## Display modes
 
-Settings → General → Work details stores `ui-chat.transcriptView` as `compact` (default), `detailed`, or `expanded`. A saved legacy `normal` value reads as `detailed` without being written back.
+Settings → General → Work details offers `compact`, `standard` (default), `detailed`, and `verbose`; its description is “Choose how much detail to show for tool calls”. A saved `normal` reads as `standard`, and a saved `expanded` reads as `detailed`, without automatic write-back. Existing `detailed` remains `detailed`. Missing or invalid values, including the period before Host settings arrive, use `standard`; invalid values in other settings still fail validation.
 
-| Behavior | Compact | Detailed | Expanded |
-|---|---|---|---|
-| Process-group header | Category summary | Summary and live task detail | Hidden in running Turns; retained in historical Turns |
-| Process-group body | Initially collapsed | Initially collapsed | Directly visible without a group-level height cap in running Turns; manual disclosure in historical Turns |
-| Settled reasoning preview | Hidden | First line | First line |
-| Individual reasoning and tool bodies | Manual expansion | Manual expansion | Manual expansion |
-| Eligible completed Turn | Initially collapsed | Initially collapsed | Initially collapsed |
+| Behavior | Compact | Standard | Detailed | Verbose |
+|---|---|---|---|---|
+| Process-group header | Category summary | Summary and live task detail | Hidden in running Turns; retained in historical Turns | Hidden |
+| Process-group body | Initially collapsed | Initially collapsed | Directly visible without a group-level height cap in running Turns; manual disclosure in historical Turns | Directly visible without a group-level height cap in running and historical Turns |
+| Settled reasoning preview | Hidden | First line | First line | First line |
+| Individual reasoning and tool bodies | Manual expansion | Manual expansion | Manual expansion | Manual expansion |
+| Eligible completed Turn | Initially collapsed | Initially collapsed | Initially collapsed | Always open; duration/status header cannot collapse it |
 
-A closed group's header names the first three categories from its ranked summary, without displaying counts. A group without categories uses the thinking label. A running header names its live tool category, otherwise thinking; Detailed appends live detail. Live titles remain visible for at least 150ms, retaining only the newest pending title.
+A closed group's header names the first three categories from its ranked summary, without displaying counts. A group without categories uses the thinking label. A running header names its live tool category, otherwise thinking; Standard appends live detail. Live titles remain visible for at least 150ms, retaining only the newest pending title.
 
 ### Group-title rules
 
-All three stages share the tool-name classification below. A preparing Tool node uses its category's preparation label: read files for `read`, read images for `read_image`, write files for `write`, edit files for `edit` and `apply_patch`, and update the plan for `todo_write` and goal tools. Only the generic “Preparing tool calls” category appends the wire tool name in Detailed mode; other categories omit it. It contributes one call without parsing arguments and renders one non-expandable row. A named live delta can create this node; historical calls start directly from tool/call without replaying preparation.
+All three stages share the tool-name classification below. A preparing Tool node uses its category's preparation label: read files for `read`, read images for `read_image`, write files for `write`, edit files for `edit` and `apply_patch`, and update the plan for `todo_write` and goal tools. Only the generic “Preparing tool calls” category appends the wire tool name in Standard mode; other categories omit it. It contributes one call without parsing arguments and renders one non-expandable row. A named live delta can create this node; historical calls start directly from tool/call without replaying preparation.
 
 The labels below describe recorded activity, not successful outcomes. For example, a failed read still participates in the “Read files” category.
 
@@ -145,23 +145,23 @@ The labels below describe recorded activity, not successful outcomes. For exampl
 
 | Group state | Title composition |
 |---|---|
-| Not closed, with a running tool | Use the live category, not the highest-count category. Detailed appends nonempty detail with ` · `; Compact omits detail. |
-| Not closed, without a running tool | Use the analysis label even when completed-tool counts are nonzero. Detailed may append running reasoning detail. |
+| Not closed, with a running tool | Use the live category, not the highest-count category. Standard appends nonempty detail with ` · `; Compact omits detail. |
+| Not closed, without a running tool | Use the analysis label even when completed-tool counts are nonzero. Standard may append running reasoning detail. |
 | Closed, zero categories | Use the completed-analysis label. |
 | Closed, one category | Use its closed label without a count. |
 | Closed, two categories | Join ranked labels with “and”. Chinese removes the second leading `已` only when both labels start with it. |
 | Closed, three categories | Join all three ranked labels with commas. |
 | Closed, more than three categories | Show the first three labels followed by “etc.” (`等` in Chinese). |
 
-English lowercases the initial letter of joined labels after the first. Closing a group immediately selects the completed summary; the 150ms minimum applies to running-title changes, not to delaying completion. Expanded hides group headers in running Turns, including groups ended by a reply or steering before their Turn ends.
+English lowercases the initial letter of joined labels after the first. Closing a group immediately selects the completed summary; the 150ms minimum applies to running-title changes, not to delaying completion. Detailed hides group headers in running Turns, including groups ended by a reply or steering before their Turn ends. Verbose also hides historical group headers.
 
-Group headers show a category icon, replace it with a down arrow on hover or keyboard focus, and show an up arrow while open. Manually expanded group bodies use 8px row spacing, a `min(400px, 50vh)` height cap, and 24px directional fades. Wheel scrolling can continue into the outer transcript at an edge. Expanded mode removes the group-level cap and uses 16px row spacing only in running Turns.
+Group headers show a category icon, replace it with a down arrow on hover or keyboard focus, and show an up arrow while open. Manually expanded group bodies use 8px row spacing, a `min(400px, 50vh)` height cap, and 24px directional fades. Wheel scrolling can continue into the outer transcript at an edge. Detailed removes the group-level cap and uses 16px row spacing in running Turns; Verbose applies this layout to historical Turns as well.
 
 An open capped group follows content growth only while its own scroll position is at the bottom. Scrolling away pauses that group's following; returning to the bottom resumes it, independently of outer transcript following. Manually opening an unclosed group starts at the bottom and follows growth; manually opening a closed group starts at the top with following disabled, even when its initial content fits without scrolling. Closing the group in the data or restoring its height cap through a mode change does not reset an already-open reader's position. Browser find retains its own reveal position.
 
 Individual reasoning starts collapsed, including while streaming. All modes preview the latest paragraph whose first line ends with a newline; an unfinished single line has no preview. Later text in that paragraph does not change the preview. After settlement, the mode table applies. Expanded reasoning uses compact Markdown typography.
 
-Switching modes retains manually opened groups and inner disclosures. It changes visibility and sizing without recreating the message rows. Expanded does not mean opening every individual disclosure or unfolding the whole Turn.
+Switching modes retains manually opened groups and inner disclosures. It changes visibility and sizing without recreating the message rows. Detailed and Verbose do not open every individual disclosure. Only Verbose keeps the whole Turn open.
 
 -----
 
@@ -170,7 +170,7 @@ Switching modes retains manually opened groups and inner disclosures. It changes
 
 [process-groups.ts](process-groups.ts) groups visible Chat content; [process-activity.ts](process-activity.ts) summarizes the activity inside each group. Both follow the rules below.
 
-A group collects adjacent process content within one Turn. Step-number changes alone do not split it. Compact, Detailed, and Expanded use the same grouping result. A group's `closed` flag means its content segment has ended, not that its UI disclosure is collapsed.
+A group collects adjacent process content within one Turn. Step-number changes alone do not split it. All four modes use the same grouping result. A group's `closed` flag means its content segment has ended, not that its UI disclosure is collapsed.
 
 | Input | Membership and segmentation |
 |---|---|
