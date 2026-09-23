@@ -88,7 +88,7 @@ export const guideZh: Record<PresetGuideKey, string> = {
   guideStandardIntro: '新建任务时选择「标准模式」，说明要完成什么、相关文件在哪里，以及怎样判断任务完成。',
   guideStandardExplanation: [
     '### 工作方式',
-    'Agent 直接调用工具来读写文件、检索资料和执行终端命令。包含 Skills、计划、目标、子 Agent、工作流和上下文压缩等能力。',
+    'Agent 直接调用工具来读写文件、检索资料和执行终端命令。包含 Skills、计划、目标、子智能体、工作流和上下文压缩等能力。',
     '### 什么时候选',
     '日常编程、文件处理和资料整理可以从这里开始。标准模式也能编写脚本、批量处理文件；PTC 改变的是工具调用方式，批量任务并不必须使用 PTC。',
   ].join('\n\n'),
