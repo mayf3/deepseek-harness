@@ -100,19 +100,26 @@ function isWsl(internals: PathOpenerInternals): boolean {
 /**
  * Encode one Windows path as the target Explorer can receive intact.
  *
- * Explorer parses its own command line and treats commas as field separators,
- * so a path handed over raw loses everything after its first comma and the
- * shell opens a different target without reporting it. A file URI has `,`
- * percent-encoded and keeps whitespace, and Explorer resolves it to the shell
- * item the path names. Node resolves the path before encoding it, so a verbatim
- * `\\?\` or `\\?\UNC\` prefix reaches Explorer as the ordinary drive or UNC
- * URI; a `\\.\` device path keeps that same UNC handling and names a device
- * rather than a shell item, which this opener does not open.
+ * Explorer parses its own command line and splits fields at commas and equals
+ * signs, so a raw path loses everything after the first separator and the shell
+ * opens a different target without reporting it; both separators are escaped.
+ * Nothing else is: Explorer rejects percent-encoded non-ASCII in a file URI and
+ * opens the user's Documents folder instead, while it resolves the literal
+ * characters, so Node's non-ASCII escapes are decoded back and its ASCII escapes
+ * stand. Node resolves the path before encoding it, so a verbatim `\\?\` or
+ * `\\?\UNC\` prefix reaches Explorer as the ordinary drive or UNC URI; a `\\.\`
+ * device path keeps that same UNC handling and names a device rather than a
+ * shell item, which this opener does not open.
  * @param windowsPath - path already translated for the Windows desktop.
  * @returns the target for an open, or the object of a `/select,` reveal.
  */
 function explorerTarget(windowsPath: string): string {
-  return pathToFileURL(windowsPath, { windows: true }).href.replaceAll(',', '%2C')
+  const href = pathToFileURL(windowsPath, { windows: true }).href
+  // A run of escapes whose every byte starts above ASCII is one non-ASCII character.
+  return href
+    .replace(/(?:%[89A-F][0-9A-F])+/gi, escaped => decodeURIComponent(escaped))
+    .replaceAll(',', '%2C')
+    .replaceAll('=', '%3D')
 }
 
 /**

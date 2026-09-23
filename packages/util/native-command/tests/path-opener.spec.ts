@@ -81,15 +81,20 @@ describe('native path opener', () => {
   })
 
   it.each([
-    // Explorer parses its own command line and splits it at commas, and libuv
-    // quotes an argument only when it holds a space, so the encoded file URI is
-    // what keeps the whole path in one field. The URI encoding covers the comma,
-    // spaces, the percent sign, and non-ASCII; the apostrophe and ampersand stay
-    // literal because no shell interprets them. UNC takes the same encoding.
+    // Explorer parses its own command line and splits fields at commas and
+    // equals signs, and libuv quotes an argument only when it holds a space, so
+    // the encoded file URI is what keeps the whole path in one field. Only those
+    // two separators are escaped on top of the URI's own encoding: Explorer
+    // rejects percent-encoded non-ASCII and opens Documents instead, while it
+    // resolves the literal characters, so `报告` stays literal here. UNC takes
+    // the same encoding.
     ["C:\\work\\o'reilly, & 100%.txt", "file:///C:/work/o'reilly%2C%20&%20100%25.txt"],
     ['C:\\work\\plain.txt', 'file:///C:/work/plain.txt'],
     ['C:\\work\\my report.txt', 'file:///C:/work/my%20report.txt'],
-    ['C:\\my files\\报告,#%.txt', 'file:///C:/my%20files/%E6%8A%A5%E5%91%8A%2C%23%25.txt'],
+    ['C:\\work\\key=value.txt', 'file:///C:/work/key%3Dvalue.txt'],
+    ['C:\\my files\\报告,#%.txt', 'file:///C:/my%20files/报告%2C%23%25.txt'],
+    ['C:\\目录\\a,b=c.txt', 'file:///C:/目录/a%2Cb%3Dc.txt'],
+    ['C:\\工作\\报告 2026.txt', 'file:///C:/工作/报告%202026.txt'],
     ['\\\\server\\share\\a,b.txt', 'file://server/share/a%2Cb.txt'],
     // Node resolves the path before encoding it, so a verbatim prefix is not
     // part of the target: `\\?\` and `\\?\UNC\` arrive as the ordinary drive or
@@ -372,7 +377,7 @@ describe('native file manager', () => {
     expect(nativeFileManager(internals)).toBe('explorer')
     await revealNativePath('/mnt/c/work/报告.txt', signal(), internals)
     expect(run.mock.calls.map(([cmd, args]) => [cmd, args])).toEqual([
-      ['wslpath', ['-w', '/mnt/c/work/报告.txt']], ['explorer.exe', ['/select,', 'file:///C:/work/%E6%8A%A5%E5%91%8A.txt']],
+      ['wslpath', ['-w', '/mnt/c/work/报告.txt']], ['explorer.exe', ['/select,', 'file:///C:/work/报告.txt']],
     ])
   })
 
@@ -449,7 +454,7 @@ it('preserves a non-delegate Explorer failure when opening', async () => {
 })
 
 it.each([
-  ['C:\\my files\\报告,#%.txt', 'file:///C:/my%20files/%E6%8A%A5%E5%91%8A%2C%23%25.txt'],
+  ['C:\\my files\\报告,#%.txt', 'file:///C:/my%20files/报告%2C%23%25.txt'],
   ['\\\\server\\share\\a,b.txt', 'file://server/share/a%2Cb.txt'],
 ])('preserves special characters in the Explorer target %s', async (path, target) => {
   const run = vi.fn<PathOpenerRunner>().mockResolvedValue({ stdout: '', stderr: '' })

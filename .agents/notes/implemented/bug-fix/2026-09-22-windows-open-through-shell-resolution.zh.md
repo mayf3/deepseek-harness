@@ -12,7 +12,7 @@ Windows 桌面客户端设置页的「打开配置文件」会准备当前 profi
 
 ## 决策
 
-`openWindowsPath` 将路径作为**一个** argv 元素交给 `explorer.exe`，`revealNativePath` 经共享的 `runExplorer` 帮助函数走到同一个 shell。两者都把目标编码成文件 URI 并对逗号做百分号编码，因为资源管理器自己解析命令行并以逗号分段——含逗号的原始路径会打开另一个目标且不作任何提示。资源管理器执行的是双击所执行的默认应用解析，因此由 shell 的答案选择应用——包括只记录在较新的按用户记录里的默认值；而完全没有处理程序的机器会得到资源管理器自己的「你要如何打开这个文件?」选择框，而不是毫无反应。
+`openWindowsPath` 将路径作为**一个** argv 元素交给 `explorer.exe`，`revealNativePath` 经共享的 `runExplorer` 帮助函数走到同一个 shell。两者都把目标编码成文件 URI 并对**逗号与等号**做百分号编码，因为资源管理器自己解析命令行并以这两个字符分段——含其中任一字符的原始路径都会打开另一个目标且不作任何提示。其余字符不做转义：资源管理器会拒绝 file URI 里百分号编码的非 ASCII 并回落到「文档」，因此这些字符以字面形式交给它。资源管理器执行的是双击所执行的默认应用解析，因此由 shell 的答案选择应用——包括只记录在较新的按用户记录里的默认值；而完全没有处理程序的机器会得到资源管理器自己的「你要如何打开这个文件?」选择框，而不是毫无反应。
 
 `runExplorer` 为两种操作持有唯一一条 Explorer 调用规则：退出码 1 是 Explorer 把请求转交给已在运行的桌面进程后返回的交接码，它照常兑现调用方的 Promise；其余失败和取消仍然报错。该帮助函数取代了 PowerShell 命令字符串，同时删掉了 `powershellLiteral` 及其单引号翻倍逻辑：路径以 argv 元素跨进程边界，去掉的是 shell 层转义，而不是资源管理器自身解析所需的编码；该编码由 `explorerTarget` 为两种意图统一持有。
 
@@ -40,4 +40,4 @@ Windows 对 HTML 与 SVG 仍然无法命名浏览器，因此 `openInBrowser` �
 
 ## 验证
 
-`path-opener.spec.ts` 固定两种意图交给 Explorer 的编码文件 URI、打开与选中都可接受的交接退出码 1，以及仍然报错的普通失败与取消。`resolver.spec.ts` 固定 open-in-app 路由在 Windows 上的命令。按该包测试策略，原生桌面验证留在 Windows。在 Windows 11 ARM64 build 26200 上，一次独立验证用 sha256 与源码一致的副本直接驱动模块自身的 `openNativeAssociatedPath`、`openNativePath`、`openNativeTextFile`，旁边挂一个记录 shell 实收参数的探针关联：每个含逗号的目标都以 `%2C` 完整到达、普通文件正常打开、名为 `dir,comma` 的目录打开为根目录正确的窗口。反证——同一个文件以逗号未编码的 file URI 交给 `explorer.exe`——没有触发任何关联、打开了用户的「文档」，而且**同样返回退出码 1**。因此退出码 1 记录的是委派而非结果，接受它不会把错误目标变成成功；真正保住路径完整的是那段编码。此处不观测窗口是否出现，选中路径的 `/select,` 高亮仍未验证。
+`path-opener.spec.ts` 固定两种意图交给 Explorer 的编码文件 URI、打开与选中都可接受的交接退出码 1，以及仍然报错的普通失败与取消。`resolver.spec.ts` 固定 open-in-app 路由在 Windows 上的命令。按该包测试策略，原生桌面验证留在 Windows。在 Windows 11 ARM64 build 26200 上，一次独立验证用 sha256 与源码一致的副本直接驱动模块自身的 `openNativeAssociatedPath`、`openNativePath`、`openNativeTextFile`，旁边挂一个记录 shell 实收参数的探针关联：每个含逗号的目标都以 `%2C` 完整到达、普通文件正常打开、名为 `dir,comma` 的目录打开为根目录正确的窗口。反证——同一个文件以逗号未编码的 file URI 交给 `explorer.exe`——没有触发任何关联、打开了用户的「文档」，而且**同样返回退出码 1**。因此退出码 1 记录的是委派而非结果，接受它不会把错误目标变成成功；真正保住路径完整的是那段编码。此处不观测窗口是否出现。同一 build 的后续一轮改为直接读取 shell 自己的窗口与选中状态：编码后的 `/select,` 目标选中了目标文件；未编码的 `=` 会打开「文档」而不是文件；非 ASCII 字符保持百分号编码时同样打开「文档」，改为字面字符则正常打开。
