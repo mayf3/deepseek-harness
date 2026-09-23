@@ -1,4 +1,4 @@
-/** Anchor-preserving tooltips with optional body portals for clipping containers. */
+/** Anchor-preserving tooltips; an optional body portal escapes clipping containers and stacking contexts that cap the bubble's z-index. */
 
 import { cloneElement, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { FocusEventHandler, MouseEventHandler, MutableRefObject, ReactElement, Ref } from 'react'
@@ -46,7 +46,8 @@ if (typeof window !== 'undefined') {
  * @param props.align - horizontal anchor-edge alignment for 'bottom'/'top' bubbles: 'end' pins
  * the bubble's right edge to the anchor's (for anchors beside other hover surfaces the centered
  * bubble would overlap); default 'center'. Ignored for side 'right'.
- * @param props.portal - render the bubble under document.body to escape containing blocks and clipping ancestors.
+ * @param props.portal - render the bubble under document.body, so an ancestor's clipping or its
+ * stacking context (which resolves the bubble's z-index against its siblings) cannot hide it.
  * @param props.delayMs - hover delay in milliseconds; keyboard focus remains immediate.
  * @param props.disabled - suppress the bubble while true; the anchor renders identically so
  * toggling never remounts it (which would cut its CSS transitions).

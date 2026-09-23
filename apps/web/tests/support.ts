@@ -226,6 +226,26 @@ export async function saveFailureShot(page: Page, name: string): Promise<void> {
 }
 
 /**
+ * Assert a visible tooltip paints above the element a user would read through
+ * it: both probes must hit the bubble itself. The bubble ignores pointer events
+ * by design, so the measurement enables them for its own duration.
+ * @param tooltip - locator for the visible `[role="tooltip"]` bubble.
+ */
+export async function expectTooltipOnTop(tooltip: Locator): Promise<void> {
+  expect(await tooltip.evaluate((element) => {
+    const bubble = element as HTMLElement
+    const rect = bubble.getBoundingClientRect()
+    const previous = bubble.style.pointerEvents
+    bubble.style.pointerEvents = 'auto'
+    const hitsBubble = (y: number): boolean =>
+      document.elementFromPoint(rect.left + rect.width / 2, y) === bubble
+    const onTop = hitsBubble(rect.top + rect.height / 2) && hitsBubble(rect.bottom - 1)
+    bubble.style.pointerEvents = previous
+    return onTop
+  })).toBe(true)
+}
+
+/**
  * The conversation engine's Context key format, restated here rather than
  * imported: these specs live in the Host compiler aggregate, which must not
  * reach the Client plane. The engine's own copy is
