@@ -14,7 +14,7 @@ import {
   fixtureUserPrompts, launchWebScaffold, recordFixture, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { openSettings, connectFreshWorkspaceZh, ZH_BROWSER_LOCALE } from './support.ts'
+import { openSettings, connectFreshWorkspaceZh, expandOwningTurnProcess, ZH_BROWSER_LOCALE } from './support.ts'
 
 const DIR = fileURLToPath(new URL('../../../snapshots/web/changed-files-turn', import.meta.url))
 const FIXTURE = join(DIR, 'session.v3.jsonl')
@@ -62,6 +62,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
   let tripwire: ReturnType<typeof watchConsole>
   let cwd: string
   let replayRoot: string | undefined
+  let releasePreparations: (() => void) | undefined
 
   beforeAll(async () => {
     let replayOverride: string | undefined
@@ -92,6 +93,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
   })
 
   afterAll(async () => {
+    releasePreparations?.()
     try {
       await browser?.close()
     } finally {
@@ -106,10 +108,45 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
   it('records the edited, created, and shell-appended files with their line counts', async () => {
     if (MODE !== 'record') expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])
     const settled = scaffold.whenTurnSettled()
+    const preparations = ['edit', 'write'].map(name => ({
+      name, ready: Promise.withResolvers<{ callId: string; kilobytes: number }>(),
+      release: Promise.withResolvers<undefined>(), held: false,
+    }))
+    const names = new Map<string, string>()
+    const dispose = scaffold.ctx.on('llm/stream', async function* (_options, next) {
+      for await (const chunk of next()) {
+        yield chunk
+        if (chunk.type !== 'tool-call-delta') continue
+        if (chunk.name !== undefined) names.set(chunk.id, chunk.name)
+        const preparation = preparations.find(value => value.name === names.get(chunk.id))
+        if (preparation === undefined || preparation.held || chunk.argumentsDelta.length === 0) continue
+        preparation.held = true
+        preparation.ready.resolve({ callId: chunk.id, kilobytes: Math.ceil(chunk.argumentsDelta.length / 1024) })
+        await preparation.release.promise
+      }
+    }, { prepend: true })
+    releasePreparations = () => {
+      for (const preparation of preparations) preparation.release.resolve(undefined)
+      dispose()
+    }
     const input = page.locator('[data-composer-input]').first()
     await input.fill(PROMPT)
     await input.press('Enter')
-    const sessionId = await settled
+    const observations = preparations.map(async (preparation) => {
+      const { callId, kilobytes } = await Promise.race([
+        preparation.ready.promise,
+        settled.then(() => { throw new Error(`No ${preparation.name} argument prefix was streamed`) }),
+      ])
+      const row = page.locator(`[data-chat-call-id="${callId}"] [data-state="preparing"]`)
+      await row.waitFor({ state: 'attached' })
+      await expandOwningTurnProcess(page, row)
+      await row.getByText(`正在准备内容 ${kilobytes}KB`, { exact: true }).waitFor()
+      expect(await row.getByRole('button').count()).toBe(0)
+      expect(await row.locator('pre').count()).toBe(0)
+      await compareOrRefreshGolden(join(DIR, `preparing-${preparation.name}.expected.md`), await row.ariaSnapshot(), MODE)
+      preparation.release.resolve(undefined)
+    })
+    const [sessionId] = await Promise.all([settled, ...observations]).finally(() => { releasePreparations?.() })
     const session = scaffold.ctx.agents.get(sessionId)?.session
     if (session?.header.cwd === undefined) throw new Error('changed-files Session has no workspace')
     cwd = session.header.cwd

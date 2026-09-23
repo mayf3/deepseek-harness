@@ -656,11 +656,7 @@
     "5c8c41ba658c0576bea6c34b1226c27e7b0328c03c9eea0d6c920f940c9d8f5b": 1
   },
   "packages/client/ui-settings-models/tests/components.client.spec.tsx": {
-    "149134633dbc576c06d4fd7ae295957de037e229a7d9f029d5576be5f3d56bd0": 1,
-    "34e91417f24ec20ab9adb34c131dafc76c9481af9163a6a32e0c4eda834be8a5": 1
-  },
-  "packages/client/ui-settings-models/tests/provider-form.client.spec.tsx": {
-    "34e91417f24ec20ab9adb34c131dafc76c9481af9163a6a32e0c4eda834be8a5": 1
+    "149134633dbc576c06d4fd7ae295957de037e229a7d9f029d5576be5f3d56bd0": 1
   },
   "packages/client/ui-settings-models/tests/store.client.spec.ts": {
     "6b8b0a920c558092d20bc17623b7050e0f7403f896fde7da17bb45677899b910": 1

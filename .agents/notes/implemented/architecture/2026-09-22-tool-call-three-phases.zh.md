@@ -18,7 +18,7 @@ Status: implemented
 
 | 阶段 | 创建或更新依据 | 可用数据与展示 |
 |---|---|---|
-| `preparing` | 带调用 ID 和工具名的实时 delta | 调用身份、名称和时间；不提供参数正文，只显示不可展开的一行。 |
+| `preparing` | 带调用 ID 和工具名的实时 delta | 调用身份、名称和时间；不提供完整参数，只显示不可展开的一行。可选钩子可读取原始参数前缀。 |
 | `start` | `tool/call` | 完整参数；启用工具原有的调用展示。 |
 | `result` | `tool/result` | 调用结果，以及当前窗口内可配对的完整参数。 |
 
@@ -30,7 +30,7 @@ Status: implemented
 
 Tool 的具名 delta 和 `tool/call` 都是创建入口。实时先收到 delta，就从 preparing 创建；历史先收到 `tool/call`，就从 start 创建。匹配函数仍然只读取当前事件，不查询 Context，不增加角色、注册表或旁路缓存。
 
-流结束移除临时 delta 后，Assembler 从剩余 Match 重新选择 start，刷新前序索引并重算 State。没有剩余调用证据时，已发布的准备节点隐藏；后续正式调用仍使用相同 callId。未派发的调用不合成执行结果。
+成功流结束时发布最终 Assistant 消息，瞬态 delta 保留到 `step/end`。每个 `tool/call` 更新已有 callId；Assistant 的实时排序锚点也保留到同一次清理。失败、中断或废弃的流立即移除 delta。清理时，Assembler 从剩余 Match 重新选择 start 并重算 State；未派发的准备节点隐藏，不合成执行结果。
 
 ### 最终状态收敛，不重现准备过程
 
@@ -40,7 +40,7 @@ Group 从准备阶段起就聚合 Tool 节点，按工具名分类和计数。As
 
 ### 通用行复用现有外壳
 
-[ToolRow](../../../../packages/client/ui-tool/src/client/tool/components/ToolRow.tsx) 在三个阶段复用既有图标、标题和行组件。公共行模型选择工具标题，并组合通用工具名前缀与已有参数摘要。准备阶段没有参数或结果，共享参数解析入口直接返回 null，不解析 JSON；ToolRow 禁止准备行展开。
+[ToolRow](../../../../packages/client/ui-tool/src/client/tool/components/ToolRow.tsx) 在三个阶段复用既有图标、标题和行组件。公共行模型选择工具标题，并组合通用工具名前缀与已有参数摘要。准备阶段没有完整参数或结果，共享参数解析入口直接返回 null，不解析 JSON。既有 slot 钩子绑定可选地提供当前调用的原始前缀，不增加准备态注册机制；ToolRow 禁止准备行展开。
 
 read、read_image、write/edit、search、web、todo、question、details 和通用回退使用这条路径。Bash、Skill、Present、Cordis 等自定义外壳保留自己的准备态分支。不增加自动／自管注册声明，不在 ToolTree 维护另一份工具分类名单。
 
@@ -62,6 +62,6 @@ read、read_image、write/edit、search、web、todo、question、details 和通
 
 - 工具可以在参数完整前出现，但准备展示不表示工具已经执行，也不暴露依赖参数的交互。
 - 同一 ID 的多个 start 被视为同一个生命周期；业务必须为独立调用提供不同 ID，不能再依赖第二个 start 报错检测身份复用。
-- 通用行不因准备／派发分支替换整行组件；自定义外壳仍可按阶段切换内部组件。
-- 不提供部分 JSON 解析或 `useToolCallDelta`，参数驱动的提前展示不属于本次实现。
+- 各阶段复用通用行基础组件。write/edit 分离准备态与派发后组件，只有前者订阅原始参数；自定义外壳也可按阶段切换内部组件。
+- 不提供部分 JSON 解析或 `useToolCallDelta`。`useToolCallArgumentsPartial` 暴露既有 Step 的原始前缀，不另建累积器；write/edit 只使用其长度展示准备进度。
 - 组装测试分别覆盖实时准备态、撤回、活跃流重建、持久历史与分页收敛；组件测试检查无参数展示和阶段切换，录制会话覆盖浏览器中的准备态与重载结果。

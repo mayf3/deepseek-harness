@@ -28,6 +28,7 @@ function operationsOf(state: Omit<AccountView, 'links'>, details?: Partial<Accou
       },
       theme: { getSnapshot: () => themeOf('light'), subscribe: () => () => {} },
     },
+    hasRunningAccountTasks: vi.fn(async () => false),
     contactUs: vi.fn(), showLogin: vi.fn(), setOnboarding: vi.fn(),
     refresh: vi.fn(() => Promise.resolve()),
     start: vi.fn(() => Promise.resolve()), cancel: vi.fn(() => Promise.resolve()), signOut: vi.fn(() => Promise.resolve()),
@@ -66,13 +67,14 @@ it('starts sign-in and disables cancellation during persistence', async () => {
   expect(screen.queryByRole('button', { name: en.signIn })).toBeNull()
 })
 
-it.each([en, zh])('opens settings and signs out from the sidebar account menu', async (copy) => {
+it.each([en, zh].flatMap(copy => ([false, true, 'unknown'] as const).map(running => ({ copy, running }))))('confirms sidebar sign-out with task impact $running', async ({ copy, running }) => {
   const signOut = vi.fn(() => Promise.resolve())
   const openSettings = vi.fn()
   const operations = mount({ status: 'credential-stored', attempt: null }, copy)
   cleanup()
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
   render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} signOut={signOut}
+    hasRunningAccountTasks={async () => { if (running === 'unknown') throw new Error('offline'); return running }}
     useAccount={selector => selector(operations.hooks.account.getSnapshot())}
     useTheme={selector => selector(operations.hooks.theme.getSnapshot())} wide openOnboarding={() => {}} openSettings={openSettings}
     t={key => key in copy ? copy[key as AccountKey] : key} />)
@@ -87,6 +89,9 @@ it.each([en, zh])('opens settings and signs out from the sidebar account menu', 
   expect(screen.queryByRole('menu')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: copy.menu }))
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: copy.signOut })) })
+  expect(signOut).not.toHaveBeenCalled()
+  expect(screen.getByText(running === 'unknown' ? copy.signOutUnknownDescription : running ? copy.signOutRunningDescription : copy.signOutDescription)).toBeTruthy()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.signOut })) })
   expect(signOut).toHaveBeenCalledOnce()
   expect(screen.queryByRole('menu')).toBeNull()
 })
@@ -120,6 +125,27 @@ it.each([en, zh])('updates the Settings menu keycaps and accessible combination 
   expect(props.openSettings).toHaveBeenCalledOnce()
 })
 
+it.each([en, zh])('offers settings, contact and sign-in from the signed-out account menu', async (copy) => {
+  const openSettings = vi.fn()
+  const operations = operationsOf({ status: 'signed-out', attempt: null })
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())}
+    useTheme={selector => selector(operations.hooks.theme.getSnapshot())} wide openOnboarding={() => {}} openSettings={openSettings}
+    t={key => key in copy ? copy[key as AccountKey] : key} />)
+  const trigger = screen.getByRole('button', { name: copy.menu })
+  expect(trigger.textContent).toBe(copy.more)
+  expect(trigger.querySelector('svg')).not.toBeNull()
+  fireEvent.click(trigger)
+  expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([copy.settings, copy.contactUsSignedOut, copy.signIn])
+  await expect(`${screen.getByRole('menu').textContent}\n`).toMatchFileSnapshot(`./expected/menu-signed-out-${copy === en ? 'en' : 'zh'}.txt`)
+  fireEvent.click(screen.getByRole('menuitem', { name: copy.settings }))
+  expect(openSettings).toHaveBeenCalledOnce()
+  fireEvent.click(screen.getByRole('button', { name: copy.menu }))
+  fireEvent.click(screen.getByRole('menuitem', { name: copy.contactUsSignedOut }))
+  expect(operations.contactUs).toHaveBeenCalledOnce()
+})
+
 it('reports a failed start in the login dialog, not as a sidebar alert', async () => {
   const operations = mount({ status: 'signed-out', attempt: null })
   cleanup()
@@ -150,7 +176,7 @@ it('reports a failed start in the login dialog, not as a sidebar alert', async (
   await expect(`${document.body.textContent}\n`).toMatchFileSnapshot('./expected/login-failed-en.txt')
 })
 
-it('keeps the sidebar alert for a failed sign-out', async () => {
+it('keeps the confirmation dialog open after a failed sign-out', async () => {
   const operations = mount({ status: 'credential-stored', attempt: null })
   cleanup()
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
@@ -161,6 +187,7 @@ it('keeps the sidebar alert for a failed sign-out', async () => {
     openOnboarding={() => {}} openSettings={() => {}} t={key => key in en ? en[key as AccountKey] : key} />)
   fireEvent.click(screen.getByRole('button', { name: en.menu }))
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: en.signOut })) })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.signOut })) })
   expect(screen.getByRole('alert').textContent).toBe(en.failed)
 })
 
@@ -362,15 +389,41 @@ it.each([[], [{ currency: 'CNY' as const, balance: '0.00' }, { currency: 'USD' a
   },
 )
 
-it('opens more account information externally without invoking the embedded Platform bridge', () => {
+it('opens more account information at the configured Platform origin without invoking the embedded bridge', () => {
   const platform: PlatformBridge = { open: vi.fn(), close: vi.fn(), setBounds: vi.fn() }
   mount({ status: 'credential-stored', attempt: null }, en, undefined, platform)
   const link = screen.getByRole('link', { name: en.accountInfo })
-  expect(link.getAttribute('href')).toBe('https://platform.deepseek.com')
+  expect(link.getAttribute('href')).toBe('http://localhost:8081/')
   expect(link.getAttribute('target')).toBe('_blank')
   expect(link.getAttribute('rel')).toBe('noopener noreferrer')
   fireEvent.click(link)
   expect(platform.open).not.toHaveBeenCalled()
+})
+
+it.each([en, zh])('shows a localized toast when the account credential expires', async (copy) => {
+  vi.useFakeTimers()
+  onTestFinished(() => { vi.useRealTimers() })
+  const operations = mount({ status: 'signed-out', attempt: null }, copy)
+  cleanup()
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  let expire: (() => void) | undefined
+  const unsubscribe = vi.fn()
+  const element = <AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    subscribeSessionExpired={(listener) => { expire = listener; return unsubscribe }}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())}
+    useTheme={selector => selector(operations.hooks.theme.getSnapshot())} wide openOnboarding={() => {}} openSettings={() => {}}
+    t={key => key in copy ? copy[key as AccountKey] : key} />
+  const view = render(element)
+  expect(screen.queryByRole('alert')).toBeNull()
+  act(() => { expire!() })
+  expect(screen.getByRole('alert').textContent).toContain(copy.sessionExpired)
+  await expect(`${screen.getByRole('alert').textContent}\n`).toMatchFileSnapshot(`./expected/expired-${copy === en ? 'en' : 'zh'}.txt`)
+  await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  view.unmount()
+  expect(unsubscribe).toHaveBeenCalledOnce()
+  render(element)
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it.each(['initializing', 'waiting-browser', 'exchanging'] as const)('shows %s and lets the user cancel the active attempt', async (phase) => {
@@ -477,4 +530,32 @@ it('reports resize failure, ignores late native failures, and tolerates a remove
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.backToHarness })) })
   await act(async () => { loaded.reject(new Error('late failure')); await loaded.promise.catch(() => {}) })
   expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it.each([en, zh])('shows live model sign-in guidance without replaying it after remount', async (copy) => {
+  vi.useFakeTimers()
+  onTestFinished(() => { vi.useRealTimers() })
+  const operations = operationsOf({ status: 'signed-out', attempt: null })
+  let listener: (() => void) | undefined
+  const unsubscribe = vi.fn(() => { listener = undefined })
+  operations.subscribeModelSignInRequired = (next) => { listener = next; return unsubscribe }
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  const element = <AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())}
+    useTheme={selector => selector(operations.hooks.theme.getSnapshot())} wide openOnboarding={() => {}} openSettings={() => {}}
+    t={key => key in copy ? copy[key as AccountKey] : key} />
+  const view = render(element)
+  expect(screen.queryByRole('alert')).toBeNull()
+  act(() => { listener?.() })
+  expect(screen.getByRole('alert').textContent).toBe(copy.modelSignInRequired)
+  act(() => { listener?.() })
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+  await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  act(() => { listener?.() })
+  expect(screen.getByRole('alert').textContent).toBe(copy.modelSignInRequired)
+  view.unmount()
+  expect(unsubscribe).toHaveBeenCalledOnce()
+  render(element)
+  expect(screen.queryByRole('alert')).toBeNull()
 })

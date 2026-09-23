@@ -8,10 +8,21 @@ import type { PluginEntryId } from '@deepseek-ai/dsh-host-plugin-inventory/types
 /** Reasons a profile control cannot modify its target. */
 export type ReadOnlyReason = 'management-required' | 'unaddressable'
 
+/** A package whose declared DSH peers reject the running DSH version, without an exemption for the exact pair. */
+export interface IncompatiblePlugin {
+  name: string
+  version: string
+  runtimeVersion: string
+  /** Only the DSH peer ranges the running version does not satisfy. */
+  peers: Record<string, string>
+}
+
 /** Localizable management failure and optional external diagnostic. */
 export interface ManagementError {
-  code: ReadOnlyReason | 'unknown-plugin' | 'invalid-spec' | 'ambiguous-install' | 'not-bundle' | 'not-removable' | 'stop-profile' | 'bundle-in-use' | 'stale-approval' | 'operation-error'
+  code: ReadOnlyReason | 'unknown-plugin' | 'invalid-spec' | 'ambiguous-install' | 'not-bundle' | 'not-removable' | 'stop-profile' | 'bundle-in-use' | 'stale-approval' | 'incompatible-version' | 'operation-error'
   diagnostic?: string
+  /** Present with `incompatible-version`: the packages the running DSH version rejects. */
+  incompatible?: IncompatiblePlugin[]
 }
 
 /** One running-profile entry and its persistent control availability. */
@@ -92,6 +103,8 @@ export interface PackageResult {
   kind?: PluginInstallFailureKind
   /** The manager terminated the run after it printed nothing for its silence bound; `exitCode` still reports how it ended. */
   timedOut?: boolean
+  /** Present when a compatibility check refused the run: the packages the running DSH version rejects. */
+  incompatible?: IncompatiblePlugin[]
 }
 
 /** Persisted change and independently observed application outcome. */

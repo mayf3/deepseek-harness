@@ -14,6 +14,8 @@ Embedded Platform documents use a dedicated non-persistent WebContentsView sessi
 
 Desktop Host Platform API requests use the same `x-client-platform` mapping as update-policy requests. The account provider owns [API-only header configuration](../../packages/credentials/deepseek-account-platform/README.md#use-this-package).
 
+A server-expired account credential returns to Welcome when no official API key is configured; an available API key keeps the workspace open. Explicit sign-out follows the same rule. Both Welcome and the workspace display the localized expiry notice.
+
 Desktop microphone access is restricted to audio requests from the primary `dsh-app://app` frame. macOS uses system microphone authorization and a packaged usage description.
 
 Press F12 (Fn+F12 on media-key keyboards), Command+Option+I on macOS, or Ctrl+Shift+I on Windows to toggle DevTools for the focused application page, including in packaged builds. These native shortcuts use hidden application-menu items. Update overlays and packaged embedded browser guests disable DevTools.
@@ -53,6 +55,8 @@ Node prepares the bundled interpreters and Python libraries without a system Pyt
 | Updates | Independent shell and dsh updates would recreate version splits, while unchanged shell blocks should not require a complete transfer. | The Electron shell, matching dsh runtime and pnpm form one signed update unit. Platform update artifacts may reuse unchanged blocks, but runtime version selection never splits from the Desktop release. |
 
 The [thin-wrapper decision](../../.agents/notes/implemented/architecture/2026-09-10-desktop-web-wrapper.md) owns shared Web behavior and Desktop adapters. The [Electron packaging and update decision](../../.agents/notes/implemented/architecture/2026-08-25-electron-desktop-packaging-and-updates.md) owns release identity, signing, and update qualification.
+
+Welcome loads the shared Toast palette and shadow tokens, with system typography for body-mounted notifications.
 
 ## Installation ownership
 
@@ -403,7 +407,7 @@ The downloaded bytes are inert, and the installation call is recorded rather tha
 
 ## Low-level development overrides
 
-An unpackaged Electron process uses `.desktop-build/development/project` under its application directory as its development project. `DSH_DESKTOP_PNPM_ENTRY` and `DSH_DESKTOP_DSH_DIR` select explicit runtime resources. Packaged applications ignore these variables, resolve signed resources from `process.resourcesPath`, and use the managed Desktop profile.
+An unpackaged Electron process uses `.desktop-build/development/project` under its application directory as its development project. `DSH_DESKTOP_PNPM_ENTRY` and `DSH_DESKTOP_DSH_DIR` are optional overrides with application-path defaults. `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` is required for every unpackaged launch: the development launchers (`dev:desktop`, `start:desktop`, and the workspace-update qualification runner) set it to the primary-runtime directory of the target they prepared, and a launch without it fails with the fatal startup dialog. The launcher must set it because the shell cannot derive that directory from `process.arch`: the build target fixes Windows to x64 while the host may be arm64. Packaged applications ignore these variables, resolve signed resources from `process.resourcesPath`, and use the managed Desktop profile.
 
 ## Known limitations
 
@@ -412,8 +416,11 @@ An unpackaged Electron process uses `.desktop-build/development/project` under i
 - Release signing, notarization, update hosting, and previous-version installed-artifact qualification require the production release environment.
 - Dependency lifecycle scripts follow pnpm’s build permissions; Desktop provides no separate approval dialog.
 - The desktop shell shares sessions, settings, credentials, workspaces, and storage under `$DSH_HOME` with CLI dsh, while executable packages, plugin activation, and lockfiles remain separate.
+- Unpackaged startup on an Electron win32-arm64 host now succeeds, but the payload remains x64: the architecture check in `packages/skill/tool-workspace-dependencies/src/index.ts` compares the recorded payload architecture against the host `process.arch`, so the `load_workspace_dependencies` tool can still reject the primary runtime.
 
-Sign in opens the configured platform page in the system browser. The Host owns PKCE and a temporary loopback callback, saves the credential before entering the workspace, and redirects the browser to the platform completion page. Opened and copied authorization links carry the effective Desktop theme as `theme=light` or `theme=dark`; `system` resolves at the time of the action. Cancel withdraws the local attempt even if the platform page later approves it. Settings offers Account sign-out; without a separate API key, sign-out returns to the welcome window. Packaged applications register dsh://open to show the window without passing credentials. On macOS, the development launcher prepares an ad-hoc-signed `Harness Dev.app` under `.desktop-build/development`, declares `dsh` in its Info.plist, and registers it with Launch Services. It loads the current workspace and records the selected development home, browser-data path, and debug settings for cold starts. Starting this bundle makes it the default `dsh://` handler; starting the packaged application registers the packaged handler again. The generated bundle does not contain account tokens and requires the workspace and prepared runtime to remain available.
+Sign in opens the configured platform page in the system browser. The Host owns PKCE and a temporary loopback callback, saves the credential before entering the workspace, and redirects the browser to the platform completion page. Opened and copied authorization links carry the effective Desktop theme as `theme=light` or `theme=dark`; `system` resolves at the time of the action. Cancel withdraws the local attempt even if the platform page later approves it. Settings offers Account sign-out; without a separate API key, sign-out returns to the welcome window. Successful browser sign-in switches Welcome to the workspace without activating the application; the completion page’s dsh://open link brings it to the foreground. Packaged applications register dsh://open to show the window without passing credentials. On macOS, the development launcher prepares an ad-hoc-signed `Harness Dev.app` under `.desktop-build/development`, declares `dsh` in its Info.plist, and registers it with Launch Services. It loads the current workspace and records the selected development home, browser-data path, and debug settings for cold starts. Starting this bundle makes it the default `dsh://` handler; starting the packaged application registers the packaged handler again. The generated bundle does not contain account tokens and requires the workspace and prepared runtime to remain available.
+
+When an expired account returns to Welcome, the main process retains a one-time notification until the renderer requests it over window-owned IPC. Reloading Welcome does not repeat the notice; manual sign-out and cold startup do not create it.
 
 An expired login displays a timeout heading with explicit Sign in again and Add API Key actions. Opening the API-key form dismisses the authorization view; late account-state notifications do not replace an in-progress key entry.
 

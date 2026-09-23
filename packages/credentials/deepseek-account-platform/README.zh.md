@@ -13,6 +13,8 @@ getPlatformSession 仅在已存授权的 issuer 与 platformOrigin 一致时导�
 
 `desktopPlatform` 默认为 `null`。此时所有 profile 的 Host 授权、资料、余额和退登请求都携带 `x-client-platform: web`；Desktop profile 提供 `darwin` 或 `win32`，改为携带 `x-client-platform: desktop-mac` 或 `desktop-win`。该请求头由 provider 拥有，部署配置无法覆盖。内嵌 Platform 的文档与 API 请求仅向配置来源发送相同的平台请求头，同时保留其他部署请求头。
 
+资料和余额接口返回 HTTP 401 或顶层响应码 `40003`（鉴权失效）时清除被拒绝的本地凭据，并发送实时 `deepseek-account/session-expired` 通知。并发响应共用一次清除操作；已失效凭据代次的响应不能清除替换后的凭据。其他 HTTP 错误保留凭据。Host 推理调用方可以通过 `rejectToken` 报告被拒绝的请求 token；仅当它仍匹配当前登录凭据时才执行清除。
+
 ## 概述
 
 通过系统浏览器登录，并将账号凭证保存在现有本地凭证存储中。本地取消会阻止迟到的回调和兑换响应使用户登录。
@@ -25,6 +27,8 @@ getPlatformSession 仅在已存授权的 issuer 与 platformOrigin 一致时导�
 
 <a id="use-this-package"></a>
 ## 使用此包
+
+本地退出登录期间拒绝解析 token。本地授权成功删除后，先发布 `deepseek-account/signed-out`，再返回已退出的状态快照；远程撤销独立执行。
 
 账号资料投影将 `id_profile.picture` 映射为 `avatarUrl`，没有配置头像时返回 null。
 

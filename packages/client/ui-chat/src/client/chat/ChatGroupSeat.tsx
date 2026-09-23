@@ -138,7 +138,8 @@ export const ChatGroupSeat = memo(function ChatGroupSeat({ groupKey, useChatGrou
     const location = node?.location
     return location?.kind === 'turn' || location?.kind === 'step' ? location.turn : undefined
   })
-  const grouped = props.usePresentation(policy => turnLocation?.status !== 'open' || policy.stepGrouping !== 'none')
+  const grouped = props.usePresentation(policy => policy.stepGrouping === 'collapsed'
+    || (policy.stepGrouping === 'history' && turnLocation?.status !== 'open'))
   const reason = turnLocation?.end?.data.reason.kind
   const alwaysOpen = presentation?.turnClosed === false || presentation?.hasInterleavedInput === true
     || reason === 'aborted' || reason === 'error'
