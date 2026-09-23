@@ -86,6 +86,7 @@ Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversati
 <a id="known-limitations-and-deferred-work"></a>
 
 - **没有 mailbox timeline**——投影视图只承载 roster 与任务；不显示 peer 消息。
+- **晚启用插件** — 在已经打开的会话中启用 Agent Teams 后，需要刷新页面才能接收其 Team 投影。
 - **模型可用性** — 仅当共享 store 包含该成员的持久选择或请求时才显示模型。冷缓存中缺少的值会保持缺失，直到正常 Session 加载或实时更新提供它们。
 - **普通 child continuation**——导航后发送的人类消息使用稳定 addressed-subagent 提示词路径，而不是 Team peer mailbox。
 - **没有 lifecycle 或 workspace control**——panel 不能 spawn、rename、delete 或 interrupt teammate，write scope 仍只是提示性 metadata。

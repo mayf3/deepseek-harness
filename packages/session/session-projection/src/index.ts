@@ -31,13 +31,6 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     sessionProjections: SessionProjectionRegistry
   }
-  interface Events {
-    /**
-     * The registered client-visible keys changed; carriers must replace their baselines.
-     * @mode emit
-     */
-    'session-projection/definitions-changed'(): void
-  }
 }
 
 import type { SessionProjectionMap, SessionProjectionStateMap } from './types.ts'
@@ -293,12 +286,8 @@ export class SessionProjectionRegistry extends Service {
         /* v8 ignore next -- the disposer runs once per successful registration, so the entry it counted is still here */
         if (live === undefined) return
         live.refs -= 1
-        if (live.refs === 0) {
-          this.registrations.delete(key)
-          if (live.def.wire !== undefined) this.ctx.emit('session-projection/definitions-changed')
-        }
+        if (live.refs === 0) this.registrations.delete(key)
       }
-      if (existing === undefined && erased.wire !== undefined) this.ctx.emit('session-projection/definitions-changed')
     }.bind(this), 'sessionProjections.register()')
     return () => void dispose()
   }

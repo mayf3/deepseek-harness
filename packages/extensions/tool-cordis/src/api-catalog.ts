@@ -3980,14 +3980,6 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'progress', description: 'the installation\'s request id and phase, with the attempt while installing.' }],
   },
   {
-    name: 'session-projection/definitions-changed',
-    mode: 'emit',
-    signature: '\'session-projection/definitions-changed\'(): void',
-    summary: 'The registered client-visible keys changed; carriers must replace their baselines.',
-    description: 'The registered client-visible keys changed; carriers must replace their baselines.',
-    parameters: [],
-  },
-  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',

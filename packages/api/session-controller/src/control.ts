@@ -19,9 +19,6 @@ export class SessionControlController {
 
   /** @param ctx - Host context carrying live Agent and projection services. */
   constructor(private readonly ctx: Context) {
-    ctx.on('session-projection/definitions-changed', () => {
-      if (this.streams.size > 0) this.broadcast({ type: 'baseline', value: this.baseline() })
-    })
     ctx.sessionProjections.onChanged((session, key, value, seq) => {
       this.broadcast({
         type: 'projection',

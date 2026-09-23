@@ -86,6 +86,7 @@ No direct effect; the Team tools and ordinary conversation submission own any la
 <a id="known-limitations-and-deferred-work"></a>
 
 - **No mailbox timeline** — the projection view carries roster and tasks only; peer messages are not shown.
+- **Late plugin activation** — after enabling Agent Teams in an already-open conversation, reload the page to receive its Team projection.
 - **Model availability** — a model appears only when the shared store has a durable selection or request for that member. Missing cold-cache values stay absent until normal Session loading or a live update supplies them.
 - **Ordinary child continuation** — a human message sent after navigation uses the stable addressed-subagent prompt path, not the Team peer mailbox.
 - **No lifecycle or workspace controls** — the panel cannot spawn, rename, delete, or interrupt teammates, and write scopes remain advisory metadata.

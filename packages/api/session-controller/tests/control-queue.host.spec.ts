@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent, Inbox, InboxState } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -15,15 +14,6 @@ import {
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     'fixture': { kind: 'fixture' } & ContextFormed
-  }
-}
-
-declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionMap {
-    'test/late-capability': number
-  }
-  interface SessionProjectionStateMap {
-    'test/late-capability': number
   }
 }
 
@@ -65,47 +55,6 @@ describe('Session control Inbox projection', () => {
       if (next.value.type === 'projection' && next.value.key === 'inbox') return next.value
     }
   }
-
-  it('updates connected clients when a wire capability is registered, shared, and removed', async () => {
-    const { ctx, control, agent } = await harness()
-    const empty = ctx.sessions.create(SessionId('empty-late-capability'))
-    const abort = new AbortController()
-    const iterator = control.control(abort.signal)[Symbol.asyncIterator]()
-    try {
-      await iterator.next()
-      const unit = {
-        key: 'test/late-capability' as const,
-        stateSchema: z.number(),
-        init: () => 7,
-        apply: (state: number) => state,
-        wire: { viewSchema: z.number(), view: (state: number) => state },
-        stateVersion: 1,
-      }
-      const removeFirst = ctx.sessionProjections.register(unit)
-      const removeSecond = ctx.sessionProjections.register(unit)
-      removeFirst()
-      await expect(iterator.next()).resolves.toMatchObject({ value: {
-        type: 'baseline', value: { projections: {
-          [agent.session.id]: { values: { 'test/late-capability': 7 } },
-          [empty.id]: { asOfSeq: -1, values: { 'test/late-capability': 7 } },
-        } },
-      } })
-      removeSecond()
-      const removed = await iterator.next()
-      if (removed.done || removed.value.type !== 'baseline') throw new Error('missing removal baseline')
-      expect(removed.value.value.projections[agent.session.id]?.values).not.toHaveProperty('test/late-capability')
-      ctx.sessionProjections.register(unit)
-      await expect(iterator.next()).resolves.toMatchObject({ value: {
-        type: 'baseline', value: { projections: {
-          [agent.session.id]: { values: { 'test/late-capability': 7 } },
-          [empty.id]: { asOfSeq: -1, values: { 'test/late-capability': 7 } },
-        } },
-      } })
-    } finally {
-      abort.abort()
-      await iterator.return?.()
-    }
-  })
 
   it('projects both pending lists in baselines and live replacement frames', async () => {
     const { control, inbox } = await harness()

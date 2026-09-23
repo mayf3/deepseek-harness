@@ -57,8 +57,6 @@ const definition = {
 
 `register(definition)` installs the unit; registrants with the same key and `stateVersion` share its cells, while an incompatible version or invalid `stateVersion` throws. Registration is an effect on the calling fiber, so the last unload removes the key and its cached cells. Carriers read a consistent synchronous cut over every client-visible unit with `snapshot(session)` — `{ asOfSeq, values }`, where `asOfSeq` is the seq of the last event every value reflects — and subscribe to per-change notifications with `onChanged(listener)`. `stateOf(session, key)` reads one unit's live read-only host state without computing unrelated views.
 
-The registry emits `session-projection/definitions-changed` after a client-visible key is first registered or its last registration is removed. Carriers replace their baselines so connected clients observe capability changes without waiting for another Session event. Duplicate registrations and host-only units do not trigger this notification.
-
 ```text
 const dispose = ctx.sessionProjections.register(definition)
 const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)

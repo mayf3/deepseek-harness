@@ -280,6 +280,9 @@ describe('web e2e: plugin manager', () => {
         await action.waitFor({ timeout: 20_000 })
         await action.getByRole('button', { name: /Agent Team/iu }).click()
         const teamPanel = teamPage.getByRole('dialog', { name: 'Agent Team', exact: true })
+        await teamPanel.getByText('Team 暂不可用', { exact: true }).waitFor()
+        await teamPage.reload({ waitUntil: 'load' })
+        await action.getByRole('button', { name: /Agent Team/iu }).click()
         await teamPanel.getByText('还没有共享任务').waitFor()
         await teamPanel.getByText('lead', { exact: true }).waitFor()
         const manifest = JSON.parse(await homeFile('profiles', 'scaffold', 'package.json')) as {
