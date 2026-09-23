@@ -29,6 +29,16 @@ export interface AccountSnapshot {
 
 /** Host operations injected into the Cordis-free account component. */
 export interface AccountSectionInjected {
+  /** Subscribe to live credential-expiry notifications.
+   * @param listener - callback after the current credential is removed.
+   * @returns listener cleanup.
+   */
+  subscribeSessionExpired?: (listener: () => void) => () => void
+  /** Subscribe to live model sign-in guidance; the returned function removes the listener.
+   * @param listener - callback for one rejected account-model request.
+   * @returns listener cleanup.
+   */
+  subscribeModelSignInRequired?: (listener: () => void) => () => void
   /** Desktop-only commands; absent in ordinary browsers. */
   platform?: PlatformBridge
 
@@ -50,6 +60,8 @@ export interface AccountSectionInjected {
   start: () => Promise<void>
   /** @param id - attempt to cancel. @returns after cancellation or an already-admitted commit. */
   cancel: (id: SignInAttemptId) => Promise<void>
+  /** @returns whether a running task currently uses the account token. */
+  hasRunningAccountTasks: () => Promise<boolean>
   /** @returns after local account credentials are removed. */
   signOut: () => Promise<void>
 }
@@ -109,7 +121,7 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, refresh
             <span className={css.status} role="status">{status}</span>
           </div>
         </div>
-        {signedIn && <a className={css.accountInfo} href="https://platform.deepseek.com" target="_blank" rel="noopener noreferrer">
+        {signedIn && <a className={css.accountInfo} href={new URL('/', state.links.usageUrl).href} target="_blank" rel="noopener noreferrer">
           {t('accountInfo')}<IconRightUpOutlineRegular size={12} />
         </a>}
       </div>

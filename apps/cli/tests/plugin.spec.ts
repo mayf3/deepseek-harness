@@ -78,7 +78,20 @@ it.each([0, 1])('forwards ordinary pnpm output and exit status %s', async (exitC
   expect(await runPlugin('test', ['list'])).toBe(exitCode)
   expect(stdout).toHaveBeenCalledWith('pnpm output')
   if (exitCode === 0) expect(stderr).not.toHaveBeenCalled()
-  else expect(stderr).toHaveBeenCalledWith('dsh: pnpm failed; diagnostics: /profile/log\n')
+  else expect(stderr).toHaveBeenCalledWith('dsh: plugin command failed; diagnostics: /profile/log\n')
+})
+
+it('names the exact grant command for each package a compatibility check refused', async () => {
+  const { stderr } = fixture()
+  vi.mocked(runPluginCommand).mockResolvedValue({
+    exitCode: 1, output: '', truncated: false, logPath: '/profile/log',
+    incompatible: [{ name: '@example/plugin', version: '1.2.3', runtimeVersion: '0.1.0', peers: { '@deepseek-ai/dsh': '^9.0.0' } }],
+  })
+  expect(await runPlugin('test', ['add', '@example/plugin'])).toBe(1)
+  expect(stderr.mock.calls.map(call => call[0])).toEqual([
+    'dsh: to accept the risk, run: dsh plugin --profile test allow-version @example/plugin@1.2.3 --dsh-version 0.1.0 --accept-risk\n',
+    'dsh: plugin command failed; diagnostics: /profile/log\n',
+  ])
 })
 
 it('forwards all other commands unchanged and retains package diagnostics', async () => {

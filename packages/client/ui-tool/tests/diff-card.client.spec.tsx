@@ -207,6 +207,7 @@ describe('FileMutationRow diff card', () => {
   })
 
   const rowProps = (block: StartedToolCall | ToolResultNode, toolName = 'edit'): FileMutationRowProps => ({
+    useToolCallArgumentsPartial: () => { throw new Error('dispatched calls must not subscribe to preparing arguments') },
     useDisclosure, callId: 'c1', toolName, ...('kind' in block ? { phase: 'result' as const, block: block } : { phase: block.phase, block: block }), openFile: vi.fn(), cwd: '/w/app',
     sessionId: SID, useSessions: bindSnapshotSelector(list()),
     t,

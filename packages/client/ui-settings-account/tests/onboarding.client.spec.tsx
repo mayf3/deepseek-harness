@@ -25,6 +25,7 @@ it('claims onboarding while loading, offers API key fallback, and completes afte
   }
   const props = {
     ...globals,
+    hasRunningAccountTasks: vi.fn(async () => false),
     complete: vi.fn(), useApiKey: vi.fn(), setOnboarding: vi.fn(), showLogin: vi.fn(),
     useAccount: <T,>(select: (snapshot: AccountSnapshot) => T) => select(account),
     useTheme: <T,>(select: (snapshot: ThemeSnapshot) => T) => select(theme),

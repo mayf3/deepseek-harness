@@ -401,8 +401,8 @@ export interface ConfigDumpLayer {
  * layer targeting a group child a plain config replacement introduced, which
  * the single-pass id index never sees) compose identically — then render the
  * result as YAML in the same dialect (`!!js` expressions print verbatim,
- * unevaluated). Admission is a later stage: this dump reports what the profile
- * configures, and a plugin the compatibility policy denies still appears here.
+ * unevaluated). Row admission is a later stage: a plugin row the compatibility
+ * policy denies still appears here, while a denied bundle contributes no layer.
  *
  * Every run of rows from the same file and patch layers is preceded by a `# ==` comment
  * naming the file that contributed the rows and any layers that patched them,

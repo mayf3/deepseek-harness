@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Schema from '@deepseek-ai/schemastery'
+import { Context } from '@deepseek-ai/cordis'
 import { bindSnapshotSelector, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
   CredentialInfo, RemoteResult, SettingsNamespaceView,
@@ -12,7 +13,7 @@ import {
   ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
-import { pathOps } from '../src/client/ProviderEditor.tsx'
+import { ProviderEditor, pathOps } from '../src/client/ProviderEditor.tsx'
 import {
   DeepSeekModelsEditor, formatCapacity, modelDrafts, parseCapacity, validateDeepSeekModels,
 } from '../src/client/DeepSeekModelsEditor.tsx'
@@ -22,7 +23,7 @@ import { deriveKeyRef, ModelsSettingsStore } from '../src/client/store.ts'
 import { createModelsOperations } from '../src/client/operations.ts'
 import type { ModelsOperations } from '../src/client/operations.ts'
 import type { ProviderRow } from '../src/client/store.ts'
-import { en } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 
 afterEach(cleanup)
@@ -219,7 +220,9 @@ const contexts = new WeakMap<object, PageContext>()
 function ctxWith(face: object): PageContext {
   const existing = contexts.get(face)
   if (existing !== undefined) return existing
-  const ctx = { remote: face } as unknown as PageContext
+  const ctx = Object.assign(new Context(), { remote: { ...face,
+    session: { initializeDefaultModel: async () => ({ ok: true, value: undefined }) },
+  } })
   contexts.set(face, ctx)
   return ctx
 }
@@ -1111,6 +1114,16 @@ describe('ModelsSection', () => {
     expect(baseURL.value).toBe('')
   })
 
+  it('saves credentials without changing the default model', async () => {
+    const { ctx, set } = await mountDeepSeekCard()
+    const initialize = vi.spyOn(ctx.remote.session, 'initializeDefaultModel')
+    fireEvent.change(await screen.findByLabelText(en.keyInput), { target: { value: 'test-key' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(screen.queryByText(en.apply)).toBeNull() })
+    expect(set).toHaveBeenCalledOnce()
+    expect(initialize).not.toHaveBeenCalled()
+  })
+
   it('rejects an invalid draft before writing', async () => {
     const { mutate } = await mountDeepSeekCard()
     fireEvent.click(screen.getByText(en.customized))
@@ -1868,4 +1881,35 @@ describe('apiKeyFailure', () => {
     expect(apiKeyFailure('"')).toBeUndefined()
     expect(apiKeyFailure('"a')).toBeUndefined()
   })
+})
+
+it.each([en, zh])('edits the account model catalog without credential or endpoint fields', async (copy) => {
+  const scripted = scriptedFace({})
+  const ops = operationsWith(scripted.face)
+  const describe = vi.spyOn(ops, 'describeCredential')
+  render(<ProviderEditor provider="deepseek-account" displayName={copy.deepSeekAccount}
+    namespace={wireNamespaces()[0]!} settingsPath={[]} schema={settingsSchema}
+    operations={ops} t={key => copy[key]} readOnly={false} onClose={() => {}} />)
+  expect(screen.queryByLabelText(copy.keyInput)).toBeNull()
+  expect(screen.queryByLabelText(copy.baseUrl)).toBeNull()
+  expect(describe).not.toHaveBeenCalled()
+  expect(screen.getByDisplayValue('deepseek-v4-flash')).toBeTruthy()
+  await expect(`${document.body.textContent}\n`)
+    .toMatchFileSnapshot(`./expected/deepseek-account-${copy === en ? 'en' : 'zh'}.txt`)
+})
+
+it('renders the localized account row and supports catalogs without capacity defaults', async () => {
+  const scripted = scriptedFace({})
+  const { controller, view } = await mountFace(scripted)
+  const row = controller.store.getSnapshot().rows[0]!
+  await act(async () => { controller.store.update((state) => {
+    state.rows = [{ ...row, accountAvailable: true, entry: { ...row.entry, provider: 'deepseek-account' } }]
+  }) })
+  expect(screen.getByText(en.deepSeekAccount)).toBeTruthy()
+  view.unmount()
+  const namespace = wireNamespaces()[0]!
+  render(<ProviderEditor provider="deepseek-account" displayName={en.deepSeekAccount}
+    namespace={{ ...namespace, value: { models: [] }, base: { models: [] } }} settingsPath={[]} schema={settingsSchema}
+    operations={operationsWith(scripted.face)} t={t} readOnly={false} onClose={() => {}} />)
+  expect(screen.queryByLabelText(en.keyInput)).toBeNull()
 })
