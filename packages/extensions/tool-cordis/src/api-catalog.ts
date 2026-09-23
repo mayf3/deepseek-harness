@@ -160,6 +160,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Current metadata, including failure when activation failed.',
       },
       {
+        signature: '@Remote(\'read\') readDocument(agentPreset: string): Promise<AgentPresetDocument>',
+        description: 'Read one declaration\'s child plugin list as YAML, for viewing only.',
+        parameters: [{ name: 'agentPreset', description: 'Preset identity.' }],
+        returns: 'The declared composition beside its published metadata.',
+      },
+      {
         signature: 'async mount(ctx: Context, id?: string): Promise<AgentPreset>',
         description: 'Bind an unpublished Agent to the current preset revision.',
         parameters: [{ name: 'ctx', description: 'Agent context from its setup callback.' }, { name: 'id', description: 'Requested preset, or the default.' }],
@@ -4274,6 +4280,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentPresetCompositionRow',
     declaration: 'export interface AgentPresetCompositionRow {\n    readonly entryId: string | null;\n    readonly moduleName: string;\n    readonly enabled: CompositionRowEnablement;\n    readonly condition?: string;\n    readonly fiberState?: FiberState;\n}',
+  },
+  {
+    name: 'AgentPresetDocument',
+    declaration: 'export interface AgentPresetDocument {\n    readonly agentPreset: string;\n    readonly content: string;\n    readonly name?: string;\n    readonly description?: string;\n}',
   },
   {
     name: 'AgentPresetRoster',
