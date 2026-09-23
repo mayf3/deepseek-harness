@@ -1,3 +1,4 @@
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type {
@@ -51,6 +52,8 @@ const workspaceState = (
 
 async function bench() {
   const ctx = new Context()
+  ctx.provide('shortcuts', { register: () => () => {}, catalog: createSnapshotStore([]) })
+  ctx.provide('uiConversation', {})
   await ctx.plugin(SlotRegistry).await()
   const create = vi.fn(async (input: { name: string } | { path: string }) => ({
     workspaceId: 'ws-new' as never,
@@ -181,7 +184,7 @@ describe('ui-workspace apply', () => {
 
   it('declares the services it drives', () => {
     expect(inject).toEqual([
-      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout',
+      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout', 'shortcuts',
     ])
   })
 
@@ -227,7 +230,7 @@ describe('ui-workspace apply', () => {
     // The menu list binds the row's open state into every entry's hook; the
     // hover-button list carries no common face.
     expect(b.slots.spec(MENU_ITEM)).toEqual({
-      kind: 'list', scope: 'root', inject: { hooks: { menuOpenState: menuOpenStateFactory } },
+      kind: 'list', scope: 'root', inject: { hooks: { menuOpenState: menuOpenStateFactory, shortcuts: b.ctx.shortcuts.catalog } },
     })
     expect(b.slots.spec(ROW_ACTION)).toEqual({ kind: 'list', scope: 'root' })
 
@@ -521,9 +524,9 @@ describe('ui-workspace apply', () => {
     const startSession = vi.spyOn(b.ctx.uiWorkspace, 'startSession').mockImplementation(() => undefined)
 
     const browser = faceOf(b.slots.entries('sidebar.workspaces')[0]!) as WorkspaceBrowserInjected
-    // Both arms delegate to the shared Session navigation action.
+    // The browser share delegates to the shared Session navigation action.
     browser.startSession('ws' as never)
-    expect(startSession).toHaveBeenCalledWith('ws')
+    expect(startSession).toHaveBeenLastCalledWith('ws')
     browser.startSession()
     expect(startSession).toHaveBeenLastCalledWith(undefined)
     browser.open('session' as never)

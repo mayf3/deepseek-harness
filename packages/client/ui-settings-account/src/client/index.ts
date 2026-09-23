@@ -12,6 +12,8 @@ import { contactUrl } from './contact-url.ts'
 import { AccountOnboarding } from './AccountOnboarding.tsx'
 import { AccountMenu } from './AccountMenu.tsx'
 import { AccountSection, type AccountSnapshot, type AccountSectionInjected } from './AccountSection.tsx'
+import { createBonusNoticeController } from './bonus-notices.ts'
+import { accountClientMetadata } from './client-metadata.ts'
 import { en, zh, type AccountKey } from './locales.ts'
 export type { AccountSectionInjected, AccountSectionProps } from './AccountSection.tsx'
 export type { AccountMenuProps } from './AccountMenu.tsx'
@@ -21,6 +23,7 @@ export type { AccountKey } from './locales.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'settings.account': AccountKey }
 }
+
 /** Services required by account settings. */
 export const inject = ['slots', 'locale', 'remote', 'remote.account', 'remote.session', 'theme']
 /** Register account UI only in the Desktop renderer. @param ctx - client plugin context. */
@@ -33,6 +36,32 @@ export function apply(ctx: Context): void {
   let snapshot: AccountSnapshot = { view: undefined, details: undefined, failed: false, loginVisible: false }
   const listeners = new Set<() => void>()
   const publish = (value: AccountSnapshot) => { snapshot = value; for (const listener of listeners) listener() }
+  /** @returns the client identity for one account call, read at call time so it carries the language and zone in effect then. */
+  const client = () => accountClientMetadata(ctx.locale.getSnapshot().active, process.env.DSH_CLIENT_VERSION)
+  // The browser half of the notice lifecycle: reads when the account becomes
+  // active and on an explicit refresh, and acknowledges an order only after its
+  // card reports a presented frame. The Host owns which bonus is unnotified and
+  // the server owns the copy.
+  const notices = createBonusNoticeController({
+    ackRetryDelayMs: config.bonusAckRetryDelayMs,
+    ackRetryMaxDelayMs: config.bonusAckRetryMaxDelayMs,
+    read: async () => {
+      const result = await ctx.remote.account.getUnnotifiedBonuses(client())
+      if (!result.ok) throw new Error('account bonus read failed')
+      return result.value
+    },
+    acknowledge: async (accountId, orderId) => {
+      const result = await ctx.remote.account.ackBonusNotified(accountId, orderId, client())
+      if (!result.ok) throw new Error('account bonus acknowledgement failed')
+      return result.value
+    },
+    publish: (notice) => {
+      const { notice: _replaced, ...withoutNotice } = snapshot
+      // exactOptionalPropertyTypes distinguishes an absent notice from an undefined one.
+      publish(notice === null ? withoutNotice : { ...withoutNotice, notice })
+    },
+  })
+  ctx.effect(() => () => { notices.end() }, 'account: bonus notice lifetime')
   let revision = 0
   let refreshing: Promise<void> | undefined
   const refresh = (): Promise<void> => {
@@ -48,12 +77,12 @@ export function apply(ctx: Context): void {
     }
     const request = Promise.all([
       read('profile', async () => {
-        const result = await ctx.remote.account.getProfile()
+        const result = await ctx.remote.account.getProfile(client())
         if (!result.ok) throw new Error('account profile failed')
         return result.value
       }),
       read('balance', async () => {
-        const result = await ctx.remote.account.getBalance()
+        const result = await ctx.remote.account.getBalance(client())
         if (!result.ok) throw new Error('account balance failed')
         return result.value
       }),
@@ -74,8 +103,12 @@ export function apply(ctx: Context): void {
       refreshing = undefined
       const initialize = frame.value.status === 'credential-stored' && frame.value.attempt?.phase === 'succeeded'
         && snapshot.view?.attempt?.phase !== 'succeeded'
-      publish({ ...snapshot, view: frame.value, details: undefined, failed: false })
+      const { notice, ...previous } = snapshot
+      publish({ ...previous, view: frame.value, details: undefined, failed: false,
+        ...(frame.value.status === 'credential-stored' && notice ? { notice } : {}) })
       frame.accept()
+      if (frame.value.status === 'credential-stored') notices.begin()
+      else notices.end()
       if (initialize) void (async () => {
         try {
           const initialized = await ctx.remote.session.initializeDefaultModel()
@@ -92,7 +125,10 @@ export function apply(ctx: Context): void {
     subscribeSessionExpired: listener => ctx.remote.$on('deepseek-account/session-expired', listener),
     subscribeModelSignInRequired: listener => ctx.remote.$on('deepseek-account/model-sign-in-required', listener),
     ...nativePlatform === undefined ? {} : { platform: nativePlatform },
-    refresh,
+    // One account refresh: the recharge/bonus wallet and the unnotified-bonus read,
+    // whichever surface asks — a Settings entry, or returning from top-up. Both
+    // reads are independent, and a concurrent refresh shares the in-flight request.
+    async refreshAccount() { await Promise.all([refresh(), notices.refresh()]) },
     contactUs() {
       const url = contactUrl(config, {
         version: process.env.DSH_CLIENT_VERSION,
@@ -103,6 +139,8 @@ export function apply(ctx: Context): void {
     },
     showLogin(visible) { publish({ ...snapshot, loginVisible: visible }) },
     setOnboarding(active) { publish({ ...snapshot, onboarding: active }) },
+    bonusNoticeShown(orderId) { notices.shown(orderId) },
+    bonusNoticeDismissed(orderId) { notices.dismiss(orderId) },
     hooks: {
       account: {
         getSnapshot: () => snapshot,
@@ -119,7 +157,7 @@ export function apply(ctx: Context): void {
         __DSH_TRANSPORT__?: { streamBaseUrl?: string }
       }).__DSH_TRANSPORT__
       try {
-        const result = await ctx.remote.account.startSignIn(ctx.locale.getSnapshot().active,
+        const result = await ctx.remote.account.startSignIn(client(),
           transport?.streamBaseUrl !== undefined ? new URL(transport.streamBaseUrl).origin : window.location.origin,
           'desktop')
         if (!result.ok) throw new Error('account start failed')
@@ -134,7 +172,11 @@ export function apply(ctx: Context): void {
       if (!result.ok) throw new Error('account task query failed')
       return result.value
     },
-    async signOut() { const result = await ctx.remote.account.signOut(); if (!result.ok) throw new Error('account sign-out failed') },
+    async signOut() {
+      const result = await ctx.remote.account.signOut(client())
+      if (result.ok) return
+      throw result.error
+    },
   }
   ctx.slots.inject('settings.models.sign-in', () => ctx.slots.register({
     name: 'settings.models.sign-in', locale: 'settings.account', inject: () => operations,

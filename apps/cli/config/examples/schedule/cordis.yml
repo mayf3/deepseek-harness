@@ -1,5 +1,4 @@
-# Opt-in Schedule patch over the shipped Web composition. The owner observes
-# only roots published after this overlay loads.
+# Opt-in host Schedule service and its Session task catalog.
 
 - insert:
     - id: time-context
