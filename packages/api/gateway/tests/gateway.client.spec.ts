@@ -2845,7 +2845,7 @@ describe('Remote stream client carrier lifecycle', () => {
         [Symbol.asyncIterator]: () => ({
           next: () => {
             if (reads++ < 256) return Promise.resolve(new ReadResult())
-            blocked.resolve()
+            blocked.resolve(undefined)
             return lastRead.promise
           },
           return: async () => {
@@ -2875,7 +2875,7 @@ describe('Remote stream client carrier lifecycle', () => {
       } finally {
         await client.close()
         await first.catch(() => undefined)
-        await iterator.return?.()
+        await iterator.return?.(undefined)
       }
     })
   })
