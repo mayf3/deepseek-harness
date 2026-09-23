@@ -28,9 +28,9 @@ function source(initial: AssistantChatData | undefined) {
   const store = createSnapshotStore<AssistantChatData | undefined>(initial)
   const listeners = new Set<() => void>()
   return {
-    set: store.set,
+    set: (value: AssistantChatData | undefined) => { store.set(value) },
     listeners,
-    getSnapshot: store.getSnapshot,
+    getSnapshot: () => store.getSnapshot(),
     subscribe: (listener: () => void) => {
       listeners.add(listener)
       const dispose = store.subscribe(listener)

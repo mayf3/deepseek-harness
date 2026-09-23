@@ -25,9 +25,9 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
   }, [ticking])
   if (turn?.start === undefined && turn?.status !== 'closed') return null
   const canCollapse = turnProcess.foldable && turnProcess.hasContent && !turnProcessAlwaysOpen(node)
-  const running = turn?.status === 'open'
-  const reason = turn?.end?.data.reason.kind
-  const elapsedMs = turn?.start === undefined ? undefined
+  const running = turn.status === 'open'
+  const reason = turn.end?.data.reason.kind
+  const elapsedMs = turn.start === undefined ? undefined
     : Math.max(1000, (turn.end?.time ?? now) - turn.start.time)
   const duration = elapsedMs === undefined ? undefined
     : running ? formatLiveRunDuration(elapsedMs, t) : formatRunDuration(elapsedMs, t)
