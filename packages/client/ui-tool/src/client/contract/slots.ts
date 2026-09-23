@@ -50,10 +50,10 @@ export interface ToolImagesOwnerProps {
 }
 
 /** Standard owner currency supplied to every atomic Tool view. */
-interface ToolCallCommonProps {
-  /** Stable injected Hook; each invocation owns its open state and subscribes to enclosing-Turn resets. */
+export interface ToolCallCommonProps {
+  /** Stable Hook; each invocation owns its open state and subscribes to enclosing-Turn resets. */
   useDisclosure: UseDisclosure
-  /** Tool call identity, stable across running and settled forms. */
+  /** Call identity, stable across all stages. */
   callId: string
   /** Wire Tool name and keyed dispatch value. */
   toolName: string
@@ -61,18 +61,9 @@ interface ToolCallCommonProps {
   cwd?: string | undefined
   /** Host account home; POSIX home-rooted summaries display as `~`. */
   home?: string | undefined
-  /**
-   * Open a Tool argument path. A view that knows which line the call was about
-   * passes it, and the opened surface lands there.
-   */
+  /** Open an argument path at its optional requested line. */
   openFile: (path: string, options?: OpenFileOptions) => void
-  /**
-   * Session-authorized image loader for the `tool.call.images` slot, supplied
-   * by the chat node that owns this call. A composed chat node always
-   * supplies it (`ChatNodeOwnerProps.loadImage` is required), so the tool
-   * layer never imports an attachment implementation nor handles URL
-   * authorization.
-   */
+  /** Chat-supplied, session-authorized loader for durable images; Tool views do not manage attachment URLs. */
   loadImage: MessageImageLoader
   /** Inspect this call in the trajectory view when available. */
   inspect?: (() => void) | undefined

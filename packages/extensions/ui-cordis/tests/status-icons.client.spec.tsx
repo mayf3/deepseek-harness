@@ -37,7 +37,7 @@ describe('Cordis tool failure icons', () => {
       ...callbacks,
       phase: 'preparing', toolName, callId: 'call', t,
       block: { phase: 'preparing', name: toolName, callId: 'call', turn: 1, step: 1, time: 1, subCalls: [] },
-      useInventory: unused, useLoaded: unused, useRunCards: unused, useActiveRuns: unused,
+      useInventory: unused, useLoaded: unused, useRunCards: unused, useActiveRuns: unused, useDisclosure: unused,
     } as Parameters<typeof CordisDefineRow>[0] & Parameters<typeof CordisRunRow>[0]
     const view = render(<Component {...props} />)
     expect(view.container.querySelector('[data-state="preparing"] svg')).not.toBeNull()

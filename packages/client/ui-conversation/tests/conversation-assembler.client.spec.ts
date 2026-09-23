@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type {
   SessionEventLike, SessionEventLikeEntry, SessionLiveEventEntry,
 } from '@deepseek-ai/dsh-api-session-controller/client'
-import { LlmAttemptId } from '@deepseek-ai/dsh-llm/brand'
+import { LlmAttemptId, ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
@@ -917,6 +917,45 @@ describe('ConversationNodeAssembler', () => {
 
     expect(consumerStart).toHaveBeenCalledTimes(2)
     expect([...testSnapshot(assembler)?.nodes.values() ?? []][0]?.data).toBe(-1)
+  })
+
+  it('reorders predecessor reads when durable calls replace transient starts after dispatch', () => {
+    const source: ConversationNodeDefinition<number> = {
+      kind: 'reindexed-source',
+      match: (event) => {
+        if (event.type === 'assistant/live-chunk' && event.data.chunk.type === 'tool-call-delta') {
+          return { id: String(event.data.chunk.id), role: 'start' }
+        }
+        return event.type === 'tool/call' ? { id: String(event.data.callId), role: 'start' } : null
+      },
+      start: (_context, match) => match.event.seq,
+      update: context => context.state,
+      target: 'test', buildViewNode: () => null,
+    }
+    const consumer: ConversationNodeDefinition<number> = {
+      kind: 'consumer',
+      match: event => event.type === 'step/end' ? { id: String(event.seq), role: 'start' } : null,
+      start: (_context, _match, reader) => reader.previous<number>('reindexed-source')?.state ?? -1,
+      update: context => context.state,
+      target: 'test', buildViewNode: context => node(context, context.state),
+    }
+    const assembler = new ConversationNodeAssembler(
+      new TestEventDefinitions([source, consumer]), new TestViewDefinitions([testView()]),
+    )
+    assembler.replaceWindow([], false)
+    for (const [index, id] of ['a', 'b'].entries()) {
+      assembler.append(transientChunk(1.1 + index / 10, 1, 1, {
+        type: 'tool-call-delta', index, id: ToolCallId(id), name: 'write', argumentsDelta: '',
+      }))
+    }
+    assembler.append(input(at(SessionSeq(3), 'tool/call', { turn: 1, step: 1, callId: ToolCallId('b'), name: 'write', arguments: '{}' })))
+    assembler.append(input(at(SessionSeq(4), 'tool/call', { turn: 1, step: 1, callId: ToolCallId('a'), name: 'write', arguments: '{}' })))
+    assembler.append(input(at(SessionSeq(5), 'step/end', { turn: 1, step: 1 })))
+    assembler.flush()
+    expect([...testSnapshot(assembler)!.nodes.values()][0]?.data).toBeCloseTo(1.2)
+    assembler.settleAssistant(LlmAttemptId('test-attempt'))
+    assembler.flush()
+    expect([...testSnapshot(assembler)!.nodes.values()][0]?.data).toBe(4)
   })
 
   it('replays direct dependents when an append revises their predecessor Context', () => {

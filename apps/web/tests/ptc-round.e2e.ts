@@ -92,7 +92,7 @@ describe('web e2e: PTC mode round renders nested sub-calls', () => {
       }
     }
     const [sessionId] = await Promise.all([settled, observePreparation()])
-    expect(await page.locator('[data-state="preparing"]').count()).toBe(0)
+    await expect.poll(() => page.locator('[data-state="preparing"]').count(), { timeout: 15_000 }).toBe(0)
     if (MODE === 'record') {
       await recordFixture(scaffold, sessionId, FIXTURE)
     }
@@ -150,7 +150,7 @@ describe('web e2e: PTC mode round renders nested sub-calls', () => {
         await page.reload({ waitUntil: 'load' })
         acknowledgeReloadConnectionLoss(tripwire, warningStart)
         await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
-        expect(await page.locator('[data-state="preparing"]').count()).toBe(0)
+        await expect.poll(() => page.locator('[data-state="preparing"]').count(), { timeout: 15_000 }).toBe(0)
       }
       const nest = page.locator('[data-subcalls]').first()
       const frame = page.locator('[style*="grid-template-columns"]').first()

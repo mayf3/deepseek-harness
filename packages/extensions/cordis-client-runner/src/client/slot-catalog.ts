@@ -3832,10 +3832,17 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
+      '/** Standard owner currency supplied to every atomic Tool view. */\nexport interface ToolCallCommonProps {\n  /** Stable Hook; each invocation owns its open state and subscribes to enclosing-Turn resets. */\n  useDisclosure: UseDisclosure\n  /** Call identity, stable across all stages. */\n  callId: string\n  /** Wire Tool name and keyed dispatch value. */\n  toolName: string\n  /** Session workspace root for relative summaries. */\n  cwd?: string | undefined\n  /** Host account home; POSIX home-rooted summaries display as `~`. */\n  home?: string | undefined\n  /** Open an argument path at its optional requested line. */\n  openFile: (path: string, options?: OpenFileOptions) => void\n  /** Chat-supplied, session-authorized loader for durable images; Tool views do not manage attachment URLs. */\n  loadImage: MessageImageLoader\n  /** Inspect this call in the trajectory view when available. */\n  inspect?: (() => void) | undefined\n}',
       '/** Common owner callbacks and the data admitted at the current tool stage. */\nexport type ToolCallOwnerProps = ToolCallCommonProps & ToolCallPhaseProps',
+      '/** Stage-specific tool data; only start/result expose the dispatched call material. */\nexport type ToolCallPhaseProps =\n  | { readonly phase: \'preparing\'; readonly block: PreparingToolCall }\n  | { readonly phase: \'start\'; readonly block: StartedToolCall }\n  | { readonly phase: \'result\'; readonly block: ToolResultNode }',
     ],
     ownerPropsReferences: [
-      'ToolCallPhaseProps',
+      'MessageImageLoader',
+      'OpenFileOptions',
+      'PreparingToolCall',
+      'StartedToolCall',
+      'ToolResultNode',
+      'UseDisclosure',
     ],
     standardProps: [
       'useResource: UseResource',

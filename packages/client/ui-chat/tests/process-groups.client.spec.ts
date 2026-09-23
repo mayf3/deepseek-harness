@@ -67,6 +67,24 @@ function harness(nodes: ChatNode[], currentTimeline = timeline) {
 }
 
 describe('Definition-owned Chat process groups', () => {
+  it('clears preparation from a closed group while retaining its recorded activity', () => {
+    const preparing: ChatNode<'tool-call'> = {
+      ...tool('call', 2, 'write'),
+      data: { root: { phase: 'preparing', callId: 'call', name: 'write', turn: 1, step: 1, time: 2, subCalls: [] } },
+    }
+    const h = harness([preparing])
+    const group = h.store.entries[0]!
+    if (group.kind !== 'group') throw new Error('expected group')
+    const source = h.store.groupSource(group.key)
+    expect(source.getSnapshot()?.data.summary.preparing).toBe(true)
+    h.builder.apply({ upserts: [separator(3, true)], timeline })
+    h.commit()
+    expect(source.getSnapshot()?.data).toEqual({
+      turn: 1, closed: true,
+      summary: { counts: [{ kind: 'write', count: 1 }], running: undefined, runningDetail: '' },
+    })
+  })
+
   it.each([
     ['read', 'read'], ['read_image', 'readImage'], ['write', 'write'], ['edit', 'edit'], ['apply_patch', 'edit'],
     ['todo_write', 'plan'], ['create_goal', 'plan'], ['update_goal', 'plan'], ['get_goal', 'plan'],

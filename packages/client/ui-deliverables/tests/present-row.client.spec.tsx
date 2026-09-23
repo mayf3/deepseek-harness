@@ -5,7 +5,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { StartedToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { PresentRow } from '../src/client/PresentRow.tsx'
-import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -34,12 +33,14 @@ it('discloses the saved result and offers call inspection', () => {
 })
 
 it('shows a non-expandable preparation before delivery arguments exist', () => {
+  const useDisclosure = vi.fn(() => { throw new Error('preparation must not subscribe to disclosure resets') })
   const view = render(<PresentRow {...props({
     phase: 'preparing', callId: 'p', name: 'present', turn: 1, step: 1, time: 1, subCalls: [],
   })} useDisclosure={useDisclosure} />)
   expect(view.container.querySelector('[data-state="preparing"] svg')).not.toBeNull()
   expect(view.queryByRole('button')).toBeNull()
   expect(view.container.querySelector('pre')).toBeNull()
+  expect(useDisclosure).not.toHaveBeenCalled()
 })
 
 it.each([

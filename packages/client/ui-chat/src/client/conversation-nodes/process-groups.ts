@@ -67,7 +67,7 @@ class ProcessGroup {
     const unchanged = nodes.length === this.nodes.length && nodes.every((node, index) => node === this.nodes[index])
     const previous = this.snapshot.data
     const activity = unchanged && previous.closed === closed ? previous.summary : processActivity(nodes)
-    const summary = closed ? { ...activity, running: undefined, runningDetail: '' } : activity
+    const summary = closed ? { counts: activity.counts, running: undefined, runningDetail: '' } : activity
     this.nodes = nodes
     if (previous.closed !== closed || !sameSummary(previous.summary, summary)) {
       this.snapshot = {

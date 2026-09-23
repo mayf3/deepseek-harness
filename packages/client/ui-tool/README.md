@@ -43,7 +43,7 @@ ctx.slots.inject('tool.call.toolview', () =>
   }, BusinessToolRow))
 ```
 
-The owner payload is `ToolCallOwnerProps`: `callId`, `toolName`, the frozen `block`, optional `cwd` and `home`, the session-authorized `loadImage` loader (for a view whose result carries durable images), and plain `openFile`/`inspect` callbacks. A PTC dispatch block retains its event's `parentCallId`; a root Session call has no such field, so descendants route through the same keyed dispatch — a registered view such as `read_image` renders its card there, and unregistered descendants keep the generic flattened form. Path summaries relativize to the Session cwd first, then replace a leftover POSIX Host home with `~`; `filePath` and Host open keep the authored filesystem path. The registration receives the normal Session slot runtime share but no React node or Runtime service.
+The owner payload is `ToolCallOwnerProps`: `callId`, `toolName`, the `phase` discriminant and its frozen stage-specific `block`, optional `cwd` and `home`, the session-authorized `loadImage` loader (for a view whose result carries durable images), and plain `openFile`/`inspect` callbacks. A PTC dispatch block retains its event's `parentCallId`; a root Session call has no such field, so descendants route through the same keyed dispatch — a registered view such as `read_image` renders its card there, and unregistered descendants keep the generic flattened form. Path summaries relativize to the Session cwd first, then replace a leftover POSIX Host home with `~`; `filePath` and Host open keep the authored filesystem path. The registration receives the normal Session slot runtime share but no React node or Runtime service.
 
 ### Built-in views
 

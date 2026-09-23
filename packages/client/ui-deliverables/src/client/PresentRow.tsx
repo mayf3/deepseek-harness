@@ -8,6 +8,9 @@ import css from './PresentRow.module.css'
 
 type PresentRowProps = ToolCallViewProps & PropsLocale<typeof NS>
 
+/* v8 ignore next -- Non-expandable rows never invoke DisclosureRow's required toggle callback. */
+const noop = (): void => undefined
+
 /** Raw arguments can be partial while a call is streaming. */
 function fileNames(raw: string): string {
   let args: unknown
@@ -29,11 +32,10 @@ export function PresentRow(props: PresentRowProps) {
   return props.phase === 'preparing' ? <PreparingPresentRow {...props} /> : <StartedPresentRow {...props} />
 }
 
-function PreparingPresentRow({ t, useDisclosure }: Extract<PresentRowProps, { phase: 'preparing' }>) {
-  const { toggle } = useDisclosure()
+function PreparingPresentRow({ t }: Extract<PresentRowProps, { phase: 'preparing' }>) {
   return <div data-tool="present" data-state="preparing" aria-label={t('row.preparing')}>
     <DisclosureRow title={t('row.title')} icon={<IconDeliverDocRegular size={14} />}
-      open={false} expandable={false} onToggle={toggle} running />
+      open={false} expandable={false} onToggle={noop} running />
   </div>
 }
 

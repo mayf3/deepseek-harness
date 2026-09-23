@@ -262,6 +262,8 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
 
   /**
    * Retire one Assistant attempt's transient matches and apply its optional durable settlement.
+   * Empty Contexts retain their keys and published nodes until the loaded window is rebuilt;
+   * Definitions may hide those nodes when no start remains instead of withdrawing their identities.
    * @param attemptId - process-local attempt whose transient presentation ended.
    * @param entry - durable message or attempt event committed for the stream.
    * @returns highest requested publication cadence.

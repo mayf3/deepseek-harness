@@ -162,6 +162,22 @@ describe('Tool preparation and durable replay', () => {
     expect(paged.phases()).toEqual([[first, 'start']])
   })
 
+  it('retains a dispatched call when its earlier transient start is withdrawn', () => {
+    const h = harness()
+    h.assembler.append(delta(2.1))
+    const key = h.tools()[0]!.key
+    h.assembler.append(call(6))
+    expect(h.tools()[0]).toMatchObject({ key, anchorSeq: 2.1, data: { root: { phase: 'start', argsRaw: args } } })
+    const message = settlement()
+    h.assembler.settleAssistant(attemptId, message)
+    expect(h.tools()).toHaveLength(1)
+    expect(h.tools()[0]).toMatchObject({ key, anchorSeq: 6, data: { root: { phase: 'start', argsRaw: args } } })
+    h.assembler.append(result(7))
+    expect(h.phases()).toEqual([[first, 'result']])
+    const replay = harness([...opening, message, call(6), result(7)])
+    expect(h.material()).toEqual(replay.material())
+  })
+
   it('abandons one attempt and lets a subsequent live attempt create its own preparation', () => {
     const h = harness()
     h.assembler.append(delta(2.1))
