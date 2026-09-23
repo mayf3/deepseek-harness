@@ -811,7 +811,7 @@ describe('DockSurface', () => {
     // Vitest stubs CSS Modules; bind the real stylesheet's menu selector to its generated class.
     const style = document.createElement('style')
     style.textContent = readFileSync(resolve(import.meta.dirname, '../src/components/dockkit.module.css'), 'utf8')
-      .replaceAll(/\.menu(?=[:\s{])/g, `.${menu.className}`)
+      .replaceAll(/\.menu(?=[:\s{])/g, `.${[...menu.classList].join('.')}`)
     document.head.append(style)
     onTestFinished(() => { style.remove() })
     expect(menu.querySelectorAll('[role^="menuitem"]')).toHaveLength(0)

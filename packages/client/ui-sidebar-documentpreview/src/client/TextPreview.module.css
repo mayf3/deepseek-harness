@@ -165,7 +165,7 @@
   font-family: inherit;
   background: transparent;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 16px;
+  border-radius: var(--dsw-radius-md);
   cursor: pointer;
 }
 
@@ -212,7 +212,7 @@
   white-space: normal;
   background: var(--dsw-alias-bg-layer-2);
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   cursor: pointer;
 }
 
@@ -231,7 +231,7 @@
   white-space: normal;
   background: var(--dsw-alias-bg-layer-2);
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   cursor: pointer;
 }
 
@@ -260,7 +260,7 @@
   line-height: 1;
   background: transparent;
   border: none;
-  border-radius: 28px;
+  border-radius: var(--dsw-radius-sm);
   cursor: pointer;
 }
 

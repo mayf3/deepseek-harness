@@ -9,6 +9,7 @@ import { isBehindModal } from './useModalLayer.ts'
 import { observeComposition } from './keyboard-composition.ts'
 import { focusWithoutRing } from './focus.ts'
 import { ShortcutKeys } from './ShortcutKeys.tsx'
+import { MenuSurface } from './MenuSurface.tsx'
 import css from './Menu.module.css'
 
 /** Selectable row (optionally with a nested submenu). */
@@ -476,7 +477,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
           {selected && selection === 'check' && <IconCheckOutlineRegular className={css.check} />}
         </button>
         {subOpen && entry.submenu !== undefined && (
-          <div className={clsx(css.submenu, compact && css.compactList)} role="menu">
+          <MenuSurface compact={compact} className={clsx(css.submenu, compact && css.compactList)} role="menu">
             {entry.submenu.map(sub => (
               <button
                 key={sub.id}
@@ -492,7 +493,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
                 {sub.shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys keys={sub.shortcut.keys} className={css.shortcutKeys} /></span>}
               </button>
             ))}
-          </div>
+          </MenuSurface>
         )}
       </div>
     )
@@ -514,7 +515,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
   // already at the final position (with getAnchorRect returning null the
   // list simply stays hidden).
   const list = open && (
-    <div
+    <MenuSurface compact={compact}
       ref={listRef}
       className={clsx(css.list, listClassName, dense && css.denseList, compact && css.compactList, scrollable && css.scrollable, portal && css.portal, side === 'top' && !portal && css.sideTop, align === 'end' && !portal && css.alignEnd)}
       style={portal ? fixedPos ?? MEASURE_STYLE : undefined}
@@ -542,7 +543,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
           {footer.map(renderEntry)}
         </div>
       )}
-    </div>
+    </MenuSurface>
   )
 
   // Pointer-leave dismissal watches the WRAPPER, not the list: React's

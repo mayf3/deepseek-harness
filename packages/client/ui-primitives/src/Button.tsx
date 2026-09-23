@@ -11,7 +11,7 @@ export type ButtonVariant = 'primary' | 'ghost' | 'outline' | 'toolbar'
 /**
  * Render a button.
  * @param props.variant - visual family (default 'ghost').
- * @param props.size - 'md' 36px capsule, 'sm' 28px compact.
+ * @param props.size - 'md' 36px control with 12px corners or 'sm' 28px control with 8px corners.
  * @param props.icon - optional leading 16px icon node.
  * @returns the button element; native button attributes pass through.
  */

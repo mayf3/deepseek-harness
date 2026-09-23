@@ -35,7 +35,7 @@ Mouse selection uses native browser clicks, including their cancellation behavio
 
 ### Model and effort
 
-Models stay grouped by provider. The composer menu shows model and effort names only, with DeepSeek Account first and DeepSeek second; third-party providers retain their catalog order. The `/model` popup shows provider names and catalog descriptions; it localizes the two built-in DeepSeek descriptions and leaves external provider descriptions verbatim. The popup applies the selected model's default effort; the composer can then choose any advertised effort. An adapter without reasoning metadata leaves the Effort row absent; there is no arbitrary effort input.
+Models stay grouped by provider. The composer menu shows model and effort names only, with DeepSeek Account first and DeepSeek second; third-party providers retain their catalog order. Navigation chevrons use the `--dsw-alias-menu-icon` color. The `/model` popup shows provider names and catalog descriptions; it localizes the two built-in DeepSeek descriptions and leaves external provider descriptions verbatim. The popup applies the selected model's default effort; the composer can then choose any advertised effort. An adapter without reasoning metadata leaves the Effort row absent; there is no arbitrary effort input.
 
 The composer replaces the model and effort text with the Models icon when the expanded controls cannot share one line, and restores the text when space permits. The full selection remains available in the trigger's accessible name, tooltip, and menu.
 
@@ -51,6 +51,8 @@ When another writer owns the Session, model-selection failures tell the user to 
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
+
+Menus use the shared `MenuSurface` material, including the macOS backing for background blur; custom content follows the [menu rules](../../../docs/web-styling.md#component-rules).
 
 <details>
 <summary>Implementation internals — click to expand</summary>

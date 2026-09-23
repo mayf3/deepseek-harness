@@ -57,6 +57,7 @@ describe('elevation tokens', () => {
   })
 
   it('defines the translucent menu material for both palettes', () => {
+    expect(bodyOnly.get('--dsw-mask-blur')).toBe('none')
     expect(bodyOnly.get('--dsw-menu-backdrop-filter')).toBe('blur(40px) saturate(150%)')
     const platformRules = parseRules(platformCss)
     const value = (selector: string): string | undefined => platformRules
@@ -64,7 +65,7 @@ describe('elevation tokens', () => {
       .flatMap(rule => rule.declarations)
       .findLast(([property]) => property === '--dsw-specific-menu')?.[1]
     expect(value('body')).toBe('rgba(248, 249, 250, 0.58)')
-    expect(value('body[data-ds-dark-theme]')).toBe('rgba(48, 49, 54, 0.5)')
+    expect(value('body[data-ds-dark-theme]')).toBe('rgba(67, 69, 74, 0.45)')
   })
 })
 
@@ -107,6 +108,7 @@ describe('translucent menu surfaces pair fill and filter', () => {
 
   it('keeps backdrop filtering on background layers when descendants use fixed positioning', () => {
     const surfaces = [
+      ['packages/client/ui-primitives/src/MenuSurface.module.css', '.surface', '.material'],
       ['packages/client/ui-goal/src/client/GoalBar.module.css', '.bar', '.bar::before'],
       ['packages/client/ui-conversation/src/client/queue/QueueDock.module.css', '.panel', '.panel::before'],
       ['packages/extensions/ui-cordis/src/client/CordisPanel.module.css', '.panel', '.panel::before'],
