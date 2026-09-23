@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, protocol } from 'electron'
 import { DesktopUpdateDialog } from '../../lib/types/update-dialog.js'
-import { formatDesktopMessage, resolveDesktopLocale } from '../../lib/types/locale.js'
+import { desktopUpdateReadyConfirmation, resolveDesktopLocale } from '../../lib/types/locale.js'
 
 async function rendered(window) {
   await window.webContents.executeJavaScript(`new Promise((resolve, reject) => {
@@ -38,13 +38,11 @@ export async function qualifyUpdateDialogs(root, fixture) {
     await f.coordinator.download(available.version)
     assert.equal(f.installations.length, 0)
     for (const active of [false, true]) {
+      const ready = desktopUpdateReadyConfirmation(messages, available.version, process.platform)
       const options = {
         title: messages.updateTitle,
-        message: active ? messages.updateActiveTasks : formatDesktopMessage(
-          process.platform === 'win32' ? messages.updateDownloadedTitleWindows : messages.updateDownloadedTitle,
-          { version: available.version }),
-        detail: active ? messages.updateActiveTasksDetail
-          : process.platform === 'win32' ? messages.updateDownloadedDetailWindows : messages.updateDownloadedDetail,
+        message: active ? messages.updateActiveTasks : ready.message,
+        detail: active ? messages.updateActiveTasksDetail : ready.detail,
         buttons: active ? [messages.updateStopTasks, messages.updateLater] : [messages.installAndRestart], cancelId: 1,
       }
       f.restart(async () => (await dialogs.show(parent, options)).response === 0)

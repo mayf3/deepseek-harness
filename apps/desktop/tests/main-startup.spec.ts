@@ -77,7 +77,8 @@ const harness = await vi.hoisted(async () => {
         if (channel === 'dsh-desktop:mandatory-state' && state.policy?.blocking) policyBlocked.resolve()
       }),
     })
-    readonly show = vi.fn()
+    readonly shown = deferred()
+    readonly show = vi.fn(() => { this.shown.resolve() })
     readonly hide = vi.fn()
     readonly focus = vi.fn()
     readonly moveTop = vi.fn()
@@ -989,7 +990,7 @@ describe('desktop main startup', () => {
     harness.prepared.resolve()
     await harness.hostStarted.promise
     harness.hosts[0]!.ready.resolve()
-    await vi.advanceTimersByTimeAsync(0)
+    await window.shown.promise
     expect(window.show).toHaveBeenCalledOnce()
     expect(window.moveTop).toHaveBeenCalledTimes(raises ? 1 : 0)
     expect(window.focus).toHaveBeenCalledTimes(raises ? 1 : 0)
@@ -999,8 +1000,8 @@ describe('desktop main startup', () => {
     }
     window.destroy()
     harness.app.emit('second-instance')
-    await vi.advanceTimersByTimeAsync(0)
     const replacement = harness.windows[1]!
+    await replacement.shown.promise
     expect(replacement.show).toHaveBeenCalledOnce()
     expect(replacement.moveTop).not.toHaveBeenCalled()
     expect(replacement.setAlwaysOnTop).not.toHaveBeenCalled()

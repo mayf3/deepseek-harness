@@ -354,7 +354,7 @@ An unpacked artifact contains Electron, the materialized dsh production tree, pn
 
 ## Updates
 
-On Windows, the downloaded-update confirmation explains that the application closes during installation, reopens automatically, and should not be launched again while updating. An installer restart carrying `--updated` raises and focuses the main window once after the workspace opens, without enabling always-on-top. Ordinary launches and other platforms do not use this foregrounding step.
+On Windows, the downloaded-update confirmation explains that the application closes during installation, reopens automatically, and should not be launched again while updating. An installer restart carrying `--updated` raises and focuses the main window once when startup opens the workspace directly, without enabling always-on-top. Startup into the welcome page discards that request so a later login keeps its normal activation behavior. Ordinary launches and other platforms do not use this foregrounding step.
 
 Native update overlays wait for a ready document and a visible parent, and reappear when that parent is shown again. Closing an overlay releases its background blur, input interception, and parent listeners. The [local window qualification](tests/README.md#verification-overlay) exercises these transitions without starting a workspace.
 
