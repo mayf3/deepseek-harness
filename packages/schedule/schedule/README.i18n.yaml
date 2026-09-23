@@ -1,6 +1,112 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/schedule/schedule/README.md
-README.md: 55a4c86b88ae5a28219fd927930ec68cc780185e
-README.zh.md: 4670803e88b61501a03e9635f6b260948c98610f
+/:
+  en: 858039eacc1d2d0f
+  zh: 880d1bdcac10c358
+/deepseek-ai-dsh-schedule:
+  en: 83c1ed891080cce4
+  zh: ac08407f9bb63531
+/deepseek-ai-dsh-schedule/summary:
+  en: c331ddb94b2eff4e
+  zh: 9d49a28785da1da3
+/deepseek-ai-dsh-schedule/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-schedule/use-this-package:
+  en: 54bdf68b20112b78
+  zh: 53ba066d0f30213b
+/deepseek-ai-dsh-schedule/use-this-package/when-to-choose-it:
+  en: ed2db1b066841156
+  zh: 610ee19ae06d6838
+/deepseek-ai-dsh-schedule/use-this-package/enable-schedule:
+  en: c1ef52c503af4cda
+  zh: 61640a96e5883c19
+/deepseek-ai-dsh-schedule/use-this-package/schedule-a-reminder:
+  en: b9dcbca982886e41
+  zh: 7e9612c029cb5373
+/deepseek-ai-dsh-schedule/use-this-package/when-reminders-fire:
+  en: 0b5c8259cea580e2
+  zh: 05f5b1e0dfe6a7cd
+/deepseek-ai-dsh-schedule/understand-the-implementation:
+  en: 8e555f81bf4635f8
+  zh: bce6ab53622ed3e3
+/deepseek-ai-dsh-schedule/understand-the-implementation/scope-and-composition:
+  en: 59cbf4ef4ee408b3
+  zh: 11aebc95663477d7
+/deepseek-ai-dsh-schedule/understand-the-implementation/design-philosophy:
+  en: 45cde2c0238f7b6d
+  zh: ff6954ca10e04392
+/deepseek-ai-dsh-schedule/understand-the-implementation/source-map:
+  en: 72a5779c4e3c6614
+  zh: 4d49a1710d08ca2f
+/deepseek-ai-dsh-schedule/understand-the-implementation/durable-state-and-replay:
+  en: 1b60030eae89842a
+  zh: cb769795930235a9
+/deepseek-ai-dsh-schedule/understand-the-implementation/client-projection:
+  en: 64afc8a5b6922fb3
+  zh: 1c6356cf36f016c2
+/deepseek-ai-dsh-schedule/understand-the-implementation/time-validation:
+  en: f447b80ee2a95556
+  zh: 1a635c56abec6226
+/deepseek-ai-dsh-schedule/understand-the-implementation/management-pipeline:
+  en: 48b9358f7fc8769d
+  zh: cddcccfa451c219c
+/deepseek-ai-dsh-schedule/understand-the-implementation/live-owner:
+  en: 99bc7475c38134d8
+  zh: 23881143f1341a3d
+/deepseek-ai-dsh-schedule/further-exploration:
+  en: 7068ce0bd542b08c
+  zh: c819212d9496df53
+/deepseek-ai-dsh-schedule/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-schedule/model-experience/scoped-management-tools:
+  en: 9a36762003cc60e9
+  zh: 0e8590dfaa23e3f1
+/deepseek-ai-dsh-schedule/model-experience/scoped-management-tools/what-the-model-sees:
+  en: a96ffd10fdf3aa1a
+  zh: 72bf13124dfc1955
+/deepseek-ai-dsh-schedule/model-experience/scoped-management-tools/token-effect:
+  en: fa2ba2f8820558c1
+  zh: ab44c0575a106868
+/deepseek-ai-dsh-schedule/model-experience/scoped-management-tools/kv-cache-effect:
+  en: ae851de8f2e6742a
+  zh: e8566a1e310ccfe4
+/deepseek-ai-dsh-schedule/model-experience/due-reminder-follow-up:
+  en: 8d7f454a3fd08c46
+  zh: 72a626f9c28ed65d
+/deepseek-ai-dsh-schedule/model-experience/due-reminder-follow-up/what-the-model-sees:
+  en: a93a3694e0509fa6
+  zh: 604590a5a8a90168
+/deepseek-ai-dsh-schedule/model-experience/due-reminder-follow-up/what-the-model-sees/reminder-framing:
+  en: ce20963ce7b68129
+  zh: fd6ba41b78b53ff6
+/deepseek-ai-dsh-schedule/model-experience/due-reminder-follow-up/token-effect:
+  en: 8a5a24d61ed252c8
+  zh: c97fe88d60979a84
+/deepseek-ai-dsh-schedule/model-experience/due-reminder-follow-up/kv-cache-effect:
+  en: 337ecff4b767cff0
+  zh: 0a9d7e2a50cc6014
+/deepseek-ai-dsh-schedule/model-experience/due-fixed-rate-batch:
+  en: 359e57f4f2132d0f
+  zh: 62ee6cf7ed8ffe55
+/deepseek-ai-dsh-schedule/model-experience/due-fixed-rate-batch/what-the-model-sees:
+  en: 48dbd6fd467bf430
+  zh: 75a4a85422057727
+/deepseek-ai-dsh-schedule/model-experience/due-fixed-rate-batch/what-the-model-sees/fixed-rate-batch-framing:
+  en: 33875cd91268e870
+  zh: e88284ae5bd00876
+/deepseek-ai-dsh-schedule/model-experience/due-fixed-rate-batch/token-effect:
+  en: e598e01fec42f091
+  zh: f9bf9da5f09632d8
+/deepseek-ai-dsh-schedule/model-experience/due-fixed-rate-batch/kv-cache-effect:
+  en: b166477a7f5bac39
+  zh: ae6c5e81c0d7e9be
+/deepseek-ai-dsh-schedule/known-limitations-and-deferred-work:
+  en: 53e7624ab59b1606
+  zh: 062c2513b14321fc
+/deepseek-ai-dsh-schedule/known-limitations-and-deferred-work/dev-note:
+  en: 5bb80bafa47df4b5
+  zh: 5f408796e66c790c

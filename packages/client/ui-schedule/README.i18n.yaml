@@ -1,6 +1,43 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-schedule/README.md
-README.md: 689bd3fa219a5ee43ff81de7dd924e83af099c02
-README.zh.md: b868eaee032bc79ba17b4eac8ae2921a397309d1
+/:
+  en: af257c854bda5c00
+  zh: 55426306f517d696
+/deepseek-ai-dsh-client-ui-schedule:
+  en: 862120984d5392eb
+  zh: eb3e5d5a802da592
+/deepseek-ai-dsh-client-ui-schedule/summary:
+  en: 8b9b3a84423f4b1d
+  zh: 9521ab04209deb47
+/deepseek-ai-dsh-client-ui-schedule/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-client-ui-schedule/use-this-package:
+  en: 6e1e74b73a4eb24e
+  zh: ffc0fcf59a2156cd
+/deepseek-ai-dsh-client-ui-schedule/use-this-package/read-and-dismiss-the-catalog:
+  en: 44a33487c9c18789
+  zh: 5b567a9fc4c099a7
+/deepseek-ai-dsh-client-ui-schedule/understand-the-implementation:
+  en: 2430ec651a2a577d
+  zh: 6f5cad74adeaae32
+/deepseek-ai-dsh-client-ui-schedule/understand-the-implementation/source-map:
+  en: e89204b9b4dd3003
+  zh: 3ab55a0503de4b4f
+/deepseek-ai-dsh-client-ui-schedule/further-exploration:
+  en: 81ae5a7021733ada
+  zh: 54d4ec1070685345
+/deepseek-ai-dsh-client-ui-schedule/model-experience:
+  en: 5c6b73a7cfda0351
+  zh: fa075bf6a3258a94
+/deepseek-ai-dsh-client-ui-schedule/model-experience/kv-cache-effect:
+  en: 47f982e326fe77fd
+  zh: c2241315dc0c89c9
+/deepseek-ai-dsh-client-ui-schedule/known-limitations-and-deferred-work:
+  en: 8efb04400a306d00
+  zh: 1da6b0f94d3bd6a2
+/deepseek-ai-dsh-client-ui-schedule/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 3bb0c20c93f16f98
