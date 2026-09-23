@@ -8,11 +8,25 @@
  * bundle inlines its workspace devDependencies; when one of their `lib/`
  * outputs is missing at bundle time, rolldown reports `UNRESOLVED_IMPORT` as a
  * warning and keeps the specifier as an external import, which is exactly the
- * broken artifact. Sandboxed preloads may `require` only `electron`. This
- * check fails the bundle instead of the installed application.
+ * broken artifact. This check fails the bundle instead of the installed
+ * application.
+ *
+ * The check runs in `moduleParsed`, where rolldown reports every import record
+ * of a module: static imports, dynamic `import()`, and `require()` calls. A
+ * bundled import resolves to an absolute module id; an external one keeps its
+ * bare specifier. Chunk metadata (`imports`/`dynamicImports`) omits external
+ * `import()` and `require()` targets, so it cannot serve this check.
  */
 
 import { isBuiltin } from 'node:module'
+import { isAbsolute, relative } from 'node:path'
+
+/**
+ * Bare specifiers one Desktop bundle may leave for the runtime to resolve.
+ * @typedef {object} BundleImportPolicy
+ * @property {ReadonlySet<string>} packages - Package names present at runtime, matched by package name so subpaths pass.
+ * @property {boolean} nodeBuiltins - Whether Node builtins resolve at runtime (true for the Electron main process; false for sandboxed preloads, whose `require` polyfill offers only the modules listed in `packages`).
+ */
 
 /**
  * Package name of a bare import specifier.
@@ -25,16 +39,27 @@ export function importPackageName(specifier) {
 }
 
 /**
+ * Whether a module id rolldown reports is a bare specifier, i.e. an import the
+ * bundle leaves external. Bundled modules carry absolute ids; virtual modules
+ * start with `\0`.
+ * @param {string} id - Module id from `importedIds` or `dynamicallyImportedIds`.
+ * @returns {boolean} True for a bare specifier.
+ */
+export function isBareSpecifier(id) {
+  return !id.startsWith('.') && !id.startsWith('\0') && !isAbsolute(id)
+}
+
+/**
  * Bare imports the packaged application cannot resolve.
- * @param {readonly string[]} imports - External specifiers a chunk imports, statically or dynamically.
- * @param {ReadonlySet<string>} packaged - Package names available to the bundle at runtime.
+ * @param {readonly string[]} imports - External specifiers a module imports statically, dynamically, or through `require()`.
+ * @param {BundleImportPolicy} policy - What this bundle may leave external.
  * @returns {string[]} Offending specifiers in import order, each once.
  */
-export function unpackagedImports(imports, packaged) {
+export function unpackagedImports(imports, policy) {
   const offending = new Set()
   for (const specifier of imports) {
-    if (isBuiltin(specifier)) continue
-    if (packaged.has(importPackageName(specifier))) continue
+    if (policy.nodeBuiltins && isBuiltin(specifier)) continue
+    if (policy.packages.has(importPackageName(specifier))) continue
     offending.add(specifier)
   }
   return [...offending]
@@ -42,25 +67,24 @@ export function unpackagedImports(imports, packaged) {
 
 /**
  * Rolldown plugin that fails a bundle whose external imports the packaged
- * application cannot resolve.
- * @param {ReadonlySet<string>} packaged - Package names available to the bundle at runtime.
+ * application cannot resolve. The failure names the importing module and every
+ * offending specifier, and no output is written.
+ * @param {BundleImportPolicy} policy - What this bundle may leave external.
  * @returns {import('tsdown').Rolldown.Plugin} The plugin.
  */
-export function packagedImportsPlugin(packaged) {
+export function packagedImportsPlugin(policy) {
+  const allowed = [...policy.packages].join(', ') + (policy.nodeBuiltins ? ', and Node builtins' : '')
   return {
     name: 'desktop-packaged-imports',
-    generateBundle(_options, bundle) {
-      for (const output of Object.values(bundle)) {
-        if (output.type !== 'chunk') continue
-        const external = [...output.imports, ...output.dynamicImports].filter(specifier => !(specifier in bundle))
-        const offending = unpackagedImports(external, packaged)
-        if (offending.length === 0) continue
-        this.error(
-          `desktop bundle: ${output.fileName} imports ${offending.join(', ')}, which the packaged application does not ship. `
-          + `A bare import must name electron or a package in this manifest's dependencies; anything else must be bundled, `
-          + 'which requires its lib/ output to exist before this bundle runs (pnpm run build:lib:host).',
-        )
-      }
+    moduleParsed(info) {
+      const external = [...info.importedIds, ...info.dynamicallyImportedIds].filter(isBareSpecifier)
+      const offending = unpackagedImports(external, policy)
+      if (offending.length === 0) return
+      this.error(
+        `desktop bundle: ${relative(process.cwd(), info.id)} imports ${offending.join(', ')}, which the packaged application does not ship. `
+        + `This bundle may leave only ${allowed} as bare imports; anything else must be bundled, `
+        + 'which requires its lib/ output to exist before this bundle runs (pnpm run build:lib:host).',
+      )
     },
   }
 }
