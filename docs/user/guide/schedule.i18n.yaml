@@ -2,6 +2,30 @@
 # section, a hash of its English and Chinese blocks outside code blocks and generated regions.
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/user/guide/schedule.md
-/schedule-session-local-reminders:
-  en: 758fff68dae2823c
-  zh: eda1d8a529a97b5d
+/schedule-reminders:
+  en: c3cb91d1d53b7603
+  zh: 715ced3f1a2e9dd5
+/schedule-reminders/summary:
+  en: bc85e4ac935f2fd5
+  zh: c39e54e4beaa3f9a
+/schedule-reminders/table-of-contents:
+  en: a1159100bd5429cd
+  zh: 2ca8ff4462484376
+/schedule-reminders/enable-and-create-reminders:
+  en: bba6e40f1d266983
+  zh: 82477fb6308e4789
+/schedule-reminders/inspect-and-delete-tasks:
+  en: a44fc1aabc2ab957
+  zh: 31f444d4c7fd5c7a
+/schedule-reminders/edit-an-active-task:
+  en: f28e54059d256ff0
+  zh: 9e59ceef4cf2dd45
+/schedule-reminders/timing-and-delivery-reference:
+  en: 6e5aa8ae5906df4f
+  zh: afdf670a31fae2bb
+/schedule-reminders/further-exploration:
+  en: b7eb797281f028c0
+  zh: 3754f9d19127a3c5
+/schedule-reminders/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

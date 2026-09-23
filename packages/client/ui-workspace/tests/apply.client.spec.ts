@@ -524,9 +524,9 @@ describe('ui-workspace apply', () => {
     const startSession = vi.spyOn(b.ctx.uiWorkspace, 'startSession').mockImplementation(() => undefined)
 
     const browser = faceOf(b.slots.entries('sidebar.workspaces')[0]!) as WorkspaceBrowserInjected
-    // Both arms delegate to the shared Session navigation action.
+    // The browser share delegates to the shared Session navigation action.
     browser.startSession('ws' as never)
-    expect(startSession).toHaveBeenCalledWith('ws')
+    expect(startSession).toHaveBeenLastCalledWith('ws')
     browser.startSession()
     expect(startSession).toHaveBeenLastCalledWith(undefined)
     browser.open('session' as never)

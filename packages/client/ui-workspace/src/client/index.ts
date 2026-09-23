@@ -9,7 +9,10 @@
  * action lists, and this apply registers the shipped actions — pin, rename,
  * fork, archive — into them the way any client plugin would, each with its
  * own behavior, plus the rename dialog and the row-action notice into
- * `shell.overlay` (see the contract module doc). Export discipline:
+ * `shell.overlay` (see the contract module doc). It also declares two
+ * Session-row seats: the leading decoration a row renders only while its own
+ * primary state is idle, and the section the row's hover card renders between
+ * its relative time and its trailing status line. Export discipline:
  * packages/client/AGENTS.md.
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -54,6 +57,7 @@ export type { UiWorkspace } from './navigation.ts'
 export type {
   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
   MenuOpenState, RowToast, SessionRenameTarget, SessionRowOwnerProps, UseMenuOpenState, WorkspaceBrowserInjected,
+  SessionRowScheduleOwnerProps,
   WorkspaceBrowserProps,
   WorkspacePickerInjected, WorkspacePickerProps,
 } from './contract/slots.ts'
@@ -262,6 +266,8 @@ export function apply(ctx: Context): void {
           kind: 'list', scope: 'root', inject: { hooks: { menuOpenState: menuOpenStateFactory, shortcuts: ctx.shortcuts.catalog } },
         },
         'sidebar.workspaces.session.row.action': { kind: 'list', scope: 'root' },
+        'sidebar.session.row.leading': { kind: 'list', scope: 'root' },
+        'sidebar.session.row.hover': { kind: 'list', scope: 'root' },
       },
       store: viewStore,
       inject: browserInjected,

@@ -740,6 +740,14 @@ describe('UiWorkspaceService', () => {
     })
   })
 
+  it('opens nothing when a New Session request has no Workspace to open', () => {
+    const b = bench()
+
+    b.uiWorkspace.startSession()
+
+    expect(b.selectPanel).toHaveBeenCalledWith(null)
+  })
+
   it('releases a prepared Workspace target when synchronous preparation supersedes it', async () => {
     const b = bench({ workspaces: workspaceState([workspace('a')]) })
 

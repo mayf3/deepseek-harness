@@ -405,6 +405,7 @@ describe('RightbarSeat presentation', () => {
     const h = await mountSeat()
     const panel = element(h.view.container, '[data-sidebar-right-panel]')
     expect(panel.hasAttribute('data-sidebar-right-open')).toBe(false)
+    expect(panel.getAttribute('aria-hidden')).toBe('true')
     expect(h.frame.closeRightbar).toHaveBeenCalled()
     h.open()
     expect(element(h.view.container, '[data-sidebar-right-panel]')).toBe(panel)
