@@ -38,6 +38,10 @@ export function registerAgentTeamUi(ctx: ClientContext): void {
     openTeammate(sessionId: SessionId, childSessionId: SessionId): void {
       const parentSessionId = leadSessionId(sessionId)
       if ((sessions.retainInfo(sessionId).getSnapshot().retainedBy.mainView ?? 0) === 0) return
+      if (childSessionId === parentSessionId) {
+        ctx.uiWorkspace.openSession(parentSessionId)
+        return
+      }
       ctx.uiWorkspace.openSession({
         parentSessionId,
         childSessionId,
@@ -51,7 +55,7 @@ export function registerAgentTeamUi(ctx: ClientContext): void {
     () => ctx.slots.register({
       name: 'conversation.session.header.actions',
       id: 'agent-team',
-      order: 20,
+      order: -20,
       locale: NS,
       inject: () => actions,
     }, TeamAction),

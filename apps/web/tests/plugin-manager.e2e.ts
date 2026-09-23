@@ -278,12 +278,12 @@ describe('web e2e: plugin manager', () => {
         await expect.poll(() => teamRows().filter(entry => entry.fiber?.state === FiberState.ACTIVE).length, { timeout: 20_000 }).toBe(3)
         await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
         await action.waitFor({ timeout: 20_000 })
-        await action.getByRole('button', { name: /Agent Team/iu }).click()
-        const teamPanel = teamPage.getByRole('dialog', { name: 'Agent Team', exact: true })
+        await action.getByRole('button', { name: '智能体团队', exact: true }).click()
+        const teamPanel = teamPage.getByRole('dialog', { name: '智能体团队', exact: true })
         await teamPanel.getByText('Team 暂不可用', { exact: true }).waitFor()
         await teamPage.reload({ waitUntil: 'load' })
-        await action.getByRole('button', { name: /Agent Team/iu }).click()
-        await teamPanel.getByText('还没有共享任务').waitFor()
+        await action.getByRole('button', { name: '智能体团队', exact: true }).click()
+        await teamPanel.getByText('暂无共享任务，可以通过对话创建').waitFor()
         await teamPanel.getByText('lead', { exact: true }).waitFor()
         const manifest = JSON.parse(await homeFile('profiles', 'scaffold', 'package.json')) as {
           dsh: { profile: { bundles: string[] } }

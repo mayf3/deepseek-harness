@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import { IconUsersOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
@@ -88,6 +89,14 @@ describe('DetailsRow', () => {
     expect(screen.queryByText('Output')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Inspect' }))
     expect(inspect).toHaveBeenCalledOnce()
+  })
+
+  it('presents teammate-coordination tools under the two-person team icon', () => {
+    const inspect = vi.fn()
+    const expectedIcon = render(<IconUsersOutlineRegular size={14} />).container.querySelector('svg')!.outerHTML
+    const view = render(<DetailsRow {...{ useDisclosure, toolName: 'wait_agent', block: result('wait_agent', { timedOut: true }), inspect, t } as Parameters<typeof DetailsRow>[0]} />)
+    expect(screen.getByText('Wait for teammates')).toBeTruthy()
+    expect(view.container.querySelector('svg')?.outerHTML).toBe(expectedIcon)
   })
 
   it('registers the supported tool names through the scoped keyed slot', () => {
