@@ -28,8 +28,24 @@
   padding-right: 5px;
 }
 
+.workbook :global(.luckysheet-sheet-area) {
+  padding: 0;
+}
+
+.workbook :global(#luckysheet-sheet-content) {
+  flex: 1;
+  min-width: 0;
+}
+
 .workbook :global(.fortune-sheettab-container) {
+  flex: 1;
+  min-width: 0;
   max-width: 100%;
+}
+
+.workbook :global(.fortune-sheettab-scroll),
+.workbook :global(.fortune-sheet-area-right) {
+  flex: none;
 }
 
 .workbook :global(.fortune-fx-input-container) {
