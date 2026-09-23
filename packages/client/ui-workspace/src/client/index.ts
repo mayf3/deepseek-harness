@@ -220,7 +220,7 @@ export function apply(ctx: Context): void {
     renameSession,
   })
   const rowToastInjected = (): RowToastInjected => ({
-    hooks: { toast: rowToast },
+    hooks: { toast: rowToast, view: viewInstance.store },
     dismissToast: () => { rowToast.set(null) },
     undoArchive: unarchiveSession,
     showArchived: () => { viewInstance.actions.setArchivedFilter('show') },
