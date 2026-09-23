@@ -582,6 +582,38 @@ it('unloads before removing packages and retries inactive dependencies whose fil
   expect((await manager.listBundles()).some(row => row.name === 'extra')).toBe(false)
 })
 
+it('treats a terminated run that trapped the signal and exited zero as a failure', async () => {
+  const { manager, dir } = await fixture()
+  const install = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async () => {
+    // pnpm rewrote the manifest before it trapped the manager's signal.
+    const manifest = readProfileManifest('test', dir)
+    manifest.dependencies = { ...manifest.dependencies, half: '1.0.0' }
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+    return { exitCode: 0, output: 'installing\n', truncated: false, logPath: join(dir, 'pnpm.log'), timedOut: true }
+  })
+  onTestFinished(() => { install.mockRestore() })
+  const result = await manager.installBundle('half', { enabled: false })
+  expect(result).toMatchObject({ application: 'failed', packageResult: { exitCode: 0, timedOut: true, kind: 'timeout' } })
+  // The half-written dependency goes back, and nothing is activated.
+  expect(readProfileManifest('test', dir).dependencies).toEqual({ extra: '1.0.0' })
+  expect((await manager.listBundles()).some(row => row.name === 'half')).toBe(false)
+})
+
+it('reports a terminated removal as failed even when pnpm exited zero', async () => {
+  const { manager, dir } = await fixture()
+  const remove = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async () => {
+    // The unload already happened, so the removal is reported through its own run.
+    const manifest = readProfileManifest('test', dir)
+    delete manifest.dependencies?.extra
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+    return { exitCode: 0, output: 'removing\n', truncated: false, logPath: join(dir, 'pnpm.log'), timedOut: true }
+  })
+  onTestFinished(() => { remove.mockRestore() })
+  expect(await manager.removeBundle('extra')).toMatchObject({
+    application: 'failed', packageResult: { exitCode: 0, timedOut: true, kind: 'timeout' },
+  })
+})
+
 it('restores the manifest and lockfile after a failed package run, classifying the failure', async () => {
   const { manager, dir } = await fixture()
   const lockPath = join(dir, 'pnpm-lock.yaml')
@@ -1200,6 +1232,46 @@ it('installs from the next registry after one is unreachable, restoring the file
   // Each attempt streams as its own run, the command line naming the registry it asked.
   expect(new Set(chunks.map(chunk => chunk.jobId)).size).toBe(2)
   expect(chunks.at(-1)).toMatchObject({ requestId, argv: ['pnpm', 'add', 'fallen', `--registry=${MIRROR}`], exitCode: 0 })
+})
+
+it('does not ask the next registry after the manager terminated a silent run', async () => {
+  const { manager } = await fixture()
+  const install = vi.spyOn(operations, 'runProfilePnpm').mockResolvedValue({
+    exitCode: 1, output: 'installing\ndsh: pnpm printed nothing for 600000ms and was terminated\n',
+    truncated: false, logPath: '/dev/null', timedOut: true,
+  })
+  onTestFinished(() => { install.mockRestore() })
+  const stalled = await manager.installBundle('silent')
+  expect(stalled).toMatchObject({ application: 'failed', registries: [null], packageResult: { kind: 'timeout', timedOut: true } })
+  expect(stalled.failedAt).toBeUndefined()
+  expect(install).toHaveBeenCalledTimes(1)
+})
+
+it('drops the earlier registry failure once a later attempt is terminated for silence', async () => {
+  const { manager } = await fixture()
+  const install = vi.spyOn(operations, 'runProfilePnpm')
+    .mockResolvedValueOnce({
+      exitCode: 1, output: 'ERR_PNPM_META_FETCH_FAIL  GET https://registry.npmjs.org/flaky: ETIMEDOUT',
+      truncated: false, logPath: '/dev/null',
+    })
+    .mockResolvedValueOnce({
+      exitCode: 1, output: 'installing\ndsh: pnpm printed nothing for 600000ms and was terminated\n',
+      truncated: false, logPath: '/dev/null', timedOut: true,
+    })
+  onTestFinished(() => { install.mockRestore() })
+  const stalled = await manager.installBundle('flaky')
+  expect(stalled).toMatchObject({ application: 'failed', registries: [null, MIRROR], packageResult: { kind: 'timeout', timedOut: true } })
+  expect(stalled.failedAt).toBeUndefined()
+  expect(install).toHaveBeenCalledTimes(2)
+})
+
+it('bounds each package run with the configured silence timeout', async () => {
+  const { manager } = await fixture('live', false, undefined, { idleTimeoutMs: 1234 })
+  const install = vi.spyOn(operations, 'runProfilePnpm')
+    .mockResolvedValue({ exitCode: 1, output: 'plain failure', truncated: false, logPath: '/dev/null' })
+  onTestFinished(() => { install.mockRestore() })
+  await manager.installBundle('quiet')
+  expect(install.mock.calls[0]?.[2]).toMatchObject({ idleTimeoutMs: 1234 })
 })
 
 it('stops at a failure no registry changes, at a host the spec itself is fetched from, and after a registry outside the configured set', async () => {
