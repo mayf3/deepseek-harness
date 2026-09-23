@@ -59,11 +59,12 @@ const ToolCall = memo(function ToolCall({
 })
 
 const ToolCallBranch = memo(function ToolCallBranch({
-  renderSlot, call, cwd, home, openFile, inspectCall, loadImage, useDisclosure, t,
+  renderSlot, block, cwd, home, openFile, inspectCall, loadImage, useDisclosure, t,
 }: Pick<ToolTreeProps, 'renderSlot' | 'cwd' | 'openFile' | 'inspectCall' | 'loadImage' | 'useDisclosure' | 't'> & {
-  call: ToolCallPhaseProps
+  block: ToolCallBlock
   home?: string | undefined
 }) {
+  const call = useMemo(() => toolCallPhase(block), [block])
   return (
     <ToolCall
       renderSlot={renderSlot}
@@ -84,7 +85,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
             <ToolCallBranch
               key={child.callId}
               renderSlot={renderSlot}
-              call={toolCallPhase(child)}
+              block={child}
               cwd={cwd}
               home={home}
               openFile={openFile}
@@ -110,11 +111,10 @@ export function ToolCallTree({
   renderSlot, node, cwd, openFile, inspectCall, loadImage, useDisclosure, useHostInfo, t,
 }: ToolTreeProps) {
   const home = useHostInfo(info => info.home)
-  const call = useMemo(() => toolCallPhase(node.data.root), [node.data.root])
   return (
     <ToolCallBranch
       renderSlot={renderSlot}
-      call={call}
+      block={node.data.root}
       cwd={cwd}
       home={home}
       openFile={openFile}
