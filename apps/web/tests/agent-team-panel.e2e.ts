@@ -18,6 +18,7 @@ import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './suppor
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/agent-team-panel', import.meta.url))
 const PANEL_EXPECTED = join(SNAPSHOT_DIR, 'task.expected.md')
+const RESIZE_EXPECTED = join(SNAPSHOT_DIR, 'resize.expected.md')
 const OVERLAY = fileURLToPath(new URL('./agent-team-panel.overlay.yml', import.meta.url))
 const TEAM_PATCH = fileURLToPath(new URL('../../../packages/experimental/agent-team-profile/cordis.patch.yml', import.meta.url))
 const INSTALL_ANCHORS = [
@@ -86,7 +87,7 @@ describe('web e2e: Agent Teams panel', () => {
     onTestFinished(() => { projectionReads.mockRestore() })
     await page.locator('[data-team-action]').getByRole('button', { name: /Agent Team/iu }).click()
     const action = page.getByRole('dialog', { name: 'Agent Team', exact: true })
-    await action.getByText('No shared tasks yet').waitFor()
+    await action.getByText('No shared tasks yet. Create them through the conversation.').waitFor()
     await action.getByText('lead').waitFor()
     expect(projectionReads).not.toHaveBeenCalled()
 
@@ -113,7 +114,7 @@ describe('web e2e: Agent Teams panel', () => {
     expect(projectionReads).not.toHaveBeenCalled()
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-    await action.getByRole('button', { name: 'Close' }).click()
+    await page.keyboard.press('Escape')
   }, 60_000)
 
   it('keeps the panel inside the viewport and closes on outside click or Escape', async () => {
@@ -135,31 +136,24 @@ describe('web e2e: Agent Teams panel', () => {
               .every(([x, y]) => element.contains(document.elementFromPoint(x!, y!)))
         })).toBe(true)
       }
-      await panel.getByText('Shared tasks', { exact: true }).click()
+      await panel.getByRole('heading', { name: /Shared tasks/u }).click()
       expect(await panel.count()).toBe(1)
       await page.mouse.click(2, 2)
       await panel.waitFor({ state: 'detached' })
       await page.setViewportSize(viewport)
       await trigger.focus()
       await page.keyboard.press('Enter')
-      await panel.getByRole('heading', { name: 'Shared tasks' }).waitFor()
+      await panel.getByRole('heading', { name: /Shared tasks/u }).waitFor()
       expect(await panel.evaluate(element => element === document.activeElement)).toBe(true)
-      await page.keyboard.press('Tab')
-      expect(await panel.getByRole('button', { name: 'Close', exact: true })
-        .evaluate(element => element === document.activeElement)).toBe(true)
       await page.keyboard.press('Escape')
-      await panel.waitFor({ state: 'detached' })
-      expect(await trigger.evaluate(element => element === document.activeElement)).toBe(true)
-      await page.keyboard.press('Enter')
-      await panel.waitFor()
-      await page.keyboard.press('Tab')
-      await page.keyboard.press('Enter')
       await panel.waitFor({ state: 'detached' })
       expect(await trigger.evaluate(element => element === document.activeElement)).toBe(true)
       await page.keyboard.press('Enter')
       await panel.waitFor()
       const outside = page.getByRole('button', { name: 'Settings', exact: true })
       await outside.focus()
+      expect(await panel.count()).toBe(1)
+      await page.keyboard.press('Escape')
       await panel.waitFor({ state: 'detached' })
       expect(await outside.evaluate(element => element === document.activeElement)).toBe(true)
     } finally {
@@ -167,7 +161,50 @@ describe('web e2e: Agent Teams panel', () => {
     }
   })
 
+  it('keeps the hovered panel open when the pointer returns directly to its trigger', async () => {
+    const trigger = page.locator('[data-team-action]').getByRole('button', { name: 'Agent Team', exact: true })
+    const panel = page.getByRole('dialog', { name: 'Agent Team', exact: true })
+    await trigger.hover()
+    await panel.waitFor()
+    await panel.hover()
+    await trigger.hover()
+    // The assertion spans the 120ms dismissal grace while the pointer stays on the trigger.
+    await page.waitForTimeout(180)
+    expect(await panel.count()).toBe(1)
+    await page.keyboard.press('Escape')
+  })
+
+  it('offers expansion when resizing makes a task description exceed two lines', async () => {
+    const agent = scaffold.ctx.agents.list()[0]!
+    await scaffold.ctx.agentTeams.createTask(agent, {
+      subject: 'Responsive task',
+      description: 'Check the task description before you start work. '.repeat(3),
+      writeScopes: [],
+    })
+    const viewport = page.viewportSize()!
+    const trigger = page.locator('[data-team-action]').getByRole('button', { name: 'Agent Team', exact: true })
+    const panel = page.getByRole('dialog', { name: 'Agent Team', exact: true })
+    const card = panel.locator('article').filter({ hasText: 'Responsive task' })
+    await trigger.click()
+    await card.waitFor()
+    expect(await card.getByRole('button', { name: 'Show more' }).count()).toBe(0)
+    try {
+      await page.setViewportSize({ width: 360, height: 700 })
+      await card.getByRole('button', { name: 'Show more' }).waitFor()
+      expect(await card.locator('p').evaluate(p => p.scrollHeight > p.clientHeight)).toBe(true)
+      await compareOrRefreshGolden(RESIZE_EXPECTED, await captureStableAria(page, '[data-team-panel]', scaffold.workspaceCwd), MODE)
+      await card.getByRole('button', { name: 'Show more' }).click()
+      expect(await card.locator('p').evaluate(p => p.scrollHeight === p.clientHeight)).toBe(true)
+      await card.getByRole('button', { name: 'Show less' }).click()
+      await page.setViewportSize(viewport)
+      await expect.poll(() => card.getByRole('button', { name: 'Show more' }).count()).toBe(0)
+    } finally {
+      await page.keyboard.press('Escape')
+      await page.setViewportSize(viewport)
+    }
+  })
+
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['task.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['task.expected.md', 'resize.expected.md'])
   })
 })

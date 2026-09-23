@@ -78,7 +78,7 @@ describe('ui-team browser plugin', () => {
     const b = await bench()
     expect(inject).toEqual(['sessions', 'uiWorkspace', 'slots', 'locale'])
     expect(b.entry()).toMatchObject({
-      options: { id: 'agent-team', order: 20 },
+      options: { id: 'agent-team', order: -20 },
       locale: 'agent-team',
     })
     const t = b.ctx.locale.bind('agent-team')
@@ -105,6 +105,12 @@ describe('ui-team browser plugin', () => {
     expect(b.navigation).toEqual([
       ['open', { parentSessionId: SESSION, childSessionId: CHILD, mode: 'continuable' }],
     ])
+  })
+
+  it('opens the Lead from an addressed teammate conversation', async () => {
+    const b = await bench({ addressed: true })
+    b.actions().openTeammate(CHILD, SESSION)
+    expect(b.navigation).toEqual([['open', SESSION]])
   })
 
   it('does not open a teammate from a conversation outside the main view', async () => {
