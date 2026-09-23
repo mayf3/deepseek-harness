@@ -9,7 +9,7 @@ import { useEffect } from 'react'
 import type {
   AssistantMessageNode, ChatNode, ChatNodeHookContext, ChatNodeOwnerProps, ChatSnapshot,
   ChatViewSlotProps, CommandNode, CompactionSummaryNode, ContextMessageNode, ConversationNode,
-  LegacyConversationSlice, ModelRetryNode, RunningToolCall, SteeringMessageNode,
+  LegacyConversationSlice, ModelRetryNode, StartedToolCall, SteeringMessageNode,
   ToolCallBlock, ToolResultNode, TurnErrorNode, TurnMaxTokensNode, UseChatNodeTurnData,
   TranscriptViewMode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -206,8 +206,8 @@ const toolResult = (seq: number, callId: string, name = 'bash'): ToolResultNode 
   callTime: seq * 1_000 - 500,
   content: [], isError: false, subCalls: [],
 })
-const runningCall = (callId: string, name = 'bash'): RunningToolCall => ({
-  callId, name, argsRaw: `{"command":"cmd-${callId}"}`, turn: 2, step: 1, time: 1_000, subCalls: [],
+const runningCall = (callId: string, name = 'bash'): StartedToolCall => ({
+  phase: 'start' as const, callId, name, argsRaw: `{"command":"cmd-${callId}"}`, turn: 2, step: 1, time: 1_000, subCalls: [],
 })
 const command = (over: Partial<CommandNode> = {}): CommandNode => ({
   kind: 'command', seq: 5, time: 5_000, commandId: 'cmd-1' as CommandNode['commandId'],

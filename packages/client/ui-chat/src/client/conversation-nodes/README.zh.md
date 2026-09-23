@@ -122,19 +122,23 @@ description: "Chat 过程分组与活动摘要的明细业务规则。"
 
 ### 组标题规则
 
+三个阶段共用下方工具名分类。准备中的 Tool 节点使用对应类别的准备文案；`read` 为「准备读取文件」，`read_image` 为「准备读取图片」，`write` 为「准备写入文件」，`edit` 和 `apply_patch` 为「准备编辑文件」，`todo_write` 及目标工具为「准备更新计划」。只有通用类别的「准备调用工具」在 Detailed 中追加协议工具名，其他类别不追加。它计为一次调用，不解析参数，只渲染不可展开的一行。具名实时 delta 可以创建该节点；历史调用直接从 tool/call 开始，不重现准备过程。
+
 以下文案描述已记录的活动，不保证操作成功；例如失败的读取仍参与「已读取文件」类别。
 
 | 类别 | 未结束组的活动文案 | 已结束组的摘要文案 |
 |---|---|---|
 | 无实时类别 / 无计数类别 | 正在分析请求 | 已完成分析 |
 | `read` | 正在读取文件 | 已读取文件 |
+| `readImage` | 正在读取图片 | 已读取图片 |
 | `search` | 正在搜索代码 | 已搜索代码 |
+| `write` | 正在写入文件 | 已写入文件 |
 | `edit` | 正在编辑文件 | 修改了文件 |
 | `commands` | 正在运行命令 | 执行了命令 |
 | `code` | 正在运行代码 | 运行了代码 |
 | `webSearch` | 正在搜索网页 | 已搜索网页 |
 | `webFetch` | 正在访问网页 | 已访问网页 |
-| `subagents` | 正在协调子任务 | 已协调子任务 |
+| `subagents` | 正在协调子代理 | 已协调子代理 |
 | `plan` | 正在更新计划 | 更新了计划 |
 | `questions` | 等待你的操作 | 向用户提出了问题 |
 | `tools` | 正在调用工具 | 已调用工具 |
@@ -210,7 +214,7 @@ description: "Chat 过程分组与活动摘要的明细业务规则。"
 
 | 本组中的调用记录 | 计数规则 |
 |---|---|
-| 运行中调用、成功结果、失败结果，或保留原调用信息的中断结果 | 按记录的工具名计入对应类别一次；结算或失败不会增加或扣除次数。 |
+| 准备中调用、运行中调用、成功结果、失败结果，或保留原调用信息的中断结果 | 按记录的工具名计入对应类别一次；结算或失败不会增加或扣除次数。 |
 | 重复的 `callId` | 只计首次出现，包括同时作为根调用和嵌套调用出现的情况；后续重复记录及其子树不再处理。 |
 | 父子调用的 `callId` 不同 | 父子分别按各自类别计数；父调用先于子调用，同级按记录顺序处理。 |
 | 同一工具使用不同 `callId` 多次调用 | 每次都计数，即使参数相同，或操作的是同一个终端、Session。 |
@@ -225,9 +229,11 @@ description: "Chat 过程分组与活动摘要的明细业务规则。"
 
 | 类别 | 工具名匹配 |
 |---|---|
-| `read` | `read`、`read_image`、`list_mcp_resources`、`list_mcp_resource_templates`、`read_mcp_resource` |
+| `read` | `read` |
+| `readImage` | `read_image` |
 | `search` | `grep`、`glob`，或以 `_inspect` 结尾 |
-| `edit` | `write`、`edit`、`apply_patch` |
+| `write` | `write` |
+| `edit` | `edit`、`apply_patch` |
 | `commands` | `bash`、`pwsh`、`exec_command`、`write_stdin`，或以 `terminal_` 开头 |
 | `code` | `run_code` |
 | `webSearch` | `web_search` |
@@ -235,7 +241,7 @@ description: "Chat 过程分组与活动摘要的明细业务规则。"
 | `subagents` | `subagent`，或以 `subagent_` 开头 |
 | `plan` | `todo_write`、`create_goal`、`update_goal`、`get_goal` |
 | `questions` | `ask_user_question`、`request_user_input` |
-| `tools` | 其他所有名称 |
+| `tools` | 其他所有名称，包括 `list_mcp_resources`、`list_mcp_resource_templates`、`read_mcp_resource` |
 
 ### Subagent、后台任务与嵌套调用
 
@@ -255,6 +261,8 @@ Subagent 工具遵循普通分组边界，不会仅因委派任务就单独成�
 精确名称规则也意味着：记录为 `functions.read`、`mcp.read` 或 `Read` 的名称归 `tools`，`browser_inspect` 归 `search`。`terminal_*` 即使只检查或关闭终端，也按命令规则分类，除非先命中 `_inspect` 规则。
 
 ### 实时活动与详情
+
+准备中的调用使用首个具名 delta 的时间，只有通用工具类别提供工具名详情。已派发调用使用 tool/call 的时间和完整参数。
 
 运行中的调用以最大 `time` 决定实时类别和详情；时间相同时取后遍历的调用。没有运行调用时，类别为空，详情取成员顺序中最近一个含有非空推理段落的运行中 Assistant 的最后一个非空段落。推理详情移除 `**` 标记，不要求首行以换行结束；单个推理行的预览另有规则。
 

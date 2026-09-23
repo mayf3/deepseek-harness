@@ -3,7 +3,10 @@ import type {
   HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
-import type { OpenFileOptions, ToolCallBlock, UseDisclosure } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {
+  OpenFileOptions, PreparingToolCall, StartedToolCall,
+  ToolResultNode, UseDisclosure,
+} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { MessageImageLoader, MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 
@@ -16,7 +19,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      *
      * Registering an occupied key replaces its view; unclaimed keys use the
      * generic row. The owner supplies the call identity and frozen running
-     * or settled node through ToolCallOwnerProps.
+     * or settled node through explicit phase props; preparing inputs have no arguments.
      */
     'tool.call.toolview': { kind: 'keyed'; scope: 'session'; owner: ToolCallOwnerProps }
     /**
@@ -47,38 +50,39 @@ export interface ToolImagesOwnerProps {
 }
 
 /** Standard owner currency supplied to every atomic Tool view. */
-export interface ToolCallOwnerProps {
-  /** Stable injected Hook; each invocation owns its open state and subscribes to enclosing-Turn resets. */
+export interface ToolCallCommonProps {
+  /** Stable Hook; each invocation owns its open state and subscribes to enclosing-Turn resets. */
   useDisclosure: UseDisclosure
-  /** Tool call identity, stable across running and settled forms. */
+  /** Call identity, stable across all stages. */
   callId: string
   /** Wire Tool name and keyed dispatch value. */
   toolName: string
-  /** Frozen running call or settled result node. */
-  block: ToolCallBlock
   /** Session workspace root for relative summaries. */
   cwd?: string | undefined
   /** Host account home; POSIX home-rooted summaries display as `~`. */
   home?: string | undefined
-  /**
-   * Open a Tool argument path. A view that knows which line the call was about
-   * passes it, and the opened surface lands there.
-   */
+  /** Open an argument path at its optional requested line. */
   openFile: (path: string, options?: OpenFileOptions) => void
-  /**
-   * Session-authorized image loader for the `tool.call.images` slot, supplied
-   * by the chat node that owns this call. A composed chat node always
-   * supplies it (`ChatNodeOwnerProps.loadImage` is required), so the tool
-   * layer never imports an attachment implementation nor handles URL
-   * authorization.
-   */
+  /** Chat-supplied, session-authorized loader for durable images; Tool views do not manage attachment URLs. */
   loadImage: MessageImageLoader
   /** Inspect this call in the trajectory view when available. */
   inspect?: (() => void) | undefined
 }
 
+/** Stage-specific tool data; only start/result expose the dispatched call material. */
+export type ToolCallPhaseProps =
+  | { readonly phase: 'preparing'; readonly block: PreparingToolCall }
+  | { readonly phase: 'start'; readonly block: StartedToolCall }
+  | { readonly phase: 'result'; readonly block: ToolResultNode }
+
+/** Common owner callbacks and the data admitted at the current tool stage. */
+export type ToolCallOwnerProps = ToolCallCommonProps & ToolCallPhaseProps
+
 /** Full props of a registered atomic Tool view. */
 export type ToolCallViewProps = PropsRuntime<'tool.call.toolview'>
+
+/** Existing argument/result business components exclude the preparation stage. */
+export type StartedToolCallViewProps = Exclude<ToolCallViewProps, { readonly phase: 'preparing' }>
 
 /** Injected Host description for POSIX home-path display. */
 export type ToolHostInfoInjected = {
@@ -93,7 +97,7 @@ export type ToolHostInfoInjected = {
   }
 }
 
-/** Full props of the Tool call-tree renderer registered as a `tool-call` Chat Node. */
+/** Full props of the Tool call-tree renderer registered as a tool-call Chat Node. */
 export type ToolTreeProps = PropsRuntime<'conversation.chat.node', 'tool-call'>
   & PropsRenderSlots<'tool.call.toolview'>
   & PropsLocale<'conversation'>

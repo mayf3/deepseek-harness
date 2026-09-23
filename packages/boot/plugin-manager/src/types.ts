@@ -90,6 +90,8 @@ export interface PackageResult {
   logPath: string
   /** Present when the run failed: what kind of failure its exit and output describe. */
   kind?: PluginInstallFailureKind
+  /** The manager terminated the run after it printed nothing for its silence bound; `exitCode` still reports how it ended. */
+  timedOut?: boolean
 }
 
 /** Persisted change and independently observed application outcome. */
