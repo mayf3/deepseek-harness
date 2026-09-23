@@ -1057,16 +1057,16 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.installSubjectTarball)).toBeTruthy()
   })
 
-  it('shows GitHub recovery only after a connection failure and returns to package input', () => {
+  it.each(['network', 'timeout'] as const)('shows GitHub recovery only after a %s failure and returns to package input', (kind) => {
     const subject = { spec: 'github:a/b', status: 'accepted', kind: 'git', bundle: null, registry: null, host: 'github.com' } as const
     const failed: InstallState = {
       ...IDLE_INSTALL, open: true, spec: subject.spec, registries: REGISTRIES, phase: 'failed', subject,
-      failure: { reason: 'Could not resolve host: github.com', kind: 'network', failedAt: 'spec-host' },
+      failure: { reason: 'GitHub connection failed', kind, failedAt: 'spec-host' },
     }
     const { actions, set, setLanguage } = renderTab({ install: { ...failed, phase: 'idle', failure: null } })
     expect(screen.queryByText(en.installGithubFailedTitle)).toBeNull()
     set({ install: failed })
-    const dialog = screen.getByRole('dialog', { name: en.installGithubFailedTitle })
+    const dialog = screen.getByRole('dialog', { name: kind === 'timeout' ? en.installGithubTimeoutTitle : en.installGithubFailedTitle })
     expect(within(dialog).getByText(en.installGithubFailedDescription)).toBeTruthy()
     expect(screen.queryByRole('button', { name: en.installRetry })).toBeNull()
     fireEvent.click(within(dialog).getByRole('button', { name: en.installUseGithubMirror }))
@@ -1075,7 +1075,7 @@ describe('PluginManagerPage', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
     expect(actions.closeInstall).toHaveBeenCalledOnce()
     setLanguage(zh)
-    expect(screen.getByRole('dialog', { name: '无法访问 GitHub' })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: kind === 'timeout' ? '连接 GitHub 超时' : '无法访问 GitHub' })).toBeTruthy()
     expect(screen.getByText('请尝试其他安装来源。')).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, mirrorRecovery: true, registries: REGISTRIES, registry: { kind: 'offered', registry: MIRROR } } })
     const form = within(screen.getByRole('dialog', { name: zh.installTitle }))
