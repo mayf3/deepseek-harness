@@ -79,3 +79,14 @@
 @media (prefers-reduced-motion: reduce) {
   .preview { transition: none; }
 }
+
+.inline { display: inline; }
+.media {
+  width: min(300px, calc(100vw - 16px));
+  padding: 8px;
+  border: 0;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  box-shadow: var(--dsw-elevation-panel);
+}

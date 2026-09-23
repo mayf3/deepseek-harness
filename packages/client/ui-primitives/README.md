@@ -54,6 +54,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `OnboardingSurface` | First-run stage that holds the application root inert. |
 | `Tooltip` | Hover text anchored to a cloned child; optional `portal` rendering escapes clipping containers and ancestor stacking contexts that cap the bubble's z-index. |
 | `HoverCard` | Hover preview the pointer can rest on and select from; optional copy button. |
+| `ImageLightbox`, `ImagePreview` | Shared image modal and passive contained preview with loading/failure states. |
 | `Toast` | Transient top-center banner held for the owner's `holdMs`. |
 | `SettingsForm`, `SettingsValueField`, `SettingsSecretField` | The frame and the controls of a plugin's settings page: the frame takes its copy as `labels`, saves only on its button, and discards on unmount; a value field shows staged text with the overridden badge and reset; a secret field starts blank and reports only whether a value is configured. |
 | `SettingsFormModel`, `settingsNumberField`, `settingsTextField` | The staged-edit model behind such a page over a settings scope: drafts are staged and written on save, a field is overridden by its presence in the user layer, and a save that did not land keeps its drafts. |
@@ -94,6 +95,8 @@ The nearest `MarkdownDelegateProvider` supplies optional `openExternalLink` and 
 `DiffBlock` compares the old and new content by line. It shows actual additions and deletions with up to three neutral context lines on each side, separates distant changes with `⋯`, and excludes shared context from tool-summary totals. The card ends after the diff body. Search stops beyond 256 line additions/deletions per fragment; those fragments display and count the complete old and new contents as a coarse replacement, including shared lines. Copy includes the full displayed diff with its prefixes. A final newline is treated as a terminator; differences only in the presence of a final newline are not displayed.
 
 `JsonTree` clamps collapsed strings to `collapsedStringLines` (three by default). Expanded strings show raw text, retain sibling commas, and fit within the window and outer scrolling containers. Resize and ancestor-scroll events update that limit. Row copy feedback updates independently of JSON value rendering; pending clipboard writes cannot update a different row or an unmounted tree.
+
+`ImageLightbox` is the shared original-image modal with focus restoration and Escape dismissal; `ImagePreview` is a passive, contained thumbnail with owner-supplied loading/failure labels. `HoverCard.inline` keeps a file link in the text flow and uses the shared menu material, keyboard focus, and viewport-clamped placement. `MarkdownDelegateProvider.fileImages` supplies a decoded-path resolver and complete image labels: settled image links gain hover previews, and standalone images gain lightbox activation. Image-only anchors retain their single navigation target. The parser recovers only complete, unescaped, standalone local image references with bare spaces and an unambiguous supported image suffix; code and ambiguous destinations remain literal.
 
 ### Localizing copy
 

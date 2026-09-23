@@ -1,5 +1,5 @@
 /** Local Markdown image destinations served by the authenticated file route. */
-import { isAbsoluteWorkspacePath, pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
+import { fileMediaUrl, isAbsoluteWorkspacePath, pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 
 /**
  * Build a file URL, resolving relative destinations beside the previewed file.
@@ -25,5 +25,5 @@ export function markdownImageUrl(base: string, documentPath: string | undefined,
     if (documentPath === undefined) return undefined
     path = pathPartsOf(documentPath).directory + path
   }
-  return new URL(`api/file?path=${encodeURIComponent(path)}`, base).href
+  return fileMediaUrl(base, path)
 }

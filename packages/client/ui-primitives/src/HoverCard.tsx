@@ -32,9 +32,11 @@ const VIEWPORT_MARGIN = 8
  */
 export function HoverCard({
   anchor, content, openDelayMs = 500, disabled = false,
-  copyText, copyLabel, copiedLabel, variant = 'compact', widthAnchorRef,
+  copyText, copyLabel, copiedLabel, variant = 'compact', widthAnchorRef, inline = false,
 }: {
   anchor: ReactNode
+  /** Inline media preview using the shared menu material and keyboard focus. */
+  inline?: boolean
   content: ReactNode
   openDelayMs?: number
   disabled?: boolean
@@ -148,11 +150,19 @@ export function HoverCard({
         })
         return
       }
+      if (inline) {
+        const w = cardRef.current?.offsetWidth ?? 300
+        setPos({
+          left: Math.max(VIEWPORT_MARGIN, Math.min(r.left, window.innerWidth - w - VIEWPORT_MARGIN)),
+          top: Math.max(overlayTopMargin(VIEWPORT_MARGIN), Math.min(r.bottom + ANCHOR_GAP, window.innerHeight - h - VIEWPORT_MARGIN)),
+        })
+        return
+      }
       const top = r.top + h > window.innerHeight - VIEWPORT_MARGIN ? window.innerHeight - h - VIEWPORT_MARGIN : r.top
       setPos({ left: r.right + ANCHOR_GAP, top })
     }
     place()
-    const observer = variant === 'preview' && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(place) : null
+    const observer = (variant === 'preview' || inline) && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(place) : null
     for (const element of [cardRef.current, rootRef.current, widthAnchorRef?.current]) {
       if (element !== null && element !== undefined) observer?.observe(element)
     }
@@ -163,7 +173,7 @@ export function HoverCard({
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
-  }, [open, variant, widthAnchorRef, positioned])
+  }, [open, variant, widthAnchorRef, positioned, inline])
 
   // The first placement ran before the card mounted (height read 0): once the
   // card's real height is measurable, correct the bottom-edge clamp. The
@@ -202,7 +212,7 @@ export function HoverCard({
   const card = open && pos !== null && (
     <div
       ref={cardRef}
-      className={clsx(css.card, variant === 'preview' && css.preview, copyable && css.copyable, copied && css.feedback)}
+      className={clsx(css.card, variant === 'preview' && css.preview, inline && css.media, copyable && css.copyable, copied && css.feedback)}
       data-closing={closing || undefined}
       style={{
         ...pos, minHeight: copied && copyHeightRef.current !== null ? copyHeightRef.current : undefined,
@@ -237,9 +247,16 @@ export function HoverCard({
   return (
     <span
       ref={rootRef}
-      className={css.root}
-      onPointerEnter={() => {
-        if (disabled) return
+      className={clsx(css.root, inline && css.inline)}
+      onFocus={inline ? () => { if (!disabled) { cancelClose(); setPhase('open') } } : undefined}
+      onBlur={inline ? (event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) { clearTimer(); cancelClose(); close() }
+      } : undefined}
+      onKeyDown={inline ? (event) => {
+        if (event.key === 'Escape') { event.stopPropagation(); clearTimer(); cancelClose(); close() }
+      } : undefined}
+      onPointerEnter={(event) => {
+        if (disabled || (inline && event.pointerType === 'touch')) return
         // Coming back inside during the grace (the gap, or the card itself)
         // keeps the current card rather than restarting the dwell.
         cancelClose()

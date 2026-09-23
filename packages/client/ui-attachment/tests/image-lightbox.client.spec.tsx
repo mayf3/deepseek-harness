@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
-import { ImageLightbox } from '../src/ImageLightbox.tsx'
+import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-primitives'
 
 afterEach(cleanup)
 
