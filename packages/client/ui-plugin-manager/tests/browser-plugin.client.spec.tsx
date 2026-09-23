@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import assert from 'node:assert/strict'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
@@ -38,8 +39,11 @@ async function bench() {
       registries: vi.fn(() => Promise.resolve({ ok: true as const, value: { registry: null, fallbackRegistries: [], resolved: null } })),
     },
   })
+  const selectPanel = vi.fn()
+  ctx.provide('layout', { selectPanel, beginNavigation: () => new AbortController().signal,
+    toggleSidebar: vi.fn(), openRightbar: vi.fn(), closeRightbar: vi.fn() })
   await ctx.plugin(settings).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, remote }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, remote, selectPanel }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -54,7 +58,7 @@ function declare(slots: SlotRegistry): () => void {
 
 describe('ui-plugin-manager browser plugin', () => {
   it('declares only the services the page and its Remote methods use', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginManager', 'remote.pluginInventory', 'remote.pluginRegistryProbe', 'configForms'])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginManager', 'remote.pluginInventory', 'remote.pluginRegistryProbe', 'configForms', 'layout'])
   })
 
   it('registers the sidebar entry and its page, which reads the Host only once rendered and follows Host changes', async () => {
@@ -63,7 +67,11 @@ describe('ui-plugin-manager browser plugin', () => {
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
 
+    b.ctx.pluginNavigation.openBundle('dsh-navigation-test')
+    expect(b.selectPanel).toHaveBeenCalledWith(PANEL_ID)
     const entry = b.slots.entries('main')[0]!
+    assert(entry.store && 'create' in entry.store)
+    expect(entry.store.create().getSnapshot()).toEqual({ view: { kind: 'package', name: 'dsh-navigation-test' } })
     expect(entry.component).toBe(PluginManagerPage)
     expect(entry.options).toMatchObject({ key: PANEL_ID })
     expect(entry.locale).toBe(NS)
@@ -113,6 +121,7 @@ describe('ui-plugin-manager browser plugin', () => {
     expect(face.hooks.pluginManager.getSnapshot().install.runs).toEqual([])
 
     await fiber.dispose()
+    expect(b.ctx.get('pluginNavigation')).toBeUndefined()
     expect(b.slots.entries('main')).toHaveLength(0)
     expect(b.slots.entries('sidebar.panellist')).toHaveLength(0)
     b.remote.emit('plugin-manager/changed', [{ reason: 'install' }])

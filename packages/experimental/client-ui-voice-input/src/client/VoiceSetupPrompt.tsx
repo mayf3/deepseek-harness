@@ -10,6 +10,25 @@ import type { NS } from './locales.ts'
 export type VoiceSetupPromptProps = PropsRuntime<'plugins.bundle.activation'> & PropsLocale<typeof NS>
   & Pick<InjectFace<VoiceInputInjected>, 'useSpeechReadiness'>
 
+type VoiceSetupDialogProps = Pick<VoiceSetupPromptProps, 'onDismiss' | 'onOpenDetails' | 't'>
+  & { open: boolean; needsInstallation: boolean }
+
+/**
+ * Guide activation or microphone clicks to the existing plugin details.
+ * @param props - visibility, installation need and navigation callbacks.
+ * @returns a dismissible prompt that never starts preparation or recording.
+ */
+export function VoiceSetupDialog({ open, needsInstallation, onDismiss, onOpenDetails, t }: VoiceSetupDialogProps) {
+  return <Modal open={open} title={t(needsInstallation ? 'setupPrompt.title' : 'setupPrompt.unavailableTitle')}
+    closeLabel={t('cancel')} onClose={onDismiss}
+    footer={<>
+      <Button variant="ghost" onClick={onDismiss}>{t('setupPrompt.later')}</Button>
+      <Button variant="primary" onClick={onOpenDetails}>{t(needsInstallation ? 'setupPrompt.open' : 'setupPrompt.details')}</Button>
+    </>}>
+    <p>{t(needsInstallation ? 'setupPrompt.body' : 'setupPrompt.unavailableBody')}</p>
+  </Modal>
+}
+
 /**
  * Offer navigation to installation without starting a download.
  * @param props - activation navigation and the shared Host readiness observer.
@@ -23,11 +42,5 @@ export function VoiceSetupPrompt({ useSpeechReadiness, onDismiss, onOpenDetails,
   useEffect(() => {
     if (phase !== undefined && phase !== 'checking' && !needsSetup) onDismiss()
   }, [phase, needsSetup, onDismiss])
-  return <Modal open={needsSetup} title={t('setupPrompt.title')} closeLabel={t('cancel')} onClose={onDismiss}
-    footer={<>
-      <Button variant="ghost" onClick={onDismiss}>{t('setupPrompt.later')}</Button>
-      <Button variant="primary" onClick={onOpenDetails}>{t('setupPrompt.open')}</Button>
-    </>}>
-    <p>{t('setupPrompt.body')}</p>
-  </Modal>
+  return <VoiceSetupDialog open={needsSetup} needsInstallation onDismiss={onDismiss} onOpenDetails={onOpenDetails} t={t} />
 }

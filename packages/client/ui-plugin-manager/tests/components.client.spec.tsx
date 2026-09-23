@@ -9,6 +9,7 @@ import { bindSnapshotSelector, stubConfigForm } from '@deepseek-ai/dsh-client-te
 import type { ConfigForm, ConfigFormSnapshot, SettingsMirrorSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ReactNode } from 'react'
+import { createNavigationStore } from '../src/client/navigation-store.ts'
 import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
 import type { PluginManagerPageProps } from '../src/client/index.ts'
 import type { ConfigLedger } from '../src/client/config-ledger.ts'
@@ -126,7 +127,9 @@ function renderTab(
     useSessionRetainInfo: unusedStandardHook,
     useResource: unusedStandardHook,
   }
+  const navigation = createNavigationStore().create()
   const props: PluginManagerPageProps = {
+    useStore: bindSnapshotSelector(navigation), actions: navigation.actions,
     ...standard,
     t,
     resolveText,
@@ -157,6 +160,7 @@ function renderTab(
   }
   const { rerender } = render(<PluginManagerPage {...props} />)
   return {
+    navigation,
     store,
     actions,
     set: (next: Partial<PluginManagerState>) => { act(() => { store.set({ ...store.getSnapshot(), ...next }) }) },
@@ -168,6 +172,16 @@ function renderTab(
 }
 
 describe('PluginManagerPage', () => {
+  it('opens the requested bundle after its inventory arrives and falls back when it is absent', () => {
+    const b = renderTab({ status: 'loading' })
+    act(() => { b.navigation.actions.setView({ kind: 'package', name: 'dsh-better-sidebar' }) })
+    b.set({ status: 'ready', packages: [pkg()] })
+    expect(document.querySelector('[data-plugin-detail="dsh-better-sidebar"]')).not.toBeNull()
+    act(() => { b.navigation.actions.setView({ kind: 'package', name: 'missing' }) })
+    expect(document.querySelector('[data-plugin-detail]')).toBeNull()
+    expect(document.querySelector('[data-plugin-package="dsh-better-sidebar"]')).not.toBeNull()
+  })
+
   it('asks the store once mounted and renders the loading, unavailable, error, and empty states', () => {
     const { actions, set } = renderTab({ status: 'loading' })
     expect(actions.ensure).toHaveBeenCalledTimes(1)
