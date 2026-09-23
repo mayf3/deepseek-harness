@@ -40,7 +40,7 @@ Chat 在节点列表外通过一个 `MarkdownDelegateProvider` 提供文件及 H
 <a id="system-prompt-row"></a>
 ## Chat 隐藏的行
 
-Chat 在所有工作步骤展示模式下都不显示系统提示词行、普通上下文注入和 `permission` 命令行。该过滤不改变已记录的 Session 事件或 Trajectory 查看能力。非人工轮次触发仍作为独立通知显示，其他命令行仍保留在 Chat 中。
+Chat 在所有工作步骤展示模式下都不显示系统提示词行、普通上下文注入和 `permission` 命令行。包含工具添加或移除记录的上下文仍然可见。该过滤不改变已记录的 Session 事件或 Trajectory 查看能力。非人工轮次触发仍作为独立通知显示，其他命令行仍保留在 Chat 中。
 
 Assistant 尝试结束且没有可见消息时，Chat 隐藏已发布的 Node，不移除其 key。同一 Step 的重试再次产生可见内容时，复用该 key。已加载窗口缺少 Step 起点时也遵循此规则。
 
@@ -154,7 +154,7 @@ Chat 会在历史前插与 renderer 重新挂载时恢复语义锚点，并且�
 <a id="known-limitations-and-deferred-work"></a>
 
 
-- **不展示 developer 消息** — 展示能力有意留待后续实现；遇到 `developer/message` 时抛出错误，不渲染回退行。
+- **工具变更展示** — `developer-message` Definition 与 `input-message` 共用上下文展示。仅包含工具变更的 developer 消息在单个工具新增或移除时直接显示工具名，不提供展开操作。多个变更显示新增、移除数量，展开后按变更类型分别以逗号分隔显示一行工具列表。混合内容使用通用上下文展示。
 
 - **开场回显预测本地顺序**——运行状态更新前连续发出的多条消息可能都留在 Chat。初始排列遵循本地提交顺序，而非 Host 队列顺序；Host 按不同顺序接收请求时，入档可能调整它们的位置。
 

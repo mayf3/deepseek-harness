@@ -2,7 +2,8 @@
 import type { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { WebContentsView, session, shell, type View, type WebFrameMain } from 'electron'
-import { mergePlatformCookies, type PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
+import { mergePlatformCookies, platformClientHeaders, type PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
+import { desktopClientMetadata } from './client-metadata.ts'
 
 import { PLATFORM_IPC, type PlatformLocale } from './platform-ipc.ts'
 
@@ -47,8 +48,10 @@ export class DesktopPlatformView {
   /**
    * @param preload - bundled sandboxed Platform preload path.
    * @param getLocale - current resolved Desktop language.
+   * @param platform - operating system this shell runs on, reported to Platform.
    */
-  constructor(private readonly preload: string, private readonly getLocale: () => PlatformLocale) {}
+  constructor(private readonly preload: string, private readonly getLocale: () => PlatformLocale,
+    private readonly platform: 'darwin' | 'win32') {}
 
   /** @param next - private Host credential snapshot; replacement invalidates the current document. */
   setSession(next: PlatformSession | null): void {
@@ -75,6 +78,9 @@ export class DesktopPlatformView {
     browserSession.setPermissionRequestHandler((_contents, _permission, callback) => { callback(false) })
     browserSession.setPermissionCheckHandler(() => false)
     const deploymentHeaders = account.requestHeaders ?? {}
+    const injectedNames = new Set([...Object.keys(deploymentHeaders),
+      ...Object.keys(platformClientHeaders(this.platform, desktopClientMetadata(this.getLocale())))]
+      .map(name => name.toLowerCase()))
     const injectedRequests = new Set<number>()
     browserSession.webRequest.onCompleted((details) => { injectedRequests.delete(details.id) })
     browserSession.webRequest.onErrorOccurred((details) => { injectedRequests.delete(details.id) })
@@ -82,12 +88,17 @@ export class DesktopPlatformView {
       let headers = Object.fromEntries(Object.entries(details.requestHeaders).map(([name, value]) => [name.toLowerCase(), value]))
       if (new URL(details.url).origin === account.origin) {
         injectedRequests.add(details.id)
+        // The document identifies the UI that is asking, so language and UTC offset are sampled now.
+        const injected = {
+          ...deploymentHeaders,
+          ...platformClientHeaders(this.platform, desktopClientMetadata(this.getLocale())),
+        }
         const cookie = headers.cookie ?? ''
-        Object.assign(headers, deploymentHeaders)
-        if (deploymentHeaders.cookie !== undefined) headers.cookie = mergePlatformCookies(cookie, deploymentHeaders.cookie)
+        Object.assign(headers, injected)
+        if (injected.cookie !== undefined) headers.cookie = mergePlatformCookies(cookie, injected.cookie)
       } else if (injectedRequests.has(details.id)) {
-        // Redirected subresources must not carry deployment headers to another origin.
-        headers = Object.fromEntries(Object.entries(headers).filter(([name]) => !Object.hasOwn(deploymentHeaders, name)))
+        // Redirected subresources must not carry injected headers to another origin.
+        headers = Object.fromEntries(Object.entries(headers).filter(([name]) => !injectedNames.has(name.toLowerCase())))
       }
       callback({ requestHeaders: headers })
     })

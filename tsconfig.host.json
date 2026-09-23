@@ -75,6 +75,7 @@
     "apps/web/tests/onboarding-deepseek-config.e2e.ts",
     "apps/web/tests/onboarding-native.e2e.ts",
     "apps/web/tests/desktop-onboarding.e2e.ts",
+    "apps/web/tests/bonus-notice.e2e.ts",
     "apps/web/tests/onboarding-usable-provider.e2e.ts",
     "apps/web/tests/remote-welcome.e2e.ts",
     "apps/web/tests/public-mount.e2e.ts",

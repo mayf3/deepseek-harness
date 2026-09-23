@@ -215,7 +215,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     <>
       <div className={clsx(css.triggerRow, !wide && css.railRow)}>
         {renderSlot('settings.launcher', {
-          wide, openSettings: actions.open,
+          wide, settingsOpen: open, openSettings: actions.open,
           ...(shortcut?.keys.length ? { settingsShortcut: { keys: shortcut.keys, aria: shortcut.aria } } : {}),
           openOnboarding: (id) => { close(); setRequestedOnboarding(id) },
         }, { fallback: <Tooltip disabled={open} label={shortcut?.keys.length ? t('shortcut.hint', { label: t('trigger'), keys: shortcut.keys.join(' ') }) : t('trigger')}>

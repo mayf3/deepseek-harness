@@ -89,6 +89,7 @@
     "tests/onboarding-deepseek-config.e2e.ts",
     "tests/onboarding-native.e2e.ts",
     "tests/desktop-onboarding.e2e.ts",
+    "tests/bonus-notice.e2e.ts",
     "tests/onboarding-usable-provider.e2e.ts",
     "tests/remote-welcome.e2e.ts",
     "tests/public-mount.e2e.ts",

@@ -634,9 +634,6 @@
   "packages/client/ui-primitives/tests/hover-card.client.spec.tsx": {
     "3f1388888979d95f395647d76b2e7a57bfa1d6e0042ede409015a5a1e24c0ab9": 1
   },
-  "packages/client/ui-schedule/tests/schedule-catalog-action.client.spec.tsx": {
-    "d76ae9c57204752a2f68fadae5ef55d45e6675ce10c407ceed217c9648a011a9": 1
-  },
   "packages/client/ui-session/src/client/index.ts": {
     "0fae329186de631f08edbf22f01cbfbf15d7c1ea8dce64e4cefa8ad0a8d43dea": 1,
     "67b3449f6e9ef4d8549d4f8a884f7b145729a874c6932021cdbd172f039467ed": 1

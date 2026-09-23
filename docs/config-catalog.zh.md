@@ -560,12 +560,16 @@ export interface Config extends ContactConfig {
   developerTools: Volatile<boolean>
 }
 
-/** Questionnaire destination and its supported source option. */
+/** Questionnaire destination and bonus notice timings shared by Host and Client. */
 export interface ContactConfig {
   /** HTTPS questionnaire URL; override for a test form. */
   contactFormUrl: string
   /** Questionnaire source option; empty until Harness is supported by the form. */
   contactSource: string
+  /** First delay before retrying a failed bonus acknowledgement. */
+  bonusAckRetryDelayMs: number
+  /** Ceiling for the acknowledgement retry backoff. */
+  bonusAckRetryMaxDelayMs: number
 }
 
 /** Persisted steps; a native top-up page leaves the durable step at credit. */
@@ -1853,8 +1857,8 @@ export type PiAiThinkingTokenBudgetField = NonNullable<OpenAICompletionsCompat['
 ## `@deepseek-ai/dsh-llm-replay`
 
 - `inject`: `llm`
-- `refs`: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · [`SystemPromptUpdate`](../packages/llm/llm/src/index.ts)
-- `source`: [`packages/test-support/llm-replay/src/index.ts:1123`](../packages/test-support/llm-replay/src/index.ts)
+- `refs`: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · [`SystemPromptUpdate`](../packages/llm/llm/src/index.ts) · [`ToolUpdate`](../packages/llm/llm/src/index.ts)
+- `source`: [`packages/test-support/llm-replay/src/index.ts:1129`](../packages/test-support/llm-replay/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the {@link ReplayConfig} inputs, each defaulting to its `DSH_SNAPSHOT_*` env var in `apply`. */
@@ -1922,6 +1926,8 @@ export interface ReplayModelConfig {
   defaultReasoningEffort?: string
   /** Optional in-history system prompt replacement for a keyless replay route. */
   systemPromptUpdate?: SystemPromptUpdate
+  /** Optional mid-conversation tool declaration mode for a keyless replay route. */
+  toolUpdate?: ToolUpdate
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-replay -->
@@ -2461,6 +2467,31 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-sandbox-policy -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-schedule -->
+<a id="deepseek-aidsh-schedule"></a>
+
+## `@deepseek-ai/dsh-schedule`
+
+- `inject`: `agents` · `sessions` · `tools` · `storageDomain` · `sessionController` · `sessionPersistence`
+- `source`: [`packages/schedule/schedule/src/index.ts:73`](../packages/schedule/schedule/src/index.ts)
+
+```ts config-catalog
+/** Configuration for the Host Schedule domain. */
+export interface Config {
+  /**
+   * Delivery-history window retained per task, in days; omission defaults to 30.
+   * Pruning happens when an acknowledgment is appended, and `lastDelivery` is always retained.
+   */
+  deliveryHistoryDays?: number
+  /**
+   * Retained delivery records per task; omission defaults to 200. The older of this
+   * cap and the window wins, and the newest records survive.
+   */
+  deliveryHistoryRecords?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-schedule -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-sdk-app -->
 <a id="deepseek-aidsh-sdk-app"></a>
@@ -4322,7 +4353,6 @@ export interface Config {
 | `@deepseek-ai/dsh-lsp` | — | [`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts) |
 | `@deepseek-ai/dsh-mcp-resources` | `tools` | [`packages/mcp/mcp-resources/src/index.ts`](../packages/mcp/mcp-resources/src/index.ts) |
 | `@deepseek-ai/dsh-sandbox-ssh` | `ssh` | [`packages/ssh/sandbox-ssh/src/index.ts`](../packages/ssh/sandbox-ssh/src/index.ts) |
-| `@deepseek-ai/dsh-schedule` | `agents` · `sessions` · `tools` · `sessionPersistence` | [`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts) |
 | `@deepseek-ai/dsh-session` | — | [`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts) |
 | `@deepseek-ai/dsh-session-checkpoint-policy` | `llm` · `sessionPersistence` · `sessions` · `tools` | [`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts) |
 | `@deepseek-ai/dsh-session-projection` | — | [`packages/session/session-projection/src/index.ts`](../packages/session/session-projection/src/index.ts) |

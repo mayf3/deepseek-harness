@@ -27,8 +27,10 @@ export const en = {
   settingsSignedOutDescription: 'Sign in to DeepSeek Harness to get your dedicated API Key',
   signInDescription: 'Use your DeepSeek account to get started.',
   profileUnavailable: 'Account details are not available yet.',
-  balance: 'Recharge balance', bonusBalance: 'Bonus balance', balanceUnavailable: 'View on Platform', balanceSignedOut: 'Sign in to view',
+  balance: 'Topped-up balance', bonusBalance: 'Granted balance', balanceUnavailable: 'View on Platform', balanceSignedOut: 'Sign in to view',
   accountInfo: 'More account information', more: 'More', usage: 'View usage', topUp: 'Top up',
+  bonusNoticeTitle: 'Bonus credited',
+  bonusEmpty: 'No bonus available',
 } as const
 /** Account locale keys. */
 export type AccountKey = keyof typeof en
@@ -60,4 +62,6 @@ export const zh: Record<AccountKey, string> = {
   profileUnavailable: '账号资料暂不可用',
   balance: '充值余额', bonusBalance: '赠金余额', balanceUnavailable: '前往开放平台查看', balanceSignedOut: '登录后查看',
   accountInfo: '更多账号信息', more: '更多', usage: '查询用量', topUp: '充值',
+  bonusNoticeTitle: '赠金已到账',
+  bonusEmpty: '暂无可用赠金',
 }

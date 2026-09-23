@@ -43,6 +43,7 @@ import { DesktopUpdateSchedule, resolveDesktopUpdateScheduleConfig } from './upd
 import { desktopUpdateErrorSummary, presentDesktopUpdate } from './update-presentation.ts'
 import { desktopErrorState } from './startup-error.ts'
 import { DesktopMandatoryUpdatePolicy, resolveDesktopPolicyConfig, type DesktopPolicyState } from './mandatory-update-policy.ts'
+import { desktopClientMetadata } from './client-metadata.ts'
 import { DesktopMandatoryUpdateWindow } from './mandatory-update-window.ts'
 import { DesktopPolicyTestAuth } from './policy-test-auth.ts'
 import { DesktopUpdateDialog, type UpdateDialogOptions } from './update-dialog.ts'
@@ -380,7 +381,7 @@ async function main(): Promise<void> {
     return next.promise
   }
   const platformView = new DesktopPlatformView(join(app.getAppPath(), 'lib', 'preload-platform-account.cjs'),
-    () => locale.id === 'zh-CN' ? 'zh_CN' : 'en_US')
+    () => locale.id === 'zh-CN' ? 'zh_CN' : 'en_US', process.platform === 'win32' ? 'win32' : 'darwin')
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
@@ -997,7 +998,7 @@ async function main(): Promise<void> {
         },
         startSignIn: async () => {
           if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
-          return welcomeBackend.account.start(locale.id)
+          return welcomeBackend.account.start(desktopClientMetadata(locale.id))
         },
         cancelSignIn: async (id) => {
           if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
@@ -1111,16 +1112,11 @@ async function main(): Promise<void> {
         () => mandatoryUI?.confirmationWindow ?? currentDialogWindow(),
         (event) => { console.info(`desktop policy authentication: ${event}`); updateJournal?.action(`policy-login-${event}`) })
     }
-    const bundleId = app.isPackaged
-      ? ('dshDesktopAppId' in manifest ? manifest.dshDesktopAppId : undefined)
-      : process.env.DSH_DESKTOP_APP_ID
-    if (typeof bundleId !== 'string' || bundleId.trim() === '') throw new Error('desktop policy: missing application bundle ID')
     if (!['win32', 'darwin'].includes(process.platform) || !['x64', 'arm64'].includes(process.arch)) throw new Error('desktop policy: unsupported platform')
     let wasBlocking = false
     mandatoryPolicy = new DesktopMandatoryUpdatePolicy(policyConfig, {
       platform: process.platform as 'win32' | 'darwin', arch: process.arch as 'x64' | 'arm64',
-      version: app.getVersion(), bundledDshVersion: app.isPackaged ? readDesktopRuntime(resources.dsh).release.version : app.getVersion(),
-      bundleId, locale: locale.id,
+      bundledDshVersion: app.isPackaged ? readDesktopRuntime(resources.dsh).release.version : app.getVersion(),
     }, (state) => {
       if (state.error !== 'authentication-required') policyAuthenticationQueued = false
       if (state.blocking) {
@@ -1130,7 +1126,7 @@ async function main(): Promise<void> {
       mandatoryUI?.sync()
       if (state.blocking && !wasBlocking) void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
       wasBlocking = state.blocking
-    }, policyAuth?.request)
+    }, policyAuth?.request, () => desktopClientMetadata(locale.id))
     const policy = mandatoryPolicy
     mandatoryUI = new DesktopMandatoryUpdateWindow({
       overlays: updateOverlays,

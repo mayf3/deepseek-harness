@@ -1,5 +1,5 @@
 /** Model catalog and request-local dependencies for DeepSeek Messages. */
-import type { LlmModelInfo, ModelModality, SystemPromptUpdate, ResolvedRetryPolicy, ImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
+import type { LlmModelInfo, ModelModality, SystemPromptUpdate, ToolUpdate, ResolvedRetryPolicy, ImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import type { DeepSeekLlmApiExtensionRequest, PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
@@ -33,6 +33,13 @@ export interface DeepSeekCatalogModel {
    * system prompt; omission means only a leading system message is read.
    */
   systemPromptUpdate?: SystemPromptUpdate
+  /**
+   * `'addition-only'` declares that the endpoint activates a `defer_loading`
+   * tool from a later `tool_addition` block; `'in-history'` additionally
+   * reads removal notices in conversation order. Omission declares the
+   * complete tool list on every request.
+   */
+  toolUpdate?: ToolUpdate
 }
 
 /**

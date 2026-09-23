@@ -499,9 +499,13 @@ it('explicitly reopens one onboarding editor during an existing session', () => 
 it('opens Account from the contributed sidebar launcher', () => {
   const { renderSlot } = mount({ rows: [{ id: 'account', order: -10, label: 'Account' }] })
   const launcher = renderSlot.mock.calls.find(call => call[0] === 'settings.launcher')!
+  expect(launcher[1]).toMatchObject({ settingsOpen: false })
   act(() => { (launcher[1] as { openSettings: () => void }).openSettings() })
   expect(screen.getByTestId('section-account')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Account' }).querySelector('svg')).not.toBeNull()
+  expect(renderSlot.mock.calls.filter(call => call[0] === 'settings.launcher').at(-1)?.[1]).toMatchObject({ settingsOpen: true })
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(renderSlot.mock.calls.filter(call => call[0] === 'settings.launcher').at(-1)?.[1]).toMatchObject({ settingsOpen: false })
 })
 
 it('shows the effective settings binding on focus and exposes it to assistive technology', () => {
