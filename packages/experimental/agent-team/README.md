@@ -176,7 +176,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 The `agentTeam` Session projection publishes the Lead Session's durable roster, non-deleted task views, and any `failure` beside the last valid state. Its `apply` replaces only the touched collection; mailbox-only changes retain the client view reference and produce no frame. The [subsystem reference](../../../docs/subsystems/agent-team.md#web-projection) defines the wire types.
 
-The [Web UI](../client-ui-agent-team/README.md) owns projection baseline loading and overlays activity from Session status. Task creation and updates belong to Team agents through the service and model tools. The `./client` export supplies browser-safe roster, task, and projection types.
+The [Web UI](../client-ui-agent-team/README.md) reads the shared Session projections and overlays activity from Session status. Task creation and updates belong to Team agents through the service and model tools. The `./client` export supplies browser-safe roster, task, and projection types.
 
 ## Model Experience
 

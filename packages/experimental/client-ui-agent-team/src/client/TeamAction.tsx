@@ -7,7 +7,7 @@ import type {
 } from '@deepseek-ai/dsh-experimental-agent-team/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import {
-  IconCloseOutlineRegular, IconRefreshOutlineRegular, IconUserOutlineRegular, StateDot,
+  IconCloseOutlineRegular, IconUserOutlineRegular, StateDot,
   useAnchoredPosition, useDismissOnOutsidePointer, type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -17,9 +17,8 @@ import css from './TeamAction.module.css'
 
 /** Business actions injected by the browser plugin. */
 export interface TeamActionInjected {
-  /** Read a Session's projection baseline once per connection, or retry a failed read. */
-  loadProjections: (sessionId: SessionId) => void
-  openTeammate: (sessionId: SessionId, member: TeamMemberProjection) => void
+  /** Open a continuable child from the current conversation. */
+  openTeammate: (sessionId: SessionId, childSessionId: SessionId) => void
 }
 
 /** Full props of the Team conversation-header action. */
@@ -28,10 +27,6 @@ export type TeamActionProps =
 
 /** Durable lifecycle overlaid with the member Session's live turn activity. */
 type MemberStatus = 'running' | 'inactive' | 'provisioning' | 'failed'
-
-function failureText(error: { readonly code: string; readonly message: string }): string {
-  return `${error.message} (${error.code})`
-}
 
 function statusKey(status: TeamTask['status']): TeamKey {
   switch (status) {
@@ -72,26 +67,21 @@ function taskDotState(task: TeamTask): StateDotState {
 }
 
 type TeamMemberRowProps = Pick<TeamActionProps,
-  'sessionId' | 'useProjection' | 'useSessions' | 'useSessionStatus' | 'openTeammate' | 't'
+  'sessionId' | 'useSessions' | 'useSessionStatus' | 'openTeammate' | 't'
 > & {
   member: TeamMemberProjection
   onError: (message: string) => void
 }
 
 function TeamMemberRow({
-  member, sessionId, useProjection, useSessions, useSessionStatus, openTeammate, onError, t,
+  member, sessionId, useSessions, useSessionStatus, openTeammate, onError, t,
 }: TeamMemberRowProps) {
-  const currentModel = useProjection('modelSelection', value =>
-    member.id === sessionId ? value?.next?.model : undefined)
-  const otherModel = useSessions(state => member.id === sessionId
-    ? undefined
-    : state.projectionsBySession[member.id]?.values.modelSelection?.next?.model)
+  const model = useSessions(state => state.projectionsBySession[member.id]?.values.modelSelection?.next?.model)
   const running = useSessionStatus(state => state.get(member.id)?.running)
   const summaryRunning = useSessions(state => state.byId[member.id]?.running)
   const status: MemberStatus = member.phase === 'active'
     ? (running ?? summaryRunning) === true ? 'running' : 'inactive'
     : member.phase
-  const model = member.id === sessionId ? currentModel : otherModel
 
   return (
     <button
@@ -101,7 +91,7 @@ function TeamMemberRow({
       title={member.role === 'teammate' ? t('open') : undefined}
       onClick={() => {
         try {
-          openTeammate(sessionId, member)
+          openTeammate(sessionId, member.id)
         } catch (reason) {
           onError(String(reason))
         }
@@ -119,7 +109,7 @@ function TeamMemberRow({
 
 /** Render the Team roster and read-only task board from the Lead Session's `agentTeam` projection. */
 export function TeamAction({
-  sessionId, useSession, useProjection, useSessions, useSessionStatus, loadProjections, openTeammate, t,
+  sessionId, useSession, useSessions, useSessionStatus, openTeammate, t,
 }: TeamActionProps) {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -133,33 +123,14 @@ export function TeamAction({
   useDismissOnOutsidePointer(rootRef, open, setOpen, panelRef)
 
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
-  const isLead = leadSessionId === sessionId
-  const currentTeam = useProjection('agentTeam')
-  const parentTeam = useSessions(state => isLead
-    ? undefined
-    : state.projectionsBySession[leadSessionId]?.values.agentTeam)
-  const readState = useSessions(state => state.projectionsBySession[leadSessionId]?.state)
-  const projectionError = useSessions(state => state.projectionsBySession[leadSessionId]?.error ?? null)
-  const team = isLead ? currentTeam : parentTeam
-  const readError = readState === 'error' ? projectionError : null
-  const ready = readState === 'ready'
-  const members = team?.members
+  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
+  const opening = useSession(snapshot => snapshot.openState === 'loading')
+  const listing = useSessions(state => state.phase === 'pending')
 
   useEffect(() => {
     setOpen(false)
     setError(null)
   }, [sessionId])
-
-  useEffect(() => {
-    if (open) loadProjections(leadSessionId)
-  }, [open, leadSessionId, loadProjections])
-
-  useEffect(() => {
-    if (!open) return
-    for (const member of members ?? []) {
-      if (member.id !== sessionId && member.id !== leadSessionId && member.phase === 'active') loadProjections(member.id)
-    }
-  }, [open, sessionId, leadSessionId, members, loadProjections])
 
   useLayoutEffect(() => {
     if (open && positioned) panelRef.current?.focus()
@@ -215,19 +186,10 @@ export function TeamAction({
           {error !== null && (
             <div className={css.error} role="alert"><StateDot state="error" />{error}</div>
           )}
-          {readError !== null && (
-            <div className={css.error} role="alert">
-              <StateDot state="error" />
-              <span className={css.spacer}>{failureText(readError)}</span>
-              <button type="button" className={css.iconButton} aria-label={t('retry')} onClick={() => { loadProjections(leadSessionId) }}>
-                <IconRefreshOutlineRegular size={14} />
-              </button>
-            </div>
-          )}
-          {team === undefined && readError === null && (
+          {team === undefined && (
             <div className={css.notice} role="status">
-              <StateDot state={ready ? 'warning' : 'ongoing'} />
-              {t(ready ? 'unavailable' : 'loading')}
+              <StateDot state={opening || listing ? 'ongoing' : 'warning'} />
+              {t(opening || listing ? 'loading' : 'unavailable')}
             </div>
           )}
           {team !== undefined && (
@@ -243,7 +205,6 @@ export function TeamAction({
                       key={member.id}
                       member={member}
                       sessionId={sessionId}
-                      useProjection={useProjection}
                       useSessions={useSessions}
                       useSessionStatus={useSessionStatus}
                       openTeammate={openTeammate}

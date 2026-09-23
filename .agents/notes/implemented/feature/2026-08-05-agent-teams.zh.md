@@ -56,9 +56,9 @@ Worktree isolation 不是 harness runtime 行为。deployment 或 prompt 可以�
 
 ## Web projection
 
-Web panel 读取 Lead Session 的 `agentTeam` 传输投影，因为现有投影流能持续更新浏览器状态，无需独立的 Team 读取 API。当前会话的值使用标准 `useProjection` 钩子；teammate 会话通过共享的跨 Session store 读取其 Lead。
+Web panel 读取 Lead Session 的 `agentTeam` 传输投影，因为现有投影流能持续更新浏览器状态，无需独立的 Team 读取 API。Lead 与 teammate 会话均从共享的跨 Session store 选择值。面板不负责投影读取：Session 加载、列表缓存值与控制基线提供数据，已注册传输 key 的变化会为已连接客户端替换控制基线。
 
-传输视图携带持久 roster phase、使用共享就绪与重叠派生逻辑的未删除任务视图，以及最后有效状态旁的 `failure`。实时活动来自 Session 状态。模型选择有自己的持久投影；打开 panel 时请求其他 active 成员的基线，无需打开它们的会话，在持久选择或请求出现前不显示模型。
+传输视图携带持久 roster phase、使用共享就绪与重叠派生逻辑的未删除任务视图，以及最后有效状态旁的 `failure`。实时活动来自 Session 状态。模型选择有自己的持久投影；面板展示共享 store 中可用的值，不打开成员会话。缺少的缓存值保持缺失，直到 Session 加载或实时更新提供它。
 
 发布要求 `apply` 对每个已应用的 Team 事件返回新的 state 对象，并只替换被触及的集合。仅邮箱的事件保留视图引用，不发布 frame。现有传输层将每个变化后的完整视图发送给所有已连接浏览器；包 README 记录了这项开销。
 

@@ -29,7 +29,9 @@ Enable this package through [`@deepseek-ai/dsh-experimental-agent-team-profile`]
 
 ### Inspect and navigate the roster
 
-The trigger shows the teammate count, and the panel shows the roster and task board of the Lead Session's `agentTeam` projection, so a task created by an agent or a teammate reaching `active` appears while the panel is open. Opening the panel requests the Lead's projection baseline once per connection, both in the Lead conversation and in a teammate conversation. A successful prior read is reused; a failed read shows a retry control alongside any last valid Team, and a reconnect reloads it. A successful read without the Team capability shows an unavailable notice. The panel also requests active members' projection baselines outside the current Session and Lead, including persisted Sessions that have not been opened, and loads new members when they become active. Roster rows show durable names and a status: `failed` and `provisioning` come from the durable member phase, and `running` or `inactive` comes from the member Session's live status. A model appears when the member Session's `modelSelection` projection records a durable selection or request. Provisioning and running members use the shared ongoing loader, inactive members use idle, and failed members use error. Selecting a healthy teammate opens the ordinary `{ parentSessionId, childSessionId, mode: 'continuable' }` address from its Lead and roster identity without refreshing or checking the parent catalog. The Host validates the parent, child, and mode when history opens. History and later human prompts continue through the stable addressed-subagent conversation path; this package adds no Team-specific address field.
+The trigger shows the teammate count, and the panel shows the Lead Session's roster and task board from the shared Session store. Task and roster updates appear while the panel stays open. Opening the panel performs no projection requests. The panel shows a loading notice while the conversation or Session list is loading, and an unavailable notice when no Team value is present afterward.
+
+Roster rows show durable names and phases. Live Session status supplies running activity; the shared `modelSelection` projection supplies a model when available. Selecting an active teammate opens its ordinary continuable child address. The Host validates the parent, child, and mode when history opens; later human prompts use the same addressed-subagent conversation.
 
 ### Inspect the task board
 
@@ -47,11 +49,11 @@ The read-only task board shows task identity, owner, blockers, readiness, adviso
 
 The Client export registers its locale dictionaries and one conversation-header slot through Cordis effects; it mounts no Remote namespace. Disposing the plugin fiber removes both registrations.
 
-The panel renders outside the conversation container and stays within the viewport. Opening moves focus into the panel; Escape or Close returns focus to its trigger. Clicking outside or moving focus outside the panel and trigger closes it without moving focus back. The component reads the current Session's Team through `useProjection('agentTeam')` and its model through `useProjection('modelSelection')`. In a teammate conversation, `useSession` supplies the Lead identity and `useSessions` reads its Team value. Separate `useSessions` selectors read the Lead's baseline-read state and error in both conversation types. Each roster row selects its own model and running state; the panel subscribes to neither the complete projection collection nor the complete summary or status collection. Its only injected callbacks read a Session's projection baseline and open a teammate. Switching conversations closes the panel and clears a navigation failure.
+The panel renders outside the conversation container and stays within the viewport. Opening moves focus into the panel; Escape or Close returns focus to its trigger. Clicking outside or moving focus outside the panel and trigger closes it without moving focus back. `useSession` supplies the Lead identity; `useSessions` selects its Team and each member's model from the shared store. Each roster row selects its own running state. The only injected callback opens a teammate using the current and child Session ids. Switching conversations closes the panel and clears a navigation failure.
 
 | File | Role |
 |---|---|
-| [`src/client/mount.ts`](src/client/mount.ts) | Locale, projection-read, navigation, and slot registrations |
+| [`src/client/mount.ts`](src/client/mount.ts) | Locale, navigation, and slot registrations |
 | [`src/client/TeamAction.tsx`](src/client/TeamAction.tsx) | Projection-derived roster and task board with panel interaction state |
 | [`src/client/locales.ts`](src/client/locales.ts) | English and Chinese panel copy |
 | [`src/index.ts`](src/index.ts) | Inert Host entry |
@@ -83,10 +85,8 @@ No direct effect; the Team tools and ordinary conversation submission own any la
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Cached capability absence** — if another UI loaded the Lead projection baseline before Agent Teams was enabled, opening this panel reuses that baseline; reconnect to load the newly enabled capability.
-- **Member baseline failures** — the panel shows read errors only for the Lead. Failed reads for other active members retry when the panel reopens or receives a roster or task update; persistent failures can issue repeated requests while the Team is active.
 - **No mailbox timeline** — the projection view carries roster and tasks only; peer messages are not shown.
-- **Model before the first request** — a member without a durable model selection or request shows no model. Inactive persisted members can supply their model through the explicit projection read; live activity still requires a running Host agent.
+- **Model availability** — a model appears only when the shared store has a durable selection or request for that member. Missing cold-cache values stay absent until normal Session loading or a live update supplies them.
 - **Ordinary child continuation** — a human message sent after navigation uses the stable addressed-subagent prompt path, not the Team peer mailbox.
 - **No lifecycle or workspace controls** — the panel cannot spawn, rename, delete, or interrupt teammates, and write scopes remain advisory metadata.
 

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished, vi } from 'vitest'
 import * as yaml from 'js-yaml'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
@@ -82,10 +82,13 @@ describe('web e2e: Agent Teams panel', () => {
 
   it('displays agent-owned task changes through a read-only board without a refresh action', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-team-panel'))
+    const projectionReads = vi.spyOn(scaffold.ctx.sessionController, 'projections')
+    onTestFinished(() => { projectionReads.mockRestore() })
     await page.locator('[data-team-action]').getByRole('button', { name: /Agent Team/iu }).click()
     const action = page.getByRole('dialog', { name: 'Agent Team', exact: true })
     await action.getByText('No shared tasks yet').waitFor()
     await action.getByText('lead').waitFor()
+    expect(projectionReads).not.toHaveBeenCalled()
 
     expect(await action.getByRole('button', { name: 'New task' }).count()).toBe(0)
     expect(await action.getByRole('button', { name: /Refresh/u }).count()).toBe(0)
@@ -107,6 +110,7 @@ describe('web e2e: Agent Teams panel', () => {
 
     const snapshot = await captureStableAria(page, '[data-team-panel]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(PANEL_EXPECTED, snapshot, MODE)
+    expect(projectionReads).not.toHaveBeenCalled()
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await action.getByRole('button', { name: 'Close' }).click()

@@ -353,4 +353,24 @@ hydrate( session: Session, checkpoint: ProjectionCheckpoint, events: readonly Se
 Types: [Session](session.md) · [SessionEvent](session.md) · [SessionHeader](persistence.md) · [SessionLogOffset](session.md)
 
 Source: [`packages/session/session-projection/src/index.ts`](../../packages/session/session-projection/src/index.ts)
+
+<a id="session-projection-events"></a>
+
+### `session-projection/*` events
+
+<a id="session-projectiondefinitions-changed--emit"></a>
+
+#### `session-projection/definitions-changed` — emit
+
+The registered client-visible keys changed; carriers must replace their baselines.
+
+```ts cordis-catalog
+/**
+ * The registered client-visible keys changed; carriers must replace their baselines.
+ * @mode emit
+ */
+'session-projection/definitions-changed'(): void
+```
+
+Source: [`packages/session/session-projection/src/index.ts`](../../packages/session/session-projection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

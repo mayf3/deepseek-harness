@@ -3,15 +3,12 @@ import { describe, expect, it } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-import type { TeamMemberProjection } from '@deepseek-ai/dsh-experimental-agent-team/client'
 import { TeamAction, type TeamActionInjected } from '../src/client/TeamAction.tsx'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
 const SESSION = 'team-session' as SessionId
 const CHILD = 'team-child' as SessionId
-const LEAD: TeamMemberProjection = { id: SESSION, name: 'lead', role: 'lead', phase: 'active' }
-const WORKER: TeamMemberProjection = { id: CHILD, name: 'worker', role: 'teammate', phase: 'active' }
 
 async function bench(options: { addressed?: boolean } = {}) {
   const ctx = new Context()
@@ -57,12 +54,11 @@ async function bench(options: { addressed?: boolean } = {}) {
     .find(candidate => candidate.component === TeamAction)
   const actions = (): TeamActionInjected => {
     const injected = entry()!.inject!()
-    const { loadProjections, openTeammate } = injected
-    if (typeof loadProjections !== 'function' || typeof openTeammate !== 'function') {
+    const { openTeammate } = injected
+    if (typeof openTeammate !== 'function') {
       throw new Error('Team header action lacks its injected callbacks')
     }
     return {
-      loadProjections: loadProjections as TeamActionInjected['loadProjections'],
       openTeammate: openTeammate as TeamActionInjected['openTeammate'],
     }
   }
@@ -88,10 +84,7 @@ describe('ui-team browser plugin', () => {
     const t = b.ctx.locale.bind('agent-team')
     expect(t('trigger')).toBe('Agent Team')
 
-    b.actions().loadProjections(SESSION)
-    expect(b.navigation).toEqual([['refresh', SESSION]])
-    b.actions().openTeammate(SESSION, LEAD)
-    expect(b.navigation).toEqual([['refresh', SESSION]])
+    expect(b.navigation).toEqual([])
 
     await b.fiber.dispose()
     expect(b.entry()).toBeUndefined()
@@ -100,7 +93,7 @@ describe('ui-team browser plugin', () => {
 
   it('opens a continuable teammate address without touching the parent catalog', async () => {
     const b = await bench()
-    b.actions().openTeammate(SESSION, WORKER)
+    b.actions().openTeammate(SESSION, CHILD)
     expect(b.navigation).toEqual([
       ['open', { parentSessionId: SESSION, childSessionId: CHILD, mode: 'continuable' }],
     ])
@@ -108,7 +101,7 @@ describe('ui-team browser plugin', () => {
 
   it('routes teammate navigation from an addressed teammate conversation back through its Lead', async () => {
     const b = await bench({ addressed: true })
-    b.actions().openTeammate(CHILD, WORKER)
+    b.actions().openTeammate(CHILD, CHILD)
     expect(b.navigation).toEqual([
       ['open', { parentSessionId: SESSION, childSessionId: CHILD, mode: 'continuable' }],
     ])
@@ -117,7 +110,7 @@ describe('ui-team browser plugin', () => {
   it('does not open a teammate from a conversation outside the main view', async () => {
     const b = await bench()
     b.select('other-session' as SessionId)
-    b.actions().openTeammate(SESSION, WORKER)
+    b.actions().openTeammate(SESSION, CHILD)
     expect(b.navigation).toEqual([])
   })
 

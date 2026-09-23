@@ -176,7 +176,7 @@ dispose 会关闭准入、中止并等待已获准的创建与 mailbox dispatch 
 
 `agentTeam` Session 投影发布 Lead Session 的持久 roster、未删除任务视图，以及最后有效状态旁的 `failure`。其 `apply` 只替换被触及的集合；仅邮箱的变化保留客户端视图引用，不产生 frame。[子系统参考](../../../docs/subsystems/agent-team.zh.md#web-projection) 定义传输类型。
 
-[Web UI](../client-ui-agent-team/README.zh.md) 负责投影基线加载，并从 Session 状态叠加活动信息。任务创建与更新由 Team agent 通过服务和模型工具完成。`./client` 导出可供浏览器使用的 roster、任务与投影类型。
+[Web UI](../client-ui-agent-team/README.zh.md) 读取共享 Session 投影，并从 Session 状态叠加活动信息。任务创建与更新由 Team agent 通过服务和模型工具完成。`./client` 导出可供浏览器使用的 roster、任务与投影类型。
 
 ## 模型体验
 

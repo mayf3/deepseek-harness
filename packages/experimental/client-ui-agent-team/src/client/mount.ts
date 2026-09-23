@@ -1,6 +1,5 @@
 /** Source-safe Agent Teams browser registration. */
 
-import type { TeamMemberProjection } from '@deepseek-ai/dsh-experimental-agent-team/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -18,7 +17,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** Required browser services for projection reads, navigation, slots, and localized copy. */
+/** Required browser services for navigation, slots, and localized copy. */
 export const inject = ['sessions', 'uiWorkspace', 'slots', 'locale']
 
 /**
@@ -36,16 +35,12 @@ export function registerAgentTeamUi(ctx: ClientContext): void {
   }
 
   const actions: TeamActionInjected = {
-    loadProjections(sessionId: SessionId): void {
-      void sessions.refreshProjections(sessionId)
-    },
-    openTeammate(sessionId: SessionId, member: TeamMemberProjection): void {
-      if (member.role !== 'teammate') return
+    openTeammate(sessionId: SessionId, childSessionId: SessionId): void {
       const parentSessionId = leadSessionId(sessionId)
       if ((sessions.retainInfo(sessionId).getSnapshot().retainedBy.mainView ?? 0) === 0) return
       ctx.uiWorkspace.openSession({
         parentSessionId,
-        childSessionId: member.id,
+        childSessionId,
         mode: 'continuable',
       })
     },

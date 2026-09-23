@@ -7,7 +7,6 @@ export const NS = 'agent-team'
 export const zh = {
   trigger: 'Agent Team',
   close: '关闭',
-  retry: '重试读取 Team',
   loading: '正在加载 Team…',
   unavailable: 'Team 暂不可用',
   failure: 'Team 持久记录无效：{message}',
@@ -38,7 +37,6 @@ export type TeamKey = keyof typeof zh
 export const en = {
   trigger: 'Agent Team',
   close: 'Close',
-  retry: 'Retry reading Team',
   loading: 'Loading Team…',
   unavailable: 'Team is unavailable',
   failure: 'Invalid persisted Team record: {message}',

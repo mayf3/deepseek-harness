@@ -29,7 +29,9 @@ kind: "package-reference"
 
 ### 检查并导航 roster
 
-触发按钮显示 teammate 数量，panel 显示 Lead Session `agentTeam` 投影中的 roster 与任务板，因此 agent 创建的任务或进入 `active` 的 teammate 会在 panel 打开期间直接出现。无论在 Lead 会话还是 teammate 会话中，打开 panel 时都按每次连接一次的规则请求 Lead 的投影基线。之前读取成功则复用；读取失败会在最后有效 Team 旁显示重试控件，重连后会重新加载。读取成功但缺少 Team 能力时显示不可用提示。panel 还会请求当前 Session 与 Lead 之外 active 成员的投影基线，包括尚未打开的持久 Session，并在新成员进入 active 时加载它。Roster row 展示持久 name 与状态：`failed` 与 `provisioning` 来自持久成员 phase，`running` 或 `inactive` 来自成员 Session 的实时状态。当成员 Session 的 `modelSelection` 投影记录了持久选择或请求时显示 model。provisioning 和 running 成员使用共享 ongoing loading，inactive 成员使用 idle 灰点，failed 成员使用 error 红点。选择健康 teammate 时，系统直接根据其 Lead 与 roster 身份打开普通的 `{ parentSessionId, childSessionId, mode: 'continuable' }` address，不刷新或检查 parent catalog。Host 在打开历史时校验 parent、child 与 mode。History 与后续人类提示词继续使用稳定 addressed-subagent 会话路径；本包不会添加 Team 专用 address 字段。
+触发按钮显示 teammate 数量，面板从共享 Session store 展示 Lead Session 的 roster 与任务板。面板保持打开时，任务和成员更新会直接出现。打开面板不发起投影请求。会话或 Session 列表正在加载时，面板显示加载提示；加载结束后仍无 Team 值时，显示不可用提示。
+
+Roster 行展示持久名称与阶段。实时 Session 状态提供运行活动；共享 `modelSelection` 投影在可用时提供模型。选择 active teammate 会打开其普通 continuable 子会话地址。Host 在打开历史时校验 parent、child 与 mode；后续人类提示词使用同一 addressed-subagent 会话。
 
 ### 查看任务板
 
@@ -47,11 +49,11 @@ kind: "package-reference"
 
 Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversation-header slot；它不挂载任何 Remote namespace。Dispose plugin fiber 会移除这两项 registration。
 
-面板渲染在会话容器外，并保持在视口范围内。打开时焦点移入面板；按 Escape 或选择关闭按钮时，焦点返回触发按钮。点击外部或将焦点移出面板与触发按钮时，面板关闭，但不会将焦点移回。组件通过 `useProjection('agentTeam')` 读取当前 Session 的 Team，通过 `useProjection('modelSelection')` 读取其 model。在 teammate 会话中，`useSession` 提供 Lead 身份，`useSessions` 读取其 Team 值。两类会话均通过独立的 `useSessions` selector 读取 Lead 的基线读取状态和错误。每个 roster row 只选择自己的 model 和运行状态；panel 不订阅完整投影集合，也不订阅完整摘要或状态集合。它仅有的注入回调是读取 Session 的投影基线与打开 teammate。切换会话会关闭面板并清除导航失败。
+面板渲染在会话容器外，并保持在视口范围内。打开时焦点移入面板；按 Escape 或选择关闭按钮时，焦点返回触发按钮。点击外部或将焦点移出面板与触发按钮时，面板关闭，但不会将焦点移回。`useSession` 提供 Lead 身份；`useSessions` 从共享 store 选择其 Team 及每个成员的模型。每个 roster 行只选择自己的运行状态。唯一的注入回调通过当前与子 Session 的 id 打开 teammate。切换会话会关闭面板并清除导航失败。
 
 | 文件 | 职责 |
 |---|---|
-| [`src/client/mount.ts`](src/client/mount.ts) | locale、投影读取、导航与 slot registration |
+| [`src/client/mount.ts`](src/client/mount.ts) | locale、导航与 slot registration |
 | [`src/client/TeamAction.tsx`](src/client/TeamAction.tsx) | 由投影派生的 roster 与任务板及面板交互状态 |
 | [`src/client/locales.ts`](src/client/locales.ts) | 中英文 panel 文案 |
 | [`src/index.ts`](src/index.ts) | 不执行行为的 Host entry |
@@ -83,10 +85,8 @@ Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversati
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **能力缺失的缓存** — 如果其他 UI 在启用 Agent Teams 前已读取 Lead 的投影基线，打开本面板会复用该基线；重新连接后才能加载新启用的能力。
-- **成员基线读取失败** — 面板只显示 Lead 的读取错误。其他 active 成员的读取失败会在重新打开面板或收到 roster、任务更新时重试；Team 活跃期间，持续失败可能反复发出请求。
 - **没有 mailbox timeline**——投影视图只承载 roster 与任务；不显示 peer 消息。
-- **首次请求前的模型** — 没有持久模型选择或请求的成员不显示模型。未运行的持久成员可通过显式投影读取提供模型；实时活动仍需要正在运行的 Host agent。
+- **模型可用性** — 仅当共享 store 包含该成员的持久选择或请求时才显示模型。冷缓存中缺少的值会保持缺失，直到正常 Session 加载或实时更新提供它们。
 - **普通 child continuation**——导航后发送的人类消息使用稳定 addressed-subagent 提示词路径，而不是 Team peer mailbox。
 - **没有 lifecycle 或 workspace control**——panel 不能 spawn、rename、delete 或 interrupt teammate，write scope 仍只是提示性 metadata。
 
