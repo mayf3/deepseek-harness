@@ -623,6 +623,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   JobSettleCause: 'jobs.md',
   SpeechDownloadFailure: 'voice-input.md',
   SpeechPreparationState: 'voice-input.md',
+  SpeechPreparationOptions: 'voice-input.md',
   SpeechPreparationStep: 'voice-input.md',
   SpeechPreparationStepKind: 'voice-input.md',
   SpeechProviderView: 'voice-input.md',
