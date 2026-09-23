@@ -346,7 +346,8 @@ describe.skipIf(MODE === 'record')('web e2e: App-only desktop onboarding', () =>
     expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-settings')?.value).toMatchObject({ enabled: true })
     const persisted = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
     expect(persisted).toContain('id: ui-settings-account')
-    expect(persisted).toContain('detailed')
+    expect(persisted).toContain('process: detailed')
+    expect(persisted).toContain('transcriptView: detailed')
     const warningsAfter = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     acknowledgeReloadConnectionLoss(tripwire, warningsAfter)

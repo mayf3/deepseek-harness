@@ -4,14 +4,14 @@ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { OnboardingProcess } from '../onboarding-settings.ts'
 import type { DesktopOnboardingProps } from './onboarding-contract.ts'
 import compactIcon from './assets/onboarding-compact.svg'
+import standardIcon from './assets/onboarding-standard.svg'
 import detailedIcon from './assets/onboarding-detailed.svg'
-import expandedIcon from './assets/onboarding-expanded.svg'
 import css from './DesktopOnboarding.module.css'
 
 const options = [
   { value: 'compact', titleKey: 'onboardingCompact', descriptionKey: 'onboardingCompactDescription', icon: compactIcon, size: 40 },
-  { value: 'standard', titleKey: 'onboardingDetailed', descriptionKey: 'onboardingDetailedDescription', icon: detailedIcon, size: 36 },
-  { value: 'detailed', titleKey: 'onboardingExpanded', descriptionKey: 'onboardingExpandedDescription', icon: expandedIcon, size: 36 },
+  { value: 'standard', titleKey: 'onboardingStandard', descriptionKey: 'onboardingStandardDescription', icon: standardIcon, size: 36 },
+  { value: 'detailed', titleKey: 'onboardingDetailed', descriptionKey: 'onboardingDetailedDescription', icon: detailedIcon, size: 36 },
 ] as const
 
 /** @param props - selected detail, localized copy and persistence callbacks. @returns the process step. */

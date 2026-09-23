@@ -1,4 +1,4 @@
-import type { ChatSettings } from '@deepseek-ai/dsh-client-ui-chat/src/chat-settings.ts'
+import type { TranscriptViewMode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -65,8 +65,8 @@ async function harness(options: {
     namespace: DESKTOP_ONBOARDING_NAMESPACE,
     decode: value => OnboardingSettingsSchema(value as OnboardingSettings),
   }, mirror, 'host', schema)
-  const chat = new ConfigFormController<Pick<ChatSettings, 'transcriptView' | 'performanceUsage'>>(ctx, {
-    namespace: 'ui-chat', decode: value => value as Pick<ChatSettings, 'transcriptView' | 'performanceUsage'>,
+  const chat = new ConfigFormController<{ transcriptView: TranscriptViewMode; performanceUsage: 'compact' | 'detailed' }>(ctx, {
+    namespace: 'ui-chat', decode: value => value as { transcriptView: TranscriptViewMode; performanceUsage: 'compact' | 'detailed' },
   }, mirror, 'host', schema)
   const developerScope = new ConfigFormController<{ enabled: boolean }>(ctx, {
     namespace: 'ui-settings', decode: value => value as { enabled: boolean },

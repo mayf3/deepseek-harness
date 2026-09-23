@@ -1,5 +1,5 @@
 /** Resumable desktop onboarding and preference application over Host settings. */
-import type { ChatSettings } from '@deepseek-ai/dsh-client-ui-chat/src/chat-settings.ts'
+import type { TranscriptViewMode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { createSnapshotStore, shallowEqual } from '@deepseek-ai/dsh-client-store'
 import { hasOnboardingCredit } from './onboarding-balance.ts'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
@@ -41,7 +41,7 @@ export class DesktopOnboardingController {
    */
   constructor(
     private readonly progress: ConfigForm<OnboardingSettings>,
-    private readonly chat: ConfigForm<Pick<ChatSettings, 'transcriptView' | 'performanceUsage'>>,
+    private readonly chat: ConfigForm<{ transcriptView: TranscriptViewMode; performanceUsage: 'compact' | 'detailed' }>,
     private readonly setDeveloperTools: (enabled: boolean) => Promise<void>,
     private readonly account: HostObservable<AccountSnapshot>,
     private readonly readApiKeyPresence: () => Promise<boolean>,
