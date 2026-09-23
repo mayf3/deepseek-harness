@@ -52,6 +52,9 @@
     },
     {
       "path": "../ui-layout"
+    },
+    {
+      "path": "../ui-chat/tsconfig.client.json"
     }
   ]
 }
