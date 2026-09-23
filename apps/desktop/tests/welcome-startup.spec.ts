@@ -23,6 +23,9 @@ const state = vi.hoisted(() => ({
   stopHost: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   loadWorkspace: vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined),
   showWorkspace: vi.fn(),
+  showInactiveWorkspace: vi.fn(),
+  focusWorkspace: vi.fn(),
+  openDevTools: vi.fn(),
   closeWelcome: vi.fn(),
   welcomeLocale: undefined as DesktopLocale | undefined,
   preference: 'zh',
@@ -64,16 +67,18 @@ vi.mock('electron', () => ({
   BrowserWindow: class {
     constructor(options: BrowserWindowConstructorOptions) { state.windowOptions = options }
     private ready: (() => void) | undefined
-    webContents = { mainFrame: { url: 'dsh-app://app/' }, setWindowOpenHandler: vi.fn(), on: vi.fn(), once: vi.fn(), send: vi.fn(), openDevTools: vi.fn() }
+    webContents = { mainFrame: { url: 'dsh-app://app/' }, setWindowOpenHandler: vi.fn(),
+      on: vi.fn(), once: vi.fn(), send: vi.fn(), openDevTools: state.openDevTools }
     static getAllWindows() { return [] }
     once(name: string, callback: () => void) { if (name === 'ready-to-show') this.ready = callback; return this }
     on() { return this }
     isDestroyed() { return false }
     isMinimized() { return false }
     restore = vi.fn()
-    focus = vi.fn()
+    focus = state.focusWorkspace
     hide = vi.fn()
     show = state.showWorkspace
+    showInactive = state.showInactiveWorkspace
     async loadURL(url: string) { state.contents = this.webContents; await state.loadWorkspace(url); this.ready?.() }
   },
   net: { fetch: vi.fn() },
@@ -251,5 +256,16 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   state.accountListener!({ ...account, status: 'signed-out', attempt: null })
   await vi.advanceTimersByTimeAsync(0)
   expect(await state.operations!.takeNotice()).toBeUndefined()
+  state.showWorkspace.mockClear()
+  state.focusWorkspace.mockClear()
+  vi.stubEnv('DSH_DESKTOP_OPEN_DEVTOOLS', '1')
+  state.accountListener!({ ...account, status: 'credential-stored', attempt: { id: attemptId, phase: 'succeeded' } })
+  await vi.waitFor(() => { expect(state.showInactiveWorkspace).toHaveBeenCalledOnce() })
+  expect(state.showWorkspace).not.toHaveBeenCalled()
+  expect(state.focusWorkspace).not.toHaveBeenCalled()
+  expect(state.openDevTools).not.toHaveBeenCalled()
+  state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'dsh://open')
+  expect(state.showWorkspace).toHaveBeenCalledOnce()
+  expect(state.focusWorkspace).toHaveBeenCalledOnce()
 
 })

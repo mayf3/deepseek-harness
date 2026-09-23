@@ -395,7 +395,7 @@ async function main(): Promise<void> {
             returnedAttempt = attempt.id
             focusPrimaryWindow()
           }
-          if (attempt?.phase === 'succeeded' && welcomeWindow !== undefined) void enterWorkspace().catch(() => undefined)
+          if (attempt?.phase === 'succeeded' && welcomeWindow !== undefined) void enterWorkspace({ activate: false }).catch(() => undefined)
           if (previousAccountStatus === 'credential-stored' && state.status === 'signed-out') {
             void readWelcomeState().then(async (value) => {
               if (needsWelcome(value) && !quitting) {
@@ -924,19 +924,20 @@ async function main(): Promise<void> {
     })
     return window
   }
-  const enterWorkspace = async (): Promise<void> => {
+  const enterWorkspace = async ({ activate = true }: { activate?: boolean } = {}): Promise<void> => {
     if (quitting) return
     const window = mainWindow ?? createMainWindow()
     await navigateMain(applicationUrl)
     if (isQuitting() || recovery.active || window.isDestroyed()) return
-    window.show()
+    if (activate) window.show()
+    else window.showInactive()
     enteredWorkspace = true
     if (welcomeWindow !== undefined) {
       welcomeWindow.close()
       window.webContents.send(DESKTOP_IPC.enterWorkspace)
     }
     welcomeWindow = undefined
-    if (development && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
+    if (activate && development && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
       window.webContents.openDevTools({ mode: 'detach' })
     }
   }
