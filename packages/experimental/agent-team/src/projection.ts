@@ -314,9 +314,6 @@ const teamMemberProjectionSchema = z.object({
   name: z.string(),
   role: z.enum(['lead', 'teammate']),
   phase: z.enum(['provisioning', 'active', 'failed']),
-  description: z.string().optional(),
-  provider: z.string().optional(),
-  context: z.enum(['fresh', 'fork']).optional(),
   error: z.string().optional(),
 }).strict() as z.ZodType<TeamMemberProjection>
 
@@ -351,9 +348,6 @@ function buildTeamProjection(state: TeamProjectionState): TeamProjection {
       name: member.name,
       role: 'teammate',
       phase: member.phase,
-      description: member.description,
-      provider: member.provider,
-      context: member.context,
       ...member.error === undefined ? {} : { error: member.error },
     })
   }
@@ -361,7 +355,7 @@ function buildTeamProjection(state: TeamProjectionState): TeamProjection {
     members,
     tasks: state.tasks
       .filter(task => task.status !== 'deleted')
-      .map(task => projectTaskView(rootId, state, task)),
+      .map(task => projectTaskView(state, task)),
     ...state.failure === undefined ? {} : { failure: state.failure },
   }
 }

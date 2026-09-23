@@ -35,7 +35,7 @@ const task: TeamTask = {
 }
 const lead: TeamMemberProjection = { id: SESSION, name: 'lead', role: 'lead', phase: 'active' }
 const worker: TeamMemberProjection = {
-  id: WORKER, name: 'worker', role: 'teammate', phase: 'active', description: 'worker', provider: 'spawn', context: 'fresh',
+  id: WORKER, name: 'worker', role: 'teammate', phase: 'active',
 }
 const team: TeamProjection = { members: [lead, worker], tasks: [task] }
 

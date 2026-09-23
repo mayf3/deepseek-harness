@@ -103,9 +103,6 @@ export interface TeamMemberProjection {
   readonly role: 'lead' | 'teammate'
   /** Durable lifecycle; the Lead row is always `active`. Turn activity comes from Session status. */
   readonly phase: TeamMemberPhase
-  readonly description?: string
-  readonly provider?: string
-  readonly context?: 'fresh' | 'fork'
   readonly error?: string
 }
 

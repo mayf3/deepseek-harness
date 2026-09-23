@@ -64,7 +64,7 @@ export class TeamTaskBoard {
       }
       this.assertTaskGraph(state, task)
       await this.journal.appendAndFlush(root, 'team/task', { version: 2, teamId: TeamId(root.id), task })
-      return this.taskView(root, state, task)
+      return projectTaskView(state, task)
     })
   }
 
@@ -79,7 +79,7 @@ export class TeamTaskBoard {
     const state = this.journal.state(root)
     const task = state.tasks.find(candidate => candidate.id === id)
     if (task === undefined) throw new TeamError(`team task "${id}" not found`, 'TEAM_TASK_NOT_FOUND')
-    return this.taskView(root, state, task)
+    return projectTaskView(state, task)
   }
 
   /**
@@ -92,7 +92,7 @@ export class TeamTaskBoard {
     const state = this.journal.state(root)
     return state.tasks
       .filter(task => task.status !== 'deleted')
-      .map(task => this.taskView(root, state, task))
+      .map(task => projectTaskView(state, task))
   }
 
   /**
@@ -206,7 +206,7 @@ export class TeamTaskBoard {
       }
       this.assertTaskGraph(state, task)
       await this.journal.appendAndFlush(root, 'team/task', { version: 2, teamId: TeamId(root.id), task })
-      return this.taskView(root, state, task)
+      return projectTaskView(state, task)
     })
   }
 
@@ -251,10 +251,5 @@ export class TeamTaskBoard {
   private withoutOwner(task: TeamTaskSnapshot): TeamTaskSnapshot {
     const { ownerId: _ownerId, ...without } = task
     return without
-  }
-
-  /** View one task against the supplied state through the shared derivation. */
-  private taskView(root: Agent, state: TeamState, task: TeamTaskSnapshot): TeamTaskView {
-    return projectTaskView(root.id, state, task)
   }
 }

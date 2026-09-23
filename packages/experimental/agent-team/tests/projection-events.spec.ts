@@ -496,7 +496,7 @@ describe('Agent Teams projection events', () => {
       expect(view).toEqual({
         members: [
           { id: ROOT, name: 'lead', role: 'lead', phase: 'active' },
-          { id: CHILD, name: 'worker-a', role: 'teammate', phase: 'active', description: 'worker', provider: 'spawn', context: 'fresh' },
+          { id: CHILD, name: 'worker-a', role: 'teammate', phase: 'active' },
         ],
         tasks: [
           {
@@ -520,7 +520,7 @@ describe('Agent Teams projection events', () => {
       const memberView = teamProjectionView(withMember)
       expect(memberView).not.toBe(view)
       expect(memberView.members.at(-1)).toEqual({
-        id: 'child-b', name: 'worker-b', role: 'teammate', phase: 'provisioning', description: 'worker', provider: 'spawn', context: 'fresh',
+        id: 'child-b', name: 'worker-b', role: 'teammate', phase: 'provisioning',
       })
 
       const failedMember = event('team/member', {

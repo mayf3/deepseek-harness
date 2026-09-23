@@ -1,5 +1,6 @@
 /** Pure task-view derivation shared by the task board and the client projection. */
 
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { TeamState } from './projection.ts'
 import type { TeamTaskSnapshot, TeamTaskView } from './types.ts'
@@ -29,15 +30,14 @@ export function taskReady(state: TeamState, task: TeamTaskSnapshot): boolean {
  * A committing caller may pass its pre-append state because `task` supplies the
  * new value explicitly; owner names, blocker readiness, and other task scopes
  * do not change when that snapshot is appended.
- * @param rootId - Team Lead Session identity named `lead` in owner names.
  * @param state - Team state supplying members and sibling tasks.
  * @param task - durable task snapshot to view.
  * @returns a detached task view.
  */
-export function projectTaskView(rootId: SessionId, state: TeamState, task: TeamTaskSnapshot): TeamTaskView {
+export function projectTaskView(state: TeamState, task: TeamTaskSnapshot): TeamTaskView {
   const ownerName = task.ownerId === undefined
     ? undefined
-    : task.ownerId === rootId
+    : task.ownerId === brandString<SessionId>(state.id)
       ? 'lead'
       : state.members.find(member => member.id === task.ownerId)?.name
   const warnings = new Set<string>()
