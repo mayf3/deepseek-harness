@@ -148,7 +148,6 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
       options: createOptions.agentOptions ?? {},
       session,
       inbox,
-      activeProvider: undefined,
       status: 'idle',
       ctx: ownerCtx,
       cancel: () => {},

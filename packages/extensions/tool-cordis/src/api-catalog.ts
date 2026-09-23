@@ -1833,9 +1833,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async initializeDefaultModel(provider: string): Promise<void>',
-        description: 'Initialize the default after the user first configures a provider credential.',
+        description: 'Initialize a provider default; account login replaces it only when no provider API key is configured.',
         parameters: [{ name: 'provider', description: 'the provider whose credential was configured.' }],
-        returns: 'after saving the initial available model; existing user choices are retained.',
+        returns: 'after saving the first available model or retaining the existing default.',
       },
       {
         signature: '@Remote(\'modelCatalog\') modelCatalog(): Promise<ModelCatalog>',
@@ -3882,6 +3882,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Committed change to a provider-managed credential source: a `set`, an `unset`, or an external edit observed in storage.',
     description: 'Committed change to a provider-managed credential source: a `set`, an `unset`, or an external edit observed in storage. Ambient process-environment changes are not observable and never emit. Listener failures are contained and logged — a sync throw and an async rejection alike — without changing the committed operation\'s outcome, except `INVARIANT`-coded failures, which rethrow after every listener ran; that rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.',
     parameters: [{ name: 'ref', description: 'the reference whose stored value changed.' }],
+  },
+  {
+    name: 'deepseek-account/model-sign-in-required',
+    mode: 'emit',
+    signature: '\'deepseek-account/model-sign-in-required\'(): void',
+    summary: 'An account model request requires the user to sign in.',
+    description: 'An account model request requires the user to sign in.',
+    parameters: [],
   },
   {
     name: 'deepseek-account/signed-out',

@@ -22,7 +22,7 @@ kind: "package-reference"
 
 account 命名空间提供 getState、getProfile / getBalance、startSignIn、cancelSignIn、signOut 和 watch。watch 先发送完整初始状态，随后发送完整状态变化；断开连接只停止观察，不取消登录。取消操作必须指定尝试 ID，防止旧页面取消新登录。
 
-hasRunningAccountTasks 读取 agents 注册表，判断是否有任务实际使用 deepseek-account，包括工具执行和重试阶段；未完成请求准备的轮次和 API key provider 不计入。结果反映查询时刻；移除凭据时，退登操作会独立取消匹配的 Agent。
+`hasRunningAccountTasks` 通过账号模块的判断函数，检查运行中 Agent 最近记录的请求上下文，包括工具和重试阶段。空闲 Agent 及 API key 上下文不计入。移除凭据时，账号提供方独立取消匹配任务。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现

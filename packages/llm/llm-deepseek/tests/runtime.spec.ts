@@ -1,3 +1,4 @@
+import * as Protocol from '@deepseek-ai/dsh-llm-deepseek'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -21,7 +22,7 @@ import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/d
 import { SessionId } from '@deepseek-ai/dsh-session'
 import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import type { PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
-import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
+import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import { providerError } from '../src/transport.ts'
@@ -72,7 +73,7 @@ function noExtensions(): Promise<PreparedDeepSeekLlmApiExtensions> {
 function adapterOf(
   config: Partial<LlmDeepSeek.Options> & { apiKey?: string } = {},
   attachments?: AttachmentStore,
-  files?: LlmDeepSeek.DeepSeekFileStore,
+  files?: Protocol.DeepSeekFileStore,
 ): DeepSeekAdapter {
   const { apiKey, ...rest } = config
   return new DeepSeekAdapter({
@@ -126,22 +127,22 @@ function attachmentStoreOf(
 }
 
 function fileStoreOf(
-  implementation: (...args: Parameters<LlmDeepSeek.DeepSeekFileStore['ensureUploaded']>) => ReturnType<LlmDeepSeek.DeepSeekFileStore['ensureUploaded']>,
+  implementation: (...args: Parameters<Protocol.DeepSeekFileStore['ensureUploaded']>) => ReturnType<Protocol.DeepSeekFileStore['ensureUploaded']>,
 ) {
   const ensureUploaded = vi.fn(implementation)
   const invalidate = vi.fn(() => Promise.resolve())
   return {
-    store: Object.assign(new LlmDeepSeek.DeepSeekFileStore(), { ensureUploaded, invalidate }),
+    store: Object.assign(new Protocol.DeepSeekFileStore(), { ensureUploaded, invalidate }),
     ensureUploaded,
     invalidate,
   }
 }
 
-function fileReference(fileId: string): Awaited<ReturnType<LlmDeepSeek.DeepSeekFileStore['ensureUploaded']>> {
+function fileReference(fileId: string): Awaited<ReturnType<Protocol.DeepSeekFileStore['ensureUploaded']>> {
   return {
-    record: { fileId: LlmDeepSeek.DeepSeekFileId(fileId) },
+    record: { fileId: Protocol.DeepSeekFileId(fileId) },
     uploaded: true,
-  } as Awaited<ReturnType<LlmDeepSeek.DeepSeekFileStore['ensureUploaded']>>
+  } as Awaited<ReturnType<Protocol.DeepSeekFileStore['ensureUploaded']>>
 }
 
 function successfulSseResponse(): Response {
@@ -1698,13 +1699,13 @@ describe('plugin registration and config', () => {
     const fiber = await ctx.plugin(LlmDeepSeek, {
       baseURL: server.url,
     })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'deepseek-account', name: 'DeepSeek Account' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
     expect(ctx.llm.listConfigurableProviders()).toEqual([{
       provider: 'deepseek-official',
       displayName: 'DeepSeek',
-      settingsNs: 'llm-deepseek',
+      settingsNs: 'llm-deepseek-api-key',
       settingsPath: [],
-    }, { provider: 'deepseek-account', displayName: 'DeepSeek Account', settingsNs: 'llm-deepseek', settingsPath: [] }])
+    }])
     await fiber.dispose()
     expect(ctx.llm.listProviders()).toEqual([])
     expect(ctx.llm.listConfigurableProviders()).toEqual([])
@@ -1734,7 +1735,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { baseURL: 'http://127.0.0.1:1' })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'deepseek-account', name: 'DeepSeek Account' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
       { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'] },
       {
@@ -1875,21 +1876,6 @@ describe('plugin registration and config', () => {
     ])
   })
 
-  it('defaults an adapter-supplied catalog entry to text input', async () => {
-    const connection = resolveAdapterOptions({ models: [] })
-    const adapter = new DeepSeekAdapter({
-      options: () => ({ ...connection, models: [{ id: 'adapter-model' }] }),
-      resolveApiKey: () => Promise.resolve('k'),
-      resolveUserId: () => TEST_USER_ID,
-      prepareExtensions: noExtensions,
-    })
-    await expect(adapter.listModels('deepseek-official')).resolves.toEqual([{
-      provider: 'deepseek-official',
-      id: 'adapter-model',
-      name: 'adapter-model',
-      inputModalities: ['text'],
-    }])
-  })
 
   it('advertises configured models without restricting arbitrary request ids', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', 'catalog-fixture-key')
@@ -2175,7 +2161,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {})
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'deepseek-account', name: 'DeepSeek Account' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
   })
 
   it('loads keyless with an empty catalog and fails requests actionably', async () => {
@@ -2183,7 +2169,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { baseURL: 'http://127.0.0.1:1' })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'deepseek-account', name: 'DeepSeek Account' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(0)
     const first = await assemble(ctx, { model: 'deepseek-flash', messages: [] })
     expect(first.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
@@ -2264,15 +2250,14 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmRuntime)
     // Registration succeeds; no call is made (would hit api.deepseek.com).
     await ctx.plugin(LlmDeepSeek, {})
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'deepseek-account', name: 'DeepSeek Account' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
   })
 
   it('adapter is constructible directly for embedding over the shared resolver', async () => {
     const adapter = adapterOf()
     expect(adapter).toBeInstanceOf(DeepSeekAdapter)
-    // Direct embedding shares the plugin's one resolve step, so it advertises
-    // the same default catalog instead of a divergent empty one.
-    await expect(adapter.listModels('deepseek-official')).resolves.toHaveLength(2)
+    await expect(adapter.listModels('deepseek-official')).resolves.toEqual([])
+    await expect(adapter.resolveModel('deepseek-official', 'deepseek-flash')).resolves.toMatchObject({ name: 'DeepSeek-V41-Flash' })
   })
 
   it('resolves connection facts and the credential exactly once per stream call', async () => {

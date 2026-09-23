@@ -330,8 +330,6 @@ export class SessionCommandController {
     }
     const agent = await this.resolveAgent(request.sessionId)
     if (hasPromptRequest(agent, request.requestId)) return { accepted: true }
-    const selection = this.agents.selectionFor(agent).current
-    await this.requireModel(selection)
     const source: MessageSource = {
       kind: 'user',
       rpcId: request.requestId,
@@ -357,7 +355,6 @@ export class SessionCommandController {
         )
         const content = await this.ctx.attachments.admitPromptContent(admission.content)
         const message: UserMessage = createUserMessage({ content, source })
-        await this.requireModel(this.agents.selectionFor(agent).current)
         if (this.ctx.agents.get(agent.id) !== agent) {
           throw new RemoteError(
             'session/not-found',

@@ -39,16 +39,11 @@ export class ModelDirectoryResolver extends Service {
   private readonly live: LiveState = { directories: new WeakMapWithValues() }
   private readonly catalog: ModelCatalogDirectory
 
-  /** Localized composer-block copy; this plugin owns the string it raises. */
-  private readonly blockReason: () => string
-
   /**
    * @param ctx - owning root context (the service registers itself as `models`).
-   * @param config - the bound translator for this plugin's own dictionary.
    */
-  constructor(ctx: Context, config: { blockReason: () => string }) {
+  constructor(ctx: Context) {
     super(ctx, 'modelDirectories')
-    this.blockReason = config.blockReason
     this.catalog = new ModelCatalogDirectory(ctx)
     void this.catalog.load().catch(() => { /* selectors expose the shared error */ })
     ctx.on('connection/reset', () => {
@@ -84,25 +79,6 @@ export class ModelDirectoryResolver extends Service {
       binding.session.projections.faceOf('modelSelection'),
     )
     live.directories.set(binding, directory)
-    const conversation = this.ctx.get('conversation')
-    if (conversation !== undefined) {
-      const publish = (): void => {
-        if (sessions.binding(sessionId) !== binding) return
-        conversation.blocks.set(sessionId, directory.store.getSnapshot().routable !== true
-          ? { reason: this.blockReason() }
-          : undefined)
-      }
-      publish()
-      actx.effect(() => {
-        const stop = directory.store.subscribe(publish)
-        return () => {
-          stop()
-          const current = sessions.binding(sessionId)
-          if (current !== undefined && current !== binding && live.directories.get(current) !== undefined) return
-          conversation.blocks.set(sessionId, undefined)
-        }
-      }, 'ui-model-selection: composer block')
-    }
     actx.effect(() => () => {
       directory.dispose()
       live.directories.delete(binding)

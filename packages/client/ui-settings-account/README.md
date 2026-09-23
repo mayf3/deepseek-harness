@@ -19,6 +19,8 @@ Desktop Account settings display DeepSeek login state and offer browser authoriz
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 
+A new account-model sign-in-required event displays “Model unavailable. Please sign in and try again.” in a toast. The notice is transient: remounting or refreshing does not replay it.
+
 <a id="use-this-package"></a>
 ## Use this package
 
@@ -57,7 +59,7 @@ A terminal account-state stream failure appears in the sign-in dialog or Account
 The balance card shows recharge funds and positive bonus credit in separate rows. Empty or nonpositive bonus wallets hide the bonus row and its divider; currencies retain their own amounts.
 
 
-A successful first login initializes the default model from `deepseek-account` when no user choice has been saved. Later logins retain the saved choice, including an unavailable one.
+A successful login selects the first available `deepseek-account` model as the default when no other provider has a configured API key, even if a previous default was saved. Configured keys preserve the existing default even when their provider has no available models. Session-specific selections remain unchanged.
 
 <a id="model-experience"></a>
 ## Model Experience

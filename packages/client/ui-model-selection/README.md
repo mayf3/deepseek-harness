@@ -29,7 +29,7 @@ DeepSeek account and API-key routes appear as separate provider groups, each exp
 
 The unselected model label uses the same regular weight as an available model name and retains the saved reasoning effort caption for existing and new sessions; effort editing requires an available model. Clicking the unselected trigger opens the model list directly; Escape closes it.
 
-Mount this plugin alongside `ui-conversation` and the commands package; the composer then shows the model seat next to the pending indicator, and `/model` opens the same directory as a popup. While the seat's menu is open, `↑`/`↓` move focus across the rows of the shown pane, Tab settles the focused row, and Escape and `Shift+Tab` leave a drilled pane first and otherwise close back to the trigger. Drilling lands on the row of the value in use, and going back lands on the cell that opened the pane left. Both surfaces show the host-reported current selection when the exact provider/model pair remains in the advertised groups; a missing catalog row clears the effective selection and the trigger prompts `Select model`, without changing the stored choice.
+Mount this plugin alongside `ui-conversation` and the commands package; the composer then shows the model seat next to the pending indicator, and `/model` opens the same directory as a popup. While the seat's menu is open, `↑`/`↓` move focus across the rows of the shown pane, Tab settles the focused row, and Escape and `Shift+Tab` leave a drilled pane first and otherwise close back to the trigger. Drilling lands on the row of the value in use, and going back lands on the cell that opened the pane left. The composer shows the catalog name while the selected model is available, and its saved `provider/model` ID when the model or provider is removed, including account sign-out. The stored provider, model, and reasoning effort remain unchanged.
 
 ### Model and effort
 
@@ -39,9 +39,7 @@ The composer replaces the model and effort text with the Models icon when the ex
 
 ### Unroutable sessions
 
-The composer blocks sending while the exact provider/model pair is absent from the available catalog or availability is loading or unknown. It keeps the normal input placeholder and an enabled model picker. Refreshes and refresh failures retain the last displayed selection and groups while sending remains blocked; retry revalidates availability. A Host reset clears that display. The account provider name follows the active locale in both selectors. Sign-out, credential removal, and provider or model removal refresh availability without replacing the saved choice with another model. Existing session logs remain unchanged.
-
-Only the current Client binding's directory can publish its composer block. Cleanup from an older binding preserves a replacement directory's block; without a replacement directory, cleanup removes the obsolete block.
+Catalog availability does not block sending with a saved selection; request execution reports missing credentials or unavailable models. Refreshes and refresh failures retain the last displayed selection and groups. A Host reset clears that display. Sign-out hides the account provider from the picker while preserving the saved provider/model ID and reasoning effort. Signing in restores the catalog name when that model is available again. Existing session logs remain unchanged.
 
 ### Selection failures
 
@@ -67,7 +65,7 @@ Two entries over ONE per-session directory owned by `ModelDirectoryResolver` (`c
 Read these pages when the model surface is not enough. They move from the browser surfaces to the command popup shell and the selection contract.
 
 - [ui-commands](../ui-commands/README.md) — the popupSelect shell the `/model` contribution registers into.
-- [ui-conversation](../ui-conversation/README.md) — declares the composer's `conversation.input.model` seat and the composer block.
+- [ui-conversation](../ui-conversation/README.md) — declares the composer's `conversation.input.model` seat.
 - [dsh-agent-default-model](../../core/agent-default-model/README.md) — the default-model service for sessions that never choose.
 - [Client package map](../README.md) — adjacent browser UI packages.
 
@@ -85,7 +83,6 @@ Switching the route can reduce or invalidate provider-side cache reuse for subse
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-
 
 These limits define the current model surface. They are current package constraints, not a general model-router comparison or a task backlog.
 

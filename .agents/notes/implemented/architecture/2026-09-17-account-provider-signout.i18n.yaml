@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-17-account-provider-signout.md
-2026-09-17-account-provider-signout.md: dd9930a7b36fd93c18febb8cca506e59bb605797
-2026-09-17-account-provider-signout.zh.md: e706a1bacc3c3ef2c3b29912fa85da59b02d8d5e
+2026-09-17-account-provider-signout.md: 6b8ef842c54ef25d1e5fc063c40361775aae9a92
+2026-09-17-account-provider-signout.zh.md: 588dd38bf9fbae8131a9e3c5cb1181dcc807df8c

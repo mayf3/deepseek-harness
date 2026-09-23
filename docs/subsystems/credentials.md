@@ -414,6 +414,21 @@ Source: [`packages/credentials/credentials/src/types.ts`](../../packages/credent
 
 ### `deepseek-account/*` events
 
+<a id="deepseek-accountmodel-sign-in-required--emit"></a>
+
+#### `deepseek-account/model-sign-in-required` — emit
+
+An account model request requires the user to sign in.
+
+```ts cordis-catalog
+/** An account model request requires the user to sign in.
+ * @mode emit
+ */
+'deepseek-account/model-sign-in-required'(): void
+```
+
+Source: [`packages/credentials/deepseek-account/src/types.ts`](../../packages/credentials/deepseek-account/src/types.ts)
+
 <a id="deepseek-accountsigned-out--emit"></a>
 
 #### `deepseek-account/signed-out` — emit

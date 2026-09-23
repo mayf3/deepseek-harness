@@ -356,7 +356,7 @@ describe('ui-model-selection dual entry', () => {
     })
   })
 
-  it('blocks until a refreshed catalog validates the projected selection', async () => {
+  it('retains the selected model while refreshing its catalog', async () => {
     const b = await bench()
     b.mint('s1')
     const face = b.seat().inject!(sid('s1'))
@@ -383,7 +383,7 @@ describe('ui-model-selection dual entry', () => {
     })
   })
 
-  it('retains the last catalog on refresh failure, blocks sending, and recovers on retry', async () => {
+  it('retains the last catalog on refresh failure and recovers on retry', async () => {
     const b = await bench()
     try {
       b.mint('s1')
@@ -397,7 +397,7 @@ describe('ui-model-selection dual entry', () => {
           groups: GROUPS, routable: null, status: 'error', error: 'catalog offline',
         })
       })
-      expect(b.blockOf('s1')).toBeDefined()
+      expect(b.blockOf('s1')).toBeUndefined()
       b.setCatalogFailure(false)
       await b.ctx.modelDirectories.directoryFor(sid('s1')).load()
       expect(face.directory.getSnapshot().routable).toBe(true)
@@ -417,68 +417,6 @@ describe('ui-model-selection dual entry', () => {
     expect(face2.directory).not.toBe(face1.directory)
   })
 
-  it('keeps the replacement directory block when the previous scope finishes cleanup', async () => {
-    const b = await bench()
-    const first = b.mint('s1')
-    const oldDirectory = b.ctx.modelDirectories.directoryFor(sid('s1'))
-    await oldDirectory.load()
-    const replacement = b.mint('s1')
-    replacement.projection.set({ lastUsed: null, next: { provider: 'missing', model: 'unserved' } })
-    const directory = b.ctx.modelDirectories.directoryFor(sid('s1'))
-    try {
-      expect(directory).not.toBe(oldDirectory)
-      expect(directory.store.getSnapshot().routable).toBe(false)
-      expect(b.blockOf('s1')?.reason).toBe(zh['blocked.composer'])
-      await first.fiber.dispose()
-      expect(b.blockOf('s1')?.reason).toBe(zh['blocked.composer'])
-      await replacement.fiber.dispose()
-      expect(b.blockOf('s1')).toBeUndefined()
-    } finally {
-      await Promise.all([first.fiber.dispose(), replacement.fiber.dispose()])
-      await b.ctx.fiber.dispose()
-    }
-  })
-
-  it.each([false, true])('ignores late old projection publication while the replacement is routable=%s', async (routable) => {
-    const b = await bench()
-    const first = b.mint('s1')
-    const oldDirectory = b.ctx.modelDirectories.directoryFor(sid('s1'))
-    await oldDirectory.load()
-    const replacement = b.mint('s1')
-    replacement.projection.set({ lastUsed: null,
-      next: { provider: routable ? 'deepseek-official' : 'missing', model: 'deepseek-v4-flash' } })
-    const directory = b.ctx.modelDirectories.directoryFor(sid('s1'))
-    try {
-      expect(directory.store.getSnapshot().routable).toBe(routable)
-      const expected = b.blockOf('s1')
-      await Promise.resolve().then(() => {
-        first.projection.set({ lastUsed: null,
-          next: { provider: routable ? 'missing' : 'deepseek-official', model: 'deepseek-v4-pro' } })
-      })
-      expect(oldDirectory.store.getSnapshot().routable).toBe(!routable)
-      expect(b.blockOf('s1')).toBe(expected)
-    } finally {
-      await Promise.all([first.fiber.dispose(), replacement.fiber.dispose()])
-      await b.ctx.fiber.dispose()
-    }
-  })
-
-  it('clears an obsolete block when the new binding has no model directory', async () => {
-    const b = await bench()
-    const first = b.mint('s1')
-    first.projection.set({ lastUsed: null, next: { provider: 'missing', model: 'unserved' } })
-    await b.ctx.modelDirectories.directoryFor(sid('s1')).load()
-    const replacement = b.mint('s1')
-    try {
-      expect(b.blockOf('s1')).toBeDefined()
-      await first.fiber.dispose()
-      expect(b.blockOf('s1')).toBeUndefined()
-    } finally {
-      await Promise.all([first.fiber.dispose(), replacement.fiber.dispose()])
-      await b.ctx.fiber.dispose()
-    }
-  })
-
   it('retains saved effort for existing and new sessions after credentials disappear', async () => {
     const b = await bench()
     try {
@@ -492,17 +430,17 @@ describe('ui-model-selection dual entry', () => {
       b.remote.emit('settings/document-updated', ['llm-deepseek', 1])
       expect(existing.store.getSnapshot().retainedEffort).toBe('High')
       await vi.waitFor(() => {
-        expect(existing.store.getSnapshot()).toMatchObject({ current: null, routable: false, retainedEffort: 'High' })
+        expect(existing.store.getSnapshot()).toMatchObject({ current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' }, routable: false, retainedEffort: 'High' })
       })
       b.mint('new')
       const fresh = b.ctx.modelDirectories.directoryFor(sid('new'))
-      expect(fresh.store.getSnapshot()).toMatchObject({ current: null, routable: false, retainedEffort: 'Max' })
+      expect(fresh.store.getSnapshot()).toMatchObject({ current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' }, routable: false, retainedEffort: 'Max' })
     } finally {
       await b.ctx.fiber.dispose()
     }
   })
 
-  it('blocks the composer when current catalog models disappear', async () => {
+  it('keeps the composer usable when current catalog models disappear', async () => {
     const b = await bench()
     b.mint('s1')
     const face = b.seat().inject!(sid('s1'))
@@ -518,7 +456,7 @@ describe('ui-model-selection dual entry', () => {
     b.remote.emit('settings/document-updated', ['llm-deepseek', 1])
     await Promise.resolve()
     await Promise.resolve()
-    expect(b.blockOf('s1')?.reason).toBe(zh['blocked.composer'])
+    expect(b.blockOf('s1')).toBeUndefined()
     expect(b.calls.models).toBe(2)
 
     // Recovering clears it without a reload of the surface.
@@ -530,29 +468,16 @@ describe('ui-model-selection dual entry', () => {
     expect(b.calls.models).toBe(3)
   })
 
-  it('hides an unavailable durable selection without replacing or rewriting it', async () => {
+  it('retains an unavailable durable selection without replacing or rewriting it', async () => {
     const b = await bench()
     b.mint('s1')
     const face = b.seat().inject!(sid('s1'))
     const intended = { provider: 'deepseek-official', model: 'unlisted' }
     b.setProjected(sid('s1'), { lastUsed: intended, next: intended })
     await vi.waitFor(() => { expect(face.directory.getSnapshot().status).toBe('ready') })
-    expect(face.directory.getSnapshot().current).toBeNull()
-    expect(b.blockOf('s1')?.reason).toBe(zh['blocked.composer'])
-    expect(b.calls.select).toBe(0)
-  })
-
-  it('clears its block when the session scope goes', async () => {
-    const b = await bench()
-    const scope = b.mint('s1')
-    b.setRoutable(false)
-    const face = b.seat().inject!(sid('s1'))
-    face.load()
-    b.remote.emit('llm/adapters-updated', [])
-    await vi.waitFor(() => { expect(b.blockOf('s1')).toBeDefined() })
-
-    await scope.fiber.dispose()
+    expect(face.directory.getSnapshot().current).toEqual(intended)
     expect(b.blockOf('s1')).toBeUndefined()
+    expect(b.calls.select).toBe(0)
   })
 
   it('an unknown session fails loud at the seat inject', async () => {

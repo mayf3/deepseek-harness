@@ -28,11 +28,13 @@ getPlatformSession 为原生 Platform 内嵌提供仅限 Host 的 origin/token �
 <a id="use-this-package"></a>
 ## 使用此包
 
-本地成功退出登录后发出 `deepseek-account/signed-out`。消费方负责取消策略；账号服务不跟踪 agent 或模型提供方。
+本地成功退出登录后发出 `deepseek-account/signed-out`。Platform 提供方安装账号模块的取消监听器，根据运行中 Agent 的 `session.requestContext().provider` 判断账号任务，取消时保留收件箱。账号控制器的确认弹窗复用同一判断，不维护额外 Agent 状态。新轮次绑定首请求前，该判断仍读取上一轮的提供方。
 
 `AccountProfile.avatarUrl` 是可选的账号头像 URL；为空或缺失时表示没有头像。
 
 该服务定义账号操作和可重连的状态快照。平台提供者负责协议和授权记录。凭证仅限 Host；API 控制器只导出状态与操作，不导出 resolveToken。
+
+账号模型请求以 `ACCOUNT_SIGN_IN_REQUIRED` 失败时，发出 `deepseek-account/model-sign-in-required`，Client 接收该实时事件以提示登录。其他请求错误不触发此事件。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现

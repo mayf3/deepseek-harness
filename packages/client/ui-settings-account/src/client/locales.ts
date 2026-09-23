@@ -1,5 +1,6 @@
 /** Account settings copy, owned by the account feature. */
 export const en = {
+  modelSignInRequired: 'Model unavailable. Please sign in and try again.',
   sessionExpired: 'You have signed out of your account, please log in again.',
   close: 'Close', addApiKey: 'Add API Key', retry: 'Sign in again',
   loginTitle: 'Start creating', loginDescription: 'Sign in to create, edit, and share your design projects. Everything is saved locally.',
@@ -29,6 +30,7 @@ export const en = {
 export type AccountKey = keyof typeof en
 /** Chinese account settings copy. */
 export const zh: Record<AccountKey, string> = {
+  modelSignInRequired: '当前模型暂不可用，请登录后再试',
   sessionExpired: '登录信息已失效，请重新登录',
   close: '关闭', addApiKey: '添加 API Key', retry: '重新登录',
   loginTitle: '开始你的创作', loginDescription: '登录后即可创建、编辑和分享你的设计项目，所有内容在本地保存。',

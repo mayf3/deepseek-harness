@@ -170,8 +170,6 @@ declare module './types.ts' {
     readonly inbox: Inbox
     /** The current lifecycle state, mirrored on every `agent/status` transition. */
     readonly status: AgentStatus
-    /** Latest prepared provider in this turn; retained through tools and retries, absent before preparation and between turns. */
-    readonly activeProvider: string | undefined
     /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
     readonly ctx: Context
 

@@ -15,7 +15,7 @@ import type { ModelCatalogDirectory } from './catalog.ts'
 
 /** Directory snapshot both entries render from. */
 export interface ModelDirectoryState {
-  /** Last catalog-confirmed selection, retained for display during same-Host refreshes. */
+  /** Saved selection, retained even when its provider or model leaves the catalog. */
   current: ModelSelection | null
   /** Saved effort caption retained when the selected model is unavailable. */
   retainedEffort?: string
@@ -156,12 +156,12 @@ export class ModelDirectory {
       return
     }
     const selection = projected.next ?? catalog.value.default
-    const current = catalog.value.groups.some(group => group.id === selection.provider
-      && group.models.some(model => model.id === selection.model)) ? selection : null
+    const routable = catalog.value.groups.some(group => group.id === selection.provider
+      && group.models.some(model => model.id === selection.model))
     this.store.set({
-      current,
+      current: selection,
       ...retainedEffort === undefined ? {} : { retainedEffort },
-      routable: current !== null,
+      routable,
       groups: catalog.value.groups,
       failures: catalog.value.failures,
       status: this.store.getSnapshot().status === 'selecting'

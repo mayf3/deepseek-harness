@@ -351,7 +351,6 @@ describe('foreground commands as jobs', () => {
     const ctx = await setup()
     const ownerId = SessionId('promote-owner')
     const owner: Agent = {
-      activeProvider: undefined,
       id: ownerId,
       options: {},
       session: Session.create(ownerId, undefined, {
@@ -468,7 +467,6 @@ describe('owned background output', () => {
     const ctx = await setup()
     const ownerId = SessionId('background-owner')
     const owner: Agent = {
-      activeProvider: undefined,
       id: ownerId,
       options: {},
       session: Session.create(ownerId, undefined, {

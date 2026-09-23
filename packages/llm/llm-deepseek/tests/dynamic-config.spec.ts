@@ -16,7 +16,7 @@ import type {
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
-import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
+import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
@@ -270,8 +270,8 @@ describe('request-level dynamic configuration', () => {
       maxDelayMs: 100,
       jitterRatio: 0.2,
     })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'deepseek-account', name: 'DeepSeek Account' }])
-    expect(observed).toEqual([['deepseek-account', 'deepseek-official'], ['deepseek-official', 'deepseek-account']])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    expect(observed).toEqual([['deepseek-official']])
   })
 
   it('fails catalog reads while a stored snapshot fails beyond-schema validation, and recovers on repair', async () => {

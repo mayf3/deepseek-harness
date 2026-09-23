@@ -69,8 +69,6 @@ interface Agent {
   readonly inbox: Inbox
   /** The current lifecycle state, mirrored on every `agent/status` transition. */
   readonly status: AgentStatus
-  /** Latest prepared provider in this turn; retained through tools and retries, absent before preparation and between turns. */
-  readonly activeProvider: string | undefined
   /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
   readonly ctx: Context
 
@@ -1105,5 +1103,3 @@ One session committed a different agent preset to its durable log. Consumers inv
 
 Source: [`packages/preset/agent-preset-registry/src/types.ts`](../../packages/preset/agent-preset-registry/src/types.ts)
 <!-- END GENERATED cordis-surface -->
-
-`Agent.activeProvider` is the latest prepared request’s provider in the current turn. It is undefined before first preparation and between turns, stays unchanged during tools and subsequent preparation, and changes only when the next final request configuration is bound.

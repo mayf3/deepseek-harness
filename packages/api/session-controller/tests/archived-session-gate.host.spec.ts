@@ -26,7 +26,6 @@ async function harness(): Promise<Harness> {
 /** A registered idle Agent double: the gate reads only its Session header. */
 async function liveAgent(ctx: Context, session: Session): Promise<Agent> {
   const agent: Agent = {
-    activeProvider: undefined,
     id: session.id,
     options: {},
     session,

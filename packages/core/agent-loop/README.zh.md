@@ -25,7 +25,6 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-运行阶段在工具执行及重试准备期间保留最终准备完成的提供方，在发布 `turn/end` 前重置，并通过 `Agent.activeProvider` 暴露。插件可以取消匹配的运行中代理，无须读取可变设置或历史请求头。
 
 在任何应运行 agent 的组合中挂载 `dsh-agent-loop`。它提供 `ctx.agents` 背后的驱动器，并启动你在配置中声明的 agent；[`dsh-base`](../../bundle/base/README.zh.md) 与 [`dsh-sdk-minimal`](../../bundle/sdk-minimal/README.zh.md) 都将它作为显式配置行挂载。
 

@@ -19,12 +19,15 @@ export type AccountMenuProps = PropsRuntime<'settings.launcher'> & PropsLocale<'
  * @returns account menu launcher.
  */
 export function AccountMenu({
-  wide, openSettings, openOnboarding, useAccount, useTheme, signOut, hasRunningAccountTasks, contactUs, showLogin, start, cancel, t,
+  subscribeModelSignInRequired, wide, openSettings, openOnboarding, useAccount, useTheme, signOut, hasRunningAccountTasks,
+  contactUs, showLogin, start, cancel, t,
 }: AccountMenuProps) {
   const account = useAccount(state => state)
   const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
   const signedIn = account.view?.status === 'credential-stored'
   const expired = account.view?.status === 'signed-out' && account.view.signOutReason === 'expired'
+  const [signInNotice, setSignInNotice] = useState(0)
+  useEffect(() => subscribeModelSignInRequired?.(() => { setSignInNotice(value => value + 1) }), [subscribeModelSignInRequired])
   const [expiryNotice, setExpiryNotice] = useState(false)
   useEffect(() => { setExpiryNotice(expired) }, [expired])
   const profile = account.details?.profile
@@ -42,6 +45,7 @@ export function AccountMenu({
   // The plugin's start publishes `loginFailed` before it rejects, so the dialog owns the report.
   const beginSignIn = (): void => { setOpen(false); void start().catch(() => undefined) }
   return <div className={css.root}>
+    {signInNotice > 0 && <Toast key={signInNotice} text={t('modelSignInRequired')} onDone={() => { setSignInNotice(0) }} />}
     {expiryNotice && <Toast text={t('sessionExpired')} onDone={() => { setExpiryNotice(false) }} />}
     <Menu open={open} side="top" portal autoFocus className={css.anchor} listClassName={signedIn ? undefined : css.signedOutMenu}
       anchor={<button type="button" className={css.trigger} data-collapsed={!wide} data-signed-out={!signedIn} aria-label={t('menu')}

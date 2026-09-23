@@ -30,7 +30,6 @@ function stubAgent(ctx: Context, id: string): Agent {
     options: {},
     session,
     inbox: unsupportedInbox(),
-    activeProvider: undefined,
     status: 'idle',
     ctx: new Context(),
     send(_message: UserMessage, _target: InboxTarget, _wakeup: boolean) {},

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -142,6 +142,19 @@ describe('ModelSelect reasoning effort', () => {
     expect(screen.queryByRole('menuitemradio', { name: 'removed-model' })).toBeNull()
     expect(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' })).toBeTruthy()
     expect(screen.queryByText('Fast catalog description')).toBeNull()
+  })
+
+  it.each(['model', 'provider'])('keeps the saved id and effort when the selected %s disappears', (removed) => {
+    const directory = createSnapshotStore(state({ retainedEffort: 'High' }))
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
+    expect(screen.getByRole('button', { name: /选择模型，当前/ }).textContent).toContain('DeepSeek-V4-Flash')
+    act(() => { directory.update((snapshot) => {
+      snapshot.groups = removed === 'provider' ? [] : snapshot.groups.map(group => ({ ...group, models: [] }))
+      snapshot.routable = false
+    }) })
+    expect(screen.getByRole('button', { name: /选择模型，当前/ }).textContent)
+      .toMatchInlineSnapshot('"deepseek-official/deepseek-v4-flashHigh"')
+    expect(directory.getSnapshot().current).toEqual(state().current)
   })
 
   it('shows loading until the catalog and Session projection are both ready', async () => {
@@ -490,4 +503,20 @@ it.each([en, zh])('localizes the account group while preserving external names',
   fireEvent.click(screen.getByRole('button', { name: copy['trigger.selectAria'] }))
   expect(screen.getByRole('group', { name: copy['provider.account'] })).toBeTruthy()
   expect(screen.getByRole('group', { name: 'My Gateway' })).toBeTruthy()
+})
+
+it('restores the account model name after login without changing the saved route', () => {
+  const groups = [{ id: 'deepseek-account', name: 'DeepSeek Account', models: [
+    { id: 'deepseek-flash', name: 'DeepSeek Flash', reasoning },
+  ] }]
+  const selected = { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' }
+  const directory = createSnapshotStore(state({ current: selected, groups, retainedEffort: 'High' }))
+  render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
+  expect(screen.getByRole('button', { name: /选择模型，当前/ }).textContent).toBe('DeepSeek FlashHigh')
+  act(() => { directory.update((snapshot) => { snapshot.groups = []; snapshot.routable = false }) })
+  expect(screen.getByRole('button', { name: /选择模型，当前/ }).textContent)
+    .toMatchInlineSnapshot('"deepseek-account/deepseek-flashHigh"')
+  act(() => { directory.update((snapshot) => { snapshot.groups = groups; snapshot.routable = true }) })
+  expect(screen.getByRole('button', { name: /选择模型，当前/ }).textContent).toBe('DeepSeek FlashHigh')
+  expect(directory.getSnapshot().current).toEqual(selected)
 })

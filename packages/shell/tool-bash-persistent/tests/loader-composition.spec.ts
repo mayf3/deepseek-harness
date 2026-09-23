@@ -49,7 +49,6 @@ async function agent(ctx: Context, cwd: string): Promise<Agent> {
     options: {},
     session,
     inbox: unsupportedInbox(),
-    activeProvider: undefined,
     status: 'idle',
     ctx: scope.ctx,
     send: () => {},

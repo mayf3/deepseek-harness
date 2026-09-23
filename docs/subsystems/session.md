@@ -821,9 +821,9 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
 @Remote('selectModel') selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue>
 
 /**
- * Initialize the default after the user first configures a provider credential.
+ * Initialize a provider default; account login replaces it only when no provider API key is configured.
  * @param provider - the provider whose credential was configured.
- * @returns after saving the initial available model; existing user choices are retained.
+ * @returns after saving the first available model or retaining the existing default.
  */
 @Remote async initializeDefaultModel(provider: string): Promise<void>
 

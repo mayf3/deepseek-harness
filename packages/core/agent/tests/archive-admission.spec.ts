@@ -15,7 +15,6 @@ async function liveAgent(ctx: Context, rawId: string, initial: AgentStatus): Pro
   const cancels: CancelCall[] = []
   let status = initial
   const agent: LiveAgent = {
-    activeProvider: undefined,
     id,
     options: {},
     session: Session.create(id),

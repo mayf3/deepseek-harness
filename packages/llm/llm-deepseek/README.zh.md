@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-通过 `deepseek-official` 使用 Messages API 流式调用 DeepSeek 模型。在 Cordis YAML 或 Web 设置中配置端点、凭据、推理与图片处理。有效的设置更改在后续请求生效，进行中的请求保留原配置。本包可与 [pi-ai 适配器](../llm-pi-ai/README.zh.md)并用。
+提供共享的 DeepSeek Messages 传输、请求配置和模型能力。组合 [API key](../llm-deepseek-api-key/README.zh.md) 或[账号](../llm-deepseek-account/README.zh.md)插件以提供鉴权、模型发现与 provider 注册。有效的设置更改在后续请求生效，进行中的请求保留原配置。本包可与 [pi-ai 适配器](../llm-pi-ai/README.zh.md)并用。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-将此插件与 harness LLM 服务一起挂载以提供 `deepseek-official`。它在每次操作开始时从 Config 引用捕获连接选项。
+本包导出传输库；provider 插件向 harness LLM 服务注册路由。它在每次操作开始时从 Config 引用捕获连接选项。
 
 适配器接受 LLM 服务的[仅供请求使用的 user 输入](../llm/README.zh.md#use-this-package)，并可将其与持久历史混用；省略请求输入的身份与来源不会改变提供方内容。
 
@@ -36,7 +36,7 @@ kind: "package-reference"
 ### 最小配置
 
 ```yaml
-- name: '@deepseek-ai/dsh-llm-deepseek'
+- name: '@deepseek-ai/dsh-llm-deepseek-api-key'
   config:
     apiKeyEnv: DEEPSEEK_API_KEY  # credential reference, resolved per request
     reasoningEffort: high        # optional; off | low | high | max
@@ -47,11 +47,10 @@ kind: "package-reference"
     filesApiTimeoutMs: 60000
 ```
 
-请求用 `provider: deepseek-official` 选择路由；模型 id 原样传到协议，因此新增 DeepSeek 模型无需重新注册。省略 `models` 时公布支持文本和图像的 `deepseek-flash`，以及仅支持文本的 `deepseek-v4-pro`，各自的上下文窗口均为 1,000,000 token。显式列表会替换这些默认值，核心调用中未列出的模型 id 仍作为纯文本路由原样通过。GUI 选择与提交要求模型具有目录条目。包括模型发现工具在内的客户端可通过 `ctx.llm.listModels('deepseek-official')` 读取这些建议性条目。支持图片的条目可把 `imagePixelBudget` 设置为正整数或 `low`，也可以设置 `imageMaxBytes`。当端点把 `messages` 中任意位置最新的 `system` 消息读作完整的有效系统提示词时，条目可以声明 `systemPromptUpdate: in-history`；适配器会在已解析模型与已准备调用上报告该模式，agent loop（智能体循环）随后把变化后的提示词追加到已缓存历史之后，而不是改写开头的 system 消息（[决策规则](../../core/agent-loop/README.zh.md#understand-the-implementation)）。默认的 `deepseek-flash` 条目声明该模式；其他模型需通过 `models` 显式声明，`in-history` 以外的任何值都会在加载时以 `llm-deepseek: catalog model "<id>" systemPromptUpdate must be "in-history" when present` 失败。
+请求用 `provider: deepseek-official` 选择路由；模型 id 原样传到协议，因此新增 DeepSeek 模型无需重新注册。省略 `models` 时公布支持文本和图像的 `deepseek-flash`，以及仅支持文本的 `deepseek-v4-pro`，各自的上下文窗口均为 1,000,000 token。显式列表会替换这些默认值，核心调用中未列出的模型 id 仍作为纯文本路由原样通过。GUI 选择要求模型具有目录条目；条目消失后，已保存的选择仍可提交请求。包括模型发现工具在内的客户端可通过 `ctx.llm.listModels('deepseek-official')` 读取这些建议性条目。支持图片的条目可把 `imagePixelBudget` 设置为正整数或 `low`，也可以设置 `imageMaxBytes`。当端点把 `messages` 中任意位置最新的 `system` 消息读作完整的有效系统提示词时，条目可以声明 `systemPromptUpdate: in-history`；适配器会在已解析模型与已准备调用上报告该模式，agent loop（智能体循环）随后把变化后的提示词追加到已缓存历史之后，而不是改写开头的 system 消息（[决策规则](../../core/agent-loop/README.zh.md#understand-the-implementation)）。默认的 `deepseek-flash` 条目声明该模式；其他模型需通过 `models` 显式声明，`in-history` 以外的任何值都会在加载时以 `llm-deepseek: catalog model "<id>" systemPromptUpdate must be "in-history" when present` 失败。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
-| `apiKeyEnv` | `DEEPSEEK_API_KEY` | 按请求解析的凭据引用：先经凭据 seam，再到环境变量 |
 | `baseURL` | `https://api.deepseek.com/anthropic` | 显式值优先，其次为 `$DEEPSEEK_BASE_URL`，最后为官方根地址 |
 | `thinking` | `enabled` | 部署策略；`disabled` 把所有请求锁定为 `off` |
 | `reasoningEffort` | `high` | 默认强度：`off`、`low`、`high` 或 `max` |
@@ -71,7 +70,7 @@ kind: "package-reference"
 | `fileQuotaCleanupBatch` | `100` | 配额重试前删除的、归 harness 所有的最旧文件数 |
 | `retryPolicy` | normal，5 次重试 | 由 `dsh-llm-retry` 执行的提供方自有重试策略 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-llm-deepseek)是每个受支持字段及其 JSDoc 的穷尽式真源。
+生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-llm-deepseek-api-key)是每个受支持字段及其 JSDoc 的穷尽式真源。
 
 启用[主动压缩](../../compaction/compaction-basic/README.zh.md#use-this-package)时，`models[].contextWindow`（未声明时使用 `defaultContextWindow`）必须大于生效请求的 `maxTokens` 与压缩策略 `headroomTokens` 之和。请求未覆盖输出上限时，使用模型的 `maxTokens` 或适配器默认值。小窗口部署应在容量范围内配置余量；降低 `thresholdRatio` 可以提早压缩。
 
@@ -86,7 +85,7 @@ Messages 以内容块发送文本、思考、工具调用和工具结果，以 `
 
 `deepseek-official` 仅解析配置的 API Key 引用。`deepseek-account` 仅解析[账号提供者](../../credentials/deepseek-account-platform/README.zh.md)保存的授权，其允许的 `inferenceOrigin` 默认为 `https://api.deepseek.com`。两条路由均不回退到另一凭证。退出登录删除账号授权，保留 API Key。
 
-Messages 和 Files 请求通过 `x-dsh-auth-token` 发送账号 token，不加 Bearer 前缀；API Key 使用 `x-api-key`。两种凭据模式均拒绝重定向。使用账号 token 鉴权的请求返回 HTTP 401 时归类为 `ACCOUNT_TOKEN_INVALID`，不依赖响应体内容。仅当该请求的 token 仍匹配已存登录凭据时才删除它，并发布账号过期状态和 UI 退登通知。API Key 路由和其他 HTTP 状态码不会删除账号凭据。
+Messages 和 Files 请求通过 `x-dsh-auth-token` 发送账号 token，不加 Bearer 前缀；API Key 使用 `x-api-key`。两种凭据模式均拒绝重定向。账号 provider 负责 HTTP 401 分类和凭据失效处理；传输层将错误交给其回调。
 
 ### 带 thinking 与图片的流式调用
 
@@ -116,7 +115,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 非 2xx 响应以稳定 code 失败：`AUTH`（401/403）、`QUOTA`、`RATE_LIMIT`、`CONTEXT_WINDOW_EXCEEDED`、`INVALID_REQUEST`、`SERVER` 以及其他情况的 `HTTP_<status>`；响应前传输失败抛出 `TRANSPORT`，调用方中止抛出 `ABORTED`，流空闲超时抛出 `TIMEOUT`。请求扩展准备、字段冲突或 2xx 后接受失败使用 `REQUEST_EXTENSION`。当提供方未指出 file id 时，规范化图片拒绝会列出所有可能附件及其持久位置。陈旧文件拒绝会使点名映射（或该次尝试使用的全部映射）失效，并允许一次替换模型请求。协议违规抛出 `STREAM_CLOSED` 或 `MALFORMED_RESPONSE`；不带内容块的终止 `stop` 变成 `EMPTY_RESPONSE`，默认重试策略会重试它。官方路由缺少 API Key 的请求以 `MISSING_CREDENTIAL` 失败；格式错误的凭据以 `INVALID_CREDENTIAL` 失败，并点名需要修复的引用——绝不包含密钥的任何部分。
 
-每条路由仅在其自身凭据可解析时公布模型。缺少 API Key 或账号授权缺失、不适用时返回空目录；其他凭据错误仍会暴露。此检查不会探测推理端点。两个可配置提供方条目共用同一份模型目录。
+provider 插件拥有按凭据可用性过滤的模型发现。两者的目录独立配置；传输层提供共享的默认模型元数据和能力解析。
 
 -----
 
@@ -134,7 +133,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 ### 源码导航
 
-[`src/index.ts`](src/index.ts) 注册提供方并解析设置与凭据。[`src/adapter.ts`](src/adapter.ts) 管理请求生命周期；[`src/serialize.ts`](src/serialize.ts) 和 [`src/translate.ts`](src/translate.ts) 映射模型输入与流式输出。[`src/file-store.ts`](src/file-store.ts) 通过 [`src/files-api.ts`](src/files-api.ts) 管理上传复用与恢复。
+[`src/index.ts`](src/index.ts) 导出协议库；[`src/host.ts`](src/host.ts) 为 provider 插件绑定共享 Host 服务。[`src/adapter.ts`](src/adapter.ts) 管理请求生命周期；[`src/serialize.ts`](src/serialize.ts) 和 [`src/translate.ts`](src/translate.ts) 映射模型输入与流式输出。[`src/file-store.ts`](src/file-store.ts) 通过 [`src/files-api.ts`](src/files-api.ts) 管理上传复用与恢复。
 
 ### 协议流程
 
@@ -215,4 +214,4 @@ loop 保留的响应块会追加到下一个请求，并保留其更早的可复
 
 **运行时不变式：** 不发布伴生入口。本包没有独立事件序列或可变数据关系，相关约定在所属 seam 强制执行。
 
-`deepseek-official` 仅使用配置的 API Key 引用；`deepseek-account` 仅在账号提供方允许的推理来源使用已保存的 DSH 授权。两条路由共享 Messages 传输、模型和文件设置。账号凭证缺失或不适用于目标时拒绝请求并提示登录；两条路由均不回退到另一凭证。Chat 和 Files 请求拒绝重定向。退登成功会取消当前已准备提供方为 `deepseek-account` 的运行代理，包括工具执行阶段，同时保留待处理消息和独立的 API Key 任务。
+`deepseek-official` 仅使用配置的 API Key 引用；`deepseek-account` 仅在账号提供方允许的推理来源使用已保存的 DSH 授权。两条路由共享 Messages 传输，模型与文件设置独立配置。账号凭证缺失或不适用于目标时拒绝请求并提示登录；两条路由均不回退到另一凭证。Chat 和 Files 请求拒绝重定向。账号提供方根据运行中 Agent 已记录的请求上下文负责退登取消，包括工具执行阶段；传输层接收现有请求的中止信号。

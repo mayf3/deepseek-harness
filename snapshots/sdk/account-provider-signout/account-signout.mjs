@@ -1,4 +1,4 @@
-/** Deterministic transport boundary; cancellation belongs to the shipped DeepSeek plugin. */
+/** Deterministic transport boundary; cancellation belongs to the shipped account provider. */
 export const inject = ['llm', 'agents']
 export function apply(ctx) {
   ctx.on('llm/stream', async function* (request, next) {

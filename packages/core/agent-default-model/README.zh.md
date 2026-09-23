@@ -7,7 +7,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-`initializeSelection()` 将首次配置选择与用户写入串行处理，并保留显式的 profile 选择，包括暂不可用的模型。
+`initializeSelection()` 将首次配置选择与用户写入串行处理，并在写入前检查持久化的 profile override。它保留显式选择，包括暂不可用的模型。
 
 ## 概述
 

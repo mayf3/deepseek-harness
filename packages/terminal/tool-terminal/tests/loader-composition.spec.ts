@@ -44,7 +44,6 @@ async function agent(ctx: Context): Promise<Agent> {
   const session = Session.create(id)
   const value: Agent = {
     id, options: {}, session, inbox: unsupportedInbox(),
-    activeProvider: undefined,
     status: 'idle',
     ctx: scope.ctx,
     send: () => {},

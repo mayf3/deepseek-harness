@@ -4,7 +4,7 @@ import { attributionHeaders, LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, ImageAttachmentAccessResolver, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { DeepSeekLlmApiJson } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
-import { catalogModelInfo, modelInfo } from './model-info.ts'
+import { modelInfo } from './model-info.ts'
 import type { DeepSeekAdapterOptions, DeepSeekConnectionOptions as Connection } from './types.ts'
 import { DeepSeekFileStore } from './file-store.ts'
 import { MESSAGES_FILES_BETA, messagesApiRoot } from './messages-api.ts'
@@ -17,28 +17,22 @@ import { translate } from './translate.ts'
 import { providerError, providerErrorDetail } from './transport.ts'
 
 /** DeepSeek provider using Messages content and native thinking replay. */
-export class DeepSeekAdapter extends LlmAdapter {
+export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapter {
   private readonly files: DeepSeekFileStore
   private readonly imageAccess: ImageAttachmentAccessResolver = (ref) => {
     const attachments = this.dependencies.resolveAttachments?.()
     return attachments === undefined ? undefined : this.dependencies.resolveImageAccess?.(attachments, ref)
   }
 
-  constructor(private readonly dependencies: DeepSeekAdapterOptions) {
+  constructor(private readonly dependencies: DeepSeekAdapterOptions<C>) {
     super()
     this.files = dependencies.resolveFiles?.() ?? new DeepSeekFileStore()
   }
 
-  override providerInfo(provider: string) { return { id: provider, name: provider === 'deepseek-account' ? 'DeepSeek Account' : 'DeepSeek' } }
+  override providerInfo(provider: string) { return { id: provider, name: this.dependencies.providerName ?? 'DeepSeek' } }
   override providerRetryPolicy(_provider: string) { return this.dependencies.options().retryPolicy }
   override async listModels(provider: string) {
-    const connection = this.dependencies.options()
-    try { await this.dependencies.resolveApiKey(connection) }
-    catch (error) {
-      if (error instanceof LlmError && ['MISSING_CREDENTIAL', 'ACCOUNT_SIGN_IN_REQUIRED'].includes(error.code)) return []
-      throw error
-    }
-    return connection.models.map(model => catalogModelInfo(provider, model))
+    return this.dependencies.discoverModels?.(provider) ?? []
   }
   override resolveModel(provider: string, model: string, _signal?: AbortSignal) {
     return Promise.resolve(modelInfo(this.dependencies.options(), provider, model))
@@ -54,7 +48,7 @@ export class DeepSeekAdapter extends LlmAdapter {
     return this.generate(options, this.dependencies.options())
   }
 
-  private async * generate(options: GenerateOptions, connection: Connection): AsyncGenerator<StreamChunk> {
+  private async * generate(options: GenerateOptions, connection: C): AsyncGenerator<StreamChunk> {
     const consumer = new AbortController()
     const signal = options.signal === undefined ? consumer.signal : AbortSignal.any([consumer.signal, options.signal])
     using watchdog = idleWatchdog(signal, connection.streamIdleTimeoutMs, 'MESSAGES_IDLE')
@@ -79,7 +73,7 @@ export class DeepSeekAdapter extends LlmAdapter {
   }
 
   private async * request(
-    options: GenerateOptions, connection: Connection, signal: AbortSignal, activity: () => void,
+    options: GenerateOptions, connection: C, signal: AbortSignal, activity: () => void,
   ): AsyncGenerator<StreamChunk> {
     signal.throwIfAborted()
     const { messages, versions } = await prepareImages(
@@ -139,8 +133,7 @@ export class DeepSeekAdapter extends LlmAdapter {
           if (await files.retry(detail)) continue
           const failure = providerError(raw, response.status, response.headers)
           const message = files.errorMessage(response.status, failure.message, detail)
-          const code = accountToken !== undefined && response.status === 401 ? 'ACCOUNT_TOKEN_INVALID' : failure.code
-          throw new LlmError(message, code, { ...failure.failure, cause: new Error(text) })
+          throw new LlmError(message, failure.code, { ...failure.failure, cause: new Error(text) })
         }
         await extensions.accept()
         if (response.body === null) throw new LlmError('DeepSeek Messages returned no response body', 'EMPTY_RESPONSE')
@@ -148,10 +141,11 @@ export class DeepSeekAdapter extends LlmAdapter {
         return
       }
     } catch (error) {
-      if (accountToken !== undefined && error instanceof LlmError && error.code === 'ACCOUNT_TOKEN_INVALID') {
-        try { await this.dependencies.onInvalidAccountToken?.(accountToken) } catch (_credentialRemovalFailed) {
-          // Credential storage failure cannot replace the inference failure.
-        }
+      if (this.dependencies.onRequestError !== undefined) {
+        let mapped: unknown
+        try { mapped = await this.dependencies.onRequestError(error, key) }
+        catch (_credentialUpdateFailed) { throw error }
+        throw mapped
       }
       throw error
     }

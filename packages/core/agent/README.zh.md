@@ -25,7 +25,6 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-只读 `Agent.activeProvider` 标识当前轮次最近一次完成准备的请求提供方。首请求准备完成前及轮次之间没有该值；工具执行和重试期间保留上一提供方，直到另一请求完成准备。仅改变配置不会改变在途任务的归属。
 
 在存在实时 agent 的任何地方挂载 `dsh-agent`：它提供 `ctx.agents` 以及插件、UI、钩子和编排器所面向编程的 `Agent` 句柄。在没有驱动器注册工厂之前，该服务保持惰性——随附驱动器是 `dsh-agent-loop`，因此最小的可用组合需要同时加载两者。
 

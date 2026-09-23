@@ -7,7 +7,7 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
-`initializeSelection()` serializes the first setup choice with user writes and preserves an explicit profile selection, including unavailable models.
+`initializeSelection()` serializes the first setup choice with user writes and checks the persisted profile override before writing. It preserves explicit selections, including unavailable models.
 
 ## Summary
 

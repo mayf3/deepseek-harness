@@ -22,7 +22,7 @@ Account screens use authenticated Remote commands and a snapshot stream. The con
 
 The account namespace exposes getState, getProfile / getBalance, startSignIn, cancelSignIn, signOut, and watch. watch emits an initial complete state and subsequent complete states; disconnecting stops observation, not the login attempt. Cancellation names the attempt ID so a stale screen cannot cancel a newer login.
 
-hasRunningAccountTasks reads the agents registry and reports whether any active prepared provider is deepseek-account, including tool execution and retries. It excludes unprepared turns and API-key providers. The result describes the query instant; sign-out independently cancels matching agents when credentials are removed.
+`hasRunningAccountTasks` checks running Agents through the account-owned predicate over their latest logged request context, including tools and retries. Idle Agents and API-key contexts are excluded. The account provider independently cancels matching tasks when credentials are removed.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

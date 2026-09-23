@@ -1,5 +1,5 @@
 /** HTTP lifecycle, routing and optional Cordis services under real composition. */
-import type { DeepSeekAccount } from '@deepseek-ai/dsh-deepseek-account'
+import { installAccountTaskCancellation, type DeepSeekAccount } from '@deepseek-ai/dsh-deepseek-account'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -26,7 +26,8 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { DeepSeekAdapter } from '../src/adapter.ts'
 import { object } from '../src/replay.ts'
 import { DeepSeekFileStore } from '../src/file-store.ts'
-import * as Messages from '../src/index.ts'
+import * as Messages from '@deepseek-ai/dsh-llm-deepseek-api-key'
+import * as AccountProvider from '@deepseek-ai/dsh-llm-deepseek-account'
 import { adapter, assemble, chunks, MODEL, options, prepareExtensions, server, sse, textEvents, user, sourceModuleLoader } from './helpers.ts'
 
 const cleanup: (() => Promise<unknown>)[] = []
@@ -122,9 +123,7 @@ describe('direct Messages HTTP', () => {
       'x-deepseek-harness-session-id': 'session-test', 'x-deepseek-harness-compact': '1',
     }, body: { thinking: { type: 'enabled' }, output_config: { effort: 'high' } } })
     expect(llm.providerInfo('deepseek-official')).toEqual({ id: 'deepseek-official', name: 'DeepSeek' })
-    expect((await llm.listModels('deepseek-official')).map(model => model.id)).toEqual([
-      'deepseek-flash', 'deepseek-v4-pro',
-    ])
+    expect(await llm.listModels('deepseek-official')).toEqual([])
     expect(await llm.resolveModel('deepseek-official', 'deepseek-flash')).toMatchObject({
       name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
     })
@@ -240,6 +239,18 @@ describe('direct Messages HTTP', () => {
     await expect(chunks(adapter().stream(options()))).rejects.toMatchObject({ code: 'TRANSPORT' })
   })
 
+  it('preserves the transport failure when a provider error callback rejects', async () => {
+    vi.stubGlobal('fetch', async () => new Response('Unauthorized', { status: 401 }))
+    const llm = new DeepSeekAdapter({
+      options: () => Messages.resolveAdapterOptions({}),
+      resolveApiKey: () => Promise.resolve('fixture-key'),
+      resolveUserId: () => 'fixture-user' as import('@deepseek-ai/dsh-anonymous-user-id').AnonymousUserId,
+      prepareExtensions,
+      onRequestError: async () => { throw new Error('credential storage unavailable') },
+    })
+    await expect(chunks(llm.stream(options()))).rejects.toMatchObject({ code: 'AUTH', failure: { status: 401 } })
+  })
+
   it('rejects a successful response with no readable body', async () => {
     vi.stubGlobal('fetch', async () => new Response(null, { status: 200 }))
     await expect(chunks(adapter().stream(options()))).rejects.toMatchObject({ code: 'EMPTY_RESPONSE' })
@@ -282,7 +293,7 @@ describe('Cordis provider composition', () => {
     await ctx.plugin(Loader)
     ctx.loader.builtins.include = Include
     const modules = new Map<string, unknown>([
-      ['@deepseek-ai/dsh-llm', LlmRuntime], ['@deepseek-ai/dsh-llm-deepseek', Messages],
+      ['@deepseek-ai/dsh-llm', LlmRuntime], ['@deepseek-ai/dsh-llm-deepseek-api-key', Messages], ['@deepseek-ai/dsh-llm-deepseek-account', AccountProvider],
       ['@deepseek-ai/dsh-credentials-local', LocalCredentials],
       ['@deepseek-ai/dsh-agent', AgentRegistry], ['@deepseek-ai/dsh-agent-loop', AgentLoop],
       ['@deepseek-ai/dsh-session', SessionStore], ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
@@ -328,6 +339,7 @@ describe('Cordis provider composition', () => {
     })
     ctx.provide('deepseekAccount', { resolveToken: async (_url: string): Promise<string | undefined> => 'fixture-token',
       rejectToken: async (_token: string): Promise<void> => { ctx.emit('deepseek-account/signed-out') } } as DeepSeekAccount)
+    installAccountTaskCancellation(ctx)
     const agent = await ctx.agentLoop.create(SessionId('inference-account-expiry'), { provider: 'deepseek-account', model: MODEL })
     agent.followup(user('hello'))
     await agent.whenIdle()
@@ -405,7 +417,7 @@ describe('Cordis provider composition', () => {
 
   it.each([false, true])('continues and resumes sessions after a model capability change, in-history=%s', async (inHistory) => {
     const { ctx, http } = await boot()
-    await ctx.settings.update('llm-deepseek', { baseURL: http.url, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
+    await ctx.settings.update(Messages.name, { baseURL: http.url, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
     let prompt = 'old prompt'
     ctx.on('system-prompt/assemble', async (_assembly, _context, next) => ({
       ...await next(), sections: [{ name: 'test', text: prompt, order: 0 }],
@@ -548,7 +560,7 @@ it.each([
     resolveToken: (url: string) => Promise.resolve(url === 'https://api.deepseek.com' ? 'account-token' : undefined),
   } as DeepSeekAccount)
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(Messages, { baseURL })
+  await ctx.plugin(expected === 'account-token' ? AccountProvider : Messages, { baseURL })
   const request = vi.fn<typeof fetch>((_input, init) => {
     const headers = new Headers(init?.headers)
     expect(headers.has('authorization')).toBe(false)
@@ -558,6 +570,6 @@ it.each([
     return Promise.resolve(new Response(sse(textEvents), { status: 200 }))
   })
   vi.stubGlobal('fetch', request)
-  await assemble(ctx.llm.stream(options()))
+  await assemble(ctx.llm.stream(options({ provider: expected === 'account-token' ? 'deepseek-account' : 'deepseek-official' })))
   expect(request).toHaveBeenCalledOnce()
 })

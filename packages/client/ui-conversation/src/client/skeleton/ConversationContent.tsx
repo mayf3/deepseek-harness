@@ -133,7 +133,7 @@ export function ConversationContent(props: ConversationContentProps) {
   // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
   // not a different tree, so the textarea DOM survives the transition.
   const inert = sessionId === undefined || (hero && chipTitle === undefined)
-  // A raised block keeps the same textarea mounted:
+  // A raised block is the same inert posture with the blocker's own reason:
   // one disabled textarea, never a second tree. The no-workspace state wins
   // when both hold — picking a workspace is the earlier prerequisite.
   const blocked = !inert && composerBlock !== undefined
@@ -150,7 +150,7 @@ export function ConversationContent(props: ConversationContentProps) {
         // `blocked`, not `disabled`: the bar refuses input either way, but a
         // block keeps the model seat live because choosing a model is how the
         // user clears it.
-        ? { blocked: composerBlock, placeholder: t(hero ? 'placeholder.hero' : 'placeholder.default') }
+        ? { blocked: composerBlock, placeholder: composerBlock.reason }
         : hero ? { placeholder: t('placeholder.hero') } : {}),
   })
 

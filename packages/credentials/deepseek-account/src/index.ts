@@ -1,6 +1,7 @@
 /** Account Service Definition shared by platform, API, and model consumers. */
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { AccountDetails, AccountView, SignInAttemptId } from './types.ts'
+export { isRunningAccountTask, installAccountTaskCancellation } from './account-tasks.ts'
 export type { AccountDetails, AccountProfile, AccountWallet, AccountLinks, AccountView, SignInAttemptId, SignInAttemptView, SignInErrorCode } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {

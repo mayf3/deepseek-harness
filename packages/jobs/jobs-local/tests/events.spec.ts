@@ -19,7 +19,6 @@ function agentIn(ctx: Context, rawId: string, presetScope?: ScopeKey): Agent {
   }
   const session = Session.create(id)
   return {
-    activeProvider: undefined,
     id,
     options: {},
     session,

@@ -491,3 +491,25 @@ it('reports resize failure, ignores late native failures, and tolerates a remove
   await act(async () => { loaded.reject(new Error('late failure')); await loaded.promise.catch(() => {}) })
   expect(screen.queryByRole('dialog')).toBeNull()
 })
+
+it.each([en, zh])('shows live model sign-in guidance without replaying it after remount', async (copy) => {
+  const operations = operationsOf({ status: 'signed-out', attempt: null })
+  let listener: (() => void) | undefined
+  const unsubscribe = vi.fn(() => { listener = undefined })
+  operations.subscribeModelSignInRequired = (next) => { listener = next; return unsubscribe }
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  const element = <AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())}
+    useTheme={selector => selector(operations.hooks.theme.getSnapshot())} wide openOnboarding={() => {}} openSettings={() => {}}
+    t={key => key in copy ? copy[key as AccountKey] : key} />
+  const view = render(element)
+  expect(screen.queryByRole('alert')).toBeNull()
+  act(() => { listener?.() })
+  expect(screen.getByRole('alert').textContent).toBe(copy.modelSignInRequired)
+  act(() => { listener?.() })
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+  view.unmount()
+  expect(unsubscribe).toHaveBeenCalledOnce()
+  render(element)
+  expect(screen.queryByRole('alert')).toBeNull()
+})

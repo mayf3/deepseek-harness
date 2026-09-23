@@ -21,7 +21,6 @@ async function fakeAgent(ctx: Context, rawId: string): Promise<Agent> {
   const session = Session.create(id)
   const agent: Agent = {
     id, options: {}, session, inbox: unsupportedInbox(),
-    activeProvider: undefined,
     status: 'idle',
     ctx: scope.ctx,
     send: () => {},

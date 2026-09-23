@@ -1,7 +1,6 @@
 /** Model catalog and request-local dependencies for DeepSeek Messages. */
-import type { ModelModality, SystemPromptUpdate, ResolvedRetryPolicy, ImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
+import type { LlmModelInfo, ModelModality, SystemPromptUpdate, ResolvedRetryPolicy, ImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import type { DeepSeekLlmApiExtensionRequest, PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import type { DeepSeekFileStore, DeepSeekFilePolicy } from './file-store.ts'
@@ -45,13 +44,6 @@ export interface DeepSeekCatalogModel {
 export interface DeepSeekConnectionOptions {
   /** Messages API root; custom paths remain unchanged. */
   baseURL: string
-  /**
-   * Credential reference of this same resolution, resolved per request.
-   * Travelling with the endpoint is the point: a request can never pair one
-   * generation's URL with another generation's secret. Configuration carries
-   * only this name — a literal key is not a configuration value.
-   */
-  apiKeyEnv: CredentialRef
   /** Request defaults applied to every call (thinking mode, effort). */
   defaults: RequestDefaults
   /** Default per-request output cap; explicit request values win. */
@@ -83,20 +75,24 @@ export interface DeepSeekConnectionOptions {
 }
 
 /** Constructor options for {@link DeepSeekAdapter}: the operation-local resolution hooks the plugin owns. */
-export interface DeepSeekAdapterOptions {
+export interface DeepSeekAdapterOptions<Connection extends DeepSeekConnectionOptions = DeepSeekConnectionOptions> {
   /** Report unusable native Messages replay metadata without exposing content or signatures. */
   onReplayDegrade?: (detail: { provider: string; model: string; reason: string }) => void
-  /** Remove a server-rejected account token if it still matches the current login; failures preserve the inference error. */
-  onInvalidAccountToken?: (token: string) => Promise<void>
+  /** Provider label for selectors; omission uses the protocol family name. */
+  providerName?: string
+  /** Provider-owned catalog availability; omission exposes no discovery entries. */
+  discoverModels?: (provider: string) => Promise<LlmModelInfo[]>
+  /** Classify a request failure and update credential state; callback failure preserves the original error. */
+  onRequestError?: (error: unknown, credential: string) => Promise<unknown>
   /** Current validated connection facts; called once per operation. */
-  options: () => DeepSeekConnectionOptions
+  options: () => Connection
   /**
    * Resolve this adapter’s credential for the connection facts of one request. The
    * snapshot is passed in — never re-read — so the key can only ever come
    * from the same resolution as the endpoint it is sent to. Throws `LlmError`
    * `MISSING_CREDENTIAL` for a missing API key; account routes reject unavailable grants.
    */
-  resolveApiKey: (connection: DeepSeekConnectionOptions) => Promise<string>
+  resolveApiKey: (connection: Connection) => Promise<string>
   /** Send the resolved credential as a bare DSH account token; never fall back to an API key. */
   accountCredential?: boolean
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */

@@ -51,7 +51,6 @@ function sessionAgent(session: Session, id = 'agent'): Agent {
     options: {},
     session,
     inbox: unsupportedInbox(),
-    activeProvider: undefined,
     status: 'running',
     ctx: new Context(),
     send: () => {},

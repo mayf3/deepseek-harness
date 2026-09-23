@@ -52,7 +52,6 @@ export class AgentDefaultModelConfig extends Service {
     reasoningEffort: z.string().volatile(),
   })
 
-  private saved = false
   private writes: Promise<void> = Promise.resolve()
 
   constructor(private readonly ownerContext: Context, private config: Config) {
@@ -98,12 +97,11 @@ export class AgentDefaultModelConfig extends Service {
       const editor = this.ctx.get('configEditor')
       if (entry === undefined || editor === undefined) return
       const override = editor.configuration().find(row => row.entry === entry)?.override
-      if (initialize && (this.saved || override !== undefined && ('provider' in override || 'model' in override))) return
+      if (initialize && override !== undefined && ('provider' in override || 'model' in override)) return
       await editor.edit(entry, () => ({
         provider: next.provider, model: next.model,
         ...next.reasoningEffort === undefined ? {} : { reasoningEffort: String(next.reasoningEffort) },
       }))
-      this.saved = true
     })
     this.writes = operation.catch(() => { /* A refused write does not block the next user choice. */ })
     return operation

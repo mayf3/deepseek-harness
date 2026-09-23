@@ -1,7 +1,7 @@
 /** Authenticated Remote operations for account UI consumers. */
 import { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import type {} from '@deepseek-ai/dsh-deepseek-account'
+import { isRunningAccountTask } from '@deepseek-ai/dsh-deepseek-account'
 import type {} from '@deepseek-ai/dsh-agent'
 import type { AccountDetails } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { AccountView, SignInAttemptId } from './types.ts'
@@ -46,12 +46,12 @@ export class AccountController extends TypertRemoteService {
   @Remote
   cancelSignIn(attemptId: SignInAttemptId): Promise<AccountView> { return this.ctx.deepseekAccount.cancelSignIn(attemptId) }
   /**
-   * Inspect prepared providers across running tasks, including tools and retries.
-   * @returns whether any task currently uses the account token; unprepared turns are excluded.
+   * Inspect the latest logged request providers of running tasks, including tools and retries.
+   * @returns whether running work has a latest request context on the account route.
    */
   @Remote
   hasRunningAccountTasks(): boolean {
-    return this.ctx.agents.list().some(agent => agent.activeProvider === 'deepseek-account')
+    return this.ctx.agents.list().some(isRunningAccountTask)
   }
   /**
    * Remove the local account grant and revoke it through Platform in the background, without deleting API keys.

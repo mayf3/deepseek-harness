@@ -226,7 +226,6 @@ describe('JobController', () => {
   async function liveOwner(ctx: Context, rawId: string): Promise<Agent> {
     const session = ctx.sessions.create(SessionId(rawId))
     const owner: Agent = {
-      activeProvider: undefined,
       id: session.id,
       options: {},
       session,

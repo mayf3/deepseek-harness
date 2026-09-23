@@ -29,7 +29,6 @@ async function liveAgent(ctx: Context, session: Session, initial: AgentStatus): 
   const cancels: CancelCall[] = []
   let status = initial
   const agent: LiveAgent = {
-    activeProvider: undefined,
     id: session.id,
     options: {},
     session,

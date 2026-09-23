@@ -7,7 +7,7 @@ import { finished } from 'node:stream/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
-import { DeepSeekAccount, desktopClientHeaders, mergePlatformCookies, type PlatformSession, type AccountDetails, type AccountView, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
+import { DeepSeekAccount, installAccountTaskCancellation, desktopClientHeaders, mergePlatformCookies, type PlatformSession, type AccountDetails, type AccountView, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
 import { profile, readAccountDetail } from './details.ts'
@@ -103,6 +103,7 @@ export class PlatformAccount extends DeepSeekAccount {
   /** @param ctx - Host with authorization and credentials services. @param config - deployment options. */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx)
+    installAccountTaskCancellation(ctx)
     const resolved = Config(config)
     this.embeddedPageDist = resolved.embeddedPageDist
     this.origin = platformOrigin(resolved.platformOrigin, resolved.allowLoopbackHttp)

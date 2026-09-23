@@ -23,7 +23,7 @@ import { SessionControlController } from './control.ts'
 import { SessionHistoryController } from './history.ts'
 import { SessionFileReferences } from './file-references.ts'
 import { ApiSessionList } from './list.ts'
-import { buildModelCatalog } from './catalog.ts'
+import { buildModelCatalog, hasProviderApiKey } from './catalog.ts'
 import { installModelSelectionProjection } from './model-selection-projection.ts'
 import { SessionSkillCatalog } from './skill-catalog.ts'
 import { SessionMediaReferences } from './media-references.ts'
@@ -285,19 +285,22 @@ export class SessionController extends TypertRemoteService {
   }
 
   /**
-   * Initialize the default after the user first configures a provider credential.
+   * Initialize a provider default; account login replaces it only when no provider API key is configured.
    * @param provider - the provider whose credential was configured.
-   * @returns after saving the initial available model; existing user choices are retained.
+   * @returns after saving the first available model or retaining the existing default.
    */
   @Remote
   async initializeDefaultModel(provider: string): Promise<void> {
+    if (provider === 'deepseek-account' && await hasProviderApiKey(this.ctx)) return
     const catalog = await buildModelCatalog(this.ctx)
     const model = catalog.groups.find(group => group.id === provider)?.models[0]
     if (model === undefined) throw new RemoteError('session/provider-models-unavailable',
       `provider "${provider}" has no available models`, { provider })
-    await this.ctx.agentDefaultModel.initializeSelection({ provider, model: model.id,
+    const selection = { provider, model: model.id,
       ...model.reasoning?.defaultEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(model.reasoning.defaultEffort) },
-    })
+    }
+    if (provider === 'deepseek-account') await this.ctx.agentDefaultModel.saveSelection(selection)
+    else await this.ctx.agentDefaultModel.initializeSelection(selection)
   }
 
   /**

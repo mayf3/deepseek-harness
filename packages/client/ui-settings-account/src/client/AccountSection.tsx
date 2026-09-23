@@ -29,6 +29,11 @@ export interface AccountSnapshot {
 
 /** Host operations injected into the Cordis-free account component. */
 export interface AccountSectionInjected {
+  /** Subscribe to live model sign-in guidance; the returned function removes the listener.
+   * @param listener - callback for one rejected account-model request.
+   * @returns listener cleanup.
+   */
+  subscribeModelSignInRequired?: (listener: () => void) => () => void
   /** Desktop-only commands; absent in ordinary browsers. */
   platform?: PlatformBridge
 

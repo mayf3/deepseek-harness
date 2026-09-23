@@ -46,7 +46,7 @@ type Phase =
     lastTurn: number
     wakeRequested: boolean
   }
-  | { kind: 'running'; abort: AbortController; turn: number; step: number; wakeRequested: boolean; activeProvider?: string }
+  | { kind: 'running'; abort: AbortController; turn: number; step: number; wakeRequested: boolean }
 
 type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }>
 
@@ -138,10 +138,6 @@ export class ReactLoopAgent implements Agent {
 
   get status(): AgentStatus {
     return this.phase.kind === 'idle' || this.phase.kind === 'maintenance' ? 'idle' : 'running'
-  }
-
-  get activeProvider(): string | undefined {
-    return this.phase.kind === 'running' ? this.phase.activeProvider : undefined
   }
 
   /** Commit a phase and publish its externally visible status transition. */
@@ -367,7 +363,6 @@ export class ReactLoopAgent implements Agent {
       this.throwError(error)
     } finally {
       try {
-        delete phase.activeProvider
         // oxlint-disable-next-line typescript/no-non-null-assertion -- every exit assigns a turn ending
         this.session.append('turn/end', { turn, reason: turnEnds! })
       } catch (error: unknown) {
@@ -579,7 +574,6 @@ export class ReactLoopAgent implements Agent {
       config = proposedConfig
     }
     signal.throwIfAborted()
-    if (this.phase.kind === 'running') this.phase.activeProvider = config.provider
     return { config, ...preparedCall === undefined ? {} : { preparedCall } }
   }
 
