@@ -1,6 +1,28 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for schedule.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/schedule.md
-schedule.md: b92b81c6f24773b8cbafea5fccd7ac16df07ccd3
-schedule.zh.md: a3e6a4e5f82223526f0ec84e60e5c752e6f65f9a
+/session-local-schedule:
+  en: d9c45890973c8312
+  zh: dc24bdb262b521c8
+/session-local-schedule/durable-records:
+  en: 65b12288096cbacb
+  zh: 50a39aaf9fd16b76
+/session-local-schedule/absolute-time-input:
+  en: 831be0104c9a76ab
+  zh: f95f1791a918e272
+/session-local-schedule/fixed-rate-input-and-catch-up:
+  en: 071aa73c5c4ca8cd
+  zh: 34f4ea9a0d0e3f90
+/session-local-schedule/durable-changes-and-replay:
+  en: cc9573bae1cabf26
+  zh: 9d32f9efcbb7b3c1
+/session-local-schedule/active-views-and-management:
+  en: 057d439bc9263d02
+  zh: 9a675fd7fecf4e45
+/session-local-schedule/read-only-web-catalog:
+  en: 3bfdb5370bd16560
+  zh: 5176c01962819f0f
+/session-local-schedule/live-delivery:
+  en: 95a78df72f98f9b8
+  zh: ffaa6f163cdf9034
