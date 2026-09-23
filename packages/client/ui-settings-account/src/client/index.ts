@@ -25,7 +25,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Services required by account settings. */
-export const inject = ['slots', 'locale', 'remote', 'remote.account', 'theme']
+export const inject = ['slots', 'locale', 'remote', 'remote.account', 'remote.session', 'theme']
 /** Register account UI only in the Desktop renderer. @param ctx - client plugin context. */
 export function apply(ctx: Context): void {
   if (!('dshDesktop' in globalThis)) return
@@ -101,17 +101,29 @@ export function apply(ctx: Context): void {
     for await (const frame of stream) {
       revision++
       refreshing = undefined
+      const initialize = frame.value.status === 'credential-stored' && frame.value.attempt?.phase === 'succeeded'
+        && snapshot.view?.attempt?.phase !== 'succeeded'
       const { notice, ...previous } = snapshot
       publish({ ...previous, view: frame.value, details: undefined, failed: false,
         ...(frame.value.status === 'credential-stored' && notice ? { notice } : {}) })
       frame.accept()
       if (frame.value.status === 'credential-stored') notices.begin()
       else notices.end()
+      if (initialize) void (async () => {
+        try {
+          const initialized = await ctx.remote.session.initializeDefaultModel()
+          if (!initialized.ok) console.info('[deepseek-account] default model initialization failed', { reason: 'refused' })
+        } catch (_error) {
+          console.info('[deepseek-account] default model initialization failed', { reason: 'disconnected' })
+        }
+      })()
       void refresh()
     }
   })().catch(() => { if (!disposed) publish({ ...snapshot, failed: true }) })
   const nativePlatform = (globalThis as typeof globalThis & { dshPlatform?: PlatformBridge }).dshPlatform
   const operations: AccountSectionInjected = {
+    subscribeSessionExpired: listener => ctx.remote.$on('deepseek-account/session-expired', listener),
+    subscribeModelSignInRequired: listener => ctx.remote.$on('deepseek-account/model-sign-in-required', listener),
     ...nativePlatform === undefined ? {} : { platform: nativePlatform },
     // One account refresh: the recharge/bonus wallet and the unnotified-bonus read,
     // whichever surface asks — a Settings entry, or returning from top-up. Both
@@ -155,6 +167,11 @@ export function apply(ctx: Context): void {
       }
     },
     async cancel(id) { const result = await ctx.remote.account.cancelSignIn(id); if (!result.ok) throw new Error('account cancel failed') },
+    async hasRunningAccountTasks() {
+      const result = await ctx.remote.account.hasRunningAccountTasks()
+      if (!result.ok) throw new Error('account task query failed')
+      return result.value
+    },
     async signOut() {
       const result = await ctx.remote.account.signOut(client())
       if (result.ok) return

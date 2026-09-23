@@ -63,8 +63,13 @@ export interface DesktopAccountBackend {
   cancel(id: SignInAttemptId): Promise<AccountView>
   /** @param client - this window's identity. @returns state after local sign-out. */
   signOut(client: AccountClientMetadata): Promise<AccountView>
-  /** @param listener - state recipient. @param failed - stream failure recipient. @returns stream disposer. */
-  watch(listener: (state: AccountView) => void, failed: () => void): () => void
+  /**
+   * @param listener - state recipient.
+   * @param failed - stream failure recipient.
+   * @param expired - live credential-expiry recipient.
+   * @returns stream disposer.
+   */
+  watch(listener: (state: AccountView) => void, failed: () => void, expired: () => void): () => void
 }
 
 /**
@@ -81,22 +86,27 @@ export function desktopAccountBackend(origin: string, invoke: AccountInvoke, coo
     state: () => call('getState'),
     start: client => call('startSignIn', { client, callbackOrigin: new URL(origin).origin, loginSource: 'desktop' }),
     cancel: attemptId => call('cancelSignIn', { attemptId }), signOut: client => call('signOut', { client }),
-    watch(listener, failed) {
+    watch(listener, failed, expired) {
       let closed = false
       let socket: WebSocket | undefined
       let retry: ReturnType<typeof setTimeout> | undefined
       const connect = (): void => {
         const streamId = randomUUID()
+        const expiryStreamId = randomUUID()
         void cookies().then((cookie) => {
           if (closed) return
           const url = new URL(REMOTE_STREAM_MUX_PATH, origin)
           url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
           socket = new WebSocket(url, { headers: { cookie, origin }, maxPayload: 65_536 })
-          socket.on('open', () => socket?.send(JSON.stringify({ type: 'open', streamId, endpoint: 'account/watch', payload: { args: {} } })))
+          socket.on('open', () => {
+            socket?.send(JSON.stringify({ type: 'open', streamId: expiryStreamId, endpoint: 'account/watchExpiry', payload: { args: {} } }))
+            socket?.send(JSON.stringify({ type: 'open', streamId, endpoint: 'account/watch', payload: { args: {} } }))
+          })
           socket.on('message', (data) => {
             try {
               const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.isBuffer(data) ? data : Buffer.from(data)
               const frame = parseRemoteStreamServerMessage(bytes.toString('utf8'))
+              if (frame.streamId === expiryStreamId && frame.type === 'item' && frame.value === 'session-expired') { expired(); return }
               if (frame.streamId !== streamId) throw new Error('desktop account: unexpected stream')
               if (frame.type === 'item') listener(accountView(frame.value))
               else socket?.close()

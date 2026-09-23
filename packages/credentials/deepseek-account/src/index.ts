@@ -2,8 +2,15 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { AccountBonusBatch, AccountBonusOrderId, AccountClientMetadata, AccountDetails, AccountUserId, AccountView, SignInAttemptId } from './types.ts'
 export type { AccountBonusBatch, AccountBonusNotification, AccountBonusOrderId, AccountClientMetadata, AccountDetails, AccountProfile, AccountUserId, AccountWallet, AccountLinks, AccountView, SignInAttemptId, SignInAttemptView, SignInErrorCode } from './types.ts'
+export { isRunningAccountTask, installAccountTaskCancellation } from './account-tasks.ts'
 
 declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Local grant removal has completed.
+     * @mode emit
+     */
+    'deepseek-account/signed-out'(): void
+  }
   interface Context {
     deepseekAccount: DeepSeekAccount
   }
@@ -69,7 +76,7 @@ export abstract class DeepSeekAccount extends Service {
    */
   abstract cancelSignIn(id: SignInAttemptId): Promise<AccountView>
   /**
-   * Remove the local grant while retaining API keys and tasks; the provider revokes it in the background.
+   * Remove the local grant while retaining API keys; the provider revokes it in the background.
    * @param client - identity of the requesting UI, captured for the background revocation retries.
    * @returns the signed-out state after local removal; remote failures never restore the grant.
    */
@@ -86,6 +93,12 @@ export abstract class DeepSeekAccount extends Service {
    * @returns stored token, or undefined for other origins or a signed-out account.
    */
   abstract resolveToken(url: string): Promise<string | undefined>
+  /**
+   * Remove an inference-rejected token only while it still matches the stored login.
+   * @param token - token captured by the rejected inference request.
+   * @returns after matching credentials are removed and the expiry notification is emitted.
+   */
+  abstract rejectToken(token: string): Promise<void>
   /**
    * Read credentials for the configured Platform origin, bound to their issuing environment.
    * @returns a Host-only snapshot, or null while signed out.

@@ -1,4 +1,5 @@
 /** Client-supplied request identity and client-safe account state; credentials never cross this projection. */
+import type {} from '@deepseek-ai/cordis'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 
 /** Identity of the requesting UI for one account operation; the Host derives Platform request headers from it. */
@@ -75,4 +76,17 @@ export interface AccountBonusNotification {
 export interface AccountBonusBatch {
   readonly accountId: AccountUserId
   readonly bonuses: readonly AccountBonusNotification[]
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Server rejection removed the current account credential; this notification is not replayed.
+     * @mode emit
+     */
+    'deepseek-account/session-expired'(): void
+    /** An account model request requires the user to sign in.
+     * @mode emit
+     */
+    'deepseek-account/model-sign-in-required'(): void
+  }
 }

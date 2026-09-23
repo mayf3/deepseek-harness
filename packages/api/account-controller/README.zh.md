@@ -24,6 +24,10 @@ account 命名空间提供 getState、getProfile / getBalance、getUnnotifiedBon
 
 到达 Platform 的每个操作都接收调用界面的 `AccountClientMetadata`——客户端版本、当前语言和以秒为单位的 UTC 偏移——因此 Host 报告的是发起请求的界面，而不是它上一次见到的调用方。取消和 watch 不接该参数，因为它们不会到达 Platform。
 
+`watchExpiry` 仅发送实时凭据失效通知，不发送初始值，也不重放历史通知。桌面端通过该流，在切换到 Welcome 时交接一次性 toast。
+
+`hasRunningAccountTasks` 通过账号模块的判断函数，检查运行中 Agent 最近记录的请求上下文，包括工具和重试阶段。空闲 Agent 及 API key 上下文不计入。移除凭据时，账号提供方独立取消匹配任务。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

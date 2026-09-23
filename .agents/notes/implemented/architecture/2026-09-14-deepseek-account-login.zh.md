@@ -30,7 +30,7 @@ Platform 客户端身份属于发起调用的界面，而不属于 Host。每个
 
 退出登录先删除本地授权，再使用捕获的 token 调用 Platform POST /auth-api/v0/users/logout。远程失败不会恢复登录态。首次请求失败后，提供者最多重试五次，使用可配置的指数退避，默认从一秒开始。重试任务只保留旧 token，不改变后续登录态，并在提供者关闭时结束，不持久化。本地凭证删除成功后才发布已退出状态。退出登录位于侧边栏账号菜单；账号设置负责资料、余额和登录。两者通过框架 hook 读取插件持有的同一条 Host 状态流。
 
-API Key 与账号记录独立保存。账号 token 没有过期或刷新流程；退登重试耗尽后，已从本地删除的 token 在远端仍可能有效。提供者初始化时在本地丢弃与配置的 Platform 来源不同的授权，不调用远端撤销，使环境切换以未登录态启动，而不导致 Desktop 启动失败。API Key 和设备标识保留。资料与余额查询失败保留登录态；授权尝试的有效期仅适用于 token 签发前。同一授权 token 可认证已配置签发来源上的 Platform current 和 get_user_summary 查询。Host 原样保留 Platform 脱敏后的联系方式并丢弃响应 token；账号变化使未完成结果失效。UI 分行显示 normal_wallets 充值余额与正额 bonus_wallets 赠金余额，避免将赠金额度显示为充值资金。
+API Key 与账号记录独立保存。账号 token 没有主动刷新流程；退登重试耗尽后，已从本地删除的 token 在远端仍可能有效。提供者初始化时在本地丢弃与配置的 Platform 来源不同的授权，不调用远端撤销，使环境切换以未登录态启动，而不导致 Desktop 启动失败。API Key 和设备标识保留。资料与余额接口的 HTTP 401 响应清除被拒绝的凭据，其他查询错误保留登录态；授权尝试的有效期仅适用于 token 签发前。同一授权 token 可认证已配置签发来源上的 Platform current 和 get_user_summary 查询。Host 原样保留 Platform 脱敏后的联系方式并丢弃响应 token；账号变化使未完成结果失效。UI 分行显示 normal_wallets 充值余额与正额 bonus_wallets 赠金余额，避免将赠金额度显示为充值资金。
 
 账号插件通过 settings.models.sign-in 提供选择、等待、失败和超时对话框。模型包保留凭证就绪检查和现有 API Key 编辑器；设置外壳协调显式重开，避免登录与 API Key 引导同时挂载冲突的对话框。
 

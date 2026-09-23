@@ -1,5 +1,5 @@
 /** Bonus notification reads and acknowledgements over the real Host HTTP path. */
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -116,7 +116,7 @@ async function fixture() {
   cleanups.push(async () => { await provider.dispose(); await authorization.dispose(); await credentials.dispose() })
   const key = credentialKey('deepseek-account-platform', 'default')
   return {
-    account: ctx.deepseekAccount, requests, key,
+    account: ctx.deepseekAccount, ctx, requests, key,
     grant: (token: string) => ctx.credentials.modifyRecord(key, () => Promise.resolve({
       kind: 'grant', payload: { version: 1, token, issuer: origin },
     })),
@@ -239,6 +239,36 @@ it('acknowledges a displayed bonus with the grant, locale, and a JSON body', asy
       bundleId: '', platform: 'web', version: '1.2.3', timezoneOffset: '28800',
       contentType: 'application/json', body: `{"order_id":"${ORDER}"}` },
   ])
+})
+
+it.each([
+  ['the unnotified read', (f: Awaited<ReturnType<typeof fixture>>) => {
+    f.failBonuses(0, 401)
+    return f.account.getUnnotifiedBonuses(clientMetadata('en'))
+  }, null],
+  ['the acknowledgement', (f: Awaited<ReturnType<typeof fixture>>) => {
+    f.failAck(0, 401)
+    return f.account.ackBonusNotified(USER as AccountUserId, ORDER as AccountBonusOrderId, clientMetadata('en'))
+  }, false],
+])('expires the rejected grant when %s returns HTTP 401', async (_name, run, signedOutOutcome) => {
+  const f = await fixture()
+  await f.grant('test-account-token')
+  const expired = vi.fn()
+  f.ctx.on('deepseek-account/session-expired', expired)
+  // A rejected authenticated request names an invalid credential, so the provider drops it locally
+  // exactly as the profile and balance reads do; the caller sees its signed-out outcome.
+  expect(await run(f)).toBe(signedOutOutcome)
+  expect(await f.account.getState()).toMatchObject({ status: 'signed-out' })
+  expect(expired).toHaveBeenCalledOnce()
+})
+
+it('retains the grant when an acknowledgement returns HTTP 500', async () => {
+  const f = await fixture()
+  await f.grant('test-account-token')
+  f.failAck(0, 500)
+  await expect(f.account.ackBonusNotified(USER as AccountUserId, ORDER as AccountBonusOrderId, clientMetadata('en')))
+    .rejects.toThrow('account: network')
+  expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
 })
 
 it('rejects the supplied BONUS_ORDER_NOT_FOUND envelope as a business failure', async () => {

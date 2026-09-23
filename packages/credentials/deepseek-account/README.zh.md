@@ -13,6 +13,10 @@ getPlatformSession 为原生 Platform 内嵌提供仅限 Host 的 origin/token �
 
 getUnnotifiedBonuses 返回平台尚未记录为已展示的赠金及其所属账号；ackBonusNotified 记录用户实际看到的那一笔赠金。确认请求携带该账号，因此在一个账号下读取的通知绝不会被确认到另一个账号。
 
+`rejectToken` 接收 Host 推理请求被拒绝的 token，仅删除与它匹配的当前登录凭据；延迟返回的拒绝不能清除替换后的凭据。
+
+`deepseek-account/session-expired` 在移除被拒绝的凭据后，向当前订阅方通知一次。账号快照不携带失效提示，因此重新连接不会重复弹出 toast。
+
 ## 概述
 
 账号使用方可读取本地登录状态、发起或取消浏览器登录，并在保留 API Key 的情况下退出。Host 模型使用方仅能为提供者配置的推理来源解析账号凭证。
@@ -26,9 +30,13 @@ getUnnotifiedBonuses 返回平台尚未记录为已展示的赠金及其所属�
 <a id="use-this-package"></a>
 ## 使用此包
 
+本地成功退出登录后发出 `deepseek-account/signed-out`。Platform 提供方安装账号模块的取消监听器，根据运行中 Agent 的 `session.requestContext().provider` 判断账号任务，取消时保留收件箱。账号控制器的确认弹窗复用同一判断，不维护额外 Agent 状态。新轮次绑定首请求前，该判断仍读取上一轮的提供方。
+
 `AccountProfile.avatarUrl` 是可选的账号头像 URL；为空或缺失时表示没有头像。
 
 该服务定义账号操作和可重连的状态快照。平台提供者负责协议和授权记录。凭证仅限 Host；API 控制器只导出状态与操作，不导出 resolveToken。
+
+账号模型请求以 `ACCOUNT_SIGN_IN_REQUIRED` 失败时，发出 `deepseek-account/model-sign-in-required`，Client 接收该实时事件以提示登录。其他请求错误不触发此事件。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现

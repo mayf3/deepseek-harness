@@ -92,6 +92,7 @@ function textResponse(text: string): StreamChunk[] {
 
 /** Deterministic model seam that turns one due reminder into ordinary assistant prose. */
 class ReminderAdapter extends LlmAdapter {
+  override async listModels(provider: string) { return [{ provider, id: MODEL, name: `${provider}/${MODEL}` }] }
   readonly requests: GenerateOptions[] = []
 
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -102,6 +103,7 @@ class ReminderAdapter extends LlmAdapter {
 
 /** Deterministic model seam for one multi-record fixed-rate batch. */
 class EveryReminderAdapter extends LlmAdapter {
+  override async listModels(provider: string) { return [{ provider, id: MODEL, name: `${provider}/${MODEL}` }] }
   readonly requests: GenerateOptions[] = []
 
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -137,6 +139,7 @@ function localAt(epoch: number, timeZone: string): LocalAt {
 
 /** Dynamic model seam proving request-local browser context becomes an explicit At selector. */
 class BrowserZoneAtAdapter extends LlmAdapter {
+  override async listModels(provider: string) { return [{ provider, id: MODEL, name: `${provider}/${MODEL}` }] }
   readonly requests: GenerateOptions[] = []
   selectedAt: LocalAt | undefined
   scheduledAt: string | undefined

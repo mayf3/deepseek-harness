@@ -7,6 +7,8 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
+Server-expired account credentials clear the displayed account details and emit a localized sign-in reminder toast once; account snapshot replay does not repeat it.
+
 ## Summary
 
 Desktop Account settings display DeepSeek login state and offer browser authorization and cancellation; the sidebar account menu provides Platform sign-out.
@@ -17,12 +19,14 @@ Desktop Account settings display DeepSeek login state and offer browser authoriz
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 
+A new account-model sign-in-required event displays “Model unavailable. Please sign in and try again.” in a toast. The notice is transient: remounting or refreshing does not replay it.
+
 <a id="use-this-package"></a>
 ## Use this package
 
 The client activates only inside Desktop, identified by its preload bridge. Plain Web clients keep the standard Settings launcher and API-key onboarding without account login, account settings, or an account-state subscription.
 
-The sidebar and Account settings display the profile avatar as a circular image, with the account icon as fallback when the URL is absent or the image fails to load. The collapsed sidebar centers the avatar in a 36 × 36 px button.
+The sidebar and Account settings display the profile avatar as a circular image, with the account icon as fallback when the URL is absent or the image fails to load. The collapsed sidebar centers the avatar in a 36 × 36 px button. Before sign-in the sidebar launcher shows a More row instead, leading with the ellipsis glyph.
 
 The section registers through settings.section and uses the account Remote namespace. The stream survives carrier reconnects through the shared Remote supervisor. The page renders feature-owned English and Chinese copy and keeps API keys separate from account state.
 
@@ -34,9 +38,11 @@ Desktop usage and top-up actions open an isolated native Platform view below a 4
 
 The account menu's Feedback entry opens the Feishu questionnaire in the system browser. It supplies the available build version, UI locale and physical screen resolution as prefill_* parameters, with hide_*=1 for every context field; the account UID, tokens and contact details are excluded. Configure contactFormUrl on the ui-settings-account plugin to select another HTTPS form. contactSource defaults to empty until the questionnaire supports a Harness source option; OS and device fields remain unfilled, matching the Web implementation.
 
-The sidebar account menu uses the shared Menu surface, backdrop blur, spacing, and row typography; feature styles only size its launcher.
+The sidebar account menu uses the shared Menu surface and backdrop blur. The signed-in menu keeps the shared row typography; the signed-out menu carries its own wider rows and its Contact us copy for the Feedback entry.
 
-The account card’s More account information link opens `https://platform.deepseek.com` in the system browser.
+The account card’s More account information link opens the root of the Host-provided Platform usage URL in the system browser, following `platformOrigin`.
+
+Sign out first queries running account-token tasks and opens a confirmation dialog. The warning describes interruption when such tasks exist; otherwise it explains that data is retained and the account can be signed in again. Cancel, close, and Escape dismiss without signing out. Failed impact queries still open confirmation with an explicit unknown-task warning; failed sign-out keeps the dialog available for retry.
 
 A granted bonus appears as a server-authored notice above the sidebar account launcher without taking focus. The client reads the unnotified bonus when an account becomes active and once per Settings entry; it never polls. The server orders the candidates and owns the copy, so the client displays the first one and renders its message verbatim.
 
@@ -57,6 +63,9 @@ Account login uses a dismissible dialog before the model onboarding credential e
 A terminal account-state stream failure appears in the sign-in dialog or Account settings. Plugin unload suppresses late failure reports.
 
 The balance card shows recharge funds and bonus credit in separate rows. The bonus row is present while signed in; without positive bonus credit it states that no bonus is available. A failed wallet read shows the existing unavailable copy as a link to Platform — the same destination and behavior as the Usage action, so the embedded page opens on Desktop and a new tab elsewhere — while the loading and empty states stay plain text. Currencies retain their own amounts, and a notice date is rendered only inside the server’s own message.
+
+
+A successful login selects the first available `deepseek-account` model as the default when no other provider has a configured API key, even if a previous default was saved. Configured keys preserve the existing default even when their provider has no available models. Session-specific selections remain unchanged.
 
 <a id="model-experience"></a>
 ## Model Experience
@@ -83,3 +92,5 @@ No model request prefix changes.
 The [desktop login decision](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.md) records cancellation and storage ownership.
 
 Usage and top-up show a centered 24px loading indicator without visible loading text until the native document loads; the return action remains available. The loading SVG is embedded locally from Figma node 2957:72553.
+
+Default-model initialization runs after publishing and accepting the sign-in frame, without delaying subsequent account frames. Failures are recorded in diagnostics and do not mark the signed-in account as failed.

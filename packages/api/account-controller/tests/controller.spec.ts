@@ -26,7 +26,7 @@ function fixture() {
     watch: vi.fn<DeepSeekAccount['watch']>(),
   }
   ctx.provide('deepseekAccount', provider as never)
-  return { provider, controller: new AccountController(ctx) }
+  return { ctx, provider, controller: new AccountController(ctx) }
 }
 
 it('delegates account operations without coupling profile and balance queries', async () => {
@@ -74,4 +74,21 @@ it('passes the subscriber lifetime to the provider and returns its state stream'
   const received: AccountView[] = []
   for await (const value of stream) received.push(value)
   expect(received).toEqual([state])
+})
+
+it('delivers expiry only to current subscribers and stops on disconnect', async () => {
+  const { ctx, controller } = fixture()
+  ctx.emit('deepseek-account/session-expired')
+  const lifetime = new AbortController()
+  const iterator = controller.watchExpiry(lifetime.signal)[Symbol.asyncIterator]()
+  const first = iterator.next()
+  ctx.emit('deepseek-account/session-expired')
+  expect(await first).toEqual({ done: false, value: 'session-expired' })
+  const next = iterator.next()
+  lifetime.abort()
+  expect(await next).toEqual({ done: true, value: undefined })
+  const reconnect = new AbortController()
+  const reopened = controller.watchExpiry(reconnect.signal)[Symbol.asyncIterator]().next()
+  reconnect.abort()
+  expect(await reopened).toEqual({ done: true, value: undefined })
 })

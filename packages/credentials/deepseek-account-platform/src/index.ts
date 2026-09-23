@@ -7,12 +7,12 @@ import { finished } from 'node:stream/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
-import { DeepSeekAccount, mergePlatformCookies, platformClientHeaders, platformWireLocale, type AccountBonusBatch, type AccountBonusOrderId, type AccountClientMetadata, type AccountDetails, type AccountUserId, type AccountView, type PlatformSession, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
+import { DeepSeekAccount, installAccountTaskCancellation, mergePlatformCookies, platformClientHeaders, platformWireLocale, type AccountBonusBatch, type AccountBonusOrderId, type AccountClientMetadata, type AccountDetails, type AccountUserId, type AccountView, type PlatformSession, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
 import { profile, readAccountDetail, readUnnotifiedBonuses, sendBonusNotified } from './details.ts'
 import { revokeAccount, type LogoutRetryPolicy } from './logout.ts'
-import { PlatformAuthError, platformHeaders, platformOrigin, browserUrl, requestPlatform, initialization, exchange, loginOrigin } from './protocol.ts'
+import { AccountUnauthorizedError, PlatformAuthError, platformHeaders, platformOrigin, browserUrl, requestPlatform, initialization, exchange, loginOrigin } from './protocol.ts'
 
 const KEY = credentialKey('deepseek-account-platform', 'default')
 const DEVICE = credentialKey('deepseek-account-platform', 'device')
@@ -107,6 +107,7 @@ export class PlatformAccount extends DeepSeekAccount {
   /** @param ctx - Host with authorization and credentials services. @param config - deployment options. */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx)
+    installAccountTaskCancellation(ctx)
     const resolved = Config(config)
     this.embeddedPageDist = resolved.embeddedPageDist
     this.origin = platformOrigin(resolved.platformOrigin, resolved.allowLoopbackHttp)
@@ -174,8 +175,11 @@ export class PlatformAccount extends DeepSeekAccount {
     if (record !== undefined && (record.kind !== 'grant' || !grant.safeParse(record.payload).success)) {
       throw new PlatformAuthError('storage')
     }
+    const attempt = this.attempt?.view ?? null
     return {
-      status: record === undefined ? 'signed-out' : 'credential-stored', attempt: this.attempt?.view ?? null,
+      status: record === undefined ? 'signed-out' : 'credential-stored',
+      // Credential removal can notify watchers before sign-out finishes clearing the attempt.
+      attempt: record === undefined && attempt?.phase === 'succeeded' ? null : attempt,
       links: { usageUrl: new URL('/usage', this.origin).href, topUpUrl: new URL('/top_up', this.origin).href },
     }
   }
@@ -204,9 +208,17 @@ export class PlatformAccount extends DeepSeekAccount {
     if (stored === null) return null
     const accountId = await this.currentAccountId(lifetime, stored, headers)
     if (accountId === null) return null
-    const bonuses = await readUnnotifiedBonuses(this.origin, stored.token,
-      AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), headers)
-    return { accountId, bonuses }
+    try {
+      const bonuses = await readUnnotifiedBonuses(this.origin, stored.token,
+        AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), headers)
+      return { accountId, bonuses }
+    } catch (error) {
+      if (error instanceof AccountUnauthorizedError) {
+        if (this.detailsLifetime === lifetime) await this.expireCredential(stored.token, lifetime)
+        return null
+      }
+      throw error
+    }
   }
 
   override async ackBonusNotified(accountId: AccountUserId, orderId: AccountBonusOrderId, client: AccountClientMetadata): Promise<boolean> {
@@ -216,9 +228,17 @@ export class PlatformAccount extends DeepSeekAccount {
     if (stored === null) return false
     const current = await this.currentAccountId(lifetime, stored, headers)
     if (current === null || current !== accountId) return false
-    await sendBonusNotified(this.origin, stored.token, orderId,
-      AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), headers)
-    return true
+    try {
+      await sendBonusNotified(this.origin, stored.token, orderId,
+        AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), headers)
+      return true
+    } catch (error) {
+      if (error instanceof AccountUnauthorizedError) {
+        if (this.detailsLifetime === lifetime) await this.expireCredential(stored.token, lifetime)
+        return false
+      }
+      throw error
+    }
   }
 
   /**
@@ -273,14 +293,44 @@ export class PlatformAccount extends DeepSeekAccount {
       delete this.attempt.initialProfile
       return initial as AccountDetails[K]
     }
-    const details = await readAccountDetail(field, this.origin, stored.token,
-      AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), headers)
-    return this.detailsLifetime !== lifetime ? null : details
+    try {
+      const details = await readAccountDetail(field, this.origin, stored.token,
+        AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), headers)
+      return this.detailsLifetime !== lifetime ? null : details
+    } catch (_unauthorized) {
+      // readAccountDetail exposes only authenticated credential rejection failures.
+      if (this.detailsLifetime === lifetime) await this.expireCredential(stored.token, lifetime)
+      return null
+    }
   }
 
   /** Deployment account headers plus the client identity headers derived from one call's metadata. */
   private detailHeaders(client: AccountClientMetadata): Record<string, string> {
     return { ...this.accountRequestHeaders, ...platformClientHeaders(this.platform, client) }
+  }
+
+  override async rejectToken(token: string): Promise<void> {
+    const lifetime = this.detailsLifetime
+    const stored = await this.readCurrentGrant(lifetime)
+    if (stored?.token !== token || this.detailsLifetime !== lifetime) return
+    await this.expireCredential(token, lifetime)
+  }
+
+  private async expireCredential(token: string, lifetime: AbortController): Promise<void> {
+    this.removing ??= (async () => {
+      if (this.attempt !== undefined) await this.cancelSignIn(this.attempt.view.id)
+      const record = await this.ctx.credentials.readRecord(KEY)
+      if (this.closed || this.detailsLifetime !== lifetime || record?.kind !== 'grant') return this.getState()
+      const current = grant.parse(record.payload)
+      if (current.token !== token || current.issuer !== this.origin) return this.getState()
+      await this.ctx.credentials.deleteRecord(KEY)
+      this.ctx.emit('deepseek-account/session-expired')
+      this.attempt = undefined
+      this.ctx.emit('deepseek-account/signed-out')
+      this.changed()
+      return this.getState()
+    })().finally(() => { this.removing = undefined })
+    await this.removing
   }
 
   override async getPlatformSession(): Promise<PlatformSession | null> {
@@ -307,6 +357,7 @@ export class PlatformAccount extends DeepSeekAccount {
   }
 
   override async resolveToken(url: string): Promise<string | undefined> {
+    if (this.closed || this.removing !== undefined) return undefined
     const destination = new URL(url)
     if (destination.origin !== this.inferenceOrigin || destination.username || destination.password) return undefined
     const record = await this.ctx.credentials.readRecord(KEY)
@@ -397,6 +448,7 @@ export class PlatformAccount extends DeepSeekAccount {
         this.revoke(parsed.data.token, platformClientHeaders(this.platform, client))
       }
       this.attempt = undefined
+      this.ctx.emit('deepseek-account/signed-out')
       this.changed()
       return this.getState()
     })().finally(() => { this.removing = undefined })

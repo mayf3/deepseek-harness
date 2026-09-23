@@ -13,6 +13,10 @@ getPlatformSession returns a Host-only origin/token snapshot for native Platform
 
 getUnnotifiedBonuses returns the granted bonuses Platform has not yet recorded as displayed, together with the account they belong to; ackBonusNotified records one bonus the user actually saw. The acknowledgement names that account, so a notification read under one account is never confirmed for another.
 
+`rejectToken` accepts a Host inference request’s rejected token and removes only the matching current login; a late rejection cannot clear a replacement credential.
+
+`deepseek-account/session-expired` notifies current subscribers once after a rejected credential is removed. Account snapshots carry no expiry notice, so reconnecting does not repeat the toast.
+
 ## Summary
 
 Account consumers read stored login state, start or cancel a browser login, and sign out without editing API keys. Host model consumers resolve account credentials only for the provider-configured inference origin.
@@ -28,7 +32,11 @@ Account consumers read stored login state, start or cancel a browser login, and 
 
 `AccountProfile.avatarUrl` is an optional profile image URL; null or absence means no avatar.
 
+Successful local sign-out emits `deepseek-account/signed-out`. The platform provider installs the account-owned cancellation listener, which checks running Agents against `session.requestContext().provider` and cancels account tasks while retaining inboxes. The account controller uses the same predicate for its confirmation dialog. No additional Agent state is maintained. Before a new turn binds its first request, this predicate still sees the previous turn’s provider.
+
 The service defines account operations and reconnectable state snapshots. The platform provider owns the protocol and stored grant. Credentials are Host-only; the API controller exports state and commands without resolveToken.
+
+Account model failures with `ACCOUNT_SIGN_IN_REQUIRED` emit `deepseek-account/model-sign-in-required`; the Client receives this live event for sign-in guidance. Other request errors do not emit it.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

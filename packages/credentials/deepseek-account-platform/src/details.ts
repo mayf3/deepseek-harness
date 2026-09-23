@@ -1,7 +1,7 @@
 /** Platform Web profile and wallet queries projected for account UI consumers. */
 import { z } from 'zod'
 import type { AccountBonusNotification, AccountBonusOrderId, AccountDetails, AccountProfile, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
-import { PlatformAuthError, requestAccount, requestBonusNotified, requestUnnotifiedBonuses } from './protocol.ts'
+import { AccountUnauthorizedError, PlatformAuthError, requestAccount, requestBonusNotified, requestUnnotifiedBonuses } from './protocol.ts'
 
 const user = z.object({
   id: z.string().nullish(),
@@ -57,12 +57,16 @@ const queries: { [K in keyof AccountDetails]: {
  * @param signal - request and credential lifetime.
  * @param headers - validated deployment headers for the configured origin.
  * @returns sanitized query outcome; failure never becomes a zero balance.
+ * @throws AccountUnauthorizedError when Platform rejects the stored token with HTTP 401 or response code 40003.
  */
 export async function readAccountDetail<K extends keyof AccountDetails>(field: K, origin: string, token: string,
   signal: AbortSignal, headers: Record<string, string>): Promise<AccountDetails[K]> {
   const query = queries[field]
   try { return query.parse(await requestAccount(origin, query.path, token, signal, headers)) }
-  catch { return { status: 'failed' } }
+  catch (error) {
+    if (error instanceof AccountUnauthorizedError) throw error
+    return { status: 'failed' }
+  }
 }
 
 /**
