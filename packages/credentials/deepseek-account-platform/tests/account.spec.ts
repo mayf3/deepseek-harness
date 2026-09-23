@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { createServer, IncomingMessage, ServerResponse } from 'node:http'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import AuthorizationService from '@deepseek-ai/dsh-authorization'
+import type { AccountClientMetadata } from '@deepseek-ai/dsh-deepseek-account'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
 import { Config, PlatformAccount } from '../src/index.ts'
@@ -18,6 +19,9 @@ afterEach(async () => {
   vi.useRealTimers()
   while (cleanups.length) await cleanups.pop()!()
 })
+
+/** Client identity supplied with each account operation; the Host derives the Platform headers from it. */
+const clientMetadata = (locale = 'en'): AccountClientMetadata => ({ version: '1.2.3', locale, timezoneOffsetSeconds: 28_800 })
 
 async function fixture(
   contact: { email: string; mobile?: string; mobile_number?: string } = {
@@ -57,19 +61,29 @@ async function fixture(
   let logoutHold = false
   let logoutCount = 0
   const logoutHeaders: Array<string | undefined> = []
+  let normalWallets: unknown = [{ currency: 'CNY', balance: '123.45', token_estimation: '0' },
+    { currency: 'USD', balance: '6.78', token_estimation: '0' }]
   let bonusWallets: unknown = [{ currency: 'CNY', balance: '10.00' }]
-  let invalidSummary = false
   const detailsStarted = Promise.withResolvers<undefined>()
   const detailRequests: Array<{ path: string; authorization: string | undefined }> = []
   const receivedHeaders: Array<{
     clientPlatform: string | undefined
+    bundleId: string | undefined
+    version: string | undefined
+    locale: string | undefined
+    timezoneOffset: string | undefined
     path: string | undefined
     cookie: string | undefined
     authorization: string | undefined
   }> = []
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
     expect(req.headers.authorization).toBeUndefined()
-    receivedHeaders.push({ clientPlatform: req.headers['x-client-platform'] as string | undefined, path: req.url, cookie: req.headers.cookie, authorization: req.headers['x-dsh-auth-token'] as string | undefined })
+    receivedHeaders.push({ clientPlatform: req.headers['x-client-platform'] as string | undefined,
+      bundleId: req.headers['x-client-bundle-id'] as string | undefined,
+      version: req.headers['x-client-version'] as string | undefined,
+      locale: req.headers['x-client-locale'] as string | undefined,
+      timezoneOffset: req.headers['x-client-timezone-offset'] as string | undefined,
+      path: req.url, cookie: req.headers.cookie, authorization: req.headers['x-dsh-auth-token'] as string | undefined })
     if (redirect) { res.writeHead(302, { location: `${origin}/redirect-target` }).end(); return }
     if (req.url === '/auth-api/v0/users/logout') {
       logoutCount++
@@ -89,9 +103,7 @@ async function fixture(
       const value = req.url === '/auth-api/v0/users/current'
         ? { id: 'test-user', token: 'never-copy-response-token', ...contact,
           id_profile: { name: 'Test Account', picture: null } }
-        : { normal_wallets: [{ currency: 'CNY', balance: invalidSummary ? 'not-a-decimal' : '123.45', token_estimation: '0' },
-          { currency: 'USD', balance: '6.78', token_estimation: '0' }],
-        bonus_wallets: bonusWallets }
+        : { normal_wallets: normalWallets, bonus_wallets: bonusWallets }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ code: 0, data: {
         biz_code: (profileFailed && req.url === '/auth-api/v0/users/current')
@@ -166,7 +178,9 @@ async function fixture(
     failProfile: (failed: boolean) => { profileFailed = failed },
     holdBalance: () => { balanceHold = true },
     holdDetails: () => { detailsHold = true }, failSummary: () => { summaryFailed = true },
-    invalidateSummary: () => { invalidSummary = true }, dispose: () => provider.dispose(), exchanged, release,
+    invalidateSummary: () => { normalWallets = [{ currency: 'CNY', balance: 'not-a-decimal' }] },
+    normalWallets: (value: unknown) => { normalWallets = value },
+    dispose: () => provider.dispose(), exchanged, release,
     redirect: () => { redirect = true },
     hold: () => { hold = true },
     initResponse: (value: Record<string, unknown>) => { initOverride = value },
@@ -189,7 +203,7 @@ it.each([
     vi.setSystemTime(startedAt)
     f.onInit(() => { vi.setSystemTime(startedAt + 120_000) })
     f.initResponse({ expires_in: serverTtl })
-    await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+    await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
     const state = await f.wait('waiting-browser')
     expect(state.attempt?.expiresAt).toBe(startedAt + 120_000 + expectedRemaining)
     await f.account.cancelSignIn(state.attempt!.id)
@@ -203,7 +217,7 @@ it('rejects initialization that completes after the total sign-in deadline', asy
   try {
     vi.setSystemTime(startedAt)
     f.onInit(() => { vi.setSystemTime(startedAt + 600_000) })
-    await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+    await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
     const state = await f.wait('expired')
     expect(state.status).toBe('signed-out')
     expect(state.attempt?.errorCode).toBe('expired')
@@ -221,7 +235,7 @@ it('does not store an exchange result received after the sign-in deadline', asyn
   vi.useFakeTimers({ toFake: ['Date'] })
   try {
     vi.setSystemTime(startedAt)
-    await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+    await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
     await f.wait('waiting-browser')
     const callback = fetch(f.callback(), { redirect: 'manual' })
     await f.exchanged.promise
@@ -236,7 +250,7 @@ it('does not store an exchange result received after the sign-in deadline', asyn
 
 it('stores a grant before redirecting, restores account presence, and signs out without deleting device identity', async () => {
   const f = await fixture()
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   expect((await fetch(f.callback('wrong'))).status).toBe(400)
   const response = await fetch(f.callback(), { redirect: 'manual' })
@@ -247,9 +261,9 @@ it('stores a grant before redirecting, restores account presence, and signs out 
   expect((await f.account.getState()).status).toBe('credential-stored')
   expect(await readFile(join(f.home, 'credentials.yaml'), 'utf8')).toContain('dsh_mock_test')
   expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test',
-    requestHeaders: { 'x-client-platform': 'web' } })
+    requestHeaders: {} })
   expect(await f.account.resolveToken('https://api.deepseek.com')).toBeUndefined()
-  await f.account.signOut()
+  await f.account.signOut(clientMetadata())
   expect((await f.account.getState()).status).toBe('signed-out')
   expect(await f.account.getPlatformSession()).toBeNull()
   expect((await f.ctx.credentials.describeRecord(credentialKey('deepseek-account-platform', 'device'))).configured).toBe(true)
@@ -259,20 +273,20 @@ it('does not persist a delayed exchange after cancellation or replace the next a
   const f = await fixture()
   f.exchangeResponse({ user: { email: 'c***@example.invalid', id_profile: { name: 'Cancelled User' } } })
   f.hold()
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   const waiting = await f.wait('waiting-browser')
   const callback = fetch(f.callback(), { redirect: 'manual' }).catch(() => undefined)
   await f.exchanged.promise
   const cancelled = await f.account.cancelSignIn(waiting.attempt!.id)
   expect(cancelled.attempt?.phase).toBe('cancelled')
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   const next = await f.wait('waiting-browser')
   f.release.resolve(undefined)
   await callback
   expect((await f.account.getState()).attempt?.id).toBe(next.attempt?.id)
   expect((await f.account.getState()).status).toBe('signed-out')
   expect(f.count()).toBe(1)
-  expect(await f.account.getProfile()).toBeNull()
+  expect(await f.account.getProfile(clientMetadata())).toBeNull()
   await f.account.cancelSignIn(next.attempt!.id)
 })
 
@@ -298,7 +312,7 @@ it('restricts platform destinations to the configured origin and route', () => {
 it('maps both returned browser pages to the development origin across the login flow', async () => {
   const f = await fixture(undefined, {}, true)
   f.exchangeResponse({ authorized_url: 'https://platform.deepseek.com/dsh/authorized?result=a%2Fb&locale=zh_CN' })
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   expect((await f.wait('waiting-browser')).attempt?.authorizeUrl).toBe(`${f.origin}/dsh/authorize?authorize_id=test`)
   const response = await fetch(f.callback(), { redirect: 'manual' })
   expect(response.status).toBe(302)
@@ -314,7 +328,7 @@ it.each([
 ] as const)('redirects the %s login completion with its login source when Platform returns %s', async (client, query) => {
   const f = await fixture()
   f.exchangeResponse({ authorized_url: `${f.origin}/dsh/authorized?result=a%2Fb&locale=zh_CN${query}` })
-  await f.account.startSignIn('en', f.callbackOrigin, client)
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, client)
   await f.wait('waiting-browser')
   const response = await fetch(f.callback(), { redirect: 'manual' })
   expect(response.status).toBe(302)
@@ -324,7 +338,7 @@ it.each([
 it('preserves Platform business client_type in the completion URL', async () => {
   const f = await fixture()
   f.exchangeResponse({ authorized_url: `${f.origin}/dsh/authorized?client_type=DSH` })
-  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
   await f.wait('waiting-browser')
   const response = await fetch(f.callback(), { redirect: 'manual' })
   expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?client_type=DSH&login_source=web`)
@@ -333,7 +347,7 @@ it('preserves Platform business client_type in the completion URL', async () => 
 it.each([undefined, 'https://other.example/dsh/authorized', '/dsh/authorized'])('rejects an invalid exchange completion URL %s before storing a token', async (authorizedUrl) => {
   const f = await fixture()
   f.exchangeResponse({ authorized_url: authorizedUrl })
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   const response = await fetch(f.callback(), { redirect: 'manual' })
   expect(response.status).toBe(204)
@@ -344,7 +358,7 @@ it.each([undefined, 'https://other.example/dsh/authorized', '/dsh/authorized'])(
 it.each([2, 17])('uses the generic failure for business code %s without guessing product behavior or exposing backend text', async (code) => {
   const f = await fixture()
   f.fail(code)
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   const state = await f.wait('failed')
   expect(state).toMatchObject({ status: 'signed-out', attempt: { phase: 'failed', errorCode: 'protocol' } })
   expect(JSON.stringify(state)).not.toContain('sensitive diagnostic')
@@ -353,12 +367,12 @@ it.each([2, 17])('uses the generic failure for business code %s without guessing
 
 it('removes its callback route without closing the shared server on disposal', async () => {
   const f = await fixture()
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   const callback = f.callback()
   await f.dispose()
   expect((await fetch(callback)).status).toBe(404)
-  await expect(f.account.startSignIn('en', f.callbackOrigin, 'desktop')).rejects.toThrow()
+  await expect(f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')).rejects.toThrow()
   expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default'))).toBeUndefined()
 })
 
@@ -366,7 +380,7 @@ it('removes its callback route without closing the shared server on disposal', a
 it('derives every portal link from the private platform origin', async () => {
   const f = await fixture()
   expect((await f.account.getState()).links).toEqual({ usageUrl: `${f.origin}/usage`, topUpUrl: `${f.origin}/top_up` })
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   expect((await f.wait('waiting-browser')).attempt?.authorizeUrl).toBe(`${f.origin}/dsh/authorize?authorize_id=test`)
 })
 
@@ -405,7 +419,7 @@ it('publishes sign-out only after local grant removal and refuses token resoluti
   await storeAccount(f)
   const observed: string[] = []
   f.ctx.on('deepseek-account/signed-out', () => { observed.push('signed-out') })
-  const pending = f.account.signOut()
+  const pending = f.account.signOut(clientMetadata())
   expect(await f.account.resolveToken('https://api.deepseek.com')).toBeUndefined()
   await pending
   expect(observed).toEqual(['signed-out'])
@@ -418,7 +432,7 @@ it('discards account details when sign-out races the Platform response', async (
   f.holdDetails()
   const pending = readDetails(f.account)
   await f.detailsStarted.promise
-  await f.account.signOut()
+  await f.account.signOut(clientMetadata())
   expect(await pending).toBeNull()
   f.release.resolve(undefined)
   expect(await readDetails(f.account)).toBeNull()
@@ -432,6 +446,46 @@ it('does not send an account grant to a different configured Platform environmen
   await expect(readDetails(f.account)).rejects.toThrow('account: protocol')
   expect(f.detailRequests).toEqual([])
 })
+
+it('accepts Platform exponent and full-precision balances that big.js parses', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  // The reported production value: a zero recharge wallet in exponent form beside a bonus wallet
+  // carrying more fractional digits than the old provider regex allowed.
+  f.normalWallets([{ currency: 'CNY', balance: '0E-16' }])
+  f.bonusWallets([{ currency: 'CNY', balance: '5.0000000000000000' }])
+  expect(await readDetails(f.account)).toMatchObject({
+    balance: {
+      status: 'ready',
+      value: [{ currency: 'CNY', balance: '0E-16' }],
+      bonusWallets: [{ currency: 'CNY', balance: '5.0000000000000000' }],
+    },
+  })
+})
+
+it.each([
+  ['1e+3', '1e+3'],
+  ['1E-3', '1E-3'],
+  ['.5', '.5'],
+  ['1.', '1.'],
+  ['-0.00', '-0.00'],
+])('keeps the original balance string %s readable when big.js accepts it', async (balance, preserved) => {
+  const f = await fixture()
+  await storeAccount(f)
+  f.normalWallets([{ currency: 'CNY', balance }])
+  expect(await readDetails(f.account)).toMatchObject({
+    balance: { status: 'ready', value: [{ currency: 'CNY', balance: preserved }] },
+  })
+})
+
+it.each(['NaN', 'Infinity', '-Infinity', '1e', 'e5', '1.2.3', '', ' 1', '+1', '0x10', '1,5'])(
+  'still rejects the malformed balance %s', async (balance) => {
+    const f = await fixture()
+    await storeAccount(f)
+    f.normalWallets([{ currency: 'CNY', balance }])
+    expect(await readDetails(f.account)).toMatchObject({ profile: { status: 'ready' }, balance: { status: 'failed' } })
+  },
+)
 
 it('rejects malformed wallet data independently of the profile response', async () => {
   const f = await fixture()
@@ -456,11 +510,11 @@ it('removes the local grant while a shared concurrent logout request is still pe
   const f = await fixture()
   await storeAccount(f)
   f.holdLogout()
-  await Promise.all([f.account.signOut(), f.account.signOut()])
+  await Promise.all([f.account.signOut(clientMetadata()), f.account.signOut(clientMetadata())])
   await expect.poll(f.logoutCount).toBe(1)
   expect(f.logoutHeaders).toEqual(['test-platform-grant'])
   expect((await f.account.getState()).status).toBe('signed-out')
-  await f.account.signOut()
+  await f.account.signOut(clientMetadata())
   expect(f.logoutCount()).toBe(1)
 })
 
@@ -468,9 +522,9 @@ it('bounds failed logout retries without restoring the grant or deleting a new l
   const f = await fixture()
   await storeAccount(f)
   f.failLogout(true)
-  await expect(f.account.signOut()).resolves.toMatchObject({ status: 'signed-out' })
+  await expect(f.account.signOut(clientMetadata())).resolves.toMatchObject({ status: 'signed-out' })
   expect(await readDetails(f.account)).toBeNull()
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   f.exchangeResponse({ token: 'new-account-token' })
   await fetch(f.callback(), { redirect: 'manual' })
@@ -483,25 +537,25 @@ it('bounds failed logout retries without restoring the grant or deleting a new l
 
 it.each([['en', 'en_US'], ['zh-CN', 'zh_CN']])('passes %s to Platform and keeps the active attempt language', async (locale, platformLocale) => {
   const f = await fixture()
-  await f.account.startSignIn(locale, f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(locale), f.callbackOrigin, 'desktop')
   const first = await f.wait('waiting-browser')
   expect(f.init().locale).toBe(platformLocale)
-  expect((await f.account.startSignIn('zh', f.callbackOrigin, 'desktop')).attempt?.id).toBe(first.attempt?.id)
+  expect((await f.account.startSignIn(clientMetadata('zh'), f.callbackOrigin, 'desktop')).attempt?.id).toBe(first.attempt?.id)
   expect(f.init().locale).toBe(platformLocale)
   await f.account.cancelSignIn(first.attempt!.id)
-  await f.account.startSignIn('zh', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata('zh'), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   expect(f.init().locale).toBe('zh_CN')
 })
 
 it('adds private deployment cookies to every Platform request without exposing them in account state', async () => {
   const f = await fixture(undefined, { Cookie: 'test_gate=synthetic' })
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
   await readDetails(f.account)
   expect(JSON.stringify(await f.account.getState())).not.toContain('test_gate')
-  await f.account.signOut()
+  await f.account.signOut(clientMetadata())
   await expect.poll(f.logoutCount).toBe(1)
   const headers = f.receivedHeaders
   const paths = headers.map(item => item.path)
@@ -529,7 +583,7 @@ it('rejects reserved, duplicate and malformed deployment headers without disclos
 it('does not forward deployment cookies through a Platform redirect', async () => {
   const f = await fixture(undefined, { Cookie: 'test_gate=synthetic' })
   f.redirect()
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('failed')
   expect(f.receivedHeaders.map(item => item.path)).toEqual(['/auth-api/v0/dsh/auth_init'])
 })
@@ -538,7 +592,7 @@ it('closes the failed Web authorization tab without redirecting and keeps the sh
   const f = await fixture()
   const dispose = f.ctx.webServer.register({ kind: 'exact', path: '/health', handler: (_req, res) => { res.end('alive') } })
   cleanups.push(async () => { dispose() })
-  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
   await f.wait('waiting-browser')
   expect(new URL(f.init().redirect_uri!).origin).toBe(f.callbackOrigin)
   f.fail(17)
@@ -556,7 +610,7 @@ it('closes the failed Web authorization tab without redirecting and keeps the sh
   expect(f.count()).toBe(1)
   expect(await (await fetch(`${f.callbackOrigin}/health`)).text()).toBe('alive')
   f.fail(0)
-  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
   await f.wait('waiting-browser')
   const success = await fetch(f.callback(), { redirect: 'manual' })
   expect(success.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=test&locale=zh_CN&login_source=web`)
@@ -584,7 +638,7 @@ it('completes login through a local TCP forward using the browser port rather th
   if (address === null || typeof address === 'string') throw new Error('missing forward listener')
   const forwardedOrigin = `http://127.0.0.1:${address.port}`
   expect(forwardedOrigin).not.toBe(f.callbackOrigin)
-  await f.account.startSignIn('en', forwardedOrigin, 'web')
+  await f.account.startSignIn(clientMetadata(), forwardedOrigin, 'web')
   await f.wait('waiting-browser')
   expect(f.init().redirect_uri).toBe(`${forwardedOrigin}/oauth/callback`)
   const response = await fetch(f.callback(), { redirect: 'manual' })
@@ -595,7 +649,7 @@ it('completes login through a local TCP forward using the browser port rather th
 it('keeps cancellation authoritative without reopening WebUI after a delayed exchange', async () => {
   const f = await fixture()
   f.hold()
-  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
   const state = await f.wait('waiting-browser')
   const response = fetch(f.callback(), { redirect: 'manual' })
   await f.exchanged.promise
@@ -610,7 +664,7 @@ it.each(['https://example.com', 'http://example.com', 'http://127.0.0.1.evil.tes
   'http://user@localhost', 'http://localhost/path', 'http://localhost/?x=1', 'http://localhost/#x', 'invalid'])
 ('rejects unsupported callback origin %s before starting authorization', async (origin) => {
   const f = await fixture()
-  await expect(f.account.startSignIn('en', origin, 'web')).rejects.toThrow('account: protocol')
+  await expect(f.account.startSignIn(clientMetadata(), origin, 'web')).rejects.toThrow('account: protocol')
   expect(f.init()).toEqual({})
 })
 
@@ -624,7 +678,7 @@ it('normalizes supported loopback callback origins', () => {
 it('cancels remotely with the original PKCE verifier without waiting for acknowledgment', async () => {
   const f = await fixture()
   f.holdCancel()
-  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
   const state = await f.wait('waiting-browser')
   expect((await f.account.cancelSignIn(state.attempt!.id)).attempt?.phase).toBe('cancelled')
   await f.cancellationReceived.promise
@@ -644,7 +698,7 @@ it('cancels remotely with the original PKCE verifier without waiting for acknowl
 it('preserves localhost and the browser-visible port in authorization initialization', async () => {
   const f = await fixture()
   const origin = f.callbackOrigin.replace('127.0.0.1', 'localhost')
-  await f.account.startSignIn('en', origin, 'web')
+  await f.account.startSignIn(clientMetadata(), origin, 'web')
   const state = await f.wait('waiting-browser')
   expect(f.init().redirect_uri).toBe(`${origin}/oauth/callback`)
   await f.account.cancelSignIn(state.attempt!.id)
@@ -659,7 +713,7 @@ it('never exports an embedded Platform token to a different configured issuer', 
 })
 
 async function readDetails(account: Pick<PlatformAccount, 'getProfile' | 'getBalance'>) {
-  const [profile, balance] = await Promise.all([account.getProfile(), account.getBalance()])
+  const [profile, balance] = await Promise.all([account.getProfile(clientMetadata()), account.getBalance(clientMetadata())])
   return profile === null || balance === null ? null : { profile, balance }
 }
 
@@ -668,10 +722,10 @@ it('returns the profile while the balance request is still pending', async () =>
   await storeAccount(f)
   f.holdBalance()
   let balanceSettled = false
-  const balance = f.account.getBalance().then((value) => { balanceSettled = true; return value })
+  const balance = f.account.getBalance(clientMetadata()).then((value) => { balanceSettled = true; return value })
   try {
     await f.detailsStarted.promise
-    expect(await f.account.getProfile()).toMatchObject({ status: 'ready', value: { name: 'Test Account' } })
+    expect(await f.account.getProfile(clientMetadata())).toMatchObject({ status: 'ready', value: { name: 'Test Account' } })
     expect(balanceSettled).toBe(false)
   } finally { f.release.resolve(undefined) }
   expect(await balance).toMatchObject({ status: 'ready' })
@@ -681,10 +735,10 @@ it('returns the profile while the balance request is still pending', async () =>
 it('uses exchange user for the first profile read and fetches current on refresh', async () => {
   const f = await fixture()
   f.exchangeResponse({ user: { id: 'exchange-user', email: 'e***@example.invalid', id_profile: { name: 'Exchange User' }, token: 'discard-me' } })
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
-  expect(await f.account.getProfile()).toMatchInlineSnapshot(`
+  expect(await f.account.getProfile(clientMetadata())).toMatchInlineSnapshot(`
     {
       "status": "ready",
       "value": {
@@ -696,7 +750,7 @@ it('uses exchange user for the first profile read and fetches current on refresh
     }
   `)
   expect(f.detailRequests).toEqual([])
-  expect((await f.account.getProfile())).toMatchObject({ status: 'ready', value: { name: 'Test Account' } })
+  expect((await f.account.getProfile(clientMetadata()))).toMatchObject({ status: 'ready', value: { name: 'Test Account' } })
   expect(f.detailRequests).toHaveLength(1)
   expect(await readFile(join(f.home, 'credentials.yaml'), 'utf8')).not.toContain('discard-me')
 })
@@ -704,10 +758,10 @@ it('uses exchange user for the first profile read and fetches current on refresh
 it.each([undefined, null, { email: 123 }])('fetches current when exchange user is unavailable: %j', async (user) => {
   const f = await fixture()
   f.exchangeResponse({ user })
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
-  expect(await f.account.getProfile()).toMatchObject({ status: 'ready', value: { name: 'Test Account' } })
+  expect(await f.account.getProfile(clientMetadata())).toMatchObject({ status: 'ready', value: { name: 'Test Account' } })
   expect(f.detailRequests).toHaveLength(1)
 })
 
@@ -715,7 +769,7 @@ it.each([undefined, null, { email: 123 }])('fetches current when exchange user i
 it('uses the initialization payload ID for cancellation without extracting it from the browser URL', async () => {
   const f = await fixture()
   f.initResponse({ authorize_id: 'payload-id', authorize_url: `${f.origin}/dsh/authorize?opaque=value` })
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   const state = await f.wait('waiting-browser')
   await f.account.cancelSignIn(state.attempt!.id)
   await f.cancellationReceived.promise
@@ -725,7 +779,7 @@ it('uses the initialization payload ID for cancellation without extracting it fr
 it.each([undefined, '', 123])('rejects an invalid initialization authorize_id: %j', async (authorizeId) => {
   const f = await fixture()
   f.initResponse({ authorize_id: authorizeId })
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   expect(await f.wait('failed')).toMatchObject({ status: 'signed-out', attempt: { errorCode: 'protocol' } })
   expect(f.count()).toBe(0)
 })
@@ -733,12 +787,12 @@ it.each([undefined, '', 123])('rejects an invalid initialization authorize_id: %
 
 it('overlays account cookies without changing authorization or logout routing', async () => {
   const f = await fixture(undefined, { Cookie: 'gate=private; route=auth', 'x-private': 'keep' }, false, { Cookie: 'route=account' })
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
   await readDetails(f.account)
   expect(await f.account.getPlatformSession()).toMatchObject({ requestHeaders: { cookie: 'gate=private; route=account', 'x-private': 'keep' } })
-  await f.account.signOut()
+  await f.account.signOut(clientMetadata())
   await expect.poll(f.logoutCount).toBe(1)
   for (const row of f.receivedHeaders) {
     const detail = ['/auth-api/v0/users/current', '/api/v0/users/get_user_summary'].includes(row.path ?? '')
@@ -751,7 +805,7 @@ it('overlays account cookies without changing authorization or logout routing', 
 it('sends a development grant only to its configured inference origin', async () => {
   const f = await fixture(undefined, {}, false, {}, 'http://inference.example.test:8094')
   f.exchangeResponse({ token: 'test-account-token' })
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
   await f.wait('succeeded')
@@ -776,8 +830,8 @@ it('starts signed out after discarding another Platform issuer without remote lo
   })
   expect((await f.account.getState()).status).toBe('signed-out')
   expect(await f.account.getPlatformSession()).toBeNull()
-  expect(await f.account.getProfile()).toBeNull()
-  expect(await f.account.getBalance()).toBeNull()
+  expect(await f.account.getProfile(clientMetadata())).toBeNull()
+  expect(await f.account.getBalance(clientMetadata())).toBeNull()
   expect(await f.ctx.credentials.readRecord(accountKey)).toBeUndefined()
   expect(await f.ctx.credentials.readRecord(deviceKey)).toEqual({ kind: 'grant', payload: { id: 'stable-device' } })
   expect((await f.ctx.credentials.resolve(apiKey))?.value).toBe('retained-api-key')
@@ -792,7 +846,7 @@ it('preserves a matching issuer and its grant when a balance request fails', asy
     }))
   })
   f.failSummary()
-  expect(await f.account.getBalance()).toEqual({ status: 'failed' })
+  expect(await f.account.getBalance(clientMetadata())).toEqual({ status: 'failed' })
   expect((await f.account.getState()).status).toBe('credential-stored')
   expect(await f.ctx.credentials.readRecord(accountKey)).toMatchObject({ kind: 'grant', payload: { token: 'retained-token' } })
   expect(f.logoutCount()).toBe(0)
@@ -800,30 +854,35 @@ it('preserves a matching issuer and its grant when a balance request fails', asy
 
 it('carries the configured embedded frontend selector in the private Platform session', async () => {
   const f = await fixture(undefined, {}, false, {}, undefined, undefined, 'feat/test')
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
   expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test', embeddedPageDist: 'feat/test',
-    requestHeaders: { 'x-client-platform': 'web' } })
+    requestHeaders: {} })
 })
 
 it.each([
   ['darwin', 'desktop-mac'], ['win32', 'desktop-win'], [null, 'web'],
-] as const)('identifies %s Host API and embedded Platform requests', async (desktopPlatform, expected) => {
-  const f = await fixture(undefined, { Cookie: 'test_gate=synthetic', 'X-Client-Platform': 'deployment-override' },
-    false, {}, undefined, undefined, '', desktopPlatform)
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+] as const)('identifies %s Host API requests over deployment header overrides', async (desktopPlatform, expected) => {
+  // Deployment configuration may name the client identity headers, but the caller's metadata always
+  // wins for every Host API request. The embedded session keeps the deployment values, and its
+  // consuming client composes the same five headers on top.
+  const overrides = { 'x-client-bundle-id': 'deployment', 'x-client-platform': 'deployment',
+    'x-client-version': 'deployment', 'x-client-locale': 'deployment', 'x-client-timezone-offset': 'deployment' }
+  const f = await fixture(undefined, { Cookie: 'test_gate=synthetic', ...overrides }, false, overrides,
+    undefined, undefined, '', desktopPlatform)
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   const attempt = (await f.account.getState()).attempt!
   await f.account.cancelSignIn(attempt.id)
   await f.cancellationReceived.promise
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
   await readDetails(f.account)
   expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test',
-    requestHeaders: { cookie: 'test_gate=synthetic', 'x-client-platform': expected } })
-  await f.account.signOut()
+    requestHeaders: { cookie: 'test_gate=synthetic', ...overrides } })
+  await f.account.signOut(clientMetadata())
   await expect.poll(f.logoutCount).toBe(1)
   const paths = f.receivedHeaders.map(item => item.path)
   expect(paths.slice(0, 4)).toEqual([
@@ -834,6 +893,49 @@ it.each([
   expect(paths.slice(4, -1).sort()).toEqual(['/api/v0/users/get_user_summary', '/auth-api/v0/users/current'])
   expect(paths.slice(-1)).toEqual(['/auth-api/v0/users/logout'])
   expect(f.receivedHeaders.map(item => item.clientPlatform)).toEqual(f.receivedHeaders.map(() => expected))
+  for (const header of f.receivedHeaders) {
+    expect(header).toMatchObject({ bundleId: '', version: '1.2.3', locale: 'en_US', timezoneOffset: '28800' })
+  }
+})
+
+const ZH_CLIENT = { version: '1.0.0', locale: 'zh-CN', timezoneOffsetSeconds: 28_800 }
+const EN_CLIENT = { version: '9.9.9', locale: 'en-US', timezoneOffsetSeconds: -18_000 }
+
+it('keeps one login attempt on the identity captured by its own initiating call', async () => {
+  const f = await fixture()
+  await f.account.startSignIn(ZH_CLIENT, f.callbackOrigin, 'desktop')
+  const waiting = await f.wait('waiting-browser')
+  // A joining call supplies other metadata; the attempt keeps the identity it captured.
+  expect((await f.account.startSignIn(EN_CLIENT, f.callbackOrigin, 'desktop')).attempt?.id).toBe(waiting.attempt?.id)
+  await f.account.cancelSignIn(waiting.attempt!.id)
+  await f.cancellationReceived.promise
+  await f.account.startSignIn(EN_CLIENT, f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  await fetch(f.callback(), { redirect: 'manual' })
+  expect(f.receivedHeaders.map(header => [
+    header.path, header.bundleId, header.clientPlatform, header.version, header.locale, header.timezoneOffset,
+  ])).toEqual([
+    ['/auth-api/v0/dsh/auth_init', '', 'web', '1.0.0', 'zh_CN', '28800'],
+    ['/auth-api/v0/dsh/auth_cancel', '', 'web', '1.0.0', 'zh_CN', '28800'],
+    ['/auth-api/v0/dsh/auth_init', '', 'web', '9.9.9', 'en_US', '-18000'],
+    ['/auth-api/v0/dsh/auth_exchange', '', 'web', '9.9.9', 'en_US', '-18000'],
+  ])
+})
+
+it('derives the client headers independently for profile, balance, and logout calls', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  await f.account.getProfile(EN_CLIENT)
+  await f.account.getBalance(ZH_CLIENT)
+  await f.account.signOut({ version: '2.0.0', locale: 'fr', timezoneOffsetSeconds: 3_600 })
+  await expect.poll(f.logoutCount).toBe(1)
+  expect(f.receivedHeaders.map(header => [
+    header.path, header.bundleId, header.clientPlatform, header.version, header.locale, header.timezoneOffset,
+  ])).toEqual([
+    ['/auth-api/v0/users/current', '', 'web', '9.9.9', 'en_US', '-18000'],
+    ['/api/v0/users/get_user_summary', '', 'web', '1.0.0', 'zh_CN', '28800'],
+    ['/auth-api/v0/users/logout', '', 'web', '2.0.0', 'en_US', '3600'],
+  ])
 })
 
 it('rejects unsupported native desktop platforms in configuration', () => {
@@ -844,32 +946,32 @@ it('rejects unsupported native desktop platforms in configuration', () => {
 it('retains successful profile data on current failure only for the same credential', async () => {
   const f = await fixture()
   f.exchangeResponse({ user: { email: 'e***@example.invalid', id_profile: { name: 'Exchange User' } } })
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
-  const initial = await f.account.getProfile()
+  const initial = await f.account.getProfile(clientMetadata())
   expect(initial).toMatchObject({ status: 'ready', value: { name: 'Exchange User' } })
   f.failProfile(true)
-  expect(await f.account.getProfile()).toEqual(initial)
+  expect(await f.account.getProfile(clientMetadata())).toEqual(initial)
   f.failProfile(false)
-  const refreshed = await f.account.getProfile()
+  const refreshed = await f.account.getProfile(clientMetadata())
   expect(refreshed).toMatchObject({ status: 'ready', value: { name: 'Test Account' } })
   f.failProfile(true)
-  expect(await f.account.getProfile()).toEqual(refreshed)
+  expect(await f.account.getProfile(clientMetadata())).toEqual(refreshed)
   const key = credentialKey('deepseek-account-platform', 'default')
   await f.ctx.credentials.modifyRecord(key, () => Promise.resolve({
     kind: 'grant', payload: { version: 1, issuer: f.origin, token: 'replacement-token' },
   }))
-  expect(await f.account.getProfile()).toEqual({ status: 'failed' })
-  await f.account.signOut()
-  expect(await f.account.getProfile()).toBeNull()
+  expect(await f.account.getProfile(clientMetadata())).toEqual({ status: 'failed' })
+  await f.account.signOut(clientMetadata())
+  expect(await f.account.getProfile(clientMetadata())).toBeNull()
 })
 
 it.each([[], [{ currency: 'CNY', balance: '0.00' }]].map(wallets => ({ wallets })))('preserves empty or zero bonus wallets', async ({ wallets }) => {
   const f = await fixture()
   await storeAccount(f)
   f.bonusWallets(wallets)
-  expect(await f.account.getBalance()).toMatchObject({ status: 'ready', bonusWallets: wallets })
+  expect(await f.account.getBalance(clientMetadata())).toMatchObject({ status: 'ready', bonusWallets: wallets })
 })
 
 it.each([undefined, [{ currency: 'EUR', balance: '1' }], [{ currency: 'CNY', balance: 'invalid' }]].map(wallets => ({ wallets })))(
@@ -877,7 +979,7 @@ it.each([undefined, [{ currency: 'EUR', balance: '1' }], [{ currency: 'CNY', bal
     const f = await fixture()
     await storeAccount(f)
     f.bonusWallets(wallets)
-    expect(await f.account.getBalance()).toEqual({ status: 'failed' })
+    expect(await f.account.getBalance(clientMetadata())).toEqual({ status: 'failed' })
   },
 )
 
@@ -889,7 +991,7 @@ it.each(['profile', 'balance'] as const)('clears the rejected account grant afte
   const expired = vi.fn()
   f.ctx.on('deepseek-account/session-expired', expired)
   f.detailStatus(401)
-  expect(await (field === 'profile' ? f.account.getProfile() : f.account.getBalance())).toBeNull()
+  expect(await (field === 'profile' ? f.account.getProfile(clientMetadata()) : f.account.getBalance(clientMetadata()))).toBeNull()
   expect(await f.account.getState()).toMatchObject({ status: 'signed-out', attempt: null })
   expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default'))).toBeUndefined()
   expect(signedOut).toBe(1)
@@ -904,7 +1006,7 @@ it.each(['profile', 'balance'] as const)('clears the rejected account grant afte
   const expired = vi.fn()
   f.ctx.on('deepseek-account/session-expired', expired)
   f.detailCode(40003)
-  expect(await (field === 'profile' ? f.account.getProfile() : f.account.getBalance())).toBeNull()
+  expect(await (field === 'profile' ? f.account.getProfile(clientMetadata()) : f.account.getBalance(clientMetadata()))).toBeNull()
   expect(await f.account.getState()).toMatchObject({ status: 'signed-out', attempt: null })
   expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default'))).toBeUndefined()
   expect(signedOut).toBe(1)
@@ -919,7 +1021,7 @@ it('coalesces simultaneous unauthorized profile and balance responses', async ()
   const expired = vi.fn()
   f.ctx.on('deepseek-account/session-expired', expired)
   f.detailStatus(401)
-  await Promise.all([f.account.getProfile(), f.account.getBalance()])
+  await Promise.all([f.account.getProfile(clientMetadata()), f.account.getBalance(clientMetadata())])
   expect(signedOut).toBe(1)
   expect(expired).toHaveBeenCalledOnce()
   expect(await f.account.getState()).toMatchObject({ status: 'signed-out' })
@@ -929,7 +1031,7 @@ it.each([403, 500])('retains the account grant after HTTP %s', async (status) =>
   const f = await fixture()
   await storeAccount(f)
   f.detailStatus(status)
-  expect(await f.account.getBalance()).toEqual({ status: 'failed' })
+  expect(await f.account.getBalance(clientMetadata())).toEqual({ status: 'failed' })
   expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
 })
 
@@ -938,7 +1040,7 @@ it('does not remove a replacement grant when an older request is rejected', asyn
   await storeAccount(f)
   f.detailStatus(401)
   f.holdDetails()
-  const pending = f.account.getBalance()
+  const pending = f.account.getBalance(clientMetadata())
   try {
     await f.detailsStarted.promise
     await f.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'default'), () => Promise.resolve({
@@ -959,10 +1061,10 @@ it.each([{ kind: 'api-key' as const, key: 'wrong-kind' }, { kind: 'grant' as con
     const key = credentialKey('deepseek-account-platform', 'default')
     await f.ctx.credentials.modifyRecord(key, () => Promise.resolve(record))
     await expect(f.account.getState()).rejects.toThrow('account: storage')
-    await expect(f.account.getProfile()).rejects.toThrow('account: storage')
+    await expect(f.account.getProfile(clientMetadata())).rejects.toThrow('account: storage')
     await expect(f.account.getPlatformSession()).rejects.toThrow('account: storage')
     await expect(f.account.resolveToken('https://api.deepseek.com')).rejects.toThrow('account: storage')
-    await expect(f.account.signOut()).rejects.toThrow('account: storage')
+    await expect(f.account.signOut(clientMetadata())).rejects.toThrow('account: storage')
   },
 )
 
@@ -972,10 +1074,10 @@ it('returns no credentials when signed out or disposed', async () => {
   expect(await f.account.getPlatformSession()).toBeNull()
   await f.account.cancelSignIn('missing' as import('@deepseek-ai/dsh-deepseek-account').SignInAttemptId)
   await f.dispose()
-  expect(await f.account.getProfile()).toBeNull()
+  expect(await f.account.getProfile(clientMetadata())).toBeNull()
   expect(await f.account.getPlatformSession()).toBeNull()
-  await expect(f.account.startSignIn('en', f.callbackOrigin, 'web')).rejects.toThrow('account: protocol')
-  await expect(f.account.signOut()).rejects.toThrow('account: protocol')
+  await expect(f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')).rejects.toThrow('account: protocol')
+  await expect(f.account.signOut(clientMetadata())).rejects.toThrow('account: protocol')
 })
 
 it('rejects sign-out and inference grants issued by another environment', async () => {
@@ -984,7 +1086,7 @@ it('rejects sign-out and inference grants issued by another environment', async 
     kind: 'grant', payload: { version: 1, token: 'real-token', issuer: 'https://other.example' },
   }))
   expect(await f.account.resolveToken('https://private.example')).toBeUndefined()
-  await expect(f.account.signOut()).rejects.toThrow('account: protocol')
+  await expect(f.account.signOut(clientMetadata())).rejects.toThrow('account: protocol')
 })
 
 it('never sends a development issuer grant to official inference', async () => {
@@ -1004,11 +1106,11 @@ it('merges account cookies when there are no base cookies', async () => {
 it.each([null, []])('rejects invalid initialization and exchange payload fields: %j', async (value) => {
   const f = await fixture()
   f.initResponse({ authorize_id: value })
-  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
   await f.wait('failed')
   f.initResponse({})
   f.exchangeResponse({ token: value })
-  await f.account.startSignIn('zh', f.callbackOrigin, 'web')
+  await f.account.startSignIn(clientMetadata('zh'), f.callbackOrigin, 'web')
   await f.wait('waiting-browser')
   const callback = await fetch(f.callback(), { redirect: 'manual' })
   expect(callback.status).toBe(200)
@@ -1040,14 +1142,14 @@ it('fails sign-in when its shared callback server is absent', async () => {
   const f = await fixture()
   const get = vi.spyOn(f.ctx, 'get').mockImplementation(() => undefined)
   try {
-    await f.account.startSignIn('en', f.callbackOrigin, 'web')
+    await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
     expect((await f.wait('failed')).attempt?.errorCode).toBe('protocol')
   } finally { get.mockRestore() }
 })
 
 it('reports a credential commit failure without redirecting to success', async () => {
   const f = await fixture()
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   const original = f.ctx.credentials.modifyRecord.bind(f.ctx.credentials)
   const modify = vi.spyOn(f.ctx.credentials, 'modifyRecord').mockImplementation((key, mutate) =>
@@ -1062,7 +1164,7 @@ it('reports a credential commit failure without redirecting to success', async (
 it('rejects a device record of the wrong kind before exchanging', async () => {
   const f = await fixture()
   await f.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'device'), () => Promise.resolve({ kind: 'api-key', key: 'wrong' }))
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   expect((await fetch(f.callback(), { redirect: 'manual' })).status).toBe(204)
   expect((await f.wait('failed')).attempt?.errorCode).toBe('storage')
@@ -1072,7 +1174,7 @@ it('rejects a device record of the wrong kind before exchanging', async () => {
 it('rejects callbacks with missing state and callbacks arriving during exchange', async () => {
   const f = await fixture()
   f.hold()
-  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
   await f.wait('waiting-browser')
   expect((await fetch(`${f.init().redirect_uri}?code=test`)).status).toBe(400)
   const callback = fetch(f.callback(), { redirect: 'manual' })
@@ -1091,7 +1193,7 @@ it.each(['initializing', 'waiting-browser'])('expires the attempt while %s', asy
     timer()
   })
   try {
-    await f.account.startSignIn('en', f.callbackOrigin, 'web')
+    await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
     if (phase === 'waiting-browser') {
       await f.wait('waiting-browser')
       const timer = timeout.mock.calls.filter(([, delay]) => typeof delay === 'number' && delay > 590_000).at(-1)?.[0]
@@ -1116,7 +1218,7 @@ it('holds cancellation and disposal until an admitted account write completes', 
   })
   let callback: Promise<Response> | undefined
   try {
-    await f.account.startSignIn('en', f.callbackOrigin, 'web')
+    await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
     const state = await f.wait('waiting-browser')
     callback = fetch(f.callback(), { redirect: 'manual' })
     await admitted.promise
@@ -1145,9 +1247,9 @@ it('waits for local sign-out before beginning a new authorization', async () => 
     return original(key)
   })
   try {
-    const out = f.account.signOut()
+    const out = f.account.signOut(clientMetadata())
     await admitted.promise
-    const login = f.account.startSignIn('en', f.callbackOrigin, 'web')
+    const login = f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
     release.resolve(undefined)
     expect((await out).status).toBe('signed-out')
     expect((await login).attempt?.phase).toBe('initializing')
@@ -1167,7 +1269,7 @@ it('does not begin a remote logout after disposal starts during local removal', 
     return original(key)
   })
   try {
-    const out = f.account.signOut()
+    const out = f.account.signOut(clientMetadata())
     await admitted.promise
     const disposed = f.dispose()
     release.resolve(undefined)
@@ -1180,13 +1282,13 @@ it('does not begin a remote logout after disposal starts during local removal', 
 it.each([false, true])('settles a previous attempt before concurrent restart or disposal: %s', async (dispose) => {
   const f = await fixture()
   f.hold()
-  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
   await f.wait('waiting-browser')
   const callback = fetch(f.callback(), { redirect: 'manual' })
   await f.exchanged.promise
   const cancel = f.account.cancelSignIn((await f.account.getState()).attempt!.id)
   await f.wait('cancelled')
-  const first = f.account.startSignIn('en', f.callbackOrigin, 'web')
+  const first = f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
   if (dispose) {
     const rejected = expect(first).rejects.toThrow('account: protocol')
     const disposed = f.dispose()
@@ -1194,7 +1296,7 @@ it.each([false, true])('settles a previous attempt before concurrent restart or 
     await rejected
     await disposed
   } else {
-    const second = f.account.startSignIn('zh', f.callbackOrigin, 'web')
+    const second = f.account.startSignIn(clientMetadata('zh'), f.callbackOrigin, 'web')
     f.release.resolve(undefined)
     expect((await first).attempt?.id).toBe((await second).attempt?.id)
     await f.wait('waiting-browser')
@@ -1211,7 +1313,7 @@ it('rejects unsupported interaction and projects unexpected authorization failur
     throw new Error('private implementation failure')
   })
   try {
-    await f.account.startSignIn('en', f.callbackOrigin, 'web')
+    await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
     expect((await f.wait('failed')).attempt?.errorCode).toBe('protocol')
   } finally { begin.mockRestore() }
 })
@@ -1220,7 +1322,7 @@ it('rejects callback requests whose raw URL is absent or malformed', async () =>
   const f = await fixture()
   const register = vi.spyOn(f.ctx.webServer, 'register')
   try {
-    await f.account.startSignIn('en', f.callbackOrigin, 'web')
+    await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
     await f.wait('waiting-browser')
     const route = register.mock.calls.find(([route]) => route.path === '/oauth/callback')?.[0]
     if (route === undefined) throw new Error('missing callback route')
@@ -1253,7 +1355,7 @@ it('settles an attempt after its browser callback connection closes during excha
       return route.handler(req, res)
     },
   }))
-  await f.account.startSignIn('en', f.callbackOrigin, 'web')
+  await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'web')
   await f.wait('waiting-browser')
   const socket = connect(Number(new URL(f.callbackOrigin).port), '127.0.0.1')
   const closed = new Promise<void>(resolve => socket.once('close', () => { resolve() }))
@@ -1269,7 +1371,7 @@ it('settles an attempt after its browser callback connection closes during excha
     await serverClosed.promise
     f.release.resolve(undefined)
     await f.wait('succeeded')
-    expect((await f.account.signOut()).status).toBe('signed-out')
+    expect((await f.account.signOut(clientMetadata())).status).toBe('signed-out')
   } finally { socket.destroy(); f.release.resolve(undefined); await closed; register.mockRestore() }
 })
 
@@ -1286,7 +1388,7 @@ it('invalidates account reads before the shared grant lookup returns to its call
   })
   try {
     expect(await f.account.getPlatformSession()).toBeNull()
-    expect(await f.account.getProfile()).toBeNull()
+    expect(await f.account.getProfile(clientMetadata())).toBeNull()
     expect(f.detailRequests).toEqual([])
   } finally { read.mockRestore() }
 })
@@ -1294,10 +1396,10 @@ it('invalidates account reads before the shared grant lookup returns to its call
 it('cancels a pending sign-in when the current stored grant expires', async () => {
   const f = await fixture()
   await storeAccount(f)
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata('en'), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   f.detailStatus(401)
-  expect(await f.account.getBalance()).toBeNull()
+  expect(await f.account.getBalance(clientMetadata())).toBeNull()
   expect(await f.account.getState()).toMatchObject({ status: 'signed-out', attempt: null })
 })
 
@@ -1307,16 +1409,19 @@ it('retains the grant when local expiry removal fails and permits a later retry'
   f.detailStatus(401)
   const remove = vi.spyOn(f.ctx.credentials, 'deleteRecord').mockRejectedValueOnce(new Error('storage failed'))
   try {
-    await expect(f.account.getBalance()).rejects.toThrow('storage failed')
+    await expect(f.account.getBalance(clientMetadata())).rejects.toThrow('storage failed')
     expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
     expect(await f.account.getState()).not.toHaveProperty('signOutReason')
-    expect(await f.account.getBalance()).toBeNull()
+    expect(await f.account.getBalance(clientMetadata())).toBeNull()
     expect(await f.account.getState()).toMatchObject({ status: 'signed-out' })
   } finally { remove.mockRestore() }
 })
 
-it.each(['invalidated', 'missing', 'other-kind', 'token', 'issuer'] as const)(
-  'rechecks the stored grant before expiry removal: %s', async (change) => {
+it.each([
+  ['balance', 'invalidated'], ['balance', 'missing'], ['balance', 'other-kind'],
+  ['balance', 'token'], ['balance', 'issuer'], ['profile', 'missing'],
+] as const)(
+  'rechecks the stored grant before %s expiry removal: %s', async (field, change) => {
     const f = await fixture()
     await storeAccount(f)
     f.detailStatus(401)
@@ -1336,7 +1441,7 @@ it.each(['invalidated', 'missing', 'other-kind', 'token', 'issuer'] as const)(
     })
     const remove = vi.spyOn(f.ctx.credentials, 'deleteRecord')
     try {
-      expect(await f.account.getBalance()).toBeNull()
+      expect(await (field === 'profile' ? f.account.getProfile(clientMetadata()) : f.account.getBalance(clientMetadata()))).toBeNull()
       expect(remove).not.toHaveBeenCalled()
       expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
     } finally { read.mockRestore(); remove.mockRestore() }
@@ -1356,7 +1461,7 @@ it('ignores a 401 whose response cleanup overlaps a credential replacement', asy
   })
   const fetchResponse = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response)
   try {
-    expect(await f.account.getBalance()).toBeNull()
+    expect(await f.account.getBalance(clientMetadata())).toBeNull()
     expect(await f.account.getState()).toMatchObject({ status: 'credential-stored' })
     expect(await f.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'default')))
       .toMatchObject({ kind: 'grant', payload: { token: 'new-login' } })
@@ -1404,7 +1509,7 @@ it('ignores an inference rejection while already signed out', async () => {
 
 it('clears a completed login from snapshots while credential deletion is still settling', async () => {
   const f = await fixture()
-  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.account.startSignIn(clientMetadata('en'), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
   await f.wait('succeeded')
@@ -1416,7 +1521,7 @@ it('clears a completed login from snapshots while credential deletion is still s
     removed.resolve(undefined)
     await release.promise
   })
-  const signingOut = f.account.signOut()
+  const signingOut = f.account.signOut(clientMetadata())
   try {
     await removed.promise
     expect(await f.account.getState()).toMatchObject({ status: 'signed-out', attempt: null })

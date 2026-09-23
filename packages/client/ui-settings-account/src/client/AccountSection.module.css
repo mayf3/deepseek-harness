@@ -117,6 +117,24 @@
   outline-offset: 2px;
 }
 
+/* A failed wallet read keeps its muted copy, but as a link: the user can still
+   inspect the balance on Platform through the same destination as Usage. */
+.unavailableLink {
+  color: var(--dsw-alias-label-tertiary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.unavailableLink:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.unavailableLink:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .primary {
   color: var(--dsw-alias-label-primary-foreground);
   background: var(--dsw-alias-button-primary-fill);
@@ -195,3 +213,10 @@
 }
 
 .accountInfo { display: inline-flex; align-items: center; gap: 2px; flex: none; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 22px; text-decoration: underline; }
+
+.bonusValue {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}

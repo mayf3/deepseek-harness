@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DesktopPlatformView, platformBounds } from '../src/platform-view.ts'
 
 const state = vi.hoisted(() => ({
@@ -30,15 +30,31 @@ vi.mock('electron', () => ({
   },
 }))
 
-afterEach(() => { state.views.length = 0; state.sessions.length = 0; state.loadFailure = undefined; vi.clearAllMocks() })
+beforeEach(() => { vi.stubEnv('DSH_CLIENT_VERSION', '1.2.3') })
+afterEach(() => {
+  state.views.length = 0; state.sessions.length = 0; state.loadFailure = undefined
+  vi.clearAllMocks(); vi.unstubAllEnvs()
+})
 function setup() {
   const removeChildView = vi.fn()
   const owner = Object.assign(new EventEmitter(), {
     webContents: new EventEmitter(), contentView: { addChildView: vi.fn(), removeChildView }, isDestroyed: () => false,
   })
-  const manager = new DesktopPlatformView('/bundled/preload.cjs', () => 'en_US')
+  const manager = new DesktopPlatformView('/bundled/preload.cjs', () => 'en_US', 'darwin')
   manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
   return { manager, owner, removeChildView }
+}
+
+/** Invoke the first registered header interceptor for one request. */
+function interceptHeaders(id: number, url: string, requestHeaders: Record<string, string>): Record<string, string> {
+  const browserSession = state.sessions.at(-1) as { webRequest: { onBeforeSendHeaders: ReturnType<typeof vi.fn> } }
+  const handler = browserSession.webRequest.onBeforeSendHeaders.mock.calls[0]![0] as (
+    details: { id: number; url: string; requestHeaders: Record<string, string> },
+    callback: (value: { requestHeaders: Record<string, string> }) => void,
+  ) => void
+  const callback = vi.fn()
+  handler({ id, url, requestHeaders }, callback)
+  return (callback.mock.calls[0]![0] as { requestHeaders: Record<string, string> }).requestHeaders
 }
 function view() {
   return state.views.at(-1) as {
@@ -107,6 +123,43 @@ it('blocks cross-origin navigation and redirects', async () => {
   manager.close()
 })
 
+it('injects the deployment and client identity headers only at the Platform origin', async () => {
+  const { manager, owner } = setup()
+  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret',
+    requestHeaders: { cookie: 'gate=synthetic', 'x-deployment': 'harness' } })
+  await manager.open(owner, 'usage', bounds)
+  const request = { Cookie: 'route=user', 'x-client-platform': 'stale', 'x-deployment': 'stale' }
+  expect(interceptHeaders(1, 'https://platform.deepseek.com/api/v0/users/current', request)).toEqual({
+    'x-deployment': 'harness', cookie: 'route=user; gate=synthetic', 'x-client-bundle-id': '',
+    'x-client-platform': 'desktop-mac', 'x-client-version': '1.2.3', 'x-client-locale': 'en_US',
+    'x-client-timezone-offset': String(-new Date().getTimezoneOffset() * 60),
+  })
+  // A redirect to another origin keeps the injected headers out of the follow-up request.
+  expect(interceptHeaders(1, 'https://login.example.com/authorize', request)).toEqual({})
+  manager.close()
+})
+
+it('samples the language and UTC offset on every Platform request', async () => {
+  let locale: 'en_US' | 'zh_CN' = 'en_US'
+  const owner = Object.assign(new EventEmitter(), {
+    webContents: new EventEmitter(), contentView: { addChildView: vi.fn(), removeChildView: vi.fn() }, isDestroyed: () => false,
+  })
+  const manager = new DesktopPlatformView('/bundled/preload.cjs', () => locale, 'darwin')
+  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
+  await manager.open(owner, 'usage', bounds)
+  const offset = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(480)
+  expect(interceptHeaders(1, 'https://platform.deepseek.com/usage', {})).toMatchObject({
+    'x-client-locale': 'en_US', 'x-client-timezone-offset': '-28800',
+  })
+  locale = 'zh_CN'
+  offset.mockReturnValue(-300)
+  expect(interceptHeaders(1, 'https://platform.deepseek.com/usage', {})).toMatchObject({
+    'x-client-locale': 'zh_CN', 'x-client-timezone-offset': '18000',
+  })
+  offset.mockRestore()
+  manager.close()
+})
+
 it.each([null, {}, { ...bounds, width: NaN }, { ...bounds, x: -1 }, { ...bounds, y: Infinity }])('rejects malformed IPC rectangles', (value) => {
   expect(() => platformBounds(value)).toThrow()
 })
@@ -162,6 +215,8 @@ it('injects deployment headers only at the Platform origin and excludes them fro
     intercept({ id: 1, url: `https://platform.deepseek.com${path}`, requestHeaders: { Cookie: 'route=old; browser=keep', Accept: 'application/json' } }, callback)
     expect(callback).toHaveBeenLastCalledWith({ requestHeaders: {
       cookie: 'route=new; browser=keep; gate=private', accept: 'application/json', 'x-private-gate': 'private', 'x-client-platform': 'desktop-mac',
+      'x-client-bundle-id': '', 'x-client-version': '1.2.3', 'x-client-locale': 'en_US',
+      'x-client-timezone-offset': String(-new Date().getTimezoneOffset() * 60),
     } })
   }
   intercept({ id: 1, url: 'https://other.example/api', requestHeaders: {
@@ -242,7 +297,7 @@ it('does not reveal a pending view after the owner reloads or remove a replaceme
 it('bootstraps the current language and updates an open view without reloading', async () => {
   const { owner } = setup()
   let locale: 'en_US' | 'zh_CN' = 'zh_CN'
-  const manager = new DesktopPlatformView('/bundled/preload.cjs', () => locale)
+  const manager = new DesktopPlatformView('/bundled/preload.cjs', () => locale, 'win32')
   manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
   manager.notifyLocaleChanged()
   await manager.open(owner, 'usage', bounds)
