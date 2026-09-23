@@ -11,6 +11,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type { Config } from './config.ts'
 import type { SpeechPreparationState } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
+import { timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { classifyDownloadFailure, SpeechDownloadError } from './download-error.ts'
+import { orderModelSources } from './model-sources.ts'
 
 /** Release-pinned downloadable file. */
 export interface Asset {
@@ -96,43 +99,58 @@ export async function inspectRuntime(config: Config, signal: AbortSignal): Promi
  * @param root - provider-owned cache directory.
  * @param signal - preparation cancellation.
  * @param report - Host-owned progress publisher.
- * @returns verified local file path.
+ * @returns verified local file path; failures carry localized-UI diagnostics through SpeechDownloadError.
  */
 export async function downloadAsset(asset: Asset, root: string, signal: AbortSignal,
   report: (state: SpeechPreparationState) => void = () => {}): Promise<string> {
   signal.throwIfAborted()
-  await mkdir(root, { recursive: true })
   const destination = join(root, asset.name)
-  if (await matchesAsset(destination, asset, signal)) return destination
   const partial = `${destination}.${randomUUID()}.part`
+  let source = new URL(asset.url).origin
   try {
-    const response = await fetch(asset.url, { signal })
-    if (!response.ok || !response.body) throw new Error(`Speech asset download failed: HTTP ${response.status}`)
-    const digest = createHash('sha256')
-    let completedBytes = 0
-    const publish = (): void => { report({ phase: 'downloading', resource: asset.name, completedBytes, totalBytes: asset.bytes }) }
-    publish()
-    const hashing = new Transform({ transform(chunk: Buffer, _encoding, callback) {
-      completedBytes += chunk.length
-      if (completedBytes > asset.bytes) { callback(new Error(`Speech asset exceeds its pinned size: ${asset.name}`)); return }
-      digest.update(chunk); publish(); callback(null, chunk)
-    } })
-    await pipeline(response.body, hashing, createWriteStream(partial, { flags: 'wx', mode: 0o600 }), { signal })
-    if (completedBytes !== asset.bytes || digest.digest('hex') !== asset.sha256) {
-      throw new Error(`Speech asset checksum or size mismatch: ${asset.name}`)
+    await mkdir(root, { recursive: true })
+    if (await matchesAsset(destination, asset, signal)) return destination
+    try {
+      const response = await fetch(asset.url, { signal })
+      source = new URL(response.url || asset.url).origin
+      if (!response.ok || !response.body) {
+        await response.body?.cancel()
+        throw new SpeechDownloadError({ resource: asset.name, source, reason: 'http', status: response.status })
+      }
+      const digest = createHash('sha256')
+      let completedBytes = 0
+      const publish = (): void => { report({ phase: 'downloading', resource: asset.name, completedBytes, totalBytes: asset.bytes }) }
+      publish()
+      const hashing = new Transform({ transform(chunk: Buffer, _encoding, callback) {
+        completedBytes += chunk.length
+        if (completedBytes > asset.bytes) {
+          callback(new SpeechDownloadError({ resource: asset.name, source, reason: 'integrity' })); return
+        }
+        digest.update(chunk); publish(); callback(null, chunk)
+      } })
+      await pipeline(response.body, hashing, createWriteStream(partial, { flags: 'wx', mode: 0o600 }), { signal })
+      if (completedBytes !== asset.bytes || digest.digest('hex') !== asset.sha256) {
+        throw new SpeechDownloadError({ resource: asset.name, source, reason: 'integrity' })
+      }
+      signal.throwIfAborted()
+      await rename(partial, destination)
+      return destination
+    } finally {
+      await rm(partial, { force: true })
     }
-    signal.throwIfAborted()
-    await rename(partial, destination)
-    return destination
-  } finally {
-    await rm(partial, { force: true })
+  } catch (error) {
+    const timedOut = timeoutOf(signal)
+    if (signal.aborted && !timedOut || error instanceof SpeechDownloadError) throw error
+    throw new SpeechDownloadError({ resource: asset.name, source,
+      ...timedOut ? { reason: 'timeout' } : classifyDownloadFailure(error),
+    }, { cause: error })
   }
 }
 
 /**
  * Resolve the bundled native runtime and prepare verified ONNX models on demand.
  * @param _ctx - Host context owning the preparation task.
- * @param config - model paths, precision, and download origin.
+ * @param config - model paths, precision, and download source policy.
  * @param signal - preparation cancellation or deadline.
  * @param report - Host-owned progress publisher.
  * @returns verified model and worker paths.
@@ -141,9 +159,18 @@ export async function prepareRuntime(_ctx: Context, config: Config, signal: Abor
   report: (state: SpeechPreparationState) => void = () => {}): Promise<RuntimePaths> {
   const { lock, modelRoot, paths } = resolveRuntime(config)
   const download = async (asset: Asset, root: string, step: 'model' | 'vad'): Promise<void> => {
-    const url = new URL(asset.url)
-    const pinned = { ...asset, url: `${config.modelOrigin.replace(/\/$/, '')}${url.pathname}` }
-    await downloadAsset(pinned, root, signal, (state) => { report({ ...state, step }) })
+    if (await matchesAsset(join(root, asset.name), asset, signal)) return
+    const origins = config.modelOrigin === undefined ? config.modelOrigins : [config.modelOrigin]
+    const urls = await orderModelSources(asset.url, origins, config.modelProbeTimeoutMs, signal)
+    for (const [index, url] of urls.entries()) {
+      try {
+        await downloadAsset({ ...asset, url }, root, signal, (state) => { report({ ...state, step }) })
+        return
+      } catch (error) {
+        if (signal.aborted || !(error instanceof SpeechDownloadError) || error.download.reason === 'storage'
+          || error.download.reason === 'unknown' || index === urls.length - 1) throw error
+      }
+    }
   }
   if (config.modelDirectory === undefined) {
     report({ phase: 'checking', step: 'model', startedAt: Date.now() })

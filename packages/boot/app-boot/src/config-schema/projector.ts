@@ -4,9 +4,16 @@ import type { ConfigJsonSchema, ConfigJsonSchemaObject, NativeConfigSchema } fro
 import { isNativeConfigSchema } from './native.ts'
 import { createPatternCheck } from './pattern.ts'
 
+/** Definition that projected value positions reference as `#/$defs/loaderExpression`; an enclosing document must define it. */
+export const LOADER_EXPRESSION_SCHEMA: ConfigJsonSchemaObject = {
+  type: 'object', properties: { __jsExpr: { type: 'string' } }, required: ['__jsExpr'],
+  description: 'Inert representation of a YAML !!js scalar from the Cordis entry-list parser. Its result is evaluated and validated only at runtime. Extra marker-object fields are ignored by interpolation.',
+}
+
 /** One Config projection; unknown omission behavior is explicit rather than an invented default. */
 export interface ConfigProjection {
-  schema: ConfigJsonSchema
+  /** Object-form root: value positions are wrapped in `anyOf` with the loader-expression reference. */
+  schema: ConfigJsonSchemaObject
   definitions: Record<string, ConfigJsonSchema>
   acceptsMissing: boolean | 'unknown'
   limitations: string[]

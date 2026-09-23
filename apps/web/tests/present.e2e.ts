@@ -14,7 +14,7 @@ import {
   compareOrRefreshGolden, fixtureUserPrompts, launchWebScaffold, recordFixture,
   watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage } from './support.ts'
+import { connectFreshWorkspace, expandTurnProcesses, newEnglishPage, scrollIntoView } from './support.ts'
 
 const DIR = fileURLToPath(new URL('../../../snapshots/web/present', import.meta.url))
 const FIXTURE = join(DIR, 'session.v3.jsonl')
@@ -195,7 +195,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       await expect.poll(() => page.locator('[data-presented-file] [role="status"]').count(), { timeout: 10_000 }).toBe(0)
       const aria = await captureExpandedTurnProcessAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(join(DIR, 'ui.expected.md'), aria, MODE)
-      await page.locator('[data-turn-process]').click()
+      await expandTurnProcesses(page)
       const failed = page.locator('[data-tool="present"][data-state="error"]')
       const delivered = page.locator('[data-tool="present"][data-state="ok"]')
       expect(await failed.count()).toBe(1)
@@ -272,7 +272,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       expect(geometry.openFontSize).toBe('11px')
       await page.setViewportSize({ width: 480, height: 900 })
       const row = page.locator('[data-presented-files-row]')
-      await row.scrollIntoViewIfNeeded()
+      await scrollIntoView(row)
       for (const card of await row.getByRole('button').all()) {
         const bounds = await card.boundingBox()
         expect(bounds).not.toBeNull()

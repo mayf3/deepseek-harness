@@ -12,9 +12,11 @@ Chat Builder 汇总整个目标的节点及索引。在其中固定创建 Chat �
 
 过程组与 Step 正交：同一个 Assistant Node 可以把推理放在组内、回复放在组外，回复后的工具进入后面的组。Step 编号范围无法描述这种成员归属。现有事件 Definition 逐个解释事件，分组则需要这些 Definition 已经解释完成的节点。
 
+宽松的基准预算不能证明分组更新具有局部性。按键通知、组件身份、浏览器布局与常驻内存是不同的性质，通过其中一项检查不能证明其他性质。
+
 ## Decision
 
-分组基础机制提供独立的节点输入 `ConversationGroupDefinition`、注册表及 Session 内上下文、Builder 通用输入与发布、按键 Group 存储及两种 React 分支。基础机制不注册真实 Chat 分段及 PR #4565 展示，[业务迁移提案](../../proposed/feature/2026-09-20-chat-work-details-migration.zh.md)保留这些需求。[子系统参考](../../../../docs/subsystems/conversation.zh.md#group-definitions)与[源码类型](../../../../packages/client/ui-conversation/src/client/contract/groups.ts)拥有当前 API 细节。
+分组基础机制提供独立的节点输入 `ConversationGroupDefinition`、注册表及 Session 内上下文、Builder 通用输入与发布、按键 Group 存储及两种 React 分支。Chat 在[业务规则参考](../../../../packages/client/ui-chat/src/client/conversation-nodes/README.zh.md)中拥有其已注册的分段与展示规则。[子系统参考](../../../../docs/subsystems/conversation.zh.md#group-definitions)与[源码类型](../../../../packages/client/ui-conversation/src/client/contract/groups.ts)拥有当前 API 细节。
 
 ### 职责
 
@@ -22,21 +24,20 @@ Chat Builder 汇总整个目标的节点及索引。在其中固定创建 Chat �
 |---|---|
 | 分组业务属于已注册 Definition | 成员、分段、回复、steering、重试、摘要和缓存失效放在一起。 |
 | Builder 与 assembler 做统一工作 | 提供输入、调度 Definition、校验引用、复用身份并发布，不创建具体分组类。 |
-| 产品行为以 PR #4565 为准 | 保留行为，不复制其侵入性实现。 |
+| PR #4565 提供产品参考 | Chat 业务规则参考拥有当前行为及已确认的调整。 |
 | React 根循环只有两种 kind | 根顺序包含 NodeReference 和 GroupReference，不引入另一套布局对象模型。 |
 | 所有模式共用分组 | 模式不进入 Definition 输入、key 或父级选择。 |
 | 不采用 buildLayout | ConversationViewDefinition 保留现有职责。 |
-| 先基础、后业务 | 基础 PR 不包含真实 Chat 分组、摘要、通知或页脚变化。 |
+| 业务属于目标包 | Chat 拥有过程分组、摘要、通知和页脚行为，通用组装不解释这些业务。 |
 
 ### 与已有记录的关系
 
 | 记录 | 关系 |
 |---|---|
 | [业务节点组装](2026-08-09-client-conversation-node-assembly.zh.md) | 保留事件匹配、Context、Location、每个 Context 一个业务 Node 及目标 Builder，分组增加另一种输入类别。 |
-| [展示策略与过程分组](../../proposed/architecture/2026-09-20-chat-presentation-policy-and-step-groups.zh.md) | 保留 Definition 归属、局部订阅和模式无关要求，以新分组机制替代事件 fold 及 Step 范围成员推断。 |
-| [工作过程展示迁移](../../proposed/feature/2026-09-20-chat-work-details-migration.zh.md) | 保留产品范围及迁移跟踪，基础机制本身不代表这些功能完成。 |
+| [Chat 滚动与页脚](../bug-fix/2026-09-22-chat-scroll-follow-and-footer-geometry.zh.md) | 负责裁剪与独立的嵌套跟随，不改变 Group Definition 成员关系。 |
 
-这些记录仍有独立理由，保留有效状态。跨 View 导航与 `toolCallFocus` 不属于本次改动；不引入 View 句柄、Label Slot 或资源导航架构。
+分组保留独立的节点组装决策。跨 View 导航与 `toolCallFocus` 仍是独立职责，Group 引用不携带 View 句柄或资源导航策略。
 
 ## Definition 输入、状态与注册
 
@@ -106,7 +107,7 @@ GroupStore 按 GroupKey 索引记录和来源，不反复查找数组。等价�
 | [group-store.ts](../../../../packages/client/ui-conversation/src/client/conversation/group-store.ts) | 原子引用校验、按键来源、数组复用及局部发布。 |
 | [chat-snapshot-builder.ts](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) | 记录投影后节点增量、目标位置及变化轮次顺序，提供索引读取器并推迟来源通知，不持有过程分组类。 |
 | [ChatView.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) | 读取可选根引用并切换 node/group，无分组时使用既有 Node 顺序。 |
-| [ChatGroupSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx) | 稳定组父级、仅成员订阅及嵌套 Node 容器。 |
+| [ChatGroupSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx) | 稳定组父级、组内订阅及嵌套 Node 容器。 |
 | [ChatNodeSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatNodeSeat.tsx) | 既有 Node 来源及渲染器、groupPart 传递、独立部分锚点及 Store 替换时重绑定。 |
 | [slots.ts](../../../../packages/client/ui-chat/src/client/contract/slots.ts) 与 [apply.ts](../../../../packages/client/ui-chat/src/client/apply.ts) | 使用现有按键钩子注入 Group 来源，不改 Slot 引擎。 |
 
@@ -116,7 +117,9 @@ GroupStore 按 GroupKey 索引记录和来源，不反复查找数组。等价�
 
 React key 由引用 kind、NodeKey/groupPart 或 GroupKey 的无歧义元组派生，不另设 RenderKey 类型或 renderer 分发字段。Compact、Detailed、Expanded 保留同一组容器及成员父级，展示变化不重新运行 Group Definition，也不选择不同的根分支。
 
-稳定 Group 父级使用 `div` 与 `display: contents`，自身不产生布局盒子。CSS 继承仍然可用，业务样式适配子级／兄弟选择器并拥有可测量的正文容器。CSS 变量和几何信息都不进入 Definition。阅读位置采样测量成员 Node，保留部分专属锚点；既有轮次导航将原 NodeKey 解析到它的第一个可见部分。
+稳定 Group 父级使用可测量的 `div`，正文拥有组内限高滚动，内容盒子报告尺寸增长。CSS 继承仍然可用，业务样式适配子级／兄弟选择器。CSS 变量和几何信息都不进入 Definition。阅读位置采样测量成员 Node，保留部分专属锚点；既有轮次导航将原 NodeKey 解析到它的第一个可见部分。
+
+展示通道将每个存储模式映射为稳定策略对象。Seat 和 renderer 选择自己使用的字段，不通过所有 renderer 透传模式 prop。模式变化不注册 Definition，也不重放 Context。整轮折叠资格使用本轮已加载的生命周期事实，不依赖整个 Session 的分页完成状态；半截历史的折叠规则由业务参考定义。组开合保留在组件本地状态中，显式收起整轮通过注入 Hook 重置参与折叠的内部开合，不更换 key。
 
 ## Alternatives considered
 
@@ -138,12 +141,27 @@ React key 由引用 kind、NodeKey/groupPart 或 GroupKey 的无歧义元组派�
 
 **Expanded 移除组容器。** 不采用，即使 key 不变，父级改变仍会重挂载成员。
 
+**让首成员或每 Step 的 Context 承载组头。** 首成员组头把组 UI 耦合到任意业务行。每 Step 的身份无法区分同一步内的多个组，共享整轮聚合数据还会刷新无关组头，或让后续 Step 的读取过期。
+
+**一个事件 Context 输出多个 Node，或派生子 Context。** 多数事件 Context 只拥有一个 Node，数组增加间接层却不能解决跨 Node 分组。父级派生 Context 需要转发、重放及移除生命周期，只有派生实体需要独立于分组的这些生命周期时，才值得另作框架决策。
+
+**常驻全部 Markdown，或靠重挂载重置 renderer。** 保留轻量 Seat 不意味着需要常驻所有完整 Markdown 正文。完整正文仍由开合状态控制，显式重置避免销毁无关 renderer 状态。一次性引入 #4565 的全部改动还会混合独立视觉变化与分组成本，难以判断导致回退的具体行为。
+
 ## Verification
 
 - [Group 存储测试](../../../../packages/client/ui-conversation/tests/conversation-group-store.client.spec.ts)覆盖原子引用校验、根与成员身份复用、局部发布，以及删除组但保留原 Node。
 - [分组调度测试](../../../../packages/client/ui-conversation/tests/conversation-groups.client.spec.ts)覆盖首次激活、仅生命周期输入、注册替换、View 移除与恢复，以及完整替换输出。[Assembler 测试](../../../../packages/client/ui-conversation/tests/conversation-assembler.client.spec.ts)覆盖变化轮次报告和 Location 数据来源。
 - [Node 来源测试](../../../../packages/client/ui-chat/tests/chat-node-source.client.spec.ts)覆盖投影后的分组输入、索引读取器和空变化批次。
 - [Chat 渲染测试](../../../../packages/client/ui-chat/tests/chat-view.client.spec.tsx)保留模式切换时的组件状态，重绑定替换后的 Node 存储，传递独立部分，并省略未引用 Node。[视口测试](../../../../packages/client/ui-chat/tests/chat-viewport.client.spec.ts)覆盖组内阅读锚点、历史前插及部分感知的轮次导航。
+
+业务行为通过按键更新回归与已录制的 Web 回放验证。
+
+| 证据 | 必须观察到的结果 |
+|---|---|
+| 按键通知与 React 更新 | 正文增长影响所属 Node 和相关 Group；未变化历史行及其他 Turn 没有额外通知。模式变化保留 key 与成员父级。 |
+| 已录制的 Web 回放 | 当前可访问标题、组开合、普通 Context 隐藏、触发通知及页脚位置与提交的预期输出一致。 |
+
+[已录制的 Web 场景](../../../../apps/web/tests/steering.e2e.ts)通过正式 Web profile 覆盖在线 steering、重连接续与分组展示。这些行为检查不构成量化延迟或内存改善的证明。
 
 ## Consequences
 
@@ -152,4 +170,5 @@ React key 由引用 kind、NodeKey/groupPart 或 GroupKey 的无歧义元组派�
 - Node 顺序及可见性只有 Builder 一个所有者，分组不独立排序原始事件，也不在通用层再次推断成员。
 - 稳定挂载不消除布局、绘制或保留内存的成本，不宣称实测延迟或最优性能。
 - 真实组拆并、首成员变化及分页修正可以改变身份，模式切换保证不禁止这些正常变化。
-- 隐藏部分的揭示、选择复制、中断提示、组开合与外层 Turn 联动需要业务适配。基础测试使用混合引用，不启用真实分组。
+- 隐藏部分的揭示、选择复制、中断提示、组开合与外层 Turn 联动属于 Chat 业务适配，仅凭通用引用测试不能确认这些行为。
+- 整轮状态与用时替代旧工具／消息计数标题，因此状态、可访问名称和空过程轮次需要明确的展示覆盖。隐藏普通 Context 时保留非人工唤醒通知及原始 Session／Trajectory 查看能力；页脚定位依赖真实 Turn 结束，不依赖分组成员。

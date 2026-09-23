@@ -11,10 +11,17 @@ export interface ExcelLimits {
   timeoutMs: number
 }
 
-/** Preview data and a count of formulas without saved results. */
+/** Content categories reported in stable order when XLSX preview omits them. */
+export const EXCEL_UNSUPPORTED_FEATURES = ['charts', 'images', 'shapes', 'conditionalFormatting'] as const
+
+/** A detected workbook feature that the spreadsheet preview does not display. */
+export type ExcelUnsupportedFeature = typeof EXCEL_UNSUPPORTED_FEATURES[number]
+
+/** Preview data, missing formula results, and detected content that is not displayed. */
 export interface ExcelPreview {
   sheets: Sheet[]
   missingResults: number
+  unsupportedFeatures: ExcelUnsupportedFeature[]
 }
 
 /**

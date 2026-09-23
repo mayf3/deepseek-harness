@@ -1,4 +1,5 @@
 /** The CLI and manager share package reconciliation, path anchoring and diagnostics. */
+import { EventEmitter } from 'node:events'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -7,7 +8,23 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import { initProfile, readProfileManifest } from '@deepseek-ai/dsh-app-boot'
 import { anchorPathSpec, readProfileRegistry, runPluginCommand, runProfilePnpm, viewProfilePackage } from '../src/operations.ts'
 
-const command = vi.hoisted(() => ({ run: vi.fn<(...args: unknown[]) => ReturnType<typeof result>>() }))
+/** What execa resolves for a run that settled. */
+interface FakeOutcome {
+  exitCode: number | undefined
+  failed: boolean
+  code?: string
+  shortMessage?: string
+}
+
+/** The child execa hands back, including the descriptors an inherited CLI run reports as null. */
+interface FakeChild {
+  stdout: PassThrough | null
+  stderr: PassThrough | null
+  nodeChildProcess: EventEmitter
+  kill?: () => boolean
+}
+
+const command = vi.hoisted(() => ({ run: vi.fn<(...args: unknown[]) => Promise<FakeOutcome> & FakeChild>() }))
 vi.mock('execa', () => ({ execa: (...args: unknown[]) => command.run(...args) }))
 
 function fixture() {
@@ -26,13 +43,68 @@ function result(
 ) {
   const stdout = new PassThrough()
   const stderr = new PassThrough()
+  const raw = new EventEmitter()
   const done = Promise.resolve().then(() => {
     mutate()
     stdout.end(output)
     stderr.end()
     return { exitCode, failed: exitCode !== 0, ...details }
   })
-  return Object.assign(done, { stdout, stderr })
+  // A launch failure reports on the raw child, which never emits an exit; anything else exits once execa's promise settles.
+  // Both arrive on a macrotask, so a fixture built before the run still reaches the listener the run attaches.
+  if (details.code === undefined) {
+    void done.then(() => { setTimeout(() => { raw.emit('exit', exitCode, null) }, 0) }, () => {})
+  } else {
+    setTimeout(() => { raw.emit('error', Object.assign(new Error('pnpm failed to launch'), { code: details.code })) }, 0)
+  }
+  return Object.assign(done, { stdout, stderr, nodeChildProcess: raw })
+}
+
+/** A child that printed once and never exits on its own: only the silence bound can end it. */
+function silentChild(output: string, exitCode?: number) {
+  const stdout = new PassThrough()
+  const stderr = new PassThrough()
+  const raw = new EventEmitter()
+  const exit = Promise.withResolvers<{ exitCode: number | undefined; failed: boolean }>()
+  const kill = () => {
+    stdout.end()
+    stderr.end()
+    raw.emit('exit', exitCode ?? null, 'SIGTERM')
+    exit.resolve({ exitCode, failed: exitCode !== 0 })
+    return true
+  }
+  stdout.write(output)
+  return Object.assign(exit.promise, { stdout, stderr, kill, nodeChildProcess: raw })
+}
+
+/** A child that exited while its pipes stay open, as a descendant that inherited them leaves them. */
+function heldPipeChild(output: string) {
+  const stdout = new PassThrough()
+  const stderr = new PassThrough()
+  const raw = new EventEmitter()
+  const exit = Promise.withResolvers<{ exitCode: number; failed: boolean }>()
+  let ended = 0
+  // execa settles only once both pipes end, which the bounded drain forces by destroying them.
+  for (const stream of [stdout, stderr]) {
+    stream.on('close', () => {
+      ended += 1
+      if (ended === 2) exit.resolve({ exitCode: 0, failed: false })
+    })
+  }
+  // The process exits as soon as the run watches the raw child, so a fixture the
+  // test built before the run cannot emit past the listener the run attaches.
+  let watched = false
+  const watch = (): void => {
+    if (watched) return
+    watched = true
+    setTimeout(() => { raw.emit('exit', 0, null) }, 0)
+  }
+  const on = raw.on.bind(raw)
+  const once = raw.once.bind(raw)
+  raw.on = (event, listener) => { const holder = on(event, listener); if (event === 'exit') watch(); return holder }
+  raw.once = (event, listener) => { const holder = once(event, listener); if (event === 'exit') watch(); return holder }
+  stdout.write(output)
+  return Object.assign(exit.promise, { stdout, stderr, nodeChildProcess: raw })
 }
 
 function install(dir: string, name: string) {
@@ -107,6 +179,72 @@ it('initializes missing profiles under the same lock and reports initialization'
   expect(messages.filter(text => text.includes('initialized profile'))).toHaveLength(2)
 })
 
+it('terminates a run that stopped printing and reports the silence bound', async () => {
+  const { context } = fixture()
+  command.run.mockImplementationOnce(() => silentChild('installing\n'))
+  const outcome = await runProfilePnpm(context, ['add', 'silent'], { execution: 'service', outputBytes: 100, idleTimeoutMs: 20 })
+  expect(outcome).toMatchObject({ exitCode: 1, timedOut: true })
+  expect(outcome.output).toBe('installing\ndsh: pnpm printed nothing for 20ms and was terminated\n')
+  expect(readFileSync(outcome.logPath, 'utf8')).toBe(outcome.output)
+})
+
+it('settles a run whose pipes stay open past the process exit', async () => {
+  const { context } = fixture()
+  const child = heldPipeChild('installed\n')
+  command.run.mockImplementationOnce(() => child)
+  const outcome = await runProfilePnpm(context, ['add', 'held'], {
+    execution: 'service', outputBytes: 100, activateNewBundles: false,
+  })
+  expect(outcome).toMatchObject({ exitCode: 0 })
+  expect(outcome.output).toBe('installed\ndsh: pnpm output was cut short after its process exited\n')
+  // The pipes never ended on their own, so the run settled by cutting them here.
+  expect(child.stdout.destroyed).toBe(true)
+  expect(child.stderr.destroyed).toBe(true)
+  expect(outcome.timedOut).toBeUndefined()
+})
+
+it('reports a terminated run that trapped the signal and exited zero', async () => {
+  const { context } = fixture()
+  command.run.mockImplementationOnce(() => silentChild('installing\n', 0))
+  const outcome = await runProfilePnpm(context, ['add', 'trapped'], { execution: 'service', outputBytes: 100, idleTimeoutMs: 20 })
+  // The independent facts stay separate: the signal was trapped, so the exit status is still zero.
+  expect(outcome).toMatchObject({ exitCode: 0, timedOut: true })
+  expect(outcome.output).toContain('printed nothing for 20ms and was terminated')
+})
+
+it('surfaces an output consumer failure the bounded drain cuts short', async () => {
+  const { context } = fixture()
+  command.run.mockImplementationOnce(() => heldPipeChild('installed\n'))
+  await expect(runProfilePnpm(context, ['add', 'held'], {
+    execution: 'service', outputBytes: 100, activateNewBundles: false,
+    onOutput() { throw new Error('output destination closed') },
+  })).rejects.toThrow('output destination closed')
+})
+
+it('reports a reading that fails with something other than an Error by its text', async () => {
+  const { context } = fixture()
+  const child = heldPipeChild('installed\n')
+  command.run.mockImplementationOnce(() => child)
+  await expect(runProfilePnpm(context, ['add', 'held'], {
+    execution: 'service', outputBytes: 100, activateNewBundles: false,
+    // A reading can reject with any value; its text is what the failure reports.
+    onOutput() { throw 'pipe broke' },
+  })).rejects.toThrow('pipe broke')
+})
+
+it('terminates a service run as a tree and leaves the CLI in the caller group', async () => {
+  const { context } = fixture()
+  command.run.mockImplementation(() => result(0, ''))
+  await runProfilePnpm(context, ['add', 'tree'], { execution: 'service', outputBytes: 100, activateNewBundles: false })
+  await runProfilePnpm(context, ['add', 'tree'], { execution: 'cli', outputBytes: 100, activateNewBundles: false })
+  expect(command.run).toHaveBeenCalledWith(
+    expect.anything(), expect.anything(), expect.objectContaining({ killDescendants: true }),
+  )
+  expect(command.run).toHaveBeenLastCalledWith(
+    expect.anything(), expect.anything(), expect.objectContaining({ killDescendants: false }),
+  )
+})
+
 it('retains built-in layers, removes deleted dependencies and warns about plain packages', async () => {
   const { context, dir } = fixture()
   install(dir, 'removed')
@@ -172,7 +310,9 @@ it('preserves an unexpected subprocess rejection after both streams settle', asy
   const stderr = new PassThrough()
   stdout.end()
   stderr.end()
-  command.run.mockImplementationOnce(() => Object.assign(Promise.reject(new Error('subprocess failed')), { stdout, stderr }))
+  command.run.mockImplementationOnce(() => Object.assign(Promise.reject(new Error('subprocess failed')), {
+    stdout, stderr, nodeChildProcess: new EventEmitter(),
+  }))
   await expect(runProfilePnpm(context, ['root'], { execution: 'service', outputBytes: 100 })).rejects.toThrow('subprocess failed')
 })
 
@@ -207,8 +347,8 @@ it.each(['cli', 'service'] as const)('uses the %s environment and interaction po
 it('settles inherited CLI descriptors without requiring captured streams', async () => {
   const { context } = fixture()
   command.run.mockImplementationOnce(() => Object.assign(
-    Promise.resolve({ exitCode: 0, failed: false }), { stdout: null, stderr: null },
-  ) as unknown as ReturnType<typeof result>)
+    Promise.resolve({ exitCode: 0, failed: false }), { stdout: null, stderr: null, nodeChildProcess: new EventEmitter() },
+  ))
   expect(await runPluginCommand(context, ['approve-builds'], { execution: 'cli', outputBytes: 100 })).toMatchObject({ exitCode: 0, output: '' })
 })
 

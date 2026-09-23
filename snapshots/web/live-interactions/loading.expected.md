@@ -8,9 +8,9 @@
     - tab "Trajectory"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Context injection runtime-context"
-- paragraph: partial
 - status: Deep diving...
+- button "Deep diving for {{duration}}" [disabled] [expanded]
+- paragraph: partial
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write

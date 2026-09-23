@@ -29,10 +29,26 @@ function DownloadProgress({ state, t }: { state: SpeechPreparationState } & Prop
     ? <progress className={css.progress} aria-label={t('downloadProgress')} value={state.completedBytes} max={state.totalBytes} /> : null
 }
 
+function PreparationFailure({ state, t }: { state: Extract<SpeechPreparationState, { phase: 'failed' }> } & PropsLocale<typeof NS>) {
+  const failure = state.download
+  if (!failure) return <p className={css.preparationError} role="alert">{t('preparationFailed', { message: state.message })}</p>
+  return <div className={css.downloadFailure} role="alert">
+    <p className={css.preparationError}>{t(`download.${failure.reason}`, { resource: failure.resource, status: String(failure.status) })}</p>
+    <p>{t(`downloadAdvice.${failure.reason}`)}</p>
+    <small className={css.metric}>{t('downloadSource', { source: failure.source })}</small>
+    {failure.code && <small className={css.metric}>{t('downloadCode', { code: failure.code })}</small>}
+  </div>
+}
+
 /** Render a collapsed current-step summary or all Host-owned preparation steps. */
 export function PreparationCard({ provider, connected, prepare, cancelPreparation, t }: PreparationCardProps) {
   const state = provider.preparation
   const [expanded, setExpanded] = useState(false), [now, setNow] = useState(Date.now), [error, setError] = useState('')
+  const [source, setSource] = useState(''), [submitting, setSubmitting] = useState(false)
+  const sources = provider.downloadSources ?? []
+  const [firstSource = ''] = sources
+  const selectedSource = sources.includes(source) ? source : sources.length === 1 ? firstSource : ''
+  const canPrepare = ['unprepared', 'cancelled', 'failed'].includes(state.phase)
   const current = state.steps?.find(step => step.status === 'running' || step.status === 'failed' || step.status === 'cancelled')
   const preparing = preparationTone(state) === 'ongoing'
   const startedAt = current?.startedAt ?? ('startedAt' in state ? state.startedAt : undefined)
@@ -42,8 +58,9 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
     return () => { clearInterval(timer) }
   }, [preparing, startedAt])
   const run = async (action: () => Promise<unknown>): Promise<void> => {
-    setError('')
+    setError(''); setSubmitting(true)
     try { await action() } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) }
+    finally { setSubmitting(false) }
   }
   const metric = state.phase === 'downloading' ? byteText(state, t)
     : preparing && startedAt !== undefined ? t('elapsed', { seconds: String(Math.max(0, Math.floor((now - startedAt) / 1000))) }) : ''
@@ -88,11 +105,22 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
       </ol>
     </DisclosureRow>
     {!expanded && <DownloadProgress state={state} t={t} />}
-    {state.phase === 'failed' && <p className={css.preparationError} role="alert">{t('preparationFailed', { message: state.message })}</p>}
+    {state.phase === 'failed' && <PreparationFailure state={state} t={t} />}
+    {canPrepare && sources.length > 0 && <div className={css.sourceChoice}>
+      <label>{t('sourceChoice')}<select aria-label={t('sourceChoice')} value={selectedSource} disabled={!connected || submitting || sources.length === 1}
+        onChange={(event) => { setSource(event.target.value) }}>
+        {sources.length > 1 && <option value="">{t('sourceAuto')}</option>}
+        {sources.map(origin => <option key={origin} value={origin}>
+          {origin === 'https://huggingface.co' ? t('sourceHuggingFace')
+            : origin === 'https://hf-mirror.com' ? t('sourceMirror') : origin}
+        </option>)}
+      </select></label>
+      <small className={css.metric}>{t(selectedSource === '' ? 'sourceAutoHelp' : 'sourceManualHelp')}</small>
+    </div>}
     <div className={css.preparationActions}>
-      {['unprepared', 'cancelled', 'failed'].includes(state.phase) && <Button variant="outline" size="sm" disabled={!connected}
-        onClick={() => { void run(() => prepare(provider.id)) }}>{t(state.phase === 'unprepared' ? 'prepare' : 'retryPrepare')}</Button>}
-      {preparing && state.phase !== 'waking' && <Button variant="ghost" size="sm" disabled={!connected || state.phase === 'cancelling'}
+      {canPrepare && <Button variant="outline" size="sm" disabled={!connected || submitting}
+        onClick={() => { void run(() => selectedSource === '' ? prepare(provider.id) : prepare(provider.id, { downloadSource: selectedSource })) }}>{t(state.phase === 'unprepared' ? 'prepare' : 'retryPrepare')}</Button>}
+      {preparing && state.phase !== 'waking' && <Button variant="ghost" size="sm" disabled={!connected || submitting || state.phase === 'cancelling'}
         onClick={() => { void run(() => cancelPreparation(provider.id)) }}>{t('cancelPrepare')}</Button>}
     </div>
     {error && <p className={css.preparationError} role="alert">{t('failed', { message: error })}</p>}

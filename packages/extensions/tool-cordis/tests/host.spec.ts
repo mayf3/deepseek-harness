@@ -27,7 +27,7 @@ describe('the cordis-inspect-providers host entry', () => {
     const fiber = ctx.plugin(CordisInspectProviders)
     await fiber
 
-    expect(ctx.cordisInspect.list().map(provider => provider.id)).toEqual(['Service', 'Event', 'Builtin', 'Tool'])
+    expect(ctx.cordisInspect.list().map(provider => provider.id)).toEqual(['Service', 'Event', 'Config', 'Tool'])
 
     await fiber.dispose()
     expect(ctx.cordisInspect.list()).toEqual([])

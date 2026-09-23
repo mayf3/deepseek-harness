@@ -3,11 +3,13 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import { IconUsersOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { detailsCardModel, todosDetail } from '../src/client/tool/models/details-card-model.ts'
 import { DetailsRow, detailsToolview } from '../src/client/tool/toolviews/details-row.tsx'
+import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 
 const t = makeTranslate(en, commonEn)
 const goal = { id: 'goal-1', revision: 2, objective: 'Ship compact cards', phase: 'active', roundsStarted: 2, maxGoalRounds: 8 }
@@ -61,7 +63,7 @@ describe('detailsCardModel', () => {
     expect(detailsCardModel({ ...block, call: { name: 'create_goal', argsRaw: '{' } }, t, 'en')).toBeNull()
     expect(detailsCardModel({ ...block, content: [{ type: 'text', text: 'partial {' }] }, t, 'en')).toBeNull()
     expect(detailsCardModel({ ...block, content: [...block.content, { type: 'text', text: 'Extra result' }] }, t, 'en')).toBeNull()
-    expect(detailsCardModel({ callId: 'c1', name: 'create_goal', argsRaw: '{}', turn: 1, step: 1, time: 1000, subCalls: [] }, t, 'en')).toBeNull()
+    expect(detailsCardModel({ phase: 'start' as const, callId: 'c1', name: 'create_goal', argsRaw: '{}', turn: 1, step: 1, time: 1000, subCalls: [] }, t, 'en')).toBeNull()
     expect(detailsCardModel({ ...block, parentCallId: 'parent' }, t, 'en')?.items[0]?.title).toBe(goal.objective)
   })
 })
@@ -79,7 +81,7 @@ describe('todosDetail', () => {
 describe('DetailsRow', () => {
   it('expands fields with the keyboard and keeps Inspect available', () => {
     const inspect = vi.fn()
-    render(<DetailsRow {...{ toolName: 'get_goal', block: result('get_goal', { goal, activation: 'armed' }), inspect, t } as Parameters<typeof DetailsRow>[0]} />)
+    render(<DetailsRow {...{ useDisclosure, toolName: 'get_goal', block: result('get_goal', { goal, activation: 'armed' }), inspect, t } as Parameters<typeof DetailsRow>[0]} />)
     expect(screen.queryByText('Rounds')).toBeNull()
     fireEvent.keyDown(screen.getByRole('button', { expanded: false }), { key: 'Enter' })
     expect(screen.getByText('Rounds')).toBeTruthy()
@@ -87,6 +89,14 @@ describe('DetailsRow', () => {
     expect(screen.queryByText('Output')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Inspect' }))
     expect(inspect).toHaveBeenCalledOnce()
+  })
+
+  it('presents teammate-coordination tools under the two-person team icon', () => {
+    const inspect = vi.fn()
+    const expectedIcon = render(<IconUsersOutlineRegular size={14} />).container.querySelector('svg')!.outerHTML
+    const view = render(<DetailsRow {...{ useDisclosure, toolName: 'wait_agent', block: result('wait_agent', { timedOut: true }), inspect, t } as Parameters<typeof DetailsRow>[0]} />)
+    expect(screen.getByText('Wait for subagent')).toBeTruthy()
+    expect(view.container.querySelector('svg')?.outerHTML).toBe(expectedIcon)
   })
 
   it('registers the supported tool names through the scoped keyed slot', () => {

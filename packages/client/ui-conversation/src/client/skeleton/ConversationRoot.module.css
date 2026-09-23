@@ -63,6 +63,12 @@
 
 .titleRow {
   grid-column: 2;
+  /* Anonymous inline-size container (CSS modules hash container-names per
+     module, so occupants match the nearest container): header occupants such
+     as the preset label and slot actions shed their text at row-width
+     breakpoints. The minmax(0, 1fr) column sizes the row, so inline-size
+     containment cannot collapse it. */
+  container-type: inline-size;
   display: flex;
   align-items: center;
   gap: 0;
@@ -272,14 +278,14 @@ button.crumb:hover {
   left: calc(50% + var(--dsh-chat-content-width) / 2 + 24px);
 }
 
-/* The glow: a short 2px bar riding the pointer's Y, centered in the strip
+/* The glow: a short 2px bar following the captured pointer's Y, centered in the strip
    (29px from the content column), not a full-height rule — a 16px solid core
    centered on the pointer
-   (published by pointermove as --dsh-width-handle-pointer-y), fading to
+   (published during drag as --dsh-width-handle-pointer-y), fading to
    transparent over 28px each side (72px total). A solid CORE, not a single
    solid stop: a lone peak washes out over the fade. The resting scrollbar
    tint keeps this secondary affordance quiet in both themes. Before the first
-   move the fallback centers the glow at 50% height. */
+   drag move the fallback centers the glow at 50% height; hover leaves its position unchanged. */
 .widthHandle::after {
   content: '';
   position: absolute;

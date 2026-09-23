@@ -20,6 +20,8 @@ export interface SpeechProviderInfo {
   /** Accepted language hints, including automatic detection when supported. */
   readonly languages: readonly string[]
   readonly setupEstimate?: SpeechSetupEstimate
+  /** Origins offered for an explicit preparation download; omitted or empty when no choice applies. */
+  readonly downloadSources?: readonly string[]
 }
 
 /** Ordered resource-preparation operations understood by the speech UI. Providers omit operations they do not need. */
@@ -32,12 +34,21 @@ export interface SpeechPreparationStep {
   readonly startedAt?: number
 }
 
+/** Safe download diagnostics for localized preparation guidance; URLs omit credentials and query strings. */
+export interface SpeechDownloadFailure {
+  readonly resource: string
+  readonly source: string
+  readonly reason: 'network' | 'dns' | 'timeout' | 'certificate' | 'http' | 'integrity' | 'storage' | 'unknown'
+  readonly code?: string
+  readonly status?: number
+}
+
 /** Host-owned preparation state; byte totals describe downloads, never estimated installation percentages. */
 export type SpeechPreparationState = (
   | { readonly phase: 'unprepared' | 'ready' | 'standby' | 'cancelled' }
   | { readonly phase: 'downloading'; readonly resource: string; readonly completedBytes: number; readonly totalBytes?: number }
   | { readonly phase: 'checking' | 'loading' | 'waking' | 'cancelling'; readonly startedAt: number }
-  | { readonly phase: 'failed'; readonly message: string }
+  | { readonly phase: 'failed'; readonly message: string; readonly download?: SpeechDownloadFailure }
 ) & {
   readonly step?: SpeechPreparationStepKind
   readonly steps?: readonly SpeechPreparationStep[]
@@ -66,14 +77,23 @@ export interface SpeechSnapshot {
   readonly selection: SpeechSelection
 }
 
+/** Download choice for one preparation task; omission keeps the provider's configured selection policy. */
+export interface SpeechPreparationOptions {
+  /** One advertised origin; providers reject unavailable sources and use a manual choice without fallback. */
+  readonly downloadSource?: string
+}
+
 /** Optional resource preparation controls. Providers without them are immediately usable. */
 export interface SpeechPreparation {
   /** @returns the latest Host-owned state. */
   snapshot(): SpeechPreparationState
   /** @param listener - state invalidation callback. @returns subscription disposer. */
   subscribe(listener: () => void): () => void
-  /** Start or join the current preparation task; page and transport lifetimes do not own it. */
-  prepare(): void
+  /**
+   * Start or join the current preparation task; page and transport lifetimes do not own it.
+   * @param options - task-local download selection; providers reject changing the source of active work.
+   */
+  prepare(options?: SpeechPreparationOptions): void
   /** Cancel preparation. @returns after its resources settle. */
   cancel(): Promise<void>
 }

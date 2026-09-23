@@ -20,10 +20,11 @@ import type { ProfileContext, ProfileManifest } from '@deepseek-ai/dsh-app-boot'
 import { bundleManifest, readProfileRegistry, registryArguments, runProfilePnpm, saveManifest, viewProfilePackage } from './operations.ts'
 import { classifyInstallFailure } from './install-failure.ts'
 import { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
-import { attributeFailure, normalizeRegistry, registryPlan } from './registry.ts'
+import { attributeFailure, normalizeRegistry, NPMMIRROR_REGISTRY, registryPlan } from './registry.ts'
 import { writePluginEnabled } from './patch.ts'
 import { ManagementFailure } from './failure.ts'
 import { approveBuilds, readPendingBuilds } from './build-approval.ts'
+import { checkGithubConnection } from './github-connection.ts'
 import type {
   BundleInfo, BundleRowInfo, ChangeResult, InspectOptions, InstallBundleOptions, ManagementError, PackageResult, PluginChange,
   PluginEntryId, PluginInfo, PluginInspectProblem, PluginInstallCancellation, PluginInstallProgress, PluginInstallRequestId,
@@ -33,16 +34,20 @@ export type * from './types.ts'
 export { classifyInstallFailure, type InstallFailureFacts } from './install-failure.ts'
 export { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
 
-/** The pnpm executable, the registries asked, and the limits for package diagnostics and registry lookups. */
+/** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
 export interface Config {
   /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
   pnpmCommand?: string
-  /** Maximum retained pnpm diagnostic bytes per operation. */
+  /** Maximum retained package-operation diagnostic bytes. */
   outputBytes?: number
   /** Maximum time to wait for another process's profile package operation. */
   lockWaitMs?: number
   /** Bound on one registry lookup an inspection runs, in milliseconds. */
   inspectTimeoutMs?: number
+  /** Maximum duration of the GitHub repository connection check before installation, in milliseconds. */
+  githubConnectionTimeoutMs?: number
+  /** Maximum time one captured package run may print nothing before the manager terminates it, in milliseconds. */
+  idleTimeoutMs?: number
   /** The registry lookups and installations ask first, as an http(s) URL; absent, the one pnpm's own configuration names. */
   registry?: string
   /**
@@ -172,8 +177,10 @@ export class PluginManager extends TypertRemoteService {
     outputBytes: z.number().step(1).min(1).default(16384),
     lockWaitMs: z.number().step(1).min(0).default(120000),
     inspectTimeoutMs: z.number().step(1).min(1000).default(20000),
+    githubConnectionTimeoutMs: z.number().step(1).min(1000).default(5000),
+    idleTimeoutMs: z.number().step(1).min(1000).default(600000),
     registry: z.string().pattern(REGISTRY_URL),
-    fallbackRegistries: z.array(z.string().pattern(REGISTRY_URL)).default(['https://registry.npmmirror.com/']),
+    fallbackRegistries: z.array(z.string().pattern(REGISTRY_URL)).default([NPMMIRROR_REGISTRY]),
   })
   /** Management bundles remain protected if their files become unreadable. */
   private readonly managementBundles = new Set<string>()
@@ -183,6 +190,8 @@ export class PluginManager extends TypertRemoteService {
   private readonly outputBytes: number
   private readonly lockWaitMs: number
   private readonly inspectTimeoutMs: number
+  private readonly githubConnectionTimeoutMs: number
+  private readonly idleTimeoutMs: number
   private readonly pnpmCommand: string
   private readonly configuredRegistries: Omit<PluginRegistries, 'resolved'>
   private readonly ownerContext: Context
@@ -199,6 +208,8 @@ export class PluginManager extends TypertRemoteService {
     this.outputBytes = (config as Required<Config>).outputBytes
     this.lockWaitMs = (config as Required<Config>).lockWaitMs
     this.inspectTimeoutMs = (config as Required<Config>).inspectTimeoutMs
+    this.githubConnectionTimeoutMs = (config as Required<Config>).githubConnectionTimeoutMs
+    this.idleTimeoutMs = (config as Required<Config>).idleTimeoutMs
     this.pnpmCommand = (config as Required<Config>).pnpmCommand
     this.configuredRegistries = {
       registry: config.registry === undefined ? null : normalizeRegistry(config.registry),
@@ -406,7 +417,9 @@ export class PluginManager extends TypertRemoteService {
   }
 
   /**
-   * Install a package using the same pnpm implementation as dsh plugin. A run
+   * Install a package using the same pnpm implementation as dsh plugin. GitHub
+   * repositories get a connection check bounded by githubConnectionTimeoutMs before pnpm starts;
+   * only network failures or timeouts stop installation, while pnpm owns authentication and transport fallback. A run
    * that fails, is cancelled, or adds a package without a bundle patch restores
    * `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.
    * @param spec One package spec, including local paths relative to the invocation directory.
@@ -418,7 +431,7 @@ export class PluginManager extends TypertRemoteService {
   installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult> {
     const requestId = options?.requestId
     const control: InstallControl = { abort: new AbortController(), phase: 'installing', result: Promise.resolve(null) }
-    const stopped = (): boolean => control.abort.signal.aborted
+    const stopped = (): boolean => control.abort.signal.aborted || this.abort.signal.aborted
     if (requestId !== undefined) this.installs.set(requestId, control)
     const announce = (phase: PluginInstallProgress['phase'], attempt?: PluginInstallProgress['attempt']): void => {
       if (requestId !== undefined) this.ownerContext.emit('plugin-manager/install-state', { requestId, phase, ...attempt === undefined ? {} : { attempt } })
@@ -432,12 +445,27 @@ export class PluginManager extends TypertRemoteService {
       }
       const files = await this.readRestoredFiles()
       const before = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
-      const plan = registryPlan(options?.registry, await this.registries())
       let name: string
       try {
-        // The last run is the result's; the registries asked stay listed whatever the outcome.
-        let run: PackageResult | undefined
         result.registries = []
+        const connection = checkGithubConnection(parsedForRegistry(spec), this.profile.dir, {
+          timeoutMs: this.githubConnectionTimeoutMs, outputBytes: this.outputBytes,
+          signal: AbortSignal.any([this.abort.signal, control.abort.signal]),
+          ...this.profile.packageManager?.env === undefined ? {} : { env: this.profile.packageManager.env },
+        })
+        this.packageOperations.add(connection)
+        let connectionFailure: PackageResult | undefined
+        try { connectionFailure = await connection }
+        finally { this.packageOperations.delete(connection) }
+        if (stopped()) throw new InstallCancelledError()
+        if (connectionFailure?.kind === 'network' || connectionFailure?.kind === 'timeout') {
+          result.packageResult = connectionFailure
+          result.failedAt = 'spec-host'
+          throw new Error(connectionFailure.output)
+        }
+        // The last run is the result's; the registries asked stay listed whatever the outcome.
+        const plan = registryPlan(options?.registry, await this.registries())
+        let run: PackageResult | undefined
         for (const [index, registry] of plan.entries()) {
           if (index > 0) await this.restoreFiles(files)
           // A stop that landed while the files went back, or before the first run, starts no run with a dead signal.
@@ -447,18 +475,24 @@ export class PluginManager extends TypertRemoteService {
           run = await this.runPnpm(['add', spec, ...registryArguments(registry)], control.abort.signal, requestId)
           result.packageResult = run
           if (stopped()) throw new InstallCancelledError()
-          /* v8 ignore next 2 -- runPnpm classifies every failed run, so kind is never absent here */
-          if (run.exitCode === 0 || run.kind === undefined) break
-          const failedAt = attributeFailure(run.kind, run.output, parsedForRegistry(spec))
+          // A run this manager terminated is not a success, even when pnpm trapped the signal and exited 0.
+          if (run.exitCode === 0 && run.timedOut !== true) break
+          /* v8 ignore next 2 -- runPnpm classifies every run it does not report as succeeded */
+          if (run.kind === undefined) break
           // What the last failed run could not reach; a later run that succeeds leaves nothing to say.
           delete result.failedAt
+          // A run this manager terminated got no answer from the registry at all, so no registry explains it.
+          if (run.timedOut === true) break
+          const failedAt = attributeFailure(run.kind, run.output, parsedForRegistry(spec))
           if (failedAt !== 'other') result.failedAt = failedAt
           if (failedAt !== 'registry' || index === plan.length - 1) break
         }
         /* v8 ignore next -- the plan is never empty, so a run always settled */
         if (run === undefined) throw new Error('no registry was asked')
-        if (run.exitCode === 0) delete result.failedAt
-        if (run.exitCode !== 0) {
+        // A terminated run reports no usable exit status, so neither its files nor its bundle are trusted.
+        const succeeded = run.exitCode === 0 && run.timedOut !== true
+        if (succeeded) delete result.failedAt
+        if (!succeeded) {
           // pnpm-workspace.yaml is not restored, so the names pnpm left undecided there can be offered for approval.
           try { result.pendingBuilds = await readPendingBuilds(this.profile.dir) }
           catch (error) {
@@ -509,7 +543,7 @@ export class PluginManager extends TypertRemoteService {
 
   /** Stop an installation this manager owns and wait until its files are back.
    * @param requestId The id the installation was started with.
-   * @returns `cancelled` once pnpm exited and the files are restored, `too-late` once the bundle is being
+   * @returns `cancelled` once the Git check or pnpm exited and the files are restored, `too-late` once the bundle is being
    * applied, `not-running` for any other id.
    */
   @Remote
@@ -550,7 +584,9 @@ export class PluginManager extends TypertRemoteService {
         }
       })
       result.packageResult = await this.runPnpm(['remove', name])
-      if (result.packageResult.exitCode !== 0) throw new Error(result.packageResult.output)
+      if (result.packageResult.exitCode !== 0 || result.packageResult.timedOut === true) {
+        throw new Error(result.packageResult.output)
+      }
     }, { stage: 'remove', target: name }, 'remove')
   }
 
@@ -597,7 +633,7 @@ export class PluginManager extends TypertRemoteService {
     const task = runProfilePnpm({ ...this.profile, profile: this.profile.name }, args, {
       execution: 'service', ...this.profile.packageManager ?? { command: this.pnpmCommand },
       signal: signal === undefined ? this.abort.signal : AbortSignal.any([this.abort.signal, signal]),
-      outputBytes: this.outputBytes, activateNewBundles: false,
+      outputBytes: this.outputBytes, activateNewBundles: false, idleTimeoutMs: this.idleTimeoutMs,
       onOutput: (text, stream) => {
         this.ownerContext.emit('plugin-manager/install-log', { ...identity, jobId, argv, cwd, stream, text })
       },
@@ -608,7 +644,12 @@ export class PluginManager extends TypertRemoteService {
       this.ownerContext.emit('plugin-manager/install-log', {
         ...identity, jobId, argv, cwd, stream: 'stdout', text: '', exitCode: signal?.aborted === true ? null : result.exitCode,
       })
-      return result.exitCode === 0 ? result : { ...result, kind: classifyInstallFailure({ log: result.output }) }
+      // A terminated run keeps its own kind even when pnpm trapped the signal and exited 0.
+      if (result.exitCode === 0 && result.timedOut !== true) return result
+      return {
+        ...result,
+        kind: classifyInstallFailure({ log: result.output, ...result.timedOut === true ? { timedOut: true } : {} }),
+      }
     } catch (error) {
       this.ownerContext.emit('plugin-manager/install-log', { ...identity, jobId, argv, cwd, stream: 'stderr', text: messageOf(error), exitCode: null })
       throw error

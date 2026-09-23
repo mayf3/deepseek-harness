@@ -1,6 +1,6 @@
 /** Compose Loader entry/patch structure and discovered plugin input schemas into one JSON Schema document. */
 
-import { createConfigProjector } from './projector.ts'
+import { createConfigProjector, LOADER_EXPRESSION_SCHEMA } from './projector.ts'
 import type {
   CollectedConfigEntry, ConfigJsonSchema, ConfigJsonSchemaObject, ConfigSchemaDiagnostic,
   ConfigSchemaDump, ConfigSchemaEntry, NativeConfigSchema,
@@ -48,10 +48,7 @@ export async function buildConfigSchemaDocument(
   const project = await createConfigProjector()
   const diagnostics = [...initialDiagnostics]
   const definitions: Record<string, ConfigJsonSchema> = {
-    loaderExpression: {
-      type: 'object', properties: { __jsExpr: { type: 'string' } }, required: ['__jsExpr'],
-      description: 'Inert representation of a YAML !!js scalar from the Cordis entry-list parser. Its result is evaluated and validated only at runtime. Extra marker-object fields are ignored by interpolation.',
-    },
+    loaderExpression: LOADER_EXPRESSION_SCHEMA,
     entryMetadata: { type: 'object', properties: metadata() },
     entryList: { type: 'array', items: ref('entry') },
     patchList: { type: 'array', items: ref('patch') },

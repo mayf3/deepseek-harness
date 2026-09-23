@@ -14,7 +14,7 @@ import {
   SCAFFOLD_DEFAULTS_BUNDLE, assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { ZH_BROWSER_LOCALE, connectFreshWorkspaceZh, saveFailureShot } from './support.ts'
+import { ZH_BROWSER_LOCALE, connectFreshWorkspaceZh, openSettings, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/plugin-manager', import.meta.url))
 const MANAGER_EXPECTED = join(SNAPSHOT_DIR, 'manager.expected.md')
@@ -64,7 +64,7 @@ describe('web e2e: plugin manager', () => {
     const source = language === 'en' ? '中文' : 'English'
     const target = language === 'en' ? 'English' : '中文'
     if (await page.getByRole('dialog', { name: settings }).count() === 0) {
-      await page.getByRole('button', { name: settings, exact: true }).click()
+      await openSettings(page, language === 'en' ? 'zh' : 'en')
     }
     await page.getByRole('dialog', { name: settings }).getByRole('button', { name: source }).click()
     await page.getByRole('menuitem', { name: target }).click()
@@ -128,7 +128,7 @@ describe('web e2e: plugin manager', () => {
     expect(await panel.locator('[data-plugin-group="bundles"] [data-plugin-package]').count()).toBe(2)
     expect(await panel.locator('[data-plugin-group="official"] [data-plugin-package]').count()).toBe(2)
     expect(await panel.locator('[data-plugin-group="official"] [data-plugin-item]').count()).toBe(4)
-    expect(await panel.getByText('Beta', { exact: true }).count()).toBe(2)
+    expect(await panel.getByText('实验性', { exact: true }).count()).toBe(2)
     expect(await panel.getByRole('switch', { name: '启用 语音输入', exact: true }).getAttribute('aria-checked')).toBe('false')
     // A bundle that is off still shows the rows its patch declares, without switches.
     await panel.getByRole('button', { name: '查看 @fixture/bundle' }).click()
@@ -278,9 +278,12 @@ describe('web e2e: plugin manager', () => {
         await expect.poll(() => teamRows().filter(entry => entry.fiber?.state === FiberState.ACTIVE).length, { timeout: 20_000 }).toBe(3)
         await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
         await action.waitFor({ timeout: 20_000 })
-        await action.getByRole('button', { name: /Agent Team/iu }).click()
-        const teamPanel = teamPage.getByRole('dialog', { name: 'Agent Team', exact: true })
-        await teamPanel.getByText('还没有共享任务').waitFor()
+        await action.getByRole('button', { name: '智能体团队', exact: true }).click()
+        const teamPanel = teamPage.getByRole('dialog', { name: '智能体团队', exact: true })
+        await teamPanel.getByText('Team 暂不可用', { exact: true }).waitFor()
+        await teamPage.reload({ waitUntil: 'load' })
+        await action.getByRole('button', { name: '智能体团队', exact: true }).click()
+        await teamPanel.getByText('暂无共享任务，可以通过对话创建').waitFor()
         await teamPanel.getByText('lead', { exact: true }).waitFor()
         const manifest = JSON.parse(await homeFile('profiles', 'scaffold', 'package.json')) as {
           dsh: { profile: { bundles: string[] } }

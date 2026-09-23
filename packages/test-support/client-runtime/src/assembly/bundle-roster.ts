@@ -13,7 +13,7 @@
  * repository.
  * @module @deepseek-ai/dsh-client-test-runtime/src/assembly/bundle-roster
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -130,12 +130,15 @@ function readManifest(path: string): PackageManifest {
   return JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
 }
 
-/** Locate `<name>/package.json` on the resolution paths of any anchor, without requiring a `./package.json` export. */
+/** Resolve package manifests to real paths so linked bundles use their own dependency directories. */
 function locateManifest(anchors: readonly string[], name: string): string | undefined {
-  for (const anchor of anchors) {
-    for (const searchPath of createRequire(anchor).resolve.paths(name) ?? []) {
-      const candidate = join(searchPath, name, 'package.json')
-      if (existsSync(candidate)) return candidate
+  const paths = anchors.map(anchor => createRequire(anchor).resolve.paths(name) ?? [])
+  for (let depth = 0; depth < Math.max(...paths.map(search => search.length)); depth++) {
+    for (const search of paths) {
+      const directory = search[depth]
+      if (directory === undefined) continue
+      const candidate = join(directory, name, 'package.json')
+      if (existsSync(candidate)) return realpathSync(candidate)
     }
   }
   return undefined
