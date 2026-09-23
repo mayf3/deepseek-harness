@@ -6,9 +6,10 @@
  * `highlightLines`/`highlightToHtml` unchanged; a filename outside the table, or
  * one naming a language the highlighter does not register, renders as plain text.
  * The read tool persists a short `lang` id, so {@link readLangHintForPath}
- * projects short ids over this table: a suffix whose value a recorded session
- * already holds keeps it byte-identical, and every other suffix persists the
- * canonical language's short name rather than its grammar id.
+ * projects short ids over this table: a suffix keeps the value a recorded session
+ * already holds, and every other suffix persists the language's short name —
+ * which for `kotlin`, `swift`, `yaml`, `json`, and similar equals that
+ * language's grammar id.
  * @module @deepseek-ai/dsh-util-code-language
  */
 
@@ -23,7 +24,8 @@
  * stay unlisted. Certificate and lock extensions (`pem`, `crt`, `key`, `cer`,
  * `lock`) stay unlisted, and `csv` is deliberately absent: the Spreadsheet
  * preview declares it and must keep it, so listing it here would let the earlier
- * Code registration take the suffix.
+ * Code registration take the suffix. `makefile` covers only the suffix
+ * (`foo.makefile`); the extensionless `Makefile` name stays unlisted.
  */
 const LANGUAGE_EXTENSIONS: Readonly<Record<string, readonly string[]>> = {
   typescript: ['ts', 'tsx', 'mts', 'cts'],
@@ -85,7 +87,7 @@ const LANGUAGE_EXTENSIONS: Readonly<Record<string, readonly string[]>> = {
   svelte: ['svelte'],
   make: ['makefile', 'mk'],
   cmake: ['cmake'],
-  groovy: ['gradle'],
+  groovy: ['gradle', 'groovy'],
 }
 
 /**
@@ -101,26 +103,20 @@ const LANGUAGES = new Map(Object.entries(LANGUAGE_EXTENSIONS)
 export const CODE_HIGHLIGHT_EXTENSIONS: readonly string[] = [...LANGUAGES.keys()]
 
 /**
- * The short `lang` values recorded sessions already hold, keyed by the suffix
- * that produced them. Keys are shared-table extensions, so the recognized set
- * derives from {@link LANGUAGE_EXTENSIONS}; each value is the exact string a
- * recorded session persists and must not change. An extension absent here but
- * present in the shared table falls back to {@link SHORT_BY_LANGUAGE}, so every
- * persisted hint is a short id.
+ * Persisted `lang` values a language-level short id cannot express, keyed by the
+ * suffix that produced them. Everything else falls back to
+ * {@link SHORT_BY_LANGUAGE}, so only a suffix whose own name is the better label
+ * appears here. Each value is the exact string recorded sessions already hold
+ * and must not change; the byte-level expectation for every suffix lives in the
+ * read consumer's test.
  */
-const READ_LANG_BY_EXTENSION = new Map<string, string>(Object.entries({
-  ts: 'ts', tsx: 'tsx', mts: 'ts', cts: 'ts',
-  js: 'js', jsx: 'jsx', mjs: 'js', cjs: 'js',
-  json: 'json', jsonc: 'json',
-  py: 'py', rb: 'rb', go: 'go', rs: 'rs', java: 'java',
-  c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', hpp: 'cpp', cxx: 'cpp',
-  cs: 'cs', kt: 'kotlin', swift: 'swift', php: 'php',
-  sh: 'sh', bash: 'sh', zsh: 'sh',
-  yaml: 'yaml', yml: 'yaml', toml: 'toml', ini: 'ini',
-  md: 'md', markdown: 'md', mdx: 'mdx',
-  html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
-  sql: 'sql', xml: 'xml', lua: 'lua',
-}))
+const READ_LANG_BY_EXTENSION = new Map<string, string>([
+  // The two JSX flavors keep their own suffix; every other persisted value is
+  // the language's short name, or an extension naming itself better than its
+  // language does (`tf` rather than `hcl`, `gradle` rather than `groovy`).
+  ['tsx', 'tsx'], ['jsx', 'jsx'],
+  ['tf', 'tf'], ['tfvars', 'tfvars'], ['gradle', 'gradle'],
+])
 
 /**
  * The short `lang` id the read card persists, keyed by canonical language id.
@@ -185,13 +181,13 @@ const SHORT_BY_LANGUAGE: Readonly<Record<string, string>> = {
   'system-verilog': 'sv',
   graphql: 'graphql',
   proto: 'proto',
-  hcl: 'tf',
+  hcl: 'hcl',
   nix: 'nix',
   vue: 'vue',
   svelte: 'svelte',
   make: 'make',
   cmake: 'cmake',
-  groovy: 'gradle',
+  groovy: 'groovy',
 }
 
 function extensionForPath(path: string): string | undefined {
@@ -218,11 +214,12 @@ export function languageForPath(path: string): string | undefined {
 
 /**
  * Derive the Host read card's persisted `lang` hint from a read path's
- * extension. The hint is always a short id: a suffix a recorded session already
- * holds keeps its persisted value (`ts`, `md`, `cpp`, …), while a suffix with no
- * recorded value (`.ps1`, `.env`, `.tf`, …) uses its language's short name
- * (`ps1`, `env`, `tf`, …) rather than the canonical grammar id. An unrecognized
- * suffix stays `undefined`, so the card renders as plain text.
+ * extension. The value is the language's short name; for some languages that name
+ * is also the grammar id (`kotlin`, `swift`, `java`, `yaml`, `json`), and
+ * {@link READ_LANG_BY_EXTENSION} overrides it where the suffix names itself
+ * better (`tsx`, `tf`, `gradle`). A suffix a recorded session already holds keeps
+ * its persisted value. An unrecognized suffix stays `undefined`, so the card
+ * renders as plain text.
  * @param path - the model-facing path the read reported.
  * @returns the persisted language hint, or `undefined` when the extension maps to none.
  */

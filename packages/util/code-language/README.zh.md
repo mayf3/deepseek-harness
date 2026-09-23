@@ -24,7 +24,7 @@ kind: "package-library"
 
 表位于 [`src/index.ts`](src/index.ts)。每个键是规范化语言 id——即 Client 高亮器解析的 grammar id；每个值是选中它的、不含点的小写扩展名。`languageForPath(path)` 取路径最后一段的最后一个点之后的文本、转小写后在 `Map` 中查找；使用 `Map` 可避免 `foo.constructor` 这类文件名解析到 `Object.prototype` 成员。未列入表的 dotfile（`.gitignore`）、无扩展名、结尾点、未知后缀都返回 `undefined`，各消费方一律按纯文本渲染；前导点仍算分隔符，因此 `.env` 解析为 `dotenv`。`/` 与 `\` 都算路径分隔符，因此 Windows 路径与 POSIX 路径解析一致。
 
-该集合按常见源码、配置、脚本、数据与标记扩展名精选，并非完整语言登记表。没有对应 grammar 的扩展名映射到最接近的 grammar（`properties` 映射到 `ini`，该 grammar 自带 `properties` alias）；证书与锁文件扩展名（`pem`、`crt`、`key`、`cer`、`lock`）保持不表，`csv` 同样保持不表：Spreadsheet 预览声明该后缀且必须保留，因此更早注册的 Code 不能抢占它。`readLangHintForPath` 在同一张表上做投影：已录制的会话已经持有该后缀的值时返回该持久化短 id，其余后缀返回该语言的短名（`powershell`→`ps1`、`hcl`→`tf`），无法识别的后缀返回 `undefined`——持久化字段因此只有一种风格，即短 id，绝不出现规范 grammar id。消费方若希望 Client 高亮器真正分词，仍取决于该 grammar 已在其中注册——没有加载 grammar 的 id 会按纯文本渲染，而不是报错。
+该集合按常见源码、配置、脚本、数据与标记扩展名精选，并非完整语言登记表。没有对应 grammar 的扩展名映射到最接近的 grammar（`properties` 映射到 `ini`，该 grammar 自带 `properties` alias）；证书与锁文件扩展名（`pem`、`crt`、`key`、`cer`、`lock`）保持不表，`csv` 同样保持不表：Spreadsheet 预览声明该后缀且必须保留，因此更早注册的 Code 不能抢占它。`readLangHintForPath` 在同一张表上做投影：已录制的会话已经持有该后缀的值时返回该持久化短 id，其余后缀返回该语言的短名（`powershell`→`ps1`），无法识别的后缀返回 `undefined`——持久化字段因此只有一种风格，即短名；对 `kotlin`、`swift`、`yaml`、`json` 等语言，短名与 grammar id 相同；而 `tsx`、`tf`、`tfvars`、`gradle` 这些后缀本身的名字更准确，保留其自身名字。消费方若希望 Client 高亮器真正分词，仍取决于该 grammar 已在其中注册——没有加载 grammar 的 id 会按纯文本渲染，而不是报错。
 
 -----
 

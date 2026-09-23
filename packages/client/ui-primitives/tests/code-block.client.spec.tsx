@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { CodeBlock as LocalizedCodeBlock } from '../src/markdown/CodeBlock.tsx'
+import { CODE_HIGHLIGHT_EXTENSIONS, languageForPath } from '../src/code-highlighting.ts'
+import { readLangHintForPath } from '@deepseek-ai/dsh-util-code-language'
 import { highlightToHtml, subscribeGrammarLoaded } from '../src/markdown/highlight.ts'
 import { markdownLabels } from './labels.client.ts'
 
@@ -61,6 +63,32 @@ describe('highlightToHtml', () => {
       stop()
     }
     // 57 dynamic grammars (some with large embedded sub-grammars) exceed the default.
+  }, 120_000)
+
+  it('highlights both ids every suffix reaches through the shipped surfaces', async () => {
+    // LAZY_ALIASES above is a hand-synced list, so it cannot catch an alias whose
+    // target is in neither LANGS nor LAZY_GRAMMARS: ensureGrammar treats that as a
+    // registered boot grammar, supportsHighlighting still reports true, and the
+    // render then throws. Walking the shared table's two ids per suffix covers
+    // every hint the Code preview and the read card can actually produce.
+    const hints = new Set<string>()
+    for (const extension of CODE_HIGHLIGHT_EXTENSIONS) {
+      const path = `file.${extension}`
+      for (const hint of [languageForPath(path), readLangHintForPath(path)]) if (hint !== undefined) hints.add(hint)
+    }
+    expect(hints.size).toBeGreaterThan(50)
+    const allLoaded = (): boolean => [...hints].every(hint => highlightToHtml('x', hint) !== undefined)
+    const registered = Promise.withResolvers<undefined>()
+    const stop = subscribeGrammarLoaded(() => { if (allLoaded()) registered.resolve(undefined) })
+    try {
+      // Touching each hint starts its dynamic import. A hint already loaded by an
+      // earlier test fires no further notification, so only await when needed.
+      for (const hint of hints) highlightToHtml('x', hint)
+      if (!allLoaded()) await registered.promise
+      for (const hint of hints) expect(highlightToHtml('x', hint), hint).toContain('shiki')
+    } finally {
+      stop()
+    }
   }, 120_000)
 })
 

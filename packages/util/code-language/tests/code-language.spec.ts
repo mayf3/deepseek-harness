@@ -24,7 +24,7 @@ describe('languageForPath', () => {
     ['Form.vb', 'vb'], ['script.pl', 'perl'], ['Module.pm', 'perl'],
     ['top.v', 'verilog'], ['top.sv', 'system-verilog'], ['defs.svh', 'system-verilog'],
     ['schema.graphql', 'graphql'], ['query.gql', 'graphql'], ['message.proto', 'proto'],
-    ['main.tf', 'hcl'], ['terraform.tfvars', 'hcl'], ['stack.hcl', 'hcl'],
+    ['main.tf', 'hcl'], ['terraform.tfvars', 'hcl'], ['stack.hcl', 'hcl'], ['build.groovy', 'groovy'],
     ['flake.nix', 'nix'], ['App.vue', 'vue'], ['App.svelte', 'svelte'],
     ['Makefile', undefined], ['build.mk', 'make'], ['CMakeLists.cmake', 'cmake'],
     ['build.gradle', 'groovy'],
@@ -117,6 +117,13 @@ describe('readLangHintForPath', () => {
     expect(readLangHintForPath('paper.tex')).toBe('tex')
     expect(readLangHintForPath('server.log')).toBe('log')
     expect(readLangHintForPath('message.proto')).toBe('proto')
+    // `.hcl`/`.tf`/`.tfvars` and `.gradle`/`.groovy` keep the label their own
+    // suffix names, so a Nomad `.hcl` file is never labelled `tf`.
+    expect(readLangHintForPath('nomad.hcl')).toBe('hcl')
+    expect(readLangHintForPath('main.tf')).toBe('tf')
+    expect(readLangHintForPath('terraform.tfvars')).toBe('tfvars')
+    expect(readLangHintForPath('build.gradle')).toBe('gradle')
+    expect(readLangHintForPath('build.groovy')).toBe('groovy')
   })
 
   // The short id each canonical language persists. Transcribed rather than
@@ -132,18 +139,17 @@ describe('readLangHintForPath', () => {
     xml: 'xml', lua: 'lua', bat: 'bat', powershell: 'ps1', r: 'r', julia: 'jl',
     dart: 'dart', scala: 'scala', clojure: 'clj', erlang: 'erl', elixir: 'ex',
     haskell: 'hs', fsharp: 'fs', vb: 'vb', perl: 'pl', verilog: 'v',
-    'system-verilog': 'sv', graphql: 'graphql', proto: 'proto', hcl: 'tf', nix: 'nix',
-    vue: 'vue', svelte: 'svelte', make: 'make', cmake: 'cmake', groovy: 'gradle',
+    'system-verilog': 'sv', graphql: 'graphql', proto: 'proto', hcl: 'hcl', nix: 'nix',
+    vue: 'vue', svelte: 'svelte', make: 'make', cmake: 'cmake', groovy: 'groovy',
   }
 
-  it('persists a short id for every suffix, never a canonical grammar id', () => {
-    // The persisted `lang` has one style: a short id. Every suffix must resolve
-    // to one of these short names, except the persisted `tsx`/`jsx` values,
-    // which the language table cannot express because typescript and javascript
-    // already shorten to `ts` and `js`. A result outside both sets is a
-    // canonical grammar id leaking back in (`powershell`, `dotenv`, `latex`,
-    // `hcl`).
-    const allowed = new Set([...Object.values(SHORT_BY_LANGUAGE), 'tsx', 'jsx'])
+  it('persists a short id for every suffix', () => {
+    // The persisted `lang` is the language's short name, plus the suffixes whose
+    // own name is the better label. These languages' short names happen to equal
+    // their grammar ids (`kotlin`, `swift`, `yaml`), so a result outside both
+    // sets means a canonical id leaked back in for a language that has a
+    // distinct short name (`powershell`, `dotenv`, `latex`, `hcl`).
+    const allowed = new Set([...Object.values(SHORT_BY_LANGUAGE), 'tsx', 'jsx', 'tf', 'tfvars', 'gradle'])
     for (const extension of CODE_HIGHLIGHT_EXTENSIONS) {
       const hint = readLangHintForPath(`file.${extension}`)
       expect(hint, extension).toBeDefined()

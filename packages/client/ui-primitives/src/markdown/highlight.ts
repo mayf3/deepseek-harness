@@ -36,8 +36,8 @@ type LangModule = { default: typeof langTs }
  * resolve to the TypeScript grammar rather than a separate one: it tokenizes
  * plain TS/JS exactly, and JSX/TSX approximately (shiki's TS grammar is not the
  * dedicated TSX grammar, so JSX elements tokenize imperfectly) — an accepted
- * trade to keep the boot set to one JS-family grammar. The read card's wider
- * set loads lazily through {@link LAZY_GRAMMARS}.
+ * trade to keep the boot set to one JS-family grammar. Every other language in
+ * the shared extension table loads lazily through {@link LAZY_GRAMMARS}.
  */
 const LANGS = [langTs, langBash, langJson]
 
@@ -115,9 +115,10 @@ const LAZY_GRAMMARS = new Map<string, () => Promise<LangModule>>([
  * plain. A Map, not an object: fence info strings are assistant-authored, so
  * a label like `constructor` or `__proto__` must miss instead of resolving an
  * inherited property and crashing the renderer inside shiki. Keys cover both
- * the markdown-fence aliases `CodeBlock` uses and the file-extension language
- * ids `@deepseek-ai/dsh-util-code-language` resolves, so both callers resolve the
- * same grammars. The JS family maps to the TypeScript grammar (see {@link LANGS} for
+ * the markdown-fence aliases `CodeBlock` uses, the file-extension language ids
+ * `@deepseek-ai/dsh-util-code-language` resolves, and the short ids
+ * `readLangHintForPath` persists, so every caller resolves the same grammars.
+ * A new short name in the shared table must be aliased here too. The JS family maps to the TypeScript grammar (see {@link LANGS} for
  * the JSX/TSX approximation). A value not in {@link LANGS} names a
  * {@link LAZY_GRAMMARS} entry loaded on first use.
  */
@@ -209,6 +210,9 @@ const LANG_ALIASES = new Map<string, string>([
   ['pl', 'perl'],
   ['pm', 'perl'],
   ['verilog', 'verilog'],
+  // Shiki's own `v` grammar is the V language; the fence label and the `.v`
+  // extension both name Verilog here, so a future V registration needs a
+  // different alias.
   ['v', 'verilog'],
   ['system-verilog', 'system-verilog'],
   ['systemverilog', 'system-verilog'],
@@ -379,7 +383,7 @@ const warmupTimer = setTimeout(() => { highlighter() }, 0)
  * @returns the highlighted HTML, or `undefined` for unknown or not-yet-loaded languages.
  */
 export function highlightToHtml(code: string, lang: string | undefined): string | undefined {
-  const resolved = lang === undefined ? undefined : LANG_ALIASES.get(lang.toLowerCase())
+  const resolved = grammarForHint(lang)
   if (resolved === undefined) return undefined
   if (!ensureGrammar(resolved)) return undefined
   return highlighter().codeToHtml(code, { lang: resolved, theme: 'css-variables' })
@@ -505,7 +509,7 @@ export class StreamingHighlightSession {
     this.lastCode = code
     this.lastLang = lang
     this.lastResult = undefined
-    const resolved = lang === undefined ? undefined : LANG_ALIASES.get(lang.toLowerCase())
+    const resolved = grammarForHint(lang)
     if (resolved === undefined || !ensureGrammar(resolved)) {
       this.reset(undefined)
       return undefined
@@ -579,7 +583,7 @@ export interface StreamingHighlightFrame {
  * @returns one entry per source line (each an array of runs), or `undefined` for unknown or not-yet-loaded languages.
  */
 export function highlightLines(code: string, lang: string | undefined): HighlightSpan[][] | undefined {
-  const resolved = lang === undefined ? undefined : LANG_ALIASES.get(lang.toLowerCase())
+  const resolved = grammarForHint(lang)
   if (resolved === undefined) return undefined
   if (!ensureGrammar(resolved)) return undefined
   const { tokens } = highlighter().codeToTokens(code, { lang: resolved, theme: 'css-variables' })
