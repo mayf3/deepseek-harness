@@ -1,17 +1,20 @@
 /**
- * Lifecycle of bonus notices: one read at a time, one displayed notice at a
- * time, and acknowledgement of a notice only after its card reports a
- * presented frame. Reads happen when the account becomes active and when the
- * user asks for a refresh; the controller never polls.
+ * Lifecycle of bonus notices: one displayed notice at a time, one read result in
+ * force at a time, and one acknowledgement per displayed card. Reads happen when
+ * the account becomes active and when the user asks for a refresh, never on a
+ * timer; the server owns which bonus is unnotified and what its copy says.
  *
- * The server is the sole authority for which bonus is unnotified and owns the
- * copy, so this controller never synthesizes a notice from wallet balances and
- * never acknowledges an order the user did not see. Reads and acknowledgements
- * carry the UI locale so the server can localize its copy.
+ * An order is acknowledged once its card reports a presented frame: the card has
+ * a position, the document is visible, and it painted one frame. The card measures
+ * no cover, so a card painted under the open Settings overlay reports like any
+ * other, and closing the card counts as a display too.
  *
- * Pending acknowledgements live for the signed-in lifecycle only. Signing out,
- * switching accounts, or unloading the plugin discards them, so a later sign-in
- * shows whatever the server still offers without restoring an earlier retry.
+ * One lifecycle covers one signed-in session. A repeated signed-in frame — the
+ * second commit update of one sign-in, or a reconnected stream's replay — keeps
+ * the card and its acknowledgement retries and reads again, so a credential
+ * replaced in place is still named by a fresh read. Signing out, unloading, or a
+ * read naming another account clears all of it; a later sign-in shows whatever
+ * the server still offers.
  * @module @deepseek-ai/dsh-client-ui-settings-account/src/client/bonus-notices
  */
 import type {
@@ -54,10 +57,9 @@ export interface BonusNoticeControllerOptions extends BonusNoticeTiming {
 /** Commands the account plugin issues to the bonus notice lifecycle. */
 export interface BonusNoticeController {
   /**
-   * Start the lifecycle for one signed-in account and read once, discarding any
-   * previous account's notice and pending acknowledgements. The plugin calls this
-   * for every signed-in account frame, so an account switch never leaves the
-   * previous account's card or retries on screen.
+   * Start the signed-in lifecycle and read. Re-entry during a live lifecycle keeps
+   * the card and its acknowledgement retries and reads again, so a credential
+   * replaced in place is named by that frame's own read.
    */
   begin(): void
   /** Stop the lifecycle, drop the displayed notice, and discard pending acknowledgement retries. */
@@ -100,7 +102,8 @@ export function createBonusNoticeController(options: BonusNoticeControllerOption
   let scope: NoticeScope | undefined
   /** Notice currently published to the sidebar, including the expiration checked at display time. */
   let current: BonusNotice | undefined
-  let readToken = 0
+  /** Newest read; an older read still in flight has its result dropped once a newer one starts. */
+  let readGeneration = 0
   let ackTimer: ReturnType<typeof setTimeout> | undefined
   let ackInFlight = false
   let ackDelay = options.ackRetryDelayMs
@@ -129,8 +132,9 @@ export function createBonusNoticeController(options: BonusNoticeControllerOption
   const startAcks = (): void => { if (scope !== undefined && scope.pending.length > 0) scheduleAck(0) }
 
   /**
-   * Apply one read result. A notice already on screen stays until the user
-   * closes it, and a re-offered order displays again once its card is gone.
+   * Apply one read result. A newly offered order replaces the on-screen card;
+   * an offer equal to the on-screen card refreshes its copy in place, and an
+   * empty batch leaves a card the user has already seen alone.
    */
   const apply = (scopeAtRead: NoticeScope, batch: AccountBonusBatch): void => {
     if (scopeAtRead.accountId !== batch.accountId) {
@@ -157,19 +161,26 @@ export function createBonusNoticeController(options: BonusNoticeControllerOption
     setCurrent({ orderId: candidate.orderId, message: candidate.message, expiresAt: candidate.expiresAt })
   }
 
-  /** Read once; a result that arrives after the lifecycle or account changed is dropped. */
-  async function runRead(): Promise<void> {
-    const scopeAtRead = scope
-    if (scopeAtRead === undefined) return
-    const token = ++readToken
-    let batch: AccountBonusBatch | null
-    try { batch = await options.read() }
-    catch {
-      // A failed read reports nothing to the user; the next explicit read retries it.
-      batch = null
-    }
-    if (scope !== scopeAtRead || token !== readToken) return
-    if (batch !== null) apply(scopeAtRead, batch)
+  /**
+   * Read once for one live lifecycle. A newer read supersedes one in flight: the
+   * older result is dropped instead of applied, so only the newest read can report
+   * an account change.
+   * @param scopeAtRead - lifecycle this read belongs to.
+   * @returns after this read settles.
+   */
+  function runRead(scopeAtRead: NoticeScope): Promise<void> {
+    const generation = ++readGeneration
+    return (async () => {
+      let batch: AccountBonusBatch | null
+      try { batch = await options.read() }
+      catch {
+        // A failed read reports nothing to the user and leaves the lifecycle as
+        // it stands, so a pending acknowledgement keeps retrying.
+        batch = null
+      }
+      if (scope !== scopeAtRead || generation !== readGeneration) return
+      if (batch !== null) apply(scopeAtRead, batch)
+    })()
   }
 
   /**
@@ -184,6 +195,7 @@ export function createBonusNoticeController(options: BonusNoticeControllerOption
     if (scopeAtCall === undefined || ackInFlight) return
     const accountId = scopeAtCall.accountId
     const orderId = scopeAtCall.pending[0]
+    /* v8 ignore next -- an acknowledgement runs only while a read named the account and left a pending order */
     if (accountId === undefined || orderId === undefined) return
     ackInFlight = true
     /** @returns whether this call still owns the lifecycle and account it started for. */
@@ -203,6 +215,7 @@ export function createBonusNoticeController(options: BonusNoticeControllerOption
     ackInFlight = false
     // Success needs no record and a refusal has no retry, so either way this order
     // is settled for this lifecycle.
+    /* v8 ignore next -- the call owns the scope, and this order is its head until this shift */
     if (scopeAtCall.pending[0] === orderId) scopeAtCall.pending.shift()
     ackDelay = options.ackRetryDelayMs
     if (acknowledged && scopeAtCall.pending.length > 0) scheduleAck(0)
@@ -221,7 +234,7 @@ export function createBonusNoticeController(options: BonusNoticeControllerOption
 
   const endLifecycle = (): void => {
     if (scope === undefined) return
-    readToken++
+    // The lifecycle a read started for is gone, so its scope check drops the result.
     resetAcks()
     scope = undefined
     reported.clear()
@@ -230,15 +243,17 @@ export function createBonusNoticeController(options: BonusNoticeControllerOption
 
   return {
     begin() {
-      endLifecycle()
-      scope = { pending: [] }
-      void runRead()
+      // Re-entry is the same signed-in session: the card and its acknowledgement
+      // retries stay, and this frame's own read supersedes any read still in flight,
+      // so a credential swapped in place is never left unnamed.
+      scope ??= { pending: [] }
+      void runRead(scope)
     },
     end: endLifecycle,
     refresh(): Promise<void> {
       if (scope === undefined) return Promise.resolve()
       startAcks()
-      return runRead()
+      return runRead(scope)
     },
     shown(orderId) {
       if (current?.orderId !== orderId) return

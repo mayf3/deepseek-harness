@@ -35,7 +35,7 @@ function operations(c: TestClient): AccountSectionInjected {
   return injected as AccountSectionInjected
 }
 beforeEach(() => { vi.stubEnv('DSH_CLIENT_VERSION', '0.0.0-test') })
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); localStorage.clear() })
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks() })
 
 it('keeps account UI and account RPC inactive in a plain browser, including after reload', async ({ start, mock }) => {
   const c = await start()
@@ -67,7 +67,7 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
   probe()
   offTheme()
   expect(theme.getTheme().themes.map(candidate => candidate.id)).toEqual(['light', 'dark'])
-  await actions.refresh()
+  await actions.refreshAccount()
   expect(c.mock.remote.account.getProfile).not.toHaveBeenCalled()
   const listener = vi.fn()
   const off = actions.hooks.account.subscribe(listener)
@@ -107,12 +107,16 @@ it('coalesces refreshes, publishes independent failures, and rejects stale respo
   c.mock.remote.account.getBalance.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'offline', {}) })
   c.mock.streams.push('account/watch', stored)
   await vi.waitFor(() => { expect(c.mock.remote.account.getProfile).toHaveBeenCalledOnce() })
-  const a = actions.refresh()
-  expect(actions.refresh()).toBe(a)
+  // Two concurrent account refreshes share the one in-flight request, so the
+  // second call adds no second read of the profile or the balance.
+  const a = actions.refreshAccount()
+  const concurrently = actions.refreshAccount()
+  expect(c.mock.remote.account.getProfile).toHaveBeenCalledOnce()
+  expect(c.mock.remote.account.getBalance).toHaveBeenCalledOnce()
   c.mock.streams.push('account/watch', view)
   await vi.waitFor(() => { expect(actions.hooks.account.getSnapshot().view).toEqual(view) })
   pending.resolve(ok(profile))
-  await a
+  await Promise.all([a, concurrently])
   expect(actions.hooks.account.getSnapshot().details).toBeUndefined()
   c.mock.remote.account.getProfile.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'offline', {}) })
   c.mock.remote.account.getBalance.mockRejectedValueOnce(new Error('offline'))
@@ -120,7 +124,7 @@ it('coalesces refreshes, publishes independent failures, and rejects stale respo
   await vi.waitFor(() => { expect(actions.hooks.account.getSnapshot().details).toEqual({ profile: { status: 'failed' }, balance: { status: 'failed' } }) })
   const pendingAgain = Promise.withResolvers<ReturnType<typeof ok<AccountDetails['profile'] | null>>>()
   c.mock.remote.account.getProfile.mockReturnValueOnce(pendingAgain.promise)
-  const request = actions.refresh()
+  const request = actions.refreshAccount()
   await c.unload(SELF)
   pendingAgain.resolve(ok(profile))
   await request
@@ -144,29 +148,10 @@ it('uses the Desktop login carrier and exposes operation errors', async ({ start
   mock.remote.account.cancelSignIn.mockResolvedValueOnce(ok(view)).mockResolvedValueOnce(failure)
   await actions.cancel(id)
   await expect(actions.cancel(id)).rejects.toThrow('account cancel failed')
-  const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   mock.remote.account.signOut.mockResolvedValueOnce(ok(view)).mockResolvedValueOnce(failure)
   await actions.signOut()
-  // The launcher renders nothing, so the typed failure and its code must reach the console.
+  // The launcher renders nothing, so the refused Remote call reaches the caller unchanged.
   await expect(actions.signOut()).rejects.toBe(failure.error)
-  expect(logged).toHaveBeenLastCalledWith('[ui-settings-account] sign-out failed',
-    JSON.stringify({ phase: 'result', errorCode: 'gateway/internal', errorName: 'RemoteError' }))
-}, 60_000)
-
-it('classifies a sign-out that throws before the Remote call and logs no thrown message', async ({ start }) => {
-  vi.stubGlobal('dshDesktop', {})
-  const c = await start()
-  const actions = operations(c)
-  const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-  // A build without an embedded client version refuses before any Remote call is prepared, which is
-  // the only pre-result throw the test carrier can produce: the whole-client namespace proxy folds a
-  // carrier rejection into the refused-result branch before the plugin sees it.
-  vi.stubEnv('DSH_CLIENT_VERSION', '')
-  await expect(actions.signOut()).rejects.toThrow('carries no DSH_CLIENT_VERSION')
-  expect(logged).toHaveBeenLastCalledWith('[ui-settings-account] sign-out failed',
-    JSON.stringify({ phase: 'prepare-client', errorCode: 'unknown', errorName: 'Error' }))
-  // Only the classification fields may ride the log; the thrown text can quote what it failed on.
-  expect(JSON.stringify(logged.mock.calls)).not.toContain('DSH_CLIENT_VERSION')
 }, 60_000)
 
 it('uses the Desktop stream origin and exposes the native platform bridge', async ({ start, mock }) => {
@@ -204,6 +189,30 @@ it('reads the unnotified bonus in the active locale and acknowledges only after 
   })
   actions.bonusNoticeDismissed(orderId as AccountBonusOrderId)
   expect(actions.hooks.account.getSnapshot().notice).toBeUndefined()
+}, 60_000)
+
+it('keeps the notice and its acknowledgement retry across repeated signed-in frames', async ({ start }) => {
+  vi.stubGlobal('dshDesktop', {})
+  vi.stubGlobal(CONTACT_CONFIG_GLOBAL, { bonusAckRetryDelayMs: 1, bonusAckRetryMaxDelayMs: 4 })
+  const c = await start()
+  const actions = operations(c)
+  const orderId = '4c1b0000-0000-4000-8000-000000000000'
+  c.mock.remote.account.getUnnotifiedBonuses.mockResolvedValue(ok(bonus(orderId)))
+  c.mock.remote.account.ackBonusNotified.mockResolvedValue({ ok: false, error: new RemoteError('gateway/internal', 'offline', {}) })
+  c.mock.streams.push('account/watch', stored)
+  await vi.waitFor(() => { expect(actions.hooks.account.getSnapshot().notice).toMatchObject({ orderId }) })
+  actions.bonusNoticeShown(orderId as AccountBonusOrderId)
+  await vi.waitFor(() => { expect(c.mock.remote.account.ackBonusNotified.mock.calls.length).toBeGreaterThan(0) })
+  // One sign-in commits the credential and then updates the attempt; a reconnected
+  // stream replays the same signed-in state. None of them is a new account.
+  c.mock.streams.push('account/watch', stored)
+  c.mock.streams.push('account/watch', stored)
+  await vi.waitFor(() => { expect(actions.hooks.account.getSnapshot().view).toEqual(stored) })
+  // The displayed card stays, no second read replaces it, and the failed
+  // acknowledgement keeps backing off instead of stopping until sign-out.
+  expect(actions.hooks.account.getSnapshot().notice).toMatchObject({ orderId })
+  expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenCalledOnce()
+  await vi.waitFor(() => { expect(c.mock.remote.account.ackBonusNotified.mock.calls.length).toBeGreaterThan(1) }, { timeout: 30_000 })
 }, 60_000)
 
 it('drops the previous account notice and stops reading after sign-out', async ({ start }) => {

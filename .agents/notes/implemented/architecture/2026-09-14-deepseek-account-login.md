@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-09-14-deepseek-account-login.zh.md)
 
-Sign-in captures the initiating UI language per attempt so browser authorization follows the Desktop or Settings locale without depending on the Platform default.
+Sign-in captures the initiating UI's client metadata per attempt so browser authorization follows the Desktop or Settings language without depending on the Platform default.
 
 ## Problem
 
@@ -56,7 +56,7 @@ The embedded Platform document stays hidden during loading because native child 
 
 Separate accountRequestHeaders route account data and embedded Platform traffic independently of authorization and logout. Cookie overrides merge by name, retaining deployment authentication. Host passes the resolved headers over private process IPC; Electron injects them only at the configured origin and omits them from bootstrap.
 
-Bonus notices use Platform-provided text and order identities. Reads occur on signed-in startup, successful sign-in, and explicit balance refresh. The settings dialog defers sidebar display until it closes; there is no periodic polling. The client acknowledges an order only after its card becomes visible, and persists the displayed order with pending acknowledgment before sending the request. Account- and origin-scoped local records prevent repeat display after restart; failed acknowledgments retry with capped exponential backoff. Platform acknowledgments suppress delivery on other devices, but concurrent displays before acknowledgment are possible because the API does not reserve delivery. Fetch success alone never records a display.
+Bonus notices use Platform-provided text and order identities. Reads occur when an account becomes active — signed-in startup and successful sign-in — and once per Settings entry or return from the top-up view, with no periodic polling. The card is painted as soon as the server offers it, including underneath the open Settings panel, so display is never deferred. The client acknowledges an order after a presented frame or the user closes it; nothing is written to browser storage, so a later sign-in re-displays an order the server still offers. Failed acknowledgments retry with capped exponential backoff for the rest of the signed-in session. Platform acknowledgments suppress delivery on other devices, but concurrent displays before acknowledgment are possible because the API does not reserve delivery. Fetch success alone never records a display.
 
 The Host binds private Platform sessions to the account provider lifetime. Removal or watch termination clears Electron’s session; replacement subscribes to the new provider, and disposed reads cannot publish old credentials.
 

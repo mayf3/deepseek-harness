@@ -25,7 +25,7 @@ retry.notice=赠金已到账 / 已赠送您 6.00 元 DSH 体验赠金。
 retry.attempts=2 backoff=true body-kept=true cards=1
 repeat.first=赠金已到账 / 已赠送您 7.00 元 DSH 体验赠金。
 repeat.reload=赠金已到账 / 已赠送您 7.00 元 DSH 体验赠金。
-repeat.acks=2 legacy-record={"66666666-6666-4666-8666-666666666666":"acknowledged"} cards=1
+repeat.shown added-storage-keys=0 reload-added=0 acks=2 cards=1
 failed.links count=2 hrefs={{origin}}/usage,{{origin}}/usage
 failed.reached usages=2 gets=1 summaries=1
 en.notice=Bonus credited / You received a CNY 9.00 DSH trial credit.

@@ -134,7 +134,17 @@ export function platformClientHeaders(platform: 'darwin' | 'win32' | null, clien
     'x-client-platform': 'web',
     ...desktopClientHeaders(platform),
     'x-client-version': client.version,
-    'x-client-locale': client.locale.toLowerCase().split(/[-_]/)[0] === 'zh' ? 'zh_CN' : 'en_US',
+    'x-client-locale': platformWireLocale(client.locale),
     'x-client-timezone-offset': String(client.timezoneOffsetSeconds),
   }
+}
+
+/**
+ * Reduce a caller's UI language to the region-tagged Platform locale.
+ * Shares one normalization with the header and with request body locale fields.
+ * @param locale - active UI language such as `zh-CN`, `zh_TW`, or `en-US`.
+ * @returns the region-tagged Platform locale for that language, `zh_CN` or `en_US`.
+ */
+export function platformWireLocale(locale: string): 'zh_CN' | 'en_US' {
+  return locale.toLowerCase().split(/[-_]/)[0] === 'zh' ? 'zh_CN' : 'en_US'
 }

@@ -30,7 +30,7 @@ function operationsOf(state: Omit<AccountView, 'links'>, details?: Partial<Accou
     },
     contactUs: vi.fn(), showLogin: vi.fn(), setOnboarding: vi.fn(),
     bonusNoticeShown: vi.fn(), bonusNoticeDismissed: vi.fn(),
-    refresh: vi.fn(() => Promise.resolve()), refreshAccount: vi.fn(() => Promise.resolve()),
+    refreshAccount: vi.fn(() => Promise.resolve()),
     start: vi.fn(() => Promise.resolve()), cancel: vi.fn(() => Promise.resolve()), signOut: vi.fn(() => Promise.resolve()),
   }
 }

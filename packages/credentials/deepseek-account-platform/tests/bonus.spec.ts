@@ -130,7 +130,7 @@ async function fixture() {
   }
 }
 
-it('sends one call\'s client identity headers on both requests of a bonus chain', async () => {
+it('reads the identity once, then sends one call\'s client identity headers on both bonus requests', async () => {
   const f = await fixture()
   await f.grant('test-account-token')
   const client = { version: '3.0.0', locale: 'zh-TW', timezoneOffsetSeconds: -18_000 }
@@ -141,8 +141,29 @@ it('sends one call\'s client identity headers on both requests of a bonus chain'
   ])).toEqual([
     ['/auth-api/v0/users/current', '', 'web', '3.0.0', 'zh_CN', '-18000'],
     ['/api/v0/users/get_unnotified_bonuses', '', 'web', '3.0.0', 'zh_CN', '-18000'],
-    ['/auth-api/v0/users/current', '', 'web', '3.0.0', 'zh_CN', '-18000'],
     ['/api/v0/users/ack_bonus_notified', '', 'web', '3.0.0', 'zh_CN', '-18000'],
+  ])
+})
+
+it('queries the account identity once even across repeated reads and acknowledgements', async () => {
+  const f = await fixture()
+  await f.grant('test-account-token')
+  await f.account.getUnnotifiedBonuses(clientMetadata('en'))
+  await f.account.getUnnotifiedBonuses(clientMetadata('en'))
+  await f.account.ackBonusNotified(USER as AccountUserId, ORDER as AccountBonusOrderId, clientMetadata('en'))
+  expect(f.requests.filter(request => request.url === '/auth-api/v0/users/current')).toHaveLength(1)
+})
+
+it('does not reuse a cached identity from another grant', async () => {
+  const f = await fixture()
+  await f.grant('test-account-token')
+  expect(await f.account.getProfile(clientMetadata())).toMatchObject({ status: 'ready' })
+  await f.grant('rotated-token')
+  await f.account.getUnnotifiedBonuses(clientMetadata('en'))
+  expect(f.requests.map(request => [request.url, request.token])).toEqual([
+    ['/auth-api/v0/users/current', 'test-account-token'],
+    ['/auth-api/v0/users/current', 'rotated-token'],
+    ['/api/v0/users/get_unnotified_bonuses', 'rotated-token'],
   ])
 })
 

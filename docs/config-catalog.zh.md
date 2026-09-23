@@ -214,7 +214,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/job-controller/src/index.ts:35`](../packages/api/job-controller/src/index.ts)
+来源：[`packages/api/job-controller/src/index.ts:35`](../packages/api/job-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
@@ -307,7 +307,7 @@ export interface Config {
 }
 ```
 
-源码：[`packages/api/workspace-controller/src/index.ts:34`](../packages/api/workspace-controller/src/index.ts)
+来源：[`packages/api/workspace-controller/src/index.ts:34`](../packages/api/workspace-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-workspace-files"></a>
 
@@ -728,7 +728,7 @@ export interface Config {
 }
 ```
 
-来源： [`packages/credentials/deepseek-account-platform/src/index.ts:26`](../packages/credentials/deepseek-account-platform/src/index.ts)
+来源： [`packages/credentials/deepseek-account-platform/src/index.ts:23`](../packages/credentials/deepseek-account-platform/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-agent-team"></a>
 

@@ -24,39 +24,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'settings.account': AccountKey }
 }
 
-/** @param error - caught failure. @returns its stable string code when one is present, otherwise undefined. */
-function errorCodeOf(error: unknown): string | undefined {
-  if (!(error instanceof Error) || !('code' in error)) return undefined
-  const code: unknown = error.code
-  return typeof code === 'string' ? code : undefined
-}
-
-/**
- * Classify one sign-out failure for the log. Thrown messages are omitted: a Remote
- * message or a native error may quote the values it failed on.
- * @param phase - sign-out step that refused the call.
- * @param error - caught failure; its own code and name replace the fallback classification.
- * @returns log fields carrying no message and no credential.
- */
-function signOutFailure(phase: string, error: unknown): Record<string, string> {
-  return { phase, errorCode: errorCodeOf(error) ?? 'unknown', errorName: error instanceof Error ? error.name : typeof error }
-}
-
-/**
- * Run one sign-out step and report the failing phase before rethrowing, so a throw
- * before or around the Remote call is distinguishable from a refused Remote result.
- * @param phase - sign-out step that ran.
- * @param step - the step to run.
- * @returns the step's value.
- */
-async function signOutStep<Value>(phase: 'prepare-client' | 'invoke-remote', step: () => Value | Promise<Value>): Promise<Value> {
-  try { return await step() }
-  catch (error) {
-    console.error('[ui-settings-account] sign-out failed', JSON.stringify(signOutFailure(phase, error)))
-    throw error
-  }
-}
-
 /** Services required by account settings. */
 export const inject = ['slots', 'locale', 'remote', 'remote.account', 'theme']
 /** Register account UI only in the Desktop renderer. @param ctx - client plugin context. */
@@ -146,7 +113,6 @@ export function apply(ctx: Context): void {
   const nativePlatform = (globalThis as typeof globalThis & { dshPlatform?: PlatformBridge }).dshPlatform
   const operations: AccountSectionInjected = {
     ...nativePlatform === undefined ? {} : { platform: nativePlatform },
-    refresh,
     // One account refresh: the recharge/bonus wallet and the unnotified-bonus read,
     // whichever surface asks — a Settings entry, or returning from top-up. Both
     // reads are independent, and a concurrent refresh shares the in-flight request.
@@ -190,10 +156,8 @@ export function apply(ctx: Context): void {
     },
     async cancel(id) { const result = await ctx.remote.account.cancelSignIn(id); if (!result.ok) throw new Error('account cancel failed') },
     async signOut() {
-      const metadata = await signOutStep('prepare-client', client)
-      const result = await signOutStep('invoke-remote', () => ctx.remote.account.signOut(metadata))
+      const result = await ctx.remote.account.signOut(client())
       if (result.ok) return
-      console.error('[ui-settings-account] sign-out failed', JSON.stringify(signOutFailure('result', result.error)))
       throw result.error
     },
   }

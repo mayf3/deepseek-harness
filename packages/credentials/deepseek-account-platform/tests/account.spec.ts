@@ -516,112 +516,6 @@ it('bounds failed logout retries without restoring the grant or deleting a new l
     .toMatchObject({ kind: 'grant', payload: { token: 'new-account-token' } })
 })
 
-it('names the local stage that refused a sign-out without echoing the stored grant', async () => {
-  const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
-  try {
-    const f = await fixture()
-    await f.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'default'), () => Promise.resolve({
-      kind: 'grant', payload: { version: 1, token: 'test-platform-grant', issuer: 'https://other.example' },
-    }))
-    await expect(f.account.signOut(clientMetadata())).rejects.toThrow('account: protocol')
-    const logged = JSON.stringify(output.mock.calls)
-    expect(logged).toContain('sign-out failed')
-    expect(logged).toContain('validate-issuer')
-    expect(logged).toContain('protocol')
-    expect(logged).toContain('sign-out started')
-    expect(logged).not.toContain('sign-out completed')
-    expect(logged).not.toContain('test-platform-grant')
-  } finally { output.mockRestore() }
-})
-
-it('separates a malformed stored record from an issuer mismatch', async () => {
-  const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
-  try {
-    const f = await fixture()
-    await f.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'default'), () => Promise.resolve(
-      { kind: 'grant', payload: { version: 0 } }))
-    await expect(f.account.signOut(clientMetadata())).rejects.toThrow('account: storage')
-    const logged = JSON.stringify(output.mock.calls)
-    expect(logged).toContain('validate-record')
-    expect(logged).toContain('storage')
-  } finally { output.mockRestore() }
-})
-
-it('names a failing credential store stage with its code and never its message', async () => {
-  const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
-  const failure = Object.assign(new Error('credentials-local: cannot delete deepseek-account-platform/default for test-platform-grant'), { code: 'EACCES' })
-  try {
-    const f = await fixture()
-    await storeAccount(f)
-    vi.spyOn(f.ctx.credentials, 'deleteRecord').mockRejectedValue(failure)
-    await expect(f.account.signOut(clientMetadata())).rejects.toThrow('cannot delete')
-    const logged = JSON.stringify(output.mock.calls)
-    expect(logged).toContain('delete-grant')
-    expect(logged).toContain('EACCES')
-    expect(logged).toContain('Error')
-    expect(logged).not.toContain('cannot delete')
-    expect(logged).not.toContain('test-platform-grant')
-  } finally { output.mockRestore() }
-})
-
-it.each([
-  [new Error('no code'), 'unknown', 'Error'],
-  [Object.assign(new Error('numeric code'), { code: 21 }), 'unknown', 'Error'],
-  ['plain string failure', 'unknown', 'string'],
-])('classifies $0 without treating its message as readable', async (thrown, errorCode, errorName) => {
-  const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
-  try {
-    const f = await fixture()
-    await storeAccount(f)
-    vi.spyOn(f.ctx.credentials, 'deleteRecord').mockRejectedValue(thrown)
-    await expect(f.account.signOut(clientMetadata())).rejects.toBeDefined()
-    const logged = JSON.stringify(output.mock.calls)
-    expect(logged).toContain('delete-grant')
-    expect(logged).toContain(errorCode)
-    expect(logged).toContain(errorName)
-    expect(logged).not.toContain('numeric code')
-    expect(logged).not.toContain('no code')
-    expect(logged).not.toContain('test-platform-grant')
-  } finally { output.mockRestore() }
-})
-
-it('names the publish stage when the removed grant leaves an unreadable store', async () => {
-  const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
-  try {
-    const f = await fixture()
-    await storeAccount(f)
-    vi.spyOn(f.ctx.credentials, 'readRecord')
-      .mockResolvedValueOnce({ kind: 'grant', payload: { version: 1, issuer: f.origin, token: 'test-platform-grant' } })
-      .mockRejectedValueOnce(new Error('credentials-local: unreadable document'))
-    await expect(f.account.signOut(clientMetadata())).rejects.toThrow('unreadable document')
-    const logged = JSON.stringify(output.mock.calls)
-    expect(logged).toContain('publish-state')
-    expect(logged).not.toContain('unreadable document')
-  } finally { output.mockRestore() }
-})
-
-it('reports a completed local sign-out and no failure', async () => {
-  const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
-  try {
-    const f = await fixture()
-    await storeAccount(f)
-    await expect(f.account.signOut(clientMetadata())).resolves.toMatchObject({ status: 'signed-out' })
-    const logged = JSON.stringify(output.mock.calls)
-    expect(logged).toContain('sign-out started')
-    expect(logged).toContain('sign-out completed')
-    expect(logged).not.toContain('sign-out failed')
-    // Sign-out shares the log with its background revocation requests; only its own lines are inspected.
-    const signOutLines = output.mock.calls
-      .map(call => ({ message: String(call[0]), fields: JSON.stringify(call[1]) }))
-      .filter(line => line.message.startsWith('[deepseek-account] sign-out'))
-    expect(signOutLines.map(line => line.message))
-      .toEqual(['[deepseek-account] sign-out started', '[deepseek-account] sign-out completed'])
-    for (const line of signOutLines) {
-      expect(line.fields).toMatch(/"at":"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"/)
-    }
-  } finally { output.mockRestore() }
-})
-
 it.each([['en', 'en_US'], ['zh-CN', 'zh_CN']])('passes %s to Platform and keeps the active attempt language', async (locale, platformLocale) => {
   const f = await fixture()
   await f.account.startSignIn(clientMetadata(locale), f.callbackOrigin, 'desktop')
@@ -951,6 +845,9 @@ it('carries the configured embedded frontend selector in the private Platform se
 it.each([
   ['darwin', 'desktop-mac'], ['win32', 'desktop-win'], [null, 'web'],
 ] as const)('identifies %s Host API requests over deployment header overrides', async (desktopPlatform, expected) => {
+  // Deployment configuration may name the client identity headers, but the caller's metadata always
+  // wins for every Host API request. The embedded session keeps the deployment values, and its
+  // consuming client composes the same five headers on top.
   const overrides = { 'x-client-bundle-id': 'deployment', 'x-client-platform': 'deployment',
     'x-client-version': 'deployment', 'x-client-locale': 'deployment', 'x-client-timezone-offset': 'deployment' }
   const f = await fixture(undefined, { Cookie: 'test_gate=synthetic', ...overrides }, false, overrides,

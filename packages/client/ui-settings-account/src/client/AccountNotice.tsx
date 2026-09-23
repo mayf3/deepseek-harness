@@ -1,9 +1,10 @@
 /**
- * Sidebar bonus notice. The card reports the difference between a notice the
- * server offered and one the user actually saw: it asks for display only after
- * the card has a position, the document is visible, and one frame has been
- * presented. Closing counts as seen, because the user acted on it. An award
- * that expired before a render is not drawn at all.
+ * Sidebar bonus notice. The card reports a display once it has a position, the
+ * document is visible, and it has painted one frame: that is the whole signal,
+ * and the card measures no cover, so a painted card behind the open Settings
+ * overlay reports the same way as any other. Closing counts as a display too,
+ * because the user acted on it. An award that expired before a render is not
+ * drawn at all.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'

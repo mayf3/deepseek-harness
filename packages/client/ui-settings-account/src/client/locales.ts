@@ -18,7 +18,7 @@ export const en = {
   settingsSignedOutDescription: 'Sign in to DeepSeek Harness to get your dedicated API Key',
   signInDescription: 'Use your DeepSeek account to get started.',
   profileUnavailable: 'Account details are not available yet.',
-  balance: 'Recharge balance', bonusBalance: 'Bonus balance', balanceUnavailable: 'View on Platform', balanceSignedOut: 'Sign in to view',
+  balance: 'Topped-up balance', bonusBalance: 'Granted balance', balanceUnavailable: 'View on Platform', balanceSignedOut: 'Sign in to view',
   accountInfo: 'More account information', more: 'More', usage: 'View usage', topUp: 'Top up',
   bonusNoticeTitle: 'Bonus credited',
   bonusEmpty: 'No bonus available',

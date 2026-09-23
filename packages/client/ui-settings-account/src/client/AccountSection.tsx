@@ -42,8 +42,6 @@ export interface AccountSectionInjected {
     /** Palette the Platform login pages follow. */
     theme: HostObservable<ThemeSnapshot>
   }
-  /** @returns after account details are refreshed; concurrent refreshes share a request. */
-  refresh: () => Promise<void>
   /**
    * Read the balance, bonus wallets and unnotified bonus once. The Settings launcher
    * calls it on each entry and the top-up view calls it when the user returns.

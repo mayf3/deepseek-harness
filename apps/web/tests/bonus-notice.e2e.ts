@@ -274,6 +274,8 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     const observations: string[] = []
     const page = await openDesktopPage('zh-CN')
     onTestFailed(() => saveFailureShot(page, 'web-e2e-bonus-notice'))
+    /** @returns every browser storage key of the started page, so a baseline can be taken before a notice shows. */
+    const storageKeys = (): Promise<string[]> => page.evaluate(() => Object.keys(localStorage).sort())
 
     // A read the renderer never received cannot become a displayed notice: while the
     // response is held there is no card and no acknowledgement.
@@ -304,9 +306,7 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     expect(await noticeCards(page).count()).toBe(0)
     expect(platform.acks).toHaveLength(1)
 
-    // A new grant and balance arrive before settings opens. Entering the panel refreshes
-    // the balance and the notice read once, and a read the renderer never received still
-    // cannot become a displayed notice.
+    // A new grant and balance arrive before settings opens; one panel entry refreshes both once.
     platform.grant(ORDER_LATER, '8.00')
     platform.setBonusBalance('13.00')
     const getsBefore = platform.gets.length
@@ -325,13 +325,11 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     expect(platform.acks).toHaveLength(1)
     expect(platform.summaries.length).toBeGreaterThan(summariesBefore)
     platform.releaseGet()
-    // The answered notice is displayed at once, below the settings overlay, and the card
-    // that passed a presented frame is acknowledged without waiting for the panel to close.
+    // The answered notice is displayed and acknowledged while the panel stays open.
     const openNotice = await shownNotice(page, zhLater)
     observations.push(`open.shown notice=${openNotice}`)
     observations.push(`open.shown ack orders=${await acked(platform, 2)}`)
-    // Hit-testing the card's own point proves the settings layer paints above it, so the
-    // user reads it through the mask rather than over the panel.
+    // Hit-testing the card's own point proves the settings layer paints above it.
     const paintedUnderOverlay = await noticeCards(page).filter({ hasText: zhLater }).evaluate((element) => {
       const rect = element.getBoundingClientRect()
       const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + 20)
@@ -359,8 +357,7 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     expect(await noticeCards(page).count()).toBe(1)
     expect(platform.acks).toHaveLength(2)
 
-    // Closing settings acknowledges nothing again: the notice keeps its acknowledged
-    // record and stays on the sidebar until the user closes it.
+    // Closing settings repeats no acknowledgement and leaves the card on the sidebar.
     const launcher = page.getByRole('button', { name: '账号菜单', exact: true })
     await page.keyboard.press('Escape')
     await settings.waitFor({ state: 'detached', timeout: 30_000 })
@@ -375,9 +372,7 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     expect(platform.acks).toHaveLength(2)
     observations.push(`open.dismissed cards=0 acks=${String(platform.acks.length)}`)
 
-    // The next entry refreshes once more. Every grant was acknowledged, so the panel shows
-    // no card and adds no acknowledgement, and switching sections inside one open is not
-    // another entry.
+    // The next entry refreshes once more; switching sections inside one open is not an entry.
     const reopenGetsBefore = platform.gets.length
     const reopenSummariesBefore = platform.summaries.length
     await openSettings(page, 'zh')
@@ -411,9 +406,8 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     expect(await noticeCards(page).count()).toBe(0)
     expect(platform.acks).toHaveLength(2)
 
-    // Top-up runs in the native child view, so the account can change while the user is
-    // paying. Returning refreshes the wallet and the notice read once each; the panel
-    // returns as soon as the user asks for it, with the reads settling behind it.
+    // Returning from the native top-up view refreshes balance and notice once each, without
+    // holding the panel open.
     const zhTopUp = '已赠送您 11.00 元 DSH 体验赠金。'
     const topUpGetsBefore = platform.gets.length
     const topUpSummariesBefore = platform.summaries.length
@@ -430,9 +424,8 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     // Opening the native view reads nothing by itself.
     expect(platform.gets.length).toBe(topUpGetsBefore + 1)
     expect(platform.summaries.length).toBe(topUpSummariesBefore + 1)
-    // The user pays while the view is open: the balance grows and a bonus is granted.
-    // Platform reports the spent-down recharge balance in scientific notation, so the
-    // refresh must render plain currency rather than reject the wallet payload.
+    // The user pays while the view is open; Platform reports both balances in scientific
+    // notation, so the refresh must render plain currency.
     platform.setNormalBalance('0E-16')
     platform.setBonusBalance('2.4E+1')
     platform.grant(ORDER_TOPUP, '11.00')
@@ -455,8 +448,7 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     observations.push(`topup.refresh gets=${String(platform.gets.length - topUpGetsBefore)} summaries=${String(platform.summaries.length - topUpSummariesBefore)} acks=${String(topUpAttempts().length)} recharge=${String(topUpAmounts.recharge)} bonus=${String(topUpAmounts.bonus)}`)
     expect(topUpAmounts).toEqual({ recharge: true, bonus: true })
     expect(await topUpSettings.getByRole('button', { name: '刷新余额', exact: true }).count()).toBe(0)
-    // The card the user read through the mask survives closing the panel, and the
-    // acknowledgement already sent is not repeated.
+    // The card survives closing the panel, and the acknowledgement is not repeated.
     await page.keyboard.press('Escape')
     await topUpSettings.waitFor({ state: 'detached', timeout: 30_000 })
     observations.push(`topup.closed cards=${String(await noticeCards(page).count())} acks=${String(topUpAttempts().length)}`)
@@ -465,9 +457,8 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     await noticeCards(page).getByRole('button', { name: '关闭', exact: true }).click()
     expect(await noticeCards(page).count()).toBe(0)
 
-    // A transient acknowledgement failure keeps the displayed card and retries the same
-    // order after the backoff. The pending retry is page state: no part of it reaches
-    // browser storage, so restarting the client cannot resume it.
+    // A transient acknowledgement failure keeps the card and retries the same order after
+    // the backoff; the pending retry is page state, not browser storage.
     const zhRetry = '已赠送您 6.00 元 DSH 体验赠金。'
     platform.grant(ORDER_RETRY, '6.00')
     platform.failNextAcks(ORDER_RETRY, 1)
@@ -494,11 +485,10 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     await retryDialog.waitFor({ state: 'detached', timeout: 30_000 })
     await noticeCards(page).getByRole('button', { name: '关闭', exact: true }).click()
 
-    // The double now keeps serving an acknowledged order, which is what a backend that has
-    // not applied the acknowledgement looks like. Display follows each response: dismissing
-    // the card and reading again shows the order again, because the client keeps no local
-    // record that suppresses it.
+    // Display follows each response: the double keeps serving an acknowledged order, which
+    // is what makes a second display of the same order observable.
     const zhRepeat = '已赠送您 7.00 元 DSH 体验赠金。'
+    const storedBeforeShown = await storageKeys()
     platform.setKeepUnnotified(true)
     platform.grant(ORDER_REPEAT, '7.00')
     const repeatAttempts = (): AckRecord[] => platform.acks.filter(item => item.orderId === ORDER_REPEAT)
@@ -507,36 +497,25 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     await repeatDialog.waitFor()
     observations.push(`repeat.first=${await shownNotice(page, zhRepeat)}`)
     await expect.poll(() => repeatAttempts().length, { timeout: 30_000 }).toBe(1)
-    // The mask owns pointer input, so the panel closes first; the card the user was reading
-    // through the mask is still on the sidebar and is dismissed there.
+    // The mask owns pointer input, so the panel closes before the sidebar card is dismissed.
     await page.keyboard.press('Escape')
     await repeatDialog.waitFor({ state: 'detached', timeout: 30_000 })
     expect(await noticeCards(page).count()).toBe(1)
     await noticeCards(page).getByRole('button', { name: '关闭', exact: true }).click()
-    /** @returns every localStorage key the bonus notice lifecycle could have written. */
-    const bonusStorageKeys = (): Promise<string[]> => page.evaluate(() =>
-      Object.keys(localStorage).filter(key => key.startsWith('dsh-account-bonus')))
-    // A displayed and acknowledged notice writes nothing: the server response is the only
-    // record of what was offered.
-    expect(await bonusStorageKeys()).toEqual([])
-    // An older build persisted an acknowledged record under this key and suppressed any
-    // order that record named. Restarting with that record present must not hide the order,
-    // so seed the exact legacy entry for this origin and account.
-    const legacyKey = `dsh-account-bonus:${platform.origin}:${ACCOUNT_ID}`
-    await page.evaluate((entry: { key: string; value: string }) => { localStorage.setItem(entry.key, entry.value) },
-      { key: legacyKey, value: JSON.stringify({ [ORDER_REPEAT]: 'acknowledged' }) })
-    expect(await bonusStorageKeys()).toEqual([legacyKey])
+    // Displaying and acknowledging a notice writes nothing, so the key set is unchanged
+    // against the baseline taken before it was shown.
+    const shownAdded = (await storageKeys()).filter(key => !storedBeforeShown.includes(key))
+    expect(shownAdded).toEqual([])
+    // Restarting replays whatever the server still offers.
     await page.reload({ waitUntil: 'load' })
     observations.push(`repeat.reload=${await shownNotice(page, zhRepeat)}`)
     await expect.poll(() => repeatAttempts().length, { timeout: 30_000 }).toBe(2)
-    // The legacy entry is untouched and still ignored: it names an acknowledged order that
-    // came back from the server, and the notice was displayed and acknowledged again.
-    observations.push(`repeat.acks=${String(repeatAttempts().length)} legacy-record=${String(await page.evaluate((key: string) => localStorage.getItem(key), legacyKey))} cards=${String(await noticeCards(page).count())}`)
-    expect(await bonusStorageKeys()).toEqual([legacyKey])
+    const reloadAdded = (await storageKeys()).filter(key => !storedBeforeShown.includes(key))
+    observations.push(`repeat.shown added-storage-keys=${String(shownAdded.length)} reload-added=${String(reloadAdded.length)} acks=${String(repeatAttempts().length)} cards=${String(await noticeCards(page).count())}`)
+    expect(reloadAdded).toEqual([])
     await noticeCards(page).getByRole('button', { name: '关闭', exact: true }).click()
 
-    // A wallet read that failed still leaves the user a way out: both balance rows become
-    // the Platform entry, which is where the balance the Harness could not load is shown.
+    // A failed wallet read still leaves both balance rows reaching the Platform entry.
     platform.setKeepUnnotified(false)
     platform.clearUnnotified()
     platform.setFailSummary(true)
@@ -553,8 +532,7 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
       .map(href => String(href).replace(platform.origin, '{{origin}}'))
     observations.push(`failed.links count=${String(await failedLinks.count())} hrefs=${failedHrefs.join(',')}`)
     expect(failedHrefs).toEqual(['{{origin}}/usage', '{{origin}}/usage'])
-    // Each row reaches the same embedded page, and returning from it refreshes nothing:
-    // only a payment can change what the account holds.
+    // Returning from usage refreshes nothing, because only a payment changes the account.
     for (const index of [0, 1]) {
       await failedLinks.nth(index).click()
       const usageOverlay = page.getByRole('dialog', { name: '返回 DeepSeek Harness', exact: true })

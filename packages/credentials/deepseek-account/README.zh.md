@@ -9,7 +9,7 @@ kind: "package-reference"
 
 getPlatformSession 为原生 Platform 内嵌提供仅限 Host 的 origin/token 快照，退登时返回 null。账号控制器 RPC 和 Client 状态不包含此方法及快照。账号变化时，使用方销毁持有旧快照的文档。快照只携带部署请求头；Platform 客户端身份由发起请求的内嵌客户端自行组装。
 
-`platformClientHeaders` 依据单次调用的 `AccountClientMetadata` 与组合出的桌面平台生成五个 Platform 客户端请求头：`x-client-bundle-id` 有意保持为空字符串，`x-client-platform` 在没有 Desktop profile 提供 `darwin` 或 `win32` 时为 `web`，`x-client-version` 为调用方构建的版本，`x-client-locale` 将当前界面语言归约为 `zh_CN` 或 `en_US`，`x-client-timezone-offset` 为东为正的整秒偏移。
+`platformClientHeaders` 依据单次调用的 `AccountClientMetadata` 与组合出的桌面平台生成五个 Platform 客户端请求头：`x-client-bundle-id` 有意保持为空字符串，`x-client-platform` 在没有 Desktop profile 提供 `darwin` 或 `win32` 时为 `web`，`x-client-version` 为调用方构建的版本，`x-client-locale` 通过导出的 `platformWireLocale` 将当前界面语言归约为 `zh_CN` 或 `en_US`，`x-client-timezone-offset` 为东为正的整秒偏移。请求正文需要同一个线上语言值时，消费方复用 `platformWireLocale`，使请求头与正文不会不一致。
 
 getUnnotifiedBonuses 返回平台尚未记录为已展示的赠金及其所属账号；ackBonusNotified 记录用户实际看到的那一笔赠金。确认请求携带该账号，因此在一个账号下读取的通知绝不会被确认到另一个账号。
 
