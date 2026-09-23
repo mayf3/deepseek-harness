@@ -8,8 +8,9 @@
     - tab "Trajectory"
 - text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
 - button "Copy"
-- button "Thought for a while" [expanded]
-- button "Context injection runtime-context"
+- status: Worked
+- button "Took {{duration}}" [expanded]
+- button "Analysis completed" [expanded]
 - button "Think"
 - paragraph: LIGHTHOUSE
 - button "Copy"

@@ -8,6 +8,7 @@ import { en } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.t
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { detailsCardModel, todosDetail } from '../src/client/tool/models/details-card-model.ts'
 import { DetailsRow, detailsToolview } from '../src/client/tool/toolviews/details-row.tsx'
+import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 
 const t = makeTranslate(en, commonEn)
 const goal = { id: 'goal-1', revision: 2, objective: 'Ship compact cards', phase: 'active', roundsStarted: 2, maxGoalRounds: 8 }
@@ -79,7 +80,7 @@ describe('todosDetail', () => {
 describe('DetailsRow', () => {
   it('expands fields with the keyboard and keeps Inspect available', () => {
     const inspect = vi.fn()
-    render(<DetailsRow {...{ toolName: 'get_goal', block: result('get_goal', { goal, activation: 'armed' }), inspect, t } as Parameters<typeof DetailsRow>[0]} />)
+    render(<DetailsRow {...{ useDisclosure, toolName: 'get_goal', block: result('get_goal', { goal, activation: 'armed' }), inspect, t } as Parameters<typeof DetailsRow>[0]} />)
     expect(screen.queryByText('Rounds')).toBeNull()
     fireEvent.keyDown(screen.getByRole('button', { expanded: false }), { key: 'Enter' })
     expect(screen.getByText('Rounds')).toBeTruthy()

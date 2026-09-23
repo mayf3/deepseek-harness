@@ -71,7 +71,12 @@ export function AgentPresetSection({
     content: NonNullable<ReturnType<typeof presetGuide>>
     page: PresetGuidePage
   } | null>(null)
+  const viewTrigger = useRef<HTMLButtonElement | null>(null)
+  const closeViewOnUnmount = useRef(closeView)
   useEffect(() => { void load() }, [load])
+  useLayoutEffect(() => { closeViewOnUnmount.current = closeView }, [closeView])
+  useEffect(() => () => { closeViewOnUnmount.current() }, [])
+  const closeViewer = () => { closeView(); viewTrigger.current?.focus() }
   const viewed = state.view
   const viewedRow = viewed === null ? undefined : state.rows.find(row => row.id === viewed.id)
   const viewedTitle = viewed === null ? '' : viewedRow === undefined ? viewed.title : presetDisplayText(viewedRow, t).name
@@ -159,7 +164,7 @@ export function AgentPresetSection({
                   beyond choosing: a broken preset's YAML is also where its
                   diagnostic points, so the viewer stays available for it. */}
                 <button type="button" className={css.iconButton} data-tip={t('view')} aria-label={`${t('view')}: ${display.name}`}
-                  onClick={() => { void view(row.id) }}>
+                  onClick={(event) => { viewTrigger.current = event.currentTarget; void view(row.id) }}>
                   <IconBrowseOutlineRegular />
                 </button>
               </div>
@@ -170,9 +175,29 @@ export function AgentPresetSection({
       </section>
     })}
     {guide === null ? null : <PresetGuideDialog guide={guide.content} initialPage={guide.page} t={t} onClose={() => { setGuide(null) }} />}
-    <Modal open={viewed !== null} onClose={closeView} closeLabel={t('close')}
+    <Modal open={viewed !== null} onClose={closeViewer} closeLabel={t('close')}
+      onKeyDownCapture={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          closeViewer()
+        } else if (event.key === 'Tab') {
+          const targets = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+            'button:not([disabled]):not([tabindex="-1"]), [tabindex="0"]',
+          ))
+          const first = targets[0]
+          const last = targets[targets.length - 1]
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault()
+            last?.focus()
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault()
+            first?.focus()
+          }
+        }
+      }}
       title={viewed === null ? '' : `${t('view')} · ${viewedTitle}`} className={css.dialog as string}
-      footer={<Button variant="outline" autoFocus onClick={closeView}>{t('close')}</Button>}>
+      footer={<Button variant="outline" autoFocus onClick={closeViewer}>{t('close')}</Button>}>
       {viewed === null ? null : <pre className={css.viewerCode}>{viewed.content}</pre>}
     </Modal>
   </section>

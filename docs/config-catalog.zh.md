@@ -196,7 +196,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/gateway/src/index.ts:144`](../packages/api/gateway/src/index.ts)
+来源：[`packages/api/gateway/src/index.ts:145`](../packages/api/gateway/src/index.ts)
 
 <a id="deepseek-aidsh-api-job-controller"></a>
 
@@ -483,6 +483,54 @@ export interface Config {
 
 来源： [`packages/client/hmr/src/index.ts:30`](../packages/client/hmr/src/index.ts)
 
+<a id="deepseek-aidsh-client-ui-plugin-manager"></a>
+
+## `@deepseek-ai/dsh-client-ui-plugin-manager`
+
+```ts config-catalog
+/** Registry-probe deadline and process-local cache policy. */
+export interface Config {
+  /** Whether the dialog can compare the public npm registries. */
+  registryProbeEnabled: boolean
+  /** Deadline for the parallel HTTPS probes, including response cleanup. */
+  registryProbeTimeoutMs: number
+  /** Lifetime of a winning registry or unavailable result. */
+  registryProbeCacheTtlMs: number
+}
+```
+
+来源： [`packages/client/ui-plugin-manager/src/index.ts:15`](../packages/client/ui-plugin-manager/src/index.ts)
+
+<a id="deepseek-aidsh-client-ui-settings-account"></a>
+
+## `@deepseek-ai/dsh-client-ui-settings-account`
+
+```ts config-catalog
+/** Questionnaire destination and its supported source option. */
+export interface Config {
+  /** HTTPS questionnaire URL; override for a test form. */
+  contactFormUrl: string
+  /** Questionnaire source option; empty until Harness is supported by the form. */
+  contactSource: string
+}
+```
+
+来源： [`packages/client/ui-settings-account/src/contact-config.ts:5`](../packages/client/ui-settings-account/src/contact-config.ts)
+
+<a id="deepseek-aidsh-client-ui-settings-models"></a>
+
+## `@deepseek-ai/dsh-client-ui-settings-models`
+
+```ts config-catalog
+/** Onboarding options after schema defaults are applied. */
+export interface Config {
+  /** Offer the browser API-key step when no native shell owns credential onboarding. */
+  credentialOnboarding: boolean
+}
+```
+
+来源： [`packages/client/ui-settings-models/src/onboarding-config.ts:6`](../packages/client/ui-settings-models/src/onboarding-config.ts)
+
 <a id="deepseek-aidsh-client-ui-sidebar-documentpreview"></a>
 
 ## `@deepseek-ai/dsh-client-ui-sidebar-documentpreview`
@@ -639,6 +687,44 @@ export interface Config {
 ```
 
 来源： [`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
+
+<a id="deepseek-aidsh-deepseek-account-platform"></a>
+
+## `@deepseek-ai/dsh-deepseek-account-platform`
+
+需要： `credentials` · `authorization`
+
+```ts config-catalog
+/** Deployment-specific platform and request deadlines. */
+export interface Config {
+  /** Platform origin serving auth-api and browser pages. */
+  platformOrigin?: string
+  /** Native desktop identity for Host API and embedded Platform requests; null identifies the client as web. */
+  desktopPlatform?: 'darwin' | 'win32' | null
+  /** Optional frontend deployment selector for embedded Usage and Top-up pages. */
+  embeddedPageDist?: string
+  /** Exact HTTP(S) origin allowed to receive account tokens for inference and files. */
+  inferenceOrigin?: string
+  /** Allow HTTP only on loopback for the development Mock. */
+  allowLoopbackHttp?: boolean
+  /** Map authorization and completion pages to platformOrigin for private development proxies. */
+  rewriteBrowserOrigin?: boolean
+  /** Host-only headers sent exclusively to platformOrigin; account authorization cannot be overridden. */
+  requestHeaders?: Record<string, string>
+  /** Overrides for profile, balance and embedded Platform requests; Cookie pairs merge by name. Logout retains requestHeaders. */
+  accountRequestHeaders?: Record<string, string>
+  /** Deadline for each platform HTTP request. */
+  requestTimeoutMs?: number
+  /** Additional logout attempts after the first request fails, at most five. */
+  logoutMaxRetries?: number
+  /** Delay before the first logout retry; each later delay doubles. */
+  logoutRetryDelayMs?: number
+  /** Upper bound for the entire local attempt, even if the server advertises a longer TTL. */
+  attemptTimeoutMs?: number
+}
+```
+
+来源： [`packages/credentials/deepseek-account-platform/src/index.ts:23`](../packages/credentials/deepseek-account-platform/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-agent-team"></a>
 
@@ -2715,18 +2801,14 @@ export interface Config {
 需要： `tools`
 
 ```ts config-catalog
-/** Plugin config. */
+/** Optional result-retention budget. */
 export interface Config {
-  /**
-   * The model-facing context cap for a plain-text tool result, in UTF-8 bytes.
-   * Omitted disables the policy entirely (no-op). When set, a result larger than
-   * this is spilled and replaced with a preview derived from this same budget.
-   */
-  maxInlineBytes?: number
+  /** Maximum estimated tokens in a retained result, including image descriptors and omission notices. Omitted disables retention. */
+  maxInlineTokens?: number
 }
 ```
 
-来源： [`packages/spill/spill-policy/src/index.ts:61`](../packages/spill/spill-policy/src/index.ts)
+来源： [`packages/spill/spill-policy/src/index.ts:25`](../packages/spill/spill-policy/src/index.ts)
 
 <a id="deepseek-aidsh-ssh"></a>
 
@@ -3343,9 +3425,11 @@ export interface Config {
   completionDelivery?: CompletionDelivery
   /**
    * Turns one owner may have opened by completion wakes before the next
-   * notice degrades to injection, reset by any user-authored input (default 3).
-   * Bounds the self-exciting chain where a woken turn starts the job whose
-   * completion wakes it again.
+   * notice degrades to injection, reset by any user-authored input. Absent by
+   * default: every idle completion wakes its owner. Set it to bound the
+   * self-exciting chain where a woken turn starts the job whose completion
+   * wakes it again, at the cost of notices past the cap waiting silently for
+   * the next user input.
    */
   maxConsecutiveWakes?: number
 }
@@ -3445,7 +3529,7 @@ export interface Config {
 }
 ```
 
-来源： [`packages/shell/tool-pwsh-persistent/src/index.ts:480`](../packages/shell/tool-pwsh-persistent/src/index.ts)
+来源： [`packages/shell/tool-pwsh-persistent/src/index.ts:455`](../packages/shell/tool-pwsh-persistent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-ralph"></a>
 
@@ -4020,6 +4104,7 @@ export interface Config {
 
 - `@deepseek-ai/dsh-acp-app` — 需要 `cmdlineArgs`（[`packages/bundle/acp-app/src/index.ts`](../packages/bundle/acp-app/src/index.ts)）
 - `@deepseek-ai/dsh-agent`（[`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts)）
+- `@deepseek-ai/dsh-api-account-controller` — 需要 `deepseekAccount` ([`packages/api/account-controller/src/index.ts`](../packages/api/account-controller/src/index.ts))
 - `@deepseek-ai/dsh-api-remotes` — 需要 `typertGateway`（[`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts)）
 - `@deepseek-ai/dsh-authorization` — 需要 `credentials`（[`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts)）
 - `@deepseek-ai/dsh-browser-use`（[`packages/browser-use/browser-use/src/index.ts`](../packages/browser-use/browser-use/src/index.ts)）
@@ -4047,7 +4132,6 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-open-in-app`（[`packages/client/ui-open-in-app/src/index.ts`](../packages/client/ui-open-in-app/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-permission-presets`（[`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-plan`（[`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts)）
-- `@deepseek-ai/dsh-client-ui-plugin-manager`（[`packages/client/ui-plugin-manager/src/index.ts`](../packages/client/ui-plugin-manager/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-reference`（[`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-renderer`（[`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-schedule`（[`packages/client/ui-schedule/src/index.ts`](../packages/client/ui-schedule/src/index.ts)）
@@ -4055,7 +4139,6 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-settings`（[`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-agent-loop`（[`packages/client/ui-settings-agent-loop/src/index.ts`](../packages/client/ui-settings-agent-loop/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-general`（[`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts)）
-- `@deepseek-ai/dsh-client-ui-settings-models`（[`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory`（[`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-plugins`（[`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-shell`（[`packages/client/ui-settings-shell/src/index.ts`](../packages/client/ui-settings-shell/src/index.ts)）
@@ -4123,6 +4206,7 @@ export interface Config {
 - `@deepseek-ai/dsh-attachment` — 抽象 `AttachmentStore`（[`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts)）
 - `@deepseek-ai/dsh-compaction` — 抽象 `CompactionEngine`（[`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts)）
 - `@deepseek-ai/dsh-credentials` — 抽象 `CredentialProvider`（[`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts)）
+- `@deepseek-ai/dsh-deepseek-account` — 抽象类 `DeepSeekAccount` ([`packages/credentials/deepseek-account/src/index.ts`](../packages/credentials/deepseek-account/src/index.ts))
 - `@deepseek-ai/dsh-file-reference` — 抽象 `FileReferenceService`（[`packages/context/file-reference/src/index.ts`](../packages/context/file-reference/src/index.ts)）
 - `@deepseek-ai/dsh-fs` — 抽象 `FileSystem`（[`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker` — 抽象 `DirectoryPicker`（[`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts)）

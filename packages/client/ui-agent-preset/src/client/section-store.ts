@@ -32,6 +32,7 @@ export class AgentPresetSectionController {
   /** Observable roster, selection and viewer state. */
   readonly store: SnapshotStore<AgentPresetSectionState> = createSnapshotStore(INITIAL)
   private loading: Promise<void> | undefined
+  private viewRequest = 0
   constructor(private readonly ctx: Context) {}
 
   private set(patch: Partial<AgentPresetSectionState>): void { this.store.set({ ...this.store.getSnapshot(), ...patch }) }
@@ -52,19 +53,21 @@ export class AgentPresetSectionController {
 
   /** Open one preset's declared composition in the viewer.
    * @param id Preset to read.
-   * @returns Once the read settles; a failure lands in `error` and leaves the viewer closed.
+   * @returns Once the read settles; a current failure lands in `error`, while a read superseded by close or another read is ignored.
    */
   async view(id: string): Promise<void> {
-    this.set({ error: null })
+    const request = ++this.viewRequest
+    this.set({ error: null, view: null })
     try {
       const result = await this.ctx.remote.agentPresets.read(id)
+      if (request !== this.viewRequest) return
       if (!result.ok) throw new Error(result.error.message)
       const { name, content } = result.value
       this.set({ view: { id, title: name ?? id, content } })
-    } catch (error) { this.set({ error: message(error) }) }
+    } catch (error) { if (request === this.viewRequest) this.set({ error: message(error) }) }
   }
   /** Close the viewer. */
-  closeView(): void { this.set({ view: null }) }
+  closeView(): void { this.viewRequest++; this.set({ view: null }) }
 
   /** Set the default and synchronize the current blank task when supplied.
    * @param id Selected default.

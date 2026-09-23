@@ -25,7 +25,7 @@ Use ordinary workspace files to author a bundle, then `plugin_manager` with `act
 
 ## Read next
 
-The files below live in this skill's base directory, which the `skill` tool reported. Read them with the file-read tool only: in Desktop that directory sits inside `app.asar`, which the Host process can open but shell commands (`cat`, `cp`, `ls`), `node`, and pnpm cannot. Never install or syntax-check a template in place; copy its contents into the workspace first.
+The files below live in this skill's base directory, which the `skill` tool reported, and the table is the complete list: do not enumerate that directory. In every deployment, including a source checkout, read these files with the file-read tool, write copies into the workspace with the file-write tool, and verify a copy by reading it back. In Desktop the directory sits inside `app.asar`, which only the Host process's own file reads can open; shell commands (`ls`, `cat`, `cp`, `cmp`), the glob and search tools (they run a native ripgrep process), `node`, and pnpm all fail on it. Never install or syntax-check a template in place; copy its contents into the workspace first.
 
 | Task | File |
 |---|---|
@@ -33,5 +33,6 @@ The files below live in this skill's base directory, which the `skill` tool repo
 | A UI plugin rendered in the Web page: Client manifest, module loader, slot registration | `references/ui-plugin.md` |
 | Connecting an MCP server through a configuration-only bundle | `references/mcp-bundle.md` |
 | Verification limits when no browser control is available | `references/verification.md` |
-| Starting points to read and copy into the workspace | `templates/decoration/` (UI plugin), `templates/mcp/` (MCP bundle) |
+| UI plugin starting point, four files | `templates/decoration/package.json`, `templates/decoration/cordis.patch.yml`, `templates/decoration/index.js`, `templates/decoration/client.js` |
+| MCP bundle starting point, two files | `templates/mcp/package.json`, `templates/mcp/cordis.patch.yml` |
 | Loader patch dialect and the list of installable plugin packages | the `cordis-composition-reference` skill |

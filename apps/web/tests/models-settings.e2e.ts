@@ -25,7 +25,7 @@ import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
+import { openSettings, ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/models-settings', import.meta.url))
 const EMPTY_EXPECTED = join(SNAPSHOT_DIR, 'empty.expected.md')
@@ -72,7 +72,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it('opens the add card over the dormant directory vocabulary', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-empty'))
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openSettings(page, 'zh')
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.waitFor({ timeout: 10_000 })
     await dialog.getByRole('button', { name: '模型', exact: true }).click()
@@ -397,7 +397,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       const picker = page.getByRole('dialog', { name: '选择要添加的模型' })
       await picker.getByRole('button', { name: '取消全选' }).click()
       await picker.getByRole('searchbox', { name: '搜索模型' }).fill('gpt-6-astra')
-      await picker.getByRole('checkbox', { name: 'gpt-6-astra', exact: true }).check()
+      await picker.getByRole('checkbox', { name: 'GPT-6 Astra', exact: true }).check()
       await picker.getByRole('button', { name: '添加所选' }).click()
       await dialog.getByRole('button', { name: '模型选项 1' }).click()
       expect(await image.isChecked()).toBe(true)

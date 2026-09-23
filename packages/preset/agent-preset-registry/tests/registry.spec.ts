@@ -136,6 +136,10 @@ describe('declarative preset revisions', () => {
     expect(document.content.startsWith('- id: contribute\n  name: ')).toBe(true)
     expect(document.content).toContain("\n  config:\n    tool: standard\n- id: windows-only\n  name: missing\n  disabled: !!js process.platform !== 'win32'\n")
     expect(document.content).not.toContain('__jsExpr')
+    await declare(ctx, contribution('minimal'))
+    expect(await ctx.agentPresets.readDocument('minimal')).toEqual({
+      agentPreset: 'minimal', content: expect.any(String) as string,
+    })
     await expect(ctx.agentPresets.readDocument('absent')).rejects.toThrow('Unknown agent preset: absent')
   })
 })

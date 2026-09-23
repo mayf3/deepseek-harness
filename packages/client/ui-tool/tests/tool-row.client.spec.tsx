@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 
 import type { RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -273,6 +274,7 @@ describe('tool-call-model', () => {
 
 describe('ToolRow', () => {
   const rowProps = {
+    useDisclosure,
     t,
     variant: 'bash' as const, icon: <i data-testid="tool-icon" />, title: 'Bash',
     summary: 'List files', bodyRaw: '{"a":1}', state: 'ok' as const,
@@ -299,7 +301,7 @@ describe('ToolRow', () => {
     expect(view.getByText('List files')).toBeTruthy()
   })
 
-  it('excludes shared context from collapsed edit totals and the expanded card', () => {
+  it('shows totals once and shared context once when an edit expands', () => {
     const view = render(<ToolRow {...rowProps} variant="edit" title="Edit" summary="settings.ts" diff={{
       card: { diffs: [{
         path: 'settings.ts',
@@ -310,7 +312,7 @@ describe('ToolRow', () => {
     expect(view.getByText('+1 -1')).toBeTruthy()
     expect(view.container.querySelector('[data-diff]')).toBeNull()
     fireEvent.click(view.getByRole('button'))
-    expect(view.getByText(/└ \+1 -1/)).toBeTruthy()
+    expect(view.getAllByText('+1 -1')).toHaveLength(1)
     expect(view.getAllByText('start')).toHaveLength(1)
     expect(view.getAllByText('end')).toHaveLength(1)
     expect(view.getByText('old', { exact: true })).toBeTruthy()
@@ -494,7 +496,7 @@ describe('ToolRow', () => {
 describe('GenericToolCard', () => {
   const props = (toolName: string, block: RunningToolCall | ToolResultNode): GenericToolCardProps => ({
     loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
-    callId: 'c1', toolName, block, openFile: vi.fn(), t,
+    useDisclosure, callId: 'c1', toolName, block, openFile: vi.fn(), t,
   })
 
   it('renders the classified variant row from the frozen slice', () => {

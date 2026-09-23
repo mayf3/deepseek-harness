@@ -592,13 +592,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'rebuilt(id: string): string | undefined',
-        description: 'Publish one completed bundle generation (the HMR watch\'s registration hook — the only entry point through which build changes reach the graph).',
+        description: 'Publish one completed bundle generation (the HMR watch\'s registration hook — the only entry point through which build changes reach the graph). Unchanged mtime, ctime and size preserve the graph without reading the bundle.',
         parameters: [{ name: 'id', description: 'entry id (package name).' }],
-        returns: 'the new rev, or undefined for an unknown id.',
+        returns: 'the current artifact rev, or undefined for an unknown id.',
       },
       {
         signature: 'onRebuilt(listener: (id: string, rev: string) => void): () => void',
-        description: 'Subscribe to bundle rebuilds; fires only when the re-hash changed the rev.',
+        description: 'Subscribe to bundle rebuilds; fires only when artifact metadata changes the rev.',
         parameters: [{ name: 'listener', description: 'receives the entry id and its new bundle rev.' }],
         returns: 'the unsubscriber.',
       },
@@ -845,6 +845,67 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove one reference from a configuration surface.',
         parameters: [{ name: 'ref', description: 'reference name to remove.' }],
         throws: ['RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.'],
+      },
+    ],
+  },
+  {
+    key: 'deepseekAccount',
+    summary: 'Account operations; only Host consumers can obtain a request credential.',
+    description: 'Account operations; only Host consumers can obtain a request credential.',
+    methods: [
+      {
+        signature: 'abstract getState(): Promise<AccountView>',
+        description: 'Read stored-account presence and the latest login attempt.',
+        parameters: [],
+        returns: 'a snapshot without credentials or PKCE secrets.',
+      },
+      {
+        signature: 'abstract getProfile(): Promise<AccountDetails[\'profile\'] | null>',
+        description: 'Query Platform profile independently of wallet balances.',
+        parameters: [],
+        returns: 'profile outcome, or null if signed out or the grant changed during the query.',
+      },
+      {
+        signature: 'abstract getBalance(): Promise<AccountDetails[\'balance\'] | null>',
+        description: 'Query Platform recharge and bonus wallet balances independently of profile data.',
+        parameters: [],
+        returns: 'balance outcome, or null if signed out or the grant changed during the query.',
+      },
+      {
+        signature: 'abstract startSignIn(locale: string, callbackOrigin: string, loginSource: \'web\' | \'desktop\'): Promise<AccountView>',
+        description: 'Join an active attempt or start browser authorization.',
+        parameters: [{ name: 'locale', description: 'active UI language for a new attempt; joining retains its original language.' }, { name: 'callbackOrigin', description: 'browser-accessible loopback HTTP origin, including any SSH local port.' }, { name: 'loginSource', description: 'initiating UI, used to return from a failed exchange.' }],
+        returns: 'the initial snapshot without waiting for browser approval.',
+      },
+      {
+        signature: 'abstract cancelSignIn(id: SignInAttemptId): Promise<AccountView>',
+        description: 'Cancel only the named attempt; committing attempts settle before returning.',
+        parameters: [{ name: 'id', description: 'attempt identity from this Host.' }],
+        returns: 'state after cancellation or an already-started commit.',
+      },
+      {
+        signature: 'abstract signOut(): Promise<AccountView>',
+        description: 'Remove the local grant while retaining API keys and tasks; the provider revokes it in the background.',
+        parameters: [],
+        returns: 'the signed-out state after local removal; remote failures never restore the grant.',
+      },
+      {
+        signature: 'abstract watch(signal: AbortSignal): AsyncIterable<AccountView>',
+        description: 'Subscribe to snapshots including a complete initial state.',
+        parameters: [{ name: 'signal', description: 'subscription lifetime; ending it never cancels login.' }],
+        returns: 'complete snapshots as account state changes.',
+      },
+      {
+        signature: 'abstract resolveToken(url: string): Promise<string | undefined>',
+        description: 'Resolve a credential only for the inference origin allowed by the provider.',
+        parameters: [{ name: 'url', description: 'actual request destination or API base URL.' }],
+        returns: 'stored token, or undefined for other origins or a signed-out account.',
+      },
+      {
+        signature: 'abstract getPlatformSession(): Promise<PlatformSession | null>',
+        description: 'Read credentials for the configured Platform origin, bound to their issuing environment.',
+        parameters: [],
+        returns: 'a Host-only snapshot, or null while signed out.',
       },
     ],
   },
@@ -1595,6 +1656,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Unload and remove a profile-owned bundle dependency through dsh plugin\'s pnpm path.',
         parameters: [{ name: 'name', description: 'Installed dependency name.' }],
         returns: 'Removal diagnostics and the remaining profile state.',
+      },
+    ],
+  },
+  {
+    key: 'pluginRegistryProbe',
+    summary: 'Compares public registry responses on the Host; the Client owns the initial selection.',
+    description: 'Compares public registry responses on the Host; the Client owns the initial selection.',
+    methods: [
+      {
+        signature: '@Remote async fastest(): Promise<string | null>',
+        description: 'Race npm and npmmirror HTTPS ping responses through the Host\'s fetch proxy. Concurrent readers share a probe; a winner cancels and awaits the other request.',
+        parameters: [],
+        returns: 'the first registry with a successful response, or null when disabled or neither responds successfully; results are cached.',
+        throws: ['rejects when the service has been unloaded.'],
       },
     ],
   },
@@ -4153,6 +4228,30 @@ export const EVENT_API: readonly EventApiEntry[] = [
 /** Shapes of every exported type the Service and Event signatures reference (transitively), sorted by name. */
 export const TYPE_API: readonly TypeApiEntry[] = [
   {
+    name: 'AccountDetails',
+    declaration: 'export interface AccountDetails {\n    readonly profile: {\n        readonly status: \'ready\';\n        readonly value: AccountProfile;\n    } | {\n        readonly status: \'failed\';\n    };\n    readonly balance: {\n        readonly status: \'ready\';\n        readonly value: readonly AccountWallet[];\n        readonly bonusWallets: readonly AccountWallet[];\n    } | {\n        readonly status: \'failed\';\n    };\n}',
+  },
+  {
+    name: 'AccountLinks',
+    declaration: 'export interface AccountLinks {\n    readonly usageUrl: string;\n    readonly topUpUrl: string;\n}',
+  },
+  {
+    name: 'AccountProfile',
+    declaration: 'export interface AccountProfile {\n    readonly id: AccountUserId | null;\n    readonly name: string | null;\n    readonly contact: string | null;\n    readonly avatarUrl?: string | null;\n}',
+  },
+  {
+    name: 'AccountUserId',
+    declaration: 'export type AccountUserId = Branded<\'AccountUserId\'>;',
+  },
+  {
+    name: 'AccountView',
+    declaration: 'export interface AccountView {\n    readonly status: \'signed-out\' | \'credential-stored\';\n    readonly links: AccountLinks;\n    readonly attempt: SignInAttemptView | null;\n}',
+  },
+  {
+    name: 'AccountWallet',
+    declaration: 'export interface AccountWallet {\n    readonly currency: \'CNY\' | \'USD\';\n    readonly balance: string;\n}',
+  },
+  {
     name: 'AdapterRegistrationHandle',
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
@@ -4358,7 +4457,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AuthorizationSession',
-    declaration: 'export interface AuthorizationSession {\n    readonly method: string;\n    readonly signal: AbortSignal;\n    notify(notice: AuthorizationNotice): void;\n    prompt(prompt: AuthorizationPrompt): Promise<string>;\n}',
+    declaration: 'export interface AuthorizationSession {\n    readonly method: string;\n    readonly signal: AbortSignal;\n    commit(record: CredentialRecord): Promise<void>;\n    notify(notice: AuthorizationNotice): void;\n    prompt(prompt: AuthorizationPrompt): Promise<string>;\n}',
   },
   {
     name: 'AuthorizationSettlement',
@@ -4410,7 +4509,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ClientArtifactBaseline',
-    declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
+    declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly ctimeMs: number;\n    readonly size: number;\n}',
   },
   {
     name: 'CollectedOutput',
@@ -5525,6 +5624,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n    defaultOptions: PresetOption[];\n    defaultPreset: string;\n}',
   },
   {
+    name: 'PlatformSession',
+    declaration: 'export interface PlatformSession {\n    readonly origin: string;\n    readonly token: string;\n    readonly embeddedPageDist?: string;\n    readonly requestHeaders?: Readonly<Record<string, string>>;\n}',
+  },
+  {
     name: 'PluginChange',
     declaration: 'export interface PluginChange {\n    readonly reason: \'plugin\' | \'bundle\' | \'install\' | \'remove\';\n}',
   },
@@ -6118,7 +6221,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionFollowRequest',
-    declaration: 'export interface SessionFollowRequest {\n    readonly address: SessionAddress;\n    readonly maxMessages?: number;\n    readonly assistantStream?: true;\n}',
+    declaration: 'export interface SessionFollowRequest extends Pick<SessionPageRequest, \'maxMessages\' | \'turnWindow\'> {\n    readonly address: SessionAddress;\n    readonly assistantStream?: true;\n}',
   },
   {
     name: 'SessionForkRequest',
@@ -6222,7 +6325,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionPageRequest',
-    declaration: 'export interface SessionPageRequest {\n    readonly address: SessionAddress;\n    readonly throughSeq: number;\n    readonly beforeSeq?: number;\n    readonly maxMessages?: number;\n}',
+    declaration: 'export interface SessionPageRequest {\n    readonly address: SessionAddress;\n    readonly throughSeq: number;\n    readonly beforeSeq?: number;\n    readonly maxMessages?: number;\n    readonly turnWindow?: {\n        readonly minMessages: number;\n        readonly minTurns: number;\n    };\n}',
   },
   {
     name: 'SessionPersistenceCreateOptions',
@@ -6545,6 +6648,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ShellSandboxInfo {\n    mode: SandboxMode;\n    denied: boolean;\n    enforcement?: SandboxEnforcement;\n    runnerFailed?: boolean;\n}',
   },
   {
+    name: 'SignInAttemptId',
+    declaration: 'export type SignInAttemptId = Branded<\'SignInAttemptId\'>;',
+  },
+  {
+    name: 'SignInAttemptView',
+    declaration: 'export interface SignInAttemptView {\n    readonly id: SignInAttemptId;\n    readonly phase: \'initializing\' | \'waiting-browser\' | \'exchanging\' | \'committing\' | \'succeeded\' | \'cancelled\' | \'expired\' | \'failed\';\n    readonly authorizeUrl?: string;\n    readonly expiresAt?: number;\n    readonly errorCode?: SignInErrorCode;\n}',
+  },
+  {
+    name: 'SignInErrorCode',
+    declaration: 'export type SignInErrorCode = \'network\' | \'protocol\' | \'expired\' | \'storage\';',
+  },
+  {
     name: 'SkillCandidate',
     declaration: 'export interface SkillCandidate extends SkillSummary {\n    readonly rank: number;\n    readonly locator: unknown;\n    readonly metadata?: Readonly<Record<string, unknown>>;\n}',
   },
@@ -6621,6 +6736,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SpeechCatalog extends SpeechSnapshot {\n    readonly maxAudioBytes: number;\n    readonly maxDurationSeconds: number;\n}',
   },
   {
+    name: 'SpeechDownloadFailure',
+    declaration: 'export interface SpeechDownloadFailure {\n    readonly resource: string;\n    readonly source: string;\n    readonly reason: \'network\' | \'dns\' | \'timeout\' | \'certificate\' | \'http\' | \'integrity\' | \'storage\' | \'unknown\';\n    readonly code?: string;\n    readonly status?: number;\n}',
+  },
+  {
     name: 'SpeechInput',
     declaration: 'export interface SpeechInput {\n    readonly audio: Uint8Array;\n    readonly language: string;\n}',
   },
@@ -6630,7 +6749,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpeechPreparationState',
-    declaration: 'export type SpeechPreparationState = ({\n    readonly phase: \'unprepared\' | \'ready\' | \'standby\' | \'cancelled\';\n} | {\n    readonly phase: \'downloading\';\n    readonly resource: string;\n    readonly completedBytes: number;\n    readonly totalBytes?: number;\n} | {\n    readonly phase: \'checking\' | \'loading\' | \'waking\' | \'cancelling\';\n    readonly startedAt: number;\n} | {\n    readonly phase: \'failed\';\n    readonly message: string;\n}) & {\n    readonly step?: SpeechPreparationStepKind;\n    readonly steps?: readonly SpeechPreparationStep[];\n};',
+    declaration: 'export type SpeechPreparationState = ({\n    readonly phase: \'unprepared\' | \'ready\' | \'standby\' | \'cancelled\';\n} | {\n    readonly phase: \'downloading\';\n    readonly resource: string;\n    readonly completedBytes: number;\n    readonly totalBytes?: number;\n} | {\n    readonly phase: \'checking\' | \'loading\' | \'waking\' | \'cancelling\';\n    readonly startedAt: number;\n} | {\n    readonly phase: \'failed\';\n    readonly message: string;\n    readonly download?: SpeechDownloadFailure;\n}) & {\n    readonly step?: SpeechPreparationStepKind;\n    readonly steps?: readonly SpeechPreparationStep[];\n};',
   },
   {
     name: 'SpeechPreparationStep',
@@ -7090,7 +7209,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolDefinition',
-    declaration: 'export interface ToolDefinition extends ToolSchema {\n    readonly output: ToolOutputDefinition;\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    timeoutMs?: number;\n    isConcurrencySafe?(args: unknown): boolean;\n    presentCall?(args: unknown): ToolCallView | undefined;\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}',
+    declaration: 'export interface ToolDefinition extends ToolSchema {\n    readonly output: ToolOutputDefinition;\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    projectContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    timeoutMs?: number;\n    isConcurrencySafe?(args: unknown): boolean;\n    presentCall?(args: unknown): ToolCallView | undefined;\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}',
   },
   {
     name: 'ToolDispatchExecution',

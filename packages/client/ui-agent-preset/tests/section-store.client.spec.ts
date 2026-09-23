@@ -37,13 +37,31 @@ describe('the preset roster', () => {
     remote.agentPresets.read.mockResolvedValueOnce({ ok: true, value: { agentPreset: 'mine', content: '[]\n' } } as never)
     await controller.view('mine')
     expect(state().view).toEqual({ id: 'mine', title: 'mine', content: '[]\n' })
-    controller.closeView()
     remote.agentPresets.read.mockResolvedValueOnce({ ok: false, error: { message: 'Unknown agent preset: gone' } } as never)
     await controller.view('gone')
     expect(state()).toMatchObject({ view: null, error: 'Unknown agent preset: gone' })
     remote.agentPresets.read.mockRejectedValueOnce(new Error('offline'))
     await controller.view('standard')
     expect(state()).toMatchObject({ view: null, error: 'offline' })
+  })
+
+  it('ignores a read that settles after the viewer closes or a newer read opens', async () => {
+    const { controller, remote, state } = fixture()
+    const late = Promise.withResolvers<Awaited<ReturnType<typeof remote.agentPresets.read>>>()
+    remote.agentPresets.read.mockImplementationOnce(() => late.promise)
+    const first = controller.view('standard')
+    controller.closeView()
+    late.resolve({ ok: true, value: { agentPreset: 'standard', name: 'Standard', content: 'old' } })
+    await first
+    expect(state().view).toBeNull()
+
+    const failed = Promise.withResolvers<Awaited<ReturnType<typeof remote.agentPresets.read>>>()
+    remote.agentPresets.read.mockImplementationOnce(() => failed.promise)
+    const stale = controller.view('standard')
+    await controller.view('mine')
+    failed.reject(new Error('stale read'))
+    await stale
+    expect(state()).toMatchObject({ error: null, view: { id: 'mine', content: '- name: fs\n' } })
   })
 
   it('keeps default selection and blank-session synchronization on their existing settings path', async () => {

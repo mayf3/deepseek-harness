@@ -10,10 +10,11 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vit
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { realOfficeBytes } from './office-fixture.ts'
 import { excelFixture, excelHtmlFixture, excelHtmlText, meetingMinutesFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-fixture.ts'
+import { excelDrawingFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-drawing-fixture.ts'
 import { xlsFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/xls-fixture.ts'
 import { pdfFixture, selectionPdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { openSettings, connectFreshWorkspace, newEnglishPage, saveFailureShot, scrollIntoView } from './support.ts'
 
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v3.jsonl', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/document-preview', import.meta.url))
@@ -102,6 +103,58 @@ async function hideDocumentZoom(page: Page, preview: Locator): Promise<void> {
   await page.mouse.move(bounds.x + 8, bounds.y + 8)
   await expect.poll(() => preview.locator('[data-document-zoom-controls]').getAttribute('data-document-zoom-visible')).toBeNull()
 }
+
+it.skipIf(MODE === 'record')('resizes the spreadsheet canvas with its pane while retaining the selected cell', async () => {
+  const scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false })
+  let browser: Browser | undefined
+  try {
+    browser = await chromium.launch()
+    const page = await newEnglishPage(browser)
+    onTestFailed(async () => { await saveFailureShot(page, `screenshots/0908-document-preview/excel-resize-${process.pid}`) })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    const settled = scaffold.whenTurnSettled()
+    const input = page.locator('[data-composer-input]').first()
+    await input.fill(PROMPT)
+    await input.press('Enter')
+    const sessionId = await settled
+    const cwd = scaffold.ctx.agents.get(sessionId)?.session.header.cwd
+    if (cwd === undefined) throw new Error('settled Session has no workspace cwd')
+    await writeFile(join(cwd, 'budget.xlsx'), await excelFixture())
+    await page.getByText('LIGHTHOUSE', { exact: true }).waitFor()
+    const column = page.locator('[data-rightbar-col]')
+    await page.locator('[data-sidebar-right-expand]').click()
+    await column.locator('[data-sidebar-right-guide-entry="files"]').click()
+    await column.locator('[data-files-state="tree"]').waitFor({ state: 'visible' })
+    await column.locator('[data-files-entry="file"]').getByRole('button', { name: 'budget.xlsx', exact: true }).click()
+    const excel = column.locator('[data-excel-preview]')
+    await excel.locator('.luckysheet-sheets-item-name').getByText('公式与格式', { exact: true }).click()
+    await excel.locator('.fortune-sheet-overlay').click({ position: { x: 140, y: 30 } })
+    const formula = excel.locator('.fortune-fx-input')
+    await expect.poll(() => formula.innerText()).toBe('46281')
+    const canvas = excel.locator('canvas').first()
+    const originalCanvas = await canvas.elementHandle()
+    const original = await canvas.boundingBox()
+    if (original === null || originalCanvas === null) throw new Error('spreadsheet canvas is unavailable')
+    const panel = page.locator('[data-sidebar-right-panel]')
+    const panelBounds = await panel.boundingBox()
+    if (panelBounds === null) throw new Error('sidebar panel is unavailable')
+    const viewport = page.viewportSize()
+    const layout = await page.addStyleTag({ content: `[data-sidebar-right-panel] { width: ${panelBounds.width + 160}px !important; }` })
+    await expect.poll(async () => Math.round((await canvas.boundingBox())!.width - original.width)).toBe(160)
+    await expect.poll(() => formula.innerText()).toBe('46281')
+    expect(await originalCanvas.evaluate(node => node.isConnected)).toBe(true)
+    expect(page.viewportSize()).toEqual(viewport)
+    await successShot(page, 'excel-resize-wide')
+    await layout.evaluate((node) => { node.textContent = '' })
+    await expect.poll(async () => Math.round((await canvas.boundingBox())!.width)).toBe(Math.round(original.width))
+    expect(await formula.innerText()).toBe('46281')
+    await successShot(page, 'excel-resize-restored')
+    await originalCanvas.dispose()
+  } finally {
+    try { await browser?.close() } finally { await scaffold.close() }
+  }
+})
 
 describe.skipIf(MODE === 'record')('web e2e: document preview through Files', () => {
   let scaffold: WebScaffold
@@ -266,6 +319,7 @@ else process.exit(1);
       ...[90, 180, 270].map(rotation => writeFile(join(cwd, `rotated-${rotation}.pdf`), pdfFixture(4, rotation))),
       writeFile(join(cwd, 'selection.pdf'), selectionPdfFixture()),
       writeFile(join(cwd, 'budget.xlsx'), await excelFixture()),
+      writeFile(join(cwd, 'chart-budget.xlsx'), await excelDrawingFixture()),
       writeFile(join(cwd, 'meeting.xlsx'), await meetingMinutesFixture()),
       writeFile(join(cwd, 'literal-html.xlsx'), await excelHtmlFixture()),
       writeFile(join(cwd, 'budget.xls'), xlsFixture()),
@@ -342,13 +396,13 @@ else process.exit(1);
     const markdownImages: string[] = []
     for (const alt of ['relative image', 'absolute image', 'reference image']) {
       const image = preview.getByRole('img', { name: alt, exact: true })
-      await image.scrollIntoViewIfNeeded()
+      await scrollIntoView(image)
       await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0)).toBe(true)
       const source = new URL(await image.getAttribute('src') ?? '')
       expect(source.pathname).toBe('/api/file')
       markdownImages.push(alt)
     }
-    await preview.getByRole('heading', { name: heading, exact: true }).scrollIntoViewIfNeeded()
+    await scrollIntoView(preview.getByRole('heading', { name: heading, exact: true }))
     await successShot(page, 'markdown')
     const markdownTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('smoke.md', { exact: true }) })
     const markdownTabId = await markdownTab.getAttribute('data-dockkit-tab')
@@ -423,7 +477,7 @@ else process.exit(1);
       `- Local script: ${await basicHtml.locator('#local-result').innerText()}`,
       `- Network requests: ${previewNetworkRequests}`,
     ].join('\n'))
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await openSettings(page, 'en')
     const settings = page.getByRole('dialog', { name: 'Settings' })
     await settings.getByRole('switch', { name: 'Developer tools' }).click()
     await expect.poll(() => settings.getByRole('switch', { name: 'Developer tools' }).getAttribute('aria-checked')).toBe('true')
@@ -513,7 +567,7 @@ else process.exit(1);
     expect(firstColor).toBe('red')
     const workerNames = await Promise.all(page.workers().map(worker => worker.evaluate(() => self.name)))
     expect(workerNames).toContain('dsh-pdf')
-    await preview.locator('[data-pdf-page="2"]').scrollIntoViewIfNeeded()
+    await scrollIntoView(preview.locator('[data-pdf-page="2"]'))
     const secondPage = preview.getByRole('img', { name: 'PDF page 2', exact: true })
     await secondPage.waitFor({ state: 'visible', timeout: 30_000 })
     await expect.poll(() => canvasColor(secondPage), { timeout: 30_000 }).toBe('blue')
@@ -526,7 +580,7 @@ else process.exit(1);
     await filesTab.click()
     await column.locator('[data-files-state="tree"]').waitFor({ state: 'visible' })
     await pdfTab.click()
-    await preview.locator('[data-pdf-page="2"]').scrollIntoViewIfNeeded()
+    await scrollIntoView(preview.locator('[data-pdf-page="2"]'))
     await secondPage.waitFor({ state: 'visible', timeout: 30_000 })
     await expect.poll(() => canvasColor(secondPage), { timeout: 30_000 }).toBe('blue')
     const restoredColor = await canvasColor(secondPage)
@@ -797,7 +851,12 @@ else process.exit(1);
     })).toEqual({ scrollTop, scrollportBelowBanner: true, firstLineAbove: true })
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin })
     await page.evaluate(() => navigator.clipboard.writeText(''))
-    await codeBlock.getByRole('button', { name: 'Copy', exact: true }).click()
+    const copyCode = codeBlock.getByRole('button', { name: 'Copy', exact: true })
+    expect(await codeBlock.getByRole('button').count()).toBe(1)
+    expect(await copyCode.textContent()).toBe('')
+    await copyCode.hover()
+    await page.getByRole('tooltip', { name: 'Copy', exact: true }).waitFor()
+    await copyCode.click()
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(codeLines.join('\n'))
     sections.push([
       '## Code paging', '',
@@ -856,8 +915,19 @@ else process.exit(1);
     await page.keyboard.press('ControlOrMeta+C')
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('42\n')
     await successShot(page, 'excel-cached-formula')
+    await openFile('chart-budget.xlsx')
+    await sheetTabs.getByText('季度预算', { exact: true }).waitFor({ state: 'visible' })
+    const unsupportedNotice = excel.locator('[data-excel-unsupported-notice]')
+    const chartNotice = await unsupportedNotice.innerText()
+    expect(chartNotice).toBe('This preview does not support charts, conditional formatting in this workbook. Open it in a system application for the full experience.')
+    await sheetOverlay.click({ position: { x: 500, y: 110 } })
+    await expect.poll(() => formulaInput.innerText()).toBe('=C3/B3')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('80.0%\n')
+    await successShot(page, 'excel-chart-notice')
     await openFile('meeting.xlsx')
     await sheetTabs.getByText('会议信息', { exact: true }).waitFor({ state: 'visible' })
+    expect(await unsupportedNotice.count()).toBe(0)
     expect(await excel.getByText('Read-only preview', { exact: false }).count()).toBe(0)
     expect(await excel.getByText('Some formulas have no saved result', { exact: false }).count()).toBe(0)
     const formulaWarning = excel.locator('[data-excel-formula-warning]')
@@ -903,6 +973,8 @@ else process.exit(1);
       '- Opens without the Office conversion service',
       '- Sheets: 季度预算 | 公式与格式; hidden worksheet omitted',
       '- Formula workbooks use a compact warning beside fx; notice rows absent',
+      `- Unsupported XLSX content: ${chartNotice}`,
+      '- Drawing parts omitted; styled cells and cached formulas retained; notice cleared on file replacement',
       '- Formatted percent copied: 80.0%; date copied: 2026-09-16',
       '- Cached XLOOKUP result copied: 42; typing leaves it unchanged',
       '- Formula bar is read-only; PDF body and editing toolbar absent',

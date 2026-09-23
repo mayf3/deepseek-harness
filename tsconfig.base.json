@@ -28,6 +28,15 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@deepseek-ai/dsh-client-ui-settings-account": ["./packages/client/ui-settings-account/src/index.ts"],
+      "@deepseek-ai/dsh-client-ui-settings-account/client": ["./packages/client/ui-settings-account/src/client/index.ts"],
+      "@deepseek-ai/dsh-api-gateway/stream-protocol": ["./packages/api/gateway/src/stream-protocol.ts"],
+      "@deepseek-ai/dsh-api-account-controller": ["./packages/api/account-controller/src/index.ts"],
+      "@deepseek-ai/dsh-api-account-controller/types": ["./packages/api/account-controller/src/types.ts"],
+      "@deepseek-ai/dsh-deepseek-account-platform": ["./packages/credentials/deepseek-account-platform/src/index.ts"],
+      "@deepseek-ai/dsh-deepseek-account-platform/types": ["./packages/credentials/deepseek-account-platform/src/types.ts"],
+      "@deepseek-ai/dsh-deepseek-account": ["./packages/credentials/deepseek-account/src/index.ts"],
+      "@deepseek-ai/dsh-deepseek-account/types": ["./packages/credentials/deepseek-account/src/types.ts"],
       "@deepseek-ai/dsh-experimental-speech-to-text": ["./packages/experimental/speech-to-text/src/index.ts"],
       "@deepseek-ai/dsh-experimental-speech-to-text-sensevoice": ["./packages/experimental/speech-to-text-sensevoice/src/index.ts"],
       "@deepseek-ai/dsh-experimental-api-speech-to-text": ["./packages/experimental/api-speech-to-text/src/index.ts"],
@@ -118,6 +127,7 @@
       "@deepseek-ai/dsh-session-turn-outline/types": ["./packages/session/session-turn-outline/src/types.ts"],
       "@deepseek-ai/dsh-session-turn-outline/client": ["./packages/session/session-turn-outline/src/client.ts"],
       "@deepseek-ai/dsh-token-meter/client": ["./packages/llm/token-meter/src/client.ts"],
+      "@deepseek-ai/dsh-token-meter/estimate": ["./packages/llm/token-meter/src/estimate.ts"],
       "@deepseek-ai/dsh-plan-mode/types": ["./packages/plan/plan-mode/src/types.ts"],
       "@deepseek-ai/dsh-plan-mode/client": ["./packages/plan/plan-mode/src/client.ts"],
       "@deepseek-ai/dsh-agent-preset-registry/tools": ["./packages/preset/agent-preset-registry/src/tools.ts"],
