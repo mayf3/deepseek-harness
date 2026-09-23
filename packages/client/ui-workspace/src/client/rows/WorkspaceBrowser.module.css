@@ -532,6 +532,7 @@
 }
 
 .emptyState > svg {
+  margin-bottom: 4px;
   color: var(--dsw-alias-label-caption);
 }
 
