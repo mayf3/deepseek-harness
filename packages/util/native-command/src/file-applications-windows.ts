@@ -1,4 +1,7 @@
 /** Windows Shell association queries and invocation; paths are encoded data, never PowerShell expressions. */
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { NativeCommandRunner } from './runner.ts'
 
 /** Shell interfaces are declared in their native vtable order; Invoke preserves packaged-app and DDE handling. */
@@ -155,10 +158,12 @@ public static class DshFileAssociations {
       if (small != IntPtr.Zero) DestroyIcon(small);
     }
   }
-  static string IconData(IHandler handler) {
+  // Best-effort fallback: some handlers return their executable path from GetName, but a
+  // packaged handler's name may be an AUMID or family name, which extracts no icon.
+  static string IconData(IHandler handler, string id) {
     string source = null; int index = 0;
     try { handler.GetIconLocation(out source, out index); } catch (Exception) {
-      // A handler without a drawable icon location falls back to its executable.
+      // A handler without a drawable icon location falls back to its name.
     }
     if (!String.IsNullOrEmpty(source)) {
       source = Environment.ExpandEnvironmentVariables(source);
@@ -169,14 +174,9 @@ public static class DshFileAssociations {
       var icon = PngFromIconSource(source, index);
       if (icon != null) return icon;
     }
-    // Packaged handlers name the executable only in GetName; extract there too.
-    string executable = null;
-    try { handler.GetName(out executable); } catch (Exception) {
-      // A handler that names no executable has no icon to fall back to.
-    }
-    return String.IsNullOrEmpty(executable) || String.Equals(executable, source, StringComparison.OrdinalIgnoreCase)
+    return String.IsNullOrEmpty(id) || String.Equals(id, source, StringComparison.OrdinalIgnoreCase)
       ? null
-      : PngFromIconSource(executable, 0);
+      : PngFromIconSource(id, 0);
   }
   static void Visit(string path, Action<IHandler> visit) {
     var extension = Path.GetExtension(path);
@@ -203,7 +203,7 @@ public static class DshFileAssociations {
       string id, name;
       handler.GetName(out id); handler.GetUIName(out name);
       if (!seen.Add(id)) return;
-      apps.Add(new Application { id = id, name = name, icon = IconData(handler),
+      apps.Add(new Application { id = id, name = name, icon = IconData(handler, id),
         @default = String.Equals(id, executable, StringComparison.OrdinalIgnoreCase) || String.Equals(id, appId, StringComparison.OrdinalIgnoreCase) });
     });
     return apps.ToArray();
@@ -236,7 +236,8 @@ public static class DshFileAssociations {
 }`
 
 /**
- * Execute the Windows Shell adapter in a Unicode STA PowerShell process.
+ * Execute the Windows Shell adapter in a Unicode STA PowerShell process; the adapter
+ * source is a private temporary script file, removed once the call settles.
  * @param path - Windows file path, translated by the caller for WSL.
  * @param application - registered handler to invoke; null requests the application list.
  * @param signal - caller cancellation.
@@ -257,8 +258,19 @@ $path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedPa
 $application = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedApplication}'))
 ${application === null ? 'ConvertTo-Json -InputObject @([DshFileAssociations]::List($path)) -Depth 4 -Compress' : '[DshFileAssociations]::Open($path, $application)'}
 `
-  const result = await run('powershell.exe', [
-    '-NoProfile', '-NonInteractive', '-STA', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64'),
-  ], signal)
-  return result.stdout
+  // The script travels as a file, not as command-line data: -EncodedCommand grew with the
+  // embedded C# and overflowed the 32767-character CreateProcess limit for long paths.
+  // PowerShell 5.1 decodes a -File script as ANSI unless it carries a BOM; the BOM keeps
+  // the embedded UTF-8 source intact.
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-native-command-'))
+  const scriptPath = join(directory, 'associations.ps1')
+  try {
+    await writeFile(scriptPath, `\uFEFF${script}`, 'utf8')
+    const result = await run('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', scriptPath,
+    ], signal)
+    return result.stdout
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 }
