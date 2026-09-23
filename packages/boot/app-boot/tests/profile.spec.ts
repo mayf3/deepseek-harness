@@ -447,7 +447,6 @@ describe('loadProfile', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(
       `skipping profile bundle "guarded": Error: Plugin guarded@0.0.0 is incompatible with dsh ${getDshRuntimeVersion()}`,
     ))
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('dsh plugin --profile demo allow-version guarded@0.0.0'))
     writeFileSync(join(dir, PROFILE_COMPATIBILITY_FILENAME), JSON.stringify({ 'guarded@0.0.0': [getDshRuntimeVersion()] }))
     expect(loadProfileDirectory('dsh', dir, anchor).layers.map(layer => layer.packageName)).toEqual(['guarded', 'kept'])
   })

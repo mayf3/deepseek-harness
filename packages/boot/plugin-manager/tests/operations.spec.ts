@@ -187,6 +187,9 @@ it.each([
     execution: 'service', outputBytes: 8192, onOutput: (text) => { messages.push(text) },
   })
   expect(outcome.exitCode).toBe(1)
+  expect(outcome.incompatible).toEqual([
+    { name: 'plugin', version: '1.0.0', runtimeVersion: getDshRuntimeVersion(), peers: { '@deepseek-ai/dsh': '999.0.0' } },
+  ])
   expect(outcome.output).toContain('installation rejected')
   expect(outcome.output).toContain('plugin@1.0.0')
   expect(outcome.output).toContain('nothing was installed')
@@ -335,6 +338,7 @@ it.each([true, false])('rejects incompatible installed manifests before activati
     execution: 'service', outputBytes: 8192, activateNewBundles, onOutput: (text) => { messages.push(text) },
   })
   expect(outcome.exitCode).toBe(1)
+  expect(outcome.incompatible).toMatchObject([{ name: 'incompatible', version: '1.0.0', peers: { '@deepseek-ai/dsh-app-boot': '>=999.0.0' } }])
   expect(outcome.output).toContain('incompatible@1.0.0')
   expect(outcome.output).toContain('installation rejected')
   expect(readFileSync(outcome.logPath, 'utf8')).toContain('incompatible@1.0.0')

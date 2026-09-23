@@ -1334,7 +1334,10 @@ it.each(['live', 'startup'] as const)('requires exact risk acknowledgement and p
   const managed = () => [...ctx.loader.entries()].find(entry => entry.id === 'include:managed')
   // The bundle's own peers are incompatible, so its whole layer is skipped and contributes no row.
   expect(managed()).toBeUndefined()
-  expect((await manager.listBundles()).find(bundle => bundle.name === 'extra')?.error?.diagnostic).toContain('crashes or data loss')
+  expect((await manager.listBundles()).find(bundle => bundle.name === 'extra')?.error).toEqual({
+    code: 'incompatible-version',
+    incompatible: [{ name: 'extra', version: '1.0.0', runtimeVersion: runtime, peers: { '@deepseek-ai/dsh': '999.0.0' } }],
+  })
   expect(await manager.setBundleEnabled('extra', true)).toMatchObject({ changed: false, application: 'failed' })
   expect(await manager.setVersionExemption('extra@1.0.0', runtime, true)).toMatchObject({ changed: false, application: 'failed' })
   expect(manager.listVersionExemptions()).toEqual({ exemptions: {}, warnings: [] })
@@ -1356,6 +1359,18 @@ it.each(['live', 'startup'] as const)('requires exact risk acknowledgement and p
   if (mode === 'live') expect(managed()).toBeUndefined()
 })
 
+it('reports a package run refused for compatibility as a typed refusal', async () => {
+  const { manager } = await fixture()
+  const incompatible = [{ name: 'dsh-x', version: '2.0.0', runtimeVersion: getDshRuntimeVersion(), peers: { '@deepseek-ai/dsh': '999.0.0' } }]
+  const install = vi.spyOn(operations, 'runProfilePnpm').mockResolvedValue({
+    exitCode: 1, output: 'dsh: installation rejected', truncated: false, logPath: 'pnpm.log', kind: 'unknown', incompatible,
+  })
+  onTestFinished(() => { install.mockRestore() })
+  const result = await manager.installBundle('dsh-x')
+  expect(result).toMatchObject({ application: 'failed', changed: false, error: { code: 'incompatible-version', incompatible } })
+  expect(install).toHaveBeenCalledTimes(1)
+})
+
 it.each([false, true])('rechecks installed bundle peers before accepting a disabled installation (exempted=%s)', async (exempted) => {
   const { manager, dir, bundle } = await fixture()
   if (exempted) await manager.setVersionExemption('incompatible@1.0.0', getDshRuntimeVersion(), true, true)
@@ -1374,7 +1389,7 @@ it.each([false, true])('rechecks installed bundle peers before accepting a disab
   const result = await manager.installBundle('incompatible', { enabled: false })
   expect(result).toMatchObject({ application: exempted ? 'applied' : 'failed', changed: exempted })
   if (!exempted) {
-    expect(result.error?.diagnostic).toContain('incompatible@1.0.0')
+    expect(result.error).toMatchObject({ code: 'incompatible-version', incompatible: [{ name: 'incompatible', version: '1.0.0' }] })
     expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(before)
   }
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core', 'extra'])

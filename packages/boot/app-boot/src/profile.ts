@@ -659,7 +659,7 @@ export function loadProfileDirectory(
       }
       // A bundle is not a plugin row, so row admission never reads its own peers.
       const issue = evaluatePluginCompatibility(bundleManifest, exemptions)
-      if (issue !== undefined && !issue.exempted) throw new Error(pluginCompatibilityWarning(issue, basename(dir)))
+      if (issue !== undefined && !issue.exempted) throw new Error(pluginCompatibilityWarning(issue))
       const patchPaths = bundlePatchPaths(packageDir, bundle)
       const patches = patchPaths.flatMap(patchPath => loadOverlayPatches(binName, patchPath))
       layers.push({ packageName, packageDir, patchPaths, patches })

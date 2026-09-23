@@ -89,19 +89,15 @@ export function evaluatePluginCompatibility(
 
 /**
  * Describe incompatible peers, their risk, and the exact-version remedy.
+ * Surfaces with their own grant mechanism or locale render the structured result themselves.
  * @param issue - incompatible plugin/runtime result, including exempted mismatches.
- * @param profile - profile whose composition met the plugin; a CLI-managed profile gets the `dsh plugin` grant command.
- * @returns a warning suitable for CLI and plugin-management diagnostics.
+ * @returns an English diagnostic for logs and stderr.
  */
-export function pluginCompatibilityWarning(issue: PluginCompatibility, profile?: string): string {
+export function pluginCompatibilityWarning(issue: PluginCompatibility): string {
   const key = `${issue.name}@${issue.version}`
-  // The Electron application owns the desktop profile, and `dsh plugin` refuses to manage it.
-  const grant = profile === undefined || profile.toLowerCase() === 'desktop'
-    ? `grant the exact-version exemption for ${key} on dsh ${issue.runtimeVersion} through the plugin manager`
-    : `run \`dsh plugin --profile ${profile} allow-version ${key} --dsh-version ${issue.runtimeVersion} --accept-risk\``
   return `Plugin ${key} is incompatible with dsh ${issue.runtimeVersion}: peerDependencies ${JSON.stringify(issue.peers)}. `
     + 'Running it may cause crashes or data loss. '
     + 'Update the plugin or install a plugin version compatible with this dsh runtime. '
-    + `To accept this risk explicitly, ${grant}, then retry the installation or restart dsh. `
+    + `To accept this risk explicitly, grant the exact-version exemption for ${key} on dsh ${issue.runtimeVersion} with \`dsh plugin allow-version\` or the plugin manager, then retry the installation or restart dsh. `
     + `Exact-version exemption: ${issue.exempted ? 'active' : 'not active'}.`
 }

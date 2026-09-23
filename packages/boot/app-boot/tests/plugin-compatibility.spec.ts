@@ -171,16 +171,8 @@ describe('compatibility warning', () => {
       + 'Running it may cause crashes or data loss. '
       + 'Update the plugin or install a plugin version compatible with this dsh runtime. '
       + 'To accept this risk explicitly, grant the exact-version exemption for @example/plugin@2.0.0 on dsh 0.1.7-alpha.1 '
-      + 'through the plugin manager, then retry the installation or restart dsh. '
+      + 'with `dsh plugin allow-version` or the plugin manager, then retry the installation or restart dsh. '
       + `Exact-version exemption: ${exempted ? 'active' : 'not active'}.`,
     )
-  })
-
-  it('names the dsh plugin grant command for a CLI-managed profile only', () => {
-    const issue = { ...identity, runtimeVersion: runtime, peers: { '@deepseek-ai/dsh': '^0.2.0' }, exempted: false }
-    expect(pluginCompatibilityWarning(issue, 'web')).toContain(
-      'run `dsh plugin --profile web allow-version @example/plugin@2.0.0 --dsh-version 0.1.7-alpha.1 --accept-risk`, then retry',
-    )
-    expect(pluginCompatibilityWarning(issue, 'Desktop')).toContain('through the plugin manager')
   })
 })

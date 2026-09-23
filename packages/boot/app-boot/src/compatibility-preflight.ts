@@ -103,7 +103,7 @@ function preflight(
       const manifest = manifestOf(ctx, row.name, base)
       if (manifest === undefined) return undefined
       const issue = evaluatePluginCompatibility(manifest, exemptions)
-      return issue === undefined || issue.exempted ? undefined : pluginCompatibilityWarning(issue, profile.name)
+      return issue === undefined || issue.exempted ? undefined : pluginCompatibilityWarning(issue)
     } catch (error) {
       // Peer metadata that cannot be read or validated is refused rather than silently admitted.
       /* v8 ignore next -- every reader and parser used here rejects with an Error. */
