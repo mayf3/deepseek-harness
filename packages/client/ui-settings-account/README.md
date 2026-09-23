@@ -24,7 +24,7 @@ Desktop Account settings display DeepSeek login state and offer browser authoriz
 
 The client activates only inside Desktop, identified by its preload bridge. Plain Web clients keep the standard Settings launcher and API-key onboarding without account login, account settings, or an account-state subscription.
 
-The sidebar and Account settings display the profile avatar as a circular image, with the account icon as fallback when the URL is absent or the image fails to load. The collapsed sidebar centers the avatar in a 36 × 36 px button.
+The sidebar and Account settings display the profile avatar as a circular image, with the account icon as fallback when the URL is absent or the image fails to load. The collapsed sidebar centers the avatar in a 36 × 36 px button. Before sign-in the sidebar launcher shows a More row instead, leading with the ellipsis glyph.
 
 The section registers through settings.section and uses the account Remote namespace. The stream survives carrier reconnects through the shared Remote supervisor. The page renders feature-owned English and Chinese copy and keeps API keys separate from account state.
 
@@ -34,7 +34,7 @@ Desktop usage and top-up actions open an isolated native Platform view below a 4
 
 The account menu's Feedback entry opens the Feishu questionnaire in the system browser. It supplies the available build version, UI locale and physical screen resolution as prefill_* parameters, with hide_*=1 for every context field; the account UID, tokens and contact details are excluded. Configure contactFormUrl on the ui-settings-account plugin to select another HTTPS form. contactSource defaults to empty until the questionnaire supports a Harness source option; OS and device fields remain unfilled, matching the Web implementation.
 
-The sidebar account menu uses the shared Menu surface, backdrop blur, spacing, and row typography; feature styles only size its launcher.
+The sidebar account menu uses the shared Menu surface and backdrop blur. The signed-in menu keeps the shared row typography; the signed-out menu carries its own wider rows and its Contact us copy for the Feedback entry.
 
 The account card’s More account information link opens `https://platform.deepseek.com` in the system browser.
 

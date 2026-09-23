@@ -1,6 +1,8 @@
 /** Sidebar account launcher and locally authoritative sign-out action. */
 import { useEffect, useState } from 'react'
-import { Toast, Menu, IconPaperPlaneOutlineMedium, IconSettingsOutlineMedium, IconUserOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Toast, Menu, IconEllipsisOutlineMedium, IconPaperPlaneOutlineMedium, IconSettingsOutlineMedium, IconUserOutlineMedium,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountSectionInjected } from './AccountSection.tsx'
 import { SignOutDialog } from './SignOutDialog.tsx'
@@ -41,15 +43,17 @@ export function AccountMenu({
   const beginSignIn = (): void => { setOpen(false); void start().catch(() => undefined) }
   return <div className={css.root}>
     {expiryNotice && <Toast text={t('sessionExpired')} onDone={() => { setExpiryNotice(false) }} />}
-    <Menu open={open} side="top" portal autoFocus className={css.anchor}
-      anchor={<button type="button" className={css.trigger} data-collapsed={!wide} aria-label={t('menu')}
+    <Menu open={open} side="top" portal autoFocus className={css.anchor} listClassName={signedIn ? undefined : css.signedOutMenu}
+      anchor={<button type="button" className={css.trigger} data-collapsed={!wide} data-signed-out={!signedIn} aria-label={t('menu')}
         aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
-        <span className={css.avatar}><AccountAvatar url={signedIn && profile?.status === 'ready' ? profile.value.avatarUrl : null} /></span>
-        {wide && <span className={css.label}>{signedIn ? label : t('signedOut')}</span>}
+        {signedIn
+          ? <span className={css.avatar}><AccountAvatar url={profile?.status === 'ready' ? profile.value.avatarUrl : null} /></span>
+          : <IconEllipsisOutlineMedium size={14} />}
+        {wide && <span className={css.label}>{signedIn ? label : t('more')}</span>}
       </button>}
       items={[
         { id: 'settings', label: t('settings'), icon: <IconSettingsOutlineMedium size={16} /> },
-        { id: 'contact', label: t('contactUs'), icon: <IconPaperPlaneOutlineMedium size={16} /> },
+        { id: 'contact', label: signedIn ? t('contactUs') : t('contactUsSignedOut'), icon: <IconPaperPlaneOutlineMedium size={16} /> },
         ...(signedIn ? [{ id: 'signout', label: t('signOut'), icon: <LogoutIcon />, disabled: busy }]
           : [{ id: 'signin', label: t('signIn'), icon: <IconUserOutlineMedium size={16} /> }]),
       ]}

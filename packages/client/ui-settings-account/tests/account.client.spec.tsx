@@ -95,6 +95,27 @@ it.each([en, zh].flatMap(copy => ([false, true, 'unknown'] as const).map(running
   expect(screen.queryByRole('menu')).toBeNull()
 })
 
+it.each([en, zh])('offers settings, contact and sign-in from the signed-out account menu', async (copy) => {
+  const openSettings = vi.fn()
+  const operations = operationsOf({ status: 'signed-out', attempt: null })
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())}
+    useTheme={selector => selector(operations.hooks.theme.getSnapshot())} wide openOnboarding={() => {}} openSettings={openSettings}
+    t={key => key in copy ? copy[key as AccountKey] : key} />)
+  const trigger = screen.getByRole('button', { name: copy.menu })
+  expect(trigger.textContent).toBe(copy.more)
+  expect(trigger.querySelector('svg')).not.toBeNull()
+  fireEvent.click(trigger)
+  expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([copy.settings, copy.contactUsSignedOut, copy.signIn])
+  await expect(`${screen.getByRole('menu').textContent}\n`).toMatchFileSnapshot(`./expected/menu-signed-out-${copy === en ? 'en' : 'zh'}.txt`)
+  fireEvent.click(screen.getByRole('menuitem', { name: copy.settings }))
+  expect(openSettings).toHaveBeenCalledOnce()
+  fireEvent.click(screen.getByRole('button', { name: copy.menu }))
+  fireEvent.click(screen.getByRole('menuitem', { name: copy.contactUsSignedOut }))
+  expect(operations.contactUs).toHaveBeenCalledOnce()
+})
+
 it('reports a failed start in the login dialog, not as a sidebar alert', async () => {
   const operations = mount({ status: 'signed-out', attempt: null })
   cleanup()
