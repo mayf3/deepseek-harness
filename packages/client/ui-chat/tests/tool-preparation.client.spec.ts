@@ -86,7 +86,7 @@ function harness(entries: readonly SessionEventLikeEntry[] = opening, hasMore = 
 
 describe('Tool preparation and durable replay', () => {
   it('batches repeated named deltas and retains the unchanged Tool node', () => {
-    const start = vi.fn(toolDefinition.start)
+    const start = vi.fn<typeof toolDefinition.start>((...args) => toolDefinition.start(...args))
     const h = harness(opening, false, { ...toolDefinition, start })
     expect(h.assembler.append(delta(2.1, first, '{"file_path":"file.txt","content":"'))).toBe('animation-frame')
     const original = h.tools()[0]!
