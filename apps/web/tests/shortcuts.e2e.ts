@@ -48,6 +48,12 @@ describe('web e2e: shortcut reference', () => {
       expect(await dialog.boundingBox()).toMatchObject({ width: 480, height: 600 })
       expect(await dialog.getByRole('search').boundingBox()).toMatchObject({ width: 432, height: 36 })
       const rows = dialog.getByRole('listitem')
+      const stopRow = dialog.getByRole('region', { name: locale === 'zh-CN' ? '应用操作' : 'Application', exact: true })
+        .getByRole('listitem').last()
+      await stopRow.getByText(locale === 'zh-CN' ? '停止生成' : 'Stop generating', { exact: true }).waitFor()
+      const stopButtons = stopRow.getByRole('button')
+      expect(await stopButtons.count()).toBe(1)
+      expect(await stopButtons.isDisabled()).toBe(true)
       expect(new Set(await rows.evaluateAll(items => items.map(row => row.getBoundingClientRect().height))))
         .toEqual(new Set([42]))
       expect(await rows.evaluateAll(items => items.every(row => row.getBoundingClientRect().height >= 42

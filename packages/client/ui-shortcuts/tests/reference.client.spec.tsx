@@ -168,32 +168,78 @@ function referenceFixture({ runtime = 'web', dictionary = en }: { runtime?: 'web
   return { store, catalog, fixedCatalog, config, edit, view }
 }
 
-it('keeps row and tied-search order stable across registration and remount order', () => {
+it('keeps core actions in product order across registration, remount and label changes', () => {
   const { catalog, fixedCatalog, store } = referenceFixture()
   const template = catalog.getSnapshot()[0]!
-  const first = { ...template, id: 'first.command' as ShortcutCommandId, label: 'Zulu', aliases: ['action'] }
-  const last = { ...template, id: 'last.command' as ShortcutCommandId, label: 'Alpha', aliases: ['action'] }
-  const fixedFirst: ShortcutFixedCatalogEntry = { id: 'fixed.first' as ShortcutCommandId, label: 'Zulu input',
-    keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'input' }
-  const fixedLast = { ...fixedFirst, id: 'fixed.last' as ShortcutCommandId, label: 'Alpha input' }
-  const applicationRows = () => screen.getAllByRole('button', { name: /^Edit shortcut for/ })
-    .map(button => button.getAttribute('aria-label'))
-  const inputRows = () => within(screen.getByRole('region', { name: en.input })).getAllByRole('listitem')
-    .map(row => row.textContent)
+  const core = [
+    ['shortcuts.open', 'Keyboard shortcuts'], ['session.new', 'New session'],
+    ['sidebar.left.toggle', 'Toggle left sidebar'], ['session.search', 'Search sessions'],
+    ['workspace.add', 'Add workspace'], ['session.rename', 'Rename session'],
+    ['session.fork', 'Fork session'], ['session.archive', 'Archive session'],
+    ['settings.open', 'Open settings'], ['workspace.openLocal', 'Open workspace locally'],
+    ['sidebar.right.toggle', 'Toggle right sidebar'], ['workspace.files', 'Workspace files'],
+    ['browser.new', 'Browser'], ['terminal.new', 'New terminal'], ['pane.split', 'Split pane'],
+    ['pane.fullscreen.toggle', 'Toggle fullscreen'], ['page.refresh', 'Refresh page'], ['page.close', 'Close page'],
+  ] as const
+  const commands = core.map(([id, label]) => ({ ...template, id: id as ShortcutCommandId, label }))
+  const extensions = ([['extension.alpha', 'Zulu extension'], ['extension.zulu', 'Alpha extension']] as const).map(([id, label]) => ({
+    ...template, id: id as ShortcutCommandId, label,
+  }))
+  const stop: ShortcutFixedCatalogEntry = { id: 'response.stop' as ShortcutCommandId, label: 'Stop reply',
+    keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'application' }
+  const fixed: ShortcutFixedCatalogEntry[] = [
+    { ...stop, id: 'fixed.send' as ShortcutCommandId, label: 'Send', keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'input' },
+    { ...stop, id: 'fixed.newline' as ShortcutCommandId, label: 'Newline', keys: ['Shift', 'Enter'], bindings: [{ code: 'Enter', modifiers: ['shift'] }], group: 'input' },
+    { ...stop, id: 'fixed.select' as ShortcutCommandId, label: 'Select', keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'menus' },
+    { ...stop, id: 'fixed.dismiss' as ShortcutCommandId, label: 'Dismiss', group: 'menus' },
+    { ...stop, id: 'approval.accept' as ShortcutCommandId, label: 'Approve', keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'approval' },
+    stop,
+  ]
+  const labels = (group: string) => within(screen.getByRole('region', { name: group })).getAllByRole('listitem')
+    .map(row => row.firstElementChild?.textContent)
+  const expected = [...core.map(([, label]) => label), 'Stop reply', 'Zulu extension', 'Alpha extension']
   for (const reversed of [true, false]) {
     act(() => {
-      catalog.set(reversed ? [last, first] : [first, last])
-      fixedCatalog.set(reversed ? [fixedLast, fixedFirst] : [fixedFirst, fixedLast])
+      catalog.set(reversed ? [...extensions, ...commands].reverse() : [...extensions, ...commands])
+      fixedCatalog.set(reversed ? [...fixed].reverse() : fixed)
     })
-    expect(applicationRows()).toEqual(['Edit shortcut for Zulu', 'Edit shortcut for Alpha'])
-    expect(inputRows()).toEqual(['Zulu inputEnter', 'Alpha inputEnter'])
+    expect(labels(en.application)).toEqual(expected)
+    expect(labels(en.input)).toEqual(['Newline', 'Send'])
+    expect(labels(en.menus)).toEqual(['Dismiss', 'Select'])
+    expect(labels(en.approval)).toEqual(['Approve'])
   }
-  act(() => { catalog.set([last]); fixedCatalog.set([fixedLast]) })
-  act(() => { catalog.set([last, first]); fixedCatalog.set([fixedLast, fixedFirst]) })
-  expect(applicationRows()).toEqual(['Edit shortcut for Zulu', 'Edit shortcut for Alpha'])
-  expect(inputRows()).toEqual(['Zulu inputEnter', 'Alpha inputEnter'])
-  act(() => { store.actions.search('action') })
-  expect(applicationRows()).toEqual(['Edit shortcut for Zulu', 'Edit shortcut for Alpha'])
+  const stopButton = within(screen.getByRole('region', { name: en.application })).getByRole('button', { name: 'Stop reply Esc Esc' })
+  expect(stopButton.hasAttribute('disabled')).toBe(true)
+  fireEvent.click(stopButton)
+  expect(screen.queryByRole('button', { name: 'Edit shortcut for Stop reply' })).toBeNull()
+  expect(screen.queryByRole('group', { name: 'Stop reply' })).toBeNull()
+  act(() => { catalog.set(extensions); fixedCatalog.set(fixed.filter(row => row.id !== stop.id)) })
+  expect(labels(en.application)).toEqual(['Zulu extension', 'Alpha extension'])
+  act(() => { catalog.set([...extensions, ...[...commands].reverse()]); fixedCatalog.set(fixed) })
+  expect(labels(en.application)).toEqual(expected)
+  act(() => {
+    catalog.set([...commands, ...extensions].map(row => ({ ...row, label: `操作：${row.label}` })))
+    fixedCatalog.set(fixed.map(row => ({ ...row, label: `操作：${row.label}` })))
+    store.actions.search('操作')
+  })
+  expect(labels(en.application)).toEqual(expected.map(label => `操作：${label}`))
+  expect(labels(en.input)).toEqual(['操作：Newline', '操作：Send'])
+})
+
+it('keeps product order for tied searches while prioritizing stronger matches', () => {
+  const { catalog, store } = referenceFixture()
+  const template = catalog.getSnapshot()[0]!
+  const first = { ...template, id: 'shortcuts.open' as ShortcutCommandId, label: 'Zulu', aliases: ['action', 's-e-a-r-c-h'] }
+  const second = { ...template, id: 'session.new' as ShortcutCommandId, label: 'Alpha', aliases: ['action', 's-e-a-r-c-h'] }
+  const extension = { ...template, id: 'extension.alpha' as ShortcutCommandId, label: 'Extension', aliases: ['action', 'search'] }
+  const labels = () => screen.getAllByRole('button', { name: /^Edit shortcut for/ })
+    .map(button => button.getAttribute('aria-label')?.replace('Edit shortcut for ', ''))
+  act(() => { catalog.set([extension, second, first]); store.actions.search('action') })
+  expect(labels()).toEqual(['Zulu', 'Alpha', 'Extension'])
+  act(() => { store.actions.search('search') })
+  expect(labels()).toEqual(['Extension', 'Zulu', 'Alpha'])
+  act(() => { store.actions.search('') })
+  expect(labels()).toEqual(['Zulu', 'Alpha', 'Extension'])
 })
 
 it.each((['web', 'desktop'] as const).flatMap(runtime => (['invalid', 'future'] as const)
@@ -218,7 +264,7 @@ it.each((['web', 'desktop'] as const).flatMap(runtime => (['invalid', 'future'] 
 it('shows mounted fixed actions as searchable read-only rows and follows their label and lifetime', () => {
   const { fixedCatalog, store } = referenceFixture()
   const send = { id: 'fixed.send' as ShortcutCommandId, label: 'Send from catalog', keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'input' as const }
-  const stop = { id: 'response.stop' as ShortcutCommandId, label: 'Stop reply', keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input' as const }
+  const stop = { id: 'response.stop' as ShortcutCommandId, label: 'Stop reply', keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'application' as const }
   const approve = { id: 'approval.accept' as ShortcutCommandId, label: 'Approve', keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'approval' as const }
   expect(screen.queryByText(send.label)).toBeNull()
   act(() => { fixedCatalog.set([send, stop, approve]) })

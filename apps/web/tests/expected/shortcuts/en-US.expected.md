@@ -7,85 +7,88 @@
   - region "Application":
     - list:
       - listitem:
-        - text: Close current page or window
-        - button "Remove shortcut for Close current page or window"
-        - button "Edit shortcut for Close current page or window"
-        - button "Close current page or window Ctrl + Alt + W": Ctrl + Alt + W
-      - listitem:
-        - text: Refresh current page
-        - button "Remove shortcut for Refresh current page"
-        - button "Edit shortcut for Refresh current page"
-        - button "Refresh current page Ctrl + Alt + R": Ctrl + Alt + R
-      - listitem:
-        - text: Toggle panel fullscreen
-        - button "Remove shortcut for Toggle panel fullscreen"
-        - button "Edit shortcut for Toggle panel fullscreen"
-        - button "Toggle panel fullscreen Ctrl + Alt + Enter": Ctrl + Alt + Enter
-      - listitem:
-        - text: Split
-        - button "Remove shortcut for Split"
-        - button "Edit shortcut for Split"
-        - button "Split Ctrl + \\": Ctrl + \
-      - listitem:
-        - text: Archive session
-        - button "Remove shortcut for Archive session"
-        - button "Edit shortcut for Archive session"
-        - button "Archive session Ctrl + Alt + A": Ctrl + Alt + A
-      - listitem:
-        - text: Fork session
-        - button "Remove shortcut for Fork session"
-        - button "Edit shortcut for Fork session"
-        - button "Fork session Ctrl + Shift + F": Ctrl + Shift + F
+        - text: Open keyboard shortcuts
+        - button "Remove shortcut for Open keyboard shortcuts"
+        - button "Edit shortcut for Open keyboard shortcuts"
+        - button "Open keyboard shortcuts Ctrl + /": Ctrl + /
       - listitem:
         - text: New Session
         - button "Remove shortcut for New Session"
         - button "Edit shortcut for New Session"
         - button "New Session Ctrl + Alt + N": Ctrl + Alt + N
       - listitem:
-        - text: Rename session
-        - button "Remove shortcut for Rename session"
-        - button "Edit shortcut for Rename session"
-        - button "Rename session Ctrl + Shift + R": Ctrl + Shift + R
+        - text: Toggle left sidebar
+        - button "Remove shortcut for Toggle left sidebar"
+        - button "Edit shortcut for Toggle left sidebar"
+        - button "Toggle left sidebar Ctrl + Alt + B": Ctrl + Alt + B
       - listitem:
         - text: Search sessions
         - button "Remove shortcut for Search sessions"
         - button "Edit shortcut for Search sessions"
         - button "Search sessions Ctrl + Alt + K": Ctrl + Alt + K
       - listitem:
+        - text: Add workspace
+        - button "Remove shortcut for Add workspace"
+        - button "Edit shortcut for Add workspace"
+        - button "Add workspace Ctrl + Alt + O": Ctrl + Alt + O
+      - listitem:
+        - text: Rename session
+        - button "Remove shortcut for Rename session"
+        - button "Edit shortcut for Rename session"
+        - button "Rename session Ctrl + Shift + R": Ctrl + Shift + R
+      - listitem:
+        - text: Fork session
+        - button "Remove shortcut for Fork session"
+        - button "Edit shortcut for Fork session"
+        - button "Fork session Ctrl + Shift + F": Ctrl + Shift + F
+      - listitem:
+        - text: Archive session
+        - button "Remove shortcut for Archive session"
+        - button "Edit shortcut for Archive session"
+        - button "Archive session Ctrl + Alt + A": Ctrl + Alt + A
+      - listitem:
         - text: Open settings
         - button "Remove shortcut for Open settings"
         - button "Edit shortcut for Open settings"
         - button "Open settings Ctrl + ,": Ctrl + ,
-      - listitem:
-        - text: Open keyboard shortcuts
-        - button "Remove shortcut for Open keyboard shortcuts"
-        - button "Edit shortcut for Open keyboard shortcuts"
-        - button "Open keyboard shortcuts Ctrl + /": Ctrl + /
-      - listitem:
-        - text: Toggle left sidebar
-        - button "Remove shortcut for Toggle left sidebar"
-        - button "Edit shortcut for Toggle left sidebar"
-        - button "Toggle left sidebar Ctrl + Alt + B": Ctrl + Alt + B
       - listitem:
         - text: Toggle right sidebar
         - button "Remove shortcut for Toggle right sidebar"
         - button "Edit shortcut for Toggle right sidebar"
         - button "Toggle right sidebar Ctrl + Shift + B": Ctrl + Shift + B
       - listitem:
+        - text: Workspace files
+        - button "Remove shortcut for Workspace files"
+        - button "Edit shortcut for Workspace files"
+        - button "Workspace files Ctrl + Alt + P": Ctrl + Alt + P
+      - listitem:
         - text: New terminal
         - button "Remove shortcut for New terminal"
         - button "Edit shortcut for New terminal"
         - 'button "New terminal Ctrl + `"': "Ctrl + `"
       - listitem:
-        - text: Add workspace
-        - button "Remove shortcut for Add workspace"
-        - button "Edit shortcut for Add workspace"
-        - button "Add workspace Ctrl + Alt + O": Ctrl + Alt + O
+        - text: Split
+        - button "Remove shortcut for Split"
+        - button "Edit shortcut for Split"
+        - button "Split Ctrl + \\": Ctrl + \
       - listitem:
-        - text: Workspace files
-        - button "Remove shortcut for Workspace files"
-        - button "Edit shortcut for Workspace files"
-        - button "Workspace files Ctrl + Alt + P": Ctrl + Alt + P
+        - text: Toggle panel fullscreen
+        - button "Remove shortcut for Toggle panel fullscreen"
+        - button "Edit shortcut for Toggle panel fullscreen"
+        - button "Toggle panel fullscreen Ctrl + Alt + Enter": Ctrl + Alt + Enter
+      - listitem:
+        - text: Refresh current page
+        - button "Remove shortcut for Refresh current page"
+        - button "Edit shortcut for Refresh current page"
+        - button "Refresh current page Ctrl + Alt + R": Ctrl + Alt + R
+      - listitem:
+        - text: Close current page or window
+        - button "Remove shortcut for Close current page or window"
+        - button "Edit shortcut for Close current page or window"
+        - button "Close current page or window Ctrl + Alt + W": Ctrl + Alt + W
+      - listitem:
+        - text: Stop generating
+        - button "Stop generating Esc Esc" [disabled]: Esc Esc
   - region "Message input":
     - heading "Message input" [level=3]
     - list:
@@ -104,9 +107,6 @@
       - listitem:
         - text: Open command menu
         - button "Open command menu /" [disabled]: /
-      - listitem:
-        - text: Stop generating
-        - button "Stop generating Esc Esc" [disabled]: Esc Esc
   - region "Menus and dialogs":
     - heading "Menus and dialogs" [level=3]
     - list:

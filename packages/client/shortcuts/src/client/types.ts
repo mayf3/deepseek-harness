@@ -69,7 +69,7 @@ export interface ShortcutFixedCommand {
   readonly keys: readonly string[]
   /** One or more physical combinations reserved by this action, including individual steps of a sequence. */
   readonly bindings: readonly [ShortcutBinding, ...ShortcutBinding[]]
-  readonly group: 'input' | 'menus' | 'approval'
+  readonly group: 'application' | 'input' | 'menus' | 'approval'
 }
 /** Localized fixed-action row; its key sequence is not an editable binding. */
 export interface ShortcutFixedCatalogEntry {

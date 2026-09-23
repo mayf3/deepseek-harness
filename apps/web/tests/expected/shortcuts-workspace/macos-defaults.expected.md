@@ -7,84 +7,87 @@
   - region "Application":
     - list:
       - listitem:
-        - text: Close current page or window
-        - button "Remove shortcut for Close current page or window"
-        - button "Edit shortcut for Close current page or window"
-        - button "Close current page or window ⌥ ⌘ W": ⌥ ⌘ W
-      - listitem:
-        - text: Refresh current page
-        - button "Edit shortcut for Refresh current page"
-        - button "Refresh current page No shortcut": No shortcut
-      - listitem:
-        - text: Toggle panel fullscreen
-        - button "Remove shortcut for Toggle panel fullscreen"
-        - button "Edit shortcut for Toggle panel fullscreen"
-        - button "Toggle panel fullscreen ⌥ ⌘ Enter": ⌥ ⌘ Enter
-      - listitem:
-        - text: Split
-        - button "Remove shortcut for Split"
-        - button "Edit shortcut for Split"
-        - button "Split ⌘ \\": ⌘ \
-      - listitem:
-        - text: Archive session
-        - button "Remove shortcut for Archive session"
-        - button "Edit shortcut for Archive session"
-        - button "Archive session ⌥ ⌘ A": ⌥ ⌘ A
-      - listitem:
-        - text: Fork session
-        - button "Remove shortcut for Fork session"
-        - button "Edit shortcut for Fork session"
-        - button "Fork session ⇧ ⌘ F": ⇧ ⌘ F
+        - text: Open keyboard shortcuts
+        - button "Remove shortcut for Open keyboard shortcuts"
+        - button "Edit shortcut for Open keyboard shortcuts"
+        - button "Open keyboard shortcuts ⌘ /": ⌘ /
       - listitem:
         - text: New Session
         - button "Remove shortcut for New Session"
         - button "Edit shortcut for New Session"
         - button "New Session ⌥ ⌘ N": ⌥ ⌘ N
       - listitem:
-        - text: Rename session
-        - button "Remove shortcut for Rename session"
-        - button "Edit shortcut for Rename session"
-        - button "Rename session ⇧ ⌘ R": ⇧ ⌘ R
+        - text: Toggle left sidebar
+        - button "Remove shortcut for Toggle left sidebar"
+        - button "Edit shortcut for Toggle left sidebar"
+        - button "Toggle left sidebar ⌥ ⌘ B": ⌥ ⌘ B
       - listitem:
         - text: Search sessions
         - button "Remove shortcut for Search sessions"
         - button "Edit shortcut for Search sessions"
         - button "Search sessions ⌥ ⌘ K": ⌥ ⌘ K
       - listitem:
+        - text: Add workspace
+        - button "Remove shortcut for Add workspace"
+        - button "Edit shortcut for Add workspace"
+        - button "Add workspace ⌥ ⌘ O": ⌥ ⌘ O
+      - listitem:
+        - text: Rename session
+        - button "Remove shortcut for Rename session"
+        - button "Edit shortcut for Rename session"
+        - button "Rename session ⇧ ⌘ R": ⇧ ⌘ R
+      - listitem:
+        - text: Fork session
+        - button "Remove shortcut for Fork session"
+        - button "Edit shortcut for Fork session"
+        - button "Fork session ⇧ ⌘ F": ⇧ ⌘ F
+      - listitem:
+        - text: Archive session
+        - button "Remove shortcut for Archive session"
+        - button "Edit shortcut for Archive session"
+        - button "Archive session ⌥ ⌘ A": ⌥ ⌘ A
+      - listitem:
         - text: Open settings
         - button "Remove shortcut for Open settings"
         - button "Edit shortcut for Open settings"
         - button "Open settings ⌘ ,": ⌘ ,
-      - listitem:
-        - text: Open keyboard shortcuts
-        - button "Remove shortcut for Open keyboard shortcuts"
-        - button "Edit shortcut for Open keyboard shortcuts"
-        - button "Open keyboard shortcuts ⌘ /": ⌘ /
-      - listitem:
-        - text: Toggle left sidebar
-        - button "Remove shortcut for Toggle left sidebar"
-        - button "Edit shortcut for Toggle left sidebar"
-        - button "Toggle left sidebar ⌥ ⌘ B": ⌥ ⌘ B
       - listitem:
         - text: Toggle right sidebar
         - button "Remove shortcut for Toggle right sidebar"
         - button "Edit shortcut for Toggle right sidebar"
         - button "Toggle right sidebar ⇧ ⌘ B": ⇧ ⌘ B
       - listitem:
+        - text: Workspace files
+        - button "Remove shortcut for Workspace files"
+        - button "Edit shortcut for Workspace files"
+        - button "Workspace files ⌥ ⌘ P": ⌥ ⌘ P
+      - listitem:
         - text: New terminal
         - button "Remove shortcut for New terminal"
         - button "Edit shortcut for New terminal"
         - 'button "New terminal ⌃ `"': "⌃ `"
       - listitem:
-        - text: Add workspace
-        - button "Remove shortcut for Add workspace"
-        - button "Edit shortcut for Add workspace"
-        - button "Add workspace ⌥ ⌘ O": ⌥ ⌘ O
+        - text: Split
+        - button "Remove shortcut for Split"
+        - button "Edit shortcut for Split"
+        - button "Split ⌘ \\": ⌘ \
       - listitem:
-        - text: Workspace files
-        - button "Remove shortcut for Workspace files"
-        - button "Edit shortcut for Workspace files"
-        - button "Workspace files ⌥ ⌘ P": ⌥ ⌘ P
+        - text: Toggle panel fullscreen
+        - button "Remove shortcut for Toggle panel fullscreen"
+        - button "Edit shortcut for Toggle panel fullscreen"
+        - button "Toggle panel fullscreen ⌥ ⌘ Enter": ⌥ ⌘ Enter
+      - listitem:
+        - text: Refresh current page
+        - button "Edit shortcut for Refresh current page"
+        - button "Refresh current page No shortcut": No shortcut
+      - listitem:
+        - text: Close current page or window
+        - button "Remove shortcut for Close current page or window"
+        - button "Edit shortcut for Close current page or window"
+        - button "Close current page or window ⌥ ⌘ W": ⌥ ⌘ W
+      - listitem:
+        - text: Stop generating
+        - button "Stop generating Esc Esc" [disabled]: Esc Esc
   - region "Message input":
     - heading "Message input" [level=3]
     - list:
@@ -103,9 +106,6 @@
       - listitem:
         - text: Open command menu
         - button "Open command menu /" [disabled]: /
-      - listitem:
-        - text: Stop generating
-        - button "Stop generating Esc Esc" [disabled]: Esc Esc
   - region "Menus and dialogs":
     - heading "Menus and dialogs" [level=3]
     - list:

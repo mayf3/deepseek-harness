@@ -96,9 +96,9 @@ it('releases listeners, modal observation, and pending local-input resets on dis
 it('publishes fixed reservations and removes them with their owning registration', () => {
   const registry = new ShortcutRegistry('web', 'windows')
   let label = 'Stop reply'
-  const command: ShortcutFixedCommand = { id: 'response.stop' as ShortcutCommandId, label: () => label, keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input' }
+  const command: ShortcutFixedCommand = { id: 'response.stop' as ShortcutCommandId, label: () => label, keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'application' }
   const off = registry.registerFixed(command)
-  expect(registry.fixedCatalog.getSnapshot()).toEqual([{ id: 'response.stop', label, keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input' }])
+  expect(registry.fixedCatalog.getSnapshot()).toEqual([{ id: 'response.stop', label, keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'application' }])
   expect(registry.definitions()).toEqual([{ id: 'response.stop', defaults: {}, fixed: [{ code: 'Escape', modifiers: [] }] }])
   expect(() => registry.registerFixed(command)).toThrow('Duplicate')
   expect(() => registry.register({ ...command, aliases: [], defaults: {}, regions: [], modals: [], resolve: () => ({ status: 'pass' }) })).toThrow('Duplicate')
