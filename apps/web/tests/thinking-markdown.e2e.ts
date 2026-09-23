@@ -16,7 +16,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { expandTurnProcesses, newEnglishPage, saveFailureShot } from './support.ts'
+import { expandTurnProcesses, newEnglishPage, saveFailureShot, scrollIntoView } from './support.ts'
 
 const EXPECTED_DIR = fileURLToPath(new URL('./expected/thinking-markdown', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('./expected/thinking-markdown/ui.expected.md', import.meta.url))
@@ -159,7 +159,7 @@ describe('web e2e: secondary Thinking Markdown', () => {
     expect(await markdown.locator('hr').count()).toBe(1)
     expect(await markdown.locator('table').count()).toBe(1)
     expect(await markdown.locator('.katex').count()).toBe(7)
-    await markdown.locator('pre').scrollIntoViewIfNeeded()
+    await scrollIntoView(markdown.locator('pre'))
     await expect.poll(() => markdown.locator('pre.shiki').count(), { timeout: 15_000 }).toBe(1)
     const snapshot = (await captureStableAria(page, '[data-variant="think"][data-expanded]', scaffold.workspaceCwd))
       .split(LONG_TOKEN).join('{{longToken}}')
@@ -233,7 +233,7 @@ describe('web e2e: secondary Thinking Markdown', () => {
     expect(answerSize).toBeGreaterThan(Number.parseFloat(summaryStyle.fontSize))
     await page.setViewportSize({ width: 1680, height: 1000 })
     const groupScroll = thinking.locator('xpath=ancestor::*[@data-step-process-body][1]')
-    await groupScroll.scrollIntoViewIfNeeded()
+    await scrollIntoView(groupScroll)
     await groupScroll.evaluate((host) => {
       const row = host.querySelector('[data-variant="think"] tbody tr:nth-child(12)')
       if (row === null) throw new Error('tall Thinking table row missing')

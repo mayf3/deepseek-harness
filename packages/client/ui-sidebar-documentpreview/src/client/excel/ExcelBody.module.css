@@ -16,6 +16,34 @@
   color-scheme: light;
 }
 
+/* Hide editing handles and redundant controls within the read-only preview. */
+.workbook :global(.fortune-stat-area),
+.workbook :global(.luckysheet-sheets-item-function),
+.workbook :global(.fortune-cols-freeze-handle),
+.workbook :global(.fortune-rows-freeze-handle) {
+  display: none;
+}
+
+.workbook :global(.luckysheet-sheet-area div.luckysheet-sheets-item) {
+  padding-right: 5px;
+}
+
+.workbook :global(.fortune-sheettab-container) {
+  max-width: 100%;
+}
+
+.workbook :global(.fortune-fx-input-container) {
+  min-width: 0;
+}
+
+.workbook :global(.fortune-fx-input) {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
 .notice {
   display: flex;
   flex: none;
