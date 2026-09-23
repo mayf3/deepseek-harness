@@ -40,11 +40,6 @@ export function apply(ctx: Context, config: Config): void {
     options, resolveApiKey, providerName: 'DeepSeek',
     discoverModels: async (provider) => {
       const connection = options()
-      try { await resolveApiKey(connection) }
-      catch (error) {
-        if (error instanceof LlmError && error.code === 'MISSING_CREDENTIAL') return []
-        throw error
-      }
       return connection.models.map(model => catalogModelInfo(provider, model))
     },
   })

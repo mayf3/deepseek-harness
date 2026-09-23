@@ -1126,7 +1126,7 @@ describe('resolution snapshots', () => {
       profiles: () => current,
       // Credential resolution is the real await inside a stream call, and the
       // window a configuration change has to land in.
-      resolveApiKey: async (provider) => { if (provider === 'deepseek') await held; return 'k' },
+      resolveApiKey: async () => { await held; return 'k' },
       auth: memoryAuth(),
     })
 
