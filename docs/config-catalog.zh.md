@@ -196,7 +196,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/gateway/src/index.ts:144`](../packages/api/gateway/src/index.ts)
+来源：[`packages/api/gateway/src/index.ts:145`](../packages/api/gateway/src/index.ts)
 
 <a id="deepseek-aidsh-api-job-controller"></a>
 
@@ -1035,8 +1035,12 @@ export interface Config {
   vadModelPath?: string | undefined
   /** Weight precision; INT8 minimizes first-use download and model storage. */
   precision: 'int8' | 'fp32'
-  /** Hugging Face-compatible origin for pinned model URLs, including private mirrors. */
-  modelOrigin: string
+  /** Explicit Hugging Face-compatible origin; bypasses automatic selection and public fallback. */
+  modelOrigin?: string | undefined
+  /** Hugging Face-compatible origins compared before downloading each missing asset. */
+  modelOrigins: string[]
+  /** Deadline for concurrent HEAD probes, including redirects to the actual asset. */
+  modelProbeTimeoutMs: number
   /** CPU intra-operation thread count. */
   threads: number
   /** Maximum speech segment length passed to the recognizer. */

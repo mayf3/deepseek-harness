@@ -139,6 +139,35 @@ function imageRow(id: string, refId: string, text = ''): UserMessage {
 }
 
 describe('QueueDock', () => {
+  it.each(['ABC', 'ACB', 'BAC', 'BCA', 'CAB', 'CBA'])(
+    'keeps repeated queued submissions in Dock through acceptance and FIFO claims (%s)', (hostOrder) => {
+      const pending: SessionSnapshot['pendingSubmissions'] = ['A', 'B', 'C'].map(id => ({
+        requestId: id as never, placement: 'queued', time: 1_000,
+        text: `input ${id}`, attachments: [],
+      }))
+      const initial = { ...snapshotWith([]), pendingSubmissions: pending }
+      const source = liveSession(initial)
+      const view = render(<QueueDock {...kitFor(initial)} useSession={source.useSession} useProjection={source.useProjection} />)
+      fireEvent.click(view.getByRole('button', { name: /3 条排队消息/ }))
+      const order = () => [...view.container.querySelectorAll('[data-queue-dock] li')]
+        .map(element => pending.find(input => element.textContent?.includes(input.text))!.requestId)
+      expect(order()).toEqual(['A', 'B', 'C'])
+      const queued: UserMessage[] = []
+      for (const id of hostOrder) {
+        const submission = pending.find(input => input.requestId === id)!
+        queued.push({ ...row(id, submission.text), source: { kind: 'user', rpcId: submission.requestId } })
+        const remaining = pending.filter(input => !hostOrder.slice(0, queued.length).includes(input.requestId))
+        act(() => { source.push({ ...snapshotWith([...queued]), pendingSubmissions: remaining }) })
+        expect(order()).toEqual([...queued.map(item => item.id), ...remaining.map(input => input.requestId)])
+      }
+      for (let claimed = 1; claimed <= queued.length; claimed++) {
+        act(() => { source.push(snapshotWith(queued.slice(claimed))) })
+        expect(order()).toEqual(hostOrder.slice(claimed).split(''))
+      }
+      expect(view.container.querySelector('[data-queue-dock]')).toBeNull()
+    },
+  )
+
   it('renders null while the queue is empty', () => {
     const snap = snapshotWith([])
     const source = liveSession(snap)
@@ -199,6 +228,28 @@ describe('QueueDock', () => {
     }
     fireEvent.click(view.getByRole('button', { name: '编辑排队消息' }))
     expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('等待上传')
+  })
+
+  it('omits a local Chat submission while keeping other queued rows and queued echoes', () => {
+    const local = { ...row('idle', '留在正文'), source: { kind: 'user' as const, rpcId: 'idle-request' as never } }
+    const pending: TestSnapshot = {
+      ...snapshotWith([local, row('older', '原有排队')]),
+      pendingSubmissions: [{
+        requestId: 'idle-request' as never, placement: 'transcript', time: 1, text: '留在正文', attachments: [],
+      }],
+    }
+    const source = liveSession(pending)
+    const view = render(<QueueDock {...kitFor(pending)} useSession={source.useSession} useProjection={source.useProjection} />)
+    expect(view.queryByText('留在正文')).toBeNull()
+    expect(view.getByText('原有排队')).toBeTruthy()
+    expect((view.getByRole('button', { name: '编辑排队消息' }) as HTMLButtonElement).disabled).toBe(false)
+    act(() => { source.push({ ...pending, pendingSubmissions: [...pending.pendingSubmissions, {
+      requestId: 'queued-request' as never, placement: 'queued', time: 2, text: '新排队回显', attachments: [],
+    }] }) })
+    fireEvent.click(view.getByRole('button', { name: '2 条排队消息发送中…' }))
+    expect(view.queryByText('留在正文')).toBeNull()
+    expect(view.getByText('原有排队')).toBeTruthy()
+    expect(view.getByText('新排队回显').closest('[data-submission-echo]')).not.toBeNull()
   })
 
   it('loads the durable thumbnail after replacing a local image echo', async () => {
