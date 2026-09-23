@@ -87,7 +87,9 @@ Chat 末尾为进行中的 Turn 控制行，且该轮尚无可见输入时，第
 
 Chat 通过 `uiConversation.groups` 注册过程 Group Definition。React 通过稳定的 Group 与 Node 容器渲染混合 `node`/`group` 根序列，组头数据与成员数组分别订阅。已结束组的标题独立于实时详情偏好，只有运行中的标题在该偏好变化时更新。[过程分组业务规则](src/client/conversation-nodes/README.zh.md#process-grouping) 定义切分方式与活动摘要。
 
-`groupPart` 在 Assistant 渲染器中选择推理或回复，不复制 Node 载荷。每个部分有独立的 DOM 锚点用于恢复阅读位置；轮次导航使用原 Node key，落到它的第一个可见部分。展示模式切换以及为完整旧组补入更早成员时，保留组来源、成员父级及 key。原 Node Store 仍是唯一节点数据所有者，替换 Builder 时重新绑定按键订阅，不重挂载容器。模式变化保留尺寸观察器，并复用整轮状态选择器。
+`groupPart` 在 Assistant 渲染器中选择推理或回复，不复制 Node 载荷。同一个 callId 的准备、派发与结果阶段由 Tool 节点自己拥有。每个部分有独立的 DOM 锚点用于恢复阅读位置；轮次导航使用原 Node key，落到它的第一个可见部分。展示模式切换以及为完整旧组补入更早成员时，保留组来源、成员父级及 key。原 Node Store 仍是唯一节点数据所有者，替换 Builder 时重新绑定按键订阅，不重挂载容器。模式变化保留尺寸观察器，并复用整轮状态选择器。
+
+实时工具 delta 与推理共用按帧合并的发布节奏；持久调用和结果立即发布。重复具名 delta 在投影调用、锚点、位置及可见性均未变化时保留 Tool 节点及其数据引用。
 
 过程组使用稳定的 `div` 布局盒子、滚动正文及不限高的内容盒子，后者报告正文内部的内容增长。业务样式必须适配组内及组边界间距，处理隐藏或空成员以及回答前的间距特例。CSS 变量不属于 Group Definition。
 
