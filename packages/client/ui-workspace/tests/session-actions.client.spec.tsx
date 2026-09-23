@@ -30,6 +30,7 @@ import { ForkSessionMenuItem } from '../src/client/session-actions/ForkSession.t
 import { PinSessionMenuItem, PinSessionRowButton } from '../src/client/session-actions/PinSession.tsx'
 import { RenameSessionMenuItem, SessionRenameDialog } from '../src/client/session-actions/RenameSession.tsx'
 import { RowActionToast } from '../src/client/session-actions/RowActionToast.tsx'
+import { createWorkspaceViewStore } from '../src/client/stores.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
@@ -489,8 +490,15 @@ declare module '@deepseek-ai/dsh-workspace/types' {
 
 describe('RowActionToast', () => {
   /** The notice surface over a test-owned notice source; dismissal clears the notice the way apply does. */
-  function toastSurface() {
+  function toastSurface(viewState: { archivedFilter?: 'default' | 'show' | 'only' } = { archivedFilter: 'default' }) {
     const toast = createSnapshotStore<RowToastState | null>(null)
+    const instance = createWorkspaceViewStore().create()
+    // A v5 snapshot hydrates without the filter key; mirror it by dropping the
+    // fresh store's default rather than writing an explicit undefined.
+    const state = { ...instance.store.getSnapshot() }
+    if (viewState.archivedFilter === undefined) delete state.archivedFilter
+    else state.archivedFilter = viewState.archivedFilter
+    const view = createSnapshotStore(state)
     const dismissToast = vi.fn(() => { toast.set(null) })
     const undoArchive = vi.fn()
     const showArchived = vi.fn()
@@ -498,6 +506,8 @@ describe('RowActionToast', () => {
       <RowActionToast
         {...overlay}
         useToast={bindSnapshotSelector(toast)}
+        useStore={bindSnapshotSelector(view)}
+        actions={instance.actions}
         dismissToast={dismissToast}
         undoArchive={undoArchive}
         showArchived={showArchived}
@@ -542,6 +552,20 @@ describe('RowActionToast', () => {
     expect(callOrder(dismissToast, 1)).toBeLessThan(callOrder(showArchived))
     expect(undoArchive).toHaveBeenCalledOnce()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('treats a view without a persisted filter as the hidden default and keeps the filter action', () => {
+    const { notify } = toastSurface({})
+    notify({ kind: 'archived', sessionId: sid('one') })
+    expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销或筛选已归档会话')
+  })
+
+  it.each(['show', 'only'] as const)('omits the filter action while the %s filter already shows archived rows', (archivedFilter) => {
+    const { notify } = toastSurface({ archivedFilter })
+    notify({ kind: 'archived', sessionId: sid('one') })
+    expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销')
+    expect(screen.queryByRole('button', { name: '筛选已归档会话' })).toBeNull()
+    expect(screen.getByRole('button', { name: '撤销' })).toBeTruthy()
   })
 
   it.each([

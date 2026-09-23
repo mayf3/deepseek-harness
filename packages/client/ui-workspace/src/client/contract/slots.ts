@@ -438,10 +438,15 @@ export type SessionArchiveConfirmProps =
   & Omit<SessionArchiveConfirmInjected, 'hooks'>
   & PropsHooks<SessionArchiveConfirmInjected['hooks']>
 
-/** Props of the row toast entry in `shell.overlay`. */
+/**
+ * Props of the row toast entry in `shell.overlay`. The declared viewing store
+ * carries the archived filter; the archived notice omits its filter action
+ * when archived rows are already visible.
+ */
 export type RowToastProps =
   PropsRuntime<'shell.overlay'>
   & PropsLocale<'workspace'>
+  & PropsStore<WorkspaceViewStoreHandle>
   & Omit<RowToastInjected, 'hooks'>
   & PropsHooks<RowToastInjected['hooks']>
 

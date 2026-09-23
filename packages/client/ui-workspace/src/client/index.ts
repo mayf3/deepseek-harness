@@ -298,8 +298,10 @@ export function apply(ctx: Context): void {
     yield ctx.slots.register({
       name: 'shell.overlay', id: 'workspace.session-archive', locale: NS, inject: archiveConfirmInjected,
     }, SessionArchiveConfirmDialog)
+    // The toast shares the browser's viewing store: it reads the archived
+    // filter to drop the archived notice's filter action once rows are visible.
     yield ctx.slots.register({
-      name: 'shell.overlay', id: 'workspace.row-toast', locale: NS, inject: rowToastInjected,
+      name: 'shell.overlay', id: 'workspace.row-toast', locale: NS, store: viewStore, inject: rowToastInjected,
     }, RowActionToast)
   })
   ctx.slots.inject('conversation.hero.workspace', () => ctx.slots.register(

@@ -17,10 +17,10 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconArchiveCheckOutlineRegular, IconArchiveOutlineRegular,
+  Button, IconArchiveCheckOutlineRegular, IconArchiveOffOutlineRegular, IconArchiveOutlineRegular,
   IconChevronsUpDownOutlineRegular, IconClockOutlineRegular, IconCloseFillRegular,
   IconFlatListOutlineRegular, IconFolderCloseRegular, IconProjectAddOutlineRegular,
-  IconSearchOutlineRegular, IconSlidersTwoOutlineRegular,
+  IconQueueOutlineRegular, IconSearchOutlineRegular, IconSlidersTwoOutlineRegular,
   IconWorkspaceTreeOutlineRegular, Menu, Modal, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
@@ -127,22 +127,21 @@ function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrde
         { id: 'updated', label: t('orderBy.updated'), icon: <IconClockOutlineRegular /> },
         { type: 'separator' as const, id: 'archived-filter-separator' },
         { type: 'label' as const, id: 'filter-by', text: t('filterBy.label') },
-        { id: 'show-archived', label: t('viewOptions.showArchived'), icon: <IconArchiveOutlineRegular /> },
+        { id: 'hide-archived', label: t('viewOptions.hideArchived'), icon: <IconArchiveOffOutlineRegular /> },
+        { id: 'show-archived', label: t('viewOptions.showArchived'), icon: <IconQueueOutlineRegular /> },
         { id: 'only-archived', label: t('viewOptions.onlyArchived'), icon: <IconArchiveCheckOutlineRegular /> },
       ]}
       selectedIds={[
         groupBy,
         orderBy,
-        ...archivedFilter === 'show' ? ['show-archived'] : [],
-        ...archivedFilter === 'only' ? ['only-archived'] : [],
+        { default: 'hide-archived', show: 'show-archived', only: 'only-archived' }[archivedFilter],
       ]}
       onSelect={(id) => {
         if (id === 'workspace' || id === 'workspace-tree' || id === 'flat') onGroupPick(id)
         else if (id === 'manual' || id === 'updated') onOrderPick(id)
-        // The two archived items are mutually exclusive; re-picking the
-        // selected one returns to the default hide-archived view.
-        else if (id === 'show-archived') onArchivedFilterPick(archivedFilter === 'show' ? 'default' : 'show')
-        else if (id === 'only-archived') onArchivedFilterPick(archivedFilter === 'only' ? 'default' : 'only')
+        else if (id === 'hide-archived') onArchivedFilterPick('default')
+        else if (id === 'show-archived') onArchivedFilterPick('show')
+        else if (id === 'only-archived') onArchivedFilterPick('only')
         setOpen(false)
       }}
       align="end"
@@ -247,6 +246,8 @@ type SessionTreeProps = Pick<
   setSessionOrder: (accountKey: string, order: readonly string[]) => void
   /** Registry-global pin and archive sets plus the archived-visibility choice. */
   rowState: SessionRowState
+  /** Switch the archived filter back to the default hide-archived view. */
+  onLeaveArchivedOnly: () => void
   /** Open the browser-owned rename dialog for a real Workspace group. */
   onRenameRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
   /** Open the browser-owned delete-confirmation dialog for a real Workspace group. */
@@ -259,10 +260,26 @@ type SessionTreeProps = Pick<
   onSessionRevealed: (sessionId: SessionId) => void
 }
 
+/** The list-empty placeholder — a glyph over the text; the archived-only view names its filter and offers the way back. */
+function EmptySessions({ rowState, onLeaveArchivedOnly, t }: Pick<SessionTreeProps, 'rowState' | 'onLeaveArchivedOnly' | 't'>) {
+  const archivedOnly = rowState.archivedFilter === 'only'
+  return (
+    <div className={css.emptyState} data-row-key="empty">
+      {archivedOnly ? <IconArchiveOutlineRegular size={24} /> : <IconQueueOutlineRegular size={24} />}
+      <div>{archivedOnly ? t('empty.noneArchived') : t('empty.none')}</div>
+      {archivedOnly && (
+        <button type="button" className={css.emptyAction} onClick={onLeaveArchivedOnly}>
+          {t('empty.viewOthers')}
+        </button>
+      )}
+    </div>
+  )
+}
+
 /** The scrolling session tree; unmounting drops the sessions subscription and local row limits. */
 function SessionTree({
   list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds,
-  rowState,
+  rowState, onLeaveArchivedOnly,
   workspaceReady, animationResetKey, usePanelInfo,
   onRenameRequest, onDeleteRequest, onSessionRenameRequest,
   renderSlot,
@@ -375,9 +392,13 @@ function SessionTree({
     })
   }
   const childrenByParent = useMemo(() => {
+    const rendered = new Set(groups.map(group => group.key))
     const children = new Map<string | undefined, GroupNode[]>()
     for (const group of groups) {
-      const parent = parents.get(group.key)
+      // The archived-only view drops empty groups, so an ancestor may be
+      // absent; nest under the nearest rendered one.
+      let parent = parents.get(group.key)
+      while (parent !== undefined && !rendered.has(parent)) parent = parents.get(parent)
       const siblings = children.get(parent)
       if (siblings === undefined) children.set(parent, [group])
       else siblings.push(group)
@@ -594,7 +615,7 @@ function SessionTree({
         resetKey={JSON.stringify([animationResetKey, sessionLimits])}
       >
         {groups.length === 0 && (
-          <div className={css.empty} data-row-key="empty">{t('empty.none')}</div>
+          <EmptySessions rowState={rowState} onLeaveArchivedOnly={onLeaveArchivedOnly} t={t} />
         )}
         {groupRows}
       </AnimatedRows>
@@ -605,7 +626,7 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  list, sessionIds, rowState, useSessionStatus, open, onSessionRenameRequest,
+  list, sessionIds, rowState, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest,
   usePanelInfo, setSessionOrder, workspaceReady, animationResetKey,
   revealSessionId, onSessionRevealed, renderSlot, t,
 }: Pick<
@@ -621,6 +642,7 @@ function FlatList({
   | 'revealSessionId'
   | 'onSessionRevealed'
   | 'rowState'
+  | 'onLeaveArchivedOnly'
   | 't'
 > & {
   list: SessionListState
@@ -656,7 +678,7 @@ function FlatList({
         resetKey={animationResetKey}
       >
         {rows.length === 0 && (
-          <div className={css.empty} data-row-key="empty">{t('empty.none')}</div>
+          <EmptySessions rowState={rowState} onLeaveArchivedOnly={onLeaveArchivedOnly} t={t} />
         )}
         {rows.map((node) => {
           const active = drag !== null && drag.pinned === node.pinned
@@ -875,6 +897,7 @@ export function WorkspaceBrowser({
     }
     open(sessionId)
   }
+  const leaveArchivedOnly = (): void => { actions.setArchivedFilter('default') }
   const workspaceReady = workspacePhase === 'ready' && workspaceStreamState !== 'loading'
   const mainSessionId = Object.values(list.byId)
     .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
@@ -1327,6 +1350,7 @@ export function WorkspaceBrowser({
                 list={list}
                 sessionIds={orderedFlatSessionIds}
                 rowState={rowState}
+                onLeaveArchivedOnly={leaveArchivedOnly}
                 workspaceReady={workspaceReady}
                 animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
                 useSessionStatus={useSessionStatus}
@@ -1356,6 +1380,7 @@ export function WorkspaceBrowser({
                 setGroupExpanded={actions.setGroupExpanded}
                 setSessionOrder={saveSessionOrder}
                 rowState={rowState}
+                onLeaveArchivedOnly={leaveArchivedOnly}
                 startSession={startSession}
                 open={guardedOpen}
                 insertWorkspaceBefore={insertWorkspaceBefore}
