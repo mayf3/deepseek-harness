@@ -5,6 +5,9 @@
 /deepseek-harness-desktop:
   en: 45561fc0dd3a1b20
   zh: f4b03355d4bd0693
+/deepseek-harness-desktop/closing-the-window-and-quitting:
+  en: eff1938598576ffa
+  zh: 2bcb2e0dec0139cc
 /deepseek-harness-desktop/key-technical-decisions:
   en: 069fdfd72d2ea26a
   zh: 76ae549d43c99bb4
@@ -48,8 +51,8 @@
   en: 8efe3498dbe8686d
   zh: a88c16f20a9430f3
 /deepseek-harness-desktop/updates:
-  en: a40f7aa2b00ed6fb
-  zh: d852a2d9de576dc5
+  en: c2cf8db67af2ecf7
+  zh: 5df4cd47ecc7edf9
 /deepseek-harness-desktop/updates/mandatory-update-policy:
   en: 2f789a4949fafb12
   zh: d8b28c01cfee11b7
