@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-本仓库唯一的「文件扩展名 → 语法高亮语言」表，供 Client 的文档 Code 预览、diff 审阅与 Host read 工具持久化的 `lang` 提示共同使用。`languageForPath` 以大小写不敏感的方式把文件名或路径映射为规范化 grammar id，识别两种路径分隔符，并把前导点视为扩展名分隔符（`.env` 解析为 `dotenv`）。`CODE_HIGHLIGHT_EXTENSIONS` 列出全部已识别后缀，供预览注册使用。Host read 卡片持久化的 `lang` 一律是短 id：`readLangHintForPath` 在同一张表上做投影——旧 read 表已识别的后缀保持逐字节相同的旧值，新增后缀使用该语言的短名（`powershell`→`ps1`、`hcl`→`tf`）。该包可在浏览器使用，不提供 Cordis service，也不持有运行时状态；真正的分词仍由 Client 高亮器负责。
+本仓库唯一的「文件扩展名 → 语法高亮语言」表，供 Client 的文档 Code 预览、diff 审阅与 Host read 工具持久化的 `lang` 提示共同使用。`languageForPath` 以大小写不敏感的方式把文件名或路径映射为规范化 grammar id；`CODE_HIGHLIGHT_EXTENSIONS` 列出预览注册可以声明的全部后缀。`readLangHintForPath` 在同一张表上把 read 卡片的短 id 投影出来：已录制的会话已经持有该后缀的值时保持该持久化值不变，其余后缀取该语言的短名。该包可在浏览器使用，不提供 Cordis service，也不持有运行时状态；真正的分词仍由 Client 高亮器负责。
 
 ## 目录
 
@@ -24,7 +24,7 @@ kind: "package-library"
 
 表位于 [`src/index.ts`](src/index.ts)。每个键是规范化语言 id——即 Client 高亮器解析的 grammar id；每个值是选中它的、不含点的小写扩展名。`languageForPath(path)` 取路径最后一段的最后一个点之后的文本、转小写后在 `Map` 中查找；使用 `Map` 可避免 `foo.constructor` 这类文件名解析到 `Object.prototype` 成员。未列入表的 dotfile（`.gitignore`）、无扩展名、结尾点、未知后缀都返回 `undefined`，各消费方一律按纯文本渲染；前导点仍算分隔符，因此 `.env` 解析为 `dotenv`。`/` 与 `\` 都算路径分隔符，因此 Windows 路径与 POSIX 路径解析一致。
 
-该集合按常见源码、配置、脚本、数据与标记扩展名精选，并非完整语言登记表。没有对应 grammar 的扩展名映射到最接近的 grammar（`properties` 映射到 `ini`，该 grammar 自带 `properties` alias）；证书与锁文件扩展名（`pem`、`crt`、`key`、`cer`、`lock`）保持不表，`csv` 同样保持不表：Spreadsheet 预览声明该后缀且必须保留，因此更早注册的 Code 不能抢占它。`readLangHintForPath` 在同一张表上做投影：旧 read 表已识别的后缀返回历史短 id，只有本表才知道的后缀返回该语言的短名（`powershell`→`ps1`、`hcl`→`tf`），无法识别的后缀返回 `undefined`——持久化字段因此只有一种风格，即短 id，绝不出现规范 grammar id。消费方若希望 Client 高亮器真正分词，仍取决于该 grammar 已在其中注册——没有加载 grammar 的 id 会按纯文本渲染，而不是报错。
+该集合按常见源码、配置、脚本、数据与标记扩展名精选，并非完整语言登记表。没有对应 grammar 的扩展名映射到最接近的 grammar（`properties` 映射到 `ini`，该 grammar 自带 `properties` alias）；证书与锁文件扩展名（`pem`、`crt`、`key`、`cer`、`lock`）保持不表，`csv` 同样保持不表：Spreadsheet 预览声明该后缀且必须保留，因此更早注册的 Code 不能抢占它。`readLangHintForPath` 在同一张表上做投影：已录制的会话已经持有该后缀的值时返回该持久化短 id，其余后缀返回该语言的短名（`powershell`→`ps1`、`hcl`→`tf`），无法识别的后缀返回 `undefined`——持久化字段因此只有一种风格，即短 id，绝不出现规范 grammar id。消费方若希望 Client 高亮器真正分词，仍取决于该 grammar 已在其中注册——没有加载 grammar 的 id 会按纯文本渲染，而不是报错。
 
 -----
 
