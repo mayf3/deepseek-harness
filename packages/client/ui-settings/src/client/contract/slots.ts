@@ -144,7 +144,7 @@ export interface SettingsOnboardingOwnerProps {
 export interface SettingsLauncherOwnerProps {
   /** Whether the sidebar shows labels. */
   wide: boolean
-  /** Whether the settings dialog covers the sidebar; defer launcher notices until it closes. */
+  /** Whether the settings dialog covers the sidebar; a launcher may treat a false-to-true edge as one Settings entry. */
   settingsOpen: boolean
   /** Open the settings panel. */
   openSettings: () => void

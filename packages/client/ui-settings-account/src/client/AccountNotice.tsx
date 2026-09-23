@@ -63,7 +63,9 @@ export function AccountNoticeCard({ notice, anchor, title, closeLabel, onShown, 
     const element = anchor.current
     const update = () => {
       const rect = element.getBoundingClientRect()
-      setPosition({ left: Math.max(8, Math.min(rect.left - 6, window.innerWidth - 288)),
+      // The launcher row starts one 10px inset inside the sidebar, which is the
+      // card's fixed left inset; the width itself does not follow the sidebar.
+      setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 268)),
         bottom: Math.max(8, window.innerHeight - rect.top + 4) })
     }
     update()

@@ -1,7 +1,7 @@
 /** Account settings renders safe Host state and explicit login actions. */
 import { Big } from 'big.js'
 import { useEffect, useState } from 'react'
-import { Button, IconRefreshOutlineRegular, IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { PropsRuntime, PropsLocale, InjectFace, HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
@@ -44,8 +44,8 @@ export interface AccountSectionInjected {
   }
   /** @returns after account details are refreshed; concurrent refreshes share a request. */
   refresh: () => Promise<void>
-  /** @returns after the recharge/bonus balances and the unnotified-bonus read are refreshed. */
-  refreshBonus: () => Promise<void>
+  /** @returns after one Settings entry refreshed the balance and the unnotified-bonus read. */
+  refreshOnSettingsOpen: () => Promise<void>
   /** Open the external support questionnaire with the current build and browser environment. */
   contactUs: () => void
   /** Open or dismiss the login dialog. */
@@ -67,14 +67,12 @@ export interface AccountSectionInjected {
 export type AccountSectionProps =
   PropsRuntime<'settings.section'> & PropsLocale<'settings.account'> & InjectFace<AccountSectionInjected>
 /** @param props - localized actions and account subscription. @returns account settings UI. */
-export function AccountSection({ t, useAccount, useTheme, start, cancel, refresh, refreshBonus, platform }: AccountSectionProps) {
+export function AccountSection({ t, useAccount, useTheme, start, cancel, platform }: AccountSectionProps) {
   const { view: state, details, failed: streamFailed } = useAccount(value => value)
   const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
   const [platformPage, setPlatformPage] = useState<'usage' | 'top-up'>()
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [refreshingBonus, setRefreshingBonus] = useState(false)
-  useEffect(() => { void refresh() }, [refresh])
   const profile = details?.profile?.status === 'ready' ? details.profile.value : undefined
   const wallets = details?.balance?.status === 'ready' ? details.balance.value : undefined
   const bonusWallets = details?.balance?.status === 'ready'
@@ -88,17 +86,6 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, refresh
     setBusy(true)
     setFailed(false)
     try { await action() } catch { setFailed(true) } finally { setBusy(false) }
-  }
-  // Both reads are independent: a failed bonus payout read still publishes a
-  // refreshed wallet, and the action reports only that it settled.
-  const reloadBonus = async (): Promise<void> => {
-    setRefreshingBonus(true)
-    try { await refreshBonus() }
-    catch {
-      // Each read already reports its own failure in its row; this catch only
-      // keeps a rejected action from escaping as an unhandled rejection.
-    }
-    finally { setRefreshingBonus(false) }
   }
   const status = failed || streamFailed || attempt?.phase === 'failed' ? t('failed')
     : attempt?.phase === 'expired' ? t('expired')
@@ -164,9 +151,6 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, refresh
                 </span>)}</span>
                 : <span className={css.unavailable}>{t(details?.balance === undefined ? 'loading'
                   : details.balance.status === 'failed' ? 'balanceUnavailable' : 'bonusEmpty')}</span>}
-              <button type="button" className={css.refresh} title={t('refreshBonus')}
-                aria-label={t('refreshBonus')} disabled={refreshingBonus}
-                onClick={() => { void reloadBonus() }}><IconRefreshOutlineRegular size={14} /></button>
             </span>
           </div>
         </>}

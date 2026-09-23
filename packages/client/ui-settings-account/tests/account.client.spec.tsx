@@ -30,7 +30,7 @@ function operationsOf(state: Omit<AccountView, 'links'>, details?: Partial<Accou
     },
     contactUs: vi.fn(), showLogin: vi.fn(), setOnboarding: vi.fn(),
     bonusNoticeShown: vi.fn(), bonusNoticeDismissed: vi.fn(),
-    refresh: vi.fn(() => Promise.resolve()), refreshBonus: vi.fn(() => Promise.resolve()),
+    refresh: vi.fn(() => Promise.resolve()), refreshOnSettingsOpen: vi.fn(() => Promise.resolve()),
     start: vi.fn(() => Promise.resolve()), cancel: vi.fn(() => Promise.resolve()), signOut: vi.fn(() => Promise.resolve()),
   }
 }
@@ -44,6 +44,20 @@ function mount(state: Omit<AccountView, 'links'>, copy: typeof en | typeof zh = 
     useTheme={selector => selector(operations.hooks.theme.getSnapshot())}
     close={() => {}} t={key => key in copy ? copy[key as AccountKey] : key} />)
   return operations
+}
+
+/**
+ * @param operations - account face the launcher injects.
+ * @param snapshot - reads the account state the launcher renders, so a rerender observes the latest value.
+ * @param settingsOpen - whether the settings panel covers the sidebar.
+ * @returns the sidebar launcher with its framework hooks wired to the test face.
+ */
+async function accountMenu(operations: AccountSectionInjected, snapshot: () => AccountSnapshot, settingsOpen: boolean) {
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  return <AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    settingsOpen={settingsOpen} useAccount={selector => selector(snapshot())} wide
+    useTheme={selector => selector(operations.hooks.theme.getSnapshot())}
+    openOnboarding={() => {}} openSettings={() => {}} t={key => en[key as AccountKey]} />
 }
 
 it.each([en, zh])('renders account cards without inventing profile or balance data', async (copy) => {
@@ -122,18 +136,27 @@ it('reports a failed start in the login dialog, not as a sidebar alert', async (
   await expect(`${document.body.textContent}\n`).toMatchFileSnapshot('./expected/login-failed-en.txt')
 })
 
-it('keeps the sidebar alert for a failed sign-out', async () => {
+it('keeps the menu open for a retried sign-out without reporting an error', async () => {
   const operations = mount({ status: 'credential-stored', attempt: null })
   cleanup()
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  const signOut = vi.fn((): Promise<void> => Promise.reject(new Error('account sign-out failed')))
   render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} settingsOpen={false}
-    signOut={() => Promise.reject(new Error('account sign-out failed'))}
+    signOut={signOut}
     useAccount={selector => selector(operations.hooks.account.getSnapshot())}
     useTheme={selector => selector(operations.hooks.theme.getSnapshot())} wide
     openOnboarding={() => {}} openSettings={() => {}} t={key => key in en ? en[key as AccountKey] : key} />)
   fireEvent.click(screen.getByRole('button', { name: en.menu }))
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: en.signOut })) })
-  expect(screen.getByRole('alert').textContent).toBe(en.failed)
+  // The operation logs the stable Remote failure code, and the launcher reports nothing of its own.
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(document.body.textContent).not.toContain(en.failed)
+  expect(screen.getByRole('menu')).toBeTruthy()
+  expect(screen.getByRole('menuitem', { name: en.signOut }).hasAttribute('disabled')).toBe(false)
+  signOut.mockResolvedValueOnce(undefined)
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: en.signOut })) })
+  expect(signOut).toHaveBeenCalledTimes(2)
+  expect(screen.queryByRole('menu')).toBeNull()
 })
 
 it.each([en, zh])('renders Platform profile and recharge wallet balances', async (copy) => {
@@ -326,14 +349,13 @@ it.each([en, zh])('renders positive bonus wallets separately from recharge balan
 })
 
 it.each([[], [{ currency: 'CNY' as const, balance: '0.00' }, { currency: 'USD' as const, balance: '-1.00' }]].map(bonusWallets => ({ bonusWallets })))(
-  'keeps the bonus row refreshable without inventing credit for zero or negative wallets', ({ bonusWallets }) => {
+  'keeps the bonus row without inventing credit for zero or negative wallets', ({ bonusWallets }) => {
     mount({ status: 'credential-stored', attempt: null }, en, {
       balance: { status: 'ready', value: [{ currency: 'CNY', balance: '0' }], bonusWallets },
     })
-    // The row itself stays: it carries the refresh action and states the absence.
+    // The row itself stays and states the absence.
     expect(screen.getByText(en.bonusBalance)).toBeTruthy()
     expect(screen.getByText(en.bonusEmpty)).toBeTruthy()
-    expect(screen.getByRole('button', { name: en.refreshBonus })).toBeTruthy()
     expect(screen.getByText('¥0.00')).toBeTruthy()
     expect(screen.queryByText('¥-1.00')).toBeNull()
   },
@@ -436,59 +458,47 @@ it('dismisses a collapsed menu and hands its login dialog to the API-key onboard
   expect(screen.queryByRole('dialog')).toBeNull()
 })
 
-it('mounts the bonus notice only while settings is closed', async () => {
+it('paints the bonus notice under the open settings panel and reports its display once', async () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   const operations = mount({ status: 'credential-stored', attempt: null }, en, {
     profile: { status: 'ready', value: { id: null, name: 'User', contact: null } },
   })
   cleanup()
-  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
   const notice = { orderId: 'order-1' as BonusNotice['orderId'], message: 'Awarded 5.00', expiresAt: '2099-01-01T00:00:00Z' }
-  const snapshot: AccountSnapshot = { ...operations.hooks.account.getSnapshot(), notice }
-  const renderMenu = (settingsOpen: boolean) => <AccountMenu {...({} as GlobalStandardProps)} {...operations}
-    settingsOpen={settingsOpen} useAccount={selector => selector(snapshot)} wide
-    openOnboarding={() => {}} openSettings={() => {}} t={key => en[key as AccountKey]} />
-  const view = render(renderMenu(true))
-  // The settings dialog covers the sidebar, so the card waits for it to close.
+  // The launcher mounts first; the entry's refresh then delivers the notice while the panel is open.
+  let snapshot: AccountSnapshot = operations.hooks.account.getSnapshot()
+  const view = render(await accountMenu(operations, () => snapshot, true))
   expect(screen.queryByRole('status')).toBeNull()
-  view.rerender(renderMenu(false))
-  expect(screen.getByRole('status').textContent).toBe(`${en.bonusNoticeTitle}${notice.message}`)
-  // Reopening settings unmounts the card without another display report.
-  view.rerender(renderMenu(true))
-  expect(screen.queryByRole('status')).toBeNull()
+  snapshot = { ...snapshot, notice }
+  view.rerender(await accountMenu(operations, () => snapshot, true))
+  // The settings overlay is translucent, so the card paints underneath it instead of waiting for the exit.
+  await vi.waitFor(() => { expect(screen.getByRole('status').textContent).toBe(`${en.bonusNoticeTitle}${notice.message}`) })
+  // A card that passed a presented frame reports once even while the panel is open; that report is the acknowledgement.
+  await vi.waitFor(() => { expect(operations.bonusNoticeShown).toHaveBeenCalledExactlyOnceWith(notice.orderId) })
+  // Leaving the panel keeps the same card without reporting its display a second time.
+  view.rerender(await accountMenu(operations, () => snapshot, false))
+  await vi.waitFor(() => { expect(screen.getByRole('status').textContent).toBe(`${en.bonusNoticeTitle}${notice.message}`) })
+  expect(operations.bonusNoticeShown).toHaveBeenCalledOnce()
 })
 
-it.each([en, zh])('refreshes balances and the bonus read from the bonus row', async (copy) => {
-  const operations = mount({ status: 'credential-stored', attempt: null }, copy, {
-    balance: { status: 'ready', value: [{ currency: 'CNY', balance: '12.34' }], bonusWallets: [] },
-  })
-  expect(operations.refreshBonus).not.toHaveBeenCalled()
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.refreshBonus })) })
-  expect(operations.refreshBonus).toHaveBeenCalledOnce()
-  // The row stays available with no bonus balance, and says so without inventing a currency.
-  expect(screen.getByText(copy.bonusEmpty)).toBeTruthy()
-  expect(screen.queryByText('¥0.00')).toBeNull()
-})
-
-it('disables the refresh button until both reads settle and keeps it usable after a failure', async () => {
-  const pending = Promise.withResolvers<undefined>()
-  const operations = mount({ status: 'credential-stored', attempt: null }, en, {
-    balance: { status: 'failed' },
-  })
-  operations.refreshBonus = vi.fn(() => pending.promise)
+it('reads once per Settings entry, whatever section the entry opens', async () => {
+  const operations = mount({ status: 'credential-stored', attempt: null }, en)
   cleanup()
-  const props = { ...({} as GlobalStandardProps), ...operations }
-  render(<AccountSection {...props}
-    useAccount={selector => selector(operations.hooks.account.getSnapshot())}
-    close={() => {}} t={key => en[key as AccountKey]} />)
-  const button = screen.getByRole('button', { name: en.refreshBonus })
-  expect(button.hasAttribute('disabled')).toBe(false)
-  fireEvent.click(button)
-  expect(screen.getByRole('button', { name: en.refreshBonus }).hasAttribute('disabled')).toBe(true)
-  // Both balance rows report the failed read.
-  expect(screen.getAllByText(en.balanceUnavailable)).toHaveLength(2)
-  await act(async () => { pending.resolve(undefined); await pending.promise })
-  expect(screen.getByRole('button', { name: en.refreshBonus }).hasAttribute('disabled')).toBe(false)
+  let snapshot: AccountSnapshot = operations.hooks.account.getSnapshot()
+  const view = render(await accountMenu(operations, () => snapshot, false))
+  // The sidebar launcher outlives the panel, so a closed panel reads nothing.
+  expect(operations.refreshOnSettingsOpen).not.toHaveBeenCalled()
+  view.rerender(await accountMenu(operations, () => snapshot, true))
+  expect(operations.refreshOnSettingsOpen).toHaveBeenCalledOnce()
+  // Staying open — another section, a tab switch, or an unrelated re-render — is not a new entry.
+  snapshot = { ...snapshot, details: { ...snapshot.details, balance: { status: 'ready', value: [], bonusWallets: [] } } }
+  view.rerender(await accountMenu(operations, () => snapshot, true))
+  view.rerender(await accountMenu(operations, () => snapshot, true))
+  expect(operations.refreshOnSettingsOpen).toHaveBeenCalledOnce()
+  // Closing and reopening is a new entry, so it reads again.
+  view.rerender(await accountMenu(operations, () => snapshot, false))
+  view.rerender(await accountMenu(operations, () => snapshot, true))
+  expect(operations.refreshOnSettingsOpen).toHaveBeenCalledTimes(2)
 })
 
 it('reports resize failure, ignores late native failures, and tolerates a removed IPC receiver', async () => {

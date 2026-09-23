@@ -12,7 +12,7 @@ import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
 import { profile, readAccountDetail, readUnnotifiedBonuses, sendBonusNotified } from './details.ts'
 import { revokeAccount, type LogoutRetryPolicy } from './logout.ts'
-import { PlatformAuthError, platformHeaders, platformOrigin, browserUrl, requestPlatform, initialization, exchange, loginOrigin } from './protocol.ts'
+import { PlatformAuthError, platformHeaders, platformOrigin, browserUrl, requestPlatform, initialization, exchange, loginOrigin, logAccountDiagnostic } from './protocol.ts'
 
 const KEY = credentialKey('deepseek-account-platform', 'default')
 const DEVICE = credentialKey('deepseek-account-platform', 'device')
@@ -21,6 +21,24 @@ const device = z.object({ id: z.uuid() })
 
 // The wire locale is region-tagged; the caller's active UI language is not.
 function clientLocale(locale: string): 'zh_CN' | 'en_US' { return locale.toLowerCase().split(/[-_]/)[0] === 'zh' ? 'zh_CN' : 'en_US' }
+
+/**
+ * Classify one local sign-out failure for the log.
+ * Thrown messages are omitted: a credential store's own text may quote the value it failed on.
+ * @param stage - local step that refused the sign-out.
+ * @param error - caught failure; its own code and name replace the fallback classification.
+ * @returns log fields with no message and no credential.
+ */
+function signOutFailure(stage: string, error: unknown): Record<string, string> {
+  return { stage, errorCode: errorCodeOf(error) ?? 'unknown', errorName: error instanceof Error ? error.name : typeof error }
+}
+
+/** @param error - caught failure. @returns its stable string code when one is present, otherwise undefined. */
+function errorCodeOf(error: unknown): string | undefined {
+  if (!(error instanceof Error) || !('code' in error)) return undefined
+  const code: unknown = error.code
+  return typeof code === 'string' ? code : undefined
+}
 
 /** Deployment-specific platform and request deadlines. */
 export interface Config {
@@ -165,7 +183,7 @@ export class PlatformAccount extends DeepSeekAccount {
     if (!parsed.success) throw new PlatformAuthError('storage')
     if (parsed.data.issuer === this.origin) return
     await this.ctx.credentials.deleteRecord(KEY)
-    console.info('[deepseek-account] stored grant discarded', { reason: 'issuer-mismatch' })
+    logAccountDiagnostic('stored grant discarded', { reason: 'issuer-mismatch' })
   }
 
   override async getState(): Promise<AccountView> {
@@ -334,7 +352,7 @@ export class PlatformAccount extends DeepSeekAccount {
       } else attempt.callback?.writeHead(204, { 'cache-control': 'no-store' }).end()
     }).catch((error: unknown) => {
       const code = error instanceof PlatformAuthError ? error.code : 'protocol'
-      console.info('[deepseek-account] sign-in failed', { errorCode: code })
+      logAccountDiagnostic('sign-in failed', { errorCode: code })
       this.update(attempt, { phase: code === 'expired' ? 'expired' : 'failed', errorCode: code })
       this.finishFailedCallback(attempt)
     }).then(async () => {
@@ -362,23 +380,48 @@ export class PlatformAccount extends DeepSeekAccount {
   }
 
   override signOut(client: AccountClientMetadata): Promise<AccountView> {
-    this.removing ??= (async () => {
+    this.removing ??= this.removeGrant(client).finally(() => { this.removing = undefined })
+    return this.removing
+  }
+
+  /**
+   * Remove the stored grant and schedule its background revocation.
+   * @param client - identity of the requesting UI, used for the revocation headers.
+   * @returns the signed-out state published after local removal.
+   */
+  private async removeGrant(client: AccountClientMetadata): Promise<AccountView> {
+    logAccountDiagnostic('sign-out started')
+    let stage = 'closed'
+    try {
       if (this.closed) throw new PlatformAuthError('protocol')
-      if (this.attempt !== undefined) await this.cancelSignIn(this.attempt.view.id)
+      if (this.attempt !== undefined) {
+        stage = 'cancel-attempt'
+        await this.cancelSignIn(this.attempt.view.id)
+      }
+      stage = 'read-grant'
       const record = await this.ctx.credentials.readRecord(KEY)
       if (record !== undefined) {
+        stage = 'validate-record'
         if (record.kind !== 'grant') throw new PlatformAuthError('storage')
         const parsed = grant.safeParse(record.payload)
         if (!parsed.success) throw new PlatformAuthError('storage')
+        stage = 'validate-issuer'
         if (parsed.data.issuer !== this.origin) throw new PlatformAuthError('protocol')
+        stage = 'delete-grant'
         await this.ctx.credentials.deleteRecord(KEY)
+        stage = 'schedule-revocation'
         this.revoke(parsed.data.token, platformClientHeaders(this.platform, client))
       }
+      stage = 'publish-state'
       this.attempt = undefined
       this.changed()
-      return this.getState()
-    })().finally(() => { this.removing = undefined })
-    return this.removing
+      const state = await this.getState()
+      logAccountDiagnostic('sign-out completed')
+      return state
+    } catch (error) {
+      logAccountDiagnostic('sign-out failed', signOutFailure(stage, error))
+      throw error
+    }
   }
 
   override async *watch(signal: AbortSignal): AsyncIterable<AccountView> {
@@ -512,7 +555,7 @@ export class PlatformAccount extends DeepSeekAccount {
   }
 
   private rejectPayload(stage: string, error: z.ZodError): never {
-    console.info('[deepseek-account] payload rejected', {
+    logAccountDiagnostic('payload rejected', {
       stage, issues: error.issues.map(issue => ({
         path: issue.path, code: issue.code,
         receivedType: issue.input === null ? 'null' : Array.isArray(issue.input) ? 'array' : typeof issue.input,

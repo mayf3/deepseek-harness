@@ -21,7 +21,7 @@ export const en = {
   balance: 'Recharge balance', bonusBalance: 'Bonus balance', balanceUnavailable: 'View on Platform', balanceSignedOut: 'Sign in to view',
   accountInfo: 'More account information', more: 'More', usage: 'View usage', topUp: 'Top up',
   bonusNoticeTitle: 'Bonus credited',
-  bonusEmpty: 'No bonus available', refreshBonus: 'Refresh balance',
+  bonusEmpty: 'No bonus available',
 } as const
 /** Account locale keys. */
 export type AccountKey = keyof typeof en
@@ -48,5 +48,5 @@ export const zh: Record<AccountKey, string> = {
   balance: '充值余额', bonusBalance: '赠金余额', balanceUnavailable: '前往开放平台查看', balanceSignedOut: '登录后查看',
   accountInfo: '更多账号信息', more: '更多', usage: '查询用量', topUp: '充值',
   bonusNoticeTitle: '赠金已到账',
-  bonusEmpty: '暂无可用赠金', refreshBonus: '刷新余额',
+  bonusEmpty: '暂无可用赠金',
 }

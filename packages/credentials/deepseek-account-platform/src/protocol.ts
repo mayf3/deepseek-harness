@@ -2,6 +2,16 @@
 import { z } from 'zod'
 import type { AccountBonusOrderId } from '@deepseek-ai/dsh-deepseek-account/types'
 
+/**
+ * Write one `[deepseek-account]` diagnostic with a UTC timestamp.
+ * Single writer for provider diagnostics so every line carries the same `at` field.
+ * @param message - suffix after the log prefix.
+ * @param fields - structured values, already free of credentials.
+ */
+export function logAccountDiagnostic(message: string, fields: Record<string, unknown> = {}): void {
+  console.info(`[deepseek-account] ${message}`, { at: new Date().toISOString(), ...fields })
+}
+
 /** Protocol errors expose a stable code, never a response body or authorization URL. */
 export class PlatformAuthError extends Error {
   /** @param code - safe error classification. */
@@ -35,12 +45,12 @@ export function platformOrigin(value: string, allowLoopbackHttp: boolean): strin
 export function browserUrl(value: string, origin: string, path: string, rewriteOrigin = false): string {
   let url: URL
   try { url = new URL(value) } catch {
-    console.info('[deepseek-account] browser URL rejected', { path, reason: 'invalid-url' })
+    logAccountDiagnostic('browser URL rejected', { path, reason: 'invalid-url' })
     throw new PlatformAuthError('protocol')
   }
   const allowedOrigin = url.origin === origin || (rewriteOrigin && url.protocol === 'https:')
   if (!allowedOrigin || url.pathname !== path || url.username || url.password || url.hash) {
-    console.info('[deepseek-account] browser URL rejected', {
+    logAccountDiagnostic('browser URL rejected', {
       path, originMismatch: !allowedOrigin, pathMismatch: url.pathname !== path,
       hasCredentials: Boolean(url.username || url.password), hasFragment: Boolean(url.hash),
     })
@@ -69,6 +79,10 @@ export function platformHeaders(values: Record<string, string>): Record<string, 
 }
 
 const envelope = z.object({ code: z.literal(0), data: z.object({ biz_code: z.number().int(), biz_data: z.unknown() }) })
+// Failure envelopes may carry `data: null`, so the numeric codes stay readable without the success fields.
+const responseCodes = z.object({
+  code: z.number().int(), data: z.object({ biz_code: z.number().int() }).nullish(),
+})
 /** Successful initialization response. */
 export const initialization = z.object({
   authorize_url: z.url(), authorize_id: z.string().min(1), expires_in: z.number().positive(),
@@ -132,8 +146,10 @@ export function requestUnnotifiedBonuses(origin: string, token: string,
  */
 export function requestBonusNotified(origin: string, token: string, orderId: AccountBonusOrderId,
   signal: AbortSignal, headers: Record<string, string>): Promise<unknown> {
-  return platformRequest(`${origin}/api/v0/users/ack_bonus_notified?order_id=${encodeURIComponent(orderId)}`,
-    { method: 'POST', headers: accountHeaders(headers, token) }, signal)
+  return platformRequest(`${origin}/api/v0/users/ack_bonus_notified`, {
+    method: 'POST', headers: { ...accountHeaders(headers, token), 'content-type': 'application/json' },
+    body: JSON.stringify({ order_id: orderId }),
+  }, signal)
 }
 
 // The grant is provider-owned; deployment requestHeaders cannot override it or the client identity.
@@ -158,62 +174,201 @@ export async function logoutAccount(origin: string, token: string,
 
 async function platformRequest(url: string, init: RequestInit, signal: AbortSignal): Promise<unknown> {
   const path = new URL(url).pathname
-  console.info('[deepseek-account] request', { path, method: init.method })
+  const secrets = requestSecrets(init)
+  logAccountDiagnostic('request', { path, method: init.method })
   let response: Response
   try {
     response = await fetch(url, { ...init, redirect: 'error', signal })
   } catch {
-    console.info('[deepseek-account] request failed', { path, errorCode: 'network', aborted: signal.aborted })
+    logAccountDiagnostic('request failed', { path, errorCode: 'network', aborted: signal.aborted })
     throw new PlatformAuthError('network')
   }
-  console.info('[deepseek-account] response', { path, status: response.status })
+  logAccountDiagnostic('response', { path, status: response.status })
   if (!response.ok || response.body === null) {
-    await response.body?.cancel()
+    // The failure body names the server-side cause; the request and its headers never reach the log.
+    const read = response.body === null ? { ok: false as const, reason: 'empty' as const } : await readBounded(response.body)
+    const payload = read.ok ? parseJson(read.text) : undefined
+    logAccountDiagnostic('response failed', read.ok ? {
+      path, status: response.status, errorCode: 'network', bodyState: 'read',
+      ...codesOf(payload), body: sanitizedBody(read.text, payload, secrets),
+    } : { path, status: response.status, errorCode: 'network', bodyState: read.reason })
     throw new PlatformAuthError('network')
   }
-  const reader = response.body.getReader()
+  const read = await readBounded(response.body)
+  if (!read.ok) {
+    logAccountDiagnostic('response rejected', {
+      path, status: response.status, stage: read.reason === 'limit' ? 'body-limit' : 'read-body',
+      errorCode: 'protocol', bodyState: read.reason,
+    })
+    throw new PlatformAuthError('protocol')
+  }
+  const payload = parseJson(read.text)
+  if (payload === undefined) {
+    logAccountDiagnostic('response rejected', {
+      path, status: response.status, stage: 'parse-json', errorCode: 'protocol',
+      body: sanitizedBody(read.text, undefined, secrets),
+    })
+    throw new PlatformAuthError('protocol')
+  }
+  const codes = codesOf(payload)
+  if (codes.code !== undefined || codes.bizCode !== undefined) {
+    logAccountDiagnostic('response codes', { path, ...codes })
+  }
+  const parsed = envelope.safeParse(payload)
+  if (!parsed.success) {
+    logAccountDiagnostic('envelope rejected', {
+      path, status: response.status, errorCode: 'protocol', body: sanitizedBody(read.text, payload, secrets),
+      issues: parsed.error.issues.map(issue => ({ path: issue.path, code: issue.code })),
+    })
+    throw new PlatformAuthError('protocol')
+  }
+  if (parsed.data.data.biz_code !== 0) {
+    // TODO(product-error-ui): Apply product-defined copy and UI behavior for the supplied biz_code values.
+    // Business failures use the existing generic failure UI until then; backend messages stay Host-only.
+    logAccountDiagnostic('business rejected', {
+      path, status: response.status, errorCode: 'protocol', code: parsed.data.code,
+      bizCode: parsed.data.data.biz_code, body: sanitizedBody(read.text, payload, secrets),
+    })
+    throw new PlatformAuthError('protocol')
+  }
+  // A validated success body is logged after every credential-bearing field is replaced.
+  logAccountDiagnostic('response body', {
+    path, status: response.status, body: sanitizedBody(read.text, payload, secrets),
+  })
+  return parsed.data.data.biz_data
+}
+
+/** Parse one response body; `undefined` marks invalid JSON because `JSON.parse` never returns it. */
+function parseJson(text: string): unknown { try { return JSON.parse(text) } catch { return undefined } }
+
+/** Numeric envelope codes; absent when the failure body is not a recognized envelope. */
+function codesOf(payload: unknown): { code?: number; bizCode?: number } {
+  const parsed = responseCodes.safeParse(payload)
+  if (!parsed.success) return {}
+  return parsed.data.data?.biz_code === undefined
+    ? { code: parsed.data.code } : { code: parsed.data.code, bizCode: parsed.data.data.biz_code }
+}
+
+const BODY_LIMIT = 65_536
+const LOG_LIMIT = 2_048
+// Credential-bearing field names; `code` is matched exactly so `error_code` and `decoder` stay readable.
+const CREDENTIAL_KEY = /(token|password|secret|cookie|authorization|api[-_]?key|authorize|code_verifier)/i
+const EXACT_CODE_KEY = /^code$/i
+const NUMERIC_CODE_KEY = /^(code|biz_code)$/i
+const CREDENTIAL_HEADER = /(authorization|cookie|token|api[-_]?key|secret|password|session)/i
+const URL_KEY = /(?:url|uri)$/i
+const ABSOLUTE_URL = /https?:\/\/[^\s"'<>]+/gi
+const AUTHORIZE_URL = /\/dsh\/authorize|[?&]code=/i
+// A deployment routing cookie carries no credential; its value can be a bare flag like 1 or 20022.
+// Replacing so little text everywhere would erase the digits of server-authored dates, amounts and
+// order ids, so only a cookie value this short is restricted to whole-value matches.
+const COOKIE_VALUE_SUBSTRING_MIN_LENGTH = 8
+
+/** Read one bounded platform response body; never throws. */
+async function readBounded(body: ReadableStream<Uint8Array>): Promise<{ ok: true; text: string } | { ok: false; reason: 'limit' | 'stream' }> {
+  const reader = body.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
-  let stage = 'read-body'
   try {
     while (true) {
       const next = await reader.read()
       if (next.done) break
       size += next.value.byteLength
-      if (size > 65_536) {
-        stage = 'body-limit'
-        throw new PlatformAuthError('protocol')
-      }
+      if (size > BODY_LIMIT) return { ok: false, reason: 'limit' }
       chunks.push(next.value)
     }
-    stage = 'parse-json'
-    const payload: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-    const codes = z.object({ code: z.number().int(), data: z.object({ biz_code: z.number().int() }).optional() }).safeParse(payload)
-    if (codes.success) console.info('[deepseek-account] response codes', {
-      path, code: codes.data.code, bizCode: codes.data.data?.biz_code,
-    })
-    stage = 'envelope'
-    const parsed = envelope.safeParse(payload)
-    if (!parsed.success) {
-      console.info('[deepseek-account] envelope rejected', {
-        path, issues: parsed.error.issues.map(issue => ({ path: issue.path, code: issue.code })),
-      })
-      throw new PlatformAuthError('protocol')
-    }
-    stage = 'business-code'
-    if (parsed.data.data.biz_code !== 0) {
-      // TODO(product-error-ui): Apply product-defined copy and UI behavior for the supplied biz_code values.
-      // Business failures use the existing generic failure UI until then; backend messages stay Host-only.
-      throw new PlatformAuthError('protocol')
-    }
-    return parsed.data.data.biz_data
-  } catch (error) {
-    console.info('[deepseek-account] response rejected', { path, stage, errorCode: 'protocol' })
-    if (error instanceof PlatformAuthError) throw error
-    throw new PlatformAuthError('protocol')
+    return { ok: true, text: Buffer.concat(chunks).toString('utf8') }
+  } catch {
+    return { ok: false, reason: 'stream' }
   } finally {
     await reader.cancel().catch(() => undefined)
     reader.releaseLock()
+  }
+}
+
+/** Serialize one failure body for the log with credential keys and echoed request secrets removed. */
+function sanitizedBody(text: string, payload: unknown, secrets: RequestSecrets): string {
+  // Parsed payloads scrub each string and key individually; a raw body is scrubbed as text. Re-scrubbing
+  // the serialized JSON would also rewrite numeric codes that a short request secret happens to match.
+  if (payload === undefined) return clip(scrubText(text, secrets.substrings, secrets.exact))
+  return clip(JSON.stringify(sanitize(payload, secrets)))
+}
+
+function sanitize(value: unknown, secrets: RequestSecrets): unknown {
+  if (typeof value === 'string') return scrubText(value, secrets.substrings, secrets.exact)
+  if (Array.isArray(value)) return value.map(item => sanitize(item, secrets))
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => {
+      // Numeric protocol codes stay readable; a numeric credential still redacts.
+      if (!(NUMERIC_CODE_KEY.test(key) && typeof item === 'number') && isCredentialKey(key)) return [key, '[redacted]']
+      if (URL_KEY.test(key) && typeof item === 'string' && /^https?:\/\//i.test(item)) return [key, '[authorize-url]']
+      return [key, sanitize(item, secrets)]
+    }))
+  }
+  return value
+}
+
+function isCredentialKey(key: string): boolean { return EXACT_CODE_KEY.test(key) || CREDENTIAL_KEY.test(key) }
+
+function scrubText(text: string, substrings: readonly string[], exact: readonly string[] = []): string {
+  if (exact.includes(text)) return '[redacted]'
+  let value = text.replace(ABSOLUTE_URL, url => AUTHORIZE_URL.test(url) ? '[authorize-url]' : url)
+  for (const secret of substrings) value = value.split(secret).join('[redacted]')
+  return value
+}
+
+function clip(text: string): string { return text.length > LOG_LIMIT ? `${text.slice(0, LOG_LIMIT)}…` : text }
+
+/**
+ * Request-owned values to remove from an echoed copy of a response body.
+ * `substrings` redact wherever they appear; `exact` redact only when an echoed string is exactly
+ * that value, which keeps a short deployment routing flag from rewriting unrelated dates, amounts
+ * or order ids that happen to contain the same characters.
+ */
+interface RequestSecrets {
+  /** Values redacted wherever they appear in an echoed body. */
+  readonly substrings: readonly string[]
+  /** Short cookie values redacted only when an echoed string is exactly this value. */
+  readonly exact: readonly string[]
+}
+
+/** Collect the request values that must not be echoed back, split by how precisely they can match. */
+function requestSecrets(init: RequestInit): RequestSecrets {
+  // Credentials always redact as substrings; only a deployment cookie's own short value is restricted
+  // to whole-value matches, because a routing flag is not a secret and overlaps ordinary numbers.
+  const values: string[] = []
+  const exact = new Set<string>()
+  for (const [name, value] of new Headers(init.headers)) {
+    // Only credential-bearing headers are collected; content types and framing stay readable.
+    if (!CREDENTIAL_HEADER.test(name)) continue
+    if (name.toLowerCase() !== 'cookie') {
+      values.push(value)
+      continue
+    }
+    for (const pair of value.split(';')) {
+      const entry = pair.trim()
+      const component = entry.slice(entry.indexOf('=') + 1)
+      // The whole pair is not numeric-looking text on its own, so it stays a substring.
+      values.push(entry)
+      if (component.length < COOKIE_VALUE_SUBSTRING_MIN_LENGTH) exact.add(component)
+      else values.push(component)
+    }
+  }
+  if (typeof init.body === 'string') {
+    collectCredentialValues(parseJson(init.body), values)
+  }
+  const substrings = [...new Set(values.filter(value => value !== ''))]
+    // Longest first so a secret containing another secret cannot leave a partial echo behind.
+    .sort((left, right) => right.length - left.length)
+  return { substrings, exact: [...exact].filter(value => value !== '') }
+}
+
+function collectCredentialValues(value: unknown, values: string[]): void {
+  if (Array.isArray(value)) { for (const item of value) collectCredentialValues(item, values); return }
+  if (value === null || typeof value !== 'object') return
+  for (const [key, item] of Object.entries(value)) {
+    if (isCredentialKey(key) && typeof item === 'string') values.push(item)
+    else collectCredentialValues(item, values)
   }
 }
 

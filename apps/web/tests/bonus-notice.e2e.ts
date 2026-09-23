@@ -21,9 +21,12 @@ const OVERLAY_TEMPLATE = fileURLToPath(new URL('./fixtures/bonus-notice/cordis.p
 const MODE = webSnapshotMode()
 
 const TOKEN = 'dsh_bonus_notice_test'
+const ACCOUNT_ID = 'bonus-user'
 const ORDER_FIRST = '22222222-2222-4222-8222-222222222222'
 const ORDER_LATER = '33333333-3333-4333-8333-333333333333'
 const ORDER_EN = '44444444-4444-4444-8444-444444444444'
+const ORDER_RETRY = '55555555-5555-4555-8555-555555555555'
+const ORDER_REPEAT = '66666666-6666-4666-8666-666666666666'
 
 const CLAIM_DAYS = 30
 
@@ -50,6 +53,10 @@ interface AckRecord {
   readonly locale: string | undefined
   readonly orderId: string | null
   readonly body: string
+  readonly query: string
+  readonly contentType: string | undefined
+  /** Monotonic arrival time, so the backoff gap cannot be distorted by a wall-clock jump. */
+  readonly at: number
 }
 
 /** Loopback Platform double: auth gate, profile, wallets, unnotified bonuses, and the acknowledgement. */
@@ -59,7 +66,13 @@ async function mockPlatform() {
   /** Reads already answered; a request the client is still awaiting is not evidence of a delivered response. */
   const served: GetRecord[] = []
   const acks: AckRecord[] = []
+  /** Wallet reads, one per balance refresh the settings panel performs. */
+  const summaries: GetRecord[] = []
   let bonusBalance = '5.00'
+  /** Order whose acknowledgement attempts the double fails, and how many failures it still owes. */
+  let ackFailure: { orderId: string; remaining: number } | undefined
+  /** Whether an acknowledged order stays unnotified, as a backend that has not applied the acknowledgement would serve it. */
+  let keepUnnotified = false
   /** Reply held back while the test controls when a read can answer. */
   let heldReply: (() => void) | undefined
   const grant = (orderId: string, amount: string): void => {
@@ -87,11 +100,12 @@ async function mockPlatform() {
     if (url.pathname === '/auth-api/v0/users/current') {
       // `email` is required by the provider's profile schema even when the account has none.
       reply({ code: 0, data: { biz_code: 0, biz_data: {
-        id: 'bonus-user', email: '', id_profile: { name: 'Bonus User', picture: null },
+        id: ACCOUNT_ID, email: '', id_profile: { name: 'Bonus User', picture: null },
       } } })
       return
     }
     if (url.pathname === '/api/v0/users/get_user_summary') {
+      summaries.push({ locale, query: url.search })
       reply({ code: 0, data: { biz_code: 0, biz_data: {
         normal_wallets: [{ currency: 'CNY', balance: '12.34' }],
         bonus_wallets: [{ currency: 'CNY', balance: bonusBalance }],
@@ -112,11 +126,22 @@ async function mockPlatform() {
       req.setEncoding('utf8')
       req.on('data', (chunk: string) => { body += chunk })
       req.on('end', () => {
-        const orderId = url.searchParams.get('order_id')
-        acks.push({ method: req.method ?? '', path: url.pathname, locale, orderId, body })
-        if (orderId === null) { reply({ code: 1, msg: 'BONUS_ORDER_NOT_FOUND', data: null }); return }
+        const payload: unknown = JSON.parse(body)
+        const orderId = typeof payload === 'object' && payload !== null && 'order_id' in payload
+          && typeof payload.order_id === 'string' ? payload.order_id : null
+        acks.push({ method: req.method ?? '', path: url.pathname, locale, orderId, body,
+          query: url.search, contentType: req.headers['content-type'], at: performance.now() })
+        if (ackFailure !== undefined && ackFailure.orderId === orderId && ackFailure.remaining > 0) {
+          ackFailure.remaining--
+          // A transient gateway failure: the client retries it after its backoff.
+          res.writeHead(502, { 'content-type': 'text/plain' }).end('Internal Server Error')
+          return
+        }
+        if (orderId === null) {
+          reply({ code: 0, msg: '', data: { biz_code: 1, biz_msg: 'BONUS_ORDER_NOT_FOUND', biz_data: null } }); return
+        }
         const index = unnotified.findIndex(value => value.orderId === orderId)
-        if (index >= 0) unnotified.splice(index, 1)
+        if (index >= 0 && !keepUnnotified) unnotified.splice(index, 1)
         reply({ code: 0, msg: '', data: { biz_code: 0, biz_msg: '', biz_data: null } })
       })
       return
@@ -129,9 +154,13 @@ async function mockPlatform() {
   if (address === null || typeof address === 'string') throw new Error('bonus notice: missing mock listener')
   return {
     origin: `http://127.0.0.1:${String(address.port)}`,
-    grant, gets, served, acks,
+    grant, gets, served, acks, summaries,
     /** @param value - bonus balance the settings page reads next. */
     setBonusBalance: (value: string): void => { bonusBalance = value },
+    /** @param value - whether acknowledged orders keep arriving in the unnotified read. */
+    setKeepUnnotified: (value: boolean): void => { keepUnnotified = value },
+    /** @param orderId - order to refuse. @param count - its acknowledgement attempts that fail before one succeeds. */
+    failNextAcks: (orderId: string, count: number): void => { ackFailure = { orderId, remaining: count } },
     /** Hold the next unnotified-bonus read so the test can observe the in-flight state. */
     holdNextGet: (): void => { heldReply = () => undefined },
     releaseGet: (): void => { const held = heldReply; heldReply = undefined; held?.() },
@@ -204,7 +233,7 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     if (root !== undefined) await rm(root, { recursive: true, force: true })
   })
 
-  it('acknowledges only a displayed notice, refreshes from settings, and localizes the request', async () => {
+  it('acknowledges a notice shown under settings, refreshes once per entry, and localizes the request', async () => {
     const zhFirst = '已赠送您 5.00 元 DSH 体验赠金。'
     const zhLater = '已赠送您 8.00 元 DSH 体验赠金。'
     const enBonus = 'You received a CNY 9.00 DSH trial credit.'
@@ -232,61 +261,191 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     expect(get.locale).toBe('zh_CN')
     expect(get.query).toBe('')
     expect(ack).toMatchObject({
-      method: 'POST', path: '/api/v0/users/ack_bonus_notified', locale: 'zh_CN', orderId: ORDER_FIRST, body: '',
+      method: 'POST', path: '/api/v0/users/ack_bonus_notified', locale: 'zh_CN', orderId: ORDER_FIRST,
+      body: JSON.stringify({ order_id: ORDER_FIRST }), query: '', contentType: 'application/json',
     })
 
-    // Closing the card counts as reading it and never acknowledges it twice.
+    // Closing the card only hides it; the acknowledgement already sent is not repeated.
     await noticeCards(page).getByRole('button', { name: '关闭', exact: true }).click()
     expect(await noticeCards(page).count()).toBe(0)
     expect(platform.acks).toHaveLength(1)
 
-    // A new grant and balance arrive while settings is open. Refresh fetches both, but
-    // the card is gated on settings being closed, so the served response is not displayed
-    // and must not be acknowledged yet.
-    await openSettings(page, 'zh')
-    const settings = page.getByRole('dialog', { name: '设置', exact: true })
-    const refresh = settings.getByRole('button', { name: '刷新余额', exact: true })
-    await refresh.waitFor()
+    // A new grant and balance arrive before settings opens. Entering the panel refreshes
+    // the balance and the notice read once, and a read the renderer never received still
+    // cannot become a displayed notice.
     platform.grant(ORDER_LATER, '8.00')
     platform.setBonusBalance('13.00')
     const getsBefore = platform.gets.length
-    // Hold the refresh's notice read so the test observes the button's in-flight state
-    // instead of racing a fast local response.
+    const summariesBefore = platform.summaries.length
+    // Hold the panel's notice read so the test observes its in-flight state instead of
+    // racing a fast local response.
     platform.holdNextGet()
-    await refresh.click()
+    await openSettings(page, 'zh')
+    const settings = page.getByRole('dialog', { name: '设置', exact: true })
+    await settings.waitFor()
     await expect.poll(() => platform.gets.length, { timeout: 30_000 }).toBe(getsBefore + 1)
-    expect(platform.gets.length).toBe(getsBefore + 1)
-    await expect.poll(() => refresh.isDisabled(), { timeout: 30_000 }).toBe(true)
-    // The read is in flight: no card, no acknowledgement, and the button has not re-enabled.
-    observations.push(`refresh.held cards=${String(await noticeCards(page).count())} acks=${String(platform.acks.length)}`)
+    // One open, one read: no control in the panel drives a second one.
+    expect(await settings.getByRole('button', { name: '刷新余额', exact: true }).count()).toBe(0)
+    observations.push(`open.held cards=${String(await noticeCards(page).count())} acks=${String(platform.acks.length)} gets=${String(platform.gets.length - getsBefore)}`)
     expect(await noticeCards(page).count()).toBe(0)
     expect(platform.acks).toHaveLength(1)
+    expect(platform.summaries.length).toBeGreaterThan(summariesBefore)
     platform.releaseGet()
-    // The refresh completed only once the button re-enabled, which follows both the
-    // balance read and the notice read settling.
-    await expect.poll(() => refresh.isDisabled(), { timeout: 30_000 }).toBe(false)
+    // The answered notice is displayed at once, below the settings overlay, and the card
+    // that passed a presented frame is acknowledged without waiting for the panel to close.
+    const openNotice = await shownNotice(page, zhLater)
+    observations.push(`open.shown notice=${openNotice}`)
+    observations.push(`open.shown ack orders=${await acked(platform, 2)}`)
+    // Hit-testing the card's own point proves the settings layer paints above it, so the
+    // user reads it through the mask rather than over the panel.
+    const paintedUnderOverlay = await noticeCards(page).filter({ hasText: zhLater }).evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + 20)
+      return hit !== null && !element.contains(hit) && hit.closest('[role="presentation"]') !== null
+    })
+    observations.push(`open.shown painted-under-settings=${String(paintedUnderOverlay)} cards=${String(await noticeCards(page).count())} acks=${String(platform.acks.length)}`)
+    expect(paintedUnderOverlay).toBe(true)
     await expect.poll(async () => (await settings.textContent()) ?? '', { timeout: 30_000 }).toContain('¥13.00')
+    // Still one read after the refresh settled.
+    expect(platform.gets.length).toBe(getsBefore + 1)
 
-    const refreshGet = platform.served.at(-1)!
+    const openGet = platform.served.at(-1)!
     const panel = (await settings.textContent()) ?? ''
     const usage = await settings.getByRole('link', { name: '查询用量', exact: true }).getAttribute('href')
-    observations.push(`refresh.get locale=${String(refreshGet.locale)} query=${refreshGet.query} served=true`)
-    observations.push(`refresh.balance bonus-row=${String(panel.includes('赠金余额'))} amount=${String(panel.includes('¥13.00'))} dated=${String(/\d{4}-\d{2}-\d{2}/.test(panel))}`)
-    observations.push(`refresh.cards-while-settings-open=${String(await noticeCards(page).count())} acks=${String(platform.acks.length)}`)
-    observations.push(`refresh.usage-link=${String(usage).replace(platform.origin, '{{origin}}')}`)
-    expect(refreshGet.locale).toBe('zh_CN')
-    expect(refreshGet.query).toBe('')
+    observations.push(`open.get locale=${String(openGet.locale)} query=${openGet.query} served=true gets=${String(platform.gets.length - getsBefore)}`)
+    observations.push(`open.balance bonus-row=${String(panel.includes('赠金余额'))} amount=${String(panel.includes('¥13.00'))} dated=${String(/\d{4}-\d{2}-\d{2}/.test(panel))}`)
+    observations.push(`open.cards-while-open=${String(await noticeCards(page).count())} acks=${String(platform.acks.length)}`)
+    observations.push(`open.usage-link=${String(usage).replace(platform.origin, '{{origin}}')}`)
+    expect(openGet.locale).toBe('zh_CN')
+    expect(openGet.query).toBe('')
     expect(panel).toContain('赠金余额')
     expect(panel).toContain('¥13.00')
     expect(panel).not.toMatch(/\d{4}-\d{2}-\d{2}/)
     expect(usage).toBe(`${platform.origin}/usage`)
-    expect(await noticeCards(page).count()).toBe(0)
-    expect(platform.acks).toHaveLength(1)
+    expect(await noticeCards(page).count()).toBe(1)
+    expect(platform.acks).toHaveLength(2)
 
-    // Leaving settings releases the already-fetched notice; it is displayed, and only now acknowledged.
+    // Closing settings acknowledges nothing again: the notice keeps its acknowledged
+    // record and stays on the sidebar until the user closes it.
+    const launcher = page.getByRole('button', { name: '账号菜单', exact: true })
     await page.keyboard.press('Escape')
-    observations.push(`refresh.released notice=${await shownNotice(page, zhLater)}`)
-    observations.push(`refresh.released ack orders=${await acked(platform, 2)}`)
+    await settings.waitFor({ state: 'detached', timeout: 30_000 })
+    // The shell restores focus to the launcher once the close commits.
+    await expect.poll(() => launcher.evaluate(element => element === document.activeElement), { timeout: 30_000 }).toBe(true)
+    observations.push(`open.closed settings cards=${String(await noticeCards(page).count())} acks=${String(platform.acks.length)}`)
+    expect(await noticeCards(page).count()).toBe(1)
+    expect(platform.acks).toHaveLength(2)
+    // Closing the card hides it; the double already stopped serving this acknowledged order.
+    await noticeCards(page).getByRole('button', { name: '关闭', exact: true }).click()
+    expect(await noticeCards(page).count()).toBe(0)
+    expect(platform.acks).toHaveLength(2)
+    observations.push(`open.dismissed cards=0 acks=${String(platform.acks.length)}`)
+
+    // The next entry refreshes once more. Every grant was acknowledged, so the panel shows
+    // no card and adds no acknowledgement, and switching sections inside one open is not
+    // another entry.
+    const reopenGetsBefore = platform.gets.length
+    const reopenSummariesBefore = platform.summaries.length
+    await openSettings(page, 'zh')
+    const reopened = page.getByRole('dialog', { name: '设置', exact: true })
+    await reopened.waitFor()
+    await expect.poll(() => platform.gets.length, { timeout: 30_000 }).toBe(reopenGetsBefore + 1)
+    await expect.poll(() => platform.summaries.length, { timeout: 30_000 }).toBe(reopenSummariesBefore + 1)
+    observations.push(`reopen.open gets=${String(platform.gets.length - reopenGetsBefore)} summaries=${String(platform.summaries.length - reopenSummariesBefore)} cards=${String(await noticeCards(page).count())} acks=${String(platform.acks.length)}`)
+    expect(await noticeCards(page).count()).toBe(0)
+    expect(platform.acks).toHaveLength(2)
+    // Arm the hold so a read triggered by navigation would be recorded and observed rather
+    // than racing this assertion.
+    const sectionGetsBefore = platform.gets.length
+    const sectionSummariesBefore = platform.summaries.length
+    platform.holdNextGet()
+    const nav = reopened.locator('nav')
+    await nav.getByRole('button', { name: '模型', exact: true }).click()
+    await expect.poll(async () => nav.getByRole('button', { name: '模型', exact: true }).getAttribute('aria-current'), { timeout: 30_000 }).toBe('true')
+    await nav.getByRole('button', { name: '账号与余额', exact: true }).click()
+    await expect.poll(async () => nav.getByRole('button', { name: '账号与余额', exact: true }).getAttribute('aria-current'), { timeout: 30_000 }).toBe('true')
+    platform.releaseGet()
+    const sectionPanel = (await reopened.textContent()) ?? ''
+    observations.push(`reopen.section-switch gets=${String(platform.gets.length - sectionGetsBefore)} summaries=${String(platform.summaries.length - sectionSummariesBefore)} amount=${String(sectionPanel.includes('¥13.00'))} cards=${String(await noticeCards(page).count())} acks=${String(platform.acks.length)}`)
+    expect(platform.gets.length).toBe(sectionGetsBefore)
+    expect(platform.summaries.length).toBe(sectionSummariesBefore)
+    expect(sectionPanel).toContain('¥13.00')
+    await page.keyboard.press('Escape')
+    await reopened.waitFor({ state: 'detached', timeout: 30_000 })
+    await expect.poll(() => launcher.evaluate(element => element === document.activeElement), { timeout: 30_000 }).toBe(true)
+    observations.push(`reopen.closed cards=${String(await noticeCards(page).count())} acks=${String(platform.acks.length)}`)
+    expect(await noticeCards(page).count()).toBe(0)
+    expect(platform.acks).toHaveLength(2)
+
+    // A transient acknowledgement failure keeps the displayed card and retries the same
+    // order after the backoff. The pending retry is page state: no part of it reaches
+    // browser storage, so restarting the client cannot resume it.
+    const zhRetry = '已赠送您 6.00 元 DSH 体验赠金。'
+    platform.grant(ORDER_RETRY, '6.00')
+    platform.failNextAcks(ORDER_RETRY, 1)
+    await openSettings(page, 'zh')
+    const retryDialog = page.getByRole('dialog', { name: '设置', exact: true })
+    await retryDialog.waitFor()
+    observations.push(`retry.notice=${await shownNotice(page, zhRetry)}`)
+    const retryAttempts = (): AckRecord[] => platform.acks.filter(item => item.orderId === ORDER_RETRY)
+    await expect.poll(() => retryAttempts().length, { timeout: 30_000 }).toBe(1)
+    // The failed attempt does not withdraw the card the user is reading.
+    expect(await noticeCards(page).count()).toBe(1)
+    await expect.poll(() => retryAttempts().length, { timeout: 30_000 }).toBe(2)
+    const attempts = retryAttempts()
+    // The first retry follows the configured first delay rather than arriving immediately.
+    // Only the lower bound is asserted: load can widen the observed gap, never shorten it
+    // below the timer's own 1s first step.
+    const retryGapMs = attempts[1]!.at - attempts[0]!.at
+    const retryBodyKept = attempts.every(item => item.body === JSON.stringify({ order_id: ORDER_RETRY })
+      && item.query === '' && item.contentType === 'application/json')
+    observations.push(`retry.attempts=${String(attempts.length)} backoff=${String(retryGapMs >= 900)} body-kept=${String(retryBodyKept)} cards=${String(await noticeCards(page).count())}`)
+    expect(retryGapMs).toBeGreaterThanOrEqual(900)
+    expect(retryBodyKept).toBe(true)
+    await page.keyboard.press('Escape')
+    await retryDialog.waitFor({ state: 'detached', timeout: 30_000 })
+    await noticeCards(page).getByRole('button', { name: '关闭', exact: true }).click()
+
+    // The double now keeps serving an acknowledged order, which is what a backend that has
+    // not applied the acknowledgement looks like. Display follows each response: dismissing
+    // the card and reading again shows the order again, because the client keeps no local
+    // record that suppresses it.
+    const zhRepeat = '已赠送您 7.00 元 DSH 体验赠金。'
+    platform.setKeepUnnotified(true)
+    platform.grant(ORDER_REPEAT, '7.00')
+    const repeatAttempts = (): AckRecord[] => platform.acks.filter(item => item.orderId === ORDER_REPEAT)
+    await openSettings(page, 'zh')
+    const repeatDialog = page.getByRole('dialog', { name: '设置', exact: true })
+    await repeatDialog.waitFor()
+    observations.push(`repeat.first=${await shownNotice(page, zhRepeat)}`)
+    await expect.poll(() => repeatAttempts().length, { timeout: 30_000 }).toBe(1)
+    // The mask owns pointer input, so the panel closes first; the card the user was reading
+    // through the mask is still on the sidebar and is dismissed there.
+    await page.keyboard.press('Escape')
+    await repeatDialog.waitFor({ state: 'detached', timeout: 30_000 })
+    expect(await noticeCards(page).count()).toBe(1)
+    await noticeCards(page).getByRole('button', { name: '关闭', exact: true }).click()
+    /** @returns every localStorage key the bonus notice lifecycle could have written. */
+    const bonusStorageKeys = (): Promise<string[]> => page.evaluate(() =>
+      Object.keys(localStorage).filter(key => key.startsWith('dsh-account-bonus')))
+    // A displayed and acknowledged notice writes nothing: the server response is the only
+    // record of what was offered.
+    expect(await bonusStorageKeys()).toEqual([])
+    // An older build persisted an acknowledged record under this key and suppressed any
+    // order that record named. Restarting with that record present must not hide the order,
+    // so seed the exact legacy entry for this origin and account.
+    const legacyKey = `dsh-account-bonus:${platform.origin}:${ACCOUNT_ID}`
+    await page.evaluate((entry: { key: string; value: string }) => { localStorage.setItem(entry.key, entry.value) },
+      { key: legacyKey, value: JSON.stringify({ [ORDER_REPEAT]: 'acknowledged' }) })
+    expect(await bonusStorageKeys()).toEqual([legacyKey])
+    await page.reload({ waitUntil: 'load' })
+    observations.push(`repeat.reload=${await shownNotice(page, zhRepeat)}`)
+    await expect.poll(() => repeatAttempts().length, { timeout: 30_000 }).toBe(2)
+    // The legacy entry is untouched and still ignored: it names an acknowledged order that
+    // came back from the server, and the notice was displayed and acknowledged again.
+    observations.push(`repeat.acks=${String(repeatAttempts().length)} legacy-record=${String(await page.evaluate((key: string) => localStorage.getItem(key), legacyKey))} cards=${String(await noticeCards(page).count())}`)
+    expect(await bonusStorageKeys()).toEqual([legacyKey])
+    await noticeCards(page).getByRole('button', { name: '关闭', exact: true }).click()
     await page.close()
 
     // Another device in another language gets the copy the server localized for it.

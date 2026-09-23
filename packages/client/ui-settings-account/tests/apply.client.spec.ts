@@ -144,9 +144,29 @@ it('uses the Desktop login carrier and exposes operation errors', async ({ start
   mock.remote.account.cancelSignIn.mockResolvedValueOnce(ok(view)).mockResolvedValueOnce(failure)
   await actions.cancel(id)
   await expect(actions.cancel(id)).rejects.toThrow('account cancel failed')
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   mock.remote.account.signOut.mockResolvedValueOnce(ok(view)).mockResolvedValueOnce(failure)
   await actions.signOut()
-  await expect(actions.signOut()).rejects.toThrow('account sign-out failed')
+  // The launcher renders nothing, so the typed failure and its code must reach the console.
+  await expect(actions.signOut()).rejects.toBe(failure.error)
+  expect(logged).toHaveBeenLastCalledWith('[ui-settings-account] sign-out failed',
+    JSON.stringify({ phase: 'result', errorCode: 'gateway/internal', errorName: 'RemoteError' }))
+}, 60_000)
+
+it('classifies a sign-out that throws before the Remote call and logs no thrown message', async ({ start }) => {
+  vi.stubGlobal('dshDesktop', {})
+  const c = await start()
+  const actions = operations(c)
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  // A build without an embedded client version refuses before any Remote call is prepared, which is
+  // the only pre-result throw the test carrier can produce: the whole-client namespace proxy folds a
+  // carrier rejection into the refused-result branch before the plugin sees it.
+  vi.stubEnv('DSH_CLIENT_VERSION', '')
+  await expect(actions.signOut()).rejects.toThrow('carries no DSH_CLIENT_VERSION')
+  expect(logged).toHaveBeenLastCalledWith('[ui-settings-account] sign-out failed',
+    JSON.stringify({ phase: 'prepare-client', errorCode: 'unknown', errorName: 'Error' }))
+  // Only the classification fields may ride the log; the thrown text can quote what it failed on.
+  expect(JSON.stringify(logged.mock.calls)).not.toContain('DSH_CLIENT_VERSION')
 }, 60_000)
 
 it('uses the Desktop stream origin and exposes the native platform bridge', async ({ start, mock }) => {
@@ -204,7 +224,7 @@ it('drops the previous account notice and stops reading after sign-out', async (
   expect(c.mock.remote.account.getUnnotifiedBonuses.mock.calls.length).toBe(reads)
 }, 60_000)
 
-it('refreshes balances and the bonus read from the settings action, without polling', async ({ start }) => {
+it('refreshes balances and the bonus read on one Settings entry, without polling', async ({ start }) => {
   vi.stubGlobal('dshDesktop', {})
   const c = await start()
   const actions = operations(c)
@@ -220,14 +240,14 @@ it('refreshes balances and the bonus read from the settings action, without poll
   expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenCalledTimes(1)
   // Signing in already read the wallet once through the details refresh.
   const balances = c.mock.remote.account.getBalance.mock.calls.length
-  await actions.refreshBonus()
+  await actions.refreshOnSettingsOpen()
   expect(c.mock.remote.account.getBalance).toHaveBeenCalledTimes(balances + 1)
   expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenCalledTimes(2)
   // The bonus read carries the active UI language.
   expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenLastCalledWith(expect.objectContaining({ locale: 'en' }))
 }, 60_000)
 
-it('publishes a failed balance from a manual refresh without dropping the bonus read', async ({ start }) => {
+it('publishes a failed balance from a Settings entry without dropping the bonus read', async ({ start }) => {
   vi.stubGlobal('dshDesktop', {})
   const c = await start()
   const actions = operations(c)
@@ -235,7 +255,7 @@ it('publishes a failed balance from a manual refresh without dropping the bonus 
   c.mock.remote.account.getUnnotifiedBonuses.mockResolvedValue(ok(null))
   c.mock.streams.push('account/watch', stored)
   await vi.waitFor(() => { expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenCalledTimes(1) })
-  await actions.refreshBonus()
+  await actions.refreshOnSettingsOpen()
   expect(actions.hooks.account.getSnapshot().details?.balance).toEqual({ status: 'failed' })
   // The bonus read still ran: a failed wallet read does not cancel it.
   expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenCalledTimes(2)
@@ -283,7 +303,7 @@ it('samples the build version, language, and UTC offset for every account call',
   })
   // The next call reads the zone again instead of reusing the first sample.
   offset.mockReturnValue(-300)
-  await actions.refreshBonus()
+  await actions.refreshOnSettingsOpen()
   expect(c.mock.remote.account.getUnnotifiedBonuses).toHaveBeenLastCalledWith({
     version: '0.0.0-test', locale: 'en', timezoneOffsetSeconds: 18_000,
   })

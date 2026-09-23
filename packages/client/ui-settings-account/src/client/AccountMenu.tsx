@@ -1,5 +1,5 @@
 /** Sidebar account launcher and locally authoritative sign-out action. */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Menu, IconPaperPlaneOutlineMedium, IconSettingsOutlineMedium, IconUserOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountSectionInjected } from './AccountSection.tsx'
@@ -18,9 +18,16 @@ export type AccountMenuProps = PropsRuntime<'settings.launcher'> & PropsLocale<'
  */
 export function AccountMenu({
   wide, openSettings, openOnboarding, settingsOpen, useAccount, useTheme, signOut, contactUs, showLogin, start, cancel,
-  bonusNoticeShown, bonusNoticeDismissed, t,
+  refreshOnSettingsOpen, bonusNoticeShown, bonusNoticeDismissed, t,
 }: AccountMenuProps) {
   const anchor = useRef<HTMLDivElement>(null)
+  // The launcher outlives the panel, so a false-to-true edge is one Settings entry:
+  // re-renders, section switches and tab switches inside one open must not read again.
+  const settingsWasOpen = useRef(false)
+  useEffect(() => {
+    if (settingsOpen && !settingsWasOpen.current) void refreshOnSettingsOpen()
+    settingsWasOpen.current = settingsOpen
+  }, [refreshOnSettingsOpen, settingsOpen])
   const account = useAccount(state => state)
   const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
   const signedIn = account.view?.status === 'credential-stored'
@@ -29,18 +36,20 @@ export function AccountMenu({
     ? profile.value.name ?? profile.value.contact ?? t('signedIn') : t('signedIn')
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [logoutFailed, setLogoutFailed] = useState(false)
   const logout = async () => {
     setBusy(true)
-    setLogoutFailed(false)
-    try { await signOut(); setOpen(false) }
-    catch { setLogoutFailed(true) }
+    try { await signOut() }
+    catch (_signOutFailed) {
+      // The operation logs the stable Remote failure code; the open menu keeps the retry within reach.
+      return
+    }
     finally { setBusy(false) }
+    setOpen(false)
   }
   // The plugin's start publishes `loginFailed` before it rejects, so the dialog owns the report.
   const beginSignIn = (): void => { setOpen(false); void start().catch(() => undefined) }
   return <div ref={anchor} className={css.root}>
-    {signedIn && !settingsOpen && account.notice && <AccountNoticeCard key={account.notice.orderId} notice={account.notice}
+    {signedIn && account.notice && <AccountNoticeCard key={account.notice.orderId} notice={account.notice}
       anchor={anchor} title={t('bonusNoticeTitle')} closeLabel={t('close')}
       onShown={bonusNoticeShown} onDismiss={bonusNoticeDismissed} />}
     <Menu open={open} side="top" portal autoFocus className={css.anchor}
@@ -65,6 +74,5 @@ export function AccountMenu({
     {account.loginVisible && !account.onboarding && <SignInDialog account={account} colorScheme={colorScheme}
       start={start} cancel={cancel} t={t}
       close={() => { showLogin(false) }} useApiKey={() => { showLogin(false); openOnboarding('deepseek-official') }} />}
-    {logoutFailed && <span className={css.error} role="alert">{t('failed')}</span>}
   </div>
 }

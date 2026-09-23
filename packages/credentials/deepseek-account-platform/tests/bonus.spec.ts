@@ -30,6 +30,19 @@ interface Recorded {
   readonly platform: string | undefined
   readonly version: string | undefined
   readonly timezoneOffset: string | undefined
+  readonly contentType: string | undefined
+  readonly body: string | undefined
+}
+
+/** Read one request body; the acknowledgement carries its order id in JSON, so the fixture keeps the exact bytes. */
+function requestBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = ''
+    req.setEncoding('utf8')
+    req.on('data', (chunk: string) => { body += chunk })
+    req.on('error', reject)
+    req.on('end', () => { resolve(body) })
+  })
 }
 
 async function fixture() {
@@ -53,12 +66,14 @@ async function fixture() {
   let origin = ''
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     expect(req.headers.authorization).toBeUndefined()
+    const body = await requestBody(req)
     requests.push({ method: req.method, url: req.url, token: req.headers['x-dsh-auth-token'] as string | undefined,
       locale: req.headers['x-client-locale'] as string | undefined,
       bundleId: req.headers['x-client-bundle-id'] as string | undefined,
       platform: req.headers['x-client-platform'] as string | undefined,
       version: req.headers['x-client-version'] as string | undefined,
-      timezoneOffset: req.headers['x-client-timezone-offset'] as string | undefined })
+      timezoneOffset: req.headers['x-client-timezone-offset'] as string | undefined,
+      contentType: req.headers['content-type'], body: body === '' ? undefined : body })
     res.setHeader('content-type', 'application/json')
     if (req.url === '/auth-api/v0/users/current') {
       await beforeProfileResponse?.()
@@ -71,10 +86,10 @@ async function fixture() {
         data: { biz_code: bonusBizCode, biz_data: bonuses } }))
       return
     }
-    if (req.url?.startsWith('/api/v0/users/ack_bonus_notified')) {
+    // The exact path is the assertion: a query parameter would fall through to the 404 below.
+    if (req.url === '/api/v0/users/ack_bonus_notified') {
       res.writeHead(ackStatus).end(JSON.stringify(ackStatus === 200
-        ? { code: ackBizCode === 0 ? 0 : 1, msg: ackBizCode === 0 ? '' : 'BONUS_ORDER_NOT_FOUND',
-          data: ackBizCode === 0 ? { biz_code: 0, biz_msg: '', biz_data: null } : null }
+        ? { code: 0, msg: '', data: { biz_code: ackBizCode, biz_msg: ackBizCode === 0 ? '' : 'BONUS_ORDER_NOT_FOUND', biz_data: null } }
         : { code: 1, msg: 'INTERNAL', data: null }))
       return
     }
@@ -127,7 +142,7 @@ it('sends one call\'s client identity headers on both requests of a bonus chain'
     ['/auth-api/v0/users/current', '', 'web', '3.0.0', 'zh_CN', '-18000'],
     ['/api/v0/users/get_unnotified_bonuses', '', 'web', '3.0.0', 'zh_CN', '-18000'],
     ['/auth-api/v0/users/current', '', 'web', '3.0.0', 'zh_CN', '-18000'],
-    [`/api/v0/users/ack_bonus_notified?order_id=${ORDER}`, '', 'web', '3.0.0', 'zh_CN', '-18000'],
+    ['/api/v0/users/ack_bonus_notified', '', 'web', '3.0.0', 'zh_CN', '-18000'],
   ])
 })
 
@@ -152,12 +167,18 @@ it('reads unnotified bonuses with the platform origin, grant header, and locale 
   ])
 })
 
-it('selects en_US copy without a language query parameter', async () => {
+it.each([
+  ['zh-CN', 'zh_CN'],
+  ['en-US', 'en_US'],
+])('selects %s copy through the locale header and never a language query', async (locale, wireLocale) => {
   const f = await fixture()
   await f.grant('test-account-token')
-  await f.account.getUnnotifiedBonuses(clientMetadata('en-US'))
-  expect(f.requests.map(request => request.locale)).toEqual(['en_US', 'en_US'])
-  expect(f.requests.map(request => request.url)).not.toContain('/api/v0/users/get_unnotified_bonuses?language=en')
+  await f.account.getUnnotifiedBonuses(clientMetadata(locale))
+  expect(f.requests.map(request => request.locale)).toEqual([wireLocale, wireLocale])
+  expect(f.requests.map(request => request.url)).toEqual([
+    '/auth-api/v0/users/current',
+    '/api/v0/users/get_unnotified_bonuses',
+  ])
 })
 
 it.each([
@@ -173,16 +194,29 @@ it.each([
   await expect(f.account.getUnnotifiedBonuses(clientMetadata('en'))).rejects.toThrow('account: protocol')
 })
 
-it('acknowledges a displayed bonus with the grant, locale, and encoded order id', async () => {
+it('acknowledges a displayed bonus with the grant, locale, and a JSON body', async () => {
   const f = await fixture()
   await f.grant('test-account-token')
   expect(await f.account.ackBonusNotified(USER as AccountUserId, ORDER as AccountBonusOrderId, clientMetadata('zh-CN'))).toBe(true)
   expect(f.requests).toEqual([
     { method: 'GET', url: '/auth-api/v0/users/current', token: 'test-account-token', locale: 'zh_CN',
       bundleId: '', platform: 'web', version: '1.2.3', timezoneOffset: '28800' },
-    { method: 'POST', url: `/api/v0/users/ack_bonus_notified?order_id=${ORDER}`, token: 'test-account-token', locale: 'zh_CN',
-      bundleId: '', platform: 'web', version: '1.2.3', timezoneOffset: '28800' },
+    { method: 'POST', url: '/api/v0/users/ack_bonus_notified', token: 'test-account-token', locale: 'zh_CN',
+      bundleId: '', platform: 'web', version: '1.2.3', timezoneOffset: '28800',
+      contentType: 'application/json', body: `{"order_id":"${ORDER}"}` },
   ])
+})
+
+it('rejects the supplied BONUS_ORDER_NOT_FOUND envelope as a business failure', async () => {
+  const f = await fixture()
+  await f.grant('test-account-token')
+  f.failAck(1)
+  await expect(f.account.ackBonusNotified(USER as AccountUserId, ORDER as AccountBonusOrderId, clientMetadata('en')))
+    .rejects.toThrow('account: protocol')
+  expect(f.requests[1]).toMatchObject({
+    method: 'POST', url: '/api/v0/users/ack_bonus_notified', locale: 'en_US',
+    contentType: 'application/json', body: `{"order_id":"${ORDER}"}`,
+  })
 })
 
 it.each([

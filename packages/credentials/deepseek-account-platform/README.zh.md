@@ -30,7 +30,7 @@ getPlatformSession 仅在已存授权的 issuer 与 platformOrigin 一致时导�
 
 getProfile / getBalance 将保存的授权 token 通过 x-dsh-auth-token 请求头，向 platformOrigin 上的 GET /auth-api/v0/users/current 和 GET /api/v0/users/get_user_summary 发起请求。授权签发来源必须与该来源一致。Host 只投影账号 UID、资料名称、头像 URL、由 Platform 脱敏的手机号或邮箱（原样保留），以及 normal_wallets / bonus_wallets 的币种和余额字符串，丢弃响应 token 与其他字段。赠送钱包不计入充值余额。凭证变化和销毁会使进行中的查询失效。
 
-getUnnotifiedBonuses 读取同一来源上的 GET /api/v0/users/get_unnotified_bonuses，ackBonusNotified 向 POST /api/v0/users/ack_bonus_notified?order_id=… 发请求，两者都按调用方元数据组装这五个客户端请求头。二者都先为捕获到的授权解析账号身份，因此退登或切号时返回 null 或 false，而不会确认另一个账号的赠金；一次读取只有在同一凭证生命周期内全部结算后才发布。Host 按 Platform 返回顺序转发赠金列表，把每条的 msg 映射为 message，其余字段不额外丢弃；格式错误、HTTP 失败和业务失败都会抛出。
+getUnnotifiedBonuses 读取同一来源上的 GET /api/v0/users/get_unnotified_bonuses，ackBonusNotified 向 POST /api/v0/users/ack_bonus_notified 发送仅含订单号的 JSON 正文，两者都按调用方元数据组装这五个客户端请求头。二者都先为捕获到的授权解析账号身份，因此退登或切号时返回 null 或 false，而不会确认另一个账号的赠金；一次读取只有在同一凭证生命周期内全部结算后才发布。Host 按 Platform 返回顺序转发赠金列表，把每条的 msg 映射为 message，其余字段不额外丢弃；格式错误、HTTP 失败和业务失败都会抛出。
 
 在插件行配置 platformOrigin、allowLoopbackHttp、requestTimeoutMs 和 attemptTimeoutMs。HTTP 仅用于显式启用的本机开发。提供者先在现有 Host webServer 注册 /oauth/callback，再调用 auth_init；校验 state、使用 S256 PKCE 授权码兑换一次，并在跳转 auth_exchange.biz_data.authorized_url 前提交授权记录。浏览器地址默认要求匹配配置的平台来源，并始终要求固定的 /dsh/authorize 或 /dsh/authorized 路径。完成页地址将 `login_source` 设为发起登录的客户端类型（`web` 或 `desktop`），并保留平台返回的其他查询参数。设备标识是独立的随机 UUID 记录，由使用同一凭证存储的进程共享；device_model 报告操作系统和架构。
 
@@ -51,7 +51,7 @@ getUnnotifiedBonuses 读取同一来源上的 GET /api/v0/users/get_unnotified_b
 
 已鉴权客户端提供浏览器可访问的回调来源（含 SSH 本地转发端口）和 UI 类型。提供者固定回调路径，并在初始化与兑换时使用同一个 redirect_uri。回调请求使用 state 和 PKCE 校验，不要求 RPC 鉴权。完成、取消和卸载仅移除本次尝试的路由。兑换失败发布 failed 状态，不自动重试：Web 关闭授权标签页，原标签页显示失败弹窗；回调页尝试自行关闭，并提供手动关闭提示。Desktop 收到 HTTP 204，并通过账号状态流聚焦现有登录界面。
 
-Host 诊断通过标准输出及 Host 调试器 Console 输出，前缀为 `[deepseek-account]`。日志包含接口路径、HTTP 状态、数值响应码、失败阶段、校验失败的字段路径、实际类型和校验码，以及浏览器 URL 拒绝规则，不包含请求头、请求和响应正文、授权 URL 或原始异常。
+Host 诊断通过标准输出及 Host 调试器 Console 输出，前缀为 `[deepseek-account]`，每行都带 UTC ISO 格式的 `at` 时间戳；新增日志沿用 protocol.ts 里的唯一写入函数即可保留该字段。日志包含接口路径、HTTP 状态、数值响应码、失败阶段、校验失败的字段路径、实际类型和校验码、浏览器 URL 拒绝规则，以及去除凭证字段、请求中的密钥值和授权 URL 后的受限响应正文。信封校验通过后无论成败都会写正文：成功写 `response body`，业务失败写 `business rejected` 且不会写成功行。授权请求头或请求正文里的真实凭证，无论多短，只要被响应正文回显就会脱敏；仅部署 Cookie 自身的值（可能是 1 这类标志）限定为整值匹配，避免误伤服务端返回的日期、金额或订单号中的数字。本地退出登录先写一行 `sign-out started`，随后写 `sign-out completed`，或以 `sign-out failed` 写明拒绝的阶段（`closed`、`cancel-attempt`、`read-grant`、`validate-record`、`validate-issuer`、`delete-grant`、`schedule-revocation` 或 `publish-state`）、错误码和错误名。抛出异常的消息、请求正文和请求头、原始异常对象不会写入日志。
 
 `rewriteBrowserOrigin` 默认为 `false`，要求浏览器地址同源。私有开发 patch 可设为 `true`，将授权页和完成页地址映射到 `platformOrigin`，保留固定路径和查询字符串。原地址必须使用 HTTPS 或已匹配配置来源；仍拒绝用户名密码、片段和非预期路径。发布的 profile 保持严格同源校验。
 
