@@ -6,20 +6,20 @@
   en: b8487c3bea6d86bb
   zh: d936a91a17efd1da
 /deepseek-harness-desktop/key-technical-decisions:
-  en: 47ec880441223749
-  zh: 3be7731db888b4a4
+  en: 069fdfd72d2ea26a
+  zh: 81c683ada1fe3e8d
 /deepseek-harness-desktop/key-technical-decisions/bundled-workspace-dependencies:
   en: c2eb16f568cd8554
   zh: 686d64af17b10375
 /deepseek-harness-desktop/installation-ownership:
-  en: 3fe85101acf17b0a
-  zh: 70cd207cadc85b94
+  en: 8307baf6c5b691d0
+  zh: 86e46b9552017ff6
 /deepseek-harness-desktop/installation-ownership/runtime-and-plugin-activation:
   en: 0d11af8639977a6d
   zh: 86b086b12d2210d3
 /deepseek-harness-desktop/develop:
-  en: 99f5299ebcf69b97
-  zh: 0411074daee0cd79
+  en: 9b9b362a9865e763
+  zh: c748901168e2db8c
 /deepseek-harness-desktop/develop/startup-onboarding:
   en: f01d0dbafe8b1613
   zh: 91ad92f5d7e505c4
@@ -52,7 +52,7 @@
   zh: 93250420c9d6f4ce
 /deepseek-harness-desktop/updates/mandatory-update-policy:
   en: 2f789a4949fafb12
-  zh: 8381fef7d1646d23
+  zh: d8b28c01cfee11b7
 /deepseek-harness-desktop/updates/local-updater-qualification:
   en: bf34de891411c618
   zh: aa6923fd5060174b

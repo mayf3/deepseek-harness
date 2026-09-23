@@ -8,6 +8,7 @@
 
 /** Simplified Chinese dictionary and key-set source of truth. */
 export const zh = {
+  'shortcut.hint': '{label} {keys}',
   loading: '正在读取…',
   loadMore: '加载更多',
   changed: '文件已更新，当前显示为旧内容',
@@ -37,6 +38,7 @@ export type SidebarDocumentPreviewKey = keyof typeof zh
 
 /** English dictionary, checked against the Chinese key set. */
 export const en = {
+  'shortcut.hint': '{label} {keys}',
   loading: 'Reading…',
   loadMore: 'Load more',
   changed: 'The file has changed, showing the previous content.',

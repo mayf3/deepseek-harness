@@ -7,6 +7,7 @@ import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { PlatformBridge } from '../src/client/PlatformOverlay.tsx'
 import { AccountSection, type AccountSectionInjected, type AccountSnapshot } from '../src/client/AccountSection.tsx'
 import type { BonusNotice } from '../src/client/bonus-notices.ts'
+import type { AccountMenuProps } from '../src/client/AccountMenu.tsx'
 import type {} from '../src/client/index.ts'
 import { en, zh, type AccountKey } from '../src/client/locales.ts'
 
@@ -109,6 +110,35 @@ it.each([en, zh].flatMap(copy => ([false, true, 'unknown'] as const).map(running
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.signOut })) })
   expect(signOut).toHaveBeenCalledOnce()
   expect(screen.queryByRole('menu')).toBeNull()
+})
+
+it.each([en, zh])('updates the Settings menu keycaps and accessible combination from its owner', async (copy) => {
+  const operations = mount({ status: 'signed-out', attempt: null }, copy)
+  cleanup()
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  const props: AccountMenuProps = {
+    ...({} as GlobalStandardProps), ...operations, wide: true, settingsOpen: false,
+    useAccount: selector => selector(operations.hooks.account.getSnapshot()),
+    useTheme: selector => selector(operations.hooks.theme.getSnapshot()),
+    openSettings: vi.fn(() => { expect(document.activeElement).toBe(screen.getByRole('button', { name: copy.menu })) }),
+    openOnboarding: vi.fn(),
+    t: key => key in copy ? copy[key as AccountKey] : key,
+  }
+  const view = render(<AccountMenu {...props} settingsShortcut={{ keys: ['⌘', ','], aria: 'Meta+,' }} />)
+  fireEvent.click(screen.getByRole('button', { name: copy.menu }))
+  const settings = screen.getByRole('menuitem', { name: copy.settings })
+  expect(settings.getAttribute('aria-keyshortcuts')).toBe('Meta+,')
+  expect([...settings.querySelectorAll('kbd')].map(key => key.textContent)).toEqual(['⌘', ','])
+
+  view.rerender(<AccountMenu {...props} settingsShortcut={{ keys: ['Ctrl', 'Shift', 'S'], aria: 'Control+Shift+S' }} />)
+  expect(settings.getAttribute('aria-keyshortcuts')).toBe('Control+Shift+S')
+  expect([...settings.querySelectorAll('kbd')].map(key => key.textContent)).toEqual(['Ctrl', 'Shift', 'S'])
+
+  view.rerender(<AccountMenu {...props} />)
+  expect(settings.hasAttribute('aria-keyshortcuts')).toBe(false)
+  expect(settings.querySelector('kbd')).toBeNull()
+  fireEvent.click(settings)
+  expect(props.openSettings).toHaveBeenCalledOnce()
 })
 
 it.each([en, zh])('offers settings, contact and sign-in from the signed-out account menu', async (copy) => {
