@@ -40,7 +40,7 @@ Groups include Tool nodes from preparation onward and classify and count them by
 
 ### Shared rows reuse their existing presentation
 
-[ToolRow](../../../../packages/client/ui-tool/src/client/tool/components/ToolRow.tsx) reuses the existing icon, title, and row component across all stages. The shared row model returns empty presentation fields for preparing, and the shared argument parser returns null without parsing JSON. ToolRow prevents preparation rows from expanding.
+[ToolRow](../../../../packages/client/ui-tool/src/client/tool/components/ToolRow.tsx) reuses the existing icon, title, and row component across all stages. The shared row model selects the tool title and combines any generic tool-name prefix with the available argument summary. Preparation has no arguments or result, and the shared argument parser returns null without parsing JSON. ToolRow prevents preparation rows from expanding.
 
 Read, read_image, write/edit, search, web, todo, question, details, and the generic fallback use this path. Custom rows such as Bash, Skill, Present, and Cordis keep their own preparation branches. No automatic/custom registration declaration or second tool-classification list in ToolTree is introduced.
 

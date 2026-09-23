@@ -118,7 +118,7 @@ describe('Tool preparation and durable replay', () => {
     const group = groups.entries.find(entry => entry.kind === 'group')!
     if (group.kind !== 'group') throw new Error('expected a process group')
     expect(groups.groupSource(group.key).getSnapshot()?.data.summary).toMatchObject({
-      counts: [{ kind: 'edit', count: 2 }], preparing: true,
+      counts: [{ kind: 'write', count: 2 }], preparing: true, runningDetail: '',
     })
     h.assembler.append(call(6))
     expect(h.tools()[0]?.key).toBe(original.key)

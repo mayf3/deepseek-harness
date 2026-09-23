@@ -23,7 +23,7 @@ export interface AutoReviewDenial {
   reason: string | null
 }
 
-type ToolTitleKey = Extract<LocaleKeysOf<'conversation'>, `tool.title.${string}`>
+type ToolTitleKey = Extract<LocaleKeysOf<'conversation'>, `tool.title.${string}` | 'ask.rowTitle' | 'todo.rowTitle'>
 
 /** Locale key per generic row variant. */
 export const VARIANT_TITLE_KEYS = {
@@ -79,6 +79,44 @@ const TOOL_TITLE_KEYS: Record<string, ToolTitleKey> = {
   cordis_undefine: 'tool.title.removeCordis',
   pwsh: 'tool.title.pwsh',
   read_image: 'tool.title.readImage',
+  todo_write: 'todo.rowTitle',
+  ask_user_question: 'ask.rowTitle',
+  create_goal: 'tool.title.createGoal',
+  get_goal: 'tool.title.getGoal',
+  update_goal: 'tool.title.updateGoal',
+  schedule_create: 'tool.title.createSchedule',
+  schedule_list: 'tool.title.listSchedules',
+  schedule_delete: 'tool.title.deleteSchedule',
+  cordis_inspect_list: 'tool.title.inspectProviders',
+  cordis_inspect_query: 'tool.title.queryRuntime',
+  cordis_inspect_self: 'tool.title.inspectPlugins',
+  workflow: 'tool.title.workflow',
+  ralph: 'tool.title.ralph',
+  session_event_read: 'tool.title.readEvent',
+  session_event_search: 'tool.title.searchEvents',
+  session_event_trace: 'tool.title.traceEvent',
+  session_search: 'tool.title.searchSessions',
+  session_trace: 'tool.title.traceSession',
+  list_subagent_models: 'tool.title.listModels',
+  subagent: 'tool.title.subagent',
+  list_agents: 'tool.title.listAgents',
+  send_message: 'tool.title.sendMessage',
+  interrupt_agent: 'tool.title.interruptAgent',
+  job_list: 'tool.title.listJobs',
+  job_output: 'tool.title.readJob',
+  job_kill: 'tool.title.killJob',
+  terminal_open: 'tool.title.openTerminal',
+  terminal_read: 'tool.title.readTerminal',
+  terminal_list: 'tool.title.listTerminals',
+  terminal_signal: 'tool.title.signalTerminal',
+  terminal_close: 'tool.title.closeTerminal',
+  lsp: 'tool.title.lsp',
+  spawn_teammate: 'tool.title.spawnTeammate',
+  team_task_create: 'tool.title.createTeamTask',
+  team_task_get: 'tool.title.getTeamTask',
+  team_task_update: 'tool.title.updateTeamTask',
+  team_task_list: 'tool.title.listTeamTasks',
+  wait_agent: 'tool.title.waitAgent',
 }
 
 /**
@@ -103,6 +141,7 @@ export function toolTitleKey(toolName: string): ToolTitleKey {
 export interface ToolRowModel {
   variant: ToolRowVariant
   titleKey: ToolTitleKey
+  /** Generic rows retain the wire tool name; available arguments append their summary. */
   summary: string
   /**
    * Filesystem path from args (`path` / `file_path`) when the row is a file
@@ -244,24 +283,14 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
   const variant = classifyTool(toolName)
   const titleKey = toolTitleKey(toolName)
   const done = 'kind' in block
-  if (!done && block.phase === 'preparing') {
-    return {
-      variant, titleKey, state: 'preparing', summary: '', filePath: undefined,
-      bodyRaw: null, output: null, errorSummary: null, autoReviewDenial: null,
-    }
-  }
-  const argsRaw = (done ? block.call?.argsRaw : block.argsRaw) ?? ''
-  const state: ToolRowState = !done ? 'running'
+  const argsRaw = done ? block.call?.argsRaw ?? '' : block.phase === 'start' ? block.argsRaw : null
+  const state: ToolRowState = !done ? block.phase === 'preparing' ? 'preparing' : 'running'
     : block.error?.code === 'interrupted' ? 'stopped'
       : block.isError ? 'error' : 'ok'
-  const base = argsRaw === ''
-    ? block.callId
-    : abbreviateHomePath(relativizeToCwd(deriveSummary(variant, argsRaw), cwd), home)
-  // Others keeps the static "Tool call" title (figma literal); the real tool
-  // name rides the mutable summary slot unless the tool owns a specific title.
-  const summary = variant === 'others' && toolName !== '' && TOOL_TITLE_KEYS[toolName] === undefined
-    ? `${toolName} · ${base}`
-    : base
+  const base = argsRaw === null ? ''
+    : argsRaw === '' ? block.callId
+      : abbreviateHomePath(relativizeToCwd(deriveSummary(variant, argsRaw), cwd), home)
+  const summary = [titleKey === 'tool.title.generic' ? toolName : '', base].filter(Boolean).join(' · ')
   // The empty string is "no text" for both derived result fields: a settled
   // call with blank content has nothing to expand, and a blank first line
   // would erase the collapsed error row's summary slot.
@@ -272,7 +301,7 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
     variant,
     titleKey,
     summary,
-    filePath: deriveFilePath(variant, argsRaw),
+    filePath: argsRaw === null ? undefined : deriveFilePath(variant, argsRaw),
     bodyRaw,
     output,
     errorSummary,

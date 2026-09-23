@@ -106,7 +106,7 @@ function stateStatus(state: ToolRowState, t: TranslateNS<'conversation'>): strin
 
 /**
  * Render one localized tool summary and lazily mounted result card.
- * Preparation retains the icon and title without a summary or disclosure.
+ * Preparation retains the icon, title, and optional tool-name summary without disclosure.
  * @param props - tool state, summary, output, and navigation callbacks.
  * @returns the tool disclosure.
  */
@@ -167,8 +167,7 @@ export const ToolRow = memo(function ToolRow({
   )
   const status = stateStatus(state, t)
   const running = state === 'running' || state === 'preparing'
-  const normalSummary = state === 'preparing' ? ''
-    : terminalBody?.description ?? (open ? detailsBody?.expandedSummary ?? summary : summary)
+  const normalSummary = terminalBody?.description ?? (open ? detailsBody?.expandedSummary ?? summary : summary)
   // A failure keeps its first result line when available and otherwise turns
   // the ordinary summary red. An interruption turns the tool-owned summary
   // amber while retaining the business icon and hidden state announcement.

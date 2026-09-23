@@ -40,7 +40,7 @@ Group 从准备阶段起就聚合 Tool 节点，按工具名分类和计数。As
 
 ### 通用行复用现有外壳
 
-[ToolRow](../../../../packages/client/ui-tool/src/client/tool/components/ToolRow.tsx) 在三个阶段复用既有图标、标题和行组件。公共行模型为 preparing 返回空展示字段，共享参数解析入口直接返回 null，不解析 JSON；ToolRow 禁止准备行展开。
+[ToolRow](../../../../packages/client/ui-tool/src/client/tool/components/ToolRow.tsx) 在三个阶段复用既有图标、标题和行组件。公共行模型选择工具标题，并组合通用工具名前缀与已有参数摘要。准备阶段没有参数或结果，共享参数解析入口直接返回 null，不解析 JSON；ToolRow 禁止准备行展开。
 
 read、read_image、write/edit、search、web、todo、question、details 和通用回退使用这条路径。Bash、Skill、Present、Cordis 等自定义外壳保留自己的准备态分支。不增加自动／自管注册声明，不在 ToolTree 维护另一份工具分类名单。
 

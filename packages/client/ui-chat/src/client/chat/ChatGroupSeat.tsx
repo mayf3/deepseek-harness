@@ -37,8 +37,10 @@ interface LiveProcessTitle {
 const PROCESS_ICONS: Record<ProcessTitleActivity, ReactNode> = {
   thinking: <IconThinkOutlineRegular />,
   read: <IconBrowseOutlineRegular size={14} />,
+  readImage: <IconBrowseOutlineRegular size={14} />,
   search: <IconSearchOutlineRegular size={14} />,
   edit: <IconEditOutlineRegular size={14} />,
+  write: <IconEditOutlineRegular size={14} />,
   commands: <IconApiOutlineRegular />,
   code: <IconCodeOutlineRegular size={14} />,
   webSearch: <IconGlobeOutlineRegular />,

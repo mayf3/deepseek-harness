@@ -63,7 +63,7 @@ export function TodoRow({ toolName, block, inspect, useDisclosure, useTodoHistor
       variant={model.variant}
       toolName={toolName}
       icon={<IconChecklistOutlineRegular />}
-      title={t('todo.rowTitle')}
+      title={t(model.titleKey)}
       summary={summary.text}
       summarySuffix={[diff?.summary, summary.extra > 0 ? `+${summary.extra}` : null]
         .filter((part): part is string => part !== null && part !== undefined).join(' · ') || null}

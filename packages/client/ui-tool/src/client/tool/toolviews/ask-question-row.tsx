@@ -185,7 +185,7 @@ export function AskQuestionRow({ toolName, block, inspect, useDisclosure, t }: A
       variant={model.variant}
       toolName={toolName}
       icon={<IconQuestionOutlineRegular />}
-      title={t('ask.rowTitle')}
+      title={t(model.titleKey)}
       summary={summary}
       bodyRaw={transcript === null ? model.bodyRaw : null}
       output={transcript === null ? model.output : null}

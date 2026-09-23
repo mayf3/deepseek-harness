@@ -74,6 +74,33 @@ describe('argument-free tool preparation', () => {
     expect(view.container.querySelector('[data-state="ok"]')).not.toBeNull()
   })
 
+  it.each([
+    ['custom_tool', GenericToolCard, 'Tool call', 'custom_tool · Inspect this file'],
+    ['subagent', DetailsRow, 'Create subagent', 'Inspect this file'],
+  ] as const)('%s retains its title and tool-name rule when arguments arrive', (name, Component, title, summary) => {
+    const props = preparation(name)
+    const view = render(<Component {...props} />)
+    expect(view.getByText(title, { exact: true })).toBeTruthy()
+    expect(toolRowModel(name, props.block).summary).toBe(name === 'custom_tool' ? name : '')
+    expect(view.queryByText(name, { exact: true }) !== null).toBe(name === 'custom_tool')
+    expect(view.queryByRole('button')).toBeNull()
+    const started: StartedToolCall = {
+      phase: 'start', callId: 'call', name, turn: 1, step: 1, time: 2, subCalls: [],
+      argsRaw: '{"prompt":"Inspect this file"}',
+    }
+    view.rerender(<Component {...props} phase="start" block={started} />)
+    expect(view.getByText(title, { exact: true })).toBeTruthy()
+    expect(view.getByText(summary, { exact: true })).toBeTruthy()
+    expect(view.getByRole('button', { expanded: false })).toBeTruthy()
+    const result: ToolResultNode = {
+      kind: 'tool-result', seq: 3, time: 3, callId: 'call', callTime: 2,
+      call: { name, argsRaw: started.argsRaw }, content: [], isError: false, subCalls: [],
+    }
+    view.rerender(<Component {...props} phase="result" block={result} />)
+    expect(view.getByText(title, { exact: true })).toBeTruthy()
+    expect(view.getByText(summary, { exact: true })).toBeTruthy()
+  })
+
   it('keeps specialized Bash session hooks outside its preparation branch', () => {
     const useSessions = vi.fn(() => { throw new Error('Bash call details are unavailable during preparation') })
     const view = render(<BashRow {...preparation('bash')} useSessions={useSessions} />)

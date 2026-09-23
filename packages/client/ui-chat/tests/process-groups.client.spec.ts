@@ -67,6 +67,38 @@ function harness(nodes: ChatNode[], currentTimeline = timeline) {
 }
 
 describe('Definition-owned Chat process groups', () => {
+  it.each([
+    ['read', 'read'], ['read_image', 'readImage'], ['write', 'write'], ['edit', 'edit'], ['apply_patch', 'edit'],
+    ['todo_write', 'plan'], ['create_goal', 'plan'], ['update_goal', 'plan'], ['get_goal', 'plan'],
+    ['list_mcp_resources', 'tools'], ['list_mcp_resource_templates', 'tools'], ['read_mcp_resource', 'tools'],
+  ] as const)('%s keeps its activity category through preparation, dispatch, and result', (name, kind) => {
+    const started = tool('call', 2, name)
+    const preparing: ChatNode<'tool-call'> = {
+      ...started,
+      data: { root: { phase: 'preparing', callId: 'call', name, turn: 1, step: 1, time: 2, subCalls: [] } },
+    }
+    const h = harness([preparing])
+    const group = h.store.entries[0]!
+    if (group.kind !== 'group') throw new Error('expected group')
+    const source = h.store.groupSource(group.key)
+    expect(source.getSnapshot()?.data.summary).toEqual({
+      counts: [{ kind, count: 1 }], running: kind, preparing: true, runningDetail: kind === 'tools' ? name : '',
+    })
+    h.builder.apply({ upserts: [started], timeline })
+    h.commit()
+    expect(source.getSnapshot()?.data.summary).toEqual({ counts: [{ kind, count: 1 }], running: kind, runningDetail: 'pwd' })
+    const settled: ChatNode<'tool-call'> = {
+      ...started,
+      data: { root: {
+        kind: 'tool-result', callId: 'call', seq: 3, time: 3, callTime: 2,
+        call: { name, argsRaw: '{"command":"pwd"}' }, content: [], isError: false, subCalls: [],
+      } },
+    }
+    h.builder.apply({ upserts: [settled], timeline })
+    h.commit()
+    expect(source.getSnapshot()?.data.summary).toEqual({ counts: [{ kind, count: 1 }], running: undefined, runningDetail: '' })
+  })
+
   it('retains a group through repeated prepends and a later append', () => {
     const b = tool('b', 4)
     const c = tool('c', 6)

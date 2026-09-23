@@ -122,7 +122,7 @@ A closed group's header names the first three categories from its ranked summary
 
 ### Group-title rules
 
-A preparing Tool node uses its category's preparation label and its wire name as detail. It contributes one call without parsing arguments and renders one non-expandable row. A named live delta can create this node; historical calls start directly from tool/call without replaying preparation.
+All three stages share the tool-name classification below. A preparing Tool node uses its category's preparation label: read files for `read`, read images for `read_image`, write files for `write`, edit files for `edit` and `apply_patch`, and update the plan for `todo_write` and goal tools. Only the generic “Preparing tool calls” category appends the wire tool name in Detailed mode; other categories omit it. It contributes one call without parsing arguments and renders one non-expandable row. A named live delta can create this node; historical calls start directly from tool/call without replaying preparation.
 
 The labels below describe recorded activity, not successful outcomes. For example, a failed read still participates in the “Read files” category.
 
@@ -130,7 +130,9 @@ The labels below describe recorded activity, not successful outcomes. For exampl
 |---|---|---|
 | No live category / no counted categories | Analyzing the request | Analysis completed |
 | `read` | Reading files | Read files |
+| `readImage` | Reading images | Read images |
 | `search` | Searching code | Searched code |
+| `write` | Writing files | Wrote files |
 | `edit` | Editing files | Edited files |
 | `commands` | Running commands | Ran commands |
 | `code` | Running code | Ran code |
@@ -227,9 +229,11 @@ Classification uses the recorded tool name exactly: no case folding, namespace s
 
 | Category | Tool-name match |
 |---|---|
-| `read` | `read`, `read_image`, `list_mcp_resources`, `list_mcp_resource_templates`, `read_mcp_resource` |
+| `read` | `read` |
+| `readImage` | `read_image` |
 | `search` | `grep`, `glob`, or suffix `_inspect` |
-| `edit` | `write`, `edit`, `apply_patch` |
+| `write` | `write` |
+| `edit` | `edit`, `apply_patch` |
 | `commands` | `bash`, `pwsh`, `exec_command`, `write_stdin`, or prefix `terminal_` |
 | `code` | `run_code` |
 | `webSearch` | `web_search` |
@@ -237,7 +241,7 @@ Classification uses the recorded tool name exactly: no case folding, namespace s
 | `subagents` | `subagent` or prefix `subagent_` |
 | `plan` | `todo_write`, `create_goal`, `update_goal`, `get_goal` |
 | `questions` | `ask_user_question`, `request_user_input` |
-| `tools` | Every other name |
+| `tools` | Every other name, including `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource` |
 
 ### Subagents, background jobs, and nested calls
 
@@ -258,7 +262,7 @@ Exact-name rules also mean that a recorded name such as `functions.read`, `mcp.r
 
 ### Live activity and detail
 
-Preparing calls use their first named delta time and show only the tool name. Dispatched calls use their tool/call time and complete arguments.
+Preparing calls use their first named delta time; only the generic tool category provides the tool name as detail. Dispatched calls use their tool/call time and complete arguments.
 
 Among running calls, the greatest `time` selects the live category and detail; equal times select the later visited call. With no running call, the category is absent and detail comes from the last nonempty reasoning paragraph of the latest running Assistant with nonempty reasoning, in member order. Reasoning detail removes `**` markers and does not require a newline-terminated first line; the individual reasoning-row preview has separate rules.
 

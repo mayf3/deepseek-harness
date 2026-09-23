@@ -522,7 +522,7 @@ describe('GenericToolCard', () => {
 
   it('unknown tools land on the others variant titled Tool call', () => {
     const view = render(
-      <GenericToolCard {...props('todo_write', running({ name: 'todo_write', argsRaw: '{"note":"x"}' }))} />,
+      <GenericToolCard {...props('custom_tool', running({ name: 'custom_tool', argsRaw: '{"note":"x"}' }))} />,
     )
     expect(view.getByText('工具调用')).toBeTruthy()
     expect(view.container.querySelector('[data-variant="others"]')).not.toBeNull()
