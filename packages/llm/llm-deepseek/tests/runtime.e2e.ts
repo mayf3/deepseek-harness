@@ -199,7 +199,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
       return response
     }
     vi.stubGlobal('fetch', observedFetch)
-    const files = new Protocol.DeepSeekFilesClient({ baseURL, apiKey: key })
+    const files = new Protocol.DeepSeekFilesClient({ baseURL, headers: { 'x-api-key': key } })
 
     try {
       const result = await assemble(ctx, {

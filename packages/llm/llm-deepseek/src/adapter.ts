@@ -79,11 +79,10 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
     const { messages, versions } = await prepareImages(
       options.messages, connection, options.model, this.dependencies.resolveAttachments?.(), this.imageAccess, signal,
     )
-    const key = await this.dependencies.resolveApiKey(connection)
-    const accountToken = this.dependencies.accountCredential === true ? key : undefined
+    const auth = await this.dependencies.resolveAuth(connection)
     try {
       const files = new RequestFiles(this.files, {
-        baseURL: connection.baseURL, apiKey: key, accountCredential: accountToken !== undefined,
+        baseURL: connection.baseURL, headers: auth.headers,
       },
       connection.filePolicy, connection.filesApiTimeoutMs, signal, activity)
       let inline = false
@@ -115,7 +114,7 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
           headers: {
             ...attributionHeaders(),
             'content-type': 'application/json', 'accept': 'text/event-stream',
-            ...accountToken === undefined ? { 'x-api-key': key } : { 'x-dsh-auth-token': accountToken },
+            ...auth.headers,
             'anthropic-version': '2023-06-01',
             ...fileIds === undefined || fileIds.size === 0 ? {} : { 'anthropic-beta': MESSAGES_FILES_BETA },
             'x-deepseek-harness-user-id': this.dependencies.resolveUserId(),
@@ -141,9 +140,9 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
         return
       }
     } catch (error) {
-      if (this.dependencies.onRequestError !== undefined) {
+      if (auth.onRequestError !== undefined) {
         let mapped: unknown
-        try { mapped = await this.dependencies.onRequestError(error, key) }
+        try { mapped = await auth.onRequestError(error) }
         catch (_credentialUpdateFailed) { throw error }
         throw mapped
       }

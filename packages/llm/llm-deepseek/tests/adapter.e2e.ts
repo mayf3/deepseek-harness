@@ -76,7 +76,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
     const uploads: string[] = []
     const bodies: string[] = []
     const files = new DeepSeekFilesClient({
-      baseURL: Protocol.PUBLIC_BASE_URL, apiKey: process.env.DEEPSEEK_API_KEY as string, fetch: fetchImpl,
+      baseURL: Protocol.PUBLIC_BASE_URL, headers: { 'x-api-key': process.env.DEEPSEEK_API_KEY as string }, fetch: fetchImpl,
     })
     const ownedFiles = new Set<ReturnType<typeof Protocol.DeepSeekFileId>>()
     cleanups.push(async () => {

@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 Provide the shared DeepSeek Messages transport, request configuration, and model capabilities. Compose [API-key](../llm-deepseek-api-key/README.md) or [account](../llm-deepseek-account/README.md) plugins for authentication, model discovery, and provider registration. Valid settings changes affect subsequent calls while in-flight calls retain their configuration. This package can run beside the [pi-ai adapter](../llm-pi-ai/README.md).
 
+`resolveAuth(connection)` returns the provider-owned authentication headers and an optional failure callback bound to that request’s credential. Messages and Files send those headers without selecting a credential mode. Upload reuse is isolated by endpoint and a hash of the authentication headers; raw credentials are not persisted.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

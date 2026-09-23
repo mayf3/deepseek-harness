@@ -74,6 +74,14 @@ export interface DeepSeekConnectionOptions {
   retryPolicy: ResolvedRetryPolicy
 }
 
+/** Authentication captured by the provider for one request and its file operations. */
+export interface DeepSeekRequestAuth {
+  /** Credential headers sent unchanged to the resolved endpoint. */
+  headers: Readonly<Record<string, string>>
+  /** Classify a failure using the captured credential; callback failure preserves the original error. */
+  onRequestError?: (error: unknown) => Promise<unknown>
+}
+
 /** Constructor options for {@link DeepSeekAdapter}: the operation-local resolution hooks the plugin owns. */
 export interface DeepSeekAdapterOptions<Connection extends DeepSeekConnectionOptions = DeepSeekConnectionOptions> {
   /** Report unusable native Messages replay metadata without exposing content or signatures. */
@@ -82,19 +90,10 @@ export interface DeepSeekAdapterOptions<Connection extends DeepSeekConnectionOpt
   providerName?: string
   /** Provider-owned catalog availability; omission exposes no discovery entries. */
   discoverModels?: (provider: string) => Promise<LlmModelInfo[]>
-  /** Classify a request failure and update credential state; callback failure preserves the original error. */
-  onRequestError?: (error: unknown, credential: string) => Promise<unknown>
   /** Current validated connection facts; called once per operation. */
   options: () => Connection
-  /**
-   * Resolve this adapter’s credential for the connection facts of one request. The
-   * snapshot is passed in — never re-read — so the key can only ever come
-   * from the same resolution as the endpoint it is sent to. Throws `LlmError`
-   * `MISSING_CREDENTIAL` for a missing API key; account routes reject unavailable grants.
-   */
-  resolveApiKey: (connection: Connection) => Promise<string>
-  /** Send the resolved credential as a bare DSH account token; never fall back to an API key. */
-  accountCredential?: boolean
+  /** Resolve authentication from this request's connection snapshot; never re-read the endpoint. */
+  resolveAuth: (connection: Connection) => Promise<DeepSeekRequestAuth>
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
   /** Resolve the current durable attachment service; absence rejects image input. */

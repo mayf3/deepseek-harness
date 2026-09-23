@@ -78,7 +78,7 @@ function adapterOf(
   const { apiKey, ...rest } = config
   return new DeepSeekAdapter({
     options: () => resolveAdapterOptions({ ...rest }),
-    resolveApiKey: () => Promise.resolve(apiKey ?? 'k'),
+    resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': apiKey ?? 'k' } }),
     resolveUserId: () => TEST_USER_ID,
     resolveAttachments: () => attachments,
     ...files === undefined ? {} : { resolveFiles: () => files },
@@ -192,7 +192,7 @@ describe('request image target', () => {
     const attachments = {} as AttachmentStore
     const adapter = new DeepSeekAdapter({
       options: () => resolveAdapterOptions({ models: [{ id: 'vision', inputModalities: ['text', 'image'] }] }),
-      resolveApiKey: () => Promise.resolve('k'),
+      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'k' } }),
       resolveUserId: () => TEST_USER_ID,
       resolveAttachments: () => attachments,
       resolveImageAccess: (store, ref) => (store === attachments && ref === imageRef
@@ -215,7 +215,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     }))
     const adapter = new DeepSeekAdapter({
       options: () => resolveAdapterOptions({ baseURL: server.url }),
-      resolveApiKey: () => Promise.resolve('k'),
+      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'k' } }),
       resolveUserId: () => TEST_USER_ID,
       prepareExtensions: prepareExtensions as never,
     })
@@ -230,7 +230,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     const server = await mockServer([])
     const base = {
       options: () => resolveAdapterOptions({ baseURL: server.url }),
-      resolveApiKey: () => Promise.resolve('k'),
+      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'k' } }),
       resolveUserId: () => TEST_USER_ID,
     }
     const failed = new DeepSeekAdapter({
@@ -256,7 +256,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     let signalSeen: AbortSignal | undefined
     const adapter = new DeepSeekAdapter({
       options: () => resolveAdapterOptions({ baseURL: server.url }),
-      resolveApiKey: () => Promise.resolve('k'),
+      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'k' } }),
       resolveUserId: () => TEST_USER_ID,
       prepareExtensions: ((request: { signal: AbortSignal }) => {
         signalSeen = request.signal
@@ -321,7 +321,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     const accept = vi.fn()
     const adapter = new DeepSeekAdapter({
       options: () => resolveAdapterOptions({ baseURL: server.url }),
-      resolveApiKey: () => Promise.resolve('k'),
+      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'k' } }),
       resolveUserId: () => TEST_USER_ID,
       prepareExtensions: () => Promise.resolve({ fields: { dsh_test: 1 }, accept: async () => { accept() } }) as never,
     })
@@ -338,7 +338,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     const failure = new Error('watermark append failed')
     const adapter = new DeepSeekAdapter({
       options: () => resolveAdapterOptions({ baseURL: server.url }),
-      resolveApiKey: () => Promise.resolve('k'),
+      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'k' } }),
       resolveUserId: () => TEST_USER_ID,
       prepareExtensions: () => Promise.resolve({
         fields: { dsh_test: 1 },
@@ -1085,12 +1085,12 @@ describe('DeepSeekAdapter against a mock server', () => {
     'rejects image input for text-only model %s before credentials, image reads, or fetch',
     async (model) => {
       const server = await mockServer([])
-      const resolveApiKey = vi.fn(() => Promise.resolve('k'))
+      const resolveAuth = vi.fn(() => Promise.resolve({ headers: { 'x-api-key': 'k' } }))
       const attachments = attachmentStoreOf(ref => Promise.resolve(requestImage(ref)))
       const resolveAttachments = vi.fn(() => attachments.store)
       const adapter = new DeepSeekAdapter({
         options: () => resolveAdapterOptions({ baseURL: server.url }),
-        resolveApiKey,
+        resolveAuth,
         resolveUserId: () => TEST_USER_ID,
         resolveAttachments,
         prepareExtensions: noExtensions,
@@ -1104,7 +1104,7 @@ describe('DeepSeekAdapter against a mock server', () => {
           source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
         })],
       }))).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
-      expect(resolveApiKey).not.toHaveBeenCalled()
+      expect(resolveAuth).not.toHaveBeenCalled()
       expect(attachments.readImageRequest).not.toHaveBeenCalled()
       expect(server.requests).toHaveLength(0)
     },
@@ -1112,13 +1112,13 @@ describe('DeepSeekAdapter against a mock server', () => {
 
   it('rejects vision input without an attachment provider before credentials or fetch', async () => {
     const server = await mockServer([])
-    const resolveApiKey = vi.fn(() => Promise.resolve('k'))
+    const resolveAuth = vi.fn(() => Promise.resolve({ headers: { 'x-api-key': 'k' } }))
     const adapter = new DeepSeekAdapter({
       options: () => resolveAdapterOptions({
         baseURL: server.url,
         models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
       }),
-      resolveApiKey,
+      resolveAuth,
       resolveUserId: () => TEST_USER_ID,
       prepareExtensions: noExtensions,
     })
@@ -1131,7 +1131,7 @@ describe('DeepSeekAdapter against a mock server', () => {
         source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
       })],
     }))).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
-    expect(resolveApiKey).not.toHaveBeenCalled()
+    expect(resolveAuth).not.toHaveBeenCalled()
     expect(server.requests).toHaveLength(0)
   })
 
@@ -2263,14 +2263,14 @@ describe('plugin registration and config', () => {
   it('resolves connection facts and the credential exactly once per stream call', async () => {
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const options = vi.fn(() => resolveAdapterOptions({ baseURL: server.url }))
-    const resolveApiKey = vi.fn(() => Promise.resolve('per-request-key'))
+    const resolveAuth = vi.fn(() => Promise.resolve({ headers: { 'x-api-key': 'per-request-key' } }))
     const resolveUserId = vi.fn(() => TEST_USER_ID)
-    const adapter = new DeepSeekAdapter({ options, resolveApiKey, resolveUserId, prepareExtensions: noExtensions })
+    const adapter = new DeepSeekAdapter({ options, resolveAuth, resolveUserId, prepareExtensions: noExtensions })
 
     for await (const _chunk of adapter.stream({ provider: 'deepseek-official', model: 'm', messages: [] })) { /* drain */ }
 
     expect(options).toHaveBeenCalledTimes(1)
-    expect(resolveApiKey).toHaveBeenCalledTimes(1)
+    expect(resolveAuth).toHaveBeenCalledTimes(1)
     expect(resolveUserId).toHaveBeenCalledTimes(1)
     expect(server.headers[0]?.['x-api-key']).toBe('per-request-key')
   })

@@ -17,7 +17,7 @@ import type { DeepSeekAdapterOptions, DeepSeekConnectionOptions } from './types.
  */
 export function registerDeepSeekProvider<C extends DeepSeekConnectionOptions>(
   ctx: Context, provider: string, dependencies: Pick<DeepSeekAdapterOptions<C>,
-  'options' | 'resolveApiKey' | 'accountCredential' | 'onRequestError' | 'providerName' | 'discoverModels'>): void {
+  'options' | 'resolveAuth' | 'providerName' | 'discoverModels'>): void {
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
   let userId: AnonymousUserId | undefined
   const adapter = new DeepSeekAdapter({

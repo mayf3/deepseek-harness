@@ -11,6 +11,8 @@ kind: "package-reference"
 
 为 `deepseek-account` 注册独立的鉴权和模型发现插件。通过 [llm-deepseek](../llm-deepseek/README.zh.md) 共用 Messages 请求实现；本包拥有凭据解析和目录可用性判断。
 
+鉴权解析返回 `x-dsh-auth-token` 和捕获同一 token 的失败回调。HTTP 401 的分类和凭据失效处理由此提供方负责；被拒绝的旧请求不能清除替换后的登录。
+
 ## 目录
 
 - [使用此包](#use-this-package)

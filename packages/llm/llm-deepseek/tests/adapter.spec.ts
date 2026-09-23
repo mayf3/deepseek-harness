@@ -165,7 +165,7 @@ describe('direct Messages HTTP', () => {
     const files = new DeepSeekFileStore()
     const llm = new DeepSeekAdapter({
       options: () => Messages.resolveAdapterOptions({ baseURL: source.url }),
-      resolveApiKey: () => Promise.resolve('test-key'), resolveUserId: () => 'test-user' as AnonymousUserId,
+      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'test-key' } }), resolveUserId: () => 'test-user' as AnonymousUserId,
       resolveAttachments: () => undefined, resolveImageAccess: () => undefined, resolveFiles: () => files,
       prepareExtensions: prepare,
     })
@@ -182,7 +182,7 @@ describe('direct Messages HTTP', () => {
     const first = await endpoint(), second = await endpoint()
     let config = Messages.resolveAdapterOptions({ baseURL: first.url, maxTokens: 10, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
     const files = new DeepSeekFileStore()
-    const llm = new DeepSeekAdapter({ options: () => config, resolveApiKey: snapshot => Promise.resolve(snapshot.maxTokens === 10 ? 'first' : 'second'), resolveUserId: () => 'user' as AnonymousUserId, resolveAttachments: () => undefined, resolveImageAccess: () => undefined, resolveFiles: () => files, prepareExtensions })
+    const llm = new DeepSeekAdapter({ options: () => config, resolveAuth: snapshot => Promise.resolve({ headers: { 'x-api-key': snapshot.maxTokens === 10 ? 'first' : 'second' } }), resolveUserId: () => 'user' as AnonymousUserId, resolveAttachments: () => undefined, resolveImageAccess: () => undefined, resolveFiles: () => files, prepareExtensions })
     const prepared = await llm.prepareCall('deepseek-official', MODEL)
     config = Messages.resolveAdapterOptions({ baseURL: second.url, maxTokens: 20 })
     expect(prepared.model.systemPromptUpdate).toBe('in-history')
@@ -243,10 +243,11 @@ describe('direct Messages HTTP', () => {
     vi.stubGlobal('fetch', async () => new Response('Unauthorized', { status: 401 }))
     const llm = new DeepSeekAdapter({
       options: () => Messages.resolveAdapterOptions({}),
-      resolveApiKey: () => Promise.resolve('fixture-key'),
+      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'fixture-key' },
+        onRequestError: async () => { throw new Error('credential storage unavailable') },
+      }),
       resolveUserId: () => 'fixture-user' as import('@deepseek-ai/dsh-anonymous-user-id').AnonymousUserId,
       prepareExtensions,
-      onRequestError: async () => { throw new Error('credential storage unavailable') },
     })
     await expect(chunks(llm.stream(options()))).rejects.toMatchObject({ code: 'AUTH', failure: { status: 401 } })
   })
@@ -330,6 +331,21 @@ describe('Cordis provider composition', () => {
       type: 'finish', reason: { kind: 'error', failure: { code: provider === 'deepseek-account' ? 'ACCOUNT_TOKEN_INVALID' : 'AUTH' } },
     })
     expect(rejectToken.mock.calls).toEqual(provider === 'deepseek-account' ? [['fixture-token']] : [])
+  })
+
+  it('reports the request token when credentials change before a 401 response', async () => {
+    let token = 'first-login'
+    const { ctx } = await boot((response) => {
+      token = 'replacement-login'
+      response.writeHead(401)
+      response.end('Unauthorized')
+    })
+    const rejectToken = vi.fn(async (_token: string) => {})
+    ctx.provide('deepseekAccount', { resolveToken: async (_url: string): Promise<string | undefined> => token,
+      rejectToken: (value: string): Promise<void> => rejectToken(value) } as DeepSeekAccount)
+    await chunks(ctx.llm.stream(options({ provider: 'deepseek-account' })))
+    expect(token).toBe('replacement-login')
+    expect(rejectToken).toHaveBeenCalledExactlyOnceWith('first-login')
   })
 
   it('finishes the active account turn when rejected credentials publish sign-out', async () => {

@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 Register authentication and model discovery for `deepseek-official`. This plugin shares the [Messages transport](../llm-deepseek/README.md) and owns credential resolution and catalog availability.
 
+Authentication resolution returns the validated API key in `x-api-key` for both Messages and Files requests.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
