@@ -32,7 +32,7 @@ describe('languageForPath', () => {
     expect(languageForPath(path)).toBe(language)
   })
 
-  it('keeps the extensions the two former tables already agreed on', () => {
+  it('resolves the extensions the preview and read tables already agreed on', () => {
     expect(languageForPath('src/a.ts')).toBe('typescript')
     expect(languageForPath('src/a.TSX')).toBe('typescript')
     expect(languageForPath('/abs/module.mjs')).toBe('javascript')
@@ -41,7 +41,7 @@ describe('languageForPath', () => {
     expect(languageForPath('C:\\src\\main.rs')).toBe('rust')
   })
 
-  it('resolves every extension that only the preview table knew, including the new ones', () => {
+  it('resolves every suffix the preview registry declares beyond the persisted read hints', () => {
     for (const extension of ['jsonl', 'ndjson', 'pyw', 'pyi', 'rake', 'gemspec', 'hh', 'hxx', 'kts', 'xhtml', 'xsd', 'xsl', 'xslt']) {
       expect(languageForPath(`file.${extension}`), extension).toBeDefined()
     }
@@ -91,7 +91,7 @@ describe('languageForPath', () => {
 })
 
 describe('readLangHintForPath', () => {
-  it('keeps the read card pre-unification short hints for the old suffixes', () => {
+  it('keeps the read card short hints recorded sessions already hold', () => {
     expect(readLangHintForPath('src/a.ts')).toBe('ts')
     expect(readLangHintForPath('src/a.tsx')).toBe('tsx')
     expect(readLangHintForPath('src/a.mts')).toBe('ts')
@@ -110,7 +110,7 @@ describe('readLangHintForPath', () => {
     expect(readLangHintForPath('page.htm')).toBe('html')
   })
 
-  it('uses the language short id for a suffix added after the old read table', () => {
+  it('uses the language short id for a suffix with no persisted value', () => {
     expect(readLangHintForPath('build.ps1')).toBe('ps1')
     expect(readLangHintForPath('.env')).toBe('env')
     expect(readLangHintForPath('infra.tf')).toBe('tf')
@@ -137,11 +137,12 @@ describe('readLangHintForPath', () => {
   }
 
   it('persists a short id for every suffix, never a canonical grammar id', () => {
-    // The persisted `lang` has one style: the historical short id for the
-    // suffixes the old read table knew, the language's short name otherwise. A
-    // result outside both sets is a canonical grammar id leaking back in
-    // (`powershell`, `dotenv`, `latex`, `hcl`). The old table's `tsx`/`jsx`
-    // hints are the only legacy values absent from the short-name table.
+    // The persisted `lang` has one style: a short id. Every suffix must resolve
+    // to one of these short names, except the persisted `tsx`/`jsx` values,
+    // which the language table cannot express because typescript and javascript
+    // already shorten to `ts` and `js`. A result outside both sets is a
+    // canonical grammar id leaking back in (`powershell`, `dotenv`, `latex`,
+    // `hcl`).
     const allowed = new Set([...Object.values(SHORT_BY_LANGUAGE), 'tsx', 'jsx'])
     for (const extension of CODE_HIGHLIGHT_EXTENSIONS) {
       const hint = readLangHintForPath(`file.${extension}`)

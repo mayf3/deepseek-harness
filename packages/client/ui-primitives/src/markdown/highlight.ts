@@ -11,10 +11,11 @@
  * (`@deepseek-ai/dsh-util-code-language`: python, rust, yaml, markup, …) is
  * imported lazily and registered the first time such a language is requested,
  * so a session that never opens a code surface in one of those languages pays
- * neither the grammar modules nor their synchronous init. The first render of a lazy language falls back to plain text while its
- * grammar loads, then {@link onGrammarLoaded} notifies subscribers to re-render
- * with highlighting. An unknown or absent language falls back to plain text (no
- * highlighting, still monospace) — never an error.
+ * neither the grammar modules nor their synchronous init. The first render of a
+ * lazy language falls back to plain text while its grammar loads, then
+ * {@link onGrammarLoaded} notifies subscribers to re-render with highlighting.
+ * An unknown or absent language falls back to plain text (no highlighting, still
+ * monospace) — never an error.
  */
 
 import { createHighlighterCoreSync, createCssVariablesTheme } from 'shiki/core'
@@ -233,7 +234,7 @@ const LANG_ALIASES = new Map<string, string>([
 
 /**
  * Resolve a language hint to the grammar id {@link LANG_ALIASES} selects.
- * @param lang - Language hint from a code surface: a shared canonical id or a legacy read-card hint.
+ * @param lang - Language hint from a code surface: a canonical grammar id or the read card's persisted short id.
  * @returns The resolved grammar id, or `undefined` when the table aliases no grammar.
  */
 export function grammarForHint(lang: string | undefined): string | undefined {

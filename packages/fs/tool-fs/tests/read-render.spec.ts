@@ -119,11 +119,12 @@ describe('buildWindow', () => {
 })
 
 /**
- * The pre-unification read table's extension-to-hint mapping, transcribed
- * verbatim. A read card persisted one of these strings, so changing any value
- * changes replay-visible output for an already-recorded session.
+ * The short `lang` values a recorded read persisted, transcribed verbatim.
+ * Changing any value changes replay-visible output for an already-recorded
+ * session, so this table is the test's independent expectation rather than a
+ * second read of the implementation's own data.
  */
-const MASTER_READ_LANG_BY_EXTENSION: Readonly<Record<string, string>> = {
+const PERSISTED_READ_LANG_BY_EXTENSION: Readonly<Record<string, string>> = {
   ts: 'ts', tsx: 'tsx', mts: 'ts', cts: 'ts',
   js: 'js', jsx: 'jsx', mjs: 'js', cjs: 'js',
   json: 'json', jsonc: 'json',
@@ -138,16 +139,16 @@ const MASTER_READ_LANG_BY_EXTENSION: Readonly<Record<string, string>> = {
 }
 
 describe('langFromPath', () => {
-  it('keeps every pre-unification suffix byte-identical to the old persisted hint', () => {
-    expect(Object.keys(MASTER_READ_LANG_BY_EXTENSION)).toHaveLength(43)
-    for (const [extension, hint] of Object.entries(MASTER_READ_LANG_BY_EXTENSION)) {
+  it('keeps every already-persisted suffix byte-identical', () => {
+    expect(Object.keys(PERSISTED_READ_LANG_BY_EXTENSION)).toHaveLength(43)
+    for (const [extension, hint] of Object.entries(PERSISTED_READ_LANG_BY_EXTENSION)) {
       expect(langFromPath(`file.${extension}`), extension).toBe(hint)
     }
   })
 
-  it('gives a suffix added after the old read table the language short id', () => {
-    // A suffix the old read table did not know used to persist the canonical
-    // grammar id; it now persists the language's short name.
+  it('gives every other suffix the language short id', () => {
+    // A suffix with no persisted value has none to preserve, so the projection
+    // applies the language's short name instead of the canonical grammar id.
     expect(langFromPath('build.ps1')).toBe('ps1')
     expect(langFromPath('deploy.bat')).toBe('bat')
     expect(langFromPath('.env')).toBe('env')
@@ -167,7 +168,7 @@ describe('langFromPath', () => {
     expect(langFromPath('notebook.ipynb')).toBe('json')
   })
 
-  it('maps a known extension to its old short hint, case-insensitively', () => {
+  it('maps a known extension to its persisted short hint, case-insensitively', () => {
     expect(langFromPath('src/a.ts')).toBe('ts')
     expect(langFromPath('src/a.TSX')).toBe('tsx')
     expect(langFromPath('/abs/module.mjs')).toBe('js')
@@ -177,7 +178,8 @@ describe('langFromPath', () => {
 
   it('keeps the canonical ids the Client code surfaces use out of the persisted hint', () => {
     // The Client reads the shared table directly; only this projection owns the
-    // persisted value, so the two intentionally differ for the old suffixes.
+    // persisted value, so the two intentionally differ for the suffixes a
+    // recorded session already holds.
     expect(languageForPath('src/a.ts')).toBe('typescript')
     expect(languageForPath('README.md')).toBe('markdown')
     expect(langFromPath('src/a.ts')).not.toBe(languageForPath('src/a.ts'))

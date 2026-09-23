@@ -51,12 +51,12 @@ describe('code highlighting', () => {
     expect(languageForPath).toBe(sharedLanguageForPath)
   })
 
-  it('reaches one grammar from the shared canonical id and the read card legacy hint', () => {
-    // The read card persists the old short ids while this surface reads the
-    // canonical table directly; both must select the same grammar, so a
-    // persisted hint can never render differently from this surface's own
-    // selection. This is the alias-normalized check the identity assertion
-    // cannot make now that the read projection intentionally differs.
+  it("reaches one grammar from the shared canonical id and the read card's persisted hint", () => {
+    // The read card persists short ids while this surface reads the canonical
+    // table directly; both must select the same grammar, so a persisted hint can
+    // never render differently from this surface's own selection. The identity
+    // assertion above cannot cover that, because the two projections
+    // intentionally differ.
     for (const extension of CODE_HIGHLIGHT_EXTENSIONS) {
       const path = `file.${extension}`
       const readHint = readLangHintForPath(path)

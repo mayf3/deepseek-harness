@@ -5,9 +5,9 @@
  * highlighter's alias table resolves, so a language returned here reaches
  * `highlightLines`/`highlightToHtml` unchanged; a filename outside the table, or
  * one naming a language the highlighter does not register, renders as plain text.
- * The read card predates the shared table, so {@link readLangHintForPath} projects
- * short ids over this table: the suffixes the old read table already recognized
- * keep their historical values byte-identical, and every later suffix persists the
+ * The read tool persists a short `lang` id, so {@link readLangHintForPath}
+ * projects short ids over this table: a suffix whose value a recorded session
+ * already holds keeps it byte-identical, and every other suffix persists the
  * canonical language's short name rather than its grammar id.
  * @module @deepseek-ai/dsh-util-code-language
  */
@@ -101,10 +101,10 @@ const LANGUAGES = new Map(Object.entries(LANGUAGE_EXTENSIONS)
 export const CODE_HIGHLIGHT_EXTENSIONS: readonly string[] = [...LANGUAGES.keys()]
 
 /**
- * The read card's historical short language hints for the suffixes its
- * pre-unification table recognized. Keys are shared-table extensions, so the
- * recognized set still derives from {@link LANGUAGE_EXTENSIONS}; values preserve
- * the old persisted `lang` strings byte for byte. An extension absent here but
+ * The short `lang` values recorded sessions already hold, keyed by the suffix
+ * that produced them. Keys are shared-table extensions, so the recognized set
+ * derives from {@link LANGUAGE_EXTENSIONS}; each value is the exact string a
+ * recorded session persists and must not change. An extension absent here but
  * present in the shared table falls back to {@link SHORT_BY_LANGUAGE}, so every
  * persisted hint is a short id.
  */
@@ -123,13 +123,13 @@ const READ_LANG_BY_EXTENSION = new Map<string, string>(Object.entries({
 }))
 
 /**
- * The short `lang` id the read card persists for each canonical language the
- * pre-unification read table did not recognize. Keys are exactly the languages
- * in {@link LANGUAGE_EXTENSIONS}: the 27 languages the old read table covered
- * repeat their historical short id, and the remaining 33 shorten the grammar id
- * (`powershell` to `ps1`, `hcl` to `tf`, `system-verilog` to `sv`).
- * Keys are canonical ids, not untrusted extensions, so an object lookup cannot
- * reach an `Object.prototype` member the way the extension tables can.
+ * The short `lang` id the read card persists, keyed by canonical language id.
+ * Keys are exactly the languages in {@link LANGUAGE_EXTENSIONS}: where
+ * {@link READ_LANG_BY_EXTENSION} does not already fix a suffix's value, this
+ * table supplies the language's short name (`powershell` to `ps1`, `hcl` to
+ * `tf`, `system-verilog` to `sv`) rather than the grammar id. Keys are canonical
+ * ids, not untrusted extensions, so an object lookup cannot reach an
+ * `Object.prototype` member the way the extension tables can.
  */
 const SHORT_BY_LANGUAGE: Readonly<Record<string, string>> = {
   typescript: 'ts',
@@ -218,11 +218,11 @@ export function languageForPath(path: string): string | undefined {
 
 /**
  * Derive the Host read card's persisted `lang` hint from a read path's
- * extension. The hint is always a short id: a suffix the pre-unification read
- * table recognized keeps its old value (`ts`, `md`, `cpp`, …), while a suffix
- * only the shared table knows (`.ps1`, `.env`, `.tf`, …) uses its language's
- * short name (`ps1`, `env`, `tf`, …) rather than the canonical grammar id. An
- * unrecognized suffix stays `undefined`, so the card renders as plain text.
+ * extension. The hint is always a short id: a suffix a recorded session already
+ * holds keeps its persisted value (`ts`, `md`, `cpp`, …), while a suffix with no
+ * recorded value (`.ps1`, `.env`, `.tf`, …) uses its language's short name
+ * (`ps1`, `env`, `tf`, …) rather than the canonical grammar id. An unrecognized
+ * suffix stays `undefined`, so the card renders as plain text.
  * @param path - the model-facing path the read reported.
  * @returns the persisted language hint, or `undefined` when the extension maps to none.
  */

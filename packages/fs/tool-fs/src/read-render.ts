@@ -173,10 +173,9 @@ ${body}
  * Derive the persisted `lang` hint from a read path's file extension. The shared
  * table in `@deepseek-ai/dsh-util-code-language` owns the recognized suffixes and
  * the path rules (both separators, a leading dot as the extension separator, and
- * prototype-key safety); `readLangHintForPath` projects the read card's
- * historical short ids over it, so a suffix the pre-unification read table
- * recognized keeps its byte-identical old value while a newly added suffix uses
- * its language's short name.
+ * prototype-key safety); `readLangHintForPath` projects the read card's short ids
+ * over it, so a suffix whose value a recorded session already holds keeps it
+ * byte-identical while every other suffix uses its language's short name.
  * @param path - the model-facing path the read reported.
  * @returns the persisted language hint, or `undefined` when the extension maps to none.
  */
