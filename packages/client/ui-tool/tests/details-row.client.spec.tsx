@@ -95,7 +95,7 @@ describe('DetailsRow', () => {
     const inspect = vi.fn()
     const expectedIcon = render(<IconUsersOutlineRegular size={14} />).container.querySelector('svg')!.outerHTML
     const view = render(<DetailsRow {...{ useDisclosure, toolName: 'wait_agent', block: result('wait_agent', { timedOut: true }), inspect, t } as Parameters<typeof DetailsRow>[0]} />)
-    expect(screen.getByText('Wait for teammates')).toBeTruthy()
+    expect(screen.getByText('Wait for subagent')).toBeTruthy()
     expect(view.container.querySelector('svg')?.outerHTML).toBe(expectedIcon)
   })
 
