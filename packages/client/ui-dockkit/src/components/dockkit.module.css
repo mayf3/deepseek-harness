@@ -297,16 +297,17 @@
   margin-left: 4px;
 }
 
-/* macOS desktop: an embedder may pin this surface under the window's top drag
-   band (ui-layout .leadingBand — full-window geometry that Electron composes
-   in DOM order, not by stacking). The chip run, the strip-end chrome, the
-   pane body, and the split divider subtract their whole boxes so tabs,
-   controls, content, and the resize grab stay usable even where they overlap
-   the band; the strip's blank fill and top inset keep the band's drag, so the
-   row moves the window like a native tab bar. The divider must be named here:
-   it is a plain div, so ui-web base.css's interactive-element subtraction
-   never matches it. Hidden surfaces contribute nothing: Blink skips
-   non-visible boxes when it collects draggable regions. */
+/* macOS desktop: an embedder may pin this surface at the window's top edge (the
+   right sidebar does, in both presentations). The strip row is marked
+   `data-window-drag` in markup (TabPanel), so ui-web base.css's single darwin
+   rule drags it over its own box; the chip run, the strip-end chrome, the pane
+   body, and the split divider subtract their whole boxes so tabs, controls,
+   content, and the resize grab stay usable wherever they overlap that row. The
+   divider must be named here: it is a plain div, so ui-web base.css's
+   interactive-element subtraction never matches it. A floating pane subtracts its
+   own box the same way, so the strip row never drags the window over it. Hidden
+   surfaces contribute nothing: Blink skips non-visible boxes when it collects
+   draggable regions. */
 :global(html[data-platform='darwin']) .stripTabs,
 :global(html[data-platform='darwin']) .stripChrome,
 :global(html[data-platform='darwin']) .paneBody,
