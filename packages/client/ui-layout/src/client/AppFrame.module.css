@@ -180,21 +180,17 @@
 }
 
 /* The frame declares no window drag of its own: every chrome row owns the drag
-   over its own box — the sidebar's top strip and logo row (ui-sidebar), the
-   right sidebar's dockkit strip (ui-dockkit), the Conversation header and the
-   plugin manager's page heads (ui-conversation, ui-plugin-manager) — so the
-   draggable geometry is each row's geometry and no fixed band has to match any
-   of them. The ordering rule that replaces the old "band first" invariant: a
-   surface that covers the window and must stay clickable portals beside #root
-   (ui-web base.css subtracts every `body > :not(#root)` box), which puts it
-   after every drag row in document order. The Windows caption row below is the
-   other platform's chrome and stays. */
+   over its own box (ui-web base.css holds the one rule; the ui-theme app-region
+   gate lists the rows). The ordering rule that replaces the old "band first"
+   invariant: a surface that covers the window and must stay clickable portals
+   beside #root, which puts it after every drag row in document order. The Windows
+   caption row above is the other platform's chrome and stays. */
 
 /* The seat itself: the two 28px controls centered on the conversation title
    row (10px header inset + 30px row → centre y 25) and level with the traffic
    lights (centre y ≈ 24). Sits above column content, below frame overlays
    (20) and the fullscreen right panel (40). The box subtracts itself from any
-   window drag band beneath (Electron app-regions are geometry, not stacking). */
+   window drag row beneath (Electron app-regions are geometry, not stacking). */
 .leadingSeat {
   position: absolute;
   top: 11px;

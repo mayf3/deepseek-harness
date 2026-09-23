@@ -53,15 +53,13 @@ html[data-platform='darwin'] body[data-ds-dark-theme] {
 }
 
 /* macOS desktop: the one drag declaration. A chrome row marks itself in markup
-   (`data-window-drag`: the sidebar's top strip and logo row, the right sidebar's
-   dockkit strip, the Conversation header, the plugin manager's page head and
-   shared detail head) and
-   its own box becomes its draggable geometry, so no fixed band has to match any
-   row's height. Electron composes app-regions from geometry, not hit testing, so
-   a surface covering a row would otherwise drag the window instead of receiving
-   clicks; every covering overlay portals to document.body beside #root, which
-   also puts it after every drag row in document order, and one rule subtracts
-   them all. */
+   (`data-window-drag`) and its own box becomes its draggable geometry, so no fixed
+   band has to match any row's height; the ui-theme app-region gate's CHROME_ROWS
+   manifest is the list of rows that must carry the mark. Electron composes
+   app-regions from geometry, not hit testing, so a surface covering a row would
+   otherwise drag the window instead of receiving clicks; every covering overlay
+   portals to document.body beside #root, which also puts it after every drag row
+   in document order, and one rule subtracts them all. */
 html[data-platform='darwin'] [data-window-drag] {
   -webkit-app-region: drag;
 }

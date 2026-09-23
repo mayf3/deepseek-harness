@@ -11,17 +11,28 @@
  * A row's viewport box is the measurement: every row in this composition shows and
  * hides by mounting, unmounting, or moving, so a changed box is the signal. The
  * watcher starts on a DOM change that touches a marked row — inside it, on it, on
- * an ancestor that holds one, or adding or removing one — or on a marked row's box
- * resizing, and then measures every marked row once per frame for as long as any
- * box keeps changing. Each frame that changed sets the recall mark, and the frame
- * that finds the same geometry twice clears it and stops: that clear is the
- * collection the steady state comes from.
+ * an ancestor that holds one, on a container it lives in, or adding or removing one
+ * — on a marked row's box resizing, or on a transition or animation starting on an
+ * element that holds one, and then measures every marked row once per frame for as
+ * long as any box keeps changing. Each frame that changed sets the recall mark, and
+ * the frame that finds the same geometry clears it and stops once the short grace
+ * window below has passed: that clear is the collection the steady state comes from.
  * @module @deepseek-ai/dsh-client-web/src/window-drag/recall
  */
 import { DRAG_MARK, RECALL_MARK } from './regions.ts'
 
 /** The selector of an element that owns a window drag region. */
 const ROW_SELECTOR = `[${DRAG_MARK}]`
+
+/**
+ * Quiet frames a report tolerates before the loop stops again. A CSS transition's
+ * first frame still reports the box's from-value, so a report that arrives before
+ * the surface starts moving must not end the loop on its first unchanged sample.
+ */
+const GRACE_FRAMES = 2
+
+/** The event types that mark a box starting or finishing a transition or animation. */
+const MOTION_EVENTS = ['transitionstart', 'transitionend', 'animationstart', 'animationend'] as const
 
 /** How the shell installs the one window drag watcher. */
 export interface WindowDragRecallOptions {
@@ -59,14 +70,18 @@ export function installWindowDragRecall(options: WindowDragRecallOptions): () =>
   let scheduled = false
   let disposed = false
   let cancelPending: (() => void) | undefined
+  /** Quiet frames left before the loop may stop; refreshed by every report. */
+  let grace = 0
 
   /**
    * Measure every marked row and pulse when any box differs from the last frame's.
    * Runs once per frame while the surface keeps moving.
    */
   const measure = (): void => {
-    // Clearing first is part of the pulse: a frame that finds a change re-marks,
-    // and the frame that finds none leaves the surface collected as it settles.
+    // Clearing first is part of the pulse, and the clear must be flushed before the
+    // measurement below reads it: one style pass between the two writes is what makes
+    // Electron observe a computed app-region value that changed back. Reordering these
+    // two statements silently drops the pulse.
     doc.body.removeAttribute(RECALL_MARK)
     const rows = Array.from(doc.querySelectorAll(ROW_SELECTOR))
     watchBoxes(rows)
@@ -74,8 +89,20 @@ export function installWindowDragRecall(options: WindowDragRecallOptions): () =>
     const moved = rows.length !== geometry.size
       || rows.some(row => geometry.get(row) !== next.get(row))
     geometry = next
-    if (!moved) return
-    doc.body.setAttribute(RECALL_MARK, '')
+    if (moved) {
+      doc.body.setAttribute(RECALL_MARK, '')
+      grace = 0
+      schedule()
+      return
+    }
+    if (grace === 0) return
+    grace -= 1
+    schedule()
+  }
+
+  /** Report that the surface may be moving, opening the grace window again. */
+  const arm = (): void => {
+    grace = GRACE_FRAMES
     schedule()
   }
 
@@ -102,20 +129,38 @@ export function installWindowDragRecall(options: WindowDragRecallOptions): () =>
     }
     for (const row of rows) {
       if (boxes.has(row)) continue
-      boxes.set(row, watchBox(row, schedule))
+      boxes.set(row, watchBox(row, arm))
     }
   }
 
+  /**
+   * Whether a motion event can be moving a marked row: the transitioning element is
+   * one, holds one, or lives inside one.
+   * @param target - the event target to classify.
+   * @returns true when the drag surface has to be re-measured.
+   */
+  const movesRows = (target: EventTarget | null): boolean => {
+    if (!(target instanceof Element)) return false
+    return target.closest(ROW_SELECTOR) !== null || target.querySelector(ROW_SELECTOR) !== null
+  }
+
+  /** Re-arm for a transition or animation that can be sliding a marked row. */
+  const onMotion = (event: Event): void => {
+    if (movesRows(event.target)) arm()
+  }
+
   const observer = new MutationObserver((records) => {
-    if (records.some(touchesRows)) schedule()
+    if (records.some(record => touchesRows(record, geometry.keys()))) arm()
   })
   observer.observe(doc.body, { subtree: true, childList: true, attributes: true, characterData: true })
+  for (const type of MOTION_EVENTS) doc.addEventListener(type, onMotion, true)
   // The first frame collects the surface as it stands today.
-  schedule()
+  arm()
 
   return () => {
     disposed = true
     observer.disconnect()
+    for (const type of MOTION_EVENTS) doc.removeEventListener(type, onMotion, true)
     if (cancelPending !== undefined) cancelPending()
     for (const dispose of boxes.values()) dispose()
     boxes.clear()
@@ -131,16 +176,18 @@ function readBox(row: Element): string {
 }
 
 /**
- * Whether one DOM change can have moved the drag surface: a child list change
- * that adds or removes a marked row, or an attribute or text change that lands on
- * a marked row, inside one, or on an element holding one (a panel's open flag, a
- * column's width). A child list change elsewhere is left alone — a row whose box
- * grows because its content did is a resize, which the box watcher reports — and
- * so is a mounted overlay, whose own app-region value is a change of its own.
+ * Whether one DOM change can have moved the drag surface: a child list change in a
+ * container that holds a marked row, or an attribute or text change that lands on a
+ * marked row, inside one, or on an element holding one (a panel's open flag, a
+ * column's width). A child list change in a container without a marked row is left
+ * alone — a row whose box grows because its content did is a resize, which the box
+ * watcher reports — and so is a mounted overlay, whose own app-region value is a
+ * change of its own.
  * @param record - the mutation record to classify.
+ * @param rows - the rows the last frame measured.
  * @returns true when the drag surface has to be re-measured.
  */
-function touchesRows(record: MutationRecord): boolean {
+function touchesRows(record: MutationRecord, rows: Iterable<Element>): boolean {
   // The pulse writes its own mark on the body; that write is not a movement, and
   // treating it as one would re-arm the watcher from its own output every frame.
   if (record.attributeName === RECALL_MARK) return false
@@ -149,10 +196,16 @@ function touchesRows(record: MutationRecord): boolean {
       return true
     }
   }
-  if (record.type === 'childList') return false
   const target = record.target instanceof Element ? record.target : record.target.parentElement
   /* v8 ignore next -- the observer watches body's subtree, so a text target always has a parent element. */
   if (target === null) return false
+  if (record.type === 'childList') {
+    // A plain sibling inserted or removed beside a marked row shifts that row without
+    // resizing it, so the box watcher never reports it. Only the container a row lives
+    // in can move it, which keeps streamed appends outside the surface out of here.
+    for (const row of rows) if (target.contains(row)) return true
+    return false
+  }
   return target.closest(ROW_SELECTOR) !== null || target.querySelector(ROW_SELECTOR) !== null
 }
 

@@ -85,6 +85,15 @@ async function flushMutations(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 0))
 }
 
+/**
+ * Run frames until the watcher stops re-arming. Every report opens a short grace
+ * window, so a settled surface needs more than one frame to fall idle.
+ * @param seams - the frame queue under test.
+ */
+function settle(seams: Harness): void {
+  for (let frame = 0; frame < 8 && seams.frames() > 0; frame += 1) seams.runFrames()
+}
+
 /** Whether the recall mark is currently set. */
 function marked(): boolean {
   return document.body.hasAttribute(RECALL_MARK)
@@ -247,20 +256,82 @@ describe('what re-arms the watcher', () => {
     stop()
   })
 
-  it.each([
-    ['a plain sibling element', () => { document.body.append(document.createElement('span')) }],
-    ['a text node beside the rows', () => { document.body.append(document.createTextNode('transcript')) }],
-  ])('ignores a change that cannot move the surface: %s', async (_name, mutate) => {
+  it('re-arms on a plain sibling inserted in a container that holds a marked row', async () => {
+    const { seams, stop } = installed()
+    const element = row()
+    await flushMutations()
+    settle(seams)
+    expect(seams.frames()).toBe(0)
+
+    // The row is not the container's first child here, so a sibling inserted beside
+    // it shifts it without resizing it: only this child-list report can see that.
+    element.before(document.createElement('span'))
+    await flushMutations()
+    expect(seams.frames()).toBe(1)
+    stop()
+  })
+
+  it('ignores a change that cannot move the surface: a change in a container without a marked row', async () => {
     const { seams, stop } = installed()
     row()
     await flushMutations()
-    seams.runFrames()
-    seams.runFrames()
+    settle(seams)
     expect(seams.frames()).toBe(0)
-    mutate()
+
+    // The transcript appends beside the rows, never into the containers holding them.
+    const transcript = document.createElement('div')
+    document.body.append(transcript)
+    await flushMutations()
+    settle(seams)
+    expect(seams.frames()).toBe(0)
+    transcript.append(document.createElement('span'), document.createTextNode('streamed'))
     await flushMutations()
     expect(seams.frames()).toBe(0)
     expect(marked()).toBe(false)
+    stop()
+  })
+
+  it('keeps measuring after a report whose box has not moved yet', async () => {
+    const { seams, stop } = installed()
+    const element = row()
+    await flushMutations()
+    settle(seams)
+    expect(seams.watched()).toEqual([element])
+
+    // A CSS transition reports its start before the box moves: the first sample still
+    // equals the last frame's geometry, and the slide that follows has to keep pulsing.
+    element.setAttribute('class', 'sliding')
+    await flushMutations()
+    seams.runFrames()
+    expect(marked()).toBe(false)
+    place(element, [0, 14, 100, 52])
+    seams.runFrames()
+    expect(marked()).toBe(true)
+    stop()
+  })
+
+  it('re-arms only for a transition on a marked row, or on an element holding one', async () => {
+    const { seams, stop } = installed()
+    const holder = document.createElement('div')
+    const plain = document.createElement('div')
+    document.body.append(holder, plain)
+    const element = document.createElement('div')
+    element.setAttribute(DRAG_MARK, '')
+    place(element, [0, 0, 100, 52])
+    holder.append(element)
+    await flushMutations()
+    settle(seams)
+    expect(seams.frames()).toBe(0)
+
+    // A transition elsewhere on the page, and a target that is not an element, move no row.
+    plain.dispatchEvent(new Event('transitionstart'))
+    document.dispatchEvent(new Event('transitionstart'))
+    expect(seams.frames()).toBe(0)
+    holder.dispatchEvent(new Event('transitionstart'))
+    expect(seams.frames()).toBe(1)
+    settle(seams)
+    element.dispatchEvent(new Event('animationstart'))
+    expect(seams.frames()).toBe(1)
     stop()
   })
 

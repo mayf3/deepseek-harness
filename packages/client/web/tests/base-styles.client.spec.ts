@@ -62,8 +62,9 @@ describe('web shell base.css', () => {
   it('keeps the one-frame recall mark out of the drag surface while it is set', () => {
     // The shell's drag watcher sets the recall mark while a marked row's box is
     // moving (electron#32341 recollects the window's drag rects only on a
-    // computed-value change); while set, the marked subtree stops dragging and
-    // the frame that clears it recollects the steady state.
+    // computed-value change). The box it subtracts is the body's own, and the row
+    // marks inside it still win in document order, so the pulse changes what
+    // Electron collects without changing the composed surface.
     expect(normalizedCss).toContain(
       "html[data-platform='darwin'] [data-window-drag-recall] { -webkit-app-region: no-drag; }",
     )

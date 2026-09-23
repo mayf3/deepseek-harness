@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-19-window-drag-coverage-contract.md
-2026-09-19-window-drag-coverage-contract.md: e16d5e7399959b59b17c8ee7374f9ac515c6f04c
-2026-09-19-window-drag-coverage-contract.zh.md: 0255ed8965af7bc31d7aaab133adb6226f783884
+2026-09-19-window-drag-coverage-contract.md: c73d9230a4194f74babbd41ef3a8fdedc07cdd81
+2026-09-19-window-drag-coverage-contract.zh.md: 81fb9bbcc299769ab5b5bde1c04deb7c691c3a34

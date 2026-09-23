@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  INTERACTIVE_SELECTOR, containsPoint, isDraggableAt, survivingDragBoxes, type RegionRect,
+  INTERACTIVE_SELECTOR, containsPoint, isDraggableAt, type RegionRect,
 } from '../src/window-drag/regions.ts'
 
 const box = (x: number, y: number, width: number, height: number, draggable: boolean): RegionRect =>
@@ -49,15 +49,6 @@ describe('window drag-region composition', () => {
   it('treats edges as half-open so adjacent boxes never both claim a point', () => {
     expect(containsPoint(box(0, 0, 10, 10, true), 10, 5)).toBe(false)
     expect(containsPoint(box(0, 0, 10, 10, true), 9.999, 9.999)).toBe(true)
-  })
-
-  it('reports the authored drag boxes that still own a draggable sample', () => {
-    const band = box(0, 0, 100, 52, true)
-    const covered = box(20, 10, 28, 28, false)
-    const regions = [band, covered]
-    expect(survivingDragBoxes(regions, [[4, 24]])).toEqual([band])
-    expect(survivingDragBoxes(regions, [[34, 24]])).toEqual([])
-    expect(survivingDragBoxes([covered], [[34, 24]])).toEqual([])
   })
 
   it('publishes the interactive selector base.css declares', () => {

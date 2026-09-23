@@ -1,11 +1,12 @@
 /**
  * The window drag-region contract for the macOS desktop shell: Electron hands
  * the page's `-webkit-app-region` boxes to the native window, which hit-tests
- * them by geometry in DOM order, ignoring stacking. Blink emits one box per
- * element whose computed value differs from its parent's, and the window
- * applies them in that order: `drag` adds geometry, `no-drag` removes it. The
- * composition is therefore equivalent to "the last matching box decides" — a
- * point is draggable when the last collected box containing it is `drag`.
+ * them by geometry in DOM order, ignoring stacking. The property does not inherit:
+ * Blink collects one box per element whose own computed value is not `none`,
+ * skipping subtrees that are not visible, and the window applies them in that
+ * order: `drag` adds geometry, `no-drag` removes it. The composition is therefore
+ * equivalent to "the last matching box decides" — a point is draggable when the
+ * last collected box containing it is `drag`.
  *
  * This module is the executable statement of that rule. Production CSS authors
  * the boxes; tests and the browser coverage scenario both decide points through
@@ -86,21 +87,4 @@ export function isDraggableAt(regions: readonly RegionRect[], x: number, y: numb
     if (containsPoint(region, x, y)) draggable = region.draggable
   }
   return draggable
-}
-
-/**
- * The drag boxes that survived composition, for coverage signatures and
- * failure messages. Each returned box is an input box that contains at least
- * one draggable sample; overlapping boxes are reported as authored rather than
- * flattened, because callers report which declaration owns a gap.
- * @param regions - collected boxes in DOM order.
- * @param samples - points to test, as `[x, y]` viewport pairs.
- * @returns the drag boxes containing any draggable sample, in input order.
- */
-export function survivingDragBoxes(
-  regions: readonly RegionRect[],
-  samples: readonly (readonly [number, number])[],
-): readonly RegionRect[] {
-  return regions.filter(region => region.draggable
-    && samples.some(([x, y]) => containsPoint(region, x, y) && isDraggableAt(regions, x, y)))
 }
