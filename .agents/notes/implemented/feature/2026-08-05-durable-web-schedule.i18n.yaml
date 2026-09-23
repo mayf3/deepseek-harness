@@ -1,6 +1,37 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-05-durable-web-schedule.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-05-durable-web-schedule.md
-2026-08-05-durable-web-schedule.md: b09ab752c9db0587b49dbe50a152144b9ff19515
-2026-08-05-durable-web-schedule.zh.md: 8d84be3e3589969245fa41f433166eabacdf3951
+/agent-note-durable-session-local-reminders:
+  en: c40fc2bc6dd1b469
+  zh: c3932a1c8c60579b
+/agent-note-durable-session-local-reminders/problem:
+  en: 75d2d50c48475d22
+  zh: 293c507e9e516f29
+/agent-note-durable-session-local-reminders/decision:
+  en: 7fd21223d6306a39
+  zh: b792a415d9dccba0
+/agent-note-durable-session-local-reminders/decision/session-log-authority-and-tools:
+  en: 23a928cba17217d6
+  zh: 7995b144db6e4c70
+/agent-note-durable-session-local-reminders/decision/explicit-absolute-time-boundary:
+  en: 2e1fe906d42245aa
+  zh: bd21d4a2dd7d8afc
+/agent-note-durable-session-local-reminders/decision/bounded-fixed-rate-semantics:
+  en: 2ebada22d530b18a
+  zh: 90e7dd128c8ba54a
+/agent-note-durable-session-local-reminders/decision/live-delivery-lifecycle:
+  en: e69281749cf18500
+  zh: 9ce38e39e486f2d6
+/agent-note-durable-session-local-reminders/decision/read-only-web-catalog:
+  en: 6ea0fcb2512d1434
+  zh: ef9e430200677c9f
+/agent-note-durable-session-local-reminders/alternatives-considered:
+  en: d86b5e8b0380c22a
+  zh: e6b6fce158608b08
+/agent-note-durable-session-local-reminders/verification:
+  en: 716fce79e742ecfa
+  zh: 6abb1480f1b9e2d9
+/agent-note-durable-session-local-reminders/consequences:
+  en: 7abf5e7d73b32153
+  zh: c178fb3f1f28dee4

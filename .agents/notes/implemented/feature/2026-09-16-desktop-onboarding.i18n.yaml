@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-16-desktop-onboarding.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-16-desktop-onboarding.md
-2026-09-16-desktop-onboarding.md: 4dbce360b5a3c9db472cc3444b46fc6af0f382b6
-2026-09-16-desktop-onboarding.zh.md: a3d5f305c69701e58cc3f9a983e28911911f99a0
+/agent-note-device-local-desktop-onboarding:
+  en: 84a5519665d72899
+  zh: beaadffa0e139459
+/agent-note-device-local-desktop-onboarding/problem:
+  en: 50c7c883a2115b7e
+  zh: 60533d618a3b2da7
+/agent-note-device-local-desktop-onboarding/decision:
+  en: e2b564bd7f89f868
+  zh: c1dbc0c00e07c8df
+/agent-note-device-local-desktop-onboarding/alternatives-considered:
+  en: 82debfeba02ecfdb
+  zh: c15d8fcc012058e3
+/agent-note-device-local-desktop-onboarding/consequences:
+  en: 65d1dbaf6b39d57a
+  zh: fa5b562c059b3203
