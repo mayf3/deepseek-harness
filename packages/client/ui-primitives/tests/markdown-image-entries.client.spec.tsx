@@ -5,7 +5,7 @@ import { MarkdownDelegateProvider } from '../src/markdown/MarkdownDelegate.tsx'
 import { MarkdownText } from './markdown-test-components.tsx'
 import { parseGfm, parseGfmWithMath } from '../src/markdown/parse.ts'
 
-afterEach(() => { cleanup(); vi.useRealTimers() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 const labels = { open: 'View full image', dialog: 'Image preview', close: 'Close preview', loading: 'Loading image', failed: 'Image unavailable' }
 const fileImages = { resolve: (path: string) => `https://example.com/api/file?path=${encodeURIComponent('/workspace/' + path)}`, labels }
 function mount(text: string, streaming = false) {
@@ -53,7 +53,9 @@ it('loads a link preview only after hover dwell and keeps its existing sidebar a
 it('supports keyboard previews, Escape dismissal, and an inert failure state', () => {
   mount('[View comparison](graph.png)')
   const link = screen.getByRole('button', { name: 'View comparison' })
-  fireEvent.focus(link)
+  // jsdom does not model keyboard input modality for :focus-visible.
+  vi.spyOn(link, 'matches').mockReturnValue(true)
+  act(() => { link.focus() })
   fireEvent.error(screen.getByRole('img'))
   expect(screen.getByText('Image unavailable')).toBeTruthy()
   fireEvent.keyDown(link, { key: 'Escape' })
@@ -84,4 +86,32 @@ it.each([parseGfm, parseGfmWithMath])('recovers standalone bare-space paths with
     '![图](https://example.com/test image.png)', '![图](/work/test (image).png)']) {
     expect(JSON.stringify(parse(example))).not.toContain('"type":"image"')
   }
+})
+
+it('keeps an unavailable image link navigable without showing a hover preview', () => {
+  const openFile = vi.fn()
+  render(<MarkdownDelegateProvider openFile={openFile} fileImages={{ ...fileImages, resolve: () => undefined }}>
+    <MarkdownText text="[Image](relative.png)" />
+  </MarkdownDelegateProvider>)
+  const link = screen.getByRole('button', { name: 'Image' })
+  fireEvent.focus(link)
+  expect(screen.queryByRole('img')).toBeNull()
+  fireEvent.click(link)
+  expect(openFile).toHaveBeenCalledWith('relative.png', undefined)
+})
+
+it('labels empty-alt image activation and retains a localized failure description', () => {
+  mount('![](image.png)')
+  expect(screen.getByRole('button', { name: 'View full image' })).toBeTruthy()
+  fireEvent.error(document.querySelector('img')!)
+  expect(screen.getByText('Image unavailable · image.png')).toBeTruthy()
+  expect(screen.queryByRole('button')).toBeNull()
+})
+
+it.each([parseGfm, parseGfmWithMath])('uses the shared image categories for bare-space recovery', (parse) => {
+  for (const extension of ['avif', 'tif', 'tiff', 'heic', 'heif']) {
+    expect(parse(`![图](/work/test dir/photo.${extension})`).children[0])
+      .toMatchObject({ children: [{ type: 'image', url: `/work/test dir/photo.${extension}` }] })
+  }
+  expect(JSON.stringify(parse('![report](/work/test dir/report.pdf)'))).not.toContain('"type":"image"')
 })

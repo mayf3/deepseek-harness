@@ -9,7 +9,6 @@ import { fileMediaUrl, isAbsoluteWorkspacePath, pathPartsOf } from '@deepseek-ai
  * @returns an HTTP(S) file URL, or undefined for unsupported or malformed destinations.
  */
 export function markdownImageUrl(base: string, documentPath: string | undefined, destination: string): string | undefined {
-  if (!base.startsWith('http:') && !base.startsWith('https:')) return undefined
   const suffix = destination.search(/[?#]/u)
   let path: string
   try {
@@ -18,7 +17,7 @@ export function markdownImageUrl(base: string, documentPath: string | undefined,
     // Malformed percent escapes do not identify a local file.
     return undefined
   }
-  if (path.length === 0 || path.includes('\0') || /^[/\\]{2}/u.test(path)) return undefined
+  if (path.length === 0) return undefined
   const windowsDrive = /^[a-z]:[/\\]/iu.test(path)
   if (!windowsDrive && /^[a-z][a-z\d+.-]*:/iu.test(path)) return undefined
   if (!isAbsoluteWorkspacePath(path)) {

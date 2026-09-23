@@ -1,33 +1,30 @@
 /** Passive, contained image preview for Markdown image links. */
 import { useState } from 'react'
-import clsx from 'clsx'
 import { IconLoadingOutlineRegular } from './icons/index.tsx'
 import css from './ImagePreview.module.css'
 
 /**
  * Render an image without introducing a second activation target.
- * @param props - Source, accessible description, localized status, and owner layout class.
+ * @param props - Source, accessible description, localized status.
  * @returns A contained preview with loading or failure status.
  */
-export function ImagePreview({ src, alt, loadingLabel, failedLabel, className }: {
+export function ImagePreview({ src, alt, loadingLabel, failedLabel }: {
   src: string
   alt: string
   loadingLabel: string
   failedLabel: string
-  className?: string | undefined
 }) {
-  return <Preview key={src} src={src} alt={alt} loadingLabel={loadingLabel} failedLabel={failedLabel} className={className} />
+  return <Preview key={src} src={src} alt={alt} loadingLabel={loadingLabel} failedLabel={failedLabel} />
 }
 
-function Preview({ src, alt, loadingLabel, failedLabel, className }: {
+function Preview({ src, alt, loadingLabel, failedLabel }: {
   src: string
   alt: string
   loadingLabel: string
   failedLabel: string
-  className: string | undefined
 }) {
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
-  return <span className={clsx(css.frame, className)}>
+  return <span className={css.frame}>
     {state !== 'failed' && <img src={src} alt={alt} loading="lazy" decoding="async" referrerPolicy="no-referrer"
       className={css.image} data-ready={state === 'ready' || undefined}
       onLoad={() => { setState('ready') }} onError={() => { setState('failed') }} />}

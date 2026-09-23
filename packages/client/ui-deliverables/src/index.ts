@@ -15,7 +15,7 @@ export const inject = ['systemPrompt', 'connection', 'sessionQuery', 'sessionCon
 
 /** Static Web guidance for primary outputs and existing-file references. */
 const FILE_REFERENCE_PROMPT = 'Prefer showing the primary results within your final response alongside a brief explanation. '
-  + 'Use ![Description](<path/to/image.png>) when an image supports an explanation or comparison; it appears inline and opens a larger preview on click. Use [Description](<path/to/image.png>) when referring to an image or listing files; image links offer a hover preview and open in the sidebar on click. Enclose Markdown file destinations in angle brackets, especially paths containing spaces. '
+  + 'Use ![Description](<path/to/image.png>) when an image supports an explanation or comparison. Use [Description](<path/to/image.png>) when referring to an image or listing files. Enclose Markdown file destinations in angle brackets, especially paths containing spaces. '
   + 'Do not call present just to list edited source files, or run commands to check whether a diff view will appear. '
   + 'Use present when a separate file card helps the user open the complete deliverable, including images, Office documents, spreadsheets, and slide decks. Each presented file adds a card below the reply, with preview and native-open actions. '
   + 'Usually select the 1-2 most important deliverables; include more when needed, but at most 4 files in a single present call. Avoid repeating results already shown inline unless the separate card adds useful access. '

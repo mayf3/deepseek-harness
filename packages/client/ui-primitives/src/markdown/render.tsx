@@ -584,6 +584,7 @@ function MarkdownFileLink({ file, glyph, children }: {
 }): ReactNode {
   const { openFile, fileImages } = useMarkdownDelegate()
   if (openFile === undefined) return <>{children}</>
+  // Pure-image anchors already contain their preview and keep one navigation target.
   const preview = glyph && classifyLinkPath(file.path) === 'image' ? fileImages : undefined
   const src = preview?.resolve(file.path)
   const anchor = (
@@ -598,7 +599,7 @@ function MarkdownFileLink({ file, glyph, children }: {
     </button>
   )
   if (src === undefined || preview === undefined) return anchor
-  return <HoverCard inline anchor={anchor} copyLabel={preview.labels.open} copiedLabel={preview.labels.open}
+  return <HoverCard inline anchor={anchor}
     content={<>
       <ImagePreview src={src} alt={file.path} loadingLabel={preview.labels.loading} failedLabel={preview.labels.failed} />
       <span className={css.previewName}>{file.path.split(/[\\/]/u).pop()}</span>
@@ -655,7 +656,7 @@ function LoadedMarkdownImage({ src, alt, destination, preview }: {
   return <>
     <button type="button" className={css.imageButton} title={preview.labels.open}
       aria-label={alt ? `${preview.labels.open}: ${alt}` : preview.labels.open}
-      onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpen(true) }}>{img}</button>
+      onClick={() => { setOpen(true) }}>{img}</button>
     {open && <ImageLightbox src={src} alt={alt} labels={preview.labels} onClose={close} />}
   </>
 }

@@ -11,6 +11,7 @@ import css from './HoverCard.module.css'
 const PREVIEW_FADE_MS = 100
 const PREVIEW_MAX_HEIGHT = 420
 const PREVIEW_INSET = 24
+const INLINE_PREVIEW_WIDTH = 300
 const ANCHOR_GAP = 8
 const VIEWPORT_MARGIN = 8
 
@@ -23,6 +24,7 @@ const VIEWPORT_MARGIN = 8
  * @param props.variant - compact card beside the anchor, or a preview above/below it
  * with 24px side insets, a 420px height cap, frame-top clearance, and 100ms opacity transitions.
  * @param props.widthAnchorRef - optional element whose width and horizontal position size the preview.
+ * @param props.inline - keep the anchor in prose; show a contained preview on hover or keyboard focus.
  * @param props.disabled - suppress opening; turning true dismisses an open card.
  * @param props.copyText - optional primary value copied by activation and
  * included in the card's accessible name.
@@ -114,15 +116,17 @@ export function HoverCard({
   }, [])
 
   useEffect(() => {
-    if (!open || variant !== 'preview') return
+    if (!open || (variant !== 'preview' && !inline)) return
     const dismiss = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return
+      if (inline) event.stopPropagation()
+      clearTimer()
       cancelClose()
       close()
     }
-    window.addEventListener('keydown', dismiss)
-    return () => { window.removeEventListener('keydown', dismiss) }
-  }, [open, variant, cancelClose, close])
+    window.addEventListener('keydown', dismiss, inline)
+    return () => { window.removeEventListener('keydown', dismiss, inline) }
+  }, [open, variant, inline, cancelClose, close])
 
   // Fixed-position from the anchor rect before paint; track the anchor while
   // open (capture-phase scroll catches nested panes), as in Menu portal mode.
@@ -151,10 +155,18 @@ export function HoverCard({
         return
       }
       if (inline) {
-        const w = cardRef.current?.offsetWidth ?? 300
+        const height = Math.max(h, cardRef.current?.scrollHeight ?? 0)
+        const width = Math.max(0, Math.min(INLINE_PREVIEW_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2))
+        const topMargin = overlayTopMargin(VIEWPORT_MARGIN)
+        const belowTop = Math.max(topMargin, r.bottom + ANCHOR_GAP)
+        const above = Math.max(0, r.top - ANCHOR_GAP - topMargin)
+        const below = Math.max(0, window.innerHeight - belowTop - VIEWPORT_MARGIN)
+        const onTop = height > below && above > below
+        const maxHeight = onTop ? above : below
         setPos({
-          left: Math.max(VIEWPORT_MARGIN, Math.min(r.left, window.innerWidth - w - VIEWPORT_MARGIN)),
-          top: Math.max(overlayTopMargin(VIEWPORT_MARGIN), Math.min(r.bottom + ANCHOR_GAP, window.innerHeight - h - VIEWPORT_MARGIN)),
+          left: Math.max(VIEWPORT_MARGIN, Math.min(r.left, window.innerWidth - width - VIEWPORT_MARGIN)),
+          top: onTop ? r.top - ANCHOR_GAP - Math.min(height, maxHeight) : belowTop,
+          width, maxHeight,
         })
         return
       }
@@ -179,13 +191,13 @@ export function HoverCard({
   // card's real height is measurable, correct the bottom-edge clamp. The
   // correction converges — a clamped top satisfies the guard, so it runs once.
   useLayoutEffect(() => {
-    if (!open || pos === null || variant === 'preview') return
+    if (!open || pos === null || variant === 'preview' || inline) return
     /* v8 ignore next -- the card is mounted whenever pos is set, so the ref is attached here. */
     const h = cardRef.current?.offsetHeight ?? 0
     if (pos.top + h > window.innerHeight - VIEWPORT_MARGIN) {
       setPos({ left: pos.left, top: window.innerHeight - h - VIEWPORT_MARGIN })
     }
-  }, [open, pos, variant])
+  }, [open, pos, variant, inline])
 
   const copy = async (text: string): Promise<void> => {
     if (copied || copyingRef.current) return
@@ -248,12 +260,11 @@ export function HoverCard({
     <span
       ref={rootRef}
       className={clsx(css.root, inline && css.inline)}
-      onFocus={inline ? () => { if (!disabled) { cancelClose(); setPhase('open') } } : undefined}
+      onFocus={inline ? (event) => {
+        if (!disabled && event.target.matches(':focus-visible')) { cancelClose(); setPhase('open') }
+      } : undefined}
       onBlur={inline ? (event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) { clearTimer(); cancelClose(); close() }
-      } : undefined}
-      onKeyDown={inline ? (event) => {
-        if (event.key === 'Escape') { event.stopPropagation(); clearTimer(); cancelClose(); close() }
       } : undefined}
       onPointerEnter={(event) => {
         if (disabled || (inline && event.pointerType === 'touch')) return

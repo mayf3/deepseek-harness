@@ -40,9 +40,9 @@ export function ImageLightbox({ src, alt, labels, onClose }: {
       if (event.key === 'Escape') { event.stopPropagation(); onClose() }
       if (event.key === 'Tab') { event.preventDefault(); closeRef.current?.focus() }
     }
-    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
     return () => {
-      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keydown', onKeyDown, true)
       restoreRef.current?.focus()
     }
   }, [onClose])

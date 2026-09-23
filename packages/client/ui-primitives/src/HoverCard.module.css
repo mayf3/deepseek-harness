@@ -82,7 +82,7 @@
 
 .inline { display: inline; }
 .media {
-  width: min(300px, calc(100vw - 16px));
+  overflow: auto;
   padding: 8px;
   border: 0;
   color: var(--dsw-alias-label-primary);

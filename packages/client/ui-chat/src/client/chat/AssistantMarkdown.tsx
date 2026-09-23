@@ -11,6 +11,9 @@ import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './AssistantMarkdown.module.css'
 
 /**
+ * Standalone fallback for image destinations (query/fragment suffixes are ignored).
+ * Chat fileImages resolves decoded file references against cwd; pathImages also
+ * serves this component outside that provider and accepts legacy image URL suffixes.
  * Resolve an authored absolute image path against the document's file API.
  * @param base - canonical `document.baseURI` at render time.
  * @param value - authored Markdown destination; URL escapes are decoded once.
