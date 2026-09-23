@@ -1247,7 +1247,7 @@ describe('first-use Workspace preparation', () => {
     const directoryRoot = await makeDir('first-use')
     const result = await harness({ liveSessions: [], ...options })
     contexts.push(result.ctx)
-    const resolveDirectory = vi.fn(async () => ({ path: join(directoryRoot, 'nested', 'Workspace'), title: 'Workspace' }))
+    const resolveDirectory = vi.fn(async () => join(directoryRoot, 'nested', 'Workspace'))
     return { ...result, directoryRoot, resolveDirectory }
   }
 
@@ -1262,6 +1262,7 @@ describe('first-use Workspace preparation', () => {
     expect(h.resolveDirectory).toHaveBeenCalledOnce()
     expect(laterDirectory).not.toHaveBeenCalled()
     expect(first?.path).toBe(await realpath(join(h.directoryRoot, 'nested', 'Workspace')))
+    // The caller supplies no title: the initial one is the directory's final segment.
     expect(first?.title).toBe('Workspace')
     expect(h.registry.list()).toEqual([first])
     expect(storedState(h.pool).defaultWorkspaceId).toBe(first?.id)
@@ -1290,7 +1291,7 @@ describe('first-use Workspace preparation', () => {
   it('rejects a relative candidate before creating its directory', async () => {
     const h = await firstUse()
     const candidate = join(h.directoryRoot, 'relative')
-    h.resolveDirectory.mockResolvedValueOnce({ path: relative(process.cwd(), candidate), title: 'Workspace' })
+    h.resolveDirectory.mockResolvedValueOnce(relative(process.cwd(), candidate))
     await expect(h.registry.initializeDefault(h.resolveDirectory)).rejects.toThrow('fully qualified')
     await expect(realpath(candidate)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(h.registry.list()).toEqual([])

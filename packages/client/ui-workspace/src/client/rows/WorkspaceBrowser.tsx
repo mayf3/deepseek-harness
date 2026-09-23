@@ -27,6 +27,7 @@ import type {
   SessionListState, SessionSearchResultItem,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller/default-workspace'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
@@ -833,7 +834,20 @@ export function WorkspaceBrowser({
   const home = useHostInfo(info => info.home)
   // Ordering remains live while the rail or search replaces the list body.
   const list = useSessions(state => state)
-  const workspaces = useWorkspaces(state => state.items)
+  const storedWorkspaces = useWorkspaces(state => state.items)
+  // Every title this surface shows derives from here — rows, hover card,
+  // search meta, and the rename and delete dialogs — so the default
+  // Workspace's automatic title is localized once, at the source. The
+  // resolved name, not `t`, is the dependency: the bound seat keeps its
+  // identity across a language switch.
+  const defaultWorkspaceName = t('workspace.defaultName')
+  const workspaces = useMemo(
+    () => storedWorkspaces.map(workspace => ({
+      ...workspace,
+      title: workspaceDisplayTitle(workspace.title, defaultWorkspaceName),
+    })),
+    [storedWorkspaces, defaultWorkspaceName],
+  )
   const workspacePhase = useWorkspaces(state => state.phase)
   const workspaceStreamState = useWorkspaces(state => state.state)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)

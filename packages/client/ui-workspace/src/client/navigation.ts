@@ -16,9 +16,7 @@ import type {
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { RowToast } from './contract/slots.ts'
-import { en, zh } from './locales.ts'
 import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
 import type { WorkspaceViewStoreActions } from './stores.ts'
 
@@ -347,13 +345,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   private async initializeDefaultWorkspace(signal: AbortSignal): Promise<WorkspaceView | undefined> {
-    const language = this.ctx.locale.getSnapshot().active.toLowerCase().split('-')[0]
-    const title = (language === 'zh' ? zh : en)['defaultWorkspace.title']
     try {
-      return await this.workspaces.initializeDefault({
-        directoryName: language === 'zh' || language === 'en' ? title : 'default-workspace',
-        title,
-      }, signal)
+      return await this.workspaces.initializeDefault(signal)
     } catch (_error: unknown) {
       if (!signal.aborted) this.notify({ kind: 'defaultWorkspaceFailed' })
       return undefined

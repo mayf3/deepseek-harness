@@ -16,6 +16,7 @@ import {
 import type {
   WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller/default-workspace'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/slots.ts'
 import css from './WorkspacePicker.module.css'
@@ -107,7 +108,7 @@ export function WorkspacePickFlow({
   const items: MenuEntry[] = pinAdd
     ? workspaces.map(workspace => ({
       id: workspace.workspaceId,
-      label: workspace.title,
+      label: workspaceDisplayTitle(workspace.title, t('workspace.defaultName')),
       icon: <IconFolderCloseRegular size={16} />,
       disabled: flowBusy,
     }))
