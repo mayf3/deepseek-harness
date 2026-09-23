@@ -326,10 +326,10 @@ describe('SettingsPanel close paths', () => {
     expect(screen.getByRole('dialog')).toBeTruthy()
   })
 
-  it('lands focus on the close button when the dialog opens', () => {
+  it('lands focus on the active section when the dialog opens', () => {
     mount()
     openPanel()
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'General' }))
   })
 
   it('opens above an existing body modal and gives the visible settings panel keyboard ownership', () => {
@@ -344,7 +344,7 @@ describe('SettingsPanel close paths', () => {
     const settings = screen.getByRole('dialog', { name: 'Settings Title' })
     expect(settings.parentElement?.parentElement).toBe(document.body)
     expect(reference.parentElement!.compareDocumentPosition(settings.parentElement!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'General' }))
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'Settings Title' })).toBeNull()
     expect(closeReference).not.toHaveBeenCalled()
@@ -412,6 +412,7 @@ describe('SettingsPanel navigation', () => {
     })
     expect(screen.getByRole('dialog')).toBeTruthy()
     expect(screen.getByTestId('section-models')).toBeTruthy()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Models' }))
 
     cleanup()
     const inactive = mount({ onboardingActive: false }).renderSlot.mock.calls
@@ -450,9 +451,10 @@ describe('SettingsPanel navigation', () => {
     expect(screen.getByTestId('section-general')).toBeTruthy()
   })
 
-  it('renders an empty content column when the ledger is empty', () => {
+  it('renders an empty content column and focuses the title when the ledger is empty', () => {
     const { renderSlot } = mount({ rows: [] })
     openPanel()
+    expect(document.activeElement).toBe(screen.getByText('Settings Title'))
     expect(screen.getByRole('dialog')).toBeTruthy()
     const sectionCalls = renderSlot.mock.calls.filter(c => c[0] === 'settings.section')
     expect(sectionCalls).toHaveLength(0)

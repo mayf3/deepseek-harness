@@ -223,7 +223,9 @@ describe('Menu', () => {
     // autoFocus parks the keyboard on the first row; Tab settles it like Enter.
     const alpha = screen.getByRole('menuitem', { name: 'Alpha' })
     expect(document.activeElement).toBe(alpha)
+    expect(alpha.getAttribute('data-dsh-automatic-focus')).toBe('')
     expect(fireEvent.keyDown(alpha, { key: 'Tab' })).toBe(false)
+    expect(alpha.getAttribute('data-dsh-automatic-focus')).toBeNull()
     expect(onSelect).toHaveBeenCalledExactlyOnceWith('a')
 
     // Shift+Tab leaves like Escape: closed, with the trigger taking the keyboard.

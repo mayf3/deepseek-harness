@@ -1,6 +1,7 @@
 /** Sidebar-owned commands resolved against the currently mounted page. */
 import type { Shortcuts, ShortcutBinding, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
+import { closeTopModal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarRightController } from './service.ts'
 import type { SidebarRightTarget } from './focus.ts'
 import type {} from './locales.ts'
@@ -68,8 +69,11 @@ export function registerSidebarShortcuts(shortcuts: Pick<Shortcuts, 'register' |
       id: `page.${kind}` as ShortcutCommandId, label: () => t(`command.${kind}`), aliases: [kind, 'page'],
       defaults: { 'desktop:macos': desktop, 'desktop:windows': desktop, 'desktop:linux': desktop,
         'web:windows': web, ...(kind === 'close' ? { 'web:macos': web } : {}) },
-      regions: ['page', 'editable', 'terminal'], modals: [],
-      resolve: ({ target: element, source }) => {
+      regions: ['page', 'editable', 'terminal'], modals: kind === 'close' ? ['settings', 'shortcuts', 'other'] : [],
+      resolve: ({ target: element, source, modal }) => {
+        if (kind === 'close' && modal !== null) {
+          return { status: 'handled', run: () => { closeTopModal(document) } }
+        }
         const target = sidebar.focusedTarget(element)
         if (target === undefined && (source === 'iframe' || element?.closest('[data-sidebar-right-session]'))) {
           return { status: 'blocked', reason: t('command.stale') }

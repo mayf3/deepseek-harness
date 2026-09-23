@@ -12,6 +12,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import { closeTopModal } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the settings slot declarations plus the ctx.configForms Context
 // merge. Cross-plugin collaboration goes through the service, never a value
 // import (client bundle purity gate).
@@ -185,7 +186,13 @@ export function apply(ctx: ClientContext): void {
         'web:windows': { code: 'Comma', modifiers: ['primary'] },
       },
       regions: ['page', 'editable', 'terminal'], modals: ['settings'],
-      resolve: () => ({ status: 'handled', run: () => { shellInstance.actions.open() } }),
+      resolve: ({ modal }) => {
+        if (modal !== null && modal !== 'settings') return { status: 'blocked', reason: 'modal' }
+        return { status: 'handled', run: () => {
+          if (modal === 'settings') closeTopModal(document)
+          else shellInstance.actions.open()
+        } }
+      },
     })
 
     const disposeSlot = ctx.slots.register({

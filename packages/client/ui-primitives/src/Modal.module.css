@@ -39,6 +39,10 @@
   box-shadow: var(--dsw-elevation-prominent);
 }
 
+.dialog:focus {
+  outline: none;
+}
+
 .content {
   display: flex;
   flex-direction: column;

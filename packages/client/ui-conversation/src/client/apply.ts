@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ShortcutCommandId, ShortcutFixedCommand } from '@deepseek-ai/dsh-client-shortcuts/client'
-import { conversationOpenTurn, UiConversation } from './conversation/assembly.ts'
+import { UiConversation } from './conversation/assembly.ts'
 import type { ViewTab } from './contract/views.ts'
 import type {
   ComposerBarInjected, ConversationInjected, ConversationSessionHeaderInjected,
@@ -252,7 +252,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       scope.effect(() => scope.shortcuts.registerFixed(command), `ui-conversation: ${command.id}`)
     }
     scope.effect(() => installStopShortcut(
-      scope.shortcuts, sessions, binding => conversationOpenTurn(uiConversation, binding), ctx.uiSession, stop,
+      scope.shortcuts, sessions, binding => uiConversation.binding(binding).openTurn, ctx.uiSession, stop,
     ), 'ui-conversation: fixed stop input')
     scope.effect(() => {
       const command: ShortcutFixedCommand = {

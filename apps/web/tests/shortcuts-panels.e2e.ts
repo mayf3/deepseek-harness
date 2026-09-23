@@ -82,6 +82,11 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       expect(await composer.innerText()).toContain('T5 draft remains unsent')
       const eventCount = agent.session.seq
       const panel = page.locator('[data-sidebar-right-panel][data-sidebar-right-open]')
+      const paneAppearance = () => panel.locator('[data-dockkit-pane]').evaluateAll(panes => panes.map((pane) => {
+        const style = getComputedStyle(pane)
+        return { outline: style.outlineStyle, shadow: style.boxShadow }
+      }))
+      const plainPane = { outline: 'none', shadow: 'none' }
 
       for (const { label, previous } of [
         { label: 'Browser', previous: undefined },
@@ -94,6 +99,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
           : panel.locator('[data-sidebar-terminal]')
         await openedPage.waitFor()
         const focusedAfterOpening = await panel.locator('[data-dockkit-pane]').evaluate(pane => pane.contains(document.activeElement))
+        expect(await paneAppearance()).toEqual([plainPane])
         await page.keyboard.press(`${primary}+Alt+W`)
         await expect.poll(() => page.locator('[data-sidebar-right-open]').count(), { message: label }).toBe(0)
         expect(focusedAfterOpening, label).toBe(true)
@@ -104,6 +110,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await composer.click()
       await page.keyboard.press(`${primary}+Shift+,`)
       await panel.waitFor()
+      expect(await paneAppearance()).toEqual([plainPane])
       expect(await panel.getByRole('button', { name: 'Collapse right sidebar' }).getAttribute('aria-keyshortcuts')).toBe(aria)
       await panel.getByRole('tab').focus()
       await page.keyboard.press(`${primary}+Shift+,`)
@@ -138,6 +145,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await page.keyboard.press(`${primary}+Shift+,`)
       await expect.poll(() => panel.getByRole('tab', { name: /Browser/ }).count()).toBe(2)
       expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => document.activeElement === pane)).toBe(true)
+      expect(await paneAppearance()).toEqual([plainPane])
       await page.keyboard.press(`${primary}+Alt+W`)
       await expect.poll(() => panel.getByRole('tab', { name: /Browser/ }).count()).toBe(1)
       await page.keyboard.press(`${primary}+Shift+,`)
@@ -153,9 +161,11 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await page.keyboard.press(`${primary}+Shift+,`)
       await panel.locator('[data-dockkit-tab]').filter({ hasText: 'Files' }).waitFor()
       expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => document.activeElement === pane)).toBe(true)
+      expect(await paneAppearance()).toEqual([plainPane])
       await page.keyboard.press(`${primary}+Shift+,`)
       expect(await panel.locator('[data-dockkit-tab]').filter({ hasText: 'Files' }).count()).toBe(1)
       expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => document.activeElement === pane)).toBe(true)
+      expect(await paneAppearance()).toEqual([plainPane])
 
       await bind(page, primary, 'Toggle panel fullscreen', 'Workspace files')
       await composer.click()
@@ -166,6 +176,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await expect.poll(() => filesTab.evaluate(element => document.activeElement === element)).toBe(true)
       await page.keyboard.press(`${primary}+Shift+,`)
       await page.locator('[data-sidebar-right-panel="fullscreen"]').waitFor()
+      expect(await paneAppearance()).toEqual([plainPane])
       expect(await composer.innerText()).toContain('T5 draft remains unsent')
       expect(agent.session.seq).toBe(eventCount)
 
@@ -175,6 +186,8 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await expect.poll(() => panel.locator('[data-dockkit-pane]').count()).toBe(2)
       const left = panel.locator('[data-dockkit-pane][data-dockkit-column="0"]')
       const right = panel.locator('[data-dockkit-pane][data-dockkit-column="1"]')
+      expect(await right.evaluate(pane => document.activeElement === pane)).toBe(true)
+      expect(await paneAppearance()).toEqual([plainPane, plainPane])
       const disabled = right.locator('[data-dockkit-split-button]')
       expect(await disabled.isDisabled()).toBe(true)
       await disabled.locator('..').focus()
@@ -241,6 +254,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
         expect(await right.getByRole('tab').count()).toBe(2)
       }
       expect(await menuTab.evaluate(tab => tab === document.activeElement)).toBe(true)
+      expect(await menuTab.evaluate(tab => getComputedStyle(tab).outlineStyle)).toBe('none')
       await (closeFirst === 'right' ? right : left).getByRole('tab').last().focus()
       await page.keyboard.press(`${primary}+Shift+,`)
       await expect.poll(() => panel.getByRole('tab').count()).toBe(2)
@@ -248,6 +262,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await expect.poll(() => panel.getByRole('tab').count()).toBe(1)
       expect(await panel.locator('[data-dockkit-pane]').count()).toBe(1)
       expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => pane === document.activeElement)).toBe(true)
+      expect(await paneAppearance()).toEqual([plainPane])
       await page.keyboard.press(`${primary}+Shift+,`)
       await expect.poll(() => page.locator('[data-sidebar-right-open]').count()).toBe(0)
       await page.getByRole('button', { name: 'Open right sidebar', exact: true }).click()
@@ -258,6 +273,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await page.keyboard.press(`${primary}+Shift+,`)
       await expect.poll(() => panel.getByRole('tab').count()).toBe(1)
       expect(await panel.locator('[data-dockkit-pane]').evaluate(pane => pane === document.activeElement)).toBe(true)
+      expect(await paneAppearance()).toEqual([plainPane])
       await compareOrRefreshGolden(join(expected, 'guide-close.expected.md'),
         await captureStableAria(page, '[data-sidebar-right-panel]', scaffold.workspaceCwd), mode)
       await page.keyboard.press(`${primary}+Shift+,`)

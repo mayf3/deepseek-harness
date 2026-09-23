@@ -53,6 +53,8 @@ kind: "package-reference"
 
 `src/styles/` 下有六张样式表，由 ui-theme 的动态客户端 entry 依次导入：`base.css`、`corner-shape.css`、`design-platform.css`、`scrollbar.css`、`gradient-shadow-text.css` 与 `shiki.css`。客户端 bundle 将其编译并注入为插件持有的全局样式，因此卸载与 HMR（热模块替换）会随 ui-theme 一同移除。`scrollbar.css` 消费 `--dsw-alias-scrollbar-*` token，必须排在声明这些 token 的 `design-platform.css` 之后。状态标记使用各自的语义状态 token。`design-platform.css` 还负责代码差异底色的别名及其静态透明度色阶；`shiki.css` 负责语法颜色。
 
+`base.css` 仅抑制[基础控件焦点工具](../ui-primitives/README.zh.md)通过 `data-dsh-automatic-focus` 标记的聚焦元素外轮廓线；正常键盘焦点样式、边框、阴影及错误状态保持不变。
+
 系统提示使用 `--dsw-alias-toast-bg` 和 `--dsw-alias-toast-label`，在各调用方之间统一背景与文字颜色。
 
 `brand-font.css` 导出本地 Montserrat Light、Regular 和 Medium 字体（正体、字重 300、400 和 500），`lib/styles/` 同时提供 `montserrat-light.woff2`、`montserrat-regular.woff2`、`montserrat-medium.woff2` 及其 SIL Open Font License。Desktop 将同一份样式表、字体和许可证打包，用于欢迎页品牌文字的离线显示；普通界面保留系统字体栈。

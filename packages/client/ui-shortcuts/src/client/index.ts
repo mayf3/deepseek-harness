@@ -1,6 +1,7 @@
 /** Shortcut reference plugin; commands and entry points share one declared store. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
+import { closeTopModal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -54,7 +55,13 @@ export function apply(ctx: Context): void {
         'web:linux': { code: 'Slash', modifiers: ['primary'] },
       },
       regions: ['page', 'editable', 'terminal'], modals: ['settings', 'shortcuts'],
-      resolve: () => ({ status: 'handled', run: () => { instance.actions.open() } }),
+      resolve: ({ modal }) => {
+        if (modal !== null && modal !== 'settings' && modal !== 'shortcuts') return { status: 'blocked', reason: 'modal' }
+        return { status: 'handled', run: () => {
+          if (modal === 'shortcuts') closeTopModal(document)
+          else instance.actions.open()
+        } }
+      },
     })
     const disposeSlot = ctx.slots.register({
       name: 'shell.overlay', id: 'shortcuts', locale: 'shortcuts', store,

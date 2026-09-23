@@ -1,5 +1,5 @@
 /** Main-document keyboard adapter; local controls arbitrate before window bubbling. */
-import { observeComposition } from '@deepseek-ai/dsh-client-ui-primitives'
+import { modalSelector, observeComposition } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ShortcutContext, ShortcutFixedInput } from './types.ts'
 import type { ShortcutRegistry } from './registry.ts'
 import type { ShortcutPlatform, ShortcutRuntime } from '../protocol.ts'
@@ -37,7 +37,6 @@ export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry
   const reset = (): void => { fixed?.({ type: 'reset' }) }
   let deadKey = false
   const blur = (): void => { deadKey = false; reset() }
-  const modalSelector = '[role="dialog"][aria-modal="true"], [role="menu"]'
   const containsModal = (node: Node): boolean => node instanceof Element
     && (node.matches(modalSelector) || node.querySelector(modalSelector) !== null)
   const changedModals = (records: MutationRecord[]): void => {

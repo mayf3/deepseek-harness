@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 /** Focus ownership remains separate from layout selection and validates captured lifetimes. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createElement } from 'react'
+import { cleanup, render } from '@testing-library/react'
+import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Context } from '@deepseek-ai/cordis'
 import { activeDockPaneId, findTabPane, getPane } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -17,7 +20,7 @@ import { observeSidebarFocus, sidebarTargetFromElement } from '../src/client/foc
 
 const SESSION = 'focus-session' as SessionId
 const releases: Array<() => void> = []
-afterEach(() => { for (const release of releases.splice(0).reverse()) release(); document.body.replaceChildren() })
+afterEach(() => { cleanup(); for (const release of releases.splice(0).reverse()) release(); document.body.replaceChildren() })
 
 function harness() {
   const ctx = new Context()
@@ -517,7 +520,7 @@ describe('page close and refresh', () => {
     expect(h.layout().tabs[remaining.id]).toBeDefined()
   })
 
-  it.each(['macos', 'windows'] as const)('refreshes and closes the focused occurrence on %s with priority over modals and terminals', (platform) => {
+  it.each(['macos', 'windows'] as const)('refreshes and closes the focused occurrence on %s without closing behind a modal', (platform) => {
     const h = harness()
     const registry = new ShortcutRegistry('desktop', platform)
     const closeWindow = vi.fn()
@@ -542,12 +545,34 @@ describe('page close and refresh', () => {
     expect(h.layout().tabs[files]).toBeDefined()
     expect(registry.dispatch(gesture, { ...context, region: 'terminal' }, consume).status).toBe('blocked')
     expect(registry.dispatch({ ...gesture, code: 'KeyW' }, { ...context, region: 'terminal', modal: 'settings' }, consume).status).toBe('handled')
+    expect(h.layout().tabs[files]).toBeDefined()
+    registry.dispatch({ ...gesture, code: 'KeyW' }, { ...context, region: 'terminal' }, consume)
     expect(h.layout().tabs[files]).toBeUndefined()
     expect(occurrence.signal.aborted).toBe(true)
     registry.dispatch({ ...gesture, code: 'KeyW' }, context, consume)
     expect(closeWindow).not.toHaveBeenCalled()
     registry.dispatch({ ...gesture, code: 'KeyW' }, { ...context, target: null }, consume)
     expect(closeWindow).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['macos', 'windows', 'linux'] as const)('routes the close binding and native menu to the foreground modal on %s', (platform) => {
+    const h = harness()
+    const registry = new ShortcutRegistry('desktop', platform)
+    const closeWindow = vi.fn(), closeModal = vi.fn()
+    releases.push(registerSidebarShortcuts({ register: command => registry.register(command), runtime: 'desktop' }, h.controller, makeTranslate(en), closeWindow))
+    render(createElement(Modal, { open: true, title: 'Settings', shortcutModal: 'settings', closeLabel: 'Close', onClose: closeModal }))
+    const context = { target: document.activeElement, region: 'page' as const, modal: 'settings' }
+    const gesture = { code: 'KeyW', meta: platform === 'macos', control: platform !== 'macos', alt: false,
+      shift: false, repeat: false, composing: false, defaultPrevented: false }
+    registry.dispatch({ ...gesture, composing: true }, context, vi.fn())
+    registry.dispatch({ ...gesture, repeat: true }, context, vi.fn())
+    expect(closeModal).not.toHaveBeenCalled()
+    registry.dispatch(gesture, context, vi.fn())
+    expect(closeModal).toHaveBeenCalledTimes(1)
+    registry.invoke('page.close' as ShortcutCommandId, context)
+    expect(closeModal).toHaveBeenCalledTimes(2)
+    expect(closeWindow).not.toHaveBeenCalled()
+    expect(h.layout().expanded).toBe(true)
   })
 
   it('preserves a page when cleanup fails and never falls back to closing the window', () => {

@@ -26,7 +26,7 @@ type ModalProps = ModalBaseProps & (
 /**
  * Render a centered, body-portaled modal over a blurred page mask.
  * @param props.open - whether the dialog is showing.
- * @param props.onClose - Escape or mask click; while a menu is open inside the
+ * @param props.onClose - application close command, Escape, or mask click; while a menu is open inside the
  * dialog, Escape belongs to that menu first.
  * @param props.title - dialog heading (aria-label in every mode).
  * @param props.closeLabel - localized accessible close-button label.

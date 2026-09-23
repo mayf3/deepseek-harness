@@ -1,7 +1,7 @@
 /** Inline physical-key recording and revision-aware command editing. */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { ShortcutKeys, observeComposition } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ShortcutKeys, focusWithoutRing, observeComposition } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ShortcutBinding, ShortcutCommandId, ShortcutEdit, ShortcutRevision } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -152,7 +152,10 @@ EditorProps) {
       void recording(false).catch(() => { /* The owning window may already be closed. */ })
     }
   }, [describeBinding, recording, t, targetId, runtime, platform, desktopChords])
-  useEffect(() => { if (nativeReady) recorder.current?.focus() }, [nativeReady])
+  useEffect(() => {
+    const element = recorder.current
+    if (nativeReady && element !== null) focusWithoutRing(element)
+  }, [nativeReady])
   const readonly = busy || stale || config.status !== 'ready'
   const review = stale && <div className={css.review}>
     <span>{t('stale')}</span><button type="button" className={css.inlineAction} disabled={busy}

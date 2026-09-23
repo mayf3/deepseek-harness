@@ -1,6 +1,6 @@
 /** Searchable editable shortcut reference and its General Settings row. */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Button, IconCloseOutlineRegular, IconRefreshOutlineRegular, Modal, ShortcutKeys, Tooltip, Toast, isBehindModal, rankByName } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseOutlineRegular, IconRefreshOutlineRegular, Modal, ShortcutKeys, Tooltip, Toast, focusWithoutRing, isBehindModal, rankByName } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot, PropsStore } from '@deepseek-ai/dsh-client-store'
 import type { ShortcutCatalogEntry, ShortcutPlatform, Shortcuts } from '@deepseek-ai/dsh-client-shortcuts/client'
@@ -73,7 +73,9 @@ export function ShortcutReference({
   }, [open, config, runtime, notify, t])
   const closeEditor = (): void => {
     setTarget(null)
-    search.current?.closest<HTMLElement>('[role="dialog"]')?.focus({ preventScroll: true })
+    const dialog = search.current?.closest<HTMLElement>('[role="dialog"]')
+    /* v8 ignore next -- Editor callbacks run while its reference dialog and search input are mounted. */
+    if (dialog != null) focusWithoutRing(dialog, { preventScroll: true })
   }
   const closeReference = (): void => {
     if (busy) return
@@ -107,7 +109,10 @@ export function ShortcutReference({
     onClose: closeEditor,
     onSaved: () => { notify(t('saved')); closeEditor() },
     onError: (message: string) => { notify(message, true) } }
-  useLayoutEffect(() => { if (open && !isBehindModal(search.current)) search.current?.focus() }, [open, focusRequest])
+  useLayoutEffect(() => {
+    const input = search.current
+    if (open && input !== null && !isBehindModal(input)) focusWithoutRing(input)
+  }, [open, focusRequest])
   const entries = [
     ...catalog.map(row => ({
       ...row,
@@ -120,7 +125,10 @@ export function ShortcutReference({
   const matches = [...new Set(ranked.map(match => match.row))]
   const modifiedCount = Object.keys(config.document.profiles[`${runtime}:${platform}`] ?? {}).length
   useLayoutEffect(() => {
-    if (open && resetRevision === null && modifiedCount === 0 && document.activeElement === document.body) search.current?.focus()
+    const input = search.current
+    if (open && resetRevision === null && modifiedCount === 0 && document.activeElement === document.body && input !== null) {
+      focusWithoutRing(input)
+    }
   }, [open, resetRevision, modifiedCount])
   return <><Modal open={open} onClose={closeReference} title={t('title')} headless
     shortcutModal="shortcuts" className={css.dialog as string}>

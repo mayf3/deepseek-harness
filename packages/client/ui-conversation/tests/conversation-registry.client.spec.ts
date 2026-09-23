@@ -16,7 +16,6 @@ import {
 import type {
   ConversationNodeDefinition, ConversationViewDefinition, ConversationViewNode,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { conversationOpenTurn } from '../src/client/conversation/assembly.ts'
 
 const SESSION_ID = 'resident' as SessionId
 
@@ -148,7 +147,7 @@ describe('Conversation registries', () => {
     const { uiConversation, binding } = await bootRegistries()
     const conversation = uiConversation.binding(binding)
     const source = binding.eventSource as MutableSessionEventSource
-    const openTurn = conversationOpenTurn(uiConversation, binding)
+    const openTurn = conversation.openTurn
     const published: (number | undefined)[] = []
     const listener = vi.fn(() => { published.push(openTurn.getSnapshot()) })
     const unsubscribe = openTurn.subscribe(listener)
@@ -171,7 +170,7 @@ describe('Conversation registries', () => {
     } })
     expect(openTurn.getSnapshot()).toBe(2)
     expect(published).toEqual([1, undefined, 2])
-    expect(conversationOpenTurn(uiConversation, binding)).toBe(openTurn)
+    expect(uiConversation.binding(binding).openTurn).toBe(openTurn)
     expect(conversation.snapshot.getSnapshot().activeTargets.size).toBe(0)
     unsubscribe()
     listener.mockClear()
@@ -197,7 +196,7 @@ describe('Conversation registries', () => {
     source.replace([{ type: 'event', event: {
       type: 'step/start', seq: SessionSeq(2), time: 2, data: { turn: 7, step: 1 },
     } }], true)
-    const openTurn = conversationOpenTurn(uiConversation, binding)
+    const openTurn = uiConversation.binding(binding).openTurn
     expect(openTurn.getSnapshot()).toBeUndefined()
     source.prepend([{ type: 'event', event: {
       type: 'turn/start', seq: SessionSeq(1), time: 1, data: { turn: 7 },

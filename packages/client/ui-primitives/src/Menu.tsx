@@ -7,6 +7,7 @@ import { overlayTopMargin } from './overlay-top-margin.ts'
 import { usePointerGrace } from './pointer-grace.ts'
 import { isBehindModal } from './useModalLayer.ts'
 import { observeComposition } from './keyboard-composition.ts'
+import { focusWithoutRing } from './focus.ts'
 import { ShortcutKeys } from './ShortcutKeys.tsx'
 import css from './Menu.module.css'
 
@@ -195,20 +196,22 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
    * able to name by position.
    */
   const triggerRef = useRef<HTMLElement | null>(null)
+  const selectingWithTab = useRef(false)
 
   /**
    * Hand the keyboard back to the trigger that opened the menu — or, when the
    * anchor never held it, to the anchor's first button. Focus left on a removed
    * row otherwise falls to the page body, where the next Tab restarts from the
    * top of the page.
+   * @param navigation - whether explicit keyboard traversal should retain its focus indicator.
    */
-  const refocusAnchor = (): void => {
+  const refocusAnchor = (navigation = false): void => {
     const trigger = triggerRef.current
-    if (trigger !== null && document.contains(trigger) && !(trigger as HTMLButtonElement).disabled) {
-      trigger.focus()
-      return
-    }
-    rootRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+    const target = trigger !== null && document.contains(trigger) && !(trigger as HTMLButtonElement).disabled
+      ? trigger : rootRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')
+    if (target == null) return
+    if (navigation) target.focus()
+    else focusWithoutRing(target)
   }
 
   /**
@@ -219,10 +222,11 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
    * its removal produced) comes back to the trigger.
    */
   const refocusAfterSelection = (): void => {
+    const navigation = selectingWithTab.current
     queueMicrotask(() => {
       if (openRef.current) return
       const active = document.activeElement
-      if (active === null || active === document.body || listRef.current?.contains(active) === true) refocusAnchor()
+      if (active === null || active === document.body || listRef.current?.contains(active) === true) refocusAnchor(navigation)
     })
   }
   const openRef = useRef(open)
@@ -308,7 +312,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
     if (!open || !autoFocus) return
     const first = listRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')
     walkIndex.current = first === undefined || first === null ? null : 0
-    first?.focus()
+    if (first != null) focusWithoutRing(first)
   }, [open, autoFocus])
 
   useEffect(() => {
@@ -351,7 +355,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
         if (e.shiftKey) {
           e.preventDefault()
           onClose()
-          refocusAnchor()
+          refocusAnchor(true)
           return
         }
         // Tab settles the row it is on; from anywhere else in the menu region
@@ -361,7 +365,9 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
         if (insideList) {
           if (focused instanceof Element && focused.getAttribute('role') === 'menuitem') {
             e.preventDefault()
-            ;(focused as HTMLElement).click()
+            selectingWithTab.current = true
+            try { (focused as HTMLElement).click() }
+            finally { selectingWithTab.current = false }
           }
           return
         }

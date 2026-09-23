@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { useState } from 'react'
-import { afterEach, expect, it } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Modal } from '../src/Modal.tsx'
-import { isBehindModal } from '../src/useModalLayer.ts'
+import { closeTopModal, isBehindModal } from '../src/useModalLayer.ts'
 import { Menu } from '../src/Menu.tsx'
 
 afterEach(cleanup)
@@ -24,6 +24,44 @@ function Nested({ withSearch = true }: { withSearch?: boolean }) {
   </>
 }
 const escape = (init = {}) => fireEvent.keyDown(document.activeElement ?? document, { key: 'Escape', code: 'Escape', ...init })
+it('closes only the top modal through application commands and restores each opener', () => {
+  render(<Nested />)
+  const settings = screen.getByRole('button', { name: 'Settings' }); settings.focus(); fireEvent.click(settings)
+  const reference = screen.getByRole('button', { name: 'Reference' }); reference.focus(); fireEvent.click(reference)
+  act(() => { closeTopModal(document) })
+  expect(screen.queryByRole('dialog', { name: 'Reference' })).toBeNull()
+  expect(screen.getByRole('dialog', { name: 'Settings' })).toBeTruthy()
+  expect(document.activeElement).toBe(reference)
+  act(() => { closeTopModal(document) })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(document.activeElement).toBe(settings)
+  closeTopModal(document)
+  expect(document.activeElement).toBe(settings)
+})
+
+it.each(['menu', 'dialog'])('does not dismiss a modal behind a newer %s', (role) => {
+  const onClose = vi.fn()
+  render(<Modal open title="Settings" closeLabel="Close" onClose={onClose} />)
+  const overlay = document.createElement('div')
+  overlay.setAttribute('role', role)
+  overlay.setAttribute('aria-modal', 'true')
+  document.body.append(overlay)
+  try { closeTopModal(document); expect(onClose).not.toHaveBeenCalled() }
+  finally { overlay.remove() }
+  closeTopModal(document)
+  expect(onClose).toHaveBeenCalledTimes(1)
+})
+
+it('uses the latest close callback and retains a modal whose owner declines dismissal', () => {
+  const first = vi.fn(), busy = vi.fn()
+  const view = render(<Modal open title="Settings" closeLabel="Close" onClose={first} />)
+  view.rerender(<Modal open title="Settings" closeLabel="Close" onClose={busy} />)
+  closeTopModal(document)
+  expect(first).not.toHaveBeenCalled()
+  expect(busy).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('dialog')).toBeTruthy()
+})
+
 it('closes one layer per Escape, honors local menus and IME, and restores the real opener', () => {
   expect(isBehindModal(null)).toBe(false)
   render(<Nested />)

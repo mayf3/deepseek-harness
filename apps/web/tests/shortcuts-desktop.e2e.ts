@@ -7,7 +7,7 @@ import { chromium } from 'playwright'
 import { expect, it } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { initialShortcutConfig, parseShortcutDefinitions, parseShortcutEdit } from '@deepseek-ai/dsh-client-shortcuts/protocol'
-import type { DesktopShortcutInput, DesktopShortcutsApi, ShortcutRevision } from '@deepseek-ai/dsh-client-shortcuts/protocol'
+import type { DesktopShortcutInput, DesktopShortcutsApi, ShortcutCommandId, ShortcutRevision } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import { desktopKeybindings } from '../../desktop/src/keybindings.ts'
 import { compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole, webSnapshotMode } from './scaffold.ts'
 import { writeComposerDraft } from './support.ts'
@@ -126,10 +126,13 @@ it.each([
         expect(await composer.innerText()).toBe('Desktop focus draft')
         await writeComposerDraft(page, composer, '')
         await expect.poll(() => composer.textContent()).toBe('')
-        await openReference()
         const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts', exact: true })
-        await dialog.waitFor()
         const settings = page.getByRole('dialog', { name: 'Settings', exact: true })
+        const automaticFocusStyle = () => page.evaluate(() => {
+          const style = getComputedStyle(document.activeElement!)
+          return { outline: style.outlineStyle, shadow: style.boxShadow }
+        })
+        const noFocusRing = { outline: 'none', shadow: 'none' }
         const modalState = () => page.evaluate(() => {
           const name = (node: Element | null) => node?.getAttribute('aria-label')
             ?? document.getElementById(node?.getAttribute('aria-labelledby') ?? '')?.textContent ?? null
@@ -138,28 +141,100 @@ it.each([
             foreground: name(document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.closest('[role="dialog"]') ?? null),
           }
         })
+        const closeModal = async (name: 'Settings' | 'Keyboard shortcuts', source: 'keyboard' | 'menu' = 'keyboard') => {
+          if (source === 'menu') {
+            await page.evaluate((input) => { window.shortcutFixture.deliver(input) }, {
+              kind: 'menu', commandId: 'page.close' as ShortcutCommandId, revision: snapshot.revision,
+            } satisfies DesktopShortcutInput)
+          } else {
+            await deliverPrimary('KeyW')
+          }
+          await page.getByRole('dialog', { name, exact: true }).waitFor({ state: 'hidden' })
+          expect(await page.evaluate(() => window.shortcutFixture.closedWindows)).toBe(0)
+          expect(await page.evaluate(() => document.activeElement?.hasAttribute('data-dsh-automatic-focus'))).toBe(true)
+          expect((await automaticFocusStyle()).outline).toBe('none')
+        }
         await deliverPrimary('Comma')
         await settings.waitFor()
-        const settingsOnTop = await modalState()
-        expect(settingsOnTop).toEqual({ focused: 'Settings', foreground: 'Settings' })
-        await page.keyboard.press('Escape')
+        const selectedCategory = settings.locator('nav button[aria-current="true"]')
+        expect(await selectedCategory.evaluate(node => node === document.activeElement)).toBe(true)
+        expect(await automaticFocusStyle()).toEqual(noFocusRing)
+        const settingsShadow = await settings.evaluate(node => getComputedStyle(node).boxShadow)
+        const settingsInitialFocus = await selectedCategory.innerText()
+        await page.keyboard.press('Enter')
+        expect(await settings.isVisible()).toBe(true)
+        expect(await automaticFocusStyle()).toEqual(noFocusRing)
+        const settingsAfterEnter = await modalState()
+        expect(settingsAfterEnter).toEqual({ focused: 'Settings', foreground: 'Settings' })
+        await page.keyboard.press('Tab')
+        expect((await automaticFocusStyle()).outline).not.toBe('none')
+        expect(await page.evaluate(() => Number.parseFloat(getComputedStyle(document.activeElement!).outlineWidth))).toBeGreaterThan(0)
+        await deliverPrimary('Comma')
         await settings.waitFor({ state: 'hidden' })
-        expect(await dialog.isVisible()).toBe(true)
-        await page.keyboard.press('Escape')
+        expect(await page.evaluate(() => document.activeElement?.hasAttribute('data-dsh-automatic-focus'))).toBe(true)
+        expect((await automaticFocusStyle()).outline).toBe('none')
+        const dialogsAfterSettingsToggle = await page.getByRole('dialog').count()
+        expect(dialogsAfterSettingsToggle).toBe(0)
+        await deliverPrimary('Comma')
+        await settings.waitFor()
+        expect(await automaticFocusStyle()).toEqual(noFocusRing)
+        await closeModal('Settings')
+        expect(await dialog.isVisible()).toBe(false)
+        await openReference()
+        await dialog.waitFor()
+        expect(await dialog.getByRole('searchbox').evaluate(node => node === document.activeElement)).toBe(true)
+        expect(await automaticFocusStyle()).toEqual(noFocusRing)
+        const referenceShadow = await dialog.evaluate(node => getComputedStyle(node).boxShadow)
+        await deliverPrimary('Slash')
         await dialog.waitFor({ state: 'hidden' })
+        expect(await page.evaluate(() => document.activeElement?.hasAttribute('data-dsh-automatic-focus'))).toBe(true)
+        expect((await automaticFocusStyle()).outline).toBe('none')
+        const dialogsAfterReferenceToggle = await page.getByRole('dialog').count()
+        expect(dialogsAfterReferenceToggle).toBe(0)
+        await openReference()
+        await dialog.waitFor()
+        await deliverPrimary('Comma')
+        expect(await settings.isVisible()).toBe(false)
+        expect(await dialog.isVisible()).toBe(true)
+        const referenceBlocksSettings = await modalState()
+        expect(referenceBlocksSettings).toEqual({ focused: 'Keyboard shortcuts', foreground: 'Keyboard shortcuts' })
+        expect(await automaticFocusStyle()).toEqual(noFocusRing)
+        expect(await dialog.evaluate(node => getComputedStyle(node).boxShadow)).toBe(referenceShadow)
+        await closeModal('Keyboard shortcuts')
+        expect(await settings.isVisible()).toBe(false)
         await deliverPrimary('Comma')
         await settings.waitFor()
         await openReference()
         await dialog.waitFor()
         const referenceOnTop = await modalState()
         expect(referenceOnTop).toEqual({ focused: 'Keyboard shortcuts', foreground: 'Keyboard shortcuts' })
-        await compareOrRefreshGolden(join(expected, 'modal-layers.expected.md'),
-          `# Modal layers\n\n${JSON.stringify({ settingsOnTop, referenceOnTop }, null, 2)}`, mode)
-        await page.keyboard.press('Escape')
+        expect(await automaticFocusStyle()).toEqual(noFocusRing)
+        expect(await settings.evaluate(node => getComputedStyle(node).boxShadow)).toBe(settingsShadow)
+        await deliverPrimary('Comma')
+        expect(await page.getByRole('dialog').count()).toBe(2)
+        expect(await settings.isVisible()).toBe(true)
+        expect(await modalState()).toEqual(referenceOnTop)
+        expect(await automaticFocusStyle()).toEqual(noFocusRing)
+        await deliverPrimary('Slash')
         await dialog.waitFor({ state: 'hidden' })
         expect(await settings.isVisible()).toBe(true)
-        await page.keyboard.press('Escape')
-        await settings.waitFor({ state: 'hidden' })
+        const settingsAfterReferenceToggle = await modalState()
+        expect(settingsAfterReferenceToggle).toEqual({ focused: 'Settings', foreground: 'Settings' })
+        expect(await selectedCategory.getAttribute('data-dsh-automatic-focus')).toBe('')
+        expect(await automaticFocusStyle()).toEqual(noFocusRing)
+        await openReference()
+        await dialog.waitFor()
+        await closeModal('Keyboard shortcuts', 'menu')
+        expect(await settings.isVisible()).toBe(true)
+        const settingsAfterClose = await modalState()
+        expect(settingsAfterClose).toEqual({ focused: 'Settings', foreground: 'Settings' })
+        expect(await automaticFocusStyle()).toEqual(noFocusRing)
+        expect(await selectedCategory.getAttribute('data-dsh-automatic-focus')).toBe('')
+        expect(await settings.evaluate(node => getComputedStyle(node).boxShadow)).toBe(settingsShadow)
+        await closeModal('Settings')
+        const closedWindows = await page.evaluate(() => window.shortcutFixture.closedWindows)
+        await compareOrRefreshGolden(join(expected, 'modal-layers.expected.md'),
+          `# Modal layers\n\n${JSON.stringify({ settingsInitialFocus, settingsAfterEnter, dialogsAfterSettingsToggle, dialogsAfterReferenceToggle, referenceBlocksSettings, referenceOnTop, settingsAfterReferenceToggle, settingsAfterClose, closedWindows }, null, 2)}`, mode)
         await openReference()
         await dialog.waitFor()
         const rowHeights = () => dialog.getByRole('listitem').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))
@@ -169,11 +244,14 @@ it.each([
         await expect.poll(() => page.evaluate(() => window.shortcutFixture.recording)).toBe(true)
         expect(await rowHeights()).toEqual(heights)
         const firstRecorder = dialog.getByRole('button', { name: 'Press a shortcut', exact: true })
-        expect(await firstRecorder.evaluate(node => getComputedStyle(node).boxShadow)).toBe('none')
+        expect(await firstRecorder.evaluate(node => node === document.activeElement)).toBe(true)
+        expect(await automaticFocusStyle()).toEqual(noFocusRing)
         expect(await dialog.getByRole('button', { name: 'Cancel recording', exact: true }).count()).toBe(0)
         await compareOrRefreshGolden(join(expected, 'recording.expected.md'), await dialog.getByRole('group').ariaSnapshot(), mode)
         await page.keyboard.press(`${primary}+C`)
         await dialog.getByRole('group').waitFor({ state: 'hidden' })
+        expect(await dialog.evaluate(node => node === document.activeElement)).toBe(true)
+        expect(await automaticFocusStyle()).toEqual({ ...noFocusRing, shadow: referenceShadow })
         const saved: unknown = JSON.parse(await readFile(join(userData, 'keybindings.json'), 'utf8'))
         expect(saved).toMatchObject({ schemaVersion: 2, profiles: { [`desktop:${platform}`]: {
           'session.new': { code: 'KeyC', modifiers: [platform === 'macos' ? 'meta' : 'control'] },

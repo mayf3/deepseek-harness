@@ -173,18 +173,6 @@ export interface ConversationGroupDefinitions {
 
 const NO_GROUPS: ConversationGroupDefinitions = { entries: () => [], forTarget: () => undefined }
 
-// The class initializes package-internal read access to its private location index.
-let readOpenTurn: (assembler: ConversationNodeAssembler) => number | undefined
-
-/**
- * Read the current open turn without activating a View.
- * @param assembler - Session-owned incremental assembler.
- * @returns the latest turn number when its start is loaded and it remains open, otherwise undefined.
- */
-export function assemblerOpenTurn(assembler: ConversationNodeAssembler): number | undefined {
-  return readOpenTurn(assembler)
-}
-
 /**
  * Session-owned incremental engine that assembles business Contexts from a
  * contiguous Event window and materializes registered view snapshots.
@@ -208,15 +196,6 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
   private replacePending = true
   private timelineDirty = true
 
-  static {
-    readOpenTurn = (assembler) => {
-      const snapshot = assembler.locationIndex.snapshot()
-      const latest = snapshot.turnOrder.at(-1)
-      const turn = latest === undefined ? undefined : snapshot.turns.get(latest)
-      return turn?.status === 'open' && turn.start !== undefined ? turn.turn : undefined
-    }
-  }
-
   /**
    * @param eventDefinitions - live Event Definition registry.
    * @param viewDefinitions - live view builder registry.
@@ -228,6 +207,17 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
     private readonly groupDefinitions: ConversationGroupDefinitions = NO_GROUPS,
   ) {
     this.resetViewBuilders()
+  }
+
+  /**
+   * Read the current open turn without activating a View.
+   * @returns the latest turn number when its start is loaded and it remains open, otherwise undefined.
+   */
+  openTurn(): number | undefined {
+    const snapshot = this.locationIndex.snapshot()
+    const latest = snapshot.turnOrder.at(-1)
+    const turn = latest === undefined ? undefined : snapshot.turns.get(latest)
+    return turn?.status === 'open' && turn.start !== undefined ? turn.turn : undefined
   }
 
   /**
