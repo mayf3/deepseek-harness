@@ -56,9 +56,6 @@
     "4fb87a7468d8632606fe338680cfcdec41051b543052a0ec14c55862b43ed928": 1,
     "bb108d5dfeed36030bc4cf80fbbef2ef0cbcc72ab603bad208560b55bbf54875": 1
   },
-  "apps/desktop/tests/mandatory-update-window.spec.ts": {
-    "326597b335539db945b2e3b7c86638d40849d2077c0a5670d064e45486f4e407": 1
-  },
   "apps/desktop/tests/preload-windows.client.spec.ts": {
     "fdbd843bccc38b95f572f49587aacc29b9b0c67390d922ab5404a5935c747487": 1
   },
@@ -75,9 +72,6 @@
   },
   "apps/desktop/tests/update-http-executor.spec.ts": {
     "e46a2f88f5bcac6be4336f4a9b106f5cb17c1eec4610b29145dc413254471a94": 1
-  },
-  "apps/desktop/tests/update-overlay.spec.ts": {
-    "4000017f1f3dabd4bdf8eb91120cf4ff0dd09bad89d4683151f4785974d204a5": 1
   },
   "apps/desktop/tests/update-schedule.spec.ts": {
     "d8502ebfa0f7381727d04f3999c1a1e85c27ca770ef336e6cbe9dfd41d6b53bd": 1
@@ -736,12 +730,6 @@
   "packages/client/ui-sidebar-right/src/client/persistence.ts": {
     "58c93ff6942e5ed7b892ff2e537c4304dbf2d7366e55b5c08559452c9a25bbd8": 1
   },
-  "packages/client/ui-sidebar-right/tests/expand-button.client.spec.tsx": {
-    "0f8ea23b013318ec4b8d64e4ae2bd9d54a57b7a7d4be5b88ed0eb332ee42e76c": 1
-  },
-  "packages/client/ui-sidebar-right/tests/guide-body.client.spec.tsx": {
-    "8ba56a6ed5e4e5fa21ddca80c6bcd30e7c7f2117b8949e4175e3723e66c9d8ed": 1
-  },
   "packages/client/ui-sidebar-right/tests/seat.client.spec.tsx": {
     "1e3017afba65017e855900ad51f65999e712b08beb1b33bfe996d3cdb137a105": 1
   },
@@ -750,9 +738,6 @@
   },
   "packages/client/ui-sidebar-terminal/tests/terminal-cursor.client.spec.ts": {
     "c17c30832b2cde55b57c2c94083562feb1e941ade2d01268f1d49d31a6c6e2ca": 1
-  },
-  "packages/client/ui-sidebar-terminal/tests/terminal-guide.client.spec.tsx": {
-    "303c4744be6bc68cb05cd1c303a49602cac074bfaf34cf4d8e2b324a6acf45ff": 1
   },
   "packages/client/ui-sidebar-terminal/tests/terminal-theme.client.spec.ts": {
     "1fa946c54b497010d85a36dcb586ae0a99991d8eb4eab8ef709eb34af373fdc5": 1

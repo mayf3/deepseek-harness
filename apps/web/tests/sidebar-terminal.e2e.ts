@@ -78,6 +78,8 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     scaffold = await launchWebScaffold({ extraOverlayPath: fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url)) })
     browser = await chromium.launch()
     const context = await browser.newContext({ viewport: { width: 1680, height: 1000 }, locale: 'en-US', timezoneId: 'Asia/Shanghai' })
+    // These snapshots use the Linux Web shortcut defaults.
+    await context.addInitScript(() => { Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Linux x86_64' }) })
     page = await context.newPage()
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
@@ -473,9 +475,22 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     expect(alive(original)).toBe(false)
     transport.reconnect()
     await page.context().setOffline(false)
-    await page.reload({ waitUntil: 'load' })
-    await page.locator('[data-sidebar-right-expand]').click()
+    const environmentReady = Promise.withResolvers<undefined>()
+    const environmentUrl = new URL('/api/terminal/environment', scaffold.baseUrl).href
+    await page.route(environmentUrl, async (route) => {
+      await environmentReady.promise
+      await route.continue()
+    })
     const terminal = page.locator('[data-sidebar-terminal]')
+    try {
+      await page.reload({ waitUntil: 'load' })
+      await page.locator('[data-sidebar-right-expand]').click()
+      // The title starts discovery before the lazy body mounts; keep that request pending through mounting.
+      await terminal.getByRole('status').getByText('Reading terminal environment…', { exact: true }).waitFor()
+    } finally {
+      environmentReady.resolve(undefined)
+      await page.unrouteAll({ behavior: 'wait' })
+    }
     let unavailableSnapshot = ''
     // Mounting can refresh a failed recovered view; readiness and comparison use the same DOM sample.
     await expect.poll(async () => {

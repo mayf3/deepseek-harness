@@ -6,7 +6,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow } from 'electron'
-import { createUpdateOverlay } from '../../lib/types/update-overlay.js'
+import { DesktopUpdateOverlays } from '../../lib/types/update-overlay.js'
 
 const directory = fileURLToPath(new URL('../../.desktop-build/qualification/', import.meta.url))
 mkdirSync(directory, { recursive: true })
@@ -34,7 +34,7 @@ async function main() {
     phase = `parent load (${initiallyVisible})`
     await parent.loadURL('data:text/html,<h1>Update overlay visibility</h1><input aria-label="Keyboard probe">')
     const initialShowListeners = parent.listenerCount('show')
-    const overlay = createUpdateOverlay(parent, undefined, 'Overlay qualification', false)
+    const overlay = new DesktopUpdateOverlays().create(parent, undefined, 'Overlay qualification', false)
     windows.push(overlay)
     const ready = once(overlay, 'ready-to-show')
     const initiallyShown = initiallyVisible ? once(overlay, 'show') : undefined
@@ -43,7 +43,7 @@ async function main() {
     phase = `overlay ready (${initiallyVisible})`
     await ready
     await initiallyShown
-    // A renderer round trip observes the CSS request already queued by createUpdateOverlay.
+    // A renderer round trip observes the CSS request already queued by the overlay.
     const filter = () => parent.webContents.executeJavaScript('getComputedStyle(document.body).filter')
     const loaded = { parent: parent.isVisible(), overlay: overlay.isVisible(), filter: await filter() }
     if (initiallyVisible) {
