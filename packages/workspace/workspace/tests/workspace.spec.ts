@@ -1344,6 +1344,19 @@ describe('first-use Workspace preparation', () => {
     expect((await h.registry.initializeDefault(h.resolveDirectory))?.path).toBe(path)
   })
 
+  it('titles the Workspace after the requested directory when that path is a symlink', async () => {
+    const h = await firstUse()
+    const target = join(h.directoryRoot, 'elsewhere')
+    await mkdir(target)
+    await mkdir(join(h.directoryRoot, 'nested'))
+    await symlink(target, join(h.directoryRoot, 'nested', 'Workspace'))
+    const workspace = await h.registry.initializeDefault(h.resolveDirectory)
+    expect(workspace?.path).toBe(await realpath(target))
+    // Not 'elsewhere': the title names the directory the caller asked for, so
+    // the caller can still recognize a Workspace it has not renamed.
+    expect(workspace?.title).toBe('Workspace')
+  })
+
   it.each(['persisted', 'live'] as const)('refuses registration when a %s Session appears during directory preparation', async (kind) => {
     const h = await firstUse()
     const arrived = header('arrived-during-preparation')

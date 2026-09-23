@@ -25,7 +25,7 @@ Ineligible first use returns no Workspace without a failure dialog. Preparation 
 - Creating only when sending avoids unused directories but requires a separate local draft, transfer into a Session, and coordination of the first submission. Startup creation accepts the early filesystem effect and uses ordinary Session input throughout.
 - Falling back to `<home>/Documents` when system lookup is unavailable would choose an unverified Documents location; deployments that need another directory use the explicit Host override.
 - Inferring first use from visible sidebar rows would ignore archived, hidden, and cwd-less Sessions.
-- Using the localized path as the initialization marker would allow language changes or deletion to create another default.
+- Using the initialization directory's path as the initialization marker would allow renaming, relocation, or deletion to create another default.
 - Changing a Session's cwd after creation would change the meaning of its recorded tools and attachments.
 
 ## Consequences

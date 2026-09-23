@@ -123,7 +123,7 @@ Sessions get their cwd at create time from whoever creates them, not from this r
 
 ## Default Workspace initialization
 
-The controller's `initializeDefault` takes no request: it owns the fixed `default-workspace` directory name, resolves the Documents location, and asks the registry to initialize once. The registry accepts a directory resolver, derives the initial title from the resolved directory's final segment, and commits the registration with its durable identity. No language reaches the Host — browser consumers label a Workspace still carrying that automatic title through the controller's `workspaceDisplayTitle`, so only the on-screen name follows the reader's language. [First-use behavior and configuration](../../packages/api/workspace-controller/README.md#first-use-workspace) describe reuse and failure handling.
+The controller's `initializeDefault` takes no request: it owns the fixed `default-workspace` directory name, resolves the Documents location, and asks the registry to initialize once. The registry accepts a directory resolver, derives the initial title from the requested directory's final segment rather than the canonical one, and commits the registration with its durable identity. No language reaches the Host — browser consumers label a Workspace still carrying that automatic title through the controller's `workspaceDisplayTitle`, so only the on-screen name follows the reader's language. [First-use behavior and configuration](../../packages/api/workspace-controller/README.md#first-use-workspace) describe reuse and failure handling.
 
 ## Session pinning
 
@@ -500,8 +500,9 @@ async create(path: string, title?: string): Promise<Workspace>
  * @param resolveDirectory - resolve the absolute directory; called only for
  * eligible creation, inside the registry mutation queue. Missing directories
  * are created recursively before registration, and the initial title is the
- * directory's own final segment. After resolution, caller cancellation does
- * not roll back creation or registration.
+ * requested directory's own final segment — not the canonical one, so a
+ * symlink at that path does not retitle the Workspace after its target.
+ * After resolution, caller cancellation does not roll back creation or registration.
  * @returns the initialized Workspace, or undefined when automatic creation is ineligible.
  */
 initializeDefault(resolveDirectory: () => Promise<string>): Promise<Workspace | undefined>

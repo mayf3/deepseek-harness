@@ -248,8 +248,9 @@ export class WorkspaceRegistry extends Service {
    * @param resolveDirectory - resolve the absolute directory; called only for
    * eligible creation, inside the registry mutation queue. Missing directories
    * are created recursively before registration, and the initial title is the
-   * directory's own final segment. After resolution, caller cancellation does
-   * not roll back creation or registration.
+   * requested directory's own final segment — not the canonical one, so a
+   * symlink at that path does not retitle the Workspace after its target.
+   * After resolution, caller cancellation does not roll back creation or registration.
    * @returns the initialized Workspace, or undefined when automatic creation is ineligible.
    */
   initializeDefault(resolveDirectory: () => Promise<string>): Promise<Workspace | undefined> {
@@ -267,7 +268,7 @@ export class WorkspaceRegistry extends Service {
       const canonical = await realpathNormalize(path)
       // A Session can start outside the registry queue while directory preparation awaits I/O.
       if ((await this.listStoredHeaders()).length > 0 || sessions.list().length > 0) return undefined
-      return this.createCanonical(canonical, undefined, true)
+      return this.createCanonical(canonical, defaultWorkspaceTitle(path), true)
     })
   }
 

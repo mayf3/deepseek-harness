@@ -123,7 +123,7 @@ interface Workspace {
 
 ## 默认工作区初始化
 
-控制器的 `initializeDefault` 不接受请求参数：它拥有固定目录名 `default-workspace`，解析 Documents 位置，并请求注册表执行一次初始化。注册表接收目录解析器，以解析出目录的最后一段作为初始标题，并将登记与持久化身份一起提交。语言不会传到 Host——浏览器消费方通过控制器的 `workspaceDisplayTitle` 为仍保留该自动标题的工作区加标签，因此只有屏幕上的名称跟随读者语言。[首次使用行为与配置](../../packages/api/workspace-controller/README.zh.md#first-use-workspace)说明复用和失败处理。
+控制器的 `initializeDefault` 不接受请求参数：它拥有固定目录名 `default-workspace`，解析 Documents 位置，并请求注册表执行一次初始化。注册表接收目录解析器，以所请求目录（而非规范路径）的最后一段作为初始标题，并将登记与持久化身份一起提交。语言不会传到 Host——浏览器消费方通过控制器的 `workspaceDisplayTitle` 为仍保留该自动标题的工作区加标签，因此只有屏幕上的名称跟随读者语言。[首次使用行为与配置](../../packages/api/workspace-controller/README.zh.md#first-use-workspace)说明复用和失败处理。
 
 ## 会话置顶
 
@@ -500,8 +500,9 @@ async create(path: string, title?: string): Promise<Workspace>
  * @param resolveDirectory - resolve the absolute directory; called only for
  * eligible creation, inside the registry mutation queue. Missing directories
  * are created recursively before registration, and the initial title is the
- * directory's own final segment. After resolution, caller cancellation does
- * not roll back creation or registration.
+ * requested directory's own final segment — not the canonical one, so a
+ * symlink at that path does not retitle the Workspace after its target.
+ * After resolution, caller cancellation does not roll back creation or registration.
  * @returns the initialized Workspace, or undefined when automatic creation is ineligible.
  */
 initializeDefault(resolveDirectory: () => Promise<string>): Promise<Workspace | undefined>

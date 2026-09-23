@@ -3538,7 +3538,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'initializeDefault(resolveDirectory: () => Promise<string>): Promise<Workspace | undefined>',
         description: 'Initialize the default Workspace only while both the registry and Session history are empty. Repeated requests reuse its durable identity; deleting that registration permanently disables automatic creation.',
-        parameters: [{ name: 'resolveDirectory', description: 'resolve the absolute directory; called only for eligible creation, inside the registry mutation queue. Missing directories are created recursively before registration, and the initial title is the directory\'s own final segment. After resolution, caller cancellation does not roll back creation or registration.' }],
+        parameters: [{ name: 'resolveDirectory', description: 'resolve the absolute directory; called only for eligible creation, inside the registry mutation queue. Missing directories are created recursively before registration, and the initial title is the requested directory\'s own final segment — not the canonical one, so a symlink at that path does not retitle the Workspace after its target. After resolution, caller cancellation does not roll back creation or registration.' }],
         returns: 'the initialized Workspace, or undefined when automatic creation is ineligible.',
       },
       {
