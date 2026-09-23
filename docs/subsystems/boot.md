@@ -89,6 +89,21 @@ Source: [`packages/boot/hmr/src/index.ts`](../../packages/boot/hmr/src/index.ts)
 Manage profile files and apply their declared reload lifecycle.
 
 ```ts cordis-catalog
+/** Read exact plugin-version exemptions saved in this profile.
+ * @returns Accepted package-name@version keys with the runtime versions they may run on, and any
+ * record or file problem the reader rejected, which the caller reports instead of failing.
+ */
+@Remote listVersionExemptions(): { exemptions: Record<string, string[]>; warnings: string[] }
+
+/** Grant or revoke one exact plugin/runtime exemption and reevaluate live plugins.
+ * @param packageVersion Exact manifest package name followed by @ and its version; never an installation spec or alias.
+ * @param runtimeVersion Exact current DSH version for grants; revocation may name a previous runtime.
+ * @param enabled Whether to grant rather than revoke the exemption.
+ * @param acceptRisk Required true for grants after the user accepts possible crashes and data loss.
+ * @returns Saved and runtime outcomes. Startup-only profiles require restart.
+ */
+@Remote setVersionExemption(packageVersion: string, runtimeVersion: string, enabled: boolean, acceptRisk?: boolean): Promise<ChangeResult>
+
 /** Read current plugins, including why a row cannot be changed through the profile patch.
  * @returns Current runtime entries with persistent patch targets.
  */

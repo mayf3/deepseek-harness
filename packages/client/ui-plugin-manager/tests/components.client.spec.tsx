@@ -42,6 +42,10 @@ function row(overrides: Partial<PackageRow> = {}): PackageRow {
   return { entryId: 'include:sidebar' as PluginEntryId, rowId: 'sidebar', moduleName: 'dsh-better-sidebar', enabled: true, phase: 'active', ...overrides }
 }
 
+const INCOMPATIBLE = { name: 'dsh-late', version: '2.0.0', runtimeVersion: '0.1.0', peers: { '@deepseek-ai/dsh': '^0.2.0', '@deepseek-ai/dsh-core': '^0.2.0' } }
+/** The English sentence an incompatibility of {@link INCOMPATIBLE}, optionally renamed, reads as. */
+const incompatibleText = (name = INCOMPATIBLE.name): string => en.reasonIncompatibleVersion
+  .replace('{plugin}', `${name}@2.0.0`).replace('{runtime}', '0.1.0').replace('{peers}', '@deepseek-ai/dsh ^0.2.0, @deepseek-ai/dsh-core ^0.2.0')
 const MIRROR = 'https://registry.npmmirror.com/'
 const OFFICIAL = 'https://registry.npmjs.org/'
 
@@ -755,6 +759,11 @@ describe('PluginManagerPage', () => {
     expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonNotBundle}`)).toBeTruthy()
     set({ packages: [pkg({ error: { code: 'operation-error' } })] })
     expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonOperationError}`)).toBeTruthy()
+    // An incompatibility reads from its structured packages in the dictionary's words, one sentence per package.
+    set({ packages: [pkg({ error: { code: 'incompatible-version', incompatible: [INCOMPATIBLE, { ...INCOMPATIBLE, name: 'other' }] } })] })
+    expect(within(detail).getByText(`${en.reasonLabel}: ${incompatibleText()} ${incompatibleText('other')}`)).toBeTruthy()
+    set({ packages: [pkg({ error: { code: 'incompatible-version' } })] })
+    expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonIncompatibleVersionUnnamed}`)).toBeTruthy()
     fireEvent.click(within(detail).getByRole('button', { name: en.backToList }))
     expect(document.querySelector('[data-plugin-detail]')).toBeNull()
     // A bundle that leaves the list drops back to the cards.
@@ -1046,6 +1055,12 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.reasonNotBundle)).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: 'ERR_PNPM_ADDING_TO_ROOT', code: 'operation-error' } } })
     expect(screen.getByText('ERR_PNPM_ADDING_TO_ROOT')).toBeTruthy()
+    // A compatibility refusal outranks the kind pnpm's exit was classified as.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed',
+      failure: { reason: '', code: 'incompatible-version', incompatible: [INCOMPATIBLE], kind: 'unknown' } } })
+    expect(screen.getByText(incompatibleText())).toBeTruthy()
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: '', code: 'incompatible-version' } } })
+    expect(screen.getByText(en.reasonIncompatibleVersionUnnamed)).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: 'the transport said so' } } })
     expect(screen.getByText('the transport said so')).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: '' } } })
@@ -1289,6 +1304,8 @@ describe('PluginManagerPage', () => {
       expect(screen.getByRole('alert').textContent).toContain(en.failedEnable.replace('{reason}', 'the tree rejected it'))
       set({ notice: { kind: 'failed', action: 'uninstall', code: 'bundle-in-use', reason: '', packageName: 'pkg-1', seq: 5 } })
       expect(screen.getByRole('alert').textContent).toContain(en.failedUninstall.replace('{reason}', en.reasonBundleInUse))
+      set({ notice: { kind: 'failed', action: 'enable', code: 'incompatible-version', incompatible: [INCOMPATIBLE], reason: '', packageName: 'pkg-1', seq: 5 } })
+      expect(screen.getByRole('alert').textContent).toContain(en.failedEnable.replace('{reason}', incompatibleText()))
       set({ notice: { kind: 'failed', action: 'rowDisable', code: 'operation-error', reason: 'EACCES', packageName: 'pkg-1', seq: 6 } })
       expect(screen.getByRole('alert').textContent).toContain(en.failedRowDisable.replace('{reason}', 'EACCES'))
       set({ notice: { kind: 'failed', action: 'disable', reason: '', packageName: 'pkg-1', seq: 7 } })

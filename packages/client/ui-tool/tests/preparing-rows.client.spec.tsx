@@ -27,7 +27,7 @@ function preparation(name: string): Props {
   return {
     phase: 'preparing', callId: 'call', toolName: name,
     block: { phase: 'preparing', callId: 'call', name, turn: 1, step: 1, time: 1, subCalls: [] },
-    t: makeTranslate(en, common), useDisclosure, openFile: vi.fn(), loadImage: vi.fn(),
+    t: makeTranslate(en, common), useDisclosure, useToolCallArgumentsPartial: vi.fn(() => ''), openFile: vi.fn(), loadImage: vi.fn(),
     useTodoHistory: vi.fn(), useSession: vi.fn(() => false), renderSlot: vi.fn(() => null),
   } as Props
 }
@@ -53,16 +53,19 @@ describe('argument-free tool preparation', () => {
     expect(view.container.querySelector('[aria-expanded="true"]')).toBeNull()
   })
 
-  it('keeps the common write row mounted as complete arguments and a result arrive', () => {
+  it('replaces preparation with the dispatched row and retains that row through the result', () => {
     const props = preparation('write')
     const view = render(<FileMutationRow {...props} />)
-    const row = view.container.querySelector('[data-tool="write"]')
+    const preparingRow = view.container.querySelector('[data-tool="write"]')
+    vi.mocked(props.useToolCallArgumentsPartial).mockClear()
     const started: StartedToolCall = {
       phase: 'start', callId: 'call', name: 'write', turn: 1, step: 1, time: 2, subCalls: [],
       argsRaw: '{"file_path":"hello.txt","content":"hello"}',
     }
     view.rerender(<FileMutationRow {...props} phase="start" block={started} />)
-    expect(view.container.querySelector('[data-tool="write"]')).toBe(row)
+    const row = view.container.querySelector('[data-tool="write"]')
+    expect(row).not.toBe(preparingRow)
+    expect(props.useToolCallArgumentsPartial).not.toHaveBeenCalled()
     expect(view.getByText('hello.txt')).toBeTruthy()
     expect(view.container.querySelector('[data-state="running"]')).not.toBeNull()
     const result: ToolResultNode = {
@@ -71,6 +74,7 @@ describe('argument-free tool preparation', () => {
     }
     view.rerender(<FileMutationRow {...props} phase="result" block={result} />)
     expect(view.container.querySelector('[data-tool="write"]')).toBe(row)
+    expect(props.useToolCallArgumentsPartial).not.toHaveBeenCalled()
     expect(view.container.querySelector('[data-state="ok"]')).not.toBeNull()
   })
 

@@ -108,6 +108,9 @@ describe.skipIf(!existsSync(builtHost))('built Desktop welcome flow', () => {
           nodeVersion: process.versions.node,
           hostProtocolVersion: DESKTOP_HOST_PROTOCOL_VERSION,
         },
+        // This suite assembles a synthetic project on hosts that prepare no Desktop target, and
+        // nothing it exercises compares the descriptor's platform/arch outside packaging.
+        target: 'mac-x64',
       })
       cpSync(join(repository, 'packages/skill/skill-office/assets'), join(root, 'runtime/office-skills'), { recursive: true })
       const nodeBin = join(root, 'runtime/primary-runtime/dependencies/node/bin')

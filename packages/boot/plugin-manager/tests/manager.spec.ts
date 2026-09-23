@@ -12,7 +12,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import {
   boot, composeEntries, initProfile, loadProfileDirectory, readProfilePatches, readProfileManifest,
-  reconcileProfilePatches, OPTIONAL_BUNDLES, PluginPackages, readPluginMeta,
+  reconcileProfilePatches, OPTIONAL_BUNDLES, PluginPackages, readPluginMeta, getDshRuntimeVersion,
   type ProfileContext, type RuntimeResolution,
 } from '@deepseek-ai/dsh-app-boot'
 import PluginManager, { type Config, type PluginChange, type PluginInstallLogChunk, type PluginInstallProgress, type PluginInstallRequestId } from '../src/index.ts'
@@ -430,6 +430,7 @@ it('retains installed dependencies when toggling a bundle and appends it when re
   bundle('third', [])
   await manager.setBundleEnabled('third', true)
   expect(await manager.setBundleEnabled('extra', false)).toMatchObject({ changed: true, application: 'applied' })
+  expect(await manager.setBundleEnabled('extra', false)).toMatchObject({ changed: false, application: 'applied' })
   expect(readProfileManifest('test', dir).dependencies).toEqual({ extra: '1.0.0' })
   expect((await manager.listPlugins()).some(row => row.patchId === 'managed')).toBe(false)
   await manager.setBundleEnabled('extra', true)
@@ -1321,4 +1322,75 @@ it('answers the configured registries in pnpm\'s comparison form with what pnpm 
   expect(await manager.registries()).toEqual({ registry: 'https://npm.corp.example/', fallbackRegistries: [], resolved: OFFICIAL })
   expect(() => PluginManager.Config({ registry: 'npm.corp.example' })).toThrow()
   expect(() => PluginManager.Config({ fallbackRegistries: ['ftp://npm.corp.example/'] })).toThrow()
+})
+
+it.each(['live', 'startup'] as const)('requires exact risk acknowledgement and preserves exemptions in a %s profile', async (mode) => {
+  const { manager, dir, ctx } = await fixture(mode, false, undefined, {}, undefined, (dir) => {
+    const file = join(dir, 'node_modules', 'extra', 'package.json')
+    const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    writeFileSync(file, JSON.stringify({ ...metadata, peerDependencies: { '@deepseek-ai/dsh': '999.0.0' } }))
+  })
+  const runtime = getDshRuntimeVersion()
+  const managed = () => [...ctx.loader.entries()].find(entry => entry.id === 'include:managed')
+  // The bundle's own peers are incompatible, so its whole layer is skipped and contributes no row.
+  expect(managed()).toBeUndefined()
+  expect((await manager.listBundles()).find(bundle => bundle.name === 'extra')?.error).toEqual({
+    code: 'incompatible-version',
+    incompatible: [{ name: 'extra', version: '1.0.0', runtimeVersion: runtime, peers: { '@deepseek-ai/dsh': '999.0.0' } }],
+  })
+  expect(await manager.setBundleEnabled('extra', true)).toMatchObject({ changed: false, application: 'failed' })
+  expect(await manager.setVersionExemption('extra@1.0.0', runtime, true)).toMatchObject({ changed: false, application: 'failed' })
+  expect(manager.listVersionExemptions()).toEqual({ exemptions: {}, warnings: [] })
+  expect(existsSync(join(dir, 'compatibility.json'))).toBe(false)
+  expect(await manager.setVersionExemption('extra@1.0.0', runtime, true, true)).toMatchObject({
+    changed: true, application: mode === 'live' ? 'applied' : 'restart-required',
+  })
+  expect(manager.listVersionExemptions()).toEqual({ exemptions: { 'extra@1.0.0': [runtime] }, warnings: [] })
+  // The grant is persisted only in the profile's compatibility file, never in its package manifest.
+  expect(JSON.parse(readFileSync(join(dir, 'compatibility.json'), 'utf8'))).toEqual({ 'extra@1.0.0': [runtime] })
+  expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core', 'extra'])
+  // `setVersionExemption` reconciles the profile itself, so a live tree re-admits the bundle here;
+  // no manifest watch or Loader instrumentation participates. A startup-only profile keeps it out until restart.
+  if (mode === 'live') expect(managed()?.fiber?.state).toBe(2)
+  else expect(managed()).toBeUndefined()
+  expect(await manager.setVersionExemption('extra@1.0.0', runtime, false)).toMatchObject({ changed: true })
+  expect(manager.listVersionExemptions()).toEqual({ exemptions: {}, warnings: [] })
+  expect(JSON.parse(readFileSync(join(dir, 'compatibility.json'), 'utf8'))).toEqual({})
+  if (mode === 'live') expect(managed()).toBeUndefined()
+})
+
+it('reports a package run refused for compatibility as a typed refusal', async () => {
+  const { manager } = await fixture()
+  const incompatible = [{ name: 'dsh-x', version: '2.0.0', runtimeVersion: getDshRuntimeVersion(), peers: { '@deepseek-ai/dsh': '999.0.0' } }]
+  const install = vi.spyOn(operations, 'runProfilePnpm').mockResolvedValue({
+    exitCode: 1, output: 'dsh: installation rejected', truncated: false, logPath: 'pnpm.log', kind: 'unknown', incompatible,
+  })
+  onTestFinished(() => { install.mockRestore() })
+  const result = await manager.installBundle('dsh-x')
+  expect(result).toMatchObject({ application: 'failed', changed: false, error: { code: 'incompatible-version', incompatible } })
+  expect(install).toHaveBeenCalledTimes(1)
+})
+
+it.each([false, true])('rechecks installed bundle peers before accepting a disabled installation (exempted=%s)', async (exempted) => {
+  const { manager, dir, bundle } = await fixture()
+  if (exempted) await manager.setVersionExemption('incompatible@1.0.0', getDshRuntimeVersion(), true, true)
+  const before = readFileSync(join(dir, 'package.json'), 'utf8')
+  const install = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async () => {
+    bundle('incompatible', [])
+    const file = join(dir, 'node_modules', 'incompatible', 'package.json')
+    const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    writeFileSync(file, JSON.stringify({ ...metadata, peerDependencies: { '@deepseek-ai/dsh': '<0.0.0' } }))
+    const profile = readProfileManifest('test', dir)
+    profile.dependencies = { ...profile.dependencies, incompatible: '1.0.0' }
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(profile))
+    return { exitCode: 0, output: 'installed', truncated: false, logPath: join(dir, 'pnpm.log') }
+  })
+  onTestFinished(() => { install.mockRestore() })
+  const result = await manager.installBundle('incompatible', { enabled: false })
+  expect(result).toMatchObject({ application: exempted ? 'applied' : 'failed', changed: exempted })
+  if (!exempted) {
+    expect(result.error).toMatchObject({ code: 'incompatible-version', incompatible: [{ name: 'incompatible', version: '1.0.0' }] })
+    expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(before)
+  }
+  expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core', 'extra'])
 })
