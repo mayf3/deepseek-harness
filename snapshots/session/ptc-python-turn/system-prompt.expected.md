@@ -264,7 +264,7 @@ class JobOutputOutput(TypedDict):
     job: JobOutputOutputJob
 
 class ListAgentsArgs(TypedDict):
-    # children (default) lists direct children only; descendants walks reachable child catalogs.
+    # children (default) lists direct children only; descendants walks the complete tree below you.
     scope: NotRequired[Literal["children", "descendants"]]
     # Additional keys beyond those declared are allowed.
 
@@ -534,7 +534,7 @@ class Tools(Protocol):
     async def job_output(self, args: JobOutputArgs) -> JobOutputOutput:
         """Read a background job. Stream jobs return only output since the previous read; final-output jobs return their result after settlement. Every response ends with `[status: ...]`. Reads are non-blocking unless `wait: true`, which waits up to the configured cap."""
     async def list_agents(self, args: ListAgentsArgs) -> list[ListAgentsOutput1 | ListAgentsOutput2]:
-        """List your continuable background subagents by durable id and label. Use it to recall which ones you started, not to poll for completion — you are told when one finishes. Status comes from the live registry: running means the agent is working right now; inactive means no turn is executing, whether the child is loaded or must be resumed. inactive does not describe task completion, success, failure, or waiting for other agents. A `send_message` steers a running child at its nearest step boundary or starts or resumes a turn for an inactive child, and a direct child remains a `send_message` candidate in every status. The snapshot is not a delivery promise — `send_message` performs the authoritative check and may still fail. Scope `descendants` lists reachable catalog descendants in stable pre-order, annotating each entry with its parent session id and depth. Unknown modes and unreadable child catalogs produce diagnostics only in this scope; an unreadable catalog stops that branch, including for one-shot children. Sessions outside these catalogs, including ordinary session forks and their descendants, are omitted. You may use `send_message` only for depth-1 entries; deeper entries are candidates for `interrupt_agent` only."""
+        """List your continuable background subagents by durable id and label. Use it to recall which ones you started, not to poll for completion — you are told when one finishes. Status comes from the live registry: running means the agent is working right now; inactive means no turn is executing, whether the child is loaded or must be resumed. inactive does not describe task completion, success, failure, or waiting for other agents. A `send_message` steers a running child at its nearest step boundary or starts or resumes a turn for an inactive child, and a direct child remains a `send_message` candidate in every status. The snapshot is not a delivery promise — `send_message` performs the authoritative check and may still fail. Children that could not be read are reported as diagnostics only in `descendants` scope. Scope `descendants` walks the whole tree below you in stable pre-order, annotating each entry with its durable direct-parent session id and depth. You may use `send_message` only for depth-1 entries; deeper entries are candidates for `interrupt_agent` only."""
     async def read(self, args: ReadArgs) -> ReadOutput:
         """Read a UTF-8 text file and return line-numbered content."""
     async def read_image(self, args: ReadImageArgs) -> ReadImageOutput:

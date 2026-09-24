@@ -93,18 +93,16 @@ export function apply(ctx: Context): void {
       + 'or waiting for other agents. A `send_message` steers a running child at its nearest step boundary '
       + 'or starts or resumes a turn for an inactive child, and a direct child remains a `send_message` '
       + 'candidate in every status. The snapshot is not a delivery '
-      + 'promise — `send_message` performs the authoritative check and may still fail. Scope `descendants` '
-      + 'lists reachable catalog descendants in stable pre-order, annotating each entry with its parent '
-      + 'session id and depth. Unknown modes and unreadable child catalogs produce diagnostics only in this '
-      + 'scope; an unreadable catalog stops that branch, including for one-shot children. Sessions outside '
-      + 'these catalogs, including ordinary session forks and their descendants, are omitted. '
-      + 'You may use `send_message` only for depth-1 entries; deeper entries are '
+      + 'promise — `send_message` performs the authoritative check and may still fail. Children that could '
+      + 'not be read are reported as diagnostics only in `descendants` scope. Scope `descendants` '
+      + 'walks the whole tree below you in stable pre-order, annotating each entry with its durable direct-parent '
+      + 'session id and depth. You may use `send_message` only for depth-1 entries; deeper entries are '
       + 'candidates for `interrupt_agent` only.',
     parameters: {
       scope: {
         type: 'string',
         enum: ['children', 'descendants'],
-        description: 'children (default) lists direct children only; descendants walks reachable child catalogs.',
+        description: 'children (default) lists direct children only; descendants walks the complete tree below you.',
       },
     },
     output: {

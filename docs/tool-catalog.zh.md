@@ -2103,7 +2103,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 ### `list_agents`
 
-按持久 id 和标签列出你的可继续后台 subagent。用它回忆你启动过哪些 subagent，而不是轮询完成情况——subagent 完成时你会被告知。状态来自实时注册表：running 表示 agent 此刻正在工作；inactive 表示没有轮次在执行，包括已加载和需要恢复的 child。inactive 不表示任务完成、成功、失败或等待其他 agent。`send_message` 会在运行中 child 的最近 step 边界 steer 消息，或为 inactive child 启动或恢复轮次，且无论处于哪种状态，直接子级都仍可作为 `send_message` 的目标。该快照并非投递承诺；`send_message` 会执行权威检查，仍可能失败。`descendants` 作用域按稳定前序列出目录可达后代，并为每个条目标注其父会话 id 和深度。未知模式和无法读取的子级目录仅在此作用域中产生诊断；无法读取的目录会停止该分支，一次性子级也不例外。目录之外的 Session（包括普通会话 fork 及其后代）会被省略。只有深度为 1 的条目可以使用 `send_message`；更深的条目只能作为 `interrupt_agent` 的候选目标。
+按持久 id 和标签列出你的可继续后台 subagent。用它回忆你启动过哪些 subagent，而不是轮询完成情况——subagent 完成时你会被告知。状态来自实时注册表：running 表示 agent 此刻正在工作；inactive 表示没有轮次在执行，包括已加载和需要恢复的 child。inactive 不表示任务完成、成功、失败或等待其他 agent。`send_message` 会在运行中 child 的最近 step 边界 steer 消息，或为 inactive child 启动或恢复轮次，且无论处于哪种状态，直接子级都仍可作为 `send_message` 的目标。该快照并非投递承诺；`send_message` 会执行权威检查，仍可能失败。无法读取的子级仅在 `descendants` 作用域中作为诊断信息报告。`descendants` 作用域会按稳定的前序顺序遍历你下方的整棵树，并为每个条目标注其持久的直接父会话 id 和深度。只有深度为 1 的条目可以使用 `send_message`；更深的条目只能作为 `interrupt_agent` 的候选目标。
 
 ```json
 {
@@ -2111,7 +2111,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
   "properties": {
     "scope": {
       "type": "string",
-      "description": "children (default) lists direct children only; descendants walks reachable child catalogs.",
+      "description": "children (default) lists direct children only; descendants walks the complete tree below you.",
       "enum": [
         "children",
         "descendants"
