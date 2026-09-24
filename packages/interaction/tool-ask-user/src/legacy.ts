@@ -8,8 +8,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
-const description = 'Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding. '
-  + 'Send one or more questions, each with a stable id that will be echoed in the answer.'
+const description = 'Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding.'
 
 /**
  * Register the pre-timeout blocking tool definition selected by Cordis config.
