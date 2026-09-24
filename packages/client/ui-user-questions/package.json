@@ -33,7 +33,8 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-renderer",
-        "@deepseek-ai/dsh-client-ui-session"
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-chat"
       ],
       "platform": "web"
     }
@@ -67,7 +68,9 @@
     "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "clsx": "^2.0.0",
-    "@deepseek-ai/dsh-llm": "workspace:*"
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-chat": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-tool": "workspace:*"
   },
   "files": [
     "lib/index.js",

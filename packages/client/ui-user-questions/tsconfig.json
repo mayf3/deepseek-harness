@@ -33,6 +33,9 @@
       "path": "../store"
     },
     {
+      "path": "../ui-chat/tsconfig.client.json"
+    },
+    {
       "path": "../ui-conversation/tsconfig.client.json"
     },
     {
@@ -46,6 +49,9 @@
     },
     {
       "path": "../ui-session"
+    },
+    {
+      "path": "../ui-tool"
     },
     {
       "path": "../../llm/llm"
