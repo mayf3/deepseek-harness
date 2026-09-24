@@ -75,8 +75,7 @@
     "@deepseek-ai/dsh-attachment": "workspace:*",
     "clsx": "^2.0.0",
     "@deepseek-ai/dsh-ptc-runtime": "workspace:*",
-    "@deepseek-ai/dsh-token-meter": "workspace:*",
-    "@deepseek-ai/dsh-user-questions": "workspace:*"
+    "@deepseek-ai/dsh-token-meter": "workspace:*"
   },
   "files": [
     "lib/index.js",

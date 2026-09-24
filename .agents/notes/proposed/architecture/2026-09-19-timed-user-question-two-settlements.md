@@ -1,6 +1,6 @@
 # Agent Note: Timed user questions as two settlements
 
-Status: implemented
+Status: proposed
 
 English | [中文](2026-09-19-timed-user-question-two-settlements.zh.md)
 
@@ -10,9 +10,9 @@ A question can block an agent even when useful work does not depend on the answe
 
 The foreground tool result and the eventual answer have different lifetimes. A `user-questions/request` waterfall settles once; keeping it alive after returning pending creates a second answer path that outlives its caller. Countdown, focus, and editing also have different owners from durable question state.
 
-## Decision
+## Proposal
 
-Foreground answers use the existing Remote Event waterfall. A timeout ends that request and returns pending; a later answer uses a business RPC that steers a durable user message. The claim stream controls the foreground wait only. It neither transports answers nor replaces the Remote Event.
+Keep foreground answers on the existing Remote Event waterfall. A timeout ends that request and returns pending; a later answer uses a business RPC that steers a durable user message. The claim stream controls the foreground wait only. It neither transports answers nor replaces the Remote Event.
 
 ### Modes and scope
 
@@ -96,17 +96,15 @@ This decision adds no process-role field, independent-layout flag, user-message 
 
 **A dedicated late-reply Session event beside the inbox message.** The inbox splice and admitted user message already record the reply. A third event duplicates the same fact and adds another persistence type.
 
-## Verification
+## Acceptance criteria
 
-- [Service tests](../../../../packages/interaction/user-questions/tests/user-questions.spec.ts) and [wait tests](../../../../packages/interaction/user-questions/tests/timed-wait.spec.ts) cover claimed and unclaimed waits, last-claim disconnect, cancellation, timeout error mapping, continued-only answers, and exact answer-id validation.
-- [Projection tests](../../../../packages/interaction/user-questions/tests/projection.spec.ts) distinguish legacy and timed schemas and cover pending, answered, other failures, resume repair, and duplicate inbox/message settlement.
-- [Client listener tests](../../../../packages/client/ui-user-questions/tests/browser-plugin.client.spec.ts) and [composer tests](../../../../packages/client/ui-user-questions/tests/user-questions-composer.client.spec.tsx) cover claim retention through Host acceptance, focus before handshake, indefinite waits, draft retention, RPC resubmission, and panel actions.
-- [Grouping tests](../../../../packages/client/ui-chat/tests/process-groups.client.spec.ts) and [browser replay](../../../../apps/web/tests/question-composer.e2e.ts) cover one rendered reply with both projections retained, ordinary collapsed placement, disclosure ordering, and the original tool row's read-only late-answer panel.
-- Legacy round-trip, cancellation, plan-review intent, and Session-remount regressions remain covered by their owning tests. Live multi-Client delivery races and real Host restart remain integration coverage gaps beyond isolated lifecycle and projection tests.
+- Service tests cover claimed and unclaimed waits, last-claim disconnect, cancellation, timeout error mapping, continued-only answers, and exact answer-id validation.
+- Projection tests distinguish legacy and timed schemas and cover pending, answered, other failures, resume repair, and duplicate inbox/message settlement.
+- Client tests cover claim retention through Host acceptance, focus before handshake, indefinite waits, draft retention, RPC resubmission, and panel hiding/reopening.
+- Grouping and browser replay cover one rendered reply with both projections retained, ordinary collapsed placement, disclosure ordering, and the original tool row's read-only late-answer panel.
+- Legacy question round trips, cancellation, plan-review intent, and Session remounts retain their existing behavior. Live multi-Client delivery races and real Host restart remain integration coverage gaps beyond isolated lifecycle and projection tests.
 
-## Consequences
-
-The model can continue independent work while the question remains answerable. Business-owned timing and reply rendering reuse the existing transport and conversation APIs, at the cost of local rather than globally coordinated waiting and ordinary folded visibility.
+## Risks
 
 - Take time affects only one Client. Another Client can answer or expire the shared waterfall; local focus does not establish a global hold.
 - A terminal claim-stream failure can reject the foreground question rather than produce pending. No unattended-wait fallback is provided for that failure.
