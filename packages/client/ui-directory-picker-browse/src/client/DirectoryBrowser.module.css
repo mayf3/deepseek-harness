@@ -121,6 +121,12 @@
   cursor: pointer;
 }
 
+.crumb:focus-visible {
+  /* The trail scrolls, so an outer ring would be clipped; keep it inside. */
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
+}
+
 .crumb:hover {
   color: var(--dsw-alias-label-primary);
 }
@@ -237,6 +243,12 @@
   background: transparent;
   text-align: left;
   cursor: pointer;
+}
+
+.row:focus-visible {
+  /* The column scrolls and its left edge carries no padding; keep the ring inside. */
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
 }
 
 .row:hover {

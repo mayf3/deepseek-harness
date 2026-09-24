@@ -52,7 +52,7 @@
 }
 
 .toggle:focus-visible {
-  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
 
@@ -95,7 +95,7 @@
 }
 
 .control:focus-visible {
-  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
 
@@ -156,7 +156,7 @@
 }
 
 .action:focus-visible {
-  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
 
