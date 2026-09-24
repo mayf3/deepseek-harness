@@ -84,7 +84,7 @@ interface ToolArgsMap {
     run_in_background?: boolean;
     /** The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval. */
     sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. */
+    /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. Use the language of the user’s current request. */
     justification?: string;
   } & Record<string, JsonValue>;
   /** Create one persisted same-session completion goal when the current direct human request is a long-running objective that should continue across autonomous goal rounds. You may infer that intent without requiring the user to say "create a goal". Do not use this for trivial single-turn work. Execution rejects non-human and subagent authority. */
@@ -106,7 +106,7 @@ interface ToolArgsMap {
     replace_all?: boolean;
     /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
     sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
+    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request. */
     justification?: string;
   } & Record<string, JsonValue>;
   /** Use only in plan mode. Present your plan for the user's review and, on approval, leave plan mode. Send the COMPLETE plan as markdown, starting with a # heading that names it. The user may approve (carry out the plan from your next step) or keep planning — their feedback comes back in the tool result; revise and present again. */
@@ -183,6 +183,93 @@ interface ToolArgsMap {
     /** Path to the image file, resolved by the filesystem backend. */
     file_path: string;
   } & Record<string, JsonValue>;
+  /** Create one reminder in the current session. Supply a non-empty prompt, a title, and exactly one selector: a positive safe-integer after_seconds delay, at as a strict offset date-time or local date/time object, safe-integer every_seconds of at least 60, daily as {time: "23:00:00", time_zone: "Asia/Shanghai"}, weekly as {time: "09:00:00", time_zone: "Asia/Shanghai", weekdays: [1, 3]} with Monday 1 through Sunday 7, or cron as {expression: "*\/15 9-17 * * 1-5", time_zone: "Asia/Shanghai"} with the five fields minute hour day-of-month month day-of-week. Every creation requires a title of at most 120 characters, non-empty after trimming; it names the task on its card, its detail heading, and in the task lists. Daily, weekly, and cron reminders retain that local time and zone; missing wall-clock times skip the date and repeated times use only the earlier instant. A cron day-of-month and day-of-week pair matches when either field matches once both are restricted. Fixed-rate targets stay creation-aligned until an interval edit establishes a new anchor. All four recurring kinds batch one latest occurrence per overdue rule. The Host restores this session when a reminder is due. After downtime, each recurring reminder delivers its latest missed occurrence once. Delivery can repeat after a crash. */
+  schedule_create: {
+    /** Reminder content to present when the target becomes due. */
+    prompt: string;
+    /** Required task name of at most 120 characters, non-empty after trimming; it becomes the task card title, the detail heading, and the name in the task lists. */
+    title: string;
+    /** Positive safe-integer delay in seconds. */
+    after_seconds?: number;
+    /** Fixed-rate safe-integer interval in seconds, at least 60. */
+    every_seconds?: number;
+    /** Daily local wall-clock time in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once. */
+    daily?: {
+      /** HH:mm:ss with optional 1-3 fractional digits, for example 23:00:00. */
+      time: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+    };
+    /** Weekly local wall-clock time on explicit ISO weekdays in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once per date. */
+    weekly?: {
+      /** HH:mm:ss with optional 1-3 fractional digits, for example 09:00:00. */
+      time: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+      /** Non-empty ISO weekdays, Monday 1 through Sunday 7, without repetitions. */
+      weekdays: number[];
+    };
+    /** Five-field Vixie cron expression evaluated in an explicit IANA zone; skips nonexistent local times and uses the earlier repeated time once per date. */
+    cron?: {
+      /** minute hour day-of-month month day-of-week, for example "*\/15 9-17 * * 1-5". */
+      expression: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+    };
+    /** Absolute target as strict offset RFC 3339 or local date/time with an explicit IANA zone. */
+    at?: string | {
+      date: string;
+      time: string;
+      time_zone: string;
+    };
+  } & Record<string, JsonValue>;
+  /** Delete one retained reminder in the current session by its exact id, whether active or inactive. Unknown or already-deleted ids return deleted false. Deletion does not retract a queued message. */
+  schedule_delete: {
+    /** Exact schedule id. */
+    id: string;
+  } & Record<string, JsonValue>;
+  /** List every active reminder in the current session, including its exact id, title, UTC target, scheduled or overdue state, and host delivery mode. The returned order is not significant. */
+  schedule_list: Record<string, JsonValue>;
+  /** Change one reminder in the current session in place, keeping its id and its saved delivery records: address it by the exact id schedule_list returned, then supply a new title or prompt, or exactly one new selector from at, every_seconds, daily, weekly, or cron in the same forms schedule_create accepts. An omitted field keeps its stored value. After is not updatable: create a new reminder for a relative delay. The Host compares the record it finds for that id with the stored one, so a concurrent edit returns schedule_conflict instead of overwriting it; an inactive or unknown reminder returns updated false. Editing an every_seconds interval anchors the new fixed rate at the accepted save time; a name or instruction change alone keeps the committed target. */
+  schedule_update: {
+    /** Exact schedule id that schedule_list returned for one reminder. */
+    id: string;
+    /** New task name of at most 120 characters, non-empty after trimming; omitted keeps the stored name. */
+    title?: string;
+    /** New reminder content, non-empty after trimming; omitted keeps the stored instruction. */
+    prompt?: string;
+    /** Fixed-rate safe-integer interval in seconds, at least 60. */
+    every_seconds?: number;
+    /** Daily local wall-clock time in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once. */
+    daily?: {
+      /** HH:mm:ss with optional 1-3 fractional digits, for example 23:00:00. */
+      time: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+    };
+    /** Weekly local wall-clock time on explicit ISO weekdays in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once per date. */
+    weekly?: {
+      /** HH:mm:ss with optional 1-3 fractional digits, for example 09:00:00. */
+      time: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+      /** Non-empty ISO weekdays, Monday 1 through Sunday 7, without repetitions. */
+      weekdays: number[];
+    };
+    /** Five-field Vixie cron expression evaluated in an explicit IANA zone; skips nonexistent local times and uses the earlier repeated time once per date. */
+    cron?: {
+      /** minute hour day-of-month month day-of-week, for example "*\/15 9-17 * * 1-5". */
+      expression: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+    };
+    /** Absolute target as strict offset RFC 3339 or local date/time with an explicit IANA zone. */
+    at?: string | {
+      date: string;
+      time: string;
+      time_zone: string;
+    };
+  } & Record<string, JsonValue>;
   /** Send a message to a direct continuable child by its agent id. If you are a resident continuable child, you may also target your direct parent. If the target is still working, the message steers its nearest step; if it is inactive, the message starts or resumes a turn. This call returns no answer from the agent — only confirmation that the message was delivered. A failure means the message was NOT delivered. */
   send_message: {
     /** The agent id of your direct continuable child, or your direct parent when you are a resident continuable child. */
@@ -256,7 +343,7 @@ interface ToolArgsMap {
     content: string;
     /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
     sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
+    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request. */
     justification?: string;
   } & Record<string, JsonValue>;
 }
@@ -435,6 +522,288 @@ interface ToolOutputMap {
         height: number;
       };
     };
+  };
+  schedule_create: {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "after";
+    afterSeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "at";
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "every";
+    everySeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "daily";
+    time: string;
+    timeZone: string;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "weekly";
+    time: string;
+    timeZone: string;
+    weekdays: number[];
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "cron";
+    expression: string;
+    timeZone: string;
+  } | {
+    code: "invalid_prompt";
+    message: string;
+  } | {
+    code: "invalid_selector";
+    message: string;
+  } | {
+    code: "invalid_rule";
+    message: string;
+  } | {
+    code: "invalid_time_zone";
+    message: string;
+  } | {
+    code: "not_future";
+    message: string;
+  } | {
+    code: "time_out_of_range";
+    message: string;
+  } | {
+    code: "frequency_too_high";
+    message: string;
+  } | {
+    code: "internal_error";
+    message: string;
+  };
+  schedule_delete: {
+    id: string;
+    deleted: true;
+  } | {
+    id: string;
+    deleted: false;
+    code: "schedule_not_found";
+  } | {
+    code: "invalid_prompt";
+    message: string;
+  } | {
+    code: "invalid_selector";
+    message: string;
+  } | {
+    code: "invalid_rule";
+    message: string;
+  } | {
+    code: "invalid_time_zone";
+    message: string;
+  } | {
+    code: "not_future";
+    message: string;
+  } | {
+    code: "time_out_of_range";
+    message: string;
+  } | {
+    code: "frequency_too_high";
+    message: string;
+  } | {
+    code: "internal_error";
+    message: string;
+  };
+  schedule_list: ({
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "after";
+    afterSeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "at";
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "every";
+    everySeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "daily";
+    time: string;
+    timeZone: string;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "weekly";
+    time: string;
+    timeZone: string;
+    weekdays: number[];
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "cron";
+    expression: string;
+    timeZone: string;
+  })[] | {
+    code: "invalid_prompt";
+    message: string;
+  } | {
+    code: "invalid_selector";
+    message: string;
+  } | {
+    code: "invalid_rule";
+    message: string;
+  } | {
+    code: "invalid_time_zone";
+    message: string;
+  } | {
+    code: "not_future";
+    message: string;
+  } | {
+    code: "time_out_of_range";
+    message: string;
+  } | {
+    code: "frequency_too_high";
+    message: string;
+  } | {
+    code: "internal_error";
+    message: string;
+  };
+  schedule_update: {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "after";
+    afterSeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "at";
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "every";
+    everySeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "daily";
+    time: string;
+    timeZone: string;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "weekly";
+    time: string;
+    timeZone: string;
+    weekdays: number[];
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "cron";
+    expression: string;
+    timeZone: string;
+  } | {
+    id: string;
+    updated: false;
+    code: "schedule_not_found" | "schedule_ended" | "schedule_conflict";
+  } | {
+    code: "invalid_prompt";
+    message: string;
+  } | {
+    code: "invalid_selector";
+    message: string;
+  } | {
+    code: "invalid_rule";
+    message: string;
+  } | {
+    code: "invalid_time_zone";
+    message: string;
+  } | {
+    code: "not_future";
+    message: string;
+  } | {
+    code: "time_out_of_range";
+    message: string;
+  } | {
+    code: "frequency_too_high";
+    message: string;
+  } | {
+    code: "internal_error";
+    message: string;
   };
   send_message: {
     messageId: string;

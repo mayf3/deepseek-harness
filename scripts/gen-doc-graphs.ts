@@ -552,8 +552,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'session-projection-cache',
     title: 'Persisted projection cache',
     mode: 'core',
-    consumers: ['api-session-controller', 'session-query', 'session-reference', 'subagent'],
-    note: 'Durably checkpoints projection unit states per session (throttled + turn/end/detach mandatory points) and serves the cold-read ladder: cache row + persistence tail replay, so listings never load full logs.',
+    consumers: ['api-session-controller', 'session-query', 'session-reference'],
+    note: 'Durably checkpoints projection unit states per session (throttled + turn/end/detach mandatory points), serves cached projection views, and accelerates prepared-Session projection hydration.',
   },
   {
     key: 'skills',

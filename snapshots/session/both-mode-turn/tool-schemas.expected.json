@@ -36,7 +36,7 @@
           },
           "justification": {
             "type": "string",
-            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access."
+            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. Use the language of the user’s current request."
           }
         },
         "required": [
@@ -97,7 +97,7 @@
           },
           "justification": {
             "type": "string",
-            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access."
+            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request."
           }
         },
         "required": [
@@ -328,7 +328,7 @@
           },
           "justification": {
             "type": "string",
-            "description": "Reason this complete program needs wider access, shown to the user for approval."
+            "description": "Reason this complete program needs wider access, shown to the user for approval. Use the language of the user’s current request."
           }
         },
         "required": [
@@ -641,7 +641,7 @@
           },
           "justification": {
             "type": "string",
-            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access."
+            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request."
           }
         },
         "required": [

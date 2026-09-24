@@ -53,7 +53,7 @@ interface EveryScheduleRecord {
   readonly title: string
   /** Trimmed reminder content supplied at creation. */
   readonly prompt: string
-  /** Fixed safe-integer interval, never below five minutes. */
+  /** Fixed safe-integer interval, never below one minute. */
   readonly everySeconds: number
   /** Next anchor-aligned occurrence while active, or final occurrence when inactive. */
   readonly scheduledAt: string
@@ -116,7 +116,7 @@ interface LocalAtInput {
 type AtInput = string | LocalAtInput
 ```
 
-The official Web overlay samples the browser's IANA zone for every prompt. Time-context tells the model to interpret otherwise-unqualified natural-language dates and times in that request-local zone when the open turn has one unambiguous browser zone; mixed or missing browser-zone records tell the model to ask. That guidance is not a durable Session default: the model must still pass an offset in the string form or `time_zone` in the local form, and Schedule never reads browser, Session, process, or model context.
+The shipped Web bundle mounts time-context, which samples the browser's IANA zone for every prompt. Time-context tells the model to interpret otherwise-unqualified natural-language dates and times in that request-local zone when the open turn has one unambiguous browser zone; mixed or missing browser-zone records tell the model to ask. That guidance is not a durable Session default: the model must still pass an offset in the string form or `time_zone` in the local form, and Schedule never reads browser, Session, process, or model context.
 
 Schedule rejects invalid offsets and zones, offset-free strings, non-future targets, and local times inside daylight-saving gaps. A daylight-saving overlap chooses its first, earlier instant. Successful creation stores only canonical UTC `scheduledAt`, so replay never depends on ambient time-zone state.
 
@@ -141,11 +141,11 @@ A saved next target is a committed UTC instant. The Host decoder and restart pre
 
 ## Fixed-rate input and catch-up
 
-`every_seconds` is a safe-integer interval of at least 300 seconds, aligned to creation time. It measures elapsed time, not daily wall-clock time: `every_seconds: 86400` cannot substitute for `daily` across offset changes. The protocol provides no shared cooldown or cross-record admission rule; the cron selector described below is wall-clock timing, not a fixed-rate interval.
+`every_seconds` is a safe-integer interval of at least 60 seconds, aligned to creation time. It measures elapsed time, not daily wall-clock time: `every_seconds: 86400` cannot substitute for `daily` across offset changes. The protocol provides no shared cooldown or cross-record admission rule; the cron selector described below is wall-clock timing, not a fixed-rate interval.
 
 When the Host starts with an overdue Every, Daily, Weekly, or Cron record, it sends only the latest due occurrence. Every advances to the first target aligned to its current interval anchor after the delivery decision; Daily, Weekly, and Cron follow the local-date rules above and below. Missed occurrences do not accumulate. If no next UTC target is representable, delivery retains the record as inactive with its latest receipt.
 
-One-shots produce individual follow-ups. Recurring records due in the same scan for the same Session share one follow-up rendered by `renderRecurringReminderBatchFraming`, with one latest occurrence per record. The five-minute minimum applies only to fixed-rate intervals; delivery does not wait for the target Agent to become idle.
+One-shots produce individual follow-ups. Recurring records due in the same scan for the same Session share one follow-up rendered by `renderRecurringReminderBatchFraming`, with one latest occurrence per record. The one-minute minimum applies only to fixed-rate intervals; delivery does not wait for the target Agent to become idle.
 
 <a id="cron-wall-clock-input"></a>
 ## Cron wall-clock input
@@ -339,7 +339,7 @@ type ScheduleCatalogEntry = ScheduleRecord & {
 
 The Remote `schedule.list({ sessionId })`, model `schedule_list`, and Session-header catalog return only active tasks. A model view's derived timing `state` remains distinct from stored lifecycle `status`. Deletion uses `schedule.delete({ sessionId, id })` with the entry's original binding; a mismatched binding returns not found. Model tools supply the current Agent's Session, whereas the global user interface supplies the selected task's binding. The binding check alone does not establish caller authorization. The payload-free `schedule/changed` event invalidates client lists; reconnecting clients fetch current state again.
 
-The Web bundle keeps `ui-schedule` disabled by default; the Schedule overlay enables it with the Host capability. The [client package](../../packages/client/ui-schedule/README.md) owns the catalog, empty state, and deletion controls. The page separately filters all, active, and inactive tasks, retains inactive details and an original-Session control in the detail tab strip, and requires explicit confirmed deletion. Rules and Delivery records separate task settings from lazily paged saved receipts. Neither a receipt nor inactive status confirms model execution.
+The Web bundle mounts `ui-schedule` with the Host capability. The [client package](../../packages/client/ui-schedule/README.md) owns the catalog, empty state, and deletion controls. The page separately filters all, active, and inactive tasks, retains inactive details and an original-Session control in the detail tab strip, and requires explicit confirmed deletion. Rules and Delivery records separate task settings from lazily paged saved receipts. Neither a receipt nor inactive status confirms model execution.
 
 ## Timing edits
 

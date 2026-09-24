@@ -59,7 +59,7 @@ class BashArgs(TypedDict):
     run_in_background: NotRequired[bool]
     # The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval.
     sandbox_permissions: NotRequired[Literal["workspace-write", "danger-full-access"]]
-    # Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access.
+    # Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. Use the language of the user’s current request.
     justification: NotRequired[str]
     # Additional keys beyond those declared are allowed.
 
@@ -139,7 +139,7 @@ class EditArgs(TypedDict):
     replace_all: NotRequired[bool]
     # The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.
     sandbox_permissions: NotRequired[Literal["workspace-write", "danger-full-access"]]
-    # Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access.
+    # Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request.
     justification: NotRequired[str]
     # Additional keys beyond those declared are allowed.
 
@@ -500,7 +500,7 @@ class WriteArgs(TypedDict):
     content: str
     # The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.
     sandbox_permissions: NotRequired[Literal["workspace-write", "danger-full-access"]]
-    # Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access.
+    # Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request.
     justification: NotRequired[str]
     # Additional keys beyond those declared are allowed.
 

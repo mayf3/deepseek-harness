@@ -148,10 +148,8 @@ export type Config = PresetDefinition
 export interface Config {
   /** Deployment default when the caller omits a preset. */
   default: string
-  /** User-selected default while the chooser is shown; edited through Settings. */
+  /** User-selected default; edited through Settings. */
   selectedDefault: Volatile<string | undefined>
-  /** Whether new-session surfaces expose preset selection and the saved default applies. */
-  modeSelectionEnabled: Volatile<boolean>
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-agent-preset-registry -->
@@ -3383,7 +3381,7 @@ export type ShellDialect = 'bash' | 'pwsh'
 export interface Config {
   /** Fallback display zone when the open turn has no unique browser zone. Omit to use the process zone. */
   timeZone?: string
-  /** Minimum milliseconds between durable injections in one session. Omit or set to 0 to inject at every eligible step. */
+  /** Minimum milliseconds between durable injections in one session. Defaults to 600000 (10 minutes); 0 injects at every eligible step. */
   refreshIntervalMs?: number
 }
 ```
