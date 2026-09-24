@@ -271,7 +271,9 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
   const everyAdapter = new EveryReminderAdapter()
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold()
+    scaffold = await launchWebScaffold({
+      extraOverlayPath: fileURLToPath(new URL('./fixtures/time-context-every-step.patch.yml', import.meta.url)),
+    })
     scaffold.ctx.effect(
       () => scaffold.ctx.llm.registerAdapter([AFTER_PROVIDER], afterAdapter),
       'Schedule Web After adapter',
