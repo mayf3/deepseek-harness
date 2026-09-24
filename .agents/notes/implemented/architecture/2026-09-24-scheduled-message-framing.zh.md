@@ -10,13 +10,13 @@ Status: implemented
 
 ## Decision
 
-[`packages/schedule/schedule/src/domain.ts`](../../../../packages/schedule/schedule/src/domain.ts) 中的 `renderReminderFraming` 与 `renderRecurringReminderBatchFraming` 都以同一条固定行开篇，即模块常量 `SCHEDULED_MESSAGE_FRAMING`：`This is a scheduled message from the user`。方括号标记（`[SCHEDULE REMINDER]`、`[SCHEDULE REMINDER BATCH]`）与 JSON 编码的动态字段不变：单次消息仍追加 `schedule_id_json`、`occurrence_at`、`reminder_prompt_json`，周期批次仍追加 `reminders_json`。
+[`packages/schedule/schedule/src/domain.ts`](../../../../packages/schedule/schedule/src/domain.ts) 中的 `renderReminderFraming` 与 `renderRecurringReminderBatchFraming` 都以同一条固定行开篇，即模块常量 `SCHEDULED_MESSAGE_FRAMING`：`This is a scheduled message from the user`。方括号标记（`[SCHEDULE REMINDER]`、`[SCHEDULE REMINDER BATCH]`）与动态字段行不变：单次消息仍追加 `schedule_id_json`、`occurrence_at`、`reminder_prompt_json`，周期批次仍追加 `reminders_json`。
 
-这条固定行说明消息的来源：属于该 Session 的一条定时任务。它不声称提示词文本由用户键入——`schedule_create` 与 `schedule_update` 允许模型在该 Session 中通过这些工具代用户写入。这条固定行不包含关于提示词文本地位的指令。固定行无法被动态字段伪造，这由编码保证：schedule id 与提示词是 JSON 字符串，发生瞬点是经校验的规范 RFC 3339 值，且各自只占一行，因此带有换行或形如 `occurrence_at:` 的提示词无法向该块增加固定行。[Host 拥有的定时消息](2026-09-16-host-schedule-storage.zh.md) 记下的其余决策不变，包括通过 Session controller 投递以及保存的投递记录。
+这条固定行说明消息的来源：绑定到该 Session 的一条定时任务。它不声称提示词文本由用户键入——`schedule_create` 与 `schedule_update` 允许模型在该 Session 中通过这些工具代用户写入。这条固定行不包含关于提示词文本地位的指令。固定行无法被动态字段伪造，这由编码保证：schedule id 与提示词是 JSON 字符串，发生时点是经校验的规范 RFC 3339 值，且各自只占一行，因此带有换行或形如 `occurrence_at:` 的提示词无法向该块增加固定行。[Host 拥有的定时消息](2026-09-16-host-schedule-storage.zh.md) 记下的其余决策不变，包括通过 Session controller 投递以及保存的投递记录。
 
 ## Alternatives considered
 
-**保留「不可信内容」指令。** 它对投递的消息断言了一个并不需要的信任判定：投递本身是拥有该定时任务的 Session 中的普通 user-role 消息，约束提示词写入者的是限定 `schedule_create` 与 `schedule_update` 范围的 Session 绑定校验。
+**保留「不可信内容」指令。** 它断言提示词是不可信输入，而投递的消息并不需要这一断言：投递本身是绑定该定时任务的 Session 中的普通 user-role 消息，约束提示词写入者的是限定 `schedule_create` 与 `schedule_update` 范围的 Session 绑定校验。
 
 **只改周期批次那一行。** 单次与周期投递会对同类消息的来源给出不同说法，此后每次改措辞都要分别改两个渲染器。现在两条路径读同一个常量。
 
