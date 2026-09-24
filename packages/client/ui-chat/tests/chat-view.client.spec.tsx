@@ -2510,27 +2510,6 @@ describe('ChatView', () => {
     }
   })
 
-  it('folds a question reply with the surrounding process and reveals it on expansion', () => {
-    const base = chatSnapshotFixture({
-      nodes: [user(1, 'question'), assistant(2, 'inspect', 1, 1), assistant(4, 'final answer', 1, 2)],
-      turnEnds: new Map([[1, 5]]),
-      turnTimings: new Map([[1, { startTime: 0, endTime: 5_000 }]]),
-    })
-    const snapshot = new ChatSnapshotBuilder().replace({
-      nodes: [...base.nodes.values(), {
-        key: 'reply', id: 'reply', kind: 'question-reply', target: 'chat', anchorSeq: 3,
-        location: { kind: 'turn', turn: base.timeline.turns.get(1)! }, visibility: 'visible', data: {},
-      }],
-      timeline: base.timeline,
-    })
-    const h = makeHarness({}, {}, snapshot)
-    const view = render(<h.ChatView {...h.props} />)
-    const reply = view.container.querySelector('[data-chat-flow-kind="question-reply"]')!
-    expect(reply.getAttribute('hidden')).toBe('until-found')
-    fireEvent.click(turnProcessControl(view.container)!)
-    expect(reply.getAttribute('hidden')).toBeNull()
-  })
-
   it('folds final-step reasoning under the fallback title when every summary count is zero', () => {
     const final = {
       ...assistant(3, 'final answer', 1, 1),

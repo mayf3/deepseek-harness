@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import {
-  createWaterfallRequest, PendingQuestion, planReviewOf, type QuestionComposerProps, type QuestionWait,
+  PendingQuestion, planReviewOf, type QuestionComposerProps, type QuestionWait,
 } from '../src/client/contract/slots.ts'
 import { createQuestionDraftStore } from '../src/client/draft-store.ts'
 import { QuestionComposer } from '../src/client/QuestionComposer.tsx'
@@ -110,7 +110,6 @@ const questionDraftStore = createQuestionDraftStore().create(SID)
 
 /** Framework standard-kit stubs: the panel consumes only the locale seat. */
 const kit: Omit<QuestionComposerProps, 'matched'> = {
-  useQuestionCard: () => { throw new Error('plan review does not read question card state') },
   renderSlot: () => null,
   SessionProvider: ({ children }) => children,
   sessionId: SID,
@@ -159,11 +158,9 @@ const questions = (): QuestionWait['questions'] => [{
 /** Pending waterfall fixture with observable Client response methods. */
 function wait(items: QuestionWait['questions'] = questions()) {
   const carrier = new PendingQuestion(SID, items)
-  const request = createWaterfallRequest(undefined, undefined, (channel) => { carrier.detachWaterfall(channel) })
-  carrier.attachWaterfall(request.channel)
   const answer = vi.spyOn(carrier, 'answer')
-  const cancel = vi.spyOn(carrier, 'dismiss')
-  void request.result.catch(() => {})
+  const cancel = vi.spyOn(carrier, 'cancel')
+  void carrier.result.catch(() => {})
   return { carrier, answer, cancel }
 }
 

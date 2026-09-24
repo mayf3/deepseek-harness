@@ -21,43 +21,36 @@ export interface QuestionDraftProgress {
   index: number
   /** One draft per question, in request order. */
   drafts: QuestionDraftAnswer[]
-  /** Local indefinite-wait choice restored with the draft. */
-  wait?: 'editing' | 'waiting'
 }
 
 interface QuestionDraftState {
-  progressByRequest: Record<string, QuestionDraftProgress>
+  requestKey?: string
+  progress: QuestionDraftProgress
 }
 
 type QuestionDraftActions = {
   replace: (draft: QuestionDraftState, requestKey: string, progress: QuestionDraftProgress) => void
   clear: (draft: QuestionDraftState, requestKey: string) => void
-  prune: (draft: QuestionDraftState, keep: readonly string[]) => void
 }
 
+const emptyProgress = (): QuestionDraftProgress => ({ index: 0, drafts: [] })
+
 /**
- * Declare the question composer's Session store. Drafts persist per Session so
- * leaving the Session or restarting the Client does not erase an unfinished answer.
- * @returns a persisted store handle whose instance is owned by the Slot registry.
+ * Declare the question composer's transient Session store.
+ * @returns a non-persisted store handle whose instance is owned by the Slot registry.
  */
 export function createQuestionDraftStore(): EngineStoreHandle<QuestionDraftState, QuestionDraftActions> {
   return defineStore({
-    init: (): QuestionDraftState => ({ progressByRequest: {} }),
-    persist: 'dsh.user-questions.drafts.v1',
+    init: (): QuestionDraftState => ({ progress: emptyProgress() }),
     actions: {
       replace: (draft, requestKey, progress) => {
-        draft.progressByRequest[requestKey] = progress
+        draft.requestKey = requestKey
+        draft.progress = progress
       },
       clear: (draft, requestKey) => {
-        draft.progressByRequest = Object.fromEntries(
-          Object.entries(draft.progressByRequest).filter(([key]) => key !== requestKey),
-        )
-      },
-      prune: (draft, keep) => {
-        const live = new Set(keep)
-        draft.progressByRequest = Object.fromEntries(
-          Object.entries(draft.progressByRequest).filter(([key]) => live.has(key)),
-        )
+        if (draft.requestKey !== requestKey) return
+        delete draft.requestKey
+        draft.progress = emptyProgress()
       },
     },
   })

@@ -1,6 +1,6 @@
 # Agent Note: 计时用户提问的两次结算
 
-Status: implemented
+Status: proposed
 
 [English](2026-09-19-timed-user-question-two-settlements.md) | 中文
 
@@ -10,7 +10,7 @@ Status: implemented
 
 前台工具结果与最终回答的生命周期不同。`user-questions/request` waterfall（瀑布式事件）只结算一次；返回 pending 后仍保留它，会产生一条活过调用方的第二回答路径。倒计时、聚焦和编辑的归属也不同于持久问题状态。
 
-## Decision
+## Proposal
 
 前台回答继续使用现有 Remote Event waterfall。超时结束该请求并返回 pending；迟到回答通过业务 RPC steer 一条持久用户消息。接手 stream 只控制前台等待，既不传递回答，也不替代 Remote Event。
 
@@ -96,17 +96,15 @@ Client 计算 `Date.now() + remainingMs`。手动聚焦未编辑的回答区会�
 
 **在 inbox 消息之外增加专用迟到回复 Session 事件。** inbox 插入与接纳的用户消息已经记录回复。第三个事件重复同一事实，并增加另一种持久化类型。
 
-## 验证
+## Acceptance criteria
 
-- [服务测试](../../../../packages/interaction/user-questions/tests/user-questions.spec.ts)与[等待测试](../../../../packages/interaction/user-questions/tests/timed-wait.spec.ts)覆盖有人与无人接手、最后接手方断开、取消、超时错误映射、仅接受已继续问题的回答，以及答案 id 的精确校验。
-- [投影测试](../../../../packages/interaction/user-questions/tests/projection.spec.ts)区分 legacy 与 timed schema，并覆盖 pending、已回答、其他失败、恢复修复及 inbox／消息重复结算。
-- [Client 监听器测试](../../../../packages/client/ui-user-questions/tests/browser-plugin.client.spec.ts)与[composer 测试](../../../../packages/client/ui-user-questions/tests/user-questions-composer.client.spec.tsx)覆盖接手保留到 Host 接受结果、握手前聚焦、无限期等待、草稿保留、RPC 重提及面板操作。
-- [分组测试](../../../../packages/client/ui-chat/tests/process-groups.client.spec.ts)与[浏览器回放](../../../../apps/web/tests/question-composer.e2e.ts)覆盖保留两个投影但只渲染一次回复、普通折叠位置、折叠控件顺序，以及原工具行的迟到答案只读面板。
-- legacy 问答往返、取消、计划评审意图及 Session 重新挂载的回归仍由各自测试覆盖。真实多 Client 投递竞争与真实 Host 重启仍是独立生命周期和投影测试之外的集成覆盖缺口。
+- 服务测试覆盖有人与无人接手、最后接手方断开、取消、超时错误映射、仅接受已继续问题的回答，以及答案 id 的精确校验。
+- 投影测试区分 legacy 与 timed schema，并覆盖 pending、已回答、其他失败、恢复修复及 inbox／消息重复结算。
+- Client 测试覆盖接手保留到 Host 接受结果、握手前聚焦、无限期等待、草稿保留、RPC 重提及面板隐藏／重开。
+- 分组与浏览器回放覆盖保留两个投影但只渲染一次回复、普通折叠位置、折叠控件顺序，以及原工具行的迟到答案只读面板。
+- legacy 问答往返、取消、计划评审意图及 Session 重新挂载保留既有行为。真实多 Client 投递竞争与真实 Host 重启仍是独立生命周期和投影测试之外的集成覆盖缺口。
 
-## Consequences
-
-模型可以继续独立工作，问题同时保持可回答。业务层拥有的计时与回复渲染复用现有传输和对话 API，代价是等待由本地而非全局协调，可见性遵循普通折叠。
+## Risks
 
 - 「慢慢回答」只影响一个 Client。其他 Client 可以回答或让共享 waterfall 到期，本地聚焦不构成全局暂停。
 - 接手 stream 的终止性失败可能让前台问题失败，而不是产生 pending。不为该失败提供无人接手等待的 fallback。

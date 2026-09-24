@@ -3,5 +3,4 @@ export { apply, inject } from './apply.ts'
 export type {
   StartedToolCallViewProps, ToolCallCommonProps, ToolCallOwnerProps, ToolCallPhaseProps, ToolCallViewProps,
   ToolCallHookContext, ToolCallInjected, ToolHostInfoInjected, ToolTreeProps, UseToolCallArgumentsPartial,
-  UserQuestionPanels, UserQuestionRecord,
 } from './contract/slots.ts'
