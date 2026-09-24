@@ -62,7 +62,7 @@ interface ToolArgsMap {
     run_in_background?: boolean;
     /** The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval. */
     sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. */
+    /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. Use the language of the user’s current request. */
     justification?: string;
   } & Record<string, JsonValue>;
   /** List every Cordis Inspect Provider currently known to the Host, including local Host Providers and the latest manifests synchronized from the Client. Each entry includes its platform, purpose, read-only methods, and input/output schemas. Call this Tool before writing or configuring a plugin, then select the provider and method for cordis_inspect_query from its result. Do not guess names or treat an Inspect method as a business Service that Plugin code can call. */
@@ -97,7 +97,7 @@ interface ToolArgsMap {
     replace_all?: boolean;
     /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
     sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
+    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request. */
     justification?: string;
   } & Record<string, JsonValue>;
   /** Use only in plan mode. Present your plan for the user's review and, on approval, leave plan mode. Send the COMPLETE plan as markdown, starting with a # heading that names it. The user may approve (carry out the plan from your next step) or keep planning — their feedback comes back in the tool result; revise and present again. */
@@ -265,7 +265,7 @@ interface ToolArgsMap {
     content: string;
     /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
     sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
+    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request. */
     justification?: string;
   } & Record<string, JsonValue>;
 }

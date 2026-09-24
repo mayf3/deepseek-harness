@@ -1,0 +1,4 @@
+# Browser-zone assertions need a fresh reading after the non-browser preparation turn.
+- id: time-context
+  config:
+    refreshIntervalMs: 0

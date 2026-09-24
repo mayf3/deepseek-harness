@@ -6,7 +6,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApprovalPanel } from '../src/client/ApprovalPanel.tsx'
-import type { ApprovalComposerProps } from '../src/client/contract/slots.ts'
+import type { ApprovalComposerProps, ApprovalInjected } from '../src/client/contract/slots.ts'
 import { PendingApproval } from '../src/client/contract/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
@@ -17,6 +17,7 @@ type ApprovalListener = (
     toolName: string
     callId?: string
     reason?: string
+    displayReason?: PendingApproval['displayReason']
     signal?: AbortSignal
   },
   next: () => Promise<'unavailable'>,
@@ -35,6 +36,7 @@ interface PluginBench {
   registration(): {
     options: {
       select(props: { pendingInteraction: PendingApproval | undefined }): PendingApproval | null
+      inject(): ApprovalInjected
     }
     component: unknown
   }
@@ -46,6 +48,7 @@ async function setupPlugin(): Promise<PluginBench> {
   let registration: {
     options: {
       select(props: { pendingInteraction: PendingApproval | undefined }): PendingApproval | null
+      inject(): ApprovalInjected
     }
     component: unknown
   } | undefined
@@ -82,6 +85,7 @@ async function setupPlugin(): Promise<PluginBench> {
   ctx.provide('slots', { inject: injectSlot, register } as never)
   ctx.provide('locale', {
     register: vi.fn(() => disposeLocale),
+    resolveText: (reason: NonNullable<PendingApproval['displayReason']>) => reason.en,
   } as never)
 
   const fiber = ctx.plugin({ apply })
@@ -219,12 +223,15 @@ describe('approval Remote Event consumer', () => {
       toolName: 'bash',
       callId: 'call-1',
       reason: 'needs access',
+      displayReason: { en: 'Display reason', zh: '展示原因' },
       signal: controller.signal,
     }, next)
     const pending = bench.pending.getSnapshot()[0]!
     const { options, component } = bench.registration()
 
     expect(component).toBe(ApprovalPanel)
+    expect(pending.displayReason).toEqual({ en: 'Display reason', zh: '展示原因' })
+    expect(options.inject().resolveReason(pending.displayReason!)).toBe('Display reason')
     expect(options.select({ pendingInteraction: undefined })).toBeNull()
     expect(options.select({ pendingInteraction: pending })).toBe(pending)
     expect(pending).toMatchObject({
@@ -319,8 +326,9 @@ function panelProps(
   return {
     matched: pending,
     renderSlot,
+    resolveReason: (reason: NonNullable<PendingApproval['displayReason']>) => reason.en,
     t: (key: string) => messages[key] ?? key,
-  } as unknown as ApprovalComposerProps
+  } as ApprovalComposerProps
 }
 
 describe('ApprovalPanel', () => {
@@ -360,6 +368,21 @@ describe('ApprovalPanel', () => {
     expect(document.querySelector('[data-approval-key]')?.getAttribute('aria-busy')).toBe('true')
 
     await expect(pending.result).resolves.toBe('allowed-once')
+  })
+
+  it('keeps the audit reason intact and follows the UI language for presentation copy', () => {
+    const pending = new PendingApproval(id('s1'), {
+      toolName: 'bash',
+      reason: 'audit reason',
+      displayReason: { en: 'English explanation', zh: '中文说明' },
+    })
+    const props = panelProps(pending)
+    const view = render(<ApprovalPanel {...props} />)
+    expect(screen.getByText('English explanation')).toBeTruthy()
+    expect(screen.queryByText('audit reason')).toBeNull()
+    view.rerender(<ApprovalPanel {...props} resolveReason={reason => reason['zh']!} />)
+    expect(screen.getByText('中文说明')).toBeTruthy()
+    expect(pending.reason).toBe('audit reason')
   })
 
   it.each([['Enter', 'allowed-once'], ['Escape', 'rejected']] as const)(

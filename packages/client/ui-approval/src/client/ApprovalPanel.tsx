@@ -14,11 +14,13 @@ export function ApprovalPanel(props: ApprovalComposerProps) {
   const detail = approval.callId === undefined
     ? null
     : props.renderSlot('conversation.approval.detail', { callId: approval.callId })
-  return <ApprovalFlow key={approval.key} pending={approval} detail={detail} t={props.t} />
+  const reason = approval.displayReason === undefined ? approval.reason : props.resolveReason(approval.displayReason)
+  return <ApprovalFlow key={approval.key} pending={approval} reason={reason} detail={detail} t={props.t} />
 }
 
-function ApprovalFlow({ pending, detail, t }: {
+function ApprovalFlow({ pending, reason, detail, t }: {
   pending: PendingApproval
+  reason: string | undefined
   detail: ReactNode
   t: ApprovalComposerProps['t']
 }) {
@@ -69,7 +71,7 @@ function ApprovalFlow({ pending, detail, t }: {
           role="group"
           aria-label={t('detail.aria')}
         >
-          <div className={css.headline}>{pending.reason ?? t('escalation', { toolName: pending.toolName })}</div>
+          <div className={css.headline}>{reason ?? t('escalation', { toolName: pending.toolName })}</div>
           {detail !== null && <div className={css.command}>{detail}</div>}
         </div>
         <div className={css.actionRow}>
