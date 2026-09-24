@@ -395,13 +395,15 @@
 /* New Session: 38px bar, 12px radius (figma 133:7634 geometry, squared-off
    corners); collapsed it renders as the rail's plain icon control. */
 .newSession {
+  container-type: inline-size;
+  position: relative;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 0;
   height: 38px;
-  padding: 8px 16px;
+  padding: 8px 12px;
   margin: 0 2px 12px;
   box-sizing: border-box;
   border: 0.5px solid var(--dsw-alias-border-l3);
@@ -462,6 +464,21 @@
 .collapsed .newSessionLabel {
   max-width: 0;
 }
+
+.newSessionLabelMask { flex: 1; min-width: 0; }
+.newSession:is(:hover, :focus-visible) .newSessionLabelMask:has(+ .newSessionShortcut) { overflow: hidden; mask-image: linear-gradient(to right, black calc(100% - 16px), transparent); }
+.newSessionContent { display: flex; width: 100cqw; align-items: center; justify-content: center; gap: 6px; }
+.newSessionContent > svg { flex: none; }
+
+.newSessionShortcut {
+  opacity: 0;
+  display: inline-flex;
+  flex: none;
+  pointer-events: none;
+  font-weight: 400;
+}
+
+.newSession:is(:hover, :focus-visible) .newSessionShortcut { opacity: 1; }
 
 .panelList {
   flex: none;

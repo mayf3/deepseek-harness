@@ -28,6 +28,8 @@ export interface ModelDirectoryState {
   failures: readonly ModelCatalogFailure[]
   /** Lifecycle of the in-flight operation. */
   status: 'idle' | 'loading' | 'ready' | 'selecting' | 'error'
+  /** Selection submitted by the latest `select` until it settles; null otherwise. */
+  pending: ModelSelection | null
   /** Whole-request or selection failure text; null when none. */
   error: string | null
 }
@@ -36,7 +38,7 @@ export interface ModelDirectoryState {
 export class ModelDirectory {
   /** The shared snapshot both entries render from (uSES-safe store). */
   readonly store: SnapshotStore<ModelDirectoryState> = createSnapshotStore<ModelDirectoryState>({
-    current: null, routable: null, groups: [], failures: [], status: 'idle', error: null,
+    current: null, routable: null, groups: [], failures: [], status: 'idle', pending: null, error: null,
   })
 
   /** Latest selection operation wins; an older response never overwrites a newer one. */
@@ -90,7 +92,7 @@ export class ModelDirectory {
     const previousEffort = previous?.reasoningEffort ?? (previous === null ? undefined : this.catalog.reasoningFor(previous)?.defaultEffort)
     const nextEffort = selection.reasoningEffort ?? this.catalog.reasoningFor(selection)?.defaultEffort
     const generation = ++this.generation
-    this.store.update((s) => { s.status = 'selecting'; s.error = null })
+    this.store.update((s) => { s.status = 'selecting'; s.pending = selection; s.error = null })
     const result = await this.sessions.selectModel({
       sessionId: this.sessionId,
       provider: selection.provider,
@@ -105,6 +107,7 @@ export class ModelDirectory {
     if (!result.ok) {
       this.store.update((s) => {
         s.status = 'error'
+        s.pending = null
         s.error = `${result.error.code}: ${result.error.message}`
       })
       return result
@@ -117,7 +120,7 @@ export class ModelDirectory {
         session_id: this.sessionId, model_name: to, switch_from: previousEffort ?? 'default', switch_to: nextEffort ?? 'default',
       })
     }
-    this.store.update((s) => { s.status = 'ready'; s.error = null })
+    this.store.update((s) => { s.status = 'ready'; s.pending = null; s.error = null })
     this.syncInputs()
     return { ok: true, value: undefined }
   }
@@ -130,6 +133,7 @@ export class ModelDirectory {
     ++this.generation
     this.store.update((state) => {
       if (state.status === 'selecting') state.status = 'idle'
+      state.pending = null
       state.error = null
     })
     this.syncInputs()
@@ -165,6 +169,7 @@ export class ModelDirectory {
         groups: catalog.value?.groups ?? [],
         failures: catalog.value?.failures ?? [],
         status: catalog.status === 'error' ? 'error' : 'loading',
+        pending: this.store.getSnapshot().pending,
         error: catalog.error,
       })
       return
@@ -181,6 +186,7 @@ export class ModelDirectory {
       status: this.store.getSnapshot().status === 'selecting'
         ? 'selecting'
         : 'ready',
+      pending: this.store.getSnapshot().pending,
       error: null,
     })
   }

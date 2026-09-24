@@ -311,7 +311,6 @@ export const InputBar = memo(function InputBar({
     : running && steeringAvailable && !disabled && !uploadsPending && plainMessageDraft
       ? t(primarySubmitMode === 'steer' ? 'input.send.steer' : 'input.send.queue')
       : t('input.send')
-  const stopHint = stopKeys.length ? t('shortcut.hint', { label: t('input.stop'), keys: stopKeys.join(' ') }) : t('input.stop')
   const onPrimary = (): void => {
     if (primaryStops) {
       stop?.()
@@ -459,7 +458,7 @@ export const InputBar = memo(function InputBar({
               {renderSlot('conversation.input.activity', { locked, onActiveChange: setActivity })}
             </div>}
             {interruptible && (
-              <Tooltip label={stopHint} side="top" delayMs={500} disabled={stop === undefined}>
+              <Tooltip label={t('input.stop')} shortcutKeys={stopKeys} side="top" delayMs={500} disabled={stop === undefined}>
                 <button
                   type="button"
                   className={css.primary}
@@ -474,7 +473,7 @@ export const InputBar = memo(function InputBar({
                 </button>
               </Tooltip>
             )}
-            <Tooltip label={primaryStops ? stopHint : primaryLabel} side="top" delayMs={500} disabled={primaryDisabled}>
+            <Tooltip label={primaryStops ? t('input.stop') : primaryLabel} shortcutKeys={primaryStops ? stopKeys : undefined} side="top" delayMs={500} disabled={primaryDisabled}>
               <button
                 type="button"
                 className={css.primary}

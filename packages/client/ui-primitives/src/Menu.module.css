@@ -201,11 +201,9 @@
 }
 
 .shortcut .shortcutKeys {
-  height: auto;
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .check {

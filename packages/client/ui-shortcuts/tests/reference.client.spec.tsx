@@ -38,8 +38,12 @@ it('keeps a reference open while a clear operation is pending', async () => {
   const f = referenceFixture()
   const pending = Promise.withResolvers<Awaited<ReturnType<typeof f.edit>>>()
   f.edit.mockReturnValueOnce(pending.promise)
-  fireEvent.click(screen.getByRole('button', { name: 'Remove shortcut for Open settings' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
+  fireEvent.click(screen.getByRole('button', { name: en.clear }))
   fireEvent.click(screen.getByRole('button', { name: en.close }))
+  fireEvent.pointerDown(screen.getByRole('heading', { name: en.title }))
+  fireEvent.click(screen.getByRole('dialog').previousElementSibling!)
+  expect(screen.getByRole('group', { name: 'Open settings' })).toBeTruthy()
   expect(f.store.getSnapshot().open).toBe(true)
   await act(async () => { pending.resolve({ status: 'saved', snapshot: f.config.getSnapshot() }); await pending.promise })
   expect(screen.getByRole('alert').textContent).toBe(en.saved)
@@ -70,7 +74,7 @@ it.each(['macos', 'windows'] as const)('shows the reference, filters labels and 
     describeBinding: describe, platform, t: makeTranslate(en) } as Parameters<typeof ShortcutReference>[0]
   render(<><ShortcutsRow {...props} /><ShortcutReference {...props} /></>)
   expect(screen.queryByRole('dialog')).toBeNull()
-  const opener = screen.getByRole('button', { name: 'View shortcuts' }); opener.focus(); fireEvent.click(opener)
+  const opener = screen.getByRole('button', { name: en.view }); opener.focus(); fireEvent.click(opener)
   expect(opener.getAttribute('aria-keyshortcuts')).toBe(platform === 'macos' ? 'Meta+/' : 'Control+/')
   const search = screen.getByRole('searchbox')
   expect(document.activeElement).toBe(search)
@@ -100,7 +104,7 @@ it.each(['macos', 'windows'] as const)('shows the reference, filters labels and 
   expect(store.getSnapshot().query).toBe('')
   expect(document.activeElement).toBe(opener)
   fireEvent.mouseEnter(opener)
-  expect(screen.getByRole('tooltip').textContent).toBe(platform === 'macos' ? 'View shortcuts ⌘ /' : 'View shortcuts Ctrl + /')
+  expect(screen.getByRole('tooltip').getAttribute('aria-label')).toBe(`${en['global-hint']} ${platform === 'macos' ? '⌘ /' : 'Ctrl + /'}`)
   act(() => { catalog.set(catalog.getSnapshot().map(row => row.id === 'shortcuts.open'
     ? { ...row, binding: null, keys: [], aria: undefined } : row)) })
   expect(screen.queryByRole('tooltip')).toBeNull()
@@ -186,7 +190,7 @@ it('keeps core actions in product order across registration, remount and label c
     ...template, id: id as ShortcutCommandId, label,
   }))
   const stop: ShortcutFixedCatalogEntry = { id: 'response.stop' as ShortcutCommandId, label: 'Stop reply',
-    keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'application' }
+    keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input' }
   const fixed: ShortcutFixedCatalogEntry[] = [
     { ...stop, id: 'fixed.send' as ShortcutCommandId, label: 'Send', keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'input' },
     { ...stop, id: 'fixed.newline' as ShortcutCommandId, label: 'Newline', keys: ['Shift', 'Enter'], bindings: [{ code: 'Enter', modifiers: ['shift'] }], group: 'input' },
@@ -196,21 +200,21 @@ it('keeps core actions in product order across registration, remount and label c
     stop,
   ]
   const labels = (group: string) => within(screen.getByRole('region', { name: group })).getAllByRole('listitem')
-    .map(row => row.firstElementChild?.textContent)
-  const expected = [...core.map(([, label]) => label), 'Stop reply', 'Zulu extension', 'Alpha extension']
+    .map(row => row.querySelector(':scope > span')?.textContent)
+  const expected = [...core.map(([, label]) => label), 'Zulu extension', 'Alpha extension']
   for (const reversed of [true, false]) {
     act(() => {
       catalog.set(reversed ? [...extensions, ...commands].reverse() : [...extensions, ...commands])
       fixedCatalog.set(reversed ? [...fixed].reverse() : fixed)
     })
     expect(labels(en.application)).toEqual(expected)
-    expect(labels(en.input)).toEqual(['Newline', 'Send'])
+    expect(labels(en.input)).toEqual(['Newline', 'Send', 'Stop reply'])
     expect(labels(en.menus)).toEqual(['Dismiss', 'Select'])
     expect(labels(en.approval)).toEqual(['Approve'])
   }
-  const stopButton = within(screen.getByRole('region', { name: en.application })).getByRole('button', { name: 'Stop reply Esc Esc' })
-  expect(stopButton.hasAttribute('disabled')).toBe(true)
-  fireEvent.click(stopButton)
+  const stopRow = screen.getByText('Stop reply').closest('li')!
+  expect(within(stopRow).queryByRole('button')).toBeNull()
+  fireEvent.click(stopRow)
   expect(screen.queryByRole('button', { name: 'Edit shortcut for Stop reply' })).toBeNull()
   expect(screen.queryByRole('group', { name: 'Stop reply' })).toBeNull()
   act(() => { catalog.set(extensions); fixedCatalog.set(fixed.filter(row => row.id !== stop.id)) })
@@ -223,7 +227,7 @@ it('keeps core actions in product order across registration, remount and label c
     store.actions.search('操作')
   })
   expect(labels(en.application)).toEqual(expected.map(label => `操作：${label}`))
-  expect(labels(en.input)).toEqual(['操作：Newline', '操作：Send'])
+  expect(labels(en.input)).toEqual(['操作：Newline', '操作：Send', '操作：Stop reply'])
 })
 
 it('keeps product order for tied searches while prioritizing stronger matches', () => {
@@ -268,9 +272,9 @@ it('shows mounted fixed actions as searchable read-only rows and follows their l
   const approve = { id: 'approval.accept' as ShortcutCommandId, label: 'Approve', keys: ['Enter'], bindings: [{ code: 'Enter', modifiers: [] }], group: 'approval' as const }
   expect(screen.queryByText(send.label)).toBeNull()
   act(() => { fixedCatalog.set([send, stop, approve]) })
-  expect(screen.getByRole('button', { name: 'Send from catalog Enter' }).hasAttribute('disabled')).toBe(true)
+  expect(within(screen.getByText(send.label).closest('li')!).queryByRole('button')).toBeNull()
   expect(screen.getByRole('region', { name: 'Approval area' }).textContent).toContain('Approve')
-  expect(screen.getByRole('button', { name: 'Stop reply Esc Esc' }).hasAttribute('disabled')).toBe(true)
+  expect(within(screen.getByText(stop.label).closest('li')!).queryByRole('button')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Edit shortcut for Stop reply' })).toBeNull()
   act(() => { store.actions.search('response.stop') })
   expect(screen.getAllByRole('listitem')).toHaveLength(1)
@@ -305,12 +309,13 @@ it.each(['conflict', 'reserved'] as const)('omits status labels for a %s binding
   expect(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }).hasAttribute('disabled')).toBe(false)
 })
 
-it('removes from the row and replaces failure feedback with a fresh system success toast', async () => {
+it('removes from the inline editor and replaces failure feedback with a fresh system success toast', async () => {
   vi.useFakeTimers()
   try {
     const f = referenceFixture()
     f.edit.mockResolvedValueOnce({ status: 'write-failed', snapshot: f.config.getSnapshot() })
-    const remove = screen.getByRole('button', { name: 'Remove shortcut for Open settings' })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
+    const remove = screen.getByRole('button', { name: en.clear })
     await act(async () => { remove.click() })
     expect(screen.getByRole('alert').textContent).toBe(en['write-failed'])
     expect(screen.getByRole('dialog').contains(screen.getByRole('alert'))).toBe(false)
@@ -325,10 +330,10 @@ it('removes from the row and replaces failure feedback with a fresh system succe
   } finally { vi.useRealTimers() }
 })
 
-it('opens the same recorder from a key badge and retains the editor when restoring defaults fails', async () => {
+it('opens the recorder from the application row and retains the editor when restoring defaults fails', async () => {
   const f = referenceFixture()
   f.edit.mockResolvedValueOnce({ status: 'write-failed', snapshot: f.config.getSnapshot() })
-  fireEvent.click(screen.getByRole('button', { name: 'Open settings ⇧ ⌘ ,' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
   await act(async () => { screen.getByRole('button', { name: en.reset }).click() })
   expect(f.edit).toHaveBeenLastCalledWith({ type: 'reset', id: 'settings.open' }, f.config.getSnapshot().revision)
   expect(screen.getByRole('alert').textContent).toBe(en['write-failed'])
@@ -390,7 +395,8 @@ it('blocks reference dismissal during a removal and ignores its completion after
   let settle!: (value: Awaited<ReturnType<typeof f.edit>>) => void
   const reply = new Promise<Awaited<ReturnType<typeof f.edit>>>((resolve) => { settle = resolve })
   f.edit.mockReturnValueOnce(reply)
-  fireEvent.click(screen.getByRole('button', { name: 'Remove shortcut for Open settings' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
+  fireEvent.click(screen.getByRole('button', { name: en.clear }))
   fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
   expect(f.store.getSnapshot().open).toBe(true)
   f.view.unmount()
@@ -482,7 +488,7 @@ it('restores defaults after confirmation and retains accepted configuration when
   await act(async () => { confirm.click() })
   expect(screen.queryByRole('dialog', { name: en['reset-title'] })).toBeNull()
   expect(screen.getByRole('alert').textContent).toBe(en['reset-saved'])
-  expect(screen.getByText('0 customized')).toBeTruthy()
+  expect(screen.queryByText('0 customized')).toBeNull()
   expect(restore.hasAttribute('disabled')).toBe(true)
   expect(document.activeElement).toBe(screen.getByRole('searchbox'))
 })
@@ -522,4 +528,58 @@ it('keeps an active recorder focused when another window resets the profile', ()
   act(() => { f.config.set({ ...initialShortcutConfig(), status: 'ready' }) })
   expect(document.activeElement).toBe(recorder)
   expect(screen.getByRole('group', { name: 'Open settings' })).toBeTruthy()
+})
+
+it('clears a search and returns focus to the search field', () => {
+  referenceFixture()
+  const search = screen.getByRole('searchbox')
+  fireEvent.change(search, { target: { value: 'absent' } })
+  expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: en['clear-search'] }))
+  expect(screen.getAllByRole('listitem')).toHaveLength(1)
+  expect(document.activeElement).toBe(search)
+  expect(screen.queryByRole('button', { name: en['clear-search'] })).toBeNull()
+})
+
+it('closes the editor and drops a pending recording when blank space is clicked', async () => {
+  const f = referenceFixture()
+  fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
+  const recorder = screen.getByRole('button', { name: en.record })
+  expect(document.activeElement).toBe(recorder)
+  fireEvent.keyDown(recorder, { key: '.', code: 'Period', metaKey: true, shiftKey: true })
+  fireEvent.pointerDown(screen.getByRole('heading', { name: en.title }))
+  expect(document.activeElement).toBe(screen.getByRole('dialog'))
+  await act(async () => { fireEvent.keyUp(document.activeElement!, { key: '.', code: 'Period' }) })
+  expect(f.edit).not.toHaveBeenCalled()
+  expect(screen.queryByRole('group', { name: 'Open settings' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
+  const reopened = screen.getByRole('button', { name: en.record })
+  await act(async () => {
+    fireEvent.keyDown(reopened, { key: '.', code: 'Period', metaKey: true, shiftKey: true })
+    fireEvent.keyUp(reopened, { key: '.', code: 'Period' })
+  })
+  expect(f.edit).toHaveBeenCalledOnce()
+})
+
+it('preserves a failed draft when its status text is clicked, then retries after reviewing an external change', async () => {
+  const f = referenceFixture()
+  fireEvent.pointerDown(screen.getByRole('heading', { name: en.title }))
+  expect(f.store.getSnapshot().open).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
+  f.edit.mockResolvedValueOnce({ status: 'write-failed', snapshot: f.config.getSnapshot() })
+  const recorder = screen.getByRole('button', { name: en.record })
+  fireEvent.pointerDown(recorder)
+  await act(async () => {
+    fireEvent.keyDown(recorder, { key: '.', code: 'Period', metaKey: true, shiftKey: true })
+    fireEvent.keyUp(recorder, { key: '.', code: 'Period' })
+  })
+  const editor = screen.getByRole('group', { name: 'Open settings' })
+  fireEvent.pointerDown(within(editor).getByText(en['write-failed']))
+  expect(within(editor).getByRole('button', { name: en['retry-save'] })).toBeTruthy()
+  act(() => { f.config.set({ ...f.config.getSnapshot(), revision: initialShortcutConfig().revision }) })
+  fireEvent.pointerDown(within(editor).getByText(en.stale))
+  fireEvent.click(within(editor).getByRole('button', { name: en.review }))
+  await act(async () => { within(editor).getByRole('button', { name: en['retry-save'] }).click() })
+  expect(f.edit).toHaveBeenLastCalledWith({ type: 'set', id: 'settings.open', binding: { code: 'Period', modifiers: ['shift', 'meta'] } }, f.config.getSnapshot().revision)
+  expect(screen.queryByRole('group', { name: 'Open settings' })).toBeNull()
 })

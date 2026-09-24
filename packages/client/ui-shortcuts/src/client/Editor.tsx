@@ -129,7 +129,6 @@ EditorProps) {
       // macOS can omit the character keyup while Command is held.
       if (desktopChords && (held.size === 0 || platform === 'macos' && /^Meta(Left|Right)$/u.test(event.code))) { held.clear(); blocked = false }
       if (binding === null) return
-      if (desktopChords && document.activeElement !== recorder.current) { reset(); return }
       handlers.current.capture(binding, targetId)
     }
     const blur = (): void => { reset(); if (desktopChords) { setCandidate(null); setCaptured(false) } }
@@ -167,6 +166,7 @@ EditorProps) {
       {target.binding !== null && <button type="button" className={css.inlineAction} disabled={readonly}
         onClick={() => { void save({ type: 'set', id: target.id, binding: null }) }}>{t('clear')}</button>}
       <button ref={recorder} type="button" className={clsx(css.recorder, message && css.invalid)} disabled={!nativeReady} aria-disabled={busy || !nativeReady}
+        onBlur={() => { restart.current() }}
         aria-label={t('record')} aria-invalid={message !== ''} aria-describedby={descriptionId}
         onClick={() => { if (!writing.current) { restart.current(); setCaptured(false); setMessage(''); setRetry(null) } }}>
         {captured && message === '' ? <ShortcutKeys keys={describeBinding(candidate).keys} className={css.recorded} /> : t('record')}

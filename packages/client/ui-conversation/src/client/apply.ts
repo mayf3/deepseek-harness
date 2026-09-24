@@ -257,7 +257,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     ), 'ui-conversation: fixed stop input')
     scope.effect(() => {
       const command: ShortcutFixedCommand = {
-        id: 'response.stop' as ShortcutCommandId, label: () => t('input.stop'), keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'application',
+        id: 'response.stop' as ShortcutCommandId, label: () => t('input.stop'), keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input',
       }
       const dispose = scope.shortcuts.registerFixed(command)
       stopShortcut.set(command.keys)
