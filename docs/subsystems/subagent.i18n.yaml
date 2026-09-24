@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/subagent.md
 /subagent:
-  en: 4f8cfa6e59a1d98f
-  zh: bd2b2fbabd418018
+  en: 7ef8cafc02c317b5
+  zh: 1ccf8273c706b436
 /subagent/two-kinds-of-capability-discovered-two-ways:
   en: 7be7cbc224948ed1
   zh: 6da4f61394ed900e
@@ -12,11 +12,11 @@
   en: 37b7876d6f186642
   zh: 196a9df4fca5a4fd
 /subagent/continuable-children-and-activations:
-  en: e011e4ac4227f4bc
-  zh: b15cf25f519a116c
+  en: 6cc3f373d6ad49b2
+  zh: dd2cf41fbbc5fbe9
 /subagent/durable-enumeration-listchildren-listdescendants-and-their-entries:
-  en: 3ad5d3831d5c5a5a
-  zh: 26ca129a41ce7f77
+  en: a3c7f2a7ac2cdc95
+  zh: 758b99f246fa5941
 /subagent/the-terminal-result-subagentresult:
   en: 6070effb5f84f701
   zh: 2b8a6980ceb0b7b2
@@ -27,5 +27,5 @@
   en: cb05cffdb837b7bc
   zh: a53133845d673f0a
 /subagent/in-process-backends-permission-depth-and-seed:
-  en: ed6e94b122384d85
-  zh: 5961582674b6af69
+  en: 3290c070c97c284d
+  zh: ebced35b081ea1c2

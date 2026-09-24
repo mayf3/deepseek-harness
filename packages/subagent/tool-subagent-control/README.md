@@ -54,7 +54,7 @@ Stops only the target's current turn: queued messages stay parked until a later 
 
 ### list_agents
 
-Lists the continuable children below the calling agent: `children` (default) reads direct children from the parent catalog without opening child logs; `descendants` walks the whole tree in stable pre-order, annotating each entry with its durable direct-parent session id and depth. Status comes from the live Agent registry — `running` or `inactive`. One-shot children are intentionally absent because they cannot accept `send_message`, and unreadable candidates appear as diagnostics only in `descendants` scope.
+Lists the continuable children below the calling agent: `children` (default) reads direct children from the parent catalog without opening child logs; `descendants` recursively reads child catalogs in stable pre-order, annotating each entry with its durable direct-parent session id and depth. Status comes from the live Agent registry — `running` or `inactive`. One-shot children are omitted from output but their catalogs remain traversal nodes. Unknown modes and unreadable child catalogs appear as diagnostics only in `descendants` scope.
 
 -----
 
@@ -76,7 +76,7 @@ The tool forwards its execution signal, which owns admission only until inbox ac
 
 ### Listing projection
 
-`list_agents` derives the root id from the calling agent, reads the service catalog without a cursor, refines each candidate's status through the live Agent registry, and omits one-shot children because they cannot accept `send_message`. Diagnostics keep their positions in the descendants scope and never expose descriptor contents.
+`list_agents` derives the root id from the calling agent, reads the service catalog without a cursor, refines each candidate's status through the live Agent registry, and omits one-shot children because they cannot accept `send_message`. Descendant traversal preserves each parent catalog’s event order. Unknown modes produce diagnostics while their catalogs remain traversable; unreadable catalogs produce diagnostics and stop that branch. Descendants absent from reachable catalogs cannot be discovered.
 
 ### Source map
 

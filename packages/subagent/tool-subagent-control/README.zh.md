@@ -54,7 +54,7 @@ kind: "package-reference"
 
 ### list_agents
 
-列出调用方 agent 下方的可继续子级：`children`（默认）从父目录读取直接子级，不打开子日志；`descendants` 按稳定前序遍历整棵树，并为每个条目标注其持久化直接父级会话 ID 与深度。状态来自在线 Agent 注册表——`running` 或 `inactive`。一次性子级因无法接受 `send_message` 而被有意排除，无法读取的候选项仅在 `descendants` 作用域中以诊断信息呈现。
+列出调用方 agent 下方的可继续子级：`children`（默认）从父目录读取直接子级，不打开子日志；`descendants` 按稳定前序递归读取子级目录，并为每个条目标注其持久化直接父级会话 ID 与深度。状态来自在线 Agent 注册表——`running` 或 `inactive`。一次性子级不出现在输出中，但其目录仍是遍历节点。未知模式与无法读取的子级目录仅在 `descendants` 作用域中以诊断信息呈现。
 
 -----
 
@@ -76,7 +76,7 @@ kind: "package-reference"
 
 ### 列表投影
 
-`list_agents` 从调用 agent 推导根 id，不使用 cursor 读取服务目录，通过在线 Agent 注册表细化每个候选的状态，并省略无法接受 `send_message` 的一次性子级。diagnostic 在 descendants scope 中保留其位置，且绝不暴露描述符内容。
+`list_agents` 从调用 agent 推导根 id，不使用 cursor 读取服务目录，通过在线 Agent 注册表细化每个候选的状态，并省略无法接受 `send_message` 的一次性子级。后代遍历保留每个父目录的事件顺序。未知模式产生诊断，但其目录仍可遍历；无法读取的目录产生诊断，并停止该分支。可达目录中不存在的后代无法被发现。
 
 ### 源码地图
 
