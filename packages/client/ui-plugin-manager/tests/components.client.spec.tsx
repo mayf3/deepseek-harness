@@ -1109,6 +1109,46 @@ describe('PluginManagerPage', () => {
     ])
   })
 
+  it('offers another way instead of a mirror the failed GitHub install already asked', () => {
+    const subject = { spec: 'github:a/b', status: 'accepted', kind: 'git', bundle: null, registry: null, host: 'github.com' } as const
+    const failed: InstallState = {
+      ...IDLE_INSTALL, open: true, spec: subject.spec, registries: REGISTRIES, registry: { kind: 'offered', registry: MIRROR },
+      phase: 'failed', subject, failure: { reason: 'GitHub connection timed out', kind: 'timeout', failedAt: 'spec-host' },
+    }
+    const { actions, set, setLanguage } = renderTab({ install: failed })
+    // The mirror picked from the options, also while pnpm's own configuration is unread, typed as an address, or named
+    // by pnpm's own configuration.
+    for (const patch of [
+      {},
+      { registries: { ...REGISTRIES, resolved: null } },
+      { registry: { kind: 'custom', url: ' https://registry.npmmirror.com ' } },
+      { registries: { ...REGISTRIES, resolved: MIRROR }, registry: { kind: 'offered', registry: null } },
+    ] as const) {
+      set({ install: { ...failed, ...patch } })
+      const dialog = within(screen.getByRole('dialog', { name: en.installGithubTimeoutTitle }))
+      expect(dialog.getByText(en.installGithubFailedDescription)).toBeTruthy()
+      expect(dialog.getAllByRole('button')).toEqual([
+        dialog.getByRole('button', { name: en.close }),
+        dialog.getByRole('button', { name: en.cancel }),
+        dialog.getByRole('button', { name: en.installTryAnotherWay }),
+      ])
+    }
+    fireEvent.click(screen.getByRole('button', { name: en.installTryAnotherWay }))
+    expect(actions.useGithubMirror).toHaveBeenCalledOnce()
+    expect(actions.runInstall).not.toHaveBeenCalled()
+    // The form it returns to opens the guide to the other kinds of spec.
+    set({ install: { ...IDLE_INSTALL, open: true, mirrorRecovery: true, registries: REGISTRIES, registry: failed.registry } })
+    expect(screen.getByRole('button', { name: en.installGuideHide }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText(en.installGuidePathExample)).toBeTruthy()
+    // A typed address other than the mirror can still switch to it.
+    set({ install: { ...failed, registry: { kind: 'custom', url: 'npm.corp' } } })
+    expect(screen.getByRole('button', { name: en.installUseGithubMirror })).toBeTruthy()
+    setLanguage(zh)
+    set({ install: failed })
+    expect(screen.getByRole('button', { name: '试试其他方式' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '改用国内镜像' })).toBeNull()
+  })
+
   it('keeps the ordinary failure view for registry errors, other hosts, and unavailable mirrors', () => {
     const failed: InstallState = {
       ...IDLE_INSTALL, open: true, registries: REGISTRIES, phase: 'failed',

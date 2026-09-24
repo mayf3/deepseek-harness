@@ -1255,6 +1255,34 @@ describe('PluginManagerController', () => {
     await vi.waitFor(() => { expect(state().install.registries).toEqual(REGISTRIES) })
     expect(state().install.registry).toEqual({ kind: 'offered', registry: MIRROR })
   })
+
+  it.each([
+    ['typed as an address', { kind: 'custom', url: 'https://registry.npmmirror.com' }, REGISTRIES],
+    ['named by pnpm\'s own configuration', { kind: 'offered', registry: null }, { ...REGISTRIES, resolved: MIRROR }],
+  ] as const)('clears the GitHub address and keeps the registry when the install already asked the mirror %s', async (_how, choice, registries) => {
+    const { face, state, plugins } = bench({
+      registries: vi.fn(() => Promise.resolve(ok(registries))),
+      inspect: vi.fn(() => Promise.resolve(ok({ status: 'accepted', kind: 'git', bundle: null, registry: MIRROR, host: 'github.com' }))),
+      installBundle: vi.fn(() => Promise.resolve(ok({
+        ...failed(undefined, { exitCode: 1, output: 'Could not resolve host: github.com', truncated: false, logPath: '/l', kind: 'timeout' }),
+        failedAt: 'spec-host',
+      }))),
+    })
+    face.openInstall()
+    await vi.waitFor(() => { expect(state().install.registries).toEqual(registries) })
+    face.chooseRegistry(choice)
+    face.editInstallSpec('https://github.com/example/dsh-plugin.git')
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
+    face.useGithubMirror()
+    expect(state().install).toMatchObject({ phase: 'idle', spec: '', mirrorRecovery: true, registry: choice, failure: null })
+    // The choice stays as made, so the next dialog starts from it too.
+    face.closeInstall()
+    face.openInstall()
+    await vi.waitFor(() => { expect(state().install.registries).toEqual(registries) })
+    expect(state().install.registry).toEqual(choice)
+    expect(plugins.installBundle).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('Host registry response recommendation', () => {
