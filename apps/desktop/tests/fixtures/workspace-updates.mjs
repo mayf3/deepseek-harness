@@ -218,7 +218,7 @@ async function qualify() {
     const checking = await dialogWith(messages.updateChecking)
     await screenshot(checking, 'checking.png')
     server.release()
-    const current = await dialogWith(messages.updateCurrent.replace('{version}', app.getVersion()))
+    const current = await dialogWith(messages.updateCurrent)
     assert.equal(current, checking)
     await clickText(current, messages.updateAcknowledge)
     assert.equal(server.requests.filter(path => path === '/payload.exe').length, 0)
