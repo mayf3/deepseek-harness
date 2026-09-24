@@ -12,7 +12,7 @@ Desktop shell 用自定义模板替换了 Electron 的默认应用菜单，该�
 
 macOS 上的模板在 Edit 菜单之后声明 `{ role: 'windowMenu' }`，并在应用子菜单的 Quit 之前声明由分隔符隔开的 `hide`、`hideOthers` 和 `unhide`。这些 role 只提供标准菜单项；不声明 Services 子菜单、窗口列表或其他 macOS 默认项。Windows 和 Linux 保留应用菜单和 Edit 菜单。[页面关闭决策](../architecture/2026-09-21-desktop-page-close-shortcuts.zh.md)负责自定义 File 菜单和关闭行为。
 
-Electron 为 Window 和 Edit role 提供英文默认标签。显式标签会覆盖 role 的默认标签，同时保留原生命令和快捷键；本地化的应用命令见 [Desktop README](../../../../apps/desktop/README.zh.md)。最小化和隐藏通过 Electron 的 role 执行，没有自定义处理器。
+Electron 为 Window 和 Edit role 提供英文默认标签。显式标签会覆盖 role 的默认标签，同时保留原生命令和快捷键；本地化的应用命令见 [Desktop README](../../../../apps/desktop/README.zh.md)。最小化和隐藏通过 Electron 的 role 执行，没有自定义处理器。 关闭与激活行为已被[关闭时隐藏窗口](../architecture/2026-09-23-desktop-close-to-background-and-quit-confirmation.zh.md)部分取代；这里的菜单声明仍然有效。
 
 ## 考虑过的替代方案
 

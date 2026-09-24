@@ -103,6 +103,8 @@ Sidebar 使用的 `DockLayout` 在选中项变化、跨格移动与浮动期间�
 <a id="dev-note"></a>
 ### 开发备注
 
+菜单采用共享 `MenuSurface` 材质，包括用于背景模糊的 macOS 底层；自定义内容遵循[菜单规则](../../../docs/web-styling.zh.md#component-rules)。
+
 <details>
 <summary>维护者工作上下文——点击展开</summary>
 

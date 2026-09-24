@@ -43,7 +43,6 @@ async function main() {
     phase = `overlay ready (${initiallyVisible})`
     await ready
     await initiallyShown
-    // A renderer round trip observes the CSS request already queued by the overlay.
     const filter = () => parent.webContents.executeJavaScript('getComputedStyle(document.body).filter')
     const loaded = { parent: parent.isVisible(), overlay: overlay.isVisible(), filter: await filter() }
     if (initiallyVisible) {

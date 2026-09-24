@@ -393,6 +393,20 @@ describe('web e2e: shipped right Sidebar', () => {
       const rowBox = await utilities.boundingBox()
       if (expandBox === null || rowBox === null) throw new Error('header utilities are not rendered')
       expect(Math.round(expandBox.y + expandBox.height / 2)).toBe(Math.round(rowBox.y + rowBox.height / 2))
+      const more = utilities.getByRole('button', { name: 'More actions', exact: true })
+      let hoverFill: string | undefined
+      for (const action of [more, expand]) {
+        await action.hover()
+        const appearance = await action.evaluate((node) => {
+          const style = getComputedStyle(node)
+          const box = node.getBoundingClientRect()
+          return { width: box.width, height: box.height, radius: style.borderRadius, fill: style.backgroundColor }
+        })
+        expect(appearance).toMatchObject({ width: 28, height: 28, radius: '8px' })
+        expect(appearance.fill).not.toBe('rgba(0, 0, 0, 0)')
+        if (hoverFill === undefined) hoverFill = appearance.fill
+        else expect(appearance.fill).toBe(hoverFill)
+      }
       // Its own corner seat, past the utilities' right edge — not a utility.
       expect(expandBox.x).toBeGreaterThan(rowBox.x + rowBox.width)
       const conversationBoxBefore = await conversation.boundingBox()
@@ -1155,6 +1169,19 @@ describe('web e2e: shipped right Sidebar', () => {
         await expect.poll(async () => await tabTitles(column)).toEqual(['文件', '开始'])
         await expect.poll(async () => await guide.locator('[data-sidebar-right-guide-entry="files"]').innerText())
           .toBe('工作区文件\n浏览会话工作区的文件\n⌥\n⌘\nP')
+        const fileEntry = guide.locator('[data-sidebar-right-guide-entry="files"]')
+        const terminalEntry = guide.locator('[data-sidebar-right-guide-entry="terminal"]')
+        for (const entry of [fileEntry, terminalEntry]) {
+          expect(await entry.evaluate(node => getComputedStyle(node).borderRadius)).toBe('20px')
+        }
+        expect(await terminalEntry.evaluate(node => getComputedStyle(node).overflow)).toBe('hidden')
+        const terminalActions = terminalEntry.getByRole('button')
+        for (const action of await terminalActions.all()) {
+          expect(await action.evaluate(node => getComputedStyle(node).borderRadius)).toBe('0px')
+          await action.hover()
+          expect(await action.evaluate(node => getComputedStyle(node).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)')
+        }
+        await terminalActions.first().hover()
         await shot(zhPage, '05-guide-copy-zh')
 
         expect(zhTripwire.pageErrors).toEqual([])
