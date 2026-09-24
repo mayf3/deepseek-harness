@@ -455,7 +455,7 @@
   height: 19px;
   padding: 0 5px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--dsw-radius-xs);
   font-size: 10px;
   line-height: 16px;
   font-weight: 650;
@@ -933,7 +933,7 @@
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   color: var(--dsw-alias-label-secondary);
   background: transparent;
   cursor: pointer;
@@ -1710,7 +1710,7 @@
   padding: 8px;
   gap: 10px;
   border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-lg);
 }
 
 .attachmentIcon {
@@ -1750,7 +1750,7 @@
 .attachmentDisclosure {
   margin-block: 8px;
   border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-md);
 }
 
 .attachmentDisclosure > summary {
@@ -1800,7 +1800,7 @@
   align-items: center;
   margin-left: -4px;
   padding: 0 4px;
-  border-radius: 3px;
+  border-radius: var(--dsw-radius-xs);
   cursor: pointer;
 }
 

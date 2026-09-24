@@ -95,7 +95,8 @@ it('follows the parent geometry and removes listeners when closed or replaced', 
   expect((await next).response).toBe(1)
   expect(f.parent.listenerCount('resize')).toBe(0)
   expect(f.parent.listenerCount('move')).toBe(0)
-  expect(f.parent.webContents.removeInsertedCSS).toHaveBeenCalledTimes(1)
+  expect(f.parent.webContents.insertCSS).not.toHaveBeenCalled()
+  expect(f.parent.webContents.removeInsertedCSS).not.toHaveBeenCalled()
 })
 
 it('cancels on abort, renderer failure, disposal, or an already-closed parent', async () => {

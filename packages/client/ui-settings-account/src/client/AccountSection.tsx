@@ -169,7 +169,7 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, openPla
           target="_blank" rel="noreferrer">
           {t('open')}
         </a>}
-        <Button variant="outline" className={css.button} disabled={busy || attempt.phase === 'committing'}
+        <Button variant="outline" disabled={busy || attempt.phase === 'committing'}
           onClick={() => { void run(() => cancel(attempt.id)) }}>{t('cancel')}</Button>
       </div>}
       <div className={css.balanceCard}>
