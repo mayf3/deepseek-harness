@@ -48,7 +48,7 @@ The composer measures its expanded control groups after size, content, visibilit
 
 The context-occupancy button shows a ring and percentage below the input card, after the Session statistics. Clicking it opens the token breakdown in a panel kept inside the viewport, including when no statistics are shown; the button stays hidden until context usage and capacity are available.
 
-With Developer tools off, the shell hides only Trajectory; other plugin-contributed Views remain available. The View tab bar is hidden when fewer than two Views are available. Turning Developer tools off while Trajectory is active returns to Chat; stored View preferences and recorded Session data remain intact. Turning it on makes Trajectory available again. View owners receive the available roster so their navigation actions can follow the same visibility.
+With Coding Tools off, the shell hides only Trajectory; other plugin-contributed Views remain available. The View tab bar is hidden when fewer than two Views are available. Turning Coding Tools off while Trajectory is active returns to Chat; stored View preferences and recorded Session data remain intact. Turning it on makes Trajectory available again. View owners receive the available roster so their navigation actions can follow the same visibility.
 
 The composer registers the File command action and owns its label, availability, and native file-dialog callback. Menu availability and invocation both consult the mounted composer's current attachment-intake policy. Unmounting or locking the composer disables that action; disposing the plugin removes its registration. The callback binding stays inside the input module.
 
@@ -84,7 +84,7 @@ File chips and editable skill references share a whole-reference hover backgroun
 
 When another writer owns the Session, the send-error toast asks the user to quit other running DSH instances and retry.
 
-Two independent Escape presses in the focused Chat or Composer stop its current running turn and preserve queued messages. The interval comes from the shortcuts plugin’s `stopSequenceMs` configuration (500 ms by default). A menu, approval, modal, terminal, embedded webpage, composition, repeated key, changed input region, Session or turn breaks the sequence. The shortcut uses the same scoped cancellation as the Stop button. The plugin registers Stop as a fixed action in the `application` display group. Its registration reserves plain Escape against editable shortcuts and supplies the `Esc Esc` sequence shown in the Stop button’s hover and keyboard-focus tooltip.
+Two independent Escape presses in the focused Chat or Composer stop its current running turn and preserve queued messages. The interval comes from the shortcuts plugin’s `stopSequenceMs` configuration (500 ms by default). A menu, approval, modal, terminal, embedded webpage, composition, repeated key, changed input region, Session or turn breaks the sequence. The shortcut uses the same scoped cancellation as the Stop button. The plugin registers Stop as a fixed action in the `input` display group. Its registration reserves plain Escape against editable shortcuts and supplies the `Esc Esc` sequence shown in the Stop button’s hover and keyboard-focus tooltip.
 
 <a id="temporary-composer-entries"></a>
 ## Temporary composer entries

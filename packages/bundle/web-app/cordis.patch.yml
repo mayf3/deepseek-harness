@@ -120,9 +120,11 @@
     # is the `ui-schedule` row below.
     - id: time-context
       name: '@deepseek-ai/dsh-time-context'
+      disabled: true
 
     - id: schedule
       name: '@deepseek-ai/dsh-schedule'
+      disabled: true
 
     # Configuration-surface reads and writes over Typert Remote. Each method
     # reports an actionable error when its settings-domain provider is absent.
@@ -367,6 +369,7 @@
     # service mounted above.
     - id: ui-schedule
       name: '@deepseek-ai/dsh-client-ui-schedule'
+      disabled: true
 
     # Goal surface: GoalBar in the input dock over the goal session projection.
     - id: ui-goal

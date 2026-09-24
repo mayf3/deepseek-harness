@@ -4,19 +4,19 @@
 #   pnpm run verify-translation-pairing --write packages/client/ui-settings-subagent/README.md
 /:
   en: 91ac9c71d17a231a
-  zh: 0e18ebe47ff01aed
+  zh: c0f89c3d36b51581
 /deepseek-ai-dsh-client-ui-settings-subagent:
   en: d1fc570c45a5f42e
   zh: 01eabcac395bca62
 /deepseek-ai-dsh-client-ui-settings-subagent/summary:
   en: 4b6bf8db1752b902
-  zh: 5bdba2bfe06234b4
+  zh: b8ac25ba6bdb96fb
 /deepseek-ai-dsh-client-ui-settings-subagent/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
 /deepseek-ai-dsh-client-ui-settings-subagent/use-this-package:
   en: 09ac65efa3352ef4
-  zh: 3eda3d453764fdff
+  zh: 0a6f9e74e304ef1f
 /deepseek-ai-dsh-client-ui-settings-subagent/understand-the-implementation:
   en: 5124ebc1880ba9fa
   zh: 89c2eb2d483962a7

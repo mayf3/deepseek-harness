@@ -86,6 +86,17 @@ export function escalationHintMarker(subject: string): string {
 }
 
 /**
+ * The model-facing `sandbox_permissions` parameter description, which carries
+ * the escalation rules for every enforcing family.
+ * @param subject - the family's noun for the denied action (`command` for
+ *   bash, `operation` for a filesystem mutation).
+ * @returns the parameter description, exactly as the model sees it.
+ */
+export function sandboxPermissionsDescription(subject: string): string {
+  return `The narrowest wider sandbox mode for a one-shot retry of the exact ${subject} the sandbox just denied; the retry asks the user for approval.`
+}
+
+/**
  * The closed outcome vocabulary of one escalation ask — structurally identical
  * to the approval seam's `ApprovalOutcome` so an `ApprovalService.request`
  * return is assignable without this package importing it.
@@ -189,7 +200,7 @@ export async function approveEscalation<A, C>(request: EscalationRequest, approv
     // The schema enum already pinned `mode` to the closed target vocabulary;
     // the check above proved it is strictly wider.
     case 'allowed-once': return mode as SandboxMode
-    case 'rejected': throw new Error(`the user rejected escalating this ${subject} to "${mode}"`)
+    case 'rejected': throw new Error(`the user rejected escalating this ${subject} to "${mode}"; it stays denied, so stop and explain instead of working around it`)
     case 'cancelled': throw new Error(`approval for escalating to "${mode}" was cancelled`)
     case 'unavailable': throw new Error(`sandbox escalation to "${mode}" requires approval, but no approval channel is available`)
     default: return assertNever(outcome, 'EscalationOutcome')

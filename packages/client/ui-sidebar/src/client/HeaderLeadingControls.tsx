@@ -26,10 +26,9 @@ export type HeaderLeadingControlsProps =
 export function HeaderLeadingControls({ toggleSidebar, startSession, useShortcuts, t }: HeaderLeadingControlsProps) {
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'sidebar.left.toggle'))
   const newShortcut = useShortcuts(rows => rows.find(row => row.id === 'session.new'))
-  const newHint = newShortcut?.keys.length ? t('shortcut.hint', { label: t('session.new.label'), keys: newShortcut.keys.join(' ') }) : t('session.new.label')
   return (
     <div className={css.controls}>
-      <Tooltip label={shortcut?.keys.length ? t('shortcut.hint', { label: t('toggle.open'), keys: shortcut.keys.join(' ') }) : t('toggle.open')} delayMs={500}>
+      <Tooltip label={t('toggle.open')} shortcutKeys={shortcut?.keys} delayMs={500}>
         <button
           type="button"
           className={css.iconButton}
@@ -40,7 +39,7 @@ export function HeaderLeadingControls({ toggleSidebar, startSession, useShortcut
           <IconPanelLeftOutlineRegular size={16} />
         </button>
       </Tooltip>
-      <Tooltip label={newHint} delayMs={500}>
+      <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500}>
         <button
           type="button"
           className={css.iconButton}

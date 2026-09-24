@@ -1,6 +1,5 @@
 /** Locale-owned Browser tab copy. */
 export const zh = {
-  'shortcut.hint': '{label} {keys}',
   'type.label': '浏览器',
   'guide.title': '浏览器',
   'guide.description': '浏览网页',
@@ -34,7 +33,6 @@ export type SidebarBrowserKey = keyof typeof zh
 
 /** English dictionary with the same keys. */
 export const en = {
-  'shortcut.hint': '{label} {keys}',
   'type.label': 'Browser',
   'guide.title': 'Browser',
   'guide.description': 'Browse web pages',

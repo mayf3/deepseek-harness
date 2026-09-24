@@ -57,14 +57,11 @@
   en: cf78b9dd5596495f
   zh: bd44560f8c2435e8
 /deepseek-ai-dsh-tool-fs-search/model-experience/system-prompt/what-the-model-sees:
-  en: 9ff140be02977133
-  zh: 43035edcaab81c23
-/deepseek-ai-dsh-tool-fs-search/model-experience/system-prompt/what-the-model-sees/glob-guidance-with-sampleovercapglobresults-true:
-  en: 06042a0fcd6dacc9
-  zh: 6da14bb730677c0e
-/deepseek-ai-dsh-tool-fs-search/model-experience/system-prompt/what-the-model-sees/glob-guidance-with-sampleovercapglobresults-false:
-  en: 05aa24220cadb079
-  zh: 07b9030bec317b0e
+  en: 0700638250399773
+  zh: a42336403025e9bd
+/deepseek-ai-dsh-tool-fs-search/model-experience/system-prompt/what-the-model-sees/glob-guidance:
+  en: c8f798f1bf500fe7
+  zh: 9f56b60ec8ae1779
 /deepseek-ai-dsh-tool-fs-search/model-experience/system-prompt/what-the-model-sees/grep-guidance:
   en: 7ed8e5efe4deb2de
   zh: eb8419d4579aeab2
