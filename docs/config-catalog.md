@@ -148,10 +148,8 @@ export type Config = PresetDefinition
 export interface Config {
   /** Deployment default when the caller omits a preset. */
   default: string
-  /** User-selected default while the chooser is shown; edited through Settings. */
+  /** User-selected default; edited through Settings. */
   selectedDefault: Volatile<string | undefined>
-  /** Whether new-session surfaces expose preset selection and the saved default applies. */
-  modeSelectionEnabled: Volatile<boolean>
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-agent-preset-registry -->
@@ -2557,13 +2555,19 @@ export interface JsonRpcConfig {
 ## `@deepseek-ai/dsh-session-log-deepseek`
 
 - `inject`: `deepseekLlmApiExtensions` · `sessions`
-- `source`: [`packages/session/session-log-deepseek/src/index.ts:38`](../packages/session/session-log-deepseek/src/index.ts)
+- `source`: [`packages/session/session-log-deepseek/src/index.ts:39`](../packages/session/session-log-deepseek/src/index.ts)
 
 ```ts config-catalog
 /** Session-log request contribution configuration. */
 export interface Config {
   /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `true`. */
   enabled?: boolean
+  /**
+   * Largest serialized `dsh_session_log` field, in UTF-8 bytes, that one request carries.
+   * A request uploads the longest pending event prefix that fits; later requests continue
+   * after its acceptance. Defaults to 8 MiB.
+   */
+  maxBytes?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-log-deepseek -->
@@ -3402,7 +3406,7 @@ export type ShellDialect = 'bash' | 'pwsh'
 export interface Config {
   /** Fallback display zone when the open turn has no unique browser zone. Omit to use the process zone. */
   timeZone?: string
-  /** Minimum milliseconds between durable injections in one session. Omit or set to 0 to inject at every eligible step. */
+  /** Minimum milliseconds between durable injections in one session. Defaults to 600000 (10 minutes); 0 injects at every eligible step. */
   refreshIntervalMs?: number
 }
 ```

@@ -482,7 +482,7 @@ describe('Schedule model tools', () => {
     ['an over-long title', { id: 'task-1', title: 'x'.repeat(MAX_TITLE_LENGTH + 1) }, 'invalid_prompt'],
     ['a blank prompt', { id: 'task-1', prompt: '  ' }, 'invalid_prompt'],
     ['a fractional interval', { id: 'task-1', every_seconds: 300.5 }, 'invalid_rule'],
-    ['an interval below the floor', { id: 'task-1', every_seconds: 299 }, 'frequency_too_high'],
+    ['an interval below the floor', { id: 'task-1', every_seconds: 59 }, 'frequency_too_high'],
   ])('rejects %s', async (_label, args, code) => {
     const test = await setup()
     expect((await execute(test, 'schedule_update', args)).value).toMatchObject({ code })

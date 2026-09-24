@@ -105,7 +105,7 @@ type IntervalUnit = (typeof INTERVAL_UNITS)[number]
 const INTERVAL_UNIT_SECONDS: Record<IntervalUnit, number> = { second: 1, minute: 60, hour: 3_600 }
 
 /** Shortest elapsed interval the Host accepts, stated in seconds. */
-const MIN_INTERVAL_SECONDS = 300
+const MIN_INTERVAL_SECONDS = 60
 
 /** Exhaustive recurrence-choice labels of the stored rule records. */
 const RULE_KIND_BY_RECORD: Record<ScheduleRecord['kind'], RuleKind> = {
@@ -1611,7 +1611,7 @@ function RuleCard({
               className={clsx(css.ruleInput, css.ruleControl, css.ruleIntervalInput)}
               type="number"
               // Both bounds are stated in the row's own unit, so the Host's
-              // 300-second floor reads as 300 seconds, 5 minutes, or 1 hour and
+              // 60-second floor reads as 60 seconds, 1 minute, or 1 hour and
               // never as a fraction of a unit. Any step is accepted: a whole unit
               // step would reject a staged value such as 1.5 hours, which is a
               // whole 5400 seconds and so a legal interval.
