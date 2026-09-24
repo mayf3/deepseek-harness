@@ -10,9 +10,9 @@ Full access lets useful project work proceed without repeated approvals, but it 
 
 ## Decision
 
-[`dsh-experimental-auto-review`](../../../../packages/experimental/auto-review/README.md) is an explicitly installed experimental Web layer, published under the [experimental package publication decision](../process/2026-09-12-publish-all-experimental-packages.md). Default Web retains Read Only, Workspace Write, and Full access. The layer contributes current-session `auto`, whose only durable identity is `permission/preset:auto`; it shares Full access's unchanged `danger-full-access + never` knobs and tool definitions. Headless, General settings, and new-session defaults exclude the integration.
+[`dsh-experimental-auto-review`](../../../../packages/experimental/auto-review/README.md) is an explicitly installed experimental Web layer, published under the [experimental package publication decision](../process/2026-09-12-publish-all-experimental-packages.md). Default Web retains Read Only, Workspace Write, and Full access. The layer contributes current-session `auto`, whose only durable identity is `permission/preset:auto`; it uses Full access's `danger-full-access` sandbox and tool definitions with the approval policy chosen by [the user-approval fallback decision](2026-09-24-auto-review-user-approval-fallback.md). Headless, General settings, and new-session defaults exclude the integration.
 
-Every native call and started PTC `tools.*` inner call receives one review before its body. The outer `run_code` transport and direct Node effects in a PTC program remain outside this guarantee. There are no tool-name exemptions, cached grants, retries, configurable policy, second authorization check, or manual fallback. A repeated call receives a fresh review.
+Every native call and started PTC `tools.*` inner call receives one review before its body. The outer `run_code` transport and direct Node effects in a PTC program remain outside this guarantee. There are no tool-name exemptions, cached grants, retries, configurable policy, or second authorization check; [the user-approval fallback decision](2026-09-24-auto-review-user-approval-fallback.md) owns what follows a denial. A repeated call receives a fresh review.
 
 ### Effects and authority
 
@@ -46,7 +46,7 @@ The main agent's V3 `system/message` nodes, assistant text/reasoning, and tool r
 
 ### Result and cancellation
 
-The reviewer may emit reasoning blocks followed by exactly one JSON text block and terminal `stop`. The closed object admits only `low + allow`, `medium + allow/deny`, and `high + deny`; only deny may carry a string `reason`. Extra fields, duplicate members, invalid combinations, other blocks or termination, and provider failures share the ordinary Auto denial outcome. Risk and reviewer traces are not durable state.
+The reviewer may emit reasoning blocks followed by exactly one JSON text block and terminal `stop`. The closed object admits only `low + allow`, `medium + allow/deny`, and `high + deny`; only deny may carry a string `reason`. Extra fields, duplicate members, invalid combinations, other blocks or termination, and provider failures are reviewer failures, which [the user-approval fallback decision](2026-09-24-auto-review-user-approval-fallback.md) reports with their specific error. Risk and reviewer traces are not durable state.
 
 Native results and PTC settle events carry the same structured `AutoReviewDeniedError` / `AUTO_REVIEW_DENIED` and optional raw reason. The main agent receives only `Auto review rejected tool "<name>"; its body was not executed` through ordinary failure rendering. PTC retains the existing program exception/catch behavior; catching a denial does not elevate it to an outer failure. The generic Web tool card supplies the denial identity for the collapsed row and one not-executed output line for the expanded row, with no input body. Only that display trims and collapses line separators or supplies the localized empty-reason fallback; persistence and both SDKs preserve the complete raw reason, without a new length or redaction rule.
 
