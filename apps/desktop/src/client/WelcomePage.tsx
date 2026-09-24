@@ -180,7 +180,7 @@ export function Welcome({ api }: { api: WelcomeApi }) {
         <header className="key-heading"><h1 id="key-title">{m.welcomeKeyTitle}</h1><p id="key-description">{m.welcomeKeyDescription}</p></header>
         <div className="key-field">
           <label className="visually-hidden" htmlFor="key-input">{m.welcomeKeyPlaceholder}</label>
-          <input ref={input} id="key-input" type="password" autoComplete="off" autoCapitalize="off" spellCheck={false} required
+          <input ref={input} id="key-input" type="password" autoComplete="new-password" autoCapitalize="off" spellCheck={false} required
             aria-describedby="key-description key-error" aria-invalid={error !== ''} placeholder={m.welcomeKeyPlaceholder}
             value={draft} disabled={busy} onChange={(event) => { setDraft(event.target.value); setError('') }} />
           <p id="key-error" className="key-error" role="alert" hidden={error === ''}>{error}</p>

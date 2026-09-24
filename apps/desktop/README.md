@@ -122,6 +122,8 @@ The [native/renderer keyboard tests](tests/keyboard.spec.ts) compile in [their o
 
 ### Startup onboarding
 
+The API-key input starts empty and uses `autocomplete="new-password"` to ask Chromium not to autofill saved login passwords.
+
 Repeated launches and `dsh://open` keep the workspace hidden until the startup credential check or a welcome action permits entry. Entering from Welcome places keyboard focus on the document without selecting a sidebar control; Tab navigation remains available.
 
 Desktop checks configured model API-key references after the Host starts and before opening the workspace. With no configured key, the welcome window offers the [API-key page](https://www.figma.com/design/jRBBK7zBgcszdVWQ0Fh5J8/Harness?node-id=2138-44626). Save and continue writes through the existing credential service using the official DeepSeek provider's configured reference, then opens the workspace. Set up later opens the workspace without saving the draft or a completion setting; the next process launch checks credentials again. Back to sign in returns to the entry and clears the unsaved key and validation message. Buttons keep their labels and block competing actions while saving or opening the workspace. The Desktop preload marker suppresses the Web credential dialog, while retaining the Models settings page and the welcome notice.
