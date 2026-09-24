@@ -185,6 +185,8 @@ describe('chat row web body', () => {
     expect(link.getAttribute('href')).toBe('https://example.com/page')
     expect(link.getAttribute('target')).toBe('_blank')
     expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    // jsdom does not implement navigation; cancel it after the row's handlers run.
+    link.addEventListener('click', (event) => { event.preventDefault() })
     fireEvent.click(link)
     fireEvent.keyDown(link, { key: 'Enter' })
     expect(view.container.querySelector('[data-web]')).toBeNull()

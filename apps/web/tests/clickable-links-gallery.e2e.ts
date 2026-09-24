@@ -382,8 +382,11 @@ describe('web e2e: clickable links gallery', () => {
     const fetchPopupPromise = page.waitForEvent('popup')
     await fetchSummaryLink.click()
     const fetchPopup = await fetchPopupPromise
-    await fetchPopup.waitForURL(FETCH_URL)
-    await fetchPopup.close()
+    try {
+      await fetchPopup.waitForURL(FETCH_URL)
+    } finally {
+      await fetchPopup.close()
+    }
     expect(await page.locator('[data-web="fetch"]').count()).toBe(0)
     // A row-center click can hit a nested summary link and invoke its opener;
     // right-edge clicks expand the card itself.

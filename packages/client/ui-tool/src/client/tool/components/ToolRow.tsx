@@ -201,8 +201,9 @@ export const ToolRow = memo(function ToolRow({
   // Keep Enter/Space on the focused path or URL link from bubbling to the row's
   // keydown handler, which would preventDefault() the key and toggle expand
   // instead of activating the link — the keyboard analogue of the click
-  // handlers' stopPropagation. The native element still activates from the key.
-  const fileLinkKeyDown = useCallback((event: KeyboardEvent<HTMLElement>) => {
+  // handlers' stopPropagation. Enter activates both links and Space activates
+  // the path button; Space on a URL link does nothing.
+  const summaryLinkKeyDown = useCallback((event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Enter' || event.key === ' ') event.stopPropagation()
   }, [])
   // The code variant's program renders through CodeBlock (shiki), so only its
@@ -218,7 +219,7 @@ export const ToolRow = memo(function ToolRow({
           type="button"
           className={css.fileLink}
           onClick={openFile}
-          onKeyDown={fileLinkKeyDown}
+          onKeyDown={summaryLinkKeyDown}
         >
           <TextShimmer active={running}>{summaryText}</TextShimmer>
         </button>
@@ -229,7 +230,7 @@ export const ToolRow = memo(function ToolRow({
           target="_blank"
           rel="noopener noreferrer"
           onClick={stopLinkClick}
-          onKeyDown={fileLinkKeyDown}
+          onKeyDown={summaryLinkKeyDown}
         >
           <TextShimmer active={running}>{summaryText}</TextShimmer>
         </a>
@@ -248,7 +249,7 @@ export const ToolRow = memo(function ToolRow({
         <TextShimmer className={clsx(css.summarySuffix, suffix === diffStat && css.diffStat)} active={running}>{suffix}</TextShimmer>
       )}
     </>
-  ), [diffStat, fileLinkKeyDown, linkHref, openFile, running, state, suffix, summaryText])
+  ), [diffStat, summaryLinkKeyDown, linkHref, openFile, running, state, suffix, summaryText])
   const expandedContent = useMemo(() => open ? (
     <div className={clsx(css.bodyWrap, detailsBody !== null && css.detailsBodyWrap)}>
       {askQuestionBody !== null
