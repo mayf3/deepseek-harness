@@ -88,7 +88,6 @@ export const en = {
   updateDownload: 'Download update',
   updateDownloadedTitle: 'Version {version} is ready to install',
   updateDownloadedDetail: 'The app will close during the update and reopen automatically when it is complete.',
-  updateDownloadedTitleWindows: 'Version {version} is ready to install',
   updateDownloadedDetailWindows: 'The app will close temporarily during the update and reopen automatically when it is complete.\n\nThe update may take some time. Please wait and do not launch the app again during installation.',
   updateClose: 'Close',
   updateAcknowledge: 'OK',
@@ -127,7 +126,6 @@ export const en = {
   mandatoryReady: 'Update ready',
   mandatoryVersion: 'New version: {version}',
   mandatoryReadyDetail: 'The app will close during the update and reopen automatically when it is complete.',
-  mandatoryReadyDetailWindows: 'The app will close during the update and reopen automatically when it is complete.\n\nThe update may take some time. Please wait and do not launch the app again until it finishes.',
   mandatoryDeferred: 'Tasks in progress will keep running. Complete the update before using the app again.',
   mandatoryContinue: 'Continue update',
   mandatoryInspecting: 'Checking tasks…',
@@ -234,7 +232,6 @@ export const zh = {
   updateDownload: '下载更新',
   updateDownloadedTitle: '新版本 {version} 已准备就绪',
   updateDownloadedDetail: '更新期间应用将暂时关闭，完成后会自动打开。',
-  updateDownloadedTitleWindows: '新版本 {version} 已准备就绪',
   updateDownloadedDetailWindows: '更新期间应用将暂时关闭，完成后会自动打开。\n\n更新可能需要一些时间，请耐心等待，期间请勿重复启动应用。',
   updateClose: '关闭',
   updateAcknowledge: '确定',
@@ -273,7 +270,6 @@ export const zh = {
   mandatoryReady: '更新已准备就绪',
   mandatoryVersion: '新版本：{version}',
   mandatoryReadyDetail: '更新期间应用将暂时关闭，完成后会自动打开。',
-  mandatoryReadyDetailWindows: '更新期间应用将暂时关闭，完成后会自动打开。\n\n更新可能需要一些时间，请耐心等待，期间请勿重复启动应用。',
   mandatoryDeferred: '进行中的任务会继续运行。请完成更新后再操作应用。',
   mandatoryContinue: '继续更新',
   mandatoryInspecting: '正在检查任务状态…',
@@ -339,7 +335,7 @@ export function desktopUpdateReadyConfirmation(
   platform: string,
 ): { message: string; detail: string } {
   return {
-    message: formatDesktopMessage(platform === 'win32' ? messages.updateDownloadedTitleWindows : messages.updateDownloadedTitle, { version }),
+    message: formatDesktopMessage(messages.updateDownloadedTitle, { version }),
     detail: platform === 'win32' ? messages.updateDownloadedDetailWindows : messages.updateDownloadedDetail,
   }
 }
