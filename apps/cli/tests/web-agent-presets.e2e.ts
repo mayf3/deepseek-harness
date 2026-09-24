@@ -136,7 +136,7 @@ async function bootWeb(
     await mkdir(dirname(link), { recursive: true })
     await symlink(packageDir, link, 'junction')
   }
-  let profile: Profile = {
+  let profile: Profile = { skippedBundles: [],
     name: 'spec',
     dir: profileDir,
     layers: [],
