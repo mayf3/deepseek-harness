@@ -1,6 +1,6 @@
 /** Shortcut reference copy; only implemented operations appear in the catalog. */
 export const zh = {
-  'edit-label': '修改{command}快捷键', 'remove-label': '移除{command}快捷键',
+  'edit-label': '修改{command}快捷键',
   record: '按下快捷键', 'record-help': '松开组合键即保存。Tab 切换操作，Esc 退出录键。',
   'web-help': '浏览器可用组合：Mod+/、Mod+Shift+,、Mod+Shift+.。Mod 在 Mac 上为 Command，其他系统为 Ctrl。',
   'unsupported-key': '暂不支持这个按键。', reserved: '此组合由系统或文本编辑操作保留。',
@@ -26,16 +26,16 @@ export const zh = {
   'web-reload': '刷新页面', 'desktop-reload': '重新启动 Harness',
   'using-defaults': '当前使用默认键位。', 'using-accepted': '当前继续使用上次读取成功的键位。',
   'native-failed': '无法启用桌面录键保护，请关闭后重试。',
-  hint: '{label} {keys}',
-  title: '快捷键', open: '快捷键速查', settings: '快捷键', view: '查看快捷键',
-  description: '查看当前可用的快捷键和输入操作', search: '搜索快捷键', close: '关闭快捷键',
+  'global-hint': '全局唤起查看', 'clear-search': '清空搜索',
+  title: '快捷键', open: '快捷键速查', settings: '快捷键', view: '编辑快捷键',
+  description: '查看和编辑当前可用的快捷键和输入操作', search: '搜索快捷键', close: '关闭快捷键',
   application: '应用操作', input: '消息输入', menus: '菜单与弹层', approval: '审批区域', unbound: '暂无快捷键',
   empty: '没有匹配的快捷键',
   move: '移动菜单选择', select: '选择菜单项', dismiss: '关闭菜单或顶层弹窗',
 }
 /** Typed English counterpart. */
 export const en: Record<keyof typeof zh, string> = {
-  'edit-label': 'Edit shortcut for {command}', 'remove-label': 'Remove shortcut for {command}',
+  'edit-label': 'Edit shortcut for {command}',
   record: 'Press a shortcut', 'record-help': 'Release the keys to save. Tab moves between actions; Esc cancels.',
   'web-help': 'Browser combinations: Mod+/, Mod+Shift+,, Mod+Shift+.. Mod is Command on Mac and Ctrl elsewhere.',
   'unsupported-key': 'This key is not supported.', reserved: 'This combination is reserved for system or text editing actions.',
@@ -61,9 +61,9 @@ export const en: Record<keyof typeof zh, string> = {
   'web-reload': 'reload the page', 'desktop-reload': 'restart Harness',
   'using-defaults': 'Default bindings are active.', 'using-accepted': 'The last successfully read bindings remain active.',
   'native-failed': 'Could not protect desktop key recording. Exit recording and try again.',
-  hint: '{label} {keys}',
-  title: 'Keyboard shortcuts', open: 'Open keyboard shortcuts', settings: 'Keyboard shortcuts', view: 'View shortcuts',
-  description: 'Browse available shortcuts and input actions', search: 'Search shortcuts', close: 'Close keyboard shortcuts',
+  'global-hint': 'Open from anywhere', 'clear-search': 'Clear search',
+  title: 'Keyboard shortcuts', open: 'Open keyboard shortcuts', settings: 'Keyboard shortcuts', view: 'Edit shortcuts',
+  description: 'View and edit available shortcuts and input actions', search: 'Search shortcuts', close: 'Close keyboard shortcuts',
   application: 'Application', input: 'Message input', menus: 'Menus and dialogs', approval: 'Approval area', unbound: 'No shortcut',
   empty: 'No matching shortcuts',
   move: 'Move menu selection', select: 'Select menu item', dismiss: 'Close menu or top dialog',

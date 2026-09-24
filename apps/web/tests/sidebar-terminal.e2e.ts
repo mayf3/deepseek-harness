@@ -341,9 +341,10 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     const entry = page.locator('[data-sidebar-right-guide-entry="terminal"]')
     await page.locator('[data-sidebar-right-guide]').screenshot({ path: `${shots}/terminal-guide.png`, animations: 'disabled' })
     const selector = entry.getByRole('button', { name: 'Choose shell', exact: true })
-    const cardBox = (await entry.boundingBox())!
+    const titleBox = (await entry.getByText('New terminal', { exact: true }).boundingBox())!
     const triggerBox = (await selector.boundingBox())!
-    expect(Math.abs(cardBox.x + cardBox.width - triggerBox.x - triggerBox.width)).toBeLessThanOrEqual(2)
+    expect(triggerBox.x).toBeGreaterThanOrEqual(titleBox.x + titleBox.width)
+    expect(triggerBox.x - titleBox.x - titleBox.width).toBeLessThan(8)
     await page.emulateMedia({ colorScheme: 'dark' })
     await selector.click()
     await page.getByRole('menuitem', { name: 'bash', exact: true }).waitFor()

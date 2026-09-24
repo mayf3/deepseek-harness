@@ -4,6 +4,7 @@
     - button "关闭快捷键"
   - search "搜索快捷键":
     - searchbox "搜索快捷键": abc
+    - button "清空搜索"
   - status: 没有匹配的快捷键
   - contentinfo:
     - button "恢复全部默认"

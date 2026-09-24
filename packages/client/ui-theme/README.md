@@ -65,7 +65,7 @@ Menu icons use `--dsw-alias-menu-icon`: neutral-bluish 800 in light mode and `la
 
 `base.css` suppresses only the outline of focused elements marked `data-dsh-automatic-focus` by the [primitive focus helper](../ui-primitives/README.md); ordinary keyboard focus styling, borders, shadows, and error states remain intact.
 
-System toasts use `--dsw-alias-toast-bg` and `--dsw-alias-toast-label` for a shared background and text color across callers. Document previews pair `--dsw-alias-bg-document-preview` with `--dsw-alias-label-document-preview` so the backdrop and status text follow the same theme.
+System toasts use `--dsw-alias-toast-bg` and `--dsw-alias-toast-label` for a shared background and text color across callers. Document previews pair `--dsw-alias-bg-document-preview` with `--dsw-alias-label-document-preview` so the backdrop and status text follow the same theme. Tooltip keycaps use `--dsw-alias-tooltip-key-bg`, a lighter fill derived from the tooltip background in each palette.
 
 `brand-font.css` exports the local Montserrat Light, Regular and Medium faces (normal style, weights 300, 400 and 500), with `montserrat-light.woff2`, `montserrat-regular.woff2`, `montserrat-medium.woff2` and its SIL Open Font License in `lib/styles/`. Desktop bundles the same stylesheet, font and license for offline welcome brand text; ordinary UI keeps its system font stack.
 
