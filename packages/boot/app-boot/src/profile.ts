@@ -98,6 +98,26 @@ export interface Profile {
   patchPath: string
   /** The profile's own patches; empty when the file is absent. */
   patches: PatchOptions[]
+  /** Selected bundles that contributed no layer, in `dsh.profile.bundles` order, with why. */
+  skippedBundles: SkippedBundle[]
+}
+
+/** A selected bundle the profile could not load, or whose own DSH peers the profile does not exempt. */
+export interface SkippedBundle {
+  packageName: string
+  /** The resolution, manifest, compatibility, or patch-loading failure. */
+  reason: string
+}
+
+/**
+ * Print each skipped bundle once; loading never prints, so launchers call this once per start.
+ * @param binName - the diagnostic prefix.
+ * @param profile - the loaded profile.
+ */
+export function reportSkippedBundles(binName: string, profile: Pick<Profile, 'skippedBundles'>): void {
+  for (const { packageName, reason } of profile.skippedBundles) {
+    process.stderr.write(`${binName}: skipping profile bundle ${JSON.stringify(packageName)}: ${reason}\n`)
+  }
 }
 
 /** One package the runtime resolution supplies at the interception layer. */
@@ -631,8 +651,8 @@ export function resolveBundleDir(
  * Load an already initialized profile directory without resolving it through
  * the shared Harness home. This is used by application-owned profiles whose
  * package project and lifecycle belong to that application.
- * Unreadable bundles, and bundles whose own dsh peers the profile does not exempt, are reported
- * on stderr and skipped without changing the manifest.
+ * Unreadable bundles, and bundles whose own dsh peers the profile does not exempt, are skipped
+ * without changing the manifest and listed in `skippedBundles`; nothing is printed.
  * @param binName - the diagnostic prefix on thrown errors.
  * @param dir - absolute profile package directory.
  * @param installAnchor - absolute path of the owning dsh app's package.json.
@@ -648,6 +668,7 @@ export function loadProfileDirectory(
   const manifest = readProfileManifest(binName, dir)
   const bundles = manifest.dsh?.profile?.bundles ?? []
   const layers: ProfileLayer[] = []
+  const skippedBundles: SkippedBundle[] = []
   const exemptions = bundles.length === 0 ? {} : readProfileVersionExemptions(dir)
   for (const packageName of bundles) {
     try {
@@ -664,20 +685,20 @@ export function loadProfileDirectory(
       const patches = patchPaths.flatMap(patchPath => loadOverlayPatches(binName, patchPath))
       layers.push({ packageName, packageDir, patchPaths, patches })
     } catch (error) {
-      process.stderr.write(`${binName}: skipping profile bundle ${JSON.stringify(packageName)}: ${String(error)}\n`)
+      skippedBundles.push({ packageName, reason: String(error) })
     }
   }
   const patchPath = join(dir, PROFILE_PATCH_FILENAME)
   const patches = options.userLayer !== false && existsSync(patchPath)
     ? loadOverlayPatches(binName, patchPath)
     : []
-  return { name: basename(dir), dir, layers, patchPath, patches }
+  return { name: basename(dir), dir, layers, patchPath, patches, skippedBundles }
 }
 
 /**
  * Load a profile: resolve every `dsh.profile.bundles` entry to its patch
  * layer and parse the profile's own patch file. Unreadable or incompatible bundles
- * are reported on stderr and skipped; profile manifest and user patch errors still throw.
+ * are skipped and listed in `skippedBundles`; profile manifest and user patch errors still throw.
  * @param binName - the diagnostic prefix on thrown errors.
  * @param name - the profile name.
  * @param installAnchor - absolute path of the dsh app's package.json (first resolution anchor).

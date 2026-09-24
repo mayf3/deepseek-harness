@@ -36,7 +36,7 @@ const importModule = vi.fn(async (name: string): Promise<unknown> => {
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'dsh-config-schema-'))
-  profile = { name: 'test', dir, patchPath: join(dir, 'cordis.patch.yml'), patches: [], layers: [] }
+  profile = { skippedBundles: [], name: 'test', dir, patchPath: join(dir, 'cordis.patch.yml'), patches: [], layers: [] }
   resolution = { profilesDir: dir, profileDir: dir, localPackageNames: [], entries: [], linkedRoots: [] }
   const loader = ModuleLoader.fromInternal()
   if (loader === undefined) throw new Error('test requires supported Node internals')

@@ -156,7 +156,7 @@ function fixture(name = '@deepseek-ai/dsh-core'): {
     root,
     installAnchor,
     installed,
-    profile: {
+    profile: { skippedBundles: [],
       name: 'web',
       dir: profileDir,
       layers: [],
