@@ -19,6 +19,8 @@ Create reminders in a conversation, then inspect active and inactive tasks and e
 
 The shipped Web profile mounts Schedule with the clock context that gives the model the current time and the browser's zone. Configure a model provider before asking it to create reminders.
 
+The shipped Web profile's `standard`, `cordis`, and `ptc` presets provide `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete`; the `minimal` preset provides none.
+
 Ask the model to create, list, edit, or delete reminders. It uses `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` (update changes one reminder in place and keeps its id and saved delivery records); the Automation tasks page's New action opens a New Session for a creation instead, with the request already written in its composer. Supported choices are a one-time delay in positive whole seconds, an absolute date and time, a fixed interval of at least one minute, a daily local time with an IANA time zone, a weekly local time with an IANA time zone and ISO weekdays from Monday 1 through Sunday 7, or a five-field cron expression with an explicit IANA time zone, stored in canonical form.
 
 For example, ask: “Remind me every day at 23:00 in Asia/Shanghai to check the weather.” Open Automation tasks and select the created reminder. Check that its frequency shows a daily rule and the requested zone, not Once. A one-time reminder does not become recurring after delivery.

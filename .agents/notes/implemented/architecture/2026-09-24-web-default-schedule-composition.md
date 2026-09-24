@@ -10,7 +10,7 @@ The Automation tasks page, the Session reminder catalog, and the `schedule_*` to
 
 ## Decision
 
-`packages/bundle/web-app/cordis.patch.yml` inserts `time-context` and `schedule` in its Host row list and leaves `ui-schedule` enabled; `packages/bundle/web-app/package.json` declares both packages, which `verify-cordis-config` requires for a bare row name in a bundle patch. The `web` profile consequently ships the Automation tasks page, the Session-header reminder clock, the idle Session row's clock mark and hover list, the right-Sidebar task tab, and `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` on every live root Agent.
+`packages/bundle/web-app/cordis.patch.yml` inserts `time-context` and `schedule` in its Host row list and leaves `ui-schedule` enabled; `packages/bundle/web-app/package.json` declares both packages, which `verify-cordis-config` requires for a bare row name in a bundle patch. The `web` profile consequently ships the Automation tasks page, the Session-header reminder clock, the idle Session row's clock mark and hover list, the right-Sidebar task tab, and, in its `standard`, `cordis`, and `ptc` presets, `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` from [the preset-scoped tool package](2026-09-24-preset-scoped-schedule-tools.md); the `minimal` preset ships no reminder tool.
 
 `apps/cli/config/examples/schedule/cordis.yml` is deleted. `applyEntryPatches` appends an `insert` list without de-duplicating ids, so keeping the overlay would mount `time-context` and `schedule` a second time; the two Web suites and the preview packer that named the overlay compose the shipped profile alone.
 
@@ -32,7 +32,7 @@ A Web scenario that drives a live step now logs one time-context reading per ste
 
 ## Consequences
 
-- Every Web session's request header carries four additional tool schemas, and every eligible step appends one durable user message. A conversation that never creates a reminder pays that token cost.
+- Every Web session in the `standard`, `cordis`, and `ptc` presets carries four additional tool schemas in its request header, and every eligible step appends one durable user message. A conversation that never creates a reminder pays that token cost.
 - The clock reading is model-visible and durable, so it replays, compacts, and appears in exported Session logs like any other user message.
 - A deployment that wants the previous behavior disables the `time-context`, `schedule`, and `ui-schedule` rows in its own profile patch layer; the capability itself is untouched.
 - The `cordis_inspect_query` `listTools` answer for a full preset table now passes the base composition's 12,500-token inline budget, so the spill policy retains that answer's head and tail with a spill path instead of the complete JSON.

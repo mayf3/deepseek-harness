@@ -1,0 +1,32 @@
+# Agent Note: 按 preset 提供的 Schedule 工具
+
+Status: implemented
+
+[English](2026-09-24-preset-scoped-schedule-tools.md) | 中文
+
+## Problem
+
+`@deepseek-ai/dsh-schedule` 自己注册 `schedule_create`、`schedule_list`、`schedule_update` 和 `schedule_delete`，在 `agent/created` 监听器中把它们附加到每个 live 根 Agent，唯一的过滤条件是 `ctx.agents.roots()` 的成员资格。该判据不涉及 Agent preset，因此为能力克制而组合的 `minimal` 也携带全部四个 schema，并承担其固定的请求上下文 token 成本。存储、投递和 preset 机制各自都是正确的；可用性决策落在了拥有存储服务的包里。
+
+## Decision
+
+`@deepseek-ai/dsh-tool-schedule`（`packages/schedule/tool-schedule`）以 preset 级 Consumer 的身份贡献这四个工具。它声明 `inject = ['tools', 'schedule']`，并通过 `ctx.tools` 向挂载它的作用域注册这些定义，因此由 preset 决定哪些 Agent 获得它们。发布版 Web profile 在其 `standard`、`cordis` 和 `ptc` preset 中挂载该行，`minimal` 不挂载。Cordis 的 effect 所有权随挂载卸载而释放这些定义。[默认 Web 组合](2026-09-24-web-default-schedule-composition.zh.md)负责 `web` profile 挂载哪些宿主行与客户端界面；本记录负责提醒工具的 preset 归属。
+
+`@deepseek-ai/dsh-schedule` 保留版本 1 storage domain、宿主定时器与串行队列、经由 Session controller 的宿主投递、自动化任务页面的读取来源，以及 `ctx.schedule` 接口。`dsh-tool-schedule` 是该接口面向模型的消费者：它在调用服务前校验选择器与身份约束，从 `exec.agent` 读取 Session 绑定，并把非 `ScheduleInputError` 的失败映射为 `internal_error`，使存储细节不会到达模型。
+
+## Alternatives considered
+
+**继续在宿主服务中通过 `Config` 开关注册。** `exposeTools` 这类字段会把组合选择放进存储插件，而任何 preset 都无法在那里声明它，且每个 preset 仍要各自编辑才能改变结果。
+
+**只要 `ctx.schedule` 存在就注册这些工具。** `web` bundle patch 为整个部署加载 `schedule` 宿主行，包括 `minimal`，因此该条件会恢复本决策所移除的、存储与模型界面之间的耦合。
+
+## Consequences
+
+- `minimal` 的请求头与工具列表不含任何提醒工具 schema。
+- 挂载该行的每个 preset 承担四个 schema 的固定 token 成本，工具可用性取自组合，而不是由宿主服务是否存在推断。
+- 部署可以只为存储与投递挂载 `dsh-schedule`，而不授予其 Agent 由模型驱动的提醒管理能力。
+- `dsh-schedule` 不注入 `ctx.tools`，也不注册任何面向模型的工具。
+
+## Testing
+
+`packages/schedule/tool-schedule/tests/tool-schedule.spec.ts` 固定这四个定义及其错误映射。`apps/cli/tests/web-agent-presets.e2e.ts` 断言 `minimal` preset 的工具列表，`snapshots/web/minimal-preset/tool-schemas.expected.json` 记录其不含工具的请求头。

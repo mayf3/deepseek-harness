@@ -8,7 +8,6 @@ import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionActivity } from '@deepseek-ai/dsh-workspace'
 import { ScheduleRuntime } from './runtime.ts'
-import { registerScheduleTools } from './tools.ts'
 import { scheduleDomain } from './storage.ts'
 import { deliveryHistoryPage } from './delivery-history.ts'
 import { resolveScheduleUpdate } from './update.ts'
@@ -24,7 +23,6 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
-export { registerScheduleTools } from './tools.ts'
 export { scheduleDomain } from './storage.ts'
 export type { ScheduleTask } from './storage.ts'
 export type { RecurringOccurrence } from './domain.ts'
@@ -32,6 +30,7 @@ export {
   SCHEDULE_CHANGE_VERSION,
   MIN_EVERY_INTERVAL_SECONDS,
   MAX_TITLE_LENGTH,
+  REQUIRED_TITLE_MESSAGE,
   ScheduleId,
   ScheduleInputError,
   ScheduleLogError,
@@ -98,7 +97,7 @@ const DEFAULT_DELIVERY_HISTORY_RECORDS = 200
  * service is the plugin that registers that listener.
  */
 export class ScheduleService extends TypertRemoteService {
-  static inject = ['agents', 'sessions', 'tools', 'storageDomain', 'sessionController', 'sessionPersistence']
+  static inject = ['agents', 'sessions', 'storageDomain', 'sessionController', 'sessionPersistence']
 
   static Config: z<Config> = z.object({
     deliveryHistoryDays: z.number().step(1).min(1).max(3650).default(DEFAULT_DELIVERY_HISTORY_DAYS),
@@ -164,27 +163,6 @@ export class ScheduleService extends TypertRemoteService {
       this.runtime.requestDrive()
       return cleanup
     })
-    const registered = new WeakSet<object>()
-    const attached = new Map<import('@deepseek-ai/dsh-agent').Agent, () => Promise<void>>()
-    const attach = (agent: import('@deepseek-ai/dsh-agent').Agent): void => {
-      if (this.stopping || registered.has(agent) || !ctx.agents.roots().includes(agent)) return
-      registered.add(agent)
-      // The plugin-scope effect is what tears the Agent-scoped registration down when this
-      // plugin unloads, so it must also be disposed when the Agent itself is released.
-      attached.set(agent, ctx.effect(
-        () => agent.ctx.effect(() => registerScheduleTools(ctx, agent.ctx, agent)),
-      ))
-    }
-    ctx.on('agent/created', ({ agent }) => { attach(agent) })
-    ctx.on('agent/disposed', ({ agent }) => {
-      const detach = attached.get(agent)
-      if (detach === undefined) return
-      attached.delete(agent)
-      // `agent/disposed` declares a void listener, so the disposer promise is not returned;
-      // this teardown chain is synchronous, and a failure throws into
-      // `AgentRegistry.emitDisposed`, which reports it as a listener throw.
-      void detach()
-    })
     ctx.on('session/created', (session) => {
       // Historical Schedule events remain readable but do not populate Host tasks.
       // A throwing `session/created` listener rolls the attach back, so an unreadable
@@ -226,7 +204,6 @@ export class ScheduleService extends TypertRemoteService {
         activity()
       }
     }, 'schedule.archiveAdmission()')
-    for (const agent of ctx.agents.roots()) attach(agent)
   }
 
   async [Service.init](): Promise<void> {

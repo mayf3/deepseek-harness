@@ -25,7 +25,7 @@ Schedule delivers one-shot, fixed-rate, daily, weekly, and cron wall-clock remin
 
 The shipped Web bundle mounts the service alongside storage-domain and the Session controller. Its `Config` states `deliveryHistoryDays` (default 30) and `deliveryHistoryRecords` (default 200). Storage backend routing belongs to storage-domain; Session model and preset restoration belong to the Session controller. Schedule cannot be mounted alone in a headless or SDK-only composition: delivery requires the Host Web Session controller and a Session persistence backend, because a delivery commits only after the Session acknowledges `session/flush`.
 
-The Agent receives `schedule_create`, `schedule_list`, `schedule_delete`, and `schedule_update`. Update replaces the name, instruction, or timing of one reminder in place and keeps its id and saved records; it is not offered for the relative `after` delay. Creation requires a non-empty prompt, a title, and exactly one of six selectors:
+The reminder tools `schedule_create`, `schedule_list`, `schedule_delete`, and `schedule_update` come from [`@deepseek-ai/dsh-tool-schedule`](../tool-schedule/README.md), which a preset mounts; this package contributes the Host service those tools call. Update replaces the name, instruction, or timing of one reminder in place and keeps its id and saved records; it is not offered for the relative `after` delay. Creation requires a non-empty prompt, a title, and exactly one of six selectors:
 
 | Selector | Example | Timing |
 |---|---|---|
@@ -90,11 +90,11 @@ The `schedule.archiveAdmission()` effect answers the Workspace registry's archiv
 <a id="model-experience"></a>
 ## Model Experience
 
-### Tool schemas on root Agents
+### Tool schemas in mounted presets
 
 #### What the model sees
 
-The [generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-schedule) contains the descriptions and schemas for `schedule_create`, `schedule_list`, `schedule_delete`, and `schedule_update`, registered in live root Agent scopes while Schedule is loaded.
+The [generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-schedule) contains the descriptions and schemas for `schedule_create`, `schedule_list`, `schedule_delete`, and `schedule_update`, which [`@deepseek-ai/dsh-tool-schedule`](../tool-schedule/README.md) contributes to the presets that mount it.
 
 #### Token effect
 

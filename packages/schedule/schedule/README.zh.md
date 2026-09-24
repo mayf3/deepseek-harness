@@ -25,7 +25,7 @@ Schedule 将一次性、固定周期、按每日、按每周以及 cron 本地�
 
 发布的 Web bundle 将此服务与 storage-domain、Session controller 一起挂载。其 `Config` 声明 `deliveryHistoryDays`（默认 30）与 `deliveryHistoryRecords`（默认 200）。存储后端路由由 storage-domain 管理；会话模型与 preset 恢复由 Session controller 管理。Schedule 无法在 headless 或仅 SDK 的组合中单独挂载：投递需要 Host 的 Web Session controller 和 Session 持久化后端，因为只有在 Session 确认 `session/flush` 之后一次投递才会提交。
 
-Agent 获得 `schedule_create`、`schedule_list`、`schedule_delete` 和 `schedule_update`。更新原地替换一条提醒的名称、指令或时间，保留其 id 与已保存记录；相对的 `after` 延迟不支持更新。创建时需要非空提示文本、标题，且必须只提供以下六个选择器之一：
+提醒工具 `schedule_create`、`schedule_list`、`schedule_delete` 和 `schedule_update` 来自 [`@deepseek-ai/dsh-tool-schedule`](../tool-schedule/README.zh.md)，由 preset 挂载；本包提供这些工具调用的宿主服务。更新原地替换一条提醒的名称、指令或时间，保留其 id 与已保存记录；相对的 `after` 延迟不支持更新。创建时需要非空提示文本、标题，且必须只提供以下六个选择器之一：
 
 | 选择器 | 示例 | 时间语义 |
 |---|---|---|
@@ -90,11 +90,11 @@ Schedule domain 声明整 unit 布局，因为任务是权威数据。路由到 
 <a id="model-experience"></a>
 ## 模型体验
 
-### 根 Agent 的工具 schema
+### 挂载 preset 中的工具 schema
 
 #### 模型看到什么
 
-[生成的工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-schedule) 包含 `schedule_create`、`schedule_list`、`schedule_delete` 和 `schedule_update` 的描述与 schema；Schedule 加载期间，这些工具注册在活动根 Agent 的作用域中。
+[生成的工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-schedule) 包含 `schedule_create`、`schedule_list`、`schedule_delete` 和 `schedule_update` 的描述与 schema；这些工具由 [`@deepseek-ai/dsh-tool-schedule`](../tool-schedule/README.zh.md) 贡献给挂载它的 preset。
 
 #### Token 影响
 
