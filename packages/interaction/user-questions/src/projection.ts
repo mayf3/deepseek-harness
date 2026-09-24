@@ -320,7 +320,7 @@ export const userQuestionProjectionDefinition = {
     return fold === state ? state : { ...state, ...fold }
   },
   wire: { viewSchema: projectionViewSchema, view: state => state.questions },
-  stateVersion: 4,
+  stateVersion: 1,
 } satisfies ProjectionDefinition<'userQuestions', UserQuestionProjectionState>
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

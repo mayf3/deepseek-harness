@@ -22,8 +22,8 @@ import type { AskUserQuestionItem, PendingUserQuestion, UserQuestionProjectionVi
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { UserQuestionPanels, UserQuestionRecord } from '@deepseek-ai/dsh-client-ui-tool/client'
-// A transcript row hands its call id over as the plain string the wire carried.
-import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { createWaterfallRequest, PendingQuestion, type QuestionRpcChannel } from './contract/slots.ts'
 import { createQuestionDraftStore } from './draft-store.ts'
 import { QuestionComposer } from './QuestionComposer.tsx'
@@ -180,7 +180,7 @@ class QuestionCards {
     const card = this.byCallId(sessionId, callId) ?? this.#create(new PendingQuestion(
       sessionId,
       record.questions,
-      ToolCallId(callId),
+      brandString<ToolCallId>(callId),
       () => this.keysFor(sessionId),
       record.answers,
     ))
