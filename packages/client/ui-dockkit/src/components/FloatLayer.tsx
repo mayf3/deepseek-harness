@@ -130,7 +130,7 @@ export function FloatHeader({ paneId, tab, labels, intents, renderTabTitle, canC
         </button>
       </Tooltip>
       {(canCloseTab?.(tab.id) ?? true) && (
-        <Tooltip label={labels.closeTabTooltip ?? labels.closeFloat} side="bottom" delayMs={500}>
+        <Tooltip label={labels.closeTabTooltip ?? labels.closeFloat} shortcutKeys={labels.closeTabKeys} side="bottom" delayMs={500}>
           <button type="button" className={css.iconButton} aria-label={labels.closeTabTooltip ?? labels.closeFloat}
             data-dockkit-float-close={paneId} onPointerDown={(event) => { event.stopPropagation() }}
             onClick={() => { intents.closeTab(tab.id) }}>

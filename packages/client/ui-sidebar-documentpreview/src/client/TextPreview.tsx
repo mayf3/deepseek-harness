@@ -310,7 +310,7 @@ export function TextPreview({
         </span>
         {/* Preview and file-tree refresh controls own different reload lifecycles and locale namespaces. */}
         {/* jscpd:ignore-start */}
-        <Tooltip label={tab.refreshShortcut?.keys.length ? t('shortcut.hint', { label: t('reload'), keys: tab.refreshShortcut.keys.join(' ') }) : t('reload')} side="bottom" delayMs={500}>
+        <Tooltip label={t('reload')} shortcutKeys={tab.refreshShortcut?.keys} side="bottom" delayMs={500}>
           <button
             type="button"
             className={css.tool}

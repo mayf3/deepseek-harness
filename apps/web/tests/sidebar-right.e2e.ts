@@ -1176,8 +1176,9 @@ describe('web e2e: shipped right Sidebar', () => {
         }
         expect(await terminalEntry.evaluate(node => getComputedStyle(node).overflow)).toBe('hidden')
         const terminalActions = terminalEntry.getByRole('button')
-        for (const action of await terminalActions.all()) {
-          expect(await action.evaluate(node => getComputedStyle(node).borderRadius)).toBe('0px')
+        const terminalButtons = await terminalActions.all()
+        for (const [index, action] of terminalButtons.entries()) {
+          expect(await action.evaluate(node => getComputedStyle(node).borderRadius)).toBe(index === 0 ? '0px' : '4px')
           await action.hover()
           expect(await action.evaluate(node => getComputedStyle(node).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)')
         }

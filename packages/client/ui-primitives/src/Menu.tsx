@@ -97,7 +97,7 @@ export function MenuItemButton({
       >
         {icon !== undefined && <span className={css.itemIcon}>{icon}</span>}
         <span className={css.itemLabel}>{children}</span>
-        {shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys keys={shortcut.keys} className={css.shortcutKeys} /></span>}
+        {shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys variant="plain" keys={shortcut.keys} className={css.shortcutKeys} /></span>}
       </button>
     </div>
   )
@@ -472,7 +472,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
         >
           {entry.icon !== undefined && <span className={css.itemIcon}>{entry.icon}</span>}
           <span className={css.itemLabel}>{entry.label}</span>
-          {entry.shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys keys={entry.shortcut.keys} className={css.shortcutKeys} /></span>}
+          {entry.shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys variant="plain" keys={entry.shortcut.keys} className={css.shortcutKeys} /></span>}
           {/* Selection marker is a trailing check (figma .Menu_cell) unless the fill mode carries it. */}
           {selected && selection === 'check' && <IconCheckOutlineRegular className={css.check} />}
         </button>
@@ -490,7 +490,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
               >
                 {sub.icon !== undefined && <span className={css.itemIcon}>{sub.icon}</span>}
                 <span className={css.itemLabel}>{sub.label}</span>
-                {sub.shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys keys={sub.shortcut.keys} className={css.shortcutKeys} /></span>}
+                {sub.shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys variant="plain" keys={sub.shortcut.keys} className={css.shortcutKeys} /></span>}
               </button>
             ))}
           </MenuSurface>

@@ -23,9 +23,9 @@ async function bind(page: Page, primary: string, label: string, previous?: strin
     expect(await row.getByText('Unavailable', { exact: true }).count()).toBe(0)
   }
   if (previous !== undefined) {
-    const remove = dialog.getByRole('button', { name: `Remove shortcut for ${previous}`, exact: true })
-    await remove.click()
-    await remove.waitFor({ state: 'hidden' })
+    await dialog.getByRole('button', { name: `Edit shortcut for ${previous}`, exact: true }).click()
+    await dialog.getByRole('button', { name: 'Remove', exact: true }).click()
+    await dialog.getByRole('group').waitFor({ state: 'hidden' })
   }
   await dialog.getByRole('button', { name: `Edit shortcut for ${label}`, exact: true }).click()
   const recorder = dialog.getByRole('group', { name: label, exact: true })
@@ -124,6 +124,19 @@ describe.skipIf(process.platform === 'win32')('Web sidebar shortcuts', () => {
       await page.mouse.move(10, 10)
       await terminalGuide.focus()
       expect(await page.getByRole('tooltip').count()).toBe(0)
+
+      const terminalEntry = panel.locator('[data-sidebar-right-guide-entry="terminal"]')
+      const shellMenu = terminalEntry.getByRole('button', { name: 'Choose shell', exact: true })
+      const titleBounds = await terminalEntry.getByText('New terminal', { exact: true }).boundingBox()
+      const arrowBounds = await shellMenu.boundingBox()
+      expect(arrowBounds!.x).toBeGreaterThanOrEqual(titleBounds!.x + titleBounds!.width)
+      expect(arrowBounds!.x - titleBounds!.x - titleBounds!.width).toBeLessThan(8)
+      await shellMenu.click()
+      await page.getByRole('menu').waitFor()
+      expect(await panel.locator('[data-sidebar-terminal]').count()).toBe(0)
+      await page.keyboard.press('Escape')
+      await page.getByRole('menu').waitFor({ state: 'detached' })
+      expect(await shellMenu.evaluate(element => element === document.activeElement)).toBe(true)
 
       await bind(page, primary, 'Browser', 'Toggle right sidebar')
       const browserGuide = panel.locator('[data-sidebar-right-guide-entry="browser"]')

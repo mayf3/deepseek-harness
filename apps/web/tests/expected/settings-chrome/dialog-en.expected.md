@@ -25,8 +25,8 @@
   - text: Developer tools Show tools and information for debugging and troubleshooting
   - switch "Developer tools"
   - text: Keyboard shortcuts
-  - paragraph: Browse available shortcuts and input actions
-  - button "View shortcuts"
+  - paragraph: View and edit available shortcuts and input actions
+  - button "Edit shortcuts"
   - text: Send behavior while busy What Enter and the Send button do while the agent is running; Cmd/Ctrl+Enter uses the other behavior
   - button "Queue"
   - text: "Current version: {{version}}"

@@ -167,9 +167,10 @@ EditorProps) {
       {target.binding !== null && <button type="button" className={css.inlineAction} disabled={readonly}
         onClick={() => { void save({ type: 'set', id: target.id, binding: null }) }}>{t('clear')}</button>}
       <button ref={recorder} type="button" className={clsx(css.recorder, message && css.invalid)} disabled={!nativeReady} aria-disabled={busy || !nativeReady}
+        onBlur={() => { restart.current() }}
         aria-label={t('record')} aria-invalid={message !== ''} aria-describedby={descriptionId}
         onClick={() => { if (!writing.current) { restart.current(); setCaptured(false); setMessage(''); setRetry(null) } }}>
-        {captured && message === '' ? <ShortcutKeys keys={describeBinding(candidate).keys} className={css.recorded} /> : t('record')}
+        {captured && message === '' ? <ShortcutKeys keys={describeBinding(candidate).keys} variant="plain" className={css.recorded} /> : t('record')}
       </button>
     </div>
     <span id={descriptionId} className={css.srOnly}>{message || (desktopChords ? '' : t(runtime === 'web'

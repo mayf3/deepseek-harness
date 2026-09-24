@@ -16,10 +16,10 @@
  * scrollbar indirection away while it is elsewhere, so a list the user is not
  * pointing at carries no bar.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  FishLogo, IconNewChatOutlineMedium, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, isDarwinDesktop, Tooltip,
+  FishLogo, IconNewChatOutlineMedium, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, isDarwinDesktop, ShortcutKeys, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
@@ -100,8 +100,12 @@ export function SidebarRoot({
   const panels = usePanels(snapshot => snapshot)
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'sidebar.left.toggle'))
   const newShortcut = useShortcuts(rows => rows.find(row => row.id === 'session.new'))
-  const newHint = newShortcut?.keys.length ? t('shortcut.hint', { label: t('session.new.label'), keys: newShortcut.keys.join(' ') }) : t('session.new.label')
   const toggleLabel = collapsed ? t('toggle.open') : t('toggle.collapse')
+  const newSessionButton = useRef<HTMLButtonElement>(null)
+  const newSessionContent = useRef<HTMLSpanElement>(null)
+  const newSessionKeys = useRef<HTMLSpanElement>(null)
+  const [newShortcutFits, setNewShortcutFits] = useState(false)
+
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
   const [settled, setSettled] = useState(collapsed)
@@ -116,6 +120,23 @@ export function SidebarRoot({
   // (that is what --dsh-windows-menu-start reserves), so a right-side bubble
   // lands under their text. Below the caption is the only clear side.
   const captionTooltipSide = windowsTitlebar ? 'bottom' : 'right'
+  useLayoutEffect(() => {
+    const button = newSessionButton.current
+    const content = newSessionContent.current
+    const keys = newSessionKeys.current
+    if (!wide || button === null || content === null || keys === null) return
+    const fit = (): void => {
+      const style = getComputedStyle(button)
+      const available = (button.clientWidth - content.getBoundingClientRect().width) / 2
+        - Number.parseFloat(style.paddingRight) - Number.parseFloat(style.columnGap)
+      setNewShortcutFits(keys.getBoundingClientRect().width <= available)
+    }
+    const observer = new ResizeObserver(fit)
+    for (const element of [button, content, keys]) observer.observe(element)
+    fit()
+    return () => { observer.disconnect() }
+  }, [wide, newShortcut?.keys])
+
 
   // Freeze the content at its expanded width while it fades out (collapsed
   // && wide): the sliding column then clips it instead of reflowing it. The
@@ -178,7 +199,7 @@ export function SidebarRoot({
   // (the expand affordance, figma sidebar-hover flow). Expanded it is a plain
   // panel icon.
   const toggle = (
-    <Tooltip label={shortcut?.keys.length ? t('shortcut.hint', { label: toggleLabel, keys: shortcut.keys.join(' ') }) : toggleLabel} delayMs={500} side={captionTooltipSide}>
+    <Tooltip label={toggleLabel} shortcutKeys={shortcut?.keys} delayMs={500} side={captionTooltipSide}>
       <button
         type="button"
         className={clsx(css.iconButton, css.toggle)}
@@ -243,7 +264,7 @@ export function SidebarRoot({
           return darwinDesktop
             ? <span className={clsx(css.brand, css.wide)}>{identity}</span>
             : (
-              <Tooltip label={newHint} delayMs={500}>
+              <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500}>
                 <button
                   type="button"
                   className={clsx(css.brand, css.wide)}
@@ -259,21 +280,26 @@ export function SidebarRoot({
         {!darwinDesktop && toggle}
       </div>
 
-      {/* Expanded, the button carries its own label — tooltip only on the rail. */}
-      <Tooltip label={newHint} delayMs={500} side={captionTooltipSide}>
+      {/* The centered action uses inline keys only when its trailing space fits them. */}
+      <Tooltip label={wide ? '' : t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500} side={wide ? 'bottom' : captionTooltipSide} disabled={wide && (newShortcutFits || !newShortcut?.keys.length)}>
         <button
           type="button"
           className={css.newSession}
+          ref={newSessionButton}
+          data-shortcut-inline={newShortcutFits || undefined}
           aria-label={t('session.new.label')}
           aria-keyshortcuts={newShortcut?.aria}
           onClick={() => { startSession() }}
         >
-          {/* The rail draws Regular: Medium's 1.3px stroke scaled to the rail's
-              larger glyph reads visibly heavier than the neighboring 1px icons. */}
-          {wide
-            ? <IconNewChatOutlineMedium size={14} />
-            : <IconNewChatOutlineRegular size={windowsTitlebar ? 16 : 18} />}
-          {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
+          <span ref={newSessionContent} className={css.newSessionContent}>
+            {wide
+              ? <IconNewChatOutlineMedium size={14} />
+              : <IconNewChatOutlineRegular size={windowsTitlebar ? 16 : 18} />}
+            {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
+          </span>
+          {wide && newShortcut !== undefined && newShortcut.keys.length > 0 && <span ref={newSessionKeys} className={css.newSessionShortcut} aria-hidden="true">
+            <ShortcutKeys keys={newShortcut.keys} variant="plain" />
+          </span>}
         </button>
       </Tooltip>
 
