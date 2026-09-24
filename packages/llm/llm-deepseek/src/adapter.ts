@@ -107,7 +107,9 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
           signal,
           ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
           ...options.purpose === undefined ? {} : { purpose: options.purpose },
-        }, this.dependencies.prepareExtensions)
+        }, this.dependencies.prepareExtensions, (fields, error) => {
+          this.dependencies.onExtensionsOmitted?.({ provider: options.provider, model: options.model, fields, error })
+        })
         signal.throwIfAborted()
         const betas = [
           ...fileIds !== undefined && fileIds.size > 0 ? [MESSAGES_FILES_BETA] : [],

@@ -55,7 +55,9 @@ describe('ExpandButton', () => {
       binding: null, keys: ['Ctrl', 'B'], aria: 'Control+B', modified: true, conflicts: [], issue: null }])
     expect(control()?.getAttribute('aria-keyshortcuts')).toBe('Control+B')
     fireEvent.mouseEnter(control()!)
-    expect((await view.findByRole('tooltip')).textContent).toBe('shortcut.hint')
+    const tooltip = await view.findByRole('tooltip')
+    expect(tooltip.textContent).toContain('chrome.expand')
+    expect(Array.from(tooltip.querySelectorAll('kbd'), key => key.textContent)).toEqual(['Ctrl', 'B'])
     cleanup()
   })
   it('offers the way in while the session has no surface yet, and asks the panel to expand', () => {

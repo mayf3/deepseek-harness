@@ -19,8 +19,8 @@ describe('web e2e: shortcut reference', () => {
   afterAll(async () => { await browser?.close(); await scaffold?.close() })
 
   it.each([
-    { locale: 'zh-CN', platform: 'MacIntel', title: '快捷键', settings: '设置', view: '查看快捷键', search: '搜索快捷键', key: 'Meta' },
-    { locale: 'en-US', platform: 'Win32', title: 'Keyboard shortcuts', settings: 'Settings', view: 'View shortcuts', search: 'Search shortcuts', key: 'Control' },
+    { locale: 'zh-CN', platform: 'MacIntel', title: '快捷键', settings: '设置', view: '编辑快捷键', search: '搜索快捷键', key: 'Meta' },
+    { locale: 'en-US', platform: 'Win32', title: 'Keyboard shortcuts', settings: 'Settings', view: 'Edit shortcuts', search: 'Search shortcuts', key: 'Control' },
   ])('opens, searches, and restores nested focus in $locale', async ({ locale, platform, title, settings, view, search, key }) => {
     const referenceKey = platform === 'Win32' ? 'Control+Slash' : 'Meta+Slash'
     const context = await browser.newContext({ locale, colorScheme: 'light', viewport: { width: 1440, height: 1000 } })
@@ -46,14 +46,13 @@ describe('web e2e: shortcut reference', () => {
       const resetAll = dialog.getByRole('button', { name: locale === 'zh-CN' ? '恢复全部默认' : 'Restore all defaults', exact: true })
       expect(await resetAll.isDisabled()).toBe(true)
       expect(await dialog.boundingBox()).toMatchObject({ width: 480, height: 600 })
-      expect(await dialog.getByRole('search').boundingBox()).toMatchObject({ width: 432, height: 36 })
+      expect(await dialog.getByRole('search').boundingBox()).toMatchObject({ width: 440, height: 36 })
       const rows = dialog.getByRole('listitem')
-      const stopRow = dialog.getByRole('region', { name: locale === 'zh-CN' ? '应用操作' : 'Application', exact: true })
+      const stopRow = dialog.getByRole('region', { name: locale === 'zh-CN' ? '消息输入' : 'Message input', exact: true })
         .getByRole('listitem').last()
       await stopRow.getByText(locale === 'zh-CN' ? '停止生成' : 'Stop generating', { exact: true }).waitFor()
       const stopButtons = stopRow.getByRole('button')
-      expect(await stopButtons.count()).toBe(1)
-      expect(await stopButtons.isDisabled()).toBe(true)
+      expect(await stopButtons.count()).toBe(0)
       expect(new Set(await rows.evaluateAll(items => items.map(row => row.getBoundingClientRect().height))))
         .toEqual(new Set([42]))
       expect(await rows.evaluateAll(items => items.every(row => row.getBoundingClientRect().height >= 42
@@ -72,29 +71,22 @@ describe('web e2e: shortcut reference', () => {
       const dialogShadow = await dialog.evaluate(element => getComputedStyle(element).boxShadow)
       await compareOrRefreshGolden(join(expected, `${locale}.expected.md`),
         await captureStableAria(page, '[data-shortcut-modal="shortcuts"]', scaffold.workspaceCwd), mode)
-      const fixedButtons = dialog.getByRole('button', { disabled: true })
-      const fixedButton = fixedButtons.first()
-      expect(await fixedButton.evaluate(element => getComputedStyle(element).opacity)).toBe('0.45')
-      const fixedBackground = await fixedButton.locator('span').evaluate(element => getComputedStyle(element).backgroundColor)
-      await fixedButton.hover()
-      expect(await fixedButton.locator('span').evaluate(element => getComputedStyle(element).backgroundColor)).toBe(fixedBackground)
+      const fixedBackground = await stopRow.evaluate(element => getComputedStyle(element).backgroundColor)
+      await stopRow.hover()
+      expect(await stopRow.evaluate(element => getComputedStyle(element).backgroundColor)).toBe(fixedBackground)
       const editLabel = locale === 'zh-CN' ? '修改展开／收起左侧栏快捷键' : 'Edit shortcut for Toggle left sidebar'
-      const removeLabel = locale === 'zh-CN' ? '移除展开／收起左侧栏快捷键' : 'Remove shortcut for Toggle left sidebar'
       const row = dialog.getByRole('listitem').filter({ has: page.getByRole('button', { name: editLabel, exact: true }) })
       const editButton = page.getByRole('button', { name: editLabel, exact: true })
-      expect(await editButton.evaluate(element => getComputedStyle(element.parentElement!).opacity)).toBe('0')
+      expect(await row.locator('[class*="rowActions"]').evaluate(element => getComputedStyle(element).opacity)).toBe('0')
       const boundRow = dialog.getByRole('listitem').filter({ has: page.getByText(
         locale === 'zh-CN' ? '快捷键速查' : 'Open keyboard shortcuts', { exact: true },
       ) })
-      const badge = boundRow.getByRole('button').last()
-      const badgeColor = () => badge.locator('span').evaluate(element => getComputedStyle(element).backgroundColor)
-      const restingColor = await badgeColor()
-      await boundRow.locator(':scope > span').first().hover()
-      expect(await badgeColor()).toBe(restingColor)
-      await badge.hover()
-      expect(await badgeColor()).toBe('rgba(38, 49, 72, 0.14)')
-      await boundRow.getByRole('button').first().hover()
-      expect(await badgeColor()).toBe(restingColor)
+      const badge = boundRow.getByRole('button', { name: locale === 'zh-CN' ? '修改快捷键速查快捷键' : 'Edit shortcut for Open keyboard shortcuts', exact: true })
+      const restingColor = await boundRow.evaluate(element => getComputedStyle(element).backgroundColor)
+      await badge.hover({ position: { x: 12, y: 12 } })
+      expect(await boundRow.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(restingColor)
+      expect(await boundRow.evaluate(element => getComputedStyle(element).borderRadius)).toBe('12px')
+      expect(await badge.boundingBox()).toEqual(await boundRow.boundingBox())
       await badge.click()
       await boundRow.getByRole('group').waitFor()
       expect(await searchSurfaceStyle()).toEqual(focusedSearchSurface)
@@ -104,7 +96,7 @@ describe('web e2e: shortcut reference', () => {
       await page.keyboard.press('Escape')
       await boundRow.getByRole('group').waitFor({ state: 'hidden' })
       await dialog.getByRole('heading', { name: title, exact: true }).hover()
-      const boundActionsOpacity = () => boundRow.getByRole('button').first().evaluate(element => getComputedStyle(element.parentElement!).opacity)
+      const boundActionsOpacity = () => boundRow.locator('[class*="rowActions"]').evaluate(element => getComputedStyle(element).opacity)
       expect(await boundActionsOpacity()).toBe('0')
       expect(await dialog.evaluate(element => element === document.activeElement)).toBe(true)
       expect(await dialog.evaluate(element => getComputedStyle(element).outlineStyle)).toBe('none')
@@ -118,14 +110,17 @@ describe('web e2e: shortcut reference', () => {
       await dialog.getByRole('heading', { name: title, exact: true }).hover()
       expect(await boundActionsOpacity()).toBe('0')
       await row.hover()
-      expect(await editButton.evaluate(element => getComputedStyle(element.parentElement!).opacity)).toBe('1')
-      expect(await row.getByRole('button', { name: removeLabel, exact: true }).count()).toBe(1)
+      expect(await row.locator('[class*="rowActions"]').evaluate(element => getComputedStyle(element).opacity)).toBe('1')
+      expect(await row.getByRole('button').count()).toBe(1)
       await editButton.click()
       const inline = dialog.getByRole('group', { name: locale === 'zh-CN' ? '展开／收起左侧栏' : 'Toggle left sidebar', exact: true })
       const recorder = inline.getByRole('button', { name: locale === 'zh-CN' ? '按下快捷键' : 'Press a shortcut', exact: true })
       expect(await inline.getByRole('button', { name: locale === 'zh-CN' ? '移除' : 'Remove', exact: true }).count()).toBe(1)
       expect(await page.getByRole('dialog').count()).toBe(2)
-      expect(await recorder.evaluate(element => getComputedStyle(element).color)).toBe('rgb(129, 133, 140)')
+      expect(await recorder.evaluate(element => ({
+        color: getComputedStyle(element).color, border: getComputedStyle(element).borderColor,
+      })))
+        .toEqual({ color: 'rgb(97, 102, 107)', border: 'rgba(0, 0, 0, 0.16)' })
       expect(await recorder.evaluate(element => ({
         focused: element === document.activeElement,
         outline: getComputedStyle(element).outlineStyle, shadow: getComputedStyle(element).boxShadow,
@@ -155,7 +150,7 @@ describe('web e2e: shortcut reference', () => {
       expect(await dialog.evaluate(element => getComputedStyle(element).boxShadow)).toBe(dialogShadow)
       expect(await editButton.evaluate(element => element.matches(':focus-visible'))).toBe(false)
       await dialog.getByRole('heading', { name: title, exact: true }).hover()
-      expect(await editButton.evaluate(element => getComputedStyle(element.parentElement!).opacity)).toBe('0')
+      expect(await row.locator('[class*="rowActions"]').evaluate(element => getComputedStyle(element).opacity)).toBe('0')
       await page.keyboard.press('Shift+Tab')
       expect(await resetAll.evaluate(element => element === document.activeElement)).toBe(true)
       expect(await resetAll.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe('none')
@@ -168,12 +163,14 @@ describe('web e2e: shortcut reference', () => {
       }))).toEqual({ background: 'rgb(67, 69, 74)', color: 'rgb(255, 255, 255)' })
       await page.emulateMedia({ colorScheme: 'light' })
       await expect.poll(() => successToast.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(53, 54, 56)')
-      await page.getByRole('button', { name: removeLabel, exact: true }).click()
+      await editButton.click()
+      await inline.getByRole('button', { name: locale === 'zh-CN' ? '移除' : 'Remove', exact: true }).click()
+      await inline.waitFor({ state: 'hidden' })
       const unbound = row.getByText(locale === 'zh-CN' ? '暂无快捷键' : 'No shortcut', { exact: true })
       await unbound.waitFor()
       expect(await unbound.evaluate(element => getComputedStyle(element).color)).toBe('rgb(129, 133, 140)')
-      expect(await row.getByRole('button', { name: removeLabel, exact: true }).count()).toBe(0)
-      await unbound.click()
+      expect(await row.getByRole('button').count()).toBe(1)
+      await editButton.click({ position: { x: 12, y: 12 } })
       await inline.waitFor()
       expect(await inline.getByRole('button', { name: locale === 'zh-CN' ? '移除' : 'Remove', exact: true }).count()).toBe(0)
       await page.keyboard.press('Escape')
@@ -182,7 +179,7 @@ describe('web e2e: shortcut reference', () => {
       expect(await dialog.evaluate(element => getComputedStyle(element).outlineStyle)).toBe('none')
       expect(await dialog.evaluate(element => getComputedStyle(element).boxShadow)).toBe(dialogShadow)
       await dialog.getByRole('heading', { name: title, exact: true }).hover()
-      expect(await editButton.evaluate(element => getComputedStyle(element.parentElement!).opacity)).toBe('0')
+      expect(await row.getByRole('button').count()).toBe(1)
       expect(await page.getByRole('dialog').count()).toBe(2)
       for (const query of ['abc', 'sendEnter']) {
         await page.getByRole('searchbox').fill(query)
@@ -245,11 +242,13 @@ describe('web e2e: shortcut reference', () => {
       await page.setViewportSize({ width: 1440, height: 1000 })
       await openSettings(page, locale === 'zh-CN' ? 'zh' : 'en')
       const viewButton = page.getByRole('button', { name: view, exact: true })
-      const viewHint = `${view} ${key === 'Meta' ? '⌘ /' : 'Ctrl + /'}`
+      const viewHint = `${locale === 'zh-CN' ? '全局唤起查看' : 'Open from anywhere'} ${key === 'Meta' ? '⌘ /' : 'Ctrl + /'}`
       await viewButton.hover()
-      expect(await page.getByRole('tooltip').textContent()).toBe(viewHint)
+      expect(await page.getByRole('tooltip').getAttribute('aria-label')).toBe(viewHint)
       await viewButton.click()
-      await boundRow.getByRole('button').first().click()
+      await badge.click()
+      await boundRow.getByRole('button', { name: locale === 'zh-CN' ? '移除' : 'Remove', exact: true }).click()
+      await boundRow.getByRole('group').waitFor({ state: 'hidden' })
       await boundRow.getByText(locale === 'zh-CN' ? '暂无快捷键' : 'No shortcut', { exact: true }).waitFor()
       await page.keyboard.press('Escape')
       await dialog.waitFor({ state: 'hidden' })
@@ -266,7 +265,7 @@ describe('web e2e: shortcut reference', () => {
       await page.keyboard.press('Escape')
       await dialog.waitFor({ state: 'hidden' })
       await viewButton.hover()
-      expect(await page.getByRole('tooltip').textContent()).toBe(viewHint)
+      expect(await page.getByRole('tooltip').getAttribute('aria-label')).toBe(viewHint)
       await viewButton.click()
       await page.getByRole('searchbox').fill('abc')
       expect(await dialog.getByRole('listitem').count()).toBe(0)
@@ -286,7 +285,7 @@ describe('web e2e: shortcut reference', () => {
       await confirm.getByRole('button', { name: locale === 'zh-CN' ? '恢复默认' : 'Restore default', exact: true }).click()
       await confirm.waitFor({ state: 'hidden' })
       expect(await resetAll.isDisabled()).toBe(true)
-      expect(await dialog.locator('footer').textContent()).toContain(locale === 'zh-CN' ? '0 项已自定义' : '0 customized')
+      expect(await dialog.locator('footer').textContent()).toBe(locale === 'zh-CN' ? '恢复全部默认' : 'Restore all defaults')
       expect(await page.getByRole('searchbox').evaluate(element => element === document.activeElement)).toBe(true)
       expect(await searchInput.evaluate(element => getComputedStyle(element).outlineStyle)).toBe('none')
       expect(await searchSurfaceStyle()).toEqual(focusedSearchSurface)
@@ -319,6 +318,65 @@ describe('web e2e: shortcut reference', () => {
       expect(await sidebar.getAttribute('aria-keyshortcuts')).toBe(key === 'Meta' ? 'Alt+Meta+B' : 'Control+Alt+B')
       expect(console.pageErrors).toEqual([])
       expect(console.warnings).toEqual([])
+    } finally { await context.close() }
+  })
+
+  it.each([
+    { platform: 'Win32', primary: 'Control', keys: 'Ctrl + Alt + N' },
+    { platform: 'MacIntel', primary: 'Meta', keys: '⌥ ⇧ ⌘ F12' },
+  ])('shows the shortcut inside New Session on hover and keyboard focus at wide and narrow widths on $platform', async ({ platform, primary, keys }) => {
+    const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 1000 } })
+    try {
+      await context.addInitScript((value) => { Object.defineProperty(navigator, 'platform', { value }) }, platform)
+      const page = await context.newPage()
+      await page.goto(scaffold.authenticatedUrl)
+      const newSession = page.getByRole('button', { name: 'New session', exact: true }).filter({ hasText: 'New Session' })
+      await newSession.waitFor()
+      if (platform === 'MacIntel') await page.evaluate(() => { document.documentElement.dataset.platform = 'darwin' })
+      await page.keyboard.press(`${primary}+/`)
+      await page.getByRole('button', { name: 'Edit shortcut for New Session', exact: true }).click()
+      await page.keyboard.press(platform === 'Win32' ? 'Control+Alt+N' : 'Meta+Alt+Shift+F12')
+      await page.getByRole('group', { name: 'New Session', exact: true }).waitFor({ state: 'hidden' })
+      await page.keyboard.press('Escape')
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme })
+        for (const width of [420, 264]) {
+          const handle = (await page.locator('[data-side="sidebar"]').boundingBox())!
+          await page.mouse.move(handle.x + handle.width / 2, 240)
+          await page.mouse.down()
+          await page.mouse.move(width, 240, { steps: 10 })
+          await page.mouse.up()
+          await expect.poll(() => newSession.locator('kbd').allTextContents()).toEqual(keys.split(' '))
+          const centerOffset = () => newSession.evaluate((element) => {
+            const button = element.getBoundingClientRect()
+            const content = element.querySelector('[class*="newSessionContent"]')!.getBoundingClientRect()
+            return Math.abs(button.x + button.width / 2 - content.x - content.width / 2)
+          })
+          expect(await centerOffset()).toBeLessThan(1)
+          const hintStyle = () => newSession.locator('[class*="newSessionShortcut"]').evaluate(element => ({
+            opacity: getComputedStyle(element).opacity, mask: getComputedStyle(element.previousElementSibling!).maskImage,
+          }))
+          expect(await hintStyle()).toEqual({ opacity: '0', mask: 'none' })
+          await newSession.hover()
+          expect(await centerOffset()).toBeLessThan(1)
+          const mask = await newSession.locator('[class*="newSessionLabelMask"]').boundingBox()
+          const hint = await newSession.locator('[class*="newSessionShortcut"]').boundingBox()
+          expect(mask!.x + mask!.width).toBeLessThanOrEqual(hint!.x + 1)
+          expect((await hintStyle()).opacity).toBe('1')
+          expect((await hintStyle()).mask).toContain('linear-gradient')
+          await newSession.screenshot({ path: fileURLToPath(new URL(`../../../.artifacts/new-session-${process.pid}-${platform}-${colorScheme}-${width}.png`, import.meta.url)) })
+          expect(await page.getByRole('tooltip').count()).toBe(0)
+          await page.mouse.move(700, 100)
+          expect(await hintStyle()).toEqual({ opacity: '0', mask: 'none' })
+          await newSession.focus()
+          await page.keyboard.press('Shift+Tab')
+          await page.keyboard.press('Tab')
+          expect(await newSession.evaluate(element => element.matches(':focus-visible'))).toBe(true)
+          expect((await hintStyle()).opacity).toBe('1')
+          expect(await page.getByRole('tooltip').count()).toBe(0)
+          await newSession.evaluate((element) => { element.blur() })
+        }
+      }
     } finally { await context.close() }
   })
 
@@ -371,7 +429,8 @@ describe('web e2e: shortcut reference', () => {
       await other.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
       await other.getByRole('button', { name: 'Settings', exact: true }).waitFor()
       await other.keyboard.press(referenceKey)
-      await other.getByRole('button', { name: 'Remove shortcut for Toggle left sidebar', exact: true }).click()
+      await other.getByRole('button', { name: 'Edit shortcut for Toggle left sidebar', exact: true }).click()
+      await other.getByRole('button', { name: 'Remove', exact: true }).click()
       await editor.getByText('Shortcut configuration or available commands changed. Review the latest bindings before saving.', { exact: true }).waitFor()
       await page.bringToFront()
       await editor.getByRole('button', { name: 'Press a shortcut', exact: true }).focus()

@@ -83,9 +83,9 @@ describe('Schedule model tools', () => {
   it('accepts a supplied title in the tool schema and returns it in the create and list views', async () => {
     const test = await setup()
     const schema = test.ctx.tools.schemas(test.agent).find(item => item.name === 'schedule_create')
-    expect(schema?.description).toContain('title')
-    const parameters = schema?.parameters as { properties: Record<string, unknown>; required: string[] }
-    expect(parameters.properties).toMatchObject({ title: { type: 'string' } })
+    const parameters = schema?.parameters as { properties: Record<string, { type?: string; description?: string }>; required: string[] }
+    expect(parameters.properties.title?.type).toBe('string')
+    expect(parameters.properties.title?.description).toContain('task card')
     expect(parameters.required).toEqual(expect.arrayContaining(['prompt', 'title']))
     const created = await execute(test, 'schedule_create', {
       prompt: 'Check the queue\nand the backlog', title: '  Queue check  ', every_seconds: 300,

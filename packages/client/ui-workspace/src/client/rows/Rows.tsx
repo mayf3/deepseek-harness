@@ -294,7 +294,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
             )}
           />
         )}
-        <Tooltip label={newShortcut?.keys.length ? t('shortcut.hint', { label: t('actions.newSession'), keys: newShortcut.keys.join(' ') }) : t('actions.newSession')} side="bottom" align="end" delayMs={500}>
+        <Tooltip label={t('actions.newSession')} shortcutKeys={newShortcut?.keys} side="bottom" align="end" delayMs={500}>
           <button
             type="button"
             className={css.iconButton}
