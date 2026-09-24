@@ -233,8 +233,7 @@ it('ignores a retired modeSelectionEnabled field in the user patch', async () =>
   await declare(ctx, contribution('minimal'))
   // A patch written before Developer tools became the only gate still carries
   // this key; the Loader's declared fields simply do not include it.
-  const stored: Record<string, unknown> = { selectedDefault: 'minimal', modeSelectionEnabled: false }
-  await live.update(stored)
+  await live.update({ selectedDefault: 'minimal', modeSelectionEnabled: false })
   expect(ctx.agentPresets.defaultId).toBe('minimal')
   expect((await ctx.agentPresets.remoteExportList()).presets.find(row => row.id === 'minimal')?.isDefault).toBe(true)
   // Neither read nor rewritten: the raw entry keeps the key it was loaded with.

@@ -78,6 +78,7 @@ async function bench(options: {
   ctx.provide('locale', locale)
   const calls: string[] = []
   let savedDefault = 'standard'
+  let developerToolsEnabled = true
   let settingsSaved = false
   const settingsRosterStarted = Promise.withResolvers<undefined>()
   // The row reads `describe` to learn whether this browser may write at all,
@@ -93,7 +94,7 @@ async function bench(options: {
         namespaces: [{
           ns: 'ui-settings',
           schema: { type: 'object', dict: { enabled: { type: 'boolean' } } },
-          value: { enabled: true },
+          value: { enabled: developerToolsEnabled },
           autoGenerate: false,
           applies: 'live',
           secrets: [],
@@ -152,7 +153,18 @@ async function bench(options: {
   ctx.provide('remote.agentPresets', agentPresets as never)
   Object.assign(remote, { agentPresets })
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote, settingsRosterStarted: settingsRosterStarted.promise }
+  // Every spec below starts from the accepted "Developer tools on" value.
+  await vi.waitFor(() => { expect(ctx.configForms.developerTools.enabled.getSnapshot()).toBe(true) })
+  /** Publish a new Developer tools choice the way the settings mirror does. */
+  const setDeveloperTools = async (enabled: boolean): Promise<void> => {
+    developerToolsEnabled = enabled
+    remote.emit('settings/document-updated', ['ui-settings', 1])
+    await vi.waitFor(() => { expect(ctx.configForms.developerTools.enabled.getSnapshot()).toBe(enabled) })
+  }
+  return {
+    ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote,
+    settingsRosterStarted: settingsRosterStarted.promise, setDeveloperTools,
+  }
 }
 
 function declareRoot(slots: SlotRegistry): () => void {
@@ -721,6 +733,67 @@ describe('ui-agent-preset apply', () => {
     // switching sessions the user never picked for.
     await Promise.resolve()
     expect(calls.filter(call => call === 'select:minimal')).toHaveLength(spent)
+  })
+
+  it('drops a cross-screen stage when Developer tools turn off, and releases its subscription with the fiber', async () => {
+    const { ctx, slots, calls, setDeveloperTools } = await bench()
+    declareRoot(slots)
+    const conversation = declareConversation(slots)
+    ctx.provide('conversation', {} as never)
+    const state: {
+      current?: string
+      byId: Record<string, { id: string; blank: boolean; projectionValues?: { agentPreset?: string | null } }>
+    } = {
+      current: 's0',
+      byId: {
+        s0: { id: 's0', blank: false, projectionValues: { agentPreset: 'standard' } },
+        s1: { id: 's1', blank: true, projectionValues: { agentPreset: 'standard' } },
+      },
+    }
+    const sessions = sessionsDouble(ctx, state)
+    ctx.provide('sessions', sessions as never)
+    ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
+    // The gate's seat sweep runs over live Provider bindings; s1's binding is
+    // not the main view yet, so its seat keeps a stage it cannot apply.
+    let released = 0
+    const dispatch = ctx.configForms.developerTools.enabled.subscribe.bind(ctx.configForms.developerTools.enabled)
+    vi.spyOn(ctx.configForms.developerTools.enabled, 'subscribe').mockImplementation((listener) => {
+      const dispose = dispatch(listener)
+      return () => { released += 1; dispose() }
+    })
+    const feature = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply })
+    await feature.await()
+    const injectSeat = slots.entries('conversation.hero.agentPreset')[0]!
+      .inject as (sessionId?: SessionId) => AgentPresetSeatInjected & Record<string, unknown>
+    const chip = injectSeat(SessionId('s1'))
+    await chip.load()
+
+    await chip.select('minimal')
+    expect(chip.hooks.agentPresetSeat.getSnapshot()).toMatchObject({ current: 'minimal', introduce: false })
+
+    // The preference turns off with no seat load, so only the gate's own sweep
+    // can reconcile this live bound seat back to the roster default.
+    await setDeveloperTools(false)
+    await vi.waitFor(() => {
+      expect(chip.hooks.agentPresetSeat.getSnapshot()).toMatchObject({ current: 'standard', introduce: false })
+    })
+    expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
+
+    // Turning back on must not resurrect the dropped stage when this blank
+    // Session becomes the main view's current one.
+    await setDeveloperTools(true)
+    state.current = 's1'
+    sessions.notify()
+    await chip.load()
+    expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
+    expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
+
+    const settled = chip.hooks.agentPresetSeat.getSnapshot()
+    await feature.dispose()
+    await setDeveloperTools(false)
+    expect(chip.hooks.agentPresetSeat.getSnapshot()).toBe(settled)
+    expect(released).toBe(1)
+    conversation()
   })
 
   it('loads the header label from the shared roster store', async () => {

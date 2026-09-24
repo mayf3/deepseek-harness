@@ -100,6 +100,15 @@ export function apply(ctx: ClientContext): void {
     return seat
   }
   const section = new AgentPresetSectionController(ctx)
+  // Turning Developer tools off clears the shared stage before any apply can compose it.
+  const developerTools = ctx.configForms.developerTools.enabled
+  ctx.effect(() => developerTools.subscribe(() => {
+    if (developerTools.getSnapshot()) return
+    staged.id = undefined
+    staged.introduce = false
+    void unboundSeat.apply()
+    for (const seat of seats.values) void seat.apply()
+  }), 'ui-agent-preset: Developer tools gate')
   const mainBlankSeat = (): AgentPresetSeatController | undefined => {
     const summary = Object.values(ctx.sessions.list.getSnapshot().byId)
       .find((session) => {

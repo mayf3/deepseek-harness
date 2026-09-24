@@ -73,7 +73,8 @@ export type AgentPresetSeatProps =
 /**
  * Render the new-session agent-preset chip.
  * @param props - composed slot props.
- * @returns the chip, or null when the deployment composes no presets.
+ * @returns The chip, or null outside the main view, with Developer tools off,
+ * or before the roster provides a preset choice.
  */
 export function AgentPresetSeat({
   sessionId, useSessionRetainInfo, load, select, introduced, useAgentPresetSeat, useDeveloperTools, t,
@@ -87,9 +88,8 @@ export function AgentPresetSeat({
   // it rather than leaving the first one silently in place.
   const toastSeq = useRef(0)
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
-  const visible = developerTools
-  const pickerVisible = useRef(visible)
-  pickerVisible.current = visible
+  const pickerVisible = useRef(developerTools)
+  pickerVisible.current = developerTools
 
   useEffect(() => {
     void load()
@@ -99,10 +99,10 @@ export function AgentPresetSeat({
   // state explicitly; otherwise an external off/on edit can revive an old
   // menu or refusal banner.
   useEffect(() => {
-    if (visible) return
+    if (developerTools) return
     setOpen(false)
     setToast(null)
-  }, [visible])
+  }, [developerTools])
 
   const chosen = state.options.find(option => option.id === state.current)
   const chosenText = chosen === undefined ? undefined : presetDisplayText(chosen, t)
@@ -131,7 +131,7 @@ export function AgentPresetSeat({
 
   // Nothing to choose between: the deployment composes no presets and every
   // session shares the host composition.
-  if (!main || !visible || !ready) return null
+  if (!main || !developerTools || !ready) return null
 
   // One wrapper span: the chip is a flex row with a gap, so loose character
   // spans would each pick up the gap between them.
