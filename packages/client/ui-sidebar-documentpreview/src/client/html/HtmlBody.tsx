@@ -1,7 +1,6 @@
 /** Static or interactive HTML in an opaque iframe, without parent application access. */
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import clsx from 'clsx'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { DocumentPreviewProps } from '../document/contract.ts'
@@ -63,7 +62,7 @@ function HtmlFrame({ data, resourceAddress, readRelated, addResource, setResourc
   }, [data, readRelated, resourceAddress, addResource, setResources, signal])
 
   if (frame?.data !== data || frame.readRelated !== readRelated) {
-    return <LoadingIndicator className={clsx(css.status, css.opening)} label={t('loading')} />
+    return <LoadingIndicator label={t('loading')} />
   }
   if (frame.url === undefined) return <p className={css.status} role="alert">{t('failed')}</p>
   return <iframe key={frame.url} name={frameName} className={css.frame} src={frame.url} sandbox="allow-scripts" title={t('frame')} data-html-preview />
