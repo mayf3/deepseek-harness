@@ -122,11 +122,7 @@ macOS 上自定义菜单保留 Electron 的标准 Window 菜单及应用隐藏�
 pnpm run dev:desktop
 ```
 
-在 macOS 上，双击仓库根目录中的 [`start-desktop.command`](../../start-desktop.command)，即可在终端中执行相同的构建和启动流程。该启动器会加载用户的 zsh 启动文件，并使用已有的 `DSH_HOME` 或 `~/.dsh`，因此 Desktop 会复用用户的会话、设置和凭据。依赖已安装时，启动器使用工作区 pnpm；它默认不打开 Renderer DevTools，并在失败后等待按下回车键，以便保留诊断信息。
-
-要从不同 checkout 启动第二个 Desktop 实例，请双击 [`启动Desktop.command`](../../启动Desktop.command)。该脚本从默认 Desktop 端口之后选择空闲端口，设置 `DSH_DESKTOP_WEB_PORT`，并使用 `~/.dsh-desktop-<仓库>-<端口>` 下的独立 `$DSH_HOME`，不会复用另一 checkout 的状态和端口。每个 checkout 共用一个开发应用包和 Electron 用户数据目录，不支持从同一 checkout 并发启动。主运行时缺失时，它探测本地代理端口 7890、7897、1087 和 8080，仅供准备进程使用，并将本地回环地址排除在代理之外。两个启动脚本都会在启动 Desktop 前清除继承的代理变量。
-
-开发 Harness 状态默认写入 `apps/desktop/.desktop-build/development/home`，一次性 npm 项目位于 `apps/desktop/.desktop-build/development/project`，Electron 浏览器数据则位于 `apps/desktop/.desktop-build/development/electron-user-data`。因此，会话、设置、凭据、包链接和浏览器数据都不会进入用户正常使用的 Harness home；显式 `DSH_HOME` 只会替换开发 Harness home。Desktop Web Host 默认监听 19387 端口；`DSH_DESKTOP_WEB_PORT` 可以替换该端口。开发启动器要求端口为 1 至 65535 的整数，并将其保存在 macOS 应用包中，供 Launch Services 冷启动使用。Renderer DevTools 默认自动打开，Main、Renderer 和 dsh Host 调试端口依次为 9229、9222 和 9230。`DSH_DESKTOP_MAIN_INSPECT_PORT`、`DSH_DESKTOP_RENDERER_DEBUG_PORT` 与 `DSH_DESKTOP_HOST_INSPECT_PORT` 可以替换这些端口，`DSH_DESKTOP_OPEN_DEVTOOLS=0` 则保持 Renderer 调试窗口关闭。
+开发 Harness 状态默认写入 `apps/desktop/.desktop-build/development/home`，一次性 npm 项目位于 `apps/desktop/.desktop-build/development/project`，Electron 浏览器数据则位于 `apps/desktop/.desktop-build/development/electron-user-data`。因此，会话、设置、凭据、包链接和浏览器数据都不会进入用户正常使用的 Harness home；显式 `DSH_HOME` 只会替换开发 Harness home。Renderer DevTools 默认自动打开，Main、Renderer 和 dsh Host 调试端口依次为 9229、9222 和 9230。`DSH_DESKTOP_MAIN_INSPECT_PORT`、`DSH_DESKTOP_RENDERER_DEBUG_PORT` 与 `DSH_DESKTOP_HOST_INSPECT_PORT` 可以替换这些端口，`DSH_DESKTOP_OPEN_DEVTOOLS=0` 则保持 Renderer 调试窗口关闭。
 
 显式构建完成后，`start:desktop` 会重新生成一次性项目，并跳过构建直接启动已有产物：
 

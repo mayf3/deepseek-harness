@@ -14,7 +14,6 @@ export interface DevelopmentAppOptions {
   readonly mainPort: number
   readonly rendererPort: number
   readonly hostPort: number
-  readonly webPort: number
   readonly openDevtools: string
 }
 
@@ -65,7 +64,6 @@ export function developmentLauncher(options: DevelopmentAppOptions, bundle: stri
     DSH_HOME: options.home,
     DSH_DESKTOP_DEV_APP: '1',
     DSH_DESKTOP_HOST_INSPECT_PORT: String(options.hostPort),
-    DSH_DESKTOP_WEB_PORT: String(options.webPort),
     DSH_DESKTOP_OPEN_DEVTOOLS: options.openDevtools,
     ELECTRON_ENABLE_LOGGING: '1',
   }
