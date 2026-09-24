@@ -155,9 +155,9 @@ function wireNamespaces(): SettingsNamespaceView[] {
   ]
 }
 
-/** The account provider's dedicated settings namespace. */
-function accountNamespace(): SettingsNamespaceView {
-  return wireNamespaces().find(view => view.ns === 'llm-deepseek-account')!
+/** The account provider's settings namespace, under a composition's entry id. */
+function accountNamespace(ns = 'llm-deepseek-account'): SettingsNamespaceView {
+  return { ...wireNamespaces().find(view => view.ns === 'llm-deepseek-account')!, ns }
 }
 
 /** Credentials answers over the Remote carrier, which has no envelope. */
@@ -1904,11 +1904,11 @@ describe('apiKeyFailure', () => {
 })
 
 it.each([en, zh])('edits the account model catalog without credential or endpoint fields', async (copy) => {
-  const scripted = scriptedFace({})
+  const mutate = vi.fn(() => Promise.resolve(remoteOk(accountNamespace())))
+  const scripted = scriptedFace({ mutate })
   const ops = operationsWith(scripted.face)
   const describe = vi.spyOn(ops, 'describeCredential')
   const namespace = accountNamespace()
-  const mutate = vi.spyOn(scripted.face.settings, 'mutate').mockResolvedValue(remoteOk(accountNamespace()))
   const onClose = vi.fn()
   render(<ProviderEditor provider="deepseek-account" displayName={copy.deepSeekAccount}
     namespace={namespace} settingsPath={[]} schema={settingsSchema}
@@ -1924,6 +1924,65 @@ it.each([en, zh])('edits the account model catalog without credential or endpoin
   fireEvent.change(screen.getAllByLabelText(new RegExp(copy.modelId))[0]!, { target: { value: 'deepseek-v4-mini' } })
   fireEvent.click(screen.getByText(copy.apply))
   await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+  expect(mutate.mock.calls[0]).toEqual([
+    'llm-deepseek-account',
+    [{
+      op: 'set',
+      path: ['models'],
+      value: [
+        {
+          id: 'deepseek-v4-mini',
+          name: 'DeepSeek-V4-Flash',
+          description: 'Preserved hidden detail',
+          contextWindow: 1_000_000,
+        },
+        { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: 1_000_000 },
+      ],
+    }],
+    0,
+  ])
+  expect(set).not.toHaveBeenCalled()
+})
+
+it('keeps the DeepSeek editor for an account route under a renamed settings entry', async () => {
+  const namespace = accountNamespace('team-account-entry')
+  const mutate = vi.fn(() => Promise.resolve(remoteOk(namespace)))
+  const ops = operationsWith(scriptedFace({ mutate }).face)
+  const set = vi.spyOn(ops, 'storeCredential')
+  const onClose = vi.fn()
+  render(<ProviderEditor provider="deepseek-account" displayName={en.deepSeekAccount}
+    namespace={namespace} settingsPath={[]} schema={settingsSchema}
+    operations={ops} t={t} readOnly={false} onClose={onClose} />)
+  expect(screen.queryByText(content => content.includes(en.advancedHint))).toBeNull()
+  expect(screen.getByDisplayValue('deepseek-v4-flash')).toBeTruthy()
+  fireEvent.change(screen.getAllByLabelText(new RegExp(en.modelId))[0]!, { target: { value: 'deepseek-v4-mini' } })
+  fireEvent.click(screen.getByText(en.apply))
+  await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+  expect(mutate).toHaveBeenCalledWith('team-account-entry', expect.any(Array), 0)
+  expect(set).not.toHaveBeenCalled()
+})
+
+it('opens the account row from the section and saves to its own namespace', async () => {
+  const namespace = accountNamespace()
+  const mutate = vi.fn(() => Promise.resolve(remoteOk(namespace)))
+  const { controller, set } = await mountSection({ mutate })
+  const row = controller.store.getSnapshot().rows[0]!
+  await act(async () => { controller.store.update((state) => {
+    state.rows = [{
+      ...row,
+      accountAvailable: true,
+      entry: {
+        provider: 'deepseek-account', displayName: en.deepSeekAccount, settingsNs: namespace.ns, settingsPath: [], active: true,
+      },
+    }, ...state.rows]
+  }) })
+  fireEvent.click(screen.getByRole('button', {
+    name: providerCopy(en.editProvider, { provider: 'deepseek-account', displayName: en.deepSeekAccount }),
+  }))
+  expect(screen.getByDisplayValue('deepseek-v4-flash')).toBeTruthy()
+  fireEvent.change(screen.getAllByLabelText(new RegExp(en.modelId))[0]!, { target: { value: 'deepseek-v4-mini' } })
+  fireEvent.click(screen.getByText(en.apply))
+  await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
   expect(mutate.mock.calls[0]).toEqual([
     'llm-deepseek-account',
     [{
