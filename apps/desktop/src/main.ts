@@ -937,8 +937,8 @@ async function main(): Promise<void> {
     } catch (error) { console.warn('desktop tray: unavailable', error) }
   }
   const backgroundNotice = process.platform === 'win32'
-    ? new DesktopBackgroundNotice({ markerPath: join(app.getPath('userData'), 'background-notice-shown'),
-      locale: () => locale, open: () => { focusPrimaryWindow() } })
+    ? new DesktopBackgroundNotice({ markerPath: join(app.getPath('userData'), 'background-close-confirmed'),
+      locale: () => locale, show: ordinaryMessageBox, focus: () => { updateDialog.focus() } })
     : undefined
   const quitConfirmation = new DesktopQuitConfirmation({
     locale: () => locale,
@@ -1008,7 +1008,6 @@ async function main(): Promise<void> {
     } else {
       window.hide()
     }
-    backgroundNotice?.show()
   }
   const createMainWindow = (): BrowserWindow => {
     const window = createWindow(appPreload, false, true)
@@ -1020,7 +1019,12 @@ async function main(): Promise<void> {
     window.on('close', (event) => {
       if (quitting || shellInstallerOwnsQuit || sessionEnding) return
       event.preventDefault()
-      hideMainWindow(window)
+      if (updateDialog.isOpen) { updateDialog.focus(); return }
+      const hide = (): void => {
+        if (!quitting && !shellInstallerOwnsQuit && !sessionEnding && !window.isDestroyed()) hideMainWindow(window)
+      }
+      if (backgroundNotice === undefined) hide()
+      else backgroundNotice.close(hide)
     })
     if (process.platform === 'win32') {
       // Shutdown, restart, and log-off must not wait on a confirmation. query-session-end is only a
@@ -1183,6 +1187,7 @@ async function main(): Promise<void> {
     shuttingDown = true
     updateJournal?.action('quit-requested')
     quitConfirmation.dispose()
+    backgroundNotice?.dispose()
     tray?.dispose()
     stopAccount?.()
     if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.hide()
@@ -1198,6 +1203,7 @@ async function main(): Promise<void> {
   app.on('before-quit', (event) => {
     if (shellInstallerOwnsQuit) {
       shuttingDown = true
+      backgroundNotice?.dispose()
       updateJournal?.action('quit-requested')
       tray?.dispose()
       updateDialog.dispose()

@@ -1,97 +1,95 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DesktopBackgroundNotice } from '../src/background-notice.ts'
 import { resolveDesktopLocale } from '../src/locale.ts'
 
-const native = await vi.hoisted(async () => {
-  const { EventEmitter } = await import('node:events')
-  const notices: Notice[] = []
-  class Notice extends EventEmitter {
-    static isSupported = vi.fn(() => true)
-    show = vi.fn()
-    constructor(readonly options: unknown) { super(); notices.push(this) }
-  }
-  return { notices, Notice }
-})
-vi.mock('electron', () => ({ Notification: native.Notice }))
-
 const roots: string[] = []
 afterEach(() => {
-  native.notices.length = 0
-  vi.clearAllMocks()
   vi.restoreAllMocks()
-  native.Notice.isSupported.mockReturnValue(true)
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-function setup(markerPath = join(mkdtempSync(join(tmpdir(), 'dsh-desktop-notice-')), 'state', 'background-notice-shown')) {
-  roots.push(join(markerPath, '..', '..'))
-  const open = vi.fn()
-  const notice = new DesktopBackgroundNotice({ markerPath, locale: () => resolveDesktopLocale('zh'), open })
-  return { notice, open, markerPath }
-}
-
-it('notifies once per installation, records the marker, and opens the window on click', () => {
-  const f = setup()
-  f.notice.show()
-  f.notice.show()
-  expect(existsSync(f.markerPath)).toBe(true)
-  expect(native.notices).toHaveLength(1)
-  expect(native.notices[0]!.options).toEqual({
-    title: 'DeepSeek Harness 仍在后台运行', body: '正在运行的任务不会中断。可在系统托盘中重新打开或退出。', silent: true,
-  })
-  expect(native.notices[0]!.show).toHaveBeenCalledOnce()
-  native.notices[0]!.emit('click')
-  native.notices[0]!.emit('click')
-  expect(f.open).toHaveBeenCalledOnce()
-  // The next process of the same installation finds the marker.
-  const again = new DesktopBackgroundNotice({ markerPath: f.markerPath, locale: () => resolveDesktopLocale('zh'), open: f.open })
-  again.show()
-  expect(native.notices).toHaveLength(1)
-})
-
-it('still notifies once in this process when the marker cannot be written', () => {
-  vi.spyOn(console, 'warn').mockImplementation(() => {})
+function setup() {
   const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-notice-'))
   roots.push(root)
-  // A file where the marker's directory should be makes the marker write fail.
-  writeFileSync(join(root, 'blocker'), '')
-  const open = vi.fn()
-  const blocked = new DesktopBackgroundNotice({ markerPath: join(root, 'blocker', 'background-notice-shown'), locale: () => resolveDesktopLocale('zh'), open })
-  blocked.show()
-  blocked.show()
-  expect(console.warn).toHaveBeenCalledWith('desktop tray: could not record the background notice', expect.anything())
-  expect(native.notices).toHaveLength(1)
-})
+  const markerPath = join(root, 'background-close-confirmed')
+  const response = Promise.withResolvers<MessageBoxReturnValue>()
+  const show = vi.fn<(options: MessageBoxOptions) => Promise<MessageBoxReturnValue>>(() => response.promise)
+  const focus = vi.fn()
+  const hide = vi.fn()
+  const options = { markerPath, locale: () => resolveDesktopLocale('zh'), show, focus }
+  return { root, markerPath, response, show, focus, hide, options, notice: new DesktopBackgroundNotice(options) }
+}
 
-it('keeps the notice for a later launch when notifications are unsupported or delivery fails', () => {
-  native.Notice.isSupported.mockReturnValue(false)
+it('keeps the window visible until confirmation and remembers acknowledgement across launches', async () => {
   const f = setup()
-  f.notice.show()
-  f.notice.show()
-  expect(native.notices).toHaveLength(0)
+  writeFileSync(join(f.root, 'background-notice-shown'), '')
+  f.notice.close(f.hide)
+  f.notice.close(f.hide)
+  expect(f.hide).not.toHaveBeenCalled()
   expect(existsSync(f.markerPath)).toBe(false)
-  native.Notice.isSupported.mockReturnValue(true)
-  const g = setup()
-  g.notice.show()
-  expect(existsSync(g.markerPath)).toBe(true)
-  native.notices[0]!.emit('failed')
-  expect(existsSync(g.markerPath)).toBe(false)
-  native.notices[0]!.emit('click')
-  expect(g.open).not.toHaveBeenCalled()
-  // One attempt per process even after the marker was withdrawn.
-  g.notice.show()
-  expect(native.notices).toHaveLength(1)
+  expect(f.show).toHaveBeenCalledExactlyOnceWith({ type: 'info', title: 'DeepSeek Harness',
+    message: '正在运行的任务不会中断，可在系统托盘中重新打开窗口', buttons: ['确认'], defaultId: 0, cancelId: -1 })
+  expect(f.focus).toHaveBeenCalledOnce()
+  f.response.resolve({ response: 0, checkboxChecked: false })
+  await vi.waitFor(() => { expect(f.hide).toHaveBeenCalledOnce() })
+  expect(existsSync(f.markerPath)).toBe(true)
+  new DesktopBackgroundNotice(f.options).close(f.hide)
+  expect(f.hide).toHaveBeenCalledTimes(2)
+  expect(f.show).toHaveBeenCalledOnce()
 })
 
-it('does not record a notice the system refused to construct', () => {
+it('keeps cancellation eligible for another close and never records it', async () => {
+  const f = setup()
+  f.notice.close(f.hide)
+  f.response.resolve({ response: -1, checkboxChecked: false })
+  await f.response.promise
+  expect(f.hide).not.toHaveBeenCalled()
+  expect(existsSync(f.markerPath)).toBe(false)
+  f.show.mockResolvedValue({ response: 0, checkboxChecked: false })
+  f.notice.close(f.hide)
+  await vi.waitFor(() => { expect(f.hide).toHaveBeenCalledOnce() })
+  expect(f.show).toHaveBeenCalledTimes(2)
+})
+
+it('does not hide or record a late acknowledgement after disposal', async () => {
+  const f = setup()
+  f.notice.close(f.hide)
+  f.notice.dispose()
+  f.response.resolve({ response: 0, checkboxChecked: false })
+  await f.response.promise
+  f.notice.close(f.hide)
+  expect(f.hide).not.toHaveBeenCalled()
+  expect(existsSync(f.markerPath)).toBe(false)
+  expect(f.show).toHaveBeenCalledOnce()
+})
+
+it('keeps acknowledgement in memory when its marker cannot be written', async () => {
+  const f = setup()
   vi.spyOn(console, 'warn').mockImplementation(() => {})
+  writeFileSync(join(f.root, 'blocker'), '')
+  const notice = new DesktopBackgroundNotice({ ...f.options, markerPath: join(f.root, 'blocker', 'confirmed') })
+  notice.close(f.hide)
+  f.response.resolve({ response: 0, checkboxChecked: false })
+  await vi.waitFor(() => { expect(f.hide).toHaveBeenCalledOnce() })
+  notice.close(f.hide)
+  expect(f.hide).toHaveBeenCalledTimes(2)
+  expect(f.show).toHaveBeenCalledOnce()
+  expect(console.warn).toHaveBeenCalledWith('desktop tray: could not record background confirmation', expect.anything())
+})
+
+it('keeps the window visible after a dialog failure and permits another attempt', async () => {
   const f = setup()
-  native.Notice.isSupported.mockImplementation(() => { throw new Error('toast host unavailable') })
-  f.notice.show()
-  expect(native.notices).toHaveLength(0)
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  f.notice.close(f.hide)
+  f.response.reject(new Error('dialog unavailable'))
+  await vi.waitFor(() => { expect(console.warn).toHaveBeenCalled() })
+  expect(f.hide).not.toHaveBeenCalled()
   expect(existsSync(f.markerPath)).toBe(false)
-  expect(console.warn).toHaveBeenCalledWith('desktop tray: background notice unavailable', expect.any(Error))
+  f.show.mockResolvedValue({ response: 0, checkboxChecked: false })
+  f.notice.close(f.hide)
+  await vi.waitFor(() => { expect(f.hide).toHaveBeenCalledOnce() })
 })

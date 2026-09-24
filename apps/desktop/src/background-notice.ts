@@ -1,69 +1,56 @@
-/** One-time Windows notice that closing the window left the application running in the tray. */
+/** One-time Windows confirmation before hiding the application in the tray. */
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { Notification } from 'electron'
+import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron'
 import type { DesktopLocale } from './locale.ts'
 
-/** Marker location and the actions the notice can trigger. */
+/** Persistent acknowledgement and the shared shell dialog. */
 export interface DesktopBackgroundNoticeOptions {
-  /**
-   * Marker written once the notice has been handed to the system. Lives under Electron's userData,
-   * which the uninstaller removes and in-place updates keep, so each installation sees the notice once.
-   */
+  /** Acknowledgement under Electron userData; updates retain it and uninstall removes it. */
   readonly markerPath: string
   readonly locale: () => DesktopLocale
-  /** Show and focus the primary window when the notice is clicked. */
-  readonly open: () => void
+  readonly show: (options: MessageBoxOptions) => Promise<MessageBoxReturnValue>
+  readonly focus: () => void
 }
 
-/** Shows once per installation, and at most once per process even when the marker cannot be written. */
+/** Only an explicit acknowledgement permits the first hide; cancelled prompts remain eligible. */
 export class DesktopBackgroundNotice {
-  private shown = false
-  private notification: Notification | undefined
+  private acknowledged = false
+  private pending = false
+  private disposed = false
 
-  /** @param options - Marker path, locale reader, and the click action. */
+  /** @param options - Marker path, localized copy, and shell dialog actions. */
   constructor(private readonly options: DesktopBackgroundNoticeOptions) {}
 
   /**
-   * Show the notice after the first hide of this installation. The marker is written only after the
-   * notice reaches the system, and a delivery failure removes it again, so an unsupported or failed
-   * notification retries on a later launch. A focus mode can still swallow a delivered notice; the
-   * window stays hidden and the tray stays available either way.
+   * Request a window hide, prompting until acknowledged and coalescing repeated requests.
+   * @param hide - Hide the still-owned window after acknowledgement, or immediately when already recorded.
    */
-  show(): void {
-    if (this.shown) return
-    this.shown = true
-    if (existsSync(this.options.markerPath)) return
-    try {
-      if (!Notification.isSupported()) return
-      const { messages } = this.options.locale()
-      const notification = new Notification({ title: messages.backgroundNoticeTitle, body: messages.backgroundNoticeBody, silent: true })
-      this.notification = notification
-      notification.on('failed', () => {
-        if (this.notification === notification) this.notification = undefined
-        notification.removeAllListeners()
-        this.forget()
-      })
-      notification.once('click', () => {
-        if (this.notification !== notification) return
-        this.notification = undefined
-        notification.removeAllListeners()
-        this.options.open()
-      })
-      notification.show()
-    } catch (error) {
-      console.warn('desktop tray: background notice unavailable', error)
-      return
-    }
-    try {
-      mkdirSync(dirname(this.options.markerPath), { recursive: true })
-      writeFileSync(this.options.markerPath, '')
-    } catch (error) { console.warn('desktop tray: could not record the background notice', error) }
+  close(hide: () => void): void {
+    if (this.disposed) return
+    if (this.pending) { this.options.focus(); return }
+    if (this.acknowledged || existsSync(this.options.markerPath)) { hide(); return }
+    this.pending = true
+    void this.confirm(hide)
   }
 
-  private forget(): void {
-    try { rmSync(this.options.markerPath, { force: true }) }
-    catch (error) { console.warn('desktop tray: could not reset the background notice', error) }
+  /** Ignore late dialog responses after application shutdown begins. */
+  dispose(): void { this.disposed = true }
+
+  private async confirm(hide: () => void): Promise<void> {
+    try {
+      const { messages } = this.options.locale()
+      const result = await this.options.show({ type: 'info', title: messages.aboutProduct,
+        message: messages.backgroundNoticeBody, buttons: [messages.backgroundNoticeConfirm], defaultId: 0, cancelId: -1 })
+      if (this.disposed || result.response !== 0) return
+      this.acknowledged = true
+      try {
+        mkdirSync(dirname(this.options.markerPath), { recursive: true })
+        writeFileSync(this.options.markerPath, '')
+      } catch (error) { console.warn('desktop tray: could not record background confirmation', error) }
+      hide()
+    } catch (error) { console.warn('desktop tray: background confirmation unavailable', error) }
+    finally { this.pending = false }
   }
 }

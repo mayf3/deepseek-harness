@@ -180,10 +180,11 @@ const harness = await vi.hoisted(async () => {
     readonly destroy = vi.fn()
     constructor(readonly image: unknown) { super(); trays.push(this) }
   }
-  const backgroundNotice = { show: vi.fn(), markerPath: undefined as string | undefined }
+  const backgroundNotice = { close: vi.fn((hide: () => void) => { hide() }), dispose: vi.fn(), markerPath: undefined as string | undefined }
+  const shellDialog = { isOpen: false, focus: vi.fn() }
   return {
     failWindow(error: Error) { windowFailure = error },
-    windows, hosts, handlers, app, FakeWindow, FakeHost, powerMonitor, nativeTheme, trays, FakeTray, backgroundNotice,
+    windows, hosts, handlers, app, FakeWindow, FakeHost, powerMonitor, nativeTheme, trays, FakeTray, backgroundNotice, shellDialog,
     menu, popup, socketHeaders: vi.fn(), updateCheck, updateDownload, updateInstall,
     platformDispose,
     platformCloseAndWait,
@@ -226,6 +227,7 @@ const harness = await vi.hoisted(async () => {
       windows.length = 0; hosts.length = 0; handlers.clear(); app.removeAllListeners()
       trays.length = 0
       backgroundNotice.markerPath = undefined
+      shellDialog.isOpen = false
       powerMonitor.removeAllListeners()
       app.isPackaged = true
       windowFailure = undefined
@@ -283,7 +285,8 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../src/background-notice.ts', () => ({ DesktopBackgroundNotice: class {
   constructor(options: { markerPath: string }) { harness.backgroundNotice.markerPath = options.markerPath }
-  readonly show = harness.backgroundNotice.show
+  readonly close = harness.backgroundNotice.close
+  readonly dispose = harness.backgroundNotice.dispose
 } }))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>()
@@ -307,12 +310,13 @@ vi.mock('../src/host-process.ts', async importOriginal => ({
   ...await importOriginal<typeof import('../src/host-process.ts')>(), DesktopHostProcess: harness.FakeHost,
 }))
 vi.mock('../src/update-dialog.ts', () => ({ DesktopUpdateDialog: class {
+  get isOpen() { return harness.shellDialog.isOpen }
   show(owner: { options: { modal?: boolean } }, options: unknown) {
     return (owner.options.modal ? harness.dialog.showMessageBox(owner, options)
       : harness.dialog.showMessageBox(options)) as Promise<Electron.MessageBoxReturnValue>
   }
   cancel() {}
-  focus() {}
+  readonly focus = harness.shellDialog.focus
   dispose() {}
 } }))
 vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: class {
@@ -1093,19 +1097,19 @@ describe('desktop main startup', () => {
     expect(harness.trays[0]!.destroy).toHaveBeenCalledOnce()
   })
 
-  it('hides the main window on close, keeps the Host running, and notifies once about the tray', async () => {
+  it('routes closing through the tray confirmation and keeps the Host running', async () => {
     const host = await readyWorkspace()
     const window = harness.windows[0]!
     expect(harness.trays).toHaveLength(1)
     expect(harness.trays[0]!.image).toEqual({ path: join('desktop-test-resources', 'tray.ico') })
-    expect(harness.backgroundNotice.markerPath).toBe(join(harness.app.getPath('userData'), 'background-notice-shown'))
+    expect(harness.backgroundNotice.markerPath).toBe(join(harness.app.getPath('userData'), 'background-close-confirmed'))
     window.show.mockClear()
     window.close()
     expect(window.isDestroyed()).toBe(false)
     expect(window.hide).toHaveBeenCalledOnce()
     expect(host.stop).not.toHaveBeenCalled()
     expect(harness.app.quit).not.toHaveBeenCalled()
-    expect(harness.backgroundNotice.show).toHaveBeenCalledOnce()
+    expect(harness.backgroundNotice.close).toHaveBeenCalledOnce()
     harness.trays[0]!.emit('click')
     expect(window.show).toHaveBeenCalledOnce()
     expect(window.focus).toHaveBeenCalled()
@@ -1117,6 +1121,29 @@ describe('desktop main startup', () => {
     expect(harness.trays[0]!.setContextMenu.mock.calls.length).toBe(relabels + 1)
   })
 
+  it('keeps the workspace visible while acknowledgement is pending and ignores a destroyed window', async () => {
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    const approval = Promise.withResolvers<() => void>()
+    harness.backgroundNotice.close.mockImplementationOnce((hide) => { approval.resolve(hide) })
+    window.close()
+    const hide = await approval.promise
+    expect(window.hide).not.toHaveBeenCalled()
+    window.destroy()
+    hide()
+    expect(window.hide).not.toHaveBeenCalled()
+  })
+
+  it('focuses an existing shell dialog instead of replacing it with a close confirmation', async () => {
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    harness.shellDialog.isOpen = true
+    window.close()
+    expect(harness.shellDialog.focus).toHaveBeenCalledOnce()
+    expect(harness.backgroundNotice.close).not.toHaveBeenCalled()
+    expect(window.hide).not.toHaveBeenCalled()
+  })
+
   it('leaves macOS fullscreen before hiding on close and reopens the hidden window on activate', async () => {
     vi.stubGlobal('process', { ...process, platform: 'darwin', arch: 'arm64', resourcesPath: 'desktop-test-resources' })
     await readyWorkspace()
@@ -1126,7 +1153,7 @@ describe('desktop main startup', () => {
     window.close()
     expect(window.setFullScreen).toHaveBeenCalledWith(false)
     expect(window.hide).toHaveBeenCalledOnce()
-    expect(harness.backgroundNotice.show).not.toHaveBeenCalled()
+    expect(harness.backgroundNotice.close).not.toHaveBeenCalled()
     window.show.mockClear()
     harness.app.emit('activate', {}, false)
     expect(window.show).toHaveBeenCalledOnce()
