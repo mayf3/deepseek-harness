@@ -44,7 +44,6 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 
 const MODE = webSnapshotMode()
-const OVERLAY = fileURLToPath(new URL('../../cli/config/examples/schedule/cordis.yml', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/schedule-after', import.meta.url))
 const AFTER_EXPECTED = join(SNAPSHOT_DIR, 'conversation.expected.md')
 const AT_EXPECTED = join(SNAPSHOT_DIR, 'at-conversation.expected.md')
@@ -272,7 +271,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
   const everyAdapter = new EveryReminderAdapter()
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
+    scaffold = await launchWebScaffold()
     scaffold.ctx.effect(
       () => scaffold.ctx.llm.registerAdapter([AFTER_PROVIDER], afterAdapter),
       'Schedule Web After adapter',
@@ -708,9 +707,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
 
   beforeAll(async () => {
     const fixture = await readFile(CATALOG_FIXTURE, 'utf8')
-    scaffold = await launchWebScaffold({
-      extraOverlayPath: OVERLAY,
-    })
+    scaffold = await launchWebScaffold()
     await seedSession(scaffold, fixture, CATALOG_SESSION_ID, 'standard')
     const records = foldScheduleEvents(fixture.trim().split('\n').slice(1).map(line => JSON.parse(line) as SessionEvent)).active
     const domain = scaffold.ctx.storageDomain.get('schedule')
@@ -835,23 +832,20 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
 
   it('reads stored tasks without a live Session and deletes them through the catalog', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-schedule-catalog'))
-    const base = composeEntries([
-      loadOverlayPatches('Schedule catalog base roster', BASE_PATCH),
-      ...WEB_PATCHES.map(file => loadOverlayPatches('Schedule catalog base roster', file)),
+    const shipped = composeEntries([
+      loadOverlayPatches('Schedule catalog shipped roster', BASE_PATCH),
+      ...WEB_PATCHES.map(file => loadOverlayPatches('Schedule catalog shipped roster', file)),
     ])
-    const scheduled = composeEntries([
-      loadOverlayPatches('Schedule catalog overlay roster', BASE_PATCH),
-      ...WEB_PATCHES.map(file => loadOverlayPatches('Schedule catalog overlay roster', file)),
-      loadOverlayPatches('Schedule catalog overlay roster', OVERLAY),
-    ])
-    expect(base.find(entry => entry.id === 'ui-schedule')).toMatchObject({
+    expect(shipped.find(entry => entry.id === 'ui-schedule')).toMatchObject({
       name: '@deepseek-ai/dsh-client-ui-schedule',
-      disabled: true,
     })
-    expect(scheduled.find(entry => entry.id === 'ui-schedule')).toMatchObject({
-      name: '@deepseek-ai/dsh-client-ui-schedule',
-      disabled: false,
-    })
+    expect(shipped.find(entry => entry.id === 'ui-schedule')?.disabled).toBeUndefined()
+    for (const row of [
+      { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
+      { id: 'schedule', name: '@deepseek-ai/dsh-schedule' },
+    ]) {
+      expect(shipped.filter(entry => entry.id === row.id && entry.name === row.name)).toHaveLength(1)
+    }
 
     await page.getByRole('button', { name: 'Automation tasks', exact: true }).click()
     const manager = page.getByTestId('task-manager-page')

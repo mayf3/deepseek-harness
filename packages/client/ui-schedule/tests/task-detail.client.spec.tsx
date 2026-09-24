@@ -895,18 +895,18 @@ describe('TaskDetail save identity', () => {
 
 describe('TaskDetail interval stepper', () => {
   it('moves the staged interval one whole unit and stops at the Host floor', () => {
-    mount([every])
+    mount([{ ...every, everySeconds: 61 }])
     selectTask('Check metrics')
-    expect(intervalField().value).toBe('301')
+    expect(intervalField().value).toBe('61')
 
     // The decrease moves the staged quantity down one second to the Host's
-    // 300-second floor, which is the lowest the arrow offers.
+    // 60-second floor, which is the lowest the arrow offers.
     clickIntervalArrow('timing.intervalDecrease')
-    expect(intervalField().value).toBe('300')
+    expect(intervalField().value).toBe('60')
     expect(screen.getByRole('button', { name: en['timing.intervalDecrease'] }).hasAttribute('disabled')).toBe(true)
 
     clickIntervalArrow('timing.intervalIncrease')
-    expect(intervalField().value).toBe('301')
+    expect(intervalField().value).toBe('61')
   })
 
   it('starts an emptied interval field from the Host floor', () => {
@@ -918,7 +918,7 @@ describe('TaskDetail interval stepper', () => {
     // An emptied field states no quantity, so the increase stages the floor
     // rather than a value derived from the removed one.
     clickIntervalArrow('timing.intervalIncrease')
-    expect(intervalField().value).toBe('300')
+    expect(intervalField().value).toBe('60')
   })
 })
 
@@ -926,7 +926,7 @@ describe('TaskDetail records-tab save failure', () => {
   it('states the refused interval in the row unit while the records tab shows', () => {
     mount([every])
     selectTask('Check metrics')
-    fireEvent.change(intervalField(), { target: { value: '100' } })
+    fireEvent.change(intervalField(), { target: { value: '59' } })
     fireEvent.click(recordsTab())
     clickSave()
 

@@ -51,7 +51,10 @@ describe.skipIf(MODE === 'record')('web e2e: compact Tool details', () => {
 
   it('expands every recorded tool through its keyed renderer', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-tool-details'))
-    const rows = page.locator('[data-tool]')
+    // `[data-chat-call-id]` scopes the keyed tool cells: the Schedule client's
+    // turn-tail create card carries the same `data-tool` marker without being
+    // one of the keyed call views this case walks.
+    const rows = page.locator('[data-chat-call-id] [data-tool]')
     expect(await rows.count()).toBe(45)
     for (const row of await rows.all()) {
       await row.getByRole('button', { expanded: false }).first().click()
@@ -76,7 +79,7 @@ describe.skipIf(MODE === 'record')('web e2e: compact Tool details', () => {
     const snapshot = snapshots.join('\n')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     await page.setViewportSize({ width: 360, height: 800 })
-    const card = page.locator('[data-tool="schedule_create"]')
+    const card = page.locator('[data-chat-call-id] [data-tool="schedule_create"]')
     expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     const reminders = page.locator('[data-tool="schedule_list"]')
     await scrollIntoView(reminders)
