@@ -86,16 +86,6 @@ describe('QuestionReplyView', () => {
     expect(screen.getByRole('group', { name: '回答先前等待中的问题' }).getAttribute('data-question-reply')).toBe('call-reply')
   })
 
-  it('reads a dismissed reply as skipped, collapsed and open alike', () => {
-    render(<QuestionReplyBubble data={{ ...data, outcome: 'dismissed', answers: [] }} t={t} />)
-    expect(screen.getByRole('group', { name: '放弃回答先前等待中的问题' })).toBeTruthy()
-    expect(screen.getByText('已跳过')).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: /展开问题详情/ }))
-    expect(screen.getAllByText('已跳过')).toHaveLength(1)
-    expect(screen.queryByText('A dashboard')).toBeNull()
-  })
-
   it('shows a distinct header, marks an unanswered question skipped, and falls back to the raw text', () => {
     render(<QuestionReplyBubble
       data={{

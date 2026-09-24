@@ -17,13 +17,7 @@ const answered = JSON.stringify({
   }, { id: 'notes', question: 'Any notes?' }],
   answers: [{ id: 'scope', selected: ['Tool only'], custom: 'note' }, { id: 'notes', selected: [] }],
 })
-const dismissed = JSON.stringify({
-  kind: 'dismissed_pending_question',
-  tool: 'ask_user_question',
-  callId: 'call-1',
-  questions: [{ id: 'scope', question: 'Which scope?' }],
-  message: 'The user dismissed these pending questions without answering.',
-})
+const noAnswers = JSON.stringify({ questions: [{ id: 'scope', question: 'Which scope?' }] })
 
 function message(source: Record<string, unknown>, text: string, surfaceOp: string | null = 'append') {
   return {
@@ -46,7 +40,7 @@ describe('replyPairsOf', () => {
       }, { id: 'notes', question: 'Any notes?' }],
       answers: [{ id: 'scope', selected: ['Tool only'], custom: 'note' }, { id: 'notes', selected: [] }],
     })
-    expect(replyPairsOf(dismissed)).toEqual({ questions: [{ id: 'scope', question: 'Which scope?' }], answers: [] })
+    expect(replyPairsOf(noAnswers)).toEqual({ questions: [{ id: 'scope', question: 'Which scope?' }], answers: [] })
   })
 
   it('keeps only the well-formed options of a question and drops the rest', () => {
@@ -105,11 +99,6 @@ describe('replyClipboardText', () => {
     expect(replyClipboardText(data, t)).toBe('Which scope?\nAnswer: Tool only')
   })
 
-  it('marks every question skipped for a dismissed reply', () => {
-    const data = replyData({ outcome: 'dismissed' })
-    expect(replyClipboardText(data, t)).toBe('Scope — Which scope?\nSkipped\n\nAny notes?\nSkipped')
-  })
-
   it('falls back to the model-facing text when the payload carried no questions', () => {
     expect(replyClipboardText(replyData({ questions: [], text: 'not json' }), t)).toBe('not json')
   })
@@ -123,44 +112,44 @@ describe('questionReplyDefinition', () => {
     expect(questionReplyDefinition.match(message(replySource('answered'), answered, null))).toBeNull()
   })
 
-  it.each(['answered', 'dismissed'])('shares the message id with the generic projection for %s replies', (outcome) => {
-    const event = message(replySource(outcome), outcome === 'answered' ? answered : dismissed)
+  it('shares the message id with the generic projection', () => {
+    const event = message(replySource('answered'), answered)
     expect(messageDefinition.match(event)).toEqual({ id: 'msg-1', role: 'start' })
     expect(questionReplyDefinition.match(event)).toEqual(messageDefinition.match(event))
   })
 
   it('projects the outcome from the source and the pairs from the text into its own node', () => {
-    const event = message(replySource('dismissed'), dismissed)
+    const event = message(replySource('answered'), answered)
     const state = questionReplyDefinition.start({} as never, { event, id: 'msg-1', role: 'start' } as never, {} as never)
     expect(state).toMatchObject({
-      seq: 7, time: 7_000, callId: 'call-1', outcome: 'dismissed',
-      questions: [{ id: 'scope', question: 'Which scope?' }], answers: [], text: dismissed,
+      seq: 7, time: 7_000, callId: 'call-1', outcome: 'answered',
+      questions: [{ id: 'scope', question: 'Which scope?' }, { id: 'notes', question: 'Any notes?' }], answers: [{ id: 'scope', selected: ['Tool only'], custom: 'note' }, { id: 'notes', selected: [] }], text: answered,
     })
 
     const node = questionReplyDefinition.buildViewNode!({ state, key: 'reply:1', id: 'msg-1', start: undefined } as never)
     expect(node).toMatchObject({
       key: 'reply:1', kind: 'question-reply', id: 'msg-1', target: 'chat', anchorSeq: 7, visibility: 'visible',
       location: { kind: 'unresolved' },
-      data: { callId: 'call-1', outcome: 'dismissed', text: dismissed },
+      data: { callId: 'call-1', outcome: 'answered', text: answered },
     })
     expect(node).not.toHaveProperty('data.seq')
     expect(questionReplyDefinition.update({ state } as never, {} as never)).toBe(state)
     expect(questionReplyDefinition.buildViewNode!({ state: undefined } as never)).toBeNull()
   })
 
-  it('starts an empty record for a message without a reply source or text', () => {
+  it('starts an empty record for a reply without text', () => {
     const untyped = {
       type: 'user/message', seq: SessionSeq(8), time: 8_000, surfaceOp: 'append',
-      data: { id: 'msg-2', role: 'user', source: { kind: 'user' }, content: [{ type: 'image', source: { kind: 'inline', data: '', mediaType: 'image/png' } }] },
+      data: { id: 'msg-2', role: 'user', source: replySource('answered'), content: [{ type: 'image', source: { kind: 'inline', data: '', mediaType: 'image/png' } }] },
     } as never
     const state = questionReplyDefinition.start({} as never, { event: untyped, id: 'msg-2', role: 'start' } as never, {} as never)
-    expect(state).toEqual({ seq: 8, time: 8_000, callId: '', outcome: 'answered', text: '', questions: [], answers: [] })
+    expect(state).toEqual({ seq: 8, time: 8_000, callId: 'call-1', outcome: 'answered', text: '', questions: [], answers: [] })
   })
 
-  it('falls back to an answered outcome when the source carries an unknown one', () => {
+  it('rejects a reply source without an answered outcome', () => {
     const event = message({ kind: 'user-question-reply', callId: 'call-1' }, answered)
-    const state = questionReplyDefinition.start({} as never, { event, id: 'msg-1', role: 'start' } as never, {} as never)
-    expect(state.outcome).toBe('answered')
+    expect(questionReplyDefinition.match(event)).toBeNull()
+    expect(() => questionReplyDefinition.start({} as never, { event, id: 'msg-1', role: 'start' } as never, {} as never)).toThrow(/requires a reply source/)
     expect(() => questionReplyDefinition.start({} as never, {
       event: { ...(event as object), type: 'tool/call' }, id: 'x', role: 'start',
     } as never, {} as never)).toThrow(/requires user\/message/)

@@ -52,7 +52,7 @@ A continued question accepts `answer(agent, callId, answer)`. The method returns
 
 The inbox message is the durable reply. `agent/inbox/spliced` settles the question when the message is queued; the later admitted `user/message` is idempotent for that settlement. Settled answer batches remain in the projection so the original tool row can show late answers even though its own result remains pending. Unusable recorded reply text settles with an empty batch.
 
-No new Session event type or wait-state log is needed. The message-source extension requires the repository's persistence-type acknowledgement. `dismissed` remains readable for historical records but has no producer: hiding a panel does not manufacture a reply.
+No new Session event type or wait-state log is needed. The message-source extension requires the repository's persistence-type acknowledgement. Hiding a panel does not manufacture a reply.
 
 ### Card state and delivery races
 

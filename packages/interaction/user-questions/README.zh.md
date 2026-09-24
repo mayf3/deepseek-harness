@@ -37,7 +37,7 @@ kind: "package-reference"
 <a id="role"></a>
 ## 职责
 
-`UserQuestionService` 拥有每个 `TimedQuestionWait`、可取消的 Client 接手记录和无人接手计时器。有人接手时，倒计时与聚焦／编辑决策归 Client 所有。无人接手时超时只中止前台请求的 signal 并返回 pending，不中止 Turn。`userQuestions` projection 从现有 Session 事件记录开放、已继续和已结算的计时调用；记录的工具 schema 排除 legacy 调用。`answer` RPC 只接受已继续的问题，在确认每个问题恰有一条回答后 steer 回复。迟到批次保留在投影中，因为原工具结果包含的是超时而不是该回答。保留的 `dismissed` 来源结果仍可读取，但没有生产者。
+`UserQuestionService` 拥有每个 `TimedQuestionWait`、可取消的 Client 接手记录和无人接手计时器。有人接手时，倒计时与聚焦／编辑决策归 Client 所有。无人接手时超时只中止前台请求的 signal 并返回 pending，不中止 Turn。`userQuestions` projection 从现有 Session 事件记录开放、已继续和已结算的计时调用；记录的工具 schema 排除 legacy 调用。`answer` RPC 只接受已继续的问题，在确认每个问题恰有一条回答后 steer 回复。迟到批次保留在投影中，因为原工具结果包含的是超时而不是该回答。
 
 <a id="model-experience"></a>
 ## 模型体验

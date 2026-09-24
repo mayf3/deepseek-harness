@@ -227,7 +227,7 @@ function settleQuestion(
  * `TOOL_OUTCOME_UNKNOWN` result for a call the process never finished. An
  * answer batch settles it with that batch; any failure drops it. A late reply
  * settles a continued question the moment its message enters the agent
- * inbox, whether answered or dismissed, with the answers it carried.
+ * inbox, with the answers it carried.
  * @param fold - Current fold state.
  * @param event - Next Session event in append order.
  * @returns The same fold when the event is unrelated, otherwise the updated one.

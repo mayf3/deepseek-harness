@@ -142,9 +142,9 @@ describe('Definition-owned Chat process groups', () => {
     expect(h.snapshot.nodes.get(reply.key)).toBeDefined()
   })
 
-  it('keeps the Turn control before the group containing its coalesced opening reply', () => {
+  it.each([0.9, 5])('keeps the Turn control before its coalesced opening reply at seq %s', (anchorSeq) => {
     const control: ChatNode<'turn-process'> = {
-      key: 'control', id: '1', kind: 'turn-process', target: 'chat', anchorSeq: 0.9,
+      key: 'control', id: '1', kind: 'turn-process', target: 'chat', anchorSeq,
       location: { kind: 'turn', turn }, visibility: 'visible',
       data: {
         turn: 1, controlAnchorSeq: 1, processStartSeq: 1, answerAnchorSeq: null,

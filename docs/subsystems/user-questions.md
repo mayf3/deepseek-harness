@@ -184,7 +184,7 @@ interface UserQuestionProjectionView {
 }
 ```
 
-While a question is open, the only answer path is the waterfall. Once it is `continued`, the `answer` Remote method steers a user message into the owning agent, waking an idle one; its source is `user-question-reply` with `outcome: 'answered'` and its text is the `answer_to_pending_question` payload. That method refuses an open question, and rejects with `BAD_ANSWER` a batch that does not name each question of the call exactly once. No Remote method abandons a question: a Client that puts its question surface away sends nothing, so a question left unanswered ends only through its timeout. The `user-question-reply` source also admits `outcome: 'dismissed'`, which the projection and the Client conversation node still read for Sessions that recorded one; no current caller produces it. When the Session was reopened after a Host restart, the Remote layer resumes the root agent first, and the reply enters as a new turn.
+While a question is open, the only answer path is the waterfall. Once it is `continued`, the `answer` Remote method steers a user message into the owning agent, waking an idle one; its source is `user-question-reply` with `outcome: 'answered'` and its text is the `answer_to_pending_question` payload. That method refuses an open question, and rejects with `BAD_ANSWER` a batch that does not name each question of the call exactly once. No Remote method abandons a question: a Client that puts its question surface away sends nothing, so a question left unanswered ends only through its timeout. When the Session was reopened after a Host restart, the Remote layer resumes the root agent first, and the reply enters as a new turn.
 
 ## Errors
 

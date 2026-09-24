@@ -15,9 +15,8 @@ type QuestionReplyViewProps =
 
 /**
  * Right-aligned late-reply bubble: a label naming the earlier pending
- * questions, then one question and answer pair per question, or the bare
- * questions when the user dismissed them. A payload the Client cannot read
- * falls back to the model-facing text.
+ * questions, then one question and answer pair per question. A payload the
+ * Client cannot read falls back to the model-facing text.
  */
 export const QuestionReplyView = memo(function QuestionReplyView({ node, t }: QuestionReplyViewProps) {
   return <QuestionReplyBubble data={node.data} t={t} />
@@ -29,8 +28,7 @@ export const QuestionReplyView = memo(function QuestionReplyView({ node, t }: Qu
  * @returns The expandable reply bubble.
  */
 export function QuestionReplyBubble({ data, t }: { data: QuestionReplyData; t: PropsLocale<'question'>['t'] }) {
-  const dismissed = data.outcome === 'dismissed'
-  const label = t(dismissed ? 'reply.dismissedLabel' : 'reply.label')
+  const label = t('reply.label')
   const [open, setOpen] = useState(false)
   const toggleLabel = t(open ? 'reply.close' : 'reply.open')
   const summary = data.questions.map(question => replyAnswerValues(data, question.id)).flat().join(', ')
@@ -62,7 +60,7 @@ export function QuestionReplyBubble({ data, t }: { data: QuestionReplyData; t: P
             </span>
             <span className={css.label}>{label}</span>
           </span>
-          {!open && <span className={css.summary}>{dismissed || summary === '' ? t('reply.skipped') : summary}</span>}
+          {!open && <span className={css.summary}>{summary === '' ? t('reply.skipped') : summary}</span>}
         </button>
         {open && (data.questions.length === 0
           ? <p className={css.text}>{data.text}</p>
@@ -84,7 +82,7 @@ export function QuestionReplyBubble({ data, t }: { data: QuestionReplyData; t: P
                     </dt>
                     <dd className={css.answer}>
                       <span className={css.answerLabel}>{t('reply.answerLabel')}</span>
-                      {dismissed ? t('reply.skipped') : values.length === 0 ? t('reply.skipped') : values.join(', ')}
+                      {values.length === 0 ? t('reply.skipped') : values.join(', ')}
                     </dd>
                   </div>
                 )

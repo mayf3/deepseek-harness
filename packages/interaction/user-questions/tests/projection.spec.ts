@@ -66,8 +66,8 @@ function resulted(text: string, error?: { name: string; code: string }): Session
   })
 }
 
-const reply = (outcome: 'answered' | 'dismissed', text = '{}') => createUserMessage({
-  source: { kind: 'user-question-reply', callId, outcome },
+const reply = (text = '{}') => createUserMessage({
+  source: { kind: 'user-question-reply', callId, outcome: 'answered' },
   content: [{ type: 'text', text }],
 })
 
@@ -149,17 +149,13 @@ describe('userQuestions projection fold', () => {
     const settled = { active: [], settled: [{ callId, answers: [] }] }
     expect(foldUserQuestions([
       ...continued,
-      event(3, 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [reply('answered')] }),
+      event(3, 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [reply()] }),
     ])).toEqual(settled)
-    expect(foldUserQuestions([
-      ...continued,
-      event(3, 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [reply('dismissed')] }),
-    ])).toEqual(settled)
-    expect(foldUserQuestions([...continued, event(3, 'user/message', reply('answered'))])).toEqual(settled)
+    expect(foldUserQuestions([...continued, event(3, 'user/message', reply())])).toEqual(settled)
   })
 
   it('records the answers one reply carried, exactly once across its splice and its own event', () => {
-    const replied = reply('answered', answeredText)
+    const replied = reply(answeredText)
     const settled = { active: [], settled: [{ callId, answers: answerBatch }] }
     const continued = [timedHeader, asked, resulted('{"pending":true,"callId":"call_ask_1"}')]
     expect(foldUserQuestions([...continued, event(3, 'user/message', replied)])).toEqual(settled)
@@ -173,8 +169,8 @@ describe('userQuestions projection fold', () => {
   it('settles with no answers when the reply text carries none this reader can use', () => {
     const continued = [timedHeader, asked, resulted('{"pending":true,"callId":"call_ask_1"}')]
     const settled = { active: [], settled: [{ callId, answers: [] }] }
-    expect(foldUserQuestions([...continued, event(3, 'user/message', reply('answered', 'no json here'))])).toEqual(settled)
-    expect(foldUserQuestions([...continued, event(3, 'user/message', reply('answered', '{"answers":"nope"}'))])).toEqual(settled)
+    expect(foldUserQuestions([...continued, event(3, 'user/message', reply('no json here'))])).toEqual(settled)
+    expect(foldUserQuestions([...continued, event(3, 'user/message', reply('{"answers":"nope"}'))])).toEqual(settled)
     expect(foldUserQuestions([...continued, event(3, 'user/message', createUserMessage({
       source: { kind: 'user-question-reply', callId, outcome: 'answered' },
       content: [],

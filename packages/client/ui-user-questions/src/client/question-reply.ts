@@ -26,8 +26,8 @@ export interface QuestionReplyAnswer {
 /** Presentation data of one late reply. */
 export interface QuestionReplyData {
   readonly callId: string
-  /** Whether the user answered the pending questions or dismissed them. */
-  readonly outcome: 'answered' | 'dismissed'
+  /** A late answer to the pending questions. */
+  readonly outcome: 'answered'
   readonly questions: readonly QuestionReplyQuestion[]
   readonly answers: readonly QuestionReplyAnswer[]
   /** Model-facing text, shown when the payload is unreadable. */
@@ -119,13 +119,12 @@ export function replyAnswerValues(data: QuestionReplyData, id: string): string[]
  */
 export function replyClipboardText(data: QuestionReplyData, t: PropsLocale<'question'>['t']): string {
   if (data.questions.length === 0) return data.text
-  const dismissed = data.outcome === 'dismissed'
   return data.questions.map((question) => {
     const values = replyAnswerValues(data, question.id)
     const heading = question.header && question.header !== question.question
       ? `${question.header} — ${question.question}`
       : question.question
-    const answer = dismissed || values.length === 0
+    const answer = values.length === 0
       ? t('reply.skipped')
       : `${t('reply.answerLabel')}${values.join(', ')}`
     return `${heading}\n${answer}`
@@ -137,8 +136,8 @@ function replySource(
   event: Pick<SessionEvent<'user/message'>, 'data'>,
 ): { callId: string; outcome: QuestionReplyData['outcome'] } | null {
   const source = event.data.source as { kind?: unknown; callId?: unknown; outcome?: unknown }
-  return source.kind === 'user-question-reply' && typeof source.callId === 'string'
-    ? { callId: source.callId, outcome: source.outcome === 'dismissed' ? 'dismissed' : 'answered' }
+  return source.kind === 'user-question-reply' && typeof source.callId === 'string' && source.outcome === 'answered'
+    ? { callId: source.callId, outcome: 'answered' }
     : null
 }
 
@@ -156,11 +155,12 @@ export const questionReplyDefinition: ConversationNodeDefinition<QuestionReplySt
     const block = event.data.content.find(item => item.type === 'text')
     const text = block?.text ?? ''
     const source = replySource(event)
+    if (source === null) throw new Error('user-question-reply start requires a reply source')
     return {
       seq: event.seq,
       time: event.time,
-      callId: source?.callId ?? '',
-      outcome: source?.outcome ?? 'answered',
+      callId: source.callId,
+      outcome: source.outcome,
       text,
       ...replyPairsOf(text),
     }

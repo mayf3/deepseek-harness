@@ -9,7 +9,7 @@ kind: persistence-change
 
 ## 概述
 
-新增受限定的 user-question-reply 消息来源，把已继续的 ask_user_question 调用的迟到回答或放弃送入 agent inbox。
+新增受限定的 user-question-reply 消息来源，将已继续的 ask_user_question 调用的迟到回答送入 agent inbox。
 
 ## 目录
 
@@ -28,31 +28,31 @@ baseline: false
 changes:
   - root: "event:agent/inbox/spliced"
     previous: "2026-09-16-session-format-v4"
-    after: "99a3e14f0b0ff0e38d345e7cb7d8d81ee8d11c51d611d9f91b1a82c8ea481fc4"
+    after: "6178f1edcb23f361f2a6cb2c859b1c2187220d5695ece4a3400e0d92845a7178"
     decision: same-version
   - root: "event:developer/message"
     previous: "2026-09-16-session-format-v4"
-    after: "5d588f99e950c42bdd55a27fa41e98f5c86db5b0523622d85b99604c7ddb0107"
+    after: "186159f5f6f67a0b8cd095b8fe55bef42d4f25ca1a1c248f859867af2ece0467"
     decision: same-version
   - root: "event:session/title-llm-request"
     previous: "2026-09-16-session-format-v4"
-    after: "64170a859320a56b572372f9ab16e31c4ae9c62454a31418e900ebbf90053c68"
+    after: "ae84c5e493f94acc63cfb70389073ba616ed7ae7aa4fadde048bdcc64d49bb46"
     decision: same-version
   - root: "event:user/message"
     previous: "2026-09-16-session-format-v4"
-    after: "1d1697092d04c08f9fcb99015ac082e58b01b7de9e41611fa6aebf2879c3d083"
+    after: "b83ed1b1cfffbd7bd5cca06ea72e44be57beb68b39e5a96660ce42a9e21aa411"
     decision: same-version
 ```
 
 <a id="compatibility"></a>
 ## 兼容性
 
-已有日志不含该来源，仍然有效。该类型是受限定的归属：没有 dsh-user-questions 的读取方原样保留这条用户消息及其 callId 与 outcome 元数据，仅凭消息内容推导历史。只有生产方的 userQuestions projection 读取该类型，用来关闭它指名的问题；它不施加任何校验、回放或权限要求。不新增事件类型，Session header 不变。
+已有日志不含该来源，仍然有效。新来源是普通用户消息上的受限定归属；没有 dsh-user-questions 的读取方保留消息，并从内容推导历史。只有 userQuestions projection 读取该来源，关闭指定的问题并记录答案。answer RPC 是唯一生产方，只写入 outcome answered；关闭 Client 面板不会持久化回复。不新增事件类型，也不改变 Session header。
 
 <a id="verification"></a>
 ## 验证
 
-pnpm run typecheck：Host 与 Client 两个 face 通过。pnpm --silent run verify-persistence-changes --json：四个受影响的根均判为 attribution-kind-added，无需版本升级。projection 与 Remote 的行为测试待补。
+pnpm exec vitest run packages/interaction/user-questions/tests packages/interaction/tool-ask-user/tests：81 个测试通过。projection、reply、view 和 process-group 的定向测试共 70 个通过。pnpm run typecheck 通过。pnpm run doc-sync 的 42 项检查全部通过，包括持久化历史和翻译配对。
 
 <a id="dev-note"></a>
 ## 开发备注

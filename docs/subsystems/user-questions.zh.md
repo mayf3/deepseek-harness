@@ -184,7 +184,7 @@ interface UserQuestionProjectionView {
 }
 ```
 
-问题开放期间唯一的回答路径是 waterfall。变为 `continued` 之后，`answer` Remote 方法向所属 agent steer 一条用户消息并叫醒空闲的 agent；其 source 为带 `outcome: 'answered'` 的 `user-question-reply`，正文是 `answer_to_pending_question` 载荷。该方法拒绝开放中的问题，并以 `BAD_ANSWER` 拒绝没有恰好各命名该调用每个问题一次的批次。没有任何 Remote 方法会放弃问题：Client 收起提问界面时不发送任何内容，因此未被回答的问题只能通过超时结束。`user-question-reply` 来源也接受 `outcome: 'dismissed'`，projection 与 Client 对话节点仍会为记录过它的会话读取；当前没有调用方产生它。Session 在 Host 重启后被重开时，Remote 层先恢复根 agent，回复作为新一轮进入。
+问题开放期间唯一的回答路径是 waterfall。变为 `continued` 之后，`answer` Remote 方法向所属 agent steer 一条用户消息并叫醒空闲的 agent；其 source 为带 `outcome: 'answered'` 的 `user-question-reply`，正文是 `answer_to_pending_question` 载荷。该方法拒绝开放中的问题，并以 `BAD_ANSWER` 拒绝没有恰好各命名该调用每个问题一次的批次。没有任何 Remote 方法会放弃问题：Client 收起提问界面时不发送任何内容，因此未被回答的问题只能通过超时结束。Session 在 Host 重启后被重开时，Remote 层先恢复根 agent，回复作为新一轮进入。
 
 ## 错误
 

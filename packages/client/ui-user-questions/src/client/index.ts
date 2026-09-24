@@ -6,9 +6,9 @@
  * carrier (domain encoding in contract/slots.ts PendingQuestion); copy rides
  * the standard locale seat. Export discipline: packages/client/AGENTS.md.
  *
- * One entry renders every pending user-question request as the generic
- * question flow. Plan review has its own carrier and composer in ui-plan, so
- * the two presentation domains cannot race the same seat.
+ * One entry, two presentations: the composer renders a request with a
+ * `plan-review` intent as the plan decision card and every other request as
+ * the generic question flow. Both use the same carrier and composer seat.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'

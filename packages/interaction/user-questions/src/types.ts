@@ -108,16 +108,13 @@ declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     /**
      * Late reply to a continued `ask_user_question` call, steered into the
-     * agent by `dsh-user-questions` as the answer batch (`answered`).
-     * `dismissed` has no producer: closing a question panel is a Client-local
-     * hide that persists nothing, and an unanswered question ends through its
-     * timeout instead. Sessions recorded before that change still carry it, so
-     * readers keep both outcomes. Readers preserve the message without this
-     * producer; only the `userQuestions` projection reads the kind, to close
-     * the question and to record the answers it carried.
+     * agent by `dsh-user-questions` as an answer batch. Closing a question
+     * panel persists no reply. Readers preserve this message without the
+     * producer; only the `userQuestions` projection reads the kind to close
+     * the question and record its answers.
      * @persistenceAttribution
      */
-    'user-question-reply': { kind: 'user-question-reply'; callId: ToolCallId; outcome: 'answered' | 'dismissed' }
+    'user-question-reply': { kind: 'user-question-reply'; callId: ToolCallId; outcome: 'answered' }
   }
 }
 

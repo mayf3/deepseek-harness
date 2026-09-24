@@ -37,7 +37,7 @@ While the tool call is open, the only answer path is that request; a browser tha
 <a id="role"></a>
 ## Role
 
-`UserQuestionService` owns each `TimedQuestionWait`, its cancellable Client claims, and its unattended timer. A claimed wait leaves countdown and focus/edit decisions to the Client. An unattended timeout aborts only the foreground request signal and returns pending, never aborting the Turn. The `userQuestions` projection records open, continued, and settled timed calls from existing Session events; legacy calls are excluded by the logged tool schema. The `answer` RPC accepts only continued questions and validates one answer per question before steering the reply. A late batch stays in the projection because the original tool result contains the timeout, not that answer. The retained `dismissed` source outcome is readable but has no producer.
+`UserQuestionService` owns each `TimedQuestionWait`, its cancellable Client claims, and its unattended timer. A claimed wait leaves countdown and focus/edit decisions to the Client. An unattended timeout aborts only the foreground request signal and returns pending, never aborting the Turn. The `userQuestions` projection records open, continued, and settled timed calls from existing Session events; legacy calls are excluded by the logged tool schema. The `answer` RPC accepts only continued questions and validates one answer per question before steering the reply. A late batch stays in the projection because the original tool result contains the timeout, not that answer.
 
 <a id="model-experience"></a>
 ## Model Experience
