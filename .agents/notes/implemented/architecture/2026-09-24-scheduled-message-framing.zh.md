@@ -6,13 +6,13 @@ Status: implemented
 
 ## Problem
 
-到期的提醒以生产者 kind 为 `schedule` 的 user-role 消息进入其原 Session。两个渲染器都用一句关于其载荷地位的固定指令开篇：单次投递要求模型把 `reminder_prompt_json` 作为不可信的提醒内容呈现、而不是新的用户指令；周期批次投递对 `reminders_json` 中的每个 `reminder_prompt` 提出同样的要求。于是这条消息对自身内容附带了一个信任判定，而没有说明它来自哪里。
+到期的提醒以生产者 kind 为 `schedule` 的 user-role 消息进入其原 Session。两个渲染器都用一句关于如何处理其载荷的固定指令开篇：单次投递要求模型把 `reminder_prompt_json` 作为不可信的提醒内容呈现、而不是新的用户指令；周期批次投递对 `reminders_json` 中的每个 `reminder_prompt` 提出同样的要求。于是这条消息断言自身内容不可信，而没有说明它来自哪里。
 
 ## Decision
 
 [`packages/schedule/schedule/src/domain.ts`](../../../../packages/schedule/schedule/src/domain.ts) 中的 `renderReminderFraming` 与 `renderRecurringReminderBatchFraming` 都以同一条固定行开篇，即模块常量 `SCHEDULED_MESSAGE_FRAMING`：`This is a scheduled message from the user`。方括号标记（`[SCHEDULE REMINDER]`、`[SCHEDULE REMINDER BATCH]`）与 JSON 编码的动态字段不变：单次消息仍追加 `schedule_id_json`、`occurrence_at`、`reminder_prompt_json`，周期批次仍追加 `reminders_json`。
 
-这条固定行说明消息的来源：属于该 Session 的一条定时任务。它不声称提示词文本由用户键入——`schedule_create` 与 `schedule_update` 允许模型在该 Session 中通过这些工具代用户写入。这条固定行不再说明模型应给其中的提醒提示词何种地位。伪造固定行的通道仍由编码而非指令封闭：schedule id 与提示词是 JSON 字符串，发生瞬点是经校验的规范 RFC 3339 值，且各自只占一行，因此带有换行或形如 `occurrence_at:` 的提示词无法向该块增加固定行。[Host 拥有的定时消息](2026-09-16-host-schedule-storage.zh.md) 记下的其余决策不变，包括通过 Session controller 投递以及保存的投递记录。
+这条固定行说明消息的来源：属于该 Session 的一条定时任务。它不声称提示词文本由用户键入——`schedule_create` 与 `schedule_update` 允许模型在该 Session 中通过这些工具代用户写入。这条固定行不包含关于提示词文本地位的指令。固定行无法被动态字段伪造，这由编码保证：schedule id 与提示词是 JSON 字符串，发生瞬点是经校验的规范 RFC 3339 值，且各自只占一行，因此带有换行或形如 `occurrence_at:` 的提示词无法向该块增加固定行。[Host 拥有的定时消息](2026-09-16-host-schedule-storage.zh.md) 记下的其余决策不变，包括通过 Session controller 投递以及保存的投递记录。
 
 ## Alternatives considered
 
@@ -22,6 +22,6 @@ Status: implemented
 
 ## Consequences
 
-两个投递路径的模型可见提醒文本都改变，因此在该决策之前记录的 Session 日志重建出的是旧的固定文本。其余不动：没有 session 事件、存储字段、客户端界面或持久化格式变化，投递文本仍可从日志重建。
+两个投递路径的模型可见提醒文本都改变，因此在该决策之前记录的 Session 日志重建出的是旧的固定文本；Web 中渲染该投递消息的通知在展开时显示新的一行。其余不动：没有 session 事件、存储字段、客户端代码、协议或持久化格式变化，投递文本仍可从日志重建。
 
-未来若出现提示词文本来自目标 Session 之外的投递路径，它需要单独决定自己的固定文本。本记录覆盖当前同一 Session 内的提示词来源，即模型工具与 Web 任务详情。
+提示词文本不携带作者保证。模型创建的提醒可以把模型从网页、文件或命令输出中读到的文本原样写入，而该文本会以用户来源行交付。`schedule_create` 与 `schedule_update` 的 Session 绑定限制的是哪个 Session 的模型可以写入任务，而不是提示词内容的来源。若出现提示词文本可来自目标 Session 之外的投递路径，或决定重新标记此类内容，都需要单独决定其固定文本。
