@@ -1088,3 +1088,13 @@ it.each([['未命名', t], ['Untitled', tEn]])('labels unnamed history as %s', (
     renderSlot={() => null} t={translate} />)
   expect(screen.getByText(label)).toBeTruthy()
 })
+
+it.each([['未命名', t], ['Untitled', tEn]])('labels unnamed search results as %s', (label, translate) => {
+  const result: SearchResultNode = { id: sid('unnamed-search'), title: '', workspace: 'Project',
+    running: false, runningSubagentCount: 0, completed: false, archived: false }
+  const onOpen = vi.fn()
+  render(<SearchResultItem result={result} currentId={undefined} onOpen={onOpen}
+    onUnarchive={vi.fn()} t={translate} />)
+  fireEvent.click(screen.getByText(label))
+  expect(onOpen).toHaveBeenCalledWith(result.id)
+})

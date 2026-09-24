@@ -164,3 +164,16 @@ it.each(['checking', 'verifying', 'installing'] as const)('shows only the versio
     expect((await screen.findByRole('tooltip')).textContent).toBe('0.1.7-alpha.2')
   } finally { f.view.unmount(); f.status.resolve({ phase: 'idle' }) }
 })
+
+it.each([
+  ['checking', '正在检查更新…'],
+  ['verifying', '正在校验更新文件…'],
+  ['installing', '正在准备重启…'],
+] as const)('retains the state label when %s has no version', async (phase, label) => {
+  const f = fixture()
+  try {
+    await f.emit({ phase })
+    fireEvent.focus(screen.getByRole('button', { name: label }))
+    expect((await screen.findByRole('tooltip')).textContent).toBe(label)
+  } finally { f.view.unmount(); f.status.resolve({ phase: 'idle' }) }
+})
