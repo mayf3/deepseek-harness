@@ -223,6 +223,47 @@ describe('ModelSelect reasoning effort', () => {
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
   })
 
+  it('spins on the chosen row, then on the closed trigger, until the selection settles', async () => {
+    const groups = [{
+      id: 'deepseek-official',
+      name: 'DeepSeek',
+      models: [
+        { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', reasoning },
+        { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro' },
+      ],
+    }]
+    const directory = createSnapshotStore<ModelDirectoryState>(state({ groups }))
+    let settle!: () => void
+    const select = vi.fn((selection: ModelSelection) => {
+      directory.set(state({ groups, status: 'selecting' }))
+      return new Promise<{ ok: true; value: undefined }>((resolve) => {
+        settle = () => {
+          directory.set(state({ groups, current: selection }))
+          resolve({ ok: true, value: undefined })
+        }
+      })
+    })
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={select} t={t} />)
+    const spinners = () => document.querySelectorAll('[data-state="ongoing"]')
+
+    const trigger = screen.getByRole('button', { name: /选择模型|当前/ })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ }))
+    const pro = screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ })
+    expect(spinners()).toHaveLength(1)
+    expect(pro.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    expect(trigger.getAttribute('aria-busy')).toBe('true')
+
+    fireEvent.mouseDown(document.body)
+    expect(spinners()).toHaveLength(1)
+    expect(trigger.querySelector('[data-state="ongoing"]')).not.toBeNull()
+
+    await act(async () => { settle() })
+    expect(spinners()).toHaveLength(0)
+    expect(trigger.getAttribute('aria-busy')).toBe('false')
+  })
+
   it('portals the placed menu card to body and closes only on truly-outside mousedown', () => {
     const offsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!
     const offsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!

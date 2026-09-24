@@ -15,7 +15,8 @@
  * selected effort come from the Host rather than a client-owned vocabulary. A
  * rejected selection announces through the shared transient Toast anchored to
  * the composer card; the in-menu strip with Retry remains the catalog-load
- * surface.
+ * surface. While a selection is pending, the chosen row's check slot shows a
+ * spinner, and the trigger's chevron does while the menu is closed.
  */
 import { MenuSurface } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
@@ -27,7 +28,7 @@ import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular,
-  IconDataOutlineRegular, IconWarningOutlineRegular, Toast,
+  IconDataOutlineRegular, IconWarningOutlineRegular, StateDot, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
@@ -41,6 +42,11 @@ interface EffortChoice {
   key: string
   effort: string | undefined
   label: string
+}
+
+/** Row key of one model choice; effort rows use their own `effort:` keys. */
+function modelKey(provider: string, model: string): string {
+  return `model:${provider}/${model}`
 }
 
 /** Unplaced portal card: hidden but laid out at a fixed origin so offsetWidth/offsetHeight are real (Menu primitive's measure pass). */
@@ -69,6 +75,8 @@ export function ModelSelect(
   const lastActionRef = useRef<'load' | 'select'>('load')
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
   const toastSeq = useRef(0)
+  // Row key of the selection this seat submitted, until it settles.
+  const [pending, setPending] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -282,6 +290,7 @@ export function ModelSelect(
   }
 
   const settleSelection = (result: Awaited<ReturnType<ModelSelectInjected['select']>>): void => {
+    setPending(null)
     if (result === undefined) return
     if (result.ok) {
       if (rootRef.current !== null) close(true)
@@ -297,8 +306,9 @@ export function ModelSelect(
     })
   }
 
-  const submit = (selection: ModelSelection): void => {
+  const submit = (selection: ModelSelection, key: string): void => {
     lastActionRef.current = 'select'
+    setPending(key)
     // Disabled option rows cannot retain focus while a selection is pending.
     triggerRef.current?.focus()
     void select(selection).then(settleSelection)
@@ -309,10 +319,10 @@ export function ModelSelect(
       close(true)
       return
     }
-    submit(selection)
+    submit(selection, modelKey(selection.provider, selection.model))
   }
 
-  const chooseEffort = (effort: string | undefined): void => {
+  const chooseEffort = (effort: string | undefined, key: string): void => {
     if (state.current === null) return
     if (effectiveEffort === effort) {
       close(true)
@@ -323,7 +333,7 @@ export function ModelSelect(
       model: state.current.model,
       ...effort === undefined ? {} : { reasoningEffort: effort },
     }
-    submit(selection)
+    submit(selection, key)
   }
 
   const waiting = state.current === null && state.status === 'loading'
@@ -366,6 +376,7 @@ export function ModelSelect(
         aria-expanded={open}
         aria-controls={open ? `${id}-menu` : undefined}
         title={triggerLabel}
+        aria-busy={busy}
         disabled={locked}
         onClick={() => {
           if (open) {
@@ -378,7 +389,9 @@ export function ModelSelect(
         <IconDataOutlineRegular className={css.triggerIcon} size={16} />
         <span className={css.triggerLabel}>{modelLabel}</span>
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
-        <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />
+        {busy && !open
+          ? <StateDot state="ongoing" />
+          : <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />}
       </button>
 
       {/* Portaled to body (Menu primitive's portal mode) so the sidebar and
@@ -436,6 +449,7 @@ export function ModelSelect(
                       <div className={css.groupTitle} id={headingId}>{group.id === 'deepseek-account' ? t('provider.account') : group.name}</div>
                       {group.models.map((model) => {
                         const selected = state.current?.provider === group.id && state.current.model === model.id
+                        const key = modelKey(group.id, model.id)
                         return (
                           <button
                             ref={itemRef()}
@@ -452,7 +466,9 @@ export function ModelSelect(
                               <span className={css.modelName}>{model.name}</span>
                             </span>
                             <span className={css.check}>
-                              {selected ? <IconCheckOutlineRegular /> : null}
+                              {busy && pending === key
+                                ? <StateDot state="ongoing" />
+                                : selected ? <IconCheckOutlineRegular /> : null}
                             </span>
                           </button>
                         )
@@ -486,13 +502,15 @@ export function ModelSelect(
                     className={clsx(css.option, effectiveEffort === level.effort && css.selected)}
                     key={level.key}
                     disabled={busy}
-                    onClick={() => { chooseEffort(level.effort) }}
+                    onClick={() => { chooseEffort(level.effort, level.key) }}
                   >
                     <span className={css.optionCopy}>
                       <span className={css.modelName}>{level.label}</span>
                     </span>
                     <span className={css.check}>
-                      {effectiveEffort === level.effort ? <IconCheckOutlineRegular /> : null}
+                      {busy && pending === level.key
+                        ? <StateDot state="ongoing" />
+                        : effectiveEffort === level.effort ? <IconCheckOutlineRegular /> : null}
                     </span>
                   </button>
                 ))}
