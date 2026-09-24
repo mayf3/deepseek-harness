@@ -222,8 +222,8 @@ describe('dsh-tool-subagent-control/list-agents', () => {
     const schema = ctx.tools.schemas().find(candidate => candidate.name === 'list_agents')
     // Completion reaches the parent through its notice; listing is discovery,
     // so its inactive status must not send the model looking for a result.
-    expect(schema?.description).toContain('you are told when one finishes')
-    expect(schema?.description).toContain('inactive means none is, and says nothing about task success')
+    expect(schema?.description).toContain('You will be notified when a subagent finishes')
+    expect(schema?.description).toContain('inactive means it is not currently working')
     // The enum is the closed vocabulary the model renders, so pin it rather than
     // scanning prose that legitimately reads "not to poll for completion".
     const variants = ctx.tools.get('list_agents')?.output.schema.items?.oneOf ?? []

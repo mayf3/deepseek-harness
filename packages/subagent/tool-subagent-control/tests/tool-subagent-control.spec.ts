@@ -359,7 +359,7 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
     expect(schemas).toHaveLength(1)
     const props = (schemas[0]!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
     expect(Object.keys(props)).toEqual(['agent_id'])
-    expect(schemas[0]!.description).toContain('current turn')
+    expect(schemas[0]!.description).toContain('stop its current work')
     expect(schemas[0]!.description).toContain('send_message')
   })
 

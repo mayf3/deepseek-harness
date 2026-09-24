@@ -86,9 +86,10 @@ export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'list_agents',
     description:
-      'List your continuable background subagents by id, label, and status. Use it to recall which ones you started, '
-      + 'not to poll for completion: you are told when one finishes. running means a turn is executing; inactive means none is, '
-      + 'and says nothing about task success.',
+      'List subagents you started, with their ids, labels, and status. '
+      + 'running means it is working; inactive means it is not currently working. '
+      + 'You will be notified when a subagent finishes; there is no need to keep checking its status. '
+      + 'Use send_message to continue the conversation.',
     parameters: {
       scope: {
         type: 'string',

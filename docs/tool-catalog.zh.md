@@ -2083,7 +2083,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 ### `interrupt_agent`
 
-请求取消后台 agent 的当前轮次。该 agent 仍可接收 send_message，它启动的 agent 会继续运行。请求被接受后即返回；目标可能还会短暂运行。
+请 subagent 停止当前工作。此调用不等待其停止即返回。之后可以用 send_message 继续与直接子级的对话。它启动的 subagent 会继续运行。
 
 ```json
 {
@@ -2104,7 +2104,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 ### `list_agents`
 
-按 id、标签和状态列出你的可继续后台 subagent。用它回忆你启动过哪些 subagent，而不是轮询完成情况：subagent 完成时你会被告知。running 表示有轮次正在执行；inactive 表示没有轮次在执行，不表示任务是否成功。
+列出你启动的 subagent 及其 id、标签和状态。running 表示正在工作；inactive 表示当前未在工作。subagent 完成时你会收到通知，无需反复查看状态。使用 send_message 继续对话。
 
 ```json
 {

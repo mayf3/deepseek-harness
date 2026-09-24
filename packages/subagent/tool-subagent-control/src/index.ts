@@ -74,8 +74,9 @@ export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'interrupt_agent',
     description:
-      'Request cancellation of a background agent\'s current turn. The agent stays available for send_message, '
-      + 'and agents it started keep running. Returns once the request is accepted; the target may keep running briefly.',
+      'Ask a subagent to stop its current work. This call returns without waiting for it to stop. '
+      + 'You can continue a direct child\'s conversation later with send_message. '
+      + 'Subagents it started will keep running.',
     parameters: {
       agent_id: {
         type: 'string',

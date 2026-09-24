@@ -2073,7 +2073,7 @@ The registered delegation name is the load-time `toolName` config (default `suba
 
 ### `interrupt_agent`
 
-Request cancellation of a background agent's current turn. The agent stays available for send_message, and agents it started keep running. Returns once the request is accepted; the target may keep running briefly.
+Ask a subagent to stop its current work. This call returns without waiting for it to stop. You can continue a direct child's conversation later with send_message. Subagents it started will keep running.
 
 ```json
 {
@@ -2094,7 +2094,7 @@ Source: [`packages/subagent/tool-subagent-control/src/index.ts`](../packages/sub
 
 ### `list_agents`
 
-List your continuable background subagents by id, label, and status. Use it to recall which ones you started, not to poll for completion: you are told when one finishes. running means a turn is executing; inactive means none is, and says nothing about task success.
+List subagents you started, with their ids, labels, and status. running means it is working; inactive means it is not currently working. You will be notified when a subagent finishes; there is no need to keep checking its status. Use send_message to continue the conversation.
 
 ```json
 {
