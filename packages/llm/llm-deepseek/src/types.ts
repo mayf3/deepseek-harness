@@ -93,6 +93,8 @@ export interface DeepSeekRequestAuth {
 export interface DeepSeekAdapterOptions<Connection extends DeepSeekConnectionOptions = DeepSeekConnectionOptions> {
   /** Report unusable native Messages replay metadata without exposing content or signatures. */
   onReplayDegrade?: (detail: { provider: string; model: string; reason: string }) => void
+  /** Report extension fields omitted from one request because the merged request failed to serialize. */
+  onExtensionsOmitted?: (detail: { provider: string; model: string; fields: readonly string[]; error: unknown }) => void
   /** Provider label for selectors; omission uses the protocol family name. */
   providerName?: string
   /** Provider-owned catalog availability; omission exposes no discovery entries. */

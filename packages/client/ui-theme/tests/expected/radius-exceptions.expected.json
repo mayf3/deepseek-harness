@@ -1,7 +1,4 @@
 {
-  "ui-primitives/src/ShortcutKeys.module.css": [
-    ".keys: border-radius: 10px"
-  ],
   "ui-schedule/src/client/ClockPicker.module.css": [
     ".option: border-radius: 10px"
   ],
@@ -54,11 +51,10 @@
     ".indicator: border-radius: 6px"
   ],
   "ui-shortcuts/src/client/Reference.module.css": [
-    ".button: border-radius: 18px",
     ".dialog: border-radius: 24px",
     ".close: border-radius: 28px",
     ".searchField: border-radius: 12px",
-    ".keyButton: border-radius: 10px",
+    ".keyBadge: border-radius: 10px",
     ".unbound: border-radius: 10px",
     ".recorder: border-radius: 10px"
   ]

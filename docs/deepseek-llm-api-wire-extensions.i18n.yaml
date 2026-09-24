@@ -12,14 +12,14 @@
   en: 740e92e903ecb594
   zh: f934d3c9e5c56bfe
 /official-deepseek-llm-api-wire-extensions/body-extension-transaction:
-  en: 8c05b525a3f1358e
-  zh: 4c5bccf12f000038
+  en: f0b1443c364a431c
+  zh: 16d16ddf5c451e8e
 /official-deepseek-llm-api-wire-extensions/dsh-plugin-packages:
   en: 49d6f011e9d985a7
   zh: bbf61b4e4480c555
 /official-deepseek-llm-api-wire-extensions/dsh-session-log:
-  en: 5dc19f72ee3db8ab
-  zh: df9997b805cd01fa
+  en: de1a3f2c377d74e3
+  zh: 7c803345f71117c5
 /official-deepseek-llm-api-wire-extensions/dsh-session-log/wire-session-header:
   en: ccd8fcd773df21c4
   zh: 7ea020068ad093ae
@@ -27,8 +27,8 @@
   en: 008a21df5e314154
   zh: 8855710a37542ec5
 /official-deepseek-llm-api-wire-extensions/dsh-session-log/acceptance-watermark-and-at-least-once-delivery:
-  en: 64ba792a2a6af122
-  zh: 0f560c3610e07e81
+  en: 4d84cb1e61f9cf58
+  zh: 8a63ce3069e2f0b3
 /official-deepseek-llm-api-wire-extensions/exposure-and-receiver-requirements:
-  en: 9000a8295ff540ac
-  zh: b56802d83a04175d
+  en: ae93d9a44245b12f
+  zh: 8b95fc66c6e653c2

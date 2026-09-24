@@ -48,7 +48,7 @@
                 # Route-priced request images at the provider cap; the small
                 # context window turns that visual pressure into an automatic
                 # compaction the text-only heuristic would not trigger.
-                contextWindow: 11600
+                contextWindow: 10022
                 imageRequestTokens: 384
 
 - id: attachment-local

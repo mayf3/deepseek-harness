@@ -136,7 +136,7 @@ async function bootWeb(
     await mkdir(dirname(link), { recursive: true })
     await symlink(packageDir, link, 'junction')
   }
-  let profile: Profile = {
+  let profile: Profile = { skippedBundles: [],
     name: 'spec',
     dir: profileDir,
     layers: [],
@@ -853,7 +853,6 @@ describe('a delegated child', () => {
 
 describe('the default preset as a user setting', () => {
   it('composes an unnamed session from the stored default, not the composed one', async () => {
-    expect((await ctx.agentPresets.remoteExportList()).modeSelectionEnabled).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
 
     await ctx.settings.update(SETTINGS_NAMESPACE, { selectedDefault: 'minimal' })
@@ -879,6 +878,44 @@ describe('the default preset as a user setting', () => {
     }
 
     expect(ctx.agentPresets.defaultId).toBe('standard')
+  })
+})
+
+describe('a profile patch stored before Developer tools owned preset selection', () => {
+  let legacy: Context
+  let legacyHome: string
+  beforeAll(async () => {
+    legacyHome = await mkdtemp(join(tmpdir(), 'dsh-web-presets-legacy-'))
+    // A stored configuration from before the switch moved to Developer tools:
+    // it carries the retired key beside the default the user had saved. The
+    // Loader resolves the declared fields and leaves the extra one alone.
+    legacy = await bootWeb(legacyHome, [{
+      id: SETTINGS_NAMESPACE,
+      config: { default: 'standard', selectedDefault: 'minimal', modeSelectionEnabled: false },
+    }])
+  }, 120_000)
+  afterAll(async () => {
+    await legacy?.fiber.dispose()
+    await rm(legacyHome, { recursive: true, force: true })
+  })
+
+  it('starts, keeps the retired key inert and composes new sessions from the saved default', async () => {
+    expect(legacy.agentPresets.defaultId).toBe('minimal')
+    expect((await legacy.agentPresets.remoteExportList()).presets.find(row => row.id === 'minimal')?.isDefault).toBe(true)
+    // Settings projects the declared fields, so the retired key is neither
+    // shown nor rewritten; the user's saved default is.
+    expect(legacy.settings.describe().find(row => row.ns === SETTINGS_NAMESPACE)?.value)
+      .toEqual({ selectedDefault: 'minimal' })
+
+    const handle = await legacy.agents.create({
+      sessionId: SessionId('preset-legacy-patch'),
+      setup: agentCtx => legacy.agentPresets.mount(agentCtx).then(() => undefined),
+    })
+    try {
+      expect(toolNames(legacy, handle.agent)).toEqual(['bash', ...SCHEDULE_TOOLS])
+    } finally {
+      await handle.dispose()
+    }
   })
 })
 

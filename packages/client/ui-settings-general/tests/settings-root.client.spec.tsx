@@ -513,7 +513,7 @@ it('shows the effective settings binding on focus and exposes it to assistive te
   const trigger = screen.getByRole('button', { name: 'Settings' })
   expect(trigger.getAttribute('aria-keyshortcuts')).toBe('Meta+,')
   fireEvent.focus(trigger)
-  expect(screen.getByRole('tooltip').textContent).toBe('Settings ⌘ ,')
+  expect(screen.getByRole('tooltip').getAttribute('aria-label')).toBe('Settings ⌘ ,')
 })
 
 it('passes current Settings key labels to the launcher and removes them when unbound', () => {

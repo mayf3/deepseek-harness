@@ -457,16 +457,10 @@
     "ddca8a18cd7755688ea48674c48c3c8a6107186815ea91f516424bbed0e1c518": 1
   },
   "packages/client/ui-agent-preset/tests/components.client.spec.tsx": {
-    "0df95ae2a37a0b3403599b7478d4d59fa2611cb1189b67e8b3fd0f4fcbf500e1": 1,
     "6c63f71c0aeb1a9a97ec28a3242f77eef021ecfcee48238f17592eb2f1040c09": 1
   },
-  "packages/client/ui-agent-preset/tests/settings-store.client.spec.ts": {
-    "74d9d12b6f146dcd600e84c9fde4d8e9e3d4e66aa485cc598ef4e763188b0eac": 1,
-    "8dc4dd33a728f8be87bedb987dacefe36155443f0d2e0cc58da9716947d85920": 1
-  },
   "packages/client/ui-approval/tests/ui-approval.client.spec.tsx": {
-    "3e392ff0165a51a6ac716515b99af35ec152f89607cff72080cb9afbcff63f46": 1,
-    "d3a081f97422a352526b7014a6aa4c6c8f78cb27587568bc4150232db2037198": 1
+    "3e392ff0165a51a6ac716515b99af35ec152f89607cff72080cb9afbcff63f46": 1
   },
   "packages/client/ui-attachment/tests/attachment-rail.client.spec.tsx": {
     "b42ab24a43e0f7542bf1deb8f7ac3a76698d29e098f8dc575af6c08774987c32": 1
@@ -507,9 +501,6 @@
   },
   "packages/client/ui-chat/tests/conversation.client.spec.ts": {
     "299fcafb8671655372c99c1dbe14e2705536d569bf475ca09693f87b3b1182da": 1
-  },
-  "packages/client/ui-chat/tests/skill-name-projector.client.spec.ts": {
-    "cc5bd784736472e7293f8b0e2d889b0cf1c156a218457571390871164e35b5d5": 1
   },
   "packages/client/ui-chat/tests/tool-call-tree.client.spec.ts": {
     "427f7efc431dec431f6707ea0e4431c54fafc97efbcc9c93865d29f2488300d9": 1
@@ -1347,7 +1338,6 @@
     "0c7b023d04a2d6744d9844f27de8438231e642fd058e2b75e113a1996711014a": 1
   },
   "packages/interaction/tool-ask-user/tests/tool-ask-user.spec.ts": {
-    "60655aea47d3d8667f90341b58e3faaf64d12670b9592af837aa40ecf7b83583": 1,
     "d423bbcd1caff7aab2e2de52564efbc9061e775620a530157805a43d851c6fe9": 1
   },
   "packages/interaction/user-approval/tests/approval.spec.ts": {

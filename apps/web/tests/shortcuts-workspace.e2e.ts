@@ -61,8 +61,9 @@ describe.skipIf(mode === 'record')('web e2e: workspace shortcuts', () => {
       expect(await row.getByText('Unavailable', { exact: true }).count()).toBe(0)
     }
     if (previous !== undefined) {
-      await reference.getByRole('button', { name: `Remove shortcut for ${previous}`, exact: true }).click()
-      await expect.poll(() => reference.getByRole('button', { name: `Remove shortcut for ${previous}`, exact: true }).count()).toBe(0)
+      await reference.getByRole('button', { name: `Edit shortcut for ${previous}`, exact: true }).click()
+      await reference.getByRole('button', { name: 'Remove', exact: true }).click()
+      await reference.getByRole('group').waitFor({ state: 'hidden' })
     }
     await reference.getByRole('button', { name: `Edit shortcut for ${label}`, exact: true }).click()
     await page.keyboard.press('Meta+Shift+Comma')

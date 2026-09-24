@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-工具调用在对话中显示为卡片：一个根调用树带其嵌套子调用，每个原子调用由所属视图渲染。所有生命周期状态都保留工具的普通业务图标；失败与中断仍通过冻结调用／结果状态、无障碍状态文本和失败摘要明确表达。用户可通过宿主回调打开文件或检查调用。
+工具调用在对话中显示为卡片：一个根调用树带其嵌套子调用，每个原子调用由所属视图渲染。所有生命周期状态都保留工具的普通业务图标；失败与中断仍通过冻结调用／结果状态、无障碍状态文本和失败摘要明确表达。用户可通过宿主回调打开文件或检查调用。折叠的 `web_fetch` 行把其 http(s) URL 显示为链接，在新浏览器标签页中打开。
 
 共享工具行和 Bash 行的失败、停止摘要在悬停时仍保留错误色和警告色；只有不处于这两种状态的摘要会在悬停时加深。
 
@@ -49,7 +49,9 @@ owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、`phase` 判别字
 
 每个注册视图都接收[工具 slot 类型](src/client/contract/slots.ts)声明的显式 `preparing`、`start` 和 `result` props。通用行在三个阶段使用同一个 `ToolRow`。行模型统一选择标题，并组合通用工具名前缀与已有参数摘要，不按生命周期阶段改变前缀；专用标题不附带英文名。准备阶段的共享参数解析入口直接返回无调用，不解析部分 JSON。write/edit 将准备态和派发后阶段拆成两个组件，只有准备态组件调用 `useToolCallArgumentsPartial`，start 与 result 共用派发后组件。Bash、Skill、Cordis 等自定义 renderer 分别处理准备态，其依赖参数的组件接收 `StartedToolCallViewProps`。
 
-本包拥有 generic fallback，以及 shell/pwsh、read、read_image、write/edit、运行中的 `str_replace_editor` `create`／`str_replace`、grep/glob、web、todo、question 与 PTC dispatch 的内置展示。结构化卡片直接从第一方原始 event 字段派生；Host `presentCall` 与 `presentResult` 值不会进入 Client。运行中与已完成的前台标准 `bash`/`pwsh` 和 `terminal_send` 调用，无论位于根还是 PTC dispatch 子调用中，都在通过相同的参数、结果和错误检查后使用 terminal 卡片。持久 `bash`/`pwsh` 调用仅在运行中使用 terminal 卡片。以已识别的 spill 策略提示结尾的 shell 输出，在 shell 行中使用可展开的 generic 输出，在 Details 中使用 generic 输出；位置被改变或被省略的退出标记无法证明成功。已完成的持久 shell 结果保持 generic 展示，因为 reset 与部分输出诊断不一定描述单个进程的退出状态；根调用的持久 shell 结果可展开，后台启动回执则保持折叠。带有 `AUTO_REVIEW_DENIED` 的原生或 PTC dispatch 失败会在折叠行显示 Auto review 裁决，展开时显示一行归一化后的“未执行”原因；原因缺失或只有空白时使用本地化 fallback 文案。成功的问题行按稳定 id 配对调用中的问题与结果中的回答，展开后显示可读的问答行。已取消或已中断的问题行显示其裁决与原始问题，不虚构回答。不受支持、格式错误或含糊的输入回退为压平的工具输入／结果文本。`ui-skill` 展示了业务包自行拥有的 `skill` 注册项。
+本包拥有 generic fallback，以及 shell/pwsh、read、read_image、write/edit、运行中的 `str_replace_editor` `create`／`str_replace`、grep/glob、web、todo、question 与 PTC dispatch 的内置展示。结构化卡片直接从第一方原始 event 字段派生；Host `presentCall` 与 `presentResult` 值不会进入 Client。运行中与已完成的前台标准 `bash`/`pwsh` 和 `terminal_send` 调用，无论位于根还是 PTC dispatch 子调用中，都在通过相同的参数、结果和错误检查后使用 terminal 卡片。持久 `bash`/`pwsh` 调用仅在运行中使用 terminal 卡片。以已识别的 spill 策略提示结尾的 shell 输出，在 shell 行中使用可展开的 generic 输出，在 Details 中使用 generic 输出；位置被改变或被省略的退出标记无法证明成功。已完成的持久 shell 结果保持 generic 展示，因为 reset 与部分输出诊断不一定描述单个进程的退出状态；根调用的持久 shell 结果可展开，后台启动回执则保持折叠。带有 `AUTO_REVIEW_DENIED` 的原生或 PTC dispatch 失败会在折叠行显示 Auto review 裁决，展开时显示一行归一化后的“未执行”原因；原因缺失或只有空白时使用本地化 fallback 文案。成功的问题行按稳定 id 配对调用中的问题与回答，展开后显示可读的问答行；回答在结果携带时取自结果，而计时调用的结果只记录了超时时，则取自 `userQuestions` 投影中迟到回复结算它时留下的答案，两者读起来一致。已取消或已中断的问题行显示其裁决与原始问题，不虚构回答。问题行在摘要旁带一个胶囊按钮，按钮上是该行自己的问题图标：只要 `userQuestions` 会话投影仍把该调用列为可回答，点击它就在编辑器位置重新打开这道问题的实时回答面板；调用带着回答结束后，它以只读方式打开同一个面板，展示这些问题与回答。计时调用在没有任何回答的情况下结束时读作已结束且不提供该按钮，已取消或已中断的行同样不提供，问题字段校验失败的已回答调用也不提供；面板能力拒绝时，点击改为展开该行。不受支持、格式错误或含糊的输入回退为压平的工具输入／结果文本。`ui-skill` 展示了业务包自行拥有的 `skill` 注册项。
+
+回答面板按钮归问题 renderer 所有。它使用 `DisclosureRow` 组合自己的操作与 transcript；通用 `ToolRow` 不选择或派发问题操作。
 
 -----
 
@@ -84,6 +86,11 @@ Auto 拒绝优先于按工具名选择的专门视图。其通用行保留调用
 展开后的状态圆点和文字使用静态语义色。操作回执和任务输出的标题保持中性色，展开时省略标题中的状态。中断回执仅确认已发出中断请求。
 
 terminal model 使用浏览器安全入口 `@deepseek-ai/dsh-spill-policy/notice` 的 `hasSpillNotice`，而非独立的 UI 匹配规则。[spill-policy README](../../spill/spill-policy/README.zh.md#shared-notice-ownership) 负责提示文本的格式化与识别。该检查保守地选择通用输出；匹配的文本无法证明其来源，回放也不改变已记录的结果字节。
+
+### 声明的可选能力
+
+本包在浏览器 `Context` 上为其问题行声明 `UserQuestionPanels`：`reveal(sessionId, callId): boolean` 显示该调用的回答面板，并报告是否还有面板可显示；`review(sessionId, callId, record): boolean` 把已结束调用记录下来的问题与回答显示为只读面板，记录由该行自己记录的调用，加上记录了回答的那一方——结果，或投影中迟到回复的条目——共同解析得出。问题视图在自己的 slot `inject` 中经 `ctx.get('userQuestionPanels')` 读取两者，因此不含提问 UI 的组装渲染同样的行，只是没有动作。该能力由 `ui-user-questions` 提供，其背后的面板行为也由它拥有。
+
 </details>
 
 -----
@@ -96,6 +103,7 @@ terminal model 使用浏览器安全入口 `@deepseek-ai/dsh-spill-policy/notice
 - [ui-conversation](../ui-conversation/README.zh.md)——把 `tool-call` 节点分派给本包的聊天界面。
 - [ui-primitives](../ui-primitives/README.zh.md)——内置视图所拼装的输出卡片原子组件。
 - [ui-skill](../ui-skill/README.zh.md)——`skill` 工具的业务自有注册。
+- [ui-user-questions](../ui-user-questions/README.zh.md)——`ask_user_question` 行重新打开的提问面板。
 - [Auto review](../../experimental/auto-review/README.zh.md)——结构化拒绝身份与用户可见原因的 owner。
 - [Conversation 子系统](../../../docs/subsystems/conversation.zh.md)——业务自有功能如何注册 Conversation node。
 - [slot 系统标准](../../../.agents/notes/implemented/architecture/2026-07-22-slot-type-chain-implementation.zh.md)——keyed slot 背后的组合模型。
@@ -120,6 +128,7 @@ terminal model 使用浏览器安全入口 `@deepseek-ai/dsh-spill-policy/notice
 
 - **Host 不把 `run_code` 暴露为 PTC mode 程序 binding**：生产事件只产生一层分发；递归的运行时/UI 约定支持嵌套。
 - **第一方工具视图集中在本包**：它们可以通过 keyed slot 独立迁移到各自所属的业务包。
+- **Web 工具链接总是打开新标签页**：折叠的 `web_fetch` URL 与展开的 web 卡片链接不遵循 `ui-chat` 的链接打开方式设置，因为工具视图没有外部链接回调。
 - **工具文案复用 `ui-conversation` locale namespace**：工具标题、行 chrome 与无 Cordis 的 primitive label 使用该字典；展示转换器模型保留 locale key 或数据，而不是已渲染文案。
 
 <a id="dev-note"></a>

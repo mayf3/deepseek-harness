@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  FishLogo, IconNewChatOutlineMedium, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, isDarwinDesktop, Tooltip,
+  FishLogo, IconNewChatOutlineMedium, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, isDarwinDesktop, ShortcutKeys, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
@@ -100,7 +100,6 @@ export function SidebarRoot({
   const panels = usePanels(snapshot => snapshot)
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'sidebar.left.toggle'))
   const newShortcut = useShortcuts(rows => rows.find(row => row.id === 'session.new'))
-  const newHint = newShortcut?.keys.length ? t('shortcut.hint', { label: t('session.new.label'), keys: newShortcut.keys.join(' ') }) : t('session.new.label')
   const toggleLabel = collapsed ? t('toggle.open') : t('toggle.collapse')
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
@@ -116,7 +115,6 @@ export function SidebarRoot({
   // (that is what --dsh-windows-menu-start reserves), so a right-side bubble
   // lands under their text. Below the caption is the only clear side.
   const captionTooltipSide = windowsTitlebar ? 'bottom' : 'right'
-
   // Freeze the content at its expanded width while it fades out (collapsed
   // && wide): the sliding column then clips it instead of reflowing it. The
   // rail layout (.collapsed styles) only applies once the fade settles.
@@ -178,7 +176,7 @@ export function SidebarRoot({
   // (the expand affordance, figma sidebar-hover flow). Expanded it is a plain
   // panel icon.
   const toggle = (
-    <Tooltip label={shortcut?.keys.length ? t('shortcut.hint', { label: toggleLabel, keys: shortcut.keys.join(' ') }) : toggleLabel} delayMs={500} side={captionTooltipSide}>
+    <Tooltip label={toggleLabel} shortcutKeys={shortcut?.keys} delayMs={500} side={captionTooltipSide}>
       <button
         type="button"
         className={clsx(css.iconButton, css.toggle)}
@@ -243,7 +241,7 @@ export function SidebarRoot({
           return darwinDesktop
             ? <span className={clsx(css.brand, css.wide)}>{identity}</span>
             : (
-              <Tooltip label={newHint} delayMs={500}>
+              <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500}>
                 <button
                   type="button"
                   className={clsx(css.brand, css.wide)}
@@ -259,8 +257,8 @@ export function SidebarRoot({
         {!darwinDesktop && toggle}
       </div>
 
-      {/* Expanded, the button carries its own label — tooltip only on the rail. */}
-      <Tooltip label={newHint} delayMs={500} side={captionTooltipSide}>
+      {/* The label fades before the hover/focus shortcut, including on translucent backgrounds. */}
+      <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500} side={captionTooltipSide} disabled={wide}>
         <button
           type="button"
           className={css.newSession}
@@ -268,12 +266,15 @@ export function SidebarRoot({
           aria-keyshortcuts={newShortcut?.aria}
           onClick={() => { startSession() }}
         >
-          {/* The rail draws Regular: Medium's 1.3px stroke scaled to the rail's
-              larger glyph reads visibly heavier than the neighboring 1px icons. */}
-          {wide
-            ? <IconNewChatOutlineMedium size={14} />
-            : <IconNewChatOutlineRegular size={windowsTitlebar ? 16 : 18} />}
-          {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
+          <span className={css.newSessionLabelMask}><span className={css.newSessionContent}>
+            {wide
+              ? <IconNewChatOutlineMedium size={14} />
+              : <IconNewChatOutlineRegular size={windowsTitlebar ? 16 : 18} />}
+            {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
+          </span></span>
+          {wide && newShortcut !== undefined && newShortcut.keys.length > 0 && <span className={css.newSessionShortcut} aria-hidden="true">
+            <ShortcutKeys keys={newShortcut.keys} />
+          </span>}
         </button>
       </Tooltip>
 
