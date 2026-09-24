@@ -1,6 +1,7 @@
 /** Worker entry for current-generation physical and logical verification. */
 
 import { parentPort, workerData } from 'node:worker_threads'
+import type { MessagePort } from 'node:worker_threads'
 import { verifyJsonlCurrentGeneration } from './generation.ts'
 import type { JsonlExpectedPrefix } from './generation.ts'
 import type { JsonlCompression } from './format.ts'
@@ -30,12 +31,7 @@ function parseRequest(value: unknown): VerificationRequest {
   return request as VerificationRequest
 }
 
-if (parentPort === null) throw new Error('migration verifier requires a parent port')
-const port = parentPort
-
-const request = parseRequest(workerData)
-
-async function verify(): Promise<void> {
+async function verify(request: VerificationRequest, port: Pick<MessagePort, 'postMessage' | 'close'>): Promise<void> {
   try {
     const result = await verifyJsonlCurrentGeneration(
       request.path,
@@ -53,4 +49,15 @@ async function verify(): Promise<void> {
   }
 }
 
-void verify()
+if (parentPort !== null) {
+  void verify(parseRequest(workerData), parentPort)
+} else {
+  const send = process.send?.bind(process)
+  if (send === undefined) throw new Error('migration verifier requires a parent port or IPC channel')
+  process.once('message', (value: unknown) => {
+    void verify(parseRequest(value), {
+      postMessage: (response) => { send(response) },
+      close: () => { process.disconnect() },
+    })
+  })
+}
