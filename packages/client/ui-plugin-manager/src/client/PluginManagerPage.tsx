@@ -25,7 +25,7 @@ import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@d
 import { rowConfigKey, type OfficialItem } from './config-ledger.ts'
 import type { PluginManagerLocaleKey } from './locales.ts'
 import {
-  githubRecoveryRegistry, isInstallPending, offeredRegistries, rowKey,
+  asksMirror, githubRecoveryRegistry, isInstallPending, offeredRegistries, rowKey,
   type InstallInputError, type InstallState, type InstallSubject, type PackageRow, type PackageView,
   type PluginManagerFace, type RegistryChoice,
 } from './manager-store.ts'
@@ -337,7 +337,7 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
   readonly actions?: ReactNode
 }): ReactNode {
   return (
-    <>
+    <div className={css.detailTop} data-window-drag>
       <button type="button" className={css.crumb} aria-label={crumbLabel} onClick={onBack}>
         <IconChevronDownOutlineRegular className={css.crumbIcon} aria-hidden="true" />
         <span>{crumbText}</span>
@@ -346,7 +346,7 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
         <span className={css.cardIcon} aria-hidden="true">{icon}</span>
         {actions}
       </div>
-    </>
+    </div>
   )
 }
 
@@ -785,6 +785,7 @@ function InstallDialog({
     return () => { document.removeEventListener('keydown', onKeyDown, true) }
   }, [registryShown, onToggleRegistry])
   if (githubRecoveryRegistry(install) !== undefined) {
+    const anotherWay = asksMirror(install)
     return (
       <Modal
         open={install.open}
@@ -795,7 +796,17 @@ function InstallDialog({
         footer={(
           <>
             <Button variant="outline" onClick={onClose}>{t('cancel')}</Button>
-            <Button variant="primary" autoFocus onClick={onUseGithubMirror}>{t('installUseGithubMirror')}</Button>
+            <Button
+              variant="primary"
+              autoFocus
+              onClick={() => {
+                // The mirror is already asked, so the form opens with the guide to the other kinds of spec.
+                if (anotherWay) setGuideOpen(true)
+                onUseGithubMirror()
+              }}
+            >
+              {t(anotherWay ? 'installTryAnotherWay' : 'installUseGithubMirror')}
+            </Button>
           </>
         )}
       />
@@ -1221,7 +1232,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
     <section className={css.page} data-plugin-panel aria-busy={state.status === 'loading'}>
       {showsCards
         ? (
-          <header className={css.pageHead}>
+          <header className={css.pageHead} data-window-drag>
             <div>
               <h1 className={css.pageTitle}>{t('title')}</h1>
               <p className={css.pageIntro}>{t('intro')}</p>

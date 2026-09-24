@@ -4,16 +4,18 @@ import { cloneElement, createContext, useCallback, useContext, useEffect, useRef
 import type { FocusEventHandler, MouseEventHandler, MutableRefObject, ReactElement, Ref } from 'react'
 import { createPortal } from 'react-dom'
 import css from './Tooltip.module.css'
+// Tooltips take the wide answer — any key returns to the keyboard. Focus rings read the
+// narrower `data-input-modality` attribute the same module publishes.
+import { pointerModality } from './input-modality.ts'
 
 /** Bubble placement relative to the anchor. */
 export type TooltipSide = 'right' | 'bottom' | 'top'
 
 /**
- * Suppression channel from a tooltip to the tooltips above it: a tooltip hands
- * this setter to its own descendants, and a visible descendant bubble calls it
- * so the ancestor withdraws its bubble for as long as the descendant shows one.
+ * Suppression channel for enclosing tooltip and hover-card anchors: a visible
+ * tooltip within an anchor withdraws the enclosing preview while its bubble is shown.
  */
-const TooltipSuppression = createContext<((suppressed: boolean) => void) | null>(null)
+export const TooltipSuppression = createContext<((suppressed: boolean) => void) | null>(null)
 
 /** Props Tooltip injects into its anchor child; the child's own handlers are chained ahead of the tooltip's. */
 interface AnchorProps {
@@ -26,18 +28,6 @@ interface AnchorProps {
 }
 
 type TooltipLabel = string | (() => string)
-
-// Focus alone cannot reveal how it arrived: a closing menu hands focus back to
-// its trigger, and after a mouse selection that programmatic return must not
-// raise the trigger's bubble, while keyboard focus must. Capture-phase window
-// listeners record the last input modality for every Tooltip. The guard keeps
-// the module loadable where no window exists (node-side imports of the
-// package's pure helpers).
-let pointerModality = false
-if (typeof window !== 'undefined') {
-  window.addEventListener('pointerdown', () => { pointerModality = true }, true)
-  window.addEventListener('keydown', () => { pointerModality = false }, true)
-}
 
 /**
  * Attach a hover/focus tooltip to an anchor element.
@@ -209,7 +199,7 @@ export function Tooltip({ label, side = 'right', align = 'center', delayMs = 0, 
         // what the anchor now does (pin → unpin), and the click leaves the
         // anchor focused, which would otherwise pin the relabelled bubble up.
         onClick: (e) => { children.props.onClick?.(e); triggers.current.focus = false; cancelShow(); withdraw() },
-        onFocus: (e) => { children.props.onFocus?.(e); if (pointerModality) return; triggers.current.focus = true; cancelShow(); show() },
+        onFocus: (e) => { children.props.onFocus?.(e); if (pointerModality()) return; triggers.current.focus = true; cancelShow(); show() },
         onBlur: (e) => { children.props.onBlur?.(e); triggers.current.focus = false; hide() },
       })}
       {portal ? (content !== false && createPortal(content, document.body)) : content}
