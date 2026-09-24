@@ -25,7 +25,7 @@ Send selected product usage events to an OTLP/HTTP collector. Events carry a nam
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin in a Cordis composition with the application identity; override the collector endpoint when needed. The shipped profiles do not mount it. Set `DSH_APP_VERSION` to the running application release version in the launcher environment; the schema rejects an absent version.
+Mount the plugin in a Cordis composition with the application identity; override the collector endpoint when needed. The Desktop composition mounts it when [product analytics](../../client/product-analytics/README.md) is enabled; ordinary Web does not. Set `DSH_APP_VERSION` to the running application release version in the launcher environment; the schema rejects an absent version.
 
 ```yaml
 - name: '@deepseek-ai/dsh-host-product-telemetry-otel'

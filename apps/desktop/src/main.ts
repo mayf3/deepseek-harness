@@ -1,3 +1,4 @@
+import type { ProductEventMap, ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
@@ -355,6 +356,15 @@ async function main(): Promise<void> {
   const browserGuests = new DesktopBrowserGuests(() => hostUrl)
   let injections: readonly unknown[] = []
   let welcomeBackend: DesktopWelcomeBackend | undefined
+  let reportedLaunch = false
+  const analyticsSetting = process.env.DSH_PRODUCT_ANALYTICS_ENABLED
+  if (analyticsSetting !== undefined && analyticsSetting !== '0' && analyticsSetting !== '1') throw new Error('DSH_PRODUCT_ANALYTICS_ENABLED must be 0 or 1')
+  const analyticsEnabled = analyticsSetting !== '0'
+  const track = async <K extends keyof ProductEventMap>(eventName: K, attributes: ProductEventMap[K]): Promise<void> => {
+    if (!analyticsEnabled) return
+    const event = { eventName, attributes, timestamp: Date.now() } as ProductEvent
+    try { await welcomeBackend?.report(event) } catch (_error) { /* Analytics cannot interrupt native actions. */ }
+  }
   let stopAccount: (() => void) | undefined
   let openedAttempt: string | undefined
   let returnedAttempt: string | undefined
@@ -387,7 +397,7 @@ async function main(): Promise<void> {
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
-      hostInspectPort, process.env, onFailure,
+      hostInspectPort, { ...process.env, DSH_PRODUCT_ANALYTICS_APP_VERSION: app.getVersion() }, onFailure,
       primaryRuntime,
       resources, (next) => { platformView.setSession(next) })
     return {
@@ -398,6 +408,7 @@ async function main(): Promise<void> {
         if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
         injections = ready.injections
         welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
+        if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
         stopAccount?.()
         const accountBackend = welcomeBackend.account
         stopAccount = accountBackend.watch((state) => {
@@ -545,6 +556,7 @@ async function main(): Promise<void> {
         const result = await updateDialog.show(parent, confirmation)
         if (result.response !== 0 || isMandatory()) return false
       }
+      await track('desktop_upgrade_install_restart_click', {})
       if (backend.host !== host) throw new DesktopUpdatePreparationError('tasks-unavailable', locale.messages.updateTasksUnavailable)
       try {
         const stillActive = await host.updateTasks('lock')
@@ -569,11 +581,14 @@ async function main(): Promise<void> {
       }
       return true
     },
+    undefined, undefined, undefined,
+    (success) => { void track('desktop_upgrade_download_result', { is_success: success, ...success ? {} : { error_reason: 'download_failed' } }) },
   )
 
   const updateSchedule = new DesktopUpdateSchedule(updates, resolveDesktopUpdateScheduleConfig(process.env))
 
   const downloadUpdate = async (version: string): Promise<DesktopUpdateState> => {
+    void track('desktop_upgrade_click', {})
     updateJournal?.action('download-requested')
     const state = await updates.download(version)
     if (state.phase !== 'ready' || quitting) return state
@@ -1000,6 +1015,8 @@ async function main(): Promise<void> {
     }
     openingWelcome ??= (async () => {
       welcomeWindow = await openWelcomeWindow(locale, {
+        analyticsEnabled,
+        analytics: action => action === 'view' ? track('auth_page_view', {}) : action === 'save-key' ? track('api_key_save_click', {}) : track('auth_page_click', { button_name: action }),
         takeNotice: () => {
           const notice = pendingWelcomeNotice
           pendingWelcomeNotice = undefined

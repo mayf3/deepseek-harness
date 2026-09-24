@@ -1,3 +1,4 @@
+import type { ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
 /** Native welcome operations using the shared Web authentication and RPC APIs. */
 
 import { randomUUID } from 'node:crypto'
@@ -14,6 +15,8 @@ export interface WelcomeState {
 /** Narrow operations available to the native welcome flow. */
 export interface DesktopWelcomeBackend {
   readonly account: DesktopAccountBackend
+  /** @param event - desktop-owned fields. @returns after local Host intake. */
+  report(event: ProductEvent): Promise<void>
   /** @returns Configured-key presence and the shared language preference, without credential values. */
   read(): Promise<WelcomeState>
   /** @returns The saved UI language without account or provider requests. */
@@ -44,11 +47,14 @@ export async function connectDesktopWelcome(
   const authenticated = await send(authenticatedUrl, { credentials: 'include' })
   await authenticated.body?.cancel()
   if (!authenticated.ok) throw new Error('desktop welcome: Web authentication failed')
-  const invoke = async (request: { namespace: string; method: string; args: Record<string, unknown> }): Promise<unknown> => {
+  const invoke = async (
+    request: { namespace: string; method: string; args: Record<string, unknown> },
+    signal?: AbortSignal,
+  ): Promise<unknown> => {
     const rpcId = randomUUID()
     const method = `${request.namespace}/${request.method}`
     const response = await send(new URL(`/api/${method}`, origin).href, {
-      method: 'POST', credentials: 'include', redirect: 'error',
+      method: 'POST', credentials: 'include', redirect: 'error', ...(signal === undefined ? {} : { signal }),
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ type: 'client-request', rpcId, method, payload: { args: request.args } }),
     })
@@ -115,6 +121,7 @@ export async function connectDesktopWelcome(
   return {
     account,
     read,
+    async report(event) { await invoke({ namespace: 'productAnalytics', method: 'report', args: { event } }, AbortSignal.timeout(1000)) },
     async readLocalePreference() {
       const settings = await invoke({ namespace: 'settings', method: 'describe', args: {} })
       if (!record(settings) || !Array.isArray(settings.namespaces)) throw new Error('desktop welcome: missing settings namespaces')

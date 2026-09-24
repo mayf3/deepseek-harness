@@ -497,6 +497,25 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-hmr -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-product-analytics -->
+<a id="deepseek-aidsh-client-product-analytics"></a>
+
+## `@deepseek-ai/dsh-client-product-analytics`
+
+- `inject`: `credentials` · `deepseekAccount` · `webServer`
+- `source`: [`packages/client/product-analytics/src/index.ts:15`](../packages/client/product-analytics/src/index.ts)
+
+```ts config-catalog
+/** Application-owned collection policy; no user settings surface. */
+export interface Config {
+  /** Desktop launcher opt-in; ordinary Web defaults to disabled. */
+  enabled: boolean
+  /** Running Desktop release, absent when unavailable. */
+  appVersion?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-product-analytics -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-shortcuts -->
 <a id="deepseek-aidsh-client-shortcuts"></a>
 

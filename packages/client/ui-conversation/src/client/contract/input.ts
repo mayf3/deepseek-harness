@@ -186,7 +186,7 @@ export interface SessionInput extends InputTarget {
    * THE complexity sink: enter adjudication, submit transaction, and the default sink live inside.
    * @param mode - delivery intent retained through asynchronous adjudication and serialization.
    */
-  submit(mode?: InputSubmitMode): void
+  submit(mode?: InputSubmitMode, source?: 'click' | 'enter'): void
   /**
    * Surface a notice outside the machine's own effect stream: detached
    * command results and business notifications render through here.

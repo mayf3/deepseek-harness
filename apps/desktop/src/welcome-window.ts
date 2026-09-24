@@ -57,14 +57,19 @@ let disposeActiveHandlers: (() => void) | undefined
  * @returns the visible window; a failed load destroys it before rejecting.
  */
 export async function openWelcomeWindow(locale: DesktopLocale, operations: WelcomeOperations): Promise<BrowserWindow> {
-  const window = new BrowserWindow(welcomeWindowOptions(process.platform, locale))
+  const options = welcomeWindowOptions(process.platform, locale)
+  if (operations.analyticsEnabled && options.webPreferences?.additionalArguments) {
+    options.webPreferences.additionalArguments.push('--dsh-product-analytics')
+  }
+  const window = new BrowserWindow(options)
   disposeActiveHandlers?.()
   let active = true
   const disposeHandlers = (): void => {
     if (!active) return
     active = false
     for (const channel of [
-      WELCOME_IPC.takeNotice, WELCOME_IPC.saveApiKey, WELCOME_IPC.skip, WELCOME_IPC.start, WELCOME_IPC.cancel, WELCOME_IPC.copyLink,
+      WELCOME_IPC.analytics, WELCOME_IPC.takeNotice, WELCOME_IPC.saveApiKey,
+      WELCOME_IPC.skip, WELCOME_IPC.start, WELCOME_IPC.cancel, WELCOME_IPC.copyLink,
     ]) {
       ipcMain.removeHandler(channel)
     }
@@ -76,6 +81,11 @@ export async function openWelcomeWindow(locale: DesktopLocale, operations: Welco
       throw new Error('desktop welcome: rejected action from an unowned frame')
     }
   }
+  ipcMain.handle(WELCOME_IPC.analytics, async (event, action: unknown) => {
+    assertSender(event)
+    if (action !== 'sign_in' && action !== 'api-key' && action !== 'save-key' && action !== 'view') throw new Error('desktop welcome: invalid analytics action')
+    if (operations.analyticsEnabled) await operations.analytics?.(action)
+  })
   ipcMain.handle(WELCOME_IPC.takeNotice, async (event) => { assertSender(event); return operations.takeNotice() })
   ipcMain.handle(WELCOME_IPC.saveApiKey, async (event, value: unknown) => {
     assertSender(event)
@@ -108,6 +118,9 @@ export async function openWelcomeWindow(locale: DesktopLocale, operations: Welco
     throw error
   }
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Another window can replace ownership during loadFile.
-  if (active && !window.isDestroyed()) window.show()
+  if (active && !window.isDestroyed()) {
+    window.show()
+    if (operations.analyticsEnabled) void operations.analytics?.('view')
+  }
   return window
 }

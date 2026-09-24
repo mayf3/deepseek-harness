@@ -20,6 +20,7 @@ async function main(): Promise<void> {
   installOfficeEngineResolution(runtimeDir)
   const installAnchor = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
   const profile = loadProfileDirectory('dsh', projectDir, installAnchor)
+  process.env.DSH_DESKTOP_PRODUCT_ANALYTICS = process.env.DSH_PRODUCT_ANALYTICS_ENABLED === '0' ? '0' : '1'
   const application = runProfile({
     environment: loadLayeredEnv('dsh'),
     profile: 'desktop',

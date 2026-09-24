@@ -6,6 +6,7 @@ import type { DesktopLocale } from './locale.ts'
 /** Private native welcome channels, installed only while its window exists. */
 export const WELCOME_IPC = {
   saveApiKey: 'dsh-welcome:save-api-key',
+  analytics: 'dsh-welcome:analytics',
   skip: 'dsh-welcome:skip',
   start: 'dsh-welcome:start',
   cancel: 'dsh-welcome:cancel',
@@ -22,6 +23,10 @@ export type WelcomeNotice = 'session-expired'
 
 /** Host-owned operations used by the welcome window. */
 export interface WelcomeOperations {
+  /** @param action - fixed welcome gesture; never carries credential contents. */
+  analytics?(action: 'sign_in' | 'api-key' | 'save-key' | 'view'): Promise<void>
+  /** Whether native welcome gestures may be collected. */
+  analyticsEnabled?: boolean
   /** @returns the pending notification, clearing it before another renderer can receive it. */
   takeNotice(): Promise<WelcomeNotice | undefined>
   /** @returns account state after starting a login attempt. */

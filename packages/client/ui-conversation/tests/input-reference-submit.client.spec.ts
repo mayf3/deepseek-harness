@@ -283,3 +283,20 @@ describe('submit transaction hardening', () => {
     expect(track).toHaveBeenCalledWith('@src/', 5, { tier: 'plain' }, shell.snapshot.draftRev)
   })
 })
+
+
+it('captures click and Enter submission intent before async admission, excluding empty submits', async () => {
+  const onSubmit = vi.fn()
+  const shell = new SessionInputShell({ actx: {} as Context, defaultSink: async () => ({ kind: 'success' }), commandAttachments, onSubmit })
+  try {
+    shell.submit('queue', 'click')
+    expect(onSubmit).not.toHaveBeenCalled()
+    shell.setDraft('first')
+    shell.submit('steer', 'click')
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith('steer', 'click')
+    await vi.waitFor(() => { expect(shell.snapshot.phase).toBe('plain') })
+    shell.setDraft('second')
+    shell.submit('queue')
+    expect(onSubmit).toHaveBeenLastCalledWith('queue', 'enter')
+  } finally { shell.dispose() }
+})

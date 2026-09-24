@@ -41,6 +41,8 @@ export interface PopupDismissFace {
 export interface SessionInputDeps {
   /** Session-scope ctx handed to claim.submit transactions. */
   actx: Context
+  /** Capture mode and gesture before asynchronous submission or queue admission. */
+  onSubmit?: (mode: InputSubmitMode, source: 'click' | 'enter') => void
   /** Enter adjudication face resolver; absent/undefined answer = every '/' line falls to the default sink. */
   inputTriggers?: (() => InputTriggerController | undefined) | undefined
   /** PopupSelect shell face resolver (dismissal on submit lock / escape). */
@@ -290,7 +292,9 @@ export class SessionInputShell implements SessionInput {
    * (adjudicating/submitting) force-closes the transient layers: the popup
    * dismisses and the menu tracks frozen.
    */
-  submit(mode: InputSubmitMode = 'queue'): void {
+  submit(mode: InputSubmitMode = 'queue', source: 'click' | 'enter' = 'enter'): void {
+    if (this.disposed) return
+    if ((this.snapshot.phase === 'plain' || this.snapshot.phase === 'claimed') && (this.snapshot.draft.trim() !== '' || this.attachmentIds.length > 0)) this.deps.onSubmit?.(mode, source)
     if (this.snapshot.draft.trim() === '' && this.attachmentIds.length > 0) {
       if (this.snapshot.phase === 'plain') {
         const attachmentIds = [...this.attachmentIds]

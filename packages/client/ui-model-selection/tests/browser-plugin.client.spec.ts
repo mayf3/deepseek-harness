@@ -149,6 +149,8 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
   })
+  const track = vi.fn()
+  ctx.provide('productAnalytics', { enabled: true, track } as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   await ctx.plugin(function probe() {}).await()
@@ -173,7 +175,7 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
     return { ...handle, projection }
   }
   return {
-    ctx, fiber, mint, calls, remote,
+    ctx, fiber, mint, calls, remote, track,
     contribution: () => contribution!,
     popup: (): PopupSelectSpec => {
       const ui = contribution!.ui
@@ -510,4 +512,24 @@ describe('ui-model-selection dual entry', () => {
     await Promise.resolve()
     expect(b.calls).toEqual({ models: 2, select: 0 })
   })
+})
+
+
+it('reports successful model and effort changes and no refused switch', async () => {
+  const b = await bench('en')
+  const scope = b.mint('analytics')
+  try {
+    const face = b.seat().inject!(sid('analytics'))
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' })
+    expect(b.track).toHaveBeenCalledWith('model_switch', expect.objectContaining({ switch_to: 'deepseek-official/deepseek-v4-pro' }))
+    b.track.mockClear()
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' })
+    expect(b.track).toHaveBeenCalledExactlyOnceWith('thinking_level_switch', {
+      session_id: 'analytics', model_name: 'deepseek-official/deepseek-v4-pro', switch_from: 'max', switch_to: 'high',
+    })
+    b.track.mockClear()
+    b.rejectSelection()
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    expect(b.track).not.toHaveBeenCalled()
+  } finally { await scope.fiber.dispose(); await b.ctx.fiber.dispose() }
 })

@@ -10,6 +10,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 function mount(step: DesktopOnboardingState['progress']['step'] = 'welcome', balance: 'zero' | 'positive' | 'bonus' | 'failed' | 'loading' = 'positive', status: DesktopOnboardingState['status'] = 'ready', copy: typeof zh = zh, creditFunded = false) {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const track = vi.fn()
   const complete = vi.fn(async () => true)
   const retry = vi.fn(async () => true)
   // The shared host owns the native view; this flow only requests a page from it.
@@ -25,7 +26,7 @@ function mount(step: DesktopOnboardingState['progress']['step'] = 'welcome', bal
       status, visible: true, error: status === 'error' ? 'settings' : null, creditFunded,
       progress: { version: 1, step, purpose: null, process: null, completion: null, usage: 'compact', developerTools: false },
     })
-    return <DesktopOnboarding locale={copy === zh ? 'zh' : 'en'} state={state} t={key => copy[key]} complete={complete} retry={retry}
+    return <DesktopOnboarding track={track} locale={copy === zh ? 'zh' : 'en'} state={state} t={key => copy[key]} complete={complete} retry={retry}
       update={async (change) => {
         setState(current => ({ ...current, status: 'saving' }))
         const saved = await update(change)
@@ -38,7 +39,7 @@ function mount(step: DesktopOnboardingState['progress']['step'] = 'welcome', bal
   }
   render(<App />)
   return {
-    complete, openPlatformPage, release, update, retry,
+    complete, openPlatformPage, release, update, retry, track,
     /** The viewer returning through the shared host's Back action. */
     back: () => { returnFromPage?.() },
   }
@@ -329,4 +330,22 @@ it('returns from purpose to credit without dropping the selected purpose', async
   const h = mount('purpose')
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingBack })) })
   expect(h.update).toHaveBeenCalledWith({ step: 'credit' })
+})
+
+
+it('reports visible pages once, funded Continue, popup actions, and no close event', async () => {
+  const b = mount('credit', 'positive', 'ready', zh, true)
+  expect(b.track).toHaveBeenCalledExactlyOnceWith('onboarding_page_view', { page_name: 'onboarding_recharge' })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingSkip })) })
+  expect(b.track).toHaveBeenCalledWith('onboarding_popup_view', { popup_name: 'skip_charge' })
+  b.track.mockClear()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.close })) })
+  expect(b.track).not.toHaveBeenCalled()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingContinue })) })
+  expect(b.track).toHaveBeenCalledWith('onboarding_page_click', { page_name: 'onboarding_recharge', button_name: 'next' })
+  expect(b.track).toHaveBeenCalledWith('onboarding_page_view', { page_name: 'onboarding_use_case' })
+})
+
+it('does not report the loading surface as a page', () => {
+  expect(mount('welcome', 'loading', 'loading').track).not.toHaveBeenCalled()
 })

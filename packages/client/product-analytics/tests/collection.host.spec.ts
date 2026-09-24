@@ -1,0 +1,121 @@
+import { Context } from '@deepseek-ai/cordis'
+import { createServer } from 'node:http'
+import { once } from 'node:events'
+import { afterEach, expect, it, vi } from 'vitest'
+import ProductTelemetry, { Config as TelemetryConfig, type ProductTelemetryRecord } from '@deepseek-ai/dsh-host-product-telemetry-otel'
+import { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import { CompactionId } from '@deepseek-ai/dsh-compaction'
+import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
+import Analytics from '../src/index.ts'
+
+const cleanup: (() => Promise<void>)[] = []
+afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
+
+async function setup(enabled: boolean) {
+  const ctx = new Context()
+  cleanup.push(() => ctx.fiber.dispose())
+  const readRecord = vi.fn().mockResolvedValue({ kind: 'grant', payload: { id: 'login-device', ignored: 'private-device-field' } })
+  const getPlatformSession = vi.fn().mockResolvedValue({ userId: 'user-1', token: 'private-platform-token' })
+  const emit = vi.fn<(record: ProductTelemetryRecord) => void>()
+  ctx.provide('credentials', { readRecord } as never)
+  ctx.provide('deepseekAccount', { getPlatformSession } as never)
+  ctx.provide('webServer', {} as never)
+  ctx.provide('productTelemetry', { emit } as never)
+  const fiber = await ctx.plugin(Analytics, { enabled, appVersion: 'test-version' })
+  return { ctx, fiber, readRecord, getPlatformSession, emit }
+}
+
+it('disabled collection does not read identity or submit an event', async () => {
+  const b = await setup(false)
+  expect(b.ctx.productAnalytics.enabled()).toBe(false)
+  await b.ctx.productAnalytics.report({ eventName: 'desktop_app_launch', timestamp: 100, attributes: {} })
+  expect(b.readRecord).not.toHaveBeenCalled()
+  expect(b.getPlatformSession).not.toHaveBeenCalled()
+  expect(b.emit).not.toHaveBeenCalled()
+})
+
+it('reuses login identity and copies only approved common fields', async () => {
+  const b = await setup(true)
+  await b.ctx.productAnalytics.report({ eventName: 'auth_page_click', timestamp: 100, attributes: { button_name: 'sign_in' } })
+  expect(b.readRecord).toHaveBeenCalledWith('deepseek-account-platform/device')
+  expect(b.emit).toHaveBeenCalledExactlyOnceWith({
+    eventName: 'auth_page_click', body: 'auth_page_click', timestamp: 100,
+    attributes: { button_name: 'sign_in', device_id: 'login-device', user_id: 'user-1', app_version: 'test-version', os_version: expect.any(String) as string },
+  })
+  expect(JSON.stringify(b.emit.mock.calls)).not.toContain('private-')
+})
+
+it('missing identity does not discard an otherwise valid event', async () => {
+  const b = await setup(true)
+  b.readRecord.mockRejectedValueOnce(new Error('credential store unavailable'))
+  b.getPlatformSession.mockResolvedValueOnce(undefined)
+  await b.ctx.productAnalytics.report({ eventName: 'plugin_add_button_click', timestamp: 100, attributes: {} })
+  expect(b.emit.mock.calls[0]?.[0].attributes).toEqual({ app_version: 'test-version', os_version: expect.any(String) as string })
+})
+
+it('unload suppresses an identity lookup that settles after disposal', async () => {
+  const b = await setup(true)
+  const pending = Promise.withResolvers<undefined>()
+  b.readRecord.mockReturnValueOnce(pending.promise)
+  const reporting = b.ctx.productAnalytics.report({ eventName: 'desktop_app_launch', timestamp: 100, attributes: {} })
+  await b.fiber.dispose()
+  pending.resolve(undefined)
+  await reporting
+  expect(b.emit).not.toHaveBeenCalled()
+})
+
+it('writes the selected event through the real exporter to an isolated collector', async () => {
+  const captures: string[] = []
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = []
+    req.on('data', (chunk: Buffer) => chunks.push(chunk))
+    req.on('end', () => { captures.push(Buffer.concat(chunks).toString()); res.end('{}') })
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  cleanup.push(async () => { const done = once(server, 'close'); server.close(); server.closeAllConnections(); await done })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('missing collector port')
+  const ctx = new Context()
+  cleanup.push(() => ctx.fiber.dispose())
+  ctx.provide('credentials', { readRecord: async () => undefined } as never)
+  ctx.provide('deepseekAccount', { getPlatformSession: async () => undefined } as never)
+  ctx.provide('webServer', {} as never)
+  const exporter = await ctx.plugin(ProductTelemetry, TelemetryConfig({ endpoint: `http://127.0.0.1:${address.port}/v1/logs`, serviceName: 'test', serviceVersion: '1', compression: 'none' }))
+  await ctx.plugin(Analytics, { enabled: true })
+  await ctx.productAnalytics.report({ eventName: 'api_key_save_click', timestamp: 1_800_000_000_000, attributes: {} })
+  await exporter.dispose()
+  expect(captures).toHaveLength(1)
+  expect(JSON.parse(captures[0]!)).toMatchObject({ resourceLogs: [{ scopeLogs: [{ logRecords: [{ eventName: 'api_key_save_click', timeUnixNano: '1800000000000000000' }] }] }] })
+  expect(captures[0]).not.toContain('device_id')
+  expect(captures[0]).not.toContain('app_version')
+})
+
+it.each([true, false])('collects live manual and automatic compaction only when enabled: %s', async (enabled) => {
+  const b = await setup(enabled)
+  const session = Session.create(SessionId('analytics-compaction'))
+  b.ctx.emit('session/event', session, { type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } })
+  for (const turn of [null, 1]) {
+    b.ctx.emit('session/event', session, { type: 'compaction/start', seq: SessionSeq(1), time: 1,
+      data: { compactionId: CompactionId('analytics-compaction'), turn } })
+  }
+  if (enabled) await vi.waitFor(() => { expect(b.emit).toHaveBeenCalledTimes(2) })
+  expect(b.emit.mock.calls.map(([event]) => event.attributes?.trigger_type)).toEqual(enabled ? ['manual', 'auto'] : [])
+  expect(b.readRecord).toHaveBeenCalledTimes(enabled ? 2 : 0)
+})
+
+it.each([true, false])('publishes the launch-time collection flag to renderers: %s', async (enabled) => {
+  const b = await setup(enabled)
+  const injections: IndexInjection[] = []
+  b.ctx.emit('webserver/index-inject', injections)
+  expect(injections).toEqual([{ kind: 'global', name: '__DSH_PRODUCT_ANALYTICS__', value: enabled }])
+})
+
+it('omits an unavailable account and isolates exporter submission failure', async () => {
+  const b = await setup(true)
+  b.getPlatformSession.mockRejectedValueOnce(new Error('account unavailable'))
+  await b.ctx.productAnalytics.report({ eventName: 'desktop_app_launch', timestamp: 1, attributes: {} })
+  expect(b.emit.mock.calls[0]![0].attributes).not.toHaveProperty('user_id')
+  b.emit.mockImplementationOnce(() => { throw new Error('exporter unavailable') })
+  await expect(b.ctx.productAnalytics.report({ eventName: 'desktop_app_launch', timestamp: 2, attributes: {} })).resolves.toBeUndefined()
+})

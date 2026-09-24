@@ -87,7 +87,9 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
     ...overrides,
   }
   const probe = { fastest: overrides.fastest ?? vi.fn(() => Promise.resolve(ok(null))) }
+  const track = vi.fn()
   const ctx = {
+    get: () => ({ enabled: true, track }),
     configForms: { describe: () => ({ getSnapshot: () => ({ view: { namespaces: [] } }), subscribe: () => () => {} }), get: vi.fn((id: string) => `form:${id}`) },
     remote: { pluginManager: plugins, pluginInventory: inventory, pluginRegistryProbe: probe },
   } as never
@@ -100,7 +102,7 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
     await vi.waitFor(() => { expect(state().install.phase).toBe('starting') })
     return state().install.requestId as PluginInstallRequestId
   }
-  return { plugins, inventory, probe, controller, face, state, started }
+  return { plugins, inventory, probe, controller, face, state, started, track }
 }
 
 it('hands a custom page the shared configuration form of its entry', () => {
@@ -1383,4 +1385,60 @@ it('recognizes the official registry without a trailing slash and with uppercase
   })
   face.openInstall()
   await vi.waitFor(() => { expect(state().install.registry).toEqual({ kind: 'offered', registry: MIRROR }) })
+})
+
+
+describe('desktop analytics outcomes', () => {
+  it('reports input inspection failure separately from cancellation', async () => {
+    const b = bench({ inspect: vi.fn(async () => ok({ status: 'refused', problem: 'not-bundle', reason: 'not a bundle' })) })
+    b.face.openInstall()
+    b.face.editInstallSpec('dsh-new')
+    b.face.runInstall()
+    await vi.waitFor(() => { expect(b.track).toHaveBeenCalledWith('install_plugin_result', expect.objectContaining({ input_value: 'dsh-new', result_status: 'failed', is_success: false, error_reason: 'not-bundle', duration: expect.any(Number) as number })) })
+    expect(b.track).toHaveBeenCalledWith('plugin_install_click', { input_value: 'dsh-new', plugin_type: 'bundle' })
+  })
+
+  it('reports unknown only after recovery confirms the result is absent', async () => {
+    const lost = deferred<ReturnType<typeof ok<ChangeResult | null>>>()
+    const b = bench({ installBundle: vi.fn(async () => refused('gateway/internal', 'offline')), waitForInstall: vi.fn(() => lost.promise) })
+    b.face.openInstall()
+    b.face.editInstallSpec('dsh-new')
+    b.face.runInstall()
+    await vi.waitFor(() => { expect(b.plugins.waitForInstall).toHaveBeenCalledTimes(1) })
+    expect(b.track.mock.calls.filter(call => call[0] === 'install_plugin_result')).toEqual([])
+    lost.resolve(ok(null))
+    await vi.waitFor(() => { expect(b.track).toHaveBeenCalledWith('install_plugin_result', expect.objectContaining({ result_status: 'unknown', is_success: false })) })
+    b.face.reconcileInstall()
+    expect(b.track.mock.calls.filter(call => call[0] === 'install_plugin_result')).toHaveLength(1)
+  })
+
+  it('closing during inspection reports cancellation once without an error reason', async () => {
+    const inspecting = deferred<ReturnType<typeof ok<typeof INSPECTED>>>()
+    const b = bench({ inspect: vi.fn(() => inspecting.promise) })
+    b.face.openInstall()
+    b.face.editInstallSpec('dsh-new')
+    b.face.runInstall()
+    await vi.waitFor(() => { expect(b.plugins.inspect).toHaveBeenCalledTimes(1) })
+    b.face.closeInstall()
+    inspecting.resolve(ok(INSPECTED))
+    await Promise.resolve()
+    const results = b.track.mock.calls.filter(call => call[0] === 'install_plugin_result')
+    expect(results).toHaveLength(1)
+    expect(results[0]?.[1]).toMatchObject({ result_status: 'cancelled', is_success: false })
+    expect(results[0]?.[1]).not.toHaveProperty('error_reason')
+    expect(b.plugins.installBundle).not.toHaveBeenCalled()
+  })
+
+  it('uses bundle and plugin types only after successful changes', async () => {
+    const b = bench()
+    await b.controller.load()
+    b.face.setEnabled(BUNDLE.name, true)
+    await vi.waitFor(() => { expect(b.track).toHaveBeenCalledWith('plugin_toggle', { plugin_name: BUNDLE.name, plugin_type: 'bundle', is_enabled: true, is_builtin: false }) })
+    b.face.setRowEnabled(ROW_ENTRY, false)
+    await vi.waitFor(() => { expect(b.track).toHaveBeenCalledWith('plugin_toggle', { plugin_name: BUNDLE.name, plugin_type: 'plugin', is_enabled: false, is_builtin: false }) })
+    b.plugins.setBundleEnabled.mockResolvedValueOnce(ok({ ...APPLIED, application: 'cancelled' }))
+    b.face.setEnabled(BUNDLE.name, false)
+    await vi.waitFor(() => { expect(b.state().busy).toEqual([]) })
+    expect(b.track.mock.calls.filter(call => call[0] === 'plugin_toggle')).toHaveLength(2)
+  })
 })

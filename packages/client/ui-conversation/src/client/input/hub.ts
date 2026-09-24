@@ -7,6 +7,10 @@
  * listeners on each Session context and owns the default-sink choreography: every session is a
  * real host entity, so the sink is one unconditional prompt path.
  */
+import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
+import type { ModelSelection, ModelSelectionProjection, ModelProviderGroup } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { PlanProjection } from '@deepseek-ai/dsh-plan-mode/types'
+import type { GoalProjection } from '@deepseek-ai/dsh-goal/types'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   ISessions, SessionBinding, SessionFace,
@@ -90,6 +94,30 @@ export class InputHub implements SessionInputResolver {
     const { session, ctx: actx } = binding
     const shell = new SessionInputShell({
       actx,
+      onSubmit: (mode, source) => {
+        const analytics = this.rootCtx.get('productAnalytics')
+        if (!analytics?.enabled) return
+        const state = session.getSnapshot()
+        const model = session.projections.faceOf('modelSelection').getSnapshot() as ModelSelectionProjection | undefined
+        const plan = session.projections.faceOf('plan').getSnapshot() as PlanProjection | undefined
+        const goal = session.projections.faceOf('goal').getSnapshot() as GoalProjection | null | undefined
+        const directories = this.rootCtx.get('modelDirectories') as {
+          directoryFor(id: SessionId): {
+            store: ObservableSnapshot<{ current: ModelSelection | null; groups: readonly ModelProviderGroup[] }>
+          }
+        } | undefined
+        const directory = directories?.directoryFor(state.sessionId).store.getSnapshot()
+        const selection = directory?.current ?? model?.next ?? model?.lastUsed
+        const selectedGroup = directory?.groups.find(group => group.id === selection?.provider)
+        const selectedModel = selectedGroup?.models.find(candidate => candidate.id === selection?.model)
+        const effort = selection?.reasoningEffort ?? selectedModel?.reasoning?.defaultEffort
+        analytics.track('send_button_click', {
+          ...state.blank ? {} : { session_id: state.sessionId },
+          ...selection === undefined || selection === null ? {} : { model_name: `${selection.provider}/${selection.model}`, ...effort === undefined ? {} : { thinking_effort: effort } },
+          run_mode: plan?.active ? 'plan' : goal?.goal.phase === 'active' ? 'goal' : 'default',
+          submit_source: source, submit_type: state.running ? mode : 'normal',
+        })
+      },
       inputTriggers: () => this.controller(actx),
       popup: () => this.popup(actx),
       inbox: session.projections.faceOf('inbox') as ObservableSnapshot<InboxState | undefined>,
