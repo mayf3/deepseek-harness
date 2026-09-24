@@ -25,6 +25,8 @@ Choose an installed shell from the right sidebar's Start page to run commands in
 <a id="use-this-package"></a>
 ## Use this package
 
+The `terminal.new` command creates a separate terminal in the focused dock pane, replacing a guide and retaining existing content pages. From the conversation or a floating content page, it uses the active dock pane. The guide button displays the current effective shortcut inline without a duplicate tooltip. Windows and macOS Web use the [shortcut service’s platform defaults](../shortcuts/README.md); Linux Web leaves the command unbound by default.
+
 Open the right sidebar and click **New terminal** to open the remembered available shell immediately. Its adjacent arrow opens the installed-shell menu; selecting an item remembers it and opens that shell directly. Discovery runs when the menu opens and does not allocate a terminal. A failed lookup offers Retry in the menu. Use **New tab** to return to the guide and open another terminal.
 
 Double-click the terminal's tab title to rename it. **Take control** makes the current attachment writable when another page owns input. A temporary disconnect preserves the screen and offers **Reconnect**, without exposing transport diagnostics. An exited shell remains visible with its exit code and offers **New terminal**; it never restarts automatically. Exited terminals count toward the Session limit; close unused tabs when the limit is reached.

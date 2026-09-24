@@ -1,8 +1,10 @@
 /** Locale-owned Browser tab copy. */
 export const zh = {
+  'shortcut.hint': '{label} {keys}',
   'type.label': '浏览器',
   'guide.title': '浏览器',
   'guide.description': '浏览网页',
+  'shortcut.noSession': '请先打开一个会话',
   'address.placeholder': '输入 HTTP(S) 地址',
   'address.changed': 'URL 已变化',
   back: '后退',
@@ -32,9 +34,11 @@ export type SidebarBrowserKey = keyof typeof zh
 
 /** English dictionary with the same keys. */
 export const en = {
+  'shortcut.hint': '{label} {keys}',
   'type.label': 'Browser',
   'guide.title': 'Browser',
   'guide.description': 'Browse web pages',
+  'shortcut.noSession': 'Open a session first',
   'address.placeholder': 'Enter an HTTP(S) address',
   'address.changed': 'URL changed',
   back: 'Back',

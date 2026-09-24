@@ -1,4 +1,4 @@
-/** Anchor-preserving tooltips with optional body portals for clipping containers. */
+/** Anchor-preserving tooltips; an optional body portal escapes clipping containers and stacking contexts that cap the bubble's z-index. */
 
 import { cloneElement, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { FocusEventHandler, MouseEventHandler, MutableRefObject, ReactElement, Ref } from 'react'
@@ -9,11 +9,10 @@ import css from './Tooltip.module.css'
 export type TooltipSide = 'right' | 'bottom' | 'top'
 
 /**
- * Suppression channel from a tooltip to the tooltips above it: a tooltip hands
- * this setter to its own descendants, and a visible descendant bubble calls it
- * so the ancestor withdraws its bubble for as long as the descendant shows one.
+ * Suppression channel for enclosing tooltip and hover-card anchors: a visible
+ * tooltip within an anchor withdraws the enclosing preview while its bubble is shown.
  */
-const TooltipSuppression = createContext<((suppressed: boolean) => void) | null>(null)
+export const TooltipSuppression = createContext<((suppressed: boolean) => void) | null>(null)
 
 /** Props Tooltip injects into its anchor child; the child's own handlers are chained ahead of the tooltip's. */
 interface AnchorProps {
@@ -46,8 +45,11 @@ if (typeof window !== 'undefined') {
  * @param props.align - horizontal anchor-edge alignment for 'bottom'/'top' bubbles: 'end' pins
  * the bubble's right edge to the anchor's (for anchors beside other hover surfaces the centered
  * bubble would overlap); default 'center'. Ignored for side 'right'.
- * @param props.portal - render the bubble under document.body to escape containing blocks and clipping ancestors.
+ * @param props.portal - render the bubble under document.body, so an ancestor's clipping or its
+ * stacking context (which confines the bubble's z-index to that context) cannot hide it.
  * @param props.delayMs - hover delay in milliseconds; keyboard focus remains immediate.
+ * @param props.gap - anchor-to-bubble distance in pixels for 'bottom'/'top' bubbles (default 8);
+ * ignored for side 'right'.
  * @param props.disabled - suppress the bubble while true; the anchor renders identically so
  * toggling never remounts it (which would cut its CSS transitions).
  * @param props.maxWidth - bubble width cap in pixels, for labels long enough that the default
@@ -58,7 +60,7 @@ if (typeof window !== 'undefined') {
  * anchor dismisses the bubble until the next trigger, and focus arriving after a pointer
  * interaction (a closing menu refocusing its trigger) never raises it.
  */
-export function Tooltip({ label, side = 'right', align = 'center', delayMs = 0, disabled = false, portal = false, maxWidth, children }: { label: TooltipLabel; side?: TooltipSide; align?: 'center' | 'end'; delayMs?: number; disabled?: boolean; portal?: boolean; maxWidth?: number; children: ReactElement<AnchorProps> }) {
+export function Tooltip({ label, side = 'right', align = 'center', delayMs = 0, gap = 8, disabled = false, portal = false, maxWidth, children }: { label: TooltipLabel; side?: TooltipSide; align?: 'center' | 'end'; delayMs?: number; gap?: number; disabled?: boolean; portal?: boolean; maxWidth?: number; children: ReactElement<AnchorProps> }) {
   const anchor = useRef<HTMLElement | null>(null)
   // React 18 keeps the element's ref outside props; forward it so wrapping an
   // anchor in Tooltip never silently severs the owner's ref.
@@ -79,7 +81,7 @@ export function Tooltip({ label, side = 'right', align = 'center', delayMs = 0, 
     ? 0
     : side === 'right'
       ? pos.top + (pos.bottom - pos.top) / 2
-      : side === 'top' ? pos.top - 8 : pos.bottom + 8
+      : side === 'top' ? pos.top - gap : pos.bottom + gap
   const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Hover and focus are independent triggers: the bubble hides only after
   // BOTH clear (hovering away from a focused anchor must not drop it).
@@ -107,13 +109,13 @@ export function Tooltip({ label, side = 'right', align = 'center', delayMs = 0, 
       const { inlineSize: width, blockSize: height } = size
       const offset = side === 'right' ? 0 : align === 'end' ? width : width / 2
       const left = Math.max(edgeMargin, Math.min(pos.x - offset, window.innerWidth - edgeMargin - width))
-      const fitsBelow = pos.bottom + 8 + height <= window.innerHeight - edgeMargin
-      const fitsAbove = pos.top - 8 - height >= edgeMargin
+      const fitsBelow = pos.bottom + gap + height <= window.innerHeight - edgeMargin
+      const fitsAbove = pos.top - gap - height >= edgeMargin
       if (placement === 'bottom' && !fitsBelow && fitsAbove) placement = 'top'
       else if (placement === 'top' && !fitsAbove && fitsBelow) placement = 'bottom'
       el.style.left = `${left + offset}px`
       el.style.top = `${placement === 'right' ? (pos.top + pos.bottom) / 2
-        : placement === 'top' ? pos.top - 8 : pos.bottom + 8}px`
+        : placement === 'top' ? pos.top - gap : pos.bottom + gap}px`
       el.dataset.side = placement
       el.style.visibility = 'visible'
     }
@@ -127,7 +129,7 @@ export function Tooltip({ label, side = 'right', align = 'center', delayMs = 0, 
       observer.disconnect()
       window.removeEventListener('resize', fit)
     }
-  }, [align, pos, side, suppressed, visible])
+  }, [align, gap, pos, side, suppressed, visible])
   useEffect(() => {
     announce(visible)
     return () => { announce(false) }

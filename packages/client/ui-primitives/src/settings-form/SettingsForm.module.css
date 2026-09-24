@@ -32,7 +32,7 @@
 .save {
   appearance: none;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-md);
   padding: 5px 14px;
   font: inherit;
   font-size: 13px;
