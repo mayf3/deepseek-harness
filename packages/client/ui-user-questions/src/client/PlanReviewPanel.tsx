@@ -67,7 +67,7 @@ export function PlanReviewPanel({ pending, review, t, renderSlot }: PlanReviewPa
           <div className={css.actions}>
             <Button
               variant="outline" className={css.discuss} icon={<IconEditOutlineRegular size={14} />}
-              disabled={busy} onClick={() => { settle(() => pending.cancel()) }}
+              disabled={busy} onClick={() => { settle(() => pending.dismiss()) }}
             >
               {t('plan.discuss')}
             </Button>
