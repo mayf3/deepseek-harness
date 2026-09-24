@@ -16,7 +16,7 @@ The fixed line states the origin of the message: a schedule bound to that Sessio
 
 ## Alternatives considered
 
-**Keep the untrusted-content instruction.** It asserted that the prompt was untrusted input, which the delivered message does not need: the delivery is an ordinary user-role message in the Session the schedule is bound to, and the Session binding check that scopes `schedule_create` and `schedule_update` is the part that constrains who can write the prompt.
+**Keep the untrusted-content instruction.** It asserted that the prompt was untrusted input, which the delivered message does not need: the prompt is written in the Session the schedule is bound to — by the model through `schedule_create` and `schedule_update`, or by the user in the Web task detail — and the delivery is an ordinary user-role message there.
 
 **Change only the recurring batch line.** One-shot and recurring delivery would then disagree about the origin of the same kind of message, and each later wording change would need both renderers edited separately. Both paths now read one constant.
 
@@ -24,4 +24,4 @@ The fixed line states the origin of the message: a schedule bound to that Sessio
 
 Model-visible reminder text changes for both delivery paths, so a Session log recorded before this decision reconstructs the previous framing, and the Web notice that renders a delivered message shows the new line when expanded. Nothing else moves: no session event, storage field, client code, protocol, or durable format changes, and the delivered text remains reconstructable from the log.
 
-The prompt text carries no authorship guarantee. A reminder the model creates can quote text the model read from the web, files, or command output, and that text is delivered under the user-origin line. The Session binding on `schedule_create` and `schedule_update` limits which Session's model can write the task, not where the prompt content came from. A delivery path whose prompt text can originate outside the target Session, or a decision to mark such content again, needs its own framing decision.
+The prompt text carries no authorship guarantee. It is written in the Session the schedule is bound to, by the model through `schedule_create` and `schedule_update` or by the user in the Web task detail, and a model-written reminder can quote text the model read from the web, files, or command output. The task's Session binding scopes which Session's model reaches the task; it is not caller authorization and says nothing about where the prompt content came from. A delivery path whose prompt text can originate outside the target Session, or a decision to mark such content again, needs its own framing decision.
