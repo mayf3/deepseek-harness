@@ -4,13 +4,7 @@ import { verifyCurrentGenerationInWorker } from '../src/migration-verifier.ts'
 const state = vi.hoisted(() => ({ workers: [] as unknown[] }))
 
 vi.mock('node:worker_threads', () => ({
-  Worker: vi.fn(function forbiddenSourceWorker() {
-    throw new Error('source verification must not register TypeScript hooks in a Worker Thread')
-  }),
-}))
-
-vi.mock('../src/verifier-source-process.ts', () => {
-  class Verifier {
+  Worker: class {
     readonly listeners = new Map<string, (value: never) => void>()
     readonly terminate = vi.fn<() => Promise<number>>(() => Promise.resolve(0))
 
@@ -26,11 +20,8 @@ vi.mock('../src/verifier-source-process.ts', () => {
     emit(event: string, value: unknown): void {
       this.listeners.get(event)?.(value as never)
     }
-  }
-  return {
-    spawnSourceVerifier: (entry: URL, request: unknown) => new Verifier(entry, { workerData: request }),
-  }
-})
+  },
+}))
 
 interface FakeWorker {
   readonly entry: string | URL

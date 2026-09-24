@@ -1,9 +1,9 @@
 /** Isolated verification for a staged or competing current JSONL generation. */
 
 import { Worker } from 'node:worker_threads'
+import type { WorkerOptions } from 'node:worker_threads'
 import type { JsonlCompression } from './format.ts'
 import type { JsonlExpectedPrefix, JsonlVerifiedGeneration } from './generation.ts'
-import { spawnSourceVerifier } from './verifier-source-process.ts'
 
 interface VerificationRequest {
   readonly path: string
@@ -70,16 +70,33 @@ class VerificationScheduler {
 
 const verificationScheduler = new VerificationScheduler()
 
-function spawnVerifier(request: VerificationRequest) {
-  /* v8 ignore next 2 -- built-worker coverage owns the bundled path. */
+function workerSpawn(request: VerificationRequest): { readonly entry: string | URL; readonly options: WorkerOptions } {
+  /* v8 ignore next 3 -- built-worker coverage owns the bundled path. */
   if (!import.meta.url.endsWith('.ts')) {
-    return new Worker(new URL('./worker.cjs', import.meta.url), { workerData: request, execArgv: [] })
+    return {
+      entry: new URL('./worker.cjs', import.meta.url),
+      options: { workerData: request, execArgv: [] },
+    }
   }
-  return spawnSourceVerifier(new URL('./worker.ts', import.meta.url), request)
+  const workerEntry = new URL('./worker.ts', import.meta.url)
+  const bootstrap = [
+    `import { register as registerEsm } from ${JSON.stringify(import.meta.resolve('tsx/esm/api'))}`,
+    `import { register as registerCjs } from ${JSON.stringify(import.meta.resolve('tsx/cjs/api'))}`,
+    'registerCjs()',
+    'registerEsm()',
+    `await import(${JSON.stringify(workerEntry.href)})`,
+  ].join('\n')
+  return {
+    entry: new URL(`data:text/javascript,${encodeURIComponent(bootstrap)}`),
+    options: {
+      workerData: request,
+      execArgv: [],
+    },
+  }
 }
 
 /**
- * Verify one current generation in a fresh Worker Thread, or a process for source execution.
+ * Verify one current generation in a fresh Worker Thread.
  * @param path - staged or competing current-generation path.
  * @param compression - configured physical encoding.
  * @param expectedId - Session id expected in the decoded header.
@@ -119,7 +136,8 @@ function runVerificationWorker(
     path, compression, expectedId, expectedEventCount,
     ...(expectedPrefix === undefined ? {} : { expectedPrefix }),
   }
-  const worker = spawnVerifier(request)
+  const { entry, options } = workerSpawn(request)
+  const worker = new Worker(entry, options)
   return new Promise((resolve, reject) => {
     let settled = false
     const cleanup = (): void => {
