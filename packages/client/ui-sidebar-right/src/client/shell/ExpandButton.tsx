@@ -16,7 +16,7 @@
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { InjectFace, HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ReactNode } from 'react'
-import { IconPanelLeftOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPanelLeftOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { createSidebarRightStore } from '../stores.ts'
@@ -38,8 +38,8 @@ export function ExpandButton({ sessionId, useStore, actions, t, useShortcuts }: 
   if (expanded) return null
   return (
     <Tooltip label={shortcut?.keys.length ? t('shortcut.hint', { label: t('chrome.expand'), keys: shortcut.keys.join(' ') }) : t('chrome.expand')} side="bottom" delayMs={500}>
-      <button
-        type="button"
+      <Button
+        size="sm"
         className={css.button}
         aria-label={t('chrome.expandAria')}
         aria-keyshortcuts={shortcut?.aria}
@@ -47,7 +47,7 @@ export function ExpandButton({ sessionId, useStore, actions, t, useShortcuts }: 
         onClick={() => { actions.setExpanded(sessionId, true) }}
       >
         <IconPanelLeftOutlineRegular className={css.icon} />
-      </button>
+      </Button>
     </Tooltip>
   )
 }

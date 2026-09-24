@@ -52,6 +52,8 @@ kind: "package-library"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+菜单采用共享 `MenuSurface` 材质，包括用于背景模糊的 macOS 底层；自定义内容遵循[菜单规则](../../../docs/web-styling.zh.md#component-rules)。
+
 <details>
 <summary>实现细节——点击展开</summary>
 

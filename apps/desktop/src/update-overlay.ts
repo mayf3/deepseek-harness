@@ -48,18 +48,6 @@ export class DesktopUpdateOverlays {
     const follow = (): void => { if (!window.isDestroyed()) window.setBounds(parent.getContentBounds()) }
     parent.on('move', follow)
     parent.on('resize', follow)
-    let closed = false
-    let blur: string | undefined
-    const unblur = (): void => {
-      if (blur === undefined || parent.isDestroyed()) return
-      void parent.webContents.removeInsertedCSS(blur).catch((error: unknown) => { console.warn('desktop update: could not remove background blur', error) })
-      blur = undefined
-    }
-    void parent.webContents.insertCSS('body { filter: blur(2px) !important; }').then((key) => {
-      blur = key
-      if (closed) unblur()
-    }).catch((error: unknown) => { console.warn('desktop update: could not blur background', error) })
-    window.once('closed', () => { closed = true; unblur() })
     window.once('closed', () => { parent.off('move', follow); parent.off('resize', follow) })
     let ready = false
     const show = (): void => {

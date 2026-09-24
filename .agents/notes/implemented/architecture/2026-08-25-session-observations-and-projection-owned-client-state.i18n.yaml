@@ -21,11 +21,11 @@
   en: e550ae9892474276
   zh: fb6a2d9e91ebd4d9
 /agent-note-session-observations-and-projection-owned-client-state/decision/projection-execution-boundary:
-  en: b463e1854d2cc694
-  zh: 84fb04c9ddeb2656
+  en: 148de86941b90f41
+  zh: c065a8e96e28b9d7
 /agent-note-session-observations-and-projection-owned-client-state/decision/read-audiences:
-  en: c94cd4f6ed488c24
-  zh: 12f3b223fdd72c4a
+  en: 888f62659f4d868d
+  zh: e74491e8c85046ee
 /agent-note-session-observations-and-projection-owned-client-state/decision/replayable-client-facts-are-projection-owned:
   en: efded09f0cd30a8e
   zh: 5e16580a39ff3359
@@ -33,8 +33,8 @@
   en: fb8740be674e4708
   zh: 7dc0c89558f51792
 /agent-note-session-observations-and-projection-owned-client-state/decision/domain-applications:
-  en: c45a0429091f1cf4
-  zh: a76c7fe66e22e410
+  en: 4dcae9e00148b11e
+  zh: acfd1b6831cf50fe
 /agent-note-session-observations-and-projection-owned-client-state/decision/failure-and-readiness-boundaries:
   en: 0f90a8bccedf9e71
   zh: 8452dfdf0af00fb3
@@ -45,11 +45,11 @@
   en: 110ca8005f618ad1
   zh: 8f3e83d59334b278
 /agent-note-session-observations-and-projection-owned-client-state/decision/relationship-to-existing-decisions:
-  en: a794043297325db2
-  zh: 6459213d8dc35b1b
+  en: 8d699dfc22ab5c5f
+  zh: 8dcd9fc6bd1594db
 /agent-note-session-observations-and-projection-owned-client-state/verification:
-  en: e1458c504be960a4
-  zh: 12c565a2576450cb
+  en: df17217023668428
+  zh: 88f7da4deffc6bf9
 /agent-note-session-observations-and-projection-owned-client-state/alternatives-considered:
   en: a25138b4298cda16
   zh: 92799a9bd8867d47

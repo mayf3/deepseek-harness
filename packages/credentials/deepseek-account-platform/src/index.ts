@@ -59,7 +59,7 @@ export const Config = Schema.object({
   requestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
   accountRequestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
   requestTimeoutMs: Schema.number().min(1).max(120_000).default(30_000),
-  balanceTimeoutMs: Schema.number().min(1).max(120_000).default(2_000),
+  balanceTimeoutMs: Schema.number().min(1).max(120_000).default(30_000),
   logoutMaxRetries: Schema.number().min(0).max(5).step(1).default(5),
   logoutRetryDelayMs: Schema.number().min(1).max(60_000).default(1_000),
   attemptTimeoutMs: Schema.number().min(1).max(3_600_000).default(600_000),

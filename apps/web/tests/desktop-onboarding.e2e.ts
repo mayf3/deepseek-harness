@@ -240,7 +240,7 @@ describe.skipIf(MODE === 'record')('web e2e: App-only desktop onboarding', () =>
     expect(await page.getByRole('button', { name: '开始设置', exact: true }).count()).toBe(0)
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByRole('heading', { name: '暂时跳过充值？', exact: true }).waitFor()
-    expect(await page.locator('[data-desktop-onboarding]').evaluate(element => getComputedStyle(element).filter)).toBe('blur(2px)')
+    expect(await page.locator('[data-desktop-onboarding]').evaluate(element => getComputedStyle(element).filter)).toBe('none')
     expect(await page.getByRole('dialog').evaluate(element => getComputedStyle(element.previousElementSibling!).backdropFilter)).toBe('none')
     await page.getByRole('button', { name: '前往充值', exact: true }).click()
     await page.getByRole('button', { name: '返回 DeepSeek Harness', exact: true }).waitFor()
