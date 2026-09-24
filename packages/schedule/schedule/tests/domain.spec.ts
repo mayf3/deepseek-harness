@@ -139,7 +139,7 @@ describe('version-1 Schedule decoding and folding', () => {
     { ...atCreateData(), schedule: { ...atCreateData().schedule, prompt: ' ' } },
     { ...everyCreateData(), schedule: { ...everyCreateData().schedule, extra: true } },
     { ...everyCreateData(), schedule: { ...everyCreateData().schedule, prompt: ' ' } },
-    { ...everyCreateData(), schedule: { ...everyCreateData().schedule, everySeconds: 299 } },
+    { ...everyCreateData(), schedule: { ...everyCreateData().schedule, everySeconds: 59 } },
     { ...everyCreateData(), schedule: { ...everyCreateData().schedule, everySeconds: 300.5 } },
     { ...everyCreateData(), schedule: { ...everyCreateData().schedule, everySeconds: '300' } },
     { ...everyCreateData(), schedule: { ...everyCreateData().schedule, everySeconds: Number.MAX_SAFE_INTEGER } },
@@ -320,11 +320,11 @@ describe('fixed-rate records and durable progression', () => {
       kind: 'every',
       title: 'check metrics',
       prompt: 'check metrics',
-      everySeconds: 300,
-      scheduledAt: '2026-08-05T12:05:00.000Z',
+      everySeconds: 60,
+      scheduledAt: '2026-08-05T12:01:00.000Z',
     })
     for (const [seconds, code] of [
-      [299, 'frequency_too_high'],
+      [59, 'frequency_too_high'],
       [1.5, 'invalid_rule'],
       [Number.MAX_SAFE_INTEGER, 'time_out_of_range'],
     ] as const) {
