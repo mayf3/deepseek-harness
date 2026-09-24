@@ -15,8 +15,9 @@
  * selected effort come from the Host rather than a client-owned vocabulary. A
  * rejected selection announces through the shared transient Toast anchored to
  * the composer card; the in-menu strip with Retry remains the catalog-load
- * surface. While a selection is pending, the chosen row's check slot shows a
- * spinner, and the trigger's chevron does while the menu is closed.
+ * surface. While the directory's pending selection is unsettled, the trigger
+ * shows a spinner in place of its chevron, and each row whose value that
+ * selection carries shows one in place of its check mark.
  */
 import { MenuSurface } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
@@ -42,11 +43,6 @@ interface EffortChoice {
   key: string
   effort: string | undefined
   label: string
-}
-
-/** Row key of one model choice; effort rows use their own `effort:` keys. */
-function modelKey(provider: string, model: string): string {
-  return `model:${provider}/${model}`
 }
 
 /** Unplaced portal card: hidden but laid out at a fixed origin so offsetWidth/offsetHeight are real (Menu primitive's measure pass). */
@@ -75,8 +71,6 @@ export function ModelSelect(
   const lastActionRef = useRef<'load' | 'select'>('load')
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
   const toastSeq = useRef(0)
-  // Row key of the selection this seat submitted, until it settles.
-  const [pending, setPending] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -122,7 +116,8 @@ export function ModelSelect(
         label: effort.name,
       })),
     ], [reasoning, t])
-  const busy = state.status === 'selecting'
+  const { pending } = state
+  const busy = pending !== null
 
   const reload = (): void => {
     lastActionRef.current = 'load'
@@ -290,7 +285,6 @@ export function ModelSelect(
   }
 
   const settleSelection = (result: Awaited<ReturnType<ModelSelectInjected['select']>>): void => {
-    setPending(null)
     if (result === undefined) return
     if (result.ok) {
       if (rootRef.current !== null) close(true)
@@ -306,9 +300,8 @@ export function ModelSelect(
     })
   }
 
-  const submit = (selection: ModelSelection, key: string): void => {
+  const submit = (selection: ModelSelection): void => {
     lastActionRef.current = 'select'
-    setPending(key)
     // Disabled option rows cannot retain focus while a selection is pending.
     triggerRef.current?.focus()
     void select(selection).then(settleSelection)
@@ -319,10 +312,10 @@ export function ModelSelect(
       close(true)
       return
     }
-    submit(selection, modelKey(selection.provider, selection.model))
+    submit(selection)
   }
 
-  const chooseEffort = (effort: string | undefined, key: string): void => {
+  const chooseEffort = (effort: string | undefined): void => {
     if (state.current === null) return
     if (effectiveEffort === effort) {
       close(true)
@@ -333,7 +326,7 @@ export function ModelSelect(
       model: state.current.model,
       ...effort === undefined ? {} : { reasoningEffort: effort },
     }
-    submit(selection, key)
+    submit(selection)
   }
 
   const waiting = state.current === null && state.status === 'loading'
@@ -389,7 +382,7 @@ export function ModelSelect(
         <IconDataOutlineRegular className={css.triggerIcon} size={16} />
         <span className={css.triggerLabel}>{modelLabel}</span>
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
-        {busy && !open
+        {busy
           ? <StateDot state="ongoing" />
           : <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />}
       </button>
@@ -449,7 +442,6 @@ export function ModelSelect(
                       <div className={css.groupTitle} id={headingId}>{group.id === 'deepseek-account' ? t('provider.account') : group.name}</div>
                       {group.models.map((model) => {
                         const selected = state.current?.provider === group.id && state.current.model === model.id
-                        const key = modelKey(group.id, model.id)
                         return (
                           <button
                             ref={itemRef()}
@@ -466,7 +458,7 @@ export function ModelSelect(
                               <span className={css.modelName}>{model.name}</span>
                             </span>
                             <span className={css.check}>
-                              {busy && pending === key
+                              {pending?.provider === group.id && pending.model === model.id
                                 ? <StateDot state="ongoing" />
                                 : selected ? <IconCheckOutlineRegular /> : null}
                             </span>
@@ -502,13 +494,14 @@ export function ModelSelect(
                     className={clsx(css.option, effectiveEffort === level.effort && css.selected)}
                     key={level.key}
                     disabled={busy}
-                    onClick={() => { chooseEffort(level.effort, level.key) }}
+                    onClick={() => { chooseEffort(level.effort) }}
                   >
                     <span className={css.optionCopy}>
                       <span className={css.modelName}>{level.label}</span>
                     </span>
                     <span className={css.check}>
-                      {busy && pending === level.key
+                      {pending !== null && pending.provider === state.current?.provider
+                        && pending.model === state.current.model && pending.reasoningEffort === level.effort
                         ? <StateDot state="ongoing" />
                         : effectiveEffort === level.effort ? <IconCheckOutlineRegular /> : null}
                     </span>
