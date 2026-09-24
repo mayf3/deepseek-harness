@@ -20,6 +20,8 @@ declare module '@deepseek-ai/cordis' {
 export interface PlatformSession {
   readonly origin: string
   readonly token: string
+  /** Stable issuer account ID from the last successful profile read; null requires disposable browser storage. */
+  readonly userId: AccountUserId | null
   /** Optional dist query value selecting the embedded frontend deployment. */
   readonly embeddedPageDist?: string
   /** Host-only deployment request headers; the consuming client adds its own dynamic identity, and neither reaches renderer bootstrap. */
@@ -37,6 +39,8 @@ export abstract class DeepSeekAccount extends Service {
   abstract getState(): Promise<AccountView>
   /**
    * Query Platform profile independently of wallet balances.
+   * A ready result whose stable profile ID first becomes available or changes notifies watch
+   * consumers, so identity consumers re-read getPlatformSession; repeated IDs stay silent.
    * @param client - identity of the requesting UI for this call.
    * @returns profile outcome, or null if signed out or the grant changed during the query.
    */
@@ -100,8 +104,9 @@ export abstract class DeepSeekAccount extends Service {
    */
   abstract rejectToken(token: string): Promise<void>
   /**
-   * Read credentials for the configured Platform origin, bound to their issuing environment.
-   * @returns a Host-only snapshot, or null while signed out.
+   * Read credentials for the configured Platform origin, bound to their issuing environment, and
+   * pair them with the account ID from the last successful profile read; no profile request is made.
+   * @returns a Host-only snapshot, or null while signed out or when the credential changed during the read.
    */
   abstract getPlatformSession(): Promise<PlatformSession | null>
 }

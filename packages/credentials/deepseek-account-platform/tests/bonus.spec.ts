@@ -8,7 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AuthorizationService from '@deepseek-ai/dsh-authorization'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
-import type { AccountBonusBatch, AccountBonusOrderId, AccountClientMetadata, AccountUserId } from '@deepseek-ai/dsh-deepseek-account'
+import type { AccountBonusBatch, AccountBonusOrderId, AccountClientMetadata, AccountUserId, AccountView } from '@deepseek-ai/dsh-deepseek-account'
 import { PlatformAccount } from '../src/index.ts'
 
 const cleanups: Array<() => Promise<unknown>> = []
@@ -165,6 +165,24 @@ it('does not reuse a cached identity from another grant', async () => {
     ['/auth-api/v0/users/current', 'rotated-token'],
     ['/api/v0/users/get_unnotified_bonuses', 'rotated-token'],
   ])
+})
+
+it('publishes the identity a bonus read resolved, so the session can scope account storage', async () => {
+  const f = await fixture()
+  await f.grant('test-account-token')
+  const lifetime = new AbortController()
+  const states: AccountView[] = []
+  const watching = (async () => { for await (const state of f.account.watch(lifetime.signal)) states.push(state) })()
+  try {
+    await expect.poll(() => states.length).toBe(1)
+    expect(await f.account.getUnnotifiedBonuses(clientMetadata('en'))).toMatchObject({ accountId: USER })
+    // The bonus read names the account, so identity consumers re-read the session snapshot.
+    await expect.poll(() => states.length).toBe(2)
+    expect(await f.account.getPlatformSession()).toMatchObject({ userId: USER, token: 'test-account-token' })
+  } finally {
+    lifetime.abort()
+    await watching
+  }
 })
 
 it('reads unnotified bonuses with the platform origin, grant header, and locale header', async () => {
