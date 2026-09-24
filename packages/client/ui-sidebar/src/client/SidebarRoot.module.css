@@ -235,6 +235,9 @@
   padding: 0;
   margin-bottom: 12px;
   justify-content: flex-start;
+  /* The settled rail's 36px toggle is wider than this 35px row; the base row's clip would cut
+     the control's right edge, so the rail stops clipping once the slide has settled. */
+  overflow: visible;
 }
 
 /* Brand group (figma I133:7632): the full wordmark rides the text ink
@@ -330,6 +333,13 @@
 
 .iconButton:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The toggle is flush with .logoRow, which clips its own overflow, so an outward ring loses
+   the pixels that leave the row. Draw this control's ring inside its own box instead. */
+.iconButton.toggle:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
 }
 
 .collapsed .iconButton {
@@ -505,7 +515,7 @@
 }
 
 .panelRow:focus-visible {
-  outline: 2px solid var(--dsw-alias-label-primary);
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: -2px;
 }
 

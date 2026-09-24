@@ -189,7 +189,7 @@
 }
 
 .searchField input:focus-visible {
-  outline: 0;
+  outline: none;
 }
 
 /* The custom right-side button owns clearing the search field. */
@@ -486,7 +486,7 @@
 }
 
 .editName:focus {
-  box-shadow: 0 1px var(--dsw-alias-state-business-primary);
+  box-shadow: 0 1px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
 }
 
 /* An ended task's stored name as plain text on the control's step, padded to
@@ -688,7 +688,7 @@
 }
 
 .retentionInfo:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 2px;
 }
 
@@ -788,7 +788,7 @@
 }
 
 .ruleRows .ruleControl:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
 
@@ -838,7 +838,7 @@
 }
 
 .ruleValue:focus-visible .ruleValueFace {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
 
@@ -1294,7 +1294,7 @@
 }
 
 .linkedSession:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
 
@@ -1362,7 +1362,7 @@
 }
 
 .page :focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 2px;
 }
 

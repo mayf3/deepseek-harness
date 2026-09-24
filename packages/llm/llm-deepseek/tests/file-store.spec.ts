@@ -68,8 +68,11 @@ function uploadFetch(now: () => number = () => NOW) {
 
 describe('DeepSeekFileStore', () => {
   it('isolates credential values and header kinds while reusing reordered headers', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-file-credentials-'))
+    roots.push(dir)
     const remote = uploadFetch(() => NOW)
-    const store = new DeepSeekFileStore({ fetch: remote.fetchImpl, now: () => NOW })
+    const index = new DeepSeekUploadIndex(join(dir, 'index.json'))
+    const store = new DeepSeekFileStore({ index, fetch: remote.fetchImpl, now: () => NOW })
     const first = await store.ensureUploaded(VERSION, CONNECTION, POLICY)
     const account = await store.ensureUploaded(VERSION, { ...CONNECTION, headers: { 'x-dsh-auth-token': 'key' } }, POLICY)
     const replacement = await store.ensureUploaded(VERSION, { ...CONNECTION, headers: { 'x-api-key': 'new-key' } }, POLICY)

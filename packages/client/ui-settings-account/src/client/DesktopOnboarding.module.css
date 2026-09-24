@@ -198,7 +198,7 @@
   from { --dsh-onboarding-border-angle: 90deg; }
   to { --dsh-onboarding-border-angle: 450deg; }
 }
-.card:focus-visible, .card:has(:focus-visible) { outline: 2px solid var(--dsw-alias-onboarding-accent); outline-offset: 5px; }
+.card:focus-visible, html:not([data-input-modality='pointer']) .card:has(:focus-visible) { outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 5px; }
 .card[aria-disabled='true'] { cursor: wait; }
 .cardTop { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; height: 40px; margin-bottom: 12px; }
 .cardCheckbox { position: static; }
@@ -236,7 +236,7 @@
 
 .navigation button { pointer-events: auto; }
 .navigation button { display: flex; align-items: center; gap: 20px; padding: 0; border: 0; background: transparent; color: var(--dsw-alias-label-tertiary); font: inherit; font-size: 16px; font-weight: 300; line-height: 32px; cursor: pointer; }
-.navigation button:focus-visible { outline: 2px solid var(--dsw-alias-onboarding-accent); outline-offset: 5px; }
+.navigation button:focus-visible { outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 5px; }
 .navigation button:hover:not(:disabled) { color: var(--dsw-alias-label-primary); }
 .backIcon { width: 17px; height: 14px; flex: none; background: currentColor; mask-size: contain; mask-repeat: no-repeat; mask-position: center; }
 .status { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-size: 14px; line-height: 22px; }
@@ -296,7 +296,7 @@
 }
 
 .page .action:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 3px;
 }
 

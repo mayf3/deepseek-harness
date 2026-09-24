@@ -171,7 +171,6 @@ export function apply(ctx: Context): void {
             .filter(entry => entry !== undefined)
         }
         case 'descendants': {
-          // Complete-corpus reads can await storage, so they observe tool cancellation.
           const entries = await ctx.subagents.listDescendants(parent.id, exec.signal)
           return entries
             .map(entry => project(ctx.agents, entry, entry))
