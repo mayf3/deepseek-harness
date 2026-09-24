@@ -271,7 +271,7 @@
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--dsw-radius-xs);
   color: var(--dsw-alias-label-secondary);
   background: transparent;
   cursor: pointer;

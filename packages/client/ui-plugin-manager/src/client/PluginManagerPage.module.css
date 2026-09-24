@@ -85,7 +85,7 @@
 .banner {
   margin: 0;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: var(--dsw-radius-md);
   font-size: 12px;
   line-height: 18px;
   background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 12%, transparent);
@@ -183,7 +183,7 @@
   /* The hover surface reaches 8px past the content on both sides while the
      row's content stays aligned with the page header. */
   margin: 0 -8px;
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-xl);
   /* The page itself scrolls on the base surface. Anything that scrolls inside
      a card draws the l2 thumb (ui-theme styles/scrollbar.css rebinding contract). */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
@@ -206,7 +206,7 @@
   height: 48px;
   /* The same hairline frame as the component rows below. */
   border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 10px;
+  border-radius: var(--dsw-radius-lg);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -271,7 +271,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 12px;
+  border-radius: inherit;
 }
 
 .cardOpen:focus-visible {
@@ -310,7 +310,7 @@
   width: 28px;
   height: 28px;
   border: 0;
-  border-radius: 28px;
+  border-radius: var(--dsw-radius-sm);
   background: transparent;
   color: var(--dsw-alias-label-caption);
   cursor: pointer;
@@ -332,7 +332,7 @@
   font-size: 13px;
   line-height: 20px;
   padding: 0 12px;
-  border-radius: 16px;
+  border-radius: var(--dsw-radius-md);
 }
 
 .iconWrap {
@@ -369,7 +369,7 @@
   width: 28px;
   height: 28px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-sm);
   background: transparent;
   color: var(--dsw-alias-state-error-primary);
   cursor: pointer;
@@ -454,7 +454,7 @@
   height: 40px;
   padding: 0 14px;
   border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 14px;
+  border-radius: var(--dsw-radius-md);
   outline: none;
   background: var(--dsw-alias-bg-layer-3);
   font: inherit;
@@ -505,7 +505,7 @@
   gap: 10px;
   padding: 8px 14px 14px;
   border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 14px;
+  border-radius: var(--dsw-radius-lg);
   background: var(--dsw-alias-bg-layer-1);
 }
 
@@ -523,7 +523,7 @@
   gap: 8px;
   margin: 0;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--dsw-radius-md);
   background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 12%, transparent);
   font-size: 12px;
   line-height: 18px;
@@ -613,7 +613,7 @@
   height: 26px;
   padding: 0 8px 0 10px;
   border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-sm);
   background: var(--dsw-alias-bg-layer-2);
   font: inherit;
   font-size: 12.5px;
@@ -657,7 +657,7 @@
   margin: 0;
   padding: 8px 10px 12px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-lg);
   background: var(--dsw-alias-bg-layer-2);
   /* The neutral stroke is the elevation's hairline, not a border beside it. */
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
@@ -671,7 +671,7 @@
   gap: 4px;
   padding: 8px 10px;
   border: 0.5px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--dsw-radius-lg);
   cursor: pointer;
 }
 
@@ -724,7 +724,7 @@ label.registryOption {
   margin-left: 26px;
   padding: 0 10px;
   border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-md);
   background: var(--dsw-alias-bg-layer-3);
   font: inherit;
   font-size: 13px;
@@ -754,7 +754,7 @@ label.registryOption {
   width: 100%;
   height: 40px;
   justify-content: center;
-  border-radius: 14px;
+  border-radius: var(--dsw-radius-md);
 }
 
 /* The installing, installed, and failed screens: a head row, the centred
@@ -808,7 +808,7 @@ label.registryOption {
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   background: none;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
@@ -867,7 +867,7 @@ label.registryOption {
   gap: 6px;
   padding: 16px;
   border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-lg);
   text-align: center;
 }
 
@@ -897,7 +897,7 @@ label.registryOption {
 
 .footAction {
   height: 32px;
-  border-radius: 16px;
+  border-radius: var(--dsw-radius-md);
 }
 
 .detailsToggle {
@@ -947,7 +947,7 @@ label.registryOption {
   align-self: flex-start;
   margin: 0;
   padding: 0 6px;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   background: var(--dsw-alias-bg-layer-3);
   font-size: 11px;
   line-height: 18px;
@@ -964,7 +964,7 @@ label.registryOption {
 .resultWarn {
   margin: 0;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: var(--dsw-radius-md);
   font-size: 13px;
   line-height: 20px;
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent);
@@ -982,7 +982,7 @@ label.registryOption {
   gap: 8px;
   padding: 12px 14px;
   border: 0.5px solid color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 40%, transparent);
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-lg);
   background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 8%, transparent);
 }
 
@@ -1020,7 +1020,7 @@ label.registryOption {
 .approvalList code {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   background: var(--dsw-alias-bg-layer-3);
   font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 12px;
@@ -1226,7 +1226,7 @@ label.registryOption {
   width: 40px;
   height: 40px;
   border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 10px;
+  border-radius: var(--dsw-radius-md);
   color: var(--dsw-alias-label-secondary);
 }
 

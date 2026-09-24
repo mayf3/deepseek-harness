@@ -35,7 +35,7 @@ DeepSeek 账号和 API Key 路由显示为独立提供方分组，各自展示�
 
 ### 模型与推理强度
 
-模型按提供方分组。composer 菜单只显示模型与推理强度名称，DeepSeek 账号排第一，DeepSeek 排第二，第三方提供方保持目录原有顺序。`/model` 弹窗显示提供方名称与目录说明；其中两个内置 DeepSeek 模型的说明使用当前语言，外部提供方说明保持原文。弹窗应用所选模型的默认推理强度；composer 随后可以选择任一已公布的推理强度。适配器没有推理元数据时不显示 Effort 行；不存在任意推理强度输入。
+模型按提供方分组。composer 菜单只显示模型与推理强度名称，DeepSeek 账号排第一，DeepSeek 排第二，第三方提供方保持目录原有顺序。导航箭头使用 `--dsw-alias-menu-icon` 文本色。`/model` 弹窗显示提供方名称与目录说明；其中两个内置 DeepSeek 模型的说明使用当前语言，外部提供方说明保持原文。弹窗应用所选模型的默认推理强度；composer 随后可以选择任一已公布的推理强度。适配器没有推理元数据时不显示 Effort 行；不存在任意推理强度输入。
 
 展开的控件无法排在同一行时，composer 将模型与推理强度文字替换为模型图标；空间足够后恢复文字。触发器的无障碍名称、提示和菜单仍提供完整选择。
 
@@ -51,6 +51,8 @@ DeepSeek 账号和 API Key 路由显示为独立提供方分组，各自展示�
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
+
+菜单采用共享 `MenuSurface` 材质，包括用于背景模糊的 macOS 底层；自定义内容遵循[菜单规则](../../../docs/web-styling.zh.md#component-rules)。
 
 <details>
 <summary>实现细节——点击展开</summary>

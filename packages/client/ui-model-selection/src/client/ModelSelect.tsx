@@ -17,6 +17,7 @@
  * the composer card; the in-menu strip with Retry remains the catalog-load
  * surface.
  */
+import { MenuSurface } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
   type CSSProperties, type KeyboardEvent, type FocusEvent,
@@ -384,7 +385,7 @@ export function ModelSelect(
           column overflow clips cannot crop the card; synthetic events still
           bubble through this React subtree, keeping onKeyDown/onBlur live. */}
       {open && createPortal(
-        <div
+        <MenuSurface
           ref={menuRef}
           id={`${id}-menu`}
           className={css.menu}
@@ -497,7 +498,7 @@ export function ModelSelect(
                 ))}
             </>
           )}
-        </div>,
+        </MenuSurface>,
         document.body,
       )}
       {toast !== null && (

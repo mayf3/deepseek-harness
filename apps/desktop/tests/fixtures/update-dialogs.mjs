@@ -64,7 +64,7 @@ export async function qualifyUpdateDialogs(root, fixture) {
       })`)
       assert.deepEqual(view, { title: options.message, detail: options.detail, buttons: options.buttons,
         width: 380, radius: '24px', primary: 'rgb(15, 17, 21)', focused: 'dialog', isolated: true })
-      assert.equal(await parent.webContents.executeJavaScript('getComputedStyle(document.body).filter'), 'blur(2px)')
+      assert.equal(await parent.webContents.executeJavaScript('getComputedStyle(document.body).filter'), 'none')
       assert.equal(f.installations.length, 0)
       assert.equal(await window.webContents.executeJavaScript(`
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', cancelable: true }));
