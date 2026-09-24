@@ -361,6 +361,20 @@ describe('SubagentRuntime.listDescendants', () => {
     expect(rows.some(row => row.id === hidden.id)).toBe(false)
   })
 
+  it('reports invalid live catalog data as corrupt and continues with siblings', async () => {
+    const { ctx, parent } = await setup([])
+    const branch = ctx.sessions.create(SessionId('branch'))
+    const sibling = ctx.sessions.create(SessionId('sibling'))
+    catalog(parent.session, [child('branch'), child('sibling')])
+    catalog(branch, [{ ...child('invalid'), createdAt: -1 }])
+
+    expect(await ctx.subagents.listDescendants(parent.id)).toEqual([
+      { kind: 'diagnostic', id: branch.id, parentId: parent.id, depth: 1, reason: 'corrupt' },
+      { kind: 'child', id: sibling.id, mode: 'continuable', label: 'sibling',
+        activity: 'running', hasChildren: false, parentId: parent.id, depth: 1 },
+    ])
+  })
+
   it('reports a missing child as unavailable', async () => {
     const { ctx, parent } = await setup([])
     catalog(parent.session, [child('missing')])
