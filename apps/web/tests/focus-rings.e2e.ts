@@ -22,7 +22,7 @@ async function paint(target: Locator) {
       active: document.activeElement === element,
       focusVisible: element.matches(':focus-visible'),
       modality: document.documentElement.getAttribute('data-input-modality'),
-      brand: resolveColor(style.getPropertyValue('--dsw-alias-brand-primary').trim()),
+      focusColor: resolveColor(style.getPropertyValue('--dsw-alias-state-business-primary').trim()),
       hover: resolveColor(style.getPropertyValue('--dsw-alias-interactive-bg-hover').trim()),
       outline: style.outlineColor,
       outlineStyle: style.outlineStyle,
@@ -37,12 +37,12 @@ async function expectSilent(target: Locator): Promise<void> {
   const state = await paint(target)
   expect(state.active).toBe(true)
   expect(state.modality).toBe('pointer')
-  expect(state.brand).toMatch(/^rgb/)
+  expect(state.focusColor).toMatch(/^rgb/)
   expect(state.outlineStyle === 'none' || state.outline === 'rgba(0, 0, 0, 0)').toBe(true)
-  expect(state.shadow).not.toContain(state.brand)
+  expect(state.shadow).not.toContain(state.focusColor)
 }
 
-async function expectBrand(target: Locator, kind: 'outline' | 'shadow'): Promise<void> {
+async function expectFocusRing(target: Locator, kind: 'outline' | 'shadow'): Promise<void> {
   await expect.poll(async () => {
     const state = await paint(target)
     return {
@@ -50,22 +50,25 @@ async function expectBrand(target: Locator, kind: 'outline' | 'shadow'): Promise
       visible: state.focusVisible,
       modality: state.modality,
       painted: kind === 'shadow'
-        ? state.shadow.includes(state.brand)
-        : state.outline === state.brand && state.outlineStyle === 'solid' && Number.parseFloat(state.outlineWidth) > 0,
+        ? state.shadow.includes(state.focusColor)
+        : state.outline === state.focusColor && state.outlineStyle === 'solid' && Number.parseFloat(state.outlineWidth) > 0,
     }
   }).toEqual({ active: true, visible: true, modality: 'keyboard', painted: true })
 }
 
-it('assembled app: pointer keys stay silent; keyboard navigation and menu activation retain feedback', async () => {
+it.each(['light', 'dark'] as const)('assembled app (%s): pointer keys stay silent; navigation and menu activation retain feedback', async (theme) => {
   const scaffold = await launchWebScaffold()
   onTestFinished(() => scaffold.close())
   const browser = await chromium.launch({ headless: true })
   onTestFinished(() => browser.close())
   const page = await newEnglishPage(browser)
   const consoleWatch = watchConsole(page)
+  await page.emulateMedia({ colorScheme: theme })
   await page.goto(scaffold.authenticatedUrl)
   await connectFreshWorkspace(page, scaffold.workspaceCwd)
+  await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBe(theme === 'dark' ? '' : null)
   const trigger = page.getByRole('button', { name: /^Access mode, current:/ })
+  expect((await paint(trigger)).focusColor).toBe(theme === 'dark' ? 'rgb(122, 170, 255)' : 'rgb(65, 118, 230)')
 
   await trigger.click()
   await page.getByRole('menu').waitFor()
@@ -81,7 +84,7 @@ it('assembled app: pointer keys stay silent; keyboard navigation and menu activa
     await page.keyboard.press('Escape')
     await expectSilent(trigger)
     await page.keyboard.press(key)
-    await expectBrand(trigger, 'shadow')
+    await expectFocusRing(trigger, 'shadow')
   }
 
   await trigger.click()
@@ -89,11 +92,11 @@ it('assembled app: pointer keys stay silent; keyboard navigation and menu activa
   await page.keyboard.press('Shift+Tab')
   expect(await trigger.evaluate(element => element === document.activeElement)).toBe(false)
   await page.keyboard.press('Tab')
-  await expectBrand(trigger, 'shadow')
+  await expectFocusRing(trigger, 'shadow')
   for (const key of ['Enter', 'Space']) {
     await page.keyboard.press(key)
     await page.getByRole('menu').waitFor()
-    await expectBrand(trigger, 'shadow')
+    await expectFocusRing(trigger, 'shadow')
     const menu = page.getByRole('menu')
     for (const [navigation, index] of [['End', -1], ['Home', 0]] as const) {
       await page.keyboard.press(navigation)
@@ -107,7 +110,7 @@ it('assembled app: pointer keys stay silent; keyboard navigation and menu activa
       expect(state.background).not.toBe('rgba(0, 0, 0, 0)')
     }
     await page.keyboard.press('Escape')
-    await expectBrand(trigger, 'shadow')
+    await expectFocusRing(trigger, 'shadow')
   }
   expect(consoleWatch.warnings).toEqual([])
   expect(consoleWatch.pageErrors).toEqual([])
@@ -273,10 +276,10 @@ describe('source-compiled supplementary focus paint', () => {
     const ring = await paint(card)
     expect((await paint(checkbox)).active).toBe(true)
     expect(ring.outlineStyle).toBe('solid')
-    expect(ring.outline).toBe(ring.brand)
+    expect(ring.outline).toBe(ring.focusColor)
   })
 
-  it('keeps Shift/Escape silent while Tab, Home, End and paging reveal a brand outline', async () => {
+  it('keeps Shift/Escape silent while Tab, Home, End and paging reveal a blue outline', async () => {
     const page = await openFixture()
     const toggle = page.getByRole('switch', { name: 'Toggle' })
     await toggle.click()
@@ -288,7 +291,7 @@ describe('source-compiled supplementary focus paint', () => {
     for (const key of ['Home', 'End', 'PageUp', 'PageDown']) {
       await toggle.click()
       await page.keyboard.press(key)
-      await expectBrand(toggle, 'outline')
+      await expectFocusRing(toggle, 'outline')
     }
     await toggle.click()
     await page.keyboard.press('Tab')
@@ -296,10 +299,10 @@ describe('source-compiled supplementary focus paint', () => {
     const state = await paint(fallback)
     expect(state.active).toBe(true)
     expect(state.focusVisible).toBe(true)
-    expect(state.outline).toBe(state.brand)
+    expect(state.outline).toBe(state.focusColor)
     expect(Number.parseFloat(state.outlineWidth)).toBeGreaterThan(0)
     await page.keyboard.press('Shift+Tab')
-    await expectBrand(toggle, 'outline')
+    await expectFocusRing(toggle, 'outline')
   })
 
   it.each(['Enter', 'Space'])('%s opens the real autoFocus Menu after a pointer-owned trigger', async (key) => {
@@ -319,7 +322,7 @@ describe('source-compiled supplementary focus paint', () => {
     expect(state.background).toBe(state.hover)
     expect(state.background).not.toBe('rgba(0, 0, 0, 0)')
     await page.keyboard.press('Escape')
-    await expectBrand(trigger, 'shadow')
+    await expectFocusRing(trigger, 'shadow')
   })
 
   it('negative control: blanket shadow suppression destroys input and card paint and misses descendants', async () => {
@@ -330,8 +333,8 @@ describe('source-compiled supplementary focus paint', () => {
     await input.click()
     const focusedInput = await paint(input)
     expect(focusedInput.active).toBe(true)
-    expect(focusedInput.shadow).toContain(focusedInput.brand)
-    // Restore direct-brand fallback and the rejected global eraser only in this page.
+    expect(focusedInput.shadow).toContain(focusedInput.focusColor)
+    // Restore direct-colour fallback and the rejected global eraser only in this page.
     await page.addStyleTag({ content: `
       html[data-input-modality='pointer'] body :focus-visible {
         --dsw-focus-ring-color: initial !important;
@@ -351,7 +354,7 @@ describe('source-compiled supplementary focus paint', () => {
     expect((await paint(member)).active).toBe(true)
     const descendant = await paint(member.locator('[data-member-ring]'))
     expect(descendant.outlineStyle).toBe('solid')
-    expect(descendant.outline).toBe(descendant.brand)
+    expect(descendant.outline).toBe(descendant.focusColor)
   })
 
   it('silences high-specificity table rings without hiding selected-state shadows', async () => {
@@ -362,7 +365,7 @@ describe('source-compiled supplementary focus paint', () => {
     await expectSilent(row)
     expect((await paint(row)).focusVisible).toBe(true)
     await page.keyboard.press('Home')
-    await expectBrand(row, 'shadow')
+    await expectFocusRing(row, 'shadow')
 
     for (const [name, pseudo] of [['Selected pill', null], ['Selected request', '::before']] as const) {
       const selected = page.getByRole('button', { name })
@@ -389,7 +392,7 @@ describe('source-compiled supplementary focus paint', () => {
     await page.keyboard.type('Still focused')
     await expect.poll(async () => {
       const state = await paint(input)
-      return { active: state.active, visible: state.focusVisible, modality: state.modality, ring: state.shadow.includes(state.brand) }
+      return { active: state.active, visible: state.focusVisible, modality: state.modality, ring: state.shadow.includes(state.focusColor) }
     }).toEqual({ active: true, visible: true, modality: 'pointer', ring: true })
 
     const member = page.getByRole('button', { name: 'Workflow member' })
@@ -402,7 +405,7 @@ describe('source-compiled supplementary focus paint', () => {
     await page.keyboard.press('Home')
     const descendant = await paint(ring)
     expect((await paint(member)).active).toBe(true)
-    expect(descendant.outline).toBe(descendant.brand)
+    expect(descendant.outline).toBe(descendant.focusColor)
     expect(descendant.outlineStyle).toBe('solid')
     expect(Number.parseFloat(descendant.outlineWidth)).toBeGreaterThan(0)
 
@@ -415,7 +418,7 @@ describe('source-compiled supplementary focus paint', () => {
     expect((await paint(card)).focusVisible).toBe(true)
     expect((await paint(card)).shadow).toBe(elevation)
     await page.keyboard.press('Home')
-    await expectBrand(card, 'outline')
+    await expectFocusRing(card, 'outline')
     expect((await paint(card)).shadow).toBe(elevation)
   })
   it('gives an undeclared ring the standard width and legible contrast in both themes', async () => {
@@ -426,6 +429,7 @@ describe('source-compiled supplementary focus paint', () => {
     const light = await ringReport(button)
     expect(light.style).not.toBe('none')
     expect(light.width).toBe('2px')
+    expect(light.color).toBe('rgb(65, 118, 230)')
     expect(light.contrast).not.toBeNull()
     expect(light.contrast!).toBeGreaterThanOrEqual(3)
 
@@ -434,10 +438,9 @@ describe('source-compiled supplementary focus paint', () => {
     await button.focus()
     const dark = await ringReport(button)
     expect(dark.width).toBe('2px')
+    expect(dark.color).toBe('rgb(122, 170, 255)')
     expect(dark.contrast).not.toBeNull()
     expect(dark.contrast!).toBeGreaterThanOrEqual(3)
-    // The two themes paint different ink, so the dark ring is not the light one.
-    expect(dark.color).not.toBe(light.color)
 
     // Naming the width must not create a ring where a control disables its outline.
     const disabled = page.locator('#outline-none')

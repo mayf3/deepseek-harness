@@ -157,7 +157,7 @@
   cursor: pointer;
 }
 .resetAll:enabled:hover { color: var(--dsw-alias-label-secondary); }
-.resetAll:focus-visible { outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary)); outline-offset: 2px; }
+.resetAll:focus-visible { outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 2px; }
 .resetAll:disabled { cursor: default; opacity: 0.45; }
 .modifiedCount { color: var(--dsw-alias-label-tertiary); }
 .group {
@@ -185,9 +185,9 @@ p.hint { margin: 6px 0; }
 .rowActions { display: inline-flex; align-items: center; gap: 8px; opacity: 0; }
 .row:hover .rowActions, .row:has(:focus-visible) .rowActions { opacity: 1; }
 .iconButton { display: inline-grid; place-items: center; width: 20px; height: 26px; border: 0; padding: 0; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; }
-.iconButton:focus-visible, .inlineAction:focus-visible { outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary)); outline-offset: 2px; border-radius: 4px; }
+.iconButton:focus-visible, .inlineAction:focus-visible { outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 2px; border-radius: 4px; }
 .keyButton { display: inline-flex; padding: 0; border: 0; border-radius: 10px; background: transparent; cursor: pointer; }
-.keyButton:focus-visible { outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary)); outline-offset: 2px; }
+.keyButton:focus-visible { outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 2px; }
 .keyButton:enabled:hover .keyBadge, .keyButton:enabled:hover .unbound { background: var(--dsw-alias-interactive-bg-hover-accent); }
 .unbound { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 26px; padding: 6px 16px; border-radius: 10px; background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 14px; white-space: nowrap; }
 .inlineEditor { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
@@ -195,7 +195,7 @@ p.hint { margin: 6px 0; }
 .inlineControls { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .inlineAction { padding: 0; border: 0; background: transparent; color: var(--dsw-alias-label-tertiary); font: inherit; font-size: 12px; line-height: 18px; white-space: nowrap; cursor: pointer; }
 .recorder { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 96px; height: 26px; padding: 3px 14px; border: 1px solid var(--dsw-alias-label-tertiary); border-radius: 10px; background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-tertiary); font: inherit; font-size: 12px; line-height: 18px; white-space: nowrap; cursor: pointer; }
-.recorder:focus-visible { outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary)); outline-offset: 2px; }
+.recorder:focus-visible { outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 2px; }
 .recorder.invalid { border: 1px solid var(--dsw-alias-state-error-primary); box-shadow: none; }
 .recorded { height: auto; padding: 0; background: transparent; color: inherit; }
 .review { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }

@@ -4,14 +4,14 @@ import { describe, expect, it } from 'vitest'
 import { INPUT_MODALITY, INPUT_MODALITY_ATTRIBUTE } from '../../ui-primitives/src/input-modality.ts'
 import { packageStylesheets, parseRules, varReferences } from './stylesheet-scan.ts'
 
-const BRAND = '--dsw-alias-brand-primary'
+const ACCENT = '--dsw-alias-state-business-primary'
 const COLOR = '--dsw-focus-ring-color'
 const WIDTH = '--dsw-focus-ring-width'
-const FALLBACK = `var(${COLOR}, var(${BRAND}))`
+const FALLBACK = `var(${COLOR}, var(${ACCENT}))`
 const css = readFileSync(new URL('../src/styles/focus.css', import.meta.url), 'utf8')
 const rules = parseRules(css)
 const properties = new Set(['outline', 'outline-color', 'box-shadow'])
-const allowedTokens = new Set([BRAND, COLOR, WIDTH])
+const allowedTokens = new Set([ACCENT, COLOR, WIDTH])
 
 function ringColorViolations(source: string): string[] {
   const violations: string[] = []
@@ -20,13 +20,13 @@ function ringColorViolations(source: string): string[] {
     for (const [property, value] of rule.declarations) {
       if (!properties.has(property)) continue
       const tokens = varReferences(value)
-      const hasColor = tokens.includes(BRAND) || tokens.includes(COLOR)
+      const hasColor = tokens.includes(ACCENT) || tokens.includes(COLOR)
       const colorless = /^(none|transparent|currentcolor|inherit)$/i.test(value)
       if (tokens.some(token => !allowedTokens.has(token)) || (!hasColor && !colorless)) {
         violations.push(`${rule.selectors.join(', ')} { ${property}: ${value} }`)
       }
       if (rule.selectors.every(selector => selector.includes(':focus-visible'))
-        && tokens.includes(BRAND) && !tokens.includes(COLOR)) {
+        && tokens.includes(ACCENT) && !tokens.includes(COLOR)) {
         violations.push(`${rule.selectors.join(', ')} bypasses ${COLOR}`)
       }
     }
@@ -52,11 +52,11 @@ describe('focus styles', () => {
     expect(rules.flatMap(rule => rule.declarations).some(([property]) => property === 'box-shadow')).toBe(false)
   })
 
-  it('rejects a non-brand ring and a keyboard ring that bypasses pointer suppression', () => {
+  it('rejects a non-blue ring and a keyboard ring that bypasses pointer suppression', () => {
     expect(ringColorViolations('.a:focus-visible { outline: 2px solid red; }')).toHaveLength(1)
-    expect(ringColorViolations('.a:focus { box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary); }'))
+    expect(ringColorViolations('.a:focus { box-shadow: 0 0 0 2px var(--dsw-alias-brand-primary); }'))
       .toHaveLength(1)
-    expect(ringColorViolations('.a:focus-visible .label { outline: 2px solid var(--dsw-alias-brand-primary); }'))
+    expect(ringColorViolations('.a:focus-visible .label { outline: 2px solid var(--dsw-alias-state-business-primary); }'))
       .toHaveLength(1)
     expect(ringColorViolations(`.a:focus-visible::after { outline: 2px solid ${FALLBACK}; }`)).toEqual([])
   })

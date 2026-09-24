@@ -14,7 +14,7 @@ Focus feedback has separate interaction and geometry constraints. A browser's `:
 
 [The theme's focus stylesheet](../../../../packages/client/ui-theme/src/styles/focus.css) owns the shared ring colour and standard width. [Input modality](../../../../packages/client/ui-primitives/README.md#input-modality) distinguishes tooltip input from keyboard focus navigation.
 
-**One colour.** Global and component `:focus-visible` outlines and focus-ring shadows read `--dsw-focus-ring-color`, falling back to `--dsw-alias-brand-primary`. The global fallback names the colour and the standard width but never the style, so it cannot create an outline where the component disables one. Naming the width is what keeps a control with no ring of its own at the standard geometry instead of Chromium's `auto 1px`.
+**One colour.** Global and component `:focus-visible` outlines and focus-ring shadows read `--dsw-focus-ring-color`, falling back to `--dsw-alias-state-business-primary`. The global fallback names the colour and the standard width but never the style, so it cannot create an outline where the component disables one. Naming the width is what keeps a control with no ring of its own at the standard geometry instead of Chromium's `auto 1px`.
 
 **Context-owned geometry.** `--dsw-focus-ring-width` carries the standard 2px width. Dense tables and toolbars may keep 1px so the ring does not dominate compact content. Components own their offsets and use an inset ring where an outer ring would be clipped.
 
@@ -40,4 +40,4 @@ Tooltips follow the last input and treat any key as keyboard input. Rings instea
 
 Focus rings share a theme colour while components retain their geometry and non-focus state cues. Ring visibility changes without changing the keyboard's active target. These rules do not guarantee identical browser rendering or eliminate component-specific clipping.
 
-[Stylesheet-order checks](../../../../packages/client/ui-theme/tests/client-styles.client.spec.ts), [focus-style checks](../../../../packages/client/ui-theme/tests/focus-styles.client.spec.ts), and [input-modality tests](../../../../packages/client/ui-primitives/tests/input-modality.client.spec.ts) cover stylesheet declarations and modality transitions. Static declarations and synthetic events do not establish rendered ring visibility or cross-platform behaviour.
+[Stylesheet-order checks](../../../../packages/client/ui-theme/tests/client-styles.client.spec.ts), [focus-style checks](../../../../packages/client/ui-theme/tests/focus-ring-styles.client.spec.ts), and [input-modality tests](../../../../packages/client/ui-primitives/tests/input-modality.client.spec.ts) cover stylesheet declarations and modality transitions. Static declarations and synthetic events do not establish rendered ring visibility or cross-platform behaviour.

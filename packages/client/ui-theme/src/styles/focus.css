@@ -8,7 +8,7 @@
  * unnamed ring stayed at `auto 1px` while every declared ring used the standard geometry.
  * Declared rings also read this color, including rings on descendants and pseudo-elements. */
 :focus-visible {
-  outline-color: var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary));
+  outline-color: var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-width: var(--dsw-focus-ring-width);
 }
 

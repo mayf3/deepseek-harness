@@ -72,7 +72,7 @@
 }
 
 .action:focus-visible {
-  outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary));
+  outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 2px;
 }
 
