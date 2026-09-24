@@ -332,7 +332,7 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
   readonly actions?: ReactNode
 }): ReactNode {
   return (
-    <>
+    <div className={css.detailTop} data-window-drag>
       <button type="button" className={css.crumb} aria-label={crumbLabel} onClick={onBack}>
         <IconChevronDownOutlineRegular className={css.crumbIcon} aria-hidden="true" />
         <span>{crumbText}</span>
@@ -341,7 +341,7 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
         <span className={css.cardIcon} aria-hidden="true">{icon}</span>
         {actions}
       </div>
-    </>
+    </div>
   )
 }
 
@@ -695,6 +695,10 @@ function registryOption(registry: Registry, t: Translate, resolved: string | nul
  */
 function failureText(failure: InstallState['failure'], t: Translate, install?: Pick<InstallState, 'attempts' | 'subject' | 'registries'>): string {
   if (failure === null) return t('installFailureGeneric')
+  // A compatibility refusal is the package's own answer, whatever pnpm's exit classified the run as.
+  if (failure.code === 'incompatible-version') {
+    return managementText({ code: failure.code, ...failure.incompatible === undefined ? {} : { incompatible: failure.incompatible } }, t)
+  }
   // Blocked scripts the Host could not name leave the person to allow them in the profile's pnpm settings by hand.
   if (failure.kind === 'build-blocked' && !failure.pendingBuilds?.length) return t('installFailureBuildBlockedManual')
   const host = install?.subject?.host
@@ -780,7 +784,7 @@ function InstallDialog({
       <Modal
         open={install.open}
         onClose={onClose}
-        title={t('installGithubFailedTitle')}
+        title={t(install.failure?.kind === 'timeout' ? 'installGithubTimeoutTitle' : 'installGithubFailedTitle')}
         closeLabel={t('close')}
         description={t('installGithubFailedDescription')}
         footer={(
@@ -1213,7 +1217,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
     <section className={css.page} data-plugin-panel aria-busy={state.status === 'loading'}>
       {showsCards
         ? (
-          <header className={css.pageHead}>
+          <header className={css.pageHead} data-window-drag>
             <div>
               <h1 className={css.pageTitle}>{t('title')}</h1>
               <p className={css.pageIntro}>{t('intro')}</p>

@@ -172,6 +172,28 @@ describe('DockSurface', () => {
     expect(screen.getByRole('tab', { name: /a\.txt/u }).getAttribute('aria-selected')).toBe('true')
   })
 
+  it('claims the window drag row while every pane is docked', () => {
+    const controller = seededController()
+    controller.setExpanded(true)
+    controller.splitPane()
+    renderSurface(controller, spyIntents())
+    expect(document.querySelector('[data-dockkit-strip]')?.hasAttribute('data-window-drag')).toBe(true)
+  })
+
+  it('withdraws the window drag claim while a pane floats', () => {
+    const controller = seededController()
+    controller.setExpanded(true)
+    controller.splitPane()
+    const [first] = dockPaneIds(controller.getSnapshot().state)
+    if (first === undefined) throw new Error('expected a docked pane')
+    controller.floatTab(getPane(controller.getSnapshot().state, first).tabs[0]!)
+
+    renderSurface(controller, spyIntents())
+    // A float can sort before this row in the document, where the row's drag box would
+    // override the floating pane's own subtraction.
+    expect(document.querySelector('[data-dockkit-strip]')?.hasAttribute('data-window-drag')).toBe(false)
+  })
+
   it('shows the empty-pane label when a pane holds nothing', () => {
     const controller = new DockController()
     renderSurface(controller, spyIntents())
@@ -256,7 +278,7 @@ describe('DockSurface', () => {
     renderSurface(controller, intents, false)
     const disabled = screen.getByRole('button', { name: TEST_LABELS.splitPane })
     expect(disabled.hasAttribute('disabled')).toBe(true)
-    expect(disabled.getAttribute('title')).toBe(TEST_LABELS.splitPaneDisabled)
+    expect(disabled.parentElement?.getAttribute('aria-label')).toBe(TEST_LABELS.splitPaneDisabled)
     expect(disabled.getAttribute('data-dockkit-split-blocked')).toBe('budget')
   })
 
@@ -336,7 +358,7 @@ describe('DockSurface', () => {
       expect(narrowButton).toBeNull()
     } else {
       expect(narrowButton?.hasAttribute('disabled')).toBe(true)
-      expect(narrowButton?.getAttribute('title')).toBe(TEST_LABELS.splitPaneNarrow)
+      expect(narrowButton?.parentElement?.getAttribute('aria-label')).toBe(TEST_LABELS.splitPaneNarrow)
       expect(narrowButton?.getAttribute('data-dockkit-split-blocked')).toBe('width')
     }
   })
@@ -816,6 +838,64 @@ describe('DockSurface', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
+  it.each(['tab', 'item'])('Escape dismisses a reopened menu from the %s without closing its tab', (focus) => {
+    const intents = spyIntents()
+    const { unmount } = renderSurface(seededController(), intents)
+    const tab = screen.getByRole('tab')
+    for (let attempt = 0; attempt < 2; attempt++) {
+      fireEvent.contextMenu(tab)
+      const target = focus === 'tab' ? tab : screen.getByRole('menuitem')
+      target.focus()
+      expect(fireEvent.keyDown(target, { key: 'Escape', code: 'Escape' })).toBe(false)
+      expect(screen.queryByRole('menu')).toBeNull()
+      expect(document.activeElement).toBe(tab)
+      expect(intents.closeTab).not.toHaveBeenCalled()
+    }
+    unmount()
+    expect(fireEvent.keyDown(document.body, { key: 'Escape', code: 'Escape' })).toBe(true)
+  })
+
+  it('keeps the menu during composition, modified Escape and key repeat', () => {
+    renderSurface(seededController(), spyIntents())
+    const tab = screen.getByRole('tab')
+    fireEvent.contextMenu(tab)
+    for (const modifier of ['ctrlKey', 'altKey', 'metaKey', 'shiftKey', 'isComposing']) {
+      expect(fireEvent.keyDown(tab, { key: 'Escape', [modifier]: true })).toBe(true)
+      expect(screen.getByRole('menu')).toBeDefined()
+    }
+    fireEvent.compositionStart(tab)
+    fireEvent.keyDown(tab, { key: 'Escape' })
+    expect(screen.getByRole('menu')).toBeDefined()
+    fireEvent.compositionEnd(tab)
+    fireEvent.keyDown(tab, { key: 'Escape' })
+    expect(screen.getByRole('menu')).toBeDefined()
+    fireEvent.keyUp(tab, { key: 'Escape' })
+    expect(fireEvent.keyDown(tab, { key: 'Escape', repeat: true })).toBe(false)
+    expect(screen.getByRole('menu')).toBeDefined()
+    fireEvent.keyDown(tab, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('yields Escape to a foreground modal and consumes it before a parent handler', () => {
+    renderSurface(seededController(), spyIntents())
+    const tab = screen.getByRole('tab')
+    fireEvent.contextMenu(tab)
+    const modal = document.createElement('div')
+    modal.setAttribute('role', 'dialog')
+    modal.setAttribute('aria-modal', 'true')
+    document.body.append(modal)
+    onTestFinished(() => { modal.remove() })
+    expect(fireEvent.keyDown(modal, { key: 'Escape' })).toBe(true)
+    expect(screen.getByRole('menu')).toBeDefined()
+    modal.remove()
+    const parent = vi.fn((event: KeyboardEvent) => { expect(event.defaultPrevented).toBe(true) })
+    document.addEventListener('keydown', parent)
+    onTestFinished(() => { document.removeEventListener('keydown', parent) })
+    fireEvent.keyDown(tab, { key: 'Escape' })
+    expect(parent).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
   it('hangs the menu below the chip\'s left edge, or from its right edge when it would run off the viewport', () => {
     const controller = seededController()
     let left = 10
@@ -1117,6 +1197,18 @@ describe('keyboard tabs', () => {
     fireEvent.keyDown(chip('Start'), { key: 'a' })
     fireEvent.keyDown(chip('Start'), { key: 'Escape' })
     expect(intents.focusTab).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves modified and composing keys available to their owners', () => {
+    const { intents, chip } = threeChips()
+    const tab = chip('a.txt')
+    tab.focus()
+    for (const modifiers of [{ ctrlKey: true, altKey: true }, { metaKey: true, altKey: true }, { shiftKey: true }, { isComposing: true }]) {
+      expect(fireEvent.keyDown(tab, { key: 'Enter', ...modifiers })).toBe(true)
+      expect(fireEvent.keyDown(tab, { key: 'ArrowRight', ...modifiers })).toBe(true)
+      expect(document.activeElement).toBe(tab)
+    }
+    expect(intents.focusTab).not.toHaveBeenCalled()
   })
 
   it('records nothing for Enter on the active pane\'s selected chip, and leaves keys on the close control alone', () => {
@@ -1484,7 +1576,7 @@ describe('surface chrome', () => {
     const role = (child: Element): string => {
       if (child.hasAttribute('data-dockkit-strip-tabs')) return 'tabs'
       if (child.hasAttribute('data-dockkit-add-tab')) return 'add'
-      if (child.hasAttribute('data-dockkit-split-button')) return 'split'
+      if (child.hasAttribute('data-dockkit-split-button') || child.querySelector('[data-dockkit-split-button]')) return 'split'
       if (child.hasAttribute('data-dockkit-strip-chrome')) return 'chrome'
       return 'fill'
     }
