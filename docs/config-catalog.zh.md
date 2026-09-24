@@ -2538,13 +2538,19 @@ export interface JsonRpcConfig {
 ## `@deepseek-ai/dsh-session-log-deepseek`
 
 - `inject`: `deepseekLlmApiExtensions` · `sessions`
-- `source`: [`packages/session/session-log-deepseek/src/index.ts:38`](../packages/session/session-log-deepseek/src/index.ts)
+- `source`: [`packages/session/session-log-deepseek/src/index.ts:39`](../packages/session/session-log-deepseek/src/index.ts)
 
 ```ts config-catalog
 /** Session-log request contribution configuration. */
 export interface Config {
   /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `true`. */
   enabled?: boolean
+  /**
+   * Largest serialized `dsh_session_log` field, in UTF-8 bytes, that one request carries.
+   * A request uploads the longest pending event prefix that fits; later requests continue
+   * after its acceptance. Defaults to 8 MiB.
+   */
+  maxBytes?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-log-deepseek -->
