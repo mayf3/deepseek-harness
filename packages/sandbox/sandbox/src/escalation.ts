@@ -102,10 +102,17 @@ export type EscalationOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'una
 export interface EscalationApprover<A = object, C = string> {
   /**
    * Ask the human to approve one action, resolving to a closed outcome.
-   * @param req - the audit-self-contained request (agent, tool, call id, reason, optional signal).
+   * @param req - the audit request with optional localized displayReason and presentation lifetime signal.
    * @returns the human's decision as a closed {@link EscalationOutcome}.
    */
-  request(req: { agent: A; toolName: string; callId: C; reason: string; signal?: AbortSignal }): Promise<EscalationOutcome>
+  request(req: {
+    agent: A
+    toolName: string
+    callId: C
+    reason: string
+    displayReason?: { readonly en: string; readonly [locale: string]: string }
+    signal?: AbortSignal
+  }): Promise<EscalationOutcome>
 }
 
 /**
@@ -172,6 +179,10 @@ export async function approveEscalation<A, C>(request: EscalationRequest, approv
     toolName: approval.toolName,
     callId: approval.callId,
     reason: `escalate sandbox to ${mode}: ${justification}`,
+    displayReason: {
+      en: `Allow this operation with ${mode} permissions: ${justification}`,
+      zh: `允许本次操作使用 ${mode} 权限：${justification}`,
+    },
     ...approval.signal ? { signal: approval.signal } : {},
   })
   switch (outcome) {

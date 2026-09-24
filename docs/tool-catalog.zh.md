@@ -555,7 +555,7 @@ ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类�
     },
     "justification": {
       "type": "string",
-      "description": "Reason this complete program needs wider access, shown to the user for approval."
+      "description": "Reason this complete program needs wider access, shown to the user for approval. Use the language of the user’s current request."
     }
   },
   "required": [
