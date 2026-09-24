@@ -28,7 +28,7 @@ export function apply(ctx: Context): void {
   ctx.tools.register(markAdjacentAgentSendMessageTool(defineTool({
     name: 'send_message',
     description:
-      'Send a message to an agent. A working target receives it at its nearest step; an inactive target starts or resumes a turn. '
+      'Send a message to an agent. A working agent receives it at its next step; an idle agent starts a new turn with it. '
       + 'Returns delivery confirmation, not the agent\'s answer.',
     parameters: {
       agent_id: {

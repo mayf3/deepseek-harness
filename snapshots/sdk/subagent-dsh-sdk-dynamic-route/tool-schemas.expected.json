@@ -193,7 +193,7 @@
     },
     {
       "name": "job_kill",
-      "description": "Request cancellation of a running background job. Returns before the job has stopped.",
+      "description": "Request cancellation of a running background job.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -309,7 +309,7 @@
         "properties": {
           "file_path": {
             "type": "string",
-            "description": "Path to the image file, resolved by the filesystem backend. The format is detected from content, so a path without an extension works."
+            "description": "Path to the image file, resolved by the filesystem backend."
           }
         },
         "required": [
@@ -319,7 +319,7 @@
     },
     {
       "name": "send_message",
-      "description": "Send a message to an agent. A working target receives it at its nearest step; an inactive target starts or resumes a turn. Returns delivery confirmation, not the agent's answer.",
+      "description": "Send a message to an agent. A working agent receives it at its next step; an idle agent starts a new turn with it. Returns delivery confirmation, not the agent's answer.",
       "parameters": {
         "type": "object",
         "properties": {

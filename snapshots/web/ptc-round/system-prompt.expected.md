@@ -137,7 +137,7 @@ interface ToolArgsMap {
     /** The id of an agent created under you: your direct child or a deeper descendant. */
     agent_id: string;
   } & Record<string, JsonValue>;
-  /** Request cancellation of a running background job. Returns before the job has stopped. */
+  /** Request cancellation of a running background job. */
   job_kill: {
     /** Job id returned by the tool that started the background work. */
     job_id: string;
@@ -181,7 +181,7 @@ interface ToolArgsMap {
   } & Record<string, JsonValue>;
   /** Read a PNG/JPEG/WebP/GIF file and return the image itself. Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image. */
   read_image: {
-    /** Path to the image file, resolved by the filesystem backend. The format is detected from content, so a path without an extension works. */
+    /** Path to the image file, resolved by the filesystem backend. */
     file_path: string;
   } & Record<string, JsonValue>;
   /** Create one reminder in the current session. Supply a non-empty prompt, a title, and exactly one selector: a positive safe-integer after_seconds delay, at as a strict offset date-time or local date/time object, safe-integer every_seconds of at least 60, daily as {time: "23:00:00", time_zone: "Asia/Shanghai"}, weekly as {time: "09:00:00", time_zone: "Asia/Shanghai", weekdays: [1, 3]} with Monday 1 through Sunday 7, or cron as {expression: "*\/15 9-17 * * 1-5", time_zone: "Asia/Shanghai"} with the five fields minute hour day-of-month month day-of-week. Every creation requires a title of at most 120 characters, non-empty after trimming; it names the task on its card, its detail heading, and in the task lists. Daily, weekly, and cron reminders retain that local time and zone; missing wall-clock times skip the date and repeated times use only the earlier instant. A cron day-of-month and day-of-week pair matches when either field matches once both are restricted. Fixed-rate targets stay creation-aligned until an interval edit establishes a new anchor. All four recurring kinds batch one latest occurrence per overdue rule. The Host restores this session when a reminder is due. After downtime, each recurring reminder delivers its latest missed occurrence once. Delivery can repeat after a crash. */

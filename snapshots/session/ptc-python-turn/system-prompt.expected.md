@@ -303,7 +303,7 @@ class ReadOutput(TypedDict):
     totalLines: int
 
 class ReadImageArgs(TypedDict):
-    # Path to the image file, resolved by the filesystem backend. The format is detected from content, so a path without an extension works.
+    # Path to the image file, resolved by the filesystem backend.
     file_path: str
     # Additional keys beyond those declared are allowed.
 
@@ -528,7 +528,7 @@ class Tools(Protocol):
     async def interrupt_agent(self, args: InterruptAgentArgs) -> InterruptAgentOutput:
         """Ask a subagent to stop its current work. This call returns without waiting for it to stop. You can continue a direct child's conversation later with send_message. Subagents it started will keep running."""
     async def job_kill(self, args: JobKillArgs) -> JobKillOutput:
-        """Request cancellation of a running background job. Returns before the job has stopped."""
+        """Request cancellation of a running background job."""
     async def job_list(self, args: dict[str, Any]) -> list[JobListOutput]:
         """List your background jobs (running and finished) with their ids, kinds, and statuses."""
     async def job_output(self, args: JobOutputArgs) -> JobOutputOutput:
@@ -540,7 +540,7 @@ class Tools(Protocol):
     async def read_image(self, args: ReadImageArgs) -> ReadImageOutput:
         """Read a PNG/JPEG/WebP/GIF file and return the image itself. Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image."""
     async def send_message(self, args: SendMessageArgs) -> SendMessageOutput:
-        """Send a message to an agent. A working target receives it at its nearest step; an inactive target starts or resumes a turn. Returns delivery confirmation, not the agent's answer."""
+        """Send a message to an agent. A working agent receives it at its next step; an idle agent starts a new turn with it. Returns delivery confirmation, not the agent's answer."""
     async def skill(self, args: SkillArgs) -> SkillOutput:
         """Load the full instructions for a skill. Call it before acting on a task that names or clearly matches a skill in the session skill catalog."""
     async def subagent(self, args: SubagentArgs) -> SubagentOutput1 | SubagentOutput2 | SubagentOutput3:

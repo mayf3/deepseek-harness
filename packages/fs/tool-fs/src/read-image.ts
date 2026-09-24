@@ -211,7 +211,7 @@ export function applyReadImageTool(ctx: Context): void {
     description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. '
       + 'Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image.',
     parameters: {
-      file_path: { type: 'string', required: true, description: 'Path to the image file, resolved by the filesystem backend. The format is detected from content, so a path without an extension works.' },
+      file_path: { type: 'string', required: true, description: 'Path to the image file, resolved by the filesystem backend.' },
     },
     output: {
       schema: {

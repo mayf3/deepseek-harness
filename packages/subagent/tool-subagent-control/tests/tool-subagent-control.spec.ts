@@ -118,7 +118,7 @@ describe('dsh-tool-subagent-control', () => {
     // The continuable path has no Task, so the schema must not promise one.
     expect(schemas[0]!.description).not.toContain('job_output')
     expect(schemas[0]!.description).not.toContain('job id')
-    expect(schemas[0]!.description).toContain('nearest step')
+    expect(schemas[0]!.description).toContain('receives it at its next step')
     expect(props.agent_id).toMatchObject({
       description: 'The agent id of your direct continuable child, or your direct parent when you are a resident continuable child.',
     })

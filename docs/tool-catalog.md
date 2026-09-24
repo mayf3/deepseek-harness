@@ -1019,7 +1019,7 @@ Read a PNG/JPEG/WebP/GIF file and return the image itself. Large images are down
   "properties": {
     "file_path": {
       "type": "string",
-      "description": "Path to the image file, resolved by the filesystem backend. The format is detected from content, so a path without an extension works."
+      "description": "Path to the image file, resolved by the filesystem backend."
     }
   },
   "required": [
@@ -2116,7 +2116,7 @@ Source: [`packages/subagent/tool-subagent-control/src/list-agents.ts`](../packag
 
 ### `send_message`
 
-Send a message to an agent. A working target receives it at its nearest step; an inactive target starts or resumes a turn. Returns delivery confirmation, not the agent's answer.
+Send a message to an agent. A working agent receives it at its next step; an idle agent starts a new turn with it. Returns delivery confirmation, not the agent's answer.
 
 ```json
 {
@@ -2148,7 +2148,7 @@ The globally named control tools over continuable background subagents: provider
 
 ### `job_kill`
 
-Request cancellation of a running background job. Returns before the job has stopped.
+Request cancellation of a running background job.
 
 ```json
 {

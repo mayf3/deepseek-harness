@@ -370,7 +370,7 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'job_kill',
-    description: 'Request cancellation of a running background job. Returns before the job has stopped.',
+    description: 'Request cancellation of a running background job.',
     parameters: {
       job_id: { type: 'string', required: true, description: 'Job id returned by the tool that started the background work.' },
       reason: { type: 'string', description: 'Optional short reason, recorded in the log and forwarded to the job.' },

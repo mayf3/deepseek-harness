@@ -1025,7 +1025,7 @@ pwsh 工具是 Windows 组合中 bash 执行器 seam 的 PowerShell 方言消费
   "properties": {
     "file_path": {
       "type": "string",
-      "description": "Path to the image file, resolved by the filesystem backend. The format is detected from content, so a path without an extension works."
+      "description": "Path to the image file, resolved by the filesystem backend."
     }
   },
   "required": [
@@ -2126,7 +2126,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 ### `send_message`
 
-向某个 agent 发送消息。工作中的目标会在其最近的 step 收到消息；inactive 的目标会启动或恢复一个轮次。返回投递确认，而不是该 agent 的答案。
+向某个 agent 发送消息。工作中的 agent 会在下一个 step 收到消息；空闲的 agent 会以该消息开始新一轮。返回投递确认，而不是该 agent 的答案。
 
 ```json
 {
@@ -2158,7 +2158,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 ### `job_kill`
 
-请求取消正在运行的后台任务。返回时任务可能尚未停止。
+请求取消正在运行的后台任务。
 
 ```json
 {

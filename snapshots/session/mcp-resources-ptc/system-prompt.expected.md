@@ -125,7 +125,7 @@ interface ToolArgsMap {
     /** The id of an agent created under you: your direct child or a deeper descendant. */
     agent_id: string;
   } & Record<string, JsonValue>;
-  /** Request cancellation of a running background job. Returns before the job has stopped. */
+  /** Request cancellation of a running background job. */
   job_kill: {
     /** Job id returned by the tool that started the background work. */
     job_id: string;
@@ -173,7 +173,7 @@ interface ToolArgsMap {
   } & Record<string, JsonValue>;
   /** Read a PNG/JPEG/WebP/GIF file and return the image itself. Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image. */
   read_image: {
-    /** Path to the image file, resolved by the filesystem backend. The format is detected from content, so a path without an extension works. */
+    /** Path to the image file, resolved by the filesystem backend. */
     file_path: string;
   } & Record<string, JsonValue>;
   /** Read an MCP resource by URI from the named server. Use a listed URI or an expanded resource template. */
@@ -183,7 +183,7 @@ interface ToolArgsMap {
     /** Resource URI to read. */
     uri: string;
   } & Record<string, JsonValue>;
-  /** Send a message to an agent. A working target receives it at its nearest step; an inactive target starts or resumes a turn. Returns delivery confirmation, not the agent's answer. */
+  /** Send a message to an agent. A working agent receives it at its next step; an idle agent starts a new turn with it. Returns delivery confirmation, not the agent's answer. */
   send_message: {
     /** The agent id of your direct continuable child, or your direct parent when you are a resident continuable child. */
     agent_id: string;
