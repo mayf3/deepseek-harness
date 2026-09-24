@@ -59,6 +59,8 @@ PlatformSession is a Host-only snapshot from getPlatformSession: origin names th
 
 AccountDetails.balance projects recharge wallets in value and promotional wallets in bonusWallets, with independent currency and decimal balance strings. Failed queries contain no wallet arrays.
 
+Bonus notification queries return an AccountBonusBatch with the current Platform account id and eligible orders in server order. AccountBonusNotification retains the server message and expiry without projecting credentials. Acknowledgment carries the expected account id and order id; the Host refuses it after an account change. Both notification operations use the initiating UI language through x-client-locale, without a language query parameter.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -276,24 +278,42 @@ abstract getState(): Promise<AccountView>
  * Query Platform profile independently of wallet balances.
  * A ready result whose stable profile ID first becomes available or changes notifies watch
  * consumers, so identity consumers re-read getPlatformSession; repeated IDs stay silent.
+ * @param client - identity of the requesting UI for this call.
  * @returns profile outcome, or null if signed out or the grant changed during the query.
  */
-abstract getProfile(): Promise<AccountDetails['profile'] | null>
+abstract getProfile(client: AccountClientMetadata): Promise<AccountDetails['profile'] | null>
 
 /**
  * Query Platform recharge and bonus wallet balances independently of profile data.
+ * @param client - identity of the requesting UI for this call.
  * @returns balance outcome, or null if signed out or the grant changed during the query.
  */
-abstract getBalance(): Promise<AccountDetails['balance'] | null>
+abstract getBalance(client: AccountClientMetadata): Promise<AccountDetails['balance'] | null>
+
+/**
+ * Query the granted bonuses Platform has not yet recorded as displayed.
+ * @param client - identity of the requesting UI for this call; its language selects the server-authored message.
+ * @returns bonuses with their account, or null if signed out or the grant changed during the query.
+ */
+abstract getUnnotifiedBonuses(client: AccountClientMetadata): Promise<AccountBonusBatch | null>
+
+/**
+ * Record one displayed bonus as notified for the account it belongs to.
+ * @param accountId - account the notification was read for; a different current account is never acknowledged.
+ * @param orderId - granted bonus order the user saw.
+ * @param client - identity of the requesting UI for this call.
+ * @returns true once Platform records the acknowledgement; false if signed out or the account changed.
+ */
+abstract ackBonusNotified(accountId: AccountUserId, orderId: AccountBonusOrderId, client: AccountClientMetadata): Promise<boolean>
 
 /**
  * Join an active attempt or start browser authorization.
- * @param locale - active UI language for a new attempt; joining retains its original language.
+ * @param client - identity of the requesting UI; a new attempt captures it, and joining retains the original attempt's identity.
  * @param callbackOrigin - browser-accessible loopback HTTP origin, including any SSH local port.
  * @param loginSource - initiating UI, used to return from a failed exchange.
  * @returns the initial snapshot without waiting for browser approval.
  */
-abstract startSignIn(locale: string, callbackOrigin: string, loginSource: 'web' | 'desktop'): Promise<AccountView>
+abstract startSignIn(client: AccountClientMetadata, callbackOrigin: string, loginSource: 'web' | 'desktop'): Promise<AccountView>
 
 /**
  * Cancel only the named attempt; committing attempts settle before returning.
@@ -304,9 +324,10 @@ abstract cancelSignIn(id: SignInAttemptId): Promise<AccountView>
 
 /**
  * Remove the local grant while retaining API keys; the provider revokes it in the background.
+ * @param client - identity of the requesting UI, captured for the background revocation retries.
  * @returns the signed-out state after local removal; remote failures never restore the grant.
  */
-abstract signOut(): Promise<AccountView>
+abstract signOut(client: AccountClientMetadata): Promise<AccountView>
 
 /**
  * Subscribe to snapshots including a complete initial state.
@@ -463,4 +484,6 @@ Local grant removal has completed.
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
 <!-- END GENERATED cordis-surface -->
 
-The account Service Definition exposes getState, getProfile, getBalance, startSignIn, cancelSignIn, signOut, watch, and Host-only resolveToken and getPlatformSession. The platform provider implements it with an AuthorizationFlow and a private GrantRecord. AccountView distinguishes stored presence from server validation; attempt IDs bind cancellation to one local flow. See [the account package](../../packages/credentials/deepseek-account/README.md).
+The account Service Definition exposes getState, getProfile, getBalance, getUnnotifiedBonuses, ackBonusNotified, startSignIn, cancelSignIn, signOut, watch, and Host-only resolveToken and getPlatformSession. The platform provider implements it with an AuthorizationFlow and a private GrantRecord. AccountView distinguishes stored presence from server validation; attempt IDs bind cancellation to one local flow. See [the account package](../../packages/credentials/deepseek-account/README.md).
+
+`AccountClientMetadata` carries `version` from the caller’s `DSH_CLIENT_VERSION`, its active UI `locale`, and `timezoneOffsetSeconds` sampled when the operation begins. The offset is local time minus UTC in seconds: UTC+8 is `28800`. It contains no credentials. Login attempts retain their initiating metadata through exchange and cancellation; sign-out retains its metadata for revocation retries.

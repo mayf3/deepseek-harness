@@ -220,6 +220,12 @@
     - id: locale
       name: '@deepseek-ai/dsh-client-locale'
 
+    - id: shortcuts
+      name: '@deepseek-ai/dsh-client-shortcuts'
+
+    - id: ui-shortcuts
+      name: '@deepseek-ai/dsh-client-ui-shortcuts'
+
     - id: ui-layout
       name: '@deepseek-ai/dsh-client-ui-layout'
 
@@ -346,9 +352,9 @@
     - id: ui-jobs
       name: '@deepseek-ai/dsh-client-ui-jobs'
 
-    # Read-only active Schedule catalog. The shipped Web graph resolves the
-    # client package but leaves it disabled; the explicit Schedule overlay
-    # enables this same row together with the host Schedule services.
+    # Task management and Session reminder catalog. The shipped Web graph
+    # resolves the client package but leaves it disabled; the explicit Schedule
+    # overlay enables this same row together with the Host Schedule services.
     - id: ui-schedule
       name: '@deepseek-ai/dsh-client-ui-schedule'
       disabled: true

@@ -29,6 +29,10 @@ it.each(['accepted', 'refused', 'disconnected', 'pending'] as const)('initialize
   const ctx = {
     effect: (install: () => (() => void) | undefined) => { const dispose = install(); if (dispose) disposers.push(dispose) },
     locale: { register: () => () => {}, bind: () => (key: string) => key },
+    configForms: {
+      get: () => ({ subscribe: () => () => {}, getSnapshot: () => ({ status: 'loading', value: undefined }) }),
+      describe: () => ({ subscribe: () => () => {}, getSnapshot: () => ({ error: null }) }),
+    },
     slots: {
       inject: (_name: string, install: () => (() => void) | undefined) => {
         const dispose = install()
@@ -40,6 +44,7 @@ it.each(['accepted', 'refused', 'disconnected', 'pending'] as const)('initialize
       },
     },
     remote: {
+      $on: () => () => {},
       session: { initializeDefaultModel },
       account: { getProfile: async () => ({ ok: true, value: null }), getBalance: async () => ({ ok: true, value: null }) },
       $stream: () => ({

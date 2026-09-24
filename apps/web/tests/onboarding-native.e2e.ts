@@ -43,9 +43,11 @@ describe.skipIf(MODE === 'record').each([false, true])('web e2e: native credenti
     const credentials = await readFile(credentialPath, 'utf8')
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     const welcome = page.getByRole('dialog', { name: WELCOME_NOTICE_COPY.zh.title })
-    await welcome.waitFor()
-    await welcome.getByRole('button', { name: WELCOME_NOTICE_COPY.zh.continueLabel }).click()
-    await welcome.waitFor({ state: 'detached' })
+    if (!desktop) {
+      await welcome.waitFor()
+      await welcome.getByRole('button', { name: WELCOME_NOTICE_COPY.zh.continueLabel }).click()
+      await welcome.waitFor({ state: 'detached' })
+    }
 
     for (const reload of [false, true]) {
       if (reload) {

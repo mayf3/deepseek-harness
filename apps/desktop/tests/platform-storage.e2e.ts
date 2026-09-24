@@ -52,7 +52,10 @@ it.skipIf(!hasDisplay)('retains dismissed notices across view and process restar
     const observed: string[] = []
     for (const phase of ['first', 'restart']) {
       const result = await execa(electron, [fixture, builtView, userData, origin, phase], {
-        env: { ELECTRON_RUN_AS_NODE: undefined }, timeout: 45_000, forceKillAfterDelay: 5_000, reject: false,
+        // The unbundled tsc artifact reads the client version from the environment; the packaged
+        // build inlines the same value at bundle time.
+        env: { ELECTRON_RUN_AS_NODE: undefined, DSH_CLIENT_VERSION: '1.2.3' },
+        timeout: 45_000, forceKillAfterDelay: 5_000, reject: false,
       })
       expect(result.timedOut, result.stderr).toBe(false)
       expect(result.signal, result.stderr).toBeUndefined()

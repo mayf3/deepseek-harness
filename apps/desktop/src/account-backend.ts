@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
 import { parseRemoteStreamServerMessage, REMOTE_STREAM_MUX_PATH } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
-import type { AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
+import type { AccountClientMetadata, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 
 /** Authenticated unary caller shared with native onboarding. */
 export type AccountInvoke = (request: { namespace: string; method: string; args: Record<string, unknown> }) => Promise<unknown>
@@ -57,12 +57,12 @@ function validateBrowserDestination(value: string): void {
 export interface DesktopAccountBackend {
   /** @returns current account snapshot. */
   state(): Promise<AccountView>
-  /** @param locale - active desktop UI language. @returns new or already-running login attempt. */
-  start(locale: string): Promise<AccountView>
+  /** @param client - this window's identity and current language. @returns new or already-running login attempt. */
+  start(client: AccountClientMetadata): Promise<AccountView>
   /** @param id - attempt to cancel. @returns cancellation or completed commit state. */
   cancel(id: SignInAttemptId): Promise<AccountView>
-  /** @returns state after local sign-out. */
-  signOut(): Promise<AccountView>
+  /** @param client - this window's identity. @returns state after local sign-out. */
+  signOut(client: AccountClientMetadata): Promise<AccountView>
   /**
    * @param listener - state recipient.
    * @param failed - stream failure recipient.
@@ -83,8 +83,9 @@ export function desktopAccountBackend(origin: string, invoke: AccountInvoke, coo
   const call = async (method: string, args: Record<string, unknown> = {}): Promise<AccountView> =>
     accountView(await invoke({ namespace: 'account', method, args }))
   return {
-    state: () => call('getState'), start: locale => call('startSignIn', { locale, callbackOrigin: new URL(origin).origin, loginSource: 'desktop' }),
-    cancel: attemptId => call('cancelSignIn', { attemptId }), signOut: () => call('signOut'),
+    state: () => call('getState'),
+    start: client => call('startSignIn', { client, callbackOrigin: new URL(origin).origin, loginSource: 'desktop' }),
+    cancel: attemptId => call('cancelSignIn', { attemptId }), signOut: client => call('signOut', { client }),
     watch(listener, failed, expired) {
       let closed = false
       let socket: WebSocket | undefined
