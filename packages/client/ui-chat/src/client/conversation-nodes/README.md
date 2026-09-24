@@ -172,8 +172,6 @@ Switching modes retains manually opened groups and inner disclosures. It changes
 
 A group collects adjacent process content within one Turn. Step-number changes alone do not split it. All four modes use the same grouping result. A group's `closed` flag means its content segment has ended, not that its UI disclosure is collapsed.
 
-When `question-reply` and `turn-trigger` project the same message id, grouping references only the question reply. Both Nodes stay in the Node Store; the duplicate trigger neither renders nor splits a group. The Turn control precedes the group containing an opening reply. This aggregation also applies before the owning Turn is loaded.
-
 | Input | Membership and segmentation |
 |---|---|
 | Non-blank Assistant reasoning | Append one `reasoning` reference for that Assistant to the current group, creating a group if necessary. |
