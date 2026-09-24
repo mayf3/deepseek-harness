@@ -335,6 +335,19 @@ describe('SubagentRuntime.listDescendants', () => {
     expect(await ctx.subagents.listDescendants(parent.id)).toEqual([])
   })
 
+  it('omits an ordinary Session fork and its cataloged children from the source listing', async () => {
+    const { ctx, parent } = await setup([])
+    const fork = ctx.sessions.fork(parent.session, undefined, SessionId('ordinary-fork'))
+    const leaf = ctx.sessions.create(SessionId('fork-child'))
+    catalog(fork, [child('fork-child')])
+
+    expect(await ctx.subagents.listDescendants(parent.id)).toEqual([])
+    expect(await ctx.subagents.listDescendants(fork.id)).toEqual([
+      { kind: 'child', id: leaf.id, mode: 'continuable', label: 'fork-child',
+        activity: 'running', hasChildren: false, parentId: fork.id, depth: 1 },
+    ])
+  })
+
   it.each([
     ['corrupt', Object.assign(new Error('corrupt branch'), { code: 'SESSION_QUERY_CORRUPT_SESSION' })],
     ['corrupt', Object.assign(new Error('conflicting branch'), { code: 'SESSION_QUERY_SOURCE_CONFLICT' })],
