@@ -7,13 +7,12 @@
  * writers of one file through a `wx`-created `<file>.lock` sibling, so a
  * read-modify-write cycle can never resurrect a state another writer just
  * replaced; readers stay lock-free because the rename commit is atomic. A lock
- * whose recorded holder process no longer exists on this host is taken over.
+ * whose recorded holder process no longer exists is taken over.
  * @module @deepseek-ai/dsh-atomic-write
  */
 
 import { createHash, randomBytes } from 'node:crypto'
 import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { hostname } from 'node:os'
 import { dirname } from 'node:path'
 
 const WINDOWS_TRANSIENT_RENAME_ERRORS: ReadonlySet<string> = new Set(['EACCES', 'EBUSY', 'EPERM'])
@@ -108,41 +107,15 @@ async function isLockContention(error: unknown, lockPath: string): Promise<boole
   }
 }
 
-/** The process a lock record names; a record without a hostname predates hostnames and was written on this host. */
-interface LockHolder {
-  pid: number
-  hostname?: string
-}
-
-/** The record a new lock carries: the holder process, its host, and a nonce that keeps each record unique. */
-function lockRecord(): string {
-  return `${JSON.stringify({ pid: process.pid, hostname: hostname(), nonce: randomBytes(8).toString('hex') })}\n`
-}
-
-/** The holder a lock record names, or undefined for a record this protocol did not write completely. */
-function parseLockHolder(record: string): LockHolder | undefined {
-  // Earlier releases recorded only the PID.
-  if (/^\d+\n$/.test(record)) return { pid: Number(record.trim()) }
-  let value: unknown
+/** Whether the holder a `<pid>\n` record names is proven gone: a signal probe finds no such process. */
+function holderExited(record: string): boolean {
+  // Any other content is being written or was cut short, which proves nothing about its holder.
+  if (!/^\d+\n$/.test(record)) return false
+  const pid = Number(record.trim())
+  // PID 0 addresses the caller's process group, which proves nothing about one holder.
+  if (!Number.isSafeInteger(pid) || pid === 0) return false
   try {
-    value = JSON.parse(record)
-  } catch {
-    // An unparsable record is being written or was cut short; neither proves its holder stopped.
-    return undefined
-  }
-  if (typeof value !== 'object' || value === null) return undefined
-  const { pid, hostname } = value as { pid?: unknown; hostname?: unknown }
-  if (typeof pid !== 'number' || typeof hostname !== 'string') return undefined
-  return { pid, hostname }
-}
-
-/** Whether the holder's process is proven gone: it ran on this host and a signal probe finds no such process. */
-function holderExited(holder: LockHolder): boolean {
-  // PID 0 and negative PIDs address process groups, which prove nothing about one holder.
-  if (!Number.isSafeInteger(holder.pid) || holder.pid <= 0) return false
-  if (holder.hostname !== undefined && holder.hostname !== hostname()) return false
-  try {
-    process.kill(holder.pid, 0)
+    process.kill(pid, 0)
     return false
   } catch (error) {
     // EPERM means the process exists under another user.
@@ -166,14 +139,13 @@ async function readLockRecord(lockPath: string): Promise<string | undefined> {
  * same record serialize on a claim file named after it, and the claimant
  * removes the lock only while it still holds that record: no other contender
  * can replace the record without the claim, so a removal never deletes a lock
- * another contender acquired after the dead holder's.
+ * another contender acquired after the dead holder's, unless that contender
+ * reused the dead holder's PID within the moment between the two reads.
  * @returns Whether this call removed the dead holder's lock.
  */
 async function takeOverExitedLock(lockPath: string): Promise<boolean> {
   const record = await readLockRecord(lockPath)
-  if (record === undefined) return false
-  const holder = parseLockHolder(record)
-  if (holder === undefined || !holderExited(holder)) return false
+  if (record === undefined || !holderExited(record)) return false
   const claim = `${lockPath}.takeover-${createHash('sha256').update(record).digest('hex').slice(0, 16)}`
   try {
     await writeFile(claim, `${process.pid}\n`, { mode: 0o600, flag: 'wx' })
@@ -235,13 +207,13 @@ export interface FileLockOptions {
  * contention only when a fresh `lstat` confirms the lock path exists, covering
  * Windows exclusive-create behavior. Windows retries one unconfirmed EPERM
  * because the holder can release before the probe; a repeated unconfirmed
- * permission error is rethrown. The lock records its holder's PID and hostname.
- * A contender removes the lock and retries at once when that holder ran on
- * this host and its process no longer exists; any other lock, including one
- * whose record is incomplete or names another host, is waited for. Contention
- * backs off exponentially and times out after the deadline. A holder whose PID
- * a live process reused keeps its lock until an operator removes it. The parent
- * directory must exist.
+ * permission error is rethrown. The lock records its holder's PID. A contender
+ * removes the lock and retries at once when no process with that PID exists;
+ * any other lock, including one whose record is incomplete, is waited for.
+ * Contention backs off exponentially and times out after the deadline. A
+ * holder whose PID a live process reused keeps its lock until an operator
+ * removes it. PIDs are compared on the contender's host, so writers on other
+ * hosts sharing the file are unsupported. The parent directory must exist.
  * @param filename - the file whose writers this lock serializes.
  * @param operation - the read-render-commit cycle to run while holding the lock.
  * @param options - acquisition options; omitted waits {@link DEFAULT_LOCK_WAIT_MS}.
@@ -258,7 +230,7 @@ export async function withFileLock<T>(
   let retriedUnconfirmedPermissionError = false
   for (;;) {
     try {
-      await writeFile(lockPath, lockRecord(), { mode: 0o600, flag: 'wx' })
+      await writeFile(lockPath, `${process.pid}\n`, { mode: 0o600, flag: 'wx' })
       break
     } catch (error) {
       if (!await isLockContention(error, lockPath)) {

@@ -12,11 +12,11 @@ The profile package lock (`<profile>/package.json.lock`) made the cost visible. 
 
 ## Decision
 
-- The lock records `{ pid, hostname, nonce }`. The nonce makes each record unique, so a later lock never repeats an exited holder's record.
-- A contender that finds a lock reads its record. When the record names this host and a signal probe of the PID fails with `ESRCH`, the holder is proven gone and the lock is taken over. `EPERM` means the process exists under another user and the lock is kept.
-- Contenders that read the same record serialize on a claim file, `<file>.lock.takeover-<first 16 hex digits of the record's SHA-256>`, created with `wx`. The claimant re-reads the lock, removes it only if it still holds that record, removes the claim, and retries acquisition at once. The record can change only through another takeover, which needs the same claim, so a claimant never removes a lock that another contender acquired after the exited holder's.
-- A record that is empty, unparsable, lacks a hostname, names another host, or names a PID of zero or less is waited for. None of these proves that the holder stopped.
-- A PID-only record written by an earlier release is treated as written on this host, so locks left before this change are also taken over.
+- The lock keeps the `<pid>\n` record earlier releases wrote, so locks left before this change are taken over and processes of both releases interoperate.
+- A contender that finds a lock reads its record. When a signal probe of the PID fails with `ESRCH`, the holder is proven gone and the lock is taken over. `EPERM` means the process exists under another user and the lock is kept.
+- Contenders that read the same record serialize on a claim file, `<file>.lock.takeover-<first 16 hex digits of the record's SHA-256>`, created with `wx`. The claimant re-reads the lock, removes it only if it still holds that record, removes the claim, and retries acquisition at once. The record can change only through another takeover, which needs the same claim, or through a new holder that reused the exited PID between the claimant's two reads; the latter requires the PID space to wrap within that moment, so a claimant does not remove a lock that another contender acquired after the exited holder's.
+- A record that is empty, incomplete, not a decimal PID, or names PID 0 is waited for. None of these proves that the holder stopped.
+- The probe runs on the contender's host. Writers on several hosts sharing one `DSH_HOME` over a network filesystem are unsupported; the `flock` that guards Session files does not reliably exclude them either.
 
 ## Alternatives considered
 
@@ -26,19 +26,20 @@ The profile package lock (`<profile>/package.json.lock`) made the cost visible. 
 
 **Rename the stale lock aside and restore it when the renamed record differs.** Restoring can race a third contender that acquires the empty path in between, which leaves two holders. The claim file prevents that race without restoring anything.
 
+**Record the hostname and a nonce.** A hostname would keep a writer on another host from probing a PID that is not its own, but no supported deployment shares these files across hosts, and macOS changes its hostname when networks change, which would leave locks from before the change in place. A nonce would make each record unique, but the only race it closes needs the PID space to wrap between two reads.
+
 **Signal handlers in `dsh plugin` only.** This covers one of the paths that leave a lock and leaves crashes, forced exits, and the other lock files behind.
 
 ## Testing
 
 | Evidence | Behaviour |
 |---|---|
-| [atomic-write.spec.ts](../../../../packages/util/atomic-write/tests/atomic-write.spec.ts) | Takeover of an exited holder's current and PID-only records; eight contenders over one exited holder never overlap; live, other-user, other-host, empty, unparsable, hostname-less, and process-group records are waited for; an unreadable lock, a claim held by another contender, and a record replaced after the claim are left in place; a Windows claim refusal is retried, another claim failure surfaces, and a claim that cannot be removed does not fail the operation. |
+| [atomic-write.spec.ts](../../../../packages/util/atomic-write/tests/atomic-write.spec.ts) | Takeover of an exited holder's record; eight contenders over one exited holder never overlap; live, other-user, empty, incomplete, non-PID, process-group, and out-of-range records are waited for; an unreadable lock, a claim held by another contender, and a record replaced after the claim are left in place; a Windows claim refusal is retried, another claim failure surfaces, and a claim that cannot be removed does not fail the operation. |
 
 ## Consequences
 
-- Locks left by an exited process on the same host no longer need an operator; the next writer proceeds without waiting for its deadline.
+- Locks left by an exited process, including those written before this change, no longer need an operator; the next writer proceeds without waiting for its deadline.
 - A PID that a live process reused after a reboot keeps the lock in place until an operator removes it, as before.
-- A hostname change between the holder's exit and the next writer, which macOS does when networks change, keeps the lock in place.
-- Processes that share a hostname but not a PID namespace, such as containers started with the host's UTS namespace over one volume, can see a live holder as exited. Such deployments are not supported.
+- Processes that share the lock file but not a PID namespace, such as containers over one volume or hosts over a network filesystem, can see a live holder as exited. Such deployments are not supported.
 - A contender that crashes while it holds a claim leaves that claim, and the named lock is then not taken over automatically.
 - A holder that is still alive keeps its lock, so this does not bound how long a live operation holds it.

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
-import { hostname, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { withFileLock, writeFileAtomic } from '../src/index.ts'
@@ -88,9 +88,9 @@ async function exitedPid(): Promise<number> {
   return child.pid as number
 }
 
-/** The lock record the current protocol writes for a holder. */
-function record(pid: number, host = hostname()): string {
-  return `${JSON.stringify({ pid, hostname: host, nonce: 'test' })}\n`
+/** The lock record a holder writes. */
+function record(pid: number): string {
+  return `${String(pid)}\n`
 }
 
 /** Resolve once the lockfile exists, so contention is measured against a held lock. */
@@ -250,18 +250,13 @@ describe('withFileLock', () => {
     expect(called).toBe(false)
   })
 
-  it.each([
-    ['a current record', (pid: number) => record(pid)],
-    ['a PID-only record from an earlier release', (pid: number) => `${String(pid)}\n`],
-  ])('takes over a lock whose holder exited, from %s', async (_label, render) => {
+  it('takes over a lock whose holder exited', async () => {
     const dir = await scratch()
     const target = join(dir, 'document')
-    await writeFile(`${target}.lock`, render(await exitedPid()))
+    await writeFile(`${target}.lock`, record(await exitedPid()))
 
-    await expect(withFileLock(target, async () => {
-      const held = JSON.parse(await readFile(`${target}.lock`, 'utf8')) as { pid: number; hostname: string }
-      return [held.pid, held.hostname]
-    }, { waitMs: 0 })).resolves.toEqual([process.pid, hostname()])
+    await expect(withFileLock(target, async () => await readFile(`${target}.lock`, 'utf8'), { waitMs: 0 }))
+      .resolves.toBe(record(process.pid))
     expect(await readdir(dir)).toEqual([])
   })
 
@@ -284,19 +279,15 @@ describe('withFileLock', () => {
 
   it.each([
     ['a live holder', () => record(process.pid)],
-    ['a live holder from an earlier release', () => `${String(process.pid)}\n`],
-    ['an exited holder on another host', async () => record(await exitedPid(), `${hostname()}-elsewhere`)],
     ['an empty record', () => ''],
-    ['an unparsable record', () => '{"pid":'],
-    ['a JSON record that is not an object', () => 'null\n'],
-    ['a record without a hostname', async () => `${JSON.stringify({ pid: await exitedPid() })}\n`],
-    ['a record whose PID is not a number', () => `${JSON.stringify({ pid: '1', hostname: hostname() })}\n`],
+    ['an incomplete record', () => '12'],
+    ['a record that is not a PID', () => 'holder\n'],
     ['a record naming a process group', () => record(0)],
-    ['a record with a fractional PID', () => record(1.5)],
+    ['a record beyond the safe integer range', () => '99999999999999999999\n'],
   ])('waits for the lock of %s', async (_label, render) => {
     const dir = await scratch()
     const target = join(dir, 'document')
-    const held = await render()
+    const held = render()
     await writeFile(`${target}.lock`, held)
     const operation = vi.fn(async () => {})
 
