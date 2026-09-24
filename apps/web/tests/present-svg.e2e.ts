@@ -122,6 +122,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
     expect(await page.getByText('产物', { exact: true }).count()).toBe(0)
     // The scaffold workspace is not a git repository; the write call supplies its single changed file.
     const changes = page.locator('[data-changed-files]')
+    await changes.waitFor({ state: 'visible' })
     expect(await changes.count()).toBe(1)
     expect(await changes.getByText(`已编辑 ${FILE}`, { exact: true }).count()).toBe(1)
     expect(await changes.getByRole('list').count()).toBe(0)
