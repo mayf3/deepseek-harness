@@ -167,6 +167,31 @@ const timed = (): QuestionRequest => ({
 })
 
 describe('apply', () => {
+  it('delegates an expired foreground wait and releases its claim stream', async () => {
+    const b = await bench()
+    const dispose = vi.fn()
+    b.remoteQuestions.attachWait.mockImplementationOnce(() => ({
+      dispose, send: () => {}, end: () => {},
+      [Symbol.asyncIterator]: () => ({
+        next: () => Promise.resolve({ done: true as const, value: undefined }),
+      }),
+    }))
+    try {
+      const next = vi.fn(async () => ANSWER)
+
+      await expect(b.invoke(b.agent, timed(), next)).resolves.toBe(ANSWER)
+
+      expect(next).toHaveBeenCalledOnce()
+      expect(dispose).toHaveBeenCalledOnce()
+      expect(b.remoteQuestions.attachWait.mock.calls[0]![2].aborted).toBe(true)
+      expect(b.pending.getSnapshot()[0]?.snapshot()).toMatchObject({ channel: 'none', countdown: undefined })
+      b.projection.set(view([]))
+      expect(b.pending.getSnapshot()).toEqual([])
+    } finally {
+      await b.fiber.dispose()
+    }
+  })
+
   it('attaches an indefinite request before publishing control back to the caller', async () => {
     const b = await bench()
     try {

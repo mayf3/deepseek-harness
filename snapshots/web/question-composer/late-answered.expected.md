@@ -13,7 +13,7 @@
 - status: Worked
 - button "Took {{duration}}" [expanded]
 - button "Asked questions" [expanded]
-- button "Think"
+- button "Think The user wants me to use the ask_user_question tool with specific parameters. Let me do exactly that."
 - button "Ask question 1/1 answered View answers" [expanded]:
   - text: Ask question 1/1 answered
   - button "View answers"

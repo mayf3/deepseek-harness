@@ -10,7 +10,7 @@
 .bubble {
   max-width: 72%;
   padding: 10px 16px;
-  border-radius: 22px;
+  border-radius: var(--dsw-radius-xl);
   background: var(--dsw-specific-bubble);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
@@ -33,12 +33,12 @@
 }
 
 .toggle:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 2px;
 }
 
 .bubble:has(.toggle:focus-visible) {
-  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
 }
 
 .labelRow {
@@ -149,7 +149,7 @@
   height: 28px;
   padding: 6px;
   border: none;
-  border-radius: 28px;
+  border-radius: var(--dsw-radius-sm);
   background: transparent;
   color: inherit;
   cursor: pointer;

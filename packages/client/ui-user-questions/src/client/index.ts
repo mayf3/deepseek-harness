@@ -241,7 +241,7 @@ async function answerQuestion(
       claimSignal,
       (channel) => { card.pending.detachWaterfall(channel) },
     )
-    delegateRequest = waterfall.channel.delegate
+    delegateRequest = () => { waterfall.channel.delegate() }
     card.pending.attachWaterfall(waterfall.channel)
     if (iterator !== undefined) {
       claimEnded = (async () => {
