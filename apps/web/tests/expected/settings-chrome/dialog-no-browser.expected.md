@@ -22,8 +22,8 @@
   - button "Standard"
   - text: Performance & usage Choose how much performance and usage information to show
   - button "Detailed"
-  - text: Developer tools Show tools and information for debugging and troubleshooting
-  - switch "Developer tools"
+  - text: Coding Tools Shows trajectory, code diffs, and Agent preset switching in new chats
+  - switch "Coding Tools"
   - text: Keyboard shortcuts
   - paragraph: Browse available shortcuts and input actions
   - button "View shortcuts"
