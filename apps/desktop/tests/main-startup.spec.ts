@@ -329,6 +329,7 @@ vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: class
 vi.mock('../src/platform-view.ts', async importOriginal => ({
   ...await importOriginal<typeof import('../src/platform-view.ts')>(),
   DesktopPlatformView: class {
+    notifyLocaleChanged() {}
     setSession() {}
     setBounds() {}
     close() {}
@@ -1097,7 +1098,7 @@ describe('desktop main startup', () => {
     const window = harness.windows[0]!
     expect(harness.trays).toHaveLength(1)
     expect(harness.trays[0]!.image).toEqual({ path: join('desktop-test-resources', 'tray.ico') })
-    expect(harness.backgroundNotice.markerPath).toBe(join('desktop-test-userData', 'background-notice-shown'))
+    expect(harness.backgroundNotice.markerPath).toBe(join(harness.app.getPath('userData'), 'background-notice-shown'))
     window.show.mockClear()
     window.close()
     expect(window.isDestroyed()).toBe(false)
@@ -1268,8 +1269,8 @@ describe('desktop main startup', () => {
     const host = await readyForUpdate()
     const disposal = harness.deferPlatformDispose()
     harness.app.quit()
-    expect(harness.platformDispose).toHaveBeenCalledOnce()
     await host.stopping.promise
+    expect(harness.platformDispose).toHaveBeenCalledOnce()
     host.exited.resolve()
     expect(harness.app.quit).toHaveBeenCalledOnce()
     disposal.resolve()

@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-23-desktop-close-to-background-and-quit-confirmation.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-23-desktop-close-to-background-and-quit-confirmation.md
-2026-09-23-desktop-close-to-background-and-quit-confirmation.md: b26b040613f154185b7b98436d30cb4fb0171f46
-2026-09-23-desktop-close-to-background-and-quit-confirmation.zh.md: e4391a49a8079316bc2111b90344f3bcdad5800c
+/agent-note-hide-the-desktop-window-on-close-and-confirm-interruptible-quits:
+  en: 9e029938c58bf143
+  zh: f60f9cf2067a02ee
+/agent-note-hide-the-desktop-window-on-close-and-confirm-interruptible-quits/problem:
+  en: 782e934449eae28c
+  zh: 0941465dff3a26d9
+/agent-note-hide-the-desktop-window-on-close-and-confirm-interruptible-quits/decision:
+  en: 245710bbcf2ac63a
+  zh: b040b5e42e43702d
+/agent-note-hide-the-desktop-window-on-close-and-confirm-interruptible-quits/alternatives-considered:
+  en: ec34fbba0091f85c
+  zh: f5c971991056827a
+/agent-note-hide-the-desktop-window-on-close-and-confirm-interruptible-quits/consequences:
+  en: 24a048493c352d13
+  zh: 48f3c5f68c98fc11
