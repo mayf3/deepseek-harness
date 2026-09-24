@@ -44,7 +44,7 @@ When the host composition includes an HTTP server, the host half embeds the regi
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-All menus share `--dsw-menu-surface-fill` and blur through `MenuSurface`; platform code must preserve those token values. Other overlays consume `--dsw-specific-menu`, which keeps a nearly opaque macOS fill without a menu backing. The enforced source rules are defined in the [styling reference](../../../docs/web-styling.md#component-rules). Modal masks retain their dark translucent fill without background blur.
+Shared menus use `--dsw-menu-surface-fill` and blur through `MenuSurface`; platform code must preserve those token values. Other overlays consume `--dsw-specific-menu`, which keeps a nearly opaque macOS fill without a menu backing. The enforced source rules are defined in the [styling reference](../../../docs/web-styling.md#component-rules). Modal masks retain their dark translucent fill without background blur.
 
 <details>
 <summary>Implementation internals — click to expand</summary>

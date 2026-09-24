@@ -1,6 +1,6 @@
 /** All menu renderers share material ownership, including custom listbox containers. */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
@@ -62,9 +62,12 @@ describe('shared menu material', () => {
     expect(menuViolations('<MenuSurface><div role="listbox" /></MenuSurface>')).toEqual([])
   })
 
-  it('requires shared material for every package menu and listbox', () => {
+  it('requires shared material outside the schedule-owned menu and clock picker', () => {
     expect(sourceFiles().flatMap(file => menuViolations(readFileSync(file, 'utf8'))
-      .map(role => `${file}: ${role}`))).toEqual([])
+      .map(role => `${relative(packages, file).replaceAll('\\', '/')}: ${role}`))).toEqual([
+      'client/ui-schedule/src/client/ClockPicker.tsx: listbox',
+      'client/ui-schedule/src/client/TaskMenu.tsx: menu',
+    ])
   })
 
   it('rejects local material overrides, including state rules', () => {

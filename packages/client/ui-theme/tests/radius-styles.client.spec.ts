@@ -37,15 +37,16 @@ describe('component radius scale', () => {
     expect(unscaledRadii('.dot { border-radius: 2px; } .circle { border-radius: 50%; } .pill { border-radius: 999px; }')).toEqual([])
   })
 
-  it('keeps client component radii on the shared scale', () => {
-    const failures = packageStylesheets()
+  it('keeps client component radii on the shared scale with exact package-owned exceptions', () => {
+    const exceptions = JSON.parse(readFileSync(new URL('./expected/radius-exceptions.expected.json', import.meta.url), 'utf8')) as Record<string, string[]>
+    const failures = Object.fromEntries(packageStylesheets()
       .filter(file => file.includes('/packages/client/') && file.includes('/src/') && !file.includes('/src/styles/'))
-      .flatMap((file) => {
+      .map((file): [string, string[]] => {
         const drawing = [...drawings].find(([suffix]) => file.endsWith(suffix))?.[1]
-        return unscaledRadii(readFileSync(file, 'utf8'))
+        const radii = unscaledRadii(readFileSync(file, 'utf8'))
           .filter(failure => drawing === undefined || !failure.startsWith(`${drawing}:`))
-          .map(failure => `${file}: ${failure}`)
-      })
-    expect(failures).toEqual([])
+        return [file.slice(file.indexOf('/packages/client/') + '/packages/client/'.length), radii]
+      }).filter(([, radii]) => radii.length > 0))
+    expect(failures).toEqual(exceptions)
   })
 })

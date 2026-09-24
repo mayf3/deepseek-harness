@@ -26,6 +26,10 @@ function appearance(element: Locator) {
 it('shares settings card materials and control sizes in both palettes', async () => {
   const scaffold = await launchWebScaffold({})
   onTestFinished(() => scaffold.close())
+  await scaffold.ctx.settings.mutate('ui-settings-account', [
+    { op: 'set', path: ['step'], value: 'done' },
+    { op: 'set', path: ['completion'], value: 'completed' },
+  ])
   const account = scaffold.ctx.deepseekAccount
   const state: AccountView = {
     status: 'credential-stored', attempt: null,
@@ -66,7 +70,7 @@ it('shares settings card materials and control sizes in both palettes', async ()
 
     await dialog.getByRole('button', { name: '账号与余额', exact: true }).click()
     const section = dialog.getByRole('region', { name: '账号与余额', exact: true })
-    await section.getByText('¥128.50', { exact: true }).waitFor()
+    await expect.poll(() => section.innerText()).toContain('¥128.50')
     const cards = section.locator(':scope > div')
     expect(await cards.count()).toBe(2)
     const profile = await appearance(cards.nth(0))
