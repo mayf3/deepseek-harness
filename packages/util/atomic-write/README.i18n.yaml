@@ -33,8 +33,8 @@
   en: 725509a8b621c668
   zh: c11e3ffdf73af844
 /deepseek-ai-dsh-atomic-write/understand-the-implementation/write-path:
-  en: 24d48491c0096e5f
-  zh: 0b9d2e45eed7d10f
+  en: 2e6561c9282f0c0d
+  zh: 7f0e76f6dbdea501
 /deepseek-ai-dsh-atomic-write/understand-the-implementation/why-the-swap-stays-safe:
   en: 784e985c1fb3a25e
   zh: 4afda1b9bf5f29cc
@@ -48,8 +48,8 @@
   en: 815e93723a98919c
   zh: 921da870f67e4033
 /deepseek-ai-dsh-atomic-write/known-limitations-and-deferred-work:
-  en: db830fa94a503a00
-  zh: cb58cb5aeadbf15e
+  en: 5d0b395da8833bbb
+  zh: 6191bab46d288be7
 /deepseek-ai-dsh-atomic-write/known-limitations-and-deferred-work/dev-note:
   en: d3461ceeaf041974
   zh: f59df2adbf52fed9

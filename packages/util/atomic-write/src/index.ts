@@ -112,8 +112,10 @@ function holderExited(record: string): boolean {
   // Any other content is being written or was cut short, which proves nothing about its holder.
   if (!/^\d+\n$/.test(record)) return false
   const pid = Number(record.trim())
-  // PID 0 addresses the caller's process group, which proves nothing about one holder.
-  if (!Number.isSafeInteger(pid) || pid === 0) return false
+  // PID 0 addresses the caller's process group, and the probe accepts only positive int32 PIDs.
+  if (pid === 0 || pid > 0x7fffffff) return false
+  // This process is running; a runtime whose probe cannot see itself must not take over its own lock.
+  if (pid === process.pid) return false
   try {
     process.kill(pid, 0)
     return false
@@ -136,11 +138,12 @@ async function readLockRecord(lockPath: string): Promise<string | undefined> {
 
 /**
  * Remove the lock when its recorded holder exited. Contenders that read the
- * same record serialize on a claim file named after it, and the claimant
- * removes the lock only while it still holds that record: no other contender
- * can replace the record without the claim, so a removal never deletes a lock
- * another contender acquired after the dead holder's, unless that contender
- * reused the dead holder's PID within the moment between the two reads.
+ * same record serialize on a claim file named after it. Under the claim, the
+ * claimant re-reads the lock and probes its PID again, and removes it only
+ * when it still holds that record and that PID is still gone: the record's
+ * holder can no longer release it, and no other contender can remove it
+ * without the claim, so a removal never deletes a lock another contender
+ * acquired after the dead holder's, including one whose holder reused the PID.
  * @returns Whether this call removed the dead holder's lock.
  */
 async function takeOverExitedLock(lockPath: string): Promise<boolean> {
@@ -156,8 +159,14 @@ async function takeOverExitedLock(lockPath: string): Promise<boolean> {
     throw error
   }
   try {
-    if (await readLockRecord(lockPath) !== record) return false
-    await rm(lockPath, { force: true })
+    if (await readLockRecord(lockPath) !== record || !holderExited(record)) return false
+    try {
+      await rm(lockPath, { force: true })
+    } catch (error) {
+      // Windows can refuse the removal while other software briefly holds the file; the next attempt retries.
+      void error
+      return false
+    }
     return true
   } finally {
     await rm(claim, { force: true }).catch((error: unknown) => {
@@ -208,12 +217,16 @@ export interface FileLockOptions {
  * Windows exclusive-create behavior. Windows retries one unconfirmed EPERM
  * because the holder can release before the probe; a repeated unconfirmed
  * permission error is rethrown. The lock records its holder's PID. A contender
- * removes the lock and retries at once when no process with that PID exists;
- * any other lock, including one whose record is incomplete, is waited for.
- * Contention backs off exponentially and times out after the deadline. A
- * holder whose PID a live process reused keeps its lock until an operator
- * removes it. PIDs are compared on the contender's host, so writers on other
- * hosts sharing the file are unsupported. The parent directory must exist.
+ * removes the lock and retries at once when no process with that PID exists
+ * (`ESRCH`); any other lock, including one whose holder exists under another
+ * user (`EPERM`) or whose record is incomplete, is waited for. Contention backs
+ * off exponentially and times out after the deadline. A holder whose PID a
+ * live process reused keeps its lock until an operator removes it. Takeover
+ * proves only that the recorded process exited: an operation that starts other
+ * writers must stop them with it or leave its successor a way to find them.
+ * PIDs are compared on the contender's host, so writers on other hosts or in
+ * other PID namespaces sharing the file are unsupported and could both hold
+ * the lock. The parent directory must exist.
  * @param filename - the file whose writers this lock serializes.
  * @param operation - the read-render-commit cycle to run while holding the lock.
  * @param options - acquisition options; omitted waits {@link DEFAULT_LOCK_WAIT_MS}.
