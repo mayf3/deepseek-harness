@@ -24,7 +24,7 @@ afterEach(async () => {
 const clientMetadata = (locale = 'en'): AccountClientMetadata => ({ version: '1.2.3', locale, timezoneOffsetSeconds: 28_800 })
 
 async function fixture(
-  contact: { email: string; mobile?: string; mobile_number?: string } = {
+  contact: { email: string; mobile?: string; mobile_number?: string; id?: string | null } = {
     email: 't***@example.invalid', mobile: '138****5678',
   },
   requestHeaders: Record<string, string> = {},
@@ -34,7 +34,7 @@ async function fixture(
   beforeAccount?: (ctx: Context, origin: string) => Promise<void>,
   embeddedPageDist = '',
   desktopPlatform: 'darwin' | 'win32' | null = null,
-  balanceTimeoutMs = 2_000,
+  balanceTimeoutMs = 30_000,
 ) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-account-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
@@ -263,7 +263,9 @@ it('stores a grant before redirecting, restores account presence, and signs out 
   expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=test&locale=zh_CN&login_source=desktop`)
   expect((await f.account.getState()).status).toBe('credential-stored')
   expect(await readFile(join(f.home, 'credentials.yaml'), 'utf8')).toContain('dsh_mock_test')
-  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test',
+  // The Host publishes identity from a separate profile read; the snapshot only reuses it.
+  await f.account.getProfile(clientMetadata())
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, userId: 'test-user', token: 'dsh_mock_test',
     requestHeaders: {} })
   expect(await f.account.resolveToken('https://api.deepseek.com')).toBeUndefined()
   await f.account.signOut(clientMetadata())
@@ -870,7 +872,8 @@ it('carries the configured embedded frontend selector in the private Platform se
   await f.account.startSignIn(clientMetadata(), f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
-  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test', embeddedPageDist: 'feat/test',
+  await f.account.getProfile(clientMetadata())
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, userId: 'test-user', token: 'dsh_mock_test', embeddedPageDist: 'feat/test',
     requestHeaders: {} })
 })
 
@@ -893,7 +896,7 @@ it.each([
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
   await readDetails(f.account)
-  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test',
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, userId: 'test-user', token: 'dsh_mock_test',
     requestHeaders: { cookie: 'test_gate=synthetic', ...overrides } })
   await f.account.signOut(clientMetadata())
   await expect.poll(f.logoutCount).toBe(1)
@@ -1411,6 +1414,109 @@ it('invalidates account reads before the shared grant lookup returns to its call
     expect(await f.account.getProfile(clientMetadata())).toBeNull()
     expect(f.detailRequests).toEqual([])
   } finally { read.mockRestore() }
+})
+
+it('publishes a credential snapshot without querying the profile', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  expect(await f.account.getPlatformSession()).toMatchObject({ userId: null, token: 'test-platform-grant' })
+  expect(f.detailRequests).toEqual([])
+})
+
+it.each([null, '', 'stable-user'])('exports the stable profile ID for native storage after a profile read: %s', async (id) => {
+  const f = await fixture({ email: 'test@example.invalid', id })
+  await storeAccount(f)
+  await f.account.getProfile(clientMetadata())
+  expect(await f.account.getPlatformSession()).toMatchObject({ userId: id || null, token: 'test-platform-grant' })
+})
+
+it('publishes a snapshot while the profile read is still pending', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  f.holdDetails()
+  const profile = f.account.getProfile(clientMetadata())
+  await f.detailsStarted.promise
+  try {
+    expect(await f.account.getPlatformSession()).toMatchObject({ userId: null, token: 'test-platform-grant' })
+  } finally { f.release.resolve(undefined) }
+  await expect(profile).resolves.toMatchObject({ status: 'ready' })
+  expect(await f.account.getPlatformSession()).toMatchObject({ userId: 'test-user' })
+})
+
+it('notifies account watchers when a profile read first exposes the stable ID', async () => {
+  const f = await fixture()
+  f.failProfile(true)
+  await storeAccount(f)
+  expect(await f.account.getProfile(clientMetadata())).toEqual({ status: 'failed' })
+  const lifetime = new AbortController()
+  const states: Awaited<ReturnType<PlatformAccount['getState']>>[] = []
+  const watching = (async () => { for await (const state of f.account.watch(lifetime.signal)) states.push(state) })()
+  try {
+    await expect.poll(() => states.length).toBe(1)
+    f.failProfile(false)
+    await expect(f.account.getProfile(clientMetadata())).resolves.toMatchObject({ status: 'ready', value: { id: 'test-user' } })
+    await expect.poll(() => states.length).toBe(2)
+    expect(await f.account.getPlatformSession()).toMatchObject({ userId: 'test-user' })
+    // A later refresh with the same stable ID must not wake publishers again.
+    await f.account.getProfile(clientMetadata())
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    expect(states).toHaveLength(2)
+  } finally {
+    lifetime.abort()
+    await watching
+  }
+})
+
+it('never publishes a profile identity read from a replaced credential', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  f.holdDetails()
+  const pending = f.account.getProfile(clientMetadata())
+  await f.detailsStarted.promise
+  await f.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'default'), () => Promise.resolve({
+    kind: 'grant', payload: { version: 1, issuer: f.origin, token: 'replacement-token' },
+  }))
+  f.release.resolve(undefined)
+  expect(await pending).toBeNull()
+  expect(await f.account.getPlatformSession()).toMatchObject({ userId: null, token: 'replacement-token' })
+})
+
+it('discards a pending profile read when sign-out removes the credential', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  f.holdDetails()
+  const pending = f.account.getProfile(clientMetadata())
+  await f.detailsStarted.promise
+  await f.account.signOut(clientMetadata())
+  expect(await f.account.getPlatformSession()).toBeNull()
+  f.release.resolve(undefined)
+  expect(await pending).toBeNull()
+})
+
+it('withholds a cached profile identity from a grant it was not read with', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  await f.account.getProfile(clientMetadata())
+  const key = credentialKey('deepseek-account-platform', 'default')
+  const original = f.ctx.credentials.readRecord.bind(f.ctx.credentials)
+  // Another process may replace the credential document between this provider's reads, so the
+  // account ID is only published beside the grant it was read with.
+  const read = vi.spyOn(f.ctx.credentials, 'readRecord').mockImplementation(async requested =>
+    requested === key
+      ? { kind: 'grant', payload: { version: 1, issuer: f.origin, token: 'rotated-token' } }
+      : original(requested))
+  try {
+    expect(await f.account.getPlatformSession()).toMatchObject({ token: 'rotated-token', userId: null })
+  } finally { read.mockRestore() }
+})
+
+it('reuses the last profile identity without querying again', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  await f.account.getProfile(clientMetadata())
+  f.failProfile(true)
+  expect(await f.account.getPlatformSession()).toMatchObject({ userId: 'test-user' })
+  expect(f.detailRequests).toHaveLength(1)
 })
 
 it('cancels a pending sign-in when the current stored grant expires', async () => {

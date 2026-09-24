@@ -1,11 +1,11 @@
 /** Account settings renders safe Host state and explicit login actions. */
 import { Big } from 'big.js'
-import { useEffect, useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Button, IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { PropsRuntime, PropsLocale, InjectFace, HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
-import { PlatformOverlay, type PlatformBridge } from './PlatformOverlay.tsx'
+import type { PlatformPage, PlatformPages } from './platform-pages.ts'
 import { formatBalance } from './formatBalance.ts'
 import { AccountAvatar } from './AccountAvatar.tsx'
 import { authorizeUrlWithTheme } from './authorize-url.ts'
@@ -43,8 +43,8 @@ export interface AccountSectionInjected {
    * @returns listener cleanup.
    */
   subscribeModelSignInRequired?: (listener: () => void) => () => void
-  /** Desktop-only commands; absent in ordinary browsers. */
-  platform?: PlatformBridge
+  /** Desktop-only: show one page in the account feature's shared native host; absent in ordinary browsers. */
+  openPlatformPage?: PlatformPages['open']
 
   /** Account stream owned by the Host and theme snapshots published by the renderer, observed through framework hooks. */
   hooks: {
@@ -54,7 +54,7 @@ export interface AccountSectionInjected {
   }
   /**
    * Read the balance, bonus wallets and unnotified bonus once. The Settings launcher
-   * calls it on each entry and the top-up view calls it when the user returns.
+   * calls it on each entry, and a page opener on return from top-up.
    * @returns after both reads settle.
    */
   refreshAccount: () => Promise<void>
@@ -80,11 +80,13 @@ export interface AccountSectionInjected {
 /** Composed account section props. */
 export type AccountSectionProps =
   PropsRuntime<'settings.section'> & PropsLocale<'settings.account'> & InjectFace<AccountSectionInjected>
-/** @param props - localized actions and account subscription. @returns account settings UI. */
-export function AccountSection({ t, useAccount, useTheme, start, cancel, platform, refreshAccount }: AccountSectionProps) {
+/** @param props - localized actions, account subscription, and the shared Platform page channel. @returns account settings UI. */
+export function AccountSection({ t, useAccount, useTheme, start, cancel, openPlatformPage }: AccountSectionProps) {
   const { view: state, details, failed: streamFailed } = useAccount(value => value)
   const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
-  const [platformPage, setPlatformPage] = useState<'usage' | 'top-up'>()
+  // The shared host owns the native view; this page holds only its own request,
+  // and only while it is the latest owner.
+  const releasePage = useRef<(() => void) | undefined>(undefined)
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState(false)
   const profile = details?.profile?.status === 'ready' ? details.profile.value : undefined
@@ -95,7 +97,16 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, platfor
   const active = attempt !== null && attempt !== undefined
     && ['initializing', 'waiting-browser', 'exchanging', 'committing'].includes(attempt.phase)
   const signedIn = state?.status === 'credential-stored'
-  useEffect(() => { if (!signedIn) setPlatformPage(undefined) }, [signedIn])
+  useEffect(() => () => { releasePage.current?.(); releasePage.current = undefined }, [])
+  useEffect(() => {
+    if (signedIn) return
+    releasePage.current?.()
+    releasePage.current = undefined
+  }, [signedIn])
+  const showPage = (open: PlatformPages['open'], page: PlatformPage) => {
+    releasePage.current?.()
+    releasePage.current = open(page, () => { releasePage.current = undefined })
+  }
   const run = async (action: () => Promise<void>) => {
     setBusy(true)
     setFailed(false)
@@ -106,7 +117,7 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, platfor
    * @returns nothing; on Desktop the embedded page replaces the pending navigation.
    */
   const openUsage = (event: MouseEvent<HTMLAnchorElement>): void => {
-    if (platform !== undefined && signedIn) { event.preventDefault(); setPlatformPage('usage') }
+    if (openPlatformPage !== undefined && signedIn) { event.preventDefault(); showPage(openPlatformPage, 'usage') }
   }
   /**
    * The Platform entry the balance rows share with the Usage action: an embedded page on
@@ -141,17 +152,6 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, platfor
   )
   return (
     <section className={css.section} aria-label={t('nav')}>
-      {platformPage !== undefined && platform !== undefined && signedIn && <PlatformOverlay
-        bridge={platform} page={platformPage} backLabel={t('backToHarness')}
-        loadingLabel={t('loading')} failureLabel={t('platformFailed')} retryLabel={t('platformRetry')}
-        onClose={() => {
-          // Returning from top-up may have changed what the account holds, so the
-          // page leaves immediately and the reads settle behind it. Usage changes
-          // no account state, so leaving it stays as cheap as it was.
-          const page = platformPage
-          setPlatformPage(undefined)
-          if (page === 'top-up') void refreshAccount()
-        }} />}
       <div className={css.card}>
         <div className={css.identity}>
           <span className={css.avatar}><AccountAvatar url={signedIn ? profile?.avatarUrl : null} /></span>
@@ -169,7 +169,7 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, platfor
           target="_blank" rel="noreferrer">
           {t('open')}
         </a>}
-        <Button variant="outline" className={css.button} disabled={busy || attempt.phase === 'committing'}
+        <Button variant="outline" disabled={busy || attempt.phase === 'committing'}
           onClick={() => { void run(() => cancel(attempt.id)) }}>{t('cancel')}</Button>
       </div>}
       <div className={css.balanceCard}>
@@ -207,7 +207,7 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, platfor
             {platformLink(t('usage'), css.linkButton)}
             <a className={`${css.linkButton} ${css.primary}`} href={state?.links.topUpUrl} aria-disabled={state === undefined}
               target="_blank" rel="noreferrer"
-              onClick={(event) => { if (platform !== undefined && signedIn) { event.preventDefault(); setPlatformPage('top-up') } }}>{t('topUp')}</a>
+              onClick={(event) => { if (openPlatformPage !== undefined && signedIn) { event.preventDefault(); showPage(openPlatformPage, 'top-up') } }}>{t('topUp')}</a>
           </div>
         </div>
       </div>

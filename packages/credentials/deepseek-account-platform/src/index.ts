@@ -59,7 +59,7 @@ export const Config = Schema.object({
   requestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
   accountRequestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
   requestTimeoutMs: Schema.number().min(1).max(120_000).default(30_000),
-  balanceTimeoutMs: Schema.number().min(1).max(120_000).default(2_000),
+  balanceTimeoutMs: Schema.number().min(1).max(120_000).default(30_000),
   logoutMaxRetries: Schema.number().min(0).max(5).step(1).default(5),
   logoutRetryDelayMs: Schema.number().min(1).max(60_000).default(1_000),
   attemptTimeoutMs: Schema.number().min(1).max(3_600_000).default(600_000),
@@ -270,12 +270,17 @@ export class PlatformAccount extends DeepSeekAccount {
 
   /**
    * Cache one ready profile against the grant token it was read with, so identity reuse cannot cross
-   * a credential change.
+   * a credential change. A stable ID that first appears or changes notifies watch consumers, so
+   * identity consumers re-read getPlatformSession; repeated IDs stay silent.
    * @param token - grant the profile was read with.
    * @param profile - profile outcome to record when it carries account data.
    */
   private cacheProfile(token: string, profile: AccountDetails['profile']): void {
-    if (profile.status === 'ready') this.lastProfile = { token, profile }
+    if (profile.status !== 'ready') return
+    // Identity publishers re-read the session snapshot; wake them only when the stable ID changes.
+    const previous = this.lastProfile?.profile.value.id || null
+    this.lastProfile = { token, profile }
+    if (previous !== (profile.value.id || null)) this.changed()
   }
 
   /**
@@ -344,7 +349,10 @@ export class PlatformAccount extends DeepSeekAccount {
     if (stored === null || lifetime.signal.aborted) return null
     // Deployment headers only; the consuming client adds the identity of its own UI.
     const requestHeaders = { ...this.accountRequestHeaders }
+    // Identity comes from the profile read for this same grant; an unknown ID requires disposable
+    // browser storage. A replaced credential never publishes the account its predecessor named.
     return { origin: this.origin, token: stored.token,
+      userId: this.lastProfile?.token === stored.token ? this.lastProfile.profile.value.id || null : null,
       ...(this.embeddedPageDist ? { embeddedPageDist: this.embeddedPageDist } : {}),
       requestHeaders }
   }

@@ -12,6 +12,7 @@ import {
   ipcMain,
   Menu,
   powerMonitor,
+  nativeImage,
   nativeTheme,
   net,
   protocol,
@@ -28,7 +29,7 @@ import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { installMicrophonePermissions } from './microphone-permissions.ts'
 import { DesktopBackendController } from './backend-controller.ts'
 import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
-import { formatDesktopMessage, resolveDesktopLocale, resolveDesktopStartupLocale } from './locale.ts'
+import { desktopUpdateReadyConfirmation, formatDesktopMessage, resolveDesktopLocale, resolveDesktopStartupLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
@@ -51,10 +52,18 @@ import { readDesktopRuntime } from './runtime-tree.ts'
 import { DesktopBrowserGuests } from './browser-guests.ts'
 import { installDesktopShortcuts } from './keyboard.ts'
 import { DesktopUpdateOverlays } from './update-overlay.ts'
+import { DesktopQuitConfirmation } from './quit-confirmation.ts'
+import { DesktopTray } from './tray.ts'
+import { DesktopBackgroundNotice } from './background-notice.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
 let shuttingDown = false
+/**
+ * Set by quit entries that must not ask: crash recovery exit and restart, and the
+ * development restart command. The installer handoff has its own before-quit branch.
+ */
+let skipQuitConfirmation = false
 let windowsLanguage: string | undefined
 /**
  * Whether the backend has reached ready: false until the first ready, back to
@@ -72,6 +81,11 @@ app.setAppLogsPath()
 function currentDesktopLocale(): ReturnType<typeof resolveDesktopLocale> {
   return resolveDesktopLocale(windowsLanguage ?? app.getLocale())
 }
+/** Quit without the task confirmation; the caller has already decided the application must stop. */
+function quitWithoutConfirmation(): void {
+  skipQuitConfirmation = true
+  app.quit()
+}
 const recovery = new DesktopFatalRecovery({
   messages: () => currentDesktopLocale().messages,
   show: options => dialog.showMessageBox(options),
@@ -81,8 +95,8 @@ const recovery = new DesktopFatalRecovery({
     const backupPath = await manager.disableAllPlugins()
     console.info('Desktop profile recovery completed:', { profilePatchBackup: backupPath ?? null, homePatch: 'unchanged' })
   },
-  exit: () => { app.quit() },
-  restart: () => { app.relaunch(); app.quit() },
+  exit: () => { quitWithoutConfirmation() },
+  restart: () => { app.relaunch(); quitWithoutConfirmation() },
   writeReport: (error, source) => persistCrashReport(error, source),
 })
 
@@ -311,6 +325,8 @@ async function main(): Promise<void> {
   let mainWindow: BrowserWindow | undefined
   let welcomeWindow: BrowserWindow | undefined
   let enteredWorkspace = false
+  // NSIS passes --updated when it launches the application after installation.
+  let raiseAfterUpdate = process.platform === 'win32' && process.argv.includes('--updated')
   let shellInstallerOwnsQuit = false
   let requireCleanStop = false
   let updateStoppedHost = false
@@ -322,6 +338,13 @@ async function main(): Promise<void> {
   let mandatoryPolicy: DesktopMandatoryUpdatePolicy | undefined
   let mandatoryUI: DesktopMandatoryUpdateWindow | undefined
   let policyAuth: DesktopPolicyTestAuth | undefined
+  let tray: DesktopTray | undefined
+  /**
+   * The operating system is ending the session: the quit skips its confirmation. Windows sets it
+   * on the definitive session-end message. macOS sets it on the power-off notification, which
+   * another application can still cancel, so the next focus or show of the main window clears it.
+   */
+  let sessionEnding = false
   const isQuitting = (): boolean => quitting
   const currentMainWindow = (): BrowserWindow | undefined => mainWindow
   const ordinaryDialogs = new Set<AbortController>()
@@ -444,6 +467,7 @@ async function main(): Promise<void> {
         }
       },
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
+      inspectQuit: () => host.inspectQuit(),
     }
   }, (state) => {
     if (state.phase === 'error') reportFatal(state.failure, 'host')
@@ -527,11 +551,11 @@ async function main(): Promise<void> {
       const host = backend.host
       if (host === undefined) throw new DesktopUpdatePreparationError('tasks-unavailable', locale.messages.updateTasksUnavailable)
       const active = await host.updateTasks('inspect')
+      const ready = desktopUpdateReadyConfirmation(locale.messages, updates.state.version ?? '', process.platform)
       const confirmation: Electron.MessageBoxOptions = {
         type: active ? 'warning' : 'info', title: locale.messages.updateTitle,
-        message: active ? locale.messages.updateActiveTasks : formatDesktopMessage(locale.messages.updateDownloadedTitle, { version: updates.state.version ?? '' }),
-        detail: active ? locale.messages.updateActiveTasksDetail
-          : locale.messages.updateDownloadedDetail,
+        message: active ? locale.messages.updateActiveTasks : ready.message,
+        detail: active ? locale.messages.updateActiveTasksDetail : ready.detail,
         buttons: active ? [locale.messages.updateStopTasks, locale.messages.updateLater] : [locale.messages.installAndRestart],
         defaultId: 1, cancelId: 1,
       }
@@ -548,6 +572,8 @@ async function main(): Promise<void> {
         const stillActive = await host.updateTasks('lock')
         if (stillActive && !active) throw new DesktopUpdatePreparationError('tasks-changed', locale.messages.updateTasksChanged)
         mandatoryUI?.preparingRestart(stillActive)
+        // The embedded Platform document holds credentials issued by the Host that is about to stop.
+        await platformView.closeAndWait()
         requireCleanStop = true
         updateStopFailure = undefined
         await backend.stop()
@@ -574,8 +600,19 @@ async function main(): Promise<void> {
     const state = await updates.download(version)
     if (state.phase !== 'ready' || quitting) return state
     // Only a completed user-driven download opens this prompt; cancelling installation does not reopen it.
+    // A confirmation on a hidden window would go unseen, so it waits for the next show; the mandatory
+    // flow keeps its own taskbar and Dock attention instead.
+    if (!isMandatory()) await windowShown()
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- A quit can begin while the show is awaited.
+    if (quitting) return state
     return updates.install(version)
   }
+  const windowShown = (): Promise<void> => new Promise((resolve) => {
+    const window = currentDialogWindow()
+    if (window === undefined || window.isDestroyed() || window.isVisible()) { resolve(); return }
+    window.once('show', () => { resolve() })
+    window.once('closed', () => { resolve() })
+  })
 
   protocol.handle(SCHEME, (request) => {
     const url = new URL(request.url)
@@ -834,14 +871,15 @@ async function main(): Promise<void> {
     updates.dispose()
   })
 
+  const applicationIconPath = development ? join(app.getAppPath(), 'resources', 'icon-windows.png')
+    : join(process.resourcesPath, 'icon.png')
   app.setAboutPanelOptions({
     applicationName: 'DeepSeek Harness',
     applicationVersion: app.getVersion(),
     // The release has no separate build number; omit Electron's bundle version.
     version: '',
     copyright: '',
-    iconPath: development ? join(app.getAppPath(), 'resources', 'icon-windows.png')
-      : join(process.resourcesPath, 'icon.png'),
+    iconPath: applicationIconPath,
   })
   // A custom application menu replaces Electron's default menu, so macOS needs
   // its standard menus and application hide commands declared explicitly.
@@ -870,7 +908,7 @@ async function main(): Promise<void> {
       { label: currentDesktopLocale().messages.restartAppHostMenu, click: () => {
         if (quitting) return
         app.relaunch()
-        app.quit()
+        quitWithoutConfirmation()
       } },
     ] : [],
     { type: 'separator' },
@@ -887,8 +925,33 @@ async function main(): Promise<void> {
       label: darwin ? app.name : currentDesktopLocale().messages.application,
       submenu: [...applicationItems(), ...devToolsItems],
     }, ...platformMenus()]))
+    tray?.relabel()
   }
   refreshApplicationMenu()
+  const trayIconPath = development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico')
+  if (process.platform === 'win32') {
+    // The tray is the way back to a hidden window; without it, relaunching the application still focuses it.
+    try {
+      tray = new DesktopTray({ iconPath: trayIconPath, locale: currentDesktopLocale,
+        open: () => { focusPrimaryWindow() }, quit: () => { app.quit() } })
+    } catch (error) { console.warn('desktop tray: unavailable', error) }
+  }
+  const backgroundNotice = process.platform === 'win32'
+    ? new DesktopBackgroundNotice({ markerPath: join(app.getPath('userData'), 'background-close-confirmed'),
+      locale: () => locale, show: ordinaryMessageBox, focus: () => { updateDialog.focus() } })
+    : undefined
+  const quitConfirmation = new DesktopQuitConfirmation({
+    locale: () => locale,
+    inspect: () => backend.host?.inspectQuit(),
+    // No owner window: a hidden window stays hidden and the native box is its own top-level window.
+    show: options => dialog.showMessageBox(options),
+    // macOS raises the open alert with the application; Electron exposes no handle to the Windows task
+    // dialog, so a repeated request there only joins the open decision.
+    focus: () => { if (process.platform === 'darwin') app.focus({ steal: true }) },
+    // The task dialog draws its main icon at the system icon size; the multi-size ICO yields that
+    // size directly, where the 1024 px PNG would be scaled down by GDI.
+    ...(process.platform === 'win32' ? { icon: nativeImage.createFromPath(trayIconPath) } : {}),
+  })
 
   if (process.platform === 'win32') {
     ipcMain.handle(DESKTOP_IPC.windowsMenu, (event, name: unknown, x: unknown, y: unknown) => {
@@ -937,12 +1000,42 @@ async function main(): Promise<void> {
     })
   }
 
+  const hideMainWindow = (window: BrowserWindow): void => {
+    if (process.platform === 'darwin' && window.isFullScreen()) {
+      // Hiding a fullscreen window leaves an empty black space; leave fullscreen first.
+      window.once('leave-full-screen', () => { if (!window.isDestroyed()) window.hide() })
+      window.setFullScreen(false)
+    } else {
+      window.hide()
+    }
+  }
   const createMainWindow = (): BrowserWindow => {
     const window = createWindow(appPreload, false, true)
     mainWindow = window
     browserGuests.bind(window, (guest, name) => shortcuts.attachGuest(window, guest, name))
     shortcuts.attach(window)
     window.on('focus', automaticCheck)
+    // Closing hides: the page and the Host keep running, and the next show resumes the same document.
+    window.on('close', (event) => {
+      if (quitting || shellInstallerOwnsQuit || sessionEnding) return
+      event.preventDefault()
+      if (updateDialog.isOpen) { updateDialog.focus(); return }
+      const hide = (): void => {
+        if (!quitting && !shellInstallerOwnsQuit && !sessionEnding && !window.isDestroyed()) hideMainWindow(window)
+      }
+      if (backgroundNotice === undefined) hide()
+      else backgroundNotice.close(hide)
+    })
+    if (process.platform === 'win32') {
+      // Shutdown, restart, and log-off must not wait on a confirmation. query-session-end is only a
+      // question that another application can veto without any follow-up message, so it does not count.
+      window.on('session-end', () => { sessionEnding = true })
+    } else {
+      // The macOS power-off notification arrives before the terminate request; a cancelled shutdown
+      // leaves the process running, and user attention on the window shows the session continues.
+      window.on('focus', () => { sessionEnding = false })
+      window.on('show', () => { sessionEnding = false })
+    }
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
     window.webContents.on('console-message', (details) => {
       if (details.level !== 'error') return
@@ -977,6 +1070,11 @@ async function main(): Promise<void> {
       window.webContents.send(DESKTOP_IPC.enterWorkspace)
     }
     welcomeWindow = undefined
+    if (raiseAfterUpdate) {
+      raiseAfterUpdate = false
+      window.moveTop()
+      window.focus()
+    }
     if (activate && development && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
       window.webContents.openDevTools({ mode: 'detach' })
     }
@@ -1029,7 +1127,11 @@ async function main(): Promise<void> {
       })
       window.once('closed', () => {
         if (welcomeWindow === window) welcomeWindow = undefined
-        if (!enteredWorkspace && !recovery.active) mainWindow?.close()
+        if (enteredWorkspace || recovery.active) return
+        // Nothing runs before the workspace opens. macOS keeps the Dock convention and drops the
+        // unused main window so the next activation rebuilds the welcome; elsewhere the close quits.
+        if (process.platform === 'darwin') mainWindow?.destroy()
+        else app.quit()
       })
       if (isQuitting() || recovery.active || enteredWorkspace) window.close()
       else mainWindow?.hide()
@@ -1044,6 +1146,8 @@ async function main(): Promise<void> {
     windowsLanguage = locale.id
     refreshApplicationMenu()
     if (!enteredWorkspace && needsWelcome({ loggedIn: state.loggedIn, hasApiKey: state.hasApiKey })) {
+      // A later login must retain its own activation policy instead of replaying startup focus.
+      raiseAfterUpdate = false
       await showWelcome()
     } else {
       await enterWorkspace()
@@ -1071,31 +1175,53 @@ async function main(): Promise<void> {
     if (url === 'dsh://open' || url === 'dsh://open/') focusPrimaryWindow()
   })
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) focusPrimaryWindow()
+  app.on('activate', (_event, hasVisibleWindows) => {
+    if (!hasVisibleWindows) focusPrimaryWindow()
   })
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
   })
-  app.on('before-quit', (event) => {
+  if (process.platform !== 'win32') powerMonitor.on('shutdown', () => { sessionEnding = true })
+  const finishQuit = (): void => {
+    quitting = true
     shuttingDown = true
     updateJournal?.action('quit-requested')
-    if (shellInstallerOwnsQuit) {
-      updateDialog.dispose()
-      mandatoryUI?.dispose()
-      return
-    }
-    if (quitting) return
-    event.preventDefault()
-    quitting = true
+    quitConfirmation.dispose()
+    backgroundNotice?.dispose()
+    tray?.dispose()
     stopAccount?.()
     if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.hide()
     if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.hide()
     updateSchedule.dispose()
     updateDialog.dispose()
     mandatoryUI?.dispose()
-    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close()])
+    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(),
+      // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
+      platformView.dispose().catch((error: unknown) => { console.error(error) })])
       .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
+  }
+  app.on('before-quit', (event) => {
+    if (shellInstallerOwnsQuit) {
+      shuttingDown = true
+      quitConfirmation.dispose()
+      backgroundNotice?.dispose()
+      updateJournal?.action('quit-requested')
+      tray?.dispose()
+      updateDialog.dispose()
+      mandatoryUI?.dispose()
+      // Installation preparation already awaited Platform storage cleanup.
+      void platformView.dispose().catch((error: unknown) => { console.error(error) })
+      return
+    }
+    if (quitting) return
+    event.preventDefault()
+    if (skipQuitConfirmation || sessionEnding) { finishQuit(); return }
+    void quitConfirmation.confirm().then((approved) => {
+      if (quitting || shellInstallerOwnsQuit) return
+      if (approved) { finishQuit(); return }
+      // A quit that started from closing the welcome window destroyed it; a cancelled quit needs it back.
+      if (!enteredWorkspace && !recovery.active) void showWelcome().catch((error: unknown) => { reportFatal(error, 'main') })
+    }).catch((error: unknown) => { console.error(error); if (!quitting && !shellInstallerOwnsQuit) finishQuit() })
   })
 
   mainWindow = createMainWindow()

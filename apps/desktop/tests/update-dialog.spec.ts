@@ -62,7 +62,9 @@ function setup(locale: DesktopLocale | (() => DesktopLocale) = resolveDesktopLoc
 
 it('accepts only a displayed choice from its own main frame and retains cancellation outside the button list', async () => {
   const f = setup()
+  expect(dialogs!.isOpen).toBe(false)
   const pending = f.show()
+  expect(dialogs!.isOpen).toBe(true)
   const window = fixture.windows.at(-1)!
   expect(f.invoke(UPDATE_DIALOG_IPC.status)).toMatchObject({ closeLabel: '关闭', buttons: ['安装并重启'], cancelId: 1 })
   const respond = fixture.handlers.get(UPDATE_DIALOG_IPC.respond)!
@@ -71,6 +73,7 @@ it('accepts only a displayed choice from its own main frame and retains cancella
   for (const index of [-1, 2, '0', 0.5, NaN]) expect(() => f.invoke(UPDATE_DIALOG_IPC.respond, index)).toThrow(/invalid/)
   f.invoke(UPDATE_DIALOG_IPC.respond, 1)
   expect(await pending).toEqual({ response: 1, checkboxChecked: false })
+  expect(dialogs!.isOpen).toBe(false)
   const next = f.show()
   f.invoke(UPDATE_DIALOG_IPC.respond, 0)
   expect((await next).response).toBe(0)
@@ -92,7 +95,8 @@ it('follows the parent geometry and removes listeners when closed or replaced', 
   expect((await next).response).toBe(1)
   expect(f.parent.listenerCount('resize')).toBe(0)
   expect(f.parent.listenerCount('move')).toBe(0)
-  expect(f.parent.webContents.removeInsertedCSS).toHaveBeenCalledTimes(1)
+  expect(f.parent.webContents.insertCSS).not.toHaveBeenCalled()
+  expect(f.parent.webContents.removeInsertedCSS).not.toHaveBeenCalled()
 })
 
 it('cancels on abort, renderer failure, disposal, or an already-closed parent', async () => {

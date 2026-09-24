@@ -257,6 +257,11 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     const overlay = join(root, 'bonus-notice.overlay.yml')
     await writeFile(overlay, (await readFile(OVERLAY_TEMPLATE, 'utf8')).replaceAll('{{origin}}', platform.origin))
     scaffold = await launchWebScaffold({ harnessHome: home, extraOverlayPath: overlay })
+    // Resolve the signed-in identity before opening the renderer. First profile discovery
+    // emits another account frame, which would supersede the held startup bonus read.
+    expect(await scaffold.ctx.deepseekAccount.getProfile({
+      version: 'test', locale: 'zh-CN', timezoneOffsetSeconds: 28_800,
+    })).toMatchObject({ status: 'ready', value: { id: ACCOUNT_ID } })
     browser = await chromium.launch()
   })
 

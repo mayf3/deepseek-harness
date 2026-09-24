@@ -35,7 +35,7 @@
 
 .failure button {
   border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   padding: 4px 10px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
@@ -67,7 +67,7 @@
   width: 100%;
   height: 36px;
   border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 10px;
+  border-radius: var(--dsw-radius-md);
   padding: 0 34px 0 36px;
   outline: none;
   background: var(--dsw-alias-bg-layer-1);
@@ -118,15 +118,13 @@
 .card {
   min-width: 0;
   overflow: hidden;
-  border: 0;
-  box-shadow: var(--dsw-elevation-stroke);
-  border-radius: 14px;
-  background: var(--dsw-alias-bg-layer-3);
+  border: 0.5px solid var(--dsw-alias-settings-card-stroke);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-settings-card-fill);
 }
 
 .card[data-open='true'] {
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
-  box-shadow: var(--dsw-elevation-panel);
+  border-color: var(--dsw-alias-border-l3);
 }
 
 .cardContent {
@@ -289,7 +287,7 @@
   height: 36px;
   white-space: nowrap;
   border: none;
-  border-radius: 18px;
+  border-radius: var(--dsw-radius-md);
   padding: 0 14px;
   background: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-primary);
@@ -328,7 +326,7 @@
 
 .brokenNote {
   margin: 0;
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-lg);
   padding: 8px 10px;
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
   color: var(--dsw-alias-state-error-primary);

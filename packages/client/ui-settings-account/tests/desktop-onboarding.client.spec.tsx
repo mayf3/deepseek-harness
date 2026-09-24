@@ -10,18 +10,22 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 function mount(step: DesktopOnboardingState['progress']['step'] = 'welcome', balance: 'zero' | 'positive' | 'bonus' | 'failed' | 'loading' = 'positive', status: DesktopOnboardingState['status'] = 'ready', copy: typeof zh = zh, creditFunded = false) {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
-  const refresh = vi.fn(async () => {})
   const complete = vi.fn(async () => true)
   const retry = vi.fn(async () => true)
-  const open = vi.fn(async () => {})
-  const close = vi.fn(async () => {})
+  // The shared host owns the native view; this flow only requests a page from it.
+  const release = vi.fn()
+  let returnFromPage: (() => void) | undefined
+  const openPlatformPage = vi.fn((_page: 'usage' | 'top-up', onClose: () => void) => {
+    returnFromPage = onClose
+    return release
+  })
   const update = vi.fn(async (_change: Parameters<DesktopOnboardingProps['update']>[0]) => true)
   function App() {
     const [state, setState] = useState<DesktopOnboardingState>({
       status, visible: true, error: status === 'error' ? 'settings' : null, creditFunded,
       progress: { version: 1, step, purpose: null, process: null, completion: null, usage: 'compact', developerTools: false },
     })
-    return <DesktopOnboarding locale={copy === zh ? 'zh' : 'en'} state={state} t={key => copy[key]} refresh={refresh} complete={complete} retry={retry}
+    return <DesktopOnboarding locale={copy === zh ? 'zh' : 'en'} state={state} t={key => copy[key]} complete={complete} retry={retry}
       update={async (change) => {
         setState(current => ({ ...current, status: 'saving' }))
         const saved = await update(change)
@@ -30,10 +34,14 @@ function mount(step: DesktopOnboardingState['progress']['step'] = 'welcome', bal
       }}
       account={{ view: { status: 'credential-stored', attempt: null, links: { usageUrl: 'https://example.com/usage', topUpUrl: 'https://example.com/top_up' } },
         failed: false, details: balance === 'loading' ? {} : { balance: balance === 'failed' ? { status: 'failed' } : { status: 'ready', bonusWallets: balance === 'bonus' ? [{ currency: 'CNY', balance: '1' }] : [], value: [{ currency: 'CNY', balance: balance === 'zero' || balance === 'bonus' ? '0E-16' : '12.34' }] } } }}
-      platform={{ open, close, setBounds: async () => {} }} />
+      openPlatformPage={openPlatformPage} />
   }
   render(<App />)
-  return { refresh, complete, open, close, update, retry }
+  return {
+    complete, openPlatformPage, release, update, retry,
+    /** The viewer returning through the shared host's Back action. */
+    back: () => { returnFromPage?.() },
+  }
 }
 
 it('keeps welcome mandatory and enters credit only through Start', async () => {
@@ -66,14 +74,13 @@ it.each(['zero', 'positive', 'bonus', 'failed', 'loading'] as const)('always off
   expect(operations.update).toHaveBeenCalledWith({ step: 'purpose' })
 })
 
-it('stays on credit after returning from native recharge even while balance refresh fails', async () => {
+it('stays on credit after the viewer returns from the shared recharge page', async () => {
   const operations = mount('credit')
-  operations.refresh.mockRejectedValueOnce(new Error('balance unavailable'))
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingTopUp })) })
-  expect(operations.open).toHaveBeenCalledWith('top-up', expect.any(Object))
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.backToHarness })) })
-  expect(operations.close).toHaveBeenCalled()
-  expect(operations.refresh).toHaveBeenCalledOnce()
+  expect(operations.openPlatformPage).toHaveBeenCalledWith('top-up', expect.any(Function))
+  // The shared host owns Back and the post-top-up read; this flow keeps the
+  // credit page available through the return.
+  await act(async () => { operations.back() })
   expect(document.querySelector('[data-desktop-onboarding="credit"]')).toBeTruthy()
 })
 
@@ -156,8 +163,8 @@ it.each([zh, en])('offers Continue and recharge for a balance confirmed before e
   const operations = mount('credit', 'positive', 'ready', copy, true)
   expect(screen.queryByRole('button', { name: copy.onboardingLater })).toBeNull()
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.onboardingFundedTopUp })) })
-  expect(operations.open).toHaveBeenCalledWith('top-up', expect.any(Object))
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.backToHarness })) })
+  expect(operations.openPlatformPage).toHaveBeenCalledWith('top-up', expect.any(Function))
+  await act(async () => { operations.back() })
   expect(operations.update).not.toHaveBeenCalled()
   expect(document.querySelector('[data-desktop-onboarding="credit"]')).toBeTruthy()
 })
@@ -166,7 +173,7 @@ it('continues directly from funded credit', async () => {
   const operations = mount('credit', 'positive', 'ready', zh, true)
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingContinue })) })
   expect(operations.update).toHaveBeenCalledWith({ step: 'purpose' })
-  expect(operations.open).not.toHaveBeenCalled()
+  expect(operations.openPlatformPage).not.toHaveBeenCalled()
 })
 
 it.each([zh, en])('keeps purpose descriptions unchanged when selecting and deselecting cards', async (copy) => {
@@ -180,11 +187,11 @@ it.each([zh, en])('keeps purpose descriptions unchanged when selecting and desel
   }
 })
 
-it('returns to credit after the native recharge page fails to open', async () => {
+it('keeps the recharge request releasable so the flow can still leave credit', async () => {
   const operations = mount('credit')
-  operations.open.mockRejectedValueOnce(new Error('load failed'))
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingTopUp })) })
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.backToHarness })) })
+  expect(operations.openPlatformPage).toHaveBeenCalledWith('top-up', expect.any(Function))
+  await act(async () => { operations.back() })
   expect(document.querySelector('[data-desktop-onboarding="credit"]')).toBeTruthy()
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingBack })) })
   expect(document.querySelector('[data-desktop-onboarding="welcome"]')).toBeTruthy()
@@ -274,7 +281,7 @@ it('opens recharge directly from a credit warning', async () => {
   const h = mount('credit', 'zero')
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingLater })) })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingGoTopUp })) })
-  expect(h.open).toHaveBeenCalledOnce()
+  expect(h.openPlatformPage).toHaveBeenCalledWith('top-up', expect.any(Function))
   expect(screen.queryByRole('dialog', { name: zh.onboardingNoCreditTitle })).toBeNull()
 })
 

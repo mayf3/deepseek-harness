@@ -371,27 +371,40 @@ it('keeps the visible card when a read offers no bonus', async () => {
 })
 
 it('keeps a pending acknowledgement for the signed-in lifecycle and drops it at sign-out', async () => {
+  // Advance the backoff clock explicitly so retry observation has no competing deadline.
+  vi.useFakeTimers()
   const { controller, read, acknowledge, latest } = setup()
   acknowledge.mockRejectedValue(new Error('offline'))
   read.mockResolvedValue(batch('account-a', 'order-1'))
-  controller.begin()
-  await vi.waitFor(() => { expect(latest()).toMatchObject({ orderId: 'order-1' }) })
-  controller.shown('order-1' as AccountBonusOrderId)
-  await vi.waitFor(() => { expect(acknowledge).toHaveBeenCalledWith('account-a', 'order-1') })
-  await vi.waitFor(() => { expect(acknowledge.mock.calls.length).toBeGreaterThan(1) })
-  // Signing out ends the retry with the lifecycle; the next sign-in starts clean.
-  controller.end()
-  const callsAtEnd = acknowledge.mock.calls.length
   const again = setup()
-  again.read.mockResolvedValue(batch('account-a', 'order-1'))
-  again.controller.begin()
-  await vi.waitFor(() => { expect(again.latest()).toMatchObject({ orderId: 'order-1' }) })
-  // The next sign-in must not inherit the earlier pending acknowledgement.
-  expect(again.acknowledge).not.toHaveBeenCalled()
-  expect(acknowledge.mock.calls.length).toBe(callsAtEnd)
-  await new Promise((resolve) => { setTimeout(resolve, 5) })
-  expect(acknowledge.mock.calls.length).toBe(callsAtEnd)
-  again.controller.end()
+  try {
+    controller.begin()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(latest()).toMatchObject({ orderId: 'order-1' })
+    controller.shown('order-1' as AccountBonusOrderId)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(acknowledge).toHaveBeenCalledWith('account-a', 'order-1')
+    expect(acknowledge).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(TIMING.ackRetryDelayMs)
+    expect(acknowledge).toHaveBeenCalledTimes(2)
+
+    // Signing out ends the retry with the lifecycle; the next sign-in starts clean.
+    controller.end()
+    const callsAtEnd = acknowledge.mock.calls.length
+    again.read.mockResolvedValue(batch('account-a', 'order-1'))
+    again.controller.begin()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(again.latest()).toMatchObject({ orderId: 'order-1' })
+    // The next sign-in must not inherit the earlier pending acknowledgement.
+    expect(again.acknowledge).not.toHaveBeenCalled()
+    expect(acknowledge.mock.calls.length).toBe(callsAtEnd)
+    // Past the next retry delay: the ended lifecycle scheduled nothing.
+    await vi.advanceTimersByTimeAsync(TIMING.ackRetryDelayMs * 3)
+    expect(acknowledge.mock.calls.length).toBe(callsAtEnd)
+  } finally {
+    controller.end()
+    again.controller.end()
+  }
 })
 
 it('ignores an acknowledgement that settles after the lifecycle it belonged to', async () => {

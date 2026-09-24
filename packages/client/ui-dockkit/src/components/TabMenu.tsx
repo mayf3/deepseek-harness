@@ -14,6 +14,7 @@
  * portal's synthetic events through the strip, which is why the press guards
  * below remain necessary.
  */
+import { MenuSurface } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Children, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -97,7 +98,7 @@ export function TabMenu({ labels, anchor, onClose, onDismiss, extras }: TabMenuP
 
   if (!hasItems) return null
   return createPortal(
-    <div
+    <MenuSurface
       className={css.menu}
       ref={self}
       role="menu"
@@ -120,7 +121,7 @@ export function TabMenu({ labels, anchor, onClose, onDismiss, extras }: TabMenuP
       {/* Embedder items last: the kit's own item is the same in every menu, so
           a reader looks for it in the same place every time. */}
       {extras}
-    </div>,
+    </MenuSurface>,
     document.body,
   )
 }
