@@ -56,6 +56,42 @@ async function expectFocusRing(target: Locator, kind: 'outline' | 'shadow'): Pro
   }).toEqual({ active: true, visible: true, modality: 'keyboard', painted: true })
 }
 
+/**
+ * Name every ancestor that cuts the ring's painted box. A control flush with an
+ * `overflow: hidden` ancestor keeps its outline geometrically but loses the pixels that leave
+ * that ancestor, so compare the layout box grown by the ring against each clipping ancestor.
+ */
+async function ringCutBy(target: Locator): Promise<string[]> {
+  return target.evaluate((element) => {
+    const style = getComputedStyle(element)
+    const width = Number.parseFloat(style.outlineWidth) || 0
+    const offset = Number.parseFloat(style.outlineOffset) || 0
+    const box = element.getBoundingClientRect()
+    const ring = {
+      left: box.left - width - offset,
+      top: box.top - width - offset,
+      right: box.right + width + offset,
+      bottom: box.bottom + width + offset,
+    }
+    const cuts: string[] = []
+    for (let node = element.parentElement; node !== null; node = node.parentElement) {
+      const overflow = getComputedStyle(node)
+      if (overflow.overflow === 'visible' && overflow.overflowX === 'visible' && overflow.overflowY === 'visible') continue
+      const rect = node.getBoundingClientRect()
+      const cut = {
+        left: Math.max(0, rect.left - ring.left),
+        top: Math.max(0, rect.top - ring.top),
+        right: Math.max(0, ring.right - rect.right),
+        bottom: Math.max(0, ring.bottom - rect.bottom),
+      }
+      if (cut.left + cut.top + cut.right + cut.bottom > 0.5) {
+        cuts.push(`${node.tagName.toLowerCase()}${node.className === '' ? '' : `.${node.className}`} cuts ${JSON.stringify(cut)}`)
+      }
+    }
+    return cuts
+  })
+}
+
 it.each(['light', 'dark'] as const)('assembled app (%s): pointer keys stay silent; navigation and menu activation retain feedback', async (theme) => {
   const scaffold = await launchWebScaffold()
   onTestFinished(() => scaffold.close())
@@ -114,6 +150,46 @@ it.each(['light', 'dark'] as const)('assembled app (%s): pointer keys stay silen
   }
   expect(consoleWatch.warnings).toEqual([])
   expect(consoleWatch.pageErrors).toEqual([])
+})
+
+it.each(['light', 'dark'] as const)('assembled app (%s): the sidebar toggle keeps its whole ring in the expanded and rail layouts', async (theme) => {
+  const scaffold = await launchWebScaffold()
+  onTestFinished(() => scaffold.close())
+  const browser = await chromium.launch({ headless: true })
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  await page.emulateMedia({ colorScheme: theme })
+  await page.goto(scaffold.authenticatedUrl)
+  await connectFreshWorkspace(page, scaffold.workspaceCwd)
+
+  const toggle = page.getByRole('button', { name: 'Collapse sidebar' })
+  const rail = page.getByRole('button', { name: 'Open sidebar' })
+  /** Sample the ring box once the collapse animation stops moving the control. */
+  const settle = async (target: Locator, width: number): Promise<void> => {
+    await expect.poll(() => target.evaluate(element => element.getBoundingClientRect().width)).toBe(width)
+    await target.evaluate(async (element) => {
+      for (let node: Element | null = element; node !== null; node = node.parentElement) {
+        await Promise.all(node.getAnimations().map(animation => animation.finished))
+      }
+    })
+  }
+
+  await toggle.click()
+  await rail.waitFor()
+  // The rail only replaces the frozen wide layout once the collapse settles.
+  await settle(rail, 36)
+  await expectSilent(rail)
+  await page.keyboard.press('Home')
+  await expectFocusRing(rail, 'outline')
+  expect(await ringCutBy(rail)).toEqual([])
+
+  await rail.click()
+  await toggle.waitFor()
+  await settle(toggle, 28)
+  await expectSilent(toggle)
+  await page.keyboard.press('Home')
+  await expectFocusRing(toggle, 'outline')
+  expect(await ringCutBy(toggle)).toEqual([])
 })
 
 /**
