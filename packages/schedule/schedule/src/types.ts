@@ -53,7 +53,7 @@ export interface EveryScheduleRecord {
   readonly title: string
   /** Trimmed reminder content supplied at creation. */
   readonly prompt: string
-  /** Fixed safe-integer interval, never below five minutes. */
+  /** Fixed safe-integer interval, never below one minute. */
   readonly everySeconds: number
   /** Next anchor-aligned occurrence while active, or final occurrence when inactive. */
   readonly scheduledAt: string

@@ -24,6 +24,11 @@ it('boots default Web without experimental modules or an active built-in Browser
     expect(roster.entries).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: '@deepseek-ai/dsh-host-webserver', state: FiberState.ACTIVE }),
       expect.objectContaining({ name: '@deepseek-ai/dsh-client-modules', state: FiberState.ACTIVE }),
+      // The Loader rewrites an inserted row's id (`include:ui-schedule`), so
+      // the shipped rows are pinned by name and settled state.
+      expect.objectContaining({ name: '@deepseek-ai/dsh-time-context', state: FiberState.ACTIVE }),
+      expect.objectContaining({ name: '@deepseek-ai/dsh-schedule', state: FiberState.ACTIVE }),
+      expect.objectContaining({ name: '@deepseek-ai/dsh-client-ui-schedule', state: FiberState.ACTIVE }),
     ]))
     expect(roster.entries.some(entry => entry.name.endsWith('/runtime-roster-observer.js') && entry.state === FiberState.ACTIVE)).toBe(true)
     expect(roster.plugins.length).toBeGreaterThan(roster.entries.length)

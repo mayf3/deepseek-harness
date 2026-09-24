@@ -1845,7 +1845,7 @@ describe('Task detail rule header and run-time card', () => {
     // A whole number of minutes below the hour reads in minutes, at minutes' own minimum.
     expect(repeatButton().textContent).toContain(en['rule.everyMinutes'])
     expect(interval.value).toBe('10')
-    expect(interval.getAttribute('min')).toBe('5')
+    expect(interval.getAttribute('min')).toBe('1')
     fireEvent.change(interval, { target: { value: '20' } })
     clickSave()
     expect(h.updateTiming).toHaveBeenCalledExactlyOnceWith({
@@ -1879,7 +1879,7 @@ describe('Task detail rule header and run-time card', () => {
     const field = screen.getByLabelText<HTMLInputElement>(en['timing.interval'])
     expect(repeatButton().textContent).toContain(en['rule.everySeconds'])
     expect(field.value).toBe('301')
-    expect(field.getAttribute('min')).toBe('300')
+    expect(field.getAttribute('min')).toBe('60')
     fireEvent.change(field, { target: { value: '600' } })
     clickSave()
     expect(seconds.updateTiming).toHaveBeenCalledExactlyOnceWith({
@@ -1929,7 +1929,7 @@ describe('Task detail rule header and run-time card', () => {
     })
   })
 
-  it.each(['299', 'abc'])('rejects an interval below the supported minimum: %s', (value) => {
+  it.each(['59', 'abc'])('rejects an interval below the supported minimum: %s', (value) => {
     const h = mount({ records: [every] })
     fireEvent.click(screen.getByRole('button', { name: 'Check metrics' }))
     const interval = screen.getByLabelText<HTMLInputElement>(en['timing.interval'])
@@ -1947,9 +1947,9 @@ describe('Task detail rule header and run-time card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Check metrics' }))
     chooseRepeat(en['rule.everyHours'])
     const interval = screen.getByLabelText<HTMLInputElement>(en['timing.interval'])
-    // 0.05 hours is 180 whole seconds, under the 300-second floor, and the
+    // 0.01 hours is 36 whole seconds, under the 60-second floor, and the
     // message speaks the row's own unit as the hint above the rows does.
-    fireEvent.change(interval, { target: { value: '0.05' } })
+    fireEvent.change(interval, { target: { value: '0.01' } })
     clickSave()
     expect(h.updateTiming).not.toHaveBeenCalled()
     expect(screen.getByRole('alert').textContent).toBe(en['timing.invalidInterval.hour'])

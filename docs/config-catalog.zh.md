@@ -150,10 +150,8 @@ export type Config = PresetDefinition
 export interface Config {
   /** Deployment default when the caller omits a preset. */
   default: string
-  /** User-selected default while the chooser is shown; edited through Settings. */
+  /** User-selected default; edited through Settings. */
   selectedDefault: Volatile<string | undefined>
-  /** Whether new-session surfaces expose preset selection and the saved default applies. */
-  modeSelectionEnabled: Volatile<boolean>
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-agent-preset-registry -->

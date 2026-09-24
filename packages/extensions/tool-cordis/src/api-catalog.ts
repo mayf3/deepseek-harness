@@ -149,9 +149,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'list\') async remoteExportList(): Promise<AgentPresetRoster>',
-        description: 'Read the selection roster and chooser policy.',
+        description: 'Read the selection roster.',
         parameters: [],
-        returns: 'Current presets, default and chooser policy.',
+        returns: 'Current presets, each marked when it is the default.',
       },
       {
         signature: 'async resolve(id?: string): Promise<AgentPreset>',
@@ -4419,7 +4419,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPresetRoster',
-    declaration: 'export interface AgentPresetRoster {\n    readonly presets: readonly AgentPresetRow[];\n    readonly modeSelectionEnabled: boolean;\n}',
+    declaration: 'export interface AgentPresetRoster {\n    readonly presets: readonly AgentPresetRow[];\n}',
   },
   {
     name: 'AgentPresetRow',
