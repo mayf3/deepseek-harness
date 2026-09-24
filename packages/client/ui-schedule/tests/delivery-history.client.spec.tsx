@@ -156,6 +156,49 @@ describe.each([en, zh])('saved delivery records', (dictionary) => {
     expect(instructionRule).toMatch(/color:\s*var\(--dsw-alias-label-tertiary\);/)
     expect(instructionRule).toMatch(/white-space:\s*pre-wrap;/)
     expect(instructionRule).toMatch(/overflow-wrap:\s*anywhere;/)
+    // A collapsed instruction shows two lines; the expanded state lifts the clamp.
+    expect(instructionRule).toMatch(/display:\s*-webkit-box;/)
+    expect(instructionRule).toMatch(/-webkit-box-orient:\s*vertical;/)
+    expect(instructionRule).toMatch(/-webkit-line-clamp:\s*2;/)
+    expect(instructionRule).toMatch(/[;\s]line-clamp:\s*2;/)
+    expect(instructionRule).toMatch(/overflow:\s*hidden;/)
+    const expandedRule = ruleBlock(stylesheet, 'savedPrompt\\[data-expanded\\]')
+    expect(expandedRule).toMatch(/display:\s*block;/)
+    expect(expandedRule).toMatch(/-webkit-line-clamp:\s*none;/)
+    expect(expandedRule).toMatch(/[;\s]line-clamp:\s*none;/)
+    // The toggle's negative margin cancels its inline padding, so its label
+    // starts at the instruction's left edge.
+    const toggleRule = ruleBlock(stylesheet, 'savedPromptToggle')
+    expect(toggleRule).toMatch(/margin:\s*2px 0 0 -6px;/)
+    expect(toggleRule).toMatch(/padding:\s*1px 6px;/)
+  })
+
+  it('clamps each overflowing saved instruction behind its own expand toggle', async () => {
+    // Two 22px lines are visible of a six-line instruction.
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(44)
+    vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(132)
+    try {
+      mount(dictionary)
+      const [first, second] = await screen.findAllByRole('region', { name: dictionary['delivery.label'] })
+      const prompt = first!.querySelector<HTMLElement>(`.${css.savedPrompt}`)!
+      const toggle = within(first!).getByRole('button', { name: dictionary['delivery.expand'] })
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(toggle.getAttribute('aria-controls')).toBe(prompt.id)
+      expect(prompt.hasAttribute('data-expanded')).toBe(false)
+      expect(prompt.textContent).toBe(records[0]!.prompt)
+      fireEvent.click(toggle)
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(toggle.textContent).toBe(dictionary['delivery.collapse'])
+      expect(prompt.hasAttribute('data-expanded')).toBe(true)
+      const other = within(second!).getByRole('button', { name: dictionary['delivery.expand'] })
+      expect(other.getAttribute('aria-expanded')).toBe('false')
+      fireEvent.click(toggle)
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(toggle.textContent).toBe(dictionary['delivery.expand'])
+      expect(prompt.hasAttribute('data-expanded')).toBe(false)
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 
   it('reads legacy unavailability without inventing a prompt or a notice', async () => {
@@ -297,6 +340,53 @@ it('keeps the Rules and the Delivery records views on one type scale', () => {
   expect(declared('ruleLabel', 'color')).toBe(declared('ruleValue', 'color'))
   expect(declared('ruleHint', 'color')).toBe('var(--dsw-alias-label-tertiary)')
   expect(declared('savedPrompt', 'color')).toBe('var(--dsw-alias-label-tertiary)')
+})
+
+it('offers the instruction toggle only while the collapsed instruction overflows at the current width', async () => {
+  class FakeResizeObserver implements ResizeObserver {
+    static readonly made: FakeResizeObserver[] = []
+    readonly observe = vi.fn()
+    readonly unobserve = vi.fn()
+    readonly disconnect = vi.fn()
+    constructor(private readonly callback: ResizeObserverCallback) {
+      FakeResizeObserver.made.push(this)
+    }
+
+    fire(): void {
+      this.callback([], this)
+    }
+  }
+  vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+  let lines = 2
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(44)
+  vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockImplementation(() => lines * 22)
+  try {
+    const loadHistory = vi.fn<DeliveryHistoryInjected['loadHistory']>().mockResolvedValue(result(0, 1))
+    const view = render(<DeliveryHistory
+      id={id} sessionId={sessionId} latestMessageId={undefined} loadHistory={loadHistory} t={makeTranslate(en)}
+    />)
+    const region = await screen.findByRole('region', { name: en['delivery.label'] })
+    const prompt = region.querySelector<HTMLElement>(`.${css.savedPrompt}`)!
+    expect(within(region).queryByRole('button')).toBeNull()
+    const collapsed = FakeResizeObserver.made.at(-1)!
+    expect(collapsed.observe).toHaveBeenCalledWith(prompt)
+    // A narrower panel wraps the instruction onto a third line.
+    lines = 3
+    act(() => { collapsed.fire() })
+    fireEvent.click(within(region).getByRole('button', { name: en['delivery.expand'] }))
+    // The expanded instruction is not measured; its toggle stays until collapsed.
+    expect(collapsed.disconnect).toHaveBeenCalledTimes(1)
+    lines = 2
+    fireEvent.click(within(region).getByRole('button', { name: en['delivery.collapse'] }))
+    expect(within(region).queryByRole('button')).toBeNull()
+    const remeasured = FakeResizeObserver.made.at(-1)!
+    expect(remeasured).not.toBe(collapsed)
+    view.unmount()
+    expect(remeasured.disconnect).toHaveBeenCalledTimes(1)
+  } finally {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  }
 })
 
 it('appends real-sized pages stably without duplicate IDs and contains overlapping older-page requests', async () => {

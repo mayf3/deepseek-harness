@@ -48,6 +48,7 @@ async function answerApproval(
       ? {}
       : { callId: request.callId }),
     ...(request.reason === undefined ? {} : { reason: request.reason }),
+    ...(request.displayReason === undefined ? {} : { displayReason: request.displayReason }),
     ...(request.signal === undefined ? {} : { signal: request.signal }),
   })
   const completed = Promise.withResolvers<void>()
@@ -93,6 +94,9 @@ export function apply(ctx: ClientContext): void {
     select: ({ pendingInteraction }: ComposerChainProps): PendingApproval | null =>
       pendingInteraction instanceof PendingApproval ? pendingInteraction : null,
     locale: NS,
+    inject: () => ({
+      resolveReason: (reason: NonNullable<PendingApproval['displayReason']>) => ctx.locale.resolveText(reason),
+    }),
     children: {
       'conversation.approval.detail': { kind: 'single', scope: 'session' },
     },

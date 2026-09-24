@@ -1291,7 +1291,7 @@ describe('first-use Workspace preparation', () => {
   it('rejects a relative candidate before creating its directory', async () => {
     const h = await firstUse()
     const candidate = join(h.directoryRoot, 'relative')
-    h.resolveDirectory.mockResolvedValueOnce(relative(process.cwd(), candidate))
+    h.resolveDirectory.mockResolvedValueOnce(relative(h.directoryRoot, candidate))
     await expect(h.registry.initializeDefault(h.resolveDirectory)).rejects.toThrow('fully qualified')
     await expect(realpath(candidate)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(h.registry.list()).toEqual([])

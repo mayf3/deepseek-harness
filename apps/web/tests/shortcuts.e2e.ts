@@ -361,7 +361,9 @@ describe('web e2e: shortcut reference', () => {
       const wasOpen = await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).isVisible()
       await page.keyboard.press(sidebarKey)
       await page.getByRole('button', { name: wasOpen ? 'Open sidebar' : 'Collapse sidebar', exact: true }).waitFor()
-      if (wasOpen) await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
+      // The rail toggle moves during collapse; reopen with the binding this case exercises.
+      if (wasOpen) await page.keyboard.press(sidebarKey)
+      await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).waitFor()
       await open()
       await page.getByRole('button', { name: 'Edit shortcut for Toggle left sidebar', exact: true }).click()
       await editor.getByRole('button', { name: 'Press a shortcut', exact: true }).focus()
