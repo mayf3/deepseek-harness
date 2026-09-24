@@ -29,7 +29,7 @@ Feature plugins use this package to store and edit their preferences without re-
 
 ### Configuration forms
 
-`ctx.configForms.developerTools` owns the shared Web and desktop preference `ui-settings.enabled`, defaulting to `true`. Its `enabled` observable publishes accepted choices and `setEnabled` uses the same ordered settings writes. Desktop and loopback Web persist to the Host document; remote Web keeps this choice in one browser-local observable until reload without issuing Host writes. This controls presentation and HTML preview permissions, not Host authorization or Session recording. Host-backed clients keep developer features disabled until the first accepted schema-resolved value arrives; missing or failed initial responses do not enable them. Later refreshes retain the last accepted choice.
+`ctx.configForms.developerTools` owns the Coding Tools switch and the shared Web and desktop preference `ui-settings.enabled`, defaulting to `true`. Its `enabled` observable publishes accepted choices and `setEnabled` uses the same ordered settings writes. Desktop and loopback Web persist to the Host document; remote Web keeps this choice in one browser-local observable until reload without issuing Host writes. This controls presentation and HTML preview permissions, not Host authorization or Session recording. Host-backed clients keep developer features disabled until the first accepted schema-resolved value arrives; missing or failed initial responses do not enable them. Later refreshes retain the last accepted choice.
 
 Feature adapters use `ctx.configForms.get(entryId)` to obtain accepted values and a write queue shared by every editor of that Host entry. Snapshots contain resolved `value`, inherited `base`, raw `user`, revision, writability, and persistence mode. `set` and `unset` submit one operation; `mutate` submits one atomic operation list. Staged editors pass the revision read before editing; conflicts preserve their drafts. Unsetting removes the override and restores inheritance.
 
@@ -103,7 +103,7 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define where the settings transport cannot reach; they are current package constraints.
 
-- **Non-loopback pages get no durable settings** — this Client keeps Host persistence disabled there, so a form starts `unavailable` and never crosses the wire; form writes are inert even though Connection authentication covers the API. The shared Developer tools preference instead provides browser-local changes.
+- **Non-loopback pages get no durable settings** — this Client keeps Host persistence disabled there, so a form starts `unavailable` and never crosses the wire; form writes are inert even though Connection authentication covers the API. The shared Coding Tools preference instead provides browser-local changes.
 
 <a id="dev-note"></a>
 ### Dev Note

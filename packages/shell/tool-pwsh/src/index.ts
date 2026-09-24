@@ -432,7 +432,8 @@ export function apply(ctx: Context, config: Config = {}): void {
           },
           justification: {
             type: 'string' as const,
-            description: 'Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access.',
+            description: 'Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. '
+              + 'Use the language of the user’s current request.',
           },
         } : {},
       },

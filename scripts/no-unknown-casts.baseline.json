@@ -460,8 +460,7 @@
     "6c63f71c0aeb1a9a97ec28a3242f77eef021ecfcee48238f17592eb2f1040c09": 1
   },
   "packages/client/ui-approval/tests/ui-approval.client.spec.tsx": {
-    "3e392ff0165a51a6ac716515b99af35ec152f89607cff72080cb9afbcff63f46": 1,
-    "d3a081f97422a352526b7014a6aa4c6c8f78cb27587568bc4150232db2037198": 1
+    "3e392ff0165a51a6ac716515b99af35ec152f89607cff72080cb9afbcff63f46": 1
   },
   "packages/client/ui-attachment/tests/attachment-rail.client.spec.tsx": {
     "b42ab24a43e0f7542bf1deb8f7ac3a76698d29e098f8dc575af6c08774987c32": 1

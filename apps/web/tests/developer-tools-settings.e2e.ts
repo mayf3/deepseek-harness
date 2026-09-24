@@ -14,7 +14,7 @@ it('persists developer tools in the Host settings document and restores the acce
   const page = await newEnglishPage(browser)
   await page.goto(scaffold.authenticatedUrl)
   await openSettings(page, 'en')
-  const toggle = page.getByRole('switch', { name: 'Developer tools' })
+  const toggle = page.getByRole('switch', { name: 'Coding Tools' })
   expect(await toggle.getAttribute('aria-checked')).toBe('true')
   expect(await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')).not.toMatch(/id: ui-settings(?:\r?\n|$)/)
   await toggle.click()
@@ -29,7 +29,7 @@ it('persists developer tools in the Host settings document and restores the acce
   // The page owns no selection switch: only the General one gates the choice.
   const section = page.locator('section')
     .filter({ has: page.getByRole('heading', { name: 'Agent presets', exact: true }) })
-  const refused = section.getByRole('button', { name: /^Turn on Developer tools in General settings to choose a default: / })
+  const refused = section.getByRole('button', { name: /^Turn on Coding Tools in General settings to choose a default: / })
   expect(await section.getByRole('switch').count()).toBe(0)
   await expect.poll(() => refused.count()).toBeGreaterThan(0)
   await scaffold.ctx.settings.update('ui-settings', { enabled: true })
