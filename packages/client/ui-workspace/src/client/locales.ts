@@ -129,7 +129,7 @@ export const en = {
   'defaultWorkspace.failed': 'Unable to create default workspace. Use Choose workspace to select a folder.',
   'group.ungrouped': 'Ungrouped',
   'session.new': 'New Session',
-  'session.untitled': 'untitled',
+  'session.untitled': 'Untitled',
   'shortcut.hint': '{label} {keys}',
   'shortcut.noSession': 'Select a session first',
   'shortcut.noPicker': 'Directory picker unavailable',

@@ -1081,7 +1081,7 @@ describe('session row schedule seats', () => {
   })
 })
 
-it.each([['未命名', t], ['untitled', tEn]])('labels unnamed history as %s', (label, translate) => {
+it.each([['未命名', t], ['Untitled', tEn]])('labels unnamed history as %s', (label, translate) => {
   const node: SessionNode = { id: sid('unnamed'), title: '', blank: false, running: false,
     runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false }
   render(<SessionNodeItem node={node} currentId={node.id} now={0} onOpen={vi.fn()}
