@@ -137,7 +137,27 @@ function wireNamespaces(): SettingsNamespaceView[] {
       secrets: [],
       revision: 4,
     },
+    {
+      ns: 'llm-deepseek-account',
+      schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
+      value: {
+        baseURL: 'https://base',
+        defaultContextWindow: 1_000_000,
+        maxTokens: 256_000,
+        models: DEFAULT_DEEPSEEK_MODELS,
+      },
+      base: { defaultContextWindow: 1_000_000, maxTokens: 256_000, models: DEFAULT_DEEPSEEK_MODELS },
+      user: {},
+      autoGenerate: true, applies: 'live',
+      secrets: [],
+      revision: 0,
+    },
   ]
+}
+
+/** The account provider's dedicated settings namespace. */
+function accountNamespace(): SettingsNamespaceView {
+  return wireNamespaces().find(view => view.ns === 'llm-deepseek-account')!
 }
 
 /** Credentials answers over the Remote carrier, which has no envelope. */
@@ -1887,15 +1907,41 @@ it.each([en, zh])('edits the account model catalog without credential or endpoin
   const scripted = scriptedFace({})
   const ops = operationsWith(scripted.face)
   const describe = vi.spyOn(ops, 'describeCredential')
+  const namespace = accountNamespace()
+  const mutate = vi.spyOn(scripted.face.settings, 'mutate').mockResolvedValue(remoteOk(accountNamespace()))
+  const onClose = vi.fn()
   render(<ProviderEditor provider="deepseek-account" displayName={copy.deepSeekAccount}
-    namespace={wireNamespaces()[0]!} settingsPath={[]} schema={settingsSchema}
-    operations={ops} t={key => copy[key]} readOnly={false} onClose={() => {}} />)
+    namespace={namespace} settingsPath={[]} schema={settingsSchema}
+    operations={ops} t={key => copy[key]} readOnly={false} onClose={onClose} />)
   expect(screen.queryByLabelText(copy.keyInput)).toBeNull()
   expect(screen.queryByLabelText(copy.baseUrl)).toBeNull()
   expect(describe).not.toHaveBeenCalled()
   expect(screen.getByDisplayValue('deepseek-v4-flash')).toBeTruthy()
+  expect(screen.queryByText(content => content.includes(copy.advancedHint))).toBeNull()
   await expect(`${document.body.textContent}\n`)
     .toMatchFileSnapshot(`./expected/deepseek-account-${copy === en ? 'en' : 'zh'}.txt`)
+  const set = vi.spyOn(ops, 'storeCredential')
+  fireEvent.change(screen.getAllByLabelText(new RegExp(copy.modelId))[0]!, { target: { value: 'deepseek-v4-mini' } })
+  fireEvent.click(screen.getByText(copy.apply))
+  await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+  expect(mutate.mock.calls[0]).toEqual([
+    'llm-deepseek-account',
+    [{
+      op: 'set',
+      path: ['models'],
+      value: [
+        {
+          id: 'deepseek-v4-mini',
+          name: 'DeepSeek-V4-Flash',
+          description: 'Preserved hidden detail',
+          contextWindow: 1_000_000,
+        },
+        { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: 1_000_000 },
+      ],
+    }],
+    0,
+  ])
+  expect(set).not.toHaveBeenCalled()
 })
 
 it('renders the localized account row and supports catalogs without capacity defaults', async () => {
@@ -1907,7 +1953,7 @@ it('renders the localized account row and supports catalogs without capacity def
   }) })
   expect(screen.getByText(en.deepSeekAccount)).toBeTruthy()
   view.unmount()
-  const namespace = wireNamespaces()[0]!
+  const namespace = accountNamespace()
   render(<ProviderEditor provider="deepseek-account" displayName={en.deepSeekAccount}
     namespace={{ ...namespace, value: { models: [] }, base: { models: [] } }} settingsPath={[]} schema={settingsSchema}
     operations={operationsWith(scripted.face)} t={t} readOnly={false} onClose={() => {}} />)
