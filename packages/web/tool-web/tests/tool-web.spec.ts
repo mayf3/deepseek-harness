@@ -866,7 +866,7 @@ describe('searchMaxQueries is plugin config', () => {
       search: provider,
     })
     const schema = ctx.tools.schemas().find(item => item.name === 'web_search')
-    expect(schema?.description).toContain('1–2 queries')
+    expect(JSON.stringify(schema?.parameters)).toContain('1–2 search queries')
     const prompt = await ctx.systemPrompt.assemble()
     expect(prompt.sections.map(section => section.text).join('\n')).toContain('accepts 1–2 non-empty search queries')
     const out = await call('web_search', { queries: ['one', 'two', 'three'] })
