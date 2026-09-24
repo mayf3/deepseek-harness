@@ -709,7 +709,9 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
 
   beforeAll(async () => {
     const fixture = await readFile(CATALOG_FIXTURE, 'utf8')
-    scaffold = await launchWebScaffold()
+    scaffold = await launchWebScaffold({
+      extraOverlayPath: fileURLToPath(new URL('./fixtures/time-context-every-step.patch.yml', import.meta.url)),
+    })
     await seedSession(scaffold, fixture, CATALOG_SESSION_ID, 'standard')
     const records = foldScheduleEvents(fixture.trim().split('\n').slice(1).map(line => JSON.parse(line) as SessionEvent)).active
     const domain = scaffold.ctx.storageDomain.get('schedule')
@@ -841,7 +843,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     expect(shipped.find(entry => entry.id === 'ui-schedule')).toMatchObject({
       name: '@deepseek-ai/dsh-client-ui-schedule',
     })
-    expect(shipped.find(entry => entry.id === 'ui-schedule')?.disabled).toBeUndefined()
+    expect(shipped.find(entry => entry.id === 'ui-schedule')?.disabled).toBe(true)
     for (const row of [
       { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
       { id: 'schedule', name: '@deepseek-ai/dsh-schedule' },
