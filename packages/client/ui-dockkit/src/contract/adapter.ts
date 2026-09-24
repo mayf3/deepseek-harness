@@ -19,8 +19,6 @@ export interface DockLabels {
   readonly emptyPane: string
   /** The split control, while splitting is allowed. */
   readonly splitPane: string
-  /** Localized action tooltip, when supplied. */
-  readonly splitPaneTooltip?: string
   /** ARIA combination from the effective binding, when bound. */
   readonly splitPaneShortcut?: string | undefined
   /** Effective split keys shown as separate tooltip keycaps. */
@@ -31,8 +29,6 @@ export interface DockLabels {
   readonly splitPaneNarrow: string
   /** Destroy a tab: the chip's close control and the menu's close item. */
   readonly closeTab: string
-  /** Localized close tooltip supplied by the embedder. */
-  readonly closeTabTooltip?: string
   /** Effective close combination, when bound. */
   readonly closeTabShortcut?: string | undefined
   /** Effective close keys shown as separate tooltip keycaps. */

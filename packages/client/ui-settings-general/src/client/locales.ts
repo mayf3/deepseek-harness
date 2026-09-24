@@ -2,7 +2,6 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'shortcut.hint': '{label} {keys}',
   'trigger': '设置',
   'shortcut.open': '打开设置',
   'desktop.update.available': '新版本',
@@ -44,7 +43,6 @@ export type SettingsKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'shortcut.hint': '{label} {keys}',
   'trigger': 'Settings',
   'shortcut.open': 'Open settings',
   'desktop.update.available': 'Update',

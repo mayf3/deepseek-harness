@@ -23,13 +23,11 @@ export function dockLabels(t: TranslateNS<'sidebarRight'>, split?: ShortcutCatal
   return {
     emptyPane: t('dock.emptyPane'),
     splitPane: t('dock.splitPane'),
-    splitPaneTooltip: t('dock.splitPane'),
     splitPaneShortcut: split?.aria,
     splitPaneKeys: split?.keys,
     splitPaneDisabled: t('dock.splitPaneDisabled'),
     splitPaneNarrow: t('dock.splitPaneNarrow'),
     closeTab: t('dock.closeTab'),
-    closeTabTooltip: t('dock.closeTab'),
     closeTabShortcut: close?.aria,
     closeTabKeys: close?.keys,
     addTab: t('dock.addTab'),

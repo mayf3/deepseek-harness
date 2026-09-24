@@ -41,7 +41,7 @@ if (typeof window !== 'undefined') {
 
 /**
  * Attach a hover/focus tooltip to an anchor element.
- * @param props.label - bubble text, or a resolver evaluated only while the bubble is visible.
+ * @param props.label - bubble text, or a resolver evaluated only while visible; an empty string shows only shortcut keys.
  * @param props.shortcutKeys - effective key labels rendered as platform-formatted keycaps after optional text.
  * @param props.side - placement relative to the anchor (default 'right').
  * @param props.align - horizontal anchor-edge alignment for 'bottom'/'top' bubbles: 'end' pins

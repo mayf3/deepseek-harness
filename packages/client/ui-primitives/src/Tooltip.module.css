@@ -29,7 +29,6 @@
 .bubble[data-has-shortcut] { padding-inline-end: 5px; }
 .bubble[data-has-shortcut]:not(:has(.label)) { padding: 3px; }
 
-
 .bubble[data-side='right'] {
   transform: translateY(-50%);
 }

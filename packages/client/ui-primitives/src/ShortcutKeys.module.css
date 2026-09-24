@@ -14,22 +14,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 3px;
-  border: 0.5px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dsw-radius-sm);
-  background: var(--dsw-alias-bg-module-platform);
   font: inherit;
-}
-
-.plain .key {
-  min-width: 0;
-  height: auto;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
 }
 
 .tooltip { color: inherit; font-size: 11px; line-height: 14px; gap: 2px; }
@@ -44,13 +29,5 @@
 
 .separator { font: inherit; }
 
-.joined {
-  box-sizing: border-box;
-  height: 20px;
-  padding: 0 6px;
-  border: 0.5px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dsw-radius-sm);
-  background: var(--dsw-alias-bg-module-platform);
-}
+.joined { box-sizing: border-box; height: 16px; padding: 0 4px; border-radius: 4px; background: var(--dsw-alias-tooltip-key-bg); }
 .joined .key { min-width: 0; height: auto; padding: 0; border: 0; background: transparent; }
-.joined.tooltip { height: 16px; padding: 0 4px; border: 0; border-radius: 4px; background: var(--dsw-alias-tooltip-key-bg); }

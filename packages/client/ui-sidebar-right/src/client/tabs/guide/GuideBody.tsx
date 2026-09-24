@@ -69,7 +69,7 @@ function EntryBox({ entry, described, onPick, shortcut }: {
         <span className={css.entryTitle}>{entry.title()}</span>
         {description !== undefined && <span className={css.entryDescription}>{description}</span>}
       </span>
-      {shortcut !== undefined && shortcut.keys.length > 0 && <ShortcutKeys variant="plain" keys={shortcut.keys} />}
+      {shortcut !== undefined && shortcut.keys.length > 0 && <ShortcutKeys keys={shortcut.keys} />}
     </button>
   )
 }

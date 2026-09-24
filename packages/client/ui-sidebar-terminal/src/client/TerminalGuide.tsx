@@ -78,6 +78,6 @@ export function TerminalGuide({
       </span>
       {description !== undefined && <span className={css.description} aria-hidden="true">{description}</span>}
     </span>
-    {shortcut !== undefined && shortcut.keys.length > 0 && <ShortcutKeys variant="plain" keys={shortcut.keys} className={css.shortcut} />}
+    {shortcut !== undefined && shortcut.keys.length > 0 && <ShortcutKeys keys={shortcut.keys} className={css.shortcut} />}
   </div>
 }

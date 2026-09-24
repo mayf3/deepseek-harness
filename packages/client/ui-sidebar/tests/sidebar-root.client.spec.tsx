@@ -109,7 +109,7 @@ describe('SidebarRoot shell', () => {
     const expanded = screen.getAllByRole('button', { name: 'New session' }).find(button => button.querySelector('kbd') !== null)!
     fireEvent.mouseEnter(expanded)
     fireEvent.focus(expanded)
-    expect(screen.getByRole('tooltip').getAttribute('aria-label')).toBe('Ctrl N')
+    expect(screen.queryByRole('tooltip')).toBeNull()
     expect(Array.from(expanded.querySelectorAll('kbd'), key => key.textContent)).toEqual(['Ctrl', 'N'])
     cleanup()
     render(<HeaderLeadingControls toggleSidebar={vi.fn()} startSession={vi.fn()} selectPanel={vi.fn()} t={t}
