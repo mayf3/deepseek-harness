@@ -4,6 +4,8 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ILayout, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
@@ -39,11 +41,12 @@ async function bench() {
       registries: vi.fn(() => Promise.resolve({ ok: true as const, value: { registry: null, fallbackRegistries: [], resolved: null } })),
     },
   })
-  const selectPanel = vi.fn()
-  ctx.provide('layout', { selectPanel, beginNavigation: () => new AbortController().signal,
+  const panelInfo = createSnapshotStore<PanelInfo>({ activePanelId: null })
+  const selectPanel = vi.fn<ILayout['selectPanel']>((activePanelId) => { panelInfo.set({ activePanelId }) })
+  ctx.provide('layout', { panelInfo, selectPanel, beginNavigation: () => new AbortController().signal,
     toggleSidebar: vi.fn(), openRightbar: vi.fn(), closeRightbar: vi.fn() })
   await ctx.plugin(settings).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, remote, selectPanel }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, remote, selectPanel, panelInfo }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -57,6 +60,26 @@ function declare(slots: SlotRegistry): () => void {
 }
 
 describe('ui-plugin-manager browser plugin', () => {
+  it('resets bundle selection when leaving Plugins and releases its panel observer with the registration', async () => {
+    const b = await bench()
+    const removeRoot = declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = b.slots.entries('main')[0]!
+    assert(entry.store && 'create' in entry.store)
+    const navigation = entry.store.create()
+    b.ctx.pluginNavigation.openBundle('dsh-navigation-test')
+    expect(b.panelInfo.getSnapshot().activePanelId).toBe(PANEL_ID)
+    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'package', name: 'dsh-navigation-test' } })
+    b.selectPanel(null)
+    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'list' } })
+    b.selectPanel(PANEL_ID)
+    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'list' } })
+    b.ctx.pluginNavigation.openBundle('dsh-navigation-test')
+    removeRoot()
+    b.selectPanel(null)
+    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'package', name: 'dsh-navigation-test' } })
+  })
+
   it('declares only the services the page and its Remote methods use', () => {
     expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginManager', 'remote.pluginInventory', 'remote.pluginRegistryProbe', 'configForms', 'layout'])
   })

@@ -178,9 +178,9 @@ it('rejects excessive audio and keeps locked recognition disabled', async () => 
   expect(b.transcribe).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: zh.cancel }))
   act(() => { b.readiness.set({ catalog: null, connected: false, error: null }) })
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: zh['setupPrompt.details'] }).disabled).toBe(false)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: zh['setupPrompt.trigger'] }).disabled).toBe(false)
   b.view.rerender(<VoiceInput {...b.props} locked />)
-  const locked = screen.getByRole<HTMLButtonElement>('button', { name: zh['setupPrompt.details'] })
+  const locked = screen.getByRole<HTMLButtonElement>('button', { name: zh['setupPrompt.trigger'] })
   expect(locked.disabled).toBe(true)
   fireEvent.click(locked)
   expect(screen.queryByRole('dialog')).toBeNull()
@@ -299,8 +299,9 @@ it('offers installation on click without a preparation tooltip', () => {
   act(() => { b.readiness.set({ ...state, catalog: { ...state.catalog!, providers: [
     { ...state.catalog!.providers[0]!, preparation: { phase: 'unprepared' } },
   ] } }) })
-  const mic = screen.getByRole<HTMLButtonElement>('button', { name: zh['setupPrompt.details'] })
+  const mic = screen.getByRole<HTMLButtonElement>('button', { name: zh['setupPrompt.trigger'] })
   expect(mic.disabled).toBe(false)
+  expect(mic.getAttribute('aria-haspopup')).toBe('dialog')
   fireEvent.mouseEnter(mic.parentElement!)
   expect(screen.queryByRole('tooltip')).toBeNull()
   fireEvent.click(mic)
@@ -322,7 +323,7 @@ it.each<SpeechPreparationState>([
   act(() => { b.readiness.set({ ...state, catalog: { ...state.catalog!, providers: [
     { ...state.catalog!.providers[0]!, preparation },
   ] } }) })
-  fireEvent.click(screen.getByRole('button', { name: zh['setupPrompt.details'] }))
+  fireEvent.click(screen.getByRole('button', { name: zh['setupPrompt.trigger'] }))
   expect(screen.getByRole('dialog').textContent).toContain(zh['setupPrompt.unavailableBody'])
   expect(screen.queryByText(zh['setupPrompt.body'])).toBeNull()
   expect(b.capture.start).not.toHaveBeenCalled()
@@ -331,10 +332,35 @@ it.each<SpeechPreparationState>([
   expect(b.props.openSettings).toHaveBeenCalledOnce()
 })
 
+it('moves focus into setup guidance, contains Tab traversal, and restores the draft focus on dismissal', () => {
+  const b = fixture()
+  render(<textarea aria-label="draft" defaultValue="Keep this draft" />)
+  const draft = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'draft' })
+  act(() => { b.readiness.set({ catalog: null, connected: false, error: 'offline' }) })
+  draft.focus()
+  const mic = screen.getByRole('button', { name: zh['setupPrompt.trigger'] })
+  fireEvent.mouseDown(mic)
+  fireEvent.click(mic)
+  const dialog = screen.getByRole('dialog')
+  const details = within(dialog).getByRole('button', { name: zh['setupPrompt.details'] })
+  const close = within(dialog).getByRole('button', { name: zh.cancel })
+  expect(document.activeElement).toBe(details)
+  fireEvent.keyDown(details, { key: 'Tab' })
+  expect(document.activeElement).toBe(close)
+  fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
+  expect(document.activeElement).toBe(details)
+  fireEvent.keyDown(details, { key: 'Escape' })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(document.activeElement).toBe(draft)
+  expect(draft.value).toBe('Keep this draft')
+  expect(b.inputActions.submit).not.toHaveBeenCalled()
+  expect(b.props.openSettings).not.toHaveBeenCalled()
+})
+
 it.each(['later', 'escape', 'ready', 'session'])('dismisses unavailable recognition guidance on %s without changing the draft', (reason) => {
   const b = fixture(), ready = b.readiness.getSnapshot()
   act(() => { b.readiness.set({ catalog: null, connected: false, error: 'offline' }) })
-  const open = () => { fireEvent.click(screen.getByRole('button', { name: zh['setupPrompt.details'] })) }
+  const open = () => { fireEvent.click(screen.getByRole('button', { name: zh['setupPrompt.trigger'] })) }
   open()
   expect(screen.getByRole('dialog').textContent).toContain(zh['setupPrompt.unavailableTitle'])
   if (reason === 'later') fireEvent.click(screen.getByRole('button', { name: zh['setupPrompt.later'] }))

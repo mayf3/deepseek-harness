@@ -116,6 +116,9 @@ export function apply(ctx: ClientContext): void {
         'plugins.detail.section': { kind: 'list', scope: 'root' },
       },
     }, PluginManagerPage)
+    yield ctx.layout.panelInfo.subscribe(() => {
+      if (ctx.layout.panelInfo.getSnapshot().activePanelId !== PANEL_ID) instance.actions.setView({ kind: 'list' })
+    })
     const disposeNavigation = ctx.reflect.provide('pluginNavigation', {
       openBundle: (packageName: string) => {
         ctx.layout.selectPanel(PANEL_ID)

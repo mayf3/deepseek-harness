@@ -1,6 +1,6 @@
 - dialog "Speech recognition is not ready":
   - heading "Speech recognition is not ready" [level=2]
   - button "Cancel"
-  - paragraph: Open the voice plugin details to check recognition status and finish preparation.
+  - paragraph: Open the voice plugin details to check recognition status, preparation progress, or errors.
   - button "Later"
   - button "Open voice plugin settings"

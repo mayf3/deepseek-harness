@@ -1148,7 +1148,6 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const view = props.useStore(state => state.view), { setView } = props.actions
   const [activation, setActivation] = useState<string | null>(null)
   useEffect(() => { ensure() }, [ensure])
-  useEffect(() => () => { setView({ kind: 'list' }) }, [setView])
   // A package an install just enabled: scroll it into view and mark it for a moment.
   const { highlight, clearHighlight } = { highlight: state.highlight, clearHighlight: props.clearHighlight }
   useEffect(() => {

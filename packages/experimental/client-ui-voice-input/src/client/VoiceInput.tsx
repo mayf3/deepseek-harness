@@ -8,7 +8,7 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { RecordingError, audioBase64, type Recording } from './audio.ts'
 import type { SpeechReadiness } from './readiness.ts'
 import { Waveform } from './Waveform.tsx'
-import { VoiceSetupDialog } from './VoiceSetupPrompt.tsx'
+import { VoiceSetupDialog } from './VoiceSetupDialog.tsx'
 import { NS } from './locales.ts'
 import { Button, IconCloseOutlineRegular, IconStopFillRegular, IconMicrophoneOutlineRegular, StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './VoiceInput.module.css'
@@ -145,7 +145,8 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
   if (!expanded) return <>
     <Tooltip label={t('dictate')} disabled={!usable} side="top" portal>
       <span className={css.triggerAnchor}><Button className={css.trigger} size="sm" disabled={locked}
-        aria-label={t(usable ? 'start' : 'setupPrompt.details')} onMouseDown={(event) => { event.preventDefault() }}
+        aria-label={t(usable ? 'start' : 'setupPrompt.trigger')} aria-haspopup={usable ? undefined : 'dialog'}
+        onMouseDown={(event) => { event.preventDefault() }}
         onClick={() => { if (usable) void start(); else setSetupOpen(true) }}><IconMicrophoneOutlineRegular size={18} /></Button></span>
     </Tooltip>
     <VoiceSetupDialog open={setupOpen && !usable}
