@@ -56,17 +56,6 @@ function event(inventory: PersistenceSchemaInventory, name = 'test/record'): str
 }
 
 describe('persistent source type extraction', () => {
-  it('indexes normalized reachable types without erased boolean literals', () => {
-    const root = fixture('export interface Payload { enabled: boolean; next?: Payload }')
-    const inventory = extractPersistenceSchema(root)
-    const reachable = new Set(inventory.roots.flatMap(root => root.schema.nodes
-      .map((_, index) => schemaDigest(canonicalizeSchema(root.schema.nodes, index)))))
-    expect(new Set(inventory.types.map(type => type.digest))).toEqual(reachable)
-    expect(inventory.types.some(type => type.schema.nodes[0]?.kind === 'primitive' && type.schema.nodes[0].type === 'boolean')).toBe(true)
-    expect(inventory.types.some(type => type.schema.nodes[0]?.kind === 'literal' && type.schema.nodes[0].value === false)).toBe(false)
-    expect(inventory.types.some(type => type.names.some(name => name.endsWith('#Payload')))).toBe(true)
-  })
-
   it('keeps authored names and anonymous declaration locations without synthesized traversal names', () => {
     const root = fixture('interface Section { text: string }\nexport interface Payload { inserted: { source: { kind: "hooks-codex"; sections: Section[] } }[] }')
     const inventory = extractPersistenceSchema(root)

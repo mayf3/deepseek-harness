@@ -5176,6 +5176,14 @@ SHA-256: `aa93010d0e521ad7c42273f58d5c9b8bf1dfc94edf1b805a3971b364a35c1877`
 
 `boolean`
 
+<a id="persistence-type-sha256-0c4205180f75b9ee1e0d878bd9a9851628b5dc18448486389d9c5fdc3f1ccda3"></a>
+
+### `false`
+
+SHA-256: `0c4205180f75b9ee1e0d878bd9a9851628b5dc18448486389d9c5fdc3f1ccda3`
+
+`false`
+
 <a id="persistence-type-sha256-fcf427290c6213c2a7feb57492d832ce324f5b9737a759f424dab69e6bd101a0"></a>
 
 ### `never`

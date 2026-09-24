@@ -40,6 +40,25 @@ describe('compact persistence snapshots', () => {
     expect(parseHistoricalPersistenceSnapshot(snapshot)).toEqual(original)
   })
 
+  it.each([true, false])('retains independent recursive types with root graphs=%s', (withRoots) => {
+    const base = inventory()
+    const schema = canonicalizeSchema([
+      { kind: 'object', properties: [{ name: 'next', type: 0, optional: true }, { name: 'flag', type: 1, optional: false }], indices: [] },
+      { kind: 'literal', value: false },
+    ], 0)
+    const independent = { digest: schemaDigest(schema), schema, names: ['example.ts#Independent', 'example.ts#Alias'], sources: ['example.ts'] }
+    const original = { ...base, roots: withRoots ? base.roots : [], types: [independent, ...base.types] }
+    const snapshot = persistenceSchemaSnapshot(original)
+    expect(snapshot.types[0]).toEqual(independent)
+    if (withRoots) expect(snapshot.types.slice(1).every(type => type.schema === undefined)).toBe(true)
+    else expect(snapshot.types).toEqual(original.types)
+    const restored = parsePersistenceSnapshot(JSON.parse(JSON.stringify(snapshot)))
+    expect(restored).toEqual(original)
+    expect(parseHistoricalPersistenceSnapshot(snapshot)).toEqual(original)
+    expect(persistenceSchemaSnapshot(restored)).toEqual(snapshot)
+    expect(renderPersistenceSchemaDefinitions(restored)).toBe(renderPersistenceSchemaDefinitions(original))
+  })
+
   it('reads legacy full graphs and keeps partial acknowledgement inventories empty', () => {
     const original = inventory()
     expect(parsePersistenceSnapshot(JSON.parse(JSON.stringify(original)))).toEqual(original)

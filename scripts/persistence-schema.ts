@@ -9,7 +9,6 @@ import { validSourceCompatibility } from './persistence-source-policy.ts'
 import {
   canonicalizeSchema,
   schemaChildren,
-  reachableSchemaTypes,
   schemaDigest,
   schemaHasCompatibility,
   type PersistenceRoot,
@@ -437,18 +436,15 @@ class SchemaExtractor {
       for (const child of schemaChildren(node)) visit(child)
     }
     for (const input of inputs) visit(input.node)
-    const types = new Map<string, { schema: PersistenceType['schema']; names: Set<string>; sources: Set<string> }>(
-      [...reachableSchemaTypes(roots.map(root => root.schema))].map(([digest, schema]) =>
-        [digest, { schema, names: new Set<string>(), sources: new Set<string>() }]),
-    )
+    const types = new Map<string, { schema: PersistenceType['schema']; names: Set<string>; sources: Set<string> }>()
     for (const id of found) {
       const schema = canonicalizeSchema(this.nodes, id)
       const digest = schemaDigest(schema)
-      const item = types.get(digest)
-      if (item === undefined) continue
+      const item = types.get(digest) ?? { schema, names: new Set<string>(), sources: new Set<string>() }
       const declarationMetadata = this.declarationMetadata.get(id)
       for (const name of declarationMetadata?.names ?? []) item.names.add(name)
       for (const source of declarationMetadata?.sources ?? []) item.sources.add(source)
+      types.set(digest, item)
     }
     return {
       formatVersion: roots.some(root => schemaHasCompatibility(root.schema)) ? 2 : 1,

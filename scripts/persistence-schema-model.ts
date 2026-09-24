@@ -4,6 +4,7 @@
  */
 
 import { createHash } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 
 /** Recorded reader promise for explicitly attributed source additions. */
 export interface SourceCompatibility {
@@ -71,8 +72,10 @@ export interface PersistenceSchemaInventory {
   readonly types: readonly PersistenceType[]
 }
 
-/** On-disk type metadata; complete graphs are stored only in roots. */
-export type PersistenceTypeIndex = Omit<PersistenceType, 'schema'>
+/** Type metadata with an explicit graph when roots cannot reconstruct it exactly. */
+export interface PersistenceTypeIndex extends Omit<PersistenceType, 'schema'> {
+  readonly schema?: CanonicalSchema
+}
 
 /** Compact inventory representation; formatVersion still pins normalization. */
 export interface PersistenceSchemaSnapshot {
@@ -98,15 +101,21 @@ export function reachableSchemaTypes(schemas: readonly CanonicalSchema[]): Map<s
 }
 
 /**
- * Omit redundant type graphs from a current-source inventory for serialization.
- * @param inventory - complete inventory whose types are reachable from its roots.
- * @returns root graphs and their type metadata, preserving inventory order.
+ * Omit type graphs exactly reconstructable from roots, retaining all other graphs.
+ * @param inventory - expanded inventory, including types erased from roots by normalization.
+ * @returns a lossless snapshot preserving root graphs, type order, and declaration metadata.
  */
 export function persistenceSchemaSnapshot(inventory: PersistenceSchemaInventory): PersistenceSchemaSnapshot {
+  const reachable = reachableSchemaTypes(inventory.roots.map(root => root.schema))
   return {
     formatVersion: inventory.formatVersion,
     roots: inventory.roots,
-    types: inventory.types.map(({ digest, names, sources }) => ({ digest, names, sources })),
+    types: inventory.types.map(({ digest, schema, names, sources }) => ({
+      digest,
+      ...(isDeepStrictEqual(schema, reachable.get(digest)) ? {} : { schema }),
+      names,
+      sources,
+    })),
   }
 }
 

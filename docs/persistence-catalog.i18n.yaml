@@ -1260,8 +1260,11 @@
   en: a0d0018c68abc564
   zh: 299d86dbba56b528
 /session-persistence-event-catalog/resolved-persistence-types/boolean:
-  en: b121d42640099ec1
-  zh: b121d42640099ec1
+  en: 40616917f0b8f9cc
+  zh: 40616917f0b8f9cc
+/session-persistence-event-catalog/resolved-persistence-types/false:
+  en: 0e3a8e3c2c62bdd7
+  zh: 0e3a8e3c2c62bdd7
 /session-persistence-event-catalog/resolved-persistence-types/never~2:
   en: a35333b49c104e92
   zh: a35333b49c104e92
