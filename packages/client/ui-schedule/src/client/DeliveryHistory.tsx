@@ -1,8 +1,11 @@
 /** Lazy saved delivery pages owned by the selected task's mounted records view. */
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { Button, IconClockOutlineRegular, IconInfoOutlineRegular, IconWarningOutlineRegular, StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconClockOutlineRegular, IconInfoOutlineRegular,
+  IconWarningOutlineRegular, StateDot, Tooltip,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ScheduleDeliveryHistoryRequest, ScheduleDeliveryHistoryResult } from '@deepseek-ai/dsh-schedule/client'
 import { formatScheduleNextRun } from './schedule-format.ts'
 import css from './TaskManagerPage.module.css'
@@ -26,6 +29,36 @@ type Props = DeliveryHistoryInjected & PropsLocale<'schedule.manager'> & {
   latestMessageId: Cursor
   /** IANA zone of the task's own wall-clock rule; undefined for a one-shot or interval task. */
   timeZone?: string | undefined
+}
+
+/**
+ * Render one saved prompt clamped to two lines; the toggle appears only while the clamp hides text.
+ * Width changes re-measure a collapsed prompt; an expanded prompt keeps its toggle until collapsed.
+ * @param props - Saved prompt text and locale.
+ * @returns The prompt paragraph and, when its text exceeds two lines, the expand or collapse toggle.
+ */
+function SavedPrompt({ prompt, t }: { prompt: string } & PropsLocale<'schedule.manager'>) {
+  const ref = useRef<HTMLParagraphElement>(null)
+  const id = useId()
+  const [expanded, setExpanded] = useState(false)
+  const [clamped, setClamped] = useState(false)
+  useLayoutEffect(() => {
+    if (expanded) return
+    const paragraph = ref.current as HTMLParagraphElement
+    const measure = () => { setClamped(paragraph.scrollHeight > paragraph.clientHeight) }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(paragraph)
+    return () => { observer.disconnect() }
+  }, [expanded, prompt])
+  return <>
+    <p ref={ref} id={id} className={css.savedPrompt} data-expanded={expanded || undefined}>{prompt}</p>
+    {clamped && <button type="button" className={css.savedPromptToggle} aria-expanded={expanded} aria-controls={id}
+      onClick={() => { setExpanded(open => !open) }}>
+      {t(expanded ? 'delivery.collapse' : 'delivery.expand')}
+      {expanded ? <IconChevronUpOutlineRegular size={14} /> : <IconChevronDownOutlineRegular size={14} />}
+    </button>}
+  </>
 }
 
 /**
@@ -121,7 +154,7 @@ export function DeliveryHistory({ id, sessionId, latestMessageId, timeZone, load
           <div className={css.deliveryHead}>
             <time className={css.deliveryTime} dateTime={record.scheduledAt}>{formatOccurrence(record.scheduledAt)}</time>
           </div>
-          {record.prompt !== undefined && <p className={css.savedPrompt}>{record.prompt}</p>}
+          {record.prompt !== undefined && <SavedPrompt prompt={record.prompt} t={t} />}
         </div>
       </section>)}
       {page?.nextBefore !== undefined && failure === undefined && <Button variant="outline" disabled={loading}

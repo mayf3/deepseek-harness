@@ -1183,7 +1183,6 @@
   padding: 2px 0;
 }
 
-/* The occurrence time and its message-id info anchor share one line. */
 .deliveryHead {
   display: flex;
   align-items: center;
@@ -1204,14 +1203,53 @@
   overflow-wrap: anywhere;
 }
 
-/* Instruction text sits in the row's text column at the mock's 13px/22px. */
+/* Instruction text sits in the row's text column at the mock's 13px/22px and
+   shows two lines until its toggle expands it. */
 .savedPrompt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
   margin: 6px 0 0;
   color: var(--dsw-alias-label-tertiary);
   font-size: 13px;
   line-height: 22px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.savedPrompt[data-expanded] {
+  display: block;
+  -webkit-line-clamp: none;
+  line-clamp: none;
+}
+
+/* The negative inline margin offsets the toggle's own padding, so its label
+   starts at the text column's left edge. */
+.savedPromptToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 2px 0 0 -6px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.savedPromptToggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.savedPromptToggle:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
 }
 
 .detailActions,
