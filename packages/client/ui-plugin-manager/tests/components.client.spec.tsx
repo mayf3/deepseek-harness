@@ -158,9 +158,10 @@ function renderTab(
       return body(owner.view, owner, 'form' in owner ? owner.form as ConfigPageForm | undefined : undefined)
     },
   }
-  const { rerender } = render(<PluginManagerPage {...props} />)
+  const { rerender, unmount } = render(<PluginManagerPage {...props} />)
   return {
     navigation,
+    unmount,
     store,
     actions,
     set: (next: Partial<PluginManagerState>) => { act(() => { store.set({ ...store.getSnapshot(), ...next }) }) },
@@ -180,6 +181,14 @@ describe('PluginManagerPage', () => {
     act(() => { b.navigation.actions.setView({ kind: 'package', name: 'missing' }) })
     expect(document.querySelector('[data-plugin-detail]')).toBeNull()
     expect(document.querySelector('[data-plugin-package="dsh-better-sidebar"]')).not.toBeNull()
+  })
+
+  it('resets the open page to the list when the page unmounts', () => {
+    const b = renderTab({ packages: [pkg()] })
+    act(() => { b.navigation.actions.setView({ kind: 'package', name: 'dsh-better-sidebar' }) })
+    expect(document.querySelector('[data-plugin-detail="dsh-better-sidebar"]')).not.toBeNull()
+    b.unmount()
+    expect(b.navigation.getSnapshot()).toEqual({ view: { kind: 'list' } })
   })
 
   it('asks the store once mounted and renders the loading, unavailable, error, and empty states', () => {

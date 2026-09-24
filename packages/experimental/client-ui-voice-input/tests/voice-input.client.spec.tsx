@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Click capture preserves draft edits and Session ownership without composer banners. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -327,7 +327,7 @@ it.each<SpeechPreparationState>([
   expect(screen.queryByText(zh['setupPrompt.body'])).toBeNull()
   expect(b.capture.start).not.toHaveBeenCalled()
   expect(b.props.prepare).not.toHaveBeenCalled()
-  fireEvent.click(screen.getAllByRole('button', { name: zh['setupPrompt.details'] }).at(-1)!)
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh['setupPrompt.details'] }))
   expect(b.props.openSettings).toHaveBeenCalledOnce()
 })
 

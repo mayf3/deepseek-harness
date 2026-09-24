@@ -1,4 +1,4 @@
-/** First-use guidance after explicit enablement, once the Host finishes inspecting its cache. */
+/** Shared setup dialog for bundle activation and unready microphone clicks. */
 import { useEffect } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
