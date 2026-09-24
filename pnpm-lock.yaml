@@ -14184,6 +14184,9 @@ importers:
       '@deepseek-ai/dsh-terminal-bash':
         specifier: workspace:*
         version: link:../../packages/terminal/terminal-bash
+      '@deepseek-ai/dsh-time-context':
+        specifier: workspace:*
+        version: link:../../packages/context/time-context
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:*
         version: link:../../packages/util/timeout
