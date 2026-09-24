@@ -42,7 +42,7 @@ export interface SessionInputDeps {
   /** Session-scope ctx handed to claim.submit transactions. */
   actx: Context
   /** Capture mode and gesture before asynchronous submission or queue admission. */
-  onSubmit?: (mode: InputSubmitMode, source: 'click' | 'enter') => void
+  captureSubmit?: (mode: InputSubmitMode, source: 'click' | 'enter' | undefined) => (() => void) | undefined
   /** Enter adjudication face resolver; absent/undefined answer = every '/' line falls to the default sink. */
   inputTriggers?: (() => InputTriggerController | undefined) | undefined
   /** PopupSelect shell face resolver (dismissal on submit lock / escape). */
@@ -132,6 +132,7 @@ export class SessionInputShell implements SessionInput {
     submit: () => { this.submit('queue') },
   }
 
+  private readonly submittedAnalytics = new WeakMap<SubmitAttempt, () => void>()
   private readonly core = new SubmitMachine()
   private readonly draftEditor: DraftEditorRuntime
   private get projection(): EditorProjection {
@@ -292,9 +293,12 @@ export class SessionInputShell implements SessionInput {
    * (adjudicating/submitting) force-closes the transient layers: the popup
    * dismisses and the menu tracks frozen.
    */
-  submit(mode: InputSubmitMode = 'queue', source: 'click' | 'enter' = 'enter'): void {
+  submit(mode: InputSubmitMode = 'queue', source?: 'click' | 'enter'): void {
     if (this.disposed) return
-    if ((this.snapshot.phase === 'plain' || this.snapshot.phase === 'claimed') && (this.snapshot.draft.trim() !== '' || this.attachmentIds.length > 0)) this.deps.onSubmit?.(mode, source)
+    let report: (() => void) | undefined
+    if (this.snapshot.phase === 'plain' && (this.snapshot.draft.trim() !== '' || this.attachmentIds.length > 0)) {
+      try { report = this.deps.captureSubmit?.(mode, source) } catch (_error) { /* Analytics cannot interrupt submission. */ }
+    }
     if (this.snapshot.draft.trim() === '' && this.attachmentIds.length > 0) {
       if (this.snapshot.phase === 'plain') {
         const attachmentIds = [...this.attachmentIds]
@@ -303,6 +307,7 @@ export class SessionInputShell implements SessionInput {
         const flight = this.attachmentFlightSeq
         this.attachmentFlights.set(flight, { controller, attachmentIds })
         this.commitSend(attachmentIds)
+        this.reportSubmission(report)
         void this.deps.defaultSink('', attachmentIds, mode, controller.signal).then((outcome) => {
           if (this.disposed || !this.attachmentFlights.delete(flight)) return
           if (outcome.kind === 'success') return
@@ -325,7 +330,7 @@ export class SessionInputShell implements SessionInput {
       this.notify('error', this.deps.commandAttachments.unsupportedNotice(before.claim?.token ?? before.draft))
       return
     }
-    this.dispatchRun(({ type: 'enter', mode, draft: this.projection.clipboardText }))
+    this.dispatchRun({ type: 'enter', mode, draft: this.projection.clipboardText }, report)
     const phase = this.snapshot.phase
     if (phase === 'adjudicating' || phase === 'submitting') {
       this.deps.popup?.()?.dismiss()
@@ -574,9 +579,15 @@ export class SessionInputShell implements SessionInput {
   }
 
   /** Dispatch + execute, refreshing the claim decoration when the styled token flips. */
-  private dispatchRun(ev: Parameters<SubmitMachine['dispatch']>[0]): void {
+  private dispatchRun(ev: Parameters<SubmitMachine['dispatch']>[0], report?: () => void): void {
     const beforeToken = this.activeClaimToken()
-    this.run(this.core.dispatch(ev))
+    const effects = this.core.dispatch(ev)
+    if (report !== undefined) {
+      for (const effect of effects) {
+        if ('attempt' in effect) this.submittedAnalytics.set(effect.attempt, report)
+      }
+    }
+    this.run(effects)
     if (this.activeClaimToken() !== beforeToken) this.draftEditor.refreshClaimDecoration()
   }
 
@@ -637,6 +648,8 @@ export class SessionInputShell implements SessionInput {
     draft: string,
     mode: InputSubmitMode,
   ): void {
+    this.reportSubmission(this.submittedAnalytics.get(attempt))
+    this.submittedAnalytics.delete(attempt)
     const attachmentIds = [...this.attachmentIds]
     this.attachmentIds = []
     const occurrences = this.projection.occurrences
@@ -679,6 +692,10 @@ export class SessionInputShell implements SessionInput {
         this.settleDetachedFailure(attempt, message)
       },
     )
+  }
+
+  private reportSubmission(report: (() => void) | undefined): void {
+    try { report?.() } catch (_error) { /* Analytics cannot interrupt submission. */ }
   }
 
   /** Settle one detached default send independently of other sends. */

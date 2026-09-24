@@ -14,30 +14,27 @@ afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await
 async function setup(enabled: boolean) {
   const ctx = new Context()
   cleanup.push(() => ctx.fiber.dispose())
-  const readRecord = vi.fn().mockResolvedValue({ kind: 'grant', payload: { id: 'login-device', ignored: 'private-device-field' } })
-  const getPlatformSession = vi.fn().mockResolvedValue({ userId: 'user-1', token: 'private-platform-token' })
+  const getDeviceIdentity = vi.fn().mockResolvedValue({ deviceId: 'login-device', userId: 'user-1', osVersion: 'fixture-os', ignored: 'private-field' })
   const emit = vi.fn<(record: ProductTelemetryRecord) => void>()
-  ctx.provide('credentials', { readRecord } as never)
-  ctx.provide('deepseekAccount', { getPlatformSession } as never)
+  ctx.provide('deepseekAccount', { getDeviceIdentity } as never)
   ctx.provide('webServer', {} as never)
   ctx.provide('productTelemetry', { emit } as never)
   const fiber = await ctx.plugin(Analytics, { enabled, appVersion: 'test-version' })
-  return { ctx, fiber, readRecord, getPlatformSession, emit }
+  return { ctx, fiber, getDeviceIdentity, emit }
 }
 
 it('disabled collection does not read identity or submit an event', async () => {
   const b = await setup(false)
   expect(b.ctx.productAnalytics.enabled()).toBe(false)
   await b.ctx.productAnalytics.report({ eventName: 'desktop_app_launch', timestamp: 100, attributes: {} })
-  expect(b.readRecord).not.toHaveBeenCalled()
-  expect(b.getPlatformSession).not.toHaveBeenCalled()
+  expect(b.getDeviceIdentity).not.toHaveBeenCalled()
   expect(b.emit).not.toHaveBeenCalled()
 })
 
 it('reuses login identity and copies only approved common fields', async () => {
   const b = await setup(true)
   await b.ctx.productAnalytics.report({ eventName: 'auth_page_click', timestamp: 100, attributes: { button_name: 'sign_in' } })
-  expect(b.readRecord).toHaveBeenCalledWith('deepseek-account-platform/device')
+  expect(b.getDeviceIdentity).toHaveBeenCalledWith()
   expect(b.emit).toHaveBeenCalledExactlyOnceWith({
     eventName: 'auth_page_click', body: 'auth_page_click', timestamp: 100,
     attributes: { button_name: 'sign_in', device_id: 'login-device', user_id: 'user-1', app_version: 'test-version', os_version: expect.any(String) as string },
@@ -47,16 +44,15 @@ it('reuses login identity and copies only approved common fields', async () => {
 
 it('missing identity does not discard an otherwise valid event', async () => {
   const b = await setup(true)
-  b.readRecord.mockRejectedValueOnce(new Error('credential store unavailable'))
-  b.getPlatformSession.mockResolvedValueOnce(undefined)
+  b.getDeviceIdentity.mockRejectedValueOnce(new Error('credential store unavailable'))
   await b.ctx.productAnalytics.report({ eventName: 'plugin_add_button_click', timestamp: 100, attributes: {} })
-  expect(b.emit.mock.calls[0]?.[0].attributes).toEqual({ app_version: 'test-version', os_version: expect.any(String) as string })
+  expect(b.emit.mock.calls[0]?.[0].attributes).toEqual({ app_version: 'test-version' })
 })
 
 it('unload suppresses an identity lookup that settles after disposal', async () => {
   const b = await setup(true)
   const pending = Promise.withResolvers<undefined>()
-  b.readRecord.mockReturnValueOnce(pending.promise)
+  b.getDeviceIdentity.mockReturnValueOnce(pending.promise)
   const reporting = b.ctx.productAnalytics.report({ eventName: 'desktop_app_launch', timestamp: 100, attributes: {} })
   await b.fiber.dispose()
   pending.resolve(undefined)
@@ -79,7 +75,7 @@ it('writes the selected event through the real exporter to an isolated collector
   const ctx = new Context()
   cleanup.push(() => ctx.fiber.dispose())
   ctx.provide('credentials', { readRecord: async () => undefined } as never)
-  ctx.provide('deepseekAccount', { getPlatformSession: async () => undefined } as never)
+  ctx.provide('deepseekAccount', { getDeviceIdentity: async () => undefined } as never)
   ctx.provide('webServer', {} as never)
   const exporter = await ctx.plugin(ProductTelemetry, TelemetryConfig({ endpoint: `http://127.0.0.1:${address.port}/v1/logs`, serviceName: 'test', serviceVersion: '1', compression: 'none' }))
   await ctx.plugin(Analytics, { enabled: true })
@@ -101,7 +97,7 @@ it.each([true, false])('collects live manual and automatic compaction only when 
   }
   if (enabled) await vi.waitFor(() => { expect(b.emit).toHaveBeenCalledTimes(2) })
   expect(b.emit.mock.calls.map(([event]) => event.attributes?.trigger_type)).toEqual(enabled ? ['manual', 'auto'] : [])
-  expect(b.readRecord).toHaveBeenCalledTimes(enabled ? 2 : 0)
+  expect(b.getDeviceIdentity).toHaveBeenCalledTimes(enabled ? 2 : 0)
 })
 
 it.each([true, false])('publishes the launch-time collection flag to renderers: %s', async (enabled) => {
@@ -113,9 +109,22 @@ it.each([true, false])('publishes the launch-time collection flag to renderers: 
 
 it('omits an unavailable account and isolates exporter submission failure', async () => {
   const b = await setup(true)
-  b.getPlatformSession.mockRejectedValueOnce(new Error('account unavailable'))
+  b.getDeviceIdentity.mockRejectedValueOnce(new Error('account unavailable'))
   await b.ctx.productAnalytics.report({ eventName: 'desktop_app_launch', timestamp: 1, attributes: {} })
   expect(b.emit.mock.calls[0]![0].attributes).not.toHaveProperty('user_id')
   b.emit.mockImplementationOnce(() => { throw new Error('exporter unavailable') })
   await expect(b.ctx.productAnalytics.report({ eventName: 'desktop_app_launch', timestamp: 2, attributes: {} })).resolves.toBeUndefined()
+})
+
+
+it('warns when enabled without an exporter, while a disabled Host needs none', async () => {
+  for (const enabled of [false, true]) {
+    const ctx = new Context()
+    cleanup.push(() => ctx.fiber.dispose())
+    ctx.provide('deepseekAccount', { getDeviceIdentity: async () => undefined } as never)
+    ctx.provide('webServer', {} as never)
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    await ctx.plugin(Analytics, { enabled })
+    expect(warn).toHaveBeenCalledTimes(enabled ? 1 : 0)
+  }
 })

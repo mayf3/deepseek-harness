@@ -351,7 +351,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'forkSession(sessionId: SessionId, onCreated?: (childId: SessionId) => void): Promise<SessionId>',
         description: 'Fork a Session without changing the current selection.',
         parameters: [{ name: 'sessionId', description: 'source Session.' }, { name: 'onCreated', description: 'observer before the optional child-title update.' }],
-        returns: 'completion after child creation and inherited-title increment.',
+        returns: 'the child SessionId after creation and inherited-title increment.',
       },
       {
         signature: 'connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>',

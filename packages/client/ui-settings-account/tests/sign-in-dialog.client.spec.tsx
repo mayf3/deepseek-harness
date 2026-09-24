@@ -178,3 +178,12 @@ it('keeps an outstanding start open until the request settles', async () => {
   await act(async () => { pending.resolve(undefined); await pending.promise })
   expect(screen.getByRole('button', { name: en.signIn }).hasAttribute('disabled')).toBe(false)
 })
+
+
+it('reports entry once across rerenders with a supplied sender', () => {
+  const track = vi.fn()
+  const props = dialogProps(null)
+  const view = render(<SignInDialog {...props} track={track} />)
+  view.rerender(<SignInDialog {...props} track={(name, attributes) => { track(name, attributes) }} colorScheme="light" />)
+  expect(track).toHaveBeenCalledExactlyOnceWith('auth_page_view', {})
+})

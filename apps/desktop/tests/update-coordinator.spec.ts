@@ -232,3 +232,13 @@ it('reports one download result when callers share an operation and none for cac
   await f.coordinator.download('1.1.0-rc.2')
   expect(f.downloadResult).toHaveBeenCalledExactlyOnceWith(true)
 })
+
+
+it.each([new DesktopUpdatePreparationError('stop-failed', 'private diagnostic'), new Error('private URL')])('reports safe download failure classification: %s', async (error) => {
+  const f = fixture()
+  await f.coordinator.check()
+  f.downloadUpdate.mockRejectedValueOnce(error)
+  await f.coordinator.download('1.1.0-rc.2')
+  expect(f.downloadResult).toHaveBeenCalledExactlyOnceWith(false, error instanceof DesktopUpdatePreparationError ? 'stop-failed' : 'download_failed')
+  expect(JSON.stringify(f.downloadResult.mock.calls)).not.toContain('private')
+})

@@ -46,7 +46,7 @@ export interface UiWorkspace {
    * Fork a Session without changing the current selection.
    * @param sessionId - source Session.
    * @param onCreated - observer before the optional child-title update.
-   * @returns completion after child creation and inherited-title increment.
+   * @returns the child SessionId after creation and inherited-title increment.
    */
   forkSession(sessionId: SessionId, onCreated?: (childId: SessionId) => void): Promise<SessionId>
   /**

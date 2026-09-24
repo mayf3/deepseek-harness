@@ -1,3 +1,4 @@
+import { resolveLaunchFlag } from '@deepseek-ai/dsh-app-boot'
 import type { ProductEventMap, ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
@@ -378,9 +379,7 @@ async function main(): Promise<void> {
   let injections: readonly unknown[] = []
   let welcomeBackend: DesktopWelcomeBackend | undefined
   let reportedLaunch = false
-  const analyticsSetting = process.env.DSH_PRODUCT_ANALYTICS_ENABLED
-  if (analyticsSetting !== undefined && analyticsSetting !== '0' && analyticsSetting !== '1') throw new Error('DSH_PRODUCT_ANALYTICS_ENABLED must be 0 or 1')
-  const analyticsEnabled = analyticsSetting !== '0'
+  const analyticsEnabled = resolveLaunchFlag('DSH_PRODUCT_ANALYTICS_ENABLED', process.env.DSH_PRODUCT_ANALYTICS_ENABLED, true)
   const track = async <K extends keyof ProductEventMap>(eventName: K, attributes: ProductEventMap[K]): Promise<void> => {
     if (!analyticsEnabled) return
     const event = { eventName, attributes, timestamp: Date.now() } as ProductEvent
@@ -578,7 +577,7 @@ async function main(): Promise<void> {
         const result = await updateDialog.show(parent, confirmation)
         if (result.response !== 0 || isMandatory()) return false
       }
-      await track('desktop_upgrade_install_restart_click', {})
+      void track('desktop_upgrade_install_restart_click', {})
       if (backend.host !== host) throw new DesktopUpdatePreparationError('tasks-unavailable', locale.messages.updateTasksUnavailable)
       try {
         const stillActive = await host.updateTasks('lock')
@@ -604,7 +603,7 @@ async function main(): Promise<void> {
       return true
     },
     undefined, undefined, undefined,
-    (success) => { void track('desktop_upgrade_download_result', { is_success: success, ...success ? {} : { error_reason: 'download_failed' } }) },
+    (success, reason) => { void track('desktop_upgrade_download_result', { is_success: success, ...reason === undefined ? {} : { error_reason: reason } }) },
   )
 
   const updateSchedule = new DesktopUpdateSchedule(updates, resolveDesktopUpdateScheduleConfig(process.env))
@@ -1098,14 +1097,14 @@ async function main(): Promise<void> {
   const showWelcome = (): Promise<void> => {
     if (quitting) return Promise.resolve()
     if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) {
+      if (!welcomeWindow.isVisible()) void track('auth_page_view', {})
       welcomeWindow.show()
       welcomeWindow.focus()
       return Promise.resolve()
     }
     openingWelcome ??= (async () => {
       welcomeWindow = await openWelcomeWindow(locale, {
-        analyticsEnabled,
-        analytics: action => action === 'view' ? track('auth_page_view', {}) : action === 'save-key' ? track('api_key_save_click', {}) : track('auth_page_click', { button_name: action }),
+        ...analyticsEnabled ? { analytics: (action: 'view' | 'save-key' | 'sign_in' | 'api-key') => action === 'view' ? track('auth_page_view', {}) : action === 'save-key' ? track('api_key_save_click', {}) : track('auth_page_click', { button_name: action }) } : {},
         takeNotice: () => {
           const notice = pendingWelcomeNotice
           pendingWelcomeNotice = undefined

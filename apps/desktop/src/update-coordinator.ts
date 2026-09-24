@@ -53,7 +53,7 @@ export class DesktopUpdateCoordinator {
     private readonly updater: AppUpdater = autoUpdater,
     private readonly enabled: () => boolean = () => app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml')),
     private readonly currentVersion: () => string = () => app.getVersion(),
-    private readonly downloadResult?: (success: boolean) => void,
+    private readonly downloadResult?: (success: boolean, reason?: string) => void,
   ) {
     if (updater === autoUpdater) {
       // electron-updater omits this internal transport property from its public declarations.
@@ -114,7 +114,7 @@ export class DesktopUpdateCoordinator {
         return this.setState({ phase: 'ready', version })
       } catch (error) {
         this.downloaded = false
-        this.downloadResult?.(false)
+        this.downloadResult?.(false, error instanceof DesktopUpdatePreparationError ? error.kind : 'download_failed')
         return this.setState(this.failure(error, 'download'))
       }
     }).finally(() => { this.downloadOperation = undefined })

@@ -58,7 +58,7 @@ let disposeActiveHandlers: (() => void) | undefined
  */
 export async function openWelcomeWindow(locale: DesktopLocale, operations: WelcomeOperations): Promise<BrowserWindow> {
   const options = welcomeWindowOptions(process.platform, locale)
-  if (operations.analyticsEnabled && options.webPreferences?.additionalArguments) {
+  if (operations.analytics !== undefined && options.webPreferences?.additionalArguments) {
     options.webPreferences.additionalArguments.push('--dsh-product-analytics')
   }
   const window = new BrowserWindow(options)
@@ -84,7 +84,7 @@ export async function openWelcomeWindow(locale: DesktopLocale, operations: Welco
   ipcMain.handle(WELCOME_IPC.analytics, async (event, action: unknown) => {
     assertSender(event)
     if (action !== 'sign_in' && action !== 'api-key' && action !== 'save-key' && action !== 'view') throw new Error('desktop welcome: invalid analytics action')
-    if (operations.analyticsEnabled) await operations.analytics?.(action)
+    await operations.analytics?.(action)
   })
   ipcMain.handle(WELCOME_IPC.takeNotice, async (event) => { assertSender(event); return operations.takeNotice() })
   ipcMain.handle(WELCOME_IPC.saveApiKey, async (event, value: unknown) => {
@@ -120,7 +120,7 @@ export async function openWelcomeWindow(locale: DesktopLocale, operations: Welco
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Another window can replace ownership during loadFile.
   if (active && !window.isDestroyed()) {
     window.show()
-    if (operations.analyticsEnabled) void operations.analytics?.('view')
+    void operations.analytics?.('view')
   }
   return window
 }

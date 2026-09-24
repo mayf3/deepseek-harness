@@ -11,6 +11,7 @@ kind: "package-library"
 
 `dsh-app-boot` 是 `dsh` profile（包括 Python 运行时 wheel 包所含的 CLI（命令行界面））背后的共享 Loader 启动库。它加载环境层、组合 profile 组合包与 patch、启动每个插件，再返回运行中的应用，或指出失败插件与原因。产品应用使用 `dsh` launcher 而不发布单独 bin；直接配置 helper 只保留给低层嵌入方与测试。你还可以在启动前预览生效配置，按 profile 选择实时或仅启动时应用 patch，并让持有终端的应用在致命退出前恢复终端。
 
+
 ## 目录
 
 - [使用本包](#use-this-package)
@@ -24,6 +25,8 @@ kind: "package-library"
 
 <a id="use-this-package"></a>
 ## 使用本包
+
+`resolveLaunchFlag(name, value, defaultValue)` 仅接受 `0`、`1` 或缺失值；其他值会抛出包含变量名的错误。
 
 用此包启动应用是一个小而显式的入口：你给它一个配置文件，它运行整个启动过程。本节说明你能做什么、能得到什么；每个结果背后的 helper 调用记录在下方可折叠的实现章节中。
 

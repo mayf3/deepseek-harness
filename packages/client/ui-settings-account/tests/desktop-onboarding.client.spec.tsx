@@ -20,12 +20,14 @@ function mount(step: DesktopOnboardingState['progress']['step'] = 'welcome', bal
     returnFromPage = onClose
     return release
   })
+  let changeStatus: (value: DesktopOnboardingState['status']) => void = () => {}
   const update = vi.fn(async (_change: Parameters<DesktopOnboardingProps['update']>[0]) => true)
   function App() {
     const [state, setState] = useState<DesktopOnboardingState>({
       status, visible: true, error: status === 'error' ? 'settings' : null, creditFunded,
       progress: { version: 1, step, purpose: null, process: null, completion: null, usage: 'compact', developerTools: false },
     })
+    changeStatus = (value) => { setState(current => ({ ...current, status: value })) }
     return <DesktopOnboarding track={track} locale={copy === zh ? 'zh' : 'en'} state={state} t={key => copy[key]} complete={complete} retry={retry}
       update={async (change) => {
         setState(current => ({ ...current, status: 'saving' }))
@@ -39,7 +41,7 @@ function mount(step: DesktopOnboardingState['progress']['step'] = 'welcome', bal
   }
   render(<App />)
   return {
-    complete, openPlatformPage, release, update, retry, track,
+    complete, openPlatformPage, release, update, retry, track, changeStatus: (value: DesktopOnboardingState['status']) => { changeStatus(value) },
     /** The viewer returning through the shared host's Back action. */
     back: () => { returnFromPage?.() },
   }
@@ -348,4 +350,14 @@ it('reports visible pages once, funded Continue, popup actions, and no close eve
 
 it('does not report the loading surface as a page', () => {
   expect(mount('welcome', 'loading', 'loading').track).not.toHaveBeenCalled()
+})
+
+
+it('does not repeat page or popup exposure during save and refresh', () => {
+  const b = mount('credit')
+  fireEvent.click(screen.getByRole('button', { name: zh.onboardingSkip }))
+  act(() => { b.changeStatus('saving') })
+  act(() => { b.changeStatus('loading') })
+  act(() => { b.changeStatus('ready') })
+  expect(b.track.mock.calls.filter(([name]) => name === 'onboarding_page_view')).toHaveLength(1)
 })

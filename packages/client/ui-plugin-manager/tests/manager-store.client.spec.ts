@@ -71,7 +71,7 @@ const NO_CONFIG: HostObservable<ConfigLedger> = {
   subscribe: () => () => {},
 }
 
-function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}) {
+function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}, enabled = true) {
   const inventory = { list: overrides.inventory ?? vi.fn(() => Promise.resolve(ok({ entries: [], managementAvailable: true }))) }
   const plugins = {
     listBundles: vi.fn(() => Promise.resolve(ok([BUNDLE]))),
@@ -89,7 +89,7 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
   const probe = { fastest: overrides.fastest ?? vi.fn(() => Promise.resolve(ok(null))) }
   const track = vi.fn()
   const ctx = {
-    get: () => ({ enabled: true, track }),
+    get: () => ({ enabled, track }),
     configForms: { describe: () => ({ getSnapshot: () => ({ view: { namespaces: [] } }), subscribe: () => () => {} }), get: vi.fn((id: string) => `form:${id}`) },
     remote: { pluginManager: plugins, pluginInventory: inventory, pluginRegistryProbe: probe },
   } as never
@@ -859,7 +859,7 @@ describe('PluginManagerController', () => {
     expect(state().highlight).toBeNull()
   })
 
-  it('offers the scripts a blocked run left pending, and retries the same spec with them allowed', async () => {
+  it.each([true, false])('offers the scripts a blocked run left pending, and retries with analytics enabled=%s', async (enabled) => {
     const gates: ReturnType<typeof deferred<Awaited<ReturnType<typeof ok<ChangeResult>> | ReturnType<typeof refused>>>>[] = []
     const { face, state, controller, plugins, started } = bench({
       installBundle: vi.fn(() => {
@@ -867,7 +867,7 @@ describe('PluginManagerController', () => {
         gates.push(gate)
         return gate.promise
       }),
-    })
+    }, enabled)
     await controller.load()
     face.openInstall()
     face.editInstallSpec('x')
@@ -1417,6 +1417,16 @@ it('recognizes the official registry without a trailing slash and with uppercase
 
 
 describe('desktop analytics outcomes', () => {
+  it('redacts authenticated installer URLs from click and failed-result events', async () => {
+    const b = bench({ inspect: vi.fn(async () => ok({ status: 'refused', problem: 'not-bundle', reason: 'refused' })) })
+    b.face.openInstall()
+    b.face.editInstallSpec('git+https://user:private-token@example.invalid/repo.git?token=private-token')
+    b.face.runInstall()
+    await vi.waitFor(() => { expect(b.track).toHaveBeenCalledWith('install_plugin_result', expect.objectContaining({ input_value: '[git]' })) })
+    expect(b.track).toHaveBeenCalledWith('plugin_install_click', { input_value: '[git]', plugin_type: 'bundle' })
+    expect(JSON.stringify(b.track.mock.calls)).not.toContain('private-token')
+  })
+
   it('reports input inspection failure separately from cancellation', async () => {
     const b = bench({ inspect: vi.fn(async () => ok({ status: 'refused', problem: 'not-bundle', reason: 'not a bundle' })) })
     b.face.openInstall()
@@ -1469,4 +1479,24 @@ describe('desktop analytics outcomes', () => {
     await vi.waitFor(() => { expect(b.state().busy).toEqual([]) })
     expect(b.track.mock.calls.filter(call => call[0] === 'plugin_toggle')).toHaveLength(2)
   })
+})
+
+
+it('does not retain install identity when analytics is disabled', async () => {
+  const b = bench({}, false)
+  b.face.openInstall()
+  b.face.editInstallSpec('dsh-new')
+  b.face.runInstall()
+  await vi.waitFor(() => { expect(b.state().install.phase).toBe('done') })
+  expect(b.track.mock.calls.filter(([name]) => name === 'plugin_install_click' || name === 'install_plugin_result')).toEqual([])
+})
+
+it('reports restart-required row toggles and tolerates a vanished inventory entry', async () => {
+  const b = bench({ setPluginEnabled: vi.fn(async () => ok({ ...APPLIED, application: 'restart-required' })) })
+  await b.controller.load()
+  b.face.setRowEnabled(ROW_ENTRY, true)
+  await vi.waitFor(() => { expect(b.track).toHaveBeenCalledWith('plugin_toggle', expect.objectContaining({ plugin_type: 'plugin' })) })
+  b.face.setEnabled('vanished-package', true)
+  await vi.waitFor(() => { expect(b.state().busy).toEqual([]) })
+  expect(b.track.mock.calls.filter(([name]) => name === 'plugin_toggle')).toHaveLength(1)
 })

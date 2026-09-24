@@ -48,8 +48,8 @@ export function DesktopOnboarding({
   const pageName = step === 'welcome' ? 'onboarding_welcome' : step === 'credit' ? 'onboarding_recharge' : step === 'purpose' ? 'onboarding_use_case' : 'onboarding_process'
   const shownPage = useRef<string | null>(null)
   useEffect(() => {
-    const visible = state.visible && state.status !== 'loading' && step !== 'done' && !exiting
-    if (!visible) { shownPage.current = null; return }
+    if (!state.visible || step === 'done' || exiting) { shownPage.current = null; return }
+    if (state.status === 'loading') return
     if (shownPage.current === pageName) return
     shownPage.current = pageName
     track?.('onboarding_page_view', { page_name: pageName })

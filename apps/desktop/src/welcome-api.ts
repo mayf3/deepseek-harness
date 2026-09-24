@@ -25,8 +25,6 @@ export type WelcomeNotice = 'session-expired'
 export interface WelcomeOperations {
   /** @param action - fixed welcome gesture; never carries credential contents. */
   analytics?(action: 'sign_in' | 'api-key' | 'save-key' | 'view'): Promise<void>
-  /** Whether native welcome gestures may be collected. */
-  analyticsEnabled?: boolean
   /** @returns the pending notification, clearing it before another renderer can receive it. */
   takeNotice(): Promise<WelcomeNotice | undefined>
   /** @returns account state after starting a login attempt. */

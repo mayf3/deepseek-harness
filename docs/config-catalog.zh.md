@@ -502,8 +502,8 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-client-product-analytics`
 
-- `inject`: `credentials` · `deepseekAccount` · `webServer`
-- `source`: [`packages/client/product-analytics/src/index.ts:15`](../packages/client/product-analytics/src/index.ts)
+- `inject`: `deepseekAccount` · `webServer`
+- `source`: [`packages/client/product-analytics/src/index.ts:13`](../packages/client/product-analytics/src/index.ts)
 
 ```ts config-catalog
 /** Application-owned collection policy; no user settings surface. */

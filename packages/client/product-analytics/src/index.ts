@@ -1,10 +1,8 @@
 /** Desktop-only analytics RPC and live compaction collection. */
 import { type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { platform, release } from 'node:os'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-host-product-telemetry-otel'
-import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-deepseek-account'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session'
@@ -27,7 +25,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** Authenticated event intake; disabled instances neither inspect identity nor construct an exporter. */
 export default class ProductAnalytics extends TypertRemoteService {
-  static inject = ['credentials', 'deepseekAccount', 'webServer']
+  static inject = ['deepseekAccount', 'webServer']
   static Config = z.object({ enabled: z.boolean().default(false), appVersion: z.string() })
   private readonly collection: { active: boolean }
 
@@ -39,6 +37,7 @@ export default class ProductAnalytics extends TypertRemoteService {
       table.push({ kind: 'global', name: '__DSH_PRODUCT_ANALYTICS__', value: this.collection.active })
     })
     if (!this.collection.active) return
+    if (ctx.get('productTelemetry') === undefined) ctx.logger.warn('Product analytics is enabled without productTelemetry; configure the exporter')
     ctx.on('session/event', (session, event) => {
       if (event.type !== 'compaction/start') return
       void this.report({ eventName: 'context_compression', timestamp: Date.now(),
@@ -62,21 +61,16 @@ export default class ProductAnalytics extends TypertRemoteService {
   async report(event: ProductEvent): Promise<void> {
     if (!this.collection.active) return
     try {
-      const [device, account] = await Promise.all([
-        this.ctx.credentials.readRecord(credentialKey('deepseek-account-platform', 'device')).catch(() => undefined),
-        this.ctx.deepseekAccount.getPlatformSession().catch(() => undefined),
-      ])
+      const identity = await this.ctx.deepseekAccount.getDeviceIdentity().catch(() => undefined)
       if (!this.enabled()) return
-      const payload = device?.kind === 'grant' ? device.payload : undefined
-      const deviceId = typeof payload === 'object' && payload !== null && 'id' in payload && typeof payload.id === 'string' ? payload.id : undefined
       this.ctx.get('productTelemetry')?.emit({
         ...event, body: event.eventName,
         attributes: {
           ...event.attributes,
-          ...deviceId === undefined ? {} : { device_id: deviceId },
-          ...account?.userId == null ? {} : { user_id: account.userId },
+          ...identity?.deviceId === undefined ? {} : { device_id: identity.deviceId },
+          ...identity?.userId === undefined ? {} : { user_id: identity.userId },
           ...this.config.appVersion === undefined ? {} : { app_version: this.config.appVersion },
-          os_version: `${platform()} ${release()}`,
+          ...identity === undefined ? {} : { os_version: identity.osVersion },
         },
       })
     } catch (error) {
