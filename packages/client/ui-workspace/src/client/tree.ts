@@ -292,7 +292,7 @@ function sectionMembers(
  * and the renderer localizes its display label.
  */
 function sessionTitle(session: SessionSummary): string {
-  return session.blank ? '' : session.displayTitle
+  return session.blank ? '' : (session.title?.trim() || '')
 }
 
 /** Build one group without projecting session lineage into presentation. */

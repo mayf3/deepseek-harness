@@ -227,7 +227,7 @@ async function qualify() {
 
     server.select('healthy', '0.1.6-nightly.1')
     checkMenu.click()
-    const available = await dialogWith(messages.updateAvailable)
+    const available = await dialogWith(messages.updateAvailable.replace('{version}', '0.1.6-nightly.1'))
     server.select('corrupt', '0.1.6-nightly.1')
     await clickText(available, messages.updateDownload)
     await waitFor(() => fixture.coordinator.state.phase === 'error', 'checksum failure')

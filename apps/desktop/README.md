@@ -72,6 +72,8 @@ The `dsh-app://shell/` origin serves packaged update documents, scripts, and sty
 
 The product UI retains Web actions, including "Open In..." through the shared authenticated HTTP routes. Desktop uses Web's automatic directory-picker selection and initializes new profiles with the shared Web template's bundles.
 
+Update copy preserves the complete version, including prerelease suffixes, without adding v or V. When no update is available, the dialog title reports the result and the body shows the current version.
+
 Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. The macOS application bundle declares English and Simplified Chinese in `CFBundleLocalizations`, allowing macOS to match the initial application language to the user’s preferred languages. Saved Client UI language preferences still take precedence for the main interface. On Windows, the main document's language updates desktop menus, recovery and update prompts. The repository Client UI i18n gate checks desktop sources.
 
 Windows uses a 40-DIP caption with native window controls and colors synchronized from the application palette. Localized Application and Edit entries beside the sidebar toggle open native popup menus. They mount only after the application frame publishes its shell overlay seat, and remain absent during startup loading. Application provides Check for Updates and Exit; Edit provides undo, redo, cut, copy, paste, delete, and select all by sending the corresponding keys to the focused editor, independently of custom shortcut bindings. Plugin management uses the main application's Plugins page. No separate native menu row appears on Alt. Other platforms retain their native menus. Editable fields retain keyboard commands and a context menu without shortcut labels; Chromium supplies command availability, and selected read-only text offers Copy.
@@ -443,3 +445,5 @@ The account provider’s `embeddedPageDist` configuration adds a `dist` query pa
 ## Dev Note
 
 Pre-launch CDN and capacity decisions are tracked in the [Desktop update proposal](../../.agents/notes/proposed/feature/2026-09-08-desktop-update-policy-and-installation.md#cdn-and-capacity-qualification).
+
+The mandatory update confirmation includes the installation wait notice on Windows; macOS uses the shorter restart explanation.
