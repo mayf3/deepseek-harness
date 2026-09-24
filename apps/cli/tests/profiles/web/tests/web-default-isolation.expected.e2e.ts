@@ -25,8 +25,9 @@ it('boots default Web without experimental modules or an active built-in Browser
       expect.objectContaining({ name: '@deepseek-ai/dsh-host-webserver', state: FiberState.ACTIVE }),
       expect.objectContaining({ name: '@deepseek-ai/dsh-client-modules', state: FiberState.ACTIVE }),
       // The Loader rewrites an inserted row's id (`include:ui-schedule`), so
-      // the shipped rows are pinned by name and settled state.
-      expect.objectContaining({ name: '@deepseek-ai/dsh-time-context', state: FiberState.ACTIVE }),
+      // the shipped Host rows are pinned by name and settled state. A preset's
+      // declared plugins mount in the registry-owned preset tree, so
+      // `time-context` is not among these rows.
       expect.objectContaining({ name: '@deepseek-ai/dsh-schedule', state: FiberState.ACTIVE }),
       expect.objectContaining({ name: '@deepseek-ai/dsh-client-ui-schedule', state: FiberState.ACTIVE }),
     ]))

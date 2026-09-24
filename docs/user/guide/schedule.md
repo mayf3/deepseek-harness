@@ -17,7 +17,7 @@ Create reminders in a conversation, then inspect active and inactive tasks and e
 <a id="create-reminders"></a>
 ## Create reminders
 
-The shipped Web profile mounts Schedule with the clock context that gives the model the current time and the browser's zone. Configure a model provider before asking it to create reminders.
+The shipped Web profile mounts Schedule, and its `standard`, `cordis`, and `ptc` presets mount the clock context that gives the model the current time and the browser's zone. Configure a model provider before asking it to create reminders.
 
 The shipped Web profile's `standard`, `cordis`, and `ptc` presets provide `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete`; the `minimal` preset provides none.
 

@@ -17,7 +17,7 @@
 <a id="create-reminders"></a>
 ## 创建提醒
 
-发布的 Web profile 会挂载 Schedule 及其时钟上下文，后者把当前时间和浏览器时区交给模型。在请求模型创建提醒前，先配置模型 provider。
+发布的 Web profile 会挂载 Schedule，其 `standard`、`cordis` 与 `ptc` preset 会挂载时钟上下文，后者把当前时间和浏览器时区交给模型。在请求模型创建提醒前，先配置模型 provider。
 
 发布版 Web profile 的 `standard`、`cordis` 和 `ptc` preset 提供 `schedule_create`、`schedule_list`、`schedule_update` 和 `schedule_delete`；`minimal` preset 不提供。
 

@@ -10,17 +10,17 @@ Status: implemented
 
 ## Decision
 
-`packages/bundle/web-app/cordis.patch.yml` 在其宿主行列表中插入 `time-context` 与 `schedule`，并让 `ui-schedule` 保持启用；`packages/bundle/web-app/package.json` 声明这两个包，这是 `verify-cordis-config` 对 bundle patch 中裸包名的要求。因此 `web` profile 会交付自动化任务页面、Session 页头的提醒时钟、空闲 Session 行的时钟标记与悬停列表、右侧栏任务页签，并在其 `standard`、`cordis` 和 `ptc` preset 中通过[按 preset 提供的工具包](2026-09-24-preset-scoped-schedule-tools.zh.md)提供 `schedule_create`、`schedule_list`、`schedule_update` 与 `schedule_delete`；`minimal` preset 不交付提醒工具。
+`packages/bundle/web-app/cordis.patch.yml` 在其宿主行列表中插入 `schedule`，并让 `ui-schedule` 保持启用；`time-context` 是 `standard`、`cordis` 与 `ptc` 的 preset 行，不是宿主行（[按 preset 归属的时间上下文](2026-09-24-preset-scoped-time-context.zh.md)）。`packages/bundle/web-app/package.json` 声明 `schedule`、`ui-schedule` 与 `time-context`，这是 `verify-cordis-config` 对 bundle patch 中裸包名的要求。因此 `web` profile 会交付自动化任务页面、Session 页头的提醒时钟、空闲 Session 行的时钟标记与悬停列表、右侧栏任务页签，并在其 `standard`、`cordis` 和 `ptc` preset 中通过[按 preset 提供的工具包](2026-09-24-preset-scoped-schedule-tools.zh.md)提供 `schedule_create`、`schedule_list`、`schedule_update` 与 `schedule_delete`；`minimal` preset 既不交付提醒工具，也不交付时钟读数。
 
-`apps/cli/config/examples/schedule/cordis.yml` 已删除。`applyEntryPatches` 追加 `insert` 列表时不对 id 去重，保留该 overlay 会把 `time-context` 与 `schedule` 挂载两次；原本引用它的两个 Web 测试套件与预览打包器现在只组合发布版 profile。
+`apps/cli/config/examples/schedule/cordis.yml` 已删除。`applyEntryPatches` 追加 `insert` 列表时不对 id 去重，保留该 overlay 会把 `schedule` 挂载两次；原本引用它的两个 Web 测试套件与预览打包器现在只组合发布版 profile。
 
-`time-context` 随 Schedule 一起发布，因为提醒请求本身给出的是墙上时钟目标。该插件在每个符合条件的步骤追加一条持久 user 消息，包含采样瞬时、附加到当前开放请求的浏览器时区，以及自前一条模型可见消息以来的经过时长。正是采样瞬时让模型能把「明天九点」这类请求落成带偏移量的 `at` 值；该解释边界及其要求的显式时区由 [Schedule 子系统](../../../../docs/subsystems/schedule.zh.md)负责。
+`time-context` 随 Schedule 一起发布，因为提醒请求本身给出的是墙上时钟目标。该插件在每个符合条件的步骤追加一条持久 user 消息，包含采样瞬时、附加到当前开放请求的浏览器时区，以及自前一条模型可见消息以来的经过时长。正是采样瞬时让模型能把「明天九点」这类请求落成带偏移量的 `at` 值；该解释边界及其要求的显式时区由 [Schedule 子系统](../../../../docs/subsystems/schedule.zh.md)负责。把该行声明在声明提醒工具的同一批 preset 中，使读数与其消费者归属一致。
 
 宿主服务、其存储 domain 与客户端半边都没有改动。本决策改变的是由哪个组合挂载它们，任务存储、激活、投递与投递记录仍由[宿主定时消息决策](2026-09-16-host-schedule-storage.zh.md)负责。
 
 ## Recorded sessions
 
-驱动 live 步骤的 Web 场景现在每步记录一条 time-context 读数，因此其已提交的 Session 夹具与页头 sidecar 都已重刷。一条读数中的采样瞬时、浏览器时区与经过时长是易变值，`apps/web/tests/scaffold.ts` 的 `normalizeWebSessionVolatiles` 会把它们替换为 `{{timeContextTimestamp}}`、`{{clientTimeZone}}` 和 `{{elapsed}}`。turn 与 step 序号以及"前一条事件"的基线保持可读，因此夹具仍能显示模型收到的内容。重刷会在已保留的上一代旁写入当前 writer 代次（`session.v4.jsonl`），旧代次继续作为已提交的回放基线保留。
+声明 `time-context` 的 preset 所驱动的 Web 场景每步记录一条读数，因此其已提交的 Session 夹具与页头 sidecar 都已重刷。一条读数中的采样瞬时、浏览器时区与经过时长是易变值，`apps/web/tests/scaffold.ts` 的 `normalizeWebSessionVolatiles` 会把它们替换为 `{{timeContextTimestamp}}`、`{{clientTimeZone}}` 和 `{{elapsed}}`。turn 与 step 序号以及"前一条事件"的基线保持可读，因此夹具仍能显示模型收到的内容。重刷会在已保留的上一代旁写入当前 writer 代次（`session.v4.jsonl`），旧代次继续作为已提交的回放基线保留。把该行移出 `minimal` 后，`snapshots/web/minimal-preset/session.v4.jsonl` 中也不再记录这条读数。
 
 ## Alternatives considered
 
@@ -32,8 +32,8 @@ Status: implemented
 
 ## Consequences
 
-- `standard`、`cordis` 和 `ptc` preset 中每个 Web 会话的请求头多出四个工具 schema，且每个符合条件的步骤追加一条持久 user 消息。从不创建提醒的对话也要承担这份 token 成本。
+- `standard`、`cordis` 和 `ptc` preset 中每个 Web 会话的请求头多出四个工具 schema，且每个符合条件的步骤追加一条持久 user 消息。从不创建提醒的对话也要承担这份 token 成本；`minimal` 会话两者都不承担，因为它既不声明这些工具，也不声明这条读数。
 - 时钟读数对模型可见且持久，因此它与其他 user 消息一样参与回放、压缩，并出现在导出的 Session 日志中。
-- 想要恢复旧行为的部署，可在自己的 profile patch 层禁用 `time-context`、`schedule` 与 `ui-schedule` 三行；能力本身没有改动。
+- 想要恢复旧行为的部署，可在自己的 profile patch 层禁用 `schedule` 与 `ui-schedule` 两行。`time-context` 是 preset 行，`applyEntryPatches` 无法按 id 触达它：移除或改配它意味着重述该 preset 行的 `config.plugins`，也就是 Web 编辑器保存改动的机制。能力本身没有改动。
 - 完整预设表的 `cordis_inspect_query` `listTools` 答案现在超过基础组合 12,500 token 的内联预算，因此 spill 策略改为保留该答案的首尾并给出 spill 路径，而不是完整 JSON。
 - 仓库预览镜像与两个 Web 测试套件都不再传 overlay 参数，一处组合改动即同时作用于所有界面。
