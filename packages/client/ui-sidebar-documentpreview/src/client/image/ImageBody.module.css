@@ -13,6 +13,10 @@
   white-space: normal;
 }
 
+.frame:has([data-document-loading]) {
+  height: 100%;
+}
+
 /* A wider image shrinks to the pane's width at its aspect ratio; a smaller
    one keeps its intrinsic size. The auto margins centre it either way. */
 .surface {
