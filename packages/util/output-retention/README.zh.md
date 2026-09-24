@@ -74,6 +74,10 @@ const footer = formatRetentionNotice(
 
 库负责标准化省略子句（`Omitted 3 items.`）并把它与工具自有的恢复指引拼接；只有工具知道恢复动作，因此这些措辞由工具提供。
 
+### 按字符预算截断预览
+
+`truncateWithoutSplittingSurrogatePair` 按 UTF-16 码元限制预览文本。切口落在代理对内部时丢弃不成对的半个码元，而不是返回孤立高位代理项，因此保留文本仍是前缀。持久 `bash`、`pwsh` 与 `str_replace_editor` 用它处理各自的字符预算预览；截断提示与 `incomplete` 前缀仍由各工具自行负责。
+
 ### `truncated` 意味着什么
 
 `truncated` 是预算事实：retainer 因上限而省略了本可获得的内容。它绝不表示上游不完整——权限失败、跳过二进制文件、提供方部分失败与不可读候选项都留在工具领域字段中，绝不并入 `truncated`。
@@ -151,7 +155,7 @@ const footer = formatRetentionNotice(
 这些限制说明 retainer 刻意不覆盖什么。它们是当前包约束，不是任务积压。
 
 - **项保留只支持 `head`**——tail、head/tail、分页、分组与提供方完整性语义仍归工具所有。
-- **文本保留面向字节**——`read` 分页等行窗口与字符窗口需要单独的渲染器；切割可能丢弃部分 UTF-8 边界字节，以保持返回文本有效。
+- **文本保留面向字节**——`TextRetainer` 以字节计数；字符预算的头部截断走 `truncateWithoutSplittingSurrogatePair`，`read` 分页等行窗口仍需独立渲染器；切割可能丢弃部分 UTF-8 边界字节，以保持返回文本有效。
 
 <a id="dev-note"></a>
 ### 开发备注

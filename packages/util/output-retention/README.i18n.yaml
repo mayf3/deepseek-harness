@@ -26,6 +26,9 @@
 /deepseek-ai-dsh-output-retention/use-this-package/building-the-omission-footer:
   en: 24a79057aea704e0
   zh: ab6b91d0d1c3b8d7
+/deepseek-ai-dsh-output-retention/use-this-package/capping-a-character-budget-preview:
+  en: ca55f16ac7f494d4
+  zh: 181c19d0d5f0128b
 /deepseek-ai-dsh-output-retention/use-this-package/what-truncated-means:
   en: d496be708ac637dc
   zh: 739017ce47f08148
@@ -57,8 +60,8 @@
   en: 4487c456cf996b48
   zh: 2c25fe4a5a53f345
 /deepseek-ai-dsh-output-retention/known-limitations-and-deferred-work:
-  en: dabd5ca291570e70
-  zh: d1d98ece31eaa664
+  en: 34e646397df5e681
+  zh: 344609df5eb0c4fa
 /deepseek-ai-dsh-output-retention/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

@@ -68,10 +68,10 @@ function call(ctx: Context, owner: Agent | undefined, args: unknown) {
 
 async function setup(
   config: ToolStrReplaceEditor.Config = {},
-  options: { fsPolicy?: boolean; sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access' } = {},
+  options: { fsPolicy?: boolean; sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access'; root?: string } = {},
 ) {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-tool-str-replace-editor-'))
-  roots.push(root)
+  const root = options.root ?? await mkdtemp(join(tmpdir(), 'dsh-tool-str-replace-editor-'))
+  if (options.root === undefined) roots.push(root)
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(SystemPrompt)
@@ -355,7 +355,9 @@ describe('tool-str-replace-editor', () => {
     // The cap lands on the high surrogate of the first emoji.
     const splitAt = untruncated.indexOf('😀') + 1
 
-    const clipped = await setup({ maxOutputChars: splitAt })
+    // Share the renderer's root so the clipped context reads the file inside its
+    // own working directory.
+    const clipped = await setup({ maxOutputChars: splitAt }, { root: wide.root })
     const rendered = text(await call(clipped.ctx, clipped.owner, { command: 'view', path: file }))
 
     expect(rendered.startsWith(`${untruncated.slice(0, splitAt - 1)}<response clipped>`)).toBe(true)

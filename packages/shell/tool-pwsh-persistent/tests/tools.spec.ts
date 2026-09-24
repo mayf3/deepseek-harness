@@ -453,8 +453,7 @@ describe('tool-pwsh-persistent', () => {
     await call(ctx, owner, 'warm up')
     const session = stub.sessions[0]!
     session.mode = 'large'
-    // The tenth code unit is the emoji's high surrogate, so the clip drops the
-    // unpaired half instead of emitting it.
+    // The tenth code unit is the emoji's high surrogate.
     session.largeOutput = `${'x'.repeat(9)}😀tail`
 
     const rendered = text(await call(ctx, owner, 'emoji'))

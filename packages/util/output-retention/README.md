@@ -74,6 +74,10 @@ const footer = formatRetentionNotice(
 
 The library standardizes the omission clause (`Omitted 3 items.`) and joins it with the tool's own recovery guidance; only the tool knows the recovery action, so the tool supplies those words.
 
+### Capping a character-budget preview
+
+`truncateWithoutSplittingSurrogatePair` caps a preview measured in UTF-16 code units. A cut that lands inside a surrogate pair drops the unpaired half instead of returning a lone high surrogate, so the kept text stays a prefix. The persistent `bash` and `pwsh` shells and `str_replace_editor` use it for their character-budget previews; each still owns its truncation notice and its `incomplete` prefix.
+
 ### What `truncated` means
 
 `truncated` is a budget fact: the retainer omitted otherwise-available content because of a cap. It never means the upstream was incomplete — permission failures, skipped binary files, provider partial failures, and unreadable candidates stay in tool-domain fields, never folded into `truncated`.
@@ -151,7 +155,7 @@ No direct invalidation; the retention consumers own any request-prefix changes.
 These limits define what the retainers deliberately do not cover. They are current package constraints, not a task backlog.
 
 - **Item retention supports `head` only** — tail, head/tail, pagination, grouping, and provider-completeness semantics remain tool-owned.
-- **Text retention is byte-oriented** — line and character windows such as `read` pagination require a separate renderer, and a cut may discard partial UTF-8 boundary bytes to keep the returned text valid.
+- **Text retention is byte-oriented** — `TextRetainer` counts bytes; character-budget head caps go through `truncateWithoutSplittingSurrogatePair`, and line windows such as `read` pagination still require a separate renderer. A cut may discard partial UTF-8 boundary bytes to keep the returned text valid.
 
 <a id="dev-note"></a>
 ### Dev Note
