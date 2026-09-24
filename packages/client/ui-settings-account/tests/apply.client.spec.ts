@@ -272,8 +272,7 @@ it('re-reads profile and balance but no bonus for the onboarding recharge return
   await c.reload(SELF)
   const actions = operations(c)
   const track = vi.fn()
-  const analytics = c.ctx.get('productAnalytics')!
-  vi.spyOn(analytics, 'track').mockImplementation(track)
+  c.ctx.provide('productAnalytics', { track } as never)
   actions.track?.('auth_page_view', {})
   expect(track).toHaveBeenCalledWith('auth_page_view', {})
   const onboarding = injectedOf(c.ctx.slots.entries('shell.overlay')

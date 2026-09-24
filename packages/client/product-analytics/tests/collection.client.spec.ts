@@ -1,5 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, expect, it, vi } from 'vitest'
+import type { RemoteStreamOptions } from '@deepseek-ai/dsh-api-gateway/client'
 import * as Analytics from '../src/client/index.ts'
 
 const cleanup: (() => Promise<void>)[] = []
@@ -7,17 +8,38 @@ afterEach(async () => {
   for (const dispose of cleanup.splice(0).reverse()) await dispose()
   vi.unstubAllGlobals()
 })
-async function setup() {
+async function setup(enabled = true) {
   const ctx = new Context()
   cleanup.push(() => ctx.fiber.dispose())
   const report = vi.fn().mockResolvedValue({ ok: true, value: undefined })
-  ctx.provide('remote', { productAnalytics: { report } } as never)
+  const values = [enabled]
+  let wake: (() => void) | undefined
+  let disposed = false
+  let failure: Error | undefined
+  let options: RemoteStreamOptions<boolean> | undefined
+  const stream = {
+    async *[Symbol.asyncIterator]() {
+      while (!disposed) {
+        if (failure !== undefined) throw failure
+        const value = values.shift()
+        if (value !== undefined) { yield { value, accept: () => {} }; continue }
+        await new Promise<void>((resolve) => { wake = resolve })
+      }
+    },
+    dispose: async () => { disposed = true; wake?.() },
+  }
+  ctx.provide('remote', { productAnalytics: { report, watchPolicy: vi.fn() }, $stream: (value: RemoteStreamOptions<boolean>) => { options = value; return stream } } as never)
   ctx.provide('remote.productAnalytics', {} as never)
   await ctx.plugin(Analytics)
-  return { ctx, report }
+  if ('dshDesktop' in globalThis) await vi.waitFor(() => { expect(ctx.productAnalytics.enabled).toBe(enabled) })
+  return { ctx, report, options: () => options!,
+    async fail() { failure = new Error('terminal'); wake?.(); await vi.waitFor(() => { expect(ctx.productAnalytics.enabled).toBe(false) }) },
+    async policy(enabled: boolean) {
+      values.push(enabled); wake?.()
+      await vi.waitFor(() => { expect(ctx.productAnalytics.enabled).toBe(enabled) })
+    } }
 }
 it('never collects in Web even when the Host advertises analytics', async () => {
-  vi.stubGlobal('__DSH_PRODUCT_ANALYTICS__', true)
   const b = await setup()
   expect(b.ctx.productAnalytics.enabled).toBe(false)
   b.ctx.productAnalytics.track('desktop_app_launch', {})
@@ -25,17 +47,15 @@ it('never collects in Web even when the Host advertises analytics', async () => 
 })
 it('drops disabled events and has no backfill when enabled', async () => {
   vi.stubGlobal('dshDesktop', {})
-  vi.stubGlobal('__DSH_PRODUCT_ANALYTICS__', false)
-  const b = await setup()
+  const b = await setup(false)
   b.ctx.productAnalytics.track('auth_page_view', {})
   expect(b.report).not.toHaveBeenCalled()
-  vi.stubGlobal('__DSH_PRODUCT_ANALYTICS__', true)
+  await b.policy(true)
   b.ctx.productAnalytics.track('auth_page_click', { button_name: 'sign_in' })
   expect(b.report).toHaveBeenCalledExactlyOnceWith({ eventName: 'auth_page_click', timestamp: expect.any(Number) as number, attributes: { button_name: 'sign_in' } })
 })
 it('does not retry or propagate transport rejection', async () => {
   vi.stubGlobal('dshDesktop', {})
-  vi.stubGlobal('__DSH_PRODUCT_ANALYTICS__', true)
   const b = await setup()
   b.report.mockRejectedValueOnce(new Error('offline'))
   b.ctx.productAnalytics.track('auth_page_view', {})
@@ -45,10 +65,30 @@ it('does not retry or propagate transport rejection', async () => {
 
 it('does not interrupt an action when Remote access fails synchronously', async () => {
   vi.stubGlobal('dshDesktop', {})
-  vi.stubGlobal('__DSH_PRODUCT_ANALYTICS__', true)
   const b = await setup()
   b.report.mockImplementationOnce(() => { throw new Error('Remote namespace detached') })
   expect(() => { b.ctx.productAnalytics.track('auth_page_view', {}) }).not.toThrow()
   await Promise.resolve()
   expect(b.report).toHaveBeenCalledOnce()
+})
+
+it('keeps the supplied occurrence time and stops new events on policy changes', async () => {
+  vi.stubGlobal('dshDesktop', {})
+  const b = await setup()
+  b.ctx.productAnalytics.track('auth_page_view', {}, 123)
+  expect(b.report).toHaveBeenCalledWith({ eventName: 'auth_page_view', attributes: {}, timestamp: 123 })
+  await b.policy(false)
+  b.ctx.productAnalytics.track('auth_page_view', {})
+  expect(b.report).toHaveBeenCalledOnce()
+})
+
+it('fails closed on stream loss and accepts a fresh policy after reconnection', async () => {
+  vi.stubGlobal('dshDesktop', {})
+  const b = await setup()
+  b.options().open(new AbortController().signal)
+  expect(b.options().ended(true).message).toContain('policy stream ended')
+  b.options().carrierFailed?.(new Error('offline'))
+  expect(b.ctx.productAnalytics.enabled).toBe(false)
+  await b.policy(true)
+  await b.fail()
 })

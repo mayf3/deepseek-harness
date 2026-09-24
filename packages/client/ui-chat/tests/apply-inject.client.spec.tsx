@@ -1,4 +1,4 @@
-import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import { MessageId } from '@deepseek-ai/dsh-llm/brand'
 // @vitest-environment jsdom
 /** Chat inject factories exercised over independently mounted Conversation and Chat plugins. */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -176,8 +176,16 @@ describe('Chat inject API', () => {
     const forkCreated = vi.spyOn(b.runtime.sessions, 'fork').mockImplementation(async (input) => { input.onCreated?.(ROOT); return ROOT })
     injected.forkAt(17)
     expect(track).toHaveBeenCalledWith('branch_session_click', { session_id: ROOT, parent_session_id: ROOT, click_position: 'footer' })
-    injected.forkAt(17, 'message-id' as MessageId)
-    expect(track).toHaveBeenCalledWith('branch_session_click', expect.objectContaining({ parent_message_id: 'message-id' }))
+    await b.runtime.sessions.replaceEvents(ROOT, [
+      { type: 'event', event: { type: 'turn/start', seq: SessionSeq(10), time: 10, data: { turn: 1 } } },
+      { type: 'event', event: { type: 'step/start', seq: SessionSeq(11), time: 11, data: { turn: 1, step: 1 } } },
+      { type: 'event', event: { type: 'assistant/message', seq: SessionSeq(12), time: 12, surfaceOp: 'append', data: {
+        turn: 1, step: 1, stream: [], message: { id: MessageId('reply'), role: 'assistant', content: [{ type: 'text', text: 'answer' }], source: { kind: 'model', provider: 'fixture', model: 'fixture' } },
+      } } },
+      { type: 'event', event: { type: 'turn/end', seq: SessionSeq(17), time: 17, data: { turn: 1, reason: { kind: 'completed' } } } },
+    ])
+    injected.forkAt(17)
+    expect(track).toHaveBeenLastCalledWith('branch_session_click', { session_id: ROOT, parent_session_id: ROOT, parent_message_id: 'reply', click_position: 'footer' })
     forkCreated.mockRestore()
     injected.forkAt(17)
     await vi.waitFor(() => {

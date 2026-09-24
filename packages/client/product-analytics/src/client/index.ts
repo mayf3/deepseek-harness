@@ -1,7 +1,7 @@
 /** Desktop renderer analytics sender; browser applications have no collection capability. */
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
-import type {} from '@deepseek-ai/dsh-client-product-analytics/remote'
+export type {} from '@deepseek-ai/dsh-client-product-analytics/remote'
 import type { ProductEvent, ProductEventMap } from '../events.ts'
 export type { ProductEvent, ProductEventMap, TrackProductEvent } from '../events.ts'
 
@@ -12,21 +12,36 @@ declare module '@deepseek-ai/cordis' {
 }
 
 class DesktopAnalytics extends Service {
-  constructor(ctx: Context) { super(ctx, 'productAnalytics') }
+  private collecting = false
 
-  /** Whether this renderer may collect events under the launch-time policy. */
+  constructor(ctx: Context) {
+    super(ctx, 'productAnalytics')
+    if (!('dshDesktop' in globalThis)) return
+    const stream = ctx.remote.$stream<boolean>({
+      name: 'product analytics policy', open: signal => ctx.remote.productAnalytics.watchPolicy(signal),
+      ended: () => new Error('product analytics policy stream ended'),
+      carrierFailed: () => { this.collecting = false },
+    })
+    ctx.effect(() => () => { this.collecting = false; return stream.dispose() })
+    void (async () => {
+      for await (const frame of stream) { this.collecting = frame.value; frame.accept() }
+    })().catch(() => { this.collecting = false })
+  }
+
+  /** Whether the synchronized Host configuration currently permits collection. */
   get enabled(): boolean {
-    return 'dshDesktop' in globalThis && (globalThis as typeof globalThis & { __DSH_PRODUCT_ANALYTICS__?: boolean }).__DSH_PRODUCT_ANALYTICS__ === true
+    return this.collecting
   }
 
   /**
    * Send an event without retaining it for reconnect or later enablement.
    * @param name - event name.
    * @param attributes - approved business fields.
+   * @param timestamp - occurrence time; defaults to the current time.
    */
-  track<K extends keyof ProductEventMap>(name: K, attributes: ProductEventMap[K]): void {
+  track<K extends keyof ProductEventMap>(name: K, attributes: ProductEventMap[K], timestamp = Date.now()): void {
     if (!this.enabled) return
-    const event = { eventName: name, attributes, timestamp: Date.now() } as ProductEvent
+    const event = { eventName: name, attributes, timestamp } as ProductEvent
     void this.submit(event)
   }
 
@@ -37,7 +52,7 @@ class DesktopAnalytics extends Service {
   }
 }
 
-/** Analytics requires only the authenticated remote namespace. */
+/** Analytics consumes authenticated RPC and its reconnecting policy stream. */
 export const inject = ['remote', 'remote.productAnalytics']
 
 /** @param ctx - browser application context. */

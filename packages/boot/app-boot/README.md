@@ -11,7 +11,6 @@ English | [中文](README.zh.md)
 
 `dsh-app-boot` is the shared Loader boot library behind `dsh` profiles, including the CLI packaged by the Python runtime wheel. It loads environment layers, composes profile bundles and patches, boots every plugin, and returns the running app or identifies the failed plugin and cause. Product applications use the `dsh` launcher instead of publishing separate bins; direct-config helpers remain only for lower-level embedders and tests. You can preview the effective configuration before booting, configure HMR through profile YAML, and let a terminal-owning app restore its terminal before a fatal exit.
 
-
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -25,8 +24,6 @@ English | [中文](README.zh.md)
 
 <a id="use-this-package"></a>
 ## Use this package
-
-`resolveLaunchFlag(name, value, defaultValue)` accepts only `0`, `1`, or an absent value; other values fail with the variable name.
 
 Starting an app with this package is a small, explicit entry point: you give it a config file and it runs the whole boot. This section covers what you can do and what you get; the helper calls behind each outcome are documented in the folded implementation section.
 
@@ -196,7 +193,6 @@ Boot itself changes no request prefix. `addHarnessSourceSection` places its sour
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-
 
 These limits describe when this boot library is a poor fit or needs special care. They are current package constraints, not a task backlog.
 

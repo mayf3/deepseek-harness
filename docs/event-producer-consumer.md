@@ -27,7 +27,7 @@ This matrix shows which packages dispatch each harness-owned event and which pac
 | `api-session/error` | `emit` | [`packages/api/session-controller/src/types.ts:618`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
 | `api-session/removed` | `emit` | [`packages/api/session-controller/src/types.ts:597`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
 | `api-session/status` | `emit` | [`packages/api/session-controller/src/types.ts:604`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
-| `app-boot/config-reload` | `emit` | [`packages/boot/app-boot/src/index.ts:53`](../packages/boot/app-boot/src/index.ts) | [`app-boot`](../packages/boot/app-boot) (`emit`) | [`settings`](../packages/settings/settings) |
+| `app-boot/config-reload` | `emit` | [`packages/boot/app-boot/src/index.ts:52`](../packages/boot/app-boot/src/index.ts) | [`app-boot`](../packages/boot/app-boot) (`emit`) | [`settings`](../packages/settings/settings) |
 | `approval/request` | `waterfall` | [`packages/interaction/user-approval/src/types.ts:87`](../packages/interaction/user-approval/src/types.ts) | [`user-approval`](../packages/interaction/user-approval) (`waterfall`) | [`acp`](../packages/acp/acp), `remotes` |
 | `authorization/settled` | `emit` | [`packages/credentials/authorization/src/index.ts:57`](../packages/credentials/authorization/src/index.ts) | [`authorization`](../packages/credentials/authorization) (`events.dispatch`) | [`authorization`](../packages/credentials/authorization) |
 | `commands/change` | `emit` | [`packages/interaction/commands/src/types.ts:89`](../packages/interaction/commands/src/types.ts) | [`commands`](../packages/interaction/commands) (`events.dispatch`) | `remotes` |
@@ -80,7 +80,7 @@ This matrix shows which packages dispatch each harness-owned event and which pac
 | `tools/ptc-dispatch-log` | `waterfall` | [`packages/core/tools/src/index.ts:190`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`waterfall`) | [`spill-policy`](../packages/spill/spill-policy) |
 | `tools/result` | `emit` | [`packages/core/tools/src/index.ts:198`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`events.dispatch`) | [`agent-instructions`](../packages/context/agent-instructions), [`subagent-in-process-driver`](../packages/subagent/subagent-in-process-driver), [`tool-present`](../packages/deliverables/tool-present) |
 | `user-questions/request` | `waterfall` | [`packages/interaction/user-questions/src/types.ts:88`](../packages/interaction/user-questions/src/types.ts) | [`user-questions`](../packages/interaction/user-questions) (`waterfall`) | `remotes` |
-| `webserver/index-inject` | `emit` | [`packages/host/webserver/src/index.ts:34`](../packages/host/webserver/src/index.ts) | `webserver` (`emit`) | `connection`, `inspector`, `modules`, `product-analytics`, `shortcuts`, `ui-sidebar-documentpreview`, `ui-theme` |
+| `webserver/index-inject` | `emit` | [`packages/host/webserver/src/index.ts:34`](../packages/host/webserver/src/index.ts) | `webserver` (`emit`) | `connection`, `inspector`, `modules`, `shortcuts`, `ui-sidebar-documentpreview`, `ui-theme` |
 | `workflow/agent-end` | `emit` | [`packages/workflow/workflow/src/index.ts:79`](../packages/workflow/workflow/src/index.ts) | [`workflow`](../packages/workflow/workflow) (`events.dispatch`) | [`tool-workflow`](../packages/workflow/tool-workflow), [`workflow`](../packages/workflow/workflow) |
 | `workflow/agent-start` | `emit` | [`packages/workflow/workflow/src/index.ts:68`](../packages/workflow/workflow/src/index.ts) | [`workflow`](../packages/workflow/workflow) (`events.dispatch`) | [`tool-workflow`](../packages/workflow/tool-workflow), [`workflow`](../packages/workflow/workflow) |
 | `workflow/end` | `emit` | [`packages/workflow/workflow/src/index.ts:89`](../packages/workflow/workflow/src/index.ts) | [`workflow`](../packages/workflow/workflow) (`events.dispatch`) | [`workflow`](../packages/workflow/workflow) |
@@ -102,7 +102,7 @@ This matrix shows which packages dispatch each harness-owned event and which pac
 | `internal/service` | - | [`agent-preset-registry`](../packages/preset/agent-preset-registry), `gateway` |
 | `internal/status` | - | [`agent`](../packages/core/agent), `inspector`, [`web`](../packages/web/web) |
 | `internal/update` | - | [`app-boot`](../packages/boot/app-boot) |
-| `loader/volatile-update` | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `speech-to-text` |
+| `loader/volatile-update` | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `product-analytics`, `speech-to-text` |
 | `slots/changed` | `ui-renderer` (`emit`) | - |
 <!-- END GENERATED event-producer-consumer:undeclared -->
 

@@ -172,6 +172,8 @@ const harness = await vi.hoisted(async () => {
     }),
   })
   let accountListener: ((state: AccountView) => void) | undefined
+  let analyticsEnabled = true
+  let policyListener: ((enabled: boolean) => void) | undefined
   const analytics = vi.fn(async (_event: unknown) => {})
   const nativeTheme = { themeSource: 'system', shouldUseDarkColors: false }
   const trays: FakeTray[] = []
@@ -191,9 +193,14 @@ const harness = await vi.hoisted(async () => {
     platformDispose,
     platformCloseAndWait,
 
-    watchAccount: (listener: (state: AccountView) => void) => {
+    get analyticsEnabled() { return analyticsEnabled },
+    set analyticsEnabled(value: boolean) { analyticsEnabled = value; policyListener?.(value) },
+    watchAccount: (
+      listener: (state: AccountView) => void, _failed: () => void, _expired: () => void, policy?: (enabled: boolean) => void,
+    ) => {
+      policyListener = policy
       accountListener = listener
-      return () => { accountListener = undefined }
+      return () => { accountListener = undefined; policyListener = undefined }
     },
     publishAccount(state: AccountView) { accountListener?.(state) },
     ipcOn: vi.fn<(channel: string, listener: (event: { sender: unknown; senderFrame: unknown }, ...args: unknown[]) => void) => void>(),
@@ -345,6 +352,7 @@ vi.mock('../src/platform-view.ts', async importOriginal => ({
 }))
 vi.mock('../src/welcome-backend.ts', () => ({
   connectDesktopWelcome: async () => ({
+    analyticsEnabled: async () => harness.analyticsEnabled,
     report: harness.analytics,
     readLocalePreference: async () => null,
     read: async (): Promise<unknown> => (await harness.hosts.at(-1)!.fetch()).json() as Promise<unknown>,
@@ -399,7 +407,7 @@ beforeEach(() => {
   vi.stubEnv('DSH_DESKTOP_MANDATORY_UPDATE_CONFIG', undefined)
   vi.stubEnv('DSH_DESKTOP_UPDATE_JOURNAL_DIR', undefined)
   vi.stubEnv('DSH_CLIENT_VERSION', '1.2.3')
-  vi.stubEnv('DSH_PRODUCT_ANALYTICS_ENABLED', undefined)
+  harness.analyticsEnabled = true
 })
 
 afterEach(async () => {
@@ -2167,7 +2175,7 @@ it.each([['light', false], ['dark', true]] as const)('opens Platform authorizati
 })
 
 it('disables native product events for a disabled Desktop launch', async () => {
-  vi.stubEnv('DSH_PRODUCT_ANALYTICS_ENABLED', '0')
+  harness.analyticsEnabled = false
   await import('../src/main.ts')
   await harness.preparing.promise
   harness.prepared.resolve()
@@ -2175,5 +2183,5 @@ it('disables native product events for a disabled Desktop launch', async () => {
   harness.hosts[0]!.ready.resolve()
   await harness.navigated.promise
   expect(harness.analytics).not.toHaveBeenCalled()
-  expect(harness.hosts[0]!.environment?.DSH_PRODUCT_ANALYTICS_ENABLED).toBe('0')
+  harness.analyticsEnabled = true
 })

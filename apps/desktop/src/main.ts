@@ -1,4 +1,3 @@
-import { resolveLaunchFlag } from '@deepseek-ai/dsh-app-boot'
 import type { ProductEventMap, ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
@@ -379,11 +378,12 @@ async function main(): Promise<void> {
   let injections: readonly unknown[] = []
   let welcomeBackend: DesktopWelcomeBackend | undefined
   let reportedLaunch = false
-  const analyticsEnabled = resolveLaunchFlag('DSH_PRODUCT_ANALYTICS_ENABLED', process.env.DSH_PRODUCT_ANALYTICS_ENABLED, true)
+  let analyticsEnabled = false
   const track = async <K extends keyof ProductEventMap>(eventName: K, attributes: ProductEventMap[K]): Promise<void> => {
-    if (!analyticsEnabled) return
     const event = { eventName, attributes, timestamp: Date.now() } as ProductEvent
-    try { await welcomeBackend?.report(event) } catch (_error) { /* Analytics cannot interrupt native actions. */ }
+    try {
+      if (analyticsEnabled) await welcomeBackend?.report(event)
+    } catch (_error) { /* Analytics cannot interrupt native actions. */ }
   }
   let stopAccount: (() => void) | undefined
   let openedAttempt: string | undefined
@@ -428,6 +428,7 @@ async function main(): Promise<void> {
         if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
         injections = ready.injections
         welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
+        analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
         if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
         stopAccount?.()
         const accountBackend = welcomeBackend.account
@@ -466,9 +467,11 @@ async function main(): Promise<void> {
             const state = await accountBackend.state()
             if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
           }).catch(() => undefined)
-        })
+        }, (enabled) => { analyticsEnabled = enabled })
       },
       stop: async () => {
+        analyticsEnabled = false
+        stopAccount?.()
         try { await host.stop(requireCleanStop) }
         catch (error) {
           if (!requireCleanStop || !(error instanceof DesktopHostUncleanExitError)) throw error
@@ -1104,7 +1107,8 @@ async function main(): Promise<void> {
     }
     openingWelcome ??= (async () => {
       welcomeWindow = await openWelcomeWindow(locale, {
-        ...analyticsEnabled ? { analytics: (action: 'view' | 'save-key' | 'sign_in' | 'api-key') => action === 'view' ? track('auth_page_view', {}) : action === 'save-key' ? track('api_key_save_click', {}) : track('auth_page_click', { button_name: action }) } : {},
+        analytics: track,
+        analyticsEnabled: () => Promise.resolve(analyticsEnabled),
         takeNotice: () => {
           const notice = pendingWelcomeNotice
           pendingWelcomeNotice = undefined

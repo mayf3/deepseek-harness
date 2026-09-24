@@ -58,9 +58,6 @@ let disposeActiveHandlers: (() => void) | undefined
  */
 export async function openWelcomeWindow(locale: DesktopLocale, operations: WelcomeOperations): Promise<BrowserWindow> {
   const options = welcomeWindowOptions(process.platform, locale)
-  if (operations.analytics !== undefined && options.webPreferences?.additionalArguments) {
-    options.webPreferences.additionalArguments.push('--dsh-product-analytics')
-  }
   const window = new BrowserWindow(options)
   disposeActiveHandlers?.()
   let active = true
@@ -68,7 +65,7 @@ export async function openWelcomeWindow(locale: DesktopLocale, operations: Welco
     if (!active) return
     active = false
     for (const channel of [
-      WELCOME_IPC.analytics, WELCOME_IPC.takeNotice, WELCOME_IPC.saveApiKey,
+      WELCOME_IPC.analyticsEnabled, WELCOME_IPC.analytics, WELCOME_IPC.takeNotice, WELCOME_IPC.saveApiKey,
       WELCOME_IPC.skip, WELCOME_IPC.start, WELCOME_IPC.cancel, WELCOME_IPC.copyLink,
     ]) {
       ipcMain.removeHandler(channel)
@@ -81,10 +78,19 @@ export async function openWelcomeWindow(locale: DesktopLocale, operations: Welco
       throw new Error('desktop welcome: rejected action from an unowned frame')
     }
   }
-  ipcMain.handle(WELCOME_IPC.analytics, async (event, action: unknown) => {
+  ipcMain.handle(WELCOME_IPC.analyticsEnabled, (event) => {
     assertSender(event)
-    if (action !== 'sign_in' && action !== 'api-key' && action !== 'save-key' && action !== 'view') throw new Error('desktop welcome: invalid analytics action')
-    await operations.analytics?.(action)
+    return operations.analyticsEnabled()
+  })
+  ipcMain.handle(WELCOME_IPC.analytics, async (event, eventName: unknown, attributes: unknown) => {
+    assertSender(event)
+    if (typeof attributes !== 'object' || attributes === null || Array.isArray(attributes)) throw new Error('desktop welcome: invalid analytics attributes')
+    if (eventName === 'auth_page_click' && 'button_name' in attributes && Object.keys(attributes).length === 1
+      && (attributes.button_name === 'sign_in' || attributes.button_name === 'api-key')) {
+      await operations.analytics?.(eventName, { button_name: attributes.button_name })
+    } else if ((eventName === 'auth_page_view' || eventName === 'api_key_save_click') && Object.keys(attributes).length === 0) {
+      await operations.analytics?.(eventName, {})
+    } else throw new Error('desktop welcome: invalid analytics event')
   })
   ipcMain.handle(WELCOME_IPC.takeNotice, async (event) => { assertSender(event); return operations.takeNotice() })
   ipcMain.handle(WELCOME_IPC.saveApiKey, async (event, value: unknown) => {
@@ -120,7 +126,7 @@ export async function openWelcomeWindow(locale: DesktopLocale, operations: Welco
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Another window can replace ownership during loadFile.
   if (active && !window.isDestroyed()) {
     window.show()
-    void operations.analytics?.('view')
+    void operations.analytics?.('auth_page_view', {})
   }
   return window
 }

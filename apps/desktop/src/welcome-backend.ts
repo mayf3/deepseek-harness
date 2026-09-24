@@ -14,6 +14,8 @@ export interface WelcomeState {
 
 /** Narrow operations available to the native welcome flow. */
 export interface DesktopWelcomeBackend {
+  /** @returns the current Host policy; every read observes live configuration. */
+  analyticsEnabled(): Promise<boolean>
   readonly account: DesktopAccountBackend
   /** @param event - desktop-owned fields. @returns after local Host intake. */
   report(event: ProductEvent): Promise<void>
@@ -121,6 +123,11 @@ export async function connectDesktopWelcome(
   return {
     account,
     read,
+    async analyticsEnabled() {
+      const enabled = await invoke({ namespace: 'productAnalytics', method: 'enabled', args: {} }, AbortSignal.timeout(1000))
+      if (typeof enabled !== 'boolean') throw new Error('desktop analytics: invalid collection policy')
+      return enabled
+    },
     async report(event) { await invoke({ namespace: 'productAnalytics', method: 'report', args: { event } }, AbortSignal.timeout(1000)) },
     async readLocalePreference() {
       const settings = await invoke({ namespace: 'settings', method: 'describe', args: {} })

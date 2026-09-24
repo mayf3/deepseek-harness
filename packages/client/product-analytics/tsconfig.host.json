@@ -39,6 +39,12 @@
     },
     {
       "path": "../../llm/llm"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../../../vendor/loader"
     }
   ]
 }

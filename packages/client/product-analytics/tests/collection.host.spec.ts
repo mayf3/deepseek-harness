@@ -5,7 +5,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import ProductTelemetry, { Config as TelemetryConfig, type ProductTelemetryRecord } from '@deepseek-ai/dsh-host-product-telemetry-otel'
 import { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
-import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import Analytics from '../src/index.ts'
 
 const cleanup: (() => Promise<void>)[] = []
@@ -100,13 +99,6 @@ it.each([true, false])('collects live manual and automatic compaction only when 
   expect(b.getDeviceIdentity).toHaveBeenCalledTimes(enabled ? 2 : 0)
 })
 
-it.each([true, false])('publishes the launch-time collection flag to renderers: %s', async (enabled) => {
-  const b = await setup(enabled)
-  const injections: IndexInjection[] = []
-  b.ctx.emit('webserver/index-inject', injections)
-  expect(injections).toEqual([{ kind: 'global', name: '__DSH_PRODUCT_ANALYTICS__', value: enabled }])
-})
-
 it('omits an unavailable account and isolates exporter submission failure', async () => {
   const b = await setup(true)
   b.getDeviceIdentity.mockRejectedValueOnce(new Error('account unavailable'))
@@ -117,14 +109,51 @@ it('omits an unavailable account and isolates exporter submission failure', asyn
 })
 
 
-it('warns when enabled without an exporter, while a disabled Host needs none', async () => {
-  for (const enabled of [false, true]) {
-    const ctx = new Context()
-    cleanup.push(() => ctx.fiber.dispose())
-    ctx.provide('deepseekAccount', { getDeviceIdentity: async () => undefined } as never)
-    ctx.provide('webServer', {} as never)
-    const warn = vi.spyOn(ctx.logger, 'warn')
-    await ctx.plugin(Analytics, { enabled })
-    expect(warn).toHaveBeenCalledTimes(enabled ? 1 : 0)
-  }
+it('requires the exporter even when collection is disabled', async () => {
+  const ctx = new Context()
+  cleanup.push(() => ctx.fiber.dispose())
+  ctx.provide('deepseekAccount', { getDeviceIdentity: async () => undefined } as never)
+  const fiber = ctx.plugin(Analytics, { enabled: false })
+  await Promise.resolve()
+  expect(ctx.get('productAnalytics')).toBeUndefined()
+  ctx.provide('productTelemetry', { emit: vi.fn() } as never)
+  await fiber
+  expect(ctx.productAnalytics.enabled()).toBe(false)
+})
+
+it('streams live policy changes and rejects intake disabled during identity lookup', async () => {
+  const b = await setup(true)
+  const lifetime = new AbortController()
+  const iterator = b.ctx.productAnalytics.watchPolicy(lifetime.signal)[Symbol.asyncIterator]()
+  expect(await iterator.next()).toEqual({ value: true, done: false })
+  const identity = Promise.withResolvers<undefined>()
+  b.getDeviceIdentity.mockReturnValueOnce(identity.promise)
+  const report = b.ctx.productAnalytics.report({ eventName: 'auth_page_view', timestamp: 1, attributes: {} })
+  const next = iterator.next()
+  // Loader commits the stable Config reference before publishing this notification.
+  const { updateVolatile, createVolatile } = await import('../../../../vendor/cosmokit/src/volatile.ts')
+  const config = b.fiber.config as import('../src/index.ts').Config
+  updateVolatile(config.enabled, createVolatile(false))
+  b.fiber.ctx.emit('loader/volatile-update', [['enabled']])
+  expect(await next).toEqual({ value: false, done: false })
+  identity.resolve(undefined)
+  await report
+  expect(b.emit).not.toHaveBeenCalled()
+  const closed = iterator.next()
+  lifetime.abort()
+  expect(await closed).toEqual({ value: undefined, done: true })
+})
+
+it('wakes pending policy readers on disposal and registers hidden settings presentation', async () => {
+  const b = await setup(true)
+  const dispose = vi.fn()
+  const configure = vi.fn(() => dispose)
+  b.ctx.provide('settings', { configure } as never)
+  await vi.waitFor(() => { expect(configure).toHaveBeenCalledWith({ auto: false }, b.fiber) })
+  const iterator = b.ctx.productAnalytics.watchPolicy(new AbortController().signal)[Symbol.asyncIterator]()
+  await iterator.next()
+  const pending = iterator.next()
+  await b.fiber.dispose()
+  expect(await pending).toEqual({ done: true, value: undefined })
+  expect(dispose).toHaveBeenCalledOnce()
 })

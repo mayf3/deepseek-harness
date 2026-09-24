@@ -45,7 +45,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.productAnalytics` — `ProductAnalytics`
 
-Authenticated event intake; disabled instances neither inspect identity nor construct an exporter.
+Authenticated event intake; disabled instances do not inspect identity or accept new events.
 
 ```ts cordis-catalog
 /**
@@ -53,6 +53,13 @@ Authenticated event intake; disabled instances neither inspect identity nor cons
  * @returns whether this Host currently accepts Desktop analytics.
  */
 @Remote enabled(): boolean
+
+/**
+ * Stream the effective policy initially and after live configuration edits.
+ * @param signal - subscriber lifetime.
+ * @returns current policy values until cancellation or service disposal.
+ */
+@Remote({ mode: 'stream' }) async *watchPolicy(signal: AbortSignal): AsyncIterable<boolean>
 
 /**
  * Submit selected Desktop fields; missing identity is omitted and never generated.

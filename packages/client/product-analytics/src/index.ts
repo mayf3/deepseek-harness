@@ -1,18 +1,19 @@
 /** Desktop-only analytics RPC and live compaction collection. */
-import { type Context } from '@deepseek-ai/cordis'
+import { type Context, type Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-host-product-telemetry-otel'
 import type {} from '@deepseek-ai/dsh-deepseek-account'
-import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-compaction/types'
 import type { ProductEvent } from './events.ts'
 
 /** Application-owned collection policy; no user settings surface. */
 export interface Config {
-  /** Desktop launcher opt-in; ordinary Web defaults to disabled. */
-  enabled: boolean
+  /** Live application collection policy; ordinary Web does not mount this service. */
+  enabled: Volatile<boolean>
   /** Running Desktop release, absent when unavailable. */
   appVersion?: string
 }
@@ -23,21 +24,18 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Authenticated event intake; disabled instances neither inspect identity nor construct an exporter. */
+/** Authenticated event intake; disabled instances do not inspect identity or accept new events. */
 export default class ProductAnalytics extends TypertRemoteService {
-  static inject = ['deepseekAccount', 'webServer']
-  static Config = z.object({ enabled: z.boolean().default(false), appVersion: z.string() })
-  private readonly collection: { active: boolean }
+  static inject = ['deepseekAccount', 'productTelemetry']
+  static Config = z.object({ enabled: z.boolean().default(true).volatile(), appVersion: z.string() })
+  private active = true
+  private readonly listeners = new Set<() => void>()
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'productAnalytics')
-    this.collection = { active: config.enabled }
-    ctx.effect(() => () => { this.collection.active = false })
-    ctx.on('webserver/index-inject', (table) => {
-      table.push({ kind: 'global', name: '__DSH_PRODUCT_ANALYTICS__', value: this.collection.active })
-    })
-    if (!this.collection.active) return
-    if (ctx.get('productTelemetry') === undefined) ctx.logger.warn('Product analytics is enabled without productTelemetry; configure the exporter')
+    ctx.effect(() => () => { this.active = false; for (const listener of this.listeners) listener() })
+    ctx.on('loader/volatile-update', () => { for (const listener of this.listeners) listener() })
+    ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
     ctx.on('session/event', (session, event) => {
       if (event.type !== 'compaction/start') return
       void this.report({ eventName: 'context_compression', timestamp: Date.now(),
@@ -50,7 +48,30 @@ export default class ProductAnalytics extends TypertRemoteService {
    * @returns whether this Host currently accepts Desktop analytics.
    */
   @Remote
-  enabled(): boolean { return this.collection.active }
+  enabled(): boolean { return this.active && this.config.enabled.get() }
+
+  /**
+   * Stream the effective policy initially and after live configuration edits.
+   * @param signal - subscriber lifetime.
+   * @returns current policy values until cancellation or service disposal.
+   */
+  @Remote({ mode: 'stream' })
+  async *watchPolicy(signal: AbortSignal): AsyncIterable<boolean> {
+    let dirty = true
+    let wake: (() => void) | undefined
+    const changed = (): void => { dirty = true; wake?.() }
+    this.listeners.add(changed)
+    signal.addEventListener('abort', changed, { once: true })
+    try {
+      while (this.active && !signal.aborted) {
+        if (dirty) { dirty = false; yield this.enabled(); continue }
+        await new Promise<void>((resolve) => { wake = resolve })
+      }
+    } finally {
+      this.listeners.delete(changed)
+      signal.removeEventListener('abort', changed)
+    }
+  }
 
   /**
    * Submit selected Desktop fields; missing identity is omitted and never generated.
@@ -59,11 +80,11 @@ export default class ProductAnalytics extends TypertRemoteService {
    */
   @Remote
   async report(event: ProductEvent): Promise<void> {
-    if (!this.collection.active) return
+    if (!this.enabled()) return
     try {
       const identity = await this.ctx.deepseekAccount.getDeviceIdentity().catch(() => undefined)
       if (!this.enabled()) return
-      this.ctx.get('productTelemetry')?.emit({
+      this.ctx.productTelemetry.emit({
         ...event, body: event.eventName,
         attributes: {
           ...event.attributes,

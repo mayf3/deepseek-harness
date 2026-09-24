@@ -60,7 +60,9 @@
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-host-product-telemetry-otel": "workspace:*",
     "@deepseek-ai/dsh-deepseek-account": "workspace:*",
-    "@deepseek-ai/dsh-host-webserver": "workspace:*"
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/dsh-settings": "workspace:*",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~"
   },
   "files": [
     "lib/index.js",
@@ -73,7 +75,6 @@
   ],
   "dependencies": {
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
-    "@deepseek-ai/dsh-credentials": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
     "zod": "^4.4.3"
   }

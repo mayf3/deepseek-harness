@@ -28,9 +28,7 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
   }
   writeFileSync(join(root, 'package.json'), '{"type":"module"}')
   writeFileSync(join(modules, 'dsh-app-boot', 'package.json'), '{"type":"module","exports":"./index.js"}')
-  copyFileSync(fileURLToPath(new URL('../../../packages/boot/app-boot/lib/types/launch-flag.js', import.meta.url)), join(modules, 'dsh-app-boot', 'launch-flag.js'))
   writeFileSync(join(modules, 'dsh-app-boot', 'index.js'), `
-    export { resolveLaunchFlag } from './launch-flag.js';
     export const loadProfileDirectory = () => ({ skippedBundles: [] });
     export const reportSkippedBundles = () => {};
     export const loadLayeredEnv = () => ({});

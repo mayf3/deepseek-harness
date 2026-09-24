@@ -27,6 +27,7 @@ import type { ComposerKeyboard } from '../contract/draft-editor.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import type { PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'
+import { reportMessageSubmission } from './submission-analytics.ts'
 
 /** Structural command face for per-session popup resolution. */
 interface CommandFace {
@@ -94,23 +95,23 @@ export class InputHub implements SessionInputResolver {
     const { session, ctx: actx } = binding
     const shell = new SessionInputShell({
       actx,
-      captureSubmit: (mode, source) => {
-        const analytics = this.rootCtx.get('productAnalytics')
-        if (!analytics?.enabled) return
+      submissionState: () => {
         const state = session.getSnapshot()
         const model = session.projections.faceOf('modelSelection').getSnapshot() as ModelSelectionProjection | undefined
         const plan = session.projections.faceOf('plan').getSnapshot() as PlanProjection | undefined
         const goal = session.projections.faceOf('goal').getSnapshot() as GoalProjection | null | undefined
         const selection = model?.next ?? model?.lastUsed
-        const effort = selection?.reasoningEffort
-        const attributes = {
-          ...state.blank ? {} : { session_id: state.sessionId },
-          ...selection === undefined || selection === null ? {} : { model_name: `${selection.provider}/${selection.model}`, ...effort === undefined ? {} : { thinking_effort: effort } },
-          run_mode: plan?.active ? 'plan' : goal?.goal.phase === 'active' ? 'goal' : 'default',
-          ...source === undefined ? {} : { submit_source: source }, submit_type: state.running ? mode : 'normal',
-        } as const
-        return () => { analytics.track('send_button_click', attributes) }
+        return Object.freeze({
+          ...state.blank ? {} : { sessionId: state.sessionId },
+          ...selection == null ? {} : { model: Object.freeze({
+            provider: selection.provider, name: selection.model,
+            ...selection.reasoningEffort === undefined ? {} : { effort: selection.reasoningEffort },
+          }) },
+          runMode: plan?.active ? 'plan' : goal?.goal.phase === 'active' ? 'goal' : 'default',
+          running: state.running,
+        })
       },
+      messageSubmitted: (submission) => { reportMessageSubmission(this.rootCtx, submission) },
       inputTriggers: () => this.controller(actx),
       popup: () => this.popup(actx),
       inbox: session.projections.faceOf('inbox') as ObservableSnapshot<InboxState | undefined>,

@@ -891,7 +891,7 @@ it('captures run mode and queue intent at submission before later projection cha
     b.shell.submit('queue', 'click')
     expect(track).toHaveBeenCalledExactlyOnceWith('send_button_click', {
       session_id: 's1', model_name: 'fixture/model', thinking_effort: 'high', run_mode: 'plan', submit_source: 'click', submit_type: 'queue',
-    })
+    }, expect.any(Number))
     await b.runtime.sessions.setProjection('s1', 'plan', { active: false, pending: false })
     expect(track).toHaveBeenCalledTimes(1)
     expect(JSON.stringify(track.mock.calls)).not.toContain('private prompt')

@@ -16,7 +16,8 @@ function mount(language = 'zh-CN', takeNotice = vi.fn<() => Promise<WelcomeNotic
   const stopAccount = vi.fn()
   const api = {
     takeNotice,
-    analytics: vi.fn(async (_action: string) => {}),
+    analytics: vi.fn(async (_event: string, _attributes: object) => {}),
+    analyticsEnabled: async () => true,
     onAccountState: vi.fn((_listener: (state: AccountView) => void) => stopAccount),
     startSignIn: vi.fn(async (): Promise<AccountView> => ({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null })),
     cancelSignIn: vi.fn(async (): Promise<AccountView> => ({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null })),
@@ -333,10 +334,10 @@ it('reports each return to the welcome entry once, including account cancellatio
   expect(view.api.analytics).not.toHaveBeenCalled()
   fireEvent.click(view.button('#api-key'))
   fireEvent.click(view.button('#back-to-login'))
-  expect(view.api.analytics.mock.calls.map(([action]) => action)).toEqual(['api-key', 'view'])
+  expect(view.api.analytics.mock.calls.map(([action]) => action)).toEqual(['auth_page_click', 'auth_page_view'])
   const pending = Promise.withResolvers<AccountView>()
   view.api.startSignIn.mockReturnValueOnce(pending.promise)
   fireEvent.click(view.button('#sign-in'))
   await act(async () => { pending.resolve({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null }) })
-  expect(view.api.analytics.mock.calls.map(([action]) => action)).toEqual(['api-key', 'view', 'sign_in', 'view'])
+  expect(view.api.analytics.mock.calls.map(([action]) => action)).toEqual(['auth_page_click', 'auth_page_view', 'auth_page_click', 'auth_page_view'])
 })

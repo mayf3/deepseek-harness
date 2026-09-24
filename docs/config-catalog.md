@@ -498,14 +498,15 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-client-product-analytics`
 
-- `inject`: `deepseekAccount` · `webServer`
-- `source`: [`packages/client/product-analytics/src/index.ts:13`](../packages/client/product-analytics/src/index.ts)
+- `inject`: `deepseekAccount` · `productTelemetry`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/client/product-analytics/src/index.ts:14`](../packages/client/product-analytics/src/index.ts)
 
 ```ts config-catalog
 /** Application-owned collection policy; no user settings surface. */
 export interface Config {
-  /** Desktop launcher opt-in; ordinary Web defaults to disabled. */
-  enabled: boolean
+  /** Live application collection policy; ordinary Web does not mount this service. */
+  enabled: Volatile<boolean>
   /** Running Desktop release, absent when unavailable. */
   appVersion?: string
 }

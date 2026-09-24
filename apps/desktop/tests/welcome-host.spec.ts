@@ -20,6 +20,7 @@ function transport(preference?: string) {
     if (method === 'account/getState') value = { links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null }
     else if (method === 'settings/describe') value = { namespaces }
     else if (method === 'llm/listConfigurableProviders') value = [{ settingsNs: 'llm-pi-ai', settingsPath: ['profiles', 'example'] }]
+    else if (method === 'productAnalytics/enabled') value = true
     else if (method === 'productAnalytics/report') value = undefined
     else if (method === 'credentials/set') keys.set(payload.args.ref, payload.args.value)
     else value = Object.fromEntries(payload.args.refs.map(ref => [ref, { configured: keys.has(ref), writable: true }]))
@@ -35,6 +36,7 @@ describe('desktop welcome Web operations', () => {
     const host = transport()
     const backend = await connectDesktopWelcome(url, host.send)
     expect(host.send).toHaveBeenCalledExactlyOnceWith(url, { credentials: 'include' })
+    expect(await backend.analyticsEnabled()).toBe(true)
     expect(await backend.save('sk-example')).toEqual({ ok: true })
     expect(host.keys.get('CUSTOM_DEEPSEEK_KEY')).toBe('sk-example')
     expect(await backend.read()).toEqual({ loggedIn: false, hasApiKey: true, writable: true, localePreference: null })

@@ -1,4 +1,4 @@
-import { installationAnalyticsInput } from './install-analytics.ts'
+import { sanitizeInstallInput } from './sanitize-install-input.ts'
 /**
  * The plugin manager's state: the Host's bundles joined with its plugin
  * entries, the action in flight, the install run, and the confirmation an
@@ -789,8 +789,8 @@ export class PluginManagerController {
     const spec = install.spec.trim()
     if (install.phase === 'checking' || isInstallPending(install.phase) || spec === '') return
     if (this.ctx.get('productAnalytics')?.enabled) {
-      this.analyticsAttempt = { input: installationAnalyticsInput(spec), started: Date.now() }
-      this.ctx.get('productAnalytics')?.track('plugin_install_click', { input_value: installationAnalyticsInput(spec), plugin_type: 'bundle' })
+      this.analyticsAttempt = { input: sanitizeInstallInput(spec), started: Date.now() }
+      this.ctx.get('productAnalytics')?.track('plugin_install_click', { input_value: sanitizeInstallInput(spec), plugin_type: 'bundle' })
     }
     // A name the list already shows is refused at once, before the Host is asked.
     if (state.packages.some(pkg => pkg.name === spec)) {
@@ -935,7 +935,7 @@ export class PluginManagerController {
     const install = this.getSnapshot().install
     const pending = install.failure?.pendingBuilds
     if (install.phase !== 'failed' || install.subject === null || pending === undefined || pending.length === 0) return
-    if (this.ctx.get('productAnalytics')?.enabled) this.analyticsAttempt = { input: installationAnalyticsInput(install.subject.spec), started: Date.now() }
+    if (this.ctx.get('productAnalytics')?.enabled) this.analyticsAttempt = { input: sanitizeInstallInput(install.subject.spec), started: Date.now() }
     await this.startInstall(install.subject, pending)
   }
 

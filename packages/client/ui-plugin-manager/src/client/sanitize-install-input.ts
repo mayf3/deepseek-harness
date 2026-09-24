@@ -5,7 +5,7 @@
  * @param spec - user-entered installation spec.
  * @returns an identifier safe to send without URL credentials, tokens, or local paths.
  */
-export function installationAnalyticsInput(spec: string): string {
+export function sanitizeInstallInput(spec: string): string {
   if (/^(?:@[a-z0-9._-]+\/)?[a-z0-9][a-z0-9._-]*(?:@[a-z0-9.*^~+<>=| -]+)?$/iu.test(spec)) return spec
   if (/^(?:git[+:]|git@|github:|gitlab:|bitbucket:)/iu.test(spec)) return '[git]'
   if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(spec)) return '[url]'

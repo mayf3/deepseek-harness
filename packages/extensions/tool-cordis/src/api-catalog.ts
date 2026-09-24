@@ -1705,14 +1705,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'productAnalytics',
-    summary: 'Authenticated event intake; disabled instances neither inspect identity nor construct an exporter.',
-    description: 'Authenticated event intake; disabled instances neither inspect identity nor construct an exporter.',
+    summary: 'Authenticated event intake; disabled instances do not inspect identity or accept new events.',
+    description: 'Authenticated event intake; disabled instances do not inspect identity or accept new events.',
     methods: [
       {
         signature: '@Remote enabled(): boolean',
         description: 'Read the collection policy.',
         parameters: [],
         returns: 'whether this Host currently accepts Desktop analytics.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watchPolicy(signal: AbortSignal): AsyncIterable<boolean>',
+        description: 'Stream the effective policy initially and after live configuration edits.',
+        parameters: [{ name: 'signal', description: 'subscriber lifetime.' }],
+        returns: 'current policy values until cancellation or service disposal.',
       },
       {
         signature: '@Remote async report(event: ProductEvent): Promise<void>',

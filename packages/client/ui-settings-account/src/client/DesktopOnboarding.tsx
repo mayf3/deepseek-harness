@@ -13,6 +13,14 @@ import { OnboardingConfirmation, type OnboardingConfirmationKind } from './Onboa
 import backIcon from './assets/onboarding-back.svg'
 import css from './DesktopOnboarding.module.css'
 
+const onboardingPages = {
+  welcome: 'onboarding_welcome',
+  credit: 'onboarding_recharge',
+  purpose: 'onboarding_use_case',
+  process: 'onboarding_process',
+  done: undefined,
+} as const
+
 /**
  * @param props - durable choices, account state, localized copy and the shared recharge page channel.
  * @returns the active first-run page.
@@ -45,10 +53,13 @@ export function DesktopOnboarding({
     return () => { animation.cancel() }
   }, [targetStep, step, state.visible])
   useEffect(() => { heading.current?.focus() }, [step])
-  const pageName = step === 'welcome' ? 'onboarding_welcome' : step === 'credit' ? 'onboarding_recharge' : step === 'purpose' ? 'onboarding_use_case' : 'onboarding_process'
+  const pageName = onboardingPages[step]
   const shownPage = useRef<string | null>(null)
   useEffect(() => {
-    if (!state.visible || step === 'done' || exiting) { shownPage.current = null; return }
+    if (!state.visible || pageName === undefined || exiting) {
+      shownPage.current = null
+      return
+    }
     if (state.status === 'loading') return
     if (shownPage.current === pageName) return
     shownPage.current = pageName
@@ -61,18 +72,18 @@ export function DesktopOnboarding({
     shownPopup.current = dialog
     track?.('onboarding_popup_view', { popup_name: dialog === 'skip' ? 'skip_setting' : 'skip_charge' })
   }, [dialog, track, state.visible, state.status, step])
-  const click = (button_name: ProductEventMap['onboarding_page_click']['button_name']) => {
-    const selected_content = step === 'purpose' && progress.purpose !== null ? ({ office: 'office', development: 'code', both: 'code_office' } as const)[progress.purpose]
-      : step === 'process' && progress.process !== null ? ({ compact: 'focus_result', standard: 'key_detail', detailed: 'full_process' } as const)[progress.process] : undefined
-    track?.('onboarding_page_click', { page_name: pageName, button_name, ...selected_content === undefined ? {} : { selected_content } })
-  }
   const popupClick = (button_name: ProductEventMap['onboarding_popup_click']['button_name']) => {
     track?.('onboarding_popup_click', { popup_name: dialog === 'skip' ? 'skip_setting' : 'skip_charge', button_name })
   }
   if (state.visible && state.status === 'loading') return <OnboardingSurface>
     <div className={css.loading} role="status">{t('onboardingLoading')}</div>
   </OnboardingSurface>
-  if (!state.visible || step === 'done') return null
+  if (!state.visible || pageName === undefined) return null
+  const click = (button_name: ProductEventMap['onboarding_page_click']['button_name']) => {
+    const selected_content = step === 'purpose' && progress.purpose !== null ? ({ office: 'office', development: 'code', both: 'code_office' } as const)[progress.purpose]
+      : step === 'process' && progress.process !== null ? ({ compact: 'focus_result', standard: 'key_detail', detailed: 'full_process' } as const)[progress.process] : undefined
+    track?.('onboarding_page_click', { page_name: pageName, button_name, ...selected_content === undefined ? {} : { selected_content } })
+  }
   const go = (next: 'welcome' | 'credit' | 'purpose' | 'process') => { void update({ step: next }) }
   const canRecharge = openPlatformPage !== undefined
   const recharge = () => {
@@ -108,7 +119,7 @@ export function DesktopOnboarding({
       </section>
     </OnboardingSurface>
     {dialog !== null && <OnboardingConfirmation kind={dialog} t={t} busy={busy} canRecharge={canRecharge}
-      onClose={() => { setDialog(null) }} onKeepSetting={() => { popupClick('setting'); setDialog(null) }} onContinue={() => { popupClick('know'); setDialog(null); go('purpose') }} onRecharge={() => { popupClick('charge'); recharge() }}
+      onClose={() => { setDialog(null) }} onContinueSetup={() => { popupClick('setting'); setDialog(null) }} onContinue={() => { popupClick('know'); setDialog(null); go('purpose') }} onRecharge={() => { popupClick('charge'); recharge() }}
       onSkip={() => { popupClick(dialog === 'skip' ? 'enter' : 'know'); void complete('skipped').then(() => { setDialog(null) }) }} />}
   </>
 }

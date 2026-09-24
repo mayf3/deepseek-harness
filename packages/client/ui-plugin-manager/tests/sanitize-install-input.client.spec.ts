@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest'
-import { installationAnalyticsInput } from '../src/client/install-analytics.ts'
+import { sanitizeInstallInput } from '../src/client/sanitize-install-input.ts'
 
 it.each(['dsh-example', '@scope/plugin', '@scope/plugin@1.2.3', 'plugin@latest'])('retains a registry identifier: %s', (spec) => {
-  expect(installationAnalyticsInput(spec)).toBe(spec)
+  expect(sanitizeInstallInput(spec)).toBe(spec)
 })
 
 it.each([
@@ -13,5 +13,5 @@ it.each([
   ['C:\\Users\\private-name\\plugin', '[path-or-other]'],
   ['plugin@https://user:secret@example.invalid/archive.tgz', '[path-or-other]'],
 ])('removes private installer input: %s', (spec, expected) => {
-  expect(installationAnalyticsInput(spec)).toBe(expected)
+  expect(sanitizeInstallInput(spec)).toBe(expected)
 })
