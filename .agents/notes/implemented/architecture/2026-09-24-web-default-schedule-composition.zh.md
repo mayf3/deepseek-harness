@@ -35,4 +35,5 @@ Status: implemented
 - 每个 Web 会话的请求头多出四个工具 schema，且每个符合条件的步骤追加一条持久 user 消息。从不创建提醒的对话也要承担这份 token 成本。
 - 时钟读数对模型可见且持久，因此它与其他 user 消息一样参与回放、压缩，并出现在导出的 Session 日志中。
 - 想要恢复旧行为的部署，可在自己的 profile patch 层禁用 `time-context`、`schedule` 与 `ui-schedule` 三行；能力本身没有改动。
+- 完整预设表的 `cordis_inspect_query` `listTools` 答案现在超过基础组合 12,500 token 的内联预算，因此 spill 策略改为保留该答案的首尾并给出 spill 路径，而不是完整 JSON。
 - 仓库预览镜像与两个 Web 测试套件都不再传 overlay 参数，一处组合改动即同时作用于所有界面。

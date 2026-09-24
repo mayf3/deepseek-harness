@@ -35,4 +35,5 @@ A Web scenario that drives a live step now logs one time-context reading per ste
 - Every Web session's request header carries four additional tool schemas, and every eligible step appends one durable user message. A conversation that never creates a reminder pays that token cost.
 - The clock reading is model-visible and durable, so it replays, compacts, and appears in exported Session logs like any other user message.
 - A deployment that wants the previous behavior disables the `time-context`, `schedule`, and `ui-schedule` rows in its own profile patch layer; the capability itself is untouched.
+- The `cordis_inspect_query` `listTools` answer for a full preset table now passes the base composition's 12,500-token inline budget, so the spill policy retains that answer's head and tail with a spill path instead of the complete JSON.
 - The repository preview image and both Web suites drop their overlay arguments, so one composition change reaches every surface at once.

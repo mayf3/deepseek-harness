@@ -685,10 +685,14 @@ describe('a user preset declared from the shipped cordis rows', () => {
           agent: copied.agent,
         })
         expect(queried.isError).toBe(false)
-        const tools = (JSON.parse(resultText(queried)) as { data: { tools: Array<{ name: string }> } }).data.tools
-        expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
-          'bash', 'cordis_inspect_list', 'cordis_inspect_query', 'plugin_manager',
-        ]))
+        // The whole-table answer can pass the inline token budget once the
+        // preset's tool table grows, and the spill policy then replaces its
+        // middle with a gap plus a spill footer. What this case proves is the
+        // provider's answer, so assert the names it must carry.
+        const queriedText = resultText(queried)
+        for (const toolName of ['bash', 'cordis_inspect_list', 'cordis_inspect_query', 'plugin_manager']) {
+          expect(queriedText).toContain(`"name": "${toolName}"`)
+        }
 
         // The `Config` provider reads the booted profile tree: the shipped `tools` row declares a Config,
         // and the bootstrap include row is a carrier. The name filter keeps each page small.
