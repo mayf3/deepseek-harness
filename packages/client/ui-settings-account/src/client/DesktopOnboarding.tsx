@@ -1,10 +1,9 @@
-/** Coordinates onboarding navigation, transitions and the native recharge page. */
+/** Coordinates onboarding navigation, transitions and the shared native recharge page. */
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { hasOnboardingCredit } from './onboarding-balance.ts'
 import { OnboardingSurface } from './OnboardingSurface.tsx'
 import type { DesktopOnboardingProps } from './onboarding-contract.ts'
-import { PlatformOverlay } from './PlatformOverlay.tsx'
 import { OnboardingWelcomeStep } from './OnboardingWelcomeStep.tsx'
 import { OnboardingCreditStep } from './OnboardingCreditStep.tsx'
 import { OnboardingPurposeStep } from './OnboardingPurposeStep.tsx'
@@ -13,14 +12,20 @@ import { OnboardingConfirmation, type OnboardingConfirmationKind } from './Onboa
 import backIcon from './assets/onboarding-back.svg'
 import css from './DesktopOnboarding.module.css'
 
-/** @param props - durable choices, account state, localized copy and native recharge commands. @returns the active first-run page. */
+/**
+ * @param props - durable choices, account state, localized copy and the shared recharge page channel.
+ * @returns the active first-run page.
+ */
 export function DesktopOnboarding({
-  state, account, platform, refresh, update, complete, retry, t, locale, exiting = false,
+  state, account, openPlatformPage, update, complete, retry, t, locale, exiting = false,
 }: DesktopOnboardingProps) {
   const [dialog, setDialog] = useState<OnboardingConfirmationKind | null>(null)
-  const [topUp, setTopUp] = useState(false)
   const heading = useRef<HTMLHeadingElement>(null)
   const page = useRef<HTMLElement>(null)
+  // The one shared native host owns the recharge page; this flow holds only its
+  // own request, released when the flow unmounts.
+  const releaseRecharge = useRef<(() => void) | undefined>(undefined)
+  useEffect(() => () => { releaseRecharge.current?.(); releaseRecharge.current = undefined }, [])
   const progress = state.progress
   const targetStep = progress.step
   const [step, setStep] = useState(targetStep)
@@ -44,12 +49,12 @@ export function DesktopOnboarding({
   </OnboardingSurface>
   if (!state.visible || step === 'done') return null
   const go = (next: 'welcome' | 'credit' | 'purpose' | 'process') => { void update({ step: next }) }
-  const recharge = () => { setDialog(null); setTopUp(true) }
-  const returnFromRecharge = () => {
-    setTopUp(false)
-    void refresh().catch((_error: unknown) => {
-      // The account view owns refresh errors; returning keeps the credit page available.
-    })
+  const canRecharge = openPlatformPage !== undefined
+  const recharge = () => {
+    setDialog(null)
+    releaseRecharge.current?.()
+    // Every control that reaches this is disabled without the callback.
+    releaseRecharge.current = openPlatformPage?.('top-up', () => { releaseRecharge.current = undefined })
   }
   const later = () => {
     const balance = account.details?.balance
@@ -65,7 +70,7 @@ export function DesktopOnboarding({
       <section key={step} ref={page} className={`${css.page} ${dialog !== null ? css.blurred : ''}`} data-desktop-onboarding={step} lang={locale} aria-labelledby="desktop-onboarding-title" aria-busy={busy}>
         {step === 'welcome' && <OnboardingWelcomeStep t={t} locale={locale} heading={heading} busy={busy} onStart={() => { go('credit') }} />}
         {step === 'credit' && <OnboardingCreditStep t={t} locale={locale} heading={heading} busy={busy}
-          funded={state.creditFunded} canRecharge={platform !== undefined} onContinue={() => { go('purpose') }} onRecharge={recharge} onLater={later} />}
+          funded={state.creditFunded} canRecharge={canRecharge} onContinue={() => { go('purpose') }} onRecharge={recharge} onLater={later} />}
         {step === 'purpose' && <OnboardingPurposeStep t={t} heading={heading} busy={busy} purpose={progress.purpose}
           onSelect={(purpose) => { void update({ purpose }) }} onContinue={purposeNext} />}
         {step === 'process' && <OnboardingProcessStep t={t} heading={heading} busy={busy} process={progress.process}
@@ -77,10 +82,8 @@ export function DesktopOnboarding({
         </footer>}
       </section>
     </OnboardingSurface>
-    {dialog !== null && <OnboardingConfirmation kind={dialog} t={t} busy={busy} canRecharge={platform !== undefined}
+    {dialog !== null && <OnboardingConfirmation kind={dialog} t={t} busy={busy} canRecharge={canRecharge}
       onClose={() => { setDialog(null) }} onContinue={() => { setDialog(null); go('purpose') }} onRecharge={recharge}
       onSkip={() => { void complete('skipped').then(() => { setDialog(null) }) }} />}
-    {topUp && platform !== undefined && <PlatformOverlay bridge={platform} page="top-up"
-      backLabel={t('backToHarness')} loadingLabel={t('loading')} failureLabel={t('failed')} retryLabel={t('platformRetry')} onClose={returnFromRecharge} />}
   </>
 }

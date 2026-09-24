@@ -18,6 +18,9 @@
       "path": "../locale/tsconfig.client.json"
     },
     {
+      "path": "../store"
+    },
+    {
       "path": "../ui-settings/tsconfig.client.json"
     },
     {
@@ -45,16 +48,13 @@
       "path": "../../../vendor/schemastery"
     },
     {
-      "path": "../../settings/settings"
-    },
-    {
-      "path": "../store"
+      "path": "../ui-chat/tsconfig.client.json"
     },
     {
       "path": "../ui-layout"
     },
     {
-      "path": "../ui-chat/tsconfig.client.json"
+      "path": "../../settings/settings"
     }
   ]
 }
