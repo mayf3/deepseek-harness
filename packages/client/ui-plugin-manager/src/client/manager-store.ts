@@ -237,15 +237,26 @@ export function isInstallPending(phase: InstallState['phase']): boolean {
 /**
  * Offer the configured mainland mirror after a confirmed GitHub connection failure.
  * @param install - the installation and the Host's failure attribution.
- * @returns the offered mirror URL, or undefined when this recovery does not apply.
+ * @returns the offered entry that asks npmmirror, null when pnpm's own configuration names it, or undefined when
+ * this recovery does not apply.
  */
-export function githubRecoveryRegistry(install: InstallState): string | undefined {
+export function githubRecoveryRegistry(install: InstallState): Registry | undefined {
   if (install.phase !== 'failed' || install.failure?.failedAt !== 'spec-host'
     || (install.failure.kind !== 'network' && install.failure.kind !== 'timeout')) return undefined
   const host = install.subject?.host?.toLowerCase().split(':')[0]
   if (host !== 'github.com' && !host?.endsWith('.github.com')) return undefined
-  return offeredRegistries(install.registries).find((registry): registry is string =>
-    registry !== null && new URL(registry).hostname === 'registry.npmmirror.com')
+  const resolved = install.registries?.resolved ?? null
+  return offeredRegistries(install.registries).find(registry => registryKey(registry, resolved) === NPMMIRROR_REGISTRY)
+}
+
+/**
+ * Whether the install already asks npmmirror first, so switching to the offered mirror would not change the registry.
+ * @param install - the installation and its registry choice.
+ * @returns true when the chosen registry, offered or typed, compares as npmmirror.
+ */
+export function asksMirror(install: InstallState): boolean {
+  const choice = install.registry
+  return registryKey(choice.kind === 'custom' ? choice.url.trim() : choice.registry, install.registries?.resolved ?? null) === NPMMIRROR_REGISTRY
 }
 
 /** A destructive action waiting for the user's confirmation: a package's uninstall. */
@@ -298,7 +309,7 @@ export interface PluginManagerFace {
   chooseRegistry: (choice: RegistryChoice) => void
   /** From the failed screen: back to the spec with the registry options unfolded. */
   changeRegistry: () => void
-  /** Return from a GitHub connection failure to an empty spec with the offered mainland mirror selected. */
+  /** Return from a GitHub connection failure to an empty spec asking the offered mainland mirror, keeping a choice that asks it. */
   useGithubMirror: () => void
   /** Allow the install scripts the failed run left pending, saved for this profile, and run the same spec again. */
   approveBuildsAndRetry: () => void
@@ -575,9 +586,15 @@ export class PluginManagerController {
         const install = this.getSnapshot().install
         const mirror = githubRecoveryRegistry(install)
         if (mirror === undefined) return
+        const recovered = { ...specAgain(install), spec: '', mirrorRecovery: true }
+        // A typed address or pnpm's own entry that already asks the mirror stays chosen instead of becoming the offered one.
+        if (asksMirror(install)) {
+          this.patch({ install: recovered })
+          return
+        }
         const registry: RegistryChoice = { kind: 'offered', registry: mirror }
         this.registryMemory.set(registry)
-        this.patch({ install: { ...specAgain(install), spec: '', mirrorRecovery: true, registry } })
+        this.patch({ install: { ...recovered, registry } })
       },
       approveBuildsAndRetry: () => { void this.approveBuildsAndRetry() },
       cancelInstall: () => { void this.cancelInstall() },
