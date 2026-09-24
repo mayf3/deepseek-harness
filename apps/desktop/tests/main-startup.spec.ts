@@ -1660,13 +1660,25 @@ describe('desktop main startup', () => {
     await harness.handlers.get(MANDATORY_IPC.action)!(event, action, view.confirmation.version, view.confirmation.revision)
   }
 
-  it('closes the main window when the confirmed installer quits Electron', async () => {
+  it.each(['inspection', 'dialog'] as const)('closes the main window and cancels the pending quit %s when the installer quits Electron', async (pendingPhase) => {
     harness.embeddedPolicy = { origin: 'https://policy.example.com', allowedPageOrigins: ['https://downloads.example.com'] }
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ code: 40005, data: {
       show_content: { title: 'Update required', detail: 'Please update' }, desktop_app_link: 'https://downloads.example.com/',
     } })))
-    const host = await readyForUpdate()
+    const host = await readyWorkspace()
     await harness.policyBlocked.promise
+    const inspected = Promise.withResolvers<{ activeTasks: boolean; scheduledTasks: boolean }>()
+    const answered = Promise.withResolvers<Electron.MessageBoxReturnValue>()
+    host.inspectQuit.mockReturnValue(inspected.promise)
+    harness.dialog.showMessageBox.mockReturnValue(answered.promise)
+    harness.app.quit()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(host.inspectQuit).toHaveBeenCalledOnce()
+    if (pendingPhase === 'dialog') {
+      inspected.resolve({ activeTasks: true, scheduledTasks: true })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
+    }
     const modal = harness.windows[0]!
     const preparing = harness.prepareUpdate()
     await answerMandatory('install')
@@ -1678,9 +1690,15 @@ describe('desktop main startup', () => {
     harness.app.quit()
     await harness.quitCompleted.promise
     expect(modal.isDestroyed()).toBe(true)
-    expect(harness.app.quit).toHaveBeenCalledOnce()
+    expect(harness.app.quit).toHaveBeenCalledTimes(2)
     // The installer owns the exit, so Platform cleanup starts without holding the quit open.
     expect(harness.platformDispose).toHaveBeenCalledOnce()
+    inspected.resolve({ activeTasks: true, scheduledTasks: true })
+    answered.resolve({ response: 0, checkboxChecked: false })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(harness.dialog.showMessageBox).toHaveBeenCalledTimes(pendingPhase === 'dialog' ? 1 : 0)
+    expect(harness.platformDispose).toHaveBeenCalledOnce()
+    expect(harness.app.quit).toHaveBeenCalledTimes(2)
     disposal.resolve()
   })
 

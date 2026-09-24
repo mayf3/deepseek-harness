@@ -1203,6 +1203,7 @@ async function main(): Promise<void> {
   app.on('before-quit', (event) => {
     if (shellInstallerOwnsQuit) {
       shuttingDown = true
+      quitConfirmation.dispose()
       backgroundNotice?.dispose()
       updateJournal?.action('quit-requested')
       tray?.dispose()
@@ -1216,11 +1217,11 @@ async function main(): Promise<void> {
     event.preventDefault()
     if (skipQuitConfirmation || sessionEnding) { finishQuit(); return }
     void quitConfirmation.confirm().then((approved) => {
-      if (quitting) return
+      if (quitting || shellInstallerOwnsQuit) return
       if (approved) { finishQuit(); return }
       // A quit that started from closing the welcome window destroyed it; a cancelled quit needs it back.
       if (!enteredWorkspace && !recovery.active) void showWelcome().catch((error: unknown) => { reportFatal(error, 'main') })
-    }).catch((error: unknown) => { console.error(error); if (!quitting) finishQuit() })
+    }).catch((error: unknown) => { console.error(error); if (!quitting && !shellInstallerOwnsQuit) finishQuit() })
   })
 
   mainWindow = createMainWindow()
