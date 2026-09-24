@@ -7,7 +7,7 @@ import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { modelInfo } from './model-info.ts'
 import type { DeepSeekAdapterOptions, DeepSeekConnectionOptions as Connection } from './types.ts'
 import { DeepSeekFileStore } from './file-store.ts'
-import { MESSAGES_FILES_BETA, messagesApiRoot } from './messages-api.ts'
+import { MESSAGES_FILES_BETA, MESSAGES_TOOL_CHANGES_BETA, messagesApiRoot } from './messages-api.ts'
 import { FileResolutionFailure, RequestFiles } from './request-files.ts'
 import { prepareRequestExtensions } from './request-extensions.ts'
 import { imagePricing, inlineImages, prepareFileIds, prepareImages } from './images.ts'
@@ -109,6 +109,12 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
           ...options.purpose === undefined ? {} : { purpose: options.purpose },
         }, this.dependencies.prepareExtensions)
         signal.throwIfAborted()
+        const betas = [
+          ...fileIds !== undefined && fileIds.size > 0 ? [MESSAGES_FILES_BETA] : [],
+          ...body.messages.some(message => message.content.some(block => block.type === 'tool_addition' || block.type === 'tool_removal'))
+            ? [MESSAGES_TOOL_CHANGES_BETA]
+            : [],
+        ]
         const response = await fetch(`${messagesApiRoot(connection.baseURL)}/messages`, {
           method: 'POST', signal, body: extensions.payload, redirect: 'error',
           headers: {
@@ -116,7 +122,7 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
             'content-type': 'application/json', 'accept': 'text/event-stream',
             ...auth.headers,
             'anthropic-version': '2023-06-01',
-            ...fileIds === undefined || fileIds.size === 0 ? {} : { 'anthropic-beta': MESSAGES_FILES_BETA },
+            ...betas.length === 0 ? {} : { 'anthropic-beta': betas.join(',') },
             'x-deepseek-harness-user-id': this.dependencies.resolveUserId(),
             ...options.sessionId === undefined ? {} : { 'x-deepseek-harness-session-id': String(options.sessionId) },
             ...options.purpose === 'compaction' ? { 'x-deepseek-harness-compact': '1' } : {},

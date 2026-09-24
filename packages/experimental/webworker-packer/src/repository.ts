@@ -33,6 +33,17 @@ const CLI_ENTRY = `${CLI_PACKAGE}/src/bin.ts`
 /** Repository-owned deterministic filesystem content offered by the preview. */
 const PREVIEW_EXAMPLE_ROOT = 'packages/experimental/webworker-runtime/tests/fixtures/vfs-example'
 
+/**
+ * Opt-in composition overlays the repository preview enables over the shipped
+ * profile. Each is a `--patch` overlay under `apps/cli/config/examples/`, the
+ * same opt-in form a person passes to `dsh web --patch`; the preview applies
+ * them in its own composition so its deployment demonstrates the plugin they
+ * enable, while a shipped profile keeps them out until an operator names them.
+ */
+const PREVIEW_COMPOSITION_OVERLAYS: readonly string[] = [
+  'apps/cli/config/examples/schedule/cordis.yml',
+]
+
 /** Config directory metadata owned by the CLI image packer, not the public plugin manifest. */
 interface ConfigTreeDeclaration {
   /** Non-empty destination path in the image; mount values must be unique. */
@@ -86,11 +97,13 @@ export function indexWorkspacePackages(repoRoot: string): Map<string, string> {
 
 /**
  * Compose one profile through the real CLI dump path, leaving `!!js`
- * unevaluated. The dump runs against a throwaway Harness home and default
- * layers only, so the image is the shipped profile: the machine's `$DSH_HOME`
- * — its profile manifest with locally installed bundles, and its patch files —
- * would otherwise leak this machine's plugins into the image and break the
- * same-tree-same-bytes guarantee.
+ * unevaluated. The dump runs against a throwaway Harness home, so the
+ * profile's own layer is the freshly initialized empty patch file and the
+ * machine's `$DSH_HOME` — its profile manifest with locally installed
+ * bundles, and its patch files — would otherwise leak this machine's plugins
+ * into the image and break the same-tree-same-bytes guarantee.
+ * {@link PREVIEW_COMPOSITION_OVERLAYS} are applied as `--patch` overlays, the
+ * CLI mechanism every `dsh web --patch` invocation already uses.
  * @param repoRoot - Absolute repository root.
  * @param profile - Profile name to compose.
  * @returns The composed YAML.
@@ -100,7 +113,14 @@ export function composeProfile(repoRoot: string, profile: string): string {
   try {
     return execFileSync(
       process.execPath,
-      ['--import', 'tsx/esm', join(repoRoot, CLI_ENTRY), '--profile', profile, '--dump-default-config'],
+      [
+        '--import', 'tsx/esm', join(repoRoot, CLI_ENTRY),
+        '--profile', profile,
+        // `--dump-config`, not `--dump-default-config`: the latter rejects
+        // `--patch`, and the throwaway home keeps its extra user layer empty.
+        '--dump-config',
+        ...PREVIEW_COMPOSITION_OVERLAYS.flatMap(overlay => ['--patch', join(repoRoot, overlay)]),
+      ],
       { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, [DSH_HOME_ENV]: home } },
     )
   } finally {

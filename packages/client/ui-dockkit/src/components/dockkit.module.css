@@ -215,6 +215,11 @@
   overflow: hidden;
 }
 
+.pane:focus,
+.float:focus {
+  outline: none;
+}
+
 /* A 38px row whose 28px content band sits at its bottom: chips fill the band,
    so they end flush with the strip's bottom edge, and the 28px add control, the
    28px split control, and the embedder's 28px chrome centre on the band's one

@@ -1,5 +1,6 @@
 /** Validated platform HTTP messages and restricted browser destinations. */
 import { z } from 'zod'
+import type { AccountBonusOrderId } from '@deepseek-ai/dsh-deepseek-account/types'
 
 /** Protocol errors expose a stable code, never a response body or authorization URL. */
 export class PlatformAuthError extends Error {
@@ -108,7 +109,43 @@ export async function requestPlatform(origin: string, method: string, body: unkn
 export function requestAccount(origin: string, path: '/auth-api/v0/users/current' | '/api/v0/users/get_user_summary',
   token: string,
   signal: AbortSignal, headers: Record<string, string>): Promise<unknown> {
-  return platformRequest(`${origin}${path}`, { method: 'GET', headers: { ...headers, 'x-dsh-auth-token': token } }, signal)
+  return platformRequest(`${origin}${path}`, { method: 'GET', headers: accountHeaders(headers, token) }, signal)
+}
+
+/**
+ * Read the granted bonuses Platform has not yet recorded as displayed.
+ * @param origin - configured origin matching the grant issuer.
+ * @param token - stored account grant.
+ * @param signal - credential lifetime and request timeout.
+ * @param headers - deployment and client identity headers for this origin.
+ * @returns successful business payload holding the unnotified bonus list.
+ */
+export function requestUnnotifiedBonuses(origin: string, token: string,
+  signal: AbortSignal, headers: Record<string, string>): Promise<unknown> {
+  return platformRequest(`${origin}/api/v0/users/get_unnotified_bonuses`,
+    { method: 'GET', headers: accountHeaders(headers, token) }, signal)
+}
+
+/**
+ * Acknowledge an actually displayed bonus to Platform.
+ * @param origin - configured origin matching the grant issuer.
+ * @param token - stored account grant.
+ * @param orderId - granted bonus order the user saw.
+ * @param signal - credential lifetime and request timeout.
+ * @param headers - deployment and client identity headers for this origin.
+ * @returns successful business payload, which carries no data.
+ */
+export function requestBonusNotified(origin: string, token: string, orderId: AccountBonusOrderId,
+  signal: AbortSignal, headers: Record<string, string>): Promise<unknown> {
+  return platformRequest(`${origin}/api/v0/users/ack_bonus_notified`, {
+    method: 'POST', headers: { ...accountHeaders(headers, token), 'content-type': 'application/json' },
+    body: JSON.stringify({ order_id: orderId }),
+  }, signal)
+}
+
+// The grant is provider-owned; deployment requestHeaders cannot override it or the client identity.
+function accountHeaders(headers: Record<string, string>, token: string): Record<string, string> {
+  return { ...headers, 'x-dsh-auth-token': token }
 }
 
 /**

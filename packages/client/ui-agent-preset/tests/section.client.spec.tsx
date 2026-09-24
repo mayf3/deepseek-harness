@@ -12,7 +12,7 @@ const translations: ReadonlyMap<string, string> = new Map(Object.entries(en))
 function unusedHook(): never {
   throw new Error('This section does not read global slot sources')
 }
-function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void, developerTools = true,
+function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void, showPickerPolicy = true,
   outerClose?: () => void) {
   const store = createSnapshotStore<AgentPresetSectionState>({ status: 'ready', error: null,
     showPicker: true, policySaving: false, rows: [{ id: 'standard', isDefault: true }, { id: 'mine', name: 'Mine', isDefault: false }],
@@ -24,7 +24,7 @@ function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?
     usePanelInfo: unusedHook, useSessions: unusedHook, useSessionStatus: unusedHook, useSessionRetainInfo: unusedHook,
     useWorkspaces: unusedHook, useResource: unusedHook,
     useAgentPresetSection: bindSnapshotSelector(store),
-    useDeveloperTools: bindSnapshotSelector(createSnapshotStore(developerTools)),
+    useShowPickerPolicy: bindSnapshotSelector(createSnapshotStore(showPickerPolicy)),
     t: key => translations.get(key) ?? key }
   render(outerClose === undefined ? <AgentPresetSection {...props} />
     : <Modal open onClose={outerClose} title="Settings" closeLabel="Close"><AgentPresetSection {...props} /></Modal>)
@@ -181,11 +181,12 @@ it.each([
   expect(actions.makeDefault).not.toHaveBeenCalled()
 })
 it('keeps keyboard focus in help and dismisses only the reader on Escape', () => {
-  const actions = view()
+  const closeSettings = vi.fn()
+  const actions = view({}, undefined, true, closeSettings)
   const trigger = within(rowFor('standard')).getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` })
   trigger.focus()
   fireEvent.click(trigger)
-  const dialog = screen.getByRole('dialog')
+  const dialog = screen.getByRole('dialog', { name: en.presetStandardName })
   const details = within(dialog).getByRole('tab', { name: en.modeExplanation })
   const panel = within(dialog).getByRole('tabpanel', { name: en.modeExplanation })
   const close = within(dialog).getByRole('button', { name: en.close })
@@ -197,8 +198,10 @@ it('keeps keyboard focus in help and dismisses only the reader on Escape', () =>
   fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
   expect(document.activeElement).toBe(panel)
   fireEvent.keyDown(panel, { key: 'Escape' })
-  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.queryByRole('dialog', { name: en.presetStandardName })).toBeNull()
+  expect(screen.getByRole('dialog', { name: 'Settings' })).toBeTruthy()
   expect(document.activeElement).toBe(trigger)
+  expect(closeSettings).not.toHaveBeenCalled()
   expect(actions.close).not.toHaveBeenCalled()
 })
 it('connects keyboard selection to the visible guide panel', () => {
@@ -230,7 +233,13 @@ it('leaves help usable when mode selection is disabled', () => {
   expect(actions.setPickerVisible).not.toHaveBeenCalled()
 })
 it('closes help even when the browser reports no previously focused element', () => {
-  const activeElement = vi.spyOn(document, 'activeElement', 'get').mockReturnValue(null)
+  const descriptor: TypedPropertyDescriptor<Element | null> = Object.getOwnPropertyDescriptor(Document.prototype, 'activeElement')!
+  const readActiveElement = descriptor.get!.bind(document)
+  // Only the initial unfocused body is absent; modal controls must observe subsequent focus.
+  const activeElement = vi.spyOn(document, 'activeElement', 'get').mockImplementation(() => {
+    const focused = readActiveElement()
+    return focused === document.body ? null : focused
+  })
   try {
     view()
     fireEvent.click(within(rowFor('standard')).getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` }))

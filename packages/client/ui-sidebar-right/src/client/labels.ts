@@ -5,6 +5,7 @@
  * handed over from here. This is a projection of the dictionary, not a second
  * home for copy: the strings live in `locales.ts`.
  */
+import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { DockLabels } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 
@@ -14,15 +15,22 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
  * Called during render, so a language change reaches the kit with the next one —
  * the kit caches no copy to invalidate.
  * @param t - namespace-bound translate.
+ * @param split - effective split binding, when available.
+ * @param close - effective page-close binding, when available.
  * @returns every string the kit renders.
  */
-export function dockLabels(t: TranslateNS<'sidebarRight'>): DockLabels {
+export function dockLabels(t: TranslateNS<'sidebarRight'>, split?: ShortcutCatalogEntry, close?: ShortcutCatalogEntry): DockLabels {
+  const splitHint = (label: string) => split?.keys.length ? t('shortcut.hint', { label, keys: split.keys.join(' ') }) : label
   return {
     emptyPane: t('dock.emptyPane'),
     splitPane: t('dock.splitPane'),
-    splitPaneDisabled: t('dock.splitPaneDisabled'),
-    splitPaneNarrow: t('dock.splitPaneNarrow'),
+    splitPaneTooltip: splitHint(t('dock.splitPane')),
+    splitPaneShortcut: split?.aria,
+    splitPaneDisabled: splitHint(t('dock.splitPaneDisabled')),
+    splitPaneNarrow: splitHint(t('dock.splitPaneNarrow')),
     closeTab: t('dock.closeTab'),
+    closeTabTooltip: close?.keys.length ? t('shortcut.hint', { label: t('dock.closeTab'), keys: close.keys.join(' ') }) : t('dock.closeTab'),
+    closeTabShortcut: close?.aria,
     addTab: t('dock.addTab'),
     dockFloat: t('dock.dockFloat'),
     closeFloat: t('dock.closeFloat'),

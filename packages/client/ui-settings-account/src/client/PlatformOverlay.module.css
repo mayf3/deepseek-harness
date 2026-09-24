@@ -18,6 +18,7 @@
    Windows keeps the native caption row as its drag surface instead — this bar
    sits below that row (see above) and declares no drag of its own. */
 .header {
+  -webkit-app-region: initial;
   box-sizing: border-box;
   height: 48px;
   flex: none;

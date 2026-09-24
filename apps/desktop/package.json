@@ -8,7 +8,8 @@
   "main": "lib/main.js",
   "scripts": {
     "test:installer": "node scripts/test-windows-installer.mjs",
-    "build": "tsc -b && tsdown",
+    "build": "tsc -b && pnpm run bundle",
+    "bundle": "tsdown",
     "dev": "tsx scripts/dev.ts",
     "start": "tsx scripts/dev.ts --skip-build",
     "test:updates:local": "pnpm run build && node scripts/test-local-updater.mjs",
@@ -70,6 +71,8 @@
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "vite": "^6.0.0",
-    "@deepseek-ai/dsh-client-ui-theme": "workspace:*"
+    "@deepseek-ai/dsh-client-ui-theme": "workspace:*",
+    "@deepseek-ai/dsh-client-shortcuts": "workspace:*",
+    "@deepseek-ai/dsh-atomic-write": "workspace:*"
   }
 }
