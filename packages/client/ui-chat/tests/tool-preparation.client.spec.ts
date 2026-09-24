@@ -25,22 +25,22 @@ const opening = [
   entry({ type: 'step/start', seq: SessionSeq(2), time: 2, data: { turn: 1, step: 1 } }),
 ]
 
-function delta(seq: number, id = first, argumentsDelta = '', name: string | null = 'write'): SessionEventLikeEntry {
+function delta(seq: number, id = first, argumentsDelta = '', name: string | null = 'write', index = id === first ? 0 : 1): SessionEventLikeEntry {
   return {
     type: 'transient',
     event: {
       type: 'assistant/live-chunk', seq, time: seq,
       data: { turn: 1, step: 1, attemptId, chunk: {
-        type: 'tool-call-delta', index: id === first ? 0 : 1, id, argumentsDelta,
+        type: 'tool-call-delta', index, id, argumentsDelta,
         ...(name === null ? {} : { name }),
       } },
     },
   }
 }
 
-function call(seq: number, callId = first): SessionLiveEventEntry {
+function call(seq: number, callId = first, name = 'write', argumentsRaw = args): SessionLiveEventEntry {
   return entry({ type: 'tool/call', seq: SessionSeq(seq), time: seq,
-    data: { turn: 1, step: 1, callId, name: 'write', arguments: args } })
+    data: { turn: 1, step: 1, callId, name, arguments: argumentsRaw } })
 }
 
 function result(seq: number, callId = first): SessionLiveEventEntry {
@@ -49,18 +49,20 @@ function result(seq: number, callId = first): SessionLiveEventEntry {
   } })
 }
 
-function settlement(): SessionAssistantSettlementEntry {
+function settlement(ids = [first, second], name = 'write', argumentsRaw = args, text = ''): SessionAssistantSettlementEntry {
   const stream = new AssistantStreamAccumulator()
-  for (const [index, id] of [first, second].entries()) {
-    const chunk: StreamChunk = { type: 'tool-call-delta', index, id, name: 'write', argumentsDelta: args }
-    stream.push({ time: 3 + index, chunk })
+  if (text !== '') stream.push({ time: 3, chunk: { type: 'text-delta', index: 0, text } })
+  for (const [index, id] of ids.entries()) {
+    const chunk: StreamChunk = { type: 'tool-call-delta', index: index + Number(text !== ''), id, name, argumentsDelta: argumentsRaw }
+    stream.push({ time: 3, chunk })
   }
   return { type: 'event', event: {
     type: 'assistant/message', seq: SessionSeq(5), time: 5, surfaceOp: 'append', data: {
       turn: 1, step: 1, stream: [...stream.snapshot()],
-      message: createAssistantMessage({ source: { provider: 'test', model: 'test' }, content: [first, second].map(id => ({
-        type: 'tool-call', id, name: 'write', arguments: args,
-      })) }),
+      message: createAssistantMessage({ source: { provider: 'test', model: 'test' }, content: [
+        ...text === '' ? [] : [{ type: 'text' as const, text }],
+        ...ids.map(id => ({ type: 'tool-call' as const, id, name, arguments: argumentsRaw })),
+      ] }),
     },
   } }
 }
@@ -130,19 +132,62 @@ describe('Tool preparation and durable replay', () => {
     expect(h.phases()).toEqual([[first, 'result'], [second, 'result']])
   })
 
-  it('withdraws transient preparation on settlement and converges with a durable-only replacement', () => {
+  it('keeps five command preparations below the Assistant message through dispatch and Step end', () => {
+    const h = harness()
+    const ids = Array.from({ length: 5 }, (_, index) => ToolCallId(`command-${index}`))
+    const command = '{"command":"echo hello"}'
+    const text = 'Running five commands'
+    h.assembler.append({ type: 'transient', event: {
+      type: 'assistant/live-chunk', seq: 2.01, time: 3,
+      data: { turn: 1, step: 1, attemptId, chunk: { type: 'text-delta', index: 0, text } },
+    } })
+    for (const [index, id] of ids.entries()) h.assembler.append(delta(2.1 + index / 10, id, command, 'bash', index + 1))
+    const keys = h.tools().map(node => node.key)
+    const groups = h.assembler.grouped('chat')!
+    const group = groups.entries.find(entry => entry.kind === 'group')!
+    const order = groups.entries
+    expect(order[0]).toMatchObject({ kind: 'node', groupPart: 'response' })
+    expect(order[1]).toEqual(group)
+    const message = settlement(ids, 'bash', command, text)
+    const history = [...opening, message]
+    h.assembler.append(message)
+    expect(h.phases()).toEqual(ids.map(id => [id, 'preparing']))
+    expect(groups.entries).toEqual(order)
+    for (const [index, id] of ids.entries()) {
+      const started = call(6 + index * 2, id, 'bash', command)
+      h.assembler.append(started)
+      expect(h.phases()).toEqual(ids.map((callId, at) => [callId, at < index ? 'result' : at === index ? 'start' : 'preparing']))
+      expect(groups.entries).toEqual(order)
+      const completed = result(7 + index * 2, id)
+      h.assembler.append(completed)
+      history.push(started, completed)
+      expect(h.tools().map(node => node.key)).toEqual(keys)
+      expect(groups.entries).toEqual(order)
+    }
+    const closed = entry({ type: 'step/end', seq: SessionSeq(16), time: 16, data: { turn: 1, step: 1 } })
+    history.push(closed)
+    h.assembler.append(closed)
+    h.assembler.settleAssistant(attemptId)
+    const replay = harness(history)
+    expect(h.phases()).toEqual(ids.map(id => [id, 'result']))
+    expect(h.material()).toEqual(replay.material())
+    expect(groups.entries).toEqual(order)
+  })
+
+  it('hides undispatched preparations when a settled Step ends before every call starts', () => {
     const h = harness()
     h.assembler.append(delta(2.1))
-    const key = h.tools()[0]!.key
+    h.assembler.append(delta(2.2, second))
     const message = settlement()
-    h.assembler.settleAssistant(attemptId, message)
-    expect(h.phases()).toEqual([])
-    const history = [...opening, message, call(6), result(7), call(8, second), result(9, second)]
-    for (const event of history.slice(3)) h.assembler.append(event)
-    expect(h.tools()[0]?.key).toBe(key)
-    const replay = harness(history)
-    expect(h.phases()).toEqual([[first, 'result'], [second, 'result']])
-    expect(h.material()).toEqual(replay.material())
+    h.assembler.append(message)
+    h.assembler.append(call(6))
+    h.assembler.append(result(7))
+    expect(h.phases()).toEqual([[first, 'result'], [second, 'preparing']])
+    const closed = entry({ type: 'step/end', seq: SessionSeq(8), time: 8, data: { turn: 1, step: 1 } })
+    h.assembler.append(closed)
+    expect(h.phases()).toEqual([[first, 'result']])
+    h.assembler.settleAssistant(attemptId)
+    expect(h.material()).toEqual(harness([...opening, message, call(6), result(7), closed]).material())
   })
 
   it('does not create preparing rows from stored Assistant streams in history or older pages', () => {

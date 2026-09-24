@@ -2,6 +2,8 @@
 
 export const en = {
   application: 'Application',
+  fileMenu: 'File',
+  closePage: 'Close Page or Window',
   aboutMenu: 'About DeepSeek Harness',
   aboutProduct: 'DeepSeek Harness',
   aboutVersion: 'Version V{version}',
@@ -54,6 +56,7 @@ export const en = {
   welcomeKeySave: 'Save and continue',
   welcomeKeyLater: 'Set up later',
   welcomeKeyBack: 'Back to sign in',
+  welcomeSessionExpired: 'You have signed out of your account, please log in again.',
   welcomeKeyBlank: 'Enter an API key.',
   welcomeKeyInvalid: 'Enter the API key itself, without quotes, spaces, or an environment-variable assignment.',
   welcomeKeyFailed: 'Could not save the API key. Please try again.',
@@ -132,6 +135,8 @@ export type DesktopMessages = { readonly [Key in keyof typeof en]: string }
 
 export const zh = {
   application: '应用',
+  fileMenu: '文件',
+  closePage: '关闭页面或窗口',
   aboutMenu: '关于 DeepSeek Harness',
   aboutProduct: 'DeepSeek Harness',
   aboutVersion: '版本 V{version}',
@@ -184,6 +189,7 @@ export const zh = {
   welcomeKeySave: '保存并继续',
   welcomeKeyLater: '稍后配置',
   welcomeKeyBack: '返回登录',
+  welcomeSessionExpired: '登录信息已失效，请重新登录',
   welcomeKeyBlank: '请输入 API 密钥。',
   welcomeKeyInvalid: '请仅输入 API 密钥，不要包含引号、空格或环境变量赋值。',
   welcomeKeyFailed: '无法保存 API 密钥，请重试。',

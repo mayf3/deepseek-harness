@@ -111,7 +111,7 @@ function fixture(child: string, descendant: string) {
 describe.skipIf(process.platform === 'win32')('a run with descendants', () => {
   it('settles a run whose pipes a descendant keeps open', async () => {
     const { context, pidFile, options } = fixture(DRAIN_CHILD, HOLDER_SCRIPT)
-    const outcome = await runProfilePnpm(context, ['add', 'held'], options)
+    const outcome = await runProfilePnpm(context, ['add', './held'], options)
     const descendant = await readPid(pidFile)
     expect(outcome).toMatchObject({ exitCode: 0 })
     expect(outcome.output).toContain('dsh: pnpm output was cut short after its process exited')
@@ -121,7 +121,7 @@ describe.skipIf(process.platform === 'win32')('a run with descendants', () => {
 
   it('surfaces an output consumer failure that the bounded drain cuts short', async () => {
     const { context, options } = fixture(DRAIN_CHILD, HOLDER_SCRIPT)
-    const run = runProfilePnpm(context, ['add', 'held'], {
+    const run = runProfilePnpm(context, ['add', './held'], {
       ...options,
       onOutput() { throw new Error('output destination closed') },
     })
@@ -130,7 +130,7 @@ describe.skipIf(process.platform === 'win32')('a run with descendants', () => {
 
   it('stops the whole tree of a stalled run before returning', async () => {
     const { context, pidFile, lateFile, options } = fixture(STALLED_CHILD, LATE_SCRIPT)
-    const outcome = await runProfilePnpm(context, ['add', 'stalled'], { ...options, idleTimeoutMs: 300 })
+    const outcome = await runProfilePnpm(context, ['add', './stalled'], { ...options, idleTimeoutMs: 300 })
     const descendant = await readPid(pidFile)
     expect(outcome).toMatchObject({ timedOut: true })
     // The descendant is gone, so the marker it would have written 1.5s in never appears.

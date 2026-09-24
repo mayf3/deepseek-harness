@@ -59,6 +59,8 @@ PlatformSession 是 getPlatformSession 返回的仅限 Host 快照：origin 指�
 
 AccountDetails.balance 将充值钱包投影为 value、赠送钱包投影为 bonusWallets，分别保留币种和十进制余额字符串。查询失败不包含钱包数组。
 
+赠金通知查询返回 AccountBonusBatch，包含当前 Platform 账号 id 和按服务端顺序排列的可通知订单。AccountBonusNotification 保留服务端消息与到期时间，不投影凭证。确认请求携带预期账号 id 和订单 id；账号变化后 Host 拒绝该请求。两项通知操作都通过 x-client-locale 传递发起界面的语言，不使用语言查询参数。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -274,24 +276,42 @@ abstract getState(): Promise<AccountView>
 
 /**
  * Query Platform profile independently of wallet balances.
+ * @param client - identity of the requesting UI for this call.
  * @returns profile outcome, or null if signed out or the grant changed during the query.
  */
-abstract getProfile(): Promise<AccountDetails['profile'] | null>
+abstract getProfile(client: AccountClientMetadata): Promise<AccountDetails['profile'] | null>
 
 /**
  * Query Platform recharge and bonus wallet balances independently of profile data.
+ * @param client - identity of the requesting UI for this call.
  * @returns balance outcome, or null if signed out or the grant changed during the query.
  */
-abstract getBalance(): Promise<AccountDetails['balance'] | null>
+abstract getBalance(client: AccountClientMetadata): Promise<AccountDetails['balance'] | null>
+
+/**
+ * Query the granted bonuses Platform has not yet recorded as displayed.
+ * @param client - identity of the requesting UI for this call; its language selects the server-authored message.
+ * @returns bonuses with their account, or null if signed out or the grant changed during the query.
+ */
+abstract getUnnotifiedBonuses(client: AccountClientMetadata): Promise<AccountBonusBatch | null>
+
+/**
+ * Record one displayed bonus as notified for the account it belongs to.
+ * @param accountId - account the notification was read for; a different current account is never acknowledged.
+ * @param orderId - granted bonus order the user saw.
+ * @param client - identity of the requesting UI for this call.
+ * @returns true once Platform records the acknowledgement; false if signed out or the account changed.
+ */
+abstract ackBonusNotified(accountId: AccountUserId, orderId: AccountBonusOrderId, client: AccountClientMetadata): Promise<boolean>
 
 /**
  * Join an active attempt or start browser authorization.
- * @param locale - active UI language for a new attempt; joining retains its original language.
+ * @param client - identity of the requesting UI; a new attempt captures it, and joining retains the original attempt's identity.
  * @param callbackOrigin - browser-accessible loopback HTTP origin, including any SSH local port.
  * @param loginSource - initiating UI, used to return from a failed exchange.
  * @returns the initial snapshot without waiting for browser approval.
  */
-abstract startSignIn(locale: string, callbackOrigin: string, loginSource: 'web' | 'desktop'): Promise<AccountView>
+abstract startSignIn(client: AccountClientMetadata, callbackOrigin: string, loginSource: 'web' | 'desktop'): Promise<AccountView>
 
 /**
  * Cancel only the named attempt; committing attempts settle before returning.
@@ -301,10 +321,11 @@ abstract startSignIn(locale: string, callbackOrigin: string, loginSource: 'web' 
 abstract cancelSignIn(id: SignInAttemptId): Promise<AccountView>
 
 /**
- * Remove the local grant while retaining API keys and tasks; the provider revokes it in the background.
+ * Remove the local grant while retaining API keys; the provider revokes it in the background.
+ * @param client - identity of the requesting UI, captured for the background revocation retries.
  * @returns the signed-out state after local removal; remote failures never restore the grant.
  */
-abstract signOut(): Promise<AccountView>
+abstract signOut(client: AccountClientMetadata): Promise<AccountView>
 
 /**
  * Subscribe to snapshots including a complete initial state.
@@ -319,6 +340,13 @@ abstract watch(signal: AbortSignal): AsyncIterable<AccountView>
  * @returns stored token, or undefined for other origins or a signed-out account.
  */
 abstract resolveToken(url: string): Promise<string | undefined>
+
+/**
+ * Remove an inference-rejected token only while it still matches the stored login.
+ * @param token - token captured by the rejected inference request.
+ * @returns after matching credentials are removed and the expiry notification is emitted.
+ */
+abstract rejectToken(token: string): Promise<void>
 
 /**
  * Read credentials for the configured Platform origin, bound to their issuing environment.
@@ -402,6 +430,57 @@ Committed change to a provider-managed credential source: a `set`, an `unset`, o
 ```
 
 Source: [`packages/credentials/credentials/src/types.ts`](../../packages/credentials/credentials/src/types.ts)
+
+<a id="deepseek-account-events"></a>
+
+### `deepseek-account/*` events
+
+<a id="deepseek-accountmodel-sign-in-required--emit"></a>
+
+#### `deepseek-account/model-sign-in-required` — emit
+
+An account model request requires the user to sign in.
+
+```ts cordis-catalog
+/** An account model request requires the user to sign in.
+ * @mode emit
+ */
+'deepseek-account/model-sign-in-required'(): void
+```
+
+Source: [`packages/credentials/deepseek-account/src/types.ts`](../../packages/credentials/deepseek-account/src/types.ts)
+
+<a id="deepseek-accountsession-expired--emit"></a>
+
+#### `deepseek-account/session-expired` — emit
+
+Server rejection removed the current account credential; this notification is not replayed.
+
+```ts cordis-catalog
+/** Server rejection removed the current account credential; this notification is not replayed.
+ * @mode emit
+ */
+'deepseek-account/session-expired'(): void
+```
+
+Source: [`packages/credentials/deepseek-account/src/types.ts`](../../packages/credentials/deepseek-account/src/types.ts)
+
+<a id="deepseek-accountsigned-out--emit"></a>
+
+#### `deepseek-account/signed-out` — emit
+
+Local grant removal has completed.
+
+```ts cordis-catalog
+/** Local grant removal has completed.
+ * @mode emit
+ */
+'deepseek-account/signed-out'(): void
+```
+
+Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
 <!-- END GENERATED cordis-surface -->
 
-账号服务定义提供 getState、getProfile、getBalance、startSignIn、cancelSignIn、signOut、watch 及仅限 Host 的 resolveToken 和 getPlatformSession。平台提供者使用 AuthorizationFlow 和私有 GrantRecord 实现这些操作。AccountView 区分本地存在与服务器验证；尝试 ID 将取消绑定到单次本地流程。参见[账号包](../../packages/credentials/deepseek-account/README.zh.md)。
+账号服务定义提供 getState、getProfile、getBalance、getUnnotifiedBonuses、ackBonusNotified、startSignIn、cancelSignIn、signOut、watch 及仅限 Host 的 resolveToken 和 getPlatformSession。平台提供者使用 AuthorizationFlow 和私有 GrantRecord 实现这些操作。AccountView 区分本地存在与服务器验证；尝试 ID 将取消绑定到单次本地流程。参见[账号包](../../packages/credentials/deepseek-account/README.zh.md)。
+
+`AccountClientMetadata` 携带调用方 `DSH_CLIENT_VERSION` 提供的 `version`、当前界面 `locale`，以及操作发起时采样的 `timezoneOffsetSeconds`。偏移为本地时间减 UTC 的秒数：UTC+8 对应 `28800`。其中不含凭证。登录申请在兑换及取消期间保留发起时的元数据；退出操作为撤销重试保留其元数据。

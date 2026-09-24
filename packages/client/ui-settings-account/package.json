@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-settings-account",
   "description": "Manage DeepSeek login and open Platform billing pages",
-  "version": "0.1.7-alpha.2",
+  "version": "0.1.7-rc.1",
   "publishConfig": {
     "access": "public"
   },
@@ -63,7 +63,11 @@
     "@deepseek-ai/dsh-client-ui-settings-models": "workspace:*",
     "@types/react-dom": "~18.3.0",
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
-    "big.js": "^7.0.1"
+    "big.js": "^7.0.1",
+    "@deepseek-ai/dsh-settings": "workspace:*",
+    "@deepseek-ai/dsh-client-store": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-layout": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-chat": "workspace:*"
   },
   "files": [
     "lib/index.js",

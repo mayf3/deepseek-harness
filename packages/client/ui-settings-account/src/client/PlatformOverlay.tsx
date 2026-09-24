@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button, IconChevronLeftOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './PlatformOverlay.module.css'
+import { acquireOverlayInert } from './overlay-inert.ts'
 
 /** Non-secret commands supplied by the desktop application preload. */
 export interface PlatformBridge {
@@ -33,8 +34,7 @@ export function PlatformOverlay({ bridge, page, backLabel, loadingLabel, failure
     const element = viewport.current as HTMLDivElement
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const background = Array.from(document.body.children).filter((element): element is HTMLElement =>
-      element instanceof HTMLElement && element !== layer.current).map(element => ({ element, inert: element.inert }))
-    for (const { element } of background) element.inert = true
+      element instanceof HTMLElement && element !== layer.current).map(element => acquireOverlayInert(element))
     back.current?.focus()
     let closed = false
     const bounds = () => {
@@ -49,7 +49,7 @@ export function PlatformOverlay({ bridge, page, backLabel, loadingLabel, failure
     return () => {
       closed = true
       observer.disconnect()
-      for (const { element, inert } of background) element.inert = inert
+      for (const release of background) release()
       if (previousFocus?.isConnected) previousFocus.focus()
       void bridge.close().catch(() => {
         // Window teardown may remove the desktop IPC receiver before React unmounts.
@@ -57,7 +57,7 @@ export function PlatformOverlay({ bridge, page, backLabel, loadingLabel, failure
     }
   }, [bridge, page, attempt])
   return createPortal(<div ref={layer} className={css.overlay} role="dialog" aria-modal="true" aria-label={backLabel}>
-    <header className={css.header}>
+    <header className={css.header} data-window-drag>
       <div className={css.controls}>
         <span className={css.trafficLights} aria-hidden="true" />
         <button ref={back} className={css.back} onClick={onClose}>
