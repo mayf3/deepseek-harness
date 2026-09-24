@@ -459,6 +459,8 @@ Shared management service; reads, deletion, and timing edits never activate a Se
  *
  * The request must supply a title; a missing, blank-after-trim, or over-long
  * title rejects with `invalid_prompt` instead of deriving one from the prompt.
+ * A Session that subagent routing owns rejects with `subagent_session`, because
+ * delivery can never reach it.
  * The record is built from the clock reading taken before the request joins the
  * serialized queue, so a create that waits behind a longer operation keeps its
  * request-time anchor and may already be due when the queue reaches it.
@@ -497,7 +499,9 @@ async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: Abor
  * Delete one task belonging to the selected Session, leaving queued messages intact.
  *
  * The row is removed: the task no longer schedules, leaves `list` and `catalog`, and its
- * saved delivery records go with it.
+ * saved delivery records go with it. A task bound to a Session owned by subagent routing
+ * stays deletable even though creation and timing edits reject that binding, so a task
+ * stored before that rule existed remains removable.
  * @param request - Session and exact task identity.
  * @param signal - Optional cancellation checked before persistence begins, including after FIFO waits.
  * @returns Whether that Session owned a deleted task. Cancellation does not roll back an in-flight write.
@@ -509,7 +513,9 @@ async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: Abor
  * binding without activating the Session or changing saved deliveries.
  *
  * Each supplied field replaces its stored value; an omitted field keeps it. A name or
- * instruction change alone does not reset the committed target.
+ * instruction change alone does not reset the committed target. A Session that subagent
+ * routing owns rejects with `subagent_session`, so an edit cannot re-arm a task bound
+ * to a Session delivery can never reach.
  * @param request - Task binding, complete observed record, and any combination of timing, name, and instruction.
  * @param signal - Cancellation checked after domain readiness and FIFO waits, before persistence begins.
  * @returns The committed record, unchanged record for a no-op, or a non-mutating input/lookup/conflict result.

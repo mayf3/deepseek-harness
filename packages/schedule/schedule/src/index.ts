@@ -4,7 +4,7 @@ import z from '@deepseek-ai/schemastery'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
-import type {} from '@deepseek-ai/dsh-api-session-controller'
+import { hasApiSessionSubagentOwner } from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionActivity } from '@deepseek-ai/dsh-workspace'
 import { ScheduleRuntime } from './runtime.ts'
@@ -215,6 +215,8 @@ export class ScheduleService extends TypertRemoteService {
    *
    * The request must supply a title; a missing, blank-after-trim, or over-long
    * title rejects with `invalid_prompt` instead of deriving one from the prompt.
+   * A Session that subagent routing owns rejects with `subagent_session`, because
+   * delivery can never reach it.
    * The record is built from the clock reading taken before the request joins the
    * serialized queue, so a create that waits behind a longer operation keeps its
    * request-time anchor and may already be due when the queue reaches it.
@@ -247,6 +249,7 @@ export class ScheduleService extends TypertRemoteService {
     else if (request.cron !== undefined) record = createCronScheduleRecord(id, request.prompt, request.cron, now, title)
     else throw new ScheduleInputError('invalid_selector', 'Exactly one reminder selector is required.')
     return this.serialize(async () => {
+      this.assertReminderTarget(sessionId)
       const domain = await this.getDomain()
       signal?.throwIfAborted()
       await domain.table('tasks').put(id, {
@@ -311,7 +314,9 @@ export class ScheduleService extends TypertRemoteService {
    * Delete one task belonging to the selected Session, leaving queued messages intact.
    *
    * The row is removed: the task no longer schedules, leaves `list` and `catalog`, and its
-   * saved delivery records go with it.
+   * saved delivery records go with it. A task bound to a Session owned by subagent routing
+   * stays deletable even though creation and timing edits reject that binding, so a task
+   * stored before that rule existed remains removable.
    * @param request - Session and exact task identity.
    * @param signal - Optional cancellation checked before persistence begins, including after FIFO waits.
    * @returns Whether that Session owned a deleted task. Cancellation does not roll back an in-flight write.
@@ -337,7 +342,9 @@ export class ScheduleService extends TypertRemoteService {
    * binding without activating the Session or changing saved deliveries.
    *
    * Each supplied field replaces its stored value; an omitted field keeps it. A name or
-   * instruction change alone does not reset the committed target.
+   * instruction change alone does not reset the committed target. A Session that subagent
+   * routing owns rejects with `subagent_session`, so an edit cannot re-arm a task bound
+   * to a Session delivery can never reach.
    * @param request - Task binding, complete observed record, and any combination of timing, name, and instruction.
    * @param signal - Cancellation checked after domain readiness and FIFO waits, before persistence begins.
    * @returns The committed record, unchanged record for a no-op, or a non-mutating input/lookup/conflict result.
@@ -346,6 +353,7 @@ export class ScheduleService extends TypertRemoteService {
   @Remote('update')
   async update(request: ScheduleUpdateRequest, signal?: AbortSignal): Promise<ScheduleUpdateResult> {
     return this.serialize<ScheduleUpdateResult>(async () => {
+      this.assertReminderTarget(request.sessionId)
       const tasks = (await this.getDomain()).table('tasks')
       signal?.throwIfAborted()
       const current = tasks.get(request.id)
@@ -382,6 +390,28 @@ export class ScheduleService extends TypertRemoteService {
   private async getDomain(): Promise<Domain<typeof scheduleDomain>> {
     await this.initialized
     return this.ready
+  }
+
+  /**
+   * Refuse a Session whose live Agent subagent routing owns, which no delivery can reach.
+   *
+   * Delivery resolves the bound Session through `ctx.sessionController.resolveAgent`,
+   * whose first decision is the same live-Agent test that
+   * {@link hasApiSessionSubagentOwner} makes here; that decision rejects the Session
+   * with `session/agent-busy`. A stored task for such a Session would stay permanently
+   * overdue and retry on every drive, so both operations that can arm a delivery apply
+   * the shared predicate rather than a second ownership rule that could diverge from
+   * the delivery-time rejection.
+   * @param sessionId - Session the task would be bound to.
+   */
+  private assertReminderTarget(sessionId: SessionId): void {
+    const agent = this.ctx.agents.get(sessionId)
+    if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
+      throw new ScheduleInputError(
+        'subagent_session',
+        'This Session belongs to subagent routing, which never receives reminder delivery.',
+      )
+    }
   }
 
   /**

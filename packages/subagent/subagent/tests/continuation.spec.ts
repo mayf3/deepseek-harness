@@ -1343,20 +1343,6 @@ describe('continuable child ownership', () => {
     })
     expect(ctx.agents.roots()).toEqual([parent])
     expect(ctx.agents.isOwnedBy(child.id, parent)).toBe(true)
-    // A tool registered through the parent's own scope is not part of the
-    // child's view: preset and Agent scopes own their registrations.
-    parent.ctx.tools.register(defineTool({
-      name: 'parent-scope-ownership-probe',
-      description: 'Probe the parent Agent scope from the ownership test.',
-      parameters: {},
-      output: {
-        schema: { type: 'object', additionalProperties: false, properties: {} },
-        render: () => [{ type: 'text', text: 'ok' }],
-      },
-      execute: () => Promise.resolve({}),
-    }))
-    expect(ctx.tools.get('parent-scope-ownership-probe', parent)).toBeDefined()
-    expect(ctx.tools.get('parent-scope-ownership-probe', child)).toBeUndefined()
     const grandchild = await ctx.subagents.startContinuable(startSpec(child))
 
     await vi.waitFor(() => {

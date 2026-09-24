@@ -122,6 +122,7 @@ const ERROR_SCHEMAS = [
   basicErrorSchema('not_future'),
   basicErrorSchema('time_out_of_range'),
   basicErrorSchema('frequency_too_high'),
+  basicErrorSchema('subagent_session'),
   basicErrorSchema('internal_error'),
 ] as const
 

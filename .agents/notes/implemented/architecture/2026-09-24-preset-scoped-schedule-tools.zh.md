@@ -26,7 +26,9 @@ Status: implemented
 - 挂载该行的每个 preset 承担四个 schema 的固定 token 成本，工具可用性取自组合，而不是由宿主服务是否存在推断。
 - 部署可以只为存储与投递挂载 `dsh-schedule`，而不授予其 Agent 由模型驱动的提醒管理能力。
 - `dsh-schedule` 不注入 `ctx.tools`，也不注册任何面向模型的工具。
+- preset 挂载也会到达该 preset 下的子 Agent：in-process（进程内）子 Agent 通过 `composeFrom` 加入其父级 preset 的常驻挂载，因此 `standard`、`cordis`、`ptc` 下的子 Agent 同样能看到这四个工具。
+- 活跃 Agent 由 subagent 路由拥有的 Session 永远收不到投递的提醒，因此 `ScheduleService.create` 与 `ScheduleService.update` 会以 `subagent_session` 拒绝它；这条规则在服务层，因此其它消费方（包括自动化任务页面）也会命中。
 
 ## Testing
 
-`packages/schedule/tool-schedule/tests/tool-schedule.spec.ts` 固定这四个定义及其错误映射。`apps/cli/tests/web-agent-presets.e2e.ts` 断言 `minimal` preset 的工具列表，`snapshots/web/minimal-preset/tool-schemas.expected.json` 记录其不含工具的请求头。
+`packages/schedule/tool-schedule/tests/tool-schedule.spec.ts` 固定这四个定义及其错误映射。`apps/cli/tests/web-agent-presets.e2e.ts` 断言 `minimal` preset 的工具列表，`snapshots/web/minimal-preset/tool-schemas.expected.json` 记录其只含 `bash` 的工具表。

@@ -1547,10 +1547,6 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
 
 来源：[`packages/schedule/tool-schedule/src/index.ts`](../packages/schedule/tool-schedule/src/index.ts)
 
-选择启用的 Schedule 服务加载期间，在 live 根 Agent scope 内注册。接受 after_seconds、显式绝对 at、有界固定速率 every_seconds、带显式 IANA 时区的每日与每周本地时间，以及作为五字段表达式的 cron。管理使用宿主 storage domain；到期消息会恢复原 Session。
-
-<a id="deepseek-aidsh-tool-lsp"></a>
-
 ### `schedule_update`
 
 在当前会话中原地修改一条提醒，保留其 id 与已保存的投递记录：用 `schedule_list` 返回的精确 id 定位，然后给出新的 title 或 prompt，或从 at、every_seconds、daily、weekly、cron 中给出恰好一个新选择器（形式与 `schedule_create` 相同）。未提供的字段保持原值。`after` 不支持更新；需要相对延迟时请新建一条提醒。宿主会把它为该 id 读到的记录与已存储记录比对，因此并发编辑返回 `schedule_conflict`，而不是覆盖已存储的修改；已结束或不存在的提醒返回 `updated: false`。修改 `every_seconds` 间隔会把新的固定速率锚定在接受保存的时刻；只改名称或指令则保留已提交的目标。

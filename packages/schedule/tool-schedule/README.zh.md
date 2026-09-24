@@ -117,6 +117,8 @@ kind: "package-reference"
 - **每次调用都需要调用方 Agent** —— 未携带 Agent 的派发返回 `internal_error`，而不会猜测某个 Session。
 - **删除不会撤回已排队的消息** —— 宿主已经投递的提醒在 `schedule_delete` 之后仍留在 Session 收件箱中。
 - **提醒时间由宿主负责** —— 这些工具不提供目标时间校正、时钟来源或投递重试；这些限制属于该服务。
+- **preset 挂载也会到达该 preset 下的子 Agent** —— in-process（进程内）子 Agent 通过 `composeFrom` 加入其父级 preset 的常驻挂载，因此 `standard`、`cordis`、`ptc` 下的子 Agent 同样能看到这四个工具；该行的作用域是整个 preset 子树，而不只是顶层 Agent。
+- **subagent Session 不能拥有提醒** —— 对活跃 Agent 由 subagent 路由拥有的 Session，`ScheduleService.create` 与 `ScheduleService.update` 会以 `subagent_session` 拒绝，因为宿主投递会经由 `ctx.sessionController.resolveAgent` 解析该 Session，而后者拒绝所有此类 Session。这条规则在服务层而非这些工具里，因此其它进程内消费方（包括自动化任务页面）也会命中。`schedule_list` 与 `schedule_delete` 仍可服务该 Session，所以在这条规则之前存储的提醒仍可删除。
 
 <a id="dev-note"></a>
 ### 开发备注

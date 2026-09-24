@@ -117,6 +117,8 @@ Append-only; newly visible content follows the reusable request prefix and does 
 - **Every call needs a calling Agent** — a call dispatched without one returns `internal_error` rather than guessing a Session.
 - **Deletion does not retract a queued message** — a reminder the Host already delivered stays in the Session inbox after `schedule_delete`.
 - **Reminder timing belongs to the Host** — the tools expose no target-time correction, clock source, or delivery retry; those limits are the service's.
+- **A preset mount reaches that preset's subagents** — an in-process child joins its parent's preset standing mount through `composeFrom`, so a `standard`, `cordis`, or `ptc` child sees the four tools too; the row scopes the preset's whole subtree, not only top-level Agents.
+- **A subagent Session cannot own a reminder** — `ScheduleService.create` and `ScheduleService.update` reject a Session whose live Agent subagent routing owns with `subagent_session`, because Host delivery resolves the Session through `ctx.sessionController.resolveAgent`, which refuses every such Session. The rule sits in the service, not in these tools, so other in-process consumers reach it too: the Automation surface included. `schedule_list` and `schedule_delete` still serve that Session, so a reminder stored before this rule stays removable.
 
 <a id="dev-note"></a>
 ### Dev Note
