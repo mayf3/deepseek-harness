@@ -78,6 +78,8 @@ export const en = {
   updateDownload: 'Download update',
   updateDownloadedTitle: 'DeepSeek Harness v{version} downloaded',
   updateDownloadedDetail: 'The update package has downloaded. Select “Install and Restart” to restart the app and begin installation.',
+  updateDownloadedTitleWindows: 'New version v{version} is ready',
+  updateDownloadedDetailWindows: 'The app will close temporarily during the update and reopen automatically when it is complete.\n\nThe update may take some time. Please wait and do not launch the app again during installation.',
   updateClose: 'Close',
   updateAcknowledge: 'OK',
   updateLater: 'Update later',
@@ -211,6 +213,8 @@ export const zh = {
   updateDownload: '下载更新',
   updateDownloadedTitle: 'DeepSeek Harness v{version} 下载完成',
   updateDownloadedDetail: '安装包已下载完毕，点击“安装并重启”，即刻重启客户端，开始部署。',
+  updateDownloadedTitleWindows: '新版本 v{version} 已准备就绪',
+  updateDownloadedDetailWindows: '更新期间应用将暂时关闭，完成后会自动打开。\n\n更新可能需要一些时间，请耐心等待，期间请勿重复启动应用。',
   updateClose: '关闭',
   updateAcknowledge: '确定',
   updateLater: '稍后更新',
@@ -298,4 +302,22 @@ export function formatDesktopMessage(
   values: Readonly<Record<string, string>>,
 ): string {
   return message.replaceAll(/\{([^{}]+)\}/gu, (placeholder, key: string) => values[key] ?? placeholder)
+}
+
+/**
+ * Select localized copy for an ordinary downloaded-update confirmation.
+ * @param messages - Selected Desktop dictionary.
+ * @param version - Prepared update version without a leading v.
+ * @param platform - Operating system presenting the confirmation.
+ * @returns The versioned title and installation guidance.
+ */
+export function desktopUpdateReadyConfirmation(
+  messages: DesktopMessages,
+  version: string,
+  platform: string,
+): { message: string; detail: string } {
+  return {
+    message: formatDesktopMessage(platform === 'win32' ? messages.updateDownloadedTitleWindows : messages.updateDownloadedTitle, { version }),
+    detail: platform === 'win32' ? messages.updateDownloadedDetailWindows : messages.updateDownloadedDetail,
+  }
 }
