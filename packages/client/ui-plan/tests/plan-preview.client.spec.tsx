@@ -234,7 +234,7 @@ describe('plan entry points and document', () => {
     expect(view.container.innerHTML).toBe('')
   })
   it.each([true, false])('opens once, preserves manual closure, and reopens a review (logged: %s)', (logged) => {
-    const openReview = vi.fn()
+    const openReview = vi.fn(() => true)
     const store = createPlanReviewStore().create()
     const review = { plan: markdown, ...(logged ? { callId: plan.callId } : {}) }
     const props = { ...reviewProps(review, openReview, store), useSidebarMounted: seatHook(() => target.session.sessionId) }
@@ -260,7 +260,7 @@ describe('plan entry points and document', () => {
   it('waits for a mounted sidebar seat before opening automatically, then opens once', () => {
     // The review and the seat mount in one commit, the review first: its effect
     // runs while no seat is bound, and the seat's own effect binds afterwards.
-    const openReview = vi.fn()
+    const openReview = vi.fn(() => true)
     const store = createPlanReviewStore().create()
     const mounted = createSnapshotStore<SessionId | undefined>(undefined)
     const review = { plan: markdown, callId: plan.callId }
@@ -281,6 +281,25 @@ describe('plan entry points and document', () => {
     mounted.set(target.session.sessionId)
     view.rerender(<PlanReviewOpen {...props} />)
     expect(openReview).toHaveBeenCalledTimes(2)
+  })
+  it('retries the automatic open when the mounted seat changes after an open found none bound', () => {
+    // Switching Sessions mounts the review while the departing seat is the
+    // mounted one; that seat releases and the arriving one binds around the
+    // review's effect, so the first open finds no bound seat.
+    const bound = { current: false }
+    const openReview = vi.fn(() => bound.current)
+    const store = createPlanReviewStore().create()
+    const mounted = createSnapshotStore<SessionId | undefined>('departing' as SessionId)
+    const review = { plan: markdown, callId: plan.callId }
+    const props = { ...reviewProps(review, openReview, store), useSidebarMounted: seatHook(() => mounted.getSnapshot()) }
+    const view = render(<PlanReviewOpen {...props} />)
+    expect(openReview).toHaveBeenCalledOnce()
+    expect(store.getSnapshot().opened).toEqual({})
+    bound.current = true
+    mounted.set(target.session.sessionId)
+    view.rerender(<PlanReviewOpen {...props} />)
+    expect(openReview).toHaveBeenCalledTimes(2)
+    expect(store.getSnapshot().opened).toEqual({ [`call:${plan.callId}`]: true })
   })
   it('renders temporary Markdown and reports expired navigation after reload', () => {
     const address = reviewPreviewAddress(target.session.sessionId, 'window:question:1')

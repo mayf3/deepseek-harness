@@ -343,6 +343,25 @@ describe('RightbarSeat presentation', () => {
     expect(document.querySelector('[data-slot-error]')).toBeNull()
   })
 
+  it('stays bound through its own store commits', async () => {
+    const h = await mountSeat(1440, true, 0, true)
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const published: (SessionId | undefined)[] = []
+    const stop = h.controller.mounted.subscribe(() => { published.push(h.controller.mounted.getSnapshot()) })
+    try {
+      // The opener mounts in the commit that also carries a store commit of the
+      // seat, and its effect runs before the seat's own effects.
+      act(() => {
+        h.actions.toggleExpanded(SESSION)
+        h.arm(true)
+      })
+      expect(published).toEqual([])
+      expect(h.opened).toHaveLength(1)
+      expect(Object.values(h.layout().tabs).map(tab => tab.contentId)).toContain(h.opened[0])
+      expect(errors.mock.calls.map(call => String(call[0])).filter(text => text.includes('slot entry crashed'))).toEqual([])
+    } finally { stop() }
+  })
+
   it.each([0, 1, 2])('selects the default from %i guide entries and protects only a sole guide', async (entryCount) => {
     const h = await mountSeat(1440, true, entryCount)
     act(() => { h.controller.toggleExpanded() })
