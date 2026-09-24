@@ -31,6 +31,7 @@
     "tests/default-product-isolation.e2e.ts",
     "tests/diff-context.e2e.ts",
     "tests/code-card-layout.e2e.ts",
+    "tests/code-language.snapshot.ts",
     "tests/scaffold.ts",
     "tests/connection-recovery.e2e.ts",
     "tests/server-restart.e2e.ts",

@@ -5,6 +5,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { AccountView, AccountDetails } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { OnboardingChange } from './onboarding-contract.ts'
@@ -12,11 +14,14 @@ import type { PlatformBridge } from './PlatformOverlay.tsx'
 import { ContactConfig, CONTACT_CONFIG_GLOBAL } from '../contact-config.ts'
 import { contactUrl } from './contact-url.ts'
 import { AccountOnboarding } from './AccountOnboarding.tsx'
+import { AccountPlatformHost, type AccountPlatformHostInjected } from './AccountPlatformHost.tsx'
 import { AccountMenu } from './AccountMenu.tsx'
+import { createPlatformPages, type PlatformPages } from './platform-pages.ts'
 import { AccountSection, type AccountSnapshot, type AccountSectionInjected } from './AccountSection.tsx'
 import { createBonusNoticeController } from './bonus-notices.ts'
 import { accountClientMetadata } from './client-metadata.ts'
 import { en, zh, type AccountKey } from './locales.ts'
+import { AccountQuotaNotice, type AccountQuotaNoticeInjected } from './AccountQuotaNotice.tsx'
 import { DESKTOP_ONBOARDING_NAMESPACE, type OnboardingSettings } from '../onboarding-settings.ts'
 import { DesktopOnboardingController } from './onboarding-state.ts'
 import { DesktopOnboardingEntry } from './DesktopOnboardingEntry.tsx'
@@ -128,14 +133,32 @@ export function apply(ctx: Context): void {
     }
   })().catch(() => { if (!disposed) publish({ ...snapshot, failed: true }) })
   const nativePlatform = (globalThis as typeof globalThis & { dshPlatform?: PlatformBridge }).dshPlatform
+  // One request channel for the single native Platform view. It always exists
+  // so every entry can observe whether a page is showing; only a native bridge
+  // lets an entry request one.
+  const platformPages = createPlatformPages()
+  ctx.effect(() => () => { platformPages.dispose() }, 'account: platform page request')
+  // One account refresh: the recharge/bonus wallet and the unnotified-bonus read,
+  // whichever surface asks — a Settings entry, or returning from top-up. Both
+  // reads are independent, and a concurrent refresh shares the in-flight request.
+  const refreshAccount = async (): Promise<void> => { await Promise.all([refresh(), notices.refresh()]) }
+  /**
+   * Narrow the shared channel to one surface's post-return read: only a viewer
+   * returning from top-up re-reads, so a superseded page or a plugin teardown
+   * never triggers account work.
+   * @param reRead - that surface's read after a returned top-up page.
+   * @returns the opener that surface injects.
+   */
+  const platformPageOpener = (reRead: () => Promise<void>): PlatformPages['open'] =>
+    (page, onClose) => platformPages.open(page, (reason) => {
+      onClose(reason)
+      if (reason === 'returned' && page === 'top-up') void refreshAfterReturn(refreshing, reRead)
+    })
   const operations: AccountSectionInjected = {
     subscribeSessionExpired: listener => ctx.remote.$on('deepseek-account/session-expired', listener),
     subscribeModelSignInRequired: listener => ctx.remote.$on('deepseek-account/model-sign-in-required', listener),
-    ...nativePlatform === undefined ? {} : { platform: nativePlatform },
-    // One account refresh: the recharge/bonus wallet and the unnotified-bonus read,
-    // whichever surface asks — a Settings entry, or returning from top-up. Both
-    // reads are independent, and a concurrent refresh shares the in-flight request.
-    async refreshAccount() { await Promise.all([refresh(), notices.refresh()]) },
+    ...nativePlatform === undefined ? {} : { openPlatformPage: platformPageOpener(refreshAccount) },
+    refreshAccount,
     contactUs() {
       const url = contactUrl(config, {
         version: process.env.DSH_CLIENT_VERSION,
@@ -208,8 +231,8 @@ export function apply(ctx: Context): void {
       name: 'shell.overlay', id: 'desktop-onboarding', locale: 'settings.account',
       inject: () => ({
         hooks: { account: operations.hooks.account, onboarding: controller.state },
-        ...nativePlatform === undefined ? {} : { platform: nativePlatform },
-        refresh: () => refreshAfterReturn(refreshing, refresh),
+        // Onboarding's recharge return re-reads profile and balance only.
+        ...nativePlatform === undefined ? {} : { openPlatformPage: platformPageOpener(refresh) },
         update: (change: OnboardingChange) => controller.update(change),
         complete: (reason: 'completed' | 'skipped') => controller.complete(reason),
         retry: () => controller.retry(),
@@ -219,6 +242,23 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('settings.models.sign-in', () => ctx.slots.register({
     name: 'settings.models.sign-in', locale: 'settings.account', inject: () => operations,
   }, AccountOnboarding))
+  ctx.slots.inject('shell.quota-notice', () => ctx.slots.register({
+    name: 'shell.quota-notice', locale: 'settings.account',
+    select: owner => owner.code === 'ACCOUNT_QUOTA' ? owner : null,
+    inject: (): AccountQuotaNoticeInjected => ({
+      hooks: { account: operations.hooks.account, platformPage: platformPages },
+      ...nativePlatform === undefined ? {} : { openPlatformPage: platformPageOpener(refreshAccount) },
+    }),
+  }, AccountQuotaNotice))
+  if (nativePlatform !== undefined) {
+    ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+      name: 'shell.overlay', id: 'account.platform-page', locale: 'settings.account',
+      inject: (): AccountPlatformHostInjected => ({
+        platform: nativePlatform, hooks: { page: platformPages },
+        closePage: platformPages.close,
+      }),
+    }, AccountPlatformHost))
+  }
   ctx.slots.inject('settings.launcher', () => ctx.slots.register({
     name: 'settings.launcher', locale: 'settings.account', inject: () => operations,
   }, AccountMenu))

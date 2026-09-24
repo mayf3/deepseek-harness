@@ -26,6 +26,7 @@ const state = vi.hoisted(() => ({
   showWorkspace: vi.fn(),
   showInactiveWorkspace: vi.fn(),
   focusWorkspace: vi.fn(),
+  moveTopWorkspace: vi.fn(),
   openDevTools: vi.fn(),
   closeWelcome: vi.fn(),
   welcomeLocale: undefined as DesktopLocale | undefined,
@@ -77,6 +78,7 @@ vi.mock('electron', () => ({
     isMinimized() { return false }
     restore = vi.fn()
     focus = state.focusWorkspace
+    moveTop = state.moveTopWorkspace
     hide = vi.fn()
     show = state.showWorkspace
     showInactive = state.showInactiveWorkspace
@@ -94,7 +96,10 @@ vi.mock('electron', () => ({
   },
   dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn() },
   Menu: { buildFromTemplate: state.menu, setApplicationMenu: vi.fn() },
+  nativeImage: { createFromPath: (path: string) => ({ path }) },
 }))
+// The Windows tray relabels through Menu as well; keep the menu call counts below platform-neutral.
+vi.mock('../src/tray.ts', () => ({ DesktopTray: class { relabel() {} dispose() {} } }))
 
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: '/profile' }) }))
 vi.mock('../src/project-manager.ts', () => ({ DesktopProjectManager: class {
@@ -157,10 +162,18 @@ afterEach(() => {
   vi.clearAllTimers()
   vi.useRealTimers()
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
-it('starts the Host for welcome onboarding and opens the workspace on skip without quitting', async () => {
+it.each([false, true])('starts welcome onboarding without carrying update focus into login or skip (Windows update=%s)', async (updated) => {
+  vi.resetModules()
+  vi.clearAllMocks()
+  state.preference = 'zh'
+  state.hasApiKey = false
+  state.operations = undefined
+  state.accountState.mockResolvedValue({ status: 'signed-out', attempt: null, links: { usageUrl: '', topUpUrl: '' } })
+  if (updated) vi.stubGlobal('process', { ...process, platform: 'win32', argv: ['desktop', '--updated'] })
   vi.useFakeTimers()
   vi.stubEnv('DSH_DESKTOP_DEV_PROJECT_DIR', '/development-profile')
   vi.stubEnv('DSH_DESKTOP_NODE_BINARY', '/runtime/node')
@@ -217,6 +230,8 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   await state.operations!.skip()
   expect(state.loadWorkspace).not.toHaveBeenCalled()
   expect(state.showWorkspace).toHaveBeenCalledOnce()
+  expect(state.moveTopWorkspace).not.toHaveBeenCalled()
+  expect(state.focusWorkspace).not.toHaveBeenCalled()
   expect(state.windowOptions).toMatchObject({
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 18 }, vibrancy: 'sidebar' } : {}),
     webPreferences: { contextIsolation: true, sandbox: true },
@@ -271,6 +286,7 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   await vi.waitFor(() => { expect(state.showInactiveWorkspace).toHaveBeenCalledOnce() })
   expect(state.showWorkspace).not.toHaveBeenCalled()
   expect(state.focusWorkspace).not.toHaveBeenCalled()
+  expect(state.moveTopWorkspace).not.toHaveBeenCalled()
   expect(state.openDevTools).not.toHaveBeenCalled()
   state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'dsh://open')
   expect(state.showWorkspace).toHaveBeenCalledOnce()

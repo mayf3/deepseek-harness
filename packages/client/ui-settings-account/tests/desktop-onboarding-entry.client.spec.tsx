@@ -54,7 +54,7 @@ function mount(initiallyDone = false, initiallyLoading = false) {
   const globals = {} as GlobalStandardProps
   const element = () => <DesktopOnboardingEntry {...globals}
     useOnboarding={select => select(state)} useAccount={select => select(account)}
-    refresh={async () => {}} update={async () => true} complete={async () => true} retry={async () => true}
+    update={async () => true} complete={async () => true} retry={async () => true}
     t={key => key in zh ? zh[key as AccountKey] : key} />
   const view = render(element())
   act(() => { vi.runOnlyPendingTimers() })
