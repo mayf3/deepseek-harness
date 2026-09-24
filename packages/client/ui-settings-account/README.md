@@ -26,7 +26,7 @@ A new account-model sign-in-required event displays “Model unavailable. Please
 
 The client activates only inside Desktop, identified by its preload bridge. Plain Web clients keep the standard Settings launcher and API-key onboarding without account login, account settings, or an account-state subscription.
 
-The sidebar and Account settings display the profile avatar as a circular image, with the account icon as fallback when the URL is absent or the image fails to load. The collapsed sidebar centers the avatar in a 36 × 36 px button. Before sign-in the sidebar launcher shows a More row instead, leading with the ellipsis glyph.
+The sidebar and Account settings display circular profile images with diameters of 24px and 32px respectively, with the account icon as fallback when the URL is absent or the image fails to load. The collapsed sidebar centers the avatar in a 36 × 36 px button. Before sign-in the sidebar launcher shows a More row instead, leading with the ellipsis glyph.
 
 The section registers through settings.section and uses the account Remote namespace. The stream survives carrier reconnects through the shared Remote supervisor. The page renders feature-owned English and Chinese copy and keeps API keys separate from account state.
 
@@ -40,9 +40,11 @@ Chat offers each live quota failure from a bound Session to the frame-wide `shel
 
 The account menu's Feedback entry opens the Feishu questionnaire in the system browser. It supplies the available build version, UI locale and physical screen resolution as prefill_* parameters, with hide_*=1 for every context field; the account UID, tokens and contact details are excluded. Configure contactFormUrl on the ui-settings-account plugin to select another HTTPS form. contactSource defaults to empty until the questionnaire supports a Harness source option; OS and device fields remain unfilled, matching the Web implementation.
 
+Account profile and balance cards share the [settings card material and radius](../../../docs/web-styling.md#corner-radii-and-settings-cards). Usage and top-up links match standard Button geometry; authorization actions use the shared Button.
+
 The sidebar account menu uses the shared Menu surface and backdrop blur. The signed-in menu keeps the shared row typography; the signed-out menu carries its own wider rows and its Contact us copy for the Feedback entry. Its Settings row shows the effective key combination supplied by the shell. Closing Settings returns focus to the sidebar account launcher.
 
-The account card’s More account information link opens the root of the Host-provided Platform usage URL in the system browser, following `platformOrigin`.
+The account card’s More account information link has no underline and opens the root of the Host-provided Platform usage URL in the system browser, following `platformOrigin`.
 
 Sign out first queries running account-token tasks and opens a confirmation dialog. The warning describes interruption when such tasks exist; otherwise it explains that data is retained and the account can be signed in again. Cancel, close, and Escape dismiss without signing out. Failed impact queries still open confirmation with an explicit unknown-task warning; failed sign-out keeps the dialog available for retry.
 

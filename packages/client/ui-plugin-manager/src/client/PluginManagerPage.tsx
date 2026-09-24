@@ -25,7 +25,7 @@ import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@d
 import { rowConfigKey, type OfficialItem } from './config-ledger.ts'
 import type { PluginManagerLocaleKey } from './locales.ts'
 import {
-  githubRecoveryRegistry, isInstallPending, offeredRegistries, rowKey,
+  asksMirror, githubRecoveryRegistry, isInstallPending, offeredRegistries, rowKey,
   type InstallInputError, type InstallState, type InstallSubject, type PackageRow, type PackageView,
   type PluginManagerFace, type RegistryChoice,
 } from './manager-store.ts'
@@ -785,6 +785,7 @@ function InstallDialog({
     return () => { document.removeEventListener('keydown', onKeyDown, true) }
   }, [registryShown, onToggleRegistry])
   if (githubRecoveryRegistry(install) !== undefined) {
+    const anotherWay = asksMirror(install)
     return (
       <Modal
         open={install.open}
@@ -795,7 +796,17 @@ function InstallDialog({
         footer={(
           <>
             <Button variant="outline" onClick={onClose}>{t('cancel')}</Button>
-            <Button variant="primary" autoFocus onClick={onUseGithubMirror}>{t('installUseGithubMirror')}</Button>
+            <Button
+              variant="primary"
+              autoFocus
+              onClick={() => {
+                // The mirror is already asked, so the form opens with the guide to the other kinds of spec.
+                if (anotherWay) setGuideOpen(true)
+                onUseGithubMirror()
+              }}
+            >
+              {t(anotherWay ? 'installTryAnotherWay' : 'installUseGithubMirror')}
+            </Button>
           </>
         )}
       />

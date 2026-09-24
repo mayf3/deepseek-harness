@@ -66,6 +66,8 @@
     "apps/web/tests/plugin-install-github.e2e.ts",
     "apps/web/tests/client-plugin-live.e2e.ts",
     "apps/web/tests/settings-chrome.e2e.ts",
+    "apps/web/tests/settings-appearance.e2e.ts",
+    "apps/web/tests/menu-material.e2e.ts",
     "apps/web/tests/desktop-locale.e2e.ts",
     "apps/web/tests/window-controls.e2e.ts",
     "apps/web/tests/settings-import.e2e.ts",

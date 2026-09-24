@@ -43,7 +43,8 @@ it('restores a ready overlay each time its parent is shown and releases visibili
   window.destroyed = true
   window.emit('closed')
   expect(parent.listenerCount('show')).toBe(0)
-  expect(parent.webContents.removeInsertedCSS).toHaveBeenCalledWith('blur')
+  expect(parent.webContents.insertCSS).not.toHaveBeenCalled()
+  expect(parent.webContents.removeInsertedCSS).not.toHaveBeenCalled()
   parent.emit('show')
   expect(window.show).toHaveBeenCalledTimes(3)
 })
@@ -63,7 +64,7 @@ it('waits for both a visible parent and a ready document, in either order', asyn
   }
 })
 
-it('does not show or retain blur when closed before its document and CSS insertion settle', async () => {
+it('does not show or change parent styles when closed before its document is ready', async () => {
   const { parent, window, visibility } = visibilityFixture(false)
   window.destroyed = true
   window.emit('closed')
@@ -73,7 +74,8 @@ it('does not show or retain blur when closed before its document and CSS inserti
   await Promise.resolve()
   expect(window.show).not.toHaveBeenCalled()
   expect(parent.listenerCount('show')).toBe(0)
-  expect(parent.webContents.removeInsertedCSS).toHaveBeenCalledWith('blur')
+  expect(parent.webContents.insertCSS).not.toHaveBeenCalled()
+  expect(parent.webContents.removeInsertedCSS).not.toHaveBeenCalled()
 })
 
 it('releases a macOS overlay after its parent has already been destroyed', async () => {
