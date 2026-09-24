@@ -35,7 +35,7 @@ function hook<T>(snapshot: T) {
   return function select<S>(selector: (state: T) => S): S { return selector(snapshot) }
 }
 const sessions: SessionListState = {
-  ids: [], byId: {}, phase: 'ready', projectionsBySession: {}, jobsBySession: {},
+  ids: [], byId: {}, phase: 'ready', projectionsBySession: {},
 }
 const noPendingInteraction: SessionStatusSnapshot = new Map()
 const workspaceState = (items: readonly WorkspaceView[]): WorkspaceSnapshot => ({

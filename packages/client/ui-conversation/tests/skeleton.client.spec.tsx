@@ -27,6 +27,7 @@ import { ConversationSession, ConversationSessionHeader } from '../src/client/sk
 import { conversationPhase } from '../src/client/contract/snapshot.ts'
 import { HeroShell } from '../src/client/skeleton/EmptyHero.tsx'
 import type { HeroShellProps } from '../src/client/skeleton/EmptyHero.tsx'
+import './control-row-dom.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import type {
@@ -164,7 +165,7 @@ function mount(
       ...listed && options.nestedSubagent === true && { [parent]: parentRow },
       ...listed && { [SID]: childRow },
     },
-    phase: 'ready', projectionsBySession: {}, jobsBySession: {},
+    phase: 'ready', projectionsBySession: {},
   })
   const workspaces = createSnapshotStore<WorkspaceSnapshot>(workspaceState(workspaceRows))
   const session = createSnapshotStore<SessionSnapshot>(snapshot)
@@ -288,6 +289,7 @@ function mount(
           resolveDraftAttachments={() => []}
           toggleCommandMenu={vi.fn()}
           useBusyEnter={bindSnapshotSelector(createSnapshotStore<'queue' | 'steer'>('queue'))}
+          useStopShortcut={bindSnapshotSelector(createSnapshotStore<readonly string[]>([]))}
           useNotices={bindSnapshotSelector(wiring.notices)}
           useLexicon={bindSnapshotSelector(wiring.lexicon)}
           useMenuLauncher={bindSnapshotSelector(createSnapshotStore<string | null>(null))}
@@ -651,7 +653,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.queryByTestId('view-new-view')).toBeNull()
     expect(b.view.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('true')
     expect(b.view.getByRole('tab', { name: 'New view' }).getAttribute('aria-selected')).toBe('false')
-    // ui-layout's window drag band deepens by matching this marker (:has).
+    // The browser drag lane anchors its header tab-strip probe on this marker.
     expect(b.view.getByRole('tablist').hasAttribute('data-conversation-tabs')).toBe(true)
   })
 
@@ -728,7 +730,10 @@ describe('ConversationRoot resident composer', () => {
       // Dragging the right handle outward by 25px widens by 2×25 = 50 → 970,
       // inside both bounds (max = 1600 − 176 = 1424 keeps the handles on-column).
       fireEvent.pointerDown(handle, { pointerId: 1, clientX: 800, clientY: 300 })
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 825, clientY: 300 })
+      expect(handle.style.getPropertyValue('--dsh-width-handle-pointer-y')).toBe('300px')
       fireEvent.pointerUp(handle, { pointerId: 1, clientX: 825, clientY: 300 })
+      expect(handle.hasAttribute('data-dragging')).toBe(false)
       expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('970px')
       expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
       // Window shrinks: the displayed width re-clamps (900 − 176 = 724) but the
@@ -790,6 +795,28 @@ describe('ConversationRoot resident composer', () => {
     expect(nestedScrollBy).not.toHaveBeenCalled()
   })
 
+  it('does not check capture, measure, style, or schedule width-handle moves before dragging', () => {
+    const b = mount(sessionSnapshotOf())
+    const handle = b.view.container.querySelector('[data-width-handle="right"]') as HTMLElement
+    const capture = vi.fn(() => false)
+    Object.defineProperty(handle, 'hasPointerCapture', { value: capture })
+    const measure = vi.spyOn(handle, 'getBoundingClientRect')
+    const style = vi.spyOn(handle.style, 'setProperty')
+    const schedule = vi.spyOn(globalThis, 'requestAnimationFrame')
+    try {
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 800, clientY: 300 })
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 802, clientY: 302 })
+      expect(capture).not.toHaveBeenCalled()
+      expect(measure).not.toHaveBeenCalled()
+      expect(style).not.toHaveBeenCalled()
+      expect(schedule).not.toHaveBeenCalled()
+    } finally {
+      schedule.mockRestore()
+      style.mockRestore()
+      measure.mockRestore()
+    }
+  })
+
   it('starts width dragging only from the primary pointer button', () => {
     const b = mount(sessionSnapshotOf())
     const handle = b.view.container.querySelector('[data-width-handle="right"]') as HTMLElement
@@ -804,6 +831,9 @@ describe('ConversationRoot resident composer', () => {
     fireEvent.pointerDown(handle, { pointerId: 2, button: 0, clientX: 800, clientY: 300 })
     expect(handle.hasAttribute('data-dragging')).toBe(true)
     fireEvent.pointerCancel(handle, { pointerId: 2 })
+    expect(handle.hasAttribute('data-dragging')).toBe(false)
+    fireEvent.pointerMove(handle, { pointerId: 2, clientX: 825, clientY: 300 })
+    expect(handle.style.getPropertyValue('--dsh-width-handle-pointer-y')).toBe('')
   })
 
   it('hero phase renders no width handles (no transcript to size)', () => {

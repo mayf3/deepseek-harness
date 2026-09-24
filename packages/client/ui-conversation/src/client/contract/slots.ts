@@ -60,8 +60,12 @@ export interface ComposerAttachmentsOwnerProps {
   attachments: readonly ComposerAttachment[]
   /** Whether a document-level file drop may add attachments now. */
   canAcceptDrop: boolean
-  /** Add one dropped batch through the composer's validation path. */
-  onAddFiles: (files: readonly File[]) => void
+  /**
+   * Add one dropped batch through the composer's validation path.
+   * @param files - dropped, pasted, or picked browser files in source order.
+   * @param directories - members of `files` the drop source identified as directories.
+   */
+  onAddFiles: (files: readonly File[], directories?: ReadonlySet<File>) => void
   /** Remove one draft attachment through the Conversation service. */
   onRemoveAttachment: (id: DraftAttachmentId) => void
   /** Current per-draft upload states for file-kind attachments. */
@@ -197,6 +201,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.input.left': { kind: 'list'; scope: 'session' }
     /** Compact controls before the composer submit action. */
     'conversation.input.right': { kind: 'list'; scope: 'session' }
+    /** Compact action after the model selector; it can expand across the toolbar while retaining the editor and submit action. */
+    'conversation.input.activity': { kind: 'single'; scope: 'session'; owner: InputActivityOwnerProps }
     /** Resident composer body, including the no-Session inert state. */
     'conversation.composer.bar': { kind: 'single'; scope: 'session-maybe'; owner: ComposerBarOwnerProps }
     /** Optional draft-attachment rail and drop target. */
@@ -209,7 +215,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.input.plan': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
     /** Current-session permission control inside the composer tool row. */
     'conversation.input.permission': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
-    /** Model selector inside the composer tool row. */
+    /**
+     * Model selector inside the composer tool row. When expanded controls cannot
+     * share a line, the row sets --dsh-composer-model-text-display to none and
+     * --dsh-composer-model-icon-display to block for an occupant's compact display.
+     */
     'conversation.input.model': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
   }
 
@@ -366,7 +376,14 @@ export interface ComposerBarOwnerProps {
 /** Package-private operations injected into the resident composer bar. */
 export interface ComposerBarInjected {
   keyboard: ComposerKeyboard | undefined
-  addFiles: ((files: readonly File[]) => string | null) | undefined
+  /**
+   * Register one picked batch; resolves to the rejection copy or null. Where
+   * the browser shell reports host paths (the Desktop application), files
+   * and folders with a real path become `@path` references in the draft
+   * instead of uploads; `directories` names the members the drop source
+   * identified as directories.
+   */
+  addFiles: ((files: readonly File[], directories?: ReadonlySet<File>) => string | null) | undefined
   removeAttachment: ((id: DraftAttachmentId) => void) | undefined
   resolveDraftAttachments: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
   /** Restart one failed file upload; absent without a session. */
@@ -374,6 +391,8 @@ export interface ComposerBarInjected {
   toggleCommandMenu: ((selection: EditSelection) => void) | undefined
   stop: (() => void) | undefined
   hooks: {
+    /** Readable sequence while the fixed Stop command is registered. */
+    stopShortcut: ObservableSnapshot<readonly string[]>
     /**
      * Live busy-state submission preference: the delivery mode plain Enter
      * and the primary Send button use while the addressed agent is busy.
@@ -393,6 +412,12 @@ export interface InputControlOwnerProps {
   locked: boolean
 }
 
+/** A toolbar activity hides ordinary accessory controls while expanded; its occupant must release expansion on unmount. */
+export interface InputActivityOwnerProps extends InputControlOwnerProps {
+  /** @param active - whether the occupant needs the toolbar width before the submit action. */
+  onActiveChange: (active: boolean) => void
+}
+
 /** Full props of the resident composer bar. */
 export type ComposerBarProps =
   PropsRuntime<'conversation.composer.bar'>
@@ -400,7 +425,7 @@ export type ComposerBarProps =
     | 'conversation.input.attachments' | 'conversation.input.overlay'
     | 'conversation.input.permission'
     | 'conversation.input.left' | 'conversation.input.plan'
-    | 'conversation.input.right' | 'conversation.input.model'
+    | 'conversation.input.right' | 'conversation.input.model' | 'conversation.input.activity'
     | 'conversation.composer.dock'
   >
   & InjectFace<ComposerBarInjected>

@@ -51,7 +51,7 @@ class BashArgs(TypedDict):
     command: str
     # Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: "ls" → "List files in current directory"; "git status" → "Show working tree status"; "npm install" → "Install package dependencies".
     description: str
-    # Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry.
+    # Timeout in milliseconds. The executor applies its configured default and cap; on expiry the command moves to the background as a job instead of being killed.
     timeoutMs: NotRequired[float]
     # Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.
     workdir: NotRequired[str]
@@ -59,7 +59,7 @@ class BashArgs(TypedDict):
     run_in_background: NotRequired[bool]
     # The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval.
     sandbox_permissions: NotRequired[Literal["workspace-write", "danger-full-access"]]
-    # Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access.
+    # Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. Use the language of the user’s current request.
     justification: NotRequired[str]
     # Additional keys beyond those declared are allowed.
 
@@ -67,32 +67,39 @@ class BashOutput1(TypedDict):
     kind: Literal["background"]
     jobId: str
 
-class BashOutput2Stdout(TypedDict):
+class BashOutput2(TypedDict):
+    kind: Literal["promoted"]
+    jobId: str
+    timeoutMs: float
+    output: str
+
+class BashOutput3Stdout(TypedDict):
     text: str
     truncated: bool
     spillPath: NotRequired[str]
 
-class BashOutput2Stderr(TypedDict):
+class BashOutput3Stderr(TypedDict):
     text: str
     truncated: bool
     spillPath: NotRequired[str]
 
-class BashOutput2Sandbox(TypedDict):
+class BashOutput3Sandbox(TypedDict):
     mode: str
     denied: bool
     enforcement: NotRequired[str]
     runnerFailed: NotRequired[bool]
 
-class BashOutput2(TypedDict):
+class BashOutput3(TypedDict):
     kind: Literal["foreground"]
     exitCode: int | None
     signal: str | None
     timedOut: bool
     aborted: bool
+    stopped: NotRequired[str]
     timeoutMs: float
-    stdout: BashOutput2Stdout
-    stderr: BashOutput2Stderr
-    sandbox: NotRequired[BashOutput2Sandbox]
+    stdout: BashOutput3Stdout
+    stderr: BashOutput3Stderr
+    sandbox: NotRequired[BashOutput3Sandbox]
 
 class CreateGoalArgs(TypedDict):
     # The concrete completion objective inferred from the direct human request.
@@ -132,7 +139,7 @@ class EditArgs(TypedDict):
     replace_all: NotRequired[bool]
     # The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.
     sandbox_permissions: NotRequired[Literal["workspace-write", "danger-full-access"]]
-    # Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access.
+    # Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request.
     justification: NotRequired[str]
     # Additional keys beyond those declared are allowed.
 
@@ -493,7 +500,7 @@ class WriteArgs(TypedDict):
     content: str
     # The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.
     sandbox_permissions: NotRequired[Literal["workspace-write", "danger-full-access"]]
-    # Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access.
+    # Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request.
     justification: NotRequired[str]
     # Additional keys beyond those declared are allowed.
 
@@ -504,8 +511,8 @@ class WriteOutput(TypedDict):
     after: str
 
 class Tools(Protocol):
-    async def bash(self, args: BashArgs) -> BashOutput1 | BashOutput2:
-        """Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell: no state (cwd, variables, functions) persists between calls — pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. Current harness environment facts are exposed through managed `$DSH_*` variables; inspect them when needed. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a bug in the command; do not retry another way. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`. Attempting a command the sandbox may deny is safe and expected: run it and read the marker rather than assuming the denial. When a command is denied and a wider mode would let it succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) plus a one-sentence `justification`. Do not detour through chat to ask permission first — the approval prompt raised by that retry is how the user consents. If the session states approval prompts are disabled, there is no exception: a denial is final — do not set `sandbox_permissions`. Never escalate speculatively: ground the request in a real denial — normally the one this command just hit; escalating up front is fine only when this session already denied the same access. A rejected escalation is final for that command — stop and explain, never work around it — but it does not forbid attempting or escalating other commands later."""
+    async def bash(self, args: BashArgs) -> BashOutput1 | BashOutput2 | BashOutput3:
+        """Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell: no state (cwd, variables, functions) persists between calls — pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. Current harness environment facts are exposed through managed `$DSH_*` variables; inspect them when needed. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a bug in the command; do not retry another way. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`. A foreground command that reaches its timeout is not killed: it moves to the background the same way, returning its job id and the output so far. Attempting a command the sandbox may deny is safe and expected: run it and read the marker rather than assuming the denial. When a command is denied and a wider mode would let it succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) plus a one-sentence `justification`. Do not detour through chat to ask permission first — the approval prompt raised by that retry is how the user consents. If the session states approval prompts are disabled, there is no exception: a denial is final — do not set `sandbox_permissions`. Never escalate speculatively: ground the request in a real denial — normally the one this command just hit; escalating up front is fine only when this session already denied the same access. A rejected escalation is final for that command — stop and explain, never work around it — but it does not forbid attempting or escalating other commands later."""
     async def create_goal(self, args: CreateGoalArgs) -> CreateGoalOutput1 | CreateGoalOutput2:
         """Create one persisted same-session completion goal when the current direct human request is a long-running objective that should continue across autonomous goal rounds. You may infer that intent without requiring the user to say \"create a goal\". Do not use this for trivial single-turn work. Execution rejects non-human and subagent authority."""
     async def edit(self, args: EditArgs) -> EditOutput:

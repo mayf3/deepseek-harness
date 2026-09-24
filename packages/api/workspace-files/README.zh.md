@@ -25,29 +25,29 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-把本包与 `dsh-fs`、`dsh-sandbox-policy`、Session store 和 Typert Gateway 一起挂载；bundle 把它紧随 Session Controller 之后挂载。每个方法都在线路上携带 Session 身份，Client 调用 `remote.workspaceFiles.read(sessionId, path, range, signal)`、`stat(sessionId, path, signal)`、`readBytes(sessionId, path, range, signal)`、`list(sessionId, path, signal)` 或 `changes(sessionId, path, signal)`，从不自己指定根。Host 读取 live Session header，cold Session 则使用持久层 `stat`；它不会激活 Agent、读取事件正文或借用父 Session 的根。live 读取不要求挂载 Session persistence；未挂载时 cold Session 无法解析，Gateway 返回 `gateway/lookup-not-found`。
+把本包与 `dsh-fs`、`dsh-sandbox-policy`、Session store 和 Typert Gateway 一起挂载；bundle 把它紧随 Session Controller 之后挂载。每个方法都在线路上携带 Session 身份，Client 调用 `remote.workspaceFiles.read(sessionId, path, range, signal)`、`stat(sessionId, path, signal)`、`readBytes(sessionId, path, options, signal)`、`list(sessionId, path, signal)` 或 `changes(sessionId, path, signal)`，从不自己指定根。Host 读取 live Session header，cold Session 则使用持久层 `stat`；它不会激活 Agent、读取事件正文或借用父 Session 的根。live 读取不要求挂载 Session persistence；未挂载时 cold Session 无法解析，Gateway 返回 `gateway/lookup-not-found`。
 
 | 方法 | 返回 | 用途 |
 |---|---|---|
 | `stat(path)` | `WorkspaceFileStat { absolutePath, version, bytes? }` | 一个普通文件的身份、版本与大小，不含内容 |
 | `read(path, { offset?, limit? })` | `WorkspaceFileText` = stat + `{ offset, text, lines, eof }` | UTF-8 文本文件的一个行窗口；`lines` 计行数，使单个空行与越过文件末尾的页可区分 |
-| `readBytes(path, { offset?, length? })` | `WorkspaceFileBytes` = stat + `{ offset, data, eof }` | 任意普通文件的一个原始字节窗口，base64 编码 |
-| `readAll(path)` | `WorkspaceFileBytes`，其中 `offset: 0`、`eof: true` | `maxFileBytes` 内的完整原始字节；超大文件失败，不截断 |
-| `readRelated(path, relativePath)` | `WorkspaceFileBytes` | Host 从基文件目录解析出的文件的完整字节 |
+| `readBytes(path, { range?, baseFile? })` | `WorkspaceFileBytes` = stat + `{ offset, data, eof }` | 以 `Uint8Array` 返回完整文件或有界字节范围；可从另一个文件所在目录解析目标 |
 | `list(path)` | `WorkspaceDirectoryListing { path, entries, truncated }` | 一个目录的直接子项 |
 | `changes(path)` | `WorkspaceFileWatchFrame` 流 | 订阅就绪确认，随后为单个文件或目录直接子项的失效通知 |
 
 ### 寻址与路径
 
-`read`、`readBytes`、`readAll`、`readRelated` 与 `stat` 接受绝对路径或相对于所选 Session 工作区根的路径。组合文件系统决定路径是否可读；本服务不额外要求文件读取限定于工作区。`readRelated` 从基文件所在目录解析相对文件系统路径，基文件或目标文件位于工作区外时同样适用。这些方法以文件系统执行环境中的绝对路径报告文件。`list` 仍限定于工作区，并以相对于该根的路径报告被列举目录。`changes` 使用相同的路径解析：文件监听沿用文件读取权限，目录监听仍限定于工作区。
+`read`、`readBytes` 与 `stat` 接受绝对路径或相对于所选 Session 工作区根的路径。组合文件系统决定路径是否可读；本服务不额外要求文件读取限定于工作区。`readBytes` 携带 `options.baseFile` 时，从基准文件所在目录解析相对目标 `path`，基准文件或目标文件位于工作区外时同样适用。基准文件本身接受绝对路径或工作区相对路径。两个文件执行相同的普通文件检查；目标为空、绝对路径、URL 或含 NUL 时拒绝。文件结果报告文件系统执行环境中的绝对路径。`list` 仍限定于工作区，并以相对于该根的路径报告被列举目录。`changes` 使用相同的路径解析：文件监听沿用文件读取权限，目录监听仍限定于工作区。
 
 ### 分页
 
 `read` 返回一个行窗口，绝不返回整个文件。`range.offset` 是 1 起算的首行，缺省为 1；`range.limit` 是该页最多的行数，缺省为 `maxLines` 且不得超过它——更大的 limit，或不是正整数的 offset / limit，都是 `gateway/bad-request`。行以 `\n` 结束，末尾的 `\n` 是最后一行的终止符而不是再起一空行，所以两行文件就是两行。页的 `text` 以 `\n` 连接各行，最后一行之后不带终止符；`eof` 在该页含文件最后一行时为 true，offset 越过末尾则返回空页且 `eof` 为 true。每页还带上前置 stat 得到的文件 `version`，消费方据此分辨新页与旧页，以及 `bytes`——后端能报告时的整文件大小。服务只把文件读到该页之后的第一个字符为止，所以再大的文件每次请求也只占一页内存。
 
-### 字节窗口
+### 二进制读取
 
-`read` 按行分页，绝不按字节；字节窗口走 `readBytes`。`range.offset` 是 0 起算的首字节，缺省为 0；`range.length` 是窗口最多的字节数，缺省为 `maxBytes` 且不得超过它——更长的窗口以 `too-large` 失败而不是被截短，不是整数或越界的 offset / length 则是 `gateway/bad-request`。窗口以 base64 的 `data` 返回，到文件末尾时短于 `length`，位于或越过末尾时为空；窗口含文件最后一个字节时 `eof` 为 true。不做任何解码，也不按二进制拒绝，因此图片或含 NUL 的文件在 `read` 以 `not-text` 失败之处仍可读出。与页一样附带同一 `version` 与 `bytes`。
+`read` 按行分页，绝不按字节；字节窗口走 `readBytes(path, { range: { offset?, length? } })`。`options.range.offset` 是 0 起算的首字节，缺省为 0；`options.range.length` 是窗口最多的字节数，缺省为 `maxBytes` 且不得超过它——更长的窗口以 `too-large` 失败而不是被截短，不是整数或越界的 offset / length 则是 `gateway/bad-request`。窗口以 `Uint8Array` 类型的 `data` 返回，到文件末尾时短于 `length`，位于或越过末尾时为空；窗口含文件最后一个字节时 `eof` 为 true。不做任何解码，也不按二进制拒绝，因此图片或含 NUL 的文件在 `read` 以 `not-text` 失败之处仍可读出。与页一样附带同一 `version` 与 `bytes`。
+
+必填的选项对象传 `{}` 时，在 `maxFileBytes` 上限内读取完整文件；传 `{ range: {} }` 时，在 `maxBytes` 上限内读取默认字节窗口。超大完整文件失败，不截断。`baseFile` 与 `range` 可以组合，窗口始终不受完整文件上限约束。二进制 Remote 使用 Connection 的 multipart 响应传递 JSON 元数据与原始字节；生成的 Client 直接返回 `Uint8Array<ArrayBuffer>`，无需 base64 解码。调用方取消会传到文件系统。端点返回数据，不提供可导航的文档。
 
 ### 文件读取与目录检查
 
@@ -62,7 +62,7 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `maxBytes` | `2097152`（2 MiB） | 单页文本与单个字节窗口的字节上限（含）；更大的页或窗口失败 |
-| `maxFileBytes` | `33554432`（32 MiB） | `readAll` 和 `readRelated` 的完整文件字节上限（含）；更大文件以 `too-large` 失败 |
+| `maxFileBytes` | `33554432`（32 MiB） | `readBytes` 未传 `range` 时的完整文件字节上限（含）；更大文件以 `too-large` 失败 |
 | `maxLines` | `5000` | 页大小的缺省值与上限（行）；更大的 `limit` 被拒绝 |
 | `maxEntries` | `2000` | 返回目录条目数上限；其余丢弃并报告截断 |
 
@@ -74,7 +74,7 @@ kind: "package-reference"
 
 ### Client 文件资源
 
-浏览器导出向 `ctx.resources` 注册 `file` 提供方，要求 `resources`、`remote` 和 `remote.workspaceFiles` 在场。bundle 中单个 `workspace-files` 条目供应两面；Client 没有单独配置。组件通过 `useResource<'file'>(address)` 读取 `WorkspaceFileStat { absolutePath, version, bytes? }` 元数据，内容另经 Remote 读取。任何 UI（包括 Global）访问同一完整地址都共享观察。
+浏览器导出向 `ctx.resources` 注册 `file` 提供方，要求 `resources`、`remote` 和 `remote.workspaceFiles` 在场。bundle 中单个 `workspace-files` 条目供应两面；Client 没有单独配置。组件通过 `useResource<'file'>(address)` 读取 `WorkspaceFileStat { absolutePath, version, bytes? }` 元数据，文本与字节内容另经对应 Remote 读取。任何 UI（包括 Global）访问同一完整地址都共享观察。
 
 `session/<sessionId>/<path>` 地址携带授权 Session，以及相对或绝对路径；前导斜杠保留，例如 `dsh-resource://file/session/s//etc/hosts`。Host 原样接收路径，负责解析与权限检查；Client 不需要 Session `cwd`。`absolute/<path>` 仍可解析，但没有授权 Session，以 `workspace-file/unknown-workspace` 失败，不借用当前或 Tab Session。不支持的地址以 `workspace-file/unsupported-address` 失败。语法由 [workspace-path](../../util/workspace-path/README.zh.md) 定义；Resource 泛型层只认地址和 `signal`。
 
@@ -94,13 +94,13 @@ kind: "package-reference"
 
 经 `ctx.fs` 的读取使用后端的读取权限；沙箱后端限制写与编辑，而不限制读取。Typert lookup 从 live Session header 或持久层的 header-only `stat` 导出 `WorkspaceFileScope`，所以 cold subagent Session 不需要激活 Agent 或读取事件正文。本服务增加普通文件检查与有界传输，工作区包含要求只属于目录列举与目录监听。页从 `streamText` 切出，后者逐块解码并拒绝非 UTF-8：切页器对窗口之前的行只计数不保留，对窗口内的每个片段先按字节上限验收再缓冲，并在窗口之后的第一个字符处返回。流之前的一次 `stat` 给出页所报告的版本与大小。
 
-完整文件读取将大小上限检查交给 `fs.readBytes`，并将返回的字节编码为 base64，供 Remote 响应使用。
+完整文件读取将大小上限检查交给 `fs.readBytes`，并通过二进制 Remote 返回原始字节。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `WorkspaceFiles`：`workspaceFiles` 服务与 Remote 命名空间、`Config`、四道关、切页器、`read`、`readBytes`、`readAll`、`readRelated`、`stat`、`list` |
+| [`src/index.ts`](src/index.ts) | `WorkspaceFiles`：`workspaceFiles` 服务与 Remote 命名空间、`Config`、四道关、切页器、`read`、`readBytes`、`stat`、`list` |
 | [`src/changes.ts`](src/changes.ts) | `WorkspaceChangeFeed`：目标监听、匹配的 `fs/observed` 通知与每代流各自的队列 |
 | [`src/types.ts`](src/types.ts) | 线路类型与 `RemoteErrorDetailsMap` 错误码，以 `./types` 发布给 Client 包 |
 | [`src/client/index.ts`](src/client/index.ts)、[`provider.ts`](src/client/provider.ts)、[`change-feed.ts`](src/client/change-feed.ts) | 浏览器插件、文件元数据与按目标建立的变更流 |

@@ -10,7 +10,6 @@ import type {
   SessionProjectionHints,
   SessionRenameValue,
   SessionSummary,
-  SessionJob as JobView,
 } from '../../types.ts'
 import { mergeOrderedBaseline } from '../ordered-baseline.ts'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
@@ -56,8 +55,7 @@ export interface SessionListSnapshot {
   phase: SessionListPhase
   error: RemoteFailure | null
   projectionsBySession: Readonly<Record<SessionId, SessionProjectionSnapshot>>
-  /** Background jobs per session; an absent key is an empty set. */
-  jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>
+
 }
 
 /** Shared projection values and the lifecycle of their explicit baseline read. */
@@ -112,12 +110,7 @@ export class SessionManager {
   private readonly addresses = new Map<SessionId, SubagentAddress>()
   private readonly projectionLoads = new Map<SessionId, ProjectionLoad>()
   private readonly projectionInflight = new Map<SessionId, ProjectionInflight>()
-  /**
-   * Background jobs per session, last-wins from Session Controller's control
-   * stream. An empty set is stored as an absent key, so absence and `[]` are
-   * one representation.
-   */
-  private readonly jobsBySession = new Map<SessionId, readonly JobView[]>()
+
 
   private listSnapshotCache: SessionListSnapshot
   /** Entry-identity cache (reference stability): list rebuilds reuse the previous entry
@@ -628,21 +621,11 @@ export class SessionManager {
       this.replaceControlBaseline(frame.value)
       return
     }
-    if (frame.type === 'projection') {
-      this.projectionStore(frame.sessionId).apply(frame.key, frame.value, SessionSeq(frame.seq))
-      this.notifier.markDirty()
-      return
-    }
-    if (frame.jobs.length === 0) this.jobsBySession.delete(frame.sessionId)
-    else this.jobsBySession.set(frame.sessionId, frame.jobs)
+    this.projectionStore(frame.sessionId).apply(frame.key, frame.value, SessionSeq(frame.seq))
     this.notifier.markDirty()
   }
 
   private replaceControlBaseline(baseline: SessionControlBaseline): void {
-    this.jobsBySession.clear()
-    for (const [sessionId, jobs] of Object.entries(baseline.jobs)) {
-      if (jobs.length > 0) this.jobsBySession.set(sessionId as SessionId, jobs)
-    }
 
     for (const [sessionId, block] of Object.entries(baseline.projections)) {
       const store = this.projectionStore(sessionId as SessionId)
@@ -699,7 +682,6 @@ export class SessionManager {
       : { kind: 'remove', sessionId })
     if (durableSubagent) this.sessions.get(sessionId)?.handleRunning(false)
     else this.sessions.get(sessionId)?.handleRemoved()
-    this.jobsBySession.delete(sessionId)
     const catalog = this.projectionStores.get(sessionId)?.values().subagentCatalog
     if (!durableSubagent && (catalog === undefined || catalog.length === 0)) {
       this.projectionStores.delete(sessionId)
@@ -812,7 +794,6 @@ export class SessionManager {
         sessionId,
         { values: store.values(), state: 'idle', error: null, ...this.projectionLoads.get(sessionId) },
       ])),
-      jobsBySession: Object.fromEntries(this.jobsBySession),
     }
   }
 }

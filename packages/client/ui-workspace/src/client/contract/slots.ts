@@ -31,6 +31,12 @@
  * face and reading its own Host state through hooks that face injects, so a
  * client plugin's action lands beside them by `order` and needs nothing from
  * the browser beyond the row identity.
+ *
+ * The browser entry additionally declares two `list` seats per Session row
+ * (`sidebar.session.row.leading` / `sidebar.session.row.hover`) for ambient
+ * row decorations. Both take the row's Session identity and nothing else: a
+ * session-scoped seat would force a Session binding, which would activate and
+ * retain every listed Session.
  */
 import type {
   HostObservable, InjectFace, PropsHooks, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore, SlotHookFactory,
@@ -42,8 +48,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionSearchResultItem } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
-import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionActivity, WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { WorkspaceShortcutState } from '../shortcuts.ts'
 import type { createWorkspaceViewStore } from '../stores.ts'
 
 /**
@@ -93,12 +101,37 @@ export type UseMenuOpenState = () => MenuOpenState
 export const menuOpenStateFactory: SlotHookFactory<'sidebar.workspaces.session.menu.item', UseMenuOpenState> =
   (_standard, state) => () => state
 
+/**
+ * Owner share of the two Session-row schedule seats. Both receive only the
+ * row's Session identity: the occupant reads that Session's own scheduled
+ * tasks, and reading them activates nothing.
+ */
+export interface SessionRowScheduleOwnerProps {
+  /** Session this row shows; the occupant addresses its own data by this id. */
+  readonly sessionId: SessionId
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Directory-flow hole under the conversation empty-state picker (declared by the WorkspacePicker entry). */
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */
     'sidebar.workspaces.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
+    /**
+     * Leading decoration of one Session row, in the 16px cell before the title
+     * that the row's own state dot otherwise occupies. A higher-priority state
+     * (a pending interaction, a new message, live activity) replaces the seat
+     * with that dot for the same row, so an occupant here never renders beside
+     * a status dot and is mounted only by a row whose primary state is idle.
+     * An archived row keeps that cell blank — neither its status dot nor this
+     * seat renders there, and its live status appears on the hover card only.
+     */
+    'sidebar.session.row.leading': { kind: 'list'; scope: 'root'; owner: SessionRowScheduleOwnerProps }
+    /**
+     * Section of the Session row's hover card between its relative time and
+     * its trailing status line. Mounted only while that card is open.
+     */
+    'sidebar.session.row.hover': { kind: 'list'; scope: 'root'; owner: SessionRowScheduleOwnerProps }
     /**
      * The rows of one Session's "..." menu, in ascending `order`. ui-workspace
      * registers the shipped rows here — `pin` (100), `rename` (200), `fork`
@@ -135,7 +168,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'root'
       owner: SessionRowOwnerProps
       hookContext: MenuOpenState
-      inject: { hooks: { menuOpenState: SlotHookFactory<'sidebar.workspaces.session.menu.item', UseMenuOpenState> } }
+      inject: { hooks: {
+        menuOpenState: SlotHookFactory<'sidebar.workspaces.session.menu.item', UseMenuOpenState>
+        shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
+      } }
     }
     /**
      * The hover buttons at the end of one Session row, in ascending `order`,
@@ -185,7 +221,19 @@ export type WorkspaceBrowserInjected = {
      * saw. Select the field the surface needs (`info => info.home`).
      */
     hostInfo: HostObservable<RemoteHostFacts>
+    workspaceShortcuts: HostObservable<WorkspaceShortcutState>
+    shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
   }
+  /** Open the browser search and focus its input. */
+  requestSearch: () => void
+  /** Request the existing directory picker. */
+  requestAddWorkspace: () => void
+  /** Consume the directory-picker opening request. */
+  closeAddWorkspace: () => void
+  /** Publish directory interaction occupancy for command availability. */
+  setDirectoryBusy: (busy: boolean) => void
+  /** Dismiss the shortcut's fork-failure notification. */
+  dismissForkError: () => void
   /**
    * Start a New Session in a Workspace: reuse-or-create its blank session and
    * open it; without an explicit workspace, inherit the current Session
@@ -238,12 +286,20 @@ export type SessionRowActionProps<Injected extends object = object> =
   & PropsLocale<'workspace'>
   & InjectFace<Injected>
 
-/** One transient notice a row action raises; the overlay toast entry renders it. */
+/** One transient Workspace notice rendered by the overlay toast entry. */
 export type RowToast =
   | { kind: 'archived'; sessionId: SessionId }
+  | { kind: 'stoppedAndArchived'; sessionId: SessionId }
   | { kind: 'pinFailed' }
   | { kind: 'unpinFailed' }
   | { kind: 'archivedNotOpenable' }
+  | { kind: 'defaultWorkspaceFailed' }
+  /**
+   * An explicit New Session request that failed. `message` is untranslated:
+   * a Host refusal as `code: message` — the stable code stays in the copy so
+   * a report can be searched by it — and any other failure's own message.
+   */
+  | { kind: 'createFailed'; message: string }
 
 /** The notice on display; `seq` keys remounts so a repeated notice restarts its hold. */
 export type RowToastState = RowToast & { seq: number }
@@ -269,8 +325,9 @@ export interface PinSessionInjected {
 
 /**
  * Archive action share (menu row and hover button). The callbacks carry the
- * whole behavior: the Host call, the notice a success raises, and the
- * diagnostics for a rejection.
+ * whole behavior: the Host call, the notice a success raises, the
+ * stop-and-archive confirmation a Host refusal for running work raises, and
+ * the diagnostics for any other rejection.
  */
 export interface ArchiveSessionInjected {
   hooks: {
@@ -281,10 +338,44 @@ export interface ArchiveSessionInjected {
    * Archive a Session into the registry-global set: the row keeps its
    * account position and shows per the archived filter; archiving the
    * current session clears the selection into the New Session view state.
+   * A Session with running work is not archived by this call: the Host's
+   * refusal opens the stop-and-archive confirmation instead.
    */
   archiveSession: (sessionId: SessionId) => void
   /** Remove a Session from the registry-global archived set. */
   unarchiveSession: (sessionId: SessionId) => void
+}
+
+/**
+ * A stop-and-archive confirmation the archive action asked for: the Host
+ * refused the plain archive because this work still runs.
+ */
+export interface SessionArchiveConfirmRequest {
+  /** Session to stop and archive. */
+  sessionId: SessionId
+  /** The row's display title, named in the dialog. */
+  displayTitle: string
+  /** What the Host reported running, in family order. */
+  activity: readonly SessionActivity[]
+}
+
+/**
+ * Stop-and-archive dialog share: the pending confirmation, its settlement,
+ * and the archive hop that asks the Host to stop the work first.
+ */
+export interface SessionArchiveConfirmInjected {
+  hooks: {
+    /** The confirmation asked for, until the dialog consumes or cancels it. */
+    archiveRequest: HostObservable<SessionArchiveConfirmRequest | null>
+  }
+  /** Consume or cancel the pending confirmation. */
+  settleSessionArchive: () => void
+  /**
+   * Archive a Session after the Host stops its running work; resolves once
+   * the archive set is durable (the stops settle in the background) and
+   * raises the stopped-and-archived notice.
+   */
+  stopAndArchiveSession: (sessionId: SessionId) => Promise<void>
 }
 
 /** Fork action share. */
@@ -340,10 +431,22 @@ export type SessionRenameDialogProps =
   & Omit<SessionRenameDialogInjected, 'hooks'>
   & PropsHooks<SessionRenameDialogInjected['hooks']>
 
-/** Props of the row toast entry in `shell.overlay`. */
+/** Props of the stop-and-archive dialog entry in `shell.overlay`. */
+export type SessionArchiveConfirmProps =
+  PropsRuntime<'shell.overlay'>
+  & PropsLocale<'workspace'>
+  & Omit<SessionArchiveConfirmInjected, 'hooks'>
+  & PropsHooks<SessionArchiveConfirmInjected['hooks']>
+
+/**
+ * Props of the row toast entry in `shell.overlay`. The declared viewing store
+ * carries the archived filter; the archived notice omits its filter action
+ * when archived rows are already visible.
+ */
 export type RowToastProps =
   PropsRuntime<'shell.overlay'>
   & PropsLocale<'workspace'>
+  & PropsStore<WorkspaceViewStoreHandle>
   & Omit<RowToastInjected, 'hooks'>
   & PropsHooks<RowToastInjected['hooks']>
 
@@ -351,7 +454,11 @@ export type RowToastProps =
 export type WorkspaceBrowserProps =
   PropsRuntime<'sidebar.workspaces'>
   & PropsRenderSlots<
-    'sidebar.workspaces.directoryFlow' | 'sidebar.workspaces.session.menu.item' | 'sidebar.workspaces.session.row.action'
+    | 'sidebar.workspaces.directoryFlow'
+    | 'sidebar.workspaces.session.menu.item'
+    | 'sidebar.workspaces.session.row.action'
+    | 'sidebar.session.row.leading'
+    | 'sidebar.session.row.hover'
   >
   & PropsStore<WorkspaceViewStoreHandle>
   & Omit<WorkspaceBrowserInjected, 'hooks'>
@@ -377,5 +484,5 @@ export type WorkspacePickerProps =
   PropsRuntime<'conversation.hero.workspace'>
   & PropsRenderSlots<'conversation.hero.workspace.directoryFlow'>
   & Omit<WorkspacePickerInjected, 'hooks'>
-  & DirectoryPickingHooks
+  & PropsHooks<WorkspacePickerInjected['hooks']>
   & PropsLocale<'workspace'>

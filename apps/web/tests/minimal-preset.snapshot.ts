@@ -8,7 +8,7 @@ import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import {
   assertFixtureInventory,
@@ -123,6 +123,10 @@ describe('minimal agent preset', () => {
         "prompt": "You are a helpful software engineer assistant.",
         "tools": [
           "bash",
+          "schedule_create",
+          "schedule_delete",
+          "schedule_list",
+          "schedule_update",
         ],
       }
     `)
@@ -152,7 +156,14 @@ describe('minimal agent preset', () => {
     await process.click()
     await expect.poll(() => process.getAttribute('aria-expanded')).toBe('true')
 
-    const row = page.locator('[data-sample="bash"]').first()
+    const group = page.locator('[data-chat-group-key]').filter({ has: page.locator('[data-sample="bash"]') }).first()
+    const groupControl = group.locator('[data-process-activity]')
+    await groupControl.waitFor({ timeout: 15_000 })
+    await expect.poll(() => groupControl.getAttribute('aria-expanded')).toBe('false')
+    const row = group.locator('[data-sample="bash"]').first()
+    expect(await row.isVisible()).toBe(false)
+    await groupControl.click()
+    await expect.poll(() => groupControl.getAttribute('aria-expanded')).toBe('true')
     await row.waitFor({ timeout: 15_000 })
     await expect.poll(() => row.getAttribute('aria-expanded')).toBe('false')
     await row.click()

@@ -1,7 +1,6 @@
-/** Office owns source loading and conversion failures around the shared PDF view. */
+/** Office presents retained conversion results and font notices around the shared PDF view. */
 import { useEffect, type ReactNode } from 'react'
 import type { PropsLocale, PropsRenderSlots, PropsStore, SlotHookFactory } from '@deepseek-ai/dsh-client-ui-slots'
-import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { Button, FileTypeIcon, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
 import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
@@ -9,7 +8,7 @@ import type { UseSidebarRightTabInfo } from '@deepseek-ai/dsh-client-ui-sidebar-
 import type { DocumentBodyOwner, DocumentPreviewProps } from '../document/contract.ts'
 import { hostFileOf } from '../rpc.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
-import type { ReadOfficeDocument } from './cache.ts'
+import type { OfficeLoadInjected } from './face.ts'
 import type { OfficeStore } from './store.ts'
 import common from '../TextPreview.module.css'
 import css from './OfficeBody.module.css'
@@ -28,10 +27,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Office loading callbacks supplied by the registration's services. */
-export interface OfficeBodyInjected {
-  readonly read: ReadOfficeDocument
-  /** @param failure - declared file-read failure or conversion exception message. @returns localized display text. */
-  readonly describeFailure: (failure: RemoteFailure | { readonly message: string }) => string
+export interface OfficeBodyInjected extends OfficeLoadInjected {
   /** @param tab - owning tab. @param signal - tab lifetime, including hidden bodies. */
   readonly retainTab: (tab: TabId, signal: AbortSignal) => void
 }
@@ -47,35 +43,22 @@ export type OfficeBodyProps = DocumentPreviewProps & PropsStore<OfficeStore> & O
  */
 export function OfficeBody(props: OfficeBodyProps): ReactNode {
   const { tab } = props.useTabInfo()
-  const { actions, read, retainTab, describeFailure, resourceAddress, t } = props
+  const { load, retainTab, resourceAddress, t } = props
   const request = props.content.kind === 'renderer' ? props.content : undefined
   const revision = request?.revision
   const held = props.useStore(state => state.byTab[tab.id])
   const view = held?.revision === revision ? held : undefined
   const settled = view?.file !== undefined || view?.failure !== undefined
   useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
+  // Metadata may replace callbacks without advancing the content revision.
   useEffect(() => {
-    if (revision === undefined || settled || tab.signal.aborted) return
+    if (request === undefined || settled || tab.signal.aborted) return
     const controller = new AbortController()
     const signal = AbortSignal.any([controller.signal, tab.signal])
-    actions.loading(tab.id, revision)
-    void read(hostFileOf(resourceAddress), signal).then((result) => {
-      if (signal.aborted) return
-      if (result.ok) actions.complete(tab.id, revision, result.value)
-      else actions.failed(tab.id, revision, { code: result.error.code, message: describeFailure(result.error) })
-    }, (error: unknown) => {
-      if (!signal.aborted) actions.failed(tab.id, revision, {
-        code: 'gateway/internal', message: describeFailure({ message: error instanceof Error ? error.message : String(error) }),
-      })
-    })
+    load(tab.id, request.revision, hostFileOf(resourceAddress), signal, request.loaded, request.failed)
     return () => { controller.abort() }
-  }, [revision, resourceAddress, tab.id, tab.signal, read, actions, describeFailure, settled])
+  }, [revision, resourceAddress, tab.id, tab.signal, load, settled])
   const file = view?.file
-  useEffect(() => {
-    if (request === undefined) return
-    if (file !== undefined) request.loaded(file.version)
-    else if (view?.failure !== undefined) request.failed()
-  }, [file, view?.failure, request])
   if (request === undefined) return null
   if (view?.failure !== undefined) {
     const { name } = pathPartsOf(resourceAddress)
@@ -85,13 +68,11 @@ export function OfficeBody(props: OfficeBodyProps): ReactNode {
       <Button size="sm" onClick={request.reload}>{t('retry')}</Button>
     </div>
   }
-  if (file === undefined) return <LoadingIndicator className={common.statusLine} label={t('loading')} />
+  if (file === undefined) return <LoadingIndicator label={t('loading')} />
   return <div className={css.body}>
-    <div className={css.scrollport} ref={props.scrollportRef}>
-      {props.renderSlot('sidebar.right.tab.document.office.pdf', {
-        resourceAddress, content: { kind: 'bytes', data: file.data }, wrap: props.wrap, scrollportRef: props.scrollportRef,
-        addResource: props.addResource, setResources: props.setResources,
-      }, { entryKey: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', hookContext: props.useTabInfo })}
-    </div>
+    {props.renderSlot('sidebar.right.tab.document.office.pdf', {
+      resourceAddress, content: { kind: 'bytes', data: file.data }, wrap: props.wrap, scrollportRef: props.scrollportRef,
+      addResource: props.addResource, setResources: props.setResources,
+    }, { entryKey: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', hookContext: props.useTabInfo })}
   </div>
 }

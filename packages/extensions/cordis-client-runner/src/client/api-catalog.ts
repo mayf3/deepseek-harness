@@ -343,8 +343,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>',
         description: 'Connect a Workspace and open its Session unless a later navigation supersedes it.',
-        parameters: [{ name: 'workspaceId', description: 'target Workspace.' }, { name: 'beforeOpen', description: 'optional synchronous preparation for the selected Session, skipped after supersession.' }],
+        parameters: [{ name: 'workspaceId', description: 'target Workspace.' }, { name: 'beforeOpen', description: 'optional synchronous preparation for the selected Session, skipped after supersession; a throw aborts the open and releases the retained reference.' }],
         returns: 'completion; a superseded request may create a Session but does not open it.',
+        throws: ['on failure; a refused creation is also shown through the Workspace notice unless a later navigation or disposal superseded the request.'],
       },
       {
         signature: 'forkSession(sessionId: SessionId): Promise<void>',
@@ -360,13 +361,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'startSession(workspaceId?: WorkspaceId): void',
-        description: 'Start a New Session flow and navigate to its Session.',
+        description: 'Start a New Session flow and navigate to its Session; a creation the Host refuses is shown through the Workspace notice and leaves the selection as it was.',
         parameters: [{ name: 'workspaceId', description: 'explicit target; absent inherits the current or most recent Workspace.' }],
       },
       {
-        signature: 'archiveSession(sessionId: SessionId): Promise<void>',
+        signature: 'archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>',
         description: 'Archive a Session and clear it when it is the current selection.',
-        parameters: [{ name: 'sessionId', description: 'Session to archive.' }],
+        parameters: [{ name: 'sessionId', description: 'Session to archive.' }, { name: 'options', description: '`stopActivity` asks the Host to stop the Session\'s running work instead of refusing.' }],
       },
       {
         signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
@@ -416,9 +417,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'workspaceId', description: 'target Workspace.' }],
       },
       {
-        signature: 'archiveSession(sessionId: SessionId): Promise<void>',
+        signature: 'archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>',
         description: 'Archive a Session from Workspace grouping surfaces.',
-        parameters: [{ name: 'sessionId', description: 'Session to archive.' }],
+        parameters: [{ name: 'sessionId', description: 'Session to archive.' }, { name: 'options', description: '`stopActivity` asks the Host to stop the Session\'s running work instead of refusing.' }],
+        throws: ['{WorkspaceArchiveError} when the Host refuses; without `stopActivity` a Session with running work fails as `workspace/session-active`, its details naming what runs.'],
       },
       {
         signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
@@ -515,7 +517,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ClientConnectionRpc',
-    declaration: 'export interface ClientConnectionRpc {\n    call(channel: string, endpoint: string, payload: unknown, signal?: AbortSignal): Promise<ConnectionRpcResult<unknown>>;\n    readonly open?: (channel: string, endpoint: string, payload: unknown, signal: AbortSignal) => AsyncIterable<unknown>;\n}',
+    declaration: 'export interface ClientConnectionRpc {\n    call(channel: string, endpoint: string, payload: unknown, signal?: AbortSignal): Promise<ConnectionRpcResult<unknown>>;\n    readonly open?: (channel: string, endpoint: string, payload: unknown, signal: AbortSignal, uplink?: AsyncIterable<unknown>) => AsyncIterable<unknown>;\n}',
   },
   {
     name: 'ClientRemote',

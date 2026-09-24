@@ -1,5 +1,5 @@
 ---
-description: "Complete V3-to-V4 Session conversion and native admission: tool-role results, producer sources, parent catalogs, preserved references, and refusal."
+description: "Complete V3-to-V4 Session conversion and native admission: tool-role results, producer sources, parent catalogs, reference remapping, and refusal."
 kind: "package-library"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Restore supported released V3 Sessions as V4 without rewriting their stored generation. This page specifies the edge's transformations, preservation, prerequisites, and refusal, then separates native V4 admission. The conversion lifts tool results, renames message sources, and appends missing parent catalog facts. Persistence owns file reads and successor publication; this library owns conversion and target rules.
+Restore supported released V3 Sessions as V4 without rewriting their stored generation. This page specifies the edge's transformations, preservation, prerequisites, and refusal, then separates native V4 admission. The conversion lifts tool results, renames message sources, closes evidenced interrupted turns, and appends missing parent catalog facts. Persistence owns file reads and successor publication; this library owns conversion and target rules.
 
 ## Table of Contents
 
@@ -66,7 +66,7 @@ Every restore creates independent Stage state. Compact runs expand as iterables 
 <a id="v3-to-v4-specification"></a>
 ## V3-to-V4 specification
 
-This edge changes only the named representations below and appends available missing catalog facts. It namespaces unknown ignorable event types and retains each admitted source event's time, sequence, message identities, surface operation, references, and all fields outside those conversions. It creates no system prompt, developer event, tool execution, or replacement message. Earlier V0–V2 inputs first pass through their existing edges to V3; those edges retain their own transformations and refusal policies.
+This edge changes only the named representations below, closes evidenced interrupted turns, and appends available missing catalog facts. It namespaces unknown ignorable event types and retains each admitted source event's time, message identities, and all fields outside those conversions and the coordinate remapping below. It creates no system prompt, developer event, tool execution, or replacement message. Earlier V0–V2 inputs first pass through their existing edges to V3; those edges retain their own transformations and refusal policies.
 
 <a id="header-and-framing"></a>
 ### Header and physical framing
@@ -159,9 +159,11 @@ Storage supplies recognizable direct-child evidence and rechecks membership and 
 <a id="sequence-references"></a>
 ### Sequence references and inheritance
 
-This edge performs no coordinate remapping. Existing event sequences, `sourceEventSeqs`, replacement `startSeq/endSeq`, command and title references, compaction spans, captured Session references, delivery coordinates, turn/step numbers, stream indices, and all ids retain their values. Tool-result lifting and source conversion do not change source event count; appended catalog records only extend the suffix.
+An open turn with no open step can be closed when the next numbered `turn/start` immediately follows a nonempty `agent/inbox/spliced` for `next-turn`. The stage inserts `turn/end` with reason `interrupted` immediately before that start, using its timestamp. Open tails remain open. Other turn-order violations, unresolved tools, and active compactions still fail target validation. Native V4 never applies this repair.
 
-For a seeded Session, the last `session/end-seed` carrying `inherited: true` identifies the inherited event count, excluding that marker. It is unchanged from the V3-stage input, including when preceding V0–V2 migrations already remapped it. A supplied source cut must agree; a missing tagged marker, an inherited marker in an unseeded Session, or a cut outside the events is refused. Unseeded stages expose zero before EOF; seeded stages leave the count unknown until `finish()`. Untagged markers do not define fork inheritance.
+Insertion renumbers subsequent envelopes densely and remaps audited same-artifact references: `sourceEventSeqs`, replacement `startSeq/endSeq`, command completion `sourceEventSeq`, title `messageSeqs`, compaction `shadowedRange` and `shadowedSeqs`, and image-offload target `seq`. Captured Session references, generation-qualified delivery coordinates, turn/step numbers, stream and image indexes, ids, and arbitrary JSON retain their values. Unknown ignorable events retain opaque payload and surface metadata; only their envelope sequence is renumbered. Without insertion, source event coordinates remain unchanged; appended catalog records only extend the suffix.
+
+For a seeded Session, the last `session/end-seed` carrying `inherited: true` identifies the inherited event count, excluding that marker. The target count includes inserted events before that marker. A supplied source cut must agree with the original V3-stage marker position, including when preceding V0–V2 migrations already remapped it; a missing tagged marker, an inherited marker in an unseeded Session, or a cut outside the events is refused. Unseeded stages expose zero before EOF; seeded stages leave the count unknown until `finish()`. Untagged markers do not define fork inheritance.
 
 <a id="delivery-guards"></a>
 ### Delivery generations
@@ -171,11 +173,11 @@ For a seeded Session, the last `session/end-seed` carrying `inherited: true` ide
 | Any interpreted `session-log-deepseek/delivery-accepted` | Generation must be a nonnegative safe integer; omission identifies V0. |
 | V3 source marker claiming generation 4 | Refuse: advancing the header must not activate a target-generation watermark. |
 | V3 source marker for generation 3 | Require a nonempty Session id and nonnegative safe-integer `throughSeq` before the marker; a foreign id is allowed only before the inherited cut with `parentSession`. |
-| Other source generations, including values above 4 | Retain their event type, payload, and coordinates unchanged; they remain inactive in V4. |
+| Other source generations, including values above 4 | Retain their event type and payload coordinates unchanged; they remain inactive in V4. |
 | Native V4 marker for generation 4 | Apply the same earlier-coordinate and Session-ownership checks using V4 as current. |
 | Native V4 historical marker, including generation 3 | Retain recorded coordinates and identity; it is not a V4 acceptance watermark. |
 
-No delivery payload or event type is rewritten. Higher-version migrations own any future activation checks; this edge checks only promotion to V4. The marker’s envelope sequence remains unchanged.
+No delivery payload or event type is rewritten. Higher-version migrations own any future activation checks; this edge checks only promotion to V4. The marker’s envelope sequence follows insertion remapping; source-generation ownership is checked against the original V3 sequence and inherited cut.
 
 <a id="source-audit"></a>
 ### Source audit and refusal
@@ -257,7 +259,7 @@ An event containing additions must have `headerSeq`; it selects an earlier known
 
 Tool-change blocks in ordinary messages, inbox/title input, compaction summary/raw output, or embedded assistant block-start/block-end records are refused. A present `request/header.header.tools[].deferLoading` must be exactly true; it is independent of whether any developer addition exists. Empty developer nodes retain surface positions, produce no model message, and cannot replace the protected system head. Unknown ignorable developer payloads are deferred until the reader knows that event type.
 
-Native format support does not enable automatic emission, provider tool loading, or UI rendering. Current provider and UI consumers explicitly refuse developer history they cannot represent. Backward-compatible consumer support for the already accepted representation is separate from adding a new format.
+Native format support validates and preserves developer history. The [LLM runtime](../../llm/llm/README.md) projects tool updates for each route and omits developer messages on unsupported routes; Chat and Trajectory render tool-change notices. These consumers use the accepted representation without adding a new format.
 
 <a id="fork-results"></a>
 ### Fork-generated results
@@ -290,7 +292,7 @@ Unknown required events are refused by vocabulary-aware restoration. Unknown ign
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The migration declaration creates independent streaming stages. Compact runs expand as iterables without an intermediate event array. The V3-to-V4 stage rewrites historical message sources and lifts historical tool-result wrappers once while emitting V4 events. The V4 codec uses the released V2 codec only for physical header and source-range framing, and validates native tool-role rows directly; it does not invoke the released V3 validator or source-conversion views. JSONL scanners call `assertV4RowAdmission` before suppressing recoverable rows and the shared mandatory relationship validator before returning the completed logical prefix.
+The migration declaration creates independent streaming stages. Compact runs expand as iterables without an intermediate event array. The V3-to-V4 stage rewrites historical message sources, lifts historical tool-result wrappers, and inserts evidenced interrupted turn endings while emitting V4 events. It retains one source-to-target sequence entry per source event for local reference remapping. The V4 codec uses the released V2 codec only for physical header and source-range framing, and validates native tool-role rows directly; it does not invoke the released V3 validator or source-conversion views. JSONL scanners call `assertV4RowAdmission` before suppressing recoverable rows and the shared mandatory relationship validator before returning the completed logical prefix.
 
 The target restorer validates native fields and mandatory cross-event relationships, then returns the original artifact. Unknown ignorable events remain opaque, and unfinished inherited compactions expire at the end-seed marker. No runtime invariant companion is published because this pure library owns no independently maintained runtime observations.
 

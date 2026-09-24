@@ -53,6 +53,8 @@ kind: "package-reference"
 
 计划卡片通过 Conversation Definition 从原生 `tool/call` 或 PTC dispatch 参数派生，并使用每次调用已解析的回合位置。它们与文件产物一起贡献到可追加的 `conversation.chat.turnTail` 列表。计划资源地址标识调用及完整的普通会话地址或子会话直接父级地址；provider 读取已有会话历史及较早分页，不把正文存入侧边栏布局。提问插件拥有审批操作插槽，并提供请求键、完整正文和可选的调用标识。自动打开通过绑定的 hook 读取 `ctx.sidebarRight.mounted`，在座位出现在屏幕上后才执行：全局面板打开期间到达的审批，会在返回时与座位在同一次提交里先挂载、早于座位完成绑定。[决策记录](../../../.agents/notes/implemented/feature/2026-09-17-persistent-plan-cards.zh.md)说明审批与文档为何保持独立生命周期。 子代理计划地址也保留未知模式，以便历史读取解析子 descriptor。
 
+框架绑定的 `usePlans(turn)` 只提供该回合的已提交计划数据。Chat 随节点更新维护成员索引，并在读取时排列该集合；卡片渲染不扫描整段对话，也不订阅其他回合或节点类型。
+
 </details>
 
 -----

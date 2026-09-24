@@ -6,9 +6,12 @@
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type { SessionActivity, WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
 export type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+export type {
+  SessionActivity, SessionActivityItem, SessionActivityKind, SessionActivityKindMap,
+} from '@deepseek-ai/dsh-workspace/types'
 export type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
 
 /** One durable Workspace projected for browser consumers. */
@@ -32,6 +35,15 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'workspace/invalid-path': { readonly path: string }
     /** Another Workspace already uses the requested name. */
     'workspace/name-conflict': { readonly name: string }
+    /**
+     * The Session still has running work — its own turn, a subagent, a
+     * background job, or an active schedule — so archiving was refused
+     * without a write; `activity` names what must stop first.
+     */
+    'workspace/session-active': {
+      readonly sessionId: SessionId
+      readonly activity: readonly SessionActivity[]
+    }
     /** The Session or its anchor is not in the Workspace's manual order. */
     'workspace/move-invalid': {
       readonly workspaceId: WorkspaceId
@@ -102,6 +114,14 @@ export interface WorkspaceInsertSessionBeforeRequest {
 /** Session requested for archival from Workspace grouping surfaces. */
 export interface WorkspaceArchiveSessionRequest {
   readonly sessionId: SessionId
+  /**
+   * Stop the Session's running work — its turn, subagent descendants, owned
+   * background jobs, and active schedules — instead of refusing the archive
+   * as `workspace/session-active`. The stops are requested before the
+   * archive write and are not awaited; the response arrives once the archive
+   * set is durable.
+   */
+  readonly stopActivity?: boolean
 }
 
 /** Session requested for restoration from the archived Session list. */

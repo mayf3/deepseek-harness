@@ -1,19 +1,17 @@
 - banner:
-  - navigation "Session hierarchy": /user-invoke-demo @"meeting notes.md" an
+  - navigation "Session hierarchy": /user-invoke-demo @"meeting notes-this-i
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - button "/user-invoke-demo"
-- button "meeting notes.md"
+- button "meeting notes-this-is-a-very-long-filename-for-testing-user-message-file-references-and-preview-layout.md"
 - text: and confirm the fixture wiring {{clock}}
 - button "Copy"
-- button "Thought for a while" [expanded]
-- button "Context injection runtime-context"
-- button "Context injection user-invoke-demo"
+- status: Worked
+- button "Took {{duration}}" [disabled]
 - paragraph: USER_INVOKE_REPLY acknowledged; following the injected skill.
 - button "Copy"
 - button "Good response"

@@ -1,8 +1,9 @@
 import { Fragment, memo, useMemo } from 'react'
+import { fileMediaUrl } from '@deepseek-ai/dsh-util-workspace-path'
 import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions, MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
+import type { ChatNodeOwnerProps, ChatViewSlotProps, UseDisclosure, UsePresentation } from '../contract/slots.ts'
 import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
@@ -10,19 +11,27 @@ import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './AssistantMarkdown.module.css'
 
 /**
- * Resolve an authored POSIX image path against the document's file API.
+ * Standalone fallback for image destinations (query/fragment suffixes are ignored).
+ * Chat fileImages resolves decoded file references against cwd; pathImages also
+ * serves this component outside that provider and accepts legacy image URL suffixes.
+ * Resolve an authored absolute image path against the document's file API.
  * @param base - canonical `document.baseURI` at render time.
- * @param value - authored markdown destination.
- * @returns an absolute HTTP(S) file-API URL, or undefined for unsupported
+ * @param value - authored Markdown destination; URL escapes are decoded once.
+ * @returns an absolute Web or Desktop file-API URL, or undefined for unsupported
  * protocols and non-local paths.
  */
 export function localPathMediaUrl(base: string, value: string): string | undefined {
-  if (!value.startsWith('/') || value.startsWith('//')) return undefined
-  if (!base.startsWith('http:') && !base.startsWith('https:')) return undefined
-  return new URL(`api/file?path=${encodeURIComponent(value)}`, base).href
+  let path: string
+  try { path = decodeURIComponent(value.split(/[?#]/u)[0] ?? '') }
+  catch { return undefined } // Malformed URL escapes cannot identify a file.
+  return fileMediaUrl(base, path)
 }
 
 export interface AssistantMarkdownProps {
+  /** Render only the requested business portion, preserving original block indexes. */
+  groupPart?: string | undefined
+  /** Stable Hook forwarded to each independently expandable reasoning block. */
+  useDisclosure: UseDisclosure
   blocks: readonly AssistantBlock[]
   streaming: boolean
   /** Frozen partial of an aborted turn: rendered with a stopped marker. */
@@ -31,7 +40,9 @@ export interface AssistantMarkdownProps {
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
   /** Hide reasoning that belongs to the Turn-level process disclosure. */
   reasoningHidden?: boolean | undefined
-  /** Reveal the owning Turn-level process disclosure. */
+  /** Live display policy for reasoning summaries. */
+  usePresentation: UsePresentation
+  /** Reveal the disclosure that hides this reasoning. */
   revealProcess?: (() => void) | undefined
   /** Resolved prose file mentions for this Assistant's closing turn. */
   mentions?: MarkdownFileMentions | undefined
@@ -41,8 +52,8 @@ export interface AssistantMarkdownProps {
 
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
-  blocks, streaming, interrupted, renderMessageImages,
-  reasoningHidden = false, revealProcess, mentions, t,
+  blocks, streaming, interrupted, renderMessageImages, groupPart, useDisclosure,
+  reasoningHidden = false, usePresentation, revealProcess, mentions, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -63,6 +74,8 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block === undefined) continue
+    if (groupPart === 'reasoning' && block.kind !== 'reasoning') continue
+    if (groupPart === 'response' && block.kind === 'reasoning') continue
     switch (block.kind) {
       case 'text':
         rendered.push(
@@ -83,7 +96,8 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
             hidden={reasoningHidden}
             reveal={revealProcess}
           >
-            <ReasoningRow text={block.text} running={streaming && i === last} t={t} />
+            <ReasoningRow text={block.text} running={streaming && i === last} usePresentation={usePresentation}
+              useDisclosure={useDisclosure} t={t} />
           </ProcessReasoning>,
         )
         break
@@ -129,7 +143,9 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     <div className={css.root} data-streaming={streaming || undefined}>
       <div className={css.body}>
         {rendered}
-        {interrupted && <span className={css.stopped}>{t('message.stopped')}</span>}
+        {interrupted && (groupPart === undefined || groupPart === 'response'
+          || !blocks.some(block => block.kind !== 'reasoning' && block.kind !== 'tool-call'))
+          && <span className={css.stopped}>{t('message.stopped')}</span>}
       </div>
     </div>
   )

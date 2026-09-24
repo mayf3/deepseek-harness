@@ -1,5 +1,5 @@
 ---
-description: "完整的 V3 到 V4 Session 转换与原生接纳：工具角色结果、生产者来源、父目录、引用保留及拒绝规则。"
+description: "完整的 V3 到 V4 Session 转换与原生接纳：工具角色结果、生产者来源、父目录、引用重映射及拒绝规则。"
 kind: "package-library"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-在不改写已存储代际的前提下，将受支持的已发布 V3 Session 恢复为 V4。本页完整说明迁移边的转换、保留、前置证据与拒绝规则，再单独说明原生 V4 接纳。转换提升工具结果、重命名消息来源，并追加缺失的父目录事实。持久化层负责文件读取和后继代际发布；本库负责转换与目标规则。
+在不改写已存储代际的前提下，将受支持的已发布 V3 Session 恢复为 V4。本页完整说明迁移边的转换、保留、前置证据与拒绝规则，再单独说明原生 V4 接纳。转换提升工具结果、重命名消息来源、补齐有明确证据的中断回合，并追加缺失的父目录事实。持久化层负责文件读取和后继代际发布；本库负责转换与目标规则。
 
 ## 目录
 
@@ -66,7 +66,7 @@ const artifact = restore.finish()
 <a id="v3-to-v4-specification"></a>
 ## V3 到 V4 规范
 
-本边只改变下列明确命名的表示，并追加证据完整的缺失目录事实。未知可忽略事件的类型获得命名空间；每个获准源事件的 time、sequence、消息身份、表面操作、引用以及转换之外的字段均保留。它不创建 system prompt、developer 事件、工具执行或替换消息。更早的 V0–V2 输入先经过各自现有迁移边到达 V3；那些边保留自身的转换与拒绝策略。
+本边只改变下列明确命名的表示，补齐有明确证据的中断回合，并追加证据完整的缺失目录事实。未知可忽略事件的类型获得命名空间；每个获准源事件的 time、消息身份以及这些转换和下述坐标重映射之外的字段均保留。它不创建 system prompt、developer 事件、工具执行或替换消息。更早的 V0–V2 输入先经过各自现有迁移边到达 V3；那些边保留自身的转换与拒绝策略。
 
 <a id="header-and-framing"></a>
 ### Header 与物理分帧
@@ -159,9 +159,11 @@ Stage 只把最终继承截点之后的父目录记录作为候选。每个 inhe
 <a id="sequence-references"></a>
 ### 序号引用与继承
 
-本边不重映射坐标。已有事件序号、`sourceEventSeqs`、替换端点 `startSeq/endSeq`、command 与 title 引用、compaction 区间、捕获的 Session 引用、delivery 坐标、turn／step 编号、stream 索引以及所有 id 均保留。工具结果提升与来源转换不改变源事件数量；追加的目录记录只扩展后缀。
+当回合仍打开但没有打开的 step，且下一个连续编号的 `turn/start` 紧跟非空的 `next-turn` 类型 `agent/inbox/spliced` 时，Stage 可补齐该回合。它紧挨新 start 之前插入原因是 `interrupted` 的 `turn/end`，时间戳取该 start。开放尾部仍保持开放。其他回合顺序错误、未结算工具和进行中的 compaction 仍被目标校验拒绝。原生 V4 不执行此修复。
 
-对于 seeded Session，最后一个携带 `inherited: true` 的 `session/end-seed` 确定继承事件数量，且不计该 marker。本边保留 V3 Stage 输入中的该数值，即使先前 V0–V2 迁移已对其重映射。传入的源截点必须一致；缺少 tagged marker、unseeded Session 含 inherited marker、或截点超出事件范围时拒绝。Unseeded Stage 在 EOF 前公开零；seeded Stage 到 `finish()` 才确定计数。Untagged marker 不定义 fork 继承。
+插入后，后续信封重新连续编号，并重映射已审计的同日志引用：`sourceEventSeqs`、替换端点 `startSeq/endSeq`、命令完成的 `sourceEventSeq`、标题的 `messageSeqs`、compaction 的 `shadowedRange` 与 `shadowedSeqs`，以及图片 offload 目标的 `seq`。捕获的 Session 引用、带代际的 delivery 坐标、turn／step 编号、stream 与图片索引、id 和任意 JSON 保持原值。未知可忽略事件的载荷和表面元数据保持不透明，只重排其信封序号。没有插入时，源事件坐标不变；追加的目录记录只扩展后缀。
+
+对于 seeded Session，最后一个携带 `inherited: true` 的 `session/end-seed` 确定继承事件数量，且不计该 marker。目标计数包含该 marker 之前插入的事件。传入的源截点必须与 V3 Stage 原始 marker 位置一致，包括先前 V0–V2 迁移已对其重映射的情况；缺少 tagged marker、unseeded Session 含 inherited marker、或截点超出事件范围时拒绝。Unseeded Stage 在 EOF 前公开零；seeded Stage 到 `finish()` 才确定计数。Untagged marker 不定义 fork 继承。
 
 <a id="delivery-guards"></a>
 ### Delivery 代际
@@ -171,11 +173,11 @@ Stage 只把最终继承截点之后的父目录记录作为候选。每个 inhe
 | 任何被解释的 `session-log-deepseek/delivery-accepted` | 代际必须为非负安全整数；省略表示 V0。 |
 | V3 源 marker 声明 generation 4 | 拒绝：提升 header 不得激活目标代际的 watermark。 |
 | generation 3 的 V3 源 marker | 要求非空 Session id 和早于 marker 的非负安全整数 `throughSeq`；只有在继承截点之前且带 `parentSession` 时才允许其他 Session id。 |
-| 其他源代际，包括高于 4 的值 | 原样保留事件类型、payload 与坐标；它们在 V4 中仍未激活。 |
+| 其他源代际，包括高于 4 的值 | 原样保留事件类型及 payload 坐标；它们在 V4 中仍未激活。 |
 | generation 4 的原生 V4 marker | 以 V4 为当前代际，应用同样的较早坐标和 Session 归属检查。 |
 | 原生 V4 中的历史 marker，包括 generation 3 | 保留记录的坐标与身份；它不是 V4 接纳 watermark。 |
 
-不改写投递 payload 或事件类型。未来的激活检查归对应的更高版本迁移所有，本边只检查向 V4 的提升。标记的信封序号保持不变。
+不改写投递 payload 或事件类型。未来的激活检查归对应的更高版本迁移所有，本边只检查向 V4 的提升。标记的信封序号随插入重映射；源代际归属仍按原 V3 序号和继承截点校验。
 
 <a id="source-audit"></a>
 ### 源审计与拒绝
@@ -257,7 +259,7 @@ System image 接纳要求非空 attachment id、PNG／JPEG／WebP／GIF MIME 类
 
 普通消息、inbox／title 输入、compaction summary／raw output 以及内嵌 assistant block-start／block-end 记录中的工具变更块均被拒绝。存在的 `request/header.header.tools[].deferLoading` 必须恰好为 true；它与是否存在 developer 添加事件无关。空 developer 节点保留表面位置，不产生模型消息，也不能替换 protected system head。未知 ignorable developer 载荷推迟到读取器知道该事件类型时校验。
 
-原生格式支持不启用自动发出、提供方工具加载或 UI 渲染。当前提供方与 UI 消费者会明确拒绝不能表示的 developer 历史。为已经接受的表示增加向后兼容的消费者支持，与新增格式是不同的变更。
+原生格式支持校验并保留 developer 历史。[LLM 运行时](../../llm/llm/README.zh.md) 按路由投影工具更新，并在不支持的路由上省略 developer 消息；Chat 和 Trajectory 渲染工具变更通知。这些消费者使用已接受的表示，不新增格式。
 
 <a id="fork-results"></a>
 ### Fork 生成的结果
@@ -290,7 +292,7 @@ Fork 种子构造归核心 Session 所有，不属于此迁移。原生 V4 接�
 <details>
 <summary>实现内部机制 — 点击展开</summary>
 
-迁移声明创建相互独立的流式 Stage。紧凑事件段通过迭代器展开，不生成中间事件数组。V3 到 V4 Stage 在发出 V4 事件时一次性重写历史消息来源并提升历史工具结果包装。V4 编解码器只为物理头部和源范围分帧使用已发布 V2 编解码器，并直接校验原生工具角色行；它不会调用已发布 V3 校验器或源转换视图。JSONL 扫描器在抑制可恢复行之前调用 `assertV4RowAdmission`，并在返回完整逻辑前缀之前调用共用的强制关系校验器。
+迁移声明创建相互独立的流式 Stage。紧凑事件段通过迭代器展开，不生成中间事件数组。V3 到 V4 Stage 在发出 V4 事件时重写历史消息来源、提升历史工具结果包装，并插入有明确证据的中断回合结束事件。它为每个源事件保留一个源到目标的序号映射项，用于本地引用重映射。V4 编解码器只为物理头部和源范围分帧使用已发布 V2 编解码器，并直接校验原生工具角色行；它不会调用已发布 V3 校验器或源转换视图。JSONL 扫描器在抑制可恢复行之前调用 `assertV4RowAdmission`，并在返回完整逻辑前缀之前调用共用的强制关系校验器。
 
 目标恢复器校验原生字段和强制跨事件关系，然后返回原始产物。未知的可忽略事件保持不透明，未完成的继承压缩事务在 end-seed 标记处结束。本包不发布运行时不变量伴随插件，因为这个纯函数库不拥有独立维护的运行时观测。
 

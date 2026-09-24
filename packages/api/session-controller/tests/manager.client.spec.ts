@@ -8,7 +8,6 @@ import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import type { SessionControlFrame } from '@deepseek-ai/dsh-api-session-controller/types'
 import { ok, type RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import {
   createClientTest, type ClientTestFixtures, webApp,
@@ -526,10 +525,9 @@ describe('list lifecycle', () => {
       // The control baseline is the connected Session's own value: it replaces
       // the list-surface title even at the same cursor.
       manager.handleControlFrame({
-        type: 'baseline', value: { jobs: { [S1]: [] }, projections: { [S1]: { asOfSeq: -1, values: { title: 'cold baseline' } } } },
+        type: 'baseline', value: { projections: { [S1]: { asOfSeq: -1, values: { title: 'cold baseline' } } } },
       })
       expect(manager.getListSnapshot().items[0]?.title).toBe('cold baseline')
-      expect(manager.getListSnapshot().jobsBySession).toEqual({})
     } finally {
       await manager.dispose()
     }
@@ -666,7 +664,6 @@ describe('list lifecycle', () => {
       manager.handleControlFrame({
         type: 'baseline',
         value: {
-          jobs: {},
           projections: { [S1]: { asOfSeq: 2, values: { title: 'Durable' } } },
         },
       })
@@ -780,7 +777,8 @@ describe('subagent catalogs', () => {
           mode: 'continuable',
         },
         assistantStream: true,
-        maxMessages: 50,
+        maxMessages: 500,
+        turnWindow: { minMessages: 50, minTurns: 2 },
       },
     ])
     expect(mock.log.requests('session/page')).toEqual([])
@@ -1420,66 +1418,5 @@ describe('running facts without UI reminders', () => {
     expect(entry).toMatchObject({ running: false })
     expect(entry).not.toHaveProperty('completed')
     expect(manager.getListSnapshot()).not.toHaveProperty('current')
-  })
-})
-
-describe('background-job mirror', () => {
-  const view = (over: Partial<{ id: string; status: string; label: string }> = {}) => ({
-    id: 'bash-1', kind: 'bash', label: 'pnpm run build', status: 'running', startedAt: 5, ...over,
-  })
-  const tasksFrame = (
-    sessionId: SessionId,
-    jobs: unknown[],
-  ): Extract<SessionControlFrame, { type: 'jobs' }> => ({
-    type: 'jobs', sessionId, jobs: jobs as never,
-  })
-
-  it('mirrors the whole set last-wins, keyed per session, with no Session instance needed', ({ mock, remote }) => {
-    const manager = makeManager(mock, remote)
-    manager.handleControlFrame(tasksFrame(S1, [view()]))
-    manager.handleControlFrame(tasksFrame(S2, [view({ id: 'pwsh-1', label: 'other' })]))
-    const first = manager.getListSnapshot().jobsBySession
-    expect(first[S1]).toEqual([view()])
-    expect(first[S2]?.[0]?.label).toBe('other')
-
-    // Last-wins: the newer whole set replaces, it does not merge.
-    manager.handleControlFrame(tasksFrame(S1, [view({ status: 'completed' })]))
-    expect(manager.getListSnapshot().jobsBySession[S1]).toEqual([view({ status: 'completed' })])
-  })
-
-  it('stores an emptied set as an absent key so absence and [] read alike', ({ mock, remote }) => {
-    const manager = makeManager(mock, remote)
-    manager.handleControlFrame(tasksFrame(S1, [view()]))
-    expect(S1 in manager.getListSnapshot().jobsBySession).toBe(true)
-    manager.handleControlFrame(tasksFrame(S1, []))
-    expect(S1 in manager.getListSnapshot().jobsBySession).toBe(false)
-  })
-
-  it('clears the mirror when the next control baseline has no jobs', ({ mock, remote }) => {
-    const manager = makeManager(mock, remote)
-    manager.handleControlFrame(tasksFrame(S1, [view()]))
-    manager.handleControlFrame({
-      type: 'baseline',
-      value: { jobs: {}, projections: {} },
-    })
-    expect(S1 in manager.getListSnapshot().jobsBySession).toBe(false)
-  })
-
-  it('drops the rows when the session is removed, whichever stream lands first', ({ mock, remote }) => {
-    const manager = makeManager(mock, remote)
-    manager.handleSessionAdded(summary(S1, { blank: true }))
-    manager.handleControlFrame(tasksFrame(S1, [view()]))
-    manager.handleSessionRemoved(S1)
-    expect(S1 in manager.getListSnapshot().jobsBySession).toBe(false)
-  })
-
-  it('notifies list subscribers so an open header re-renders without a poll', async ({ mock, remote }) => {
-    const manager = makeManager(mock, remote)
-    const seen = vi.fn()
-    manager.subscribe(seen)
-    manager.handleControlFrame(tasksFrame(S1, [view()]))
-    // The notifier batches on a microtask; the frame itself is already applied.
-    await Promise.resolve()
-    expect(seen).toHaveBeenCalled()
   })
 })

@@ -5,6 +5,7 @@
    above the body's middle by the spacer below. The minimum height centres a
    short guide while allowing a tall guide to grow into the pane's scroller. */
 .guide {
+  --dsl-guide-entry-radius: var(--dsw-radius-xl);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -51,13 +52,13 @@
   width: 380px;
   max-width: 100%;
   min-height: 56px;
-  padding: 14px 20px;
+  padding: 14px 64px 14px 20px;
   color: var(--dsw-alias-label-primary);
   font: inherit;
   text-align: left;
   background: var(--dsw-alias-bg-layer-1);
   border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 24px;
+  border-radius: var(--dsl-guide-entry-radius);
   cursor: pointer;
 }
 
@@ -88,6 +89,7 @@
    description while the guide shows one. */
 .entryText {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 3px;
   min-width: 0;

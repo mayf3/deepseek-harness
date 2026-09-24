@@ -8,7 +8,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { stubSettingsScope } from '../src/settings-scope.ts'
+import { stubConfigForm } from '../src/config-form.ts'
 import { act, cleanup } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { createSnapshotStore, defineStore } from '@deepseek-ai/dsh-client-store'
@@ -557,6 +557,27 @@ describe('workspaces', () => {
     expect(view.container.textContent).toContain('ws:pending')
     await runtime.dispose()
   })
+  it('skips default initialization without a fixture and forwards the caller lifetime', async () => {
+    const runtime = await SlotTestRuntime.create()
+    try {
+      const signal = new AbortController().signal
+      await expect(runtime.workspaces.initializeDefault(signal)).resolves.toBeUndefined()
+      const workspace = {
+        workspaceId: 'default' as WorkspaceId, title: 'default-workspace', path: '/default', sessionIds: [],
+        createdAt: '2026-09-20T00:00:00Z', updatedAt: '2026-09-20T00:00:00Z',
+      }
+      const initialize = vi.fn(async () => workspace)
+      runtime.workspaces.stub('initializeDefault', initialize)
+      await expect(runtime.workspaces.initializeDefault(signal)).resolves.toBe(workspace)
+      expect(initialize).toHaveBeenCalledWith(signal)
+      expect(runtime.workspaces.calls).toEqual([
+        { method: 'initializeDefault', args: [signal] },
+        { method: 'initializeDefault', args: [signal] },
+      ])
+    } finally {
+      await runtime.dispose()
+    }
+  })
 })
 
 describe('feature mount and disposal', () => {
@@ -890,7 +911,7 @@ describe('single-slot mounting edge arms', () => {
 
 describe('stubbed settings scope', () => {
   it('records both write kinds and publishes a Host acceptance to its listeners', async () => {
-    const host = stubSettingsScope<{ preference: string }>()
+    const host = stubConfigForm<{ preference: string }>()
     let notified = 0
     const stop = host.scope.subscribe(() => { notified += 1 })
     expect(host.listenerCount()).toBe(1)

@@ -4,7 +4,7 @@ You are a coding agent powered by the deepseek-v4-flash model.
 
 `run_code` is the only tool you can call directly — a tool call naming any other tool fails. Reach every tool the SDK declares below from inside the program.
 
-Tokens prefixed with @ are workspace paths the user explicitly referenced, relative to the workspace root. A trailing slash marks a directory: list it when its contents matter. Anything else is a file: use the read tool when its contents are needed, and do not claim to have inspected it before reading. @"..." quotes a path containing spaces.
+Tokens prefixed with @ are paths the user explicitly referenced. Relative paths resolve from the workspace root; absolute paths identify files or directories on the host. A trailing slash marks a directory: list it when its contents matter. Anything else is a file: use the read tool when its contents are needed, and do not claim to have inspected it before reading. @"..." quotes a path containing spaces.
 
 Check the [exit code: N] marker on every bash result; investigate failures before moving on.
 
@@ -70,13 +70,13 @@ interface ToolArgsMap {
       multi_select?: boolean;
     } & Record<string, JsonValue>)[];
   } & Record<string, JsonValue>;
-  /** Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell: no state (cwd, variables, functions) persists between calls — pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. Current harness environment facts are exposed through managed `$DSH_*` variables; inspect them when needed. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a bug in the command; do not retry another way. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`. Attempting a command the sandbox may deny is safe and expected: run it and read the marker rather than assuming the denial. When a command is denied and a wider mode would let it succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) plus a one-sentence `justification`. Do not detour through chat to ask permission first — the approval prompt raised by that retry is how the user consents. If the session states approval prompts are disabled, there is no exception: a denial is final — do not set `sandbox_permissions`. Never escalate speculatively: ground the request in a real denial — normally the one this command just hit; escalating up front is fine only when this session already denied the same access. A rejected escalation is final for that command — stop and explain, never work around it — but it does not forbid attempting or escalating other commands later. */
+  /** Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell: no state (cwd, variables, functions) persists between calls — pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. Current harness environment facts are exposed through managed `$DSH_*` variables; inspect them when needed. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a bug in the command; do not retry another way. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`. A foreground command that reaches its timeout is not killed: it moves to the background the same way, returning its job id and the output so far. Attempting a command the sandbox may deny is safe and expected: run it and read the marker rather than assuming the denial. When a command is denied and a wider mode would let it succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) plus a one-sentence `justification`. Do not detour through chat to ask permission first — the approval prompt raised by that retry is how the user consents. If the session states approval prompts are disabled, there is no exception: a denial is final — do not set `sandbox_permissions`. Never escalate speculatively: ground the request in a real denial — normally the one this command just hit; escalating up front is fine only when this session already denied the same access. A rejected escalation is final for that command — stop and explain, never work around it — but it does not forbid attempting or escalating other commands later. */
   bash: {
     /** The bash command to execute. */
     command: string;
     /** Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: "ls" → "List files in current directory"; "git status" → "Show working tree status"; "npm install" → "Install package dependencies". */
     description: string;
-    /** Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry. */
+    /** Timeout in milliseconds. The executor applies its configured default and cap; on expiry the command moves to the background as a job instead of being killed. */
     timeoutMs?: number;
     /** Working directory for this command. Defaults to the session workspace; a relative path is resolved against it. */
     workdir?: string;
@@ -84,7 +84,7 @@ interface ToolArgsMap {
     run_in_background?: boolean;
     /** The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval. */
     sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. */
+    /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. Use the language of the user’s current request. */
     justification?: string;
   } & Record<string, JsonValue>;
   /** Create one persisted same-session completion goal when the current direct human request is a long-running objective that should continue across autonomous goal rounds. You may infer that intent without requiring the user to say "create a goal". Do not use this for trivial single-turn work. Execution rejects non-human and subagent authority. */
@@ -106,7 +106,7 @@ interface ToolArgsMap {
     replace_all?: boolean;
     /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
     sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
+    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request. */
     justification?: string;
   } & Record<string, JsonValue>;
   /** Use only in plan mode. Present your plan for the user's review and, on approval, leave plan mode. Send the COMPLETE plan as markdown, starting with a # heading that names it. The user may approve (carry out the plan from your next step) or keep planning — their feedback comes back in the tool result; revise and present again. */
@@ -183,6 +183,93 @@ interface ToolArgsMap {
     /** Path to the image file, resolved by the filesystem backend. */
     file_path: string;
   } & Record<string, JsonValue>;
+  /** Create one reminder in the current session. Supply a non-empty prompt, a title, and exactly one selector: a positive safe-integer after_seconds delay, at as a strict offset date-time or local date/time object, safe-integer every_seconds of at least 60, daily as {time: "23:00:00", time_zone: "Asia/Shanghai"}, weekly as {time: "09:00:00", time_zone: "Asia/Shanghai", weekdays: [1, 3]} with Monday 1 through Sunday 7, or cron as {expression: "*\/15 9-17 * * 1-5", time_zone: "Asia/Shanghai"} with the five fields minute hour day-of-month month day-of-week. Every creation requires a title of at most 120 characters, non-empty after trimming; it names the task on its card, its detail heading, and in the task lists. Daily, weekly, and cron reminders retain that local time and zone; missing wall-clock times skip the date and repeated times use only the earlier instant. A cron day-of-month and day-of-week pair matches when either field matches once both are restricted. Fixed-rate targets stay creation-aligned until an interval edit establishes a new anchor. All four recurring kinds batch one latest occurrence per overdue rule. The Host restores this session when a reminder is due. After downtime, each recurring reminder delivers its latest missed occurrence once. Delivery can repeat after a crash. */
+  schedule_create: {
+    /** Reminder content to present when the target becomes due. */
+    prompt: string;
+    /** Required task name of at most 120 characters, non-empty after trimming; it becomes the task card title, the detail heading, and the name in the task lists. */
+    title: string;
+    /** Positive safe-integer delay in seconds. */
+    after_seconds?: number;
+    /** Fixed-rate safe-integer interval in seconds, at least 60. */
+    every_seconds?: number;
+    /** Daily local wall-clock time in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once. */
+    daily?: {
+      /** HH:mm:ss with optional 1-3 fractional digits, for example 23:00:00. */
+      time: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+    };
+    /** Weekly local wall-clock time on explicit ISO weekdays in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once per date. */
+    weekly?: {
+      /** HH:mm:ss with optional 1-3 fractional digits, for example 09:00:00. */
+      time: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+      /** Non-empty ISO weekdays, Monday 1 through Sunday 7, without repetitions. */
+      weekdays: number[];
+    };
+    /** Five-field Vixie cron expression evaluated in an explicit IANA zone; skips nonexistent local times and uses the earlier repeated time once per date. */
+    cron?: {
+      /** minute hour day-of-month month day-of-week, for example "*\/15 9-17 * * 1-5". */
+      expression: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+    };
+    /** Absolute target as strict offset RFC 3339 or local date/time with an explicit IANA zone. */
+    at?: string | {
+      date: string;
+      time: string;
+      time_zone: string;
+    };
+  } & Record<string, JsonValue>;
+  /** Delete one retained reminder in the current session by its exact id, whether active or inactive. Unknown or already-deleted ids return deleted false. Deletion does not retract a queued message. */
+  schedule_delete: {
+    /** Exact schedule id. */
+    id: string;
+  } & Record<string, JsonValue>;
+  /** List every active reminder in the current session, including its exact id, title, UTC target, scheduled or overdue state, and host delivery mode. The returned order is not significant. */
+  schedule_list: Record<string, JsonValue>;
+  /** Change one reminder in the current session in place, keeping its id and its saved delivery records: address it by the exact id schedule_list returned, then supply a new title or prompt, or exactly one new selector from at, every_seconds, daily, weekly, or cron in the same forms schedule_create accepts. An omitted field keeps its stored value. After is not updatable: create a new reminder for a relative delay. The Host compares the record it finds for that id with the stored one, so a concurrent edit returns schedule_conflict instead of overwriting it; an inactive or unknown reminder returns updated false. Editing an every_seconds interval anchors the new fixed rate at the accepted save time; a name or instruction change alone keeps the committed target. */
+  schedule_update: {
+    /** Exact schedule id that schedule_list returned for one reminder. */
+    id: string;
+    /** New task name of at most 120 characters, non-empty after trimming; omitted keeps the stored name. */
+    title?: string;
+    /** New reminder content, non-empty after trimming; omitted keeps the stored instruction. */
+    prompt?: string;
+    /** Fixed-rate safe-integer interval in seconds, at least 60. */
+    every_seconds?: number;
+    /** Daily local wall-clock time in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once. */
+    daily?: {
+      /** HH:mm:ss with optional 1-3 fractional digits, for example 23:00:00. */
+      time: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+    };
+    /** Weekly local wall-clock time on explicit ISO weekdays in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once per date. */
+    weekly?: {
+      /** HH:mm:ss with optional 1-3 fractional digits, for example 09:00:00. */
+      time: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+      /** Non-empty ISO weekdays, Monday 1 through Sunday 7, without repetitions. */
+      weekdays: number[];
+    };
+    /** Five-field Vixie cron expression evaluated in an explicit IANA zone; skips nonexistent local times and uses the earlier repeated time once per date. */
+    cron?: {
+      /** minute hour day-of-month month day-of-week, for example "*\/15 9-17 * * 1-5". */
+      expression: string;
+      /** UTC or IANA Area/Location, for example Asia/Shanghai. */
+      time_zone: string;
+    };
+    /** Absolute target as strict offset RFC 3339 or local date/time with an explicit IANA zone. */
+    at?: string | {
+      date: string;
+      time: string;
+      time_zone: string;
+    };
+  } & Record<string, JsonValue>;
   /** Send a message to a direct continuable child by its agent id. If you are a resident continuable child, you may also target your direct parent. If the target is still working, the message steers its nearest step; if it is inactive, the message starts or resumes a turn. This call returns no answer from the agent — only confirmation that the message was delivered. A failure means the message was NOT delivered. */
   send_message: {
     /** The agent id of your direct continuable child, or your direct parent when you are a resident continuable child. */
@@ -256,7 +343,7 @@ interface ToolArgsMap {
     content: string;
     /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
     sandbox_permissions?: "workspace-write" | "danger-full-access";
-    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
+    /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request. */
     justification?: string;
   } & Record<string, JsonValue>;
 }
@@ -273,11 +360,17 @@ interface ToolOutputMap {
     kind: "background";
     jobId: string;
   } | {
+    kind: "promoted";
+    jobId: string;
+    timeoutMs: number;
+    output: string;
+  } | {
     kind: "foreground";
     exitCode: number | null;
     signal: string | null;
     timedOut: boolean;
     aborted: boolean;
+    stopped?: string;
     timeoutMs: number;
     stdout: {
       text: string;
@@ -430,6 +523,288 @@ interface ToolOutputMap {
       };
     };
   };
+  schedule_create: {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "after";
+    afterSeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "at";
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "every";
+    everySeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "daily";
+    time: string;
+    timeZone: string;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "weekly";
+    time: string;
+    timeZone: string;
+    weekdays: number[];
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "cron";
+    expression: string;
+    timeZone: string;
+  } | {
+    code: "invalid_prompt";
+    message: string;
+  } | {
+    code: "invalid_selector";
+    message: string;
+  } | {
+    code: "invalid_rule";
+    message: string;
+  } | {
+    code: "invalid_time_zone";
+    message: string;
+  } | {
+    code: "not_future";
+    message: string;
+  } | {
+    code: "time_out_of_range";
+    message: string;
+  } | {
+    code: "frequency_too_high";
+    message: string;
+  } | {
+    code: "internal_error";
+    message: string;
+  };
+  schedule_delete: {
+    id: string;
+    deleted: true;
+  } | {
+    id: string;
+    deleted: false;
+    code: "schedule_not_found";
+  } | {
+    code: "invalid_prompt";
+    message: string;
+  } | {
+    code: "invalid_selector";
+    message: string;
+  } | {
+    code: "invalid_rule";
+    message: string;
+  } | {
+    code: "invalid_time_zone";
+    message: string;
+  } | {
+    code: "not_future";
+    message: string;
+  } | {
+    code: "time_out_of_range";
+    message: string;
+  } | {
+    code: "frequency_too_high";
+    message: string;
+  } | {
+    code: "internal_error";
+    message: string;
+  };
+  schedule_list: ({
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "after";
+    afterSeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "at";
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "every";
+    everySeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "daily";
+    time: string;
+    timeZone: string;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "weekly";
+    time: string;
+    timeZone: string;
+    weekdays: number[];
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "cron";
+    expression: string;
+    timeZone: string;
+  })[] | {
+    code: "invalid_prompt";
+    message: string;
+  } | {
+    code: "invalid_selector";
+    message: string;
+  } | {
+    code: "invalid_rule";
+    message: string;
+  } | {
+    code: "invalid_time_zone";
+    message: string;
+  } | {
+    code: "not_future";
+    message: string;
+  } | {
+    code: "time_out_of_range";
+    message: string;
+  } | {
+    code: "frequency_too_high";
+    message: string;
+  } | {
+    code: "internal_error";
+    message: string;
+  };
+  schedule_update: {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "after";
+    afterSeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "at";
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "every";
+    everySeconds: number;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "daily";
+    time: string;
+    timeZone: string;
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "weekly";
+    time: string;
+    timeZone: string;
+    weekdays: number[];
+  } | {
+    id: string;
+    title: string;
+    prompt: string;
+    scheduledAt: string;
+    state: "scheduled" | "overdue";
+    deliveryMode: "host";
+    kind: "cron";
+    expression: string;
+    timeZone: string;
+  } | {
+    id: string;
+    updated: false;
+    code: "schedule_not_found" | "schedule_ended" | "schedule_conflict";
+  } | {
+    code: "invalid_prompt";
+    message: string;
+  } | {
+    code: "invalid_selector";
+    message: string;
+  } | {
+    code: "invalid_rule";
+    message: string;
+  } | {
+    code: "invalid_time_zone";
+    message: string;
+  } | {
+    code: "not_future";
+    message: string;
+  } | {
+    code: "time_out_of_range";
+    message: string;
+  } | {
+    code: "frequency_too_high";
+    message: string;
+  } | {
+    code: "internal_error";
+    message: string;
+  };
   send_message: {
     messageId: string;
   };
@@ -540,7 +915,7 @@ declare const tools: {
 }
 ```
 
-Prefer showing the primary results within your final response alongside a brief explanation. Markdown file links such as [Report](path/to/report.html) open the file in the sidebar preview. For images, you can add an inline preview such as ![Preview](/absolute/path/image.png); include a file link as well so the image remains accessible in clients that cannot display it inline. Do not call present just to list edited source files, or run commands to check whether a diff view will appear. Use present when a separate file card helps the user open the complete deliverable, especially Office documents, spreadsheets, and slide decks. Each presented file adds a card below the reply, with preview and native-open actions. Usually select the 1-2 most important deliverables; include more when needed, but at most 4 files in a single present call. Avoid repeating results already shown inline unless the separate card adds useful access. Outside commands, configuration expressions, and code blocks, link every mention of an existing file, including repeats and tables, to its full path relative to the working directory or absolute; append #L24 or #L24-L30 to the target for known lines. Use the filename or a clear alias as the label, adding only enough parent directories to distinguish files; keep full paths out of labels. Default to the name alone; when precise locations matter, append :24 or :24–30, with no # or L in the line suffix.
+Prefer showing the primary results within your final response alongside a brief explanation. Use ![Description](<path/to/image.png>) when an image supports an explanation or comparison. Use [Description](<path/to/image.png>) when referring to an image or listing files. Enclose Markdown file destinations in angle brackets, especially paths containing spaces. Do not call present just to list edited source files, or run commands to check whether a diff view will appear. Use present when a separate file card helps the user open the complete deliverable, including images, Office documents, spreadsheets, and slide decks. Each presented file adds a card below the reply, with preview and native-open actions. Usually select the 1-2 most important deliverables; include more when needed, but at most 4 files in a single present call. Avoid repeating results already shown inline unless the separate card adds useful access. Outside commands, configuration expressions, and code blocks, link every mention of an existing file, including repeats and tables, to its full path relative to the working directory or absolute; append #L24 or #L24-L30 to the target for known lines. Use the filename or a clear alias as the label, adding only enough parent directories to distinguish files; keep full paths out of labels. Default to the name alone; when precise locations matter, append :24 or :24–30, with no # or L in the line suffix.
 
 The DeepSeek Harness implementation checkout is at {{sourceRoot}}. The checkout location and current working directory are separate values and may differ; never infer the working directory from this path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend DSH itself.
 

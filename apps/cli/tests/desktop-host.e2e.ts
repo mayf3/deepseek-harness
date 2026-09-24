@@ -36,7 +36,7 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
       process.send({ type: 'booting', packageManager: options.packageManager });
       return new Promise((resolve, reject) => process.once('disconnect', () => {
         if (${String(fail)}) { reject(new Error('fixture boot failure')); return; }
-        resolve({ ctx: { plugin: async () => {}, effect: () => {}, on: () => {},
+        resolve({ ctx: { plugin: async () => {}, effect: () => {}, on: () => {}, inject: () => {},
           connection: { authenticatedUrl: value => value }, webServer: { port: 19387 } },
           shutdown: { shutdown: async () => writeFileSync(${JSON.stringify(join(root, 'stopped'))}, 'stopped') } });
       }));
@@ -69,8 +69,10 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
     expect(boot.packageManager.env.ELECTRON_RUN_AS_NODE).toBe('1')
     expect(boot.packageManager.env.PATH).toBe(`${nodeBin}${delimiter}${process.env.PATH ?? ''}`)
     child.disconnect()
-    expect(await exited).toBe(fail ? 1 : 0)
+    const exitCode = await exited
     await drained
+    expect(child.signalCode).toBeNull()
+    expect(exitCode, stderr).toBe(fail ? 1 : 0)
     expect(stderr).not.toContain('ERR_IPC_CHANNEL_CLOSED')
     expect(stderr).not.toContain('Unhandled')
     if (fail) expect(stderr).toContain('fixture boot failure')

@@ -21,7 +21,6 @@ function titleSources() {
     byId: { [sessionId]: { id: sessionId, displayTitle: 'Test', running: false, retainedBy: { mainView: 1 }, blank: false, updatedAt: 1 } },
     phase: 'ready',
     projectionsBySession: {},
-    jobsBySession: {},
   })
   const panelInfo = createSnapshotStore<PanelInfo>({ activePanelId: null })
   return {

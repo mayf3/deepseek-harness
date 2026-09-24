@@ -137,7 +137,7 @@ function answeredSummary(text: string, t: AskQuestionRowProps['t']): string | nu
 type AskQuestionRowProps = ToolCallViewProps & PropsLocale<'conversation'>
 
 /** Summarizes a pending, answered, cancelled, or interrupted question set. */
-export function AskQuestionRow({ toolName, block, inspect, t }: AskQuestionRowProps) {
+export function AskQuestionRow({ toolName, block, inspect, useDisclosure, t }: AskQuestionRowProps) {
   const model = toolRowModel(toolName, block)
   // Composer verdicts settle the call as specific UserQuestionErrors
   // (ask_user_question handler): 'ASK_CANCELLED' is the user's own
@@ -146,7 +146,7 @@ export function AskQuestionRow({ toolName, block, inspect, t }: AskQuestionRowPr
   // failed shape, and the abort keeps the shared stopped (amber) semantics of
   // any other interrupted tool call.
   const code = 'kind' in block ? block.error?.code : undefined
-  const argsRaw = ('kind' in block ? block.call?.argsRaw : block.argsRaw) ?? ''
+  const argsRaw = model.bodyRaw ?? ''
   let summary = model.summary
   let state = model.state
   let transcript: AskQuestionCardModel | null = null
@@ -180,11 +180,12 @@ export function AskQuestionRow({ toolName, block, inspect, t }: AskQuestionRowPr
   }
   return (
     <ToolRow
+      useDisclosure={useDisclosure}
       t={t}
       variant={model.variant}
       toolName={toolName}
       icon={<IconQuestionOutlineRegular />}
-      title={t('ask.rowTitle')}
+      title={t(model.titleKey)}
       summary={summary}
       bodyRaw={transcript === null ? model.bodyRaw : null}
       output={transcript === null ? model.output : null}

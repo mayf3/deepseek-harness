@@ -1,9 +1,9 @@
 /** bundleRoster: the real web profile read from its bundles, and every reader decision on a scratch installation. */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getStaticModules } from '@deepseek-ai/dsh-client-web/src/seed.ts'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, onTestFinished } from 'vitest'
 import { MODULES_PACKAGE } from '../src/assembly/modules.ts'
 import { WEB_PROFILE_BUNDLES, bundleRoster, webApp } from '../src/assembly/bundle-roster.ts'
 
@@ -35,7 +35,7 @@ describe('webApp (the real web profile)', () => {
     const names = webApp.rows.map(row => row.name)
     expect(names).toContain('@deepseek-ai/dsh-client-ui-settings-general')
     expect(names).not.toContain('@deepseek-ai/dsh-llm') // Host only
-    expect(names).not.toContain('@deepseek-ai/dsh-client-ui-schedule') // inserted disabled
+    expect(names).toContain('@deepseek-ai/dsh-client-ui-schedule')
     expect(names).not.toContain('@deepseek-ai/dsh-web-app') // Host runtime glue, its `/startup` row is a subpath
   })
 })
@@ -73,6 +73,21 @@ class Scratch {
 describe('bundleRoster on a scratch installation', () => {
   const scratch = new Scratch()
   afterAll(() => { rmSync(scratch.root, { recursive: true, force: true }) })
+
+  it('resolves a linked bundle dependency before an unrelated ancestor package', () => {
+    const linked = new Scratch()
+    onTestFinished(() => { rmSync(linked.root, { recursive: true, force: true }) })
+    const bundle = join(linked.root, 'workspace', 'bundle')
+    const dependency = join(bundle, 'node_modules', '@t', 'theme')
+    mkdirSync(dependency, { recursive: true })
+    writeFileSync(join(bundle, 'package.json'), JSON.stringify({ name: '@t/linked', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+    writeFileSync(join(bundle, 'cordis.patch.yml'), "- insert:\n    - id: theme\n      name: '@t/theme'\n")
+    writeFileSync(join(dependency, 'package.json'), JSON.stringify({ name: '@t/theme', dsh: { client: { platform: 'web' } } }))
+    linked.pkg('@t/theme', {})
+    symlinkSync(bundle, join(linked.root, 'app', 'node_modules', '@t', 'linked'), 'junction')
+    linked.bundle('@t/base', '- insert: []\n')
+    expect(linked.roster(['@t/base', '@t/linked'])).toEqual(['@t/theme'])
+  })
 
   it('applies the layers in order and keeps enabled browser rows once, with their dsh.client declaration', () => {
     scratch.web('@t/a', { inject: ['@t/b'], immediately: true })
@@ -289,4 +304,17 @@ describe('bundleRoster on a scratch installation', () => {
 `)
     expect(() => scratch.roster(['@t/misnamed'])).toThrow('names "@t/real", expected @t/alias')
   })
+})
+
+
+it('exhausts uneven linked-bundle search paths before reporting a missing plugin', () => {
+  const scratch = new Scratch()
+  onTestFinished(() => { rmSync(scratch.root, { recursive: true, force: true }) })
+  const bundle = join(scratch.root, 'workspace', 'nested', 'deeper', 'bundle')
+  mkdirSync(bundle, { recursive: true })
+  writeFileSync(join(bundle, 'package.json'), JSON.stringify({ name: '@t/deep', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+  writeFileSync(join(bundle, 'cordis.patch.yml'), "- insert:\n    - id: missing\n      name: '@t/absent'\n")
+  scratch.bundle('@t/base', '- insert: []\n')
+  symlinkSync(bundle, join(scratch.root, 'app', 'node_modules', '@t', 'deep'), 'junction')
+  expect(() => scratch.roster(['@t/base', '@t/deep'])).toThrow('cannot resolve plugin package @t/absent')
 })

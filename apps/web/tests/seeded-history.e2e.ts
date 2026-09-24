@@ -63,6 +63,18 @@ const SEED_ID = 'seeded-history-web-e2e'
 
 const PROMPT = 'Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop.'
 
+/** Trajectory visibility confirms Client receipt; Host persistence alone does not. */
+async function waitForContextInClient(page: Page, seq: number): Promise<void> {
+  await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+  try {
+    await page.locator(`[data-trajectory-scroll] tr[data-trajectory-row-key="context%00seq%00${seq}"]`)
+      .waitFor({ state: 'visible', timeout: 10_000 })
+  } finally {
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click()
+  }
+  await page.locator('[data-conversation-scroll]').waitFor({ state: 'visible' })
+}
+
 /**
  * Append a complete manual `/compact` lifecycle and valid compaction transaction
  * over the recorded turn's own surface. The recording stays model-authentic and
@@ -215,6 +227,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   let seededThroughSeq = -1
+  let openingWindow: unknown
 
   beforeAll(async () => {
     // The POSIX terminal fixture stays off Windows; the pinned desktop applies
@@ -228,6 +241,13 @@ describe('web e2e: seeded history renders through cold resume', () => {
       ],
       openInAppEnvironment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { SSH_CONNECTION: '10.0.0.2 55000 10.0.0.9 22' } }]),
     })
+    // Application registrations belong to the host desktop, not to the recorded Session.
+    const controller = scaffold.ctx.get('sessionController')
+    if (controller === undefined) throw new Error('seeded-history requires Session Controller')
+    const nativeQuery: unknown = Reflect.get(controller, 'fileApplications')
+    if (typeof nativeQuery !== 'function') throw new Error('seeded-history requires the native file-association adapter')
+    Reflect.set(controller, 'fileApplications', async () => [])
+    scaffold.ctx.effect(() => () => { Reflect.set(controller, 'fileApplications', nativeQuery) }, 'seeded-history: native association fixture')
     // Composer recording uses a child workspace; seedSession owns the scaffold root.
     const sessionCwd = MODE === 'record' ? join(scaffold.workspaceCwd, 'workspace') : scaffold.workspaceCwd
     await mkdir(sessionCwd, { recursive: true })
@@ -247,6 +267,27 @@ describe('web e2e: seeded history renders through cold resume', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
+    if (MODE !== 'record') {
+      // A one-message tail makes this short recording exercise the real Load earlier path.
+      let pagedOpening = false
+      await page.routeWebSocket('**/api/remote.mux', (socket) => {
+        const server = socket.connectToServer()
+        socket.onMessage((message) => {
+          const frame = JSON.parse(String(message)) as {
+            type: string
+            endpoint?: string
+            payload: { args: { request: { maxMessages: number; turnWindow?: { minMessages: number; minTurns: number } } } }
+          }
+          if (!pagedOpening && frame.type === 'open' && frame.endpoint === 'session/follow') {
+            pagedOpening = true
+            openingWindow = { ...frame.payload.args.request }
+            frame.payload.args.request.maxMessages = 1
+            delete frame.payload.args.request.turnWindow
+            server.send(JSON.stringify(frame))
+          } else server.send(message)
+        })
+      })
+    }
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
@@ -288,11 +329,9 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // The seed carries a session/title event: the title unit is host-plane, so
     // it folds the detached log and serves the value with nothing composed.
     expect(typeof projections.values.title).toBe('string')
-    // `todos` is absent because its unit belongs to the agent preset and this
-    // directly seeded session never composed that preset. History computes
-    // the baseline through the standard projection registry without mounting
-    // an Agent composition as a read side effect.
-    expect(projections.values).not.toHaveProperty('todos')
+    // Eager preset activation registers the todo projection before any Agent
+    // opens this log. A log without todo events projects its empty value.
+    expect(projections.values.todos).toBeNull()
     // The session-stats unit is a shipped web-app bundle row: whole-log
     // turn/step counts ride the same tail block (the stats strip's source).
     const sessionStats = projections.values.sessionStats as { turns: number; steps: number } | undefined
@@ -313,6 +352,16 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await sessionRow.click()
     // Settled barrier for history: the recorded final assistant text renders.
     await expect.poll(() => page.getByText('DONE', { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    expect(openingWindow).toMatchObject({ maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 } })
+    expect(await page.getByText(PROMPT, { exact: true }).count()).toBe(0)
+    const [paging] = await Promise.all([
+      page.waitForRequest('**/api/session/page'),
+      page.getByRole('button', { name: 'Load earlier', exact: true }).click(),
+    ])
+    expect(paging.postDataJSON()).toMatchObject({
+      payload: { args: { request: { maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 } } } },
+    })
+    await expect.poll(() => page.getByText(PROMPT, { exact: true }).count(), { timeout: 10_000 }).toBe(1)
     await expect.poll(() => page.getByText('compact', { exact: true }).count(), { timeout: 10_000 }).toBe(1)
     await expect.poll(() => page.getByText(/^Compacted \d+ history items \(~\d+ tokens\)$/).count(), {
       timeout: 10_000,
@@ -341,7 +390,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     ).toBe(true)
     const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
     if (agent === undefined) throw new Error('seeded session did not attach an agent')
-    agent.session.append('user/message', createUserMessage({
+    const injected = agent.session.append('user/message', createUserMessage({
       content: [{
         type: 'text',
         text: '<system-reminder>\n'
@@ -362,10 +411,10 @@ describe('web e2e: seeded history renders through cold resume', () => {
         }],
       },
     }), { surfaceOp: 'append' })
-    // The header names the producer the durable source records, so the
-    // reconciled instruction file is readable without expanding the row.
-    await page.getByRole('button', { name: 'Context injection AGENTS.md', exact: true })
-      .waitFor({ timeout: 10_000 })
+    await scaffold.ctx.sessions.flush(agent.session)
+    expect(agent.session.snapshotEvents()).toContainEqual(injected)
+    await waitForContextInClient(page, injected.seq)
+    expect(await page.locator('[data-chat-flow-kind="context"]').count()).toBe(0)
   }, 60_000)
 
   it.skipIf(MODE === 'record')('matches the historical conversation aria golden', async () => {
@@ -392,6 +441,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     const wasExpanded = await turnProcess.getAttribute('aria-expanded') === 'true'
     if (!wasExpanded) await turnProcess.click()
     const thinking = page.locator('[data-variant="think"]').first()
+    await expandOwningTurnProcess(page, thinking)
     const toggle = thinking.getByRole('button').first()
     const secondarySize = await thinking.locator('[class*="summaryText"]').evaluate(element => getComputedStyle(element).fontSize)
     await toggle.click()
@@ -420,60 +470,15 @@ describe('web e2e: seeded history renders through cold resume', () => {
     }
   })
 
-  it.skipIf(MODE === 'record')('matches the Figma context disclosure geometry', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-context-injection'))
-    const disclosure = page.getByRole('button', { name: 'Context injection AGENTS.md', exact: true })
-    expect(await disclosure.getAttribute('aria-expanded')).toBe('false')
-    const collapsedIcon = disclosure.locator('svg').first()
-    const collapsedIconBox = await collapsedIcon.boundingBox()
-    expect(collapsedIconBox?.width).toBe(14)
-    expect(collapsedIconBox?.height).toBe(14)
-
-    await disclosure.click()
-    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('true')
-    const body = page.locator('[data-context-injection-body]')
-    await body.waitFor({ timeout: 5_000 })
-    // The instructions form names the file it reconciled above the text, and
-    // the text keeps the framing the model read rather than a cleaned excerpt.
-    expect(await body.locator('[data-context-files] li').allInnerTexts()).toEqual(['AGENTS.md\nloaded'])
-    expect(await body.locator('[data-context-text]').innerText()).toContain('<system-reminder>')
-    const headerBox = await disclosure.boundingBox()
-    const bodyBox = await body.boundingBox()
-    if (headerBox === null || bodyBox === null) throw new Error('context disclosure geometry is not measurable')
-    expect(headerBox.height).toBe(24)
-    expect(bodyBox.x - headerBox.x).toBe(22)
-    expect(bodyBox.y - headerBox.y - headerBox.height).toBe(4)
-    expect(bodyBox.height).toBe(141)
-
-    const style = await body.evaluate((element) => {
-      const computed = getComputedStyle(element)
-      return {
-        backgroundColor: computed.backgroundColor,
-        borderRadius: computed.borderRadius,
-        color: computed.color,
-        fontSize: computed.fontSize,
-        lineHeight: computed.lineHeight,
-        padding: [
-          computed.paddingTop,
-          computed.paddingRight,
-          computed.paddingBottom,
-          computed.paddingLeft,
-        ],
-        scrolls: element.scrollHeight > element.clientHeight,
-      }
-    })
-    expect(style).toEqual({
-      backgroundColor: 'rgb(249, 250, 251)',
-      borderRadius: '8px',
-      color: 'rgb(129, 133, 140)',
-      fontSize: '11px',
-      lineHeight: '16px',
-      padding: ['10px', '16px', '12px', '12px'],
-      scrolls: true,
-    })
-
-    await disclosure.click()
-    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
+  it.skipIf(MODE === 'record')('omits ordinary instructions from Chat while retaining their logged content', async () => {
+    const session = scaffold.ctx.sessions.get(SessionId(SEED_ID))
+    if (session === undefined) throw new Error('seeded session is unavailable')
+    const instructions = session.snapshotEvents().filter(event => event.type === 'user/message'
+      && event.data.source.kind === 'agent-instructions')
+    expect(instructions).toHaveLength(1)
+    expect(instructions[0]?.data).toMatchObject({ source: { form: 'instructions', changes: [{ path: 'AGENTS.md' }] } })
+    expect(JSON.stringify(instructions[0]?.data)).toContain('Instruction 24: preserve the logged context contract.')
+    expect(await page.locator('[data-chat-flow-kind="context"], [data-context-injection-body]').count()).toBe(0)
   })
 
   it.skipIf(MODE === 'record')('restores the active turn rail mark across Chat and Trajectory', async () => {
@@ -518,7 +523,8 @@ describe('web e2e: seeded history renders through cold resume', () => {
       await expect.poll(() => path.textContent()).toBe(absolutePath)
       expect(await path.getAttribute('title')).toBe(absolutePath)
       await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
-      await column.locator('[data-open-path-open]').waitFor({ timeout: 5_000 })
+      await column.getByRole('button', { name: 'Show file location', exact: true }).waitFor({ timeout: 5_000 })
+      await expect.poll(() => column.locator('[data-open-path-open]').isEnabled()).toBe(true)
       const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(FILE_PREVIEW_EXPECTED, preview, MODE)
     } finally {
@@ -721,24 +727,21 @@ describe('web e2e: seeded history renders through cold resume', () => {
     if (bodyError !== undefined) throw bodyError
   })
 
-  it.skipIf(MODE === 'record')('an Access-chip switch lands one command row: bare name, non-repeating settlement text', async () => {
+  it.skipIf(MODE === 'record')('an Access-chip switch persists its command without adding a Chat row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-command-row'))
-    // The Access chip submits `/permission <preset>` — a host command with no
-    // model call, so the settled row renders keylessly over this cold history.
-    // The row copy is the assertion: `permission · preset read-only`,
-    // where neither half repeats the other (the dispatched `/` and its
-    // argument stay out of the title, and the settlement text never restates
-    // the command's own name).
     await page.getByRole('button', { name: 'Access mode, current: Workspace Write' }).click()
     await page.getByRole('menuitem', { name: 'Read Only' }).click()
     const access = page.getByRole('button', { name: 'Access mode, current: Read Only' })
     await expect.poll(() => access.isEnabled(), { timeout: 10_000 }).toBe(true)
-    // Scoped to the row itself, so unrelated page text that happens to read
-    // `permission` (a future resident slash menu) cannot satisfy or break it.
     const row = page.locator('[data-variant="others"]').filter({ hasText: 'preset read-only' })
-    await expect.poll(() => row.count(), { timeout: 10_000 }).toBe(1)
-    expect(await row.getByText('permission', { exact: true }).count()).toBe(1)
-    expect(await row.getByText('/permission read-only', { exact: true }).count()).toBe(0)
+    expect(await row.count()).toBe(0)
+    const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
+    if (agent === undefined) throw new Error('seeded session did not attach an agent')
+    const events = agent.session.snapshotEvents()
+    const run = events.findLast(event => event.type === 'command/run' && event.data.name === 'permission')
+    if (run?.type !== 'command/run') throw new Error('permission command was not persisted')
+    expect(events.find(event => event.type === 'command/done' && event.data.commandId === run.data.commandId)?.data)
+      .toMatchObject({ kind: 'success', text: 'preset read-only' })
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(COMMAND_ROW_EXPECTED, snapshot, MODE)
@@ -785,26 +788,19 @@ describe('web e2e: seeded history renders through cold resume', () => {
     }
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('fits short logged context without a scrollport', async () => {
+  it.skipIf(MODE === 'record')('keeps short injected context out of Chat without dropping the event', async () => {
     const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
     if (agent === undefined) throw new Error('seeded session did not attach an agent')
-    agent.session.append('user/message', createUserMessage({
+    const injected = agent.session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'Short injected context.' }],
       source: { kind: 'fixture' },
     }), { surfaceOp: 'append' })
 
-    const disclosure = page.getByRole('button', { name: 'Context injection fixture', exact: true })
-    await disclosure.waitFor({ timeout: 10_000 })
-    await disclosure.click()
-    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('true')
-
-    // The instructions row above stays expanded from the geometry case; the
-    // opaque body is the one without a declared form.
-    const body = page.locator('[data-context-injection-body]:not([data-context-form])')
-    const bodyBox = await body.boundingBox()
-    if (bodyBox === null) throw new Error('short context disclosure geometry is not measurable')
-    expect(bodyBox.height).toBeLessThan(141)
-    expect(await body.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(false)
+    await scaffold.ctx.sessions.flush(agent.session)
+    expect(agent.session.snapshotEvents()).toContainEqual(injected)
+    await waitForContextInClient(page, injected.seq)
+    expect(await page.locator('[data-chat-flow-kind="context"]').count()).toBe(0)
+    expect(await page.getByText('Short injected context.', { exact: true }).count()).toBe(0)
   })
 
   it.skipIf(MODE === 'record')('restores the recorded file preview in its original tab after page reload', async () => {

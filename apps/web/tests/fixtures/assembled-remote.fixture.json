@@ -181,9 +181,7 @@
           "trust": "user",
           "isDefault": false
         }
-      ],
-      "authorable": true,
-      "modeSelectionEnabled": true
+      ]
     }
   },
   "commands": {
@@ -261,11 +259,6 @@
     "type": "baseline",
     "value": {
       "queues": {
-        "fx-alpha": [],
-        "fx-beta": [],
-        "fx-gamma": []
-      },
-      "jobs": {
         "fx-alpha": [],
         "fx-beta": [],
         "fx-gamma": []

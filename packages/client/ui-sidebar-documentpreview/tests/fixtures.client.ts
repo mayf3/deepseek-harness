@@ -21,7 +21,7 @@ import type { WorkspaceFileStat, WorkspaceFileText } from '@deepseek-ai/dsh-api-
 import type { TextPreviewProps } from '../src/client/TextPreview.tsx'
 import { textFace } from '../src/client/face.ts'
 import type { TextInjected } from '../src/client/face.ts'
-import type { ReadDocumentBytes, ReadWorkspaceFilePage, SessionFile } from '../src/client/rpc.ts'
+import type { DocumentFileBytes, ReadDocumentBytes, ReadWorkspaceFilePage, SessionFile } from '../src/client/rpc.ts'
 import { createTextStore } from '../src/client/store.ts'
 import type { TextStore } from '../src/client/store.ts'
 import type { DocumentPreviewProps } from '../src/client/document/contract.ts'
@@ -138,7 +138,7 @@ export function harness(script: Record<number, RemoteResult<WorkspaceFileText>> 
   const useResource = vi.fn<() => ResourceSnapshot<WorkspaceFileStat>>(() => current.snapshot)
   const controller = new AbortController()
   onTestFinished(() => { controller.abort() })
-  const tabActions = { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn(), replace: vi.fn() }
+  const tabActions = { bindCommands: vi.fn(() => vi.fn()), openResource: vi.fn(), openTab: vi.fn(), close: vi.fn(), replace: vi.fn() }
   const definitions = [textBodyDefinition(() => t('viewer.text'))]
   // The document seat renders the plain body; the file-handoff seats render a
   // marker carrying what the owner handed them.
@@ -188,4 +188,9 @@ export function harness(script: Record<number, RemoteResult<WorkspaceFileText>> 
     setVersion(version) { current.version = version; refresh() },
     setFailure(failure) { current.failure = failure; refresh() },
   }
+}
+
+/** Native byte result returned by the generated workspace Remote. */
+export function byteResult(data = new Uint8Array([0, 1, 255])): RemoteResult<DocumentFileBytes> {
+  return { ok: true, value: { absolutePath: '/host/notes', version: 'v1', offset: 0, eof: true, bytes: data.byteLength, data } }
 }

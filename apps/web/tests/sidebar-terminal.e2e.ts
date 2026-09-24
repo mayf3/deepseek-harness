@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-api-terminal-controller'
 import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { createProcessInspector, type ProcessIdentity } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import { compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
-import { connectFreshWorkspace, saveFailureShot } from './support.ts'
+import { openSettings, connectFreshWorkspace, saveFailureShot } from './support.ts'
 
 const expected = fileURLToPath(new URL('./expected/sidebar-terminal/running.expected.md', import.meta.url))
 const shots = fileURLToPath(new URL('../../../.artifacts/screenshots/sidebar-terminal/', import.meta.url))
@@ -47,7 +47,7 @@ async function controlTransport(page: Page) {
 }
 
 async function selectTerminalTheme(page: Page, name: string): Promise<void> {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await openSettings(page, 'en')
   const dialog = page.getByRole('dialog', { name: 'Settings' })
   const [response] = await Promise.all([
     page.waitForResponse(candidate => new URL(candidate.url()).pathname === '/api/settings/mutate' && candidate.request().method() === 'POST'),
@@ -78,6 +78,8 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     scaffold = await launchWebScaffold({ extraOverlayPath: fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url)) })
     browser = await chromium.launch()
     const context = await browser.newContext({ viewport: { width: 1680, height: 1000 }, locale: 'en-US', timezoneId: 'Asia/Shanghai' })
+    // These snapshots use the Linux Web shortcut defaults.
+    await context.addInitScript(() => { Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Linux x86_64' }) })
     page = await context.newPage()
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
@@ -473,13 +475,31 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     expect(alive(original)).toBe(false)
     transport.reconnect()
     await page.context().setOffline(false)
-    await page.reload({ waitUntil: 'load' })
-    await page.locator('[data-sidebar-right-expand]').click()
-    await expect.poll(() => page.getByRole('alert').innerText()).toContain('no longer exists')
+    const environmentReady = Promise.withResolvers<undefined>()
+    const environmentUrl = new URL('/api/terminal/environment', scaffold.baseUrl).href
+    await page.route(environmentUrl, async (route) => {
+      await environmentReady.promise
+      await route.continue()
+    })
+    const terminal = page.locator('[data-sidebar-terminal]')
+    try {
+      await page.reload({ waitUntil: 'load' })
+      await page.locator('[data-sidebar-right-expand]').click()
+      // The title starts discovery before the lazy body mounts; keep that request pending through mounting.
+      await terminal.getByRole('status').getByText('Reading terminal environment…', { exact: true }).waitFor()
+    } finally {
+      environmentReady.resolve(undefined)
+      await page.unrouteAll({ behavior: 'wait' })
+    }
+    let unavailableSnapshot = ''
+    // Mounting can refresh a failed recovered view; readiness and comparison use the same DOM sample.
+    await expect.poll(async () => {
+      unavailableSnapshot = await terminal.ariaSnapshot()
+      return unavailableSnapshot
+    }).toContain('no longer exists')
     expect(handles).toHaveLength(1)
     const unavailable = fileURLToPath(new URL('./expected/sidebar-terminal/unavailable.expected.md', import.meta.url))
-    const terminal = page.locator('[data-sidebar-terminal]')
-    await compareOrRefreshGolden(unavailable, await terminal.ariaSnapshot(), webSnapshotMode())
+    await compareOrRefreshGolden(unavailable, unavailableSnapshot, webSnapshotMode())
     await terminal.screenshot({ path: `${shots}/unavailable.png`, animations: 'disabled' })
     const tabCount = await page.locator('[data-dockkit-tab]').count()
     const create = terminal.getByRole('button', { name: 'New terminal', exact: true })
@@ -510,7 +530,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     expect(await page.getByRole('alert').count()).toBe(0)
     expect(alive(original)).toBe(true)
     const disconnected = fileURLToPath(new URL('./expected/sidebar-terminal/disconnected.expected.md', import.meta.url))
-    await compareOrRefreshGolden(disconnected, await page.getByRole('status').ariaSnapshot(), webSnapshotMode())
+    await compareOrRefreshGolden(disconnected, await page.locator('[data-sidebar-terminal]').getByRole('status').ariaSnapshot(), webSnapshotMode())
     await page.screenshot({ path: `${shots}/disconnected.png`, fullPage: true })
     await reconnect.click()
     transport.reconnect()

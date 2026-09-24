@@ -11,7 +11,8 @@ import { BlockAssembler, createAssistantMessage, createUserMessage } from '@deep
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { resolveAdapterOptions } from '../src/index.ts'
 import { DeepSeekAdapter } from '../src/adapter.ts'
-import type { Config } from '../src/config.ts'
+import type { Options as Config } from '../src/config.ts'
+import type { DeepSeekAdapterOptions } from '../src/types.ts'
 import { DeepSeekFileStore } from '../src/file-store.ts'
 
 export const prepareExtensions = async () => ({ fields: {}, accept: async () => {} })
@@ -42,9 +43,9 @@ export async function assemble(stream: AsyncIterable<StreamChunk>, model = MODEL
   const message = createAssistantMessage({ content: assembler.blocks(), source: { provider: 'deepseek-official', model, ...assembler.replayState === undefined ? {} : { replayState: assembler.replayState } } })
   return { output, message, assembler }
 }
-export function adapter(config: Config = {}) {
+export function adapter(config: Config = {}, dependencies: Partial<DeepSeekAdapterOptions> = {}) {
   const files = new DeepSeekFileStore()
-  return new DeepSeekAdapter({ options: () => resolveAdapterOptions(config), resolveApiKey: () => Promise.resolve('test-key'), resolveUserId: () => 'test-user' as AnonymousUserId, resolveAttachments: () => undefined, resolveImageAccess: () => undefined, resolveFiles: () => files, prepareExtensions })
+  return new DeepSeekAdapter({ options: () => resolveAdapterOptions(config), resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'test-key' } }), resolveUserId: () => 'test-user' as AnonymousUserId, resolveAttachments: () => undefined, resolveImageAccess: () => undefined, resolveFiles: () => files, prepareExtensions, ...dependencies })
 }
 export async function server(reply: (response: ServerResponse, count: number) => void = response => response.end(sse(textEvents))) {
   const requests: { path: string; headers: IncomingHttpHeaders; body: Record<string, unknown> }[] = []
@@ -92,7 +93,7 @@ export function sourceModuleLoader(importModule: (specifier: string) => Promise<
   return {
     version: 'v2',
     import: importModule,
-    get loadCache(): never { throw new Error('unexpected module cache access') },
+    loadCache: new Map(),
     register(): never { throw new Error('unexpected module hook registration') },
     getOrCreateModuleJob(): never { throw new Error('unexpected module job creation') },
     resolveSync(): never { throw new Error('unexpected synchronous module resolution') },

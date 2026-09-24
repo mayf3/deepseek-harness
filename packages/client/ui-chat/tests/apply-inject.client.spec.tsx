@@ -6,12 +6,13 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import {
-  SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
+  SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   apply as applyConversation, inject as injectConversation,
+  type GroupKey,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
   apply as applyChat, inject as injectChat, type ChatViewInjected,
@@ -49,15 +50,13 @@ function sessionFakeFor() {
   } satisfies SessionBehaviorOverrides
 }
 
-async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true) {
+async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true, withProcessGroups = true) {
   const runtime = await SlotTestRuntime.create()
-  const chatSettings = stubSettingsScope<ChatSettings>()
+  const chatSettings = stubConfigForm<ChatSettings>()
   if (initialSettings !== undefined) chatSettings.publish({ value: initialSettings })
-  runtime.ctx.provide('settingsScope', {
+  runtime.ctx.provide('configForms', {
     developerTools: { enabled: createSnapshotStore(true) },
-    bind: ({ namespace }: { namespace: string }) => namespace === CHAT_SETTINGS_NAMESPACE
-      ? chatSettings.scope
-      : stubSettingsScope().scope,
+    get: (id: string) => id === CHAT_SETTINGS_NAMESPACE ? chatSettings.scope : stubConfigForm().scope,
   } as never)
   const layout = { closeRightbar: vi.fn(), openRightbar: vi.fn() }
   runtime.ctx.provide('layout', layout as never)
@@ -102,7 +101,10 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true)
     'settings.general.item': { kind: 'list', scope: 'root' },
   }, (_props: { renderSlot?: unknown }) => null)
   await runtime.mount({ inject: [...injectConversation], apply: applyConversation })
+  const registerGroups = withProcessGroups ? undefined
+    : vi.spyOn(runtime.ctx.uiConversation.groups, 'register').mockImplementation(() => () => {})
   const chat = await runtime.mount({ inject: [...injectChat], apply: applyChat })
+  registerGroups?.mockRestore()
   runtime.renderRoot()
 
   const chatViewApi = (reference: SessionReference) => {
@@ -127,6 +129,38 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true)
 }
 
 describe('Chat inject API', () => {
+  it('resolves keyed Group sources across registration, activation, and removal', async () => {
+    const b = await bench(undefined, true, false)
+    try {
+      const { injected } = b.chatViewApi(b.rootReference)
+      const key = 'injected-group' as GroupKey
+      expect(injected.keyedHooks.chatGroup(key)).toBeUndefined()
+      const conversation = b.runtime.ctx.uiConversation
+      const remove = conversation.groups.register({
+        kind: 'test-group', target: 'chat',
+        create: () => null,
+        update: () => null,
+        buildGroups: () => ({
+          entries: [{ kind: 'group', key }],
+          groups: { kind: 'replace', snapshots: [{
+            key, data: { turn: 1, closed: true, summary: { counts: [], running: undefined, runningDetail: '' } }, members: [],
+          }] },
+        }),
+      })
+      await Promise.resolve()
+      conversation.binding(b.rootReference.binding).activate('chat')
+      const source = injected.keyedHooks.chatGroup(key)
+      expect(source?.getSnapshot()?.data.turn).toBe(1)
+      expect(injected.keyedHooks.chatGroup(key)).toBe(source)
+      remove()
+      await Promise.resolve()
+      expect(source?.getSnapshot()).toBeUndefined()
+      expect(injected.keyedHooks.chatGroup(key)).toBeUndefined()
+    } finally {
+      await b.runtime.dispose()
+    }
+  })
+
   it('loads older history and forks through the Session Controller', async () => {
     const b = await bench()
     const { injected } = b.chatViewApi(b.rootReference)

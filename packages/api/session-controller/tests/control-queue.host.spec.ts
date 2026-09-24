@@ -118,6 +118,23 @@ describe('Session control Inbox projection', () => {
     await iterator.next()
   })
 
+  it('projects inbox state for live and cold sessions', async () => {
+    const { ctx, control, inbox } = await harness()
+    inbox.append('next-turn', message('queued'))
+    const cold = ctx.sessions.create(SessionId('cold-session'))
+
+    const abort = new AbortController()
+    const iterator = control.control(abort.signal)[Symbol.asyncIterator]()
+    const opened = await iterator.next()
+    if (opened.done || opened.value.type !== 'baseline') throw new Error('missing baseline')
+    expect(opened.value.value.projections[cold.id]?.values.inbox).toEqual({ 'next-turn': [], 'next-step': [] })
+    expect(opened.value.value.projections['queue-session' as SessionId]?.values.inbox).toMatchObject({
+      'next-turn': [expect.objectContaining({ content: [{ type: 'text', text: 'queued' }] })],
+    })
+    abort.abort()
+    await iterator.next()
+  })
+
   it('projects the prompt rpcId from a user-rpc source and omits it elsewhere', async () => {
     const { control, inbox } = await harness()
     const identified = createUserMessage({

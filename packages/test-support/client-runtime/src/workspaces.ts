@@ -81,6 +81,17 @@ export class TestWorkspaces implements IWorkspaces {
   }
 
   /**
+   * Initialize the default Workspace through a test stub; defaults to an ineligible first use.
+   * @param signal - caller lifetime.
+   * @returns the stubbed Workspace, or undefined when initialization is ineligible.
+   */
+  async initializeDefault(signal?: AbortSignal): Promise<WorkspaceView | undefined> {
+    this.calls.push({ method: 'initializeDefault', args: [signal] })
+    const stub = this.stubs.get('initializeDefault')
+    return await (stub?.(signal) as Promise<WorkspaceView | undefined> | undefined)
+  }
+
+  /**
    * Rename a Workspace (recorded). The default echoes a minimal view.
    * @param workspaceId - target workspace.
    * @param title - new title.

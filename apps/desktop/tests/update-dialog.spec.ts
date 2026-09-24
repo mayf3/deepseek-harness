@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import type { BrowserWindow } from 'electron'
 import { DesktopUpdateDialog, UPDATE_DIALOG_IPC } from '../src/update-dialog.ts'
-import { resolveDesktopLocale } from '../src/locale.ts'
+import { DesktopUpdateOverlays } from '../src/update-overlay.ts'
+import { resolveDesktopLocale, type DesktopLocale } from '../src/locale.ts'
 
 const fixture = await vi.hoisted(async () => {
   const { EventEmitter } = await import('node:events')
@@ -23,6 +24,7 @@ const fixture = await vi.hoisted(async () => {
     constructor(readonly options: unknown) { super(); windows.push(this) }
     getContentBounds() { return { x: 10, y: 20, width: 900, height: 650 } }
     isDestroyed() { return this.destroyed }
+    isVisible() { return true }
     destroy() { this.destroyed = true; this.emit('closed') }
     setMenu() {}
   }
@@ -43,9 +45,9 @@ afterEach(() => {
   fixture.handlers.clear()
 })
 
-function setup() {
+function setup(locale: DesktopLocale | (() => DesktopLocale) = resolveDesktopLocale('zh-CN')) {
   const parent = new fixture.FakeWindow({})
-  dialogs = new DesktopUpdateDialog('preload-update-dialog.cjs', resolveDesktopLocale('zh-CN'))
+  dialogs = new DesktopUpdateDialog('preload-update-dialog.cjs', locale, new DesktopUpdateOverlays())
   const show = (signal?: AbortSignal) => dialogs!.show(parent as unknown as BrowserWindow, {
     message: '下载完成', buttons: ['安装并重启'], cancelId: 1, ...(signal === undefined ? {} : { signal }),
   })
@@ -60,7 +62,9 @@ function setup() {
 
 it('accepts only a displayed choice from its own main frame and retains cancellation outside the button list', async () => {
   const f = setup()
+  expect(dialogs!.isOpen).toBe(false)
   const pending = f.show()
+  expect(dialogs!.isOpen).toBe(true)
   const window = fixture.windows.at(-1)!
   expect(f.invoke(UPDATE_DIALOG_IPC.status)).toMatchObject({ closeLabel: '关闭', buttons: ['安装并重启'], cancelId: 1 })
   const respond = fixture.handlers.get(UPDATE_DIALOG_IPC.respond)!
@@ -69,6 +73,7 @@ it('accepts only a displayed choice from its own main frame and retains cancella
   for (const index of [-1, 2, '0', 0.5, NaN]) expect(() => f.invoke(UPDATE_DIALOG_IPC.respond, index)).toThrow(/invalid/)
   f.invoke(UPDATE_DIALOG_IPC.respond, 1)
   expect(await pending).toEqual({ response: 1, checkboxChecked: false })
+  expect(dialogs!.isOpen).toBe(false)
   const next = f.show()
   f.invoke(UPDATE_DIALOG_IPC.respond, 0)
   expect((await next).response).toBe(0)
@@ -90,7 +95,8 @@ it('follows the parent geometry and removes listeners when closed or replaced', 
   expect((await next).response).toBe(1)
   expect(f.parent.listenerCount('resize')).toBe(0)
   expect(f.parent.listenerCount('move')).toBe(0)
-  expect(f.parent.webContents.removeInsertedCSS).toHaveBeenCalledTimes(1)
+  expect(f.parent.webContents.insertCSS).not.toHaveBeenCalled()
+  expect(f.parent.webContents.removeInsertedCSS).not.toHaveBeenCalled()
 })
 
 it('cancels on abort, renderer failure, disposal, or an already-closed parent', async () => {
@@ -190,4 +196,21 @@ it.runIf(process.platform === 'darwin')('blocks parent keyboard input and redire
   dialogs!.dispose()
   await pending
   expect(f.parent.webContents.listenerCount('before-input-event')).toBe(0)
+})
+
+it('reads the current locale for each presentation', async () => {
+  let locale = resolveDesktopLocale('en')
+  const f = setup(() => locale)
+  for (const language of ['zh-CN', 'en']) {
+    locale = resolveDesktopLocale(language)
+    const pending = f.show()
+    const window = fixture.windows.at(-1)!
+    const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    expect(fixture.handlers.get(UPDATE_DIALOG_IPC.status)!(event)).toMatchObject({
+      locale: locale.id, closeLabel: locale.messages.updateClose,
+      technicalDetailsLabel: locale.messages.updateTechnicalDetails,
+    })
+    dialogs!.cancel()
+    await pending
+  }
 })

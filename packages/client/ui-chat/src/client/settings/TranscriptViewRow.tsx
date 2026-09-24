@@ -1,18 +1,18 @@
-/** General Settings row for completed-Turn transcript presentation. */
+/** General Settings row for work-details presentation. */
 
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { TranscriptViewMode } from '../../chat-settings.ts'
+import { TRANSCRIPT_VIEW_MODES, type TranscriptViewMode } from '../../chat-settings.ts'
 import type { ChatKey } from '../locale.ts'
 import { PreferenceRow } from './PreferenceRow.tsx'
 
-/** Registration-side transcript preference face. */
+/** Registration-side work-details preference face. */
 export interface TranscriptViewRowInjected {
   hooks: {
-    /** Persisted transcript preference bound as useTranscriptView. */
+    /** Persisted work-details preference bound as useTranscriptView. */
     transcriptView: SnapshotStore<TranscriptViewMode>
   }
-  /** Change the completed-Turn transcript presentation. */
+  /** Change the work-details presentation. */
   setTranscriptView: (mode: TranscriptViewMode) => void
 }
 
@@ -22,28 +22,27 @@ export type TranscriptViewRowProps =
   & PropsLocale<'chat'>
   & InjectFace<TranscriptViewRowInjected>
 
-const OPTIONS: readonly { id: TranscriptViewMode; label: ChatKey }[] = [
-  { id: 'normal', label: 'settings.transcript.normal' },
-  { id: 'compact', label: 'settings.transcript.compact' },
-]
+const LABELS = {
+  compact: 'settings.transcript.compact',
+  standard: 'settings.transcript.standard',
+  detailed: 'settings.transcript.detailed',
+  verbose: 'settings.transcript.verbose',
+} as const satisfies Record<TranscriptViewMode, ChatKey>
 
 /**
- * Render the completed-Turn transcript mode selector.
+ * Render the work-details mode selector.
  * @param props - composed Settings slot props.
  * @returns the preference row.
  */
 export function TranscriptViewRow({ useTranscriptView, setTranscriptView, t }: TranscriptViewRowProps) {
   const mode = useTranscriptView(value => value)
-  const selectedLabel = mode === 'normal'
-    ? 'settings.transcript.normal'
-    : 'settings.transcript.compact'
   return (
     <PreferenceRow
       title={t('settings.transcript.title')}
       description={t('settings.transcript.description')}
       value={mode}
-      selectedLabel={t(selectedLabel)}
-      options={OPTIONS.map(option => ({ id: option.id, label: t(option.label) }))}
+      selectedLabel={t(LABELS[mode])}
+      options={TRANSCRIPT_VIEW_MODES.map(id => ({ id, label: t(LABELS[id]) }))}
       onSelect={(value) => { setTranscriptView(value as TranscriptViewMode) }}
     />
   )

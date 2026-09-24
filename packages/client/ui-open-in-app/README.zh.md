@@ -29,9 +29,13 @@ kind: "package-reference"
 
 ### 预期行为
 
-主按钮显示记住的应用图标——凡主机能提取的都是应用真实图标（macOS bundle 图标、Windows 可执行文件图标、Linux 主题图标），提取不到时是通用占位图形——并带设计系统 tooltip（「在本地打开」）；点击立即启动。下拉箭头打开已安装应用的紧凑菜单，记住的条目以整行填充标记。可用性每页读取一次；上次选择的应用持久化在浏览器中（`dsh.open-in-app.choice`），不再安装的选择回退到第一个可用条目。快速完成的启动不改变按钮外观——变暗的等待态只在飞行超过 250 毫秒后出现——失败的启动显示错误 tooltip 与红色描边两秒。所有文案在双语 `open-in-app` locale 命名空间中；词典无法命名的应用 id 不会被提供。
+会话标题栏和文档标题栏共用同一个高 24px、圆角 9px 的分体按钮。两个标题栏都只显示图标，悬停提示显示默认应用名称或文件定位动作。两者都显示默认动作的图标，在菜单的默认应用后标注“（默认）”，仅在自己的操作执行期间禁用，并通过短暂提示报告失败。目录适配器使用已有的跨平台应用列表，将最后一次成功选择保存在 `dsh.open-in-app.choice` 中；原选择不可用时回退到第一个可用应用。
 
-在文档预览里，头部的「打开 ▾」分体按钮的主按钮用 Host 默认应用打开当前文件，菜单提供同一动作和「显示文件位置」（文件管理器的定位）。预览无法渲染的文件，无论是视频、压缩包这类不支持的后缀，还是被读取器判为非文本或过大的文件，都会在空态里原本放重试的位置显示「用默认应用打开」按钮。两个控件都把文件元数据报出的绝对路径交给 Host，只在 Host 回答有桌面之后出现，只在自己的手势结算期间禁用，失败时通过短暂 toast 提示一次（「打开失败，请重试」或「无法显示文件位置，请重试」），之后控件上不残留任何状态。
+**在本地打开**快捷键捕获主会话的目录，并使用与头部按钮相同的已记住应用。按钮 tooltip 和 `aria-keyshortcuts` 显示当前有效绑定；Web 遵循[快捷键服务的平台默认值](../shortcuts/README.zh.md)。只有选中会话界面、且头部按钮有可打开的目录和已安装应用时，命令才执行。启动尚未结束时也会阻止命令。鼠标与键盘操作共享 controller 的启动状态，重复操作不会启动两次，也不会在启动期间更改已记住的选择。
+
+文件菜单列出已发现的关联应用，不单列“用默认应用打开”。“显示文件位置”固定在菜单底部，通过分隔线与滚动的应用列表分开。查询成功且只有一个可用操作时显示单按钮，不再显示下拉箭头。文件关联首次加载时使用灰色骨架图标。Host 识别出默认应用时，菜单将该项标注为“（默认）”，主按钮打开该应用；否则第一个关联应用占据该位置，只有在一个关联应用都没有时主按钮才执行文件定位。目录菜单不包含定位项。选择文件应用不修改系统默认应用。无法预览文件时，空态使用同一菜单，按钮增大到 40px 高并显示图标和动作文字；根据默认动作显示“打开”或“显示文件位置”。
+
+使用同一查询函数和文件的已挂载控件共用查询与结果，打开任一菜单会刷新所有相关控件。最后一个控件释放后取消查询并清除状态。已取消的查询不会覆盖其他文件的结果。查询失败时菜单显示提示，并以文件定位作为默认动作。文件关联查询的平台支持范围见 [native-command](../../util/native-command/README.zh.md)；查询结果为空时，包括平台尚无查询适配器的情况，控件统一使用定位动作，不按操作系统分支处理。
 
 -----
 
@@ -41,9 +45,9 @@ kind: "package-reference"
 <details>
 <summary>实现内幕——点击展开</summary>
 
-插件通过标准 slot/inject 机制把分体按钮注册到 `conversation.session.header.utilities`，并以一个 effect 注册 `open-in-app` 词典。一个页面生命周期的 controller（[`src/client/controller.ts`](src/client/controller.ts)）拥有每页一次的可用性读取、持久化选择的 snapshot store 与启动 POST；组件经 inject 的 `hooks` 隔间接收两个 store，因此所有会话头部共享同一份事实。文档相对的路由形式与 wire 载荷类型来自主机包的浏览器安全子路径 `@deepseek-ai/dsh-host-open-in-app/shared`。飞行中的启动由 ref 守卫——启动期间的重复点击与菜单选择被整体忽略（否则会持久化一个该手势从未打开的选择）——busy/error 视觉由围绕 `launch` promise 的定时器驱动。
+插件通过标准 slot/inject 机制把分体按钮注册到 `conversation.session.header.utilities`，并以一个 effect 注册 `open-in-app` 词典。一个页面生命周期的 controller（[`src/client/controller.ts`](src/client/controller.ts)）拥有每页一次的可用性读取、持久化选择的 snapshot store 与启动 POST；组件经 inject 的 `hooks` 隔间接收共享源，因此所有会话头部共享同一份事实。文档相对的路由形式与 wire 载荷类型来自主机包的浏览器安全子路径 `@deepseek-ai/dsh-host-open-in-app/shared`。controller 守卫执行中的启动，并发布所捕获的目录与状态；头部控件从该源派生延迟出现的等待态和短暂错误态。
 
-文件控件注册在文档预览的 `sidebar.right.tab.document.actions` 与 `sidebar.right.tab.document.unpreviewable` 子 slot 上，owner props 携带文件在执行环境中的绝对路径。第二个页面生命周期的 controller（[`src/client/open-path.ts`](src/client/open-path.ts)）每页读取一次 Session Remote 的 `session.canOpenWorkspacePath`，写进两个控件共用的桌面 snapshot store，并把每个手势交给 `session.openWorkspacePath`，带上路径，定位时再带 `action: 'reveal'`；被拒绝或抛错的调用解析为控件要提示的失败种类。两个控件共用一个手势 hook，由它持有 pending 标志和 toast，所以一个控件的手势不会改变另一个控件的样子。节点半边是一个空 `apply`，让插件出现在主机侧的插件名册上。
+目录和文件适配器把应用信息与操作交给 [`OpenTargetButton`](src/client/OpenTargetButton.tsx)，由它统一管理菜单顺序、默认标记、图标、尺寸和操作反馈。文件标题栏和空态共用 `FileOpenTarget`，`OpenPathInjected.applications` 通过 [`open-path.ts`](src/client/open-path.ts) 查询 `session.workspacePathApplications`。打开操作使用 `session.openWorkspacePath`，Host 在启动前重新验证指定的关联应用。`FileRouteAction` 通过 `deliverables.file.actions` 和 `deliverables.review.file.actions` 为交付卡片和变更对比页提供同一控件，其认证路由保留会话文件校验。目录适配器继续使用已有的应用列表路由，文件查询失败或不可用时无需增加平台专用的界面实现。
 
 </details>
 
@@ -90,4 +94,4 @@ Host 在打开或定位前通过当前文件系统验证路径。没有对应 Ho
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。插件注册一个词典 effect 和三个 slot 条目，HMR 安全性 spec 证明它们都会在资源释放时撤销；应用可用性、选择与桌面回答存储在控制器的快照存储中，不存在可能与之分歧的第二份副本。
+**运行时不变式：** 不发布伴生入口。插件注册一个词典 effect 和五个 slot 条目，HMR 安全性 spec 证明它们都会在资源释放时撤销；应用可用性、选择与桌面回答存储在控制器的快照存储中，不存在可能与之分歧的第二份副本。

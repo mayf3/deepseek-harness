@@ -44,6 +44,18 @@ function makeManager(mock: RemoteMock, remote: ClientTestFixtures['remote']): Se
 }
 
 describe('Session projection value semantics', () => {
+  it('exposes a watermark only for current Host-sequenced values', () => {
+    const store = new ProjectionValueStore()
+    expect(store.seqOf('inbox')).toBeUndefined()
+    store.applyCached({ inbox: { 'next-turn': [], 'next-step': [] } })
+    expect(store.seqOf('inbox')).toBeUndefined()
+    store.apply('inbox', { 'next-turn': [], 'next-step': [] }, SessionSeq(4))
+    store.apply('inbox', { 'next-turn': [], 'next-step': [] }, SessionSeq(2))
+    expect(store.seqOf('inbox')).toBe(4)
+    store.seed({ asOfSeq: SessionSeq(6), values: {} })
+    expect(store.seqOf('inbox')).toBeUndefined()
+  })
+
   it('reads undefined until a value lands (capability absence)', () => {
     const store = new ProjectionValueStore()
     expect(store.get('test/marks')).toBeUndefined()
@@ -241,7 +253,6 @@ describe('manager frame routing', () => {
     manager.handleControlFrame({
       type: 'baseline',
       value: {
-        jobs: {},
         projections: { [sid('s1')]: { asOfSeq: 2, values: {} } },
       },
     })
@@ -267,7 +278,6 @@ describe('manager frame routing', () => {
     manager.handleControlFrame({
       type: 'baseline',
       value: {
-        jobs: {},
         projections: { [sid('s1')]: { asOfSeq: 2, values: { title: 'Connected title' } } },
       },
     })
@@ -299,7 +309,6 @@ describe('manager frame routing', () => {
     manager.handleControlFrame({
       type: 'baseline',
       value: {
-        jobs: {},
         projections: { [sid('s1')]: { asOfSeq: 2, values: { title: 'Delayed baseline' } } },
       },
     })

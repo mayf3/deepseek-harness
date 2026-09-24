@@ -249,7 +249,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       expect(planStyle.height).toBe('28px')
       // Half the 28px height, the compact Button geometry, under the theme's
       // corner curvature; a 999px pill would need the circular opt-out.
-      expect(planStyle.borderRadius).toBe('14px')
+      expect(planStyle.borderRadius).toBe('8px')
       expect(planStyle.siblingCornerShape).not.toBeNull()
       expect(planStyle.cornerShape).toBe(planStyle.siblingCornerShape)
       expect(planStyle.fontSize).toBe('13px')
@@ -323,10 +323,12 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       const originalViewport = page.viewportSize() ?? { width: 1680, height: 1000 }
       if (MODE !== 'record') await page.setViewportSize({ width: 480, height: 1000 })
       const observedReasoning = Promise.withResolvers<undefined>()
+      const reasoningComplete = Promise.withResolvers<undefined>()
       const releaseStream = MODE === 'record' ? undefined : scaffold.ctx.on('llm/stream', async function* (_options, next) {
         let reasoning = false
         for await (const chunk of next()) {
           if (reasoning && chunk.type !== 'reasoning-delta') {
+            reasoningComplete.resolve(undefined)
             await observedReasoning.promise
           }
           if (chunk.type === 'reasoning-delta') reasoning = true
@@ -337,18 +339,12 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
         await input.press('Enter')
         if (MODE !== 'record') {
           const thinking = page.locator('[data-variant="think"][data-state="running"]')
+          await expandOwningTurnProcess(page, thinking)
           await expect.poll(() => thinking.getByRole('button').getAttribute('aria-expanded')).toBe('false')
-          const liveTail = thinking.locator('[data-follow-end]')
-          await expect.poll(async () => {
-            if (await liveTail.count() !== 1) return false
-            return await liveTail.evaluate((element) => {
-              const text = element.firstElementChild
-              if (!(text instanceof HTMLElement)) return false
-              const viewport = element.getBoundingClientRect()
-              const content = text.getBoundingClientRect()
-              return content.width > viewport.width && Math.abs(content.right - viewport.right) <= 1
-            })
-          }, { timeout: 10_000, interval: 10 }).toBe(true)
+          await reasoningComplete.promise
+          expect(await thinking.getAttribute('data-preview')).toBeNull()
+          expect(await thinking.getByRole('button').getAttribute('aria-expanded')).toBe('false')
+          expect(await thinking.locator('[data-streaming]').isVisible()).toBe(false)
         }
         observedReasoning.resolve(undefined)
         return await settled

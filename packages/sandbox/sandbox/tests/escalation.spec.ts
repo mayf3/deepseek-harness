@@ -79,6 +79,12 @@ describe('approveEscalation', () => {
     const granted = await approveEscalation(req(), ingredients({ approver: approver('allowed-once', r => seen.push(r as { reason?: string })) }))
     expect(granted).toBe('workspace-write')
     expect(seen[0]?.reason).toBe('escalate sandbox to workspace-write: the user asked to write in the workspace')
+    expect(seen[0]).toMatchObject({
+      displayReason: {
+        en: 'Allow this operation with workspace-write permissions: the user asked to write in the workspace',
+        zh: '允许本次操作使用 workspace-write 权限：the user asked to write in the workspace',
+      },
+    })
   })
 
   it.each(ESCALATION_TARGETS)('repeating %s succeeds without asking for approval', async (mode) => {

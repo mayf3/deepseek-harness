@@ -7,7 +7,7 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { LlmAttemptId } from '@deepseek-ai/dsh-llm'
 import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
 import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session/types'
-import { ok, type RemoteMock } from '@deepseek-ai/dsh-remote-mock'
+import { ok, streamHandle, type RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { createClientTest, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import { ClientSessions, SessionCreateError, SessionForkError } from '../src/client/sessions/service.ts'
 import { scopeOf } from '../src/client/scope.ts'
@@ -164,7 +164,7 @@ describe('scope tree', () => {
     expect(b.mock.remote.session.projections).not.toHaveBeenCalled()
   })
 
-  it('publishes transient Assistant chunks and the named durable v2 settlement through one event source', async ({ bench }) => {
+  it('publishes the final Assistant message before retiring transient chunks at Step end', async ({ bench }) => {
     const b = bench()
     await feedList(b, [{ id: 's1' }])
     using _reference = b.svc.retain(sid('s1'), { source: 'controllerOperation' })
@@ -232,13 +232,20 @@ describe('scope tree', () => {
     })
     await b.mock.streams.drained(FOLLOW)
     await vi.waitFor(() => {
-      expect(binding.eventSource.getSnapshot().entries).toHaveLength(1)
+      expect(binding.eventSource.getSnapshot().entries).toHaveLength(2)
     })
 
     expect(publications).toEqual([
       ['assistant/live-chunk'],
-      ['assistant/message'],
+      ['assistant/live-chunk', 'assistant/message'],
     ])
+    b.mock.streams.push(FOLLOW, {
+      type: 'event', event: { type: 'step/end', seq: 1, time: 3, data: { turn: 1, step: 1 } },
+    })
+    await b.mock.streams.drained(FOLLOW)
+    expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.type))
+      .toEqual(['assistant/message', 'step/end'])
+    expect(binding.eventSource.getSnapshot().change).toEqual({ kind: 'settle-assistant', attemptId })
     dispose()
   })
 
@@ -373,10 +380,10 @@ describe('scope tree', () => {
     await b.mock.streams.drained(FOLLOW)
     await vi.waitFor(() => {
       expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.type))
-        .toEqual(['assistant/message', 'assistant/message'])
+        .toEqual(['assistant/message', 'assistant/live-chunk', 'assistant/message'])
     })
     expect(binding.eventSource.getSnapshot().change).toEqual({
-      kind: 'settle-assistant', attemptId: String(attemptId), entry: currentMessage,
+      kind: 'append', entries: [currentMessage],
     })
   })
 
@@ -461,7 +468,7 @@ describe('scope tree', () => {
     using reference = b.svc.retainAgentScope(sid('s-early'))
     const scoped = reference.binding.ctx
     expect(scopeOf(scoped)).toBe('s-early')
-    b.svc.handleControlFrame({ type: 'baseline', value: { jobs: {}, projections: {} } })
+    b.svc.handleControlFrame({ type: 'baseline', value: { projections: {} } })
     await feedList(b, [])
     expect(b.svc.scope(sid('s-early'))).toBe(scoped)
     reference.release()
@@ -551,7 +558,7 @@ describe('Agent scope disposal lifecycle', () => {
       if (signal === undefined) throw new Error('fixture requires a signal')
       followSignal = signal
       let opened = false
-      return {
+      return streamHandle<SessionFollowFrame>({
         [Symbol.asyncIterator]: () => ({
           next: () => {
             if (!opened) {
@@ -588,7 +595,7 @@ describe('Agent scope disposal lifecycle', () => {
             })
           },
         }),
-      }
+      })
     })
     const readiness = b.ctx.plugin(() => undefined)
     await readiness
@@ -625,7 +632,7 @@ describe('Agent scope disposal lifecycle', () => {
       const closeGate = Promise.withResolvers<undefined>()
       closeGates.set(sessionId, closeGate)
       let opened = false
-      return {
+      return streamHandle<SessionFollowFrame>({
         [Symbol.asyncIterator]: () => ({
           next: () => {
             if (!opened) {
@@ -655,7 +662,7 @@ describe('Agent scope disposal lifecycle', () => {
             })
           },
         }),
-      }
+      })
     })
     const readiness = b.ctx.plugin(() => undefined)
     await readiness

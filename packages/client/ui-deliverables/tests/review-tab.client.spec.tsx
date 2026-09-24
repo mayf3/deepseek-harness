@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** The review tab type: its addresses, its store, the row pairing of the split view, and the states its body draws. */
+import { renderFileActions } from './file-actions.tsx'
 import { useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,8 +18,9 @@ import { ChangesDiffStore } from '../src/client/changes-diff.ts'
 import { ChangesSummaryStore } from '../src/client/changes-summary.ts'
 import { PresentedOpenController } from '../src/client/present-open.ts'
 import {
-  hunkRows, MAX_RENDERED_LINES, renderedHunks, ReviewTab, splitRows, type ReviewInjected, type ReviewTabProps,
+  ReviewTab, type ReviewInjected, type ReviewTabProps,
 } from '../src/client/ReviewTab.tsx'
+import { hunkRows, MAX_RENDERED_LINES, renderedHunks, splitRows } from '../src/client/FileDiff.tsx'
 import { changesReviewDefinition } from '../src/client/review-definition.ts'
 import { createReviewStore } from '../src/client/review-store.ts'
 import { en, zh } from '../src/client/locales.ts'
@@ -158,11 +160,17 @@ describe('ReviewTab', () => {
       loadChangesSummary: vi.fn<ReviewInjected['loadChangesSummary']>(() => Promise.resolve()),
       loadChangesDiff: vi.fn<ReviewInjected['loadChangesDiff']>(() => Promise.resolve()),
       reloadPresentedHost: vi.fn<ReviewInjected['reloadPresentedHost']>(() => Promise.resolve()),
-      openChanged: vi.fn<ReviewInjected['openChanged']>(() => Promise.resolve()),
+      openChanged: vi.fn<ReviewInjected['openChanged']>(() => Promise.resolve(null)),
     }
-    const sessions = { byId: { [SESSION]: { cwd: options.cwd ?? '/work/app' } } } as unknown as SessionListState
+    const sessions: SessionListState = {
+      ids: [SESSION],
+      byId: { [SESSION]: { id: SESSION, displayTitle: 'Workspace', cwd: options.cwd ?? '/work/app',
+        running: false, retainedBy: {}, blank: false, updatedAt: 0 } },
+      phase: 'ready', projectionsBySession: {},
+    }
     const navigation = { address: options.address ?? ADDRESS, params: options.params, revision: options.revision ?? 1 }
     const runtime = {
+      renderSlot: renderFileActions,
       useTabInfo: () => ({
         sidebar: { expanded: true, fullscreen: false }, panel: { id: 'pane-1' },
         tab: { id: TAB, kind: 'changes-review', contentId: options.address ?? ADDRESS, title: 'Review', visible: true, navigation, signal: aborter.signal, actions: tabActions },
@@ -177,7 +185,7 @@ describe('ReviewTab', () => {
       usePresentedHost: hookOf(controller.host),
       t: makeTranslate(options.locale ?? en),
       ...injected,
-    } as unknown as ReviewTabProps
+    } as ReviewTabProps
     const view = render(<ReviewTab {...runtime} />)
     return {
       view, injected, tabActions, store, aborter, summaries, diffs, controller,
@@ -268,6 +276,25 @@ describe('ReviewTab', () => {
     expect(rows[2]?.textContent).toBe('3c')
     expect(rows[5]?.textContent).toBe('20z')
     expect(store.getSnapshot().byTab[TAB]).toMatchObject({ split: true, wrap: true })
+
+    const oneSidedHunks: WorkspaceDiffHunk[] = [
+      { oldStart: 0, oldLines: 0, newStart: 1, newLines: 1, lines: ['+new'] },
+      { oldStart: 1, oldLines: 1, newStart: 0, newLines: 0, lines: ['-old'] },
+      { oldStart: 1, oldLines: 1, newStart: 1, newLines: 2, lines: [' context', '+new'] },
+      { oldStart: 1, oldLines: 2, newStart: 1, newLines: 1, lines: [' context', '-old'] },
+    ]
+    for (const wrap of [true, false]) {
+      if (!wrap) fireEvent.click(view.getByRole('button', { name: en['review.wrapAria'] }))
+      for (const hunk of oneSidedHunks) {
+        act(() => { diffs.state.set({ [changesDiffUrl(SESSION, 5, 0)]: { ...text, hunks: [hunk] } }) })
+        expect(view.container.querySelector('[data-review-view]')?.getAttribute('data-review-view')).toBe('unified')
+        expect(view.container.querySelectorAll('[data-diff-line]')).toHaveLength(hunk.lines.length)
+        expect(view.getByRole('button', { name: en['review.splitAria'] }).getAttribute('aria-pressed')).toBe('true')
+        expect(store.getSnapshot().byTab[TAB]).toMatchObject({ split: true, wrap })
+      }
+      act(() => { diffs.state.set({ [changesDiffUrl(SESSION, 5, 0)]: { ...text, hunks: oneSidedHunks } }) })
+      expect(view.container.querySelector('[data-review-view]')?.getAttribute('data-review-view')).toBe('split')
+    }
   })
 
   it('syntax-highlights recognized source files with the shared code grammar', () => {
@@ -313,19 +340,18 @@ describe('ReviewTab', () => {
     expect(view.container.querySelector('[data-review-tool="open-file"] svg')?.getAttribute('width')).toBe('12')
     fireEvent.click(view.getByRole('button', { name: 'Open ~/out/big.bin in sidebar' }))
     expect(tabActions.openResource).toHaveBeenCalledWith(fileAddressFor(SESSION, '/work/app', '/tmp/out/big.bin'))
-    fireEvent.click(view.getByRole('button', { name: 'Open ~/out/big.bin in default app' }))
-    expect(injected.openChanged).toHaveBeenCalledWith('viewed', 5, 1)
+    fireEvent.click(view.getByRole('button', { name: 'Native file action' }))
+    expect(injected.openChanged).toHaveBeenCalledWith('viewed', 5, 1, 'open', undefined)
     act(() => { controller.state.set({ 'api/changes.open?sessionId=viewed&seq=5&index=1': 'opening' }) })
-    expect((view.getByRole('button', { name: 'Open ~/out/big.bin in default app' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByRole('button', { name: 'Native file action' }) as HTMLButtonElement).disabled).toBe(true)
     act(() => { controller.state.set({ 'api/changes.open?sessionId=viewed&seq=5&index=1': 'error' }) })
-    expect(view.getByRole('button', { name: 'Open ~/out/big.bin in default app' }).hasAttribute('data-error')).toBe(true)
     act(() => { controller.state.set({ 'api/changes.open?sessionId=viewed&seq=5&index=1': 'nativeUnavailable' }) })
-    expect(view.queryByRole('button', { name: 'Open ~/out/big.bin in default app' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'Native file action' })).toBeNull()
     act(() => {
       controller.state.set({})
       controller.host.set({ name: 'server', available: false, fileManager: null })
     })
-    expect(view.queryByRole('button', { name: 'Open ~/out/big.bin in default app' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'Native file action' })).toBeNull()
     expect(view.getByText(en['changes.oversized'])).toBeTruthy()
   })
 
@@ -361,7 +387,8 @@ describe('ReviewTab', () => {
     act(() => {
       diffs.state.set({ [url]: { ...text, hunks: [{ oldStart: 1, oldLines: 0, newStart: 1, newLines: long.length, lines: long }] } })
     })
-    expect(view.container.querySelectorAll('[data-diff-side="right"] [data-diff-line]')).toHaveLength(MAX_RENDERED_LINES)
+    expect(view.container.querySelector('[data-review-view]')?.getAttribute('data-review-view')).toBe('unified')
+    expect(view.container.querySelectorAll('[data-diff-line]')).toHaveLength(MAX_RENDERED_LINES)
     expect(view.container.querySelector('[data-diff-truncated]')?.textContent).toBe(`只显示前 ${MAX_RENDERED_LINES} 行`)
   })
 

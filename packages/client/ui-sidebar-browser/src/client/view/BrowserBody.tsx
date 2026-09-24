@@ -1,27 +1,24 @@
-/** Browser toolbar and Web iframe renderer. */
-import { useEffect, useRef, useState } from 'react'
+/** Common browser chrome; a presentation adapter attaches the page inside its content container. */
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
+  Button,
   IconChevronLeftOutlineRegular,
   IconChevronRightOutlineRegular,
   IconLinkOutlineRegular,
-  IconRefreshOutlineRegular,
+  IconRefreshOutlineRegular, Tooltip,
   IconRightUpOutlineRegular,
   SHIELD_OUTLINE_PATH,
   ICON_REGULAR_STROKE,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { BrowserInjected } from '../browser/BrowserController.ts'
-import type { BrowserFrameState } from '../browser/BrowserFrame.ts'
-import { BrowserNavigation } from '../browser/BrowserNavigation.ts'
-import type { BrowserAddressFailure } from '../browser/url.ts'
+import { emptyBrowserFrame } from '../browser/BrowserFrame.ts'
+import { currentBrowserTarget } from '../browser/BrowserPersistence.ts'
 import type { BrowserStore } from '../browser/store.ts'
 import css from './Browser.module.css'
 
-/** Fixed Web iframe sandbox; popups escape the sandbox while top navigation remains absent. */
-export const WEB_BROWSER_SANDBOX = 'allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox'
-
-const INITIAL_BROWSER_FRAME: BrowserFrameState = { document: undefined, sandboxed: true, loadFailed: false }
+const EMPTY_FRAME = emptyBrowserFrame()
 
 function SandboxPolicyIcon({ sandboxed }: { readonly sandboxed: boolean }): ReactNode {
   return (
@@ -40,116 +37,97 @@ export type BrowserBodyProps = PropsRuntime<'sidebar.right.pane.tab'>
   & PropsLocale<'sidebarBrowser'>
   & InjectFace<BrowserInjected>
 
-/** Translate one parser refusal without matching display strings in logic. */
-function failureText(reason: BrowserAddressFailure, t: BrowserBodyProps['t']): string {
-  return t(`error.${reason}`)
+function useBrowserDraft(url: string | undefined, revision: number): readonly [string, (value: string) => void] {
+  const [edit, setEdit] = useState<{ readonly revision: number; readonly value: string }>()
+  return [edit?.revision === revision ? edit.value : url ?? '',
+    (value) => { setEdit({ revision, value }) }]
 }
 
-function useBrowserDraft(
-  controlledUrl: string | undefined,
-  requestId: number | undefined,
-): readonly [string, (value: string) => void] {
-  const [edit, setEdit] = useState<{ readonly requestId: number | undefined; readonly value: string }>()
-  const value = edit !== undefined && edit.requestId === requestId ? edit.value : controlledUrl ?? ''
-  return [value, (draft) => { setEdit({ requestId, value: draft }) }]
-}
-
-/** Browser tab renderer for a controller-owned URL state and Web iframe carrier. */
+/** Render provider-neutral navigation state and optional controls. */
 export function BrowserBody(props: BrowserBodyProps): ReactNode {
-  const {
-    goBack, goForward, loadUrl, mount, reload, reportLoaded, reportLoadFailed, toggleSandbox,
-    useBrowserFrame, useStore, useTabInfo, t,
-  } = props
+  const { mount, loadUrl, restore, goBack, goForward, reload, setSandbox, useBrowserState, useStore, useTabInfo, t } = props
   const { tab } = useTabInfo()
-  const state = useStore(snapshot => snapshot.byTab[tab.id]) ?? BrowserNavigation.empty()
-  const initialState = useRef(state)
+  useEffect(() => tab.actions.bindCommands({ refresh: () => { reload(tab.id) } }), [tab.actions, tab.id, reload])
+  const saved = useStore(state => state.byTab[tab.id])
+  const initial = useRef(saved)
   const initialUrl = useRef(tab.navigation.params?.url)
-  const current = BrowserNavigation.current(state)
-  const [draft, setDraft] = useBrowserDraft(current?.url ?? initialUrl.current, state.request?.revision)
-  const [mountCount, setMountCount] = useState(0)
+  const viewportId = useId()
+  const [mountEpoch, setMountEpoch] = useState(0)
+  const state = useBrowserState(tab.id)
+  const frame = state?.frame ?? EMPTY_FRAME
+  const restoreTarget = state === undefined ? currentBrowserTarget(initial.current) : state.restoreTarget
+  const target = frame.target ?? restoreTarget
+  const [draft, setDraft] = useBrowserDraft(target?.url ?? initialUrl.current, state?.addressRevision ?? 0)
 
-  useEffect(() => {
-    mount(tab.id, tab.signal, window.location.origin, initialState.current)
-    setMountCount(count => count + 1)
-  }, [mount, tab.id, tab.signal])
+  useLayoutEffect(() => {
+    const hide = mount({
+      tabId: tab.id, signal: tab.signal, viewportId, applicationOrigin: window.location.origin,
+      initial: initial.current, initialUrl: initialUrl.current,
+      openTab: (url) => { tab.actions.openTab('browser', { params: { url }, revealIfOpened: false }) },
+    })
+    setMountEpoch(value => value + 1)
+    return hide
+  }, [mount, tab.id, tab.signal, tab.actions, viewportId, props.actions])
 
-  useEffect(() => {
-    if (mountCount === 0) return
-    const resumed = BrowserNavigation.current(initialState.current)
-    if (resumed !== undefined) {
-      reload(tab.id)
-      return
-    }
-    const url = initialUrl.current
-    if (url !== undefined) loadUrl(tab.id, url)
-  }, [loadUrl, mountCount, reload, tab.id])
-
-  const frameState = useBrowserFrame(tab.id) ?? INITIAL_BROWSER_FRAME
-  const { document, sandboxed, loadFailed } = frameState
-
-  const navigationUnknown = state.navigation.status === 'unknown'
-  const externalUrl = navigationUnknown ? undefined : current?.url
+  const unknown = frame.address === 'unknown'
+  const externalUrl = unknown ? undefined : target?.url
+  const sandboxed = frame.sandboxEnabled
+  const failure = state?.addressFailure
+  const error = frame.error
   const submit = (event: FormEvent): void => { event.preventDefault(); loadUrl(tab.id, draft) }
-  const failure = state.failure === undefined ? undefined : failureText(state.failure.reason, t)
-  const placeholder = current === undefined ? t('start') : t('loading')
 
   return (
     <div className={css.root}>
       <form className={css.toolbar} onSubmit={submit}>
-        <button type="button" className={css.tool} aria-label={t('back')} title={t('back')} disabled={!BrowserNavigation.canGoBack(state)} onClick={() => { goBack(tab.id) }}><IconChevronLeftOutlineRegular /></button>
-        <button type="button" className={css.tool} aria-label={t('forward')} title={t('forward')} disabled={!BrowserNavigation.canGoForward(state)} onClick={() => { goForward(tab.id) }}><IconChevronRightOutlineRegular /></button>
-        <button type="button" className={css.tool} aria-label={t('reload')} title={t('reload')} disabled={current === undefined} onClick={() => { reload(tab.id) }}><IconRefreshOutlineRegular /></button>
+        <button type="button" className={css.tool} aria-label={t('back')} title={t('back')} disabled={!frame.canGoBack} onClick={() => { goBack(tab.id) }}><IconChevronLeftOutlineRegular /></button>
+        <button type="button" className={css.tool} aria-label={t('forward')} title={t('forward')} disabled={!frame.canGoForward} onClick={() => { goForward(tab.id) }}><IconChevronRightOutlineRegular /></button>
+        <Tooltip label={tab.refreshShortcut?.keys.length ? t('shortcut.hint', { label: t('reload'), keys: tab.refreshShortcut.keys.join(' ') }) : t('reload')} side="bottom" delayMs={500}>
+          <button type="button" className={css.tool} aria-label={t('reload')} aria-keyshortcuts={tab.refreshShortcut?.aria} disabled={target === undefined || mountEpoch === 0} onClick={() => { reload(tab.id) }}><IconRefreshOutlineRegular /></button>
+        </Tooltip>
         <div className={css.addressBox}>
           <input
-            className={`${css.address} ${navigationUnknown ? css.addressUnknown : ''}`}
+            className={[css.address, unknown ? css.addressUnknown : ''].join(' ')}
             value={draft}
             aria-label={t('address.placeholder')}
             placeholder={t('address.placeholder')}
             spellCheck={false}
             onChange={(event) => { setDraft(event.currentTarget.value) }}
           />
-          {navigationUnknown && <span className={css.addressChanged}>{t('address.changed')}</span>}
-          <button type="submit" className={`${css.tool} ${css.addressGo}`} aria-label={t('go')} title={t('go')}><IconLinkOutlineRegular /></button>
+          {unknown && <span className={css.addressChanged}>{t('address.changed')}</span>}
+          <button type="submit" className={[css.tool, css.addressGo].join(' ')} aria-label={t('go')} title={t('go')}><IconLinkOutlineRegular /></button>
         </div>
-        <button
-          type="button"
-          className={css.tool}
-          aria-label={t('external')}
-          title={t('external')}
-          disabled={externalUrl === undefined}
-          onClick={() => {
-            /* v8 ignore next -- React does not dispatch clicks from this disabled button. */
-            if (externalUrl !== undefined) window.open(externalUrl, '_blank', 'noopener,noreferrer')
-          }}
+        <button type="button" className={css.tool} aria-label={t('external')} title={t('external')} disabled={externalUrl === undefined}
+          onClick={externalUrl === undefined ? undefined : () => { window.open(externalUrl, '_blank', 'noopener,noreferrer') }}
         ><IconRightUpOutlineRegular size={14} /></button>
-        <button
+        {sandboxed !== undefined && <button
           type="button"
-          className={`${css.tool} ${sandboxed ? '' : css.sandboxOff}`}
+          className={[css.tool, sandboxed ? '' : css.sandboxOff].join(' ')}
           aria-label={t(sandboxed ? 'sandbox.disable' : 'sandbox.enable')}
           title={t(sandboxed ? 'sandbox.disable' : 'sandbox.enable')}
           aria-pressed={!sandboxed}
-          disabled={mountCount === 0}
-          onClick={() => { toggleSandbox(tab.id) }}
-        ><SandboxPolicyIcon sandboxed={sandboxed} /></button>
+          onClick={() => { setSandbox(tab.id, !sandboxed) }}
+        ><SandboxPolicyIcon sandboxed={sandboxed} /></button>}
       </form>
-      {!sandboxed && <div className={css.sandboxWarning} role="status">{t('sandbox.warning')}</div>}
-      {loadFailed && <div className={css.failure} role="status">{t('web.loadFailed')}</div>}
-      {failure !== undefined && <div className={css.failure} role="alert">{failure}</div>}
-      {document === undefined
-        ? <div className={css.start}>{placeholder}</div>
-        : <iframe
-          key={`${document.target.url}:${String(document.revision)}`}
-          className={css.frame}
-          src={document.src}
-          sandbox={sandboxed ? WEB_BROWSER_SANDBOX : undefined}
-          referrerPolicy="no-referrer"
-          title={document.target.title}
-          onLoad={() => { reportLoaded(tab.id, document.revision) }}
-          /* v8 ignore next -- jsdom does not dispatch React iframe error events; BrowserFrame owns the tested behavior. */
-          onError={() => { reportLoadFailed(tab.id, document.revision) }}
-          data-sidebar-browser-frame
-        />}
-      {navigationUnknown && <p className={css.limit}>{t('web.unknown')}</p>}
+      {sandboxed === false && <div className={css.sandboxWarning} role="status">{t('sandbox.warning')}</div>}
+      {error !== undefined && <div className={css.failure} role="status">{error.code !== undefined && error.description !== undefined
+        ? t('load.failed.detail', { code: String(error.code), description: error.description })
+        : t('load.failed')}</div>}
+      {failure !== undefined && <div className={css.failure} role="alert">{t(`error.${failure}`)}</div>}
+      <div className={css.content} aria-busy={frame.loading}>
+        <div id={viewportId} className={css.viewport} aria-label={t('type.label')} />
+        {restoreTarget !== undefined && <section className={css.restore} aria-label={t('restore.previous')}>
+          <p className={css.restoreLabel}>{t('restore.previous')}</p>
+          <p className={css.restoreTitle}>{restoreTarget.title}</p>
+          <p className={css.restoreUrl}>{restoreTarget.url}</p>
+          <Button variant="primary" size="sm" disabled={mountEpoch === 0} onClick={() => { restore(tab.id) }}>
+            {t('restore.action')}
+          </Button>
+        </section>}
+        {restoreTarget === undefined && (target === undefined || frame.loading) && error === undefined && <div className={css.placeholder}>
+          <div className={css.start}>{t(target === undefined ? 'start' : 'loading')}</div>
+        </div>}
+      </div>
+      {unknown && <p className={css.limit}>{t('address.unknown')}</p>}
     </div>
   )
 }

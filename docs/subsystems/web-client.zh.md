@@ -4,6 +4,8 @@
 
 Web Client 是由独立加载插件组装而成的浏览器侧 Cordis 应用。它有四个可复用底座：[Client Modules](client-modules.zh.md) 加载插件图，[API Gateway](../api-gateway.zh.md) 提供类型化 Host 通信，[Slots](slots.zh.md) 组合 React UI，[Conversation](conversation.zh.md) 把 Session 历史窗口变成各 target 自有的视图。本文串联这些系统，并规定 Client model 与功能包各自所在的位置。
 
+[快捷键](../../packages/client/shortcuts/README.zh.md)负责窗口内命令注册和物理键分发；[快捷键速查](../../packages/client/ui-shortcuts/README.zh.md)展示可用命令及局部输入操作。命令 owner 声明各运行端／平台的默认键位，并与鼠标控件共用既有操作。共用模态组件裁决顶层 Esc 并恢复焦点。
+
 ## 分层与所有权
 
 | 层 | 主要 owner | 职责 |
@@ -27,7 +29,7 @@ Web boot kernel 创建模块系统、预取 `immediately` entry、挂载 vendore
 
 Host 业务 service 使用 Typert Remote decorator 标记可调用 method。Host generation 产出严格 descriptor、runtime codec、declaration merge 与 source map。Client 侧 `api-remotes` assembly 选择这些生成贡献，并把具体 method 挂到 `ctx.remote.<namespace>` 与 Session scope 的 `agentCtx.remote.<namespace>`。功能包依赖生成的 service face，而不依赖 Gateway 实现或 Host 包的运行时 entry。
 
-Connection 拥有 request correlation、`/api` carrier、trust check、精确 Fetch 路由与 connection generation。API Gateway 拥有 Remote dispatch、取消、logical stream 与选定 Host event 的转发。Controller 操作应进入生成的 Remote method 或显式 Remote stream；功能自有的下载则注册精确 Fetch 路由。[API Gateway 参考](../api-gateway.zh.md)定义 generation 与调用，[Connection README](../../packages/client/connection/README.zh.md)定义物理 carrier 与信任策略。
+Connection 拥有请求 URL 解析、request correlation、`/api` carrier、trust check、精确 Fetch 路由与 connection generation。API Gateway 拥有 Remote dispatch、取消、logical stream 与选定 Host event 的转发。Controller 操作应进入生成的 Remote method 或显式 Remote stream；功能自有的下载则注册精确 Fetch 路由。[API Gateway 参考](../api-gateway.zh.md)定义 generation 与调用，[Connection README](../../packages/client/connection/README.zh.md)定义物理 carrier 与信任策略。
 
 内部 `$events` logical stream 是 Connection generation source。它的 opening `ready` frame 携带用于路径显示的 Host home，并在 Host listener 已挂载、任何 controller 开始 baseline read 之前建立 generation。`ctx.remote.$on()` 把 allowlist 内的普通 event 交付给 root Client Context，并把 scoped waterfall event 交付给已解析的 Session Context；waterfall listener 可以返回结果、调用 `next()` 或拒绝。
 
@@ -40,10 +42,10 @@ Connection 拥有 request correlation、`/api` carrier、trust check、精确 Fe
 [`api/session-controller`](../../packages/api/session-controller/README.zh.md)公开 Session list、search、creation、prompt、queue、cancellation、pagination 及 follow/control stream 等 Host command。其 Client 侧按 `ClientSessions → SessionManager → Session` 组织：
 
 - `ClientSessions` 提供 `ctx.sessions`，拥有 reference、source count、Session scope 与稳定的 `SessionBinding` object，并投影不含全局 current Session 选择的 catalog state。
-- `SessionManager` 拥有 list baseline、实时 list/control update、惰性 Session instance、queue、projection store、subagent catalog，以及 pull 与后到 update 之间的冲突顺序。
+- `SessionManager` 拥有 list baseline、实时 list/control update、惰性 Session instance、projection store、subagent catalog，以及 pull 与后到 update 之间的冲突顺序。
 - 每个 `Session` 拥有一段由 `SessionEventLikeEntry` value 表示的连续逻辑 event window、pagination、follow、prompt/control state 与供 adapter 消费的 observable snapshot。
 
-持久 event 路径打开 `follow()`，其首帧包含当前 header、tail page、cursor 与完整 projection baseline。历史 record 带有显式 `event` 或 `chunks` 判别字段和字段对齐的内部 `event`；journal 先校验每条 record 的逻辑 seq 闭区间，Client 再直接把这些 record 保留为 `SessionEventLikeEntry`，无需逐 record 转换。每个物理 generation 都根据该 snapshot 原子替换保留窗口，随后按 seq append 标准实时 event。`page()` 只用于更早历史与 gap repair。瞬态 control stream 每代以完整 baseline 开始，随后应用 queue、job 与 projection update。
+持久 event 路径打开 `follow()`，其首帧包含当前 header、tail page、cursor 与完整 projection baseline。历史 record 带有显式 `event` 或 `chunks` 判别字段和字段对齐的内部 `event`；journal 先校验每条 record 的逻辑 seq 闭区间，Client 再直接把这些 record 保留为 `SessionEventLikeEntry`，无需逐 record 转换。每个物理 generation 都根据该 snapshot 原子替换保留窗口，随后按 seq append 标准实时 event。`page()` 只用于更早历史与 gap repair。瞬态 control stream 每代以完整 baseline 开始，随后应用 projection update。
 
 ### Workspaces
 
@@ -53,7 +55,7 @@ Connection 拥有 request correlation、`/api` carrier、trust check、精确 Fe
 
 ## Conversation 与 presentation
 
-Web 和桌面端共享[开发者工具偏好](../../packages/client/ui-settings/README.zh.md#use-this-package)。它控制诊断 View、新会话预设选择、改动文件卡片和内置 HTML 预览策略，不改变 Session 记录。
+Web 和桌面端共享[代码工作工具偏好](../../packages/client/ui-settings/README.zh.md#use-this-package)。它控制诊断 View、新会话预设选择、改动文件卡片和内置 HTML 预览策略，不改变 Session 记录。
 
 `ui-session` 安装 Session scope adapter，并提供 `useSessions`、`useSessionStatus`、`useSessionRetainInfo`、`useSession`、`sessionId` 和 `useProjection`。`SessionProvider` 可以继承外围 binding，也可以绑定显式 `SessionReference`，因此并存子树可以指向不同 Session。领域 adapter 可以继续添加标准 source，但不会把 React hook 放进 model object。
 
@@ -66,7 +68,8 @@ Web 和桌面端共享[开发者工具偏好](../../packages/client/ui-settings/
 | 路径 | 顺序 |
 |---|---|
 | 持久 Session 展示 | Host Session log → packed Remote `follow`/`page` 历史 → Client `SessionEventLikeEntry` window → Conversation Context → target snapshot（`chat`、`trajectory` 或其他已注册 target）→ Slot view → React |
-| 瞬态 Session control | Host control baseline → Remote snapshot stream → `SessionManager` queue/job/projection store → Session 与 list snapshot → 标准 hook → component |
+| 瞬态 Session control | Host control baseline → Remote snapshot stream → `SessionManager` projection store → Session 与 list snapshot → 标准 hook → component |
+| 后台任务 | Host job 注册表 → `job.list` / `job.follow` → [`ClientJobs`](../../packages/api/job-controller/README.zh.md) 名册与输出视图 → 任务列表和面板 |
 | Workspace 状态 | Host Workspace baseline 与 increment → `ClientWorkspaceModel` → `ctx.workspaces.list` → `useWorkspaces` → sidebar、hero 与 navigation entry |
 | scoped interaction | Host Cordis waterfall → API Remotes `$events` → Session Context 上的 `ctx.remote.$on()` → 所属 UI 包 → result 或 `next()` |
 | 用户 command | component callback → 注册项 inject face 或 Slot owner → `ctx.sessions`、`ctx.workspaces` 或生成的 scoped Remote → Host Controller → 权威 update → stream 或 event projection 回到 Client |

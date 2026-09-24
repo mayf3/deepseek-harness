@@ -6,11 +6,11 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: "Use one run_code program to do the following in order. Call present for missing.txt and catch its error without creating that file. Use bash to run exactly `printf \"DELIVERED_REPORT\\n\" > report.txt; printf \"DELIVERED_NOTE\\n\" > 说明.txt`. Call present for report.txt and 说明.txt. After present succeeds, deliberately throw the string \"AFTER_PRESENT\" (not an Error object) from that same run_code program. Do not retry the program or create any other files. Finish by mentioning `report.txt` and `说明.txt` in inline code, and put PRESENT_DONE in a separate paragraph. {{clock}}"
 - button "Copy"
-- button "1 tool call" [expanded]
-- button "Context injection runtime-context"
+- status: Worked
+- button "Took {{duration}}" [expanded]
+- button "Called tools, ran code, ran commands" [expanded]
 - button "Think The user wants one run_code program that:"
 - text: Failed
 - 'button "Code Error: code run failed (exception): AFTER_PRESENT"'
@@ -36,15 +36,13 @@
   - text: — no retries, no extra files.
 - paragraph: PRESENT_DONE
 - button "Preview report.txt in sidebar"
-- text: report.txt
-- status: Opened in default app
-- button "Open report.txt in sidebar": Open
-- button "More file actions for report.txt"
+- text: report.txt delivered report
+- button "Open in Test Editor"
+- button "More ways to open"
 - button "Preview 说明.txt in sidebar"
-- text: 说明.txt
-- status: Opened in default app
-- button "Open 说明.txt in sidebar": Open
-- button "More file actions for 说明.txt"
+- text: 说明.txt delivered note
+- button "Open in Test Editor"
+- button "More ways to open"
 - button "Copy"
 - button "Good response"
 - button "Bad response"

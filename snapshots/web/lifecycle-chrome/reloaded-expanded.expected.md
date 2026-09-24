@@ -6,11 +6,11 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
 - button "Copy"
-- button "Thought for a while" [expanded]
-- button "Context injection runtime-context"
+- status: Worked
+- button "Took {{duration}}" [expanded]
+- button "Analysis completed" [expanded]
 - button "Think The user wants me to reply with a single word. Let me comply."
 - paragraph: LIGHTHOUSE
 - button "Copy"

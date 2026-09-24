@@ -19,7 +19,7 @@ import { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-permission-presets'
-import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-terminal'
@@ -94,6 +94,7 @@ function textChunks(text: string): StreamChunk[] {
 
 /** Scripted same-route main model and reviewer for the shipped Auto pipeline. */
 class ShippedAutoAdapter extends LlmAdapter {
+  override async listModels(provider: string) { return [{ provider, id: AUTO_MODEL, name: AUTO_MODEL }] }
   readonly requests: GenerateOptions[] = []
 
   constructor(private readonly targetPath: string) {
@@ -196,6 +197,7 @@ function topLevelText(options: GenerateOptions): string {
 
 /** Same-route scripts for real one-shot, continuable, and cold-resumed children. */
 class ShippedChildAutoAdapter extends LlmAdapter {
+  override async listModels(provider: string) { return [{ provider, id: AUTO_MODEL, name: AUTO_MODEL }] }
   readonly requests: GenerateOptions[] = []
   readonly reviews: ChildReviewObservation[] = []
   private readonly children = new Map<SessionId, ChildScriptState>()
@@ -487,6 +489,10 @@ const EXPECTED_TOOLS = [
   'present',
   'read',
   'read_image',
+  'schedule_create',
+  'schedule_delete',
+  'schedule_list',
+  'schedule_update',
   'send_message',
   'skill',
   'subagent',

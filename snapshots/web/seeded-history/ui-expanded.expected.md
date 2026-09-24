@@ -8,10 +8,11 @@
 - navigation "Turn navigation":
   - button "Jump to turn 1"
   - button "Jump to turn 2"
-- button "System prompt"
 - text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. {{clock}}"
 - button "Copy"
-- button "2 tool calls" [expanded]
+- status: Worked
+- button "Took {{duration}}" [expanded]
+- button "Read files" [expanded]
 - button "Think The user wants me to read a.txt and b.txt, then reply with \"DONE\". Let me do both reads in parallel."
 - button "Read a.txt":
   - text: Read
@@ -27,7 +28,8 @@
 - button "Branch into a new conversation"
 - text: {{clock}}
 - button "compact Compacted 5 history items (~{{tokens}} tokens)"
-- button "Context injection AGENTS.md"
+- status: Worked
+- button "Took {{duration}}" [disabled]
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write

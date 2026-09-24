@@ -3,7 +3,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { SubagentHeaderLineage, type SubagentCatalogInjected } from './SubagentHeaderLineage.tsx'
+import { SubagentCatalogAction, SubagentHeaderLineage, type SubagentCatalogInjected } from './SubagentHeaderLineage.tsx'
 import {
   SubagentReadOnlyComposer, type SubagentReadOnlyMatch,
 } from './SubagentReadOnlyComposer.tsx'
@@ -24,7 +24,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 export type {
-  SubagentCatalogInjected, SubagentHeaderLineageProps,
+  SubagentCatalogActionProps, SubagentCatalogInjected, SubagentHeaderLineageProps,
 } from './SubagentHeaderLineage.tsx'
 export type {
   SubagentReadOnlyComposerProps, SubagentReadOnlyMatch,
@@ -57,7 +57,6 @@ export function apply(ctx: ClientContext): void {
   ctx.inject(['resources', 'sidebarRightTabs'], (scope) => {
     registerSidebarChat(scope, ctx.locale.bind(NS))
   })
-  const sessions = ctx.sessions
   const catalogActions = (_parentSessionId: SessionId): SubagentCatalogInjected => ({
     openChild(address: SubagentAddress) {
       ctx.uiWorkspace.openSession(address)
@@ -68,8 +67,8 @@ export function apply(ctx: ClientContext): void {
         preferNewPane: true,
       })
     },
-    refresh(parentSessionId: SessionId) {
-      void sessions.refreshProjections(parentSessionId)
+    refreshProjection(parentSessionId: SessionId) {
+      void ctx.sessions.refreshProjections(parentSessionId)
     },
   })
   ctx.slots.inject(
@@ -79,6 +78,19 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: catalogActions,
     }, SubagentHeaderLineage),
+  )
+  ctx.slots.inject(
+    'conversation.session.header.actions',
+    () => ctx.slots.register({
+      name: 'conversation.session.header.actions',
+      id: 'subagent-catalog',
+      // Leads the band, directly after the title crumbs: subagent lineage is
+      // the title's own continuation, ahead of Team navigation (-20) and the
+      // preset label (-10).
+      order: -30,
+      locale: NS,
+      inject: catalogActions,
+    }, SubagentCatalogAction),
   )
   ctx.slots.inject(
     'conversation.composer',

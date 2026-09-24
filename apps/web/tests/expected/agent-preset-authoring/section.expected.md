@@ -9,9 +9,6 @@
   - button "关闭"
   - heading "Agent 预设" [level=2]
   - paragraph: 选择 Agent 的工具和工作方式。日常任务用「标准模式」，扩展 DSH 的能力用「创造模式」。
-  - text: 新任务可选择模式 Beta
-  - paragraph: 开启后，可为每个新任务选择模式，并在这里设置默认值。关闭后，新任务使用应用配置的默认预设。已有任务不受影响。
-  - switch "新任务可选择模式" [checked]
   - heading "内置" [level=3]
   - list:
     - listitem:
@@ -22,16 +19,14 @@
       - 'button "模式说明: 标准模式"': 模式说明
       - 'button "如何使用: 标准模式"': 如何使用
       - 'button "查看配置: 标准模式"': 查看配置
-      - 'button "复制预设: 标准模式"': 复制预设
     - listitem:
       - 'button "设为新任务默认: PTC 模式"':
         - text: PTC 模式 内置
         - code: ptc
-        - text: 包含标准模式的所有能力，让 Agent 用代码串联多个工具，完成批量处理、筛选和汇总。你只需描述任务。
+        - text: 包含标准模式的所有能力，更适合批量调用工具，并对结果进行筛选、整理、去重、统计或汇总的任务。
       - 'button "模式说明: PTC 模式"': 模式说明
       - 'button "如何使用: PTC 模式"': 如何使用
       - 'button "查看配置: PTC 模式"': 查看配置
-      - 'button "复制预设: PTC 模式"': 复制预设
     - listitem:
       - 'button "设为新任务默认: 极简模式"':
         - text: 极简模式 内置
@@ -40,7 +35,6 @@
       - 'button "模式说明: 极简模式"': 模式说明
       - 'button "如何使用: 极简模式"': 如何使用
       - 'button "查看配置: 极简模式"': 查看配置
-      - 'button "复制预设: 极简模式"': 复制预设
     - listitem:
       - 'button "设为新任务默认: 创造模式"':
         - text: 创造模式 内置
@@ -49,6 +43,5 @@
       - 'button "模式说明: 创造模式"': 模式说明
       - 'button "如何使用: 创造模式"': 如何使用
       - 'button "查看配置: 创造模式"': 查看配置
-      - 'button "复制预设: 创造模式"': 复制预设
   - heading "自定义" [level=3]
   - button "让 Agent 帮我创建预设模式"

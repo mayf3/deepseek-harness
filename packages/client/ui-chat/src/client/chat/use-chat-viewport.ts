@@ -2,13 +2,8 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import type { ChatScrollPosition } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
-
-/** Scroll position, maximum top, and viewport height from one geometry read. */
-export interface ViewportMetrics {
-  readonly top: number
-  readonly floor: number
-  readonly height: number
-}
+import { scrollMetrics, ScrollFollow, type ViewportMetrics } from './use-scroll-follow.ts'
+export type { ViewportMetrics } from './use-scroll-follow.ts'
 
 /** Scroll geometry attributed against the last acknowledged position. */
 export interface ViewportScroll {
@@ -27,13 +22,24 @@ interface ViewportEvents {
   scroll: (event: ViewportScroll) => void
   scrollEnd: () => void
   resize: () => void
+  interact: () => void
 }
 
 interface ViewportElements {
   readonly list: HTMLElement
+  readonly column: HTMLElement
   readonly scroller: HTMLElement
   readonly composer: HTMLElement | null
 }
+
+interface PagingPosition {
+  readonly row: HTMLElement
+  readonly position: ChatScrollPosition
+  readonly group: { readonly body: HTMLElement; readonly content: HTMLElement; readonly top: number } | null
+}
+
+const READING_INTENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown', 'beforematch'] as const
+const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '])
 
 /** Owns one Chat scrollport's DOM operations, event listeners, and size observer. */
 export class ChatViewport {
@@ -42,20 +48,22 @@ export class ChatViewport {
   private events: ViewportEvents | null = null
   private turns: ReturnType<ChatSnapshot['navigation']['items']> = []
   private observation: { top: number; landing: ViewportLanding | null } = { top: 0, landing: null }
+  private paging: PagingPosition | null = null
 
   /**
    * Bind to the containing scrollport and observe content and viewport sizes.
    * @param list - Chat root inside an optional shared conversation scrollport.
-   * @param column - content column whose size changes invalidate cached landings.
+   * @param column - ordered outer Node/Group boxes; its size changes invalidate cached landings.
    */
   attach(list: HTMLElement, column: HTMLElement): void {
     this.detach()
     const scroller = list.closest<HTMLElement>('[data-conversation-scroll]') ?? list
     const composer = scroller.querySelector<HTMLElement>('[data-composer-seat]')
-    const elements = { list, scroller, composer }
+    const elements = { list, column, scroller, composer }
     this.elements = elements
     scroller.addEventListener('scroll', this.onScroll, { passive: true })
-    scroller.addEventListener('scrollend', this.onScrollEnd, { passive: true })
+    scroller.addEventListener('scrollend', this.onScrollEnd, { passive: true, capture: true })
+    for (const type of READING_INTENTS) scroller.addEventListener(type, this.onIntent, { passive: true, capture: true })
     if (typeof ResizeObserver !== 'undefined') {
       this.observer = new ResizeObserver(() => {
         if (this.elements !== elements) return
@@ -70,8 +78,10 @@ export class ChatViewport {
 
   /** Disconnect DOM resources and clear observations for the detached view. */
   detach(): void {
+    this.stopPreserving()
     this.elements?.scroller.removeEventListener('scroll', this.onScroll)
-    this.elements?.scroller.removeEventListener('scrollend', this.onScrollEnd)
+    this.elements?.scroller.removeEventListener('scrollend', this.onScrollEnd, true)
+    for (const type of READING_INTENTS) this.elements?.scroller.removeEventListener(type, this.onIntent, true)
     this.observer?.disconnect()
     this.observer = null
     this.elements = null
@@ -135,20 +145,22 @@ export class ChatViewport {
   private metrics(): ViewportMetrics | null {
     const scroller = this.elements?.scroller
     if (scroller === undefined) return null
-    const height = scroller.clientHeight
-    return { top: scroller.scrollTop, height, floor: Math.max(0, scroller.scrollHeight - height) }
+    return scrollMetrics(scroller)
   }
 
-  private anchor(key: string): HTMLElement | null {
+  private anchor(key: string, identity: 'position' | 'node' = 'position'): HTMLElement | null {
     if (this.elements === null) return null
-    for (const row of this.elements.list.querySelectorAll<HTMLElement>('[data-chat-anchor-key]:not([hidden])')) {
-      if (row.dataset.chatAnchorKey === key) return row
+    // Reading anchors name exact parts; Turn navigation names the original Node.
+    let nodePart: HTMLElement | null = null
+    for (const row of this.elements.list.querySelectorAll<HTMLElement>('[data-chat-anchor-key]:not([hidden]):not([hidden] *)')) {
+      if (row.dataset.chatAnchorKey === key || (identity === 'node' && row.dataset.chatNodeKey === key)) return row
+      if (nodePart === null && row.dataset.chatNodeKey === key) nodePart = row
     }
-    return null
+    return nodePart
   }
 
   /**
-   * Capture the reader's position using visible transcript rows.
+   * Capture visible transcript content, excluding Turn controls that relocate when history expands.
    * @returns a visible semantic anchor, or null when no anchor can be resolved.
    */
   capturePosition(): ChatScrollPosition | null {
@@ -164,12 +176,18 @@ export class ChatViewport {
       const right = Math.min(viewport.right, content.right)
       for (const element of document.elementsFromPoint(left + Math.max(0, right - left) / 2, viewport.top + 1)) {
         const row = element instanceof HTMLElement ? element.closest<HTMLElement>('[data-chat-anchor-key]') : null
-        if (row !== null && list.contains(row)) { anchor = row; break }
+        if (row !== null && row.dataset.chatFlowKind !== 'turn-process' && list.contains(row)) {
+          // An open group's header stays put while older members enter above its body content.
+          anchor = row.dataset.chatGroupKey === undefined ? row
+            : row.querySelector<HTMLElement>('[data-step-process-content] > [data-chat-anchor-key]:not(:empty):not([hidden]):not([hidden] *)') ?? row
+          break
+        }
       }
     }
     if (anchor === null) {
       const rows = list.querySelectorAll<HTMLElement>(
-        '[data-chat-flow] > [data-chat-flow-key]:not(:empty):not([hidden])',
+        '[data-chat-flow-key]:not([data-chat-group-key]):not([data-chat-flow-kind="turn-process"])'
+        + ':not(:empty):not([hidden]):not([hidden] *)',
       )
       let low = 0
       let high = rows.length
@@ -190,9 +208,11 @@ export class ChatViewport {
   }
 
   /**
-   * Resolve the active turn, reusing a known landing when its position is unchanged.
+   * Approximate the active Turn by binary-searching outer Node/Group boxes.
+   * Gaps retain the last visited Turn candidate, not necessarily the immediate predecessor.
+   * A known landing bypasses measurement while its position is unchanged.
    * @param metrics - reusable scroll metrics; omitted callers request a fresh read.
-   * @returns the loaded turn at the reading line, or null while detached or empty.
+   * @returns the Turn near the reading line, or null while detached or empty.
    */
   readVisibleTurn(metrics = this.metrics()): number | null {
     const knownTurn = this.observation.landing?.turn
@@ -201,41 +221,34 @@ export class ChatViewport {
     const first = this.turns[0]
     if (elements === null || metrics === null || first === undefined) return null
     const line = elements.scroller.getBoundingClientRect().top + Math.min(96, metrics.height * 0.2)
-    const content = elements.list.getBoundingClientRect()
-    let reading: number | null = null
-    if (typeof document.elementsFromPoint === 'function' && content.width > 0) {
-      for (const element of document.elementsFromPoint(content.left + content.width / 2, line)) {
-        const row = element instanceof HTMLElement ? element.closest<HTMLElement>('[data-chat-turn]') : null
-        const turn = Number(row?.dataset.chatTurn)
-        if (row !== null && elements.list.contains(row) && Number.isSafeInteger(turn)) { reading = turn; break }
-      }
-    }
-    if (reading === null) {
-      for (const row of elements.list.querySelectorAll<HTMLElement>('[data-chat-turn]')) {
-        if (row.getBoundingClientRect().top > line) break
-        const turn = Number(row.dataset.chatTurn)
+    const rows = elements.column.children
+    let low = 0
+    let high = rows.length
+    let reading = first.turn
+    while (low < high) {
+      const middle = (low + high) >>> 1
+      const row = rows[middle] as Element
+      if (row.getBoundingClientRect().top > line) high = middle
+      else {
+        const value = row.getAttribute('data-chat-turn')
+        const turn = value === null ? NaN : Number(value)
         if (Number.isSafeInteger(turn)) reading = turn
+        low = middle + 1
       }
     }
-    let result = first.turn
-    if (reading !== null) {
-      for (const item of this.turns) {
-        if (item.turn > reading) break
-        result = item.turn
-      }
-    }
-    return result
+    return reading
   }
 
   /**
    * Align a known loaded turn and return its actual clamped position.
+   * A split Node anchor selects its first visible part.
    * @param turn - loaded turn to align below the scrollport's top edge.
    * @returns the actual landing, or null when its anchor is unavailable.
    */
   scrollToTurn(turn: number): ViewportLanding | null {
     const item = this.turns.find(candidate => candidate.turn === turn)
     if (item === undefined) return null
-    const row = this.anchor(item.anchorKey)
+    const row = this.anchor(item.anchorKey, 'node')
     return row === null ? null : this.align(row, 24, turn)
   }
 
@@ -246,7 +259,7 @@ export class ChatViewport {
    */
   scrollToTurnAtOrAfter(turn: number): ViewportLanding | null {
     if (this.elements === null) return null
-    for (const row of this.elements.list.querySelectorAll<HTMLElement>('[data-chat-turn]:not([hidden])')) {
+    for (const row of this.elements.list.querySelectorAll<HTMLElement>('[data-chat-turn]:not([hidden]):not([hidden] *)')) {
       const candidate = Number(row.dataset.chatTurn)
       if (Number.isSafeInteger(candidate) && candidate >= turn) return this.align(row, 24, candidate)
     }
@@ -265,23 +278,122 @@ export class ChatViewport {
     return metrics === null ? null : this.write(position.scrollTop, metrics, null)
   }
 
+  /** Retain the first eligible transcript seat in DOM order; selection reads no geometry. */
+  beginPaging(): void {
+    this.stopPreserving()
+    const row = this.elements?.list.querySelector<HTMLElement>(
+      '[data-chat-paging-anchor]:not(:empty):not([hidden]):not([hidden] *)',
+    )
+    if (row != null) this.retain(row)
+  }
+
   /**
-   * Preserve an existing anchor without falling back to an unrelated row.
-   * @param position - semantic anchor to retain after content changes.
-   * @returns the compensated landing, or null if the anchor is unavailable.
+   * Retain one old row and its inner/outer offsets for paging and later content growth.
+   * @param position - an explicit landing to retain; omitted callers capture the current reading position.
    */
-  preserve(position: ChatScrollPosition): ViewportLanding | null {
+  beginPreserving(position: ChatScrollPosition | null = this.capturePosition()): void {
+    this.stopPreserving()
+    if (position === null) return
     const row = this.anchor(position.anchorKey)
-    return row === null ? null : this.align(row, position.anchorTop, null)
+    if (row === null) return
+    this.retain(row, position)
+  }
+
+  private retain(row: HTMLElement, position?: ChatScrollPosition, groupTop?: number): PagingPosition | null {
+    const elements = this.elements
+    const key = row.dataset.chatAnchorKey
+    if (elements === null || key === undefined) return null
+    const previous = this.paging?.group
+    if (previous != null) this.observer?.unobserve(previous.content)
+    const top = row.getBoundingClientRect().top
+    const body = row.closest<HTMLElement>('[data-step-process-body]')
+    const content = body?.querySelector<HTMLElement>('[data-step-process-content]')
+    const group = body === null || content == null ? null
+      : { body, content, top: groupTop ?? top - body.getBoundingClientRect().top }
+    this.paging = {
+      row, group,
+      position: position ?? {
+        anchorKey: key,
+        anchorTop: top - elements.scroller.getBoundingClientRect().top,
+        scrollTop: elements.scroller.scrollTop,
+      },
+    }
+    if (group !== null) this.observer?.observe(group.content)
+    return this.paging
+  }
+
+  /** Release paging ownership and its content-size observation. */
+  stopPreserving(): void {
+    const group = this.paging?.group
+    if (group != null) this.observer?.unobserve(group.content)
+    this.paging = null
+  }
+
+  /**
+   * Expose retained paging ownership to navigation and resize policy.
+   * @returns whether a paging row is retained for subsequent layout changes.
+   */
+  get preserving(): boolean { return this.paging !== null }
+
+  /**
+   * Compensate inner scrolling first, then the outer scrollport, within their actual scroll ranges.
+   * An inner write pauses its bound follow controller so the reading anchor takes priority.
+   * @returns the actual landing, or null when no visible retained row remains.
+   */
+  preserve(): ViewportLanding | null {
+    let paging = this.paging
+    const elements = this.elements
+    if (paging === null || elements === null) return null
+    if (!elements.list.contains(paging.row)) {
+      // Segmentation can remount the same semantic row under another group.
+      const replacement = this.anchor(paging.position.anchorKey)
+      if (replacement === null) {
+        this.stopPreserving()
+        return null
+      }
+      paging = this.retain(replacement, paging.position, paging.group?.top)
+      if (paging === null) return null
+    }
+    const { row, group, position } = paging
+    if (row.closest('[hidden]') !== null || row.matches(':empty')) {
+      this.stopPreserving()
+      return null
+    }
+    if (group !== null && group.body.contains(row)) {
+      const top = row.getBoundingClientRect().top - group.body.getBoundingClientRect().top
+      const metrics = scrollMetrics(group.body)
+      const target = Math.max(0, Math.min(metrics.floor, metrics.top + top - group.top))
+      if (metrics.top !== target) {
+        const follow = ScrollFollow.forElement(group.body)
+        if (follow === undefined) group.body.scrollTop = target
+        else {
+          follow.jump(group.body, metrics, target)
+          follow.setFollowing(false)
+        }
+      }
+    }
+    const metrics = this.metrics()
+    if (metrics === null) return null
+    const top = row.getBoundingClientRect().top - elements.scroller.getBoundingClientRect().top
+    const target = metrics.top + top - position.anchorTop
+    return this.write(target, metrics, null, { key: position.anchorKey, top })
   }
 
   /**
    * Align the scrollport with its current floor.
+   * @param follow - independent follow intent and scrolling controller.
    * @returns the actual floor landing, or null while detached.
    */
-  scrollToBottom(): ViewportLanding | null {
+  scrollToBottom(follow: ScrollFollow): ViewportLanding | null {
     const metrics = this.metrics()
-    return metrics === null ? null : this.write(metrics.floor, metrics, this.latestTurn)
+    if (metrics === null || this.elements === null) return null
+    const landing: ViewportLanding = {
+      metrics: follow.toBottom(this.elements.scroller, metrics, 'instant'),
+      position: null,
+      turn: this.latestTurn,
+    }
+    this.observation = { top: landing.metrics.top, landing }
+    return landing
   }
 
   private align(row: HTMLElement, offset: number, turn: number | null): ViewportLanding | null {
@@ -316,12 +428,27 @@ export class ChatViewport {
     if (this.elements === null || event.target !== this.elements.scroller) return
     if (this.observation.landing !== null && this.elements.scroller.scrollTop === this.observation.top) return
     this.invalidate()
+    if (this.paging !== null) {
+      this.events?.resize()
+      return
+    }
     const scroll = this.readScroll()
     if (scroll !== null) this.events?.scroll(scroll)
   }
 
   private readonly onScrollEnd = (event: Event): void => {
-    if (event.target === this.elements?.scroller) this.events?.scrollEnd()
+    if (event.target === this.elements?.scroller
+      || (event.target instanceof HTMLElement && event.target.hasAttribute('data-step-process-body'))) this.events?.scrollEnd()
+  }
+
+  private readonly onIntent = (event: Event): void => {
+    if (event.type === 'keydown' || event.type === 'pointerdown') {
+      if (event.target instanceof Element && event.target.closest('[data-composer-seat]') !== null) return
+      if (event.type === 'keydown' && (!(event instanceof KeyboardEvent) || !SCROLL_KEYS.has(event.key))) return
+    }
+    if (this.paging === null) return
+    this.stopPreserving()
+    this.events?.interact()
   }
 }
 

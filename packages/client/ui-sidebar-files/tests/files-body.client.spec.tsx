@@ -28,6 +28,13 @@ function names(root: HTMLElement): string[] {
 }
 
 describe('FilesBody', () => {
+  it('displays the effective file-tree refresh accelerator', async () => {
+    const { view, script } = mountBody(ROOT, { id: 'page.refresh' as never, label: 'Refresh', aliases: [],
+      binding: null, keys: ['Ctrl', 'R'], aria: 'Control+R', modified: true, conflicts: [], issue: null })
+    await act(() => script.watches.ready(ROOT))
+    await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+    expect(view.getByRole('button', { name: zh.reload }).getAttribute('aria-keyshortcuts')).toBe('Control+R')
+  })
   it('says so when the session has no workspace directory, and asks for nothing', () => {
     const { view, script } = mountBody(null)
     expect(view.container.querySelector('[data-files-state="no-workspace"]')?.textContent).toBe(zh.noWorkspace)
@@ -44,7 +51,7 @@ describe('FilesBody', () => {
     expect(view.container.querySelector('[data-files-state="tree"]')?.getAttribute('data-files-root')).toBe(ROOT)
     const path = view.container.querySelector('[data-files-path]')
     expect(path?.getAttribute('title')).toBe(ROOT)
-    expect([...path?.querySelectorAll('span > span') ?? []].map(span => span.textContent)).toEqual(['/work/', 'app'])
+    expect([...path?.firstElementChild?.children ?? []].map(span => span.textContent)).toEqual(['/work/', 'app'])
     expect(names(view.container)).toEqual([`${ROOT}/src`, `${ROOT}/.env`, `${ROOT}/pipe`, `${ROOT}/README.md`])
     const envIcon = view.container.querySelector(`[data-files-path="${ROOT}/.env"] svg`)?.innerHTML
     const readmeIcon = view.container.querySelector(`[data-files-path="${ROOT}/README.md"] svg`)?.innerHTML
@@ -56,7 +63,7 @@ describe('FilesBody', () => {
     await act(() => script.watches.ready('/'))
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
     const path = view.container.querySelector('[data-files-path]')
-    expect([...path?.querySelectorAll('span > span') ?? []].map(span => span.textContent)).toEqual(['/'])
+    expect([...path?.firstElementChild?.children ?? []].map(span => span.textContent)).toEqual(['/'])
     expect(names(view.container)).toEqual(['/src', '/.env', '/pipe', '/README.md'])
   })
 
@@ -86,7 +93,7 @@ describe('FilesBody', () => {
       await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
       const path = view.container.querySelector<HTMLElement>('[data-files-path]')
       const text = path?.firstElementChild
-      expect(path?.hasAttribute('data-files-path-clipped')).toBe(false)
+      expect(path?.hasAttribute('data-path-clipped')).toBe(false)
       const observer = FakeResizeObserver.latest
       if (observer === undefined) throw new Error('expected the path to observe its size')
       expect(observer.observe).toHaveBeenCalledWith(path)
@@ -94,11 +101,11 @@ describe('FilesBody', () => {
 
       boxWidth = 120
       act(() => { observer.fire() })
-      expect(path?.hasAttribute('data-files-path-clipped')).toBe(true)
+      expect(path?.hasAttribute('data-path-clipped')).toBe(true)
 
       boxWidth = 300
       act(() => { observer.fire() })
-      expect(path?.hasAttribute('data-files-path-clipped')).toBe(false)
+      expect(path?.hasAttribute('data-path-clipped')).toBe(false)
       view.unmount()
       expect(observer.disconnect).toHaveBeenCalledTimes(1)
     } finally {
@@ -192,8 +199,8 @@ describe('FilesBody', () => {
     expect(names(view.container)).toEqual(rows)
   })
 
-  it('reload refreshes expanded nodes without clearing cached rows or the scroll position', async () => {
-    const { view, script, instance } = mountBody()
+  it.each(['button', 'shortcut'])('%s refreshes expanded nodes without clearing cached rows or the scroll position', async (source) => {
+    const { view, script, instance, tabActions } = mountBody()
     const child = `${ROOT}/src`
     const collapsed = `${ROOT}/docs`
     const rootStream = await act(() => script.watches.ready(ROOT))
@@ -207,7 +214,10 @@ describe('FilesBody', () => {
     const body = view.container.querySelector('[data-files-body]')!
     fireEvent.scroll(body, { target: { scrollTop: 120 } })
 
-    act(() => { fireEvent.click(view.container.querySelector('[data-files-reload]')!) })
+    act(() => {
+      if (source === 'button') fireEvent.click(view.container.querySelector('[data-files-reload]')!)
+      else tabActions.bindCommands.mock.calls.at(-1)![0].refresh!()
+    })
     expect(script.list.mock.calls.slice(2).map(call => call[1])).toEqual([ROOT])
     expect(script.list).toHaveBeenLastCalledWith(SESSION, ROOT, rootStream.signal)
     expect(instance.getSnapshot().byTab[TAB]!.levels).toEqual(cached.levels)

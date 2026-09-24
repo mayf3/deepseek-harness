@@ -8,7 +8,7 @@ import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold,
   watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspaceZh, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
+import { openSettings, connectFreshWorkspaceZh, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
 const EXPECTED = fileURLToPath(new URL('./expected/deepseek-messages-settings/', import.meta.url))
 
@@ -43,7 +43,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages sett
     await onboarding.getByLabel('API 密钥', { exact: true }).fill('sk-messages-onboarding')
     await onboarding.getByRole('button', { name: '保存并继续' }).click()
     await onboarding.waitFor({ state: 'detached' })
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openSettings(page, 'zh')
     const dialog = page.getByRole('dialog', { name: '设置', exact: true })
     await dialog.getByRole('button', { name: '模型', exact: true }).click()
     await dialog.getByText('DeepSeek', { exact: true }).waitFor()
@@ -62,13 +62,13 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages sett
     await messages.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.getByText('已保存 DeepSeek (deepseek-official)。', { exact: true }).waitFor()
 
-    const settings = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
+    const settings = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
     expect(settings).toContain('https://messages.example/anthropic')
-    expect(settings).toContain('llm-deepseek:')
+    expect(settings).toContain('id: llm-deepseek')
     await expect(scaffold.ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-flash')).resolves.toMatchObject({
       name: 'Messages Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
     })
-    expect(scaffold.ctx.settings.get('llm-deepseek')).not.toHaveProperty('protocol')
+    expect(scaffold.ctx.settings.describe().find(row => row.ns === 'llm-deepseek')?.value).not.toHaveProperty('protocol')
     expect(settings).not.toContain('sk-e2e-')
     const credentials = await readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8')
     expect(credentials).toContain('DEEPSEEK_API_KEY: sk-e2e-messages')
@@ -84,19 +84,21 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages sett
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('keeps a saved DeepSeek selection available after editing provider settings', async () => {
+  it('selects an available DeepSeek model after provider settings remove the default', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-deepseek-messages-default'))
     await page.keyboard.press('Escape')
     await scaffold.ctx.agentDefaultModel.saveSelection({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
     await page.reload({ waitUntil: 'load' })
     const input = page.locator('[data-composer-input]').first()
-    await expect.poll(() => input.isEnabled()).toBe(true)
-    await page.getByRole('button', { name: /^选择模型/ }).click()
+    const trigger = page.getByRole('button', { name: /^选择模型.*deepseek-official\/deepseek-v4-flash/ })
+    await trigger.waitFor()
+    await expect.poll(() => input.getAttribute('contenteditable')).toBe('true')
+    await trigger.click()
     await page.getByRole('menuitem', { name: /模型/ }).click()
     await page.getByRole('menuitemradio', { name: 'Messages Flash', exact: true }).click()
-    await expect.poll(() => input.isEnabled()).toBe(true)
+    await expect.poll(() => input.getAttribute('contenteditable')).toBe('true')
     await expect.poll(() => scaffold.ctx.agentDefaultModel.currentSelection().provider).toBe('deepseek-official')
-    const settings = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
+    const settings = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
     expect(settings).toContain('provider: deepseek-official')
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)

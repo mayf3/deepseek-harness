@@ -1,8 +1,8 @@
 /** Persistent transcript cards and pending-review sidebar navigation. */
 import { useEffect } from 'react'
 import { FileTypeIcon, IconChevronRightOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { shallowEqual } from '@deepseek-ai/dsh-client-store'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { SubmittedPlan } from './plan.ts'
 import type {} from './plan-definition.ts'
 import type { HostObservable, InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
@@ -15,6 +15,14 @@ import css from './PlanPreview.module.css'
 export interface PlanOpenInjected {
   /** Open or focus the exact submitted plan. */
   openPlan: (callId: ToolCallId) => void
+}
+
+/** Turn-keyed submitted plans and Session-bound navigation. */
+export interface PlanCardsInjected extends PlanOpenInjected {
+  keyedHooks: {
+    /** Resolve only this Turn's submitted plans, in invocation order. */
+    plans: (turn: string) => ObservableSnapshot<readonly SubmittedPlan[]>
+  }
 }
 
 /** Session-bound preview navigation for one pending review. */
@@ -32,16 +40,12 @@ export interface PlanReviewOpenInjected {
  * @param props - Logged plan, localized copy, and Session-bound navigation.
  * @returns keyboard-accessible plan cards, or null for a Turn without plans.
  */
-export function PlanCards({ turn, useChat, openPlan, t }: PropsRuntime<'conversation.chat.turnTail'> & InjectFace<PlanOpenInjected> & PropsLocale<'plan'>) {
-  const plans = useChat(snapshot => snapshot.nodes.values()
-    .filter((node): node is ChatNode<'submitted-plan'> => node.kind === 'submitted-plan'
-      && (node.location.kind === 'turn' || node.location.kind === 'step')
-      && node.location.turn.turn === turn.turn)
-    .sort((a, b) => a.anchorSeq - b.anchorSeq), shallowEqual)
-  if (plans.length === 0) return null
+export function PlanCards({ turn, usePlans, openPlan, t }: PropsRuntime<'conversation.chat.turnTail'> & InjectFace<PlanCardsInjected> & PropsLocale<'plan'>) {
+  const plans = usePlans(String(turn.turn))
+  if (plans === undefined || plans.length === 0) return null
   return (
     <div className={css.cards} data-plan-artifacts>
-      {plans.map(({ data: plan }) => <button key={plan.callId} type="button" className={css.card} data-plan-card={plan.callId}
+      {plans.map(plan => <button key={plan.callId} type="button" className={css.card} data-plan-card={plan.callId}
         aria-label={t('preview.openNamed', { title: plan.title })}
         onClick={() => { openPlan(plan.callId) }}>
         <span className={css.cardIcon}><FileTypeIcon kind="markdown" size={20} /></span>
