@@ -87,4 +87,15 @@ describe('the preset roster', () => {
     await pending
     expect(state().error).toBe('Session already started')
   })
+
+  it('skips blank-session synchronization when the roster marks no default', async () => {
+    const { controller, remote } = fixture()
+    const sync = vi.fn(async () => undefined)
+    remote.agentPresets.list.mockResolvedValueOnce({ ok: true, value: { presets: [{ id: 'standard', isDefault: false }] } })
+
+    await controller.makeDefault('standard', sync)
+
+    expect(remote.settings.update).toHaveBeenCalledOnce()
+    expect(sync).not.toHaveBeenCalled()
+  })
 })

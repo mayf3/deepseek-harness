@@ -36,7 +36,7 @@ function fakeRoster(
     settings?: object
   } = {},
 ): ClientContext {
-  return {
+  const partial = {
     remote: {
       ...options.settings === undefined ? {} : { settings: options.settings },
       agentPresets: {
@@ -53,7 +53,8 @@ function fakeRoster(
         },
       },
     },
-  } as unknown as ClientContext
+  }
+  return partial as ClientContext
 }
 
 /** A context whose roster and settings write outcome the test controls. */
@@ -209,7 +210,7 @@ describe('the new-session chip controller', () => {
       list?: () => Promise<ReturnType<typeof remoteRoster>>
     } = {},
   ): AgentPresetSeatController {
-    const ctx = {
+    const partial = {
       configForms: { developerTools: { enabled: options.developerTools ?? createSnapshotStore(true) } },
       remote: {
         agentPresets: {
@@ -237,7 +238,8 @@ describe('the new-session chip controller', () => {
           },
         },
       },
-    } as unknown as ClientContext
+    }
+    const ctx = partial as ClientContext
     return new AgentPresetSeatController(
       ctx,
       typeof current === 'function' ? current : () => current,
