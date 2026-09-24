@@ -35,7 +35,7 @@ Open Plugins in the Web sidebar and enable Scheduling and time context, marked b
 <details>
 <summary>Maintainer details — click to expand</summary>
 
-`cordis.patch.yml` carries three id-targeted patches, each setting `disabled: false` on a row the Web bundle already inserts. `OPTIONAL_BUNDLES` in `packages/boot/app-boot/src/profile.ts` names this package and `apps/cli` depends on it, so every installation ships it switched off and the plugin manager offers it in the Official group. Selecting it appends the bundle to the profile's `dsh.profile.bundles` list, and the profile launcher applies the bundle layers after the Web layer. No runtime invariant companion is published, because this configuration-only package owns no mutable runtime state.
+`cordis.patch.yml` carries three id-targeted patches, each setting `disabled: false` on a row the Web bundle already inserts. `OPTIONAL_BUNDLES` in `packages/boot/app-boot/src/profile.ts` names this package and `apps/cli` depends on it, so every installation ships it switched off and the plugin manager offers it in the Official group. Selecting it appends the bundle to the profile's `dsh.profile.bundles` list, and the profile launcher applies the bundle layers after the Web layer. No runtime invariant companion is published because this configuration-only package owns no mutable runtime state.
 
 | File | Role |
 |---|---|
