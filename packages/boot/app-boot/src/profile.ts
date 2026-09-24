@@ -104,6 +104,7 @@ export interface Profile {
 
 /** A selected bundle the profile could not load, or whose own DSH peers the profile does not exempt. */
 export interface SkippedBundle {
+  /** The bundle's package name from `dsh.profile.bundles`. */
   packageName: string
   /** The resolution, manifest, compatibility, or patch-loading failure. */
   reason: string
@@ -433,7 +434,7 @@ export async function createRuntimeResolution(
   const profilesDir = join(home, PROFILES_DIR)
   const manifest = readOptionalProfileManifest(profile)
   const { packageNames, packageDirs, declarers, versions } = collectInstallationScopePackages(
-    installAnchor, skippedProfileBundles(profile, manifest),
+    installAnchor, new Set(profile?.skippedBundles.map(skipped => skipped.packageName)),
   )
   const profileDeclarers = new Map<string, string>()
   const profileVersions = new Map<string, string | undefined>()
@@ -470,18 +471,6 @@ function readOptionalProfileManifest(profile: Profile | undefined): ProfileManif
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error
   }
-}
-
-/**
- * Identify selected bundles that did not produce a loaded layer.
- * @param profile - loaded profile, when present.
- * @param manifest - its parsed manifest, when present.
- * @returns selected bundle names missing from the loaded layers, for resolution and diagnostics.
- */
-export function skippedProfileBundles(profile: Profile | undefined, manifest: ProfileManifest | undefined): ReadonlySet<string> {
-  const selected = manifest?.dsh?.profile?.bundles ?? []
-  const loaded = new Set(profile?.layers.map(layer => layer.packageName))
-  return new Set(selected.filter(name => !loaded.has(name)))
 }
 
 /** Return installed direct dependencies that Node resolves before profile fallback. */
