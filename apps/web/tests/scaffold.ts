@@ -734,7 +734,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         patches: [],
       }
     }))
-    const profile: Profile = {
+    const profile: Profile = { skippedBundles: [],
       name: 'scaffold',
       dir: profileDir,
       layers: extraLayers,

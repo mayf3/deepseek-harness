@@ -743,10 +743,10 @@ describe('slot-owned useTabInfo', () => {
     })
     const anchor = element(h.view.container, '[data-dockkit-split-button]').parentElement!
     fireEvent.focus(anchor)
-    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Two panes is the limit ⌘ \\')
+    expect(document.querySelector('[role="tooltip"]')?.getAttribute('aria-label')).toBe('Two panes is the limit ⌘ \\')
     act(() => { h.catalog.set([{ ...split, binding: { code: 'KeyG', modifiers: ['control'] },
       keys: ['Ctrl', '+', 'G'], aria: 'Control+G' }]) })
-    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Two panes is the limit Ctrl + G')
+    expect(document.querySelector('[role="tooltip"]')?.getAttribute('aria-label')).toBe('Two panes is the limit Ctrl + G')
     act(() => { h.catalog.set([{ ...split, binding: null, keys: [], aria: undefined }]) })
     expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Two panes is the limit')
   })

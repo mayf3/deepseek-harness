@@ -20,17 +20,16 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
  * @returns every string the kit renders.
  */
 export function dockLabels(t: TranslateNS<'sidebarRight'>, split?: ShortcutCatalogEntry, close?: ShortcutCatalogEntry): DockLabels {
-  const splitHint = (label: string) => split?.keys.length ? t('shortcut.hint', { label, keys: split.keys.join(' ') }) : label
   return {
     emptyPane: t('dock.emptyPane'),
     splitPane: t('dock.splitPane'),
-    splitPaneTooltip: splitHint(t('dock.splitPane')),
     splitPaneShortcut: split?.aria,
-    splitPaneDisabled: splitHint(t('dock.splitPaneDisabled')),
-    splitPaneNarrow: splitHint(t('dock.splitPaneNarrow')),
+    splitPaneKeys: split?.keys,
+    splitPaneDisabled: t('dock.splitPaneDisabled'),
+    splitPaneNarrow: t('dock.splitPaneNarrow'),
     closeTab: t('dock.closeTab'),
-    closeTabTooltip: close?.keys.length ? t('shortcut.hint', { label: t('dock.closeTab'), keys: close.keys.join(' ') }) : t('dock.closeTab'),
     closeTabShortcut: close?.aria,
+    closeTabKeys: close?.keys,
     addTab: t('dock.addTab'),
     dockFloat: t('dock.dockFloat'),
     closeFloat: t('dock.closeFloat'),

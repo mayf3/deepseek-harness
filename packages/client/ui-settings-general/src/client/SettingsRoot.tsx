@@ -218,7 +218,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           wide, settingsOpen: open, openSettings: actions.open,
           ...(shortcut?.keys.length ? { settingsShortcut: { keys: shortcut.keys, aria: shortcut.aria } } : {}),
           openOnboarding: (id) => { close(); setRequestedOnboarding(id) },
-        }, { fallback: <Tooltip disabled={open} label={shortcut?.keys.length ? t('shortcut.hint', { label: t('trigger'), keys: shortcut.keys.join(' ') }) : t('trigger')}>
+        }, { fallback: <Tooltip disabled={open} label={t('trigger')} shortcutKeys={shortcut?.keys}>
           <button
             type="button"
             className={clsx(css.trigger, !wide && css.rail)}

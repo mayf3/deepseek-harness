@@ -9,8 +9,8 @@
   en: 909b14f93584c835
   zh: da2b6de301df901a
 /deepseek-ai-dsh-output-retention/summary:
-  en: c9dbec0027735a9c
-  zh: 5a77a10641e06b94
+  en: 22e523125ade3619
+  zh: 2cf48b1a6658056f
 /deepseek-ai-dsh-output-retention/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -26,6 +26,9 @@
 /deepseek-ai-dsh-output-retention/use-this-package/building-the-omission-footer:
   en: 24a79057aea704e0
   zh: ab6b91d0d1c3b8d7
+/deepseek-ai-dsh-output-retention/use-this-package/capping-a-character-budget-preview:
+  en: ca55f16ac7f494d4
+  zh: 181c19d0d5f0128b
 /deepseek-ai-dsh-output-retention/use-this-package/what-truncated-means:
   en: d496be708ac637dc
   zh: 739017ce47f08148
@@ -36,8 +39,8 @@
   en: fd2a6c959bfe864e
   zh: 25b11d28aced568c
 /deepseek-ai-dsh-output-retention/understand-the-implementation/source-map:
-  en: 3f1ca257232b5991
-  zh: 29bc947d6dff05cb
+  en: cb49af8772b97f13
+  zh: 23810afb65f350ee
 /deepseek-ai-dsh-output-retention/understand-the-implementation/two-retainers-two-resource-models:
   en: 6a5dd228d9f9808b
   zh: 9bba82c5771ee705
@@ -57,8 +60,8 @@
   en: 4487c456cf996b48
   zh: 2c25fe4a5a53f345
 /deepseek-ai-dsh-output-retention/known-limitations-and-deferred-work:
-  en: dabd5ca291570e70
-  zh: d1d98ece31eaa664
+  en: 34e646397df5e681
+  zh: 344609df5eb0c4fa
 /deepseek-ai-dsh-output-retention/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

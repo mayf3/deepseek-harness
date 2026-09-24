@@ -72,12 +72,12 @@ it.each(['hover', 'focus'] as const)('keeps the terminal shortcut inline without
   if (trigger === 'hover') fireEvent.mouseEnter(button)
   else fireEvent.focus(button)
   expect(h.view.queryByRole('tooltip')).toBeNull()
-  expect(button.textContent).toContain('Ctrl`')
+  expect(Array.from(h.view.container.querySelectorAll('kbd'), key => key.textContent)).toEqual(['Ctrl', '`'])
   expect(button.getAttribute('aria-keyshortcuts')).toBe('Control+`')
 
   h.setShortcut({ keys: ['Alt', 'T'], aria: 'Alt+t' })
   expect(h.view.queryByRole('tooltip')).toBeNull()
-  expect(button.textContent).toContain('AltT')
+  expect(Array.from(h.view.container.querySelectorAll('kbd'), key => key.textContent)).toEqual(['Alt', 'T'])
   expect(button.getAttribute('aria-keyshortcuts')).toBe('Alt+t')
 
   h.setShortcut({ keys: [], aria: undefined })
@@ -92,6 +92,7 @@ it('loads on demand, remembers a selected shell before opening, and cancels on m
   const h = mount()
   h.open()
   await h.view.findByRole('menuitem', { name: 'zsh' })
+  expect(h.openTab).not.toHaveBeenCalled()
   const signal = h.loadShells.mock.calls[0]![0]
   h.selectShell.mockImplementation(() => { expect(h.openTab).not.toHaveBeenCalled() })
   fireEvent.click(h.view.getByRole('menuitem', { name: 'bash' }))

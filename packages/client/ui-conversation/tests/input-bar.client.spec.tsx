@@ -856,7 +856,7 @@ describe('running and lock semantics', () => {
       if (trigger === 'hover') fireEvent.mouseEnter(stop)
       else fireEvent.focus(stop)
       act(() => { vi.advanceTimersByTime(500) })
-      expect(view.getByRole('tooltip').textContent).toBe(`${label} Esc Esc`)
+      expect(view.getByRole('tooltip').getAttribute('aria-label')).toBe(`${label} Esc Esc`)
       act(() => { stopShortcut.set([]) })
       expect(view.getByRole('tooltip').textContent).toBe(label)
     } finally {
@@ -870,7 +870,7 @@ describe('running and lock semantics', () => {
       const { button, view, session } = bench({ running: true })
       fireEvent.mouseEnter(button)
       act(() => { vi.advanceTimersByTime(500) })
-      expect(view.getByRole('tooltip').textContent).toBe('停止生成 Esc Esc')
+      expect(view.getByRole('tooltip').getAttribute('aria-label')).toBe('停止生成 Esc Esc')
 
       // Disabling a hovered native button need not deliver mouseleave.
       act(() => { session.set(snapshotOf({ running: false })) })
