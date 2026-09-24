@@ -780,8 +780,10 @@ describe('native review request', () => {
     const { ctx, adapter } = await harness(cases.map(item => decisionChunks(item.response)))
     const probe = registerProbe(ctx)
     const approvalReasons: Array<string | undefined> = []
+    const displayReasons: unknown[] = []
     ctx.on('approval/request', (request) => {
       approvalReasons.push(request.reason)
+      displayReasons.push(request.displayReason)
       return Promise.resolve<ApprovalOutcome>('rejected')
     })
 
@@ -807,6 +809,9 @@ describe('native review request', () => {
       expect(approvalReasons.at(-1)).toBe(item.expectedReason === undefined
         ? 'Auto review denied tool "probe"'
         : `Auto review denied tool "probe": ${item.expectedReason}`)
+      expect(displayReasons.at(-1)).toEqual(item.expectedReason === undefined
+        ? { en: 'Auto review denied this call.', zh: 'Auto review 拒绝了此调用。' }
+        : { en: `Auto review denied this call: ${item.expectedReason}`, zh: `Auto review 拒绝了此调用：${item.expectedReason}` })
     }
 
     expect(probe.runs()).toBe(2)

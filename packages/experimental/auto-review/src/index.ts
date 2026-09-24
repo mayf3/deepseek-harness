@@ -650,10 +650,19 @@ function denied(exec: ToolExecution, reason?: string): PreToolDecision {
   }
 }
 
-/** Ask the user to decide one call the reviewer denied. */
+/**
+ * Ask the user to decide one call the reviewer denied. The audited reason is
+ * English; the prompt text is localized and keeps the reviewer's raw reason.
+ */
 function askUser(exec: ToolExecution, reason?: string): PreToolDecision {
   const denial = `Auto review denied tool "${exec.name}"`
-  return { kind: 'ask', reason: reason === undefined ? denial : `${denial}: ${reason}` }
+  return {
+    kind: 'ask',
+    reason: reason === undefined ? denial : `${denial}: ${reason}`,
+    displayReason: reason === undefined
+      ? { en: 'Auto review denied this call.', zh: 'Auto review 拒绝了此调用。' }
+      : { en: `Auto review denied this call: ${reason}`, zh: `Auto review 拒绝了此调用：${reason}` },
+  }
 }
 
 /** Materialize a reviewer failure as its own error rather than a denial. */
