@@ -85,13 +85,13 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Tool registration: `ask_user_question` schema, execute path, result render |
-| [`src/legacy.ts`](src/legacy.ts) | Frozen pre-timeout description, arguments, output, and blocking execution |
+| [`src/index.ts`](src/index.ts) | Default blocking tool definition and mode selection |
+| [`src/timed.ts`](src/timed.ts) | Opt-in timed tool definition and result rendering |
 | — | No runtime invariant companion is published; this model-facing adapter has no independent lifecycle stream; execution relations are owned by the capability seam it calls. |
 
 ### Consumer role
 
-The plugin registers exactly one `defineTool` entry on `ctx.tools` with injects `['tools', 'userQuestions']`. The default mode registers the original legacy tool verbatim, as a frozen copy in `src/legacy.ts` that shares no schema or mapping code with the timed tool, and routes every call through blocking `ask()`. Setting the Cordis config to `mode: timed` registers the alternate timed schema and routes positive timeouts through `askTimed()` while `-1` routes through blocking `ask()`. The two definitions never appear together. Both forward the exact calling agent and turn signal; the seam owns identity checks, waterfall dispatch, and the error taxonomy. Every timed-mode request names the call in `wait`, including the indefinite `-1` form, so a Client can key its question surface to this tool call; the legacy request stays unkeyed. The timed schema's `timeout` parameter is also what the `userQuestions` projection reads out of the logged request header to tell a timed call from a legacy one.
+The plugin registers exactly one `defineTool` entry on `ctx.tools` with injects `['tools', 'userQuestions']`. The default mode keeps the original blocking definition in `src/index.ts`, with no shared schema or mapping code with the timed tool, and routes every call through `ask()`. Setting the Cordis config to `mode: timed` registers the alternate timed schema from `src/timed.ts` and routes positive timeouts through `askTimed()` while `-1` routes through blocking `ask()`. The two definitions never appear together. Both forward the exact calling agent and turn signal; the seam owns identity checks, waterfall dispatch, and the error taxonomy. Every timed-mode request names the call in `wait`, including the indefinite `-1` form, so a Client can key its question surface to this tool call; the legacy request stays unkeyed. The timed schema's `timeout` parameter is also what the `userQuestions` projection reads out of the logged request header to tell a timed call from a legacy one.
 
 ### Result rendering
 

@@ -3461,7 +3461,7 @@ export type TokenMeterConfig = Record<string, never>
 ## `@deepseek-ai/dsh-tool-ask-user`
 
 - `inject`: `tools` · `userQuestions`
-- `source`: [`packages/interaction/tool-ask-user/src/index.ts:19`](../packages/interaction/tool-ask-user/src/index.ts)
+- `source`: [`packages/interaction/tool-ask-user/src/index.ts:16`](../packages/interaction/tool-ask-user/src/index.ts)
 
 ```ts config-catalog
 /** Default wait in seconds; -1 retains the blocking tool behavior. */

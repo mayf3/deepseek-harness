@@ -85,13 +85,13 @@ kind: "package-reference"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 工具注册：`ask_user_question` schema、执行路径、结果渲染 |
-| [`src/legacy.ts`](src/legacy.ts) | 冻结的超时功能加入前描述、参数、输出和阻塞执行 |
+| [`src/index.ts`](src/index.ts) | 默认阻塞式工具定义与模式选择 |
+| [`src/timed.ts`](src/timed.ts) | 显式启用的计时工具定义与结果渲染 |
 | — | 不发布运行时不变式伴生入口；此模型侧适配器没有独立的生命周期流；执行关系由其调用的能力 seam 负责。 |
 
 ### 消费方角色
 
-该插件以 `['tools', 'userQuestions']` 注入，在 `ctx.tools` 上只注册一个 `defineTool` 条目。默认模式逐字注册原有的 legacy 工具——`src/legacy.ts` 中的一份冻结副本，与 timed 工具不共享任何 schema 或映射代码——每次调用都走阻塞式 `ask()`。Cordis 配置设为 `mode: timed` 时改为注册异步 schema：正数 timeout 走 `askTimed()`，`-1` 走阻塞式 `ask()`。两个定义绝不会同时出现。两者都会转发确切的调用 agent 与当前轮次信号；身份检查、waterfall（瀑布式事件）分派和错误分类由 seam 负责。timed 模式的每个请求都在 `wait` 中写明该调用，包括无限期的 `-1` 形式，Client 因此可以把提问界面绑定到这次工具调用；legacy 请求则不携带调用标识。timed schema 的 `timeout` 参数也正是 `userQuestions` projection 从记录的请求头中读取、用来区分 timed 调用与 legacy 调用的标志。
+该插件以 `['tools', 'userQuestions']` 注入，在 `ctx.tools` 上只注册一个 `defineTool` 条目。默认模式保留 `src/index.ts` 中原有的阻塞式定义，不与 timed 工具共享 schema 或映射代码，每次调用都走 `ask()`。Cordis 配置设为 `mode: timed` 时改为注册 `src/timed.ts` 中的异步 schema：正数 timeout 走 `askTimed()`，`-1` 走阻塞式 `ask()`。两个定义绝不会同时出现。两者都会转发确切的调用 agent 与当前轮次信号；身份检查、waterfall（瀑布式事件）分派和错误分类由 seam 负责。timed 模式的每个请求都在 `wait` 中写明该调用，包括无限期的 `-1` 形式，Client 因此可以把提问界面绑定到这次工具调用；legacy 请求则不携带调用标识。timed schema 的 `timeout` 参数也正是 `userQuestions` projection 从记录的请求头中读取、用来区分 timed 调用与 legacy 调用的标志。
 
 ### 结果渲染
 
