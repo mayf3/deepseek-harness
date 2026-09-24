@@ -123,10 +123,6 @@ describe('minimal agent preset', () => {
         "prompt": "You are a helpful software engineer assistant.",
         "tools": [
           "bash",
-          "schedule_create",
-          "schedule_delete",
-          "schedule_list",
-          "schedule_update",
         ],
       }
     `)
