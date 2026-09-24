@@ -107,7 +107,24 @@ describe('web e2e: the composer model switch is the default for later sessions',
     expect(await trigger.evaluate(element => getComputedStyle(element).fontWeight)).toBe('400')
     await trigger.click()
     await page.getByRole('menuitem', { name: /模型/ }).click()
-    await page.getByRole('menuitemradio', { name: 'Acme Large' }).click()
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const blocked = scaffold.ctx.hmr.runExclusive(async () => {
+      entered.resolve(undefined)
+      await release.promise
+    })
+    try {
+      await entered.promise
+      await page.getByRole('menuitemradio', { name: 'Acme Large' }).click()
+      await expect.poll(() => trigger.getAttribute('aria-busy')).toBe('false')
+      await expect.poll(() => trigger.textContent()).toContain('Acme Large')
+      expect(scaffold.ctx.agentDefaultModel.currentSelection()).toEqual({ provider: START_ROUTE, model: START_MODEL })
+      const aria = await captureStableAria(page, '[data-composer-card]', scaffold.workspaceCwd)
+      await compareOrRefreshGolden(fileURLToPath(new URL('./expected/default-model/background-save.expected.md', import.meta.url)), aria, webSnapshotMode())
+    } finally {
+      release.resolve(undefined)
+      await blocked
+    }
 
     // The switch is what sets the default: the shared Agent-route settings section
     // now names it, beside the provider profiles the Models page writes.
@@ -119,6 +136,8 @@ describe('web e2e: the composer model switch is the default for later sessions',
     expect(document).toContain(`provider: ${ROUTE}`)
     expect(document).toContain(`model: ${MODEL}`)
 
+    await expect.poll(() => scaffold.ctx.agentDefaultModel.currentSelection())
+      .toEqual({ provider: ROUTE, model: MODEL })
     // A session created after the switch starts from it...
     expect(await currentOf(await createSession('default-model-after')))
       .toEqual({ provider: ROUTE, model: MODEL })

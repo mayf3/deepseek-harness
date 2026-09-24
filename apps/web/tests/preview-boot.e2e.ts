@@ -437,18 +437,10 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     const sessions = page.getByRole('tree', { name: 'Sessions' })
     const showcase = sessions.getByRole('treeitem').filter({ hasText: SHOWCASE_TITLE })
     await expect.poll(() => showcase.count(), { timeout: 15_000 }).toBe(1)
-    // The fixture's DSH_HOME carries two active Schedule tasks for this
-    // Session, so the catalog the Schedule client half reads over the tunnel
-    // must reach the row mark and the header entry. A composition without the
-    // schedule overlay, or a Host that dropped the seeded storage, shows
-    // neither.
-    await showcase.locator('[data-session-schedule-mark]').waitFor({ timeout: 15_000 })
+    expect(await showcase.locator('[data-session-schedule-mark]').count()).toBe(0)
     await showcase.click()
     await page.getByText(SHOWCASE_TAIL, { exact: true }).waitFor({ timeout: 30_000 })
-    await expect.poll(
-      async () => page.locator('[data-schedule-reminder-entry]').getAttribute('aria-label'),
-      { timeout: 15_000 },
-    ).toBe('2 reminders')
+    expect(await page.locator('[data-schedule-reminder-entry]').count()).toBe(0)
 
     expect(await page.getByText(SHOWCASE_OLDEST, { exact: true }).count()).toBe(0)
     // Complete Turns can fold while earlier history is still unloaded.

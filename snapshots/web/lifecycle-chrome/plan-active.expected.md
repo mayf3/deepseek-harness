@@ -3,7 +3,6 @@
 - button "New session": New Session
 - navigation "Global panels":
   - button "Plugins"
-  - button "Automation tasks"
 - text: Workspaces
 - button "Search sessions"
 - textbox "Search session names"

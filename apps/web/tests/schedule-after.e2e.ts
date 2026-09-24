@@ -1,16 +1,13 @@
 /** Keyless assembled-Web evidence for conversational Schedule delivery. */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { dump } from 'js-yaml'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
-import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { bundlePatchPaths, composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { MessageId, ToolCallId, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { appendDelivery } from '../../../packages/schedule/schedule/src/delivery-history.ts'
@@ -73,37 +70,6 @@ const CATALOG_EXPECTED = join(CATALOG_SNAPSHOT_DIR, 'catalog.expected.md')
 const BASE_PATCH = fileURLToPath(new URL('../../../packages/bundle/base/cordis.patch.yml', import.meta.url))
 const WEB_BUNDLE = fileURLToPath(new URL('../../../packages/bundle/web-app/', import.meta.url))
 const WEB_PATCHES = bundlePatchPaths(WEB_BUNDLE, (JSON.parse(readFileSync(join(WEB_BUNDLE, 'package.json'), 'utf8')) as { dsh: { bundle: { patch: string[] } } }).dsh.bundle)
-
-/**
- * Write the overlay that makes the shipped `time-context` row read every
- * eligible step.
- *
- * `time-context` is a preset row, and a top-level patch reaches only ids in
- * the loaded entry list or a group's children, so no patch can target one
- * declared plugin. The overlay restates the shipped `preset-standard` row
- * with that single config change, keeping the scenario on the shipped
- * composition.
- * @param dir - Directory that receives the overlay file.
- * @returns Absolute path of the written overlay.
- */
-async function writeEveryStepOverlay(dir: string): Promise<string> {
-  const layers = [
-    loadOverlayPatches('Schedule Web every-step overlay', BASE_PATCH),
-    ...WEB_PATCHES.map(file => loadOverlayPatches('Schedule Web every-step overlay', file)),
-  ]
-  const row = composeEntries(layers).find(entry => entry.id === 'preset-standard')
-  if (row === undefined) throw new Error('the shipped Web surface declares no preset-standard row')
-  const config = row.config as { plugins: Array<{ id?: string; config?: unknown }> }
-  const plugins = config.plugins.map(plugin => plugin.id === 'time-context'
-    ? { ...plugin, config: { refreshIntervalMs: 0 } }
-    : plugin)
-  const path = join(dir, 'time-context-every-step.patch.yml')
-  await writeFile(path, dump(
-    [{ id: 'preset-standard', config: { ...config, plugins } }],
-    { schema: entryListSchema, noRefs: true, lineWidth: -1 },
-  ))
-  return path
-}
 const CATALOG_NOW = Date.parse('2099-08-25T12:00:00.000Z')
 const CATALOG_SESSION_ID = SessionId('schedule-catalog-web-e2e')
 const CATALOG_TITLE = 'Active schedule catalog'
@@ -300,15 +266,13 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
   let everyAssistantReply: SessionEvent<'assistant/message'> | undefined
   let everyRecords: readonly [EveryScheduleRecord, EveryScheduleRecord]
   let tripwire: ReturnType<typeof watchConsole>
-  let overlayRoot: string
   const afterAdapter = new ReminderAdapter()
   const atAdapter = new BrowserZoneAtAdapter()
   const everyAdapter = new EveryReminderAdapter()
 
   beforeAll(async () => {
-    overlayRoot = await mkdtemp(join(tmpdir(), 'dsh-schedule-every-step-'))
     scaffold = await launchWebScaffold({
-      extraOverlayPath: await writeEveryStepOverlay(overlayRoot),
+      extraOverlayPath: fileURLToPath(new URL('./fixtures/time-context-every-step.patch.yml', import.meta.url)),
     })
     scaffold.ctx.effect(
       () => scaffold.ctx.llm.registerAdapter([AFTER_PROVIDER], afterAdapter),
@@ -345,9 +309,6 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
       sessionId: SessionId('schedule-after-web-e2e'),
       meta: { cwd },
       agentOptions: { provider: AFTER_PROVIDER, model: MODEL },
-      // The shipped Schedule tools are preset-level Consumers now, so a
-      // directly created Agent needs the default preset the product mounts.
-      setup: agentCtx => scaffold.ctx.agentPresets.mount(agentCtx).then(() => undefined),
     })
     afterHandle.agent.session.append('session/title', {
       title: 'Scheduled After follow-up',
@@ -385,7 +346,6 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
       sessionId: SessionId('schedule-every-web-e2e'),
       meta: { cwd },
       agentOptions: { provider: EVERY_PROVIDER, model: MODEL },
-      setup: agentCtx => scaffold.ctx.agentPresets.mount(agentCtx).then(() => undefined),
     })
     everyHandle.agent.session.append('session/title', {
       title: 'Fixed-rate reminder batch',
@@ -435,7 +395,6 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
       sessionId: SessionId('schedule-at-web-e2e'),
       meta: { cwd },
       agentOptions: { provider: AT_PROVIDER, model: MODEL },
-      setup: agentCtx => scaffold.ctx.agentPresets.mount(agentCtx).then(() => undefined),
     })
     atHandle.agent.session.append('session/title', {
       title: 'Explicit local-time reminder',
@@ -483,7 +442,6 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     await everyHandle?.dispose().catch((error: unknown) => failures.push(error))
     await afterHandle?.dispose().catch((error: unknown) => failures.push(error))
     await scaffold?.close().catch((error: unknown) => failures.push(error))
-    await rm(overlayRoot, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, 'Schedule Web evidence teardown failed')
   })
@@ -751,7 +709,9 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
 
   beforeAll(async () => {
     const fixture = await readFile(CATALOG_FIXTURE, 'utf8')
-    scaffold = await launchWebScaffold()
+    scaffold = await launchWebScaffold({
+      extraOverlayPath: fileURLToPath(new URL('./fixtures/time-context-every-step.patch.yml', import.meta.url)),
+    })
     await seedSession(scaffold, fixture, CATALOG_SESSION_ID, 'standard')
     const records = foldScheduleEvents(fixture.trim().split('\n').slice(1).map(line => JSON.parse(line) as SessionEvent)).active
     const domain = scaffold.ctx.storageDomain.get('schedule')
@@ -883,21 +843,13 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     expect(shipped.find(entry => entry.id === 'ui-schedule')).toMatchObject({
       name: '@deepseek-ai/dsh-client-ui-schedule',
     })
-    expect(shipped.find(entry => entry.id === 'ui-schedule')?.disabled).toBeUndefined()
-    expect(shipped.filter(entry => entry.id === 'schedule' && entry.name === '@deepseek-ai/dsh-schedule'))
-      .toHaveLength(1)
-    // `time-context` belongs to a preset, not the Host roster: `standard`,
-    // `cordis`, and `ptc` declare it and `minimal` does not.
-    const presetPlugins = (id: string): Array<{ id?: string; name?: string }> => {
-      const row = shipped.find(entry => entry.id === id)
-      if (row === undefined) throw new Error(`missing shipped preset row ${id}`)
-      return (row.config as { plugins: Array<{ id?: string; name?: string }> }).plugins
+    expect(shipped.find(entry => entry.id === 'ui-schedule')?.disabled).toBe(true)
+    for (const row of [
+      { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
+      { id: 'schedule', name: '@deepseek-ai/dsh-schedule' },
+    ]) {
+      expect(shipped.filter(entry => entry.id === row.id && entry.name === row.name)).toHaveLength(1)
     }
-    for (const id of ['preset-standard', 'preset-ptc', 'preset-cordis']) {
-      expect(presetPlugins(id).filter(row => row.id === 'time-context'
-        && row.name === '@deepseek-ai/dsh-time-context')).toHaveLength(1)
-    }
-    expect(presetPlugins('preset-minimal').some(row => row.name === '@deepseek-ai/dsh-time-context')).toBe(false)
 
     await page.getByRole('button', { name: 'Automation tasks', exact: true }).click()
     const manager = page.getByTestId('task-manager-page')
