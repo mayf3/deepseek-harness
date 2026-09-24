@@ -34,7 +34,7 @@ import type {
 export const SCHEDULE_CHANGE_VERSION = 1 as const
 
 /** Fixed v1 lower bound for a fixed-rate reminder. */
-export const MIN_EVERY_INTERVAL_SECONDS = 300
+export const MIN_EVERY_INTERVAL_SECONDS = 60
 
 /** Fixed v1 upper bound for a stored task title. */
 export const MAX_TITLE_LENGTH = 120

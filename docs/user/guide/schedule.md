@@ -8,22 +8,18 @@ Create reminders in a conversation, then inspect active and inactive tasks and e
 
 ## Table of Contents
 
-- [Enable and create reminders](#create-reminders)
+- [Create reminders](#create-reminders)
 - [Inspect and delete tasks](#manage-tasks)
 - [Edit an active task](#edit-timing)
 - [Timing and delivery reference](#timing-and-delivery)
 - [Further Exploration](#further-exploration)
 
 <a id="create-reminders"></a>
-## Enable and create reminders
+## Create reminders
 
-From a repository checkout, enable Schedule for one `dsh web` process with the explicit overlay. Configure a model provider before asking it to create reminders.
+The shipped Web profile mounts Schedule with the clock context that gives the model the current time and the browser's zone. Configure a model provider before asking it to create reminders.
 
-```sh
-dsh web --patch apps/cli/config/examples/schedule/cordis.yml
-```
-
-Ask the model to create, list, edit, or delete reminders. It uses `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` (update changes one reminder in place and keeps its id and saved delivery records); the Automation tasks page's New action opens a New Session for a creation instead, with the request already written in its composer. Supported choices are a one-time delay in positive whole seconds, an absolute date and time, a fixed interval of at least five minutes, a daily local time with an IANA time zone, a weekly local time with an IANA time zone and ISO weekdays from Monday 1 through Sunday 7, or a five-field cron expression with an explicit IANA time zone, stored in canonical form.
+Ask the model to create, list, edit, or delete reminders. It uses `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` (update changes one reminder in place and keeps its id and saved delivery records); the Automation tasks page's New action opens a New Session for a creation instead, with the request already written in its composer. Supported choices are a one-time delay in positive whole seconds, an absolute date and time, a fixed interval of at least one minute, a daily local time with an IANA time zone, a weekly local time with an IANA time zone and ISO weekdays from Monday 1 through Sunday 7, or a five-field cron expression with an explicit IANA time zone, stored in canonical form.
 
 For example, ask: “Remind me every day at 23:00 in Asia/Shanghai to check the weather.” Open Automation tasks and select the created reminder. Check that its frequency shows a daily rule and the requested zone, not Once. A one-time reminder does not become recurring after delivery.
 
@@ -50,7 +46,7 @@ Choose Delete task and confirm to stop future delivery and remove the task from 
 In Automation tasks, select an active task and open Rules to edit its name, instruction, and run time. Inactive tasks are read-only, and edits stay in a local draft until you choose Save changes. Editing keeps the task id, original conversation, latest delivery receipt, and all saved delivery records.
 
 - Daily and Weekly: edit Time and Time zone; a weekly rule also toggles Weekday. A clock row shows whole seconds, an untouched row keeps a stored millisecond value for its submit, and the stored IANA zone is kept. A changed rule selects its first future occurrence using the DST rules below.
-- Every: choose Every N hours, Every N minutes, or Every N seconds and enter the quantity in the unit the row states; the smallest accepted interval is 1 hour, 5 minutes, or 300 seconds for that unit, and the submitted interval is whole seconds. A changed interval starts from the Host's accepted-save time, with the first target one new interval later. Time zones do not affect this elapsed interval.
+- Every: choose Every N hours, Every N minutes, or Every N seconds and enter the quantity in the unit the row states; the smallest accepted interval is 1 hour, 1 minute, or 60 seconds for that unit, and the submitted interval is whole seconds. A changed interval starts from the Host's accepted-save time, with the first target one new interval later. Time zones do not affect this elapsed interval.
 - One-shot After/At: edit separate Date and Time rows and Time zone. The initial zone is the record's stored zone, or this device's zone when the record stores none, and the seeded clock names the same stored instant; a one-shot rule that stored no zone shows one hint stating that the selected zone interprets the entered date and time. Changing the zone keeps those clock values and changes the instant. A changed target saves as At with the same task id. The zone is not retained as recurrence metadata.
 
 The rows change only a local draft. Save changes submits the name, instruction, and the complete rule in one update, and a save bar appears while the draft differs from the stored task; Cancel restores the stored values. The Repeat menu offers Weekly, Monday to Friday, Every day, Every N hours, Every N minutes, Every N seconds, Once, and Custom (cron), and the Host accepts any of them, so a one-shot After may save as At. An equivalent normalized rule performs no write or target reset: the same Every interval does not restart its timing, and an unchanged one-shot target preserves After or At. The rows are disabled while a save is in flight. Leaving the card does not roll back a Host write already begun.

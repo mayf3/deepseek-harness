@@ -36,7 +36,7 @@ kind: "package-group"
 - [Schedule 子系统](../../docs/subsystems/schedule.zh.md)——任务记录、最近一次回执、时间与投递约定。
 - [生成的工具目录](../../docs/tool-catalog.zh.md#deepseek-aidsh-schedule)——模型接收的 `schedule_create`／`schedule_list`／`schedule_update`／`schedule_delete` schema。
 - [Schedule 用户指南](../../docs/user/guide/schedule.zh.md)——启用提醒并查看活动或已结束任务。
-- [Web 任务页面与提醒目录](../client/ui-schedule/README.zh.md)——可选的浏览器查询与确认删除。
+- [Web 任务页面与提醒目录](../client/ui-schedule/README.zh.md)——在浏览器中查询任务并确认删除。
 
 -----
 

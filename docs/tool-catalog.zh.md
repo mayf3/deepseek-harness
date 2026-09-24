@@ -36,7 +36,7 @@
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`、`grep` | `ctx.tools`、`ctx.subprocess`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。 |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`、`terminal_list`、`terminal_open`、`terminal_read`、`terminal_send`、`terminal_signal` | `ctx.tools`、`ctx.terminals`、`ctx.systemPrompt`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | 这 6 个终端工具需要选择启用，用于补充一次性 bash／文件系统工具。`terminal_send(run_in_background: true)` 会注册到 `ctx.jobs`；schema 不包含 TUI、具名按键序列、BEL、调整尺寸、自动启动和跨 agent 共享。 |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
-| `@deepseek-ai/dsh-schedule` | `schedule_create`、`schedule_delete`、`schedule_list`、`schedule_update` | `ctx.tools`、`ctx.schedule`、live 根 Agent | `tool/call`、Schedule storage domain 创建、更新或删除、`tool/result` | - | 选择启用的 Schedule 服务加载期间，在 live 根 Agent scope 内注册。接受 after_seconds、显式绝对 at、有界固定速率 every_seconds、带显式 IANA 时区的每日与每周本地时间，以及作为五字段表达式的 cron。管理使用宿主 storage domain；到期消息会恢复原 Session。 |
+| `@deepseek-ai/dsh-schedule` | `schedule_create`、`schedule_delete`、`schedule_list`、`schedule_update` | `ctx.tools`、`ctx.schedule`、live 根 Agent | `tool/call`、Schedule storage domain 创建、更新或删除、`tool/result` | - | Schedule 服务加载期间，在 live 根 Agent scope 内注册。接受 after_seconds、显式绝对 at、有界固定速率 every_seconds、带显式 IANA 时区的每日与每周本地时间，以及作为五字段表达式的 cron。管理使用宿主 storage domain；到期消息会恢复原 Session。 |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`、`ctx.lsp`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。 |
 | `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`、`ctx.workflowEngine`、`ctx.subagents`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents every fresh round)` | `tool/call`、`tool/result`、`workflow and child session events during execution` | - | 固定的前台工作流会在每个 Round 启动一个全新的结构化子级；模型只能选择不可变目标和可选的 Round 上限。 |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.tools`、`ctx.agents`、`ctx.skills` | `tool/call`、`tool/result`、`user/message replacement catalogs via agent.inject()` | - | - |
@@ -1388,7 +1388,7 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
 
 ### `schedule_create`
 
-在当前会话中创建一条提醒。请提供非空 prompt、标题，以及恰好一个 selector：正的安全整数 after_seconds 延时；作为严格带偏移日期时间或本地日期／时间对象的 at；不小于 300 的安全整数 every_seconds；形如 {time: "23:00:00", time_zone: "Asia/Shanghai"} 的 daily；形如 {time: "09:00:00", time_zone: "Asia/Shanghai", weekdays: [1, 3]} 的 weekly，其中周一为 1、周日为 7；或形如 {expression: "*/15 9-17 * * 1-5", time_zone: "Asia/Shanghai"} 的 cron，其五个字段为 minute hour day-of-month month day-of-week。每次创建都必须提供标题，最多 120 个字符且去除首尾空白后非空；该标题用于任务卡片、详情标题和任务列表。每日、每周与 cron 提醒保留指定的本地时间与时区；不存在的钟表时间会跳过该日期，重复时刻只取较早实例。cron 的 day-of-month 与 day-of-week 都受限时，匹配任一字段即算匹配。固定速率提醒在间隔编辑确立新起点前始终与创建时刻对齐。四类重复提醒都会将每条逾期规则的最新一个发生时点合并为一批投递。宿主会在提醒到期时恢复此会话。停机后，每条重复提醒只投递最新错过的一次。崩溃后可能重复投递。
+在当前会话中创建一条提醒。请提供非空 prompt、标题，以及恰好一个 selector：正的安全整数 after_seconds 延时；作为严格带偏移日期时间或本地日期／时间对象的 at；不小于 60 的安全整数 every_seconds；形如 {time: "23:00:00", time_zone: "Asia/Shanghai"} 的 daily；形如 {time: "09:00:00", time_zone: "Asia/Shanghai", weekdays: [1, 3]} 的 weekly，其中周一为 1、周日为 7；或形如 {expression: "*/15 9-17 * * 1-5", time_zone: "Asia/Shanghai"} 的 cron，其五个字段为 minute hour day-of-month month day-of-week。每次创建都必须提供标题，最多 120 个字符且去除首尾空白后非空；该标题用于任务卡片、详情标题和任务列表。每日、每周与 cron 提醒保留指定的本地时间与时区；不存在的钟表时间会跳过该日期，重复时刻只取较早实例。cron 的 day-of-month 与 day-of-week 都受限时，匹配任一字段即算匹配。固定速率提醒在间隔编辑确立新起点前始终与创建时刻对齐。四类重复提醒都会将每条逾期规则的最新一个发生时点合并为一批投递。宿主会在提醒到期时恢复此会话。停机后，每条重复提醒只投递最新错过的一次。崩溃后可能重复投递。
 
 ```json
 {
@@ -1408,7 +1408,7 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
     },
     "every_seconds": {
       "type": "number",
-      "description": "Fixed-rate safe-integer interval in seconds, at least 300."
+      "description": "Fixed-rate safe-integer interval in seconds, at least 60."
     },
     "daily": {
       "type": "object",
@@ -1573,7 +1573,7 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
     },
     "every_seconds": {
       "type": "number",
-      "description": "Fixed-rate safe-integer interval in seconds, at least 300."
+      "description": "Fixed-rate safe-integer interval in seconds, at least 60."
     },
     "daily": {
       "type": "object",
@@ -1677,7 +1677,7 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
 
 Source: [`packages/schedule/schedule/src/tools.ts`](../packages/schedule/schedule/src/tools.ts)
 
-Registered in live root Agent scopes while the opt-in Schedule service is loaded. Accepts after_seconds, explicit absolute at, bounded fixed-rate every_seconds, daily and weekly local times in an explicit IANA zone, and cron as a five-field expression. Management uses the Host storage domain; due messages resume the original Session.
+Schedule 服务加载期间，在 live 根 Agent scope 内注册。接受 after_seconds、显式绝对 at、有界固定速率 every_seconds、带显式 IANA 时区的每日与每周本地时间，以及作为五字段表达式的 cron。管理使用宿主 storage domain；到期消息会恢复原 Session。
 
 <a id="deepseek-aidsh-tool-lsp"></a>
 
