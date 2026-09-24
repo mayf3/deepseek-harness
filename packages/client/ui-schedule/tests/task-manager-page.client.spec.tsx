@@ -1665,12 +1665,12 @@ describe('Task detail rule header and run-time card', () => {
     expect(stylesheet).toMatch(/\.ruleControl\s*\{[^}]*margin-right:\s*0;/)
     expect(stylesheet).toMatch(new RegExp([
       '\\.ruleRows \\.ruleControl:focus-visible\\s*\\{[^}]*',
-      'outline:\\s*2px solid var\\(--dsw-alias-state-business-primary\\);',
+      'outline:\\s*2px solid var\\(--dsw-focus-ring-color, var\\(--dsw-alias-state-business-primary\\)\\);',
       '[^}]*outline-offset:\\s*1px;',
     ].join('')))
     expect(stylesheet).toMatch(new RegExp([
       '\\.ruleValue:focus-visible \\.ruleValueFace\\s*\\{[^}]*',
-      'outline:\\s*2px solid var\\(--dsw-alias-state-business-primary\\);',
+      'outline:\\s*2px solid var\\(--dsw-focus-ring-color, var\\(--dsw-alias-state-business-primary\\)\\);',
       '[^}]*outline-offset:\\s*1px;',
     ].join('')))
     expect(stylesheet).toMatch(/\.ruleRows \.ruleValue:focus-visible\s*\{[^}]*outline:\s*none;/)
@@ -3552,7 +3552,9 @@ describe('Task detail name and instruction edits', () => {
     const stylesheet = readFileSync(resolve(import.meta.dirname, '../src/client/TaskManagerPage.module.css'), 'utf8')
     expect(stylesheet).toMatch(/\.editName\s*\{[^}]*font-size:\s*20px;[^}]*font-weight:\s*500;/)
     expect(stylesheet).toMatch(/\.editName:hover\s*\{[^}]*box-shadow:\s*0 1px var\(--dsw-alias-border-l3\);/)
-    expect(stylesheet).toMatch(/\.editName:focus\s*\{[^}]*box-shadow:\s*0 1px var\(--dsw-alias-state-business-primary\);/)
+    expect(stylesheet).toMatch(
+      /\.editName:focus\s*\{[^}]*box-shadow:\s*0 1px var\(--dsw-focus-ring-color, var\(--dsw-alias-state-business-primary\)\);/,
+    )
     // The bar keeps the mock's 44px in the Tasks page's own detail column; the
     // right-panel placement states the cross size that lands its rule on the
     // conversation header's rule, and the actions keep the mock's -8px inset.
