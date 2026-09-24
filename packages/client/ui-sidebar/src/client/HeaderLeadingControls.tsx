@@ -23,24 +23,29 @@ export type HeaderLeadingControlsProps =
  * @param props - Injected sidebar actions plus the sidebar locale seat.
  * @returns the two window-chrome controls.
  */
-export function HeaderLeadingControls({ toggleSidebar, startSession, t }: HeaderLeadingControlsProps) {
+export function HeaderLeadingControls({ toggleSidebar, startSession, useShortcuts, t }: HeaderLeadingControlsProps) {
+  const shortcut = useShortcuts(rows => rows.find(row => row.id === 'sidebar.left.toggle'))
+  const newShortcut = useShortcuts(rows => rows.find(row => row.id === 'session.new'))
+  const newHint = newShortcut?.keys.length ? t('shortcut.hint', { label: t('session.new.label'), keys: newShortcut.keys.join(' ') }) : t('session.new.label')
   return (
     <div className={css.controls}>
-      <Tooltip label={t('toggle.open')} delayMs={500}>
+      <Tooltip label={shortcut?.keys.length ? t('shortcut.hint', { label: t('toggle.open'), keys: shortcut.keys.join(' ') }) : t('toggle.open')} delayMs={500}>
         <button
           type="button"
           className={css.iconButton}
           aria-label={t('toggle.open')}
+          aria-keyshortcuts={shortcut?.aria}
           onClick={() => { toggleSidebar() }}
         >
           <IconPanelLeftOutlineRegular size={16} />
         </button>
       </Tooltip>
-      <Tooltip label={t('session.new.label')} delayMs={500}>
+      <Tooltip label={newHint} delayMs={500}>
         <button
           type="button"
           className={css.iconButton}
           aria-label={t('session.new.label')}
+          aria-keyshortcuts={newShortcut?.aria}
           onClick={() => { startSession() }}
         >
           <IconNewChatOutlineRegular size={16} />

@@ -18,7 +18,7 @@ The [Tool Definition](../../../../packages/client/ui-chat/src/client/conversatio
 
 | Stage | Creation or update evidence | Available data and presentation |
 |---|---|---|
-| `preparing` | A live delta with a call ID and tool name | Call identity, name, and time; no argument body, and one non-expandable row. |
+| `preparing` | A live delta with a call ID and tool name | Call identity, name, and time; no complete arguments, and one non-expandable row. An opt-in Hook can read the raw argument prefix. |
 | `start` | `tool/call` | Complete arguments; enables the tool's existing call presentation. |
 | `result` | `tool/result` | The result and any complete arguments paired within the loaded window. |
 
@@ -30,7 +30,7 @@ The [Conversation Definition](../../../../packages/client/ui-conversation/src/cl
 
 A named tool delta and `tool/call` are both initialization candidates. A live delta can create preparation; a historical `tool/call` creates the dispatched stage directly. Matching still reads only the current event, without Context lookup, additional roles, registries, or separate caches.
 
-When stream settlement removes temporary deltas, the Assembler selects the start from the remaining Matches, refreshes predecessor indexes, and recomputes State. A published preparation node hides when no call evidence remains; a later dispatch retains the same callId. Undispatched calls do not receive synthetic execution results.
+Successful stream settlement publishes the final Assistant message while retaining transient deltas until `step/end`. Each `tool/call` updates its existing callId; the Assistant keeps its live ordering anchor until the same cleanup. Failed, interrupted, or abandoned streams retire their deltas immediately. On retirement the Assembler reselects starts and recomputes State from remaining Matches. Undispatched preparations hide without synthetic execution results.
 
 ### Converge on final state without replaying preparation
 
@@ -40,7 +40,7 @@ Groups include Tool nodes from preparation onward and classify and count them by
 
 ### Shared rows reuse their existing presentation
 
-[ToolRow](../../../../packages/client/ui-tool/src/client/tool/components/ToolRow.tsx) reuses the existing icon, title, and row component across all stages. The shared row model selects the tool title and combines any generic tool-name prefix with the available argument summary. Preparation has no arguments or result, and the shared argument parser returns null without parsing JSON. ToolRow prevents preparation rows from expanding.
+[ToolRow](../../../../packages/client/ui-tool/src/client/tool/components/ToolRow.tsx) reuses the existing icon, title, and row component across all stages. The shared row model selects the tool title and combines any generic tool-name prefix with the available argument summary. Preparation has no complete arguments or result, and the shared argument parser returns null without parsing JSON. The existing slot Hook binding optionally exposes a call-scoped raw prefix; it adds no preparation registration mechanism. ToolRow prevents preparation rows from expanding.
 
 Read, read_image, write/edit, search, web, todo, question, details, and the generic fallback use this path. Custom rows such as Bash, Skill, Present, and Cordis keep their own preparation branches. No automatic/custom registration declaration or second tool-classification list in ToolTree is introduced.
 
@@ -62,6 +62,6 @@ This decision replaces the [business-node assembly](2026-08-09-client-conversati
 
 - A tool may appear before its arguments are complete, but preparation neither implies execution nor exposes interactions requiring arguments.
 - Multiple starts with one ID belong to one lifecycle. Independent calls must use distinct IDs; a second-start error no longer detects identity reuse.
-- Shared rows do not replace the whole row component when preparation becomes dispatch. Custom rows may still switch their internal components by stage.
-- Partial JSON parsing and `useToolCallDelta` are not provided; argument-driven early presentation is outside this implementation.
+- The shared row primitive is reused across stages. Write/edit separate preparing and dispatched components so only the former subscribes to raw arguments; custom rows may also switch internal components by stage.
+- Partial JSON parsing and `useToolCallDelta` are not provided. `useToolCallArgumentsPartial` exposes the existing Step's raw prefix without a second accumulator; write/edit use only its length for preparation progress.
 - Assembly tests separately cover live preparation, withdrawal, active-stream reconstruction, durable history, and paged convergence. Component tests cover argument-free presentation and stage changes; a recorded session covers browser preparation and reload results.

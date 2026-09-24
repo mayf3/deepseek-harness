@@ -33,7 +33,7 @@ interface FakePnpm {
   /** The run's exit code and captured output. */
   exitCode: number
   output: string
-  /** Exit code of the `install --frozen-lockfile` run that repairs a post-install refusal. */
+  /** Exit code of the `install` run that repairs a post-install refusal. */
   repairExit: number
   /** What the pre-install `pnpm view` lookup answers for one spec; `{}` declares no peers. */
   view: (spec: string) => { exitCode: number; stdout: string }
@@ -70,7 +70,7 @@ function fixture() {
       const answer = pnpm.view(spec)
       return result(answer.exitCode, answer.stdout)
     }
-    if (argv.includes('--frozen-lockfile')) return result(pnpm.repairExit, '')
+    if (argv.includes('--frozen-lockfile') || argv.includes('--config.lockfile=false')) return result(pnpm.repairExit, '')
     return result(pnpm.exitCode, pnpm.output, () => { pnpm.mutate(runDir) })
   })
   onTestFinished(() => { command.run.mockReset(); rmSync(home, { recursive: true, force: true }) })
@@ -187,6 +187,9 @@ it.each([
     execution: 'service', outputBytes: 8192, onOutput: (text) => { messages.push(text) },
   })
   expect(outcome.exitCode).toBe(1)
+  expect(outcome.incompatible).toEqual([
+    { name: 'plugin', version: '1.0.0', runtimeVersion: getDshRuntimeVersion(), peers: { '@deepseek-ai/dsh': '999.0.0' } },
+  ])
   expect(outcome.output).toContain('installation rejected')
   expect(outcome.output).toContain('plugin@1.0.0')
   expect(outcome.output).toContain('nothing was installed')
@@ -335,6 +338,7 @@ it.each([true, false])('rejects incompatible installed manifests before activati
     execution: 'service', outputBytes: 8192, activateNewBundles, onOutput: (text) => { messages.push(text) },
   })
   expect(outcome.exitCode).toBe(1)
+  expect(outcome.incompatible).toMatchObject([{ name: 'incompatible', version: '1.0.0', peers: { '@deepseek-ai/dsh-app-boot': '>=999.0.0' } }])
   expect(outcome.output).toContain('incompatible@1.0.0')
   expect(outcome.output).toContain('installation rejected')
   expect(readFileSync(outcome.logPath, 'utf8')).toContain('incompatible@1.0.0')
@@ -343,6 +347,19 @@ it.each([true, false])('rejects incompatible installed manifests before activati
   expect(readFileSync(join(dir, 'pnpm-lock.yaml'), 'utf8')).toBe('original-lock\n')
   // The refused run replaced the installed tree, so the restored lockfile is reinstalled.
   expect(command.run).toHaveBeenLastCalledWith(expect.anything(), ['install', '--frozen-lockfile'], expect.anything())
+  expect(outcome.output).toContain('and node_modules')
+})
+
+it('repairs a profile that had no lockfile without creating one', async () => {
+  const { dir, context, pnpm } = fixture()
+  pnpm.mutate = (target) => {
+    installGuarded(target, 'incompatible')
+    writeFileSync(join(target, 'pnpm-lock.yaml'), 'created-lock\n')
+  }
+  const outcome = await runProfilePnpm(context, ['add', 'incompatible'], { execution: 'service', outputBytes: 8192 })
+  expect(outcome.exitCode).toBe(1)
+  expect(existsSync(join(dir, 'pnpm-lock.yaml'))).toBe(false)
+  expect(command.run).toHaveBeenLastCalledWith(expect.anything(), ['install', '--config.lockfile=false'], expect.anything())
   expect(outcome.output).toContain('and node_modules')
 })
 

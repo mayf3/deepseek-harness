@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { load } from 'js-yaml'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
@@ -287,6 +288,19 @@ describe('manifest resolution', () => {
     const rows = prepareProfileEntries(context(f), [{ id: 'row', name }], pathToFileURL(f.dir).href + '/')
     expect(rows[0]?.disabled).toBe(true)
     expect(f.warnings.join('\n')).toContain('cannot be validated')
+  })
+
+  it('labels a denied row by its id, or by its module when a preset row omits the id', () => {
+    const f = fixture()
+    f.plugin('denied-plugin', { peer: '^9.0.0' })
+    const base = pathToFileURL(f.dir).href + '/'
+    prepareProfileEntries(context(f), [{ id: 'row', name: './node_modules/denied-plugin/index.mjs' }], base)
+    // A preset declaration may omit the id that the Loader type requires.
+    prepareProfileEntries(context(f), [{ name: 'denied-plugin' } as EntryOptions], base)
+    expect(f.warnings).toEqual([
+      expect.stringMatching(/^dsh: disabling profile plugin row "row": Plugin denied-plugin@1\.0\.0 /),
+      expect.stringMatching(/^dsh: disabling profile plugin denied-plugin: Plugin denied-plugin@1\.0\.0 /),
+    ])
   })
 
   it('denies a group-shaped row and clears its group flag', () => {

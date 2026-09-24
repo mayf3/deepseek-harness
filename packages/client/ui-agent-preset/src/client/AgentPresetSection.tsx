@@ -16,7 +16,7 @@ export interface AgentPresetSectionInjected {
   hooks: {
     agentPresetSection: SnapshotStore<AgentPresetSectionState>
     /** Shared preference controlling the picker-policy row. */
-    developerTools: ObservableSnapshot<boolean>
+    showPickerPolicy: ObservableSnapshot<boolean>
   }
   /** Stage the `cordis` preset and start a Creator-mode task; absent without a conversation flow. */
   startCreatorDraft?: () => void
@@ -63,10 +63,10 @@ function CardDescription({ text }: { text: string }): ReactNode {
  */
 export function AgentPresetSection({
   useAgentPresetSection, load, view, closeView, makeDefault, setPickerVisible, startCreatorDraft,
-  close: closeSettings, useDeveloperTools, t,
+  close: closeSettings, useShowPickerPolicy, t,
 }: AgentPresetSectionProps) {
   const state = useAgentPresetSection(value => value)
-  const developerTools = useDeveloperTools(enabled => enabled)
+  const showPickerPolicy = useShowPickerPolicy(enabled => enabled)
   const [guide, setGuide] = useState<{
     content: NonNullable<ReturnType<typeof presetGuide>>
     page: PresetGuidePage
@@ -102,7 +102,7 @@ export function AgentPresetSection({
   return <section className={css.section}>
     <h2 className={css.title}>{t('nav')}</h2>
     <p className={css.intro}>{t('sectionIntro')}</p>
-    {developerTools && (
+    {showPickerPolicy && (
       <div className={css.pickerPreference}>
         <div className={css.pickerPreferenceCopy}>
           <span className={css.pickerPreferenceTitleRow}>

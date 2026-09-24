@@ -5,6 +5,7 @@
  * it as an entry box, and the tree opens files through `tabActions.openResource`
  * for the `dsh-resource://file` viewers to claim.
  */
+import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from './locales.ts'
@@ -34,6 +35,7 @@ export function filesDefinition(t: TranslateNS<'sidebarFiles'>): SidebarRightTab
     title: () => t('type.label'),
     guide: [{
       id: 'workspace',
+      commandId: 'workspace.files' as ShortcutCommandId,
       order: 10,
       title: () => t('guide.title'),
       description: () => t('guide.description'),
