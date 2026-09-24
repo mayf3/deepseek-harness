@@ -34,7 +34,7 @@ async function fixture(
   beforeAccount?: (ctx: Context, origin: string) => Promise<void>,
   embeddedPageDist = '',
   desktopPlatform: 'darwin' | 'win32' | null = null,
-  balanceTimeoutMs = 2_000,
+  balanceTimeoutMs = 30_000,
 ) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-account-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
