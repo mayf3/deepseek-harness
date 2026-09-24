@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { initialShortcutConfig } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import {
   INTERACTIVE_SELECTOR, RECALL_MARK, isDraggableAt, type RegionRect,
 } from '@deepseek-ai/dsh-client-web/src/window-drag/regions.ts'
@@ -106,6 +107,11 @@ async function collectedRegions(page: Page, selector: string): Promise<Collected
       const hits = interactive
         ? samples.filter(([x, y]) => {
           const top = document.elementFromPoint(x, y)
+          // A pane's programmatic focus target also contains its window-drag strip.
+          // The strip owns those pixels; controls inside it still need their own subtraction.
+          const strip = top?.closest('[data-dockkit-strip][data-window-drag]')
+          if (element.matches('[data-dockkit-pane][tabindex="-1"]')
+            && strip != null && element.contains(strip)) return false
           return top !== null && (top === element || element.contains(top))
         })
         : []
@@ -197,11 +203,18 @@ describe('web e2e: macOS window drag coverage', () => {
    */
   async function darwinPage(): Promise<{ page: Page; tripwire: ReturnType<typeof watchConsole> }> {
     const page = await newEnglishPage(browser)
-    await page.addInitScript((value: string) => {
+    await page.addInitScript(({ value, snapshot }) => {
+      // The Desktop platform marker requires the preload's keyboard and preference capabilities.
+      Object.assign(window, { dshDesktop: { protocolVersion: 1,
+        keyboard: { subscribe: () => () => {}, closeWindow: async () => {} },
+        shortcuts: { get: async () => ({ ...snapshot, status: 'ready' }),
+          subscribe: () => () => {}, recording: async () => {},
+          edit: async () => ({ status: 'not-ready', snapshot }) },
+      } })
       const mark = (): void => { document.documentElement.setAttribute('data-platform', value) }
       if (document.documentElement === null) document.addEventListener('DOMContentLoaded', mark, { once: true })
       else mark()
-    }, 'darwin')
+    }, { value: 'darwin', snapshot: initialShortcutConfig() })
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -461,7 +474,8 @@ describe('web e2e: macOS window drag coverage', () => {
   it('keeps a covering overlay out of the drag surface', async () => {
     const { page, tripwire } = await darwinPage()
     try {
-      await page.locator('button[aria-haspopup="dialog"]').first().click()
+      await page.getByRole('button', { name: 'Account menu', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Settings', exact: true }).click()
       const dialog = page.locator('[role="dialog"]').first()
       await dialog.waitFor({ timeout: 15_000 })
       await settled(page)
