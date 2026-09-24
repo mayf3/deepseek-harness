@@ -13,6 +13,7 @@ import {
   approveEscalation,
   escalationHintMarker,
   sandboxDenialMarker,
+  sandboxPermissionsDescription,
   validateEscalationArgs,
 } from '@deepseek-ai/dsh-sandbox'
 import type { EscalationApprover, EscalationOutcome } from '@deepseek-ai/dsh-sandbox'
@@ -46,6 +47,11 @@ describe('the model-facing markers', () => {
   it('the denial marker names the mode', () => {
     expect(sandboxDenialMarker('read-only')).toBe('[sandbox: file access denied under read-only mode]')
     expect(sandboxDenialMarker('workspace-write')).toBe('[sandbox: file access denied under workspace-write mode]')
+  })
+
+  it('the sandbox_permissions description names the family subject', () => {
+    expect(sandboxPermissionsDescription('command')).toBe('The narrowest wider sandbox mode for a one-shot retry of the exact command the sandbox just denied; the retry asks the user for approval.')
+    expect(sandboxPermissionsDescription('operation')).toBe('The narrowest wider sandbox mode for a one-shot retry of the exact operation the sandbox just denied; the retry asks the user for approval.')
   })
 
   it('the hint marker names the family subject', () => {
@@ -116,7 +122,7 @@ describe('approveEscalation', () => {
 
   it('maps each non-grant outcome to its distinct verbatim text (subject in the rejection)', async () => {
     await expect(approveEscalation(req({ subject: 'operation' }), ingredients({ approver: approver('rejected') })))
-      .rejects.toThrow('the user rejected escalating this operation to "workspace-write"')
+      .rejects.toThrow('the user rejected escalating this operation to "workspace-write"; it stays denied, so stop and explain instead of working around it')
     await expect(approveEscalation(req(), ingredients({ approver: approver('cancelled') })))
       .rejects.toThrow('approval for escalating to "workspace-write" was cancelled')
     await expect(approveEscalation(req(), ingredients({ approver: approver('unavailable') })))
