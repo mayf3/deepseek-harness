@@ -324,7 +324,7 @@ describe('web e2e: shortcut reference', () => {
   it.each([
     { platform: 'Win32', primary: 'Control', keys: 'Ctrl + Alt + N' },
     { platform: 'MacIntel', primary: 'Meta', keys: '⌥ ⇧ ⌘ F12' },
-  ])('keeps the shortcut on New Session at wide and narrow sidebar widths on $platform', async ({ platform, primary, keys }) => {
+  ])('shows the shortcut inside New Session on hover and keyboard focus at wide and narrow widths on $platform', async ({ platform, primary, keys }) => {
     const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 1000 } })
     try {
       await context.addInitScript((value) => { Object.defineProperty(navigator, 'platform', { value }) }, platform)
@@ -353,19 +353,28 @@ describe('web e2e: shortcut reference', () => {
             return Math.abs(button.x + button.width / 2 - content.x - content.width / 2)
           })
           expect(await centerOffset()).toBeLessThan(1)
+          const hintStyle = () => newSession.locator('[class*="newSessionShortcut"]').evaluate(element => ({
+            opacity: getComputedStyle(element).opacity, mask: getComputedStyle(element.previousElementSibling!).maskImage,
+          }))
+          expect(await hintStyle()).toEqual({ opacity: '0', mask: 'none' })
+          await newSession.hover()
+          expect(await centerOffset()).toBeLessThan(1)
           const mask = await newSession.locator('[class*="newSessionLabelMask"]').boundingBox()
           const hint = await newSession.locator('[class*="newSessionShortcut"]').boundingBox()
           expect(mask!.x + mask!.width).toBeLessThanOrEqual(hint!.x + 1)
+          expect((await hintStyle()).opacity).toBe('1')
+          expect((await hintStyle()).mask).toContain('linear-gradient')
           await newSession.screenshot({ path: fileURLToPath(new URL(`../../../.artifacts/new-session-${process.pid}-${platform}-${colorScheme}-${width}.png`, import.meta.url)) })
-          await newSession.hover()
-          expect(await centerOffset()).toBeLessThan(1)
-          const hintStyle = await newSession.locator('[class*="newSessionShortcut"]').evaluate(element => ({
-            opacity: getComputedStyle(element).opacity, mask: getComputedStyle(element.previousElementSibling!).maskImage,
-          }))
-          expect(hintStyle.opacity).toBe('1')
-          expect(hintStyle.mask).toContain('linear-gradient')
           expect(await page.getByRole('tooltip').count()).toBe(0)
           await page.mouse.move(700, 100)
+          expect(await hintStyle()).toEqual({ opacity: '0', mask: 'none' })
+          await newSession.focus()
+          await page.keyboard.press('Shift+Tab')
+          await page.keyboard.press('Tab')
+          expect(await newSession.evaluate(element => element.matches(':focus-visible'))).toBe(true)
+          expect((await hintStyle()).opacity).toBe('1')
+          expect(await page.getByRole('tooltip').count()).toBe(0)
+          await newSession.evaluate((element) => { element.blur() })
         }
       }
     } finally { await context.close() }

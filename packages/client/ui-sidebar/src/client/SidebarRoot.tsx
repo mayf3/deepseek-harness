@@ -257,7 +257,7 @@ export function SidebarRoot({
         {!darwinDesktop && toggle}
       </div>
 
-      {/* The label fades before the persistent shortcut, including on translucent backgrounds. */}
+      {/* The label fades before the hover/focus shortcut, including on translucent backgrounds. */}
       <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500} side={captionTooltipSide} disabled={wide}>
         <button
           type="button"

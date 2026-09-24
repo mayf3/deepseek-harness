@@ -465,17 +465,20 @@
   max-width: 0;
 }
 
-.newSessionLabelMask { flex: 1; min-width: 0; overflow: hidden; }
-.newSessionLabelMask:has(+ .newSessionShortcut) { mask-image: linear-gradient(to right, black calc(100% - 16px), transparent); }
+.newSessionLabelMask { flex: 1; min-width: 0; }
+.newSession:is(:hover, :focus-visible) .newSessionLabelMask:has(+ .newSessionShortcut) { overflow: hidden; mask-image: linear-gradient(to right, black calc(100% - 16px), transparent); }
 .newSessionContent { display: flex; width: 100cqw; align-items: center; justify-content: center; gap: 6px; }
 .newSessionContent > svg { flex: none; }
 
 .newSessionShortcut {
+  opacity: 0;
   display: inline-flex;
   flex: none;
   pointer-events: none;
   font-weight: 400;
 }
+
+.newSession:is(:hover, :focus-visible) .newSessionShortcut { opacity: 1; }
 
 .panelList {
   flex: none;
