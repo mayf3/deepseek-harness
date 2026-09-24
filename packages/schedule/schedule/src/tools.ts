@@ -167,41 +167,19 @@ const UPDATE_OUTPUT_SCHEMA = {
 } as const
 
 const CREATE_DESCRIPTION =
-  'Create one reminder in the current session. Supply a non-empty prompt, a title, and exactly one selector: '
-  + 'a positive safe-integer after_seconds delay, at as a strict offset date-time or local '
-  + `date/time object, safe-integer every_seconds of at least ${MIN_EVERY_INTERVAL_SECONDS}, daily `
-  + 'as {time: "23:00:00", time_zone: "Asia/Shanghai"}, weekly as '
-  + '{time: "09:00:00", time_zone: "Asia/Shanghai", weekdays: [1, 3]} with Monday 1 through Sunday 7, or cron as '
-  + '{expression: "*/15 9-17 * * 1-5", time_zone: "Asia/Shanghai"} with the five fields '
-  + 'minute hour day-of-month month day-of-week. '
-  + `Every creation requires a title of at most ${MAX_TITLE_LENGTH} characters, non-empty after `
-  + 'trimming; it names the task on its card, its detail heading, and in the task lists. '
-  + 'Daily, weekly, and cron reminders retain that local time and zone; missing wall-clock times skip the date '
-  + 'and repeated times use only the earlier instant. '
-  + 'A cron day-of-month and day-of-week pair matches when either field matches once both are restricted. '
-  + 'Fixed-rate targets stay creation-aligned until an interval edit establishes a new anchor. '
-  + 'All four recurring kinds batch one latest occurrence per overdue rule. '
-  + 'The Host restores this session when a reminder is due. After downtime, each recurring '
-  + 'reminder delivers its latest missed occurrence once. Delivery can repeat after a crash.'
+  'Create a reminder in the current session that delivers prompt when it becomes due. '
+  + 'Supply exactly one timing parameter: after_seconds, at, every_seconds, daily, weekly, or cron. '
+  + 'Local times that do not exist in the zone are skipped; repeated local times fire once, at the earlier instant. '
+  + 'After downtime, a recurring reminder delivers only its latest missed occurrence. Delivery can repeat after a crash.'
 
-const LIST_DESCRIPTION =
-  'List every active reminder in the current session, including its exact id, '
-  + 'title, UTC target, scheduled or overdue state, and host delivery mode. '
-  + 'The returned order is not significant.'
+const LIST_DESCRIPTION = 'List the active reminders in the current session.'
 
 const DELETE_DESCRIPTION =
-  'Delete one retained reminder in the current session by its exact id, whether active or inactive. '
-  + 'Unknown or already-deleted ids return deleted false. Deletion does not retract a queued message.'
+  'Delete a reminder in the current session, active or inactive. Deletion does not retract a reminder message that is already queued.'
 
 const UPDATE_DESCRIPTION =
-  'Change one reminder in the current session in place, keeping its id and its saved delivery records: '
-  + 'address it by the exact id schedule_list returned, then supply a new title or prompt, or exactly one new '
-  + 'selector from at, every_seconds, daily, weekly, or cron in the same forms schedule_create accepts. '
-  + 'An omitted field keeps its stored value. After is not updatable: create a new reminder for a relative delay. '
-  + 'The Host compares the record it finds for that id with the stored one, so a concurrent edit returns '
-  + 'schedule_conflict instead of overwriting it; an inactive or unknown reminder returns updated false. '
-  + 'Editing an every_seconds interval anchors the new fixed rate at the accepted save time; a name or '
-  + 'instruction change alone keeps the committed target.'
+  'Change a reminder in place, keeping its id. Supply a new title, prompt, or at most one timing parameter; '
+  + 'omitted fields keep their stored values. To change a relative delay, create a new reminder.'
 
 /** Deterministic model content for every canonical Schedule value. */
 function renderValue(_args: unknown, value: unknown): ContentBlock[] {
@@ -363,12 +341,12 @@ function timingChangeFrom(args: {
 const SELECTOR_PARAMETERS = {
   every_seconds: {
     type: 'number',
-    description: `Fixed-rate safe-integer interval in seconds, at least ${MIN_EVERY_INTERVAL_SECONDS}.`,
+    description: `Fixed-rate interval in whole seconds, at least ${MIN_EVERY_INTERVAL_SECONDS}, aligned to the creation time; changing it with schedule_update re-aligns it to the save time.`,
   },
   daily: {
     type: 'object',
     additionalProperties: false,
-    description: 'Daily local wall-clock time in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once.',
+    description: 'Every day at a local time.',
     properties: {
       time: { type: 'string', required: true, description: 'HH:mm:ss with optional 1-3 fractional digits, for example 23:00:00.' },
       time_zone: { type: 'string', required: true, description: 'UTC or IANA Area/Location, for example Asia/Shanghai.' },
@@ -377,14 +355,14 @@ const SELECTOR_PARAMETERS = {
   weekly: {
     type: 'object',
     additionalProperties: false,
-    description: 'Weekly local wall-clock time on explicit ISO weekdays in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once per date.',
+    description: 'On the given weekdays at a local time.',
     properties: {
       time: { type: 'string', required: true, description: 'HH:mm:ss with optional 1-3 fractional digits, for example 09:00:00.' },
       time_zone: { type: 'string', required: true, description: 'UTC or IANA Area/Location, for example Asia/Shanghai.' },
       weekdays: {
         type: 'array',
         required: true,
-        description: 'Non-empty ISO weekdays, Monday 1 through Sunday 7, without repetitions.',
+        description: 'ISO weekdays, Monday 1 through Sunday 7, without repetitions.',
         items: { type: 'integer' },
       },
     },
@@ -392,18 +370,19 @@ const SELECTOR_PARAMETERS = {
   cron: {
     type: 'object',
     additionalProperties: false,
-    description: 'Five-field Vixie cron expression evaluated in an explicit IANA zone; skips nonexistent local times and uses the earlier repeated time once per date.',
+    description: 'Five-field Vixie cron expression in a time zone.',
     properties: {
       expression: {
         type: 'string',
         required: true,
-        description: 'minute hour day-of-month month day-of-week, for example "*/15 9-17 * * 1-5".',
+        description: 'minute hour day-of-month month day-of-week, for example "*/15 9-17 * * 1-5". '
+          + 'When both day fields are restricted, a date matches if either one matches.',
       },
       time_zone: { type: 'string', required: true, description: 'UTC or IANA Area/Location, for example Asia/Shanghai.' },
     },
   },
   at: {
-    description: 'Absolute target as strict offset RFC 3339 or local date/time with an explicit IANA zone.',
+    description: 'Absolute target: an RFC 3339 date-time with offset, or a local date, time, and IANA time_zone.',
     oneOf: [
       { type: 'string' },
       {
@@ -446,12 +425,11 @@ export function registerScheduleTools(
         title: {
           type: 'string',
           required: true,
-          description: `Required task name of at most ${MAX_TITLE_LENGTH} characters, non-empty after trimming; `
-            + 'it becomes the task card title, the detail heading, and the name in the task lists.',
+          description: `Task name of at most ${MAX_TITLE_LENGTH} characters, shown on the task card and in task lists.`,
         },
         after_seconds: {
           type: 'number',
-          description: 'Positive safe-integer delay in seconds.',
+          description: 'Delay in whole seconds.',
         },
         ...SELECTOR_PARAMETERS,
       },
@@ -492,7 +470,7 @@ export function registerScheduleTools(
       name: 'schedule_delete',
       description: DELETE_DESCRIPTION,
       parameters: {
-        id: { type: 'string', required: true, description: 'Exact schedule id.' },
+        id: { type: 'string', required: true, description: 'Schedule id returned by schedule_list.' },
       },
       output: { schema: DELETE_OUTPUT_SCHEMA, render: renderValue },
       async execute(args, exec): Promise<ScheduleDeleteValue> {
@@ -515,14 +493,14 @@ export function registerScheduleTools(
       name: 'schedule_update',
       description: UPDATE_DESCRIPTION,
       parameters: {
-        id: { type: 'string', required: true, description: 'Exact schedule id that schedule_list returned for one reminder.' },
+        id: { type: 'string', required: true, description: 'Schedule id returned by schedule_list.' },
         title: {
           type: 'string',
-          description: `New task name of at most ${MAX_TITLE_LENGTH} characters, non-empty after trimming; omitted keeps the stored name.`,
+          description: `New task name of at most ${MAX_TITLE_LENGTH} characters.`,
         },
         prompt: {
           type: 'string',
-          description: 'New reminder content, non-empty after trimming; omitted keeps the stored instruction.',
+          description: 'New reminder content.',
         },
         ...SELECTOR_PARAMETERS,
       },

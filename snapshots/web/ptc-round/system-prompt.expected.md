@@ -184,94 +184,94 @@ interface ToolArgsMap {
     /** Path to the image file, resolved by the filesystem backend. */
     file_path: string;
   } & Record<string, JsonValue>;
-  /** Create one reminder in the current session. Supply a non-empty prompt, a title, and exactly one selector: a positive safe-integer after_seconds delay, at as a strict offset date-time or local date/time object, safe-integer every_seconds of at least 60, daily as {time: "23:00:00", time_zone: "Asia/Shanghai"}, weekly as {time: "09:00:00", time_zone: "Asia/Shanghai", weekdays: [1, 3]} with Monday 1 through Sunday 7, or cron as {expression: "*\/15 9-17 * * 1-5", time_zone: "Asia/Shanghai"} with the five fields minute hour day-of-month month day-of-week. Every creation requires a title of at most 120 characters, non-empty after trimming; it names the task on its card, its detail heading, and in the task lists. Daily, weekly, and cron reminders retain that local time and zone; missing wall-clock times skip the date and repeated times use only the earlier instant. A cron day-of-month and day-of-week pair matches when either field matches once both are restricted. Fixed-rate targets stay creation-aligned until an interval edit establishes a new anchor. All four recurring kinds batch one latest occurrence per overdue rule. The Host restores this session when a reminder is due. After downtime, each recurring reminder delivers its latest missed occurrence once. Delivery can repeat after a crash. */
+  /** Create a reminder in the current session that delivers prompt when it becomes due. Supply exactly one timing parameter: after_seconds, at, every_seconds, daily, weekly, or cron. Local times that do not exist in the zone are skipped; repeated local times fire once, at the earlier instant. After downtime, a recurring reminder delivers only its latest missed occurrence. Delivery can repeat after a crash. */
   schedule_create: {
     /** Reminder content to present when the target becomes due. */
     prompt: string;
-    /** Required task name of at most 120 characters, non-empty after trimming; it becomes the task card title, the detail heading, and the name in the task lists. */
+    /** Task name of at most 120 characters, shown on the task card and in task lists. */
     title: string;
-    /** Positive safe-integer delay in seconds. */
+    /** Delay in whole seconds. */
     after_seconds?: number;
-    /** Fixed-rate safe-integer interval in seconds, at least 60. */
+    /** Fixed-rate interval in whole seconds, at least 60, aligned to the creation time; changing it with schedule_update re-aligns it to the save time. */
     every_seconds?: number;
-    /** Daily local wall-clock time in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once. */
+    /** Every day at a local time. */
     daily?: {
       /** HH:mm:ss with optional 1-3 fractional digits, for example 23:00:00. */
       time: string;
       /** UTC or IANA Area/Location, for example Asia/Shanghai. */
       time_zone: string;
     };
-    /** Weekly local wall-clock time on explicit ISO weekdays in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once per date. */
+    /** On the given weekdays at a local time. */
     weekly?: {
       /** HH:mm:ss with optional 1-3 fractional digits, for example 09:00:00. */
       time: string;
       /** UTC or IANA Area/Location, for example Asia/Shanghai. */
       time_zone: string;
-      /** Non-empty ISO weekdays, Monday 1 through Sunday 7, without repetitions. */
+      /** ISO weekdays, Monday 1 through Sunday 7, without repetitions. */
       weekdays: number[];
     };
-    /** Five-field Vixie cron expression evaluated in an explicit IANA zone; skips nonexistent local times and uses the earlier repeated time once per date. */
+    /** Five-field Vixie cron expression in a time zone. */
     cron?: {
-      /** minute hour day-of-month month day-of-week, for example "*\/15 9-17 * * 1-5". */
+      /** minute hour day-of-month month day-of-week, for example "*\/15 9-17 * * 1-5". When both day fields are restricted, a date matches if either one matches. */
       expression: string;
       /** UTC or IANA Area/Location, for example Asia/Shanghai. */
       time_zone: string;
     };
-    /** Absolute target as strict offset RFC 3339 or local date/time with an explicit IANA zone. */
+    /** Absolute target: an RFC 3339 date-time with offset, or a local date, time, and IANA time_zone. */
     at?: string | {
       date: string;
       time: string;
       time_zone: string;
     };
   } & Record<string, JsonValue>;
-  /** Delete one retained reminder in the current session by its exact id, whether active or inactive. Unknown or already-deleted ids return deleted false. Deletion does not retract a queued message. */
+  /** Delete a reminder in the current session, active or inactive. Deletion does not retract a reminder message that is already queued. */
   schedule_delete: {
-    /** Exact schedule id. */
+    /** Schedule id returned by schedule_list. */
     id: string;
   } & Record<string, JsonValue>;
-  /** List every active reminder in the current session, including its exact id, title, UTC target, scheduled or overdue state, and host delivery mode. The returned order is not significant. */
+  /** List the active reminders in the current session. */
   schedule_list: Record<string, JsonValue>;
-  /** Change one reminder in the current session in place, keeping its id and its saved delivery records: address it by the exact id schedule_list returned, then supply a new title or prompt, or exactly one new selector from at, every_seconds, daily, weekly, or cron in the same forms schedule_create accepts. An omitted field keeps its stored value. After is not updatable: create a new reminder for a relative delay. The Host compares the record it finds for that id with the stored one, so a concurrent edit returns schedule_conflict instead of overwriting it; an inactive or unknown reminder returns updated false. Editing an every_seconds interval anchors the new fixed rate at the accepted save time; a name or instruction change alone keeps the committed target. */
+  /** Change a reminder in place, keeping its id. Supply a new title, prompt, or at most one timing parameter; omitted fields keep their stored values. To change a relative delay, create a new reminder. */
   schedule_update: {
-    /** Exact schedule id that schedule_list returned for one reminder. */
+    /** Schedule id returned by schedule_list. */
     id: string;
-    /** New task name of at most 120 characters, non-empty after trimming; omitted keeps the stored name. */
+    /** New task name of at most 120 characters. */
     title?: string;
-    /** New reminder content, non-empty after trimming; omitted keeps the stored instruction. */
+    /** New reminder content. */
     prompt?: string;
-    /** Fixed-rate safe-integer interval in seconds, at least 60. */
+    /** Fixed-rate interval in whole seconds, at least 60, aligned to the creation time; changing it with schedule_update re-aligns it to the save time. */
     every_seconds?: number;
-    /** Daily local wall-clock time in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once. */
+    /** Every day at a local time. */
     daily?: {
       /** HH:mm:ss with optional 1-3 fractional digits, for example 23:00:00. */
       time: string;
       /** UTC or IANA Area/Location, for example Asia/Shanghai. */
       time_zone: string;
     };
-    /** Weekly local wall-clock time on explicit ISO weekdays in an explicit IANA zone; skips nonexistent times and uses the earlier repeated time once per date. */
+    /** On the given weekdays at a local time. */
     weekly?: {
       /** HH:mm:ss with optional 1-3 fractional digits, for example 09:00:00. */
       time: string;
       /** UTC or IANA Area/Location, for example Asia/Shanghai. */
       time_zone: string;
-      /** Non-empty ISO weekdays, Monday 1 through Sunday 7, without repetitions. */
+      /** ISO weekdays, Monday 1 through Sunday 7, without repetitions. */
       weekdays: number[];
     };
-    /** Five-field Vixie cron expression evaluated in an explicit IANA zone; skips nonexistent local times and uses the earlier repeated time once per date. */
+    /** Five-field Vixie cron expression in a time zone. */
     cron?: {
-      /** minute hour day-of-month month day-of-week, for example "*\/15 9-17 * * 1-5". */
+      /** minute hour day-of-month month day-of-week, for example "*\/15 9-17 * * 1-5". When both day fields are restricted, a date matches if either one matches. */
       expression: string;
       /** UTC or IANA Area/Location, for example Asia/Shanghai. */
       time_zone: string;
     };
-    /** Absolute target as strict offset RFC 3339 or local date/time with an explicit IANA zone. */
+    /** Absolute target: an RFC 3339 date-time with offset, or a local date, time, and IANA time_zone. */
     at?: string | {
       date: string;
       time: string;
       time_zone: string;
     };
   } & Record<string, JsonValue>;
-  /** Send a message to a direct continuable child by its agent id. If you are a resident continuable child, you may also target your direct parent. If the target is still working, the message steers its nearest step; if it is inactive, the message starts or resumes a turn. This call returns no answer from the agent — only confirmation that the message was delivered. A failure means the message was NOT delivered. */
+  /** Send a message to an agent. A working agent receives it at its next step; an idle agent starts a new turn with it. Returns delivery confirmation, not the agent's answer. */
   send_message: {
     /** The agent id of your direct continuable child, or your direct parent when you are a resident continuable child. */
     agent_id: string;
