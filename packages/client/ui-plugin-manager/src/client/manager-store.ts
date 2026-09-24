@@ -237,8 +237,8 @@ export function isInstallPending(phase: InstallState['phase']): boolean {
 /**
  * Offer the configured mainland mirror after a confirmed GitHub connection failure.
  * @param install - the installation and the Host's failure attribution.
- * @returns the offered entry that asks npmmirror, null when pnpm's own configuration names it, or undefined when
- * this recovery does not apply.
+ * @returns the offered entry that asks npmmirror, null when that entry is pnpm's own configuration, or undefined when
+ * this recovery does not apply; test for undefined, because null is a valid entry.
  */
 export function githubRecoveryRegistry(install: InstallState): Registry | undefined {
   if (install.phase !== 'failed' || install.failure?.failedAt !== 'spec-host'

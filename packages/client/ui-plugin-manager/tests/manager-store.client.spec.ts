@@ -1259,7 +1259,7 @@ describe('PluginManagerController', () => {
   it.each([
     ['typed as an address', { kind: 'custom', url: 'https://registry.npmmirror.com' }, REGISTRIES],
     ['named by pnpm\'s own configuration', { kind: 'offered', registry: null }, { ...REGISTRIES, resolved: MIRROR }],
-  ] as const)('leaves only the GitHub address behind when the install already asked the mirror %s', async (_how, choice, registries) => {
+  ] as const)('clears the GitHub address and keeps the registry when the install already asked the mirror %s', async (_how, choice, registries) => {
     const { face, state, plugins } = bench({
       registries: vi.fn(() => Promise.resolve(ok(registries))),
       inspect: vi.fn(() => Promise.resolve(ok({ status: 'accepted', kind: 'git', bundle: null, registry: MIRROR, host: 'github.com' }))),
