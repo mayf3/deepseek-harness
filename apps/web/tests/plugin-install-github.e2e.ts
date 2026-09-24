@@ -62,7 +62,7 @@ it.each(['network', 'timeout'] as const)('offers a mirror after a GitHub %s and 
   const spec = 'https://github.com/example/dsh-plugin.git'
   const title = failure === 'timeout' ? '连接 GitHub 超时' : '无法访问 GitHub'
   let dialog = page.getByRole('dialog', { name: '添加插件', exact: true })
-  await dialog.getByRole('button', { name: '安装源 默认安装源', exact: true }).waitFor()
+  await dialog.getByRole('button', { name: '安装源 npm 官方源', exact: true }).waitFor()
   await dialog.getByRole('textbox', { name: '包名或地址' }).fill(spec)
   expect(await page.getByText(title, { exact: true }).count()).toBe(0)
   await dialog.getByRole('button', { name: '安装', exact: true }).click()
