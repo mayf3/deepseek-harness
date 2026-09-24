@@ -398,6 +398,32 @@ function replyText(message: UserMessage): unknown {
 }
 
 describe('askTimed', () => {
+  it('keeps sibling waits independent and cancels the remaining wait when the service unloads', async () => {
+    vi.useFakeTimers()
+    onTestFinished(() => { vi.useRealTimers() })
+    const ctx = await timedContext()
+    onTestFinished(async () => { await ctx.fiber.dispose() })
+    const agent = liveAgent('timed-sibling-waits')
+    ctx.agents.enter(agent, undefined)
+    const service = ctx.userQuestions
+    const laterCallId = ToolCallId('ask-later')
+    const first = service.askTimed({ agent, questions: timedQuestions }, timedCallId, 1_000)
+    const later = service.askTimed({ agent, questions: timedQuestions }, laterCallId, 2_000)
+    const cancelled = expect(later).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    await expect(first).resolves.toEqual({ pending: true, callId: timedCallId })
+    const claim = service.attachWait(agent, laterCallId, new AbortController().signal)[Symbol.asyncIterator]()
+    expect(await claim.next()).toEqual({ done: false, value: { remainingMs: 1_000 } })
+    const end = claim.next()
+
+    await ctx.fiber.dispose()
+
+    await cancelled
+    expect(await end).toEqual({ done: true, value: undefined })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('expires a forwarded request even when no Client ever responds or delegates', async () => {
     vi.useFakeTimers()
     onTestFinished(() => { vi.useRealTimers() })
@@ -410,7 +436,9 @@ describe('askTimed', () => {
     registerAnswerer(ctx, {
       ask: request => new Promise((_resolve, reject) => {
         forwardedSignal = request.signal
-        request.signal?.addEventListener('abort', () => { reject(request.signal?.reason) }, { once: true })
+        request.signal?.addEventListener('abort', () => {
+          reject(new Error('forwarded request aborted', { cause: request.signal?.reason }))
+        }, { once: true })
       }),
     })
     const result = ctx.userQuestions.askTimed(
