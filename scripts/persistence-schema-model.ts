@@ -71,6 +71,45 @@ export interface PersistenceSchemaInventory {
   readonly types: readonly PersistenceType[]
 }
 
+/** On-disk type metadata; complete graphs are stored only in roots. */
+export type PersistenceTypeIndex = Omit<PersistenceType, 'schema'>
+
+/** Compact inventory representation; formatVersion still pins normalization. */
+export interface PersistenceSchemaSnapshot {
+  readonly formatVersion: PersistenceSchemaInventory['formatVersion']
+  readonly roots: readonly PersistenceRoot[]
+  readonly types: readonly PersistenceTypeIndex[]
+}
+
+/**
+ * Index every normalized type reachable from the supplied graphs.
+ * @param schemas - complete canonical root graphs.
+ * @returns canonical subgraphs keyed by their structural digest.
+ */
+export function reachableSchemaTypes(schemas: readonly CanonicalSchema[]): Map<string, CanonicalSchema> {
+  const types = new Map<string, CanonicalSchema>()
+  for (const schema of schemas) {
+    for (const [index] of schema.nodes.entries()) {
+      const type = canonicalizeSchema(schema.nodes, index)
+      types.set(schemaDigest(type), type)
+    }
+  }
+  return types
+}
+
+/**
+ * Omit redundant type graphs from a current-source inventory for serialization.
+ * @param inventory - complete inventory whose types are reachable from its roots.
+ * @returns root graphs and their type metadata, preserving inventory order.
+ */
+export function persistenceSchemaSnapshot(inventory: PersistenceSchemaInventory): PersistenceSchemaSnapshot {
+  return {
+    formatVersion: inventory.formatVersion,
+    roots: inventory.roots,
+    types: inventory.types.map(({ digest, names, sources }) => ({ digest, names, sources })),
+  }
+}
+
 /**
  * Visit direct graph edges in their normalized semantic order.
  * @param node - resolved graph node.

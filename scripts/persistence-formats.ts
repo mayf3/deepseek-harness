@@ -109,7 +109,7 @@ function validateInventory(inventory: PersistenceSchemaInventory, version: numbe
   for (const type of inventory.types) {
     if (listed.has(type.digest)) throw new Error(`${label}: duplicate schema type ${type.digest}`)
     listed.add(type.digest)
-    // The current extractor can retain types erased by normalization; its generator gate checks that inventory.
+    // Legacy current inventories can retain types erased by normalization; the generator gate checks current output.
     if (!current && !reachable.has(type.digest)) throw new Error(`${label}: unreferenced schema type ${type.digest}`)
     remaining.delete(type.digest)
   }
