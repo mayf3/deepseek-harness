@@ -122,7 +122,7 @@ Tool results append to conversation history. Creating, listing, or deleting task
 
 #### What the model sees
 
-Due reminders enter as user-role messages with producer kind `schedule`. One-shot messages append `schedule_id_json`, `occurrence_at`, and `reminder_prompt_json` after the fixed text below; the id and prompt are JSON-encoded. Recurring batches append `reminders_json`, an array containing `schedule_id`, `occurrence_at`, and `reminder_prompt` for each latest due occurrence.
+Due reminders enter as user-role messages with producer kind `schedule`. One-shot messages append `schedule_id_json`, `occurrence_at`, and `reminder_prompt_json` after the fixed text below; the id and prompt are JSON-encoded. Recurring batches append `reminders_json`, an array containing `schedule_id`, `occurrence_at`, and `reminder_prompt` for each latest due occurrence. The fixed text names the origin of the message; `schedule_create` and `schedule_update` still describe `prompt` to the model as content to present to the user when the target becomes due.
 
 ##### One-shot framing
 
