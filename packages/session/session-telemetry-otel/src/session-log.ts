@@ -133,6 +133,8 @@ class SessionLogProcessor implements LogRecordProcessor {
         const records = this.queue.splice(0, count).map(entry => entry.record)
         this.bytes -= bytes
         await this.send(records)
+        // The export callback precedes removal from the SDK concurrency queue.
+        await this.exporter.forceFlush()
       }
     } finally { this.active = undefined }
   }

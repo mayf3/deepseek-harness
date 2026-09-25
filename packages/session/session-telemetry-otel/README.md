@@ -73,7 +73,7 @@ The backend measures each record once with the SDK OTLP JSON serializer, includi
 
 ### Failures and shutdown
 
-Invalid byte limits, non-positive queue/timer values, `maxExportBatchSize > maxQueueSize`, invalid endpoints, and invalid shutdown deadlines fail at load. Processor defaults are 2,048 queued records, 512 records per request, a 1,000 ms scheduling delay, and a 30,000 ms request watchdog. Byte limits may split a count batch into multiple serial HTTP requests. `exportTimeoutMillis` warns per request but never frees an unsettled transport slot; the SDK transport owns network timeout/retry. Shutdown drains these requests until `shutdownTimeoutMillis`; expiry discards the remaining queue and prevents further sends, while an active request may still settle. Large prefixes can therefore remain partially unsent at CLI exit.
+Invalid byte limits, non-positive queue/timer values, `maxExportBatchSize > maxQueueSize`, invalid endpoints, and invalid shutdown deadlines fail at load. Processor defaults are 2,048 queued records, 512 records per request, a 1,000 ms scheduling delay, and a 30,000 ms request watchdog. Byte limits may split a count batch into multiple serial HTTP requests. Each request waits for SDK export-queue cleanup after its callback before the next starts. `exportTimeoutMillis` warns per request but never frees an unsettled transport slot; the SDK transport owns network timeout/retry. Shutdown drains these requests until `shutdownTimeoutMillis`; expiry discards the remaining queue and prevents further sends, while an active request may still settle. Large prefixes can therefore remain partially unsent at CLI exit.
 
 -----
 

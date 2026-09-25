@@ -73,7 +73,7 @@ kind: "package-reference"
 
 ### 失败与关闭
 
-无效字节上限、非正队列/计时值、`maxExportBatchSize > maxQueueSize`、无效 endpoint 或关闭期限在加载时失败。processor 默认队列为 2,048 条、单请求最多 512 条、调度延迟 1,000 ms、请求监测期限 30,000 ms。字节上限可能将按条数划分的批次拆成多个串行 HTTP 请求。`exportTimeoutMillis` 针对每个请求告警，但不会释放未结束的传输槽位；SDK transport 负责网络超时和重试。关闭时发送这些请求直到 `shutdownTimeoutMillis`，到期后丢弃剩余队列并禁止后续发送，在途请求仍可能结束。因此较大的授权前缀在 CLI 退出时可能只发送了一部分。
+无效字节上限、非正队列/计时值、`maxExportBatchSize > maxQueueSize`、无效 endpoint 或关闭期限在加载时失败。processor 默认队列为 2,048 条、单请求最多 512 条、调度延迟 1,000 ms、请求监测期限 30,000 ms。字节上限可能将按条数划分的批次拆成多个串行 HTTP 请求。每个请求在回调后等待 SDK 导出队列清理完成，才启动下一个请求。`exportTimeoutMillis` 针对每个请求告警，但不会释放未结束的传输槽位；SDK transport 负责网络超时和重试。关闭时发送这些请求直到 `shutdownTimeoutMillis`，到期后丢弃剩余队列并禁止后续发送，在途请求仍可能结束。因此较大的授权前缀在 CLI 退出时可能只发送了一部分。
 
 -----
 

@@ -106,13 +106,14 @@ it('preserves full nested events without truncation or ambient headers and retai
 
 it.each([CompressionAlgorithm.GZIP, CompressionAlgorithm.NONE])('bounds %s requests and preserves nested content', async (compression) => {
   const target = await collector()
-  const { sender } = reporter(target.endpoint, { exporter: { url: target.endpoint, compression } })
+  const { sender, onFailure } = reporter(target.endpoint, { exporter: { url: target.endpoint, compression, concurrencyLimit: 1 } })
   const records = [0,1,2].map(seq => sessionRecord('中"\\'.repeat(100000), seq))
   for (const record of records) sender.reportSessionLog(record)
   await sender.shutdown()
   expect(target.captures.length).toBeGreaterThan(1)
   expect(target.captures.every(c => c.bytes <= SESSION_LOG_MAX_REQUEST_BYTES)).toBe(true)
   expect(contents(target.captures).map(parseContent)).toEqual(records.map(r => r.event))
+  expect(onFailure).not.toHaveBeenCalled()
 })
 
 it('admits an exact request and diagnoses an oversized record only once', async () => {
