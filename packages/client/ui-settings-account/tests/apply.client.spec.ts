@@ -273,8 +273,7 @@ it('re-reads profile and balance but no bonus for the onboarding recharge return
   const actions = operations(c)
   const track = vi.fn()
   c.ctx.provide('productAnalytics', { track } as never)
-  actions.track?.('auth_page_view', {})
-  expect(track).toHaveBeenCalledWith('auth_page_view', {})
+  expect(actions).not.toHaveProperty('track')
   const onboarding = injectedOf(c.ctx.slots.entries('shell.overlay')
     .find(entry => entry.options.id === 'desktop-onboarding')!) as DesktopOnboardingInjected
   onboarding.track?.('onboarding_page_view', { page_name: 'onboarding_recharge' })

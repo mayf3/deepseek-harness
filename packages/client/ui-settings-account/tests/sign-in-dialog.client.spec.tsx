@@ -179,11 +179,15 @@ it('keeps an outstanding start open until the request settles', async () => {
   expect(screen.getByRole('button', { name: en.signIn }).hasAttribute('disabled')).toBe(false)
 })
 
-
-it('reports entry once across rerenders with a supplied sender', () => {
+// Workspace login remains outside native welcome analytics even if a caller forwards a sender.
+it('does not report workspace login views or login choices', async () => {
   const track = vi.fn()
-  const props = dialogProps(null)
-  const view = render(<SignInDialog {...props} track={track} />)
-  view.rerender(<SignInDialog {...props} track={(name, attributes) => { track(name, attributes) }} colorScheme="light" />)
-  expect(track).toHaveBeenCalledExactlyOnceWith('auth_page_view', {})
+  const props = { ...dialogProps(null), track }
+  const view = render(<SignInDialog {...props} />)
+  view.rerender(<SignInDialog {...props} colorScheme="light" />)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.signIn })) })
+  expect(props.start).toHaveBeenCalledOnce()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.addApiKey })) })
+  expect(props.useApiKey).toHaveBeenCalledOnce()
+  expect(track).not.toHaveBeenCalled()
 })

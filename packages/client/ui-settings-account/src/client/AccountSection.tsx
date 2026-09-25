@@ -1,5 +1,4 @@
 /** Account settings renders safe Host state and explicit login actions. */
-import type { TrackProductEvent } from '@deepseek-ai/dsh-client-product-analytics/client'
 import { Big } from 'big.js'
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Button, IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -34,8 +33,6 @@ export interface AccountSnapshot {
 
 /** Host operations injected into the Cordis-free account component. */
 export interface AccountSectionInjected {
-  /** Desktop-only event collection supplied by the application. */
-  track?: TrackProductEvent
   /** Subscribe to live credential-expiry notifications.
    * @param listener - callback after the current credential is removed.
    * @returns listener cleanup.

@@ -20,7 +20,7 @@ it.each(['desktop', 'web'])('limits collection and its shutdown to the Desktop l
   onTestFinished(async () => { const closed = once(server, 'close'); server.close(); server.closeAllConnections(); await closed })
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('missing collector address')
-  vi.stubEnv('DSH_PRODUCT_ANALYTICS_APP_VERSION', 'test-version')
+  vi.stubEnv('DSH_CLIENT_VERSION', 'test-version')
   vi.stubEnv('DSH_PRODUCT_ANALYTICS_OTLP_URL', `http://127.0.0.1:${address.port}/logs`)
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
@@ -68,6 +68,9 @@ it.each(['desktop', 'web'])('limits collection and its shutdown to the Desktop l
       expect(identity).not.toHaveBeenCalled()
     }
   }
+  const emit = vi.spyOn(ctx.productTelemetry, 'emit')
+  await analytics.report({ eventName: 'desktop_app_launch', timestamp: 1, attributes: {} })
+  expect(emit).toHaveBeenCalledWith(expect.objectContaining({ attributes: { app_version: 'test-version' } }))
   lifetime.abort()
   await policy.return?.()
   ctx.productTelemetry.emit({ eventName: 'desktop_upgrade_install_restart_click', body: 'upgrade', timestamp: Date.now() })

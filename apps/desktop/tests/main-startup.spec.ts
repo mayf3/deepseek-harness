@@ -173,7 +173,7 @@ const harness = await vi.hoisted(async () => {
   })
   let accountListener: ((state: AccountView) => void) | undefined
   let analyticsEnabled = true
-  let policyListener: ((enabled: boolean) => void) | undefined
+  let analyticsEnabledListener: ((enabled: boolean) => void) | undefined
   const analytics = vi.fn(async (_event: unknown) => {})
   const nativeTheme = { themeSource: 'system', shouldUseDarkColors: false }
   const trays: FakeTray[] = []
@@ -194,13 +194,14 @@ const harness = await vi.hoisted(async () => {
     platformCloseAndWait,
 
     get analyticsEnabled() { return analyticsEnabled },
-    set analyticsEnabled(value: boolean) { analyticsEnabled = value; policyListener?.(value) },
+    set analyticsEnabled(value: boolean) { analyticsEnabled = value; analyticsEnabledListener?.(value) },
     watchAccount: (
-      listener: (state: AccountView) => void, _failed: () => void, _expired: () => void, policy?: (enabled: boolean) => void,
+      listener: (state: AccountView) => void, _failed: () => void, _expired: () => void,
+      onAnalyticsEnabledChanged?: (enabled: boolean) => void,
     ) => {
-      policyListener = policy
+      analyticsEnabledListener = onAnalyticsEnabledChanged
       accountListener = listener
-      return () => { accountListener = undefined; policyListener = undefined }
+      return () => { accountListener = undefined; analyticsEnabledListener = undefined }
     },
     publishAccount(state: AccountView) { accountListener?.(state) },
     ipcOn: vi.fn<(channel: string, listener: (event: { sender: unknown; senderFrame: unknown }, ...args: unknown[]) => void) => void>(),
@@ -2064,7 +2065,7 @@ describe('desktop main startup', () => {
       profile: 'desktop-test-profile',
     })
     expect(harness.hosts[0]!.environment).not.toBe(process.env)
-    expect(harness.hosts[0]!.environment?.DSH_PRODUCT_ANALYTICS_APP_VERSION).toBe('1.0.0')
+    expect(harness.hosts[0]!.environment?.DSH_CLIENT_VERSION).toBe('1.2.3')
     expect(harness.analytics).toHaveBeenCalledExactlyOnceWith({ eventName: 'desktop_app_launch', timestamp: Date.now(), attributes: {} })
     expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)
     expect(harness.windows).toHaveLength(1)

@@ -50,7 +50,7 @@
         exportTimeoutMillis: 1500
         shutdownTimeoutMillis: 2000
         serviceName: deepseek-harness-desktop
-        serviceVersion: !!js process.env.DSH_PRODUCT_ANALYTICS_APP_VERSION
+        serviceVersion: !!js process.env.DSH_CLIENT_VERSION
         endpoint: !!js process.env.DSH_PRODUCT_ANALYTICS_OTLP_URL
 
     - id: product-analytics
@@ -58,7 +58,7 @@
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
       config:
         enabled: true
-        appVersion: !!js process.env.DSH_PRODUCT_ANALYTICS_APP_VERSION
+        appVersion: !!js process.env.DSH_CLIENT_VERSION
 
     # Host-owned opt-in sampled when a new Web session receives its preset
     # delegation tools. The Plugins page edits this settings namespace.
