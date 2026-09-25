@@ -12,7 +12,7 @@ Schedule 会给每个活跃根 Agent 的请求增加四个工具 schema，并在
 
 `packages/bundle/web-app/cordis.patch.yml` 不含 `time-context`、`schedule` 与 `ui-schedule` 中的任何一行，因此随发行版交付的 Web 组合不提供任何定时能力：没有 `schedule_*` 工具、没有 Session 提醒目录、没有自动化任务页面，也没有逐步时钟读数。
 
-`@deepseek-ai/dsh-experimental-schedule-bundle`（`packages/experimental/schedule-bundle/`）在其 `cordis.patch.yml` 中插入这三行并依赖它们的包，与其他可选 bundle 插入各自随附的行相同。`packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 列出该包，`apps/cli` 将其声明为运行时依赖，因此每次安装都随包携带且默认关闭。[实验性能力作为可选 bundle 的决策](2026-09-21-experimental-capabilities-as-optional-bundles.zh.md)负责 `OPTIONAL_BUNDLES` 的约定，以及 Web 插件管理页在 Official 分组中渲染的本地化 `icon` 与 `meta.title` / `meta.description` 元数据。
+`@deepseek-ai/dsh-experimental-schedule-bundle`（`packages/experimental/schedule-bundle/`）在其 `cordis.patch.yml` 中插入这三行并依赖它们的包，与其他可选 bundle 插入各自随附的行相同。`packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 列出该包，`apps/cli` 将其声明为运行时依赖，因此每次安装都随包携带且默认关闭。[实验性能力作为可选 bundle 的决策](2026-09-21-experimental-capabilities-as-optional-bundles.zh.md)负责 `OPTIONAL_BUNDLES` 的约定，以及 Web 插件管理页在“官方”分组中渲染的本地化 `icon` 与 `meta.title` / `meta.description` 元数据。
 
 该 bundle 的清单设置 `dsh.bundle.rowSwitches: false`。`listPlugins` 随之为该 bundle 插入的每一行报告只读原因 `bundle-switch`，因此 `setPluginEnabled`、`plugin_manager` 工具与插件管理页都拒绝单独开关这三行中的任何一行，页面列出它们及其状态，不绘制单行开关。这些 Host 行与客户端行只能一起工作，因此 bundle 自身的开关是它们唯一的控制项。未设该字段的 bundle 仍为每行提供开关。
 
@@ -30,7 +30,7 @@ Schedule 会给每个活跃根 Agent 的请求增加四个工具 schema，并在
 
 **只在插件管理页隐藏单行开关。** 那样 `setPluginEnabled` 与 `plugin_manager` 工具仍能单独关掉其中一行，即上一个备选方案描述的状态；只读原因让 Remote、工具与页面保持一致。
 
-**让 Official 分组中的所有可选 bundle 都不提供单行开关。** 这会连同其他可选 bundle 的单行控制一起去掉；清单字段把这项选择留给每个 bundle 的作者。
+**让“官方”分组中的所有可选 bundle 都不提供单行开关。** 这会连同其他可选 bundle 的单行控制一起去掉；清单字段把这项选择留给每个 bundle 的作者。
 
 ## Consequences
 

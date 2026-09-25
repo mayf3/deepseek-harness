@@ -35,7 +35,7 @@ kind: "package-bundle"
 <details>
 <summary>维护者信息 — 点击展开</summary>
 
-`cordis.patch.yml` 插入这三个条目，`package.json` 依赖它们的包，使每个条目都从此 Bundle 解析。`dsh.bundle.rowSwitches: false` 让插件管理器拒绝单独开关这三个条目中的任何一个，因为这些 Host 条目与客户端条目只能一起工作；插件管理页不为它们绘制单条目开关。`packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 列出此包，`apps/cli` 依赖它，因此每次安装都随包携带且默认禁用，插件管理页在 Official 分组中提供它。选中后会把该 Bundle 追加到 profile 的 `dsh.profile.bundles` 列表。此纯配置包不拥有可变的运行时状态，因此不发布不变量伴随模块。
+`cordis.patch.yml` 插入这三个条目，`package.json` 依赖它们的包，使每个条目都从此 Bundle 解析。`dsh.bundle.rowSwitches: false` 让插件管理器拒绝单独开关这三个条目中的任何一个，因为这些 Host 条目与客户端条目只能一起工作；插件管理页不为它们绘制单条目开关。`packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 列出此包，`apps/cli` 依赖它，因此每次安装都随包携带且默认禁用，插件管理页在“官方”分组中提供它。选中后会把该 Bundle 追加到 profile 的 `dsh.profile.bundles` 列表。此纯配置包不拥有可变的运行时状态，因此不发布不变量伴随模块。
 
 | 文件 | 作用 |
 |---|---|
