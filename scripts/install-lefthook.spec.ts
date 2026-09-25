@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   lstatSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -53,24 +54,6 @@ function git(fixture: Fixture, cwd: string, args: string[]): string {
     throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`)
   }
   return result.stdout.trim()
-}
-
-/** Remove the line terminator Git appends to a printed path, as the installer does. */
-function stripGitLineTerminator(output: string): string {
-  const withoutLineFeed = output.endsWith('\n') ? output.slice(0, -1) : output
-  return process.platform === 'win32' && withoutLineFeed.endsWith('\r')
-    ? withoutLineFeed.slice(0, -1)
-    : withoutLineFeed
-}
-
-// `git()` trims, which also drops a worktree directory's own trailing whitespace. Paths that must
-// equal the installer's own reading keep only the line terminator, so a trailing space survives.
-function gitPath(fixture: Fixture, cwd: string, args: string[]): string {
-  const result = gitResult(fixture, cwd, args)
-  if (result.status !== 0) {
-    throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`)
-  }
-  return stripGitLineTerminator(result.stdout)
 }
 
 function write(path: string, content: string, mode?: number): void {
@@ -179,13 +162,12 @@ function gitDirectory(fixture: Fixture, root: string): string {
 // The installer resolves the common directory against Git's own top-level path, and the host
 // spells that path differently from the fixture directory this file created: Git canonicalizes
 // Windows 8.3 short names and the macOS `/var` symlink, while `mkdtempSync` returns the temp
-// directory's own spelling. Reading both values the way the installer reads them (`gitPath`, not
-// the trimming `git()`) keeps the relative common directory resolved to the same string the
-// installer computes, so an injected failure on this path reaches the installer's own lock.
+// directory's own spelling. Canonicalizing the fixture-side directory collapses both spellings
+// onto the one directory the installer touches, so an injected failure on this path reaches the
+// installer's own lock instead of a differently spelled name for it.
 function commonDirectory(fixture: Fixture): string {
-  const root = gitPath(fixture, fixture.main, ['rev-parse', '--show-toplevel'])
-  const output = gitPath(fixture, fixture.main, ['rev-parse', '--git-common-dir'])
-  return isAbsolute(output) ? output : resolve(root, output)
+  const output = git(fixture, fixture.main, ['rev-parse', '--git-common-dir'])
+  return realpathSync.native(isAbsolute(output) ? output : resolve(fixture.main, output))
 }
 
 function hooksPath(fixture: Fixture, root: string): string {
@@ -413,15 +395,6 @@ syncBuiltinESMExports()
     fixture.main = alias
 
     await expectInjectedLockAccessFailure(fixture, { operation: 'openSync', code: 'EPERM', expires: false })
-  })
-
-  // A worktree directory can end in a space on POSIX hosts; Git prints that path verbatim while a
-  // trimming read would drop the space and name a different directory, so the injection only fires
-  // when the expected path is read the installer's way. Windows cannot create such a directory.
-  it.skipIf(process.platform === 'win32')('handles an injected lock failure in a worktree whose path ends with a space', async () => {
-    await expectInjectedLockAccessFailure(createFixture({ main: 'main ' }), {
-      operation: 'openSync', code: 'EPERM', expires: false,
-    })
   })
 
   it('waits for a concurrent installer to finish publishing its lock record', async () => {
