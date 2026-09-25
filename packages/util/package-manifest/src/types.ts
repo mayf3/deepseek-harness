@@ -69,6 +69,11 @@ export interface DshEnginesManifest {
 export interface DshBundleManifest {
   /** One patch file path, or an ordered list applied in sequence, each relative to the declaring package root. */
   patch: string | string[]
+  /**
+   * Whether the plugin manager offers a switch for each row the bundle inserts; false for a bundle whose rows work
+   * only together, which the bundle's own switch turns on and off. Absent means true.
+   */
+  rowSwitches?: boolean
 }
 
 /** The bundle composition declared by a profile directory. */

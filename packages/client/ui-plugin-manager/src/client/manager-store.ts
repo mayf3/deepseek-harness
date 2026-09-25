@@ -92,6 +92,8 @@ export interface PackageView {
   /** Why the Host cannot read the bundle, when it cannot. */
   readonly error?: ManagementError
   readonly rows: readonly PackageRow[]
+  /** Whether the page offers a switch for each row while the bundle is on; false when the bundle declares its rows work only together. */
+  readonly rowSwitches: boolean
 }
 
 /** The typed spec as the Host read it, on the installing, installed, and failed screens. */
@@ -412,6 +414,7 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
     optional: bundle.optional,
     enabled: bundle.enabled,
     rows,
+    rowSwitches: bundle.rowSwitches,
     ...bundle.version === undefined ? {} : { version: bundle.version },
     ...bundle.description === undefined ? {} : { description: bundle.description },
     ...bundle.meta === undefined ? {} : { meta: bundle.meta },

@@ -188,8 +188,9 @@ function MetadataError({ error, t }: { readonly error: string | undefined; reado
 /**
  * A pack's rows as a list in the order the pack declares them: a state dot,
  * the row id, one line saying its state, a configure control for a row that
- * registered a page, and, when the pack is on, a switch. A pack like base
- * carries close to a hundred rows, so a long list gets a filter.
+ * registered a page, and, when the pack is on and offers row switches, a
+ * switch. A pack like base carries close to a hundred rows, so a long list
+ * gets a filter.
  */
 function RowsSection({ rows, t, resolveText, toggle, configure }: {
   readonly rows: readonly PackageRow[]
@@ -584,7 +585,7 @@ function PackageDetail({
           rows={pkg.rows}
           t={t}
           resolveText={resolveText}
-          toggle={pkg.enabled ? { busy: row => busy || rowBusy(row), onSetEnabled: onSetRowEnabled } : undefined}
+          toggle={pkg.enabled && pkg.rowSwitches ? { busy: row => busy || rowBusy(row), onSetEnabled: onSetRowEnabled } : undefined}
           configure={configure}
         />
         {renderSlot('plugins.detail.section', { subject })}

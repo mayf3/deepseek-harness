@@ -295,7 +295,8 @@ export class PluginManager extends TypertRemoteService {
         const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
         if (info === undefined) {
           if (enabled) bundles.push({ name, enabled, installed, optional, removable: removable && readOnlyReason === undefined,
-            ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: { code: 'not-bundle' }, rows: [], overrides: [] })
+            ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: { code: 'not-bundle' },
+            rows: [], rowSwitches: true, overrides: [] })
           continue
         }
         const compatibility = evaluatePluginCompatibility(info, exemptions)
@@ -311,7 +312,8 @@ export class PluginManager extends TypertRemoteService {
       } catch (error) {
         if (enabled || installed) {
           bundles.push({ name, enabled, installed, optional, removable: removable && readOnlyReason === undefined,
-            ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: managementError(error), rows: [], overrides: [] })
+            ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: managementError(error),
+            rows: [], rowSwitches: true, overrides: [] })
         }
       }
     }
@@ -625,11 +627,11 @@ export class PluginManager extends TypertRemoteService {
     }, { stage: 'remove', target: name }, 'remove')
   }
 
-  /** The rows a bundle's patch inserts and the existing rows it changes; an unreadable patch throws. */
-  private declaredRows(name: string, info: ProfileManifest): Pick<BundleInfo, 'rows' | 'overrides'> {
+  /** The rows a bundle's patch inserts, whether each gets a switch, and the existing rows it changes; an unreadable patch throws. */
+  private declaredRows(name: string, info: ProfileManifest): Pick<BundleInfo, 'rows' | 'rowSwitches' | 'overrides'> {
     const bundle = info.dsh?.bundle
     /* v8 ignore next -- bundleManifest answers only manifests that declare a patch */
-    if (bundle === undefined) return { rows: [], overrides: [] }
+    if (bundle === undefined) return { rows: [], rowSwitches: true, overrides: [] }
     const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
     const patches: PatchOptions[] = bundlePatchPaths(dir, bundle).flatMap(file => loadOverlayPatches('dsh', file))
     // One entry per row id: the Loader keeps a single entry for an id, whichever layer declared it last.
@@ -654,7 +656,7 @@ export class PluginManager extends TypertRemoteService {
     const declared = new Set(rows.map(row => row.rowId))
     const overrides = [...new Set(patches.flatMap(item =>
       item.insert === undefined && typeof item.id === 'string' && !declared.has(item.id) ? [item.id] : []))]
-    return { rows, overrides }
+    return { rows, rowSwitches: bundle.rowSwitches !== false, overrides }
   }
 
   /** Run one pnpm command in the profile, streaming its output as install-log chunks. */

@@ -65,6 +65,8 @@ export interface BundleInfo {
   error?: ManagementError
   /** The rows the bundle's patch inserts, in declaration order; empty when the patch cannot be read. */
   rows: BundleRowInfo[]
+  /** Whether the plugin manager offers a switch for each inserted row: false when the bundle's `dsh.bundle.rowSwitches` is false. */
+  rowSwitches: boolean
   /** Ids of rows the bundle's patch changes without declaring them: the built-in rows it configures or disables. */
   overrides: string[]
 }
