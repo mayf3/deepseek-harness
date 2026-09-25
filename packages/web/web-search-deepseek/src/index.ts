@@ -82,7 +82,7 @@ export const Config = z.object({
  */
 const SEARCH_BASE_URL_ENV = 'DEEPSEEK_SEARCH_BASE_URL'
 
-/** Provider route id `dsh-llm-deepseek-account` registers; request headers record it per Session. */
+/** Provider route id `dsh-llm-deepseek-account` registers; `request/context` events record it per Session. */
 const ACCOUNT_PROVIDER = 'deepseek-account'
 
 /** Settings namespace carrying this provider's endpoint, model, and key reference. */
@@ -106,9 +106,9 @@ function resolveOptions(
   return {
     ...literalApiKey === undefined ? {} : { apiKey: literalApiKey },
     resolveAccountToken: async (endpoint) => {
-      // The latest request header names the route that produced the model
-      // request which called this search.
-      const provider = ctx.get('agents')?.currentInitiator()?.session.requestHeader()?.config.provider
+      // The latest request context names the route that served the model
+      // request which called this search, as account sign-out reads it.
+      const provider = ctx.get('agents')?.currentInitiator()?.session.requestContext()?.provider
       if (provider !== ACCOUNT_PROVIDER) return undefined
       return await ctx.get('deepseekAccount')?.resolveToken(endpoint)
     },

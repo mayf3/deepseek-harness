@@ -170,6 +170,10 @@ describe('DeepSeekSearchProvider availability', () => {
     expect(searchProvider(options).available()).toBe(true)
   })
 
+  it('is available with only an account token resolver', () => {
+    expect(searchProvider({ ...options, apiKey: '', resolveAccountToken: async () => 'account-token' }).available()).toBe(true)
+  })
+
   it('is misconfigured when the base URL is unparseable', () => {
     expect(searchProvider({ ...options, baseURL: 'not a url' }).available()).toBe(false)
   })
@@ -267,6 +271,70 @@ describe('DeepSeekSearchProvider account authentication', () => {
         message: 'DeepSeek search credential resolution failed: Error: account storage failed',
       }))
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('replaces endpoint guidance with sign-in guidance when DeepSeek rejects the account token', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: { message: 'invalid token' } }, { status: 401 })))
+    const error = await rejectedWebError(searchProvider({
+      ...options,
+      resolveAccountToken: async () => 'account-token',
+    }).search({ query: 'q' }))
+    expect(error).toMatchObject({
+      code: 'WEB_PROVIDER_ERROR',
+      message: 'DeepSeek API error (HTTP 401): invalid token\n\n'
+        + 'DeepSeek rejected the account sign-in used for this web search. '
+        + 'Guide the user to sign in to DeepSeek again; the search endpoint does not need changing.',
+    })
+  })
+
+  it('keeps endpoint guidance for other account-authenticated HTTP failures', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({}, { status: 503 })))
+    const error = await rejectedWebError(searchProvider({
+      ...options,
+      resolveAccountToken: async () => 'account-token',
+    }).search({ query: 'q' }))
+    expect(error.message).toContain('Search endpoint configuration is separate from chat.')
+  })
+
+  it('maps a synchronous resolver throw to WEB_PROVIDER_ERROR', async () => {
+    const { fetchMock } = captureFetch()
+    await expect(searchProvider({
+      ...options,
+      resolveAccountToken: () => { throw new Error('account service threw') },
+    }).search({ query: 'q' }))
+      .rejects.toThrow(expect.objectContaining({
+        code: 'WEB_PROVIDER_ERROR',
+        message: 'DeepSeek search credential resolution failed: Error: account service threw',
+      }))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('starts neither resolver for a pre-aborted call', async () => {
+    const resolveAccountToken = vi.fn(async () => 'account-token')
+    const resolveApiKey = vi.fn(async () => 'resolved-key')
+    const controller = new AbortController()
+    controller.abort(new Error('caller stopped'))
+    await expect(searchProvider({ ...options, apiKey: '', resolveAccountToken, resolveApiKey })
+      .search({ query: 'q' }, controller.signal))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
+    expect(resolveAccountToken).not.toHaveBeenCalled()
+    expect(resolveApiKey).not.toHaveBeenCalled()
+  })
+
+  it('does not start API-key resolution after cancellation during account resolution', async () => {
+    const controller = new AbortController()
+    const resolveApiKey = vi.fn(() => Promise.reject(new Error('must not run')))
+    await expect(searchProvider({
+      ...options,
+      apiKey: '',
+      resolveAccountToken: async () => {
+        controller.abort(new Error('caller stopped'))
+        return undefined
+      },
+      resolveApiKey,
+    }).search({ query: 'q' }, controller.signal))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
+    expect(resolveApiKey).not.toHaveBeenCalled()
   })
 
   it('aborts while the account resolver remains pending', async () => {
@@ -624,8 +692,8 @@ describe('web-search-deepseek plugin registration', () => {
 describe('web-search-deepseek account route selection', () => {
   /**
    * Mount the provider with a signed-in account and run one search inside an
-   * initiator whose latest request header names `provider`.
-   * @param provider - route recorded by the initiating Session's request header; undefined runs the
+   * initiator whose latest request context names `provider`.
+   * @param provider - route recorded by the initiating Session's request context; undefined runs the
    *   search without an initiator while a Session on the account route exists.
    * @returns the headers the search sent and the URLs the account was asked about.
    */
@@ -643,10 +711,8 @@ describe('web-search-deepseek account route selection', () => {
       } as DeepSeekAccount)
       await ctx.plugin(deepseekPlugin, { apiKey: 'ds-key' })
       const session = ctx.sessions.create(SessionId(`web-search-account-${provider ?? 'none'}`))
-      session.append('request/header', {
-        header: { config: { provider: provider ?? 'deepseek-account', model: 'deepseek-v4-flash' } },
-        reason: 'initial',
-      })
+      session.append('turn/start', { turn: 1 })
+      session.append('request/context', { provider: provider ?? 'deepseek-account', model: 'deepseek-v4-flash' })
       const agent = { session } as Agent
       const search = () => ctx.web.search({ query: 'q' })
       await (provider === undefined ? search() : ctx.agents.withInitiator(agent, search))
