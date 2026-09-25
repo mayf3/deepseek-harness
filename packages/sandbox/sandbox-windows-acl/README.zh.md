@@ -75,6 +75,8 @@ rmSync(tempDir, { recursive: true, force: true })
 
 `init()` 在任何 Win32 失败时抛出——子进程绝不会不受限制地 spawn。执行命令前失败的 runner 会向 stderr 打印 `windows-acl-run: <detail>` 并以 127 退出，seam 的 runner 失败规则将其归类为损坏的沙箱，而非拒绝。清理按设计尽力而为：`dispose()` 会尝试全部临时撤销并把失败聚合为 `AggregateError`。
 
+此后端无法解释的拒绝——子进程打不开本已授权的对象，或授权调用本身失败——交给 `assets/` 中随包发布的 `diagnose-windows-sandbox-acl` 技能诊断：该脚本除非传入修复开关，否则只读，并先对待查路径及其祖先做出分类，再动任何东西。只要 `dsh-sandbox-local` 在 Windows 上被组合，`registerAclDiagnosisSkill` 就会把它注册进会话目录；脚本的 `-Fix` 与 `-GrantFullControl` 是唯一受支持的修复，两者都要求 `-AllowRoot`、拒绝其外的任何目标、绝不更改所有者，并且需要不受限的调用者——受限子进程既打不开带包 SID 的对象，也写不了 DACL。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -156,11 +158,11 @@ seam 先把确定性工作区 SID 的 ACE 常驻物化（每个工作区每服�
 <a id="model-experience"></a>
 ## 模型体验
 
-间接地通过 [`dsh-bash-sandbox`](../../shell/bash-sandbox/README.zh.md)、[`dsh-pwsh-sandbox`](../../shell/pwsh-sandbox/README.zh.md) 及其工具呈现；它们渲染此后端的部分强制执行与拒绝事实（工具层通过 `denialSignatures` 分类的受限 stderr），而 [`dsh-sandbox`](../sandbox/README.zh.md) seam 拥有 `SANDBOX_UNAVAILABLE` 文本、`sandbox-local` 拥有 runner 选择。
+间接地通过 [`dsh-bash-sandbox`](../../shell/bash-sandbox/README.zh.md)、[`dsh-pwsh-sandbox`](../../shell/pwsh-sandbox/README.zh.md) 及其工具呈现；它们渲染此后端的部分强制执行与拒绝事实（工具层通过 `denialSignatures` 分类的受限 stderr），而 [`dsh-sandbox`](../sandbox/README.zh.md) seam 拥有 `SANDBOX_UNAVAILABLE` 文本、`sandbox-local` 拥有 runner 选择。在 Windows 上本包还贡献一个目录条目——随包发布的 `diagnose-windows-sandbox-acl` 技能，模型正是从它学会诊断工具层只能上报的拒绝。
 
 #### KV Cache 影响
 
-无直接影响；拒绝面属于工具层。
+Windows 上多一个目录条目：技能的 `description`（500 字符）随目录进入上下文，其正文与脚本仅在模型调用该技能时加载。拒绝面本身仍属于工具层。
 
 ## 已知限制与延期工作
 
@@ -178,6 +180,7 @@ seam 先把确定性工作区 SID 的 ACE 常驻物化（每个工作区每服�
 - **读侧隔离与网络策略不在范围内**——`WRITE_RESTRICTED` 只交叉检查写访问；将此后端与读侧策略配对以获得更强隔离。
 - **读取会被其他基于 AppContainer 的工具以包 SID 授权过的对象挡住。** 在本机上，当文件的 DACL 携带针对包 SID（`S-1-15-2-…`）的 ACE 时，Low 完整性的令牌无法访问它——即使同一份 DACL 同时向用户授予完全控制、向 Everyone 授予读取（已观测：只给新文件加这一条 ACE 即可复现拒绝，补授 Everyone 读取无法解除，而同样内容复制到别处仍可读）。其背后的内核规则尚未确证，也不由本包掌控；以 AppContainer 自我隔离的工具正是会写入这类 ACE，因此被它们标记过的目录树对本后端的子进程将不可读。移除外来 ACE（或重新安装受影响的目录树）即可恢复访问。
 - **宽目录与 FAT 卷警告已推迟；FAT 类残留未经验证。** UI 侧警告尚未实现，FAT 卷作为授权根会大声失败，而授权根之外的 FAT 类目标不存储安全描述符；其有效完整性标签由系统分配而非记录在对象上，因此标签层在该处的行为未经测试。FAT 仍被视为遗留残留。
+- **随包发布的诊断技能需要不受限的调用者。** 无论分类还是修复，都要读写受限子进程够不到的安全描述符，因此会话必须为那一次调用升权；没有审批通道时升权 fail-closed，模型只能把确切的命令交给用户自行执行。
 - **PowerShell 语言模式因受限模式而异。** 在 `read-only` 下，PowerShell 无法在临时目录中创建 AppLocker 探针文件，因此会保守地以 ConstrainedLanguage 启动（`Add-Type`、非核心 .NET 静态调用、COM 与反射失败）；交付的 `workspace-write` 路径可让探针完成，因此除非主机范围的 WDAC/AppLocker 策略另有规定，否则 pwsh 保持 FullLanguage，而直接使用 `AclSandbox` 并配置 `tempDir: null` 时则没有这一保证。这一区别属于 PowerShell 启动行为，不是 ACL 写入边界的一部分。
 
 <a id="dev-note"></a>

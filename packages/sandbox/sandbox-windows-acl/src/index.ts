@@ -159,6 +159,8 @@ function freeSidBestEffort(
  * `manageDacls: false` the caller owns the grants (the sandbox seam's grant
  * reuse): init() applies none and dispose() revokes none.
  */
+export { ACL_DIAGNOSIS_SKILL, registerAclDiagnosisSkill } from './acl-skill.ts'
+
 export class AclSandbox {
   /** Absolute writable directories (constructor-validated). */
   readonly writableDirs: string[]
