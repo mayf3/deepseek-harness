@@ -1650,6 +1650,23 @@ describe('desktop main startup', () => {
     await expect(preparing).resolves.toBe(true)
   })
 
+  it.each(['accepted', 'failed'] as const)('settles analytics intake before locking API admission and continues after intake failure: %s', async (outcome) => {
+    const host = await readyForUpdate()
+    await vi.waitFor(() => { expect(harness.analytics).toHaveBeenCalledWith(expect.objectContaining({ eventName: 'desktop_app_launch' })) })
+    const intake = Promise.withResolvers<undefined>()
+    harness.analytics.mockImplementationOnce(() => intake.promise)
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
+    const preparing = harness.prepareUpdate()
+    await vi.waitFor(() => { expect(harness.analytics).toHaveBeenLastCalledWith(expect.objectContaining({ eventName: 'desktop_upgrade_install_restart_click' })) })
+    expect(host.updateTasks.mock.calls).toEqual([['inspect']])
+    expect(host.stop).not.toHaveBeenCalled()
+    if (outcome === 'accepted') intake.resolve(undefined)
+    else intake.reject(new Error('local analytics intake timed out'))
+    await host.stopping.promise
+    host.exited.resolve()
+    await expect(preparing).resolves.toBe(true)
+  })
+
   it('reports a Platform storage cleanup failure as preparation failure without stopping the Host', async () => {
     const host = await readyForUpdate()
     harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
