@@ -159,8 +159,10 @@ function gitDirectory(fixture: Fixture, root: string): string {
 }
 
 function commonDirectory(fixture: Fixture): string {
+  // Git expands Windows short paths and filesystem aliases before the installer resolves its lock.
+  const root = git(fixture, fixture.main, ['rev-parse', '--show-toplevel'])
   const output = git(fixture, fixture.main, ['rev-parse', '--git-common-dir'])
-  return isAbsolute(output) ? output : resolve(fixture.main, output)
+  return isAbsolute(output) ? output : resolve(root, output)
 }
 
 function hooksPath(fixture: Fixture, root: string): string {
@@ -359,6 +361,7 @@ syncBuiltinESMExports()
 
     const result = await runInstaller(fixture, fixture.main, {}, ['--require', preload])
 
+    expect(existsSync(probe), `lock injection missing: exit ${result.status}\n${result.stderr}`).toBe(true)
     expect(readFileSync(probe, 'utf8')).toBe('injected')
     const recovers = process.platform === 'win32' && code === 'EPERM' && !expires
     expect(result.status, result.stderr).toBe(recovers ? 0 : 1)
