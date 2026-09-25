@@ -29,7 +29,7 @@ kind: "package-reference"
 
 共享工具行和 Bash 行的失败、停止摘要在悬停时仍保留错误色和警告色；只有不处于这两种状态的摘要会在悬停时加深。
 
-派发前，模型已给出名称的调用显示为不可展开的一行，使用工具自己的图标与标题。通用行显示为`工具调用 · <工具名>`。准备阶段不提供完整参数、文件链接、结果或依赖参数的交互。write/edit 的摘要显示「正在准备内容 NKB」；N 为 `Math.ceil(raw.length / 1024)`，是原始参数字符串长度的整数近似值，不是文件字节数。`tool/call` 才启用既有调用展示；参数块结束本身不代表开始执行。
+派发前，模型已给出名称的调用显示为不可展开的一行，使用工具自己的图标与标题。通用行显示为 `工具调用 · <工具名>`。read/write/edit 在 `file_path` 闭合后显示可打开的路径；write/edit 在内容流入时还显示「正在准备内容 NKB」。N 按解码后内容的 UTF-16 长度除以 1024 向上取整，不是文件字节数。命令行显示流入中的描述。`tool/call` 才启用既有调用展示；参数块结束本身不代表开始执行。
 
 ### 注册业务工具视图
 
@@ -43,11 +43,11 @@ ctx.slots.inject('tool.call.toolview', () =>
   }, BusinessToolRow))
 ```
 
-owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、`phase` 判别字段及对应阶段的冻结 `block`、可选 `cwd` 与 `home`、会话授权的 `loadImage` loader（供结果携带持久图像的视图使用），以及普通的 `openFile`/`inspect` 回调。PTC dispatch 块保留事件的 `parentCallId`；根会话调用没有该字段，因此后代调用都走同一条按 key 分发路径：已注册视图的调用（如 `read_image`）也会在嵌套处渲染对应卡片，未注册的后代调用则保持通用压平形式。路径摘要先相对会话 cwd 缩短，再把剩余的 POSIX Host home 写成 `~`；`filePath` 与 Host 打开仍使用作者给出的文件系统路径。注册项会收到常规的会话 slot 运行时共享数据，但不会收到 React 节点或运行时服务。
+owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、`phase` 判别字段及对应阶段的 `block`、可选 `cwd` 与 `home`、会话授权的 `loadImage` loader（供结果携带持久图像的视图使用），以及普通的 `openFile`/`inspect` 回调。PTC dispatch 块保留事件的 `parentCallId`；根会话调用没有该字段，因此后代调用都走同一条按 key 分发路径：已注册视图的调用（如 `read_image`）也会在嵌套处渲染对应卡片，未注册的后代调用则保持通用压平形式。路径摘要先相对会话 cwd 缩短，再把剩余的 POSIX Host home 写成 `~`；`filePath` 与 Host 打开仍使用作者给出的文件系统路径。注册项会收到常规的会话 slot 运行时共享数据，但不会收到 React 节点或运行时服务。
 
 ### 内置视图
 
-每个注册视图都接收[工具 slot 类型](src/client/contract/slots.ts)声明的显式 `preparing`、`start` 和 `result` props。通用行在三个阶段使用同一个 `ToolRow`。行模型统一选择标题，并组合通用工具名前缀与已有参数摘要，不按生命周期阶段改变前缀；专用标题不附带英文名。准备阶段的共享参数解析入口直接返回无调用，不解析部分 JSON。write/edit 将准备态和派发后阶段拆成两个组件，只有准备态组件调用 `useToolCallArgumentsPartial`，start 与 result 共用派发后组件。Bash、Skill、Cordis 等自定义 renderer 分别处理准备态，其依赖参数的组件接收 `StartedToolCallViewProps`。
+每个注册视图都接收[工具 slot 类型](src/client/contract/slots.ts)声明的显式 `preparing`、`start` 和 `result` props。所有块都提供 `name` 和懒计算的 `args` 读器，原有 `argsRaw` 和 result 的 `call` 字段仍可使用。行模型统一选择标题，并组合通用工具名前缀与已有参数摘要，不按生命周期阶段改变前缀；专用标题不附带英文名。write/edit 和 Bash 在各阶段共用组件。自定义 renderer 可保留独立准备态分支；依赖参数的组件接收 `StartedToolCallViewProps`。
 
 本包拥有 generic fallback，以及 shell/pwsh、read、read_image、write/edit、运行中的 `str_replace_editor` `create`／`str_replace`、grep/glob、web、todo、question 与 PTC dispatch 的内置展示。结构化卡片直接从第一方原始 event 字段派生；Host `presentCall` 与 `presentResult` 值不会进入 Client。运行中的原子工具行以同一道高光从左到右扫过标题、分隔符、摘要与后缀；已完成行保持静态。运行中与已完成的前台标准 `bash`/`pwsh` 和 `terminal_send` 调用，无论位于根还是 PTC dispatch 子调用中，都在通过相同的参数、结果和错误检查后使用 terminal 卡片。持久 `bash`/`pwsh` 调用仅在运行中使用 terminal 卡片。以已识别的 spill 策略提示结尾的 shell 输出，在 shell 行中使用可展开的 generic 输出，在 Details 中使用 generic 输出；位置被改变或被省略的退出标记无法证明成功。已完成的持久 shell 结果保持 generic 展示，因为 reset 与部分输出诊断不一定描述单个进程的退出状态；根调用的持久 shell 结果可展开，后台启动回执则保持折叠。带有 `AUTO_REVIEW_DENIED` 的原生或 PTC dispatch 失败会在折叠行显示 Auto review 裁决，展开时显示一行归一化后的“未执行”原因；原因缺失或只有空白时使用本地化 fallback 文案。`ui-skill` 展示了业务包自行拥有的 `skill` 注册项。
 
@@ -72,7 +72,7 @@ owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、`phase` 判别字
 Tool 所有者属性将 Chat 注入的稳定 `useDisclosure` 钩子传给根调用及嵌套调用。工具行在拥有展开正文的位置调用它，中间 renderer 不订阅。每次调用拥有独立展开状态，外层轮次收起时重置该状态，不替换 React 身份；展示模式切换保留该状态。
 
 
-slot 注入的 `useToolCallArgumentsPartial` 钩子按需订阅所属 Step 的 `assistant-step` 来源，并选取当前 callId 的原始参数前缀。来源或调用不存在时返回空字符串。同一步骤中的其他调用可能触发快照检查，但选中的字符串未变时不会刷新使用方。不调用钩子的工具不新增订阅，已派发的调用不再提供参数前缀来源。
+Tool Definition 拥有[懒计算参数视图](../../util/values/README.zh.md)。工具行通过读器选择字段和更新粒度，不另设订阅或注册。流式 delta 只在已读取的答案变化时替换块引用，发布仍按帧合批。需要完整派发参数的卡片模型继续读取 `argsRaw`。
 
 ### 卡片
 

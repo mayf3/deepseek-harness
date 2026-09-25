@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-util-values` 为运行时包提供统一的无损 JSON 值、不可变对象图、JSON 结构相等和封闭联合类型穷尽失败实现。调用方可以校验不受信任的值、创建分离的 JSON 快照、冻结待发布值、比较 JSON 兼容数据，或终止不可达分支，而无需导入某个能力包。这些 helper 不持有共享注册表、constructor identity 或可变模块状态。
+`dsh-util-values` 为运行时包提供统一的无损 JSON 值、流式参数、不可变对象图、JSON 结构相等和封闭联合类型穷尽失败实现。调用方可以校验不受信任的值、读取部分参数、创建分离的 JSON 快照、冻结待发布值、比较 JSON 兼容数据，或终止不可达分支，而无需导入某个能力包。这些 helper 不持有共享注册表、constructor identity 或可变模块状态。
 
 ## 目录
 
@@ -37,6 +37,10 @@ if (!isJsonValue(input)) throw new TypeError('expected lossless JSON')
 const snapshot = snapshotJsonValue(input) as JsonValue
 ```
 
+### 读取流式参数
+
+`PartialArguments` 懒读取 JSON 对象的顶层字段。向新实例追加分片，`append()` 只报告已读取答案的变化。字符串读器提供解码文本、完成状态和 UTF-16 长度，并可为变化判定指定步长和已完成前缀的偏移量。非字符串值在完整后可用。`fromText()` 和 `fromObject()` 创建拒绝追加的封存视图；`closed()` 也包含停止扫描的非法输入。返回值区别见[读器定义](src/partial-json.ts)。
+
 ### 发布、比较或保留键控值
 
 `deepFreeze(value)` 原地冻结对象图并返回同一个值。它遍历可枚举字符串键的子项，并刻意让活跃 `AbortSignal` 对象保持可变。`deepEqualJson(a, b)` 按结构比较 JSON 兼容数组与记录；调用方必须先校验恶意或不受约束的值，再进行比较。
@@ -62,6 +66,7 @@ JSON 校验器使用显式工作栈，并只跟踪当前祖先链，因此深层
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | JSON 值类型、校验与快照遍历、结构相等、深度冻结、弱键/强值关联和穷尽联合类型失败 |
+| [`src/partial-json.ts`](src/partial-json.ts) | 懒扫描顶层参数，并检测已读取答案的变化 |
 | — | 不发布运行时不变量伴生入口；这些值操作没有共享运行时状态，其代数行为由单元测试覆盖。 |
 
 </details>

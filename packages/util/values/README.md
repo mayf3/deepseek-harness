@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-util-values` gives runtime packages one implementation for lossless JSON values, immutable object graphs, structural JSON equality, and exhaustive closed-union failures. Callers can validate untrusted values, detach a JSON snapshot, freeze a published value, compare JSON-compatible data, or terminate an unreachable branch without importing a capability package. The helpers hold no shared registry, constructor identity, or mutable module state.
+`dsh-util-values` gives runtime packages one implementation for lossless JSON values, streamed arguments, immutable object graphs, structural JSON equality, and exhaustive closed-union failures. Callers can validate untrusted values, read partial arguments, detach a JSON snapshot, freeze a published value, compare JSON-compatible data, or terminate an unreachable branch without importing a capability package. The helpers hold no shared registry, constructor identity, or mutable module state.
 
 ## Table of Contents
 
@@ -37,6 +37,10 @@ if (!isJsonValue(input)) throw new TypeError('expected lossless JSON')
 const snapshot = snapshotJsonValue(input) as JsonValue
 ```
 
+### Read streamed arguments
+
+`PartialArguments` reads a JSON object's top-level fields lazily. Append fragments to a new instance; `append()` reports changes only to answers already read. String readers expose decoded text, completion, and UTF-16 length, with an optional step and completed-prefix offset for change detection. Non-string values become available when complete. `fromText()` and `fromObject()` create sealed views that reject appends; `closed()` also covers invalid input, where scanning stops. See [the readers](src/partial-json.ts) for return distinctions.
+
 ### Publish, compare, or retain keyed values
 
 `deepFreeze(value)` freezes an object graph in place and returns the same value. It walks enumerable string-keyed children and deliberately leaves live `AbortSignal` objects mutable. `deepEqualJson(a, b)` compares JSON-compatible arrays and records structurally; callers must validate hostile or unconstrained values before comparison.
@@ -62,6 +66,7 @@ The JSON validator uses an explicit work stack and tracks only the active ancest
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | JSON value type, validation and snapshot traversal, structural equality, deep freezing, weak-key/strong-value associations, and exhaustive-union failure |
+| [`src/partial-json.ts`](src/partial-json.ts) | Lazy top-level argument scanning and observed-answer change detection |
 | — | No runtime invariant companion is published because these value operations have no shared runtime state; unit tests cover their algebra. |
 
 </details>
