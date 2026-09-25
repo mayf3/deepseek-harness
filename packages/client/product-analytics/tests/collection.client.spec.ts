@@ -1,4 +1,4 @@
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { RemoteStreamOptions } from '@deepseek-ai/dsh-api-gateway/client'
 import * as Analytics from '../src/client/index.ts'
@@ -28,8 +28,16 @@ async function setup(enabled = true) {
     },
     dispose: async () => { disposed = true; wake?.() },
   }
-  ctx.provide('remote', { productAnalytics: { report, watchPolicy: vi.fn() }, $stream: (value: RemoteStreamOptions<boolean>) => { options = value; return stream } } as never)
-  ctx.provide('remote.productAnalytics', {} as never)
+  const remote = {
+    productAnalytics: { report, watchPolicy: vi.fn() },
+    $stream: (value: RemoteStreamOptions<boolean>) => { options = value; return stream },
+  }
+  class TracedRemote extends Service {
+    constructor(ctx: Context) { super(ctx, 'remote') }
+    $stream = remote.$stream
+  }
+  await ctx.plugin(TracedRemote)
+  await ctx.plugin({ apply(child: Context) { child.provide('remote.productAnalytics', remote.productAnalytics as never) } })
   await ctx.plugin(Analytics)
   if ('dshDesktop' in globalThis) await vi.waitFor(() => { expect(ctx.productAnalytics.enabled).toBe(enabled) })
   return { ctx, report, options: () => options!,
@@ -91,4 +99,23 @@ it('fails closed on stream loss and accepts a fresh policy after reconnection', 
   expect(b.ctx.productAnalytics.enabled).toBe(false)
   await b.policy(true)
   await b.fail()
+})
+
+it('reports from a consumer without granting it the analytics Remote namespace', async () => {
+  vi.stubGlobal('dshDesktop', {})
+  const b = await setup()
+  let click!: () => void
+  await b.ctx.plugin({
+    inject: ['remote'],
+    apply(ctx: Context) {
+      click = () => {
+        expect(ctx.get('productAnalytics')?.enabled).toBe(true)
+        ctx.get('productAnalytics')?.track('sidebar_menu_click', { menu_name: 'plugin' })
+      }
+    },
+  })
+  click()
+  expect(b.report).toHaveBeenCalledExactlyOnceWith({
+    eventName: 'sidebar_menu_click', timestamp: expect.any(Number) as number, attributes: { menu_name: 'plugin' },
+  })
 })

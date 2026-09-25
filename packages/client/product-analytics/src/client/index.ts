@@ -13,9 +13,16 @@ declare module '@deepseek-ai/cordis' {
 
 class DesktopAnalytics extends Service {
   private collecting = false
+  // RPC dispatch stays in the provider context when Cordis traces a consumer call.
+  private readonly submit: (event: ProductEvent) => Promise<void>
 
   constructor(ctx: Context) {
     super(ctx, 'productAnalytics')
+    this.submit = async (event) => {
+      try { await ctx.remote.productAnalytics.report(event) } catch (_error) {
+        // Missing or disconnected Remote services must not interrupt the interaction.
+      }
+    }
     if (!('dshDesktop' in globalThis)) return
     const stream = ctx.remote.$stream<boolean>({
       name: 'product analytics policy', open: signal => ctx.remote.productAnalytics.watchPolicy(signal),
@@ -43,12 +50,6 @@ class DesktopAnalytics extends Service {
     if (!this.enabled) return
     const event = { eventName: name, attributes, timestamp } as ProductEvent
     void this.submit(event)
-  }
-
-  private async submit(event: ProductEvent): Promise<void> {
-    try { await this.ctx.remote.productAnalytics.report(event) } catch (_error) {
-      // Missing or disconnected Remote services must not interrupt the interaction.
-    }
   }
 }
 
