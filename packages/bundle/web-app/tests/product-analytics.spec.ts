@@ -1,3 +1,4 @@
+import OTel from '@deepseek-ai/dsh-otel'
 /** Desktop-only collector policy and bounded shutdown against an unresponsive receiver. */
 import { createServer } from 'node:http'
 import { once } from 'node:events'
@@ -29,6 +30,7 @@ it.each(['desktop', 'web'])('limits collection and its shutdown to the Desktop l
   })
   const identity = vi.fn().mockResolvedValue(undefined)
   ctx.provide('deepseekAccount', { getDeviceIdentity: identity } as never)
+  await ctx.plugin(OTel)
   ctx.baseUrl = 'file:///'
   await ctx.plugin(Loader).await()
   ctx.loader.builtins.telemetry = Telemetry

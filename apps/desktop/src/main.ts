@@ -795,7 +795,8 @@ async function main(): Promise<void> {
         if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
         if (state.phase === 'idle') {
           await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
-            message: formatDesktopMessage(locale.messages.updateCurrent, { version: app.getVersion() }) })
+            message: locale.messages.updateCurrent,
+            detail: formatDesktopMessage(locale.messages.updateCurrentDetail, { version: app.getVersion() }) })
           return
         }
         if (state.phase === 'ready' || (state.phase === 'error' && state.failedOperation === 'install')) {
@@ -807,8 +808,9 @@ async function main(): Promise<void> {
         }
         if (state.phase !== 'available' && !(state.phase === 'error' && state.failedOperation === 'download')) return
         if (manual) {
-          const result = await ordinaryMessageBox({ title: locale.messages.updateCheckTitle, message: locale.messages.updateAvailable,
-            detail: formatDesktopMessage(locale.messages.updateDetail, { version: state.version ?? '' }),
+          const result = await ordinaryMessageBox({ title: locale.messages.updateCheckTitle,
+            message: formatDesktopMessage(locale.messages.updateAvailable, { version: state.version ?? '' }),
+            detail: locale.messages.updateDetail,
             buttons: [locale.messages.updateDownload], cancelId: 1 })
           if (result.response !== 0) return
         }

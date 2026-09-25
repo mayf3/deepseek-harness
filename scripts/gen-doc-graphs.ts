@@ -410,7 +410,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'client-product-analytics',
     title: 'Desktop interaction collection',
     mode: 'service',
-    note: 'Accepts selected Desktop events, enriches available login identity, and observes live compaction under the launch-time collection policy.',
+    note: 'Accepts selected Desktop events, enriches available login identity, and observes live compaction under the live Host collection policy.',
+  },
+  {
+    key: 'otel',
+    pkg: 'otel',
+    title: 'Shared OTel reporting channels',
+    mode: 'service',
+    consumers: ['host-product-telemetry-otel', 'session-telemetry-otel'],
+    note: 'Product analytics and Session feedback adapters create independent reporting channels through one injected service.',
   },
   {
     key: 'productTelemetry',

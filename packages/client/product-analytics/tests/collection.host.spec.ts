@@ -1,3 +1,4 @@
+import OTel from '@deepseek-ai/dsh-otel'
 import { Context } from '@deepseek-ai/cordis'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
@@ -76,6 +77,7 @@ it('writes the selected event through the real exporter to an isolated collector
   ctx.provide('credentials', { readRecord: async () => undefined } as never)
   ctx.provide('deepseekAccount', { getDeviceIdentity: async () => undefined } as never)
   ctx.provide('webServer', {} as never)
+  await ctx.plugin(OTel)
   const exporter = await ctx.plugin(ProductTelemetry, TelemetryConfig({ endpoint: `http://127.0.0.1:${address.port}/v1/logs`, serviceName: 'test', serviceVersion: '1', compression: 'none' }))
   await ctx.plugin(Analytics, { enabled: true })
   await ctx.productAnalytics.report({ eventName: 'api_key_save_click', timestamp: 1_800_000_000_000, attributes: {} })

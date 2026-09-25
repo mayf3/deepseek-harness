@@ -555,7 +555,7 @@ describe('desktop main startup', () => {
       expect(testAuth.login).toHaveBeenCalledOnce()
       const messages = harness.dialog.showMessageBox.mock.calls.map(call => (call.at(-1) as { message: string }).message)
       expect(messages.filter(message => message === en.policyLoginRequired)).toHaveLength(1)
-      expect(messages).toContain('No updates available. Current version: V1.0.0')
+      expect(messages).toContain('You’re up to date!')
     } finally {
       explanation.resolve({ response: 1 })
       login.resolve('cancelled')
@@ -1074,7 +1074,7 @@ describe('desktop main startup', () => {
     vi.stubGlobal('process', { ...process, platform })
     vi.spyOn(harness.app, 'getPreferredSystemLanguages').mockReturnValue([language])
     await readyForUpdate()
-    harness.updateState = { phase: 'ready', version: '0.1.99' }
+    harness.updateState = { phase: 'ready', version: '0.1.7-alpha.2' }
     harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 1 })
     await expect(harness.prepareUpdate()).resolves.toBe(false)
     const { message, detail, buttons } = harness.dialog.showMessageBox.mock.lastCall![0] as MessageBoxOptions
@@ -1453,7 +1453,7 @@ describe('desktop main startup', () => {
     await prompt
     expect(signal.aborted).toBe(true)
     expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({
-      message: 'No updates available. Current version: V1.0.0',
+      message: 'You’re up to date!', detail: 'Current version: 1.0.0',
     }))
   })
 
@@ -1518,7 +1518,7 @@ describe('desktop main startup', () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(() => policy.promise))
     harness.updateCheck.mockResolvedValue({ phase: 'available', version: '1.0.1-nightly.1' })
     harness.dialog.showMessageBox.mockImplementation(({ signal, message }: { signal?: AbortSignal; message: string }) => {
-      if (message !== en.updateAvailable || signal === undefined) return Promise.resolve({ response: 1 })
+      if (message !== en.updateAvailable.replace('{version}', '1.0.1-nightly.1') || signal === undefined) return Promise.resolve({ response: 1 })
       available.resolve(signal)
       return new Promise((resolve) => { signal.addEventListener('abort', () => { resolve({ response: 0 }) }, { once: true }) })
     })
@@ -1555,7 +1555,7 @@ describe('desktop main startup', () => {
     const ordinaryShown = Promise.withResolvers<undefined>()
     const policyShown = Promise.withResolvers<undefined>()
     harness.dialog.showMessageBox.mockImplementation(({ message }: { message: string }) => {
-      if (message.startsWith('No updates available.')) {
+      if (message === en.updateCurrent) {
         ordinaryShown.resolve(undefined)
         return ordinaryResult.promise
       }

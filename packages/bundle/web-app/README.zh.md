@@ -53,7 +53,7 @@ dsh --profile web --no-open --port 8080
 | `surfaceContext` | `true` | 给 agent 提供 GUI 定位上下文，并把 `DSH_WEB_URL` 暴露给其 shell 命令 |
 | `trustedHosts` | `[]` | 允许从网络访问 GUI 的额外主机 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-web-app)是每个受支持字段及其 JSDoc 的穷尽式真源。 随发行版交付的组合默认禁用 `schedule`、`ui-schedule` 和 `time-context`。
+生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-web-app)是每个受支持字段及其 JSDoc 的穷尽式真源。 随发行版交付的组合默认禁用 `schedule`、`ui-schedule` 和 `time-context`，可选实验性 bundle `@deepseek-ai/dsh-experimental-schedule-bundle` 可在插件管理页把这三行打开。
 
 ### LAN 访问与可信主机
 

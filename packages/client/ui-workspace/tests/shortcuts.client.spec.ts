@@ -168,3 +168,15 @@ describe('workspace shortcut ownership', () => {
     expect(b.loadOlder).not.toHaveBeenCalled()
   })
 })
+
+it('opens an empty rename draft for unnamed history instead of its directory label', async () => {
+  const b = await bench()
+  const unnamed = row('a', true)
+  delete unnamed.title
+  unnamed.displayTitle = 'Default workspace'
+  b.list.set({ ...b.list.getSnapshot(), byId: { [unnamed.id]: unnamed } })
+  const command = b.commands.get('session.rename')!.resolve(context)
+  expect(command.status).toBe('handled')
+  if (command.status === 'handled') command.run()
+  expect(b.controls.state.getSnapshot().renameTarget).toEqual({ sessionId: 'a', currentTitle: '' })
+})
