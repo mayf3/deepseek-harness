@@ -75,7 +75,13 @@ rmSync(tempDir, { recursive: true, force: true })
 
 `init()` 在任何 Win32 失败时抛出——子进程绝不会不受限制地 spawn。执行命令前失败的 runner 会向 stderr 打印 `windows-acl-run: <detail>` 并以 127 退出，seam 的 runner 失败规则将其归类为损坏的沙箱，而非拒绝。清理按设计尽力而为：`dispose()` 会尝试全部临时撤销并把失败聚合为 `AggregateError`。
 
-此后端无法解释的拒绝——子进程打不开本已授权的对象，或授权调用本身失败——交给 `assets/` 中随包发布的 `diagnose-windows-sandbox-acl` 技能诊断：该脚本除非传入修复开关，否则只读，并先对待查路径及其祖先做出分类，再动任何东西。只要 `dsh-sandbox-local` 在 Windows 上被组合，`registerAclDiagnosisSkill` 就会把它注册进会话目录；脚本的 `-Fix` 与 `-GrantFullControl` 是唯一受支持的修复，两者都要求 `-AllowRoot`、拒绝其外的任何目标、绝不更改所有者，并且需要不受限的调用者——受限子进程既打不开带包 SID 的对象，也写不了 DACL。
+此后端无法解释的拒绝——子进程打不开本已授权的对象，或授权调用本身失败——交给 `assets/` 中随包发布的 `diagnose-windows-sandbox-acl` 技能诊断。只要 `dsh-sandbox-local` 在 Windows 上与技能注册表一起组合，`registerAclDiagnosisSkill` 就会注册它。注册时会把资源复制到外部 PowerShell 可读取的私有临时目录，ASAR 和 SEA 部署也适用；fiber 释放时注销提供者并删除副本。缺少打包资源会导致注册失败。
+
+脚本诊断时不修改文件或 ACL；有效 `WRITE_DAC` 和 `WRITE_OWNER` 检查只打开已有对象，不修改内容。`-Fix` 删除包 SID 的允许 ACE，`-GrantFullControl` 补充调用者缺少的权限，即使包 ACE 同时存在也可执行。两者都要求不受限的调用者及 `WRITE_DAC`，强制目标位于 `-AllowRoot` 内，拒绝目标祖先链上的所有重解析点，保持所有者不变，并在修改前将恢复文件保存到 `-Out`。输出的 `-Restore` 命令只写回原 DACL 及其继承保护状态，保留 SACL，执行相同的路径限制，且在会话结束后仍可使用。多次修复应按相反顺序回滚。被拒绝或失败的修改均以非零状态退出。
+
+每次执行都会输出 `REPORT` JSON 行，说明观察、决策、操作尝试及结果和各自原因，并记录验证结果与最终摘要。ACL 观察包含允许和拒绝 ACE 的 SID、权限与继承信息、原生列表、有效权限及读取错误；未知值与权限缺失明确区分。修改在执行前报告开始状态，捕获异常后仍保留此前结果和恢复命令。操作完成不代表验证成功或已经自动回滚。[内置技能](assets/diagnose-windows-sandbox-acl/SKILL.md) 规定模型如何解读这些记录并报告尚未确认的事项。
+
+检查会从请求对象逐级访问祖先，直到文件系统根目录。每条 ACL 观察的 `path` 标识实际检查的对象；分类结果的 `details.packageObjects` 列出包含包允许 ACE 的对象，但不能据此确认原始失败的原因。[父目录包 SID 示例](tests/expected/parent-package-report.jsonl) 保留测试目录路径并展示选定字段，其中 `fixturePackageAces` 只从 `aces` 提取合成测试 SID，省略机器自带的 ACE 和祖先目录。[授权失败示例](tests/expected/denied-grant-report.txt) 保留操作路径和原因。
 
 -----
 
@@ -162,7 +168,7 @@ seam 先把确定性工作区 SID 的 ACE 常驻物化（每个工作区每服�
 
 #### KV Cache 影响
 
-Windows 上多一个目录条目：技能的 `description`（500 字符）随目录进入上下文，其正文与脚本仅在模型调用该技能时加载。拒绝面本身仍属于工具层。
+Windows 上多一个目录条目：技能描述随目录进入上下文，正文只在调用时进入。资源在注册时提取，不会把脚本内容加入模型上下文。拒绝面本身仍属于工具层。
 
 ## 已知限制与延期工作
 

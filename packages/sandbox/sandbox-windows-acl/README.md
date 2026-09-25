@@ -75,7 +75,13 @@ Temp isolation is per live session/workspace pair: sessions sharing a workspace 
 
 `init()` throws on any Win32 failure — the child is never spawned unrestricted. A runner that fails before executing the command prints `windows-acl-run: <detail>` to stderr and exits 127, which the seam's runner-failure rules classify as a broken sandbox rather than a denial. Cleanup is best-effort by design: `dispose()` attempts every temp revocation and aggregates failures into an `AggregateError`.
 
-A denial this backend cannot explain — the child cannot open an object it was granted, or the provisioning call itself fails — is diagnosed by the `diagnose-windows-sandbox-acl` skill bundled in `assets/`, whose script reads unless a repair switch is passed and classifies the failing path and its ancestors before anything changes. `registerAclDiagnosisSkill` contributes it to the session catalog wherever `dsh-sandbox-local` composes on Windows, and the script's `-Fix` and `-GrantFullControl` modes are the only supported repairs: both require `-AllowRoot`, refuse any target outside it, never change an owner, and need an unconfined caller because a confined child can neither open an object carrying a package SID nor write a DACL.
+A denial this backend cannot explain — the child cannot open an object it was granted, or the provisioning call itself fails — is diagnosed by the `diagnose-windows-sandbox-acl` skill bundled in `assets/`. `registerAclDiagnosisSkill` contributes it wherever `dsh-sandbox-local` composes with a skill registry on Windows. Registration copies the resources into a private temporary directory readable by external PowerShell, including in ASAR and SEA deployments; fiber disposal unregisters the provider and removes its copy. Missing packaged assets fail registration.
+
+The script diagnoses without changing files or ACLs; effective `WRITE_DAC` and `WRITE_OWNER` checks open existing objects without modifying contents. `-Fix` removes package allow ACEs and `-GrantFullControl` adds the caller's missing rights, including when a package ACE is present. Both require an unconfined caller and `WRITE_DAC`, enforce a containing `-AllowRoot`, reject every reparse point in the target's ancestor chain, preserve ownership and save recovery files under `-Out` before mutation. The emitted `-Restore` command writes only the saved DACL and its inheritance protection, preserves the SACL, enforces the same path restrictions and remains usable after the session ends. Apply rollback commands in reverse repair order. Refused or failed mutations exit nonzero.
+
+Every run emits `REPORT` JSON lines describing observations, decisions, operation attempts and results with their reasons, followed by verification and summary records. ACL observations include allow and deny ACEs with SID, rights and inheritance, native listings, effective access and read errors; unknown values remain distinct from absent permissions. Mutations report their start before executing, so a caught exception retains prior results and recovery commands. Operation completion does not imply successful verification or automatic rollback. The [bundled skill](assets/diagnose-windows-sandbox-acl/SKILL.md) defines how the model interprets these records and reports remaining uncertainty.
+
+Inspection visits the requested object and each ancestor through the filesystem root. Each ACL observation's `path` identifies the inspected object; the classification's `details.packageObjects` lists objects carrying package allow ACEs without establishing the cause of the original failure. The [parent-package example](tests/expected/parent-package-report.jsonl) retains the fixture paths and shows selected fields, with `fixturePackageAces` projecting only the synthetic test SID from `aces`; host-owned ACEs and ancestors are omitted. The [failed-grant example](tests/expected/denied-grant-report.txt) retains operation paths and reasons.
 
 -----
 
@@ -162,7 +168,7 @@ Indirectly, through [`dsh-bash-sandbox`](../../shell/bash-sandbox/README.md), [`
 
 #### KV Cache effect
 
-One extra catalog entry on Windows: the skill's `description` (500 characters) rides in the catalog, while its body and script load only when the model invokes it. The denial surface itself stays in the tool layer.
+One extra catalog entry on Windows: the skill's description enters context with the catalog, and the body enters only when invoked. Resource extraction happens at registration and does not add script contents to model context. The denial surface itself stays in the tool layer.
 
 ## Known Limitations and Deferred Work
 

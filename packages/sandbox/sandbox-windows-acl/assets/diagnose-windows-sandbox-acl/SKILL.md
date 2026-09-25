@@ -42,7 +42,9 @@ Run the bundled script over the failing path. It reads ACLs with .NET and native
 pwsh -File scripts/diagnose-windows-sandbox-acl.ps1 -Path <failing-path>
 ```
 
-It reports, for the target and every ancestor: any AppContainer package SID (`S-1-15-2-*`) as explicit or inherited, other `S-1-15-*` SIDs (reported but inert), the owner, whether the current user holds `WRITE_DAC` and `WRITE_OWNER`, whether the ACL could be read at all, and the caller's integrity level plus any sandbox markers in the environment.
+It reports every observed allow and deny ACE on the target and its ancestors, including SID, rights, inheritance and propagation flags, plus the native ACL listing, owner, effective `WRITE_DAC` and `WRITE_OWNER`, caller integrity and sandbox marker names. Well-known groups `S-1-15-2-1` and `S-1-15-2-2` are reported but are not individual package ACEs eligible for removal. Access checks open existing objects without changing contents; Windows accounts for group membership, deny ACEs and inheritance. An unreadable or unrecognized value is unknown, not absent.
+
+Every `REPORT` line contains a JSON record with `kind`, `operation`, `path`, `status`, `reason` and `details`. Read observations and reasons alongside the verdict: a deny ACE's presence alone does not prove that it caused the failure. Decisions explain skips and refusals. Actions report `started` before execution and `completed` or `failed` afterward; completion means the operation ran, while a separate verification reports whether the intended result was observed. A final summary lists attempted operations, outcomes and available recovery commands, including after a caught exception. If execution ends before a completion or summary record, treat the result as unconfirmed.
 
 The failing API names the family. DSH's fail-closed errors carry the API and the exact Win32 code, so read the error rather than guessing:
 
@@ -56,13 +58,15 @@ The script needs a caller that can open the object. `read-only` pwsh cannot run 
 
 ## Step 2 — Read the verdict
 
-| Package SID present | Owner is the current user | Verdict | Action |
+For `UNREADABLE` or `INCOMPLETE`, report the failed observation and its error; do not treat missing evidence as missing permissions or proceed with a repair. `NOT_THIS_CLASS` only rules out the conditions the script inspected, not every cause of the original failure.
+
+| Package SID present | Effective permissions | Verdict | Action |
 |---|---|---|---|
-| yes | yes | a foreign AppContainer ACE is the blocker | remove the ACE (Step 4) |
-| yes | no | both problems at once | grant full control first, then remove the ACE; the grant needs Windows elevation |
-| no | yes, and the DACL lacks `WRITE_OWNER` | a precondition DSH documents is unmet | grant full control (Step 4); ownership already carries `WRITE_DAC`, so no elevation is needed |
-| no | no | a precondition this caller cannot repair | hand the user the single command to run from an elevated terminal (Step 4) |
-| no | yes and the DACL is complete | not this class | say so and stop; report what was actually found |
+| yes | the target has both rights and every affected object has `WRITE_DAC` | package ACE found | remove the ACE (Step 4), then verify the original failure |
+| yes | either condition above is unmet | both problems at once | grant full control on the affected object first, then remove the ACE; if `WRITE_DAC` is missing, the user must run the grant from an elevated terminal |
+| no | `WRITE_DAC` present, `WRITE_OWNER` missing | a provisioning precondition is unmet | grant full control (Step 4) |
+| no | `WRITE_DAC` missing | this caller cannot repair the DACL | hand the user the single command to run from an elevated terminal (Step 4) |
+| no | both rights present | not this class | say so and stop; report what was actually found |
 
 ## Step 3 — Explain, and apologize
 
@@ -79,7 +83,7 @@ Two things must reach the user either way:
 
 Two repairs exist, and both run through the same script so that no ACL is edited by hand.
 
-**Remove a foreign package-SID ACE.** It grants nothing to anyone yet blocks every reader below Medium:
+**Remove a conflicting package-SID ACE.** This also removes that package's access, so explain which SID and permissions will be removed:
 
 ```powershell
 pwsh -File scripts/diagnose-windows-sandbox-acl.ps1 -Path <path> -AllowRoot <containing-root> -Out <dir> -Fix
@@ -93,11 +97,13 @@ pwsh -File scripts/diagnose-windows-sandbox-acl.ps1 -Path <path> -AllowRoot <con
 
 Full control carries both rights this needs: `WRITE_DAC` for the DACL and `WRITE_OWNER` for the mandatory label DSH writes in the same call. **Taking ownership alone does not work** — it yields only `WRITE_DAC`, so the label write still fails. Never change an object's owner, and never "replace permissions on all child objects": that erases deny ACEs somebody set deliberately.
 
-Both modes require `-AllowRoot` and refuse any target outside it, are dry-run unless the repair switch is passed, write a native `icacls` backup plus a rollback command to `-Out`, and re-read the object to confirm both that the intended change landed and that every other ACE — the mandatory label included — survived unchanged. Both also write a DACL, which the confined child cannot do, so run the diagnosis and the repair inside one escalated call rather than spending two approvals on the same directory.
+Both modes require `-AllowRoot` to be a containing directory and reject the target or any ancestor if it is a reparse point, including a junction used as `-AllowRoot`. Before mutation they save the native `icacls` listing format, a DACL recovery record, a standalone recovery script and its exact command under `-Out`. The recovery command uses `-Restore` to restore only the original DACL and inheritance protection; it never changes ownership or the mandatory label and remains usable after the session ends. It requires `WRITE_DAC` and enforces the same path restrictions. Run multiple rollback commands in reverse repair order.
 
-When the caller owns the directory, the missing piece is only `WRITE_OWNER`: ownership already carries `WRITE_DAC`, so the script repairs it unelevated. Windows elevation is needed only when the owner is somebody else, because an unelevated caller cannot write the DACL of a directory it does not own; the script reports that case as a failed grant together with the one command to run.
+After a grant, the script rechecks effective `WRITE_DAC` and `WRITE_OWNER`; after removal it checks that package ACEs disappeared and other `icacls` lines stayed unchanged. Refused or failed repairs exit nonzero. A failed verification does not undo a completed DACL write. Report which operation ran, its reason, what verification observed and the recovery command; the script never rolls back automatically. If the requested repair failed after a write, use its emitted recovery command before trying another repair, and report the recovery result. Both repairs write a DACL, which the confined child cannot do, so run the diagnosis and the repair inside one escalated call rather than spending two approvals on the same directory.
 
-Do not reach for `sandbox_permissions` to solve that token problem. Escalation is the right lever for giving the script an unconfined caller (Step 1) and the wrong one for writing a DACL the caller has no right to write, because it widens the sandbox and not the Windows token. Even at `danger-full-access` the harness still runs unelevated with `Administrators` marked deny-only, so it has no `WRITE_DAC` on a directory owned by Administrators, and asking for the escalation only spends an approval on the wrong lever.
+The caller needs effective `WRITE_DAC` to repair the DACL. Ownership often supplies it, but an explicit grant or group grant can also supply it to a non-owner. Follow the script's access result rather than inferring permissions from the owner's name. If the caller lacks `WRITE_DAC`, ask the user to run the exact grant command from an elevated terminal. Elevation does not override every deny or system policy; verify the result.
+
+Do not reach for `sandbox_permissions` to solve a Windows-token permission failure. Escalation gives the script an unconfined caller (Step 1); it does not elevate the Windows token. If the unconfined caller still lacks `WRITE_DAC`, another sandbox escalation cannot supply it.
 
 Do not make the harness trigger UAC either. An agent-initiated `runas` is a privilege-escalation path, the elevated child would run outside both the sandbox and the approval ledger the session log is built from, and a UAC prompt cannot be routed through this harness's approval channel. Hand the user the single exact command to run from an elevated terminal, and say plainly what it changes.
 
@@ -107,7 +113,7 @@ Also stop short when the directory cannot be repaired this way at all, and say w
 
 ## Step 5 — Verify against the original failure
 
-Re-run the operation that failed, from the same confined context. The repair is only done when that operation succeeds. If it still fails, report the new error verbatim rather than starting another round of changes.
+Re-run the operation that failed, from the same confined context. The repair is only done when that operation succeeds. Whether diagnosis, repair or verification succeeds or fails, tell the user what the script observed, what it changed or left untouched, why it took those actions, and what remains unverified. Keep observations separate from suspected causes. If the original operation still fails, report the new error verbatim rather than starting another round of changes.
 
 ## Step 6 — Report recurrence
 
@@ -116,5 +122,5 @@ Tell the user the condition that brings it back, so they can recognize it instea
 ## Never
 
 - Never write, create, or delete a file to *test* permissions. Writing to probe is how an existing file gets clobbered, and it answers nothing the read-only diagnosis does not. (This has already happened once in this repository: a probe overwrote a workspace-root `AGENTS.md` that no version control could restore.)
-- Never edit ACLs by hand — no `Set-Acl` from a constructed SDDL, no `icacls` surgery outside the bundled script. A hand-built security descriptor also marks the SACL for writing, which fails with a privilege error that looks like a bug.
+- Never edit ACLs by hand — use the bundled repairs or their generated recovery command. The recovery script writes only the saved DACL; do not replace it with a security-descriptor write that also attempts to change the SACL.
 - Never repair anything outside the directory being diagnosed, and never widen `-AllowRoot` beyond the tree that legitimately contains the failing path — its purpose is to keep a repair from reaching a neighbour of the thing that failed.

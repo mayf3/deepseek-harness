@@ -1,11 +1,8 @@
-/**
- * The Windows ACL diagnosis skill ships as assets, so its catalog entry and the
- * body the registry hands a model are asserted here rather than through a session.
- * The registration is exercised on a real skill registry fiber, which is also what
- * proves disposal removes the candidate.
- */
+/** The bundled skill owns its registry candidate and extracted resource directory. */
 
 import { Context } from '@deepseek-ai/cordis'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { describe, expect, it } from 'vitest'
 import { ACL_DIAGNOSIS_SKILL, registerAclDiagnosisSkill } from '../src/acl-skill.ts'
@@ -34,6 +31,10 @@ describe('bundled Windows ACL diagnosis skill', () => {
 
       const loaded = await ctx.skills.get(ACL_DIAGNOSIS_SKILL)
       expect(loaded?.resourceBase).toMatchObject({ kind: 'directory' })
+      if (loaded?.resourceBase?.kind !== 'directory') throw new Error('Missing physical skill resource directory')
+      const resourceDirectory = loaded.resourceBase.path
+      expect(readFileSync(join(resourceDirectory, 'scripts/diagnose-windows-sandbox-acl.ps1'), 'utf8'))
+        .toBe(readFileSync(new URL('../assets/diagnose-windows-sandbox-acl/scripts/diagnose-windows-sandbox-acl.ps1', import.meta.url), 'utf8'))
       // The body names the bundled script — the repair path the model must use
       // instead of editing ACLs by hand.
       expect(loaded?.content).toContain('scripts/diagnose-windows-sandbox-acl.ps1')
@@ -41,6 +42,25 @@ describe('bundled Windows ACL diagnosis skill', () => {
 
       await fiber.dispose()
       expect(await ctx.skills.list()).toEqual([])
+      expect(existsSync(resourceDirectory)).toBe(false)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each([
+    ['missing frontmatter', '# Invalid skill', 'has no YAML frontmatter'],
+    ['non-object metadata', '---\nnull\n---\nBody', 'has no description'],
+    ['empty description', '---\ndescription: ""\n---\nBody', 'has no description'],
+  ])('rejects an extracted skill with %s', async (_name, raw, message) => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SkillRegistry)
+      await ctx.plugin({ name: 'acl-skill-invalid-resource', inject: ['skills'], apply: registerAclDiagnosisSkill })
+      const skill = await ctx.skills.get(ACL_DIAGNOSIS_SKILL)
+      if (skill?.resourceBase?.kind !== 'directory') throw new Error('Missing physical skill resource directory')
+      writeFileSync(join(skill.resourceBase.path, 'SKILL.md'), raw)
+      await expect(ctx.skills.get(ACL_DIAGNOSIS_SKILL)).rejects.toThrow(message)
     } finally {
       await ctx.fiber.dispose()
     }

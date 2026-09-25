@@ -1,17 +1,16 @@
 /**
  * Registers the bundled Windows sandbox ACL diagnosis skill.
  *
- * The skill ships beside the backend whose failures it explains, so the assets
- * resolve relative to this module exactly as `skill-office` resolves its own. The
- * command-line side of the ACL backend never imports it: only the always-composed
- * local sandbox provider calls {@link registerAclDiagnosisSkill}, and only where
- * this backend can be the active one.
+ * The provider owns a private filesystem copy of its resources so external
+ * PowerShell can execute them even when the package lives inside ASAR or SEA.
+ * Disposing the registration removes both the provider and its resource copy.
  *
  * @module @deepseek-ai/dsh-sandbox-windows-acl
  */
 
-import { readFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
@@ -38,31 +37,40 @@ function parseSkill(raw: string, path: string): { description: string; content: 
 }
 
 /**
- * Register the bundled diagnosis skill on a session's skill registry.
+ * Register the bundled diagnosis skill with a private resource directory owned by this fiber.
+ * Missing or invalid packaged assets fail registration; disposal removes the directory.
  * @param ctx - Context carrying the skill registry.
  */
 export function registerAclDiagnosisSkill(ctx: Context): void {
-  const directory = fileURLToPath(new URL(`../assets/${ACL_DIAGNOSIS_SKILL}/`, import.meta.url))
-  const locator = join(directory, 'SKILL.md')
-  const { description } = parseSkill(readFileSync(locator, 'utf8'), locator)
-  const candidate: SkillCandidate = {
-    name: ACL_DIAGNOSIS_SKILL,
-    description,
-    invocation: { modelInvocable: true, userInvocable: true },
-    provider: PROVIDER,
-    source: 'bundled',
-    rank: BUNDLED_SKILL_RANK,
-    resourceBase: { kind: 'directory', path: directory },
-    locator,
-  }
-  const provider: SkillProvider = {
-    name: PROVIDER,
-    list: () => Promise.resolve([candidate]),
-    async get(entry, options) {
-      const { rank: _rank, locator: entryPath, ...summary } = entry
-      const raw = await readFile(entryPath as string, { encoding: 'utf8', signal: options.signal })
-      return { ...summary, content: parseSkill(raw, entryPath as string).content }
-    },
-  }
-  ctx.skills.registerProvider(() => provider)
+  const packaged = fileURLToPath(new URL(`../assets/${ACL_DIAGNOSIS_SKILL}/`, import.meta.url))
+  ctx.effect(function* () {
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-acl-skill-'))
+    yield async () => { await rm(directory, { recursive: true, force: true }) }
+    mkdirSync(join(directory, 'scripts'))
+    for (const path of ['SKILL.md', 'scripts/diagnose-windows-sandbox-acl.ps1']) {
+      writeFileSync(join(directory, path), readFileSync(join(packaged, path)), { flag: 'wx', mode: 0o600 })
+    }
+    const locator = join(directory, 'SKILL.md')
+    const { description } = parseSkill(readFileSync(locator, 'utf8'), locator)
+    const candidate: SkillCandidate = {
+      name: ACL_DIAGNOSIS_SKILL,
+      description,
+      invocation: { modelInvocable: true, userInvocable: true },
+      provider: PROVIDER,
+      source: 'bundled',
+      rank: BUNDLED_SKILL_RANK,
+      resourceBase: { kind: 'directory', path: directory },
+      locator,
+    }
+    const provider: SkillProvider = {
+      name: PROVIDER,
+      list: () => Promise.resolve([candidate]),
+      async get(entry, options) {
+        const { rank: _rank, locator: entryPath, ...summary } = entry
+        const raw = await readFile(entryPath as string, { encoding: 'utf8', signal: options.signal })
+        return { ...summary, content: parseSkill(raw, entryPath as string).content }
+      },
+    }
+    yield ctx.skills.registerProvider(() => provider)
+  }, 'Windows ACL diagnosis skill resources')
 }

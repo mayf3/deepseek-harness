@@ -300,7 +300,7 @@ export class LocalSandboxProvider extends SandboxProvider {
     // optional: the sandbox must not require the skill registry.
     /* v8 ignore next 3 -- Windows-only registration; the Linux coverage lane cannot take this branch */
     if (process.platform === 'win32') {
-      ctx.inject(['skills'], skillsCtx => registerAclDiagnosisSkill(skillsCtx))
+      ctx.inject(['skills'], (skillsCtx) => { registerAclDiagnosisSkill(skillsCtx) })
     }
     // The temp grants are revoked with the provider: a clean server
     // shutdown leaves no temp ACEs behind (workspace ACEs stand by design —
