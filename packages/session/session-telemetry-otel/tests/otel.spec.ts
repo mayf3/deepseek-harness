@@ -1,3 +1,4 @@
+import OTel from '@deepseek-ai/dsh-otel'
 /**
  * OTel backend unit tier: wire assertions against a scripted `node:http`
  * mock collector through the SDK's REAL pipeline (BatchLogRecordProcessor →
@@ -102,6 +103,7 @@ async function mockCollector(
 
 async function boot(url: string) {
   const ctx = new Context()
+  ctx.plugin(OTel)
   await ctx.plugin(SessionStore)
   const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
     mode: SessionTelemetryMode.FEEDBACK_ONLY,
@@ -210,6 +212,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
       }
     })
     const ctx = new Context()
+    ctx.plugin(OTel)
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
       mode: SessionTelemetryMode.FEEDBACK_ONLY,
@@ -245,6 +248,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
       }
     })
     const ctx = new Context()
+    ctx.plugin(OTel)
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
       mode: SessionTelemetryMode.FEEDBACK_ONLY,
@@ -275,6 +279,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
   it('passes exporter options beyond url and headers through to the SDK exporter', async () => {
     const { url, captures } = await mockCollector()
     const ctx = new Context()
+    ctx.plugin(OTel)
     await ctx.plugin(SessionStore)
     // `compression` is a documented SDK exporter option; the advertised
     // verbatim passthrough must hand it (and every other field) to the
@@ -316,6 +321,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
   it('replays each session suffix only at the next feedback event', async () => {
     const { url, captures } = await mockCollector()
     const ctx = new Context()
+    ctx.plugin(OTel)
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
       mode: SessionTelemetryMode.FEEDBACK_ONLY,
@@ -352,6 +358,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
   it('ignores direct emits and non-canonical feedback in feedback-only mode', async () => {
     const { url, captures } = await mockCollector()
     const ctx = new Context()
+    ctx.plugin(OTel)
     await ctx.plugin(SessionStore)
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
@@ -381,6 +388,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
   it('constructs no disabled transport even when exporter options are present', async () => {
     const { url, captures } = await mockCollector()
     const ctx = new Context()
+    ctx.plugin(OTel)
     await ctx.plugin(SessionStore)
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
@@ -414,18 +422,24 @@ describe('OpenTelemetrySessionBackend wire', () => {
     const { url, captures } = await mockCollector()
 
     const gatedCtx = new Context()
+
+    gatedCtx.plugin(OTel)
     await gatedCtx.plugin(SessionStore)
     const gated = await gatedCtx.plugin(OpenTelemetrySessionBackend, { mode: SessionTelemetryMode.FEEDBACK_ONLY, exporter: { url } })
     expect(gatedCtx.sessionTelemetry.sharing).toBe('feedback-only')
     await gated.dispose()
 
     const disabledCtx = new Context()
+
+    disabledCtx.plugin(OTel)
     await disabledCtx.plugin(SessionStore)
     const disabled = await disabledCtx.plugin(OpenTelemetrySessionBackend, { mode: SessionTelemetryMode.DISABLED })
     expect(disabledCtx.sessionTelemetry.sharing).toBe('disabled')
     await disabled.dispose()
 
     const defaultCtx = new Context()
+
+    defaultCtx.plugin(OTel)
     await defaultCtx.plugin(SessionStore)
     const defaulted = await defaultCtx.plugin(OpenTelemetrySessionBackend, { exporter: { url } })
     expect(defaultCtx.sessionTelemetry.sharing).toBe('feedback-only')
@@ -438,6 +452,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
   it('defaults direct construction to feedback-only delivery', async () => {
     const { url, captures } = await mockCollector()
     const ctx = new Context()
+    ctx.plugin(OTel)
     try {
       await ctx.plugin(SessionStore)
       new OpenTelemetrySessionBackend(ctx, {
@@ -464,6 +479,7 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
   it.each(['deepseek-official', 'mock', undefined])('uploads new text feedback for %s while the host stays alive', async (provider) => {
     const { url, captures } = await mockCollector()
     const ctx = new Context()
+    ctx.plugin(OTel)
     try {
       await ctx.plugin(SessionStore)
       await ctx.plugin(OpenTelemetrySessionBackend, {
@@ -488,6 +504,7 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
   it('does not upload ordinary events, inherited feedback, new/open/resume/fork or HMR', async () => {
     const { url, captures } = await mockCollector()
     const ctx = new Context()
+    ctx.plugin(OTel)
     await ctx.plugin(SessionStore)
     const donor = Session.create(SessionId('stored-feedback'))
     recordFeedback(donor, { text: 'old feedback is not a submission' })
@@ -517,6 +534,7 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
     const { url, captures } = await mockCollector()
     const root = mkdtempSync(join(tmpdir(), 'dsh-otel-live-'))
     const ctx = new Context()
+    ctx.plugin(OTel)
     try {
       await ctx.plugin(SessionStore)
       await ctx.plugin(JsonlPersistence, { root, compression: 'none' })
@@ -593,6 +611,7 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
     const { url, captures } = await mockCollector()
     const root = mkdtempSync(join(tmpdir(), 'dsh-otel-cold-fork-'))
     const ctx = new Context()
+    ctx.plugin(OTel)
     try {
       await ctx.plugin(SessionStore)
       await ctx.plugin(JsonlPersistence, { root, compression: 'none' })
@@ -648,6 +667,7 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
     const { url, captures } = await mockCollector()
     const root = mkdtempSync(join(tmpdir(), 'dsh-otel-cold-'))
     const ctx = new Context()
+    ctx.plugin(OTel)
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     try {
       await ctx.plugin(SessionStore)
@@ -731,12 +751,14 @@ describe('OpenTelemetrySessionBackend config fails loud', () => {
     [{ mode: SessionTelemetryMode.FEEDBACK_ONLY, exporter: { url: 'http://c/v1/logs' }, shutdownTimeoutMillis: Number.POSITIVE_INFINITY }, /shutdownTimeoutMillis/],
   ])('rejects %j at plugin load', async (config, message) => {
     const ctx = new Context()
+    ctx.plugin(OTel)
     await ctx.plugin(SessionStore)
     await expect(ctx.plugin(OpenTelemetrySessionBackend, config as Config)).rejects.toThrow(message)
   })
 
   it.each(['INVALID', 'FULL'])('rejects direct mode %s before reading transport config', async (mode) => {
     const ctx = new Context()
+    ctx.plugin(OTel)
     await ctx.plugin(SessionStore)
     let exporterRead = false
     const config = {
@@ -753,6 +775,7 @@ describe('OpenTelemetrySessionBackend config fails loud', () => {
 
   it('does not read any transport setting in disabled mode', async () => {
     const ctx = new Context()
+    ctx.plugin(OTel)
     await ctx.plugin(SessionStore)
     const transportRead = vi.fn(() => {
       throw new Error('transport config was read')
@@ -782,7 +805,7 @@ describe('dsh-session-telemetry-otel real-load-path guard', () => {
     const loader = Object.create(Loader.prototype) as Loader
     const unwrapped = loader.unwrapExports(module) as typeof OpenTelemetrySessionBackend
     expect(unwrapped).toBe(OpenTelemetrySessionBackend)
-    expect(unwrapped.inject).toEqual(['sessions'])
+    expect(unwrapped.inject).toEqual(['sessions', 'otel'])
     expect(typeof unwrapped.Config).toBe('function')
   })
 
@@ -792,6 +815,7 @@ describe('dsh-session-telemetry-otel real-load-path guard', () => {
     const loader = Object.create(Loader.prototype) as Loader
     const unwrapped = loader.unwrapExports(module) as Parameters<Context['plugin']>[0]
     const ctx = new Context()
+    ctx.plugin(OTel)
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(unwrapped, { mode: SessionTelemetryMode.FEEDBACK_ONLY, exporter: { url } })
     expect(ctx.sessionTelemetry).toBeInstanceOf(OpenTelemetrySessionBackend)
@@ -802,6 +826,7 @@ describe('dsh-session-telemetry-otel real-load-path guard', () => {
 it('reports oversized records without failing feedback or exporting their contents', async () => {
   const { url, captures } = await mockCollector()
   const ctx = new Context()
+  ctx.plugin(OTel)
   try {
     await ctx.plugin(SessionStore)
     const warn = vi.spyOn(ctx.logger, 'warn')

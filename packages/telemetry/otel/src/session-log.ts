@@ -1,5 +1,4 @@
 /** Session-log records in an independent byte-bounded OTLP queue. */
-import { createRequire } from 'node:module'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { Attributes } from '@opentelemetry/api'
 import { SeverityNumber } from '@opentelemetry/api-logs'
@@ -35,6 +34,8 @@ export interface SessionLogOptions {
   processor?: Omit<BatchLogRecordProcessorOptions, 'exporter'>
   /** May lower, but never exceed, the collector's 4,000,000-byte limit. */
   maxRequestBytes?: number
+  /** Instrumentation scope supplied by the business owner. */
+  scope: { name: string; version?: string }
   /** Application and anonymous identity carried on the OTLP resource. */
   resourceAttributes: Attributes
   /** Report rejected single records and network failures without recording their content. */
@@ -195,8 +196,7 @@ export class SessionLogReporter {
       resource: resourceFromAttributes(options.resourceAttributes),
       processors: [this.processor],
     })
-    const { version } = createRequire(import.meta.url)('../package.json') as { version: string }
-    this.logger = this.provider.getLogger('@deepseek-ai/dsh-session-telemetry-otel', version)
+    this.logger = this.provider.getLogger(options.scope.name, options.scope.version)
   }
 
   /**

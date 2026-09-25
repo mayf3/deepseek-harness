@@ -1,4 +1,6 @@
 import { createRequire } from 'node:module'
+import { Context } from '@deepseek-ai/cordis'
+import OTel from '../src/index.ts'
 import { Agent, createServer, type IncomingHttpHeaders } from 'node:http'
 import { once } from 'node:events'
 import { gunzipSync } from 'node:zlib'
@@ -6,7 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CompressionAlgorithm } from '@opentelemetry/otlp-exporter-base'
 import { JsonLogsSerializer } from '@opentelemetry/otlp-transformer'
 import { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
-import { SESSION_LOG_MAX_REQUEST_BYTES, SessionLogReporter, type SessionLogRecord, type SessionLogOptions } from '../src/session-log.ts'
+import { SESSION_LOG_MAX_REQUEST_BYTES, type SessionLogRecord, type SessionLogOptions } from '../src/session-log.ts'
 
 interface Capture {
   bytes: number
@@ -14,6 +16,7 @@ interface Capture {
   body: { resourceLogs: { resource: unknown; scopeLogs: { logRecords: Record<string, unknown>[] }[] }[] }
 }
 const cleanup: (() => Promise<void>)[] = []
+let ctx: Context
 afterEach(async () => {
   try {
     for (const dispose of cleanup.splice(0).reverse()) await dispose()
@@ -24,7 +27,10 @@ afterEach(async () => {
   }
 })
 
-beforeEach(() => {
+beforeEach(async () => {
+  ctx = new Context()
+  cleanup.push(() => ctx.fiber.dispose())
+  await ctx.plugin(OTel)
   vi.stubEnv('OTEL_EXPORTER_OTLP_COMPRESSION', undefined)
   vi.stubEnv('OTEL_EXPORTER_OTLP_LOGS_COMPRESSION', undefined)
 })
@@ -79,7 +85,8 @@ function parseContent(content: string): unknown {
 
 function reporter(endpoint: string, overrides: Partial<SessionLogOptions> = {}) {
   const onFailure = vi.fn()
-  const sender = new SessionLogReporter({
+  const sender = ctx.otel.createSessionLogReporter({
+    scope: { name: '@deepseek-ai/dsh-session-telemetry-otel', version: (createRequire(import.meta.url)('../package.json') as { version: string }).version },
     exporter: { url: endpoint, timeoutMillis: 1000 }, resourceAttributes: { 'service.name': 'session-test' },
     processor: { scheduledDelayMillis: 60000 }, onFailure, ...overrides,
   })
@@ -270,4 +277,26 @@ it('bounds the queued record count while a transport request is unsettled', asyn
   const done=sender.shutdown()
   finish({ code:0 })
   await done
+})
+
+it('keeps ordinary events and Session logs in independent channels through one Cordis service', async () => {
+  const target = await collector()
+  const ordinary = ctx.otel.createEventReporter({
+    exporter: { url: target.endpoint },
+    resourceAttributes: { 'service.name': 'ordinary-test' },
+    scope: { name: 'ordinary-consumer', version: '1' },
+    processor: { scheduledDelayMillis: 60000 },
+    onFailure: () => { throw new Error('unexpected export failure') },
+  })
+  cleanup.push(() => ordinary.shutdown())
+  const { sender } = reporter(target.endpoint)
+  ordinary.emit({ eventName: 'ui.click', body: 'click', timestamp: Date.now() })
+  sender.reportSessionLog(sessionRecord('authorized'))
+  expect(target.captures).toEqual([])
+  await sender.shutdown()
+  expect(target.captures.flatMap(logs).map(r => r.eventName)).toEqual(['session-log'])
+  await ordinary.shutdown()
+  expect(target.captures.map(c => logs(c).map(r => r.eventName))).toEqual([['session-log'], ['ui.click']])
+  await ctx.fiber.dispose()
+  expect(ctx.get('otel')).toBeUndefined()
 })

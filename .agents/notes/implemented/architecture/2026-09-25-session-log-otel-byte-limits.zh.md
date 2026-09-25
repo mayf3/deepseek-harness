@@ -10,11 +10,11 @@ Session 日志包含嵌套 JSON 和大型工具结果。产品采集端接收带
 
 ## 决策
 
-Session OTel 后端拥有 Session 日志 reporter。产品服务仅负责产品事件，不依赖 Session 类型，也不创建无人使用的 Session 队列。每条规范事件对应 `eventName: "session-log"`，属性包含 `sessionId` 和 JSON 字符串形式的事件值 `content`；序列化不保留 JSONL 键顺序。脱敏在序列化前执行，复制的 envelope 不含 payload。
+共享 `otel` Cordis 插件负责普通事件和 Session 日志的传输实现。业务适配器注入它并创建独立、由调用方持有的通道；现有 UI/RPC 入口保留授权、脱敏、身份、配置和有期限的关闭。只挂载共享服务不会创建无用队列。每条规范事件转换为 `eventName: "session-log"`，带有 `sessionId` 和在 `content` 中 JSON 字符串化的事件值；序列化不保留 JSONL 键顺序。脱敏先于序列化，复制的 envelope 不包含 payload。
 
 Session 日志使用独立 provider 和字节/条数队列。每条记录使用 SDK 序列化器计量一次，包含完整 envelope；其总和保守约束合并请求大小。顺序组包避免候选批次的完整序列化和递归重复编码。单条超限记录只产生一次诊断，不阻塞后续事件。每个 HTTP 请求在结束前始终占有传输槽位，即使其监测期限已经触发；关闭期限到期后停止剩余队列。scope 名称/版本和显式传输选项仍由后端拥有。
 
-[遥测恢复决策](../feature/2026-07-23-session-telemetry-otel-revival.zh.md) 继续约束脱敏、捕获和尽力交接。本决策替代其仅使用 SDK 队列/聚合的规则：SDK 批次期限无法拥有拆成多个 HTTP 请求的操作。后端调度完整请求，SDK 仍负责传输和重试。反馈授权和独立的 DeepSeek 模型请求附加路径不变。
+[遥测恢复决策](../feature/2026-07-23-session-telemetry-otel-revival.zh.md) 继续约束脱敏、捕获和尽力交接。本决策替代其仅使用 SDK 队列/聚合的规则：SDK 批次期限无法拥有拆成多个 HTTP 请求的操作。共享 Session 日志通道调度完整请求，SDK 仍负责传输和重试。反馈授权和独立的 DeepSeek 模型请求附加路径不变。
 
 ## 考虑过的替代方案
 

@@ -9,6 +9,8 @@ kind: "package-reference"
 
 ## 概述
 
+适配器注入 `otel`；[共享 OTel 插件](../../telemetry/otel/README.zh.md) 创建其独立 Session 日志通道。授权、脱敏、身份、scope 版本、配置和关闭期限仍由本包负责。
+
 `dsh-session-telemetry-otel` 仅在新的显式反馈后通过 OTel JS SDK 导出会话记录，适用于所有用户和提供方，包括 `deepseek-official`。`FEEDBACK_ONLY` 释放截至该反馈的权威日志前缀，包含上下文；后续记录等待下一次显式反馈。`DISABLED` 不构造传输。定时批处理可完成已授权的上传，无需另一次用户交互或模型调用。部署方负责脱敏规则。
 
 ## 目录
@@ -69,7 +71,7 @@ kind: "package-reference"
 
 每条 Session 事件对应一个 `eventName: "session-log"` 记录。`attributes.sessionId` 是 collector 使用的 Session 身份；`attributes.content` 编码完整事件 envelope 和脱敏后的 `event.data`。保留的是 JSON 值，不保证原 JSONL 字节或键顺序相同。为现有消费者保留 `session.id`、`event.seq` 和 `event.type` 元数据。Resource 携带应用和匿名用户身份；scope 携带后端包名和版本。基础配置使用 `https://dsh-otel-collector.deepseeksvc.com/v1/logs`，可用 `DSH_TELEMETRY_OTLP_URL` 覆盖。不隐式添加 channel 头。
 
-后端使用 SDK 的 OTLP JSON 序列化器对每条记录计量一次，包含其 resource/scope envelope，再按保守大小顺序组包。单条超限事件产生一次拒绝诊断且不截断。Session 日志不会与产品埋点混在一个请求中。捕获交接和关闭完成不代表 collector 确认。
+共享 OTel 通道使用 SDK 的 OTLP JSON 序列化器对每条记录计量一次，包含其 resource/scope envelope，再按保守大小顺序组包。单条超限事件产生一次拒绝诊断且不截断。Session 日志不会与产品埋点混在一个请求中。捕获交接和关闭完成不代表 collector 确认。
 
 ### 失败与关闭
 
@@ -87,7 +89,7 @@ kind: "package-reference"
 
 ### 设计理念
 
-后端负责反馈授权、身份、字节/条数调度和关闭。OTel 负责记录构造、JSON 传输、压缩和重试。Resource 身份包含 `APP_IDENTITY` 的 `service.name`/`service.version` 和匿名 `user.id`；scope 保留本包名称和版本。
+后端负责反馈授权、身份和关闭。共享 OTel 服务负责通道创建、字节和条数调度、记录构造、JSON 传输、压缩与重试。Resource 身份携带 `APP_IDENTITY` 中的 `service.name` / `service.version` 以及匿名 `user.id`；scope 保留本包的名称和版本。
 
 ### 源码地图
 

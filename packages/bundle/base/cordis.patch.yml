@@ -185,6 +185,9 @@
         writeEveryEvents: 200
         writeIntervalMs: 5000
 
+    - id: otel
+      name: '@deepseek-ai/dsh-otel'
+
     # OTel releases a Session-log prefix only after explicit user feedback,
     # regardless of model provider. Ordinary activity never triggers capture.
     # DSH_TELEMETRY_OTLP_URL overrides the production endpoint. A non-empty

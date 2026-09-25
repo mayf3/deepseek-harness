@@ -8,6 +8,7 @@
  * @module @deepseek-ai/dsh-session-telemetry-otel
  */
 
+import { createRequire } from 'node:module'
 import z from '@deepseek-ai/schemastery'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-command-feedback'
@@ -23,7 +24,7 @@ import {
 } from '@deepseek-ai/dsh-session-telemetry'
 import { APP_IDENTITY } from '@deepseek-ai/dsh-llm'
 import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import { SessionLogReporter } from './session-log.ts'
+import type { SessionLogReporter } from '@deepseek-ai/dsh-otel'
 import type { BatchLogRecordProcessorOptions } from '@opentelemetry/sdk-logs'
 import type { OTLPExporterNodeConfigBase } from '@opentelemetry/otlp-exporter-base'
 import { SeverityNumber } from '@opentelemetry/api-logs'
@@ -140,7 +141,7 @@ const SEVERITY: Record<SessionTelemetrySeverity, SeverityNumber> = {
  * SDK state and listens only to warn when recorded feedback stays local.
  */
 export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
-  static inject = ['sessions']
+  static inject = ['sessions', 'otel']
   static Config = Config
 
   private readonly provider: SessionLogReporter | undefined
@@ -184,7 +185,9 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
       throw new Error(`session-telemetry-otel: shutdownTimeoutMillis must be a positive finite number no greater than ${MAX_TIMER_DELAY_MILLIS}, got ${String(shutdownTimeoutMillis)}`)
     }
     this.shutdownTimeoutMillis = shutdownTimeoutMillis
-    const reporter = new SessionLogReporter({
+    const { version } = createRequire(import.meta.url)('../package.json') as { version: string }
+    const reporter = ctx.otel.createSessionLogReporter({
+      scope: { name: '@deepseek-ai/dsh-session-telemetry-otel', version },
       exporter: { ...config.exporter, url },
       ...(config.processor === undefined ? {} : { processor: config.processor }),
       ...(config.maxRequestBytes === undefined ? {} : { maxRequestBytes: config.maxRequestBytes }),

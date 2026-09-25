@@ -9,6 +9,8 @@ English | [中文](README.zh.md)
 
 ## Summary
 
+The adapter injects `otel`; the [shared OTel plugin](../../telemetry/otel/README.md) creates its independent Session-log channel. Authorization, redaction, identity, scope version, configuration, and the shutdown deadline remain owned here.
+
 `dsh-session-telemetry-otel` exports session records through the OTel JS SDK only after new explicit feedback, for all users and providers, including `deepseek-official`. `FEEDBACK_ONLY` releases the canonical prefix through that feedback, including context; later records wait for the next explicit feedback. `DISABLED` constructs no transport. Scheduled batching can finish an authorized upload without another user interaction or model call. Deployments own their redaction rules.
 
 ## Table of Contents
@@ -69,7 +71,7 @@ Model requests, request headers, Session creation or adoption, restoration, and 
 
 Each Session event becomes one `eventName: "session-log"` record. `attributes.sessionId` is the collector Session identity; `attributes.content` encodes the complete event envelope with redacted `event.data`. JSON values are preserved, not the original JSONL bytes or key ordering. Legacy `session.id`, `event.seq`, and `event.type` metadata remain for existing consumers. Resources carry application and anonymous-user identity; scope carries the backend package name and version. The base profile uses `https://dsh-otel-collector.deepseeksvc.com/v1/logs`; `DSH_TELEMETRY_OTLP_URL` overrides it. No channel header is added implicitly.
 
-The backend measures each record once with the SDK OTLP JSON serializer, including its resource/scope envelope, then greedily packs requests using those conservative sizes. A single oversized event produces one rejection diagnostic without truncation. Session logs never mix with product analytics in a request. Capture handoff and shutdown are not collector acknowledgements.
+The shared OTel channel measures each record once with the SDK OTLP JSON serializer, including its resource/scope envelope, then greedily packs requests using those conservative sizes. A single oversized event produces one rejection diagnostic without truncation. Session logs never mix with product analytics in a request. Capture handoff and shutdown are not collector acknowledgements.
 
 ### Failures and shutdown
 
@@ -87,7 +89,7 @@ This section explains the backend's composition; the observable behavior is full
 
 ### Design concept
 
-The backend owns feedback authorization, identity, byte/count scheduling, and shutdown. OTel owns record construction, JSON transport, compression, and retries. Resource identity carries `service.name`/`service.version` from `APP_IDENTITY` and anonymous `user.id`; the scope retains this package’s name and version.
+The backend owns feedback authorization, identity, and shutdown. The shared OTel service owns channel creation, byte/count scheduling, record construction, JSON transport, compression, and retries. Resource identity carries `service.name`/`service.version` from `APP_IDENTITY` and anonymous `user.id`; the scope retains this package’s name and version.
 
 ### Source map
 
