@@ -345,6 +345,8 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await expect(scaffold.ctx.llm.resolveModelInfo('acme-gateway', 'acme-large')).resolves.toMatchObject({
       inputModalities: ['image'],
     })
+    // The saved notice confirms the browser directory refresh after the editor closes.
+    await dialog.getByText('已保存 Acme 网关 (acme-gateway)。', { exact: true }).waitFor({ timeout: 10_000 })
     await dialog.getByRole('button', { name: '编辑 Acme 网关 (acme-gateway)' }).click()
     await dialog.getByText('自定义设置').click()
     await dialog.getByRole('button', { name: '模型选项 1' }).click()
