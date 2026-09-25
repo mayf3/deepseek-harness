@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This optional bundle inserts the three Schedule rows the shipped Web composition leaves out: `time-context`, `schedule`, and `ui-schedule`. Its manifest sets `dsh.bundle.rowSwitches: false`, so the plugin manager lists the three rows with their state and offers only the bundle's own switch. Shipped profiles leave it switched off.
+This optional bundle inserts the three Schedule rows the shipped Web composition leaves out: `time-context`, `schedule`, and `ui-schedule`. Its manifest sets `dsh.bundle.rowSwitches: false`, so the plugin manager lists the three rows with their state and switches them only with the bundle. Shipped profiles leave it switched off.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ This optional bundle inserts the three Schedule rows the shipped Web composition
 <a id="use-this-package"></a>
 ## Use this package
 
-Open Plugins in the Web sidebar and enable Automation tasks, marked by an alarm clock icon. A live root Agent then receives `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete`, the Session header shows its reminder catalog, the sidebar shows the Automation tasks entry, and each eligible step appends one clock reading with the current time, the browser zone attached to the open request, and the elapsed time since the preceding model-visible message. The bundle's page lists Time awareness, Task scheduling, and Task interface with their state; they switch on and off only with the bundle. Disabling the bundle restores the shipped composition; stored tasks remain on disk.
+Open Plugins in the Web sidebar and enable Automation tasks, marked by an alarm clock icon. A live root Agent then receives `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete`, the Session header shows its reminder catalog, the sidebar's Automation tasks entry opens the task-management page and the right Sidebar holds the selected task's detail, and each eligible step appends one clock reading with the current time, the browser zone attached to the open request, and the elapsed time since the preceding model-visible message. The bundle's page lists Time awareness, Task scheduling, and Task interface with their state; they switch on and off only with the bundle. Disabling the bundle restores the shipped composition; stored tasks remain on disk.
 
 -----
 
@@ -35,7 +35,7 @@ Open Plugins in the Web sidebar and enable Automation tasks, marked by an alarm 
 <details>
 <summary>Maintainer details — click to expand</summary>
 
-`cordis.patch.yml` inserts the three rows, and `package.json` depends on their packages so each row resolves from this bundle. `dsh.bundle.rowSwitches: false` tells the plugin manager to offer no switch per row, because the Host rows and the client row work only together. `OPTIONAL_BUNDLES` in `packages/boot/app-boot/src/profile.ts` names this package and `apps/cli` depends on it, so every installation ships it switched off and the plugin manager offers it in the Official group. Selecting it appends the bundle to the profile's `dsh.profile.bundles` list, and the profile launcher applies the bundle layers after the Web layer. No runtime invariant companion is published because this configuration-only package owns no mutable runtime state.
+`cordis.patch.yml` inserts the three rows, and `package.json` depends on their packages so each row resolves from this bundle. `dsh.bundle.rowSwitches: false` makes the plugin manager refuse to switch any of the three rows alone, because the Host rows and the client row work only together; the Plugins page draws no row switch for them. `OPTIONAL_BUNDLES` in `packages/boot/app-boot/src/profile.ts` names this package and `apps/cli` depends on it, so every installation ships it switched off and the plugin manager offers it in the Official group. Selecting it appends the bundle to the profile's `dsh.profile.bundles` list. No runtime invariant companion is published because this configuration-only package owns no mutable runtime state.
 
 | File | Role |
 |---|---|
@@ -79,7 +79,7 @@ The tool schemas change the request prefix once when the bundle mounts; each app
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- A profile that inserts any of these rows itself mounts that plugin twice when it selects this bundle, because profile patches append inserted rows without merging them by id.
+- A profile patch or `--patch` overlay that targets `time-context`, `schedule`, or `ui-schedule` by id matches no row while this bundle is not selected: the loader warns `patch: entry <id> not found` for each such patch. Select this bundle instead of switching the rows on by id.
 
 -----
 
