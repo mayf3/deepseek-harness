@@ -313,7 +313,7 @@ describe('PluginManagerController', () => {
   })
 
   it('always asks before uninstalling, and cancelling runs nothing', async () => {
-    const { plugins, face, state, controller } = bench()
+    const { plugins, face, state, controller, track } = bench()
     await controller.load()
     face.uninstall(BUNDLE.name)
     expect(state().confirm).toEqual({ action: 'uninstall', packageName: BUNDLE.name })
@@ -321,10 +321,12 @@ describe('PluginManagerController', () => {
     expect(state().confirm).toBeNull()
     face.confirm()
     expect(plugins.removeBundle).not.toHaveBeenCalled()
+    expect(track).not.toHaveBeenCalled()
     face.uninstall(BUNDLE.name)
     face.confirm()
     expect(state().confirm).toBeNull()
     await vi.waitFor(() => { expect(plugins.removeBundle).toHaveBeenCalledExactlyOnceWith(BUNDLE.name) })
+    expect(track).toHaveBeenCalledExactlyOnceWith('confirm_uninstall_plugin', { plugin_name: BUNDLE.name })
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
     // A refused removal names the action it was.
     plugins.removeBundle.mockResolvedValueOnce(ok({ ...failed(), stage: 'remove', error: { code: 'not-removable' } }) as never)
@@ -1423,7 +1425,7 @@ describe('desktop analytics outcomes', () => {
     b.face.editInstallSpec('git+https://user:private-token@example.invalid/repo.git?token=private-token')
     b.face.runInstall()
     await vi.waitFor(() => { expect(b.track).toHaveBeenCalledWith('install_plugin_result', expect.objectContaining({ input_value: '[git]' })) })
-    expect(b.track).toHaveBeenCalledWith('plugin_install_click', { input_value: '[git]', plugin_type: 'bundle' })
+    expect(b.track).toHaveBeenCalledWith('plugin_install_click', { input_value: '[git]' })
     expect(JSON.stringify(b.track.mock.calls)).not.toContain('private-token')
   })
 
@@ -1432,8 +1434,8 @@ describe('desktop analytics outcomes', () => {
     b.face.openInstall()
     b.face.editInstallSpec('dsh-new')
     b.face.runInstall()
-    await vi.waitFor(() => { expect(b.track).toHaveBeenCalledWith('install_plugin_result', expect.objectContaining({ input_value: 'dsh-new', result_status: 'failed', is_success: false, error_reason: 'not-bundle', duration: expect.any(Number) as number })) })
-    expect(b.track).toHaveBeenCalledWith('plugin_install_click', { input_value: 'dsh-new', plugin_type: 'bundle' })
+    await vi.waitFor(() => { expect(b.track).toHaveBeenCalledWith('install_plugin_result', expect.objectContaining({ input_value: 'dsh-new', is_success: false, error_reason: 'not-bundle', duration: expect.any(Number) as number })) })
+    expect(b.track).toHaveBeenCalledWith('plugin_install_click', { input_value: 'dsh-new' })
   })
 
   it('reports unknown only after recovery confirms the result is absent', async () => {
@@ -1445,12 +1447,12 @@ describe('desktop analytics outcomes', () => {
     await vi.waitFor(() => { expect(b.plugins.waitForInstall).toHaveBeenCalledTimes(1) })
     expect(b.track.mock.calls.filter(call => call[0] === 'install_plugin_result')).toEqual([])
     lost.resolve(ok(null))
-    await vi.waitFor(() => { expect(b.track).toHaveBeenCalledWith('install_plugin_result', expect.objectContaining({ result_status: 'unknown', is_success: false })) })
+    await vi.waitFor(() => { expect(b.track).toHaveBeenCalledWith('install_plugin_result', expect.objectContaining({ error_reason: 'unknown_result', is_success: false })) })
     b.face.reconcileInstall()
     expect(b.track.mock.calls.filter(call => call[0] === 'install_plugin_result')).toHaveLength(1)
   })
 
-  it('closing during inspection reports cancellation once without an error reason', async () => {
+  it('closing during inspection reports user_cancelled once', async () => {
     const inspecting = deferred<ReturnType<typeof ok<typeof INSPECTED>>>()
     const b = bench({ inspect: vi.fn(() => inspecting.promise) })
     b.face.openInstall()
@@ -1462,8 +1464,9 @@ describe('desktop analytics outcomes', () => {
     await Promise.resolve()
     const results = b.track.mock.calls.filter(call => call[0] === 'install_plugin_result')
     expect(results).toHaveLength(1)
-    expect(results[0]?.[1]).toMatchObject({ result_status: 'cancelled', is_success: false })
-    expect(results[0]?.[1]).not.toHaveProperty('error_reason')
+    expect(results[0]?.[1]).toMatchObject({ error_reason: 'user_cancelled', is_success: false })
+    expect(results[0]?.[1]).not.toHaveProperty('result_status')
+    expect(results[0]?.[1]).not.toHaveProperty('plugin_type')
     expect(b.plugins.installBundle).not.toHaveBeenCalled()
   })
 
@@ -1499,4 +1502,16 @@ it('reports restart-required row toggles and tolerates a vanished inventory entr
   b.face.setEnabled('vanished-package', true)
   await vi.waitFor(() => { expect(b.state().busy).toEqual([]) })
   expect(b.track.mock.calls.filter(([name]) => name === 'plugin_toggle')).toHaveLength(1)
+})
+
+it('reports a successful install with only documented result fields', async () => {
+  const b = bench()
+  b.face.openInstall()
+  b.face.editInstallSpec('dsh-new')
+  b.face.runInstall()
+  await vi.waitFor(() => { expect(b.state().install.phase).toBe('done') })
+  const results = b.track.mock.calls.filter(([name]) => name === 'install_plugin_result')
+  expect(results).toEqual([['install_plugin_result', {
+    input_value: 'dsh-new', is_success: true, duration: expect.any(Number) as number, plugin_name: 'dsh-new',
+  }]])
 })

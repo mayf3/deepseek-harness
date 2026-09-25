@@ -890,10 +890,25 @@ it('captures run mode and queue intent at submission before later projection cha
     b.shell.setDraft('private prompt')
     b.shell.submit('queue', 'click')
     expect(track).toHaveBeenCalledExactlyOnceWith('send_button_click', {
-      session_id: 's1', model_name: 'fixture/model', thinking_effort: 'high', run_mode: 'plan', submit_source: 'click', submit_type: 'queue',
+      session_id: 's1', model_name: 'fixture/model', thinking_effort: 'high', run_mode: 'plan', msg_type: 'queue',
     }, expect.any(Number))
     await b.runtime.sessions.setProjection('s1', 'plan', { active: false, pending: false })
     expect(track).toHaveBeenCalledTimes(1)
     expect(JSON.stringify(track.mock.calls)).not.toContain('private prompt')
+  } finally { await b.runtime.dispose() }
+})
+
+it.each([
+  { running: false, mode: 'queue', expected: 'default' },
+  { running: true, mode: 'steer', expected: 'steer' },
+] as const)('reports msg_type=$expected without gesture fields', async ({ running, mode, expected }) => {
+  const b = await bench()
+  const track = vi.fn()
+  b.runtime.ctx.provide('productAnalytics', { enabled: true, track } as never)
+  try {
+    await b.runtime.sessions.updateSessionSnapshot('s1', (state) => { state.running = running; state.blank = true })
+    b.shell.setDraft('message')
+    b.shell.submit(mode, 'enter')
+    expect(track).toHaveBeenCalledExactlyOnceWith('send_button_click', { run_mode: 'default', msg_type: expected }, expect.any(Number))
   } finally { await b.runtime.dispose() }
 })

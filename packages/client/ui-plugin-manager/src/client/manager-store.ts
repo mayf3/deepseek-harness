@@ -6,7 +6,7 @@ import { sanitizeInstallInput } from './sanitize-install-input.ts'
  * after each action and after every `plugin-manager/changed` event, so a
  * change made on another surface shows here without a manual refresh.
  */
-import type { ProductEventMap } from '@deepseek-ai/dsh-client-product-analytics/client'
+import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
@@ -615,7 +615,7 @@ export class PluginManagerController {
       },
       uninstall: (packageName) => {
         this.pendingConfirm = () => this.run(packageName, { packageName, action: 'uninstall' }, async () => {
-          this.ctx.get('productAnalytics')?.track('confirm_uninstall_plugin', { plugin_name: packageName, plugin_type: 'bundle' })
+          this.ctx.get('productAnalytics')?.track('confirm_uninstall_plugin', { plugin_name: packageName })
           this.applied(await this.ctx.remote.pluginManager.removeBundle(packageName), packageName)
         })
         this.patch({ confirm: { action: 'uninstall', packageName } })
@@ -790,7 +790,7 @@ export class PluginManagerController {
     if (install.phase === 'checking' || isInstallPending(install.phase) || spec === '') return
     if (this.ctx.get('productAnalytics')?.enabled) {
       this.analyticsAttempt = { input: sanitizeInstallInput(spec), started: Date.now() }
-      this.ctx.get('productAnalytics')?.track('plugin_install_click', { input_value: sanitizeInstallInput(spec), plugin_type: 'bundle' })
+      this.ctx.get('productAnalytics')?.track('plugin_install_click', { input_value: sanitizeInstallInput(spec) })
     }
     // A name the list already shows is refused at once, before the Host is asked.
     if (state.packages.some(pkg => pkg.name === spec)) {
@@ -1094,14 +1094,15 @@ export class PluginManagerController {
     })
   }
 
-  private finishAnalytics(status: ProductEventMap['install_plugin_result']['result_status'], reason?: string, name?: string): void {
+  private finishAnalytics(status: 'success' | 'failed' | 'cancelled' | 'unknown', reason?: string, name?: string): void {
     const attempt = this.analyticsAttempt
     this.analyticsAttempt = undefined
     if (attempt === undefined || this.disposed) return
+    const errorReason = status === 'cancelled' ? 'user_cancelled' : status === 'unknown' ? 'unknown_result' : reason
     this.ctx.get('productAnalytics')?.track('install_plugin_result', {
-      input_value: attempt.input, plugin_type: 'bundle', is_success: status === 'success', result_status: status,
+      input_value: attempt.input, is_success: status === 'success',
       duration: Math.max(0, Date.now() - attempt.started),
-      ...reason === undefined ? {} : { error_reason: reason }, ...name === undefined ? {} : { plugin_name: name },
+      ...errorReason === undefined ? {} : { error_reason: errorReason }, ...name === undefined ? {} : { plugin_name: name },
     })
   }
 

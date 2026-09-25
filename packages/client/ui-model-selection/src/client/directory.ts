@@ -53,6 +53,7 @@ export class ModelDirectory {
    * @param available - whether this session may use Agent-bound model RPCs.
    * @param catalog - Host-generation catalog shared by every Session.
    * @param projected - durable model selection projected from Session history.
+   * @param isBlank - whether this Session has no first message yet.
    * @param track - desktop-only callback after a successful user selection.
    */
   constructor(
@@ -61,6 +62,7 @@ export class ModelDirectory {
     private readonly available: () => boolean,
     private readonly catalog: ModelCatalogDirectory,
     private readonly projected: ObservableSnapshot<unknown>,
+    private readonly isBlank: () => boolean,
     private readonly track?: TrackProductEvent,
   ) {
     this.unsubscribeCatalog = catalog.store.subscribe(() => { this.syncInputs() })
@@ -115,9 +117,9 @@ export class ModelDirectory {
     if (previous !== null) {
       const from = `${previous.provider}/${previous.model}`
       const to = `${selection.provider}/${selection.model}`
-      if (from !== to) this.track?.('model_switch', { session_id: this.sessionId, switch_from: from, switch_to: to })
+      if (from !== to) this.track?.('model_switch', { ...this.isBlank() ? {} : { session_id: this.sessionId }, switch_from: from, switch_to: to })
       if (from === to && previousEffort !== nextEffort) this.track?.('thinking_level_switch', {
-        session_id: this.sessionId, model_name: to, switch_from: previousEffort ?? 'default', switch_to: nextEffort ?? 'default',
+        ...this.isBlank() ? {} : { session_id: this.sessionId }, model_name: to, switch_from: previousEffort ?? 'default', switch_to: nextEffort ?? 'default',
       })
     }
     this.store.update((s) => { s.status = 'ready'; s.pending = null; s.error = null })

@@ -11,11 +11,11 @@ export interface ProductEventMap {
   onboarding_page_view: { page_name: OnboardingPage }
   onboarding_page_click: {
     page_name: OnboardingPage
-    button_name: 'next' | 'back' | 'skip' | 'charge' | 'later'
+    button_name: 'next' | 'back' | 'skip' | 'charge' | 'later' | 'continue'
     selected_content?: 'office' | 'code' | 'code_office' | 'focus_result' | 'key_detail' | 'full_process'
   }
   onboarding_popup_view: { popup_name: 'skip_charge' | 'skip_setting' }
-  onboarding_popup_click: { popup_name: 'skip_charge' | 'skip_setting'; button_name: 'charge' | 'know' | 'enter' | 'setting' }
+  onboarding_popup_click: { popup_name: 'skip_charge' | 'skip_setting'; button_name: 'charge' | 'know' | 'enter' | 'setting' | 'close' }
   desktop_upgrade_click: Record<string, never>
   desktop_upgrade_download_result: { is_success: boolean; error_reason?: string }
   desktop_upgrade_install_restart_click: Record<string, never>
@@ -24,8 +24,7 @@ export interface ProductEventMap {
     model_name?: string
     thinking_effort?: string
     run_mode: 'plan' | 'goal' | 'default'
-    submit_source?: 'click' | 'enter'
-    submit_type: 'normal' | 'steer' | 'queue'
+    msg_type: 'default' | 'steer' | 'queue'
   }
   model_switch: { session_id?: SessionId; switch_from: string; switch_to: string }
   thinking_level_switch: { session_id?: SessionId; switch_from: string; switch_to: string; model_name: string }
@@ -39,17 +38,15 @@ export interface ProductEventMap {
   sidebar_menu_click: { menu_name: 'plugin' | 'cron' }
   plugin_toggle: { plugin_name: string; plugin_type: 'plugin' | 'bundle'; is_enabled: boolean; is_builtin: boolean }
   plugin_add_button_click: Record<string, never>
-  plugin_install_click: { input_value: string; plugin_type: 'bundle' }
+  plugin_install_click: { input_value: string }
   install_plugin_result: {
     input_value: string
-    plugin_type: 'bundle'
     is_success: boolean
-    result_status: 'success' | 'failed' | 'cancelled' | 'unknown'
     error_reason?: string
     duration: number
     plugin_name?: string
   }
-  confirm_uninstall_plugin: { plugin_name: string; plugin_type: 'bundle' }
+  confirm_uninstall_plugin: { plugin_name: string }
 }
 
 /** Public page names independent of internal onboarding state names. */

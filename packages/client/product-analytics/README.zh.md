@@ -29,9 +29,9 @@ kind: "package-reference"
 
 Electron 将构建内联的 `DSH_CLIENT_VERSION` 传给 Host；埋点与导出器复用这一客户端版本，导出器要求该值存在。桌面导出、批次与关闭期限分别为 1000、1500 和 2000 毫秒，均短于 Host 退出预算。
 
-认证事件仅覆盖原生欢迎页；通过 API Key 进入工作区后再登录的场景不在采集范围内。[事件类型](src/events.ts)定义名称和允许的字段。页面曝光按实际进入可见页面计数，包括重新显示的原生欢迎窗口；onboarding 短暂进入加载状态不会重复计算同一页面曝光，关闭 onboarding 弹窗不产生事件。有余额时的继续按钮使用 `next`。消息提交保留最初发生时间，并在异步命令裁决前采集 `submit_source`、`submit_type`、模型、显式思考强度和 `run_mode`；仅普通消息路径在引用序列化之前上报，已处理或认领的命令不计入。后续序列化、附件处理或发送失败不撤销此次计数，排队后的执行也不重复计数；纯附件提交遵循相同规则。程序化提交省略 `submit_source`；键盘与按钮操作分别使用 `enter` 和 `click`。计划模式优先于活跃目标。采集和上报异常不会中断提交。首次发送的空白会话省略 `session_id`。模型与插件切换仅在变更被接受后上报。分叉事件携带已创建的子会话 ID 和来源 ID，在可选的子会话标题更新前上报；创建失败不产生事件。
+认证事件仅覆盖原生欢迎页；通过 API Key 进入工作区后再登录的场景不在采集范围内。[事件类型](src/events.ts)定义名称和允许的字段。页面曝光按实际进入可见页面计数，包括重新显示的原生欢迎窗口；onboarding 短暂进入加载状态不会重复计算同一页面曝光，关闭 onboarding 弹窗上报 `button_name=close`。有余额时的继续按钮使用 `continue`。消息提交保留最初发生时间，并在异步命令裁决前采集 `msg_type=default|queue|steer`、模型、显式思考强度和 `run_mode`；仅普通消息路径在引用序列化之前上报，已处理或认领的命令不计入。后续序列化、附件处理或发送失败不撤销此次计数，排队后的执行也不重复计数；纯附件提交遵循相同规则。计划模式优先于活跃目标。采集和上报异常不会中断提交。消息提交以及模型或思考强度切换在空白会话中均省略 `session_id`。模型与插件切换仅在变更被接受后上报。分叉事件携带已创建的子会话 ID 和来源 ID，在可选的子会话标题更新前上报；创建失败不产生事件。
 
-插件条目使用 `plugin_type=plugin`，插件包使用 `bundle`。安装通过独立于 `error_reason` 的 `result_status=success|failed|cancelled|unknown` 表达结果，并保留 `is_success`。耗时单位为毫秒，从点击安装开始，到最终结果结束，包含校验、检查输入和内部源重试。`input_value` 仅保留 registry 包标识和普通版本；Git 输入记为 `[git]`，其他 URL 记为 `[url]`，路径及无法识别的输入记为 `[path-or-other]`。点击和结果均使用脱敏后的值。重新打开已隐藏的安装弹窗会再次计为 `plugin_add_button_click`。`is_builtin` 表示由安装供应（`installed=false`），不表示 profile 是否显式依赖该包。显式批准构建后的重试开启新的一次尝试。需要重启视为成功。临时断线保留待定操作；只有恢复查询确认没有结果时才成为 `unknown`。
+只有 `plugin_toggle` 携带 `plugin_type`：插件条目使用 `plugin`，插件包使用 `bundle`。安装通过 `is_success` 表达结果；取消使用 `is_success=false` 和 `error_reason=user_cancelled`，恢复查询确认无结果时使用 `is_success=false` 和 `error_reason=unknown_result`。耗时单位为毫秒，从点击安装开始，到最终结果结束，包含校验、检查输入和内部源重试。`input_value` 仅保留 registry 包标识和普通版本；Git 输入记为 `[git]`，其他 URL 记为 `[url]`，路径及无法识别的输入记为 `[path-or-other]`。点击和结果均使用脱敏后的值。重新打开已隐藏的安装弹窗会再次计为 `plugin_add_button_click`。`is_builtin` 表示由安装供应（`installed=false`），不表示 profile 是否显式依赖该包。显式批准构建后的重试开启新的一次尝试。需要重启视为成功。临时断线保留待定操作；只有恢复查询确认没有结果时才上报 `unknown_result`。
 
 <a id="understand-the-implementation"></a>
 ## 了解实现

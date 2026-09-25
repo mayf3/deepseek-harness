@@ -335,16 +335,16 @@ it('returns from purpose to credit without dropping the selected purpose', async
 })
 
 
-it('reports visible pages once, funded Continue, popup actions, and no close event', async () => {
+it('reports visible pages once, funded Continue, and popup close', async () => {
   const b = mount('credit', 'positive', 'ready', zh, true)
   expect(b.track).toHaveBeenCalledExactlyOnceWith('onboarding_page_view', { page_name: 'onboarding_recharge' })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingSkip })) })
   expect(b.track).toHaveBeenCalledWith('onboarding_popup_view', { popup_name: 'skip_charge' })
   b.track.mockClear()
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.close })) })
-  expect(b.track).not.toHaveBeenCalled()
+  expect(b.track).toHaveBeenCalledExactlyOnceWith('onboarding_popup_click', { popup_name: 'skip_charge', button_name: 'close' })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingContinue })) })
-  expect(b.track).toHaveBeenCalledWith('onboarding_page_click', { page_name: 'onboarding_recharge', button_name: 'next' })
+  expect(b.track).toHaveBeenCalledWith('onboarding_page_click', { page_name: 'onboarding_recharge', button_name: 'continue' })
   expect(b.track).toHaveBeenCalledWith('onboarding_page_view', { page_name: 'onboarding_use_case' })
 })
 
@@ -360,4 +360,12 @@ it('does not repeat page or popup exposure during save and refresh', () => {
   act(() => { b.changeStatus('loading') })
   act(() => { b.changeStatus('ready') })
   expect(b.track.mock.calls.filter(([name]) => name === 'onboarding_page_view')).toHaveLength(1)
+})
+
+it('reports closing the skip-settings popup', () => {
+  const b = mount('purpose')
+  fireEvent.click(screen.getByRole('button', { name: zh.onboardingSkip }))
+  b.track.mockClear()
+  fireEvent.click(screen.getByRole('button', { name: zh.close }))
+  expect(b.track).toHaveBeenCalledExactlyOnceWith('onboarding_popup_click', { popup_name: 'skip_setting', button_name: 'close' })
 })
