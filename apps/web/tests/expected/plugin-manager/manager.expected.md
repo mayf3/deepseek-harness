@@ -3,7 +3,7 @@
 - button "刷新"
 - button "添加插件"
 - heading "官方" [level=3]
-- text: "7"
+- text: "8"
 - list:
   - listitem:
     - button "查看 智能体团队": 智能体团队
@@ -13,6 +13,10 @@
     - button "查看 自动授权审查": 自动授权审查
     - text: 实验性 提供自动审查权限模式，由模型在每次工具调用前判断是否授权。
     - switch "启用 自动授权审查"
+  - listitem:
+    - button "查看 定时与时间上下文": 定时与时间上下文
+    - text: 实验性 启用持久提醒、自动化任务页面与逐步时钟上下文。
+    - switch "启用 定时与时间上下文"
   - listitem:
     - button "查看 语音输入": 语音输入
     - text: 实验性 在本机使用 SenseVoice 转写录音；首次使用需安装依赖
