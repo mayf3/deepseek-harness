@@ -85,6 +85,12 @@ declare module '@deepseek-ai/dsh-session/types' {
 
 /** Resolved provider options (the plugin's `apply` supplies credential and constant defaults). */
 export interface DeepSeekSearchProviderOptions {
+  /**
+   * Resolve the DeepSeek account token for one search endpoint. A token takes
+   * precedence over every API key and is sent only as `x-dsh-auth-token`;
+   * `undefined` selects API-key authentication.
+   */
+  resolveAccountToken?: (endpoint: string) => Promise<string | undefined>
   /** Literal DeepSeek API key; when present it wins over {@link resolveApiKey}. */
   apiKey?: string
   /** Resolve the current DeepSeek API key for one search operation. */
@@ -201,9 +207,9 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
     // settings write landing inside that await must not send the key resolved
     // from the old section to the endpoint named by the new one.
     const options = this.resolveOptions()
-    const apiKey = await this.apiKey(options, signal)
-    throwIfSearchAborted(signal)
     const endpoint = `${options.baseURL}/messages`
+    const auth = await this.authHeaders(options, endpoint, signal)
+    throwIfSearchAborted(signal)
     const body: DeepSeekSearchLlmRequest['body'] = {
       model: options.model,
       max_tokens: options.maxTokens,
@@ -225,10 +231,7 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
         method: 'POST',
         redirect: 'error',
         headers: {
-          // Official DeepSeek expects `x-api-key`; an Anthropic-compatible proxy
-          // may expect `Authorization: Bearer` — send both so either resolves.
-          'x-api-key': apiKey,
-          'authorization': `Bearer ${apiKey}`,
+          ...auth,
           'anthropic-version': options.apiVersion,
           'content-type': 'application/json',
           'accept': 'application/json',
@@ -278,25 +281,33 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
   }
 
   /**
-   * Resolve one operation's credential without retaining it on the provider.
+   * Resolve one operation's authentication headers without retaining a credential on the provider.
+   * @param options - the caller's snapshot, so the credential and the endpoint it is sent to come from one section.
+   * @param endpoint - the Messages endpoint this operation dispatches to.
+   * @param signal - abort signal for the surrounding search.
+   * @returns the account-token header when one resolves, otherwise the API-key headers.
+   */
+  private async authHeaders(
+    options: DeepSeekSearchProviderOptions, endpoint: string, signal?: AbortSignal,
+  ): Promise<Record<string, string>> {
+    throwIfSearchAborted(signal)
+    const token = await resolveCredential(options.resolveAccountToken?.(endpoint), signal)
+    if (token !== undefined && token.length > 0) return { 'x-dsh-auth-token': token }
+    const apiKey = await this.apiKey(options, signal)
+    // Official DeepSeek expects `x-api-key`; an Anthropic-compatible proxy
+    // may expect `Authorization: Bearer` — send both so either resolves.
+    return { 'x-api-key': apiKey, 'authorization': `Bearer ${apiKey}` }
+  }
+
+  /**
+   * Resolve one operation's API key without retaining it on the provider.
    * @param options - the caller's snapshot, so the key and the endpoint it is sent to come from one section.
    * @param signal - abort signal for the surrounding search.
    * @returns the resolved key.
    */
   private async apiKey(options: DeepSeekSearchProviderOptions, signal?: AbortSignal): Promise<string> {
-    throwIfSearchAborted(signal)
     if (options.apiKey !== undefined && options.apiKey.length > 0) return options.apiKey
-    let resolved: string | undefined
-    try {
-      resolved = await abortable(options.resolveApiKey?.() ?? Promise.resolve(undefined), signal)
-    } catch (error: unknown) {
-      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
-      throw new WebError(
-        `DeepSeek search credential resolution failed: ${String(error)}`,
-        'WEB_PROVIDER_ERROR',
-        { cause: error },
-      )
-    }
+    const resolved = await resolveCredential(options.resolveApiKey?.(), signal)
     if (resolved !== undefined && resolved.length > 0) return resolved
     const ref = options.apiKeyEnv ?? 'DEEPSEEK_API_KEY'
     throw new WebError(
@@ -304,6 +315,29 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
       + ' (the web Models page writes it), export it in the launching environment, or set a literal'
       + ' "apiKey" in the web-search-deepseek config',
       'WEB_PROVIDER_CREDENTIAL_MISSING',
+    )
+  }
+}
+
+/**
+ * Await one credential resolver under the search's cancellation signal.
+ * @param operation - the resolver's pending value; absent when no resolver is configured.
+ * @param signal - abort signal for the surrounding search.
+ * @returns the resolved credential, or undefined when the resolver supplied none.
+ * @throws {@link WebError} `WEB_ABORTED` on cancellation, `WEB_PROVIDER_ERROR` when the resolver rejects.
+ */
+async function resolveCredential(
+  operation: Promise<string | undefined> | undefined, signal?: AbortSignal,
+): Promise<string | undefined> {
+  if (operation === undefined) return undefined
+  try {
+    return await abortable(operation, signal)
+  } catch (error: unknown) {
+    if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+    throw new WebError(
+      `DeepSeek search credential resolution failed: ${String(error)}`,
+      'WEB_PROVIDER_ERROR',
+      { cause: error },
     )
   }
 }

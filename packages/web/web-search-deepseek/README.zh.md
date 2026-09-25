@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-有了 `dsh-web-search-deepseek`，harness 可以通过 DeepSeek 原生搜索检索 web，使用部署已有的 `DEEPSEEK_API_KEY`。当部署希望使用 DeepSeek 原生搜索、并接受一次搜索在延迟与 token 上消耗一个完整模型轮次时选择它，因为 DeepSeek 不提供专用搜索端点。结果来自 DeepSeek 返回的结构化搜索块，绝不会从回复文本中抓取。凭据缺失时调用以结构化错误失败；响应缺少搜索结果块时会明确报错，而非降级。面向模型的 `web_search` 工具位于 `dsh-tool-web`。
+有了 `dsh-web-search-deepseek`，harness 可以通过 DeepSeek 原生搜索检索 web，使用 DeepSeek 账号登录或部署已有的 `DEEPSEEK_API_KEY`。当部署希望使用 DeepSeek 原生搜索、并接受一次搜索在延迟与 token 上消耗一个完整模型轮次时选择它，因为 DeepSeek 不提供专用搜索端点。结果来自 DeepSeek 返回的结构化搜索块，绝不会从回复文本中抓取。凭据缺失时调用以结构化错误失败；响应缺少搜索结果块时会明确报错，而非降级。面向模型的 `web_search` 工具位于 `dsh-tool-web`。
 
 ## 目录
 
@@ -55,6 +55,10 @@ kind: "package-reference"
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-web-search-deepseek) 列出所有接受的字段。每次搜索从即时 Config 引用捕获选项。
 
+### 鉴权
+
+当发起会话最近的请求头指明 `deepseek-account` 提供方路由，且 `ctx.deepseekAccount` 为搜索端点解析出 token 时，搜索使用 DeepSeek 账号鉴权。账号服务仅在已登录时、且仅对部署配置的推理 origin（默认 `https://api.deepseek.com`）解析 token。这类搜索只发送 `x-dsh-auth-token`，即使配置了 API 密钥也是如此。其余所有搜索，包括没有发起会话的调用以及端点属于其他 origin 的搜索，都把 API 密钥同时作为 `x-api-key` 与 `Authorization: Bearer` 发送。HTTP 401 响应使搜索以 `WEB_PROVIDER_ERROR` 失败，账号保持登录。
+
 ### 搜索返回什么
 
 `content` 始终省略：DeepSeek 的提供方文本不作为答案受到信任。`sources[]` 来自 `web_search_tool_result` 块内的 `web_search_result` 条目——`url` 和 `title` 直接取自同名字段，`publishedAt` 取自 `page_age`——snippet 在存在摘录时按 URL 关联的 `cited_text` 条目拼接。结果按 URL 去重，且由于 DeepSeek 不公开结果数量旋钮，服务通过截断并标记来强制执行 `maxResults`。
@@ -82,7 +86,7 @@ kind: "package-reference"
 本提供方建立在两项承诺之上：
 
 - **只取结构化块。** DeepSeek 在服务端执行搜索并返回结构化的 `web_search_tool_result` 块；提供方解析这些块，绝不从模型文本中抓取 URL。严格模式下，没有此类块的响应会抛出 `WEB_PROVIDER_ERROR`，而非降级。
-- **一个凭据，逐次解析。** 提供方复用 `DEEPSEEK_API_KEY` 引用（不新增密钥），但通过 `$DEEPSEEK_SEARCH_BASE_URL` 保持辅助请求端点独立。已挂载的凭据服务具有权威性；没有该服务时回退到启动进程的环境。按次解析意味着在 Web 的 Models 页中存储或轮换的密钥无需重启，即可用于下一次搜索。
+- **会话凭据，逐次解析。** 提供方不新增密钥：来自账号路由会话的搜索使用该账号的 token，其余搜索复用 `DEEPSEEK_API_KEY` 引用。辅助请求端点通过 `$DEEPSEEK_SEARCH_BASE_URL` 保持独立。已挂载的凭据服务具有权威性；没有该服务时回退到启动进程的环境。按次解析意味着在 Web 的 Models 页中存储或轮换的密钥，或一次账号登录，无需重启即可用于下一次搜索。
 
 ### 源码地图
 
@@ -95,7 +99,7 @@ kind: "package-reference"
 
 ### 请求流程
 
-每次搜索先把当前 Config 段投影为提供方选项——端点、模型、密钥引用、上限——然后通过 `ctx.credentials`（或环境）解析凭据引用，追加仅用于日志的会话事件，并以原生 `web_search` 服务器工具分发 Messages 请求。响应中的 `web_search_tool_result` 块变为 `sources[]`；文本块中的 `cited_text` 条目按其 URL 拼接为 snippet；结果按 URL 去重；服务在返回路径上强制执行请求的来源上限。
+每次搜索先把当前 Config 段投影为提供方选项——端点、模型、密钥引用、上限——然后在发起会话使用账号路由时向 `ctx.deepseekAccount` 请求 token，否则通过 `ctx.credentials`（或环境）解析凭据引用，追加仅用于日志的会话事件，并以原生 `web_search` 服务器工具分发 Messages 请求。响应中的 `web_search_tool_result` 块变为 `sources[]`；文本块中的 `cited_text` 条目按其 URL 拼接为 snippet；结果按 URL 去重；服务在返回路径上强制执行请求的来源上限。
 
 </details>
 
