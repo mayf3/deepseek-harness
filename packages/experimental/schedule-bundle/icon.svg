@@ -1,11 +1,9 @@
 <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="18" cy="18" r="11.5" fill="url(#a)" />
-  <path d="M18 11.8V18.6L22.6 22.4" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
-  <circle cx="18" cy="18.6" r="1.5" fill="#FFFFFF" />
-  <defs>
-    <linearGradient id="a" x1="18" y1="6.5" x2="18" y2="29.5" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#7CB7FF" />
-      <stop offset="1" stop-color="#145AF3" />
-    </linearGradient>
-  </defs>
+<path d="M28.666 18C28.666 23.9156 23.8697 28.7109 17.9541 28.7109C14.154 28.7108 10.8189 26.7316 8.91797 23.75L8.48633 25.0068L6.76855 24.416L8.24512 20.123L12.5381 21.5996L11.9482 23.3154L10.4707 22.8076C12.0538 25.267 14.814 26.8954 17.9541 26.8955C22.8668 26.8955 26.8496 22.9127 26.8496 18H28.666ZM18.7178 17.9775L22.9121 19.6426L22.5439 20.5723L22.1748 21.501L17.9795 19.8359C17.2179 19.5334 16.7179 18.797 16.7178 17.9775V13.1465H18.7178V17.9775ZM18.0459 7.28906C21.846 7.28922 25.1811 9.26841 27.082 12.25L27.5137 10.9932L29.2314 11.584L27.7549 15.877L23.4619 14.4004L24.0518 12.6846L25.5293 13.1924C23.9462 10.733 21.186 9.10465 18.0459 9.10449C13.1332 9.10449 9.15039 13.0873 9.15039 18H7.33398C7.33398 12.0844 12.1303 7.28906 18.0459 7.28906Z" fill="url(#paint0_linear_3302_5429)" stroke="url(#paint0_linear_3302_5429)" stroke-width="0.3" stroke-linejoin="round"/>
+<defs>
+<linearGradient id="paint0_linear_3302_5429" x1="18" y1="7.28906" x2="18" y2="28.7109" gradientUnits="userSpaceOnUse">
+<stop stop-color="#4DD9D4"/>
+<stop offset="1" stop-color="#6085EB"/>
+</linearGradient>
+</defs>
 </svg>

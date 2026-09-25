@@ -462,9 +462,12 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     await row.waitFor({ timeout: 15_000 })
     expect(await row.getAttribute('data-chat-flow-kind')).toBe('assistant-step')
     expect(await row.textContent()).toContain(AFTER_REPLY)
+    const triggerTitle = '[data-turn-trigger] > button > span:nth-child(2)'
+    await page.locator(triggerTitle).waitFor()
+    expect(await page.locator(triggerTitle).textContent()).toBe('Automation task')
     await compareOrRefreshGolden(
       AFTER_EXPECTED,
-      await captureStableAria(page, selector, scaffold.workspaceCwd),
+      `${await captureStableAria(page, triggerTitle, scaffold.workspaceCwd)}\n\n${await captureStableAria(page, selector, scaffold.workspaceCwd)}`,
       MODE,
     )
     await expectNoReminderEntry(page)

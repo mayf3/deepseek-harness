@@ -16,7 +16,7 @@ import {
   Button, IconCheckCircleFillRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineMedium,
   IconChevronRightOutlineRegular, IconCloseOutlineMedium,
   IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
-  IconWarningOutlineRegular, Input, Modal,
+  IconWarningOutlineRegular, Input, MenuSurface, Modal,
   PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTerminal,
   StateDot, Switch, Tag, TerminalBlock, Toast, useAnchoredPosition, useDismissOnOutsidePointer,
   type IconProps, type StateDotState, type TerminalBlockLabels,
@@ -320,6 +320,39 @@ function CardHead({ title, t, onOpen, icon, tags, description, end }: {
       </div>
       {end === undefined ? null : <div className={css.cardEnd}>{end}</div>}
     </div>
+  )
+}
+
+/** First-read placeholders share the Official group's card and text-line layout. */
+function ListSkeleton({ label }: { readonly label: string }): ReactNode {
+  return (
+    <section className={css.group} role="status" aria-label={label} data-plugin-loading>
+      <div className={css.groupHead} aria-hidden="true">
+        <span className={`${css.groupTitle} ${css.skeletonText} ${css.skeletonHeading}`}>
+          <span className={`${css.skeletonFill} ${css.skeletonBar}`} />
+        </span>
+      </div>
+      <ul className={css.cards} aria-hidden="true">
+        {[0, 1, 2, 3].map(index => (
+          <li key={index} className={css.card}>
+            <div className={css.cardHead}>
+              <span className={`${css.cardIcon} ${css.skeletonFill} ${css.skeletonIcon}`} />
+              <div className={css.cardMain}>
+                <div className={css.titleRow}>
+                  <span className={`${css.cardTitle} ${css.skeletonText} ${css.skeletonTitle}`}>
+                    <span className={`${css.skeletonFill} ${css.skeletonBar}`} />
+                  </span>
+                </div>
+                <span className={`${css.cardDesc} ${css.skeletonText} ${css.skeletonDescription}`}>
+                  <span className={`${css.skeletonFill} ${css.skeletonBar}`} />
+                </span>
+              </div>
+              <div className={`${css.cardEnd} ${css.skeletonActions}`} />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -681,10 +714,10 @@ function registryList(registries: readonly Registry[], t: Translate, resolved: s
   return registries.map(registry => registryText(registry, t, resolved).name).join(t('registryListSeparator'))
 }
 
-/** An option's label: the registry's name with the host it names, unless the host is the name. */
-function registryOption(registry: Registry, t: Translate, resolved: string | null): string {
+/** An option's name with its host in tertiary text, unless the host is the name. */
+function registryOption(registry: Registry, t: Translate, resolved: string | null): ReactNode {
   const { name, host } = registryText(registry, t, resolved)
-  return name === host ? name : t('registryWithHost', { name, host })
+  return name === host ? name : <>{name}{' '}<span className={css.registryHint}>{host}</span></>
 }
 
 /**
@@ -757,15 +790,21 @@ function InstallDialog({
   const registryId = useId()
   const registryErrorId = useId()
   const [guideOpen, setGuideOpen] = useState(false)
+  const [customRegistryDraft, setCustomRegistryDraft] = useState('')
   const { phase } = install
   // The registry options float over the dialog from their toggle, so unfolding them never adds to its height;
   // the store folds them when a run starts, so they show at the spec only.
   const registryToggleRef = useRef<HTMLButtonElement | null>(null)
-  const registryPanelRef = useRef<HTMLFieldSetElement | null>(null)
+  const registryPanelRef = useRef<HTMLDivElement | null>(null)
+  const registryCustomRef = useRef<HTMLInputElement | null>(null)
   const registryShown = install.registryOpen && phase === 'idle'
   const registryPosition = useAnchoredPosition({
     open: registryShown, anchorRef: registryToggleRef, panelRef: registryPanelRef, align: 'end', gap: 6, margin: 12,
   })
+  const registryReady = registryShown && registryPosition !== null
+  useEffect(() => {
+    if (registryReady && install.registryError) registryCustomRef.current?.focus()
+  }, [registryReady, install.registryError])
   // The hook only ever asks to close.
   useDismissOnOutsidePointer(registryToggleRef, registryShown, onToggleRegistry, registryPanelRef)
   useEffect(() => {
@@ -918,8 +957,9 @@ function InstallDialog({
             : null}
           {registryShown
             ? createPortal(
-              <fieldset
+              <MenuSurface
                 ref={registryPanelRef}
+                role="group"
                 id={registryId}
                 className={css.registry}
                 style={registryPosition ?? { visibility: 'hidden', left: 0, top: 0 }}
@@ -930,30 +970,39 @@ function InstallDialog({
                   const checked = choice.kind === 'offered' && choice.registry === registry
                   return (
                     <label key={registry ?? ''} className={css.registryOption} data-checked={checked}>
-                      <input type="radio" name={registryId} checked={checked} onChange={() => { onChooseRegistry({ kind: 'offered', registry }) }} />
-                      <span className={css.registryTitle}><span>{registryOption(registry, t, resolved)}</span></span>
+                      <input type="radio" name={registryId} checked={checked} onChange={() => {
+                        if (choice.kind === 'custom') setCustomRegistryDraft(choice.url)
+                        onChooseRegistry({ kind: 'offered', registry })
+                      }} />
+                      <span className={css.registryTitle}>{registryOption(registry, t, resolved)}</span>
                     </label>
                   )
                 })}
-                <div className={css.registryOption} data-checked={choice.kind === 'custom'}>
+                <div className={css.registryOption} data-checked={choice.kind === 'custom'}
+                  onClick={(event) => {
+                    // Keep label activation from moving focus back to the radio.
+                    if (!(event.target instanceof HTMLInputElement)) event.preventDefault()
+                    registryCustomRef.current?.focus()
+                  }}>
                   <label className={css.registryCustomPick}>
                     <input
                       type="radio"
                       name={registryId}
                       checked={choice.kind === 'custom'}
-                      onChange={() => { onChooseRegistry({ kind: 'custom', url: '' }) }}
+                      onChange={() => { registryCustomRef.current?.focus() }}
                     />
                     <span className={css.registryTitle}><span>{t('registryCustom')}</span></span>
                   </label>
                   <input
+                    ref={registryCustomRef}
                     type="text"
                     className={css.registryCustomField}
                     aria-label={t('registryCustom')}
                     placeholder={t('registryCustomPlaceholder')}
-                    value={choice.kind === 'custom' ? choice.url : ''}
-                    disabled={choice.kind !== 'custom'}
+                    value={choice.kind === 'custom' ? choice.url : customRegistryDraft}
                     aria-invalid={install.registryError}
                     aria-describedby={install.registryError ? registryErrorId : undefined}
+                    onFocus={() => { if (choice.kind !== 'custom') onChooseRegistry({ kind: 'custom', url: customRegistryDraft }) }}
                     onChange={(event) => { onChooseRegistry({ kind: 'custom', url: event.currentTarget.value }) }}
                     onKeyDown={(event) => { if (event.key === 'Enter' && !empty) onRun() }}
                   />
@@ -962,7 +1011,7 @@ function InstallDialog({
                     : null}
                   <span className={css.registryHint}>{t('registryCustomHint')}</span>
                 </div>
-              </fieldset>,
+              </MenuSurface>,
               document.body,
             )
             : null}
@@ -1243,11 +1292,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           </header>
         )
         : null}
-      {showsCards && state.status === 'loading' ? (
-        <p className={`${css.status} ${css.statusWithDot}`} role="status">
-          <StateDot state="ongoing" />{t('loading')}
-        </p>
-      ) : null}
+      {showsCards && state.status === 'loading' ? <ListSkeleton label={t('loading')} /> : null}
       {showsCards && state.status === 'unavailable' ? (
         <p className={`${css.status} ${css.statusWithDot}`} role="status">
           <StateDot state="idle" />{t('unavailable')}

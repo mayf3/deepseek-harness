@@ -787,7 +787,7 @@ export class PluginManagerController {
     const choice = install.registry
     const typed = choice.kind === 'custom' ? choice.url.trim() : undefined
     if (typed !== undefined && !REGISTRY_URL.test(typed)) {
-      this.patchInstall({ phase: 'idle', registryError: true })
+      this.patchInstall({ phase: 'idle', registryError: true, registryOpen: true })
       return
     }
     this.abortInspect()

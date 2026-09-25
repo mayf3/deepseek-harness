@@ -54,9 +54,9 @@ const OFFICIAL = 'https://registry.npmjs.org/'
 const REGISTRIES = { registry: null, fallbackRegistries: [MIRROR], resolved: OFFICIAL }
 
 /** pnpm's own registry as the options label it: by npm's own name once read, the neutral default name until then. */
-const OFFICIAL_OPTION = en.registryWithHost.replace('{name}', en.registryOfficial).replace('{host}', 'registry.npmjs.org')
-const UNREAD_OPTION = en.registryWithHost.replace('{name}', en.registryDefault).replace('{host}', 'registry.npmjs.org')
-const MIRROR_OPTION = en.registryWithHost.replace('{name}', en.registryNpmmirror).replace('{host}', 'registry.npmmirror.com')
+const OFFICIAL_OPTION = `${en.registryOfficial} registry.npmjs.org`
+const UNREAD_OPTION = `${en.registryDefault} registry.npmjs.org`
+const MIRROR_OPTION = `${en.registryNpmmirror} registry.npmmirror.com`
 
 const IDLE_INSTALL: InstallState = {
   open: false, spec: '', registries: null, registry: { kind: 'offered', registry: null }, registryOpen: false, registryError: false, attempts: null,
@@ -203,9 +203,14 @@ describe('PluginManagerPage', () => {
   it('asks the store once mounted and renders the loading, unavailable, error, and empty states', () => {
     const { actions, set } = renderTab({ status: 'loading' })
     expect(actions.ensure).toHaveBeenCalledTimes(1)
-    expect(screen.getByText(en.loading).querySelector('[data-state="ongoing"]')).not.toBeNull()
+    const loading = screen.getByRole('status', { name: en.loading })
+    expect(loading.querySelectorAll('li')).toHaveLength(4)
+    expect(loading.querySelector('ul')?.getAttribute('aria-hidden')).toBe('true')
+    expect(loading.querySelector('button, input, [data-state="ongoing"]')).toBeNull()
+    expect(document.querySelector('[data-plugin-panel]')?.getAttribute('aria-busy')).toBe('true')
     expect(screen.getByRole('button', { name: en.addPlugin })).toHaveProperty('disabled', true)
     set({ status: 'unavailable' })
+    expect(screen.queryByRole('status', { name: en.loading })).toBeNull()
     expect(screen.getByRole('status').querySelector('[data-state="idle"]')).not.toBeNull()
     set({ status: 'error' })
     expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
@@ -217,6 +222,22 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.empty)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.addPlugin }))
     expect(actions.openInstall).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows skeletons only while loading and keeps ready cards during refresh and switching', () => {
+    const { actions, set } = renderTab({ status: 'idle' })
+    expect(screen.queryByRole('status', { name: en.loading })).toBeNull()
+    set({ status: 'loading' })
+    expect(screen.getByRole('status', { name: en.loading })).toBeTruthy()
+    set({ status: 'ready', packages: [pkg()] })
+    expect(screen.queryByRole('status', { name: en.loading })).toBeNull()
+    expect(document.querySelector('[data-plugin-panel]')?.getAttribute('aria-busy')).toBe('false')
+    fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+    expect(actions.refresh).toHaveBeenCalledTimes(1)
+    set({ busy: ['dsh-better-sidebar'] })
+    expect(screen.queryByRole('status', { name: en.loading })).toBeNull()
+    expect(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') })).toBeTruthy()
+    expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-better-sidebar') })).toHaveProperty('disabled', true)
   })
 
   it('keeps the read failure and its retry visible while a detail page is open', () => {
@@ -1208,6 +1229,56 @@ describe('PluginManagerPage', () => {
       expect(screen.queryByRole('dialog', { name: en.installGithubFailedTitle })).toBeNull()
       expect(screen.getByRole('button', { name: en.installRetry })).toBeTruthy()
     }
+  })
+
+  it('selects the custom registry from its whole area and focuses the address without clearing it', () => {
+    const open = { ...IDLE_INSTALL, open: true, registryOpen: true, registries: REGISTRIES }
+    const { actions, set } = renderTab({ install: open })
+    const field = screen.getByRole('textbox', { name: en.registryCustom })
+    const label = screen.getByRole('radio', { name: en.registryCustom }).parentElement!
+    const area = label.parentElement!
+    expect(field).toHaveProperty('disabled', false)
+    for (const target of [area, label, screen.getByText(en.registryCustomHint)]) {
+      field.blur()
+      set({ install: open })
+      actions.chooseRegistry.mockClear()
+      fireEvent.click(target)
+      expect(actions.chooseRegistry).toHaveBeenCalledExactlyOnceWith({ kind: 'custom', url: '' })
+      expect(document.activeElement).toBe(field)
+    }
+    set({ install: { ...open, registry: { kind: 'custom', url: 'https://npm.corp/' } } })
+    field.blur()
+    actions.chooseRegistry.mockClear()
+    field.focus()
+    fireEvent.click(field)
+    fireEvent.click(area)
+    expect(document.activeElement).toBe(field)
+    expect(field).toHaveProperty('value', 'https://npm.corp/')
+    expect(actions.chooseRegistry).not.toHaveBeenCalled()
+    field.blur()
+    fireEvent.click(screen.getByRole('radio', { name: OFFICIAL_OPTION }))
+    set({ install: open })
+    expect(field).toHaveProperty('value', 'https://npm.corp/')
+    fireEvent.click(screen.getByRole('radio', { name: MIRROR_OPTION }))
+    set({ install: { ...open, registry: { kind: 'offered', registry: MIRROR } } })
+    fireEvent.click(area)
+    expect(actions.chooseRegistry).toHaveBeenLastCalledWith({ kind: 'custom', url: 'https://npm.corp/' })
+    expect(document.activeElement).toBe(field)
+  })
+
+  it('focuses an invalid custom address when submission opens its registry menu', () => {
+    const open = { ...IDLE_INSTALL, open: true, spec: 'dsh-new', registry: { kind: 'custom' as const, url: 'invalid' } }
+    const { actions, set } = renderTab({ install: open })
+    fireEvent.click(screen.getByRole('button', { name: en.installRun, exact: true }))
+    expect(actions.runInstall).toHaveBeenCalledOnce()
+    set({ install: { ...open, registryOpen: true, registryError: true } })
+    const field = screen.getByRole('textbox', { name: en.registryCustom })
+    expect(document.activeElement).toBe(field)
+    expect(field.getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByRole('alert').textContent).toBe(en.registryCustomInvalid)
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(actions.toggleRegistryOptions).toHaveBeenCalledOnce()
+    expect(actions.closeInstall).not.toHaveBeenCalled()
   })
 
   it('offers the registries under the spec, folded by default, and picks or types one', () => {

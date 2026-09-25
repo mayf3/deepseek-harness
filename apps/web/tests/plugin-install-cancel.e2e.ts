@@ -49,6 +49,26 @@ it('cancels installation, retries and highlights the enabled plugin at 40% alpha
       // The dialog is named after its current screen, so it is found by role alone.
       const dialog = page.getByRole('dialog')
       await dialog.getByRole('textbox').fill('slow-package')
+      await dialog.getByRole('button', { name: /^安装源/ }).click()
+      const registryMenu = page.locator('[data-install-registry]')
+      const customAddress = registryMenu.getByRole('textbox', { name: '自定义地址', exact: true })
+      await customAddress.fill('invalid-registry')
+      await page.keyboard.press('Escape')
+      await registryMenu.waitFor({ state: 'hidden' })
+      await dialog.getByRole('button', { name: '安装', exact: true }).click()
+      await customAddress.waitFor({ state: 'visible' })
+      await expect.poll(() => customAddress.evaluate(element => document.activeElement === element)).toBe(true)
+      expect(await customAddress.getAttribute('aria-invalid')).toBe('true')
+      const invalidStyle = await customAddress.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return { outline: style.outlineStyle, boxShadow: style.boxShadow }
+      })
+      expect(invalidStyle).toEqual({ outline: 'none', boxShadow: 'none' })
+      await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-cancel/invalid-registry.expected.md', import.meta.url)),
+        `${await captureStableAria(page, '[data-install-registry] > [data-checked="true"]', scaffold.workspaceCwd)}\n\n${JSON.stringify(invalidStyle, null, 2)}`, webSnapshotMode())
+      await registryMenu.getByRole('radio').first().check()
+      await page.keyboard.press('Escape')
+      await registryMenu.waitFor({ state: 'hidden' })
       // Hold request delivery and the real Host's cancellation reply independently.
       // Cancellation reaches the Host before the install it names.
       const cancellationArrived = Promise.withResolvers<undefined>()

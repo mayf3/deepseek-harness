@@ -1159,7 +1159,7 @@ describe('PluginManagerController', () => {
       face.editInstallSpec('dsh-new')
       face.chooseRegistry({ kind: 'custom', url: ' npm.corp.example ' })
       face.runInstall()
-      expect(state().install).toMatchObject({ phase: 'idle', registryError: true })
+      expect(state().install).toMatchObject({ phase: 'idle', registryError: true, registryOpen: true })
       expect(plugins.inspect).not.toHaveBeenCalled()
       // Typing again clears the refusal; a URL is asked as typed, trimmed.
       face.chooseRegistry({ kind: 'custom', url: ' https://npm.corp.example ' })

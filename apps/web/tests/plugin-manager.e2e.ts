@@ -2,14 +2,15 @@
 // managed scaffold profile: installed bundles, their rows, and bundle enablement. Zero
 // model calls: everything is client state, seeded Session state, profile files, and the settings
 // document, so there is no fixture and a stray stream would fail loud on the open llm seam.
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { FiberState } from '@deepseek-ai/cordis'
 import { OPTIONAL_BUNDLES } from '@deepseek-ai/dsh-app-boot'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { join } from 'node:path'
 import {
   SCAFFOLD_DEFAULTS_BUNDLE, assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
@@ -92,6 +93,130 @@ describe('web e2e: plugin manager', () => {
   async function homeFile(...segments: string[]): Promise<string> {
     return readFile(join(scaffold.harnessHome, ...segments), 'utf8').catch(() => '')
   }
+
+  it('aligns the first-read skeleton with the loaded plugin cards', async () => {
+    const facts: string[] = []
+    let aria = ''
+    const shots = MODE === 'refresh' ? await mkdtemp(join(tmpdir(), 'dsh-plugin-loading-')) : undefined
+    for (const width of [1680, 1000]) {
+      const context = await browser.newContext({ viewport: { width, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+      const release = Promise.withResolvers<undefined>()
+      const listBundles = scaffold.ctx.pluginManager.listBundles.bind(scaffold.ctx.pluginManager)
+      const reads: ReturnType<typeof listBundles>[] = []
+      const spy = vi.spyOn(scaffold.ctx.pluginManager, 'listBundles').mockImplementation(() => {
+        const read = release.promise.then(() => listBundles())
+        reads.push(read)
+        return read
+      })
+      try {
+        const probe = await context.newPage()
+        const consoleWatch = watchConsole(probe)
+        await probe.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+        await probe.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+        await probe.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '插件', exact: true }).click()
+        await expect.poll(() => spy.mock.calls.length, { timeout: 10_000 }).toBeGreaterThan(0)
+        const panel = probe.locator('[data-plugin-panel]')
+        const skeleton = panel.locator('[data-plugin-loading]')
+        await skeleton.waitFor()
+        await probe.evaluate(() => document.fonts.ready)
+        expect(await skeleton.locator(':scope > ul > li').count()).toBe(4)
+        expect(await skeleton.getAttribute('role')).toBe('status')
+        expect(await skeleton.getAttribute('aria-label')).toBe('正在读取插件…')
+        expect(await panel.getAttribute('aria-busy')).toBe('true')
+        const actions = panel.locator(':scope > header button')
+        expect(await actions.count()).toBe(2)
+        for (const action of await actions.all()) expect(await action.isDisabled()).toBe(true)
+        const loadingAria = await captureStableAria(probe, '[data-plugin-panel]', scaffold.workspaceCwd)
+        if (aria === '') aria = loadingAria
+        else expect(loadingAria).toBe(aria)
+
+        const measure = (group: Locator) => group.evaluate((element) => {
+          const rect = (node: Element | null | undefined) => {
+            if (node === null || node === undefined) throw new Error('Missing plugin layout element')
+            const { x, y, width, height } = node.getBoundingClientRect()
+            return { x, y, width, height }
+          }
+          return {
+            pageHeader: rect(element.closest('[data-plugin-panel]')?.querySelector(':scope > header')),
+            groupHeader: rect(element.firstElementChild),
+            rows: Array.from(element.querySelectorAll(':scope > ul > li')).slice(0, 4).map((row) => {
+              const head = row.firstElementChild
+              const main = head?.children[1]
+              return {
+                row: rect(row), head: rect(head), icon: rect(head?.children[0]), main: rect(main),
+                titleRow: rect(main?.children[0]), title: rect(main?.children[0]?.firstElementChild),
+                description: rect(main?.children[1]), actions: rect(head?.children[2]),
+              }
+            }),
+          }
+        })
+        const loading = await measure(skeleton)
+        const blankActions = await skeleton.locator(':scope > ul > li > div > div:last-child').evaluateAll(nodes => nodes.map(node => ({
+          children: node.childElementCount,
+          background: getComputedStyle(node).backgroundColor,
+          width: node.getBoundingClientRect().width,
+          height: node.getBoundingClientRect().height,
+        })))
+        expect(blankActions).toEqual(Array.from({ length: 4 }, () => ({ children: 0, background: 'rgba(0, 0, 0, 0)', width: 36, height: 20 })))
+        if (shots !== undefined) {
+          for (const colorScheme of ['light', 'dark'] as const) {
+            await probe.emulateMedia({ colorScheme })
+            const path = join(shots, `loading-${width}-${colorScheme}.png`)
+            await panel.screenshot({ path, animations: 'disabled' })
+            console.log(`Plugin loading screenshot: ${path}`)
+          }
+        }
+        const motion = await skeleton.evaluate(element => element.getAnimations({ subtree: true }).map(animation => ({
+          duration: animation.effect?.getTiming().duration,
+          opacityOnly: animation.effect instanceof KeyframeEffect
+            && animation.effect.getKeyframes().every(frame => frame.opacity !== undefined && frame.transform === undefined),
+        })))
+        expect(motion.length).toBe(13)
+        expect(motion.every(animation => animation.duration === 2000 && animation.opacityOnly)).toBe(true)
+        await probe.emulateMedia({ reducedMotion: 'reduce' })
+        await expect.poll(() => skeleton.evaluate(element => element.getAnimations({ subtree: true }).length)).toBe(0)
+        await probe.emulateMedia({ reducedMotion: 'no-preference', colorScheme: null })
+
+        release.resolve(undefined)
+        await skeleton.waitFor({ state: 'detached' })
+        expect(await panel.getAttribute('aria-busy')).toBe('false')
+        for (const action of await actions.all()) expect(await action.isDisabled()).toBe(false)
+        const official = panel.locator('[data-plugin-group="official"]')
+        await official.locator('[data-plugin-package]').first().waitFor()
+        const loaded = await measure(official)
+        expect(loaded.rows).toHaveLength(4)
+        const compare = (name: string, a: typeof loading.pageHeader, b: typeof loaded.pageHeader, axes: readonly (keyof typeof a)[] = ['x', 'y', 'width', 'height']) => {
+          for (const axis of axes) {
+            expect(Math.abs(a[axis] - b[axis]), `${width}px ${name}.${axis}: loading=${a[axis]}, loaded=${b[axis]}`).toBeLessThanOrEqual(0.1)
+          }
+        }
+        compare('pageHeader', loading.pageHeader, loaded.pageHeader)
+        compare('groupHeader', loading.groupHeader, loaded.groupHeader)
+        for (const [index, row] of loading.rows.entries()) {
+          const real = loaded.rows[index]!
+          for (const part of ['row', 'head', 'icon', 'main', 'titleRow', 'actions'] as const) compare(`row ${index + 1} ${part}`, row[part], real[part])
+          // Painted text bars are deliberately shorter than real copy; their line origins and heights align.
+          for (const part of ['title', 'description'] as const) compare(`row ${index + 1} ${part}`, row[part], real[part], ['x', 'y', 'height'])
+        }
+        facts.push(`${width}px: 4 rows; page/group headers, rows, icons, text lines and blank action spaces align within 0.1px`)
+        expect(consoleWatch.pageErrors).toEqual([])
+      } finally {
+        release.resolve(undefined)
+        spy.mockRestore()
+        try {
+          await context.close()
+        } finally {
+          await Promise.allSettled(reads)
+        }
+      }
+    }
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'loading.expected.md'), [
+      aria, '', ...facts,
+      'Loading: header actions disabled; action spaces are empty 36×20 areas, with no switch placeholders',
+      'Loaded: skeleton removed; header actions enabled',
+      'Motion: 13 opacity-only pulses, 2000ms; reduced motion stops all pulses',
+    ].join('\n'), MODE)
+  })
 
   it('starts with an unavailable selected bundle and lets the user clear its error', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-missing-bundle'))
@@ -383,7 +508,7 @@ describe('web e2e: plugin manager', () => {
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'manager.expected.md', 'live-enabled.expected.md', 'missing-bundle.expected.md', 'exports.expected.md', 'exports-en.expected.md', 'icons.expected.md',
+      'manager.expected.md', 'live-enabled.expected.md', 'missing-bundle.expected.md', 'exports.expected.md', 'exports-en.expected.md', 'icons.expected.md', 'loading.expected.md',
     ])
   })
 })
