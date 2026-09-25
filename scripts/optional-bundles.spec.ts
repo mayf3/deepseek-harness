@@ -54,12 +54,13 @@ describe('optional bundles', () => {
     const topLevelIds = composed.flatMap(entry => typeof entry.id === 'string' ? [entry.id] : [])
     expect(topLevelIds).toHaveLength(new Set(topLevelIds).size)
     // An id-targeted patch reaches a row another layer inserted: the id resolves to exactly one top-level
-    // row that keeps its declared package name.
+    // row, and the override keeps the package the shipped layer declared on it.
+    const shippedComposed = composeEntries([...shipped])
     for (const patch of patches) {
       if (patch.insert !== undefined || typeof patch.id !== 'string') continue
       const matches = composed.filter(entry => entry.id === patch.id)
       expect(matches).toHaveLength(1)
-      expect(typeof matches[0]?.name).toBe('string')
+      expect(matches[0]?.name).toBe(shippedComposed.find(entry => entry.id === patch.id)?.name)
     }
   })
 

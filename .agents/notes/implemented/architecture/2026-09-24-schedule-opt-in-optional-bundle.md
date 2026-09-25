@@ -22,7 +22,7 @@ Enabling the bundle turns on `time-context` (a per-step clock reading with the s
 
 **Ship Schedule on by default.** Every Web session then pays four tool schemas in each request header and one durable user message per eligible step, and a conversation that never creates a reminder pays both costs. The arrangement also left the capability without an off switch on the product surface.
 
-**Keep a `--patch` overlay file.** An overlay is a launch-time argument rather than a product-surface switch, so a person using the shipped Web profile cannot reach it. It also cannot set fields on the shipped rows: `applyEntryPatches` appends an `insert` list without de-duplicating ids, and the Loader keeps one entry per id with the last declaration winning, so an overlay that re-declares `time-context` and `schedule` replaces the Web bundle's rows instead of overriding them.
+**Keep a `--patch` overlay file.** An overlay is a launch-time argument rather than a product-surface switch, so a person using the shipped Web profile cannot reach it. Re-declaring the rows through its `insert` list does not override them: `applyEntryPatches` appends that list without de-duplicating ids, and the Loader collapses the composed list to one entry per id with the last declaration winning, so the overlay replaces the Web bundle's rows instead of setting fields on them.
 
 **Extract the three rows out of the Web composition into the bundle.** The bundle would insert the rows instead of overriding them, so a profile that also declares one of those ids would have two declarations for it, of which the Loader keeps only the last. The disabled rows are what an override-style switch targets.
 
