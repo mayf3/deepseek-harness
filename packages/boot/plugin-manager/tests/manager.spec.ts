@@ -292,21 +292,21 @@ it('lists bundle versions and current-profile plugin targets', async () => {
     {
       name: 'core', version: '1.0.0', enabled: true, installed: false, optional: false, removable: false, readOnlyReason: 'management-required',
       meta: { title: 'core' },
-      rows: [{ rowId: 'manager', moduleName: 'cordis:manager', entryId: 'include:manager' }], rowSwitches: true, overrides: [],
+      rows: [{ rowId: 'manager', moduleName: 'cordis:manager', entryId: 'include:manager' }], overrides: [],
     },
     {
       name: 'extra', version: '1.0.0', enabled: true, installed: true, optional: false, removable: true,
       meta: { title: 'extra' },
-      rows: [{ rowId: 'managed', moduleName: pathToFileURL(join(dir, 'node_modules', 'extra', 'plugin.mjs')).href, entryId: 'include:managed' }], rowSwitches: true, overrides: [],
+      rows: [{ rowId: 'managed', moduleName: pathToFileURL(join(dir, 'node_modules', 'extra', 'plugin.mjs')).href, entryId: 'include:managed' }], overrides: [],
     },
   ])
 })
 
-it('describes a bundle by its manifest and patch: one-liner, rows without a live entry, row switches, and the built-in rows it changes', async () => {
+it('describes a bundle by its manifest and patch: one-liner, rows without a live entry, and the built-in rows it changes', async () => {
   const { manager, dir, bundle } = await fixture()
   bundle('described', [{ id: 'described-row', name: './plugin.mjs' }])
   writeFileSync(join(dir, 'node_modules', 'described', 'package.json'), JSON.stringify({
-    name: 'described', version: '2.0.0', description: 'Describes itself.', dsh: { bundle: { patch: './cordis.patch.yml', rowSwitches: false } },
+    name: 'described', version: '2.0.0', description: 'Describes itself.', dsh: { bundle: { patch: './cordis.patch.yml' } },
   }))
   // An anonymous row is not addressable and is left out of the rows.
   writeFileSync(join(dir, 'node_modules', 'described', 'cordis.patch.yml'), JSON.stringify([
@@ -319,7 +319,7 @@ it('describes a bundle by its manifest and patch: one-liner, rows without a live
   expect((await manager.listBundles()).find(row => row.name === 'described')).toEqual({
     name: 'described', version: '2.0.0', description: 'Describes itself.', enabled: false, installed: true, optional: false, removable: true,
     meta: { title: 'described', description: 'Describes itself.' },
-    rows: [{ rowId: 'described-row', moduleName }], rowSwitches: false, overrides: ['managed'],
+    rows: [{ rowId: 'described-row', moduleName }], overrides: ['managed'],
   })
   await manager.setBundleEnabled('described', true)
   expect((await manager.listBundles()).find(row => row.name === 'described')?.rows).toEqual([
@@ -411,7 +411,7 @@ it.each([
 
   expect((await manager.listBundles()).find(row => row.name === 'unnamed')).toEqual({
     name: 'unnamed', version: '1.0.0', enabled: false, installed: true, optional: false, removable: true,
-    rows: [], rowSwitches: true, overrides: [], ...expected,
+    rows: [], overrides: [], ...expected,
   })
 })
 
@@ -1045,7 +1045,7 @@ it('offers the launcher\'s optional bundles switched off and never removable', a
     name: offered, version: '3.0.0', description: 'Package one-liner.',
     meta: { title: offered, description: 'Package one-liner.' },
     enabled: false, installed: false, optional: true, removable: false,
-    rows: [{ rowId: 'offered-row', moduleName: pathToFileURL(join(supplied, 'plugin.mjs')).href }], rowSwitches: true, overrides: [],
+    rows: [{ rowId: 'offered-row', moduleName: pathToFileURL(join(supplied, 'plugin.mjs')).href }], overrides: [],
   })
   expect(await manager.setBundleEnabled(offered, true)).toMatchObject({ application: 'applied' })
   expect((await manager.listBundles()).find(row => row.name === offered)).toMatchObject({ enabled: true, optional: true, removable: false })
