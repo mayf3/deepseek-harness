@@ -14,7 +14,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -125,7 +125,8 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
   }
 
   beforeAll(() => {
-    scratch = mkdtempSync(join(tmpdir(), 'dsh-acl-diagnose-'))
+    // Windows runners may expose TEMP through an 8.3 alias; PowerShell reports long paths.
+    scratch = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-acl-diagnose-')))
     outDir = makeDir('out')
     meSid = pwsh('[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value').trim()
   })
