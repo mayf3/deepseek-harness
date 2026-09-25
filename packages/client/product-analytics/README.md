@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Collect selected Desktop interactions through the existing OTel product exporter. The application can disable collection without a user-facing setting. Ordinary Web clients never submit these events, and missing login identity is omitted.
+Desktop reports selected interactions through the existing OTel product exporter by default, without a user-facing control. Ordinary Web clients never submit these events, and missing login identity is omitted.
 
 ## Table of Contents
 
