@@ -37,8 +37,9 @@ describe('bundled Windows ACL diagnosis skill', () => {
         .toBe(readFileSync(new URL('../assets/diagnose-windows-sandbox-acl/scripts/diagnose-windows-sandbox-acl.ps1', import.meta.url), 'utf8'))
       // The body names the bundled script — the repair path the model must use
       // instead of editing ACLs by hand.
-      expect(loaded?.content).toContain('scripts/diagnose-windows-sandbox-acl.ps1')
-      expect(loaded?.content).toContain('Step 4')
+      expect(loaded?.content).toContain('scripts\\diagnose-windows-sandbox-acl.ps1')
+      // Leave room for the tool wrapper below the default 8192-character prune threshold.
+      expect(loaded?.content.length).toBeLessThan(7_000)
 
       await fiber.dispose()
       expect(await ctx.skills.list()).toEqual([])

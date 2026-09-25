@@ -9,11 +9,12 @@
     signed-in user should plainly have. This script reports why such an object is
     unreadable or unopenable, and repairs package-ACE conflicts or missing rights.
 
-    Diagnosis (the default) never writes anything: it reads each requested path
+    Diagnosis (the default) never changes ACLs: it reads each requested path
     and every ancestor with .NET and native icacls, and prints machine-parseable
     lines for the caller to interpret. REPORT JSON records distinguish observed
     facts, decisions and their reasons, attempted operations, and verification.
     A caught exception still emits the operation history and recovery commands.
+    Failed repairs restore attempted DACL changes in reverse order and stop.
 
     Repair (-Fix) removes ONLY allow ACEs whose SID is an AppContainer package SID
     (S-1-15-2-*, excluding the well-known groups ending in 1 or 2). Removing them
@@ -23,8 +24,7 @@
     effective rights; removal verifies that other icacls lines remain unchanged.
 
     The script never creates, deletes, or writes the contents of any file. Its
-    only footprint outside the ACLs it is asked to repair is the backup it writes
-    under -Out.
+    only content writes are recovery artifacts and explicitly requested reports.
 
 .PARAMETER Path
     One or more failing paths. Each is diagnosed together with its ancestors.
@@ -33,7 +33,12 @@
     Required with any mutation. Every modified object must be strictly inside this directory.
 
 .PARAMETER Out
-    Required with -Fix or -GrantFullControl. Receives ACL backups and recovery scripts.
+    Required with -Fix, -GrantFullControl or -Compact. Receives recovery artifacts
+    and, with -Compact, a unique full JSONL report.
+
+.PARAMETER Compact
+    Save every REPORT record under -Out and print a decision summary with the
+    inspected paths, findings, actions, verification and pending recovery commands.
 
 .PARAMETER Fix
     Remove individual package allow ACEs, preserving well-known package groups.
@@ -63,7 +68,8 @@ param(
   [string]$Out,
   [switch]$Fix,
   [switch]$GrantFullControl,
-  [string]$Restore
+  [string]$Restore,
+  [switch]$Compact
 )
 
 Set-StrictMode -Version Latest
@@ -73,21 +79,36 @@ $ErrorActionPreference = 'Stop'
 $PACKAGE_SID = '^S-1-15-2-(?![12]$)'
 $LOW_LABEL_SID = 'S-1-16-4096'
 
-function Write-Line { param([string]$Text) Write-Output $Text }
+function Write-Line { param([string]$Text) if (-not $Compact) { Write-Output $Text } }
 
 # Reports bypass the success pipeline so diagnostics cannot become a function's
 # return value. Each JSON record occupies one stdout line, including paths/errors.
 function Write-Report {
   param([string]$Kind, [string]$Operation, [string]$Target, [string]$Status, [string]$Reason, $Details = @{})
   $record = [ordered]@{ kind = $Kind; operation = $Operation; path = $Target; status = $Status; reason = $Reason; details = $Details }
+  $script:reports.Add($record)
   if ($Kind -eq 'observation' -and $Status -in @('unknown', 'unreadable', 'partial')) { $script:observationFailures++ }
-  [Console]::Out.WriteLine('REPORT ' + ($record | ConvertTo-Json -Depth 12 -Compress))
+  $json = $record | ConvertTo-Json -Depth 12 -Compress
+  if ($script:reportWriter) {
+    try { $script:reportWriter.WriteLine($json); $script:reportWriter.Flush() }
+    catch {
+      $script:reportWriter.Dispose()
+      $script:reportWriter = $null
+      $script:reportFailed = $true
+      [Console]::Out.WriteLine('REPORT ' + $json)
+      throw
+    }
+  }
+  if (-not $Compact -or $script:reportFailed) { [Console]::Out.WriteLine('REPORT ' + $json) }
 }
 
 function Invoke-ReportedOperation {
   param([string]$Operation, [string]$Target, [string]$Reason, [string]$Effect, [scriptblock]$Action)
   $entry = [ordered]@{ id = $script:operations.Count + 1; operation = $Operation; path = $Target; effect = $Effect; status = 'started' }
   $script:operations.Add($entry)
+  if ($Effect -eq 'acl' -and $Operation -ne 'restore_dacl' -and $script:recoveries.Count -gt 0) {
+    $script:recoveries[-1].attempted = $true
+  }
   Write-Report action $Operation $Target started $Reason @{ id = $entry.id; effect = $Effect }
   try {
     $result = & $Action
@@ -273,10 +294,62 @@ function Save-AclBackup {
     Copy-Item -LiteralPath $PSCommandPath -Destination $restoreScript
     $command | Set-Content -LiteralPath ($backup + '.rollback.txt')
   }
-  $script:recoveries.Add(@{ path = $FullPath; backup = $backup; record = $record; script = $restoreScript; command = $command })
+  $script:recoveries.Add(@{ path = $FullPath; backup = $backup; record = $record; script = $restoreScript; command = $command; attempted = $false; restored = $false })
   Write-Report observation recovery $FullPath available 'These files can restore the saved DACL; no rollback has been executed.' $script:recoveries[-1]
   Write-Line ('BACKUP {0} -> {1}' -f $FullPath, $backup)
   Write-Line ('ROLLBACK {0}' -f $command)
+}
+
+function Restore-SavedDacl {
+  param([string]$FullPath, [string]$Record, [string]$Root)
+  $refusal = Get-RepairRefusal -FullPath $FullPath -Root $Root
+  if ($refusal) { throw [System.ArgumentException]::new("RESTORE_REFUSED $refusal") }
+  $saved = Invoke-ReportedOperation read_recovery $Record 'Read the recovery record and verify it belongs to the requested path before restoring its DACL.' none {
+    Get-Content -LiteralPath $Record -Raw | ConvertFrom-Json
+  }
+  if ($saved.Path -isnot [string] -or $saved.Path -ine $FullPath -or $saved.Dacl -isnot [string]) {
+    throw [System.ArgumentException]::new('RESTORE_REFUSED backup does not describe the requested path')
+  }
+  if (-not [Dsh.TokenInfo]::HasAccess($FullPath, 0x40000)) { throw 'RESTORE_REFUSED the caller lacks WRITE_DAC' }
+  Invoke-ReportedOperation restore_dacl $FullPath 'Restore the requested backup DACL and inheritance protection, preserving owner and SACL.' acl {
+    [Dsh.TokenInfo]::SetDacl($FullPath, $saved.Dacl)
+  }
+  $actual = Invoke-ReportedOperation read_restored_dacl $FullPath 'Read the restored DACL to compare it with the saved record.' none {
+    (Get-Acl -LiteralPath $FullPath).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)
+  }
+  Write-Report verification restore $FullPath $(if ($actual -eq $saved.Dacl) { 'verified' } else { 'failed' }) 'Compare the observed DACL with the recovery record after writing it.' @{ expectedDacl = $saved.Dacl; actualDacl = $actual }
+  if ($actual -ne $saved.Dacl) { throw 'RESTORE_FAILED the restored DACL differs from the backup' }
+  $script:restored++
+  Write-Line ('RESTORED {0}' -f $FullPath)
+}
+
+function Write-CompactSummary {
+  param([string]$Status, [string]$NextAction, [array]$RollbackCommands)
+  $byPath = [ordered]@{}
+  foreach ($record in $script:reports) { if ($record.operation -eq 'inspect_acl') { $byPath[$record.path] = $record } }
+  $observations = @($byPath.Values)
+  $classifications = @($script:reports | Where-Object { $_.operation -eq 'classify' })
+  $findings = @($observations | Where-Object {
+    $_.path -in $script:requestedPaths -or $_.status -ne 'read' -or
+    @($_.details['aces'] | Where-Object { $_ -and $_.sid -match $PACKAGE_SID -and $_.type -eq 'Allow' }).Count -gt 0
+  } | ForEach-Object {
+    @{ path = $_.path; status = $_.status; writeDac = $_.details['writeDac']; writeOwner = $_.details['writeOwner']
+      packageAllowSids = @($_.details['aces'] | Where-Object { $_ -and $_.sid -match $PACKAGE_SID -and $_.type -eq 'Allow' } | ForEach-Object { $_.sid })
+      denies = @($_.details['aces'] | Where-Object { $_ -and $_.type -eq 'Deny' }); errors = @($_.details['errors']; $_.details['error']) }
+  })
+  $details = [ordered]@{
+    report = $script:reportPath; exitCode = $script:exitCode; nextAction = $NextAction
+    inspectedPaths = @($observations | ForEach-Object { $_.path } | Select-Object -Unique)
+    findings = $findings
+    decisions = @($classifications | ForEach-Object { @{ path = $_.path; verdict = $_.status; reason = $_.reason; packageObjects = $_.details.packageObjects } })
+    actions = @($script:reports | Where-Object { $_.kind -eq 'action' -and $_.details['effect'] -eq 'acl' -and $_.status -ne 'started' } | ForEach-Object { @{ operation = $_.operation; path = $_.path; status = $_.status; reason = $_.reason } })
+    verification = @($script:reports | Where-Object { $_.kind -eq 'verification' } | ForEach-Object { @{ operation = $_.operation; path = $_.path; status = $_.status } })
+    rollback = $script:rollbackStatus; rollbackCommands = $RollbackCommands
+    errors = @($script:reports | Where-Object { $_.kind -eq 'error' -or ($_.kind -eq 'decision' -and $_.status -eq 'refused') } | ForEach-Object { @{ path = $_.path; reason = $_.reason; details = $_.details } })
+  }
+  $record = @{ kind = 'summary'; operation = $script:mode; path = $script:currentPath; status = $Status
+    reason = 'Full observations, actions and reasons are in the report. Follow nextAction; a failed repair must not be followed by another repair.'; details = $details }
+  [Console]::Out.WriteLine('REPORT ' + ($record | ConvertTo-Json -Depth 12 -Compress))
 }
 
 function Get-ObjectFacts {
@@ -370,6 +443,12 @@ function Get-Ancestors {
 
 $operations = [System.Collections.Generic.List[object]]::new()
 $recoveries = [System.Collections.Generic.List[object]]::new()
+$reports = [System.Collections.Generic.List[object]]::new()
+$reportWriter = $null
+$reportPath = $null
+$reportFailed = $false
+$requestedPaths = @()
+$rollbackStatus = 'not-needed'
 $fixed = 0
 $granted = 0
 $refused = 0
@@ -380,8 +459,20 @@ $currentPath = ''
 $mode = if ($Restore) { 'restore' } elseif ($GrantFullControl) { 'grant' } elseif ($Fix) { 'fix' } else { 'diagnose' }
 
 try {
+  $requestedPaths = @($Path | ForEach-Object { [System.IO.Path]::GetFullPath($_) })
   Write-Report invocation $mode '' started 'Inspect the requested paths before deciding whether the requested operation can run.' @{
     paths = $Path; allowRoot = $AllowRoot; outputDirectory = $Out; recoveryRecord = $Restore; fix = $Fix.IsPresent; grantFullControl = $GrantFullControl.IsPresent
+  }
+  if ($Compact) {
+    if (-not $Out) { throw [System.ArgumentException]::new('-Compact requires -Out for the complete report') }
+    Invoke-ReportedOperation prepare_report $Out 'Create the requested report directory and a new JSONL report; existing reports are never overwritten.' files {
+      $directory = [System.IO.Path]::GetFullPath($Out)
+      [System.IO.Directory]::CreateDirectory($directory) | Out-Null
+      $script:reportPath = Join-Path $directory ('acl-report-{0}.jsonl' -f [guid]::NewGuid().ToString('N'))
+      $stream = [System.IO.File]::Open($script:reportPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write)
+      $script:reportWriter = [System.IO.StreamWriter]::new($stream, [System.Text.UTF8Encoding]::new($false))
+      foreach ($record in $script:reports) { $script:reportWriter.WriteLine(($record | ConvertTo-Json -Depth 12 -Compress)) }
+    }
   }
   $identity = Get-CurrentIdentity
   $meSid = $identity.User.Value
@@ -403,7 +494,7 @@ try {
     if ($Restore -and $Path.Count -ne 1) { throw [System.ArgumentException]::new('-Restore requires exactly one -Path') }
   }
 
-  foreach ($requested in $Path) {
+  :paths foreach ($requested in $Path) {
     $currentPath = $requested
     $full = [System.IO.Path]::GetFullPath($requested)
     $currentPath = $full
@@ -412,7 +503,7 @@ try {
       Write-Line '  MISSING'
       Write-Line 'VERDICT=NOT_THIS_CLASS'
       Write-Decision $mode $full skipped 'The requested path does not exist; no ACL was read or changed for it.'
-      if ($mode -ne 'diagnose') { $refused++ }
+      if ($mode -ne 'diagnose') { $refused++; break paths }
       continue
     }
 
@@ -465,39 +556,20 @@ try {
     }
     if ($targetFacts.Errors.Count -gt 0) {
       Write-Decision $mode $full refused 'Required observations are incomplete; no repair was attempted for this path.'
-      $refused++; continue
+      $refused++; break paths
     }
 
     if ($Restore) {
-      $refusal = Get-RepairRefusal -FullPath $full -Root $AllowRoot
-      if ($refusal) { Write-Line ('RESTORE_REFUSED {0}' -f $refusal); Write-Decision restore $full refused $refusal; $refused++; continue }
-      $saved = Invoke-ReportedOperation read_recovery $Restore 'Read the recovery record and verify it belongs to the requested path before restoring its DACL.' none {
-        Get-Content -LiteralPath $Restore -Raw | ConvertFrom-Json
-      }
-      if ($saved.Path -isnot [string] -or $saved.Path -ine $full -or $saved.Dacl -isnot [string]) {
-        Write-Line 'RESTORE_REFUSED backup does not describe the requested path'
-        Write-Decision restore $full refused 'The backup does not describe the requested path; no DACL write was attempted.'
-        $refused++; continue
-      }
-      if (-not $targetFacts.HasWriteDac) { Write-Line 'RESTORE_REFUSED the caller lacks WRITE_DAC'; Write-Decision restore $full refused 'Effective WRITE_DAC is absent; the saved DACL cannot be written by this caller.'; $refused++; continue }
-      Invoke-ReportedOperation restore_dacl $full 'Restore the requested backup DACL and inheritance protection, preserving owner and SACL.' acl {
-        [Dsh.TokenInfo]::SetDacl($full, $saved.Dacl)
-      }
-      $actual = Invoke-ReportedOperation read_restored_dacl $full 'Read the restored DACL to compare it with the saved record.' none {
-        (Get-Acl -LiteralPath $full).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)
-      }
-      Write-Report verification restore $full $(if ($actual -eq $saved.Dacl) { 'verified' } else { 'failed' }) 'Compare the observed DACL with the recovery record after writing it.' @{ expectedDacl = $saved.Dacl; actualDacl = $actual }
-      if ($actual -ne $saved.Dacl) { Write-Line 'RESTORE_FAILED the restored DACL differs from the backup'; $refused++; continue }
-      Write-Line ('RESTORED {0}' -f $full); $restored++
+      Restore-SavedDacl -FullPath $full -Record $Restore -Root $AllowRoot
       continue
     }
 
     if ($GrantFullControl) {
-      if ($unreadable) { Write-Line 'GRANT_REFUSED the object could not be read; the grant needs an unconfined caller'; Write-Decision grant $full refused 'The ACL is unreadable, so a preserving grant cannot be constructed.'; $refused++; continue }
+      if ($unreadable) { Write-Line 'GRANT_REFUSED the object could not be read; the grant needs an unconfined caller'; Write-Decision grant $full refused 'The ACL is unreadable, so a preserving grant cannot be constructed.'; $refused++; break paths }
       $refusal = Get-RepairRefusal -FullPath $full -Root $AllowRoot
-      if ($refusal) { Write-Line ('GRANT_REFUSED {0}' -f $refusal); Write-Decision grant $full refused $refusal; $refused++; continue }
+      if ($refusal) { Write-Line ('GRANT_REFUSED {0}' -f $refusal); Write-Decision grant $full refused $refusal; $refused++; break paths }
       if ($targetFacts.HasWriteDac -and $targetFacts.HasWriteOwner) { Write-Line ('GRANT_SKIPPED {0} already carries WRITE_DAC and WRITE_OWNER' -f $full); Write-Decision grant $full skipped 'Effective WRITE_DAC and WRITE_OWNER are already available; no grant or backup is needed.'; continue }
-      if (-not $targetFacts.HasWriteDac) { Write-Line 'GRANT_REFUSED the caller lacks WRITE_DAC; ask the user to run this command from an elevated terminal'; Write-Decision grant $full refused 'Effective WRITE_DAC is absent; this caller cannot change the DACL. Elevation may still be blocked by a deny ACE.'; $refused++; continue }
+      if (-not $targetFacts.HasWriteDac) { Write-Line 'GRANT_REFUSED the caller lacks WRITE_DAC; ask the user to run this command from an elevated terminal'; Write-Decision grant $full refused 'Effective WRITE_DAC is absent; this caller cannot change the DACL. Elevation may still be blocked by a deny ACE.'; $refused++; break paths }
       Save-AclBackup -FullPath $full -Directory $Out -Root $AllowRoot
       # AddAccessRule preserves explicit denies; icacls /grant can remove a deny
       # for the same principal. Write only the DACL, leaving owner and SACL intact.
@@ -511,7 +583,7 @@ try {
       }
       $after = Get-ObjectFacts -FullPath $full -MeSid $meSid
       $verified = $after.Readable -and $after.Errors.Count -eq 0 -and $after.HasWriteDac -and $after.HasWriteOwner
-      Write-Report verification grant $full $(if ($verified) { 'verified' } else { 'failed' }) 'The DACL write completed; recheck effective access before claiming that provisioning can succeed. No automatic rollback is performed.' @{
+      Write-Report verification grant $full $(if ($verified) { 'verified' } else { 'failed' }) 'The DACL write completed; recheck effective access before claiming that provisioning can succeed. On failure, restore this invocation and stop.' @{
         before = @{ writeDac = $targetFacts.HasWriteDac; writeOwner = $targetFacts.HasWriteOwner }
         after = @{ writeDac = $after.HasWriteDac; writeOwner = $after.HasWriteOwner }
         recovery = $recoveries[-1].command
@@ -519,8 +591,9 @@ try {
       if ($verified) {
         Write-Line ('GRANTED {0} SID={1}' -f $full, $meSid); $granted++
       } else {
-        Write-Line ('GRANT_FAILED {0}; effective WRITE_DAC and WRITE_OWNER were not both confirmed; use the saved rollback and report the error' -f $full)
+        Write-Line ('GRANT_FAILED {0}; effective WRITE_DAC and WRITE_OWNER were not both confirmed; restore this invocation and stop' -f $full)
         $refused++
+        break paths
       }
       continue
     }
@@ -531,66 +604,100 @@ try {
       Write-Line 'FIX_REFUSED the object could not be read; repair needs an unconfined caller'
       Write-Decision fix $full refused 'The requested ACL could not be read; no package removal was attempted.'
       $refused++
-      continue
+      break paths
     }
     if ($packageTargets.Count -eq 0) { Write-Decision fix $full skipped 'No package allow ACE was observed on the inspected objects; no ACL change or backup is needed.' }
     foreach ($target in $packageTargets) {
       $refusal = Get-RepairRefusal -FullPath $target.Object -Root $AllowRoot
-      if ($refusal) { Write-Line ('FIX_REFUSED {0}' -f $refusal); Write-Decision fix $target.Object refused $refusal; $refused++; continue }
-      if ($target.Errors.Count -gt 0) { Write-Decision fix $target.Object refused 'The ACL observations are incomplete; collateral changes could not be verified.'; $refused++; continue }
+      if ($refusal) { Write-Line ('FIX_REFUSED {0}' -f $refusal); Write-Decision fix $target.Object refused $refusal; $refused++; break paths }
+    }
+    if ($packageTargets.Count -gt 0 -and $needsPrecondition) {
+      Write-Decision fix $full refused 'Package removal requires verified WRITE_DAC and WRITE_OWNER on the requested path. A failed grant must not be followed by -Fix.'
+      $refused++; break paths
+    }
+    foreach ($target in $packageTargets) {
+      $refusal = Get-RepairRefusal -FullPath $target.Object -Root $AllowRoot
+      if ($refusal) { Write-Line ('FIX_REFUSED {0}' -f $refusal); Write-Decision fix $target.Object refused $refusal; $refused++; break paths }
+      if ($target.Errors.Count -gt 0) { Write-Decision fix $target.Object refused 'The ACL observations are incomplete; collateral changes could not be verified.'; $refused++; break paths }
       if (-not $target.HasWriteDac) {
         Write-Line ('FIX_REFUSED {0} needs WRITE_DAC; ask the user to run the full-control grant from an elevated terminal first' -f $target.Object)
         Write-Decision fix $target.Object refused 'Effective WRITE_DAC is absent; removing a package allow ACE requires that right.'
         $refused++
-        continue
+        break paths
       }
       $before = $target.AclLines
       Save-AclBackup -FullPath $target.Object -Directory $Out -Root $AllowRoot
-      foreach ($ace in $target.PackageAces) {
-        if ($ace -notmatch 'SID=(S-1-15-2-[\d-]+)') { continue }
-        $sid = $Matches[1]
+      $sids = @($target.Aces | Where-Object { $_.type -eq 'Allow' -and $_.sid -match $PACKAGE_SID } | ForEach-Object { $_.sid } | Sort-Object -Unique)
+      foreach ($sid in $sids) {
         $repairPath = $target.Object
         Invoke-ReportedOperation remove_package_allow $repairPath "Remove the observed package allow ACE for $sid as requested by -Fix; preserve deny ACEs and all other principals." acl {
           $output = @(icacls $repairPath /remove:g "*$sid" 2>&1)
           if ($LASTEXITCODE -ne 0) { throw "icacls removal exit ${LASTEXITCODE}: $($output -join "`n")" }
         }
-        $after = Get-ObjectFacts -FullPath $target.Object -MeSid $meSid
-        # icacls prefixes only the first ACE with the path, so compare entries
-        # without that prefix when checking for collateral changes.
-        $keepBefore = @($before | ForEach-Object {
-          $line = $_.Trim()
-          if ($line.StartsWith($target.Object, [System.StringComparison]::OrdinalIgnoreCase)) { $line = $line.Substring($target.Object.Length).Trim() }
-          $line
-        } | Where-Object { $_ -notmatch $PACKAGE_SID })
-        $keepAfter = @($after.AclLines | ForEach-Object {
-          $line = $_.Trim()
-          if ($line.StartsWith($target.Object, [System.StringComparison]::OrdinalIgnoreCase)) { $line = $line.Substring($target.Object.Length).Trim() }
-          $line
-        } | Where-Object { $_ -notmatch $PACKAGE_SID })
-        $collateral = (($keepBefore -join "`n") -eq ($keepAfter -join "`n"))
-        $verified = $after.Readable -and $after.Errors.Count -eq 0 -and $after.PackageAces.Count -eq 0 -and $collateral
-        Write-Report verification fix $target.Object $(if ($verified) { 'verified' } else { 'failed' }) 'The removal command completed; verify that package allow ACEs disappeared and other ACL listing entries remained unchanged. No automatic rollback is performed.' @{
-          removedSid = $sid; remainingPackageAces = $after.PackageAces; otherEntriesUnchanged = $collateral; recovery = $recoveries[-1].command
-        }
-        if ($verified) {
-          Write-Line ('FIXED {0} SID={1}' -f $target.Object, $sid); $fixed++
-        } else {
-          Write-Line ('FIX_FAILED {0} SID={1} collateral_change={2}' -f $target.Object, $sid, (-not $collateral))
-          $refused++
-        }
+      }
+      $after = Get-ObjectFacts -FullPath $target.Object -MeSid $meSid
+      # icacls prefixes only the first ACE with the path, so compare entries
+      # without that prefix when checking for collateral changes.
+      $keepBefore = @($before | ForEach-Object {
+        $line = $_.Trim()
+        if ($line.StartsWith($target.Object, [System.StringComparison]::OrdinalIgnoreCase)) { $line = $line.Substring($target.Object.Length).Trim() }
+        $line
+      } | Where-Object { $_ -notmatch $PACKAGE_SID })
+      $keepAfter = @($after.AclLines | ForEach-Object {
+        $line = $_.Trim()
+        if ($line.StartsWith($target.Object, [System.StringComparison]::OrdinalIgnoreCase)) { $line = $line.Substring($target.Object.Length).Trim() }
+        $line
+      } | Where-Object { $_ -notmatch $PACKAGE_SID })
+      # A package deny can share the removed allow's SID. Preserve it explicitly
+      # even though native listing comparison omits lines naming package SIDs.
+      $expectedAces = @($target.Aces | Where-Object { -not ($_.type -eq 'Allow' -and $_.sid -match $PACKAGE_SID) })
+      $collateral = (($keepBefore -join "`n") -eq ($keepAfter -join "`n")) -and
+        (($expectedAces | ConvertTo-Json -Compress) -eq ($after.Aces | ConvertTo-Json -Compress))
+      $verified = $after.Readable -and $after.Errors.Count -eq 0 -and $after.PackageAces.Count -eq 0 -and $collateral
+      Write-Report verification fix $target.Object $(if ($verified) { 'verified' } else { 'failed' }) 'The removal command completed; verify that package allow ACEs disappeared and other ACL listing entries remained unchanged. On failure, restore this invocation and stop.' @{
+        removedSids = $sids; remainingPackageAces = $after.PackageAces; otherEntriesUnchanged = $collateral; recovery = $recoveries[-1].command
+      }
+      if ($verified) {
+        foreach ($sid in $sids) { Write-Line ('FIXED {0} SID={1}' -f $target.Object, $sid); $fixed++ }
+      } else {
+        Write-Line ('FIX_FAILED {0} collateral_change={1}' -f $target.Object, (-not $collateral))
+        $refused++
+        break paths
       }
     }
   }
 } catch {
   $exitCode = if ($_.Exception -is [System.ArgumentException]) { 2 } else { 1 }
-  Write-Report error $mode $currentPath stopped 'Execution stopped after an exception. Completed operations remain completed; an interrupted write may have changed state. No automatic rollback was performed.' @{ error = (Get-HResultChain $_.Exception); location = $_.InvocationInfo.PositionMessage }
+  Write-Report error $mode $currentPath stopped 'Execution stopped after an exception. An interrupted write may have changed state; attempted repairs will be restored before the final summary.' @{ error = (Get-HResultChain $_.Exception); location = $_.InvocationInfo.PositionMessage }
 } finally {
   if ($refused -gt 0 -and $exitCode -eq 0) { $exitCode = 2 }
+  if ($exitCode -ne 0 -and -not $Restore) {
+    for ($i = $recoveries.Count - 1; $i -ge 0; $i--) {
+      $recovery = $recoveries[$i]
+      if (-not $recovery.attempted) { continue }
+      Write-Decision rollback $recovery.path selected 'The repair failed; restore every attempted DACL change from this invocation in reverse order before stopping.'
+      try {
+        Restore-SavedDacl -FullPath $recovery.path -Record $recovery.record -Root $AllowRoot
+        $recovery.restored = $true
+        $rollbackStatus = 'verified'
+      } catch {
+        $rollbackStatus = 'failed'
+        Write-Report error rollback $recovery.path stopped 'Recovery was not verified. Stop repairs and retain the pending recovery commands in reverse order.' @{ error = (Get-HResultChain $_.Exception) }
+        break
+      }
+    }
+  }
+  $pending = @($recoveries | Where-Object { $_.attempted -and -not $_.restored } | ForEach-Object { $_.command })
+  [array]::Reverse($pending)
+  $nextAction = if ($rollbackStatus -eq 'failed') { 'restore_pending_then_stop' } elseif ($exitCode -ne 0 -or $observationFailures -gt 0 -or $Restore) { 'stop' } elseif ($mode -eq 'diagnose') { 'review_findings' } else { 'verify_original_confined_operation' }
   Write-Line ('SUMMARY FIXED={0} GRANTED={1} REFUSED={2} RESTORED={3}' -f $fixed, $granted, $refused, $restored)
   $status = if ($exitCode -ne 0) { 'failed' } elseif ($observationFailures -gt 0) { 'partial' } else { 'completed' }
   Write-Report summary $mode $currentPath $status 'Operation completion records API execution; verification records the observed result. Only rerunning the original confined operation can confirm its failure is resolved.' @{
     exitCode = $exitCode; fixed = $fixed; granted = $granted; refused = $refused; restored = $restored
-    operations = @($operations.ToArray()); recoveries = @($recoveries.ToArray()); automaticRollback = $false; observationFailures = $observationFailures
+    operations = @($operations.ToArray()); recoveries = @($recoveries.ToArray()); automaticRollback = $true; observationFailures = $observationFailures
+    rollback = $rollbackStatus; rollbackCommands = $pending; nextAction = $nextAction; report = $reportPath
   }
+  if ($reportWriter) { $reportWriter.Dispose() }
+  if ($Compact) { Write-CompactSummary -Status $status -NextAction $nextAction -RollbackCommands $pending }
 }
 exit $exitCode

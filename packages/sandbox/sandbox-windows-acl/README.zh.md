@@ -77,9 +77,9 @@ rmSync(tempDir, { recursive: true, force: true })
 
 此后端无法解释的拒绝——子进程打不开本已授权的对象，或授权调用本身失败——交给 `assets/` 中随包发布的 `diagnose-windows-sandbox-acl` 技能诊断。只要 `dsh-sandbox-local` 在 Windows 上与技能注册表一起组合，`registerAclDiagnosisSkill` 就会注册它。注册时会把资源复制到外部 PowerShell 可读取的私有临时目录，ASAR 和 SEA 部署也适用；fiber 释放时注销提供者并删除副本。缺少打包资源会导致注册失败。
 
-脚本诊断时不修改文件或 ACL；有效 `WRITE_DAC` 和 `WRITE_OWNER` 检查只打开已有对象，不修改内容。`-Fix` 删除包 SID 的允许 ACE，`-GrantFullControl` 补充调用者缺少的权限，即使包 ACE 同时存在也可执行。两者都要求不受限的调用者及 `WRITE_DAC`，强制目标位于 `-AllowRoot` 内，拒绝目标祖先链上的所有重解析点，保持所有者不变，并在修改前将恢复文件保存到 `-Out`。输出的 `-Restore` 命令只写回原 DACL 及其继承保护状态，保留 SACL，执行相同的路径限制，且在会话结束后仍可使用。多次修复应按相反顺序回滚。被拒绝或失败的修改均以非零状态退出。
+脚本诊断时不修改 ACL 或已有文件内容；有效 `WRITE_DAC` 和 `WRITE_OWNER` 检查只打开已有对象，不修改内容。`-Fix` 仅在请求路径具有这两项权限时删除包 SID 的允许 ACE；`-GrantFullControl` 补充调用者缺少的权限，同时保留显式拒绝条目。两种模式分别执行，要求不受限的调用者及 `WRITE_DAC`，强制目标位于 `-AllowRoot` 内，拒绝目标祖先链上的所有重解析点，保持所有者不变，并在修改前将恢复文件保存到 `-Out`。修复失败时，脚本按相反顺序自动恢复本次调用中尝试修改的 DACL，即使恢复成功也以非零状态退出。输出的独立 `-Restore` 命令保留所有者和 SACL，并执行相同的路径限制。如果后续步骤失败，还应按相反顺序恢复此前成功调用的修改。
 
-每次执行都会输出 `REPORT` JSON 行，说明观察、决策、操作尝试及结果和各自原因，并记录验证结果与最终摘要。ACL 观察包含允许和拒绝 ACE 的 SID、权限与继承信息、原生列表、有效权限及读取错误；未知值与权限缺失明确区分。修改在执行前报告开始状态，捕获异常后仍保留此前结果和恢复命令。操作完成不代表验证成功或已经自动回滚。[内置技能](assets/diagnose-windows-sandbox-acl/SKILL.md) 规定模型如何解读这些记录并报告尚未确认的事项。
+每次执行都会输出 `REPORT` JSON 记录，说明观察、决策、操作尝试及结果和各自原因，并记录验证结果与最终摘要。`-Compact -Out <directory>` 将全部记录保存到独立 JSONL 文件，仅打印包含报告路径、全部分析路径、发现、ACL 操作、验证结果、回滚状态、待执行恢复命令和 `nextAction` 的摘要。ACL 观察包含允许和拒绝 ACE 的 SID、权限与继承信息、原生列表、有效权限及读取错误；未知值与权限缺失明确区分。修改在执行前报告开始状态，捕获异常后仍保留此前结果和恢复命令。写入完成不代表修复或恢复已通过验证。[内置技能](assets/diagnose-windows-sandbox-acl/SKILL.md) 要求失败后停止，修复成功后在原受限环境中验证最初失败的操作。
 
 检查会从请求对象逐级访问祖先，直到文件系统根目录。每条 ACL 观察的 `path` 标识实际检查的对象；分类结果的 `details.packageObjects` 列出包含包允许 ACE 的对象，但不能据此确认原始失败的原因。[父目录包 SID 示例](tests/expected/parent-package-report.jsonl) 保留测试目录路径并展示选定字段，其中 `fixturePackageAces` 只从 `aces` 提取合成测试 SID，省略机器自带的 ACE 和祖先目录。[授权失败示例](tests/expected/denied-grant-report.txt) 保留操作路径和原因。
 

@@ -14,7 +14,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -34,6 +34,13 @@ function pwshAvailable(): boolean {
 const script = fileURLToPath(new URL('../assets/diagnose-windows-sandbox-acl/scripts/diagnose-windows-sandbox-acl.ps1', import.meta.url))
 const PACKAGE_SID = 'S-1-15-2-1-2-3-4'
 const CAPABILITY_SID = 'S-1-15-3-1-2-3-4'
+
+// Vitest's asymmetric factories return any; expected matchers are opaque values.
+const containingObject = (value: Record<string, unknown>): unknown => expect.objectContaining(value)
+const containingArray = (value: unknown[]): unknown => expect.arrayContaining(value)
+const excludingArray = (value: unknown[]): unknown => expect.not.arrayContaining(value)
+const containingString = (value: string): unknown => expect.stringContaining(value)
+const anyValue = (constructor: object): unknown => expect.any(constructor)
 
 interface ScriptRun {
   readonly code: number
@@ -146,10 +153,10 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     const repair = runScript(['-Path', target, '-AllowRoot', scratch, '-Out', outDir, '-Fix'])
     expect(repair.output, repair.output).toContain(`FIXED ${target} SID=${PACKAGE_SID}`)
     expect(repair.output, repair.output).toContain('SUMMARY FIXED=1 GRANTED=0 REFUSED=0')
-    expect(reports(repair)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'action', operation: 'remove_package_allow', path: target, status: 'started' }),
-      expect.objectContaining({ kind: 'action', operation: 'remove_package_allow', path: target, status: 'completed' }),
-      expect.objectContaining({ kind: 'verification', operation: 'fix', path: target, status: 'verified' }),
+    expect(reports(repair)).toEqual(containingArray([
+      containingObject({ kind: 'action', operation: 'remove_package_allow', path: target, status: 'started' }),
+      containingObject({ kind: 'action', operation: 'remove_package_allow', path: target, status: 'completed' }),
+      containingObject({ kind: 'verification', operation: 'fix', path: target, status: 'verified' }),
     ]))
 
     // Exactly the foreign ACE disappears; every other line survives unchanged.
@@ -163,11 +170,11 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     const diagnosis = runScript(['-Path', target])
     expect(diagnosis.output, diagnosis.output).toContain('VERDICT=NOT_THIS_CLASS')
     expect(diagnosis.output, diagnosis.output).not.toContain('PACKAGE_ACE')
-    expect(reports(diagnosis)).toContainEqual(expect.objectContaining({ kind: 'decision', operation: 'diagnose', path: target, status: 'skipped' }))
+    expect(reports(diagnosis)).toContainEqual(containingObject({ kind: 'decision', operation: 'diagnose', path: target, status: 'skipped' }))
 
     const repair = runScript(['-Path', target, '-AllowRoot', scratch, '-Out', outDir, '-Fix'])
     expect(repair.output, repair.output).toContain('SUMMARY FIXED=0 GRANTED=0 REFUSED=0')
-    expect(reports(repair)).toContainEqual(expect.objectContaining({ kind: 'decision', operation: 'fix', path: target, status: 'skipped' }))
+    expect(reports(repair)).toContainEqual(containingObject({ kind: 'decision', operation: 'fix', path: target, status: 'skipped' }))
     expect(normalized(target, aclLines(target))).toEqual(before)
   }, 60_000)
 
@@ -190,15 +197,15 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     expect(inspected.map(entry => entry.path)).toEqual(expectedPaths)
     expect(inspected[0]).toMatchObject({
       path: target, status: 'read',
-      details: { aces: expect.not.arrayContaining([expect.objectContaining({ sid: PACKAGE_SID })]) },
+      details: { aces: excludingArray([containingObject({ sid: PACKAGE_SID })]) },
     })
     expect(inspected[1]).toMatchObject({
       path: parent, status: 'read',
-      details: { aces: expect.arrayContaining([expect.objectContaining({ sid: PACKAGE_SID, type: 'Allow', inherited: false })]) },
+      details: { aces: containingArray([containingObject({ sid: PACKAGE_SID, type: 'Allow', inherited: false })]) },
     })
-    expect(entries).toContainEqual(expect.objectContaining({
+    expect(entries).toContainEqual(containingObject({
       kind: 'decision', operation: 'classify', path: target, status: 'CULPRIT',
-      details: expect.objectContaining({ packageObjects: [parent] }),
+      details: containingObject({ packageObjects: [parent] }),
     }))
     expect(entries.filter(entry => entry.kind === 'action' && entry.details.effect !== 'none')).toEqual([])
     expect([sddlOf(parent), sddlOf(target)]).toEqual(before)
@@ -239,9 +246,9 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     const denyDiagnosis = runScript(['-Path', deny])
     expect(denyDiagnosis.output, denyDiagnosis.output).not.toContain('PACKAGE_ACE')
     expect(denyDiagnosis.output, denyDiagnosis.output).not.toContain('VERDICT=CULPRIT')
-    expect(reports(denyDiagnosis)).toContainEqual(expect.objectContaining({
+    expect(reports(denyDiagnosis)).toContainEqual(containingObject({
       kind: 'observation', operation: 'inspect_acl', path: deny,
-      details: expect.objectContaining({ aces: expect.arrayContaining([expect.objectContaining({ sid: PACKAGE_SID, type: 'Deny', inherited: false })]) }),
+      details: containingObject({ aces: containingArray([containingObject({ sid: PACKAGE_SID, type: 'Deny', inherited: false })]) }),
     }))
 
     // `pwsh -File` passes `-Path a,b` literally, so each object is diagnosed on its own.
@@ -280,7 +287,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     const contradictory = runScript(['-Path', target, '-AllowRoot', scratch, '-Out', outDir, '-Fix', '-GrantFullControl'])
     expect(contradictory.code).toBe(2)
     expect(contradictory.output, contradictory.output).toContain('run one at a time')
-    expect(reports(contradictory)).toContainEqual(expect.objectContaining({ kind: 'error', status: 'stopped' }))
+    expect(reports(contradictory)).toContainEqual(containingObject({ kind: 'error', status: 'stopped' }))
   }, 60_000)
 
   it.each(['-Fix', '-GrantFullControl'])('refuses ancestor junctions for %s without changing their destination', (repairSwitch) => {
@@ -298,7 +305,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
         const repair = runScript(['-Path', join(link, 'target'), '-AllowRoot', allowRoot, '-Out', outDir, repairSwitch])
         expect(repair.output, repair.output).toContain('reparse point')
         expect(repair.code).not.toBe(0)
-        expect(reports(repair)).toContainEqual(expect.objectContaining({ kind: 'decision', status: 'refused', reason: expect.stringContaining('reparse point') }))
+        expect(reports(repair)).toContainEqual(containingObject({ kind: 'decision', status: 'refused', reason: containingString('reparse point') }))
         expect(sddlOf(target)).toBe(before)
       }
     } finally {
@@ -320,7 +327,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     const rollback = repair.output.split(/\r?\n/u).find(line => line.startsWith('ROLLBACK '))
     expect(rollback, repair.output).toBeDefined()
     const restored = pwsh(rollback!.slice('ROLLBACK '.length))
-    expect(reports({ code: 0, output: restored })).toContainEqual(expect.objectContaining({ kind: 'verification', operation: 'restore', status: 'verified' }))
+    expect(reports({ code: 0, output: restored })).toContainEqual(containingObject({ kind: 'verification', operation: 'restore', status: 'verified' }))
     expect(sddlOf(target)).toBe(before)
     expect(normalized(target, aclLines(target)).sort()).toEqual(linesBefore)
   }, 60_000)
@@ -369,14 +376,15 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
   it('does not report a successful grant when a deny ACE blocks WRITE_OWNER', async () => {
     const target = makeDir('denied-write-owner')
     icacls(target, '/deny', `*${meSid}:(WO)`)
+    const before = sddlOf(target)
     try {
       const diagnosis = runScript(['-Path', target])
       expect(diagnosis.output, diagnosis.output).toContain('VERDICT=PRECONDITION')
-      expect(reports(diagnosis)).toContainEqual(expect.objectContaining({
+      expect(reports(diagnosis)).toContainEqual(containingObject({
         kind: 'observation', operation: 'inspect_acl', path: target,
-        details: expect.objectContaining({
+        details: containingObject({
           writeOwner: false,
-          aces: expect.arrayContaining([expect.objectContaining({ sid: meSid, type: 'Deny', rights: 'TakeOwnership', inherited: false })]),
+          aces: containingArray([containingObject({ sid: meSid, type: 'Deny', rights: 'TakeOwnership', inherited: false })]),
         }),
       }))
       const grant = runScript(['-Path', target, '-AllowRoot', scratch, '-Out', outDir, '-GrantFullControl'])
@@ -384,11 +392,13 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
       expect(grant.output, grant.output).toContain('GRANT_FAILED')
       expect(grant.output).toContain('GRANTED=0 REFUSED=1')
       expect(aclLines(target).join('\n')).toContain('(DENY)(WO)')
-      expect(reports(grant)).toEqual(expect.arrayContaining([
-        expect.objectContaining({ kind: 'action', operation: 'grant_dacl', status: 'completed' }),
-        expect.objectContaining({ kind: 'verification', operation: 'grant', status: 'failed', details: expect.objectContaining({ recovery: expect.stringContaining('-Restore') }) }),
-        expect.objectContaining({ kind: 'summary', details: expect.objectContaining({ automaticRollback: false, granted: 0 }) }),
+      expect(reports(grant)).toEqual(containingArray([
+        containingObject({ kind: 'action', operation: 'grant_dacl', status: 'completed' }),
+        containingObject({ kind: 'verification', operation: 'grant', status: 'failed', details: containingObject({ recovery: containingString('-Restore') }) }),
+        containingObject({ kind: 'verification', operation: 'restore', status: 'verified' }),
+        containingObject({ kind: 'summary', details: containingObject({ automaticRollback: true, granted: 0, restored: 1, rollback: 'verified', rollbackCommands: [], nextAction: 'stop' }) }),
       ]))
+      expect(sddlOf(target)).toBe(before)
       const transcript = reports(grant)
         .filter(entry => entry.path === target && entry.kind !== 'observation')
         .map(entry => `${entry.kind} ${entry.operation} ${entry.status} path={{target}}: ${entry.reason.replaceAll(meSid, '{{caller_sid}}')}`)
@@ -408,7 +418,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     const run = runScript(['-Path', target, '-AllowRoot', scratch, '-Out', outputFile, '-GrantFullControl'])
     expect(run.code).toBe(1)
     const entries = reports(run)
-    expect(entries).toContainEqual(expect.objectContaining({ kind: 'action', operation: 'backup', status: 'failed', details: expect.objectContaining({ error: expect.any(String) }) }))
+    expect(entries).toContainEqual(containingObject({ kind: 'action', operation: 'backup', status: 'failed', details: containingObject({ error: anyValue(String) }) }))
     expect(entries.filter(entry => entry.kind === 'action' && entry.details.effect === 'acl')).toEqual([])
     expect(sddlOf(target)).toBe(before)
   })
@@ -424,17 +434,17 @@ exit $LASTEXITCODE
     expect(run.code).toBe(0)
     expect(run.output).toContain('VERDICT=UNREADABLE')
     const entries = reports(run)
-    expect(entries).toContainEqual(expect.objectContaining({
+    expect(entries).toContainEqual(containingObject({
       kind: 'observation', path: target, status: 'unreadable',
-      details: { error: expect.stringContaining('ACL observation unavailable') },
+      details: { error: containingString('ACL observation unavailable') },
     }))
-    expect(entries.at(-1)).toMatchObject({ status: 'partial', details: { observationFailures: expect.any(Number) } })
+    expect(entries.at(-1)).toMatchObject({ status: 'partial', details: { observationFailures: anyValue(Number) } })
     expect(entries.filter(entry => entry.kind === 'action' && entry.details.effect !== 'none')).toEqual([])
     expect(sddlOf(target)).toBe(before)
   })
 
-  it('reports the completed write and recovery command when the verification ACL read throws', () => {
-    const target = makeDir('post-write-read-failure')
+  it.each([false, true])('restores after a failed verification read and reports whether recovery was observed (recovery read fails: %s)', (recoveryReadFails) => {
+    const target = makeDir(`post-write-read-failure-${recoveryReadFails}`)
     icacls(target, '/inheritance:r', '/grant:r', `*${meSid}:(M)`)
     const before = sddlOf(target)
     const quote = (value: string): string => `'${value.replaceAll("'", "''")}'`
@@ -446,7 +456,7 @@ function Get-Acl {
   param([string]$LiteralPath)
   if ($LiteralPath -eq ${quote(target)}) {
     $global:targetReads++
-    if ($global:targetReads -eq 4) { throw [System.IO.IOException]::new('verification read unavailable') }
+    if ($global:targetReads ${recoveryReadFails ? '-ge' : '-eq'} 4) { throw [System.IO.IOException]::new('verification read unavailable') }
   }
   Microsoft.PowerShell.Security\\Get-Acl -LiteralPath $LiteralPath
 }
@@ -456,27 +466,35 @@ exit $LASTEXITCODE
     const run = runPowerShell(['-File', wrapper])
     expect(run.code).toBe(2)
     const entries = reports(run)
-    expect(entries).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'action', operation: 'grant_dacl', status: 'completed' }),
-      expect.objectContaining({ kind: 'observation', operation: 'inspect_acl', path: target, status: 'unreadable', details: expect.objectContaining({ error: expect.stringContaining('verification read unavailable') }) }),
-      expect.objectContaining({ kind: 'verification', operation: 'grant', status: 'failed', details: expect.objectContaining({ recovery: expect.stringContaining('-Restore') }) }),
+    expect(entries).toEqual(containingArray([
+      containingObject({ kind: 'action', operation: 'grant_dacl', status: 'completed' }),
+      containingObject({ kind: 'observation', operation: 'inspect_acl', path: target, status: 'unreadable', details: containingObject({ error: containingString('verification read unavailable') }) }),
+      containingObject({ kind: 'verification', operation: 'grant', status: 'failed', details: containingObject({ recovery: containingString('-Restore') }) }),
     ]))
-    expect(sddlOf(target)).not.toBe(before)
-    const rollback = run.output.split(/\r?\n/u).find(line => line.startsWith('ROLLBACK '))!
-    pwsh(rollback.slice('ROLLBACK '.length))
     expect(sddlOf(target)).toBe(before)
+    expect(entries.at(-1)).toMatchObject({ details: {
+      rollback: recoveryReadFails ? 'failed' : 'verified',
+      nextAction: recoveryReadFails ? 'restore_pending_then_stop' : 'stop',
+      rollbackCommands: recoveryReadFails ? [containingString('-Restore')] : [],
+    } })
+    if (recoveryReadFails) {
+      const commands = entries.at(-1)!.details.rollbackCommands as string[]
+      const recovery = runPowerShell(['-Command', commands[0]!])
+      expect(recovery.code, recovery.output).toBe(0)
+      expect(reports(recovery)).toContainEqual(containingObject({ kind: 'verification', operation: 'restore', status: 'verified' }))
+    }
   }, 60_000)
 
   it('reports a missing path and an already-satisfied grant without mutating either', () => {
     const missing = join(scratch, 'missing')
     const run = runScript(['-Path', missing, '-AllowRoot', scratch, '-Out', outDir, '-GrantFullControl'])
     expect(run.code).toBe(2)
-    expect(reports(run)).toContainEqual(expect.objectContaining({ kind: 'decision', path: missing, status: 'skipped', reason: expect.stringContaining('does not exist') }))
+    expect(reports(run)).toContainEqual(containingObject({ kind: 'decision', path: missing, status: 'skipped', reason: containingString('does not exist') }))
     const healthy = makeDir('already-satisfied')
     const before = sddlOf(healthy)
     const grant = runScript(['-Path', healthy, '-AllowRoot', scratch, '-Out', outDir, '-GrantFullControl'])
     expect(grant.code, grant.output).toBe(0)
-    expect(reports(grant)).toContainEqual(expect.objectContaining({ kind: 'decision', operation: 'grant', status: 'skipped', reason: expect.stringContaining('already available') }))
+    expect(reports(grant)).toContainEqual(containingObject({ kind: 'decision', operation: 'grant', status: 'skipped', reason: containingString('already available') }))
     expect(sddlOf(healthy)).toBe(before)
   })
 
@@ -487,11 +505,11 @@ exit $LASTEXITCODE
     const run = runScript(['-Path', target, '-AllowRoot', scratch, '-Out', outDir, '-Fix'])
     expect(run.code, run.output).toBe(0)
     expect(run.output).toContain('VERDICT=NOT_THIS_CLASS')
-    expect(reports(run)).toContainEqual(expect.objectContaining({
+    expect(reports(run)).toContainEqual(containingObject({
       kind: 'observation', operation: 'inspect_acl', path: target,
-      details: expect.objectContaining({ aces: expect.arrayContaining([
-        expect.objectContaining({ sid: 'S-1-15-2-1', type: 'Allow' }),
-        expect.objectContaining({ sid: 'S-1-15-2-2', type: 'Allow' }),
+      details: containingObject({ aces: containingArray([
+        containingObject({ sid: 'S-1-15-2-1', type: 'Allow' }),
+        containingObject({ sid: 'S-1-15-2-2', type: 'Allow' }),
       ]) }),
     }))
     expect(sddlOf(target)).toBe(before)
@@ -511,5 +529,94 @@ exit $LASTEXITCODE
     expect(fix.output, fix.output).toContain('SUMMARY FIXED=1 GRANTED=0 REFUSED=0')
     expect(aclLines(target).join('\n')).not.toContain(PACKAGE_SID)
     expect(ownerOf(target)).toBe(ownerBefore)
+  })
+
+  it('refuses package removal when a deny blocks the prerequisite and restores a failed grant', () => {
+    const target = makeDir('both-with-deny')
+    stamp(target, PACKAGE_SID)
+    icacls(target, '/deny', `*${meSid}:(WO)`)
+    const before = sddlOf(target)
+    try {
+      for (const mode of ['-Fix', '-GrantFullControl', '-Fix']) {
+        const run = runScript(['-Path', target, '-AllowRoot', scratch, '-Out', outDir, mode, '-Compact'])
+        expect(run.code, run.output).toBe(2)
+        expect(reports(run).at(-1)).toMatchObject({ status: 'failed', details: { nextAction: 'stop', rollbackCommands: [] } })
+        expect(sddlOf(target)).toBe(before)
+      }
+    } finally {
+      icacls(target, '/remove:d', `*${meSid}`)
+    }
+  }, 60_000)
+
+  it('removes multiple package allow SIDs before verifying the resulting ACL', () => {
+    const target = makeDir('multiple-packages')
+    const otherSid = 'S-1-15-2-4-3-2-1'
+    for (const sid of [PACKAGE_SID, otherSid]) stamp(target, sid)
+    icacls(target, '/deny', `*${PACKAGE_SID}:(WO)`)
+    const before = normalized(target, aclLines(target))
+    const run = runScript(['-Path', target, '-AllowRoot', scratch, '-Out', outDir, '-Fix'])
+    expect(run.code, run.output).toBe(0)
+    expect(normalized(target, aclLines(target))).toEqual(before.filter(line => line.includes('(DENY)') || (!line.includes(PACKAGE_SID) && !line.includes(otherSid))))
+    expect(reports(run).filter(entry => entry.kind === 'verification' && entry.operation === 'fix')).toHaveLength(1)
+  })
+
+  it('rolls back earlier paths too when a later grant fails in the same invocation', () => {
+    const first = makeDir('multi-grant-first')
+    const second = makeDir('multi-grant-second')
+    icacls(first, '/inheritance:r', '/grant:r', `*${meSid}:(M)`)
+    icacls(second, '/deny', `*${meSid}:(WO)`)
+    const before = [sddlOf(first), sddlOf(second)]
+    try {
+      const run = runPowerShell(['-Command', `& '${script}' -Path @('${first}', '${second}') -AllowRoot '${scratch}' -Out '${outDir}' -GrantFullControl; exit $LASTEXITCODE`])
+      expect(run.code, run.output).toBe(2)
+      expect(reports(run).filter(entry => entry.operation === 'restore' && entry.kind === 'verification').map(entry => entry.path)).toEqual([second, first])
+      expect([sddlOf(first), sddlOf(second)]).toEqual(before)
+    } finally {
+      icacls(second, '/remove:d', `*${meSid}`)
+    }
+  }, 60_000)
+
+  it('keeps all observations in unique reports and all ancestor paths in the compact summary', () => {
+    const parent = makeDir('compact-parent')
+    const target = join(parent, 'child')
+    mkdirSync(target)
+    stamp(parent, PACKAGE_SID)
+    const before = [sddlOf(parent), sddlOf(target)]
+    const reportPaths = new Set<string>()
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const run = runScript(['-Path', target, '-Out', outDir, '-Compact'])
+      expect(run.code, run.output).toBe(0)
+      const compact = reports(run)
+      expect(compact).toHaveLength(1)
+      const summary = compact[0]!
+      expect(summary.details).toMatchObject({
+        inspectedPaths: containingArray([target, parent, dirname(parent)]),
+        findings: containingArray([containingObject({ path: parent, packageAllowSids: [PACKAGE_SID] })]),
+        nextAction: 'review_findings',
+      })
+      const reportPath = summary.details.report as string
+      reportPaths.add(reportPath)
+      const full = readFileSync(reportPath, 'utf8').trim().split(/\r?\n/u).map(line => JSON.parse(line) as ScriptReport)
+      expect(full.filter(entry => entry.operation === 'inspect_acl').map(entry => entry.path)).toEqual(summary.details.inspectedPaths)
+      expect(full.every(entry => entry.reason.length > 0)).toBe(true)
+      expect(full.at(-1)).toMatchObject({ kind: 'summary', status: 'completed' })
+      expect(run.output.length).toBeLessThan(5_120)
+    }
+    expect(reportPaths.size).toBe(2)
+    expect([sddlOf(parent), sddlOf(target)]).toEqual(before)
+  }, 60_000)
+
+  it('reports compact-output setup failures without changing the target or overwriting files', () => {
+    const target = makeDir('compact-failure')
+    const outputFile = join(scratch, 'existing-report-output')
+    writeFileSync(outputFile, 'preserve')
+    const before = sddlOf(target)
+    for (const args of [[], ['-Out', outputFile]]) {
+      const run = runScript(['-Path', target, '-Compact', ...args])
+      expect(run.code, run.output).not.toBe(0)
+      expect(reports(run).at(-1)).toMatchObject({ status: 'failed', details: { nextAction: 'stop' } })
+    }
+    expect(readFileSync(outputFile, 'utf8')).toBe('preserve')
+    expect(sddlOf(target)).toBe(before)
   })
 })
