@@ -6,13 +6,13 @@ Status: implemented
 
 ## Problem
 
-`packages/bundle/web-app/cordis.patch.yml` 曾把 `time-context` 插入其宿主行列表，因此发布版 `web` profile 中每个 Agent 都会在每个符合条件的步骤追加一条持久时钟读数。`minimal` preset 只组合 persona 与 persistent shell：它不声明提醒工具，其中也没有任何行会把该读数变成定时目标，但每个符合条件的步骤仍会追加一条模型能收到的 user 消息。
+`packages/bundle/web-app/cordis.patch.yml` 把 `time-context` 列在其宿主行中，而宿主行服务于 profile 中的每个 preset。`minimal` preset 只组合 persona 与 persistent shell：它不声明提醒工具，其中也没有任何行会把该读数变成定时目标，因此打开该宿主行会在每个符合条件的步骤追加一条 `minimal` 组合中无人消费的 user 消息。
 
 ## Decision
 
-`packages/bundle/web-app/presets/standard.patch.yml`、`ptc.patch.yml` 与 `cordis.patch.yml` 各自在其 Agent 上下文行中声明 `time-context`；`minimal.patch.yml` 不声明，`packages/bundle/web-app/cordis.patch.yml` 也不再携带该行。`packages/bundle/web-app/package.json` 继续声明 `@deepseek-ai/dsh-time-context`，这是 `verify-cordis-config` 对 bundle patch 中裸包名的要求。
+`packages/bundle/web-app/presets/standard.patch.yml`、`ptc.patch.yml` 与 `cordis.patch.yml` 各自在其 Agent 上下文行中声明 `time-context`；`minimal.patch.yml` 不声明。`packages/bundle/web-app/cordis.patch.yml` 让宿主 `time-context` 行与 `schedule`、`ui-schedule` 一起保持禁用，可选 bundle 只打开 `schedule` 与 `ui-schedule`。`packages/bundle/web-app/package.json` 继续声明 `@deepseek-ai/dsh-time-context`，这是 `verify-cordis-config` 对 bundle patch 中裸包名的要求。
 
-这里确立的边界是：携带时间的注入归属于消费它的 preset。由 preset 决定其 Agent 是否收到时钟读数，因此该读数与消费它的提醒工具同行；`schedule` 宿主服务行与 `ui-schedule` 客户端行是与 preset 无关的界面，保留在宿主行清单中。[发布版 Web 组合](2026-09-24-web-default-schedule-composition.zh.md)负责 `web` profile 挂载哪些宿主行与客户端界面；本记录负责该读数的 preset 归属。
+这里确立的边界是：携带时间的注入归属于消费它的 preset。由 preset 决定其 Agent 是否收到时钟读数，因此该读数与消费它的提醒工具同行；`schedule` 宿主服务行与 `ui-schedule` 客户端行是与 preset 无关的界面，保留在宿主行清单中。[按需开启的 Schedule bundle](2026-09-24-schedule-opt-in-optional-bundle.zh.md)负责 `web` profile 挂载哪些宿主行与客户端界面；本记录负责该读数的 preset 归属。
 
 插件本身没有改动：它仍按配置的最小间隔追加采样瞬时、附加到当前开放请求的浏览器时区，以及自前一条模型可见消息以来的经过时长。
 

@@ -21,8 +21,10 @@ import type {
 /** Plugin name registered with the Loader. */
 export const name = 'tool-schedule'
 
-/** Host services this plugin consumes. */
-export const inject = ['tools', 'schedule']
+/** Host services this plugin consumes. The Schedule service is resolved per
+ * scope, so a preset that declares this plugin stays inert while the shipped
+ * composition keeps that service off. */
+export const inject = ['tools']
 
 const SHARED_VIEW_PROPERTIES = {
   id: { type: 'string', required: true },
@@ -417,6 +419,15 @@ const SELECTOR_PARAMETERS = {
  * @param ctx - Context owning the `tools` registry and the Host `schedule` service.
  */
 export function apply(ctx: Context): void {
+  ctx.inject(['schedule'], (scheduleCtx) => { registerScheduleTools(scheduleCtx) })
+}
+
+/**
+ * Register the four reminder tools in the scope that resolved the Schedule
+ * service.
+ * @param ctx - Scope whose `schedule` service the tools act through.
+ */
+function registerScheduleTools(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'schedule_create',
     description: CREATE_DESCRIPTION,

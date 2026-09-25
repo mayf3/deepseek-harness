@@ -47,6 +47,8 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 
 const MODE = webSnapshotMode()
+/** The optional Schedule bundle is the switch these scenarios turn on. */
+const SCHEDULE_BUNDLE = fileURLToPath(new URL('../../../packages/experimental/schedule-bundle/cordis.patch.yml', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/schedule-after', import.meta.url))
 const AFTER_EXPECTED = join(SNAPSHOT_DIR, 'conversation.expected.md')
 const AT_EXPECTED = join(SNAPSHOT_DIR, 'at-conversation.expected.md')
@@ -75,43 +77,35 @@ const WEB_BUNDLE = fileURLToPath(new URL('../../../packages/bundle/web-app/', im
 const WEB_PATCHES = bundlePatchPaths(WEB_BUNDLE, (JSON.parse(readFileSync(join(WEB_BUNDLE, 'package.json'), 'utf8')) as { dsh: { bundle: { patch: string[] } } }).dsh.bundle)
 
 /**
- * Write the overlay that enables the reminder stack for a Schedule scenario.
+ * Write the overlay that makes every step carry a fresh clock reading.
  *
- * The shipped bundle disables the Schedule service and the clock, and the two
- * reminder rows live inside `preset-standard`; a top-level patch reaches only
- * ids in the loaded entry list or a group's children, so it cannot target a
- * plugin a preset declares. The overlay therefore restates the shipped
- * `preset-standard` row beside the Host row enables, keeping the scenario on
- * the shipped composition.
+ * The shipped Web layer disables its own `time-context` row and the `standard`
+ * preset owns the clock, so a static overlay naming the Host row reaches a row
+ * that never mounts. The overlay therefore restates the shipped `preset-standard`
+ * row with its `preset-time-context` plugin configured to re-read on every step;
+ * the scenario still turns the Host Schedule service on through the bundle layer
+ * beside it.
  * @param dir - Directory that receives the overlay file.
  * @returns Absolute path of the written overlay.
  */
-async function writeReminderOverlay(dir: string): Promise<string> {
+async function writeEveryStepOverlay(dir: string): Promise<string> {
   const layers = [
     loadOverlayPatches('Schedule Web every-step overlay', BASE_PATCH),
     ...WEB_PATCHES.map(file => loadOverlayPatches('Schedule Web every-step overlay', file)),
   ]
   const row = composeEntries(layers).find(entry => entry.id === 'preset-standard')
   if (row === undefined) throw new Error('the shipped Web surface declares no preset-standard row')
-  const config = row.config as { plugins: Array<{ id?: string; config?: unknown; disabled?: boolean }> }
-  // A preset plugin cannot be addressed from a top-level patch, so the overlay
-  // restates the shipped `preset-standard` row with the two reminder rows the
-  // stopgap disables turned back on, keeping the scenario on the shipped
-  // composition.
+  const config = row.config as { plugins: Array<{ id?: string; config?: unknown }> }
   const plugins = config.plugins.map(plugin => plugin.id === 'preset-time-context'
-    ? { ...plugin, disabled: false, config: { refreshIntervalMs: 0 } }
-    : plugin.id === 'tool-schedule'
-      ? { ...plugin, disabled: false }
-      : plugin)
+    ? { ...plugin, config: { refreshIntervalMs: 0 } }
+    : plugin)
   const path = join(dir, 'time-context-every-step.patch.yml')
   await writeFile(path, dump([
-    { id: 'time-context', disabled: false, config: { refreshIntervalMs: 0 } },
-    { id: 'schedule', disabled: false },
-    { id: 'ui-schedule', disabled: false },
     { id: 'preset-standard', config: { ...config, plugins } },
   ], { schema: entryListSchema, noRefs: true, lineWidth: -1 }))
   return path
 }
+
 const CATALOG_NOW = Date.parse('2099-08-25T12:00:00.000Z')
 const CATALOG_SESSION_ID = SessionId('schedule-catalog-web-e2e')
 const CATALOG_TITLE = 'Active schedule catalog'
@@ -308,15 +302,16 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
   let everyAssistantReply: SessionEvent<'assistant/message'> | undefined
   let everyRecords: readonly [EveryScheduleRecord, EveryScheduleRecord]
   let tripwire: ReturnType<typeof watchConsole>
-  let overlayRoot: string
+  let overlayRoot: string | undefined
   const afterAdapter = new ReminderAdapter()
   const atAdapter = new BrowserZoneAtAdapter()
   const everyAdapter = new EveryReminderAdapter()
 
   beforeAll(async () => {
-    overlayRoot = await mkdtemp(join(tmpdir(), 'dsh-schedule-every-step-'))
+    const root = await mkdtemp(join(tmpdir(), 'dsh-schedule-every-step-'))
+    overlayRoot = root
     scaffold = await launchWebScaffold({
-      extraOverlayPath: await writeReminderOverlay(overlayRoot),
+      extraOverlayPath: [SCHEDULE_BUNDLE, await writeEveryStepOverlay(root)],
     })
     scaffold.ctx.effect(
       () => scaffold.ctx.llm.registerAdapter([AFTER_PROVIDER], afterAdapter),
@@ -495,7 +490,9 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     await everyHandle?.dispose().catch((error: unknown) => failures.push(error))
     await afterHandle?.dispose().catch((error: unknown) => failures.push(error))
     await scaffold?.close().catch((error: unknown) => failures.push(error))
-    await rm(overlayRoot, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+    if (overlayRoot !== undefined) {
+      await rm(overlayRoot, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+    }
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, 'Schedule Web evidence teardown failed')
   })
@@ -760,13 +757,14 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
-  let overlayRoot: string
+  let overlayRoot: string | undefined
 
   beforeAll(async () => {
     const fixture = await readFile(CATALOG_FIXTURE, 'utf8')
-    overlayRoot = await mkdtemp(join(tmpdir(), 'dsh-schedule-catalog-web-'))
+    const root = await mkdtemp(join(tmpdir(), 'dsh-schedule-catalog-'))
+    overlayRoot = root
     scaffold = await launchWebScaffold({
-      extraOverlayPath: await writeReminderOverlay(overlayRoot),
+      extraOverlayPath: [SCHEDULE_BUNDLE, await writeEveryStepOverlay(root)],
     })
     await seedSession(scaffold, fixture, CATALOG_SESSION_ID, 'standard')
     const records = foldScheduleEvents(fixture.trim().split('\n').slice(1).map(line => JSON.parse(line) as SessionEvent)).active
@@ -807,7 +805,9 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     const failures: unknown[] = []
     await browser?.close().catch((error: unknown) => failures.push(error))
     await scaffold?.close().catch((error: unknown) => failures.push(error))
-    await rm(overlayRoot, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+    if (overlayRoot !== undefined) {
+      await rm(overlayRoot, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+    }
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, 'Schedule catalog teardown failed')
   })
@@ -897,19 +897,20 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
       loadOverlayPatches('Schedule catalog shipped roster', BASE_PATCH),
       ...WEB_PATCHES.map(file => loadOverlayPatches('Schedule catalog shipped roster', file)),
     ])
-    expect(shipped.find(entry => entry.id === 'ui-schedule')).toMatchObject({
-      name: '@deepseek-ai/dsh-client-ui-schedule',
-    })
-    expect(shipped.find(entry => entry.id === 'ui-schedule')?.disabled).toBe(true)
+    // The shipped Web layer declares the three reminder rows off; the optional
+    // Schedule bundle turns on the Host service and the catalog, but never the
+    // clock, which the presets own.
     for (const row of [
       { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
       { id: 'schedule', name: '@deepseek-ai/dsh-schedule' },
+      { id: 'ui-schedule', name: '@deepseek-ai/dsh-client-ui-schedule' },
     ]) {
-      expect(shipped.filter(entry => entry.id === row.id && entry.name === row.name)).toHaveLength(1)
+      const matches = shipped.filter(entry => entry.id === row.id && entry.name === row.name)
+      expect(matches).toHaveLength(1)
+      expect(matches[0]?.disabled).toBe(true)
     }
-    // Each preset that offers reminders declares the clock and the tool package,
-    // disabled with the Host rows while the stopgap is in place; `minimal`
-    // declares neither.
+    // Each preset that offers reminders declares the clock and the tool package
+    // in its own scope and ships them enabled; `minimal` declares neither.
     const presetPlugins = (id: string): Array<{ id?: string; name?: string; disabled?: boolean }> => {
       const row = shipped.find(entry => entry.id === id)
       if (row === undefined) throw new Error(`missing shipped preset row ${id}`)
@@ -922,7 +923,9 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
       expect(plugins.filter(row => row.id === 'tool-schedule'
         && row.name === '@deepseek-ai/dsh-tool-schedule')).toHaveLength(1)
       for (const name of ['@deepseek-ai/dsh-time-context', '@deepseek-ai/dsh-tool-schedule']) {
-        expect(plugins.filter(row => row.name === name && row.disabled === true)).toHaveLength(1)
+        const matches = plugins.filter(row => row.name === name)
+        expect(matches).toHaveLength(1)
+        expect(matches[0]?.disabled).not.toBe(true)
       }
     }
     expect(presetPlugins('preset-minimal').some(row => row.name === '@deepseek-ai/dsh-time-context'
