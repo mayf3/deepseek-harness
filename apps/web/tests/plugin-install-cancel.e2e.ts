@@ -9,7 +9,7 @@ import { expect, it } from 'vitest'
 import { launchWebScaffold, captureStableAria, compareOrRefreshGolden, webSnapshotMode, watchConsole, type WebScaffold } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE } from './support.ts'
 
-it('cancels installation through the UI, restores files, and offers the spec again', async () => {
+it('cancels installation, retries and highlights the enabled plugin at 40% alpha, and recovers unknown results', async () => {
   const scratch = await mkdtemp(join(tmpdir(), 'dsh-install-cancel-'))
   const overlay = join(scratch, 'cordis.patch.yml')
   await writeFile(overlay, `- id: plugin-manager\n  config: ${JSON.stringify({ pnpmCommand: process.execPath })}\n`)
@@ -39,6 +39,7 @@ it('cancels installation through the UI, restores files, and offers the spec aga
       `)
       const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, locale: ZH_BROWSER_LOCALE })
       const tripwire = watchConsole(page)
+      await page.clock.install()
       await page.goto(scaffold.authenticatedUrl)
       await page.waitForSelector('[class*="frame"]')
       if (await page.getByRole('dialog', { name: '设置' }).count() > 0) await page.keyboard.press('Escape')
@@ -135,7 +136,46 @@ it('cancels installation through the UI, restores files, and offers the spec aga
       await dialog.getByRole('button', { name: '查看安装详情', exact: true }).click()
       await dialog.getByText('Retry completed', { exact: true }).waitFor()
       expect(JSON.parse(await readFile(manifestPath, 'utf8'))).toMatchObject({ dependencies: { 'slow-package': '1.0.0' } })
-      await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+      // Freeze the real highlight's expiry timer and CSS first frame independently.
+      await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
+      const pausedHighlight = await page.addStyleTag({ content: '[data-plugin-highlight] { animation-play-state: paused !important; }' })
+      try {
+        await dialog.getByRole('button', { name: '立即启用', exact: true }).click()
+        await dialog.waitFor({ state: 'hidden' })
+        const card = panel.locator('[data-plugin-package="slow-package"][data-plugin-highlight]')
+        await card.waitFor({ state: 'visible' })
+        expect(await panel.locator('[data-plugin-highlight]').count()).toBe(1)
+        expect(await card.getAttribute('data-plugin-status')).toBe('running')
+        const styles = []
+        for (const colorScheme of ['light', 'dark'] as const) {
+          await page.emulateMedia({ colorScheme })
+          await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBe(colorScheme === 'dark' ? '' : null)
+          for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+            await page.emulateMedia({ reducedMotion })
+            const style = await card.evaluate((element) => {
+              const computed = getComputedStyle(element)
+              return { boxShadow: computed.boxShadow, animationName: computed.animationName, animationDuration: computed.animationDuration }
+            })
+            expect(style.boxShadow).toMatch(/(?:\/|,)\s*0\.4\)/)
+            expect(style.boxShadow).toContain('0px 0px 0px 2px')
+            if (reducedMotion === 'reduce') {
+              expect(style.animationName).toBe('none')
+            } else {
+              expect(style.animationName).toContain('dsh-plugin-highlight')
+              expect(style.animationDuration).toBe('2.4s')
+            }
+            styles.push({ colorScheme, reducedMotion, boxShadow: style.boxShadow, animated: style.animationName !== 'none' })
+          }
+        }
+        await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-cancel/highlight.expected.md', import.meta.url)),
+          `${await captureStableAria(page, '[data-plugin-package="slow-package"]', scaffold.workspaceCwd)}\n\n${JSON.stringify(styles, null, 2)}`, webSnapshotMode())
+        await page.clock.runFor(2400)
+        await card.waitFor({ state: 'detached' })
+      } finally {
+        await pausedHighlight.evaluate((element) => { element.parentNode?.removeChild(element) })
+        await page.emulateMedia({ colorScheme: null, reducedMotion: null })
+        await page.clock.resume()
+      }
       await panel.getByRole('button', { name: '添加插件', exact: true }).click()
       await dialog.getByRole('textbox').fill('recovered-package')
       await page.route('**/api/pluginManager/installBundle', async (route) => {

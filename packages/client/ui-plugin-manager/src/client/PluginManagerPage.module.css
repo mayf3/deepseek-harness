@@ -146,7 +146,7 @@
 @keyframes dsh-plugin-highlight {
   0%,
   55% {
-    box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, transparent);
   }
 
   100% {
@@ -157,7 +157,7 @@
 @media (prefers-reduced-motion: reduce) {
   .card[data-plugin-highlight] {
     animation: none;
-    box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, transparent);
   }
 }
 

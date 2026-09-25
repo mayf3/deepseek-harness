@@ -78,7 +78,7 @@ The Turn control follows all its opening inputs, including human steering and no
 | Non-human message in an idle `next-step` claim | Turn-trigger notice only in Step 1, with a loaded Turn start, a claim after that start, no `next-turn` claim in this Turn, and no human in the same `next-step` batch. |
 | Other non-human input | Ordinary Context, retained in the Node Store but omitted from Chat. Unclaimed, canceled, or requeued messages do not establish a waking claim. |
 
-Trigger titles and icons use the recorded `source.kind`: `schedule`, `tool-jobs`, and `cordis-host-runner` identify scheduled work, background work, and plugin updates. Goal, agent, team, subagent, and webhook sources have their own titles; a webhook with `provider: github` uses the GitHub title. Unknown sources use the generic execution-request title. Expanding the notice shows its recorded body; it does not imply successful execution.
+Trigger titles and icons use the recorded `source.kind`: `schedule`, `tool-jobs`, and `cordis-host-runner` identify scheduled work, background work, and plugin updates. Schedule notices use the same plain clock icon as the Automation tasks entry. Goal, agent, team, subagent, and webhook sources have their own titles; a webhook with `provider: github` uses the GitHub title. Unknown sources use the generic execution-request title. Expanding the notice shows its recorded body; it does not imply successful execution.
 
 | Turn condition | Current behavior |
 |---|---|

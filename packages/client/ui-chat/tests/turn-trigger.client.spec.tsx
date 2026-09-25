@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { IconClockOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNode } from '../src/client/contract/chat-nodes.ts'
 import { TurnTriggerNodeView } from '../src/client/chat/TurnTriggerNodeView.tsx'
 import { turnTriggerDetails } from '../src/client/chat/turn-trigger.ts'
@@ -43,6 +44,15 @@ describe('Turn trigger notices', () => {
     expect(view.getByRole('button').textContent).toContain(title)
     expect(view.getByRole('button').querySelector('svg')).not.toBeNull()
     expect(view.container.querySelector('time')?.dateTime).toBe('2023-11-14T22:13:20.000Z')
+  })
+
+  it('uses the same plain clock as the automation tasks entry', () => {
+    const node = trigger({ kind: 'schedule' })
+    const view = render(<TurnTriggerNodeView node={node} t={makeTranslate(en)} />)
+    const reference = render(<IconClockOutlineRegular size={14} />)
+    expect(view.getByRole('button').querySelector('svg')?.outerHTML)
+      .toBe(reference.container.querySelector('svg')?.outerHTML)
+    expect(node.data.source).toEqual({ kind: 'schedule' })
   })
 
   it('opens the recorded notice body and closes it independently of the Turn', () => {
