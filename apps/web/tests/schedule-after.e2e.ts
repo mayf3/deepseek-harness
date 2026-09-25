@@ -44,6 +44,9 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 
 const MODE = webSnapshotMode()
+/** The optional Schedule bundle is the switch these scenarios turn on. */
+const SCHEDULE_BUNDLE = fileURLToPath(new URL('../../../packages/experimental/schedule-bundle/cordis.patch.yml', import.meta.url))
+const TIME_CONTEXT_EVERY_STEP = fileURLToPath(new URL('./fixtures/time-context-every-step.patch.yml', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/schedule-after', import.meta.url))
 const AFTER_EXPECTED = join(SNAPSHOT_DIR, 'conversation.expected.md')
 const AT_EXPECTED = join(SNAPSHOT_DIR, 'at-conversation.expected.md')
@@ -272,7 +275,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
-      extraOverlayPath: fileURLToPath(new URL('./fixtures/time-context-every-step.patch.yml', import.meta.url)),
+      extraOverlayPath: [SCHEDULE_BUNDLE, TIME_CONTEXT_EVERY_STEP],
     })
     scaffold.ctx.effect(
       () => scaffold.ctx.llm.registerAdapter([AFTER_PROVIDER], afterAdapter),
@@ -710,7 +713,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
   beforeAll(async () => {
     const fixture = await readFile(CATALOG_FIXTURE, 'utf8')
     scaffold = await launchWebScaffold({
-      extraOverlayPath: fileURLToPath(new URL('./fixtures/time-context-every-step.patch.yml', import.meta.url)),
+      extraOverlayPath: [SCHEDULE_BUNDLE, TIME_CONTEXT_EVERY_STEP],
     })
     await seedSession(scaffold, fixture, CATALOG_SESSION_ID, 'standard')
     const records = foldScheduleEvents(fixture.trim().split('\n').slice(1).map(line => JSON.parse(line) as SessionEvent)).active
