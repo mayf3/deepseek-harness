@@ -135,7 +135,8 @@ function explorerTarget(windowsPath: string): string {
  */
 async function runExplorer(args: readonly string[], signal: AbortSignal, run: PathOpenerRunner): Promise<void> {
   try {
-    await run('explorer.exe', args, signal)
+    // SW_HIDE also hides Explorer's folder window, not just console windows.
+    await run('explorer.exe', args, signal, { windowsHide: false })
   } catch (error: unknown) {
     signal.throwIfAborted()
     // Explorer can exit 1 after delegating to the existing desktop process.

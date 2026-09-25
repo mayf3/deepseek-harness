@@ -37,7 +37,7 @@ declare const signal: AbortSignal
 const { stdout, stderr } = await runNativeCommand('osascript', ['-e', script], signal)
 ```
 
-On exit 0 the call resolves with captured stdout and stderr. On any failure it rejects with the exit `code` and both captured streams attached, so a caller can tell a missing tool (`ENOENT`), a cancellation (`ABORT_ERR`), and a real command failure apart without re-running the command.
+On exit 0 the call resolves with captured stdout and stderr. On any failure it rejects with the exit `code` and both captured streams attached, so a caller can tell a missing tool (`ENOENT`), a cancellation (`ABORT_ERR`), and a real command failure apart without re-running the command. The optional fourth argument controls Windows startup visibility: GUI launchers pass `{ windowsHide: false }`; other commands hide their windows by default. The path opener passes this override for Explorer, including WSL handoffs and file selection, because hiding Explorer also hides its folder window.
 
 ### Injecting the command boundary
 

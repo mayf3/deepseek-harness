@@ -37,7 +37,7 @@ declare const signal: AbortSignal
 const { stdout, stderr } = await runNativeCommand('osascript', ['-e', script], signal)
 ```
 
-退出码为 0 时，调用解析为捕获到的 stdout 与 stderr。任何失败都会以错误拒绝，错误附带退出 `code` 与两路已捕获输出，因此调用方无需重跑命令即可区分工具缺失（`ENOENT`）、取消（`ABORT_ERR`）与真实的命令失败。
+退出码为 0 时，调用解析为捕获到的 stdout 与 stderr。任何失败都会以错误拒绝，错误附带退出 `code` 与两路已捕获输出，因此调用方无需重跑命令即可区分工具缺失（`ENOENT`）、取消（`ABORT_ERR`）与真实的命令失败。可选的第四个参数控制 Windows 启动时的窗口可见性：GUI 启动程序传入 `{ windowsHide: false }`，其他命令默认隐藏窗口。路径打开器为 Explorer 传入此覆盖项，包括 WSL 转交和文件选中操作，因为隐藏 Explorer 也会隐藏它的文件夹窗口。
 
 ### 注入命令边界
 
