@@ -15,7 +15,7 @@ export const TRANSCRIPT_VIEW_MODES = ['compact', 'standard', 'detailed', 'verbos
 export type TranscriptViewMode = typeof TRANSCRIPT_VIEW_MODES[number]
 
 /**
- * Saved value from the two-mode generation of this setting. Read as `standard`;
+ * Saved value from the two-mode generation of this setting. Read as `detailed`;
  * never offered as a choice and never written back.
  */
 export const LEGACY_TRANSCRIPT_VIEW_MODE = 'normal'

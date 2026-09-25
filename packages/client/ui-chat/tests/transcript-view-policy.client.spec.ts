@@ -26,22 +26,27 @@ describe('TranscriptViewPolicy', () => {
     expect(host.set).toHaveBeenCalledWith('transcriptView', 'detailed')
   })
 
-  it('adopts Host state, reads normal as Standard, and ignores identical writes', () => {
+  it.each(['normal', 'expanded'] as const)('reads a later Host %s setting as Detailed without writing it back', (mode) => {
     const host = stubConfigForm<ChatSettings>()
     const policy = new TranscriptViewPolicy(host.scope)
 
-    host.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'normal', performanceUsage: 'detailed' }, revision: 1, writable: true })
-    expect(policy.mode.getSnapshot()).toBe('standard')
-    policy.setMode('standard')
+    host.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: mode, performanceUsage: 'detailed' }, revision: 1, writable: true })
+    expect(policy.mode.getSnapshot()).toBe('detailed')
     expect(host.set).not.toHaveBeenCalled()
+    policy.setMode('detailed')
+    expect(host.set).not.toHaveBeenCalled()
+
+    policy.setMode('standard')
+    expect(policy.mode.getSnapshot()).toBe('standard')
+    expect(host.set).toHaveBeenCalledExactlyOnceWith('transcriptView', 'standard')
 
     host.publish({ value: { linkOpening: 'sidebar', transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 2 })
     expect(policy.mode.getSnapshot()).toBe('compact')
   })
 
-  it('adopts an accepted section standing at construction', () => {
+  it.each(['normal', 'expanded'] as const)('reads an initial Host %s setting as Detailed without writing it back', (mode) => {
     const host = stubConfigForm<ChatSettings>()
-    host.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'expanded', performanceUsage: 'detailed' }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: mode, performanceUsage: 'detailed' }, revision: 1, writable: true })
     expect(new TranscriptViewPolicy(host.scope).mode.getSnapshot()).toBe('detailed')
     expect(host.set).not.toHaveBeenCalled()
   })

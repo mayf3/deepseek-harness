@@ -108,7 +108,7 @@ description: "Chat 过程分组与活动摘要的明细业务规则。"
 <a id="display-modes"></a>
 ## 展示模式
 
-设置 → 通用设置 → 工作步骤展示提供 `compact`、`standard`（默认）、`detailed` 和 `verbose`，说明为「选择希望看到多少工具调用细节」。旧值 `normal` 读取为 `standard`，`expanded` 读取为 `detailed`，不自动回写；已有 `detailed` 保持不变。未配置、无效值以及 Host 设置到达前均使用 `standard`；其他设置的无效值仍会校验失败。
+设置 → 通用设置 → 工作步骤展示提供 `compact`、`standard`（默认）、`detailed` 和 `verbose`，说明为「选择希望看到多少工具调用细节」。旧值 `normal` 和 `expanded` 均读取为 `detailed`，不自动回写；已有 `detailed` 保持不变。未配置、无效值以及 Host 设置到达前均使用 `standard`；其他设置的无效值仍会校验失败。
 
 | 行为 | 简洁 | 标准 | 详细 | 完全展开 |
 |---|---|---|---|---|
