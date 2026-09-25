@@ -27,13 +27,13 @@ describe('native path opener', () => {
   it('opens with macOS open(1)', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
     await openNativePath('/Users/test/file.txt', signal(), { platform: 'darwin', run })
-    expect(run).toHaveBeenCalledWith('open', ['/Users/test/file.txt'], expect.any(AbortSignal))
+    expect(run).toHaveBeenCalledWith('open', ['/Users/test/file.txt'], expect.any(AbortSignal), 'hidden')
   })
 
   it('bypasses macOS file associations for text documents', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
     await openNativeTextFile('/Users/test/settings.yaml', signal(), { platform: 'darwin', run })
-    expect(run).toHaveBeenCalledWith('open', ['-t', '/Users/test/settings.yaml'], expect.any(AbortSignal))
+    expect(run).toHaveBeenCalledWith('open', ['-t', '/Users/test/settings.yaml'], expect.any(AbortSignal), 'hidden')
   })
 
   it('uses the Linux desktop association for text documents', async () => {
@@ -41,7 +41,7 @@ describe('native path opener', () => {
     await openNativeTextFile('/tmp/settings.yaml', signal(), {
       platform: 'linux', osRelease: '6.8.0-generic', env: {}, run,
     })
-    expect(run).toHaveBeenCalledWith('xdg-open', ['/tmp/settings.yaml'], expect.any(AbortSignal))
+    expect(run).toHaveBeenCalledWith('xdg-open', ['/tmp/settings.yaml'], expect.any(AbortSignal), 'hidden')
   })
 
   it.each([
@@ -57,8 +57,8 @@ describe('native path opener', () => {
       platform: 'linux', osRelease, env, run,
     })
     expect(run.mock.calls).toEqual([
-      ['wslpath', ['-w', '/home/test user/settings.yaml'], requestSignal],
-      ['explorer.exe', ['file://wsl.localhost/Ubuntu/home/test%20user/settings.yaml'], requestSignal, { windowsHide: false }],
+      ['wslpath', ['-w', '/home/test user/settings.yaml'], requestSignal, 'hidden'],
+      ['explorer.exe', ['file://wsl.localhost/Ubuntu/home/test%20user/settings.yaml'], requestSignal, 'visible'],
     ])
   })
 
@@ -109,7 +109,7 @@ describe('native path opener', () => {
   ] as const)('opens %s through the one encoded Explorer target', async (path, target) => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
     await openNativePath(path, signal(), { platform: 'win32', run })
-    expect(run).toHaveBeenCalledExactlyOnceWith('explorer.exe', [target], expect.any(AbortSignal), { windowsHide: false })
+    expect(run).toHaveBeenCalledExactlyOnceWith('explorer.exe', [target], expect.any(AbortSignal), 'visible')
   })
 
   // Node restores a trailing separator against the host's `path.sep`, so a
@@ -122,7 +122,7 @@ describe('native path opener', () => {
       'explorer.exe',
       [process.platform === 'win32' ? 'file:///C:/' : 'file:///C://'],
       expect.any(AbortSignal),
-      { windowsHide: false },
+      'visible',
     )
   })
 
@@ -133,7 +133,7 @@ describe('native path opener', () => {
       'explorer.exe',
       ['file:///C:/work/dir%2Ccomma'],
       expect.any(AbortSignal),
-      { windowsHide: false },
+      'visible',
     )
   })
 
@@ -144,7 +144,7 @@ describe('native path opener', () => {
       'explorer.exe',
       ['file:///C:/work/settings.yaml'],
       expect.any(AbortSignal),
-      { windowsHide: false },
+      'visible',
     )
   })
 
@@ -154,7 +154,7 @@ describe('native path opener', () => {
       platform: 'linux', osRelease: '6.8.0-generic',
       env: { WSL_DISTRO_NAME: '', WSL_INTEROP: '' }, run,
     })
-    expect(run).toHaveBeenCalledWith('xdg-open', ['/tmp/a.txt'], expect.any(AbortSignal))
+    expect(run).toHaveBeenCalledWith('xdg-open', ['/tmp/a.txt'], expect.any(AbortSignal), 'hidden')
   })
 
   it('rejects unsupported platforms', async () => {
@@ -386,7 +386,7 @@ describe('native file manager', () => {
     expect(nativeFileManager(internals)).toBe(manager)
     await revealNativePath(path, signal(), internals)
     expect(run).toHaveBeenCalledExactlyOnceWith(command, args, expect.any(AbortSignal),
-      ...platform === 'win32' ? [{ windowsHide: false }] : [])
+      platform === 'win32' ? 'visible' : 'hidden')
   })
 
   it('selects a translated WSL path in Explorer and never starts a Linux file manager', async () => {
@@ -477,7 +477,7 @@ it.each([
 ])('preserves special characters in the Explorer target %s', async (path, target) => {
   const run = vi.fn<PathOpenerRunner>().mockResolvedValue({ stdout: '', stderr: '' })
   await revealNativePath(path, signal(), { platform: 'win32', run })
-  expect(run).toHaveBeenCalledWith('explorer.exe', ['/select,', target], expect.any(AbortSignal), { windowsHide: false })
+  expect(run).toHaveBeenCalledWith('explorer.exe', ['/select,', target], expect.any(AbortSignal), 'visible')
 })
 
 
@@ -489,6 +489,6 @@ it.each(['.html', '.svg'])('uses the file association for %s despite a configure
     await openNativeAssociatedPath(path, lifetime, {
       platform, osRelease: '6.8.0-generic', env: { BROWSER: 'custom-browser' }, run,
     })
-    expect(run.mock.calls).toEqual([[platform === 'darwin' ? 'open' : 'xdg-open', [path], lifetime]])
+    expect(run.mock.calls).toEqual([[platform === 'darwin' ? 'open' : 'xdg-open', [path], lifetime, 'hidden']])
   }
 })
