@@ -13,7 +13,7 @@ import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { pluginEntryId, readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import {
   readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries,
-  reconcileProfilePatches, readProfilePatches, OPTIONAL_BUNDLES, bundlePatchPaths,
+  reconcileProfilePatches, readProfilePatches, OPTIONAL_BUNDLES, bundlePatchPaths, bundleRowSwitches,
   evaluatePluginCompatibility, readProfileCompatibility, readProfileVersionExemptions,
   setProfileVersionExemption, PROFILE_COMPATIBILITY_FILENAME,
 } from '@deepseek-ai/dsh-app-boot'
@@ -121,6 +121,11 @@ function stringField(manifest: object, field: string): string | undefined {
 /** The fields of the dsh installation's own manifest the manager reads. */
 interface InstallationManifest {
   dependencies?: Record<string, string>
+}
+
+/** The bundle layers a profile manifest selects, in order. */
+function selectedBundles(manifest: ProfileManifest): string[] {
+  return manifest.dsh?.profile?.bundles ?? []
 }
 
 /** What a package manifest says about the package: identity, one-liner, and whether it is a bundle. */
@@ -255,6 +260,7 @@ export class PluginManager extends TypertRemoteService {
   @Remote
   async listPlugins(): Promise<PluginInfo[]> {
     const rows = flatten(composeEntries([readProfilePatches('dsh', this.profile)]))
+    const grouped = this.groupedRows()
     const snapshot = await readPluginInventory(this.ctx)
     return snapshot.entries.map((entry) => {
       const actual = [...this.ctx.loader.entries()].find(row => row.id === entry.entryId)
@@ -267,6 +273,7 @@ export class PluginManager extends TypertRemoteService {
         || actual?.parent.tree.ctx.fiber.entry?.id !== 'include') {
         return { ...entry, readOnlyReason: 'unaddressable' as const }
       }
+      if (grouped.has(candidate.id)) return { ...entry, readOnlyReason: 'bundle-switch' as const }
       return { ...entry, patchId: candidate.id }
     })
   }
@@ -280,7 +287,7 @@ export class PluginManager extends TypertRemoteService {
   listBundles(): Promise<BundleInfo[]> {
     const manifest = readProfileManifest('dsh', this.profile.dir)
     const exemptions = readProfileVersionExemptions(this.profile.dir)
-    const selected = manifest.dsh?.profile?.bundles ?? []
+    const selected = selectedBundles(manifest)
     const dependencies = Object.keys(manifest.dependencies ?? {})
     const installation = JSON.parse(readFileSync(this.profile.installAnchor, 'utf8')) as InstallationManifest
     const names = [...new Set([...selected, ...dependencies, ...Object.keys(installation.dependencies ?? {})])]
@@ -295,8 +302,7 @@ export class PluginManager extends TypertRemoteService {
         const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
         if (info === undefined) {
           if (enabled) bundles.push({ name, enabled, installed, optional, removable: removable && readOnlyReason === undefined,
-            ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: { code: 'not-bundle' },
-            rows: [], rowSwitches: true, overrides: [] })
+            ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: { code: 'not-bundle' }, rows: [], overrides: [] })
           continue
         }
         const compatibility = evaluatePluginCompatibility(info, exemptions)
@@ -312,8 +318,7 @@ export class PluginManager extends TypertRemoteService {
       } catch (error) {
         if (enabled || installed) {
           bundles.push({ name, enabled, installed, optional, removable: removable && readOnlyReason === undefined,
-            ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: managementError(error),
-            rows: [], rowSwitches: true, overrides: [] })
+            ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: managementError(error), rows: [], overrides: [] })
         }
       }
     }
@@ -352,7 +357,7 @@ export class PluginManager extends TypertRemoteService {
     const manifest = readProfileManifest('dsh', this.profile.dir)
     const installation = JSON.parse(readFileSync(this.profile.installAnchor, 'utf8')) as InstallationManifest
     const known = new Set([
-      ...manifest.dsh?.profile?.bundles ?? [], ...Object.keys(manifest.dependencies ?? {}), ...Object.keys(installation.dependencies ?? {}),
+      ...selectedBundles(manifest), ...Object.keys(manifest.dependencies ?? {}), ...Object.keys(installation.dependencies ?? {}),
     ])
     const plan = registryPlan(options?.registry, await this.registries())
     const registry = plan[0] as Registry
@@ -627,11 +632,13 @@ export class PluginManager extends TypertRemoteService {
     }, { stage: 'remove', target: name }, 'remove')
   }
 
-  /** The rows a bundle's patch inserts, whether each gets a switch, and the existing rows it changes; an unreadable patch throws. */
-  private declaredRows(name: string, info: ProfileManifest): Pick<BundleInfo, 'rows' | 'rowSwitches' | 'overrides'> {
+  /** The rows a bundle's patch inserts and the existing rows it changes; an unreadable patch or an invalid `rowSwitches` throws. */
+  private declaredRows(name: string, info: ProfileManifest): Pick<BundleInfo, 'rows' | 'overrides'> {
     const bundle = info.dsh?.bundle
     /* v8 ignore next -- bundleManifest answers only manifests that declare a patch */
-    if (bundle === undefined) return { rows: [], rowSwitches: true, overrides: [] }
+    if (bundle === undefined) return { rows: [], overrides: [] }
+    // listBundles reports an invalid `rowSwitches` on the bundle; listPlugins then leaves its rows switchable.
+    bundleRowSwitches(bundle)
     const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
     const patches: PatchOptions[] = bundlePatchPaths(dir, bundle).flatMap(file => loadOverlayPatches('dsh', file))
     // One entry per row id: the Loader keeps a single entry for an id, whichever layer declared it last.
@@ -656,7 +663,7 @@ export class PluginManager extends TypertRemoteService {
     const declared = new Set(rows.map(row => row.rowId))
     const overrides = [...new Set(patches.flatMap(item =>
       item.insert === undefined && typeof item.id === 'string' && !declared.has(item.id) ? [item.id] : []))]
-    return { rows, rowSwitches: bundle.rowSwitches !== false, overrides }
+    return { rows, overrides }
   }
 
   /** Run one pnpm command in the profile, streaming its output as install-log chunks. */
@@ -716,7 +723,7 @@ export class PluginManager extends TypertRemoteService {
 
   private async selectBundle(name: string, enabled: boolean): Promise<void> {
     const manifest = readProfileManifest('dsh', this.profile.dir)
-    const previous = manifest.dsh?.profile?.bundles ?? []
+    const previous = selectedBundles(manifest)
     if (enabled || !previous.includes(name)) {
       const metadata = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
       if (metadata === undefined) throw new ManagementFailure('not-bundle')
@@ -741,6 +748,26 @@ export class PluginManager extends TypertRemoteService {
     if (info?.dsh?.bundle === undefined) return []
     const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
     return flatten(composeEntries([bundlePatchPaths(dir, info.dsh.bundle).flatMap(file => loadOverlayPatches('dsh', file))]))
+  }
+
+  /** Row ids the selected bundles insert under `dsh.bundle.rowSwitches: false`; an unreadable bundle contributes none. */
+  private groupedRows(): Set<string> {
+    const grouped = new Set<string>()
+    for (const name of selectedBundles(readProfileManifest('dsh', this.profile.dir))) {
+      let rows: EntryOptions[]
+      try { rows = this.rowsSwitchedAsWhole(name) } catch (_error) {
+        // listBundles reports an unreadable bundle or an invalid `rowSwitches`; its rows stay switchable here.
+        continue
+      }
+      for (const row of rows) grouped.add(row.id)
+    }
+    return grouped
+  }
+
+  /** The rows a bundle inserts when its manifest sets `dsh.bundle.rowSwitches: false`, and none otherwise. */
+  private rowsSwitchedAsWhole(name: string): EntryOptions[] {
+    const bundle = bundleManifest(name, this.profile.dir, this.profile.installAnchor)?.dsh?.bundle
+    return bundle === undefined || bundleRowSwitches(bundle) ? [] : this.bundleRows(name)
   }
 
   private protectsManager(name: string): boolean {

@@ -64,6 +64,19 @@ export function bundlePatchFiles(bundle: DshBundleManifest): string[] {
 }
 
 /**
+ * Whether the plugin manager may switch the rows a bundle inserts one by one.
+ * @param bundle - the bundle's `dsh.bundle` declaration, as read from package.json.
+ * @returns the declared `rowSwitches`, or true when the bundle omits it.
+ * @throws {Error} when `rowSwitches` is present and not a boolean.
+ */
+export function bundleRowSwitches(bundle: DshBundleManifest): boolean {
+  const declared: unknown = bundle.rowSwitches
+  if (declared === undefined) return true
+  if (typeof declared !== 'boolean') throw new Error('dsh.bundle.rowSwitches must be a boolean')
+  return declared
+}
+
+/**
  * Resolve a bundle declaration to its ordered absolute patch files.
  * @param packageDir - absolute directory of the bundle package.
  * @param bundle - the bundle's `dsh.bundle` declaration, as read from package.json.

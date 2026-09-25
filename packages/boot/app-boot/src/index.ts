@@ -59,6 +59,7 @@ export {
   DEFAULT_PROFILE_BUNDLES,
   OPTIONAL_BUNDLES,
   bundlePatchFiles,
+  bundleRowSwitches,
   bundlePatchPaths,
   initProfile,
   removeLinkProjections,

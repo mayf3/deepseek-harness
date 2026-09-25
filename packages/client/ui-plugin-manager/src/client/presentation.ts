@@ -48,6 +48,7 @@ function registryHost(registry: string): string {
 const CODE_KEYS = {
   'management-required': 'reasonManagementRequired',
   'unaddressable': 'reasonUnaddressable',
+  'bundle-switch': 'reasonBundleSwitch',
   'unknown-plugin': 'reasonUnknownPlugin',
   'invalid-spec': 'reasonInvalidSpec',
   'ambiguous-install': 'reasonAmbiguousInstall',

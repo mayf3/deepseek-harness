@@ -35,7 +35,6 @@ function pkg(overrides: Partial<PackageView> = {}): PackageView {
     optional: false,
     enabled: true,
     rows: [],
-    rowSwitches: true,
     ...overrides,
   }
 }
@@ -506,17 +505,19 @@ describe('PluginManagerPage', () => {
     expect(screen.getByRole('form', { name: 'theme settings' })).toBeTruthy()
   })
 
-  it('lists the rows of a bundle that declares its rows work only together with their state and no switches', () => {
-    const clock = row({ rowId: 'clock', entryId: 'include:clock' as PluginEntryId, moduleName: '@acme/dsh-clock', meta: { title: { en: 'Time awareness' } } })
-    renderTab({ packages: [pkg({ rows: [row(), clock], rowSwitches: false })] })
+  it('lists a row that switches only with its bundle with its state and no switch', () => {
+    const clock = row({
+      rowId: 'clock', entryId: 'include:clock' as PluginEntryId, moduleName: '@acme/dsh-clock', readOnlyReason: 'bundle-switch',
+      meta: { title: { en: 'Time awareness' } },
+    })
+    renderTab({ packages: [pkg({ rows: [row(), clock] })] })
     fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
     const listed = document.querySelector('[data-plugin-row="include:clock"]') as HTMLElement
     expect(within(listed).getByText('Time awareness')).toBeTruthy()
     expect(within(listed).getByText(en.rowPhaseActive)).toBeTruthy()
-    expect(document.querySelectorAll('[data-plugin-row]')).toHaveLength(2)
-    // The bundle's own switch stays; its rows have none.
-    expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-better-sidebar') })).toBeTruthy()
-    expect(within(document.querySelector('[data-plugin-rows]') as HTMLElement).queryByRole('switch')).toBeNull()
+    expect(within(listed).queryByRole('switch')).toBeNull()
+    // A row the bundle lets the person switch keeps its switch.
+    expect(screen.getByRole('switch', { name: en.partToggle.replace('{name}', 'dsh-better-sidebar') })).toBeTruthy()
   })
 
   it('shows a row id only once when it is the localized title in lists and configuration pages', () => {
@@ -732,7 +733,7 @@ describe('PluginManagerPage', () => {
     })
 
     it('leaves the version out of a bundle the Host reports none for', () => {
-      const unversioned: PackageView = { name: 'dsh-better-sidebar', installed: true, optional: false, enabled: true, rows: [], rowSwitches: true }
+      const unversioned: PackageView = { name: 'dsh-better-sidebar', installed: true, optional: false, enabled: true, rows: [] }
       renderTab({ packages: [unversioned] }, {}, bodies)
       fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
       expect(subjects.at(-1)).toEqual({ kind: 'bundle', pkg: { name: 'dsh-better-sidebar', installed: true, enabled: true, rows: [] } })
