@@ -1,5 +1,5 @@
 ---
-description: "从插件管理页启用出厂的定时服务、提醒目录与自动化任务页面。"
+description: "从插件管理页加入定时服务、提醒目录与自动化任务页面。"
 kind: "package-bundle"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概述
 
-此可选 Bundle 打开 `@deepseek-ai/dsh-web-app` 以 `disabled: true` 插入的三个定时条目：`time-context`、`schedule` 与 `ui-schedule`。它的补丁不追加条目，也不声明插件依赖，因此启用它不会重复挂载同一个 Host 服务。随包配置默认禁用。
+此可选 Bundle 插入随发行版交付的 Web 组合所不含的三个定时条目：`time-context`、`schedule` 与 `ui-schedule`。它的清单设置 `dsh.bundle.rowSwitches: false`，因此插件管理页列出这三个条目及其状态，只提供 Bundle 自身的开关。随包配置默认禁用。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-bundle"
 <a id="use-this-package"></a>
 ## 使用此包
 
-打开 Web 侧栏的插件管理页并启用带闹钟图标的“自动化任务”。此后，活跃的根智能体获得 `schedule_create`、`schedule_list`、`schedule_update` 与 `schedule_delete`，会话头部显示提醒目录，侧栏出现“自动化任务”入口，每个符合条件的步骤追加一条时钟读数，包含当前时间、打开请求所带的浏览器时区，以及距上一条模型可见消息的经过时间。禁用此 Bundle 会恢复随包组合；已存储的任务保留在磁盘上。
+打开 Web 侧栏的插件管理页并启用带闹钟图标的“自动化任务”。此后，活跃的根智能体获得 `schedule_create`、`schedule_list`、`schedule_update` 与 `schedule_delete`，会话头部显示提醒目录，侧栏出现“自动化任务”入口，每个符合条件的步骤追加一条时钟读数，包含当前时间、打开请求所带的浏览器时区，以及距上一条模型可见消息的经过时间。此 Bundle 的页面列出时间感知、任务调度与任务界面及其状态；它们只随 Bundle 一起开关。禁用此 Bundle 会恢复随包组合；已存储的任务保留在磁盘上。
 
 -----
 
@@ -35,11 +35,12 @@ kind: "package-bundle"
 <details>
 <summary>维护者信息 — 点击展开</summary>
 
-`cordis.patch.yml` 包含三个按 id 定位的补丁，各自把 Web Bundle 已插入条目的 `disabled` 设为 `false`。`packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 列出此包，`apps/cli` 依赖它，因此每次安装都随包携带且默认禁用，插件管理页在 Official 分组中提供它。选中后会把该 Bundle 追加到 profile 的 `dsh.profile.bundles` 列表，profile 启动器在 Web 层之后应用各 Bundle 层。此纯配置包不拥有可变的运行时状态，因此不发布不变量伴随模块。
+`cordis.patch.yml` 插入这三个条目，`package.json` 依赖它们的包，使每个条目都从此 Bundle 解析。`dsh.bundle.rowSwitches: false` 让插件管理页不为单个条目提供开关，因为这些 Host 条目与客户端条目只能一起工作。`packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 列出此包，`apps/cli` 依赖它，因此每次安装都随包携带且默认禁用，插件管理页在 Official 分组中提供它。选中后会把该 Bundle 追加到 profile 的 `dsh.profile.bundles` 列表，profile 启动器在 Web 层之后应用各 Bundle 层。此纯配置包不拥有可变的运行时状态，因此不发布不变量伴随模块。
 
 | 文件 | 作用 |
 |---|---|
-| [`cordis.patch.yml`](cordis.patch.yml) | 针对出厂 Web 条目的三个 `disabled: false` 补丁 |
+| [`cordis.patch.yml`](cordis.patch.yml) | 插入 `time-context`、`schedule` 与 `ui-schedule` 三个条目 |
+| [`package.json`](package.json) | 以依赖声明这些条目的包，并设置 `dsh.bundle.rowSwitches: false` |
 | [`locale/en.json`](locale/en.json)、[`locale/zh.json`](locale/zh.json) | 插件管理页的标题与描述 |
 | [`icon.svg`](icon.svg) | 插件管理页图标 |
 | [`src/index.ts`](src/index.ts) | 空的模块入口；补丁即运行时内容 |
@@ -53,7 +54,7 @@ kind: "package-bundle"
 
 - [定时子系统](../../../docs/subsystems/schedule.zh.md) — 持久任务、发生时刻解析与投递。
 - [定时服务](../../schedule/schedule/README.zh.md) — Host 任务存储、激活与记录格式。
-- [Web Bundle](../../bundle/web-app/README.zh.md) — 携带这些条目的组合。
+- [Web Bundle](../../bundle/web-app/README.zh.md) — 此 Bundle 向其加入这些条目的组合。
 
 -----
 
@@ -78,8 +79,7 @@ kind: "package-bundle"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 此开关针对 `@deepseek-ai/dsh-web-app` 插入的条目。没有该 Bundle 的 profile 不含这些条目，此 Bundle 在那里不产生变化。
-- 选中此 Bundle 会给每个活跃根智能体增加四个定时工具的 schema，并为每个符合条件的步骤增加一条时钟读数。即使对话从不创建提醒，也会承担这两项开销。
+- 自行插入了其中任一条目的 profile 在选中此 Bundle 后会把该插件挂载两次，因为 profile 补丁追加插入的条目时不按 id 合并。
 
 -----
 

@@ -1,4 +1,4 @@
-/** The experimental Schedule switch must flip exactly the three rows the Web bundle inserts. */
+/** The experimental Schedule bundle inserts the three Schedule rows the shipped Web composition leaves out. */
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -16,14 +16,7 @@ interface Manifest {
   publishConfig?: { access?: string }
   exports?: Record<string, unknown>
   dependencies?: Record<string, string>
-  dsh?: { bundle?: { patch?: string } }
-}
-
-interface Patch {
-  id?: string
-  name?: string
-  disabled?: boolean
-  insert?: unknown[]
+  dsh?: { bundle?: { patch?: string; rowSwitches?: boolean } }
 }
 
 describe('experimental Schedule bundle', () => {
@@ -37,20 +30,20 @@ describe('experimental Schedule bundle', () => {
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.exports?.['./locale/*.json']).toBe('./locale/*.json')
     expect(manifest.exports?.['./cordis.patch.yml']).toBe('./cordis.patch.yml')
-    // The patch only overrides rows another layer inserts, so it depends on no plugin package.
-    expect(manifest.dependencies).toBeUndefined()
+    // The rows work only together, so the plugin manager offers the bundle's switch alone.
+    expect(manifest.dsh?.bundle?.rowSwitches).toBe(false)
+    // Each inserted row names a package the bundle depends on, so the rows resolve from the bundle.
+    expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual([
+      '@deepseek-ai/dsh-client-ui-schedule', '@deepseek-ai/dsh-schedule', '@deepseek-ai/dsh-time-context',
+    ])
   })
 
-  it('flips the three shipped rows on and appends none', () => {
+  it('inserts the three Schedule rows switched on', () => {
     const parsed = yaml.load(readFileSync(resolve(root, './cordis.patch.yml'), 'utf8'), { schema: entryListSchema })
-    expect(parsed).toEqual([
-      { id: 'time-context', disabled: false },
-      { id: 'schedule', disabled: false },
-      { id: 'ui-schedule', disabled: false },
-    ])
-    for (const patch of parsed as Patch[]) {
-      expect(patch.insert).toBeUndefined()
-      expect(patch.name).toBeUndefined()
-    }
+    expect(parsed).toEqual([{ insert: [
+      { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
+      { id: 'schedule', name: '@deepseek-ai/dsh-schedule' },
+      { id: 'ui-schedule', name: '@deepseek-ai/dsh-client-ui-schedule' },
+    ] }])
   })
 })

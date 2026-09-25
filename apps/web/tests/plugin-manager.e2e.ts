@@ -312,6 +312,34 @@ describe('web e2e: plugin manager', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('lists the Automation tasks rows without row switches and runs them with the bundle switch', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-schedule'))
+    const panel = await openPluginsPanel()
+    const scheduleRows = () => [...scaffold.ctx.loader.entries()]
+      .filter(entry => ['time-context', 'schedule', 'ui-schedule'].includes(entry.options.id))
+    const running = () => scheduleRows().filter(entry => entry.fiber?.state === FiberState.ACTIVE).length
+    expect(running()).toBe(0)
+    await panel.getByRole('button', { name: '查看 自动化任务', exact: true }).click()
+    const rows = panel.locator('[data-plugin-rows]')
+    for (const title of ['时间感知', '任务调度', '任务界面']) {
+      await rows.locator('[data-plugin-row]', { hasText: title }).waitFor()
+    }
+    expect(await rows.getByRole('switch').count()).toBe(0)
+    const toggle = panel.getByRole('switch', { name: '启用 自动化任务', exact: true })
+    await toggle.click()
+    try {
+      await expect.poll(running, { timeout: 20_000 }).toBe(3)
+      await expect.poll(() => rows.locator('[data-plugin-row]', { hasText: '运行中' }).count(), { timeout: 20_000 }).toBe(3)
+      expect(await rows.getByRole('switch').count()).toBe(0)
+      await page.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '自动化任务', exact: true }).waitFor()
+    } finally {
+      if (await toggle.getAttribute('aria-checked') === 'true') await toggle.click()
+      await expect.poll(running, { timeout: 20_000 }).toBe(0)
+      await panel.getByRole('button', { name: '返回插件列表' }).click()
+    }
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('checks a spec before installing it and words what the check refused', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-install'))
     const panel = await openPluginsPanel()
