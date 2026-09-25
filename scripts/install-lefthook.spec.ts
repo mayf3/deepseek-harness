@@ -158,9 +158,16 @@ function gitDirectory(fixture: Fixture, root: string): string {
   return git(fixture, root, ['rev-parse', '--absolute-git-dir'])
 }
 
+// The installer resolves the common directory against Git's own top-level path, and the host
+// spells that path differently from the fixture directory this file created: Git canonicalizes
+// Windows 8.3 short names and the macOS `/var` symlink, while `mkdtempSync` returns the temp
+// directory's own spelling. Resolving the relative common directory against Git's top-level
+// instead of the fixture directory gives the same string the installer computes, so an injected
+// failure on this path reaches the installer's own lock instead of missing it.
 function commonDirectory(fixture: Fixture): string {
+  const root = git(fixture, fixture.main, ['rev-parse', '--show-toplevel'])
   const output = git(fixture, fixture.main, ['rev-parse', '--git-common-dir'])
-  return isAbsolute(output) ? output : resolve(fixture.main, output)
+  return isAbsolute(output) ? output : resolve(root, output)
 }
 
 function hooksPath(fixture: Fixture, root: string): string {
