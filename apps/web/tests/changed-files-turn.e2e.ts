@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vites
 import type {} from '@deepseek-ai/dsh-workspace-changes'
 import type { ChangesSummary } from '@deepseek-ai/dsh-client-ui-deliverables/src/changes.ts'
 import { deriveReplayScript, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import {
   assertFinalWorkspaceSnapshot, captureExpandedTurnProcessAria, compareOrRefreshGolden,
   fixtureUserPrompts, launchWebScaffold, recordFixture, watchConsole,
@@ -109,7 +110,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     if (MODE !== 'record') expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])
     const settled = scaffold.whenTurnSettled()
     const preparations = ['edit', 'write'].map(name => ({
-      name, ready: Promise.withResolvers<{ callId: string; kilobytes: number }>(),
+      name, callId: '', args: new PartialArguments(), ready: Promise.withResolvers<{ callId: string }>(),
       release: Promise.withResolvers<undefined>(), held: false,
     }))
     const names = new Map<string, string>()
@@ -120,8 +121,12 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
         if (chunk.name !== undefined) names.set(chunk.id, chunk.name)
         const preparation = preparations.find(value => value.name === names.get(chunk.id))
         if (preparation === undefined || preparation.held || chunk.argumentsDelta.length === 0) continue
+        if (preparation.callId === '') preparation.callId = chunk.id
+        if (preparation.callId !== chunk.id) continue
+        preparation.args.append(chunk.argumentsDelta)
+        if (!preparation.args.complete('file_path')) continue
         preparation.held = true
-        preparation.ready.resolve({ callId: chunk.id, kilobytes: Math.ceil(chunk.argumentsDelta.length / 1024) })
+        preparation.ready.resolve({ callId: chunk.id })
         await preparation.release.promise
       }
     }, { prepend: true })
@@ -133,15 +138,15 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     await input.fill(PROMPT)
     await input.press('Enter')
     const observations = preparations.map(async (preparation) => {
-      const { callId, kilobytes } = await Promise.race([
+      const { callId } = await Promise.race([
         preparation.ready.promise,
         settled.then(() => { throw new Error(`No ${preparation.name} argument prefix was streamed`) }),
       ])
       const row = page.locator(`[data-chat-call-id="${callId}"] [data-state="preparing"]`)
       await row.waitFor({ state: 'attached' })
       await expandOwningTurnProcess(page, row)
-      await row.getByText(`正在准备内容 ${kilobytes}KB`, { exact: true }).waitFor()
-      expect(await row.getByRole('button').count()).toBe(0)
+      await row.getByRole('button').waitFor()
+      expect(await row.locator('[aria-expanded]').count()).toBe(0)
       expect(await row.locator('pre').count()).toBe(0)
       await compareOrRefreshGolden(join(DIR, `preparing-${preparation.name}.expected.md`), await row.ariaSnapshot(), MODE)
       preparation.release.resolve(undefined)

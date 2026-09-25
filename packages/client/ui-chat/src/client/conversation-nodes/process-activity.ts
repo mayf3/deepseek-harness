@@ -1,4 +1,5 @@
 /** Tool-category and live-detail interpretation owned by Chat grouping. */
+import type { ToolArgs } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ProcessActivity, ProcessActivitySummary } from '../contract/process-groups.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
@@ -67,23 +68,19 @@ function liveReasoningDetail(nodes: readonly ChatNode[]): string {
   return ''
 }
 
-function liveToolDetail(name: string, argsRaw: string): string {
-  let args: unknown
-  try {
-    args = JSON.parse(argsRaw)
-  } catch (_error: unknown) {
-    // Partial or free-form arguments have no safe one-line task detail.
-    return normalizeLiveToolDetail(name)
-  }
-  if (args === null || typeof args !== 'object') return normalizeLiveToolDetail(name)
+/**
+ * One-line task detail from the argument view, read the same way while the
+ * arguments stream and after dispatch: the first detail key present with text
+ * so far or a closed value. Without one, the tool name stands in once no further
+ * field can arrive; a field still to come is not named early.
+ */
+function liveToolDetail(name: string, args: ToolArgs): string {
   for (const key of LIVE_TOOL_DETAIL_KEYS) {
-    if (key in args) {
-      const value: unknown = Reflect.get(args, key)
-      const detail = key === 'questions' ? questionDetail(value) : normalizeLiveToolDetail(value)
-      if (detail !== '') return detail
-    }
+    if (!args.has(key)) continue
+    const detail = key === 'questions' ? questionDetail(args.value(key)) : normalizeLiveToolDetail(args.text(key) ?? args.value(key))
+    if (detail !== '') return detail
   }
-  return normalizeLiveToolDetail(name)
+  return args.closed() ? normalizeLiveToolDetail(name) : ''
 }
 
 /**
@@ -107,9 +104,7 @@ export function processActivity(nodes: readonly ChatNode[]): ProcessActivitySumm
       if (isRunningTool(tool) && tool.time >= runningTime) {
         running = kind
         preparing = tool.phase === 'preparing'
-        runningDetail = tool.phase === 'preparing'
-          ? kind === 'tools' ? tool.name : ''
-          : liveToolDetail(tool.name, tool.argsRaw)
+        runningDetail = liveToolDetail(tool.name, tool.args)
         runningTime = tool.time
       }
       counts.set(kind, (counts.get(kind) ?? 0) + 1)

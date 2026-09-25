@@ -9,6 +9,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import type { ContextProducerView, KnownContextForm } from './context-producer.ts'
+import type { PartialArguments } from '@deepseek-ai/dsh-util-values'
 export type { TodoItem }
 
 /** Request configuration recorded for one provider call. */
@@ -160,6 +161,10 @@ export interface ToolResultNode {
   callId: string
   /** Parent Tool call for a PTC dispatch result; absent on a root Session result. */
   parentCallId?: string
+  /** Wire tool name from the paired tool/call; empty when that call left the loaded window. */
+  name: string
+  /** The argument view of the paired call; see {@link ToolArgs}. */
+  args: ToolArgs
   /** Call head backfilled from the in-window tool/call; null when window truncation left the call outside (card head shows callId). */
   call: { name: string; argsRaw: string } | null
   /** Unix epoch ms of the paired tool/call when the call is still in-window; used for call-row duration. */
@@ -269,9 +274,21 @@ interface ToolCallHead {
   time: number
   /** Child calls owned by this call, in dispatch order. */
   subCalls: readonly ToolCallBlock[]
+  /** The argument view; see {@link ToolArgs}. */
+  args: ToolArgs
 }
 
-/** A named model call whose arguments are not yet available to tool views. */
+/**
+ * The call's top-level arguments read the same way at every stage: a lazily
+ * scanned view that answers per field (`has`, `complete`, `stringLength`,
+ * `text`, `value`) and scans nothing until asked. While preparing the view
+ * grows with the streamed text and reports a change only when an answer it
+ * already gave would differ; once dispatched it wraps the finished text or the
+ * parsed payload. Empty for a settled call whose `tool/call` left the window.
+ */
+export type ToolArgs = PartialArguments
+
+/** A named model call whose complete arguments are not yet available to tool views. */
 export interface PreparingToolCall extends ToolCallHead {
   readonly phase: 'preparing'
 }

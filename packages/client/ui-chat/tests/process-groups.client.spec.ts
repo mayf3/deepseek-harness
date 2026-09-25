@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ConversationTimelineSnapshot, TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import type { ChatConversationViewNode, ChatNode } from '../src/client/contract/chat-nodes.ts'
 import { ChatSnapshotBuilder } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
 import { ProcessState } from '../src/client/conversation-nodes/process-groups.ts'
@@ -35,7 +36,7 @@ function tool(key: string, seq: number, name = 'bash', owner = turn): ChatNode<'
   return {
     key, id: key, kind: 'tool-call', target: 'chat', anchorSeq: seq,
     location: { kind: 'turn', turn: owner }, visibility: 'visible',
-    data: { root: { phase: 'start' as const, callId: key, name, argsRaw: '{"command":"pwd"}', turn: owner.turn, step: 1, time: seq, subCalls: [] } },
+    data: { root: { phase: 'start' as const, args: PartialArguments.fromText('{"command":"pwd"}'), callId: key, name, argsRaw: '{"command":"pwd"}', turn: owner.turn, step: 1, time: seq, subCalls: [] } },
   }
 }
 
@@ -82,7 +83,7 @@ describe('Definition-owned Chat process groups', () => {
   it('clears preparation from a closed group while retaining its recorded activity', () => {
     const preparing: ChatNode<'tool-call'> = {
       ...tool('call', 2, 'write'),
-      data: { root: { phase: 'preparing', callId: 'call', name: 'write', turn: 1, step: 1, time: 2, subCalls: [] } },
+      data: { root: { phase: 'preparing', args: PartialArguments.EMPTY, callId: 'call', name: 'write', turn: 1, step: 1, time: 2, subCalls: [] } },
     }
     const h = harness([preparing])
     const group = h.store.entries[0]!
@@ -103,17 +104,22 @@ describe('Definition-owned Chat process groups', () => {
     ['list_mcp_resources', 'tools'], ['list_mcp_resource_templates', 'tools'], ['read_mcp_resource', 'tools'],
   ] as const)('%s keeps its activity category through preparation, dispatch, and result', (name, kind) => {
     const started = tool('call', 2, name)
+    const args = new PartialArguments()
     const preparing: ChatNode<'tool-call'> = {
       ...started,
-      data: { root: { phase: 'preparing', callId: 'call', name, turn: 1, step: 1, time: 2, subCalls: [] } },
+      data: { root: { phase: 'preparing', args, callId: 'call', name, turn: 1, step: 1, time: 2, subCalls: [] } },
     }
     const h = harness([preparing])
     const group = h.store.entries[0]!
     if (group.kind !== 'group') throw new Error('expected group')
     const source = h.store.groupSource(group.key)
     expect(source.getSnapshot()?.data.summary).toEqual({
-      counts: [{ kind, count: 1 }], running: kind, preparing: true, runningDetail: kind === 'tools' ? name : '',
+      counts: [{ kind, count: 1 }], running: kind, preparing: true, runningDetail: '',
     })
+    args.append('{}')
+    h.builder.apply({ upserts: [{ ...preparing, data: { root: { ...preparing.data.root } } }], timeline })
+    h.commit()
+    expect(source.getSnapshot()?.data.summary.runningDetail).toBe(name)
     h.builder.apply({ upserts: [started], timeline })
     h.commit()
     expect(source.getSnapshot()?.data.summary).toEqual({ counts: [{ kind, count: 1 }], running: kind, runningDetail: 'pwd' })
@@ -121,6 +127,7 @@ describe('Definition-owned Chat process groups', () => {
       ...started,
       data: { root: {
         kind: 'tool-result', callId: 'call', seq: 3, time: 3, callTime: 2,
+        name, args: PartialArguments.fromText('{"command":"pwd"}'),
         call: { name, argsRaw: '{"command":"pwd"}' }, content: [], isError: false, subCalls: [],
       } },
     }
@@ -337,7 +344,7 @@ describe('Definition-owned Chat process groups', () => {
     const previous = h.store.groupSource(history.key).getSnapshot()
     const live = tool('live', 4)
     h.builder.apply({
-      upserts: [{ ...live, data: { root: { ...live.data.root, argsRaw: '{"command":"ls"}' } } }],
+      upserts: [{ ...live, data: { root: { ...live.data.root, argsRaw: '{"command":"ls"}', args: PartialArguments.fromText('{"command":"ls"}') } } }],
       timeline,
     })
     const input = h.builder.groupInput()
