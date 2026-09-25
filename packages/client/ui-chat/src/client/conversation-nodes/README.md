@@ -108,7 +108,7 @@ Automatic collapse keeps the process open if hiding it would hide keyboard focus
 <a id="display-modes"></a>
 ## Display modes
 
-Settings → General → Work details offers `compact`, `standard`, `detailed` (the default for fresh non-Desktop Web profiles), and `verbose`; its description is “Choose how much detail to show for tool calls”. Saved `normal` and `expanded` values read as `detailed`, without automatic write-back. Existing `detailed` remains `detailed`. Missing or invalid values, including the period before Host settings arrive, use `standard`; invalid values in other settings still fail validation.
+Settings → General → Work details offers `compact`, `standard` (Desktop default), `detailed` (the default for fresh non-Desktop Web clients), and `verbose`; its description is “Choose how much detail to show for tool calls”. Saved `normal` and `expanded` values read as `detailed`, without automatic write-back. Existing `detailed` remains `detailed`. Missing or invalid values, including the period before Host settings arrive, use the client default; invalid values in other settings still fail validation.
 
 | Behavior | Compact | Standard | Detailed | Verbose |
 |---|---|---|---|---|

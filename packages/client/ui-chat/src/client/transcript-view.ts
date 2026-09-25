@@ -10,13 +10,18 @@ import {
 /** Live work-details preference consumed by Chat and its Settings row. */
 export class TranscriptViewPolicy {
   private readonly unsubscribe: () => void
-  /** Reactive current mode; defaults to Standard before Host settings arrive. */
-  readonly mode: SnapshotStore<TranscriptViewMode> = createSnapshotStore(DEFAULT_TRANSCRIPT_VIEW_MODE)
+  /** Reactive current mode, including the client default before Host settings arrive. */
+  readonly mode: SnapshotStore<TranscriptViewMode>
 
   /**
    * @param host - durable Chat settings scope.
+   * @param defaultMode - presentation used without an explicit saved mode.
    */
-  constructor(private readonly host: ConfigForm<ChatSettings>) {
+  constructor(
+    private readonly host: ConfigForm<ChatSettings>,
+    private readonly defaultMode: TranscriptViewMode = DEFAULT_TRANSCRIPT_VIEW_MODE,
+  ) {
+    this.mode = createSnapshotStore(defaultMode)
     this.unsubscribe = host.subscribe(() => { this.adopt() })
     this.adopt()
   }
@@ -40,7 +45,7 @@ export class TranscriptViewPolicy {
     if (section === undefined) return
     const saved = section.transcriptView
     const mode = saved === LEGACY_TRANSCRIPT_VIEW_MODE || saved === LEGACY_EXPANDED_TRANSCRIPT_VIEW_MODE
-      ? 'detailed' : saved
+      ? 'detailed' : saved ?? this.defaultMode
     if (this.mode.getSnapshot() !== mode) this.mode.set(mode)
   }
 }
