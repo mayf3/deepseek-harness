@@ -25,7 +25,7 @@ This optional bundle switches on the three Schedule rows that `@deepseek-ai/dsh-
 <a id="use-this-package"></a>
 ## Use this package
 
-Open Plugins in the Web sidebar and enable Scheduling and time context, marked by a clock icon. A live root Agent then receives `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete`, the Session header shows its reminder catalog, the right sidebar shows the Automation tasks page, and each eligible step appends one clock reading with the current time, the browser zone attached to the open request, and the elapsed time since the preceding model-visible message. Disabling the bundle restores the shipped composition; stored tasks remain on disk.
+Open Plugins in the Web sidebar and enable Scheduling and time context, marked by a clock icon. A live root Agent then receives `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete`, the Session header shows its reminder catalog, the sidebar's Automation tasks entry opens the task-management page and the right Sidebar holds the selected task's detail, and each eligible step appends one clock reading with the current time, the browser zone attached to the open request, and the elapsed time since the preceding model-visible message. Disabling the bundle restores the shipped composition; stored tasks remain on disk.
 
 -----
 
