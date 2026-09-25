@@ -136,7 +136,8 @@ export class ToolCallRecovery {
       case 'tool/result': {
         const callId = event.data.message.source.callId
         const entry = this.pendingCalls.get(callId)
-        if (event.surfaceOp === 'append' && entry?.turn === event.data.turn && entry.step === event.data.step) {
+        if (event.surfaceOp === 'append' && entry !== undefined
+          && entry.turn === event.data.turn && entry.step === event.data.step) {
           this.pendingCalls.delete(callId)
         }
         break
