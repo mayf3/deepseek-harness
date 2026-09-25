@@ -239,6 +239,8 @@ describe('web e2e: plugin manager', () => {
       await panel.getByRole('button', { name: 'Back to plugins' }).click()
       await panel.getByRole('button', { name: 'View Agent Teams', exact: true }).waitFor()
       expect(await panel.getByRole('switch', { name: 'Enable Agent Teams', exact: true }).count()).toBe(1)
+      await panel.getByRole('button', { name: 'View Automation tasks', exact: true }).waitFor()
+      expect(await panel.getByText('Run tasks in your sessions at a set time or on a repeating schedule.', { exact: true }).count()).toBe(1)
       // The official configuration pages follow the language too, from their own dictionary.
       for (const title of ['Shell', 'Agent loop', 'Subagent', 'Web search']) {
         await panel.getByRole('button', { name: `View ${title}`, exact: true }).waitFor()
