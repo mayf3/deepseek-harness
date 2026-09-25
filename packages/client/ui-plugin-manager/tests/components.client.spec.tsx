@@ -1269,7 +1269,7 @@ describe('PluginManagerPage', () => {
   it('focuses an invalid custom address when submission opens its registry menu', () => {
     const open = { ...IDLE_INSTALL, open: true, spec: 'dsh-new', registry: { kind: 'custom' as const, url: 'invalid' } }
     const { actions, set } = renderTab({ install: open })
-    fireEvent.click(screen.getByRole('button', { name: en.installRun, exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: en.installRun }))
     expect(actions.runInstall).toHaveBeenCalledOnce()
     set({ install: { ...open, registryOpen: true, registryError: true } })
     const field = screen.getByRole('textbox', { name: en.registryCustom })
