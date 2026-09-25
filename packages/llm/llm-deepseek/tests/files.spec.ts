@@ -73,10 +73,7 @@ describe('Messages Files requests', () => {
     vi.stubGlobal('fetch', fetchImpl)
     const h = harness()
     await chunks(h.adapter.stream(request([ref, second])))
-    expect(h.invalidate).toHaveBeenCalledExactlyOnceWith(
-      [expect.objectContaining({ version: expect.objectContaining({ attachment: ref }), fileId: 'file-a' })],
-      expect.objectContaining({}),
-    )
+    expect(h.invalidate).toHaveBeenCalledExactlyOnceWith([{ variantId: version(ref).variantId, fileId: 'file-a' }], expect.objectContaining({}))
     expect(fetchImpl).toHaveBeenCalledTimes(2)
     expect(h.prepare).toHaveBeenCalledTimes(2)
     expect(h.ensureUploaded).toHaveBeenCalledTimes(4)

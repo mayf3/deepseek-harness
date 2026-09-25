@@ -134,7 +134,10 @@ export class RequestFiles {
    */
   async retry(detail: string): Promise<boolean> {
     if (this.used.length === 0 || !providerRejectedFileId(detail)) return false
-    await this.files.invalidate(staleMappings(this.used, detail), this.connection)
+    await this.files.invalidate(
+      staleMappings(this.used, detail).map(file => ({ variantId: file.version.variantId, fileId: file.fileId })),
+      this.connection,
+    )
     if (this.retried) return false
     this.retried = true
     return true

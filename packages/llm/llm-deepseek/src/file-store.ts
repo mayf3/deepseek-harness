@@ -32,12 +32,6 @@ export interface DeepSeekFileReference {
   uploaded: boolean
 }
 
-/** One request-image version with the exact remote id a model request rejected. */
-export interface DeepSeekRejectedUpload {
-  version: RequestImageAttachment
-  fileId: DeepSeekFileId
-}
-
 interface FileStoreOptions {
   index?: DeepSeekUploadIndex
   now?: () => number
@@ -251,17 +245,14 @@ export class DeepSeekFileStore {
 
   /**
    * Invalidate exact local mappings in one index update after a model request rejects their remote ids.
-   * @param rejected - request-image versions with the exact file id the request used for each.
+   * @param generations - request-image variants with the exact file id the request used for each.
    * @param connection - endpoint and API-key snapshot.
    */
   async invalidate(
-    rejected: readonly DeepSeekRejectedUpload[],
+    generations: readonly Pick<DeepSeekUploadRecord, 'variantId' | 'fileId'>[],
     connection: DeepSeekFileConnection,
   ): Promise<void> {
-    await this.index.remove(
-      fileScope(connection),
-      rejected.map(({ version, fileId }) => ({ variantId: version.variantId, fileId })),
-    )
+    await this.index.remove(fileScope(connection), generations)
   }
 
   /**
