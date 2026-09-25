@@ -25,7 +25,7 @@ kind: "package-bundle"
 <a id="use-this-package"></a>
 ## 使用此包
 
-打开 Web 侧栏的插件管理页并启用带闹钟图标的“自动化任务”。此后，活跃的根智能体获得 `schedule_create`、`schedule_list`、`schedule_update` 与 `schedule_delete`，会话头部显示提醒目录，侧栏出现“自动化任务”入口，每个符合条件的步骤追加一条时钟读数，包含当前时间、打开请求所带的浏览器时区，以及距上一条模型可见消息的经过时间。禁用此 Bundle 会恢复随包组合；已存储的任务保留在磁盘上。
+打开 Web 侧栏的插件管理页并启用带闹钟图标的“自动化任务”。此后，活跃的根智能体获得 `schedule_create`、`schedule_list`、`schedule_update` 与 `schedule_delete`，会话头部显示提醒目录，侧栏的自动化任务入口打开任务管理页面、右侧栏承载所选任务的详情，每个符合条件的步骤追加一条时钟读数，包含当前时间、打开请求所带的浏览器时区，以及距上一条模型可见消息的经过时间。禁用此 Bundle 会恢复随包组合；已存储的任务保留在磁盘上。
 
 -----
 
@@ -35,7 +35,7 @@ kind: "package-bundle"
 <details>
 <summary>维护者信息 — 点击展开</summary>
 
-`cordis.patch.yml` 包含三个按 id 定位的补丁，各自把 Web Bundle 已插入条目的 `disabled` 设为 `false`。`packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 列出此包，`apps/cli` 依赖它，因此每次安装都随包携带且默认禁用，插件管理页在 Official 分组中提供它。选中后会把该 Bundle 追加到 profile 的 `dsh.profile.bundles` 列表，profile 启动器在 Web 层之后应用各 Bundle 层。此纯配置包不拥有可变的运行时状态，因此不发布不变量伴随模块。
+`cordis.patch.yml` 包含三个按 id 定位的补丁，各自把 Web Bundle 已插入条目的 `disabled` 设为 `false`。`packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 列出此包，`apps/cli` 依赖它，因此每次安装都随包携带且默认禁用，插件管理页在 Official 分组中提供它。选中后会把该 Bundle 追加到 profile 的 `dsh.profile.bundles` 列表末尾；Bundle 层按列表顺序应用，因此这些补丁能命中条目，只是因为该列表把 `@deepseek-ai/dsh-web-app` 排在此包之前。手写顺序把此包排在最前时，这些条目保持禁用，而插件管理页仍把该开关显示为已启用。此纯配置包不拥有可变的运行时状态，因此不发布不变量伴随模块。
 
 | 文件 | 作用 |
 |---|---|
@@ -78,8 +78,8 @@ kind: "package-bundle"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 此开关针对 `@deepseek-ai/dsh-web-app` 插入的条目。没有该 Bundle 的 profile 不含这些条目，此 Bundle 在那里不产生变化。
-- 选中此 Bundle 会给每个活跃根智能体增加四个定时工具的 schema，并为每个符合条件的步骤增加一条时钟读数。即使对话从不创建提醒，也会承担这两项开销。
+- 此开关针对 `@deepseek-ai/dsh-web-app` 插入的条目。在没有该 Bundle 的 profile 中，三个补丁匹配不到任何条目：加载器为每个条目报告一条 `patch: entry <id> not found` 警告，且不从该 Bundle 挂载任何东西；这样的 profile 也不挂载插件管理页。
+- 该 Bundle 的详情页没有逐条目开关。Host 把被覆盖的三个 id 报告在 `overrides` 下，而 Web 客户端只渲染 Bundle 插入的条目，因此打开这张卡片会显示“这个插件包不包含任何组件。”。控制这三个条目的开关在 Official 分组列表行上。
 
 -----
 

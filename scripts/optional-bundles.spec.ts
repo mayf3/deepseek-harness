@@ -41,13 +41,38 @@ describe('optional bundles', () => {
   it.each(OPTIONAL_BUNDLES)('%s composes over the Web profile without a skipped patch', (name) => {
     const { patches } = bundle(name)
     const warnings: string[] = []
-    const ids = new Set(composeEntries([...shipped, patches], message => warnings.push(message)).map(entry => entry.id))
+    const composed = composeEntries([...shipped, patches], message => warnings.push(message))
+    const ids = new Set(composed.map(entry => entry.id))
     expect(warnings).toEqual([])
     // Inserted rows carry stable ids at the profile root, so a later profile patch can configure or disable them.
     for (const row of patches.flatMap(patch => patch.insert ?? [])) {
       expect(typeof row.id).toBe('string')
       expect(ids.has(row.id)).toBe(true)
     }
+    // One top-level row per id: a duplicate declaration leaves the Loader with the last one, silently
+    // replacing the layer that declared the id first.
+    const topLevelIds = composed.flatMap(entry => typeof entry.id === 'string' ? [entry.id] : [])
+    expect(topLevelIds).toHaveLength(new Set(topLevelIds).size)
+    // An id-targeted patch reaches a row another layer inserted: the id resolves to exactly one top-level
+    // row, and the override keeps the package the shipped layer declared on it.
+    const shippedComposed = composeEntries([...shipped])
+    for (const patch of patches) {
+      if (patch.insert !== undefined || typeof patch.id !== 'string') continue
+      const matches = composed.filter(entry => entry.id === patch.id)
+      expect(matches).toHaveLength(1)
+      expect(matches[0]?.name).toBe(shippedComposed.find(entry => entry.id === patch.id)?.name)
+    }
+  })
+
+  it('composes the Schedule bundle over the three shipped Web rows', () => {
+    const { patches } = bundle('@deepseek-ai/dsh-experimental-schedule-bundle')
+    const composed = composeEntries([...shipped, patches])
+    expect(composed.filter(entry => entry.id === 'time-context' || entry.id === 'schedule' || entry.id === 'ui-schedule'))
+      .toMatchObject([
+        { id: 'time-context', name: '@deepseek-ai/dsh-time-context', disabled: false },
+        { id: 'schedule', name: '@deepseek-ai/dsh-schedule', disabled: false },
+        { id: 'ui-schedule', name: '@deepseek-ai/dsh-client-ui-schedule', disabled: false },
+      ])
   })
 
   it.each(OPTIONAL_BUNDLES)('%s resolves a title, description, and icon in both shipped languages', (name) => {

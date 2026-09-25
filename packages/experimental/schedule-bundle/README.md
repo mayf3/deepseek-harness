@@ -25,7 +25,7 @@ This optional bundle switches on the three Schedule rows that `@deepseek-ai/dsh-
 <a id="use-this-package"></a>
 ## Use this package
 
-Open Plugins in the Web sidebar and enable Automation tasks, marked by an alarm clock icon. A live root Agent then receives `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete`, the Session header shows its reminder catalog, the sidebar shows the Automation tasks entry, and each eligible step appends one clock reading with the current time, the browser zone attached to the open request, and the elapsed time since the preceding model-visible message. Disabling the bundle restores the shipped composition; stored tasks remain on disk.
+Open Plugins in the Web sidebar and enable Automation tasks, marked by an alarm clock icon. A live root Agent then receives `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete`, the Session header shows its reminder catalog, the sidebar's Automation tasks entry opens the task-management page and the right Sidebar holds the selected task's detail, and each eligible step appends one clock reading with the current time, the browser zone attached to the open request, and the elapsed time since the preceding model-visible message. Disabling the bundle restores the shipped composition; stored tasks remain on disk.
 
 -----
 
@@ -35,7 +35,7 @@ Open Plugins in the Web sidebar and enable Automation tasks, marked by an alarm 
 <details>
 <summary>Maintainer details — click to expand</summary>
 
-`cordis.patch.yml` carries three id-targeted patches, each setting `disabled: false` on a row the Web bundle already inserts. `OPTIONAL_BUNDLES` in `packages/boot/app-boot/src/profile.ts` names this package and `apps/cli` depends on it, so every installation ships it switched off and the plugin manager offers it in the Official group. Selecting it appends the bundle to the profile's `dsh.profile.bundles` list, and the profile launcher applies the bundle layers after the Web layer. No runtime invariant companion is published because this configuration-only package owns no mutable runtime state.
+`cordis.patch.yml` carries three id-targeted patches, each setting `disabled: false` on a row the Web bundle already inserts. `OPTIONAL_BUNDLES` in `packages/boot/app-boot/src/profile.ts` names this package and `apps/cli` depends on it, so every installation ships it switched off and the plugin manager offers it in the Official group. Selecting it appends the bundle to the tail of the profile's `dsh.profile.bundles` list; bundle layers apply in list order, so the patches reach the rows only because that list places `@deepseek-ai/dsh-web-app` before this package. A hand-ordered list with this package first leaves the rows disabled while the Plugins page still shows the switch as on. No runtime invariant companion is published because this configuration-only package owns no mutable runtime state.
 
 | File | Role |
 |---|---|
@@ -78,8 +78,8 @@ The tool schemas change the request prefix once when the bundle mounts; each app
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- The switch targets rows `@deepseek-ai/dsh-web-app` inserts. A profile without that bundle carries no such rows, so this bundle changes nothing there.
-- Selecting the bundle adds the four Schedule tool schemas to every live root Agent and one clock reading per eligible step. A conversation that never creates a reminder still pays both costs.
+- The switch targets rows `@deepseek-ai/dsh-web-app` inserts. In a profile without that bundle the three patches match no row: the loader reports one `patch: entry <id> not found` warning per row and mounts nothing from this bundle; such a profile mounts no Plugins page either.
+- The bundle's detail page has no per-row switches. The Host reports the three overridden ids under `overrides`, and the Web client renders only the rows a bundle inserts, so opening this card shows "This plugin pack contains no components." The switch for the three rows is on the Official-group list row.
 
 -----
 

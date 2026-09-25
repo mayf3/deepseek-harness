@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-experimental-schedule-bundle",
   "description": "Optional bundle that switches the shipped Schedule, time-context, and reminder-catalog rows on",
-  "version": "0.1.7-rc.1",
+  "version": "0.1.7-rc.2",
   "icon": "./icon.svg",
   "publishConfig": {
     "access": "public"
