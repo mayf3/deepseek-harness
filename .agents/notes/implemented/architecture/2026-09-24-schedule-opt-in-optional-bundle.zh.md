@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-09-24-schedule-opt-in-optional-bundle.md) | 中文
 
+> 取代[默认 Web 组合中的 Schedule](../../archived/architecture/2026-09-24-web-default-schedule-composition.md)：这三行现在默认禁用，打开它们是此 bundle 的职责。
+
 ## Problem
 
 `packages/bundle/web-app/cordis.patch.yml` 以 `disabled: true` 插入 `time-context`、`schedule` 与 `ui-schedule`，因此随发行版交付的 Web 组合不提供任何定时能力：没有 `schedule_*` 工具、没有 Session 提醒目录、没有自动化任务页面，也没有逐步时钟读数。这些条目在产品界面上没有开关；想要它们的部署要改 profile patch 层或传 `--patch` overlay，而两者都是使用随发行版 Web profile 的人无法触及的配置文件。
@@ -20,9 +22,9 @@ Status: implemented
 
 **默认发布 Schedule。** 那样每个 Web 会话都要在每个请求头中带上四个工具 schema，并在每个符合条件的步骤追加一条持久 user 消息，从不创建提醒的对话也要承担这两项成本。这种安排还让该能力在产品界面上没有关闭开关。
 
-**保留一个 `--patch` overlay 文件。** overlay 是启动时的参数，而不是产品界面上的开关，因此使用随发行版 `web` profile 的人无法触及它。它也无法重新插入这些行：`applyEntryPatches` 追加 `insert` 列表时不对 id 去重，插入 `time-context` 与 `schedule` 的 overlay 会把每个 Host 插件挂载两次。
+**保留一个 `--patch` overlay 文件。** overlay 是启动时的参数，而不是产品界面上的开关，因此使用随发行版 `web` profile 的人无法触及它。它也无法给出厂条目设值：`applyEntryPatches` 追加 `insert` 列表时不对 id 去重，而 Loader 每个 id 只保留一个条目、最后一个声明生效，因此重新声明 `time-context` 与 `schedule` 的 overlay 会替换 Web Bundle 的条目，而不是覆盖它们。
 
-**把这三行从 Web 组合中抽出、移入 bundle。** 这样 bundle 会插入这些行而不是覆盖它们，任何同样插入某行的 profile 都会因同样的原因把同一个 Host 插件挂载两次。按需开关针对的正是这些禁用行。
+**把这三行从 Web 组合中抽出、移入 bundle。** 这样 bundle 会插入这些行而不是覆盖它们；某个 profile 若也声明了这些 id，同一个 id 就会有两份声明，而 Loader 只保留最后一份。按需开关针对的正是这些禁用行。
 
 ## Consequences
 

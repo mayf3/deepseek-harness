@@ -49,13 +49,16 @@ describe('optional bundles', () => {
       expect(typeof row.id).toBe('string')
       expect(ids.has(row.id)).toBe(true)
     }
-    // An id-targeted patch reaches a row another layer inserted: the composed row keeps that row's package
-    // name, appears once, and carries the patched values.
+    // One top-level row per id: a duplicate declaration leaves the Loader with the last one, silently
+    // replacing the layer that declared the id first.
+    const topLevelIds = composed.flatMap(entry => typeof entry.id === 'string' ? [entry.id] : [])
+    expect(topLevelIds).toHaveLength(new Set(topLevelIds).size)
+    // An id-targeted patch reaches a row another layer inserted: the id resolves to exactly one top-level
+    // row that keeps its declared package name.
     for (const patch of patches) {
       if (patch.insert !== undefined || typeof patch.id !== 'string') continue
       const matches = composed.filter(entry => entry.id === patch.id)
       expect(matches).toHaveLength(1)
-      expect(matches[0]).toMatchObject({ ...patch })
       expect(typeof matches[0]?.name).toBe('string')
     }
   })

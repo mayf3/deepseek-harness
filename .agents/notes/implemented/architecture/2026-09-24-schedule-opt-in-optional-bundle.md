@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-09-24-schedule-opt-in-optional-bundle.zh.md)
 
+> Supersedes [Schedule in the shipped Web composition](../../archived/architecture/2026-09-24-web-default-schedule-composition.md): the three rows now ship disabled, and switching them on is this bundle's job.
+
 ## Problem
 
 `packages/bundle/web-app/cordis.patch.yml` inserts `time-context`, `schedule`, and `ui-schedule` with `disabled: true`, so the shipped Web composition exposes no Schedule surface: no `schedule_*` tools, no Session reminder catalog, no Automation tasks page, and no per-step clock reading. The rows have no switch on the product surface; a deployment that wants them edits a profile patch layer or passes a `--patch` overlay, and both are configuration files a person using the shipped Web profile cannot reach.
@@ -20,9 +22,9 @@ Enabling the bundle turns on `time-context` (a per-step clock reading with the s
 
 **Ship Schedule on by default.** Every Web session then pays four tool schemas in each request header and one durable user message per eligible step, and a conversation that never creates a reminder pays both costs. The arrangement also left the capability without an off switch on the product surface.
 
-**Keep a `--patch` overlay file.** An overlay is a launch-time argument rather than a product-surface switch, so a person using the shipped Web profile cannot reach it. It cannot re-insert the rows either: `applyEntryPatches` appends an `insert` list without de-duplicating ids, so an overlay that inserts `time-context` and `schedule` mounts each Host plugin a second time.
+**Keep a `--patch` overlay file.** An overlay is a launch-time argument rather than a product-surface switch, so a person using the shipped Web profile cannot reach it. It also cannot set fields on the shipped rows: `applyEntryPatches` appends an `insert` list without de-duplicating ids, and the Loader keeps one entry per id with the last declaration winning, so an overlay that re-declares `time-context` and `schedule` replaces the Web bundle's rows instead of overriding them.
 
-**Extract the three rows out of the Web composition into the bundle.** The bundle would insert the rows instead of overriding them, so any profile that also inserts a row would mount the same Host plugin twice for the same reason. The disabled rows are what an override-style switch targets.
+**Extract the three rows out of the Web composition into the bundle.** The bundle would insert the rows instead of overriding them, so a profile that also declares one of those ids would have two declarations for it, of which the Loader keeps only the last. The disabled rows are what an override-style switch targets.
 
 ## Consequences
 

@@ -35,7 +35,7 @@ kind: "package-bundle"
 <details>
 <summary>维护者信息 — 点击展开</summary>
 
-`cordis.patch.yml` 包含三个按 id 定位的补丁，各自把 Web Bundle 已插入条目的 `disabled` 设为 `false`。`packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 列出此包，`apps/cli` 依赖它，因此每次安装都随包携带且默认禁用，插件管理页在 Official 分组中提供它。选中后会把该 Bundle 追加到 profile 的 `dsh.profile.bundles` 列表末尾；Bundle 层按列表顺序应用，因此这些补丁能命中条目，只是因为该列表把 `@deepseek-ai/dsh-web-app` 排在此包之前。此纯配置包不拥有可变的运行时状态，因此不发布不变量伴随模块。
+`cordis.patch.yml` 包含三个按 id 定位的补丁，各自把 Web Bundle 已插入条目的 `disabled` 设为 `false`。`packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 列出此包，`apps/cli` 依赖它，因此每次安装都随包携带且默认禁用，插件管理页在 Official 分组中提供它。选中后会把该 Bundle 追加到 profile 的 `dsh.profile.bundles` 列表末尾；Bundle 层按列表顺序应用，因此这些补丁能命中条目，只是因为该列表把 `@deepseek-ai/dsh-web-app` 排在此包之前。手写顺序把此包排在最前时，这些条目保持禁用，而插件管理页仍把该开关显示为已启用。此纯配置包不拥有可变的运行时状态，因此不发布不变量伴随模块。
 
 | 文件 | 作用 |
 |---|---|
@@ -78,8 +78,8 @@ kind: "package-bundle"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 此开关针对 `@deepseek-ai/dsh-web-app` 插入的条目。在没有该 Bundle 的 profile 中，三个补丁匹配不到任何条目：加载器为每个条目报告一条 `patch: entry <id> not found` 警告并跳过它，而插件管理页仍把该开关显示为已启用。
-- 该 Bundle 的详情页没有逐条目开关。Host 把被覆盖的三个 id 报告在 `overrides` 下，而 Web 客户端只渲染 Bundle 插入的条目，因此打开这张卡片会显示“这个插件包不包含任何组件。”。三个条目的开关在 Official 分组列表行上。
+- 此开关针对 `@deepseek-ai/dsh-web-app` 插入的条目。在没有该 Bundle 的 profile 中，三个补丁匹配不到任何条目：加载器为每个条目报告一条 `patch: entry <id> not found` 警告，且不从该 Bundle 挂载任何东西；这样的 profile 也不挂载插件管理页。
+- 该 Bundle 的详情页没有逐条目开关。Host 把被覆盖的三个 id 报告在 `overrides` 下，而 Web 客户端只渲染 Bundle 插入的条目，因此打开这张卡片会显示“这个插件包不包含任何组件。”。控制这三个条目的开关在 Official 分组列表行上。
 
 -----
 

@@ -22,4 +22,4 @@ Web 插件页只提供两个可选 bundle：Agent Teams 与语音输入。Auto r
 
 ## 后果
 
-官方分组从两项增至四项，每项都因实验包名而带实验性标签。安装的运行时依赖闭包保持不变。浏览器操作或电脑操作提供方仍需在 profile patch 或组合中同时挂载其 Service Definition 与提供方。
+官方分组包含四个可选 bundle 条目，每项都因实验包名而带实验性标签。安装的运行时依赖闭包保持不变。浏览器操作或电脑操作提供方仍需在 profile patch 或组合中同时挂载其 Service Definition 与提供方。
