@@ -301,7 +301,7 @@ describe('PluginInventorySettingsTab', () => {
     })
     fireEvent.click(globalToggle())
     expect(screen.getByText(en.metadataError.replace('{error}', error))).toBeTruthy()
-    const card = screen.getByRole('button', { name: 'legacy, include:legacy, Disabled' })
+    const card = screen.getByRole('button', { name: 'legacy, Disabled' })
     expect(card).toHaveProperty('disabled', false)
     expect(card.closest('li')?.getAttribute('data-failed')).toBeNull()
     fireEvent.click(card)
@@ -433,8 +433,8 @@ describe('PluginInventorySettingsTab', () => {
 
     // An id equal to the title leaves both the card and its accessible name.
     expect(screen.getByRole('button', { name: 'timer, Enabled' }).querySelector('code')).toBeNull()
-    // A composition id matches the title once its include: marker drops; the accessible name keeps it whole.
-    expect(screen.getByRole('button', { name: 'hmr, include:hmr, Enabled' }).querySelector('code')).toBeNull()
+    // A composition id that matches the title once its include: marker drops is left out the same way.
+    expect(screen.getByRole('button', { name: 'hmr, Enabled' }).querySelector('code')).toBeNull()
     const typert = screen.getByRole('button', { name: 'typert-registry, typert, Enabled' }).querySelector('code')
     expect(typert?.textContent).toBe('typert')
     expect(typert?.getAttribute('title')).toBe('typert')
@@ -644,8 +644,8 @@ describe('PluginInventorySettingsTab', () => {
 
     const deferred = Promise.withResolvers<Snapshot>()
     const pending = render(<PluginInventorySettingsTab {...props(() => deferred.promise)} />)
-    // Loading shows skeleton cards named by the status region, with no visible text.
-    expect(screen.getByRole('status', { name: en.loading }).textContent).toBe('')
+    // Loading shows skeleton cards; the status region announces the label as visually hidden text.
+    expect(screen.getByRole('status').textContent).toBe(en.loading)
     pending.unmount()
     await act(async () => { deferred.resolve(SNAPSHOT) })
 

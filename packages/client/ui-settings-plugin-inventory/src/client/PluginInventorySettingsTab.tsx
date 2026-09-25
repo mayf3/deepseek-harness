@@ -80,9 +80,14 @@ function entrySubtitle(entryId: string): string {
   return entryId.replace(/^include:/, '')
 }
 
-/** Accessible card name: the title, the entry id unless it repeats the title, then the enablement state. */
+/** Whether a card shows its entry id: the id exists and, without its `include:` marker, differs from the title. */
+function idAddsToTitle(entryId: string | null, title: string): entryId is string {
+  return entryId !== null && entrySubtitle(entryId) !== title
+}
+
+/** Accessible card name: the title, the complete entry id when the card shows one, then the enablement state. */
 function cardLabel(title: string, entryId: string | null, state: string): string {
-  return [title, ...entryId === null || entryId === title ? [] : [entryId], state].join(', ')
+  return idAddsToTitle(entryId, title) ? `${title}, ${entryId}, ${state}` : `${title}, ${state}`
 }
 
 /** Preserve translated titles and shorten literal package or module name fallbacks in Settings. */
@@ -135,7 +140,6 @@ function PluginCard({
   const open = expanded === rowKey
   const detailId = `plugin-details-${encodeURIComponent(rowKey)}`
   const descriptionId = useId()
-  const subtitle = entryId === null ? null : entrySubtitle(entryId)
   return (
     <li
       className={css.card}
@@ -161,11 +165,11 @@ function PluginCard({
           </span>
         </span>
         {description === undefined ? null : <span className={css.cardDescription} id={descriptionId}>{description}</span>}
-        {entryId === null || subtitle === title ? null : (
+        {idAddsToTitle(entryId, title) ? (
           <span className={css.cardMeta}>
-            <code className={css.cardIdentity} title={entryId}>{subtitle}</code>
+            <code className={css.cardIdentity} title={entryId}>{entrySubtitle(entryId)}</code>
           </span>
-        )}
+        ) : null}
       </button>
       {metadataError === undefined ? null : <p className={css.brokenNote} role="status" data-package-meta-error>{metadataError}</p>}
       {open ? <div className={css.cardDetails} id={detailId}>{children}</div> : null}
@@ -448,7 +452,8 @@ export function PluginInventorySettingsTab(
         </div>
       )}
       {state.status === 'loading' ? (
-        <div className={css.cards} role="status" aria-label={t('loading')}>
+        <div className={css.cards} role="status">
+          <span className={css.visuallyHidden}>{t('loading')}</span>
           {SKELETON_CARDS.map(slot => (
             <div key={slot} className={css.skeletonCard} aria-hidden="true">
               <span className={css.skeletonBar} />
