@@ -38,7 +38,7 @@ Programmatic TypeScript configuration uses the exported `SessionTelemetryMode` e
 
 ### Minimal configuration
 
-Uploading modes require an exporter URL and accept the SDK option blocks verbatim:
+Uploading modes require an exporter URL. Processor options configure the Session-only SDK queue; the shared reporter adds collector routing and byte-bounded export.
 
 ```yaml
 - id: sessionTelemetry-otel
@@ -46,7 +46,7 @@ Uploading modes require an exporter URL and accept the SDK option blocks verbati
   config:
     mode: FEEDBACK_ONLY       # optional; defaults to FEEDBACK_ONLY
     shutdownTimeoutMillis: 3000 # optional; defaults to 3000
-    exporter:                # passed verbatim to the SDK's OTLP/HTTP log exporter
+    exporter:                # explicit SDK transport settings
       url: https://collector.example.com/v1/logs
       headers:
         authorization: !!js `Bearer ${process.env.OTLP_TOKEN}`
@@ -57,8 +57,9 @@ Uploading modes require an exporter URL and accept the SDK option blocks verbati
 |---|---|---|
 | `mode` | `FEEDBACK_ONLY` | Sharing policy: `FEEDBACK_ONLY` or `DISABLED` |
 | `exporter.url` | required in uploading modes | Full OTLP logs endpoint; must parse as `http(s)` |
-| `exporter`, `processor` | — | Passed verbatim to the SDK exporter and batch processor |
+| `exporter`, `processor` | — | Explicit SDK transport and Session-only batch settings; headers/TLS identity are not inherited from the environment |
 | `shutdownTimeoutMillis` | `3,000` | Outer deadline for the SDK's complete shutdown sequence |
+| `maxRequestBytes` | `4,000,000` | Maximum complete OTLP JSON request bytes before gzip; may only be lowered |
 
 Direct `ctx.sessionTelemetry.emit()` calls are no-ops in every mode and cannot bypass feedback authorization. Inherited parent feedback does not authorize a child export: the child needs new feedback of its own. Its authorized prefix then includes inherited context.
 
@@ -66,7 +67,9 @@ Model requests, request headers, Session creation or adoption, restoration, and 
 
 ### What leaves the machine
 
-In uploading modes, records carry the complete `event.data` as the seam's `sessionTelemetry/record` waterfall returns it — message content, tool arguments and results, the system prompt and tool schemas, todo text, compaction summaries, feedback text, and the session `cwd`. Provider credentials never appear: adapter API keys are constructor parameters, not session events, so they are structurally absent from the log and therefore from telemetry. `DISABLED` constructs no SDK pipeline and hands no capture to a backend.
+Each Session event becomes one `eventName: "session-log"` record. `attributes.sessionId` identifies its Session; `attributes.content` is the JSON string of the complete event envelope and the redacted `event.data`. The resource carries application and anonymous-user identity. Contents can include messages, tool inputs/results, prompts, schemas, feedback, and paths. `DISABLED` constructs no transport. The base profile sends to `https://dsh-otel-collector.deepseeksvc.com/v1/logs` with `x-channel: dsh_otel_report`; `DSH_TELEMETRY_OTLP_URL` can override the URL.
+
+The [shared Session-log reporter](../../host/product-telemetry-otel/README.md) measures complete uncompressed requests, splits oversized batches, and rejects single events that exceed the limit without truncating them. Session logs never mix with product analytics in a request. Rejection and network failures produce local diagnostics; neither handoff nor shutdown confirms collector acceptance.
 
 ### Failures and shutdown
 
@@ -98,7 +101,7 @@ The backend uses on-demand capture with stored history included. Only new own `f
 
 ### Field mapping
 
-Each telemetry record maps to one SDK log record with captured timestamp, severity, body, and attributes. Feedback authorizes the complete unhanded prefix, not only the feedback payload.
+Each capture record supplies a separately copied event envelope and redacted payload to `SessionLogReporter`; serialization retains optional surface metadata and the event sequence/time. Feedback authorizes the complete unhanded prefix, not only the feedback payload.
 
 </details>
 

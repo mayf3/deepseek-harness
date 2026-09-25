@@ -187,58 +187,13 @@ describe('OpenTelemetrySessionBackend wire', () => {
     expect(end?.record.severityText).toBe('ERROR')
     const assistant = ledger.find(r =>
       r.record.attributes?.some(a => a.key === 'event.type' && a.value.stringValue === 'assistant/message'))
-    const body = assistant?.record.body as {
-      kvlistValue: { values: { key: string; value: unknown }[] }
+    const content = assistant?.record.attributes?.find(a => a.key === 'content')?.value.stringValue
+    expect(typeof content).toBe('string')
+    expect(JSON.parse(content as string)).toEqual(session.snapshotEvents().find(event => event.type === 'assistant/message'))
+    for (const { record } of ledger) {
+      expect(record).toMatchObject({ eventName: 'session-log', body: { stringValue: 'session-log' } })
+      expect(record.attributes).toContainEqual({ key: 'sessionId', value: { stringValue: session.id } })
     }
-    expect(body.kvlistValue.values.find(value => value.key === 'stream')?.value).toEqual({
-      arrayValue: {
-        values: [
-          {
-            kvlistValue: {
-              values: [
-                { key: 'type', value: { stringValue: 'text-chunks' } },
-                { key: 'time0', value: { intValue: 1_000 } },
-                { key: 'index', value: { intValue: 0 } },
-                { key: 'dt', value: { arrayValue: { values: [{ intValue: 7 }] } } },
-                {
-                  key: 'texts',
-                  value: {
-                    arrayValue: {
-                      values: [
-                        { stringValue: 'first complete chunk' },
-                        { stringValue: 'second complete chunk' },
-                      ],
-                    },
-                  },
-                },
-              ],
-            },
-          },
-          {
-            kvlistValue: {
-              values: [
-                { key: 'type', value: { stringValue: 'chunk' } },
-                { key: 'time', value: { intValue: 1_007 } },
-                {
-                  key: 'chunk',
-                  value: {
-                    kvlistValue: {
-                      values: [
-                        { key: 'type', value: { stringValue: 'finish' } },
-                        {
-                          key: 'reason',
-                          value: { kvlistValue: { values: [{ key: 'kind', value: { stringValue: 'stop' } }] } },
-                        },
-                      ],
-                    },
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    })
     expect(eventTypes(captures)).not.toContain('manual')
     expect(eventTypes(captures)).toEqual(session.snapshotEvents().map(event => event.type))
     expect(ops).toHaveLength(0)
@@ -841,4 +796,40 @@ describe('dsh-session-telemetry-otel real-load-path guard', () => {
     expect(ctx.sessionTelemetry).toBeInstanceOf(OpenTelemetrySessionBackend)
     await fiber.dispose()
   })
+})
+
+
+it('reports oversized records without failing feedback or exporting their contents', async () => {
+  const { url, captures } = await mockCollector()
+  const ctx = new Context()
+  try {
+    await ctx.plugin(SessionStore)
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
+      mode: SessionTelemetryMode.FEEDBACK_ONLY, exporter: { url }, maxRequestBytes: 1,
+    })
+    const session = ctx.sessions.create(SessionId('oversized'))
+    expect(() => { recordFeedback(session, { text: 'feedback remains local' }) }).not.toThrow()
+    await fiber.dispose()
+    expect(captures).toEqual([])
+    expect(warn).toHaveBeenCalledWith('Session log export failed', expect.any(Error))
+  } finally {
+    await ctx.fiber.dispose()
+  }
+})
+
+it('does not upload a record whose redaction policy removes its canonical envelope', async () => {
+  const { url, captures } = await mockCollector()
+  const { ctx, fiber } = await boot(url)
+  try {
+    ctx.on('session-telemetry/record', (_record, next) => {
+      const { sourceEvent: _sourceEvent, ...redacted } = next()
+      return redacted
+    })
+    recordFeedback(ctx.sessions.create(SessionId('withheld-envelope')), { text: 'withheld' })
+    await fiber.dispose()
+    expect(captures).toEqual([])
+  } finally {
+    await ctx.fiber.dispose()
+  }
 })

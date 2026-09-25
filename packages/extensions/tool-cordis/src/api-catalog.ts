@@ -1703,9 +1703,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Host analytics sender. Mounting alone sends nothing; the owning fiber drains it on unload.',
     methods: [
       {
+        signature: 'reportSessionLog(record: SessionLogRecord): void',
+        description: 'Enqueue one explicitly authorized Session event in the separate byte-bounded queue. Queue admission and shutdown completion are not collector or warehouse acknowledgements.',
+        parameters: [{ name: 'record', description: 'complete Session event and its owning Session id.' }],
+      },
+      {
         signature: 'emit(record: ProductTelemetryRecord): void',
-        description: 'Enqueue one selected product event without waiting for network delivery. Queue admission and shutdown completion are not collector or warehouse acknowledgements.',
-        parameters: [{ name: 'record', description: 'caller-owned event containing only approved analytics fields.' }],
+        description: 'Enqueue a selected product event independently of Session-log reporting.',
+        parameters: [{ name: 'record', description: 'approved analytics fields; no automatic Session collection.' }],
       },
     ],
   },
@@ -6562,6 +6567,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SessionLogOffset = BrandedNumber<\'SessionLogOffset\'>;',
   },
   {
+    name: 'SessionLogRecord',
+    declaration: 'export interface SessionLogRecord {\n    sessionId: SessionId;\n    event: Omit<SessionEvent, \'data\'> & {\n        data: unknown;\n    };\n    attributes?: Attributes;\n    severityNumber?: SeverityNumber;\n}',
+  },
+  {
     name: 'SessionLogSnapshot',
     declaration: 'export interface SessionLogSnapshot {\n    session: SessionHeader;\n    inheritedEventCount: SessionLogOffset;\n    events: SessionEvent[];\n}',
   },
@@ -6767,7 +6776,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionTelemetryRecord',
-    declaration: 'export interface SessionTelemetryRecord {\n    channel: \'ledger\' | \'ops\';\n    time: number;\n    severity: SessionTelemetrySeverity;\n    attributes: Record<string, string | number>;\n    body: unknown;\n}',
+    declaration: 'export interface SessionTelemetryRecord {\n    sourceEvent?: {\n        sessionId: SessionId;\n        envelope: Omit<SessionEvent, \'data\'>;\n    };\n    channel: \'ledger\' | \'ops\';\n    time: number;\n    severity: SessionTelemetrySeverity;\n    attributes: Record<string, string | number>;\n    body: unknown;\n}',
   },
   {
     name: 'SessionTelemetrySeverity',

@@ -1,18 +1,13 @@
 /**
  * OpenTelemetry Service Provider for the DeepSeek Harness telemetry capability.
  *
- * Composes the OTel JS SDK as-is — a `LoggerProvider` with a
- * `BatchLogRecordProcessor` and an OTLP/HTTP log exporter — and maps each
- * record handed over by the capture coordinator onto `logger.emit()`. After that call,
- * batching, retry, queueing, and loss policy use the SDK's documented behavior, configured
- * verbatim through the `exporter`/`processor` passthroughs. This package owns
- * capture mode and an outer shutdown deadline: the SDK's export timeout does
- * not bound its preceding `forceFlush()` wait.
+ * Authorizes feedback-bounded capture and hands complete event strings to the
+ * shared SessionLogReporter. This plugin owns resource identity and an outer
+ * shutdown deadline; the reporter owns byte-bounded SDK delivery.
  *
  * @module @deepseek-ai/dsh-session-telemetry-otel
  */
 
-import { createRequire } from 'node:module'
 import z from '@deepseek-ai/schemastery'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-command-feedback'
@@ -28,19 +23,10 @@ import {
 } from '@deepseek-ai/dsh-session-telemetry'
 import { APP_IDENTITY } from '@deepseek-ai/dsh-llm'
 import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import {
-  BatchLogRecordProcessor,
-  LoggerProvider,
-  type BatchLogRecordProcessorOptions,
-} from '@opentelemetry/sdk-logs'
-import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http'
+import { SessionLogReporter } from '@deepseek-ai/dsh-host-product-telemetry-otel'
+import type { BatchLogRecordProcessorOptions } from '@opentelemetry/sdk-logs'
 import type { OTLPExporterNodeConfigBase } from '@opentelemetry/otlp-exporter-base'
-import { SeverityNumber, type AnyValue } from '@opentelemetry/api-logs'
-import { resourceFromAttributes } from '@opentelemetry/resources'
-
-// The package's own manifest is the single source of the instrumentation-scope
-// version (same pattern as dsh-llm's attribution identity).
-const { version } = createRequire(import.meta.url)('../package.json') as { version: string }
+import { SeverityNumber } from '@opentelemetry/api-logs'
 
 /** Session-sharing policy selected by {@link Config.mode}. */
 export enum SessionTelemetryMode {
@@ -101,10 +87,8 @@ export interface Config {
   /** Defaults to `FEEDBACK_ONLY`: capture session history only when feedback is explicitly submitted. */
   mode?: SessionTelemetryMode
   /**
-   * Passed verbatim to the SDK's OTLP/HTTP log exporter — the complete
-   * `OTLPExporterNodeConfigBase` shape (`headers`, `timeoutMillis`,
-   * `compression`, `keepAlive`, …), owned and documented by the SDK. `url`
-   * is the one field this package requires and validates itself.
+   * Explicit SDK HTTP transport settings. The reporter adds x-channel routing
+   * and does not inherit ambient credentials. URL is required while uploading.
    */
   exporter?: OTLPExporterNodeConfigBase & {
     /** Full logs endpoint (e.g. `https://collector.example.com/v1/logs`). Required outside `DISABLED`; validated at load. */
@@ -117,20 +101,22 @@ export interface Config {
   processor?: Omit<BatchLogRecordProcessorOptions, 'exporter'>
   /** Maximum time spent awaiting the SDK provider's complete shutdown path. */
   shutdownTimeoutMillis?: number
+  /** Uncompressed OTLP request byte limit, at most 4,000,000. */
+  maxRequestBytes?: number
 }
 
 /**
  * Schemastery validator for {@link Config}; cordis runs it before the plugin
- * starts. It checks only the top-level fields; value checks live in the constructor
- * so their errors name the fields. Both SDK option objects pass through unchanged:
- * the SDK defines and validates their fields. Re-declaring them here would
- * silently drop every field this plugin did not repeat.
+ * starts. The constructor validates endpoint and shutdown requirements; the
+ * shared reporter validates Session byte and queue limits. SDK transport and
+ * processor settings retain their upstream types.
  */
 export const Config: z<Config> = z.object({
   mode: z.union(Object.values(SessionTelemetryMode)).default(DEFAULT_TELEMETRY_MODE),
   exporter: z.any(),
   processor: z.any(),
   shutdownTimeoutMillis: z.number(),
+  maxRequestBytes: z.number().step(1).min(1).max(4_000_000),
 })
 
 /** Default outer allowance for the SDK's complete shutdown sequence. */
@@ -157,7 +143,7 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
   static inject = ['sessions']
   static Config = Config
 
-  private readonly provider: LoggerProvider | undefined
+  private readonly provider: SessionLogReporter | undefined
   private readonly shutdownTimeoutMillis: number
   override readonly sharing: SessionTelemetrySharingStatus
 
@@ -201,37 +187,24 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
       throw new Error(`session-telemetry-otel: shutdownTimeoutMillis must be a positive finite number no greater than ${MAX_TIMER_DELAY_MILLIS}, got ${String(shutdownTimeoutMillis)}`)
     }
     this.shutdownTimeoutMillis = shutdownTimeoutMillis
-    this.provider = new LoggerProvider({
-      resource: resourceFromAttributes({
+    const reporter = new SessionLogReporter({
+      exporter: { ...config.exporter, url },
+      ...(config.processor === undefined ? {} : { processor: config.processor }),
+      ...(config.maxRequestBytes === undefined ? {} : { maxRequestBytes: config.maxRequestBytes }),
+      resourceAttributes: {
         'service.name': APP_IDENTITY.product,
         'service.version': APP_IDENTITY.version,
-        // OTel semconv's standard user attribute, carried once per export
-        // batch on the Resource rather than per record: the collector
-        // aggregates by Resource, and the id is process-stable anyway.
         'user.id': getOrCreateAnonymousUserId(),
-      }),
-      processors: [
-        new BatchLogRecordProcessor({
-          ...config.processor,
-          // The complete validated exporter object, verbatim: every SDK
-          // option (`timeoutMillis`, `compression`, `keepAlive`, …) reaches
-          // the exporter — rebuilding selected fields here would silently
-          // ignore the rest. App identity travels in the Resource
-          // (service.name/version); the transport-level user-agent is the
-          // SDK's own, per the axiom.
-          exporter: new OTLPLogExporter(config.exporter),
-        }),
-      ],
+      },
+      onFailure: (message, error) => { ctx.logger.warn(message, error) },
     })
-    const ledger = this.provider.getLogger('@deepseek-ai/dsh-session-telemetry-otel', version)
+    this.provider = reporter
     const enqueue: SessionTelemetrySink['emit'] = (record) => {
-      ledger.emit({
-        timestamp: record.time,
-        observedTimestamp: record.time,
-        ...SEVERITY[record.severity],
-        // JSON-serializable by the seam's contract (validated at Session.append),
-        // which is exactly the AnyValue subset.
-        body: record.body as AnyValue,
+      if (record.sourceEvent === undefined) return
+      reporter.reportSessionLog({
+        sessionId: record.sourceEvent.sessionId,
+        event: { ...record.sourceEvent.envelope, data: record.body },
+        severityNumber: SEVERITY[record.severity].severityNumber,
         attributes: record.attributes,
       })
     }

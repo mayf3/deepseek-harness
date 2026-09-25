@@ -2336,6 +2336,16 @@
       "doc": "docs/subsystems/product-telemetry.md",
       "symbol": "ProductTelemetryRecord",
       "source": "packages/host/product-telemetry-otel/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/product-telemetry.md",
+      "symbol": "SessionLogRecord",
+      "source": "packages/host/product-telemetry-otel/src/session-log.ts"
+    },
+    {
+      "doc": "docs/subsystems/product-telemetry.md",
+      "symbol": "SessionLogOptions",
+      "source": "packages/host/product-telemetry-otel/src/session-log.ts"
     }
   ]
 }

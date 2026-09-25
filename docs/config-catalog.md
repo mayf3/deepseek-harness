@@ -1435,7 +1435,8 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-product-telemetry-otel`
 
-- `source`: [`packages/host/product-telemetry-otel/src/index.ts:37`](../packages/host/product-telemetry-otel/src/index.ts)
+- `refs`: `Attributes` (`@opentelemetry/api`) · `BatchLogRecordProcessorOptions` (`@opentelemetry/sdk-logs`) · `OTLPExporterNodeConfigBase` (`@opentelemetry/otlp-exporter-base`)
+- `source`: [`packages/host/product-telemetry-otel/src/index.ts:38`](../packages/host/product-telemetry-otel/src/index.ts)
 
 ```ts config-catalog
 /** Collector routing, application identity, and bounded in-memory batch settings. */
@@ -1462,6 +1463,25 @@ export interface Config {
   exportTimeoutMillis: number
   /** Outer shutdown wait; pending exports may be lost after this deadline. */
   shutdownTimeoutMillis: number
+  /** Independent Session-log batching and byte limit; product-event settings do not apply. */
+  sessionLog?: Pick<SessionLogOptions, 'processor' | 'maxRequestBytes'>
+}
+
+/** Independent Session-log transport and queue settings. */
+export interface SessionLogOptions {
+  /** Explicit destination and SDK transport options. */
+  exporter: OTLPExporterNodeConfigBase & {
+    /** Full HTTP(S) logs destination. */
+    url: string
+  }
+  /** Session-only queue settings, independent of product-event aggregation. */
+  processor?: Omit<BatchLogRecordProcessorOptions, 'exporter'>
+  /** May lower, but never exceed, the collector's 4,000,000-byte limit. */
+  maxRequestBytes?: number
+  /** Application and anonymous identity carried on the OTLP resource. */
+  resourceAttributes: Attributes
+  /** Report rejected single records and network failures without recording their content. */
+  onFailure: (message: string, error?: Error) => void
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-product-telemetry-otel -->
@@ -2703,7 +2723,7 @@ export interface Config {
 
 - `inject`: `sessions`
 - `refs`: `BatchLogRecordProcessorOptions` (`@opentelemetry/sdk-logs`) · `OTLPExporterNodeConfigBase` (`@opentelemetry/otlp-exporter-base`)
-- `source`: [`packages/session/session-telemetry-otel/src/index.ts:100`](../packages/session/session-telemetry-otel/src/index.ts)
+- `source`: [`packages/session/session-telemetry-otel/src/index.ts:86`](../packages/session/session-telemetry-otel/src/index.ts)
 
 ```ts config-catalog
 /**
@@ -2715,10 +2735,8 @@ export interface Config {
   /** Defaults to `FEEDBACK_ONLY`: capture session history only when feedback is explicitly submitted. */
   mode?: SessionTelemetryMode
   /**
-   * Passed verbatim to the SDK's OTLP/HTTP log exporter — the complete
-   * `OTLPExporterNodeConfigBase` shape (`headers`, `timeoutMillis`,
-   * `compression`, `keepAlive`, …), owned and documented by the SDK. `url`
-   * is the one field this package requires and validates itself.
+   * Explicit SDK HTTP transport settings. The reporter adds x-channel routing
+   * and does not inherit ambient credentials. URL is required while uploading.
    */
   exporter?: OTLPExporterNodeConfigBase & {
     /** Full logs endpoint (e.g. `https://collector.example.com/v1/logs`). Required outside `DISABLED`; validated at load. */
@@ -2731,6 +2749,8 @@ export interface Config {
   processor?: Omit<BatchLogRecordProcessorOptions, 'exporter'>
   /** Maximum time spent awaiting the SDK provider's complete shutdown path. */
   shutdownTimeoutMillis?: number
+  /** Uncompressed OTLP request byte limit, at most 4,000,000. */
+  maxRequestBytes?: number
 }
 
 /** Session-sharing policy selected by {@link Config.mode}. */

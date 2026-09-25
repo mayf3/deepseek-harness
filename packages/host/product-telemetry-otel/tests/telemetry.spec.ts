@@ -1,13 +1,16 @@
-import { createServer, type IncomingHttpHeaders } from 'node:http'
+import { Agent, createServer, type IncomingHttpHeaders } from 'node:http'
 import { once } from 'node:events'
 import { gunzipSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LoggerProvider } from '@opentelemetry/sdk-logs'
 import { SeverityNumber } from '@opentelemetry/api-logs'
-import ProductTelemetry, { Config } from '../src/index.ts'
+import { JsonLogsSerializer } from '@opentelemetry/otlp-transformer'
+import { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import ProductTelemetry, { Config, SESSION_LOG_MAX_REQUEST_BYTES, SessionLogReporter, type SessionLogRecord } from '../src/index.ts'
 
 interface Capture {
+  bytes: number
   headers: IncomingHttpHeaders
   body: { resourceLogs: { resource: unknown; scopeLogs: { logRecords: Record<string, unknown>[] }[] }[] }
 }
@@ -27,7 +30,7 @@ beforeEach(() => {
   vi.stubEnv('OTEL_EXPORTER_OTLP_LOGS_COMPRESSION', undefined)
 })
 
-async function collector(statuses = [200]) {
+async function collector(statuses = [200], beforeRespond?: () => Promise<void>) {
   const captures: Capture[] = []
   const server = createServer((req, res) => {
     const chunks: Buffer[] = []
@@ -35,8 +38,11 @@ async function collector(statuses = [200]) {
     req.on('end', () => {
       const raw = Buffer.concat(chunks)
       const bytes = req.headers['content-encoding'] === 'gzip' ? gunzipSync(raw) : raw
-      captures.push({ headers: req.headers, body: JSON.parse(bytes.toString()) as Capture['body'] })
-      res.writeHead(statuses.shift() ?? 200, { 'content-type': 'application/json' }).end('{}')
+      captures.push({ bytes: bytes.length, headers: req.headers, body: JSON.parse(bytes.toString()) as Capture['body'] })
+      void (async () => {
+        await beforeRespond?.()
+        res.writeHead(statuses.shift() ?? 200, { 'content-type': 'application/json' }).end('{}')
+      })()
     })
   })
   cleanup.push(async () => {
@@ -200,4 +206,207 @@ describe('explicit product telemetry', () => {
     await pending.promise
     await vi.advanceTimersByTimeAsync(0)
   })
+})
+
+
+function sessionRecord(text: string, seq = 0): SessionLogRecord {
+  return {
+    sessionId: SessionId('synthetic-session'),
+    event: { type: 'user/message', seq: SessionSeq(seq), time: 1_800_000_000_000, surfaceOp: 'append',
+      data: { content: [{ type: 'text', text }], nested: { items: [null, true, false, 0, 1.5, { text }] } } },
+  }
+}
+
+function logs(capture: Capture) {
+  return capture.body.resourceLogs.flatMap(resource => resource.scopeLogs.flatMap(scope => scope.logRecords))
+}
+
+function contents(captures: Capture[]): string[] {
+  return captures.flatMap(capture => logs(capture).map((record) => {
+    const attributes = record['attributes'] as { key: string; value: { stringValue: string } }[]
+    return attributes.find(attribute => attribute.key === 'content')!.value.stringValue
+  }))
+}
+
+function parseContent(content: string): unknown {
+  return JSON.parse(content)
+}
+
+describe('Session-log reporting', () => {
+  it('keeps product events in separate requests and preserves the complete nested event', async () => {
+    vi.stubEnv('OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT', '8')
+    vi.stubEnv('OTEL_EXPORTER_OTLP_HEADERS', 'Authorization=Bearer%20unrelated')
+    const target = await collector()
+    const ctx = context()
+    const fiber = await ctx.plugin(ProductTelemetry, config(target.endpoint))
+    const record = sessionRecord('中文\n"quoted"\\path 😀')
+    ctx.productTelemetry.emit(event)
+    ctx.productTelemetry.reportSessionLog(record)
+    await fiber.dispose()
+    expect(target.captures).toHaveLength(2)
+    const sessionCapture = target.captures.find(capture => logs(capture)[0]?.['eventName'] === 'session-log')!
+    expect(logs(sessionCapture)).toHaveLength(1)
+    expect(logs(sessionCapture)[0]).toMatchObject({
+      eventName: 'session-log', body: { stringValue: 'session-log' },
+      attributes: [
+        { key: 'sessionId', value: { stringValue: record.sessionId } },
+        { key: 'content', value: { stringValue: JSON.stringify(record.event) } },
+      ],
+    })
+    expect(JSON.parse(contents([sessionCapture])[0]!)).toEqual(record.event)
+    expect(sessionCapture.headers).not.toHaveProperty('authorization')
+  })
+
+  it.each(['gzip', 'none'] as const)('splits real 4 MB batches before %s compression without losing event order', async (compression) => {
+    const target = await collector()
+    const ctx = context()
+    const fiber = await ctx.plugin(ProductTelemetry, config(target.endpoint, { compression }))
+    const records = [0, 1, 2].map(seq => sessionRecord('中"\\'.repeat(100_000), seq))
+    for (const record of records) ctx.productTelemetry.reportSessionLog(record)
+    await fiber.dispose()
+    expect(target.captures.length).toBeGreaterThan(1)
+    expect(target.captures.every(capture => capture.bytes <= SESSION_LOG_MAX_REQUEST_BYTES)).toBe(true)
+    expect(contents(target.captures).map(parseContent)).toEqual(records.map(record => record.event))
+  })
+
+  it('admits an exact byte-limit request and rejects a single event one byte above it', async () => {
+    const target = await collector()
+    const ctx = context()
+    const record = sessionRecord('边界"\\')
+    const baseline = await ctx.plugin(ProductTelemetry, config(target.endpoint))
+    ctx.productTelemetry.reportSessionLog(record)
+    await baseline.dispose()
+    const limit = target.captures[0]!.bytes
+    const exact = await ctx.plugin(ProductTelemetry, config(target.endpoint, { sessionLog: { maxRequestBytes: limit } }))
+    ctx.productTelemetry.reportSessionLog(record)
+    await exact.dispose()
+    expect(target.captures).toHaveLength(2)
+    expect(target.captures[1]!.bytes).toBe(limit)
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    const tooSmall = await ctx.plugin(ProductTelemetry, config(target.endpoint, { sessionLog: { maxRequestBytes: limit - 1 } }))
+    ctx.productTelemetry.reportSessionLog(record)
+    await tooSmall.dispose()
+    expect(target.captures).toHaveLength(2)
+    expect(warn).toHaveBeenCalledWith('Session log record rejected; content was not truncated', expect.any(Error))
+  })
+
+  it('rejects an oversized event while still sending the events before and after it', async () => {
+    const target = await collector()
+    const ctx = context()
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    const fiber = await ctx.plugin(ProductTelemetry, config(target.endpoint))
+    const records = [sessionRecord('before'), sessionRecord('x'.repeat(SESSION_LOG_MAX_REQUEST_BYTES), 1), sessionRecord('after', 2)]
+    for (const record of records) ctx.productTelemetry.reportSessionLog(record)
+    await fiber.dispose()
+    expect(contents(target.captures).map(parseContent)).toEqual([records[0]!.event, records[2]!.event])
+    expect(warn).toHaveBeenCalledWith('Session log record rejected; content was not truncated', expect.any(Error))
+    expect(target.captures.every(capture => capture.bytes <= SESSION_LOG_MAX_REQUEST_BYTES)).toBe(true)
+  })
+
+  it('continues later byte batches after a permanent rejection', async () => {
+    const target = await collector([400, 200])
+    const ctx = context()
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    const fiber = await ctx.plugin(ProductTelemetry, config(target.endpoint, { sessionLog: { maxRequestBytes: 1300 } }))
+    ctx.productTelemetry.reportSessionLog(sessionRecord('first'.repeat(25)))
+    ctx.productTelemetry.reportSessionLog(sessionRecord('second'.repeat(25), 1))
+    await fiber.dispose()
+    expect(target.captures).toHaveLength(2)
+    expect(warn).toHaveBeenCalledWith('Session log export failed', expect.any(Error))
+  })
+
+  it.each([0, -1, 1.5, 4_000_001, Infinity])('refuses an invalid request limit %s', (maxRequestBytes) => {
+    expect(() => new SessionLogReporter({
+      exporter: { url: 'http://collector.test/v1/logs' }, resourceAttributes: {}, maxRequestBytes, onFailure: vi.fn(),
+    })).toThrow('maxRequestBytes')
+  })
+})
+
+
+it('honors explicit asynchronous headers and agent factories for Session logs', async () => {
+  const target = await collector()
+  const agent = new Agent({ keepAlive: false })
+  cleanup.push(async () => { agent.destroy() })
+  const failures = vi.fn()
+  const reporter = new SessionLogReporter({
+    exporter: { url: target.endpoint, userAgent: 'session-test', headers: async () => ({ 'x-channel': 'test-channel' }), httpAgentOptions: async () => agent },
+    resourceAttributes: {}, onFailure: failures,
+  })
+  cleanup.push(() => reporter.shutdown())
+  reporter.reportSessionLog(sessionRecord('explicit headers'))
+  await reporter.shutdown()
+  expect(failures).not.toHaveBeenCalled()
+  expect(target.captures[0]!.headers['x-channel']).toBe('test-channel')
+  expect(target.captures[0]!.headers['user-agent']).toContain('session-test')
+})
+
+it.each([new Error('serializer failed'), 'serializer failed', undefined])('reports serialization failure %s without sending a partial request', async (failure) => {
+  const target = await collector()
+  const failures = vi.fn()
+  const reporter = new SessionLogReporter({
+    exporter: { url: target.endpoint, keepAlive: false }, resourceAttributes: {}, onFailure: failures,
+  })
+  cleanup.push(() => reporter.shutdown())
+  reporter.reportSessionLog(sessionRecord('not exported'))
+  vi.spyOn(JsonLogsSerializer, 'serializeRequest').mockImplementationOnce(() => {
+    if (failure === undefined) return undefined
+    throw failure
+  })
+  await reporter.shutdown()
+  expect(target.captures).toEqual([])
+  expect(failures).toHaveBeenCalledWith('Session log export failed', expect.any(Error))
+})
+
+
+it.each([
+  ['maxQueueSize', 0], ['maxExportBatchSize', 0], ['scheduledDelayMillis', 0], ['exportTimeoutMillis', 0],
+  ['maxQueueSize', 1.5], ['exportTimeoutMillis', 2_147_483_648],
+] as const)(
+  'rejects invalid Session queue %s=%s before registering a service', (key, value) => {
+    const ctx = context()
+    expect(() => new ProductTelemetry(ctx, config('http://collector.test/v1/logs', {
+      sessionLog: { processor: { [key]: value } },
+    }))).toThrow(`processor.${key}`)
+    expect(ctx.get('productTelemetry')).toBeUndefined()
+  },
+)
+
+
+it('drains every split request when disposal starts during the first request', async () => {
+  const received = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const target = await collector([200], async () => {
+    received.resolve(undefined)
+    await release.promise
+  })
+  const ctx = context()
+  cleanup.push(async () => { release.resolve(undefined) })
+  const fiber = await ctx.plugin(ProductTelemetry, config(target.endpoint, {
+    sessionLog: { maxRequestBytes: 1300, processor: { maxExportBatchSize: 3, scheduledDelayMillis: 60_000 } },
+  }))
+  const service = ctx.productTelemetry
+  const records = [0, 1, 2].map(seq => sessionRecord('content'.repeat(20), seq))
+  for (const record of records) service.reportSessionLog(record)
+  await received.promise
+  let disposed = false
+  const disposal = fiber.dispose().then(() => { disposed = true })
+  await Promise.resolve()
+  expect(disposed).toBe(false)
+  release.resolve(undefined)
+  await disposal
+  expect(target.captures).toHaveLength(3)
+  expect(contents(target.captures).map(parseContent)).toEqual(records.map(record => record.event))
+  service.reportSessionLog(sessionRecord('after shutdown'))
+  expect(target.captures).toHaveLength(3)
+})
+
+
+it('constructs and disposes the product service without Session-specific overrides', async () => {
+  const target = await collector()
+  const ctx = context()
+  const { sessionLog: _sessionLog, ...options } = config(target.endpoint)
+  const service = new ProductTelemetry(ctx, options)
+  service.reportSessionLog(sessionRecord('default Session queue'))
+  await ctx.fiber.dispose()
+  expect(target.captures).toHaveLength(1)
 })

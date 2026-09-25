@@ -38,7 +38,7 @@ kind: "package-reference"
 
 ### 最小配置
 
-上传模式需要导出器 URL，并原样接受 SDK 选项块：
+上传模式要求提供导出器 URL。processor 选项配置 Session 专用 SDK 队列；共享上报器负责采集端路由和按字节限制的导出。
 
 ```yaml
 - id: sessionTelemetry-otel
@@ -46,7 +46,7 @@ kind: "package-reference"
   config:
     mode: FEEDBACK_ONLY       # optional; defaults to FEEDBACK_ONLY
     shutdownTimeoutMillis: 3000 # optional; defaults to 3000
-    exporter:                # passed verbatim to the SDK's OTLP/HTTP log exporter
+    exporter:                # explicit SDK transport settings
       url: https://collector.example.com/v1/logs
       headers:
         authorization: !!js `Bearer ${process.env.OTLP_TOKEN}`
@@ -57,8 +57,9 @@ kind: "package-reference"
 |---|---|---|
 | `mode` | `FEEDBACK_ONLY` | 共享策略：`FEEDBACK_ONLY` 或 `DISABLED` |
 | `exporter.url` | 上传模式必填 | 完整 OTLP 日志端点；必须能解析为 `http(s)` |
-| `exporter`、`processor` | — | 原样传给 SDK 导出器与批处理器 |
+| `exporter`, `processor` | — | 显式 SDK 传输和 Session 专用批处理配置；不从环境继承请求头或 TLS 身份 |
 | `shutdownTimeoutMillis` | `3,000` | SDK 完整关闭序列的外层截止时间 |
+| `maxRequestBytes` | `4,000,000` | gzip 前完整 OTLP JSON 请求的最大字节数；只能调低 |
 
 直接调用 `ctx.sessionTelemetry.emit()` 在任何模式下都是空操作，不能绕过反馈授权。继承的父会话反馈不授权子会话导出：子会话需要新的自身反馈。授权后的前缀包含继承的上下文。
 
@@ -66,7 +67,9 @@ kind: "package-reference"
 
 ### 哪些数据会离开本机
 
-在上传模式中，记录携带 seam 的 `sessionTelemetry/record` waterfall（瀑布式事件）返回的完整 `event.data`——消息内容、工具参数与结果、系统提示词与工具 schema、todo 文本、压缩（compaction）摘要、反馈文本，以及会话 `cwd`。提供方凭据绝不会出现：适配器的 API key 是构造函数参数而非会话事件，因此它们在结构上就不存在于日志中，也就不存在于遥测中。`DISABLED` 不构造 SDK 流水线，也不把任何捕获内容交给后端。
+每条 Session 事件对应一条 `eventName: "session-log"` 记录。`attributes.sessionId` 标识所属 Session；`attributes.content` 是完整事件信封与脱敏后的 `event.data` 的 JSON 字符串。resource 携带应用与匿名用户身份。内容可包含消息、工具输入和结果、提示词、schema、反馈及路径。`DISABLED` 不构造传输。基础 profile 使用 `x-channel: dsh_otel_report` 向 `https://dsh-otel-collector.deepseeksvc.com/v1/logs` 发送；`DSH_TELEMETRY_OTLP_URL` 可覆盖 URL。
+
+[共享 Session 日志上报器](../../host/product-telemetry-otel/README.zh.md) 计量完整未压缩请求，拆分超限批次，并拒绝超限单条事件而不截断内容。Session 日志不会与产品埋点混入同一个请求。拒绝和网络失败会产生本地诊断；交接和关闭都不确认采集端接受。
 
 ### 失败与关闭
 
@@ -98,7 +101,7 @@ kind: "package-reference"
 
 ### 字段映射
 
-每条遥测记录映射为一条 SDK 日志记录，携带捕获的时间戳、严重级别、正文和属性。反馈授权的是尚未交接的完整前缀，而非只有反馈载荷。
+每条采集记录向 `SessionLogReporter` 提供单独复制的事件信封和脱敏后的载荷；序列化保留可选的呈现元数据及事件序号和时间。反馈授权整个尚未交接的前缀，而不只是反馈载荷。
 
 </details>
 

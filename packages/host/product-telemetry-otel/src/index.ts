@@ -3,12 +3,13 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SeverityNumber, type Logger } from '@opentelemetry/api-logs'
 import { validateHeaderValue } from 'node:http'
-import { JsonLogsSerializer } from '@opentelemetry/otlp-transformer'
-import { createOtlpHttpExportDelegate, getSharedConfigurationFromEnvironment, httpAgentFactoryFromOptions } from '@opentelemetry/otlp-exporter-base/node-http'
-import { CompressionAlgorithm, getSharedConfigurationDefaults, mergeOtlpSharedConfigurationWithDefaults, OTLPExporterBase } from '@opentelemetry/otlp-exporter-base'
+import { CompressionAlgorithm } from '@opentelemetry/otlp-exporter-base'
 import { ExportResultCode } from '@opentelemetry/core'
 import { resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs'
+import { createLogExporter } from './transport.ts'
+import { resolveSessionLogLimits, SessionLogReporter, type SessionLogOptions, type SessionLogRecord } from './session-log.ts'
+export { SessionLogReporter, SESSION_LOG_MAX_REQUEST_BYTES, type SessionLogOptions, type SessionLogRecord } from './session-log.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -57,6 +58,8 @@ export interface Config {
   exportTimeoutMillis: number
   /** Outer shutdown wait; pending exports may be lost after this deadline. */
   shutdownTimeoutMillis: number
+  /** Independent Session-log batching and byte limit; product-event settings do not apply. */
+  sessionLog?: Pick<SessionLogOptions, 'processor' | 'maxRequestBytes'>
 }
 
 const positiveInteger = () => z.number().step(1).min(1).max(2_147_483_647)
@@ -74,12 +77,17 @@ export const Config: z<Partial<Config>, Config> = z.object({
   timeoutMillis: positiveInteger().default(15000),
   exportTimeoutMillis: positiveInteger().default(20000),
   shutdownTimeoutMillis: positiveInteger().default(21000),
+  sessionLog: z.object({
+    maxRequestBytes: positiveInteger().max(4_000_000),
+    processor: z.any(),
+  }),
 })
 
 /** Host analytics sender. Mounting alone sends nothing; the owning fiber drains it on unload. */
 export default class ProductTelemetry extends Service {
   static Config = Config
   private readonly logger: Logger
+  private readonly sessionLogs: SessionLogReporter
 
   constructor(ctx: Context, config: Config) {
     let endpoint: URL
@@ -99,21 +107,17 @@ export default class ProductTelemetry extends Service {
     if (config.maxExportBatchSize > config.maxQueueSize) {
       throw new Error('product-telemetry-otel: maxExportBatchSize must not exceed maxQueueSize')
     }
+    resolveSessionLogLimits(config.sessionLog ?? {})
     super(ctx, 'productTelemetry')
-    const shared = mergeOtlpSharedConfigurationWithDefaults({
+    const transport = {
+      url: config.endpoint,
+      headers: { 'x-channel': config.channel },
       timeoutMillis: config.timeoutMillis,
       ...(config.compression === undefined ? {} : {
         compression: config.compression === 'gzip' ? CompressionAlgorithm.GZIP : CompressionAlgorithm.NONE,
       }),
-    }, getSharedConfigurationFromEnvironment('LOGS'), getSharedConfigurationDefaults())
-    const transport = {
-      ...shared,
-      url: config.endpoint,
-      // This collector must not inherit another endpoint's headers or TLS client identity.
-      headers: () => Promise.resolve({ 'Content-Type': 'application/json', 'x-channel': config.channel }),
-      agentFactory: httpAgentFactoryFromOptions({ keepAlive: true }),
     }
-    const exporter = new OTLPExporterBase(createOtlpHttpExportDelegate(transport, JsonLogsSerializer))
+    const exporter = createLogExporter(transport)
     const provider = new LoggerProvider({
       resource: resourceFromAttributes({
         'service.name': config.serviceName,
@@ -138,6 +142,12 @@ export default class ProductTelemetry extends Service {
       })],
     })
     this.logger = provider.getLogger('@deepseek-ai/dsh-host-product-telemetry-otel')
+    this.sessionLogs = new SessionLogReporter({
+      ...config.sessionLog,
+      exporter: transport,
+      resourceAttributes: { 'service.name': config.serviceName, 'service.version': config.serviceVersion },
+      onFailure: (message, error) => { ctx.logger.warn(message, error) },
+    })
     ctx.effect(() => async () => {
       let timer!: ReturnType<typeof setTimeout>
       const deadline = new Promise<void>((resolve) => {
@@ -147,7 +157,7 @@ export default class ProductTelemetry extends Service {
         }, config.shutdownTimeoutMillis)
       })
       try {
-        await Promise.race([provider.shutdown(), deadline])
+        await Promise.race([Promise.all([provider.shutdown(), this.sessionLogs.shutdown()]), deadline])
       } finally {
         clearTimeout(timer)
       }
@@ -155,9 +165,17 @@ export default class ProductTelemetry extends Service {
   }
 
   /**
-   * Enqueue one selected product event without waiting for network delivery.
+   * Enqueue one explicitly authorized Session event in the separate byte-bounded queue.
    * Queue admission and shutdown completion are not collector or warehouse acknowledgements.
-   * @param record - caller-owned event containing only approved analytics fields.
+   * @param record - complete Session event and its owning Session id.
+   */
+  reportSessionLog(record: SessionLogRecord): void {
+    this.sessionLogs.reportSessionLog(record)
+  }
+
+  /**
+   * Enqueue a selected product event independently of Session-log reporting.
+   * @param record - approved analytics fields; no automatic Session collection.
    */
   emit(record: ProductTelemetryRecord): void {
     const severityNumber = record.severityNumber ?? SeverityNumber.INFO
