@@ -16,7 +16,7 @@ interface Manifest {
   publishConfig?: { access?: string }
   exports?: Record<string, unknown>
   dependencies?: Record<string, string>
-  dsh?: { bundle?: { patch?: string; rowSwitches?: boolean } }
+  dsh?: { bundle?: { patch?: string } }
 }
 
 describe('experimental Schedule bundle', () => {
@@ -30,8 +30,6 @@ describe('experimental Schedule bundle', () => {
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.exports?.['./locale/*.json']).toBe('./locale/*.json')
     expect(manifest.exports?.['./cordis.patch.yml']).toBe('./cordis.patch.yml')
-    // The rows work only together, so the plugin manager offers the bundle's switch alone.
-    expect(manifest.dsh?.bundle?.rowSwitches).toBe(false)
     // Each inserted row names a package the bundle depends on, so the rows resolve from the bundle.
     expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual([
       '@deepseek-ai/dsh-client-ui-schedule', '@deepseek-ai/dsh-schedule', '@deepseek-ai/dsh-time-context',

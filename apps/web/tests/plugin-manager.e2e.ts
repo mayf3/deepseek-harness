@@ -314,7 +314,7 @@ describe('web e2e: plugin manager', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('lists the Automation tasks rows without row switches and runs them with the bundle switch', async () => {
+  it('lists the Automation tasks rows and mounts them with the bundle switch', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-schedule'))
     const panel = await openPluginsPanel()
     const scheduleRows = () => [...scaffold.ctx.loader.entries()]
@@ -326,13 +326,16 @@ describe('web e2e: plugin manager', () => {
     for (const title of ['时间感知', '任务调度', '任务界面']) {
       await rows.locator('[data-plugin-row]', { hasText: title }).waitFor()
     }
+    // A bundle that is off offers no row switches.
     expect(await rows.getByRole('switch').count()).toBe(0)
     const toggle = panel.getByRole('switch', { name: '启用 自动化任务', exact: true })
     await toggle.click()
     try {
       await expect.poll(running, { timeout: 20_000 }).toBe(3)
       await expect.poll(() => rows.locator('[data-plugin-row]', { hasText: '运行中' }).count(), { timeout: 20_000 }).toBe(3)
-      expect(await rows.getByRole('switch').count()).toBe(0)
+      for (const title of ['时间感知', '任务调度', '任务界面']) {
+        await rows.getByRole('switch', { name: `启用组件 ${title}`, exact: true }).waitFor()
+      }
       await page.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '自动化任务', exact: true }).waitFor()
     } finally {
       if (await toggle.getAttribute('aria-checked') === 'true') await toggle.click()
