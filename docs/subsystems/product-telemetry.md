@@ -8,8 +8,6 @@ The [product telemetry plugin](../../packages/host/product-telemetry-otel/README
 
 Enqueue is synchronous and does not acknowledge delivery. The SDK owns batching and retry; local diagnostics report export failures. See the package README for configuration, shutdown, and loss limits.
 
-`reportSessionLog()` submits one complete Session event as `eventName: "session-log"` with string attributes `sessionId` and `content`. `SessionLogReporter` exposes the same independently queued sender to feedback backends. The sender measures full OTLP JSON bytes before gzip, splits requests at 4,000,000 bytes or a lower configured limit, and rejects oversized single events without truncation.
-
 ## Record types
 
 ```ts type-equiv
@@ -35,38 +33,6 @@ interface ProductTelemetryRecord {
 
 Source: [`packages/host/product-telemetry-otel/src/index.ts`](../../packages/host/product-telemetry-otel/src/index.ts)
 
-```ts type-equiv
-/** One canonical event with its separately owned Session identity and redacted payload. */
-interface SessionLogRecord {
-  sessionId: SessionId
-  /** Complete event envelope; data is the capture policy's exported copy. */
-  event: Omit<SessionEvent, 'data'> & { data: unknown }
-  /** Additional capture metadata; sessionId and content are always assigned by the reporter. */
-  attributes?: Attributes
-  /** Omitted values use INFO. */
-  severityNumber?: SeverityNumber
-}
-```
-
-```ts type-equiv
-/** Independent Session-log transport and queue settings. */
-interface SessionLogOptions {
-  /** Explicit destination and SDK transport options. */
-  exporter: OTLPExporterNodeConfigBase & {
-    /** Full HTTP(S) logs destination. */
-    url: string
-  }
-  /** Session-only queue settings, independent of product-event aggregation. */
-  processor?: Omit<BatchLogRecordProcessorOptions, 'exporter'>
-  /** May lower, but never exceed, the collector's 4,000,000-byte limit. */
-  maxRequestBytes?: number
-  /** Application and anonymous identity carried on the OTLP resource. */
-  resourceAttributes: Attributes
-  /** Report rejected single records and network failures without recording their content. */
-  onFailure: (message: string, error?: Error) => void
-}
-```
-
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -83,15 +49,9 @@ Host analytics sender. Mounting alone sends nothing; the owning fiber drains it 
 
 ```ts cordis-catalog
 /**
- * Enqueue one explicitly authorized Session event in the separate byte-bounded queue.
+ * Enqueue one selected product event without waiting for network delivery.
  * Queue admission and shutdown completion are not collector or warehouse acknowledgements.
- * @param record - complete Session event and its owning Session id.
- */
-reportSessionLog(record: SessionLogRecord): void
-
-/**
- * Enqueue a selected product event independently of Session-log reporting.
- * @param record - approved analytics fields; no automatic Session collection.
+ * @param record - caller-owned event containing only approved analytics fields.
  */
 emit(record: ProductTelemetryRecord): void
 ```

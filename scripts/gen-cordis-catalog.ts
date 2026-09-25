@@ -274,7 +274,6 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
   ProductTelemetryRecord: 'product-telemetry.md',
-  SessionLogRecord: 'product-telemetry.md',
   ProductTelemetryScalar: 'product-telemetry.md',
   WorkspaceChangesSummary: 'deliverables.md',
   WorkspaceFileDiff: 'deliverables.md',

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-session-telemetry-otel` 仅在新的显式反馈后通过 OTel JS SDK 导出会话记录，适用于所有用户和提供方，包括 `deepseek-official`。`FEEDBACK_ONLY` 释放截至该反馈的权威日志前缀，包含上下文；后续记录等待下一次显式反馈。`DISABLED` 不构造传输。SDK 批处理可完成已授权的上传，无需另一次用户交互或模型调用。部署方负责脱敏规则。
+`dsh-session-telemetry-otel` 仅在新的显式反馈后通过 OTel JS SDK 导出会话记录，适用于所有用户和提供方，包括 `deepseek-official`。`FEEDBACK_ONLY` 释放截至该反馈的权威日志前缀，包含上下文；后续记录等待下一次显式反馈。`DISABLED` 不构造传输。定时批处理可完成已授权的上传，无需另一次用户交互或模型调用。部署方负责脱敏规则。
 
 ## 目录
 
@@ -38,7 +38,7 @@ kind: "package-reference"
 
 ### 最小配置
 
-上传模式要求提供导出器 URL。processor 选项配置 Session 专用 SDK 队列；共享上报器负责采集端路由和按字节限制的导出。
+启用上传的模式必须提供 exporter URL。processor 设置控制独立的 Session 日志队列；路由头通过 `exporter.headers` 显式配置。
 
 ```yaml
 - id: sessionTelemetry-otel
@@ -50,30 +50,30 @@ kind: "package-reference"
       url: https://collector.example.com/v1/logs
       headers:
         authorization: !!js `Bearer ${process.env.OTLP_TOKEN}`
-    processor: {}            # optional; passed verbatim to BatchLogRecordProcessor
+    processor: {}            # optional; byte/count batching and per-request watchdog
 ```
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `mode` | `FEEDBACK_ONLY` | 共享策略：`FEEDBACK_ONLY` 或 `DISABLED` |
 | `exporter.url` | 上传模式必填 | 完整 OTLP 日志端点；必须能解析为 `http(s)` |
-| `exporter`, `processor` | — | 显式 SDK 传输和 Session 专用批处理配置；不从环境继承请求头或 TLS 身份 |
-| `shutdownTimeoutMillis` | `3,000` | SDK 完整关闭序列的外层截止时间 |
+| `exporter`, `processor` | — | SDK 传输及字节/条数聚合；不继承环境中的头部和 TLS 身份。agent 工厂负责返回实例的设置，包括 keepAlive |
+| `shutdownTimeoutMillis` | `3,000` | 所有排队 HTTP 请求的外层期限；到期后停止剩余排队发送 |
 | `maxRequestBytes` | `4,000,000` | gzip 前完整 OTLP JSON 请求的最大字节数；只能调低 |
 
 直接调用 `ctx.sessionTelemetry.emit()` 在任何模式下都是空操作，不能绕过反馈授权。继承的父会话反馈不授权子会话导出：子会话需要新的自身反馈。授权后的前缀包含继承的上下文。
 
-模型请求、请求头、Session 创建或接纳、恢复，以及插件挂载或 HMR（热模块替换）均不授权捕获。仅凭已存储的反馈不会触发任何操作。SDK 定时刷新和关闭可以完成先前已授权的批次，但绝不捕获新记录。
+模型请求、请求头、Session 创建或接纳、恢复，以及插件挂载或 HMR（热模块替换）均不授权捕获。仅凭已存储的反馈不会触发任何操作。定时刷新和关闭可以完成先前已授权的批次，但绝不捕获新记录。
 
 ### 哪些数据会离开本机
 
-每条 Session 事件对应一条 `eventName: "session-log"` 记录。`attributes.sessionId` 标识所属 Session；`attributes.content` 是完整事件信封与脱敏后的 `event.data` 的 JSON 字符串。resource 携带应用与匿名用户身份。内容可包含消息、工具输入和结果、提示词、schema、反馈及路径。`DISABLED` 不构造传输。基础 profile 使用 `x-channel: dsh_otel_report` 向 `https://dsh-otel-collector.deepseeksvc.com/v1/logs` 发送；`DSH_TELEMETRY_OTLP_URL` 可覆盖 URL。
+每条 Session 事件对应一个 `eventName: "session-log"` 记录。`attributes.sessionId` 是 collector 使用的 Session 身份；`attributes.content` 编码完整事件 envelope 和脱敏后的 `event.data`。保留的是 JSON 值，不保证原 JSONL 字节或键顺序相同。为现有消费者保留 `session.id`、`event.seq` 和 `event.type` 元数据。Resource 携带应用和匿名用户身份；scope 携带后端包名和版本。基础配置使用 `https://dsh-otel-collector.deepseeksvc.com/v1/logs`，可用 `DSH_TELEMETRY_OTLP_URL` 覆盖。不隐式添加 channel 头。
 
-[共享 Session 日志上报器](../../host/product-telemetry-otel/README.zh.md) 计量完整未压缩请求，拆分超限批次，并拒绝超限单条事件而不截断内容。Session 日志不会与产品埋点混入同一个请求。拒绝和网络失败会产生本地诊断；交接和关闭都不确认采集端接受。
+后端使用 SDK 的 OTLP JSON 序列化器对每条记录计量一次，包含其 resource/scope envelope，再按保守大小顺序组包。单条超限事件产生一次拒绝诊断且不截断。Session 日志不会与产品埋点混在一个请求中。捕获交接和关闭完成不代表 collector 确认。
 
 ### 失败与关闭
 
-配置错误会在插件加载时失败：缺少或非 `http(s)` 的 `exporter.url`、非正整数的 `processor.maxExportBatchSize`（SDK 会接受该值，随后却在关闭时挂起）以及无效的 `shutdownTimeoutMillis` 都会在任何记录导出前被拒绝。关闭期间，OTel 会先等待 `exporter.forceFlush()`，再等待处理器有界完成 promise；如果该传输 promise 始终不结算，本包会在 `shutdownTimeoutMillis` 到期时放弃等待、记录已隔离的失败，并让应用继续拆卸——届时仍待处理的记录可能在进程退出时丢失。
+无效字节上限、非正队列/计时值、`maxExportBatchSize > maxQueueSize`、无效 endpoint 或关闭期限在加载时失败。processor 默认队列为 2,048 条、单请求最多 512 条、调度延迟 1,000 ms、请求监测期限 30,000 ms。字节上限可能将按条数划分的批次拆成多个串行 HTTP 请求。`exportTimeoutMillis` 针对每个请求告警，但不会释放未结束的传输槽位；SDK transport 负责网络超时和重试。关闭时发送这些请求直到 `shutdownTimeoutMillis`，到期后丢弃剩余队列并禁止后续发送，在途请求仍可能结束。因此较大的授权前缀在 CLI 退出时可能只发送了一部分。
 
 -----
 
@@ -87,7 +87,7 @@ kind: "package-reference"
 
 ### 设计理念
 
-后端是对 OTel JS SDK 的薄适配层：它拥有反馈授权、资源身份与外层关闭截止时间。权威 ledger 记录使用 `@deepseek-ai/dsh-session-telemetry-otel` 插桩作用域；此后端不捕获运维记录。资源身份携带 `service.name`/`service.version`（来自 `dsh-llm` 的 `APP_IDENTITY`）以及匿名 `user.id`（来自 `$DSH_HOME/.anonymous-user-id`），按导出批次携带一次，而非逐条记录。
+后端负责反馈授权、身份、字节/条数调度和关闭。OTel 负责记录构造、JSON 传输、压缩和重试。Resource 身份包含 `APP_IDENTITY` 的 `service.name`/`service.version` 和匿名 `user.id`；scope 保留本包名称和版本。
 
 ### 源码地图
 
@@ -97,7 +97,7 @@ kind: "package-reference"
 
 ### 捕获接线
 
-后端使用包含存储历史的按需捕获。只有新的自身 `feedback/record`、`feedback/message-put` 或 `feedback/message-delete` 事件触发活跃会话捕获，并以该事件为上限。冷会话 `feedback/committed` 通知提供已提交的权威快照，不发布存活 Session 或 Agent。同对象交接游标抑制重复捕获。后端不实现 `flush()`；SDK 负责批处理和关闭排空。
+后端按需捕获历史，由新的自身反馈事件或已提交的冷会话快照触发。私有 reporter 串行发送排队 HTTP 请求，即使监测期限已触发也不会重叠；外层关闭期限停止剩余队列。不额外暴露 flush 入口。
 
 ### 字段映射
 
@@ -151,4 +151,4 @@ kind: "package-reference"
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。模式选择只改变 capture handoff、SDK setup 与本地 diagnostics，不改变可由独立 companion 对照的会话或服务状态。导出在越过后端边界后仍由 SDK 内部处理。
+**运行时不变式：** 不发布伴生入口。模式选择只改变 capture handoff、SDK setup 与本地 diagnostics，不改变可由独立 companion 对照的会话或服务状态。无法根据本地队列状态推断 collector 是否收到记录。

@@ -65,7 +65,7 @@ This section explains the capture design; the observable behavior is fully cover
 
 ### Design concept
 
-The capture package owns complete event capture, redaction, and the handoff cursor. Backends own delivery; the OTel implementation uses SDK queues and retries with collector-specific byte-bounded requests. The [revival Agent Note](../../../.agents/notes/implemented/feature/2026-07-23-session-telemetry-otel-revival.md) records the capture and redaction rationale.
+The capture package owns complete event capture, redaction, and handoff cursors. Redaction rules must preserve `sourceEvent` for OTel upload; returning a fresh record without it withholds the event with a diagnostic. Its cloned envelope excludes `data`, which is carried only in `body`. The OTel backend owns byte/count scheduling and uses SDK transport/retries. The [revival Agent Note](../../../.agents/notes/implemented/feature/2026-07-23-session-telemetry-otel-revival.md) owns capture and redaction rationale.
 
 ### Source map
 

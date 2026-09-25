@@ -1437,8 +1437,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-product-telemetry-otel`
 
-- `refs`: `Attributes` (`@opentelemetry/api`) · `BatchLogRecordProcessorOptions` (`@opentelemetry/sdk-logs`) · `OTLPExporterNodeConfigBase` (`@opentelemetry/otlp-exporter-base`)
-- `source`: [`packages/host/product-telemetry-otel/src/index.ts:38`](../packages/host/product-telemetry-otel/src/index.ts)
+- `source`: [`packages/host/product-telemetry-otel/src/index.ts:37`](../packages/host/product-telemetry-otel/src/index.ts)
 
 ```ts config-catalog
 /** Collector routing, application identity, and bounded in-memory batch settings. */
@@ -1465,25 +1464,6 @@ export interface Config {
   exportTimeoutMillis: number
   /** Outer shutdown wait; pending exports may be lost after this deadline. */
   shutdownTimeoutMillis: number
-  /** Independent Session-log batching and byte limit; product-event settings do not apply. */
-  sessionLog?: Pick<SessionLogOptions, 'processor' | 'maxRequestBytes'>
-}
-
-/** Independent Session-log transport and queue settings. */
-export interface SessionLogOptions {
-  /** Explicit destination and SDK transport options. */
-  exporter: OTLPExporterNodeConfigBase & {
-    /** Full HTTP(S) logs destination. */
-    url: string
-  }
-  /** Session-only queue settings, independent of product-event aggregation. */
-  processor?: Omit<BatchLogRecordProcessorOptions, 'exporter'>
-  /** May lower, but never exceed, the collector's 4,000,000-byte limit. */
-  maxRequestBytes?: number
-  /** Application and anonymous identity carried on the OTLP resource. */
-  resourceAttributes: Attributes
-  /** Report rejected single records and network failures without recording their content. */
-  onFailure: (message: string, error?: Error) => void
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-product-telemetry-otel -->
@@ -2729,24 +2709,24 @@ export interface Config {
 
 ```ts config-catalog
 /**
- * Plugin configuration: one sharing policy, two verbatim SDK option objects,
- * and one DSH-owned shutdown bound. Uploading modes validate their endpoint
+ * Plugin configuration: sharing policy, SDK transport options, byte/count queue
+ * settings, and an overall shutdown bound. Uploading modes validate their endpoint
  * and shutdown deadline at plugin load; `DISABLED` reads neither.
  */
 export interface Config {
   /** Defaults to `FEEDBACK_ONLY`: capture session history only when feedback is explicitly submitted. */
   mode?: SessionTelemetryMode
   /**
-   * Explicit SDK HTTP transport settings. The reporter adds x-channel routing
-   * and does not inherit ambient credentials. URL is required while uploading.
+   * Explicit SDK HTTP transport settings, including optional routing headers.
+   * Ambient credentials are not inherited. URL is required while uploading.
    */
   exporter?: OTLPExporterNodeConfigBase & {
     /** Full logs endpoint (e.g. `https://collector.example.com/v1/logs`). Required outside `DISABLED`; validated at load. */
     url?: string
   }
   /**
-   * Passed verbatim to `BatchLogRecordProcessor` (minus the exporter slot,
-   * which this plugin fills); the SDK owns and documents these knobs.
+   * Count, queue, cadence, and per-request watchdog settings for the byte-bounded
+   * processor. A watchdog warning never releases an unsettled transport slot.
    */
   processor?: Omit<BatchLogRecordProcessorOptions, 'exporter'>
   /** Maximum time spent awaiting the SDK provider's complete shutdown path. */

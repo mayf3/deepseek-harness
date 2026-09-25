@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Send selected product usage events and explicitly authorized Session logs to an OTLP/HTTP collector. Session logs use a separate queue and byte-bounded requests. Mounting the plugin collects nothing automatically. Delivery is best effort and does not confirm warehouse ingestion.
+Send selected product usage events to an OTLP/HTTP collector. Events carry a name, string summary, occurrence time, and scalar or one-level object attributes. Mounting the plugin collects nothing automatically; applications explicitly submit each event. Delivery is best effort and does not confirm warehouse ingestion.
 
 ## Table of Contents
 
@@ -48,17 +48,12 @@ Mount the plugin in a Cordis composition with the application identity; override
 | `timeoutMillis` | `15000` | Exporter HTTP and retry deadline |
 | `exportTimeoutMillis` | `20000` | Processor batch export deadline |
 | `shutdownTimeoutMillis` | `21000` | Outer wait for shutdown; expiry reports possible loss |
-| `sessionLog.maxRequestBytes` / `sessionLog.processor` | `4,000,000` / SDK defaults | Independent Session-log request ceiling and batch settings; the byte ceiling cannot exceed 4,000,000 |
 
 The default endpoint routes explicitly submitted events to the production product collector. Test and custom deployments must override it. Only `x-channel` and SDK protocol headers reach the collector; ambient OTel headers and client certificates are not inherited.
 
 The 30-second interval batches product events; the exporter has a 15-second retry window inside the processor’s 20-second batch deadline. The outer 21-second wait bounds plugin disposal, including SDK `forceFlush()` work that the processor deadline does not cover. An unreachable collector can delay disposal for the full 21 seconds. A full 2,048-record queue requires four 512-record batches and may not drain before that deadline. Interactive compositions needing a shorter exit should override these budgets; neither configuration guarantees delivery.
 
 Consumers inject `productTelemetry` and call `emit()` with explicitly selected analytics fields. Event names and field semantics belong to their product and analytics owners. The plugin reads no Session, account, credential, or device identifier. Callers must exclude prompts, responses, file contents, credentials, and other unapproved values.
-
-`reportSessionLog(record)` accepts a Session id and one complete event. It writes `eventName: "session-log"`, a string body, and `attributes.sessionId` plus `attributes.content = JSON.stringify(event)`. Optional capture metadata remains on the record. Nested objects, arrays, booleans, nulls, and fractional numbers stay inside the JSON string. The exported `SessionLogReporter` provides the same pipeline to feedback-authorizing backends without mounting the product service. Callers must authorize Session sharing before submission.
-
-Session records never share a request with product events. Each candidate batch is measured using the SDK OTLP JSON serializer before gzip, including resource, scope, attributes, UTF-8, and JSON escaping. Oversized batches split in event order; a single oversized record is rejected with a content-free diagnostic while other records continue. SDK attribute-length truncation is disabled for Session records. Shutdown awaits split requests as well as queued records, subject to the owner’s outer deadline.
 
 The collector expects a string body and attributes containing strings, numbers, booleans, or objects of those scalars. Callers supply occurrence time in milliseconds; the plugin assigns observation time and defaults severity to INFO. Invalid transport configuration fails at activation. Export failures produce local warnings without making event submission wait for the network.
 
@@ -70,7 +65,7 @@ The collector expects a string body and attributes containing strings, numbers, 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Independent OTel providers keep product and Session-log queues separate. Both use the SDK JSON serializer and the same explicit HTTP transport configuration. The Session exporter splits oversized requests before transport; SDK batching cadence and retries remain SDK-owned. Plugin disposal drains both providers under one outer deadline. No global provider is installed.
+A private OTel logger feeds `BatchLogRecordProcessor` and the SDK HTTP delegate with its JSON log serializer. The delegate receives explicit headers and an HTTP agent; only shared timeout and compression settings use SDK environment resolution. The direct `@opentelemetry/core` dependency matches `sdk-logs` at 2.9.0 so exporter result enums share one TypeScript identity. The SDK owns queueing, transient-error retries, and compression; plugin disposal drains pending records with a bounded wait. Export completion is observed separately because SDK shutdown can resolve after a rejected export. No global OTel provider is installed.
 
 [`src/index.ts`](src/index.ts) owns configuration and submission. No runtime invariant companion is published: delivery has no independent local acknowledgement to compare with the SDK's queue.
 
@@ -104,7 +99,7 @@ Delivery and collection remain limited to the following capabilities.
 
 - Callers own event selection, renderer-to-host transport, and any permitted identity attributes.
 - The queue is memory-only; overflow, network failure, and process exit can lose events. There is no durable outbox or warehouse acknowledgement.
-- Product events batch by record count. Session-log batches additionally obey the uncompressed byte ceiling; single-event rejection, queue overflow, and export failure have no durable retry guarantee.
+- The SDK batches by record count, not encoded bytes. Callers must keep records within the collector's 4 MB limit and choose batch sizes appropriate to the receiver.
 - Caller-selected strings are not redacted automatically. This package does not decide product disclosure or consent policy.
 
 <a id="dev-note"></a>

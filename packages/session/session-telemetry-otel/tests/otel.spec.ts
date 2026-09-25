@@ -235,7 +235,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
     expect(allRecords(captures).some(r => r.scope.endsWith('/ops'))).toBe(false)
   })
 
-  it('bounds the SDK forceFlush wait when an in-flight transport never settles', async () => {
+  it('stops queued sends at the shutdown deadline while observing the active transport', async () => {
     const gate = Promise.withResolvers<boolean>()
     const arrived = Promise.withResolvers<boolean>()
     const { url, captures } = await mockCollector(async (index) => {
@@ -268,7 +268,8 @@ describe('OpenTelemetrySessionBackend wire', () => {
     // the real provider promise remains clean after the test has proved the
     // Cordis disposer no longer waits for it.
     gate.resolve(true)
-    await expect.poll(() => captures.length).toBeGreaterThanOrEqual(2)
+    await expect.poll(() => captures.length).toBe(1)
+    expect(JSON.stringify(captures)).not.toContain('second report')
   })
 
   it('passes exporter options beyond url and headers through to the SDK exporter', async () => {
@@ -798,7 +799,6 @@ describe('dsh-session-telemetry-otel real-load-path guard', () => {
   })
 })
 
-
 it('reports oversized records without failing feedback or exporting their contents', async () => {
   const { url, captures } = await mockCollector()
   const ctx = new Context()
@@ -812,7 +812,7 @@ it('reports oversized records without failing feedback or exporting their conten
     expect(() => { recordFeedback(session, { text: 'feedback remains local' }) }).not.toThrow()
     await fiber.dispose()
     expect(captures).toEqual([])
-    expect(warn).toHaveBeenCalledWith('Session log export failed', expect.any(Error))
+    expect(warn).toHaveBeenCalledWith('Session log record rejected; content was not truncated', expect.any(Error))
   } finally {
     await ctx.fiber.dispose()
   }
@@ -821,6 +821,7 @@ it('reports oversized records without failing feedback or exporting their conten
 it('does not upload a record whose redaction policy removes its canonical envelope', async () => {
   const { url, captures } = await mockCollector()
   const { ctx, fiber } = await boot(url)
+  const warn = vi.spyOn(ctx.logger, 'warn')
   try {
     ctx.on('session-telemetry/record', (_record, next) => {
       const { sourceEvent: _sourceEvent, ...redacted } = next()
@@ -829,6 +830,7 @@ it('does not upload a record whose redaction policy removes its canonical envelo
     recordFeedback(ctx.sessions.create(SessionId('withheld-envelope')), { text: 'withheld' })
     await fiber.dispose()
     expect(captures).toEqual([])
+    expect(warn).toHaveBeenCalledWith('Session log record withheld: redaction removed sourceEvent')
   } finally {
     await ctx.fiber.dispose()
   }

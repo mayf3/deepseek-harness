@@ -10,11 +10,11 @@ Session logs contain nested JSON and large tool results. The product collector a
 
 ## Decision
 
-The product OTel package provides one Session-log reporter shared by its service and the feedback backend. Each canonical event becomes `eventName: "session-log"`, with `sessionId` and the JSON-stringified full event in `content` attributes. Redaction applies before serialization; the capture record carries an envelope without a duplicate payload.
+The Session OTel backend owns the Session-log reporter. The product service owns only product events, with no Session types or unused Session queue. Each canonical event becomes `eventName: "session-log"`, with `sessionId` and JSON-stringified event values in `content`; serialization does not preserve JSONL key ordering. Redaction runs before serialization and the copied envelope excludes the payload.
 
-Session logs use their own SDK provider and queue. The exporter measures complete uncompressed OTLP JSON using the transport's SDK serializer and splits batches to at most 4,000,000 bytes. A single oversized event is rejected with a diagnostic and does not prevent other events from being sent. Attribute truncation is disabled for this queue. The owner supplies a bounded shutdown that waits for split exports.
+Session logs use a separate provider and byte/count queue. Each record is measured once with the SDK serializer including a full envelope; the sum conservatively bounds a combined request. Greedy packing avoids full-candidate serialization and recursive re-encoding. Single oversized records receive one diagnostic and do not block later events. One HTTP request owns the transport slot until settlement, even after its watchdog fires; shutdown expiry stops the remaining queue. Scope name/version and explicit transport options remain owned by the backend.
 
-The [telemetry revival](../feature/2026-07-23-session-telemetry-otel-revival.md) remains authoritative for redaction, capture, and best-effort handoff. This decision replaces its SDK-only batching rule for Session-log request sizing; the SDK still owns queueing cadence and transport retry. Feedback authorization and the separate DeepSeek model-request contribution remain unchanged.
+The [telemetry revival](../feature/2026-07-23-session-telemetry-otel-revival.md) remains authoritative for redaction, capture, and best-effort handoff. This decision replaces its SDK-only queue/batching rule: SDK batch deadlines cannot own an operation split into multiple HTTP requests. The backend schedules complete requests; the SDK still owns transport/retry. Feedback authorization and the separate DeepSeek model-request contribution remain unchanged.
 
 ## Alternatives considered
 
@@ -26,4 +26,4 @@ The [telemetry revival](../feature/2026-07-23-session-telemetry-otel-revival.md)
 
 ## Consequences
 
-Product and Session records share routing configuration but never a request. Queue overflow, single-event rejection, process exit, and transport failures can still lose data; no durable outbox or collector acknowledgement is added. Tests observe exact byte limits, nested JSON round trips, separated requests, oversize continuation, and feedback-authorized recorded-session replay.
+Product and Session records never share a request or queue, and neither package imports the other. Conservative per-record envelope accounting can produce smaller batches than exact combined accounting. Queue overflow, oversize rejection, exit, and transport failure can lose data; no durable outbox or acknowledgement is added. Tests cover byte limits, linear measurement, slow-request serialization, metadata, redaction-copy isolation, and feedback-authorized replay.

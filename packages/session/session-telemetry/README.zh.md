@@ -65,7 +65,7 @@ ledger 记录携带 `sourceEvent`，其中包含所属 Session id 和不含 `dat
 
 ### 设计理念
 
-采集包负责完整事件采集、脱敏和交接游标。后端负责投递；OTel 实现使用 SDK 队列和重试，并按采集端的字节上限限制请求。[恢复遥测的 Agent Note](../../../.agents/notes/implemented/feature/2026-07-23-session-telemetry-otel-revival.zh.md) 记录采集与脱敏的理由。
+捕获包负责完整事件捕获、脱敏和交接游标。脱敏规则必须保留 `sourceEvent` 才能通过 OTel 上传；返回不含它的新记录会阻止该事件上传并产生诊断。复制的 envelope 不含 `data`，数据仅由 `body` 携带。OTel 后端负责字节/条数调度并使用 SDK 传输和重试。[恢复遥测决策记录](../../../.agents/notes/implemented/feature/2026-07-23-session-telemetry-otel-revival.zh.md) 说明捕获和脱敏依据。
 
 ### 源码地图
 

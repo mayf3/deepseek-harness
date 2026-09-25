@@ -9026,9 +9026,6 @@ importers:
       '@deepseek-ai/dsh-loader-smoke':
         specifier: workspace:*
         version: link:../../test-support/loader-smoke
-      '@deepseek-ai/dsh-session':
-        specifier: workspace:*
-        version: link:../../core/session
 
   packages/host/webserver:
     dependencies:
@@ -10920,7 +10917,13 @@ importers:
       '@opentelemetry/api-logs':
         specifier: ^0.220.0
         version: 0.220.0
+      '@opentelemetry/core':
+        specifier: 2.9.0
+        version: 2.9.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/otlp-exporter-base':
+        specifier: ^0.220.0
+        version: 0.220.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/otlp-transformer':
         specifier: ^0.220.0
         version: 0.220.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources':
@@ -10951,9 +10954,6 @@ importers:
       '@deepseek-ai/dsh-command-feedback':
         specifier: workspace:*
         version: link:../../feedback/command-feedback
-      '@deepseek-ai/dsh-host-product-telemetry-otel':
-        specifier: workspace:*
-        version: link:../../host/product-telemetry-otel
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:*
         version: link:../../util/http-proxy
@@ -13983,9 +13983,6 @@ importers:
       '@deepseek-ai/dsh-host-plugin-inventory':
         specifier: workspace:*
         version: link:../../packages/host/plugin-inventory
-      '@deepseek-ai/dsh-host-product-telemetry-otel':
-        specifier: workspace:*
-        version: link:../../packages/host/product-telemetry-otel
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:*
         version: link:../../packages/host/webserver

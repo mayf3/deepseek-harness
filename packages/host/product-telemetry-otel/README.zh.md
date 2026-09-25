@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-将选定的产品使用事件与明确授权的 Session 日志发送到 OTLP/HTTP 采集端。Session 日志使用独立队列和按字节限制的请求。挂载插件不会自动采集数据。投递为尽力而为，不确认数据仓库入库。
+将选定的产品使用事件发送到 OTLP/HTTP 接收服务。事件包含名称、字符串摘要、发生时间，以及标量或单层对象属性。挂载插件不会自动采集信息；应用需要显式提交每个事件。发送采用尽力而为方式，不代表数据已入仓。
 
 ## 目录
 
@@ -48,17 +48,12 @@ kind: "package-reference"
 | `timeoutMillis` | `15000` | Exporter HTTP 发送与重试的超时时间 |
 | `exportTimeoutMillis` | `20000` | Processor 批次导出的超时时间 |
 | `shutdownTimeoutMillis` | `21000` | 退出时的等待上限；超时会提示可能丢失数据 |
-| `sessionLog.maxRequestBytes` / `sessionLog.processor` | `4,000,000` / SDK 默认值 | 独立的 Session 日志请求上限和批处理配置；字节上限不能超过 4,000,000 |
 
 默认接收地址将显式提交的事件发送到生产产品 collector，测试和自定义部署必须覆盖该地址。只向 collector 发送 `x-channel` 和 SDK 协议请求头，不继承宿主 OTel 请求头或客户端证书。
 
 30 秒间隔用于批量发送产品事件；exporter 的 15 秒重试窗口位于 processor 的 20 秒批次期限内。外层 21 秒等待限制插件卸载时间，包括 processor 期限未覆盖的 SDK `forceFlush()`。collector 不可达时，卸载可能等待完整的 21 秒。2,048 条满队列需要四个 512 条批次，可能无法在期限前排空。要求更快退出的交互式应用组合应覆盖这些时间配置；两种配置都不保证送达。
 
 消费方注入 `productTelemetry`，调用 `emit()` 提交明确选定的分析字段。事件名称与字段含义由产品和数据分析负责人定义。插件不读取 Session、账号、凭证或设备标识。调用方必须排除提示词、回答、文件内容、凭证及其他未经批准的数据。
-
-`reportSessionLog(record)` 接收 Session id 和一条完整事件，写入 `eventName: "session-log"`、字符串 body，以及 `attributes.sessionId` 和 `attributes.content = JSON.stringify(event)`。可选的采集元数据保留在记录上。嵌套对象、数组、布尔值、null 与小数保留在 JSON 字符串内。导出的 `SessionLogReporter` 为负责反馈授权的后端提供同一管线，无需挂载产品服务。调用方必须先取得 Session 分享授权再提交。
-
-Session 记录不会与产品事件共用一个请求。每个候选批次都使用 SDK 的 OTLP JSON 序列化器在 gzip 前计量，涵盖 resource、scope、attributes、UTF-8 和 JSON 转义。超限批次按事件顺序拆分；单条超限记录被拒绝并记录不含内容的诊断，其余记录继续发送。Session 记录禁用 SDK 属性长度截断。关闭时等待拆分请求和排队记录，受拥有方的外层截止时间约束。
 
 接收服务要求 body 为字符串，attributes 的值为字符串、数字、布尔值或由这些标量组成的对象。调用方以毫秒提供发生时间；插件填写观测时间，默认严重程度为 INFO。无效传输配置在激活时报错。发送失败产生本地警告，事件提交不等待网络。
 
@@ -70,7 +65,7 @@ Session 记录不会与产品事件共用一个请求。每个候选批次都使
 <details>
 <summary>实现细节——点击展开</summary>
 
-独立的 OTel provider 将产品事件与 Session 日志队列分开。两者使用 SDK JSON 序列化器和相同的显式 HTTP 传输配置。Session 导出器在传输前拆分超限请求；批处理节奏和重试仍由 SDK 负责。插件卸载在同一个外层截止时间内排空两个 provider，不安装全局 provider。
+私有 OTel logger 将记录交给 `BatchLogRecordProcessor`，再由 SDK HTTP delegate 和 JSON 日志序列化器发送。delegate 使用显式请求头和 HTTP agent，只有共享的超时与压缩配置使用 SDK 环境变量解析。直接依赖的 `@opentelemetry/core` 与 `sdk-logs` 对齐为 2.9.0，使导出结果枚举共享同一个 TypeScript 类型身份。SDK 负责队列、临时错误重试与压缩；插件卸载时在限定时间内发送剩余记录。发送完成结果单独观测，因为 SDK 在发送被拒绝后仍可能正常完成退出。不安装全局 OTel provider。
 
 [`src/index.ts`](src/index.ts) 负责配置与提交。不发布运行时不变量伴随模块：本地没有独立的送达确认可与 SDK 队列比较。
 
@@ -104,7 +99,7 @@ Session 记录不会与产品事件共用一个请求。每个候选批次都使
 
 - 调用方拥有事件选择、渲染进程到宿主的传输以及获准使用的标识属性。
 - 队列仅存在于内存；队列溢出、网络故障和进程退出可能丢失事件。没有持久发件箱或入仓确认。
-- 产品事件按记录数量分批。Session 日志批次还遵守未压缩字节上限；单条事件拒绝、队列溢出和导出失败均不提供持久化重试保证。
+- SDK 按记录条数而非编码字节数分批。调用方必须确保记录不超过接收服务的 4 MB 限制，并选择接收服务适用的批次大小。
 - 不自动脱敏调用方选择的字符串。本包不决定产品告知或同意策略。
 
 <a id="dev-note"></a>

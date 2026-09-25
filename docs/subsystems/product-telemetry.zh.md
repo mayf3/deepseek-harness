@@ -8,8 +8,6 @@
 
 入队同步完成，不代表送达确认。SDK 负责批量发送与重试；发送失败会产生本地诊断。配置、退出和丢失限制见包 README。
 
-`reportSessionLog()` 将一条完整 Session 事件作为 `eventName: "session-log"` 提交，字符串属性为 `sessionId` 和 `content`。`SessionLogReporter` 向反馈后端提供同一个独立排队的发送器。发送器在 gzip 前计量完整 OTLP JSON 字节数，按 4,000,000 字节或更低配置上限拆分请求，并拒绝超限单条事件而不截断。
-
 ## 记录类型
 
 ```ts type-equiv
@@ -35,38 +33,6 @@ interface ProductTelemetryRecord {
 
 Source: [`packages/host/product-telemetry-otel/src/index.ts`](../../packages/host/product-telemetry-otel/src/index.ts)
 
-```ts type-equiv
-/** One canonical event with its separately owned Session identity and redacted payload. */
-interface SessionLogRecord {
-  sessionId: SessionId
-  /** Complete event envelope; data is the capture policy's exported copy. */
-  event: Omit<SessionEvent, 'data'> & { data: unknown }
-  /** Additional capture metadata; sessionId and content are always assigned by the reporter. */
-  attributes?: Attributes
-  /** Omitted values use INFO. */
-  severityNumber?: SeverityNumber
-}
-```
-
-```ts type-equiv
-/** Independent Session-log transport and queue settings. */
-interface SessionLogOptions {
-  /** Explicit destination and SDK transport options. */
-  exporter: OTLPExporterNodeConfigBase & {
-    /** Full HTTP(S) logs destination. */
-    url: string
-  }
-  /** Session-only queue settings, independent of product-event aggregation. */
-  processor?: Omit<BatchLogRecordProcessorOptions, 'exporter'>
-  /** May lower, but never exceed, the collector's 4,000,000-byte limit. */
-  maxRequestBytes?: number
-  /** Application and anonymous identity carried on the OTLP resource. */
-  resourceAttributes: Attributes
-  /** Report rejected single records and network failures without recording their content. */
-  onFailure: (message: string, error?: Error) => void
-}
-```
-
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -83,15 +49,9 @@ Host analytics sender. Mounting alone sends nothing; the owning fiber drains it 
 
 ```ts cordis-catalog
 /**
- * Enqueue one explicitly authorized Session event in the separate byte-bounded queue.
+ * Enqueue one selected product event without waiting for network delivery.
  * Queue admission and shutdown completion are not collector or warehouse acknowledgements.
- * @param record - complete Session event and its owning Session id.
- */
-reportSessionLog(record: SessionLogRecord): void
-
-/**
- * Enqueue a selected product event independently of Session-log reporting.
- * @param record - approved analytics fields; no automatic Session collection.
+ * @param record - caller-owned event containing only approved analytics fields.
  */
 emit(record: ProductTelemetryRecord): void
 ```

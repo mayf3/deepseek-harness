@@ -2,7 +2,7 @@
  * OpenTelemetry Service Provider for the DeepSeek Harness telemetry capability.
  *
  * Authorizes feedback-bounded capture and hands complete event strings to the
- * shared SessionLogReporter. This plugin owns resource identity and an outer
+ * Session-log reporter. This plugin owns resource identity and an outer
  * shutdown deadline; the reporter owns byte-bounded SDK delivery.
  *
  * @module @deepseek-ai/dsh-session-telemetry-otel
@@ -23,7 +23,7 @@ import {
 } from '@deepseek-ai/dsh-session-telemetry'
 import { APP_IDENTITY } from '@deepseek-ai/dsh-llm'
 import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import { SessionLogReporter } from '@deepseek-ai/dsh-host-product-telemetry-otel'
+import { SessionLogReporter } from './session-log.ts'
 import type { BatchLogRecordProcessorOptions } from '@opentelemetry/sdk-logs'
 import type { OTLPExporterNodeConfigBase } from '@opentelemetry/otlp-exporter-base'
 import { SeverityNumber } from '@opentelemetry/api-logs'
@@ -79,24 +79,24 @@ function sharingStatusFor(mode: SessionTelemetryMode): SessionTelemetrySharingSt
 }
 
 /**
- * Plugin configuration: one sharing policy, two verbatim SDK option objects,
- * and one DSH-owned shutdown bound. Uploading modes validate their endpoint
+ * Plugin configuration: sharing policy, SDK transport options, byte/count queue
+ * settings, and an overall shutdown bound. Uploading modes validate their endpoint
  * and shutdown deadline at plugin load; `DISABLED` reads neither.
  */
 export interface Config {
   /** Defaults to `FEEDBACK_ONLY`: capture session history only when feedback is explicitly submitted. */
   mode?: SessionTelemetryMode
   /**
-   * Explicit SDK HTTP transport settings. The reporter adds x-channel routing
-   * and does not inherit ambient credentials. URL is required while uploading.
+   * Explicit SDK HTTP transport settings, including optional routing headers.
+   * Ambient credentials are not inherited. URL is required while uploading.
    */
   exporter?: OTLPExporterNodeConfigBase & {
     /** Full logs endpoint (e.g. `https://collector.example.com/v1/logs`). Required outside `DISABLED`; validated at load. */
     url?: string
   }
   /**
-   * Passed verbatim to `BatchLogRecordProcessor` (minus the exporter slot,
-   * which this plugin fills); the SDK owns and documents these knobs.
+   * Count, queue, cadence, and per-request watchdog settings for the byte-bounded
+   * processor. A watchdog warning never releases an unsettled transport slot.
    */
   processor?: Omit<BatchLogRecordProcessorOptions, 'exporter'>
   /** Maximum time spent awaiting the SDK provider's complete shutdown path. */
@@ -108,7 +108,7 @@ export interface Config {
 /**
  * Schemastery validator for {@link Config}; cordis runs it before the plugin
  * starts. The constructor validates endpoint and shutdown requirements; the
- * shared reporter validates Session byte and queue limits. SDK transport and
+ * reporter validates Session byte and queue limits. SDK transport and
  * processor settings retain their upstream types.
  */
 export const Config: z<Config> = z.object({
@@ -127,10 +127,10 @@ export const DEFAULT_SHUTDOWN_TIMEOUT_MILLIS = 3_000
 const MAX_TIMER_DELAY_MILLIS = 2_147_483_647
 
 /** Severity mapping from the Service Definition's three-level vocabulary to OTel severity numbers. */
-const SEVERITY: Record<SessionTelemetrySeverity, { severityNumber: SeverityNumber; severityText: string }> = {
-  info: { severityNumber: SeverityNumber.INFO, severityText: 'INFO' },
-  warn: { severityNumber: SeverityNumber.WARN, severityText: 'WARN' },
-  error: { severityNumber: SeverityNumber.ERROR, severityText: 'ERROR' },
+const SEVERITY: Record<SessionTelemetrySeverity, SeverityNumber> = {
+  info: SeverityNumber.INFO,
+  warn: SeverityNumber.WARN,
+  error: SeverityNumber.ERROR,
 }
 
 /**
@@ -174,10 +174,7 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new Error(`session-telemetry-otel: exporter.url must be http(s), got ${parsed.protocol}`)
     }
-    // The one processor field checked beyond the SDK's own validation: the
-    // SDK accepts a non-positive batch size, but its shutdown drain then
-    // splices empty batches without consuming the queue — dispose would hang
-    // forever with records queued. Misconfiguration fails at load instead.
+    // Reject empty batches before allocating the reporter.
     const batchSize = config.processor?.maxExportBatchSize
     if (batchSize !== undefined && (!Number.isInteger(batchSize) || batchSize < 1)) {
       throw new Error(`session-telemetry-otel: processor.maxExportBatchSize must be a positive integer, got ${String(batchSize)}`)
@@ -200,11 +197,14 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
     })
     this.provider = reporter
     const enqueue: SessionTelemetrySink['emit'] = (record) => {
-      if (record.sourceEvent === undefined) return
+      if (record.sourceEvent === undefined) {
+        ctx.logger.warn('Session log record withheld: redaction removed sourceEvent')
+        return
+      }
       reporter.reportSessionLog({
         sessionId: record.sourceEvent.sessionId,
         event: { ...record.sourceEvent.envelope, data: record.body },
-        severityNumber: SEVERITY[record.severity].severityNumber,
+        severityNumber: SEVERITY[record.severity],
         attributes: record.attributes,
       })
     }
@@ -246,23 +246,11 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
    */
   emit(_record: SessionTelemetryRecord): void {}
 
-  // The Service Definition's optional flush() hint is deliberately NOT implemented. The
-  // batch processor exports on its own cadence (`processor.scheduledDelayMillis`,
-  // the SDK's documented knob), and this backend is the SDK pipeline's only
-  // caller — forwarding the hint to `forceFlush()` would be the sole source of
-  // concurrent flushes, whose undocumented interactions with shutdown's
-  // internal drain (concurrent-flush guard, provider-level flush timeout)
-  // silently drop tail records. Rationale and the revival trigger: the
-  // revival Agent Note.
-
   /**
-   * Ask the SDK to drain and quiesce, but reject after the backend-owned
-   * deadline. OTel's processor export timeout wraps `exportCompleted` only;
-   * shutdown awaits `exporter.forceFlush()` first, which can remain pending
-   * when the transport never obtains a socket. The provider promise remains
-   * observed after the deadline so a later rejection cannot become unhandled.
-   * `DISABLED` has no provider and resolves immediately.
-   * @returns resolves when the SDK pipeline quiesces or is disabled, or rejects at the configured deadline.
+   * Drain queued HTTP requests until the deployment deadline. The watchdog
+   * never releases an unsettled transport slot. At the outer deadline,
+   * queued records are abandoned and no further requests may start.
+   * @returns completion after transport shutdown, or rejection at the configured deadline.
    */
   async shutdown(): Promise<void> {
     if (this.provider === undefined) return
@@ -270,6 +258,7 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
     let timer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
+        this.provider?.stopPending()
         reject(new Error(`session-telemetry-otel: provider shutdown exceeded ${this.shutdownTimeoutMillis}ms`))
       }, this.shutdownTimeoutMillis)
     })
