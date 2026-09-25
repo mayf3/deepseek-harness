@@ -12,7 +12,7 @@ Status: implemented
 
 ## Decision
 
-`packages/bundle/web-app/cordis.patch.yml` 以 `disabled: true` 插入 `time-context`、`schedule` 与 `ui-schedule`，因此随发行版交付的 Web 组合不挂载其中任何一行。这三行仍留在组合中，因为按 id 定位的 patch 覆盖的是已存在的行：profile patch 或 bundle 把某行的 `disabled` 设为 `false`，无需再次插入它。
+这三行仍留在组合中，因为按 id 定位的 patch 覆盖的是已存在的行：profile patch 或 bundle 把某行的 `disabled` 设为 `false`，无需再次插入它。
 
 `@deepseek-ai/dsh-experimental-schedule-bundle`（`packages/experimental/schedule-bundle/`）在其 `cordis.patch.yml` 中携带三个按 id 定位的 patch，每行一个，各自把 `disabled` 设为 `false`；它不插入任何行。`packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 列出该包，`apps/cli` 将其声明为运行时依赖，因此每次安装都随包携带且默认关闭。[实验性能力作为可选 bundle 的决策](2026-09-21-experimental-capabilities-as-optional-bundles.zh.md)负责 `OPTIONAL_BUNDLES` 的约定，以及 Web 插件管理页在 Official 分组中渲染的本地化 `icon` 与 `meta.title` / `meta.description` 元数据。
 

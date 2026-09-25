@@ -12,7 +12,7 @@ English | [中文](2026-09-24-schedule-opt-in-optional-bundle.zh.md)
 
 ## Decision
 
-`packages/bundle/web-app/cordis.patch.yml` inserts `time-context`, `schedule`, and `ui-schedule` with `disabled: true`, so the shipped Web composition mounts none of the three. The rows stay in the composition because an id-targeted patch overrides an existing row: a profile patch or a bundle sets a row's `disabled` to `false` without inserting it again.
+The rows stay in the composition because an id-targeted patch overrides an existing row: a profile patch or a bundle sets a row's `disabled` to `false` without inserting it again.
 
 `@deepseek-ai/dsh-experimental-schedule-bundle` (`packages/experimental/schedule-bundle/`) carries three id-targeted patches in its `cordis.patch.yml`, one per row, each setting `disabled: false`; it inserts no row. `OPTIONAL_BUNDLES` in `packages/boot/app-boot/src/profile.ts` names the package, and `apps/cli` declares it as a runtime dependency, so every installation ships it switched off. The [experimental-as-optional-bundles decision](2026-09-21-experimental-capabilities-as-optional-bundles.md) owns the `OPTIONAL_BUNDLES` conventions and the localized `icon` and `meta.title` / `meta.description` metadata the Web Plugins page renders in its Official group.
 
