@@ -37,11 +37,11 @@ kind: "package-reference"
   disabled: false
 ```
 
-插件开关只更新 profile 的 `cordis.patch.yml` 中最后一条匹配覆盖项的 `disabled`；没有匹配项时追加。匹配依据是条目 id，以及覆盖项声明的模块名称。已选组合包在 `dsh.bundle.rowSwitches: false` 下插入的行在 `listPlugins` 中带只读原因 `bundle-switch`，`setPluginEnabled` 拒绝单独开关它们；这些行随组合包开关一起开关。组合包开关修改 `package.json` 的有序 `dsh.profile.bundles` 列表。关闭保留依赖；开启追加到列表末尾，可能改变配置优先级。安装新组合包默认启用。home 和单次启动 patch 保留更高优先级。
+插件开关只更新 profile 的 `cordis.patch.yml` 中最后一条匹配覆盖项的 `disabled`；没有匹配项时追加。匹配依据是条目 id，以及覆盖项声明的模块名称。组合包开关修改 `package.json` 的有序 `dsh.profile.bundles` 列表。关闭保留依赖；开启追加到列表末尾，可能改变配置优先级。安装新组合包默认启用。home 和单次启动 patch 保留更高优先级。
 
 已选择但无法加载的组合包仍会出现在 `listBundles` 中，并携带 `error`；`enabled` 表示保存的选择，不代表加载成功。插件页面显示错误并允许取消选择。损坏的组合包无法启用。管理组合包的文件变得不可读后仍受保护。
 
-`listBundles` 为各组合包及其声明的插件行提供可选的展示 `meta`，包括已禁用的组合包。Client 从这些值中选择语言。单独的 `description` 字段是该组合包原始的 `package.json.description`；元信息诊断不会阻止管理操作。`plugin_manager` 工具的列表结果不包含 UI 展示元信息。
+`listBundles` 为各组合包及其声明的插件行提供可选的展示 `meta`，包括已禁用的组合包。Client 从这些值中选择语言。单独的 `description` 字段是该组合包原始的 `package.json.description`；元信息诊断不会阻止管理操作。`plugin_manager` 工具的列表结果不包含 UI 展示元信息。`rowSwitches` 报告组合包的 `dsh.bundle.rowSwitches`，除非组合包将其设为 false，否则为 true。
 
 `inspect(spec, options)` 在任何东西安装之前读出 spec 指向什么：注册表包名通过 `pnpm view` 询问注册表，在 profile 目录中运行，因而与安装使用同样的代理与认证设置；绝对路径读取其 `package.json`；git 地址或 tarball 只答复自己的形式和它被拉取的 `host`。答复携带名称、版本、描述、该包是否声明组合包，以及作答的 `registry`，否则给出 `problem`：`invalid-spec`、`already-installed`、`not-found`、`not-a-package`、`not-a-bundle`、`network` 或 `unknown`，并附上问过的 `registries`。调用方的 `signal` 或 `inspectTimeoutMs` 会结束查询。
 

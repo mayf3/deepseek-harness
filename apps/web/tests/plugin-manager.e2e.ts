@@ -333,10 +333,6 @@ describe('web e2e: plugin manager', () => {
       await expect.poll(running, { timeout: 20_000 }).toBe(3)
       await expect.poll(() => rows.locator('[data-plugin-row]', { hasText: '运行中' }).count(), { timeout: 20_000 }).toBe(3)
       expect(await rows.getByRole('switch').count()).toBe(0)
-      // The Host refuses to switch one of the rows alone, so the Remote and the tool agree with the page.
-      const plugins = await scaffold.ctx.pluginManager.listPlugins()
-      expect(scheduleRows().map(entry => plugins.find(plugin => plugin.entryId === entry.id)?.readOnlyReason))
-        .toEqual(['bundle-switch', 'bundle-switch', 'bundle-switch'])
       await page.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '自动化任务', exact: true }).waitFor()
     } finally {
       if (await toggle.getAttribute('aria-checked') === 'true') await toggle.click()

@@ -5,11 +5,8 @@ import type { PluginInventoryEntry } from '@deepseek-ai/dsh-host-plugin-inventor
 export type { PluginEntryId } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 import type { PluginEntryId } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 
-/**
- * Reasons a profile control cannot modify its target. `bundle-switch` marks a row inserted by a bundle whose
- * manifest sets `dsh.bundle.rowSwitches: false`: only that bundle's own switch turns the row on and off.
- */
-export type ReadOnlyReason = 'management-required' | 'unaddressable' | 'bundle-switch'
+/** Reasons a profile control cannot modify its target. */
+export type ReadOnlyReason = 'management-required' | 'unaddressable'
 
 /** A package whose declared DSH peers reject the running DSH version, without an exemption for the exact pair. */
 export interface IncompatiblePlugin {
@@ -68,6 +65,8 @@ export interface BundleInfo {
   error?: ManagementError
   /** The rows the bundle's patch inserts, in declaration order; empty when the patch cannot be read. */
   rows: BundleRowInfo[]
+  /** Whether the plugin manager offers a switch for each inserted row: false when the bundle's `dsh.bundle.rowSwitches` is false. */
+  rowSwitches: boolean
   /** Ids of rows the bundle's patch changes without declaring them: the built-in rows it configures or disables. */
   overrides: string[]
 }

@@ -292,21 +292,21 @@ it('lists bundle versions and current-profile plugin targets', async () => {
     {
       name: 'core', version: '1.0.0', enabled: true, installed: false, optional: false, removable: false, readOnlyReason: 'management-required',
       meta: { title: 'core' },
-      rows: [{ rowId: 'manager', moduleName: 'cordis:manager', entryId: 'include:manager' }], overrides: [],
+      rows: [{ rowId: 'manager', moduleName: 'cordis:manager', entryId: 'include:manager' }], rowSwitches: true, overrides: [],
     },
     {
       name: 'extra', version: '1.0.0', enabled: true, installed: true, optional: false, removable: true,
       meta: { title: 'extra' },
-      rows: [{ rowId: 'managed', moduleName: pathToFileURL(join(dir, 'node_modules', 'extra', 'plugin.mjs')).href, entryId: 'include:managed' }], overrides: [],
+      rows: [{ rowId: 'managed', moduleName: pathToFileURL(join(dir, 'node_modules', 'extra', 'plugin.mjs')).href, entryId: 'include:managed' }], rowSwitches: true, overrides: [],
     },
   ])
 })
 
-it('describes a bundle by its manifest and patch: one-liner, rows without a live entry, and the built-in rows it changes', async () => {
+it('describes a bundle by its manifest and patch: one-liner, rows without a live entry, row switches, and the built-in rows it changes', async () => {
   const { manager, dir, bundle } = await fixture()
   bundle('described', [{ id: 'described-row', name: './plugin.mjs' }])
   writeFileSync(join(dir, 'node_modules', 'described', 'package.json'), JSON.stringify({
-    name: 'described', version: '2.0.0', description: 'Describes itself.', dsh: { bundle: { patch: './cordis.patch.yml' } },
+    name: 'described', version: '2.0.0', description: 'Describes itself.', dsh: { bundle: { patch: './cordis.patch.yml', rowSwitches: false } },
   }))
   // An anonymous row is not addressable and is left out of the rows.
   writeFileSync(join(dir, 'node_modules', 'described', 'cordis.patch.yml'), JSON.stringify([
@@ -319,7 +319,7 @@ it('describes a bundle by its manifest and patch: one-liner, rows without a live
   expect((await manager.listBundles()).find(row => row.name === 'described')).toEqual({
     name: 'described', version: '2.0.0', description: 'Describes itself.', enabled: false, installed: true, optional: false, removable: true,
     meta: { title: 'described', description: 'Describes itself.' },
-    rows: [{ rowId: 'described-row', moduleName }], overrides: ['managed'],
+    rows: [{ rowId: 'described-row', moduleName }], rowSwitches: false, overrides: ['managed'],
   })
   await manager.setBundleEnabled('described', true)
   expect((await manager.listBundles()).find(row => row.name === 'described')?.rows).toEqual([
@@ -328,33 +328,6 @@ it('describes a bundle by its manifest and patch: one-liner, rows without a live
   // Off again, the rows lose their entries.
   await manager.setBundleEnabled('described', false)
   expect((await manager.listBundles()).find(row => row.name === 'described')?.rows).toEqual([{ rowId: 'described-row', moduleName }])
-})
-
-it('keeps the rows of a bundle that switches them only as a whole read-only and reports an invalid declaration', async () => {
-  const { manager, dir, bundle } = await fixture()
-  bundle('grouped', [{ id: 'grouped-row', name: './plugin.mjs', config: { service: 'groupedProbe' } }])
-  const declare = (fields: object) => {
-    writeFileSync(join(dir, 'node_modules', 'grouped', 'package.json'), JSON.stringify({
-      name: 'grouped', version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml', ...fields } },
-    }))
-  }
-  declare({ rowSwitches: false })
-  const manifest = readProfileManifest('test', dir)
-  manifest.dependencies = { ...manifest.dependencies, grouped: '1.0.0' }
-  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
-  expect(await manager.setBundleEnabled('grouped', true)).toMatchObject({ application: 'applied' })
-  const row = (await manager.listPlugins()).find(item => item.entryId === 'include:grouped-row')
-  expect(row).toMatchObject({ enabled: true, readOnlyReason: 'bundle-switch' })
-  expect(row?.patchId).toBeUndefined()
-  expect(await manager.setPluginEnabled(row!.entryId, false)).toMatchObject({ application: 'failed', error: { code: 'bundle-switch' } })
-  // Another bundle keeps a switch per row.
-  expect((await manager.listPlugins()).find(item => item.entryId === 'include:managed')).toMatchObject({ patchId: 'managed' })
-  // A declaration that is not a boolean is reported on the bundle and leaves its rows switchable.
-  declare({ rowSwitches: 'false' })
-  expect((await manager.listBundles()).find(item => item.name === 'grouped')).toMatchObject({
-    error: { code: 'operation-error', diagnostic: 'dsh.bundle.rowSwitches must be a boolean' },
-  })
-  expect((await manager.listPlugins()).find(item => item.entryId === 'include:grouped-row')).toMatchObject({ patchId: 'grouped-row' })
 })
 
 it.each(['native', 'runtime'] as const)('reads a disabled bundle and its independent exported plugins without running them with %s resolution', async (mode) => {
@@ -438,7 +411,7 @@ it.each([
 
   expect((await manager.listBundles()).find(row => row.name === 'unnamed')).toEqual({
     name: 'unnamed', version: '1.0.0', enabled: false, installed: true, optional: false, removable: true,
-    rows: [], overrides: [], ...expected,
+    rows: [], rowSwitches: true, overrides: [], ...expected,
   })
 })
 
@@ -1072,7 +1045,7 @@ it('offers the launcher\'s optional bundles switched off and never removable', a
     name: offered, version: '3.0.0', description: 'Package one-liner.',
     meta: { title: offered, description: 'Package one-liner.' },
     enabled: false, installed: false, optional: true, removable: false,
-    rows: [{ rowId: 'offered-row', moduleName: pathToFileURL(join(supplied, 'plugin.mjs')).href }], overrides: [],
+    rows: [{ rowId: 'offered-row', moduleName: pathToFileURL(join(supplied, 'plugin.mjs')).href }], rowSwitches: true, overrides: [],
   })
   expect(await manager.setBundleEnabled(offered, true)).toMatchObject({ application: 'applied' })
   expect((await manager.listBundles()).find(row => row.name === offered)).toMatchObject({ enabled: true, optional: true, removable: false })

@@ -13,7 +13,6 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
-  bundleRowSwitches,
   composeEntries,
   createRuntimeResolution,
   getDshRuntimeVersion,
@@ -233,16 +232,6 @@ describe('manifest round-trip', () => {
     writeFileSync(join(dir, 'package.json'), '[]')
     expect(() => readProfileManifest('t', dir)).toThrow('must hold a JSON object')
     expect(() => readProfileManifest('t', join(dir, 'nope'))).toThrow('failed to read profile manifest')
-  })
-})
-
-describe('bundleRowSwitches', () => {
-  it('defaults to row switches, reads a declared boolean, and fails loud on any other value', () => {
-    expect(bundleRowSwitches({ patch: './cordis.patch.yml' })).toBe(true)
-    expect(bundleRowSwitches({ patch: './cordis.patch.yml', rowSwitches: false })).toBe(false)
-    expect(bundleRowSwitches({ patch: './cordis.patch.yml', rowSwitches: true })).toBe(true)
-    const declared = JSON.parse('{"patch":"./cordis.patch.yml","rowSwitches":"false"}') as Parameters<typeof bundleRowSwitches>[0]
-    expect(() => bundleRowSwitches(declared)).toThrow('dsh.bundle.rowSwitches must be a boolean')
   })
 })
 

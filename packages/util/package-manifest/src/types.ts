@@ -70,8 +70,8 @@ export interface DshBundleManifest {
   /** One patch file path, or an ordered list applied in sequence, each relative to the declaring package root. */
   patch: string | string[]
   /**
-   * Whether the plugin manager may switch each row the bundle inserts on its own; false for a bundle whose rows work
-   * only together, which then switch only with the bundle. Absent means true.
+   * Whether the plugin manager offers a switch for each row the bundle inserts; false for a bundle whose rows work
+   * only together, which the bundle's own switch turns on and off. Absent means true.
    */
   rowSwitches?: boolean
 }
