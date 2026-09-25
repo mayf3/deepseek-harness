@@ -101,6 +101,15 @@
   line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
 }
 
+/* Decorative whale below the last flow row while the Session runs. */
+.runningWhale {
+  display: inline-flex;
+  flex: none;
+  width: calc(14px + var(--dsh-content-font-delta, 0px));
+  height: calc(14px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-deep-diving);
+}
+
 .openError {
   color: var(--dsw-alias-state-error-primary);
   font-size: var(--dsh-content-font-size-secondary, 13px);

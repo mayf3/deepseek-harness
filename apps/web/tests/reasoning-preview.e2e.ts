@@ -65,6 +65,35 @@ it('shows completed paragraph first lines across blank lines with a right-edge f
       const reasoning = page.locator('[data-variant="think"][data-state="running"]')
       await expandOwningTurnProcess(page, reasoning)
       await reasoning.waitFor()
+      const whale = page.locator('[data-chat-running] svg')
+      await whale.locator('animate').waitFor({ state: 'attached' })
+      const positions = await whale.evaluate(async (element) => {
+        const svg = element as SVGSVGElement
+        const path = svg.querySelector('path')!
+        const time = svg.getCurrentTime()
+        svg.pauseAnimations()
+        try {
+          const positions: number[][] = []
+          for (const at of [0.3, 0.9, 3.3]) {
+            svg.setCurrentTime(at)
+            await new Promise<void>(resolve => requestAnimationFrame(() => { resolve() }))
+            const point = path.getPointAtLength(path.getTotalLength() * 0.4)
+            positions.push([point.x, point.y])
+          }
+          return positions
+        } finally {
+          svg.setCurrentTime(time)
+          svg.unpauseAnimations()
+        }
+      })
+      expect(positions[1]).not.toEqual(positions[0])
+      expect(positions[2]).toEqual(positions[0])
+      await whale.evaluate((element) => { element.setAttribute('data-whale-before-preference', 'true') })
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await expect.poll(() => whale.locator('animate').count()).toBe(0)
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      await whale.locator('animate').waitFor({ state: 'attached' })
+      expect(await whale.getAttribute('data-whale-before-preference')).toBeNull()
       expect(await reasoning.getAttribute('data-preview')).toBeNull()
 
       first.proceed.resolve(undefined)

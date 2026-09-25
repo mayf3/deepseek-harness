@@ -4089,4 +4089,16 @@ describe('ChatView', () => {
     expect(failedView.getByText('Compaction cancelled.')).toBeTruthy()
     expect(failedView.container.querySelector('[data-state="error"]')).not.toBeNull()
   })
+
+  it('appends the whale below the last flow row only while the Session runs', () => {
+    const h = makeHarness({ nodes: [user(1, 'do the thing'), assistant(2, 'working')] }, { running: true })
+    const view = render(<h.ChatView {...h.props} />)
+    const column = view.container.querySelector('[data-chat-flow]')!
+    const whale = column.querySelector('[data-chat-running]')
+    expect(column.lastElementChild).toBe(whale)
+    expect(whale?.getAttribute('aria-hidden')).toBe('true')
+    expect(whale?.querySelector('animate')).not.toBeNull()
+    act(() => { h.setSession({ running: false }) })
+    expect(column.querySelector('[data-chat-running]')).toBeNull()
+  })
 })
