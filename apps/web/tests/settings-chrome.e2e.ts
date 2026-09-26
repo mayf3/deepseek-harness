@@ -111,16 +111,17 @@ describe('web e2e: settings modal and General preferences', () => {
     // rewrite this surface's golden.
     await dialog.getByRole('button', { name: '内置插件', exact: true }).click()
     await dialog.getByRole('heading', { name: '内置插件', exact: true }).waitFor({ timeout: 10_000 })
-    // Both groups start collapsed; the preset group's header still carries its display-only switcher.
+    // The preset group starts open under its display-only switcher; the global group starts folded.
     const presetSwitcher = dialog.getByRole('button', { name: '选择要查看的 Agent 预设' })
     await presetSwitcher.waitFor({ timeout: 10_000 })
     // The shipped default's zh display name comes from the zh dictionaries.
     expect(await presetSwitcher.textContent()).toBe('标准模式（默认）')
     const presetToggle = dialog.getByRole('button', { name: '会话插件', exact: true })
-    expect(await presetToggle.getAttribute('aria-expanded')).toBe('false')
-    expect(await dialog.locator('[data-plugin-scope="preset"] [data-plugin-entry]').count()).toBe(0)
-    await presetToggle.click()
-    await dialog.getByRole('button', { name: /^全局/ }).click()
+    expect(await presetToggle.getAttribute('aria-expanded')).toBe('true')
+    expect(await dialog.locator('[data-plugin-scope="preset"] [data-plugin-entry]').count()).toBeGreaterThan(0)
+    const globalToggle = dialog.getByRole('button', { name: /^全局/ })
+    expect(await globalToggle.getAttribute('aria-expanded')).toBe('false')
+    await globalToggle.click()
     const pluginRow = dialog.locator(PLUGIN_ROW_SELECTOR)
     await pluginRow.waitFor({ timeout: 10_000 })
     const expectedPluginCount = [...scaffold.ctx.loader.entries()]
@@ -132,11 +133,12 @@ describe('web e2e: settings modal and General preferences', () => {
     // presets took over included, preset compositions excluded.
     expect(await dialog.locator('[data-plugin-scope="global"] [data-plugin-entry]').count())
       .toBe(expectedPluginCount)
-    // The enablement tag is the row's collapsed status: an active fiber draws no
-    // dot, so no global row names the active phase. Guard the assertion against
-    // matching nothing because no row is enabled.
-    expect(await dialog.locator('[data-plugin-scope="global"] [data-plugin-entry] button[aria-label$="已启用"]').count())
-      .toBeGreaterThan(0)
+    // A plainly enabled row states its status only in its accessible name: it
+    // carries no tag, and an active fiber draws no dot, so no global row shows
+    // either. Guard the assertions against matching nothing because no row is enabled.
+    const enabledRows = dialog.locator('[data-plugin-scope="global"] [data-plugin-entry] button[aria-label$="已启用"]')
+    expect(await enabledRows.count()).toBeGreaterThan(0)
+    expect(await enabledRows.getByText('已启用', { exact: true }).count()).toBe(0)
     expect(await dialog.locator('[data-plugin-scope="global"] [role="img"][aria-label="运行中"]').count()).toBe(0)
     expect(await dialog.locator('[data-plugin-count]').getAttribute('data-plugin-count'))
       .toBe(String(expectedPluginCount))
@@ -159,10 +161,17 @@ describe('web e2e: settings modal and General preferences', () => {
     ] as const
     for (const [entryId, status] of instanceRows) {
       const row = dialog.locator(`[data-plugin-scope="preset"] [data-plugin-entry="${entryId}"]`)
-      const trigger = row.getByRole('button', { name: `tool-subagent, ${entryId}, ${status}`, exact: true })
+      // An id that repeats the title adds nothing, so its card shows no chip and its name omits it.
+      const repeatsTitle = entryId === 'tool-subagent'
+      const name = repeatsTitle ? `tool-subagent, ${status}` : `tool-subagent, ${entryId}, ${status}`
+      const trigger = row.getByRole('button', { name, exact: true })
       await trigger.waitFor({ timeout: 10_000 })
       expect(await trigger.getAttribute('aria-expanded')).toBe('false')
       const identity = row.locator('code')
+      if (repeatsTitle) {
+        expect(await identity.count()).toBe(0)
+        continue
+      }
       expect(await identity.textContent()).toBe(entryId)
       expect(await identity.getAttribute('title')).toBe(entryId)
     }
