@@ -134,7 +134,7 @@ pnpm run start:desktop
 
 The Web counterparts are `pnpm run dev:web` and `pnpm run start:web`, documented in the [development guide](../../docs/development.md). Workspace development runs the current CLI and private Desktop Host packages under Electron RunAsNode. Plugin management and recovery use `$DSH_HOME/profiles/desktop`, separate from the disposable workspace runtime. The Host uses runtime module resolution in both development and packaged builds without creating official-package fallback links; developer-installed packages, including links, retain native priority. Use an unpacked application to exercise Electron RunAsNode, bundled pnpm, bundled dsh resources, plugin installation and repair paths.
 
-The [native/renderer keyboard tests](tests/keyboard.spec.ts) compile in [their own Client test project](../../tsconfig.desktop-keyboard-tests.json), reached by the repository Client typecheck. Its Desktop imports are limited to Cordis-free input, persistence, IPC, browser-guest, and overlay modules.
+The [native/renderer keyboard tests](tests/keyboard.spec.ts) compile as part of the repository Client typecheck. Their Desktop imports are limited to Cordis-free input, persistence, IPC, browser-guest, and overlay modules.
 
 ### Startup onboarding
 
