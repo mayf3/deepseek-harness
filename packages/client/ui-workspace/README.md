@@ -27,6 +27,8 @@ This package lets users browse grouped or flat Session lists, choose a Workspace
 
 Use the sidebar to browse Workspaces and their Sessions, reorder them, and start new ones; use the picker in the Session Intent hero to choose a Workspace for a new session. An open Workspace shows five idle, non-blank Sessions by default. Running Sessions, including parents with running children, remain visible in their ordered positions without using that quota; the selected blank **New Session** is also an extra row until its first prompt. Each **Show more** click reveals up to five more idle Sessions; after the final batch, **Show less** restores the initial rows while keeping running Sessions visible. Closing and reopening the Workspace also restores this folded projection.
 
+History rows without a stored title use the localized unnamed label (未命名 / Untitled), rather than a directory name. The current blank row remains New Session; other blank rows remain hidden. Rename drafts use the stored title, or start empty when unnamed; unnamed rows do not offer title copying.
+
 ### Reordering and view options
 
 Pinned Sessions lead ordinary Sessions in both grouped and flat views. **Last updated** sorts each partition strictly by the latest user prompt or steer time, newest first; pin time does not affect it. **Manual** uses the relative positions in one complete Session sequence, including hidden archives. Returning to Last updated discards the manual layout, and entering Manual again freezes the then-current chronological order. The browser defaults to Last updated and remembers the selected mode across reloads.

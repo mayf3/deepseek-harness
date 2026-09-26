@@ -1437,7 +1437,8 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-product-telemetry-otel`
 
-- `source`: [`packages/host/product-telemetry-otel/src/index.ts:37`](../packages/host/product-telemetry-otel/src/index.ts)
+- `inject`: `otel`
+- `source`: [`packages/host/product-telemetry-otel/src/index.ts:18`](../packages/host/product-telemetry-otel/src/index.ts)
 
 ```ts config-catalog
 /** Collector routing, application identity, and bounded in-memory batch settings. */
@@ -2703,36 +2704,36 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-session-telemetry-otel`
 
-- `inject`: `sessions`
+- `inject`: `sessions` · `otel`
 - `refs`: `BatchLogRecordProcessorOptions` (`@opentelemetry/sdk-logs`) · `OTLPExporterNodeConfigBase` (`@opentelemetry/otlp-exporter-base`)
-- `source`: [`packages/session/session-telemetry-otel/src/index.ts:100`](../packages/session/session-telemetry-otel/src/index.ts)
+- `source`: [`packages/session/session-telemetry-otel/src/index.ts:87`](../packages/session/session-telemetry-otel/src/index.ts)
 
 ```ts config-catalog
 /**
- * Plugin configuration: one sharing policy, two verbatim SDK option objects,
- * and one DSH-owned shutdown bound. Uploading modes validate their endpoint
+ * Plugin configuration: sharing policy, SDK transport options, byte/count queue
+ * settings, and an overall shutdown bound. Uploading modes validate their endpoint
  * and shutdown deadline at plugin load; `DISABLED` reads neither.
  */
 export interface Config {
   /** Defaults to `FEEDBACK_ONLY`: capture session history only when feedback is explicitly submitted. */
   mode?: SessionTelemetryMode
   /**
-   * Passed verbatim to the SDK's OTLP/HTTP log exporter — the complete
-   * `OTLPExporterNodeConfigBase` shape (`headers`, `timeoutMillis`,
-   * `compression`, `keepAlive`, …), owned and documented by the SDK. `url`
-   * is the one field this package requires and validates itself.
+   * Explicit SDK HTTP transport settings, including optional routing headers.
+   * Ambient credentials are not inherited. URL is required while uploading.
    */
   exporter?: OTLPExporterNodeConfigBase & {
     /** Full logs endpoint (e.g. `https://collector.example.com/v1/logs`). Required outside `DISABLED`; validated at load. */
     url?: string
   }
   /**
-   * Passed verbatim to `BatchLogRecordProcessor` (minus the exporter slot,
-   * which this plugin fills); the SDK owns and documents these knobs.
+   * Count, queue, cadence, and per-request watchdog settings for the byte-bounded
+   * processor. A watchdog warning never releases an unsettled transport slot.
    */
   processor?: Omit<BatchLogRecordProcessorOptions, 'exporter'>
   /** Maximum time spent awaiting the SDK provider's complete shutdown path. */
   shutdownTimeoutMillis?: number
+  /** Uncompressed OTLP request byte limit, at most 4,000,000. */
+  maxRequestBytes?: number
 }
 
 /** Session-sharing policy selected by {@link Config.mode}. */
@@ -4356,6 +4357,7 @@ export interface Config {
 | `@deepseek-ai/dsh-llm` | — | [`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts) |
 | `@deepseek-ai/dsh-lsp` | — | [`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts) |
 | `@deepseek-ai/dsh-mcp-resources` | `tools` | [`packages/mcp/mcp-resources/src/index.ts`](../packages/mcp/mcp-resources/src/index.ts) |
+| `@deepseek-ai/dsh-otel` | — | [`packages/telemetry/otel/src/index.ts`](../packages/telemetry/otel/src/index.ts) |
 | `@deepseek-ai/dsh-sandbox-ssh` | `ssh` | [`packages/ssh/sandbox-ssh/src/index.ts`](../packages/ssh/sandbox-ssh/src/index.ts) |
 | `@deepseek-ai/dsh-session` | — | [`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts) |
 | `@deepseek-ai/dsh-session-checkpoint-policy` | `llm` · `sessionPersistence` · `sessions` · `tools` | [`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts) |

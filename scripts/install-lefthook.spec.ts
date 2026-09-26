@@ -183,9 +183,10 @@ function runInstaller(
   fixture: Fixture,
   root: string,
   extraEnv: NodeJS.ProcessEnv = {},
+  nodeArgs: string[] = [],
 ): Promise<CommandResult> {
   return new Promise((resolveResult, reject) => {
-    const child = spawn(process.execPath, [installer], {
+    const child = spawn(process.execPath, [...nodeArgs, installer], {
       cwd: root,
       env: { ...fixture.env, ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -318,6 +319,56 @@ describe('worktree-local Lefthook installer', { timeout: 90_000 }, () => {
     expect(readFileSync(mainHookPath, 'utf8')).toBe(initialHook)
     expect(existsSync(join(commonDirectory(fixture), 'dsh-lefthook-install.lock'))).toBe(false)
     expect(existsSync(join(hooksPath(fixture, fixture.main), '.fake-lefthook-running'))).toBe(false)
+  })
+
+  it.each([
+    { operation: 'openSync', code: 'EPERM', expires: false },
+    { operation: 'readFileSync', code: 'EPERM', expires: false },
+    { operation: 'lstatSync', code: 'EPERM', expires: false },
+    { operation: 'openSync', code: 'EPERM', expires: true },
+    { operation: 'openSync', code: 'EACCES', expires: false },
+  ])('handles $operation $code with expired deadline=$expires', async ({ operation, code, expires }) => {
+    const fixture = createFixture()
+    const lockPath = installLockPath(fixture)
+    const probe = join(fixture.container, 'lock-access-probe')
+    const preload = join(fixture.container, 'lock-access.cjs')
+    if (operation !== 'openSync') {
+      writeFileSync(lockPath, `${process.pid} 00000000-0000-4000-8000-000000000001\n`)
+    }
+    // The subprocess owns the injected filesystem error and clock; the test process stays unchanged.
+    writeFileSync(preload, `
+const fs = require('node:fs')
+const { syncBuiltinESMExports } = require('node:module')
+const lockPath = ${JSON.stringify(lockPath)}
+const operation = ${JSON.stringify(operation)}
+const original = fs[operation]
+const now = Date.now
+let injected = false
+fs[operation] = function(path, ...args) {
+  if (path === lockPath && !injected) {
+    injected = true
+    fs.writeFileSync(${JSON.stringify(probe)}, 'injected')
+    if (operation !== 'openSync') fs.unlinkSync(lockPath)
+    if (${expires}) Date.now = () => now() + 31000
+    throw Object.assign(new Error('injected lock access failure'), { code: ${JSON.stringify(code)} })
+  }
+  return original.call(this, path, ...args)
+}
+syncBuiltinESMExports()
+`)
+
+    const result = await runInstaller(fixture, fixture.main, {}, ['--require', preload])
+
+    expect(readFileSync(probe, 'utf8')).toBe('injected')
+    const recovers = process.platform === 'win32' && code === 'EPERM' && !expires
+    expect(result.status, result.stderr).toBe(recovers ? 0 : 1)
+    if (recovers) {
+      expect(existsSync(join(hooksPath(fixture, fixture.main), 'pre-push'))).toBe(true)
+      expect(existsSync(lockPath)).toBe(false)
+    } else {
+      expect(result.stderr).toContain('injected lock access failure')
+      expect(existsSync(hooksPath(fixture, fixture.main))).toBe(false)
+    }
   })
 
   it('waits for a concurrent installer to finish publishing its lock record', async () => {
