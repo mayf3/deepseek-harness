@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ConfigPageForm } from '../src/client/slot-contract.ts'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PluginEntryId, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
@@ -1056,6 +1056,100 @@ describe('PluginManagerPage', () => {
     // A row without a fiber, on a bundle that is on, reads idle.
     set({ packages: [pkg({ rows: [row({ phase: null })] })] })
     expect(within(detail).getByText(en.rowStateIdle)).toBeTruthy()
+  })
+
+  describe.each(['package', 'custom registry'] as const)('%s input IME confirmation', (input) => {
+    beforeEach(() => { vi.useFakeTimers() })
+    afterEach(() => { cleanup(); vi.useRealTimers() })
+    const inputName = input === 'package' ? en.installSpecLabel : en.registryCustom
+    const open: InstallState = {
+      ...IDLE_INSTALL, open: true, spec: 'dsh-new', registryOpen: true,
+      registry: { kind: 'custom', url: 'https://npm.corp.example/' },
+    }
+    const enter = (field: HTMLElement) => {
+      // oxlint-disable-next-line typescript/no-deprecated -- Exercise native Enter's legacy keyCode in the IME regression.
+      const event = new KeyboardEvent('keydown', { key: 'Enter', isComposing: false, keyCode: 13, bubbles: true, cancelable: true })
+      fireEvent(field, event)
+      expect(event.defaultPrevented).toBe(false)
+    }
+
+    it('guards active composition and the first 10ms after compositionend without native flags', () => {
+      const { actions } = renderTab({ install: open })
+      const field = screen.getByRole('textbox', { name: inputName })
+      fireEvent.compositionStart(field)
+      enter(field)
+      expect(actions.runInstall).not.toHaveBeenCalled()
+      fireEvent.compositionEnd(field)
+      enter(field)
+      act(() => { vi.advanceTimersByTime(9) })
+      enter(field)
+      expect(actions.runInstall).not.toHaveBeenCalled()
+      act(() => { vi.advanceTimersByTime(1) })
+      enter(field)
+      expect(actions.runInstall).toHaveBeenCalledOnce()
+    })
+
+    it('keeps composition state independent from the other input', () => {
+      const { actions } = renderTab({ install: open })
+      const field = screen.getByRole('textbox', { name: inputName })
+      const other = screen.getByRole('textbox', { name: input === 'package' ? en.registryCustom : en.installSpecLabel })
+      fireEvent.compositionStart(field)
+      enter(other)
+      expect(actions.runInstall).toHaveBeenCalledOnce()
+      enter(field)
+      expect(actions.runInstall).toHaveBeenCalledOnce()
+    })
+
+    it.each(['active', 'ended'] as const)('clears %s composition on blur and dialog reopen', (phase) => {
+      const { actions, set } = renderTab({ install: open })
+      const field = screen.getByRole('textbox', { name: inputName })
+      fireEvent.compositionStart(field)
+      if (phase === 'ended') fireEvent.compositionEnd(field)
+      fireEvent.blur(field)
+      enter(field)
+      expect(actions.runInstall).toHaveBeenCalledOnce()
+      fireEvent.compositionStart(field)
+      if (phase === 'ended') fireEvent.compositionEnd(field)
+      set({ install: { ...open, open: false } })
+      set({ install: open })
+      enter(screen.getByRole('textbox', { name: inputName }))
+      expect(actions.runInstall).toHaveBeenCalledTimes(2)
+    })
+
+    if (input === 'custom registry') {
+      it('clears composition when the registry menu closes and reopens', () => {
+        const { actions, set } = renderTab({ install: open })
+        fireEvent.compositionStart(screen.getByRole('textbox', { name: inputName }))
+        set({ install: { ...open, registryOpen: false } })
+        set({ install: open })
+        enter(screen.getByRole('textbox', { name: inputName }))
+        expect(actions.runInstall).toHaveBeenCalledOnce()
+      })
+    }
+
+    it.each([
+      { signal: 'isComposing', isComposing: true, keyCode: 13 },
+      { signal: 'legacy keyCode 229', isComposing: false, keyCode: 229 },
+    ])('leaves $signal Enter to the IME and installs on the next ordinary Enter', ({ isComposing, keyCode }) => {
+      const { actions } = renderTab({
+        install: {
+          ...IDLE_INSTALL, open: true, spec: 'dsh-new', registryOpen: input === 'custom registry',
+          registry: { kind: 'custom', url: 'https://npm.corp.example/' },
+        },
+      })
+      const field = screen.getByRole('textbox', { name: input === 'package' ? en.installSpecLabel : en.registryCustom })
+      fireEvent.compositionStart(field)
+      if (!isComposing) fireEvent.compositionEnd(field)
+      // oxlint-disable-next-line typescript/no-deprecated -- Exercise the legacy IME signal when isComposing is false.
+      const confirm = new KeyboardEvent('keydown', { key: 'Enter', isComposing, keyCode, bubbles: true, cancelable: true })
+      fireEvent(field, confirm)
+      expect(actions.runInstall).not.toHaveBeenCalled()
+      expect(confirm.defaultPrevented).toBe(false)
+      if (isComposing) fireEvent.compositionEnd(field)
+      act(() => { vi.advanceTimersByTime(10) })
+      fireEvent.keyDown(field, { key: 'Enter', isComposing: false, keyCode: 13 })
+      expect(actions.runInstall).toHaveBeenCalledOnce()
+    })
   })
 
   it('takes a spec, checks it, and words what the check refused', () => {

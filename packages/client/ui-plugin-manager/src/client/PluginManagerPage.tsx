@@ -759,6 +759,19 @@ function SubjectCard({ subject, t }: { readonly subject: InstallSubject; readonl
   )
 }
 
+/** Track one install field's composition, including Safari's 10ms post-composition Enter window. */
+function useInstallComposition(active: boolean) {
+  const composition = useRef({ active: false, until: 0 })
+  useEffect(() => { composition.current = { active: false, until: 0 } }, [active])
+  return {
+    onCompositionStart: () => { composition.current.active = true },
+    onCompositionEnd: () => { composition.current = { active: false, until: Date.now() + 10 } },
+    onBlur: () => { composition.current = { active: false, until: 0 } },
+    isComposing: (event: KeyboardEvent) => event.isComposing || Reflect.get(event, 'keyCode') === 229
+      || composition.current.active || Date.now() < composition.current.until,
+  }
+}
+
 /**
  * The install dialog: the spec and its check, then the installing, installed,
  * and failed screens over the same subject card. A failed run that left
@@ -798,6 +811,8 @@ function InstallDialog({
   const registryPanelRef = useRef<HTMLDivElement | null>(null)
   const registryCustomRef = useRef<HTMLInputElement | null>(null)
   const registryShown = install.registryOpen && phase === 'idle'
+  const specComposition = useInstallComposition(install.open && phase === 'idle')
+  const registryComposition = useInstallComposition(install.open && registryShown)
   const registryPosition = useAnchoredPosition({
     open: registryShown, anchorRef: registryToggleRef, panelRef: registryPanelRef, align: 'end', gap: 6, margin: 12,
   })
@@ -888,7 +903,13 @@ function InstallDialog({
               aria-invalid={install.inputError !== null}
               aria-describedby={install.inputError === null ? undefined : errorId}
               onChange={(event) => { onEditSpec(event.currentTarget.value) }}
-              onKeyDown={(event) => { if (event.key === 'Enter' && !empty && !checking) onRun() }}
+              onCompositionStart={specComposition.onCompositionStart}
+              onCompositionEnd={specComposition.onCompositionEnd}
+              onBlur={specComposition.onBlur}
+              onKeyDown={(event) => {
+                if (specComposition.isComposing(event.nativeEvent)) return
+                if (event.key === 'Enter' && !empty && !checking) onRun()
+              }}
             />
           </div>
           {inputSentence === null
@@ -1004,7 +1025,13 @@ function InstallDialog({
                     aria-describedby={install.registryError ? registryErrorId : undefined}
                     onFocus={() => { if (choice.kind !== 'custom') onChooseRegistry({ kind: 'custom', url: customRegistryDraft }) }}
                     onChange={(event) => { onChooseRegistry({ kind: 'custom', url: event.currentTarget.value }) }}
-                    onKeyDown={(event) => { if (event.key === 'Enter' && !empty) onRun() }}
+                    onCompositionStart={registryComposition.onCompositionStart}
+                    onCompositionEnd={registryComposition.onCompositionEnd}
+                    onBlur={registryComposition.onBlur}
+                    onKeyDown={(event) => {
+                      if (registryComposition.isComposing(event.nativeEvent)) return
+                      if (event.key === 'Enter' && !empty) onRun()
+                    }}
                   />
                   {install.registryError
                     ? <p id={registryErrorId} className={css.inputError} role="alert">{t('registryCustomInvalid')}</p>

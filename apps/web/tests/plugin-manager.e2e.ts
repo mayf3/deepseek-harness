@@ -598,6 +598,107 @@ describe('web e2e: plugin manager', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('keeps IME confirmation Enter in install fields and submits only a plain Enter', async () => {
+    const context = await browser.newContext({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+    const manager = scaffold.ctx.pluginManager
+    const manifest = await homeFile('profiles', 'scaffold', 'package.json')
+    const registrySpy = vi.spyOn(manager, 'registries').mockResolvedValue({
+      registry: null, fallbackRegistries: [], resolved: 'https://registry.npmjs.org/',
+    })
+    const inspectSpy = vi.spyOn(manager, 'inspect').mockImplementation(async (spec, options) => ({
+      status: 'accepted', kind: 'registry', name: spec, version: '1.0.0', bundle: true, registry: options?.registry ?? null,
+    }))
+    const installSpy = vi.spyOn(manager, 'installBundle').mockImplementation(async spec => ({
+      changed: false, application: 'failed', stage: 'install', target: spec,
+      error: { code: 'operation-error', diagnostic: 'IME fixture: no package was installed' },
+    }))
+    try {
+      const probe = await context.newPage()
+      const consoleWatch = watchConsole(probe)
+      onTestFailed(() => saveFailureShot(probe, 'web-e2e-plugin-manager-ime-enter'))
+      await probe.clock.install()
+      await probe.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await probe.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '插件', exact: true }).click()
+      const panel = probe.locator('[data-plugin-panel]')
+      await panel.getByRole('button', { name: '查看 @fixture/bundle', exact: true }).waitFor({ timeout: 20_000 })
+      const trace: string[] = ['Synthetic browser KeyboardEvents, not an OS input-method test.']
+      for (const target of ['package', 'custom registry'] as const) {
+        inspectSpy.mockClear()
+        installSpy.mockClear()
+        await panel.getByRole('button', { name: '添加插件', exact: true }).click()
+        const dialog = probe.getByRole('dialog', { name: '添加插件', exact: true })
+        await dialog.waitFor({ timeout: 10_000 })
+        const spec = target === 'package' ? 'ime-confirm-package' : 'ime-confirm-registry'
+        const specField = dialog.getByRole('textbox', { name: '包名或地址', exact: true })
+        await specField.fill(spec)
+        let field = specField
+        const customRegistry = 'https://registry.example.test/'
+        if (target === 'custom registry') {
+          await dialog.getByRole('button', { name: /^安装源/ }).click()
+          field = probe.locator('[data-install-registry]').getByRole('textbox', { name: '自定义地址', exact: true })
+          await field.fill(customRegistry)
+        }
+        const value = target === 'package' ? spec : customRegistry
+        const assertUnsubmitted = async (label: string) => {
+          expect(await field.inputValue()).toBe(value)
+          expect(await field.isEditable()).toBe(true)
+          expect(await dialog.getByRole('button', { name: '安装', exact: true }).isEnabled()).toBe(true)
+          expect(inspectSpy).not.toHaveBeenCalled()
+          expect(installSpy).not.toHaveBeenCalled()
+          trace.push(`${target} / ${label}: inspect=0, install=0; editable; value retained`, await field.ariaSnapshot())
+        }
+        await probe.clock.pauseAt(await probe.evaluate(() => Date.now() + 1000))
+        try {
+          for (const event of [
+            { label: 'isComposing=true', isComposing: true, keyCode: 13 },
+            { label: 'Safari isComposing=false, keyCode=229', isComposing: false, keyCode: 229 },
+          ]) {
+            await field.dispatchEvent('keydown', {
+              key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
+              isComposing: event.isComposing, keyCode: event.keyCode,
+            })
+            await assertUnsubmitted(event.label)
+          }
+          const unmarkedEnter = { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true, isComposing: false, keyCode: 13 }
+          await field.dispatchEvent('compositionstart')
+          await field.dispatchEvent('keydown', unmarkedEnter)
+          await assertUnsubmitted('compositionstart + unmarked Enter')
+          await field.dispatchEvent('compositionend')
+          await field.dispatchEvent('keydown', unmarkedEnter)
+          await assertUnsubmitted('compositionend + immediate unmarked Enter')
+          await probe.clock.runFor(9)
+          await field.dispatchEvent('keydown', unmarkedEnter)
+          await assertUnsubmitted('compositionend + 9ms unmarked Enter')
+          await probe.clock.runFor(2)
+        } finally {
+          await probe.clock.resume()
+        }
+        await field.press('Enter')
+        await expect.poll(() => inspectSpy.mock.calls.length, { timeout: 10_000 }).toBe(1)
+        await expect.poll(() => installSpy.mock.calls.length, { timeout: 10_000 }).toBe(1)
+        expect(inspectSpy.mock.calls[0]?.[0]).toBe(spec)
+        expect(installSpy.mock.calls[0]?.[0]).toBe(spec)
+        expect(installSpy.mock.calls[0]?.[1]).toMatchObject({ enabled: false, registry: target === 'package' ? null : customRegistry })
+        const failed = probe.getByRole('dialog', { name: '插件安装失败', exact: true })
+        await failed.waitFor({ timeout: 10_000 })
+        trace.push(`${target} / plain Enter: inspect=1, install=1`, await failed.ariaSnapshot())
+        await failed.getByRole('button', { name: '关闭', exact: true }).click()
+        await failed.waitFor({ state: 'hidden', timeout: 10_000 })
+      }
+      expect(await homeFile('profiles', 'scaffold', 'package.json')).toBe(manifest)
+      expect(consoleWatch.pageErrors).toEqual([])
+      trace.push('Profile manifest unchanged; controlled Host result performed no package installation.')
+      await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'ime-enter.expected.md'), trace.join('\n'), MODE)
+    } finally {
+      try { await context.close() }
+      finally {
+        registrySpy.mockRestore()
+        inspectSpy.mockRestore()
+        installSpy.mockRestore()
+      }
+    }
+  }, 60_000)
+
   it('checks a spec before installing it and words what the check refused', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-install'))
     const panel = await openPluginsPanel()
