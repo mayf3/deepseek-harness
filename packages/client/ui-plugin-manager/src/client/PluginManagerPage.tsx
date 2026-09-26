@@ -18,7 +18,7 @@ import {
   IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
   IconWarningOutlineRegular, Input, MenuSurface, Modal,
   PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTerminal,
-  StateDot, Switch, Tag, TerminalBlock, Toast, useAnchoredPosition, useDismissOnOutsidePointer,
+  StateDot, Switch, Tag, TerminalBlock, Toast, Tooltip, useAnchoredPosition, useDismissOnOutsidePointer,
   type IconProps, type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
@@ -1217,7 +1217,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
     const timer = setTimeout(clearHighlight, HIGHLIGHT_MS)
     return () => { clearTimeout(timer) }
   }, [highlight, clearHighlight])
-  const noticeLine = state.notice === null ? null : noticeText(state.notice, t)
+  const noticeLine = state.notice === null || state.notice.kind === 'refresh-failed' ? null : noticeText(state.notice, t)
 
   // The page manages what the person installed, what the installation ships for them to switch on, and a
   // selected name the Host cannot read; the installation's other bundles are inspected in the Settings
@@ -1227,6 +1227,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const mine = listed.filter(pkg => pkg.installed || !pkg.optional)
   const official = listed.filter(pkg => pkg.optional && !pkg.installed)
   const loaded = state.status === 'ready' || state.status === 'error'
+  const refreshing = state.refreshStatus === 'refreshing'
   const openPkg = view.kind === 'package' || view.kind === 'row' ? listed.find(pkg => pkg.name === view.name) : undefined
   const openItem = view.kind === 'item' ? ledger.items.find(item => item.id === view.id) : undefined
   const openRow = view.kind === 'row' && openPkg !== undefined ? openPkg.rows.find(row => row.rowId === view.rowId) : undefined
@@ -1273,7 +1274,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
     )
 
   return (
-    <section className={css.page} data-plugin-panel aria-busy={state.status === 'loading'}>
+    <section className={css.page} data-plugin-panel aria-busy={state.status === 'loading' || refreshing}>
       {showsCards
         ? (
           <header className={css.pageHead} data-window-drag>
@@ -1282,9 +1283,13 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
               <p className={css.pageIntro}>{t('intro')}</p>
             </div>
             <div className={css.toolbar}>
-              <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
-                <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutlineRegular /></span>
-              </button>
+              <Tooltip label={t('refresh')} delayMs={500} focusDelayMs={500} side="bottom" portal disabled={!loaded || refreshing}>
+                <button type="button" className={css.iconButton} aria-label={t('refresh')} aria-busy={refreshing} disabled={!loaded || refreshing} onClick={props.refresh}>
+                  <span className={css.iconWrap} aria-hidden="true">
+                    {refreshing ? <StateDot state="ongoing" size={18} /> : <IconRefreshOutlineRegular />}
+                  </span>
+                </button>
+              </Tooltip>
               <Button variant="primary" size="sm" className={css.addButton} icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded} onClick={props.openInstall}>
                 {t(state.install.requestId === undefined ? 'addPlugin' : 'installViewTask')}
               </Button>
@@ -1309,11 +1314,11 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             onDone={props.dismissNotice}
           />
         )}
-      {!showsCards && state.status === 'error'
+      {!showsCards && state.status === 'error' && !refreshing
         ? (
           <div className={css.failure}>
             <p className={css.statusWithDot} role="alert">
-              <StateDot state="error" />{t('error')}
+              <StateDot state="error" />{t(state.refreshStatus === 'failed' ? 'refreshError' : 'error')}
             </p>
             <Button variant="outline" size="sm" onClick={props.refresh}>{t('retry')}</Button>
           </div>
@@ -1362,11 +1367,11 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
               {renderGroup('bundles', t('bundlesTitle'), mine.map(packageCard))}
               {/* A failed package read trails the groups it left incomplete: right under Official on a
                   first-load failure, and after the kept cards when a refresh fails over stale data. */}
-              {state.status === 'error'
+              {state.status === 'error' && !refreshing
                 ? (
                   <div className={css.failure}>
                     <p className={css.statusWithDot} role="alert">
-                      <StateDot state="error" />{t('error')}
+                      <StateDot state="error" />{t(state.refreshStatus === 'failed' ? 'refreshError' : 'error')}
                     </p>
                     <Button variant="outline" size="sm" onClick={props.refresh}>{t('retry')}</Button>
                   </div>

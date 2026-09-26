@@ -11,6 +11,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { StrictMode, type ReactNode } from 'react'
 import { createNavigationStore } from '../src/client/navigation-store.ts'
 import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
+import { PluginRefreshToast } from '../src/client/PluginRefreshToast.tsx'
 import type { PluginManagerPageProps } from '../src/client/index.ts'
 import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { rowKey, type InstallState, type PackageRow, type PackageView, type PluginManagerState } from '../src/client/manager-store.ts'
@@ -66,6 +67,7 @@ const IDLE_INSTALL: InstallState = {
 
 const READY: PluginManagerState = {
   status: 'ready',
+  refreshStatus: 'idle',
   packages: [],
   busy: [],
   notice: null,
@@ -163,9 +165,18 @@ function renderTab(
       return body(owner.view, owner, 'form' in owner ? owner.form as ConfigPageForm | undefined : undefined)
     },
   }
-  const { rerender, unmount } = render(<PluginManagerPage {...props} />)
+  let showPage = true
+  let currentT = t
+  const contents = () => (
+    <>
+      {showPage ? <PluginManagerPage {...props} t={currentT} /> : null}
+      <PluginRefreshToast usePluginManager={props.usePluginManager} dismissNotice={actions.dismissNotice} t={currentT} />
+    </>
+  )
+  const { rerender, unmount } = render(contents())
   return {
     navigation,
+    hidePage: () => { showPage = false; rerender(contents()) },
     props,
     unmount,
     store,
@@ -173,7 +184,8 @@ function renderTab(
     set: (next: Partial<PluginManagerState>) => { act(() => { store.set({ ...store.getSnapshot(), ...next }) }) },
     setLanguage: (dict: typeof en) => {
       locale.setLocale(dict === zh ? 'zh' : 'en')
-      rerender(<PluginManagerPage {...props} t={translate(dict)} />)
+      currentT = translate(dict)
+      rerender(contents())
     },
   }
 }
@@ -238,6 +250,161 @@ describe('PluginManagerPage', () => {
     expect(screen.queryByRole('status', { name: en.loading })).toBeNull()
     expect(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') })).toBeTruthy()
     expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-better-sidebar') })).toHaveProperty('disabled', true)
+  })
+
+  it('shows refresh progress on the disabled button while preserving cards, then restores it without a toast', () => {
+    const { actions, set } = renderTab({ packages: [pkg()] })
+    const refresh = screen.getByRole('button', { name: en.refresh })
+    const detailName = en.openDetail.replace('{name}', 'dsh-better-sidebar')
+    const card = screen.getByRole('button', { name: detailName })
+    expect(refresh).toHaveProperty('disabled', false)
+    expect(refresh.getAttribute('title')).toBeNull()
+    fireEvent.click(refresh)
+    expect(actions.refresh).toHaveBeenCalledOnce()
+    set({ refreshStatus: 'refreshing' })
+    expect(refresh).toHaveProperty('disabled', true)
+    expect(refresh.getAttribute('aria-busy')).toBe('true')
+    expect(refresh.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    expect(screen.getByRole('button', { name: detailName })).toBe(card)
+    expect(screen.queryByRole('status', { name: en.loading })).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(refresh)
+    expect(actions.refresh).toHaveBeenCalledOnce()
+    set({ refreshStatus: 'idle' })
+    expect(refresh).toHaveProperty('disabled', false)
+    expect(refresh.getAttribute('aria-busy')).toBe('false')
+    expect(refresh.querySelector('[data-state="ongoing"]')).toBeNull()
+    expect(screen.getByRole('button', { name: detailName })).toBe(card)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(actions.dismissNotice).not.toHaveBeenCalled()
+  })
+
+  it.each(['list', 'detail'] as const)('keeps cached %s content with one localized refresh toast and no inline retry', (view) => {
+    const { set, setLanguage } = renderTab({ packages: [pkg()] })
+    if (view === 'detail') fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
+    const content = document.querySelector(view === 'detail' ? '[data-plugin-detail]' : '[data-plugin-package]')
+    for (const dict of [en, zh]) {
+      setLanguage(dict)
+      set({ status: 'ready', refreshStatus: 'idle', notice: { kind: 'refresh-failed', seq: 1 } })
+      expect(screen.getAllByRole('alert')).toHaveLength(1)
+      const toast = screen.getByRole('alert')
+      expect(toast.textContent).toBe(dict.refreshError)
+      expect(toast.parentElement).toBe(document.body)
+      expect(document.querySelector('[data-plugin-panel]')?.contains(toast)).toBe(false)
+      expect(screen.queryByRole('button', { name: dict.retry })).toBeNull()
+      expect(content?.isConnected).toBe(true)
+      set({ refreshStatus: 'refreshing', notice: null })
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(content?.isConnected).toBe(true)
+      set({ refreshStatus: 'idle' })
+      expect(screen.queryByRole('alert')).toBeNull()
+    }
+  })
+
+  it.each(['list', 'configuration detail'] as const)('keeps an uncached refresh failure inline in %s and hides it during retry', (view) => {
+    const { actions, set, setLanguage } = renderTab(
+      { status: 'error', refreshStatus: 'failed' },
+      { items: [{ id: 'bash', label: 'Shell' }] },
+    )
+    if (view === 'configuration detail') fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Shell') }))
+    for (const dict of [en, zh]) {
+      setLanguage(dict)
+      set({ status: 'error', refreshStatus: 'failed' })
+      const alert = screen.getByRole('alert')
+      expect(alert.textContent).toBe(dict.refreshError)
+      expect(document.querySelector('[data-plugin-panel]')?.contains(alert)).toBe(true)
+      fireEvent.click(screen.getByRole('button', { name: dict.retry }))
+      set({ refreshStatus: 'refreshing' })
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.queryByRole('button', { name: dict.retry })).toBeNull()
+    }
+    expect(actions.refresh).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['before', 'after'] as const)('keeps the refresh toast when navigation leaves %s the failure arrives', (navigation) => {
+    vi.useFakeTimers()
+    try {
+      const { actions, set, hidePage } = renderTab({ packages: [pkg()] })
+      set({ refreshStatus: 'refreshing' })
+      if (navigation === 'before') hidePage()
+      set({ refreshStatus: 'idle', notice: { kind: 'refresh-failed', seq: 1 } })
+      const toast = screen.getByRole('alert')
+      expect(toast.textContent).toBe(en.refreshError)
+      if (navigation === 'after') hidePage()
+      expect(document.querySelector('[data-plugin-panel]')).toBeNull()
+      expect(screen.getByRole('alert')).toBe(toast)
+      expect(toast.style.getPropertyValue('--dsh-toast-hold')).toBe('3000ms')
+      act(() => { vi.advanceTimersByTime(3_999) })
+      expect(actions.dismissNotice).not.toHaveBeenCalled()
+      act(() => { vi.advanceTimersByTime(1) })
+      expect(actions.dismissNotice).toHaveBeenCalledOnce()
+      set({ notice: null })
+      expect(screen.queryByRole('alert')).toBeNull()
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives a repeated refresh failure its own toast lifetime without extending it for locale changes', () => {
+    vi.useFakeTimers()
+    try {
+      const { actions, set, setLanguage } = renderTab({ notice: { kind: 'refresh-failed', seq: 1 } })
+      act(() => { vi.advanceTimersByTime(2_000) })
+      set({ notice: { kind: 'refresh-failed', seq: 2 } })
+      act(() => { vi.advanceTimersByTime(2_000) })
+      expect(actions.dismissNotice).not.toHaveBeenCalled()
+      setLanguage(zh)
+      expect(screen.getByRole('alert').textContent).toBe(zh.refreshError)
+      act(() => { vi.advanceTimersByTime(2_000) })
+      expect(actions.dismissNotice).toHaveBeenCalledOnce()
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['hover', 'keyboard'] as const)('shows a portaled refresh tooltip after 500ms of %s and cancels early departure', (trigger) => {
+    vi.useFakeTimers()
+    try {
+      const { unmount } = renderTab()
+      const refresh = screen.getByRole('button', { name: en.refresh })
+      const enter = () => {
+        if (trigger === 'hover') fireEvent.mouseEnter(refresh)
+        else {
+          fireEvent.keyDown(document, { key: 'Tab' })
+          fireEvent.focus(refresh)
+        }
+      }
+      const leave = () => {
+        if (trigger === 'hover') fireEvent.mouseLeave(refresh)
+        else fireEvent.blur(refresh)
+      }
+      expect(refresh.getAttribute('title')).toBeNull()
+      enter()
+      act(() => { vi.advanceTimersByTime(499) })
+      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
+      leave()
+      act(() => { vi.advanceTimersByTime(1) })
+      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
+      enter()
+      act(() => { vi.advanceTimersByTime(499) })
+      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
+      act(() => { vi.advanceTimersByTime(1) })
+      const tooltip = screen.getByRole('tooltip', { hidden: true })
+      expect(tooltip.textContent).toBe(en.refresh)
+      expect(tooltip.parentElement).toBe(document.body)
+      fireEvent.click(refresh)
+      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
+      leave()
+      enter()
+      unmount()
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
   })
 
   it('keeps the read failure and its retry visible while a detail page is open', () => {

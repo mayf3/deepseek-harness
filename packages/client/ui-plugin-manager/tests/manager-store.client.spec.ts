@@ -74,7 +74,9 @@ const NO_CONFIG: HostObservable<ConfigLedger> = {
 function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}) {
   const inventory = { list: overrides.inventory ?? vi.fn(() => Promise.resolve(ok({ entries: [], managementAvailable: true }))) }
   const plugins = {
-    listBundles: vi.fn(() => Promise.resolve(ok([BUNDLE]))),
+    listBundles: vi.fn<() => Promise<ReturnType<typeof ok<BundleInfo[]>> | ReturnType<typeof refused>>>(
+      () => Promise.resolve(ok([BUNDLE])),
+    ),
     listPlugins: vi.fn(() => Promise.resolve(ok(PLUGINS))),
     inspect: vi.fn(() => Promise.resolve(ok(INSPECTED))),
     registries: vi.fn(() => Promise.resolve(ok(REGISTRIES))),
@@ -221,6 +223,183 @@ describe('PluginManagerController', () => {
     expect(plugins.listBundles).toHaveBeenCalledTimes(2)
     expect(plugins.listPlugins).toHaveBeenCalledTimes(2)
     face.ensure()
+    expect(plugins.listBundles).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps cached packages while a manual refresh reads and ignores repeated refreshes without a success notice', async () => {
+    const { plugins, inventory, face, state, controller } = bench()
+    await controller.load()
+    const packages = state().packages
+    const gate = deferred<ReturnType<typeof ok<BundleInfo[]>>>()
+    plugins.listBundles.mockReturnValueOnce(gate.promise)
+    face.refresh()
+    expect(state()).toMatchObject({ status: 'ready', refreshStatus: 'refreshing', notice: null })
+    expect(state().packages).toBe(packages)
+    await vi.waitFor(() => { expect(plugins.listBundles).toHaveBeenCalledTimes(2) })
+    face.refresh()
+    face.refresh()
+    gate.resolve(ok([{ ...BUNDLE, version: '0.17.0' }]))
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('idle') })
+    expect(state().packages[0]?.version).toBe('0.17.0')
+    expect(state().status).toBe('ready')
+    expect(state().notice).toBeNull()
+    expect(inventory.list).toHaveBeenCalledTimes(2)
+    expect(plugins.listBundles).toHaveBeenCalledTimes(2)
+    expect(plugins.listPlugins).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['refused', 'rejected'] as const)('keeps cached packages ready after a %s refresh and clears its toast when retry starts', async (failure) => {
+    const { inventory, plugins, face, state, controller } = bench()
+    await controller.load()
+    const packages = state().packages
+    if (failure === 'refused') inventory.list.mockResolvedValueOnce(refused('gateway/internal', 'offline'))
+    else inventory.list.mockRejectedValueOnce(new Error('transport down'))
+    face.refresh()
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('idle') })
+    expect(state()).toMatchObject({ status: 'ready', notice: { kind: 'refresh-failed', seq: 1 } })
+    expect(state().packages).toBe(packages)
+    const gate = deferred<ReturnType<typeof ok<BundleInfo[]>>>()
+    plugins.listBundles.mockReturnValueOnce(gate.promise)
+    face.refresh()
+    expect(state()).toMatchObject({ status: 'ready', refreshStatus: 'refreshing', notice: null })
+    expect(state().packages).toBe(packages)
+    await vi.waitFor(() => { expect(plugins.listBundles).toHaveBeenCalledTimes(2) })
+    gate.resolve(ok([BUNDLE]))
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('idle') })
+    expect(state()).toMatchObject({ status: 'ready', notice: null })
+    inventory.list.mockResolvedValueOnce(refused('gateway/internal', 'offline again'))
+    face.refresh()
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'refresh-failed', seq: 2 }) })
+    face.dismissNotice()
+    expect(state().notice).toBeNull()
+  })
+
+  it.each(['refused', 'rejected'] as const)('keeps a %s first refresh failure inline without a toast', async (failure) => {
+    const inventory = failure === 'refused'
+      ? vi.fn().mockResolvedValueOnce(refused('gateway/internal', 'offline'))
+      : vi.fn().mockRejectedValueOnce(new Error('transport down'))
+    const { face, state } = bench({ inventory })
+    face.refresh()
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('failed') })
+    expect(state()).toMatchObject({ status: 'error', packages: [], notice: null })
+  })
+
+  it('treats an empty successful inventory as cached for refresh failures', async () => {
+    const { inventory, face, state, controller } = bench({ listBundles: vi.fn().mockResolvedValue(ok([])) })
+    await controller.load()
+    expect(state().packages).toEqual([])
+    inventory.list.mockResolvedValueOnce(refused('gateway/internal', 'offline'))
+    face.refresh()
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('idle') })
+    expect(state()).toMatchObject({ status: 'ready', packages: [], notice: { kind: 'refresh-failed' } })
+  })
+
+  it('forgets cached inventory when the managed profile becomes unavailable', async () => {
+    const { inventory, face, state, controller } = bench()
+    await controller.load()
+    inventory.list.mockResolvedValueOnce(ok({ entries: [], managementAvailable: false }))
+    await controller.load()
+    expect(state()).toMatchObject({ status: 'unavailable', packages: [] })
+    inventory.list.mockResolvedValueOnce(refused('gateway/internal', 'offline'))
+    face.refresh()
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('failed') })
+    expect(state()).toMatchObject({ status: 'error', packages: [], notice: null })
+  })
+
+  it('preserves unrelated notices when a manual refresh starts and succeeds', async () => {
+    const { face, state, controller } = bench({
+      setBundleEnabled: vi.fn().mockResolvedValue(ok({ ...APPLIED, application: 'restart-required' })),
+    })
+    await controller.load()
+    face.setEnabled(BUNDLE.name, true)
+    await vi.waitFor(() => { expect(state().notice?.kind).toBe('restart') })
+    const notice = state().notice
+    face.refresh()
+    expect(state().notice).toBe(notice)
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('idle') })
+    expect(state().notice).toBe(notice)
+  })
+
+  it('keeps background reads quiet and clears an uncached refresh failure when they succeed', async () => {
+    const { plugins, face, state, controller } = bench({
+      inventory: vi.fn().mockResolvedValueOnce(refused('gateway/internal', 'offline'))
+        .mockResolvedValue(ok({ entries: [], managementAvailable: true })),
+    })
+    face.refresh()
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('failed') })
+    const gate = deferred<ReturnType<typeof ok<BundleInfo[]>>>()
+    plugins.listBundles.mockReturnValueOnce(gate.promise)
+    const loading = controller.load()
+    await vi.waitFor(() => { expect(plugins.listBundles).toHaveBeenCalledOnce() })
+    expect(state().refreshStatus).toBe('failed')
+    gate.resolve(ok([BUNDLE]))
+    await loading
+    expect(state()).toMatchObject({ status: 'ready', refreshStatus: 'idle', notice: null })
+  })
+
+  it.each(['background', 'manual'] as const)('holds the refresh indicator through coalesced reads when %s starts first', async (first) => {
+    const { plugins, face, state, controller } = bench()
+    await controller.load()
+    const initial = deferred<ReturnType<typeof ok<BundleInfo[]>>>()
+    const rerun = deferred<ReturnType<typeof ok<BundleInfo[]>>>()
+    plugins.listBundles.mockReturnValueOnce(initial.promise).mockReturnValueOnce(rerun.promise)
+    const background = first === 'background' ? controller.load() : undefined
+    if (first === 'manual') face.refresh()
+    await vi.waitFor(() => { expect(plugins.listBundles).toHaveBeenCalledTimes(2) })
+    expect(state().refreshStatus).toBe(first === 'background' ? 'idle' : 'refreshing')
+    const completion = background ?? controller.load()
+    if (first === 'background') face.refresh()
+    initial.resolve(ok([{ ...BUNDLE, version: '0.17.0' }]))
+    await vi.waitFor(() => { expect(plugins.listBundles).toHaveBeenCalledTimes(3) })
+    expect(state()).toMatchObject({ status: 'ready', refreshStatus: 'refreshing', notice: null })
+    expect(state().packages[0]?.version).toBe('0.17.0')
+    face.refresh()
+    rerun.resolve(ok([{ ...BUNDLE, version: '0.18.0' }]))
+    await completion
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('idle') })
+    expect(state().packages[0]?.version).toBe('0.18.0')
+    expect(state().notice).toBeNull()
+    expect(plugins.listBundles).toHaveBeenCalledTimes(3)
+  })
+
+  it.each([false, true])('reports only the final coalesced refresh result (failure: %s)', async (failure) => {
+    const { plugins, face, state, controller } = bench()
+    await controller.load()
+    const initial = deferred<ReturnType<typeof ok<BundleInfo[]>> | ReturnType<typeof refused>>()
+    const rerun = deferred<ReturnType<typeof ok<BundleInfo[]>> | ReturnType<typeof refused>>()
+    plugins.listBundles.mockReturnValueOnce(initial.promise).mockReturnValueOnce(rerun.promise)
+    face.refresh()
+    await vi.waitFor(() => { expect(plugins.listBundles).toHaveBeenCalledTimes(2) })
+    const loading = controller.load()
+    initial.resolve(failure ? ok([BUNDLE]) : refused('gateway/internal', 'offline'))
+    await vi.waitFor(() => { expect(plugins.listBundles).toHaveBeenCalledTimes(3) })
+    expect(state().refreshStatus).toBe('refreshing')
+    expect(state().notice).toBeNull()
+    rerun.resolve(failure ? refused('gateway/internal', 'offline') : ok([BUNDLE]))
+    await loading
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('idle') })
+    expect(state().status).toBe('ready')
+    expect(state().notice).toEqual(failure ? { kind: 'refresh-failed', seq: 1 } : null)
+  })
+
+  it.each([false, true])('does not publish a manual refresh that settles after disposal (failure: %s)', async (failure) => {
+    const { plugins, face, state, controller } = bench()
+    await controller.load()
+    const gate = deferred<ReturnType<typeof ok<BundleInfo[]>> | ReturnType<typeof refused>>()
+    plugins.listBundles.mockReturnValueOnce(gate.promise)
+    face.refresh()
+    await vi.waitFor(() => { expect(plugins.listBundles).toHaveBeenCalledTimes(2) })
+    const completion = controller.load()
+    const before = state()
+    const listener = vi.fn()
+    const unsubscribe = face.hooks.pluginManager.subscribe(listener)
+    onTestFinished(unsubscribe)
+    controller.dispose()
+    gate.resolve(failure ? refused('gateway/internal', 'offline') : ok([{ ...BUNDLE, version: '0.17.0' }]))
+    await completion
+    face.refresh()
+    expect(state()).toBe(before)
+    expect(listener).not.toHaveBeenCalled()
     expect(plugins.listBundles).toHaveBeenCalledTimes(2)
   })
 

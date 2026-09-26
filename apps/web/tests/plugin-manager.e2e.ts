@@ -218,6 +218,134 @@ describe('web e2e: plugin manager', () => {
     ].join('\n'), MODE)
   })
 
+  it('delays refresh hints and keeps cards through manual refresh, failure, and retry', async () => {
+    const context = await browser.newContext({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+    const listBundles = scaffold.ctx.pluginManager.listBundles.bind(scaffold.ctx.pluginManager)
+    const reads: ReturnType<typeof listBundles>[] = []
+    try {
+      const probe = await context.newPage()
+      const consoleWatch = watchConsole(probe)
+      onTestFailed(() => saveFailureShot(probe, 'web-e2e-plugin-manager-refresh'))
+      await probe.clock.install()
+      await probe.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await probe.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '插件', exact: true }).click()
+      const panel = probe.locator('[data-plugin-panel]')
+      const refresh = panel.getByRole('button', { name: '刷新', exact: true })
+      const add = panel.getByRole('button', { name: '添加插件', exact: true })
+      await panel.getByRole('button', { name: '查看 @fixture/bundle', exact: true }).waitFor()
+      await expect.poll(() => refresh.isEnabled()).toBe(true)
+      await probe.evaluate(() => document.fonts.ready)
+      const cards = panel.locator('[data-plugin-package], [data-plugin-item]')
+      const cardText = await cards.allTextContents()
+      expect(cardText.length).toBeGreaterThan(0)
+      const tooltip = probe.getByRole('tooltip').filter({ hasText: '刷新' })
+      const trace: string[] = []
+      const recordRefresh = async (phase: string) => {
+        trace.push(phase, await refresh.ariaSnapshot(), JSON.stringify({
+          busy: await panel.getAttribute('aria-busy'),
+          spinners: await refresh.locator('[data-state="ongoing"]').count(),
+          cards: await cards.count(),
+          skeletons: await panel.locator('[data-plugin-loading]').count(),
+          alerts: await panel.getByRole('alert').allTextContents(),
+          retry: await panel.getByRole('button', { name: '重试', exact: true }).count(),
+          toasts: await probe.locator('body > [role="alert"]').allTextContents(),
+        }))
+      }
+      const bounds = await refresh.boundingBox()
+      if (bounds === null) throw new Error('Refresh button has no visible bounds')
+      await probe.clock.pauseAt(await probe.evaluate(() => Date.now() + 1000))
+      try {
+        await probe.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+        await probe.clock.runFor(499)
+        expect(await tooltip.count()).toBe(0)
+        trace.push(`Hover at 499ms: ${await tooltip.count()} tooltips`)
+        await probe.clock.runFor(1)
+        await tooltip.waitFor()
+        trace.push('Hover at 500ms:', await tooltip.ariaSnapshot())
+        await probe.mouse.move(0, 999)
+        await tooltip.waitFor({ state: 'detached' })
+
+        await add.focus()
+        await probe.keyboard.press('Shift+Tab')
+        expect(await refresh.evaluate(element => element === document.activeElement)).toBe(true)
+        await probe.clock.runFor(499)
+        expect(await tooltip.count()).toBe(0)
+        trace.push(`Focus at 499ms: ${await tooltip.count()} tooltips`)
+        await probe.clock.runFor(1)
+        await tooltip.waitFor()
+        trace.push('Focus at 500ms:', await tooltip.ariaSnapshot())
+        await probe.keyboard.press('Tab')
+        await tooltip.waitFor({ state: 'detached' })
+      } finally {
+        await probe.clock.resume()
+      }
+
+      await probe.clock.pauseAt(await probe.evaluate(() => Date.now() + 1000))
+      const spy = vi.spyOn(scaffold.ctx.pluginManager, 'listBundles')
+      try {
+        for (const outcome of ['success', 'failure', 'retry'] as const) {
+          const release = Promise.withResolvers<undefined>()
+          const called = spy.mock.calls.length
+          spy.mockImplementationOnce(() => {
+            const read = release.promise.then(() => {
+              if (outcome === 'failure') throw new Error('Fixture plugin refresh failed')
+              return listBundles()
+            })
+            reads.push(read)
+            return read
+          })
+          try {
+            await refresh.click()
+            await expect.poll(() => spy.mock.calls.length).toBeGreaterThan(called)
+            expect(await refresh.isDisabled()).toBe(true)
+            expect(await refresh.getAttribute('aria-busy')).toBe('true')
+            expect(await panel.getAttribute('aria-busy')).toBe('true')
+            const spinner = refresh.locator('[data-state="ongoing"]')
+            await spinner.waitFor()
+            expect(await spinner.evaluate(element => element.getAnimations({ subtree: true }).length)).toBeGreaterThan(0)
+            expect(await cards.allTextContents()).toEqual(cardText)
+            expect(await panel.locator('[data-plugin-loading]').count()).toBe(0)
+            expect(await tooltip.count()).toBe(0)
+            expect(await panel.getByRole('alert').count()).toBe(0)
+            expect(await probe.locator('body > [role="alert"]').count()).toBe(0)
+            await recordRefresh(`${outcome}: pending`)
+
+            release.resolve(undefined)
+            await expect.poll(() => refresh.isEnabled()).toBe(true)
+            expect(await refresh.getAttribute('aria-busy')).toBe('false')
+            expect(await panel.getAttribute('aria-busy')).toBe('false')
+            expect(await spinner.count()).toBe(0)
+            expect(await cards.allTextContents()).toEqual(cardText)
+            expect(await panel.locator('[data-plugin-loading]').count()).toBe(0)
+            expect(await panel.getByRole('alert').count()).toBe(0)
+            expect(await panel.getByRole('button', { name: '重试', exact: true }).count()).toBe(0)
+            const toasts = probe.locator('body > [role="alert"]')
+            if (outcome === 'failure') {
+              await expect.poll(() => toasts.allTextContents()).toEqual(['刷新失败，请重试'])
+            } else {
+              expect(await toasts.count()).toBe(0)
+            }
+            await recordRefresh(`${outcome}: settled`)
+          } finally {
+            release.resolve(undefined)
+          }
+        }
+      } finally {
+        spy.mockRestore()
+        await probe.clock.resume()
+      }
+      await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'refresh.expected.md'), trace.join('\n'), MODE)
+      expect(consoleWatch.pageErrors).toEqual([])
+      expect(consoleWatch.warnings).toEqual([])
+    } finally {
+      try {
+        await context.close()
+      } finally {
+        await Promise.allSettled(reads)
+      }
+    }
+  })
+
   it('starts with an unavailable selected bundle and lets the user clear its error', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-missing-bundle'))
     const panel = await openPluginsPanel()
@@ -541,7 +669,7 @@ describe('web e2e: plugin manager', () => {
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'manager.expected.md', 'live-enabled.expected.md', 'missing-bundle.expected.md', 'exports.expected.md', 'exports-en.expected.md', 'icons.expected.md', 'loading.expected.md',
+      'manager.expected.md', 'live-enabled.expected.md', 'missing-bundle.expected.md', 'exports.expected.md', 'exports-en.expected.md', 'icons.expected.md', 'loading.expected.md', 'refresh.expected.md',
     ])
   })
 })
