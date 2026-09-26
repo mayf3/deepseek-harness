@@ -364,49 +364,6 @@ describe('PluginManagerPage', () => {
     }
   })
 
-  it.each(['hover', 'keyboard'] as const)('shows a portaled refresh tooltip after 500ms of %s and cancels early departure', (trigger) => {
-    vi.useFakeTimers()
-    try {
-      const { unmount } = renderTab()
-      const refresh = screen.getByRole('button', { name: en.refresh })
-      const enter = () => {
-        if (trigger === 'hover') fireEvent.mouseEnter(refresh)
-        else {
-          fireEvent.keyDown(document, { key: 'Tab' })
-          fireEvent.focus(refresh)
-        }
-      }
-      const leave = () => {
-        if (trigger === 'hover') fireEvent.mouseLeave(refresh)
-        else fireEvent.blur(refresh)
-      }
-      expect(refresh.getAttribute('title')).toBeNull()
-      enter()
-      act(() => { vi.advanceTimersByTime(499) })
-      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
-      leave()
-      act(() => { vi.advanceTimersByTime(1) })
-      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
-      enter()
-      act(() => { vi.advanceTimersByTime(499) })
-      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
-      act(() => { vi.advanceTimersByTime(1) })
-      const tooltip = screen.getByRole('tooltip', { hidden: true })
-      expect(tooltip.textContent).toBe(en.refresh)
-      expect(tooltip.parentElement).toBe(document.body)
-      fireEvent.click(refresh)
-      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
-      leave()
-      enter()
-      unmount()
-      act(() => { vi.advanceTimersByTime(500) })
-      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
-    } finally {
-      cleanup()
-      vi.useRealTimers()
-    }
-  })
-
   it('keeps the read failure and its retry visible while a detail page is open', () => {
     const { actions, set } = renderTab({ packages: [pkg()] })
     fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))

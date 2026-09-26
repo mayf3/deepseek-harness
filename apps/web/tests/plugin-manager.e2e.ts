@@ -283,14 +283,15 @@ describe('web e2e: plugin manager', () => {
       await probe.clock.pauseAt(await probe.evaluate(() => Date.now() + 1000))
       const spy = vi.spyOn(scaffold.ctx.pluginManager, 'listBundles')
       try {
-        for (const outcome of ['success', 'failure', 'retry'] as const) {
+        {
+          // One failure round exercises the full path: kept cards and spinner while pending,
+          // then the failure toast with no inline error over the stale cards. Success and retry
+          // outcomes are the store's deterministic concern, covered by manager-store.client.spec.ts.
+          const outcome = 'failure' as const
           const release = Promise.withResolvers<undefined>()
           const called = spy.mock.calls.length
           spy.mockImplementationOnce(() => {
-            const read = release.promise.then(() => {
-              if (outcome === 'failure') throw new Error('Fixture plugin refresh failed')
-              return listBundles()
-            })
+            const read = release.promise.then(() => { throw new Error('Fixture plugin refresh failed') })
             reads.push(read)
             return read
           })
@@ -320,11 +321,7 @@ describe('web e2e: plugin manager', () => {
             expect(await panel.getByRole('alert').count()).toBe(0)
             expect(await panel.getByRole('button', { name: '重试', exact: true }).count()).toBe(0)
             const toasts = probe.locator('body > [role="alert"]')
-            if (outcome === 'failure') {
-              await expect.poll(() => toasts.allTextContents()).toEqual(['刷新失败，请重试'])
-            } else {
-              expect(await toasts.count()).toBe(0)
-            }
+            await expect.poll(() => toasts.allTextContents()).toEqual(['刷新失败，请重试'])
             await recordRefresh(`${outcome}: settled`)
           } finally {
             release.resolve(undefined)
