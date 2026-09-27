@@ -40,7 +40,7 @@ install-cancel 场景改为轮询卡片状态，而不再单次采样，因此�
 
 本地按文件实测：`DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/<file>.e2e.ts` → workspace-new-session-folding 改动前 15/15、改动后 20/20，turn-tail-actions 改动前 8/8、改动后 20/20，plugin-install-cancel 改动前 12/12、改动后 20/20。通道配置 `DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=16 pnpm run test:web:ci` 连续三次运行中三个文件全部通过。
 
-install-cancel 场景仍带有本次改动未消除、且原因尚未定位的残余暴露：`node 24 / snapshots and artifacts` 上有两次、把该文件恢复到改动前版本后用同一通道命令运行的本地一次，都在启用点击关闭对话框后让 `plugin-install-cancel.e2e.ts:217` 的高亮卡片 locator 持续 30 s 未匹配。页面时钟已暂停，因此可排除高亮到期计时器，该等待并非与它竞争；上述三次通道运行与所有单文件运行都未复现，且尚无证据表明 store 的 `load()` 会挂起。本次改动新增的轮询覆盖的是卡片出现之后的状态读取，而不是这个 locator。
+install-cancel 场景还记录过独立的 30 s 高亮卡片等待：启用点击关闭对话框后，`node 24 / snapshots and artifacts` 上有两次、把该文件恢复到改动前版本后用同一通道命令运行的本地一次，都未能找到卡片。当时页面时钟已暂停，因此可排除高亮到期。[拦截器生命周期决策](2026-09-27-plugin-install-interceptor-lifetime.zh.md) 负责已定位的目录请求停滞及其测试装置修复。状态轮询仍覆盖卡片出现之后的读取。
 
 串行 master 通道同时失败的 WebKit 用例不是场景竞态，也不属于本次改动：`declared-reasoning.e2e.ts` 启动 Playwright 的 WebKit，通道的步骤只取浏览器本体而未安装宿主库，于是 `browserType.launch` 以 “Host system is missing dependencies to run browsers” 失败。[ci.yml](../../../../.github/workflows/ci.yml) 明确说明持久 VM 镜像拥有 Playwright 的 Linux 系统包，并且只在非自托管池随浏览器安装依赖集，因此修复镜像或该池的归属是 runner 侧的改动，而非场景改动。在开发者机器上安装 WebKit 依赖后该文件的 8 个用例全部通过。
 
