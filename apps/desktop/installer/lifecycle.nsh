@@ -51,6 +51,7 @@ Function InstallerBeforeInstall
         Quit
     ${EndIf}
     Call InstallerCheckAppRunning
+    Call PrepareCliUpdate
 FunctionEnd
 
 Function InstallerProgressShow

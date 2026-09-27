@@ -17,6 +17,8 @@ Var InstallerEdit
 Var InstallerEditFrame
 Var InstallerBrowse
 Var InstallerLaunch
+Var InstallerCommand
+Var InstallerCommandSelected
 Var InstallerExpanded
 !include "${__FILEDIR__}\path.nsh"
 !include "${__FILEDIR__}\drawing.nsh"
@@ -90,12 +92,12 @@ Function InstallerCreate
 
     ${NSD_CreateButton} 0 0 0 0 "$(INSTALLER_CHOOSE_PATH)"
     Pop $InstallerChoose
-    !insertmacro InstallerPlace $InstallerChoose 232 438 136 28
+    !insertmacro InstallerPlace $InstallerChoose 232 420 136 28
     ${NSD_OnClick} $InstallerChoose InstallerExpandPath
     ${NSD_OnNotify} $InstallerChoose InstallerPaintButton
     ${NSD_CreateBitmap} 0 0 0 0 ""
     Pop $InstallerEditFrame
-    !insertmacro InstallerPlace $InstallerEditFrame 64 434 384 34
+    !insertmacro InstallerPlace $InstallerEditFrame 64 416 384 34
     Call InstallerDrawEditFrame
     ${NSD_CreateText} 0 0 0 0 "$InstallerPath"
     Pop $InstallerEdit
@@ -117,7 +119,7 @@ Function InstallerCreate
     System::Call 'gdi32::SelectObject(p r4, p r5)'
     System::Call 'user32::ReleaseDC(p $InstallerEdit, p r4)'
     System::Call 'kernel32::MulDiv(i 76, i $InstallerDpi, i 96) i.r0'
-    System::Call 'kernel32::MulDiv(i 434, i $InstallerDpi, i 96) i.r1'
+    System::Call 'kernel32::MulDiv(i 416, i $InstallerDpi, i 96) i.r1'
     System::Call 'kernel32::MulDiv(i 360, i $InstallerDpi, i 96) i.r2'
     System::Call 'kernel32::MulDiv(i 34, i $InstallerDpi, i 96) i.r3'
     IntOp $3 $3 - $7
@@ -130,7 +132,7 @@ Function InstallerCreate
     ${NSD_OnChange} $InstallerEdit InstallerPathChanged
     ${NSD_CreateButton} 0 0 0 0 "$(INSTALLER_BROWSE)"
     Pop $InstallerBrowse
-    !insertmacro InstallerPlace $InstallerBrowse 456 434 80 34
+    !insertmacro InstallerPlace $InstallerBrowse 456 416 80 34
     ${NSD_OnClick} $InstallerBrowse InstallerBrowsePath
     ${NSD_OnNotify} $InstallerBrowse InstallerPaintButton
     ${NSD_CreateCheckbox} 0 0 0 0 "$(INSTALLER_LAUNCH)"
@@ -156,6 +158,16 @@ Function InstallerCreate
     !insertmacro InstallerControlColors $InstallerLaunch
     ${NSD_OnNotify} $InstallerLaunch InstallerPaintCheckbox
     ${NSD_Check} $InstallerLaunch
+
+    ${NSD_CreateCheckbox} 0 0 0 0 "$(INSTALLER_DSH_COMMAND)"
+    Pop $InstallerCommand
+    !insertmacro InstallerPlace $InstallerCommand 185 454 250 32
+    SendMessage $InstallerCommand ${WM_SETFONT} $InstallerSmallFont 1
+    !insertmacro InstallerControlColors $InstallerCommand
+    ${NSD_OnNotify} $InstallerCommand InstallerPaintCheckbox
+    ${If} $InstallerCommandSelected == 1
+        ${NSD_Check} $InstallerCommand
+    ${EndIf}
 
     ${NSD_CreateButton} 0 0 0 0 "$(INSTALLER_INSTALL)"
     Pop $InstallerButton
@@ -185,12 +197,14 @@ Function InstallerRender
     ShowWindow $InstallerEditFrame 0
     ShowWindow $InstallerBrowse 0
     ShowWindow $InstallerLaunch 0
+    ShowWindow $InstallerCommand 0
     ShowWindow $InstallerStatus 0
     ${If} $InstallerPhase == "success"
         ${NSD_SetText} $InstallerButton "$(INSTALLER_FINISH)"
         ShowWindow $InstallerLaunch 5
     ${Else}
         ${NSD_SetText} $InstallerButton "$(INSTALLER_INSTALL)"
+        ShowWindow $InstallerCommand 5
         ${If} $InstallerExpanded == 1
             ShowWindow $InstallerEditFrame 5
             ShowWindow $InstallerEdit 5
@@ -208,6 +222,7 @@ FunctionEnd
 
 ; Page leave callbacks also run when Enter activates NSIS's hidden default button.
 Function InstallerWelcomeLeave
+    ${NSD_GetState} $InstallerCommand $InstallerCommandSelected
     ${NSD_GetText} $InstallerEdit $InstallerPath
     Call InstallerPreflight
     ${If} $InstallerError != ""
