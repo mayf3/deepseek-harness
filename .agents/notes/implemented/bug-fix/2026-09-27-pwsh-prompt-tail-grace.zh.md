@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`dsh-terminal-bash` 新增一个经过校验的 `promptTailGraceMs` 配置字段，默认 `0`。当某次 send 已看到提示符标记而其可打印尾部尚未到达时，静默上界变为 `idleSilenceMs + handoffGraceMs + promptTailGraceMs`；其他上界、等待原因与代码路径均不变。零精确复现此前的上界，因此升级不改变任何部署的行为。持久 pwsh 的 Loader 组合用例设置 5000 毫秒，因为需要该字段的宿主机正是运行该用例的那些，而其断言（至少六次 `stdin_read` 结算、不含 `inferred_idle`）由此度量受控提示符路径，而不是宿主机的投递时序。`validateConfig` 允许该字段取零——这是唯一一个零为文档化取值的数值上界——并拒绝负数与小数。
+`dsh-terminal-bash` 新增一个经过校验的 `promptTailGraceMs` 配置字段，默认 `0`。当某次 send 已看到提示符标记而其可打印尾部尚未到达时，静默上界变为 `idleSilenceMs + handoffGraceMs + promptTailGraceMs`；其他上界、等待原因与代码路径均不变。该上界所扩展的层级阶梯由[持久 PTY 就绪设计](../feature/2026-07-16-persistent-pty-sessions.zh.md)拥有。零精确复现此前的上界，因此升级不改变任何部署的行为。持久 pwsh 的 Loader 组合用例设置 5000 毫秒，因为需要该字段的宿主机正是运行该用例的那些，而其断言（至少六次 `stdin_read` 结算、不含 `inferred_idle`）由此度量受控提示符路径，而不是宿主机的投递时序。`validateConfig` 允许该字段取零——这是唯一一个零为文档化取值的数值上界——并拒绝负数与小数。
 
 ## Alternatives considered
 
@@ -28,4 +28,4 @@ Status: implemented
 
 ## Testing
 
-`packages/terminal/terminal-bash/tests/session.spec.ts` 用假定时器固定两个方向：设置 `promptTailGraceMs` 时，尾部晚于普通上界到达的标记保持挂起，随后按 `stdin_read` 结算；字段为零时，同样的投递按 `inferred_idle` 结算。`packages/terminal/terminal-bash/tests/config.spec.ts` 接受零并拒绝负数或小数。`packages/shell/tool-pwsh-persistent/tests/loader-composition.spec.ts` 承载原生 Windows 上的端到端证据：把每个 session 的提示符尾部扣留四秒时，配置了该宽限后用例通过——九次结算、八次 `stdin_read` 加 `exit` 命令的 `session_exit`，耗时 33.4 秒与 37.5 秒；把该宽限改为零后同一停摆失败，其中两次 send 以 `inferred_idle` 结算，`promptSeen` 为 true、`promptTextSeen` 为 false、尾部为空且 `idleFor` 为 3312–3316 毫秒。
+`packages/terminal/terminal-bash/tests/session.spec.ts` 用假定时器固定每一种状态：设置 `promptTailGraceMs` 时，尾部晚于普通上界到达的标记保持挂起，随后按 `stdin_read` 结算；尾部始终不到时在扩展上界处回落到 `inferred_idle`；尾部已到达但被后续输出失效时保持普通上界；字段为零时，同样的延迟投递按 `inferred_idle` 结算。`packages/terminal/terminal-bash/tests/config.spec.ts` 接受零、拒绝负数或小数，并拒绝非零但短于一个 `pollIntervalMs` 的宽限。`packages/shell/tool-pwsh-persistent/tests/loader-composition.spec.ts` 承载原生 Windows 上的端到端证据：把每个 session 的提示符尾部扣留四秒时，配置了该宽限后用例通过——九次结算、八次 `stdin_read` 加 `exit` 命令的 `session_exit`，耗时 33.4 秒与 37.5 秒；把该宽限改为零后同一停摆失败，其中两次 send 以 `inferred_idle` 结算，`promptSeen` 为 true、`promptTextSeen` 为 false、尾部为空且 `idleFor` 为 3312–3316 毫秒。

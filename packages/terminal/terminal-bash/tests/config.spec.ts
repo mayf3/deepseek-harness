@@ -37,6 +37,12 @@ describe('terminal-bash config', () => {
     expect(() => { validateConfig(config({ promptTailGraceMs: 1.5 })) }).toThrow('promptTailGraceMs must be a non-negative safe integer')
   })
 
+  it('accepts the prompt tail grace at zero or at least one readiness poll', () => {
+    expect(() => { validateConfig(config({ promptTailGraceMs: 5, pollIntervalMs: 10 })) }).toThrow('promptTailGraceMs must be zero or at least pollIntervalMs')
+    expect(() => { validateConfig(config({ promptTailGraceMs: 10, pollIntervalMs: 10 })) }).not.toThrow()
+    expect(() => { validateConfig(config({ promptTailGraceMs: 0, pollIntervalMs: 10 })) }).not.toThrow()
+  })
+
 })
 
 describe('terminal-bash dialect resolution', () => {

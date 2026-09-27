@@ -578,6 +578,53 @@ describe('LocalPtySession readiness and output', () => {
     }
   }, 5_000)
 
+  it('settles inferred_idle at the extended bound when the prompt tail never arrives', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const session = new LocalPtySession(terminal, config({
+      idleSilenceMs: 50, handoffGraceMs: 10, promptTailGraceMs: 200, timeoutMs: 1_000,
+    }))
+    try {
+      await initialize(session, terminal)
+      const operation = session.startSend({ text: 'silent-render', submit: true })
+      await Promise.resolve()
+      await Promise.resolve()
+      let settled: string | undefined
+      void operation.done.then((result) => { settled = result.waitReason })
+
+      terminal.emitData('\x1b]133;D;0\x07')
+      await vi.advanceTimersByTimeAsync(70)
+      expect(settled).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(200)
+      expect((await operation.done).waitReason).toBe('inferred_idle')
+    } finally {
+      await session.close('prompt tail expiry cleanup')
+    }
+  }, 5_000)
+
+  it('keeps the plain silence bound once later output invalidated the prompt tail', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const session = new LocalPtySession(terminal, config({
+      idleSilenceMs: 50, handoffGraceMs: 10, promptTailGraceMs: 200, timeoutMs: 1_000,
+    }))
+    try {
+      await initialize(session, terminal)
+      const operation = session.startSend({ text: 'noisy-command', submit: true })
+      await Promise.resolve()
+      await Promise.resolve()
+
+      // The prompt arrives and is immediately followed by command output, so the tail is no
+      // longer completable and the tolerance has nothing left to wait for.
+      terminal.emitData('\x1b]133;D;0\x07dsh> ')
+      terminal.emitData('partial output')
+      await vi.advanceTimersByTimeAsync(70)
+      expect((await operation.done).waitReason).toBe('inferred_idle')
+    } finally {
+      await session.close('prompt tail invalidation cleanup')
+    }
+  }, 5_000)
+
   it('captures prompt MOTD, writes submit explicitly, and settles exact stdin waits', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()

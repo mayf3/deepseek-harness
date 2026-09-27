@@ -56,7 +56,6 @@ kind: "package-reference"
 | `maxReadBytes` | `262144` | 一次读取或一次结算发送返回的最大 UTF-8 字节数 |
 | `timeoutMs` | `30000` | 一次发送等待的绝对上限 |
 | `disposeGraceMs` | `3000` | 清理升级到 `SIGKILL` 前的宽限时间 |
-| `promptTailGraceMs` | `0` | 已看到提示符标记后，等待其可打印尾部再按 `inferred_idle` 结算的额外时长 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-terminal-bash)是每个字段的穷尽式真源，包括就绪计时（`pollIntervalMs`、`exactProbeAfterMs`、`idleSilenceMs`、`handoffGraceMs`、`promptTailGraceMs`）、终端尺寸（`rows`、`cols`）与 scrollback 上限（`scrollbackLines`、`scrollbackMaxBytes`）。
 

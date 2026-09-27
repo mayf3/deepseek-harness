@@ -56,7 +56,6 @@ Mount the terminal service, a subprocess provider, the sandbox and policy servic
 | `maxReadBytes` | `262144` | Maximum UTF-8 bytes returned by one read or settled send |
 | `timeoutMs` | `30000` | Absolute bound on one send wait |
 | `disposeGraceMs` | `3000` | Grace before teardown escalates to `SIGKILL` |
-| `promptTailGraceMs` | `0` | Extra wait for a seen prompt marker's printable tail before `inferred_idle` settles |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-terminal-bash) is the exhaustive source for every field, including the readiness timings (`pollIntervalMs`, `exactProbeAfterMs`, `idleSilenceMs`, `handoffGraceMs`, `promptTailGraceMs`), terminal size (`rows`, `cols`), and scrollback bounds (`scrollbackLines`, `scrollbackMaxBytes`).
 

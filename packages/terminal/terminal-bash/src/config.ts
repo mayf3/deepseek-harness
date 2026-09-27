@@ -42,7 +42,8 @@ export interface Config {
    * its printable tail has not arrived, before `inferred_idle` settles. The marker is written
    * by the shell's own prompt function and the tail by the same render, so a missing tail is a
    * delivery delay on a contended host rather than an absent prompt. Zero keeps the bound at
-   * `idleSilenceMs + handoffGraceMs`.
+   * `idleSilenceMs + handoffGraceMs`; any other value covers at least one `pollIntervalMs`, so a
+   * nonzero tolerance always contains a readiness poll.
    */
   promptTailGraceMs?: number
   /** Absolute bound for one send and the complete pwsh startup sequence. */
@@ -134,5 +135,8 @@ export function validateConfig(config: Config): asserts config is ResolvedConfig
   }
   if (resolved.handoffGraceMs < resolved.pollIntervalMs) {
     throw new Error('terminal-bash: handoffGraceMs must be at least pollIntervalMs so one readiness poll runs inside the grace window')
+  }
+  if (resolved.promptTailGraceMs !== 0 && resolved.promptTailGraceMs < resolved.pollIntervalMs) {
+    throw new Error('terminal-bash: promptTailGraceMs must be zero or at least pollIntervalMs so a nonzero tolerance contains one readiness poll')
   }
 }
