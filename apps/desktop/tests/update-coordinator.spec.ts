@@ -189,7 +189,7 @@ describe('desktop update coordinator', () => {
     f.checkForUpdates.mockImplementation(() => checked.promise)
     const pending = f.coordinator.check()
     await Promise.resolve()
-    f.coordinator.dispose()
+    await f.coordinator.dispose()
     expect(() => f.events.emit('error', new Error('late network failure'))).not.toThrow()
     checked.reject(new Error('offline'))
     await pending
@@ -284,7 +284,7 @@ describe('desktop update coordinator', () => {
     const checked = Promise.withResolvers<{ isUpdateAvailable: boolean; updateInfo: { version: string } }>()
     f.checkForUpdates.mockImplementation(() => checked.promise)
     const pending = f.coordinator.check()
-    f.coordinator.dispose()
+    await f.coordinator.dispose()
     checked.resolve({ isUpdateAvailable: true, updateInfo: { version: '1.1.0-rc.2' } })
     await pending
     expect(f.states).toEqual([])

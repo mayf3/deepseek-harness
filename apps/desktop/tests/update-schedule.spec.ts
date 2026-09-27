@@ -8,10 +8,10 @@ vi.mock('electron', () => ({ app: { isPackaged: false } }))
 vi.mock('electron-updater', () => ({ default: { autoUpdater: {} } }))
 const { DesktopUpdateCoordinator } = await import('../src/update-coordinator.ts')
 
-const cleanup: (() => void)[] = []
+const cleanup: (() => Promise<void>)[] = []
 beforeEach(() => { vi.useFakeTimers() })
-afterEach(() => {
-  for (const dispose of cleanup.splice(0)) dispose()
+afterEach(async () => {
+  await Promise.all(cleanup.splice(0).map(dispose => dispose()))
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
@@ -28,7 +28,7 @@ function fixture(jitter = 0, random = () => 0.5) {
   const coordinator = new DesktopUpdateCoordinator((state) => { states.push(state); return state }, async () => true,
     updater, () => true, () => '1.0.0')
   const schedule = new DesktopUpdateSchedule(coordinator, { intervalMs: 10_000, maxBackoffMs: 40_000, jitter }, random)
-  cleanup.push(() => { schedule.dispose(); coordinator.dispose() })
+  cleanup.push(async () => { schedule.dispose(); await coordinator.dispose() })
   return { schedule, coordinator, states, checkForUpdates, downloadUpdate }
 }
 
@@ -145,7 +145,7 @@ describe('ordinary update polling', () => {
     try {
       await started.promise
       f.schedule.dispose()
-      f.coordinator.dispose()
+      await f.coordinator.dispose()
       await expect(f.schedule.check(true)).rejects.toThrow('disposed')
     } finally {
       pending.resolve({ isUpdateAvailable: false, updateInfo: { version: '1.0.0' } })
