@@ -38,7 +38,9 @@ install-cancel 场景改为轮询卡片状态，而不再单次采样，因此�
 
 两个负向对照用已发布的断言复现了记录到的特征。folding 场景第一次捕获前改为悬停 New Session 行而非 Workspace 行时，`sidebar.expected.md` 失败：golden 记录 `treeitem "{{workspace}} Workspace actions …"`，实际得到 `treeitem "{{workspace}}"`。turn-tail 场景在聚焦 Copy 按钮前只做一次鼠标按下而不按键时不会出现气泡，running 捕获失败并缺少串行通道记录到的 `tooltip "Copy"`。两个对照在改动之后均通过。
 
-本地按文件实测：`DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/<file>.e2e.ts` → workspace-new-session-folding 改动前 15/15、改动后 20/20，turn-tail-actions 改动前 8/8、改动后 20/20，plugin-install-cancel 改动前 12/12、改动后 20/20。通道配置 `DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=16 pnpm run test:web:ci` 下三个文件全部通过。
+本地按文件实测：`DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/<file>.e2e.ts` → workspace-new-session-folding 改动前 15/15、改动后 20/20，turn-tail-actions 改动前 8/8、改动后 20/20，plugin-install-cancel 改动前 12/12、改动后 20/20。通道配置 `DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=16 pnpm run test:web:ci` 连续三次运行中三个文件全部通过。
+
+install-cancel 场景仍带有本次改动未消除的已知残余暴露：它通过高亮定位卡片，因此当卡片缺席期间一次重载长于高亮时，失败会落在该 locator 而不是状态断言上。一次 `node 24 / snapshots and artifacts` 正是失败在这里，而它在上述三次通道运行与二十次单文件运行中都没有复现；实测高亮到状态的时间间隔为 61 ms，本地无法构造出产生该条件的时序。
 
 串行 master 通道同时失败的 WebKit 用例不是场景竞态，也不属于本次改动：`declared-reasoning.e2e.ts` 启动 Playwright 的 WebKit，通道的步骤只取浏览器本体而未安装宿主库，于是 `browserType.launch` 以 “Host system is missing dependencies to run browsers” 失败。[ci.yml](../../../../.github/workflows/ci.yml) 明确说明持久 VM 镜像拥有 Playwright 的 Linux 系统包，并且只在非自托管池随浏览器安装依赖集，因此修复镜像或该池的归属是 runner 侧的改动，而非场景改动。在开发者机器上安装 WebKit 依赖后该文件的 8 个用例全部通过。
 
