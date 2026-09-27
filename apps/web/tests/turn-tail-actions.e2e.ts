@@ -39,17 +39,17 @@ const NARRATION = 'Reading the workspace now.'
 const PROMPT = `Begin your reply with the plain sentence "${NARRATION}" as text, and in that same message call the bash tool with the command "echo alpha". After the tool result, reply with the single word DONE and stop.`
 
 /**
- * Focus one IconAction and wait for the tooltip the running golden records.
+ * Focus the Copy IconAction and wait for the tooltip the running golden records.
  *
- * `Tooltip` ignores focus while the last input was a pointer, and only a
+ * `Tooltip` ignores focus while the last input came from a pointer, and any
  * keydown clears that flag, so a focus that follows this scenario's own clicks
- * raises no bubble. Press the key that makes the focus keyboard-owned before
- * focusing, and wait for the bubble rather than assuming the commit landed.
- * @param page - page containing the IconAction.
+ * raises no bubble. Clear the flag with a key that moves nothing, then focus
+ * and wait for the bubble rather than assuming its commit landed.
+ * @param page - page containing the Copy button.
  * @param button - the Copy button to focus.
  */
 async function expectFocusTooltip(page: Page, button: Locator): Promise<void> {
-  await page.keyboard.press('Tab')
+  await page.keyboard.press('Shift')
   await button.focus()
   await page.getByRole('tooltip', { name: 'Copy', exact: true }).waitFor({ timeout: 10_000 })
 }

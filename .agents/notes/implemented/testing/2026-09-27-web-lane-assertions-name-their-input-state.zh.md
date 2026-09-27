@@ -8,7 +8,7 @@ Status: implemented
 
 浏览器通道的三个场景在捕获 aria 区域时，golden 记录的状态只是被指针、键盘或一次进行中的 Host 读取所隐含，因此每次捕获都可能落到另一种状态上。
 
-[workspace-new-session-folding](../../../../apps/web/tests/workspace-new-session-folding.e2e.ts) 捕获同一侧边栏的两份 golden。`sidebar.expected.md` 记录的是 Workspace 行把尾部单元格换成行操作按钮的状态，该行为由 [Rows.module.css](../../../../packages/client/ui-workspace/src/client/rows/Rows.module.css) 的 `.projectRow:hover` 提供；`first-batch.expected.md` 则以 `.sessionRow:hover` 记录批次中最后一个已建立的行。两次捕获因此都取决于指针所在位置，而场景自身的 “Show 11 more sessions” 点击会在指针静止时重排列表。串行自托管 master 通道在这个场景上失败时，两份 golden 的要求都没有满足——`treeitem "{{workspace}}` 不带操作按钮，golden 记录为悬停的那一行渲染出普通的相对时间——2026-09-24 至 2026-09-27 观察到的九次失败运行全部如此。
+[workspace-new-session-folding](../../../../apps/web/tests/workspace-new-session-folding.e2e.ts) 捕获同一侧边栏的两份 golden。`sidebar.expected.md` 记录的是 Workspace 行显示出行操作单元格的状态，该行为由 [Rows.module.css](../../../../packages/client/ui-workspace/src/client/rows/Rows.module.css) 的 `.projectRow:hover` 提供；`first-batch.expected.md` 则以 `.sessionRow:hover` 记录第六个会话行，即该批次展开出的第一行。两次捕获因此都取决于指针所在位置，而场景自身的 “Show 11 more sessions” 点击会在指针静止时重排列表。串行自托管 master 通道在这个场景上失败时，两份 golden 的要求都没有满足——`treeitem "{{workspace}}"` 不带操作按钮，golden 记录为悬停的那一行渲染出普通的相对时间——2026-09-24 至 2026-09-27 观察到的九次失败运行全部如此。
 
 [turn-tail-actions](../../../../apps/web/tests/turn-tail-actions.e2e.ts) 两次捕获聚焦后的 Copy 页脚：`running.expected.md` 记录其旁有一个 `tooltip "Copy"`，`settled.expected.md` 则不记录。只要最后一次输入来自指针，[Tooltip](../../../../packages/client/ui-primitives/src/Tooltip.tsx) 就忽略聚焦，而只有 keydown 会清除该标记，因此第一次捕获是否出现气泡，取决于场景最后一次点击之后测试框架是否按过键。
 
@@ -18,11 +18,11 @@ Status: implemented
 
 每次捕获都先确立其 golden 所记录的状态。
 
-folding 场景在侧边栏捕获前悬停 Workspace 行，在 first-batch 捕获前悬停该批次中 golden 记录的那一行，两个被悬停的行都由场景确立，而不再继承 Show-more 点击周围的布局。golden、折叠配额与行渲染均不变；场景现在执行的是 golden 读者本会执行的那次悬停。
+folding 场景在侧边栏捕获前悬停 Workspace 行，在 first-batch 捕获前悬停该批次展开出的第一行，两个被悬停的行都由场景确立，而不再继承 Show-more 点击周围的布局。golden、折叠配额与行渲染均不变；场景现在执行的是 golden 读者本会执行的那次悬停。
 
-turn-tail 场景先按下使聚焦归属键盘的按键，再聚焦 Copy 按钮，并等待 running golden 记录的气泡。settled 捕获保留普通聚焦，这正是 Stop 点击让指针拥有最后一次输入之后、其 golden 所记录的状态。
+turn-tail 场景先用一个不移动焦点的按键清除指针标记，再聚焦 Copy 按钮，并等待 running golden 记录的气泡。settled 捕获保留普通聚焦，这正是 Stop 点击让指针拥有最后一次输入之后、其 golden 所记录的状态。
 
-install-cancel 场景改为轮询卡片状态，而不再单次采样，因此该断言观察到的是高亮所先于的目录重载。高亮仍保留在定位卡片的 locator 中，因为随后推进 `2400 ms` 时钟的那步仍以它断言卡片会脱离；若一次重载长于高亮的到期时间，失败发生在这个 locator，而不是轮询内部。
+install-cancel 场景改为轮询卡片状态，而不再单次采样，因此该断言观察到的是高亮所先于的目录重载。高亮仍保留在定位卡片的 locator 中，因为随后推进 `2400 ms` 时钟的那步仍以它断言卡片会脱离。
 
 ## Alternatives considered
 
@@ -32,15 +32,15 @@ install-cancel 场景改为轮询卡片状态，而不再单次采样，因此�
 
 **在场景内禁用悬停样式或 tooltip 的模态规则。** 两者都是 golden 所证明的已发布渲染与交互行为；场景级覆盖将测试一个产品并不提供的页面。
 
-**提高捕获超时或重试比较。** 两者都不能确立实际捕获到的是哪个状态；`captureStableAria` 本已等待连续两次快照相等，而错误的状态同样能满足它。
+**提高捕获超时或重试比较。** 两者都不能确立实际捕获到的是哪个状态；`captureStableAria` 本已等待连续两次快照相等，而错误的状态同样能满足它——这一限度已由 [CI 就绪与完成决策](2026-09-08-ci-readiness-and-completion.zh.md) 与 [连接与压缩 fixture 前置条件](2026-09-12-connection-and-compaction-fixture-preconditions.zh.md) 记录。
 
 ## Verification
 
-两个负向对照用已发布的断言复现了记录到的特征。folding 场景第一次捕获前改为悬停 New Session 行而非 Workspace 行时，`sidebar.expected.md` 失败：golden 记录 `treeitem "{{workspace}} Workspace actions …"`，实际得到 `treeitem "{{workspace}}"`。turn-tail 场景在聚焦 Copy 按钮前只做一次鼠标按下而不按键时不会出现气泡，running 捕获失败并缺少串行通道记录到的 `tooltip "Copy"`。两个对照在改动之后均通过。
+两个负向对照用已发布的断言复现了记录到的特征。folding 场景第一次捕获前改为悬停 New Session 行而非 Workspace 行时，`sidebar.expected.md` 失败：golden 记录 `treeitem "{{workspace}} Workspace actions …"`，实际得到 `treeitem "{{workspace}}"`。turn-tail 场景在聚焦 Copy 按钮前只做一次鼠标按下而不按键时不会出现气泡，running 捕获随后失败并缺少串行通道记录到的 `tooltip "Copy"`。两个对照在改动之后均通过。
 
 本地按文件实测：`DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/<file>.e2e.ts` → workspace-new-session-folding 改动前 15/15、改动后 20/20，turn-tail-actions 改动前 8/8、改动后 20/20，plugin-install-cancel 改动前 12/12、改动后 20/20。通道配置 `DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=16 pnpm run test:web:ci` 连续三次运行中三个文件全部通过。
 
-install-cancel 场景仍带有本次改动未消除的已知残余暴露：它通过高亮定位卡片，因此当卡片缺席期间一次重载长于高亮时，失败会落在该 locator 而不是状态断言上。一次 `node 24 / snapshots and artifacts` 正是失败在这里，而它在上述三次通道运行与二十次单文件运行中都没有复现；实测高亮到状态的时间间隔为 61 ms，本地无法构造出产生该条件的时序。
+install-cancel 场景仍带有本次改动未消除、且原因尚未定位的残余暴露：`node 24 / snapshots and artifacts` 上有两次、把该文件恢复到改动前版本后用同一通道命令运行的本地一次，都在启用点击关闭对话框后让 `plugin-install-cancel.e2e.ts:217` 的高亮卡片 locator 持续 30 s 未匹配。页面时钟已暂停，因此可排除高亮到期计时器，该等待并非与它竞争；上述三次通道运行与所有单文件运行都未复现，且尚无证据表明 store 的 `load()` 会挂起。本次改动新增的轮询覆盖的是卡片出现之后的状态读取，而不是这个 locator。
 
 串行 master 通道同时失败的 WebKit 用例不是场景竞态，也不属于本次改动：`declared-reasoning.e2e.ts` 启动 Playwright 的 WebKit，通道的步骤只取浏览器本体而未安装宿主库，于是 `browserType.launch` 以 “Host system is missing dependencies to run browsers” 失败。[ci.yml](../../../../.github/workflows/ci.yml) 明确说明持久 VM 镜像拥有 Playwright 的 Linux 系统包，并且只在非自托管池随浏览器安装依赖集，因此修复镜像或该池的归属是 runner 侧的改动，而非场景改动。在开发者机器上安装 WebKit 依赖后该文件的 8 个用例全部通过。
 

@@ -219,8 +219,7 @@ it('cancels installation, retries and highlights the enabled plugin at 40% alpha
         // Host answers, so the highlight is observable before the reload
         // commits the enabled bundle into the list. Measured 61 ms between the
         // two locally; this poll waits for that commit, which the single read
-        // it replaces sampled inside. A reload that outlives the highlight's
-        // 2.4 s expiry still fails, at the count below.
+        // it replaces sampled inside.
         await expect.poll(
           () => card.getAttribute('data-plugin-status'),
           { timeout: 10_000 },
