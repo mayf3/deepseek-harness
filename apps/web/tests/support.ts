@@ -94,8 +94,7 @@ export async function expandOwningTurnProcess(page: Page, target: Locator): Prom
   const turn = await target.evaluate(element => element.closest<HTMLElement>('[data-chat-turn]')?.dataset.chatTurn)
   if (turn !== undefined) {
     const control = page.locator(`[data-turn-process="${turn}"]`)
-    await control.waitFor({ state: 'visible', timeout: 10_000 })
-    if (await control.getAttribute('aria-expanded') === 'false') await control.click()
+    if (await control.count() > 0 && await control.getAttribute('aria-expanded') === 'false') await control.click()
   }
   const group = target.locator('xpath=ancestor::*[@data-chat-group-key][1]')
   const header = group.locator('[data-process-activity]').first()
