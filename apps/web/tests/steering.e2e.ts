@@ -149,11 +149,6 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
       expect(await page.getByText(STEER, { exact: true }).count()).toBe(1)
       expect(await pendingSteering.count()).toBe(1)
       expect(await page.getByRole('button', { name: 'Edit queued message' }).count()).toBe(0)
-      // The question step's process title reaches its settled text a minimum
-      // display interval after the takeover; capture that text, not the
-      // transient one the golden does not record.
-      await page.getByRole('button', { name: 'Waiting for your action · Ready to continue?' })
-        .waitFor({ timeout: 10_000 })
       const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(MID_EXPECTED, snapshot, MODE)
     }
