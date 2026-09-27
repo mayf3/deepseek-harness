@@ -147,7 +147,7 @@ function Get-CurrentIdentity {
   return [System.Security.Principal.WindowsIdentity]::GetCurrent()
 }
 
-# Integrity level and sandbox markers decide the symptom shape: the same foreign
+# Integrity level affects the symptom: the same foreign
 # ACE fails a grant when the caller is below Medium and merely blocks the child
 # when the caller is not.
 # The integrity level lives in the token's group list, which .NET filters out of
@@ -230,29 +230,37 @@ function Get-IntegritySid {
   }
 }
 
-function Get-CallerFacts {
-  $sid = Get-IntegritySid
-  $markers = @()
-  foreach ($name in (Get-ChildItem env: | Select-Object -ExpandProperty Name)) {
-    if ($name -like 'SBX_*' -or $name -like 'CODEX_*') { $markers += $name }
-  }
-  return @{ Integrity = $sid; Markers = $markers }
+function Get-NormalizedPath {
+  param([string]$Value)
+  $full = [System.IO.Path]::GetFullPath($Value)
+  $root = [System.IO.Path]::GetPathRoot($full)
+  if ($full.Length -le $root.Length) { return $root }
+  return $full.TrimEnd('\', '/')
 }
 
 function Test-DangerousRoot {
   param([string]$FullPath)
-  $trimmed = $FullPath.TrimEnd('\')
+  $trimmed = (Get-NormalizedPath $FullPath).TrimEnd('\')
   if ($trimmed -match '^[A-Za-z]:$') { return 'drive root' }
   if ($trimmed -ieq ([System.IO.Path]::GetFullPath($env:USERPROFILE).TrimEnd('\'))) { return 'user profile root' }
   if ($trimmed -ieq ([System.IO.Path]::GetFullPath($env:WINDIR).TrimEnd('\'))) { return 'Windows directory' }
+  foreach ($entry in @(
+    @{ directory = $env:LOCALAPPDATA; child = 'Packages' },
+    @{ directory = $env:ProgramFiles; child = 'WindowsApps' },
+    @{ directory = $env:ProgramW6432; child = 'WindowsApps' }
+  )) {
+    if (-not $entry.directory) { continue }
+    $protected = Get-NormalizedPath (Join-Path $entry.directory $entry.child)
+    if ($trimmed -ieq $protected -or (Test-UnderRoot $trimmed $protected)) { return 'managed application directory' }
+  }
   return $null
 }
 
 function Test-UnderRoot {
   param([string]$FullPath, [string]$Root)
-  $r = [System.IO.Path]::GetFullPath($Root).TrimEnd('\')
-  $c = [System.IO.Path]::GetFullPath($FullPath)
-  return $c.StartsWith($r + '\', [System.StringComparison]::OrdinalIgnoreCase)
+  $r = Get-NormalizedPath $Root
+  $c = Get-NormalizedPath $FullPath
+  return $c -ine $r -and $c.StartsWith($r.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)
 }
 
 function Get-RepairRefusal {
@@ -429,7 +437,7 @@ function Get-ObjectFacts {
 function Get-Ancestors {
   param([string]$FullPath)
   $list = @()
-  $current = [System.IO.Path]::GetFullPath($FullPath)
+  $current = Get-NormalizedPath $FullPath
   while ($true) {
     $list += $current
     $parent = [System.IO.Path]::GetDirectoryName($current)
@@ -477,9 +485,9 @@ try {
   $identity = Get-CurrentIdentity
   $meSid = $identity.User.Value
   Invoke-ReportedOperation initialize '' 'Load read-only access checks and DACL-only writes before inspecting permissions.' none { Initialize-NativeApi }
-  $caller = Get-CallerFacts
-  Write-Line ('CALLER SID={0} INTEGRITY={1} SANDBOX_MARKERS={2}' -f $meSid, $caller.Integrity, (($caller.Markers | Sort-Object) -join ','))
-  Write-Report observation caller '' read 'The caller token determines effective access; sandbox marker names do not prove token permissions.' @{ sid = $meSid; integrity = $caller.Integrity; sandboxMarkers = $caller.Markers }
+  $integrity = Get-IntegritySid
+  Write-Line ('CALLER SID={0} INTEGRITY={1}' -f $meSid, $integrity)
+  Write-Report observation caller '' read 'The caller token determines effective access; unconfined execution does not imply elevation.' @{ sid = $meSid; integrity = $integrity }
 
   if (@(@($Fix.IsPresent, $GrantFullControl.IsPresent, [bool]$Restore) | Where-Object { $_ }).Count -gt 1) {
     throw [System.ArgumentException]::new('-Fix, -GrantFullControl and -Restore are separate operations; run one at a time')
@@ -496,7 +504,7 @@ try {
 
   :paths foreach ($requested in $Path) {
     $currentPath = $requested
-    $full = [System.IO.Path]::GetFullPath($requested)
+    $full = Get-NormalizedPath $requested
     $currentPath = $full
     Write-Line ('PATH={0}' -f $full)
     if (-not (Test-Path -LiteralPath $full)) {
@@ -569,7 +577,7 @@ try {
       $refusal = Get-RepairRefusal -FullPath $full -Root $AllowRoot
       if ($refusal) { Write-Line ('GRANT_REFUSED {0}' -f $refusal); Write-Decision grant $full refused $refusal; $refused++; break paths }
       if ($targetFacts.HasWriteDac -and $targetFacts.HasWriteOwner) { Write-Line ('GRANT_SKIPPED {0} already carries WRITE_DAC and WRITE_OWNER' -f $full); Write-Decision grant $full skipped 'Effective WRITE_DAC and WRITE_OWNER are already available; no grant or backup is needed.'; continue }
-      if (-not $targetFacts.HasWriteDac) { Write-Line 'GRANT_REFUSED the caller lacks WRITE_DAC; ask the user to run this command from an elevated terminal'; Write-Decision grant $full refused 'Effective WRITE_DAC is absent; this caller cannot change the DACL. Elevation may still be blocked by a deny ACE.'; $refused++; break paths }
+      if (-not $targetFacts.HasWriteDac) { Write-Line 'GRANT_REFUSED the caller lacks WRITE_DAC; stop for permission-policy review'; Write-Decision grant $full refused 'Effective WRITE_DAC is absent; this caller cannot change the DACL. Stop for permission-policy review; do not elevate a writable script copy.'; $refused++; break paths }
       Save-AclBackup -FullPath $full -Directory $Out -Root $AllowRoot
       # AddAccessRule preserves explicit denies; icacls /grant can remove a deny
       # for the same principal. Write only the DACL, leaving owner and SACL intact.
@@ -607,27 +615,33 @@ try {
       break paths
     }
     if ($packageTargets.Count -eq 0) { Write-Decision fix $full skipped 'No package allow ACE was observed on the inspected objects; no ACL change or backup is needed.' }
-    foreach ($target in $packageTargets) {
+    $sources = @($packageTargets | Where-Object {
+      @($_.Aces | Where-Object { $_.type -eq 'Allow' -and $_.sid -match $PACKAGE_SID -and -not $_.inherited }).Count -gt 0
+    })
+    [array]::Reverse($sources)
+    foreach ($target in (@($sources) + @($packageTargets))) {
       $refusal = Get-RepairRefusal -FullPath $target.Object -Root $AllowRoot
       if ($refusal) { Write-Line ('FIX_REFUSED {0}' -f $refusal); Write-Decision fix $target.Object refused $refusal; $refused++; break paths }
+      if ($target.Errors.Count -gt 0) { Write-Decision fix $target.Object refused 'The ACL observations are incomplete; collateral changes could not be verified.'; $refused++; break paths }
     }
     if ($packageTargets.Count -gt 0 -and $needsPrecondition) {
       Write-Decision fix $full refused 'Package removal requires verified WRITE_DAC and WRITE_OWNER on the requested path. A failed grant must not be followed by -Fix.'
       $refused++; break paths
     }
-    foreach ($target in $packageTargets) {
-      $refusal = Get-RepairRefusal -FullPath $target.Object -Root $AllowRoot
-      if ($refusal) { Write-Line ('FIX_REFUSED {0}' -f $refusal); Write-Decision fix $target.Object refused $refusal; $refused++; break paths }
-      if ($target.Errors.Count -gt 0) { Write-Decision fix $target.Object refused 'The ACL observations are incomplete; collateral changes could not be verified.'; $refused++; break paths }
+    foreach ($target in $sources) {
       if (-not $target.HasWriteDac) {
-        Write-Line ('FIX_REFUSED {0} needs WRITE_DAC; ask the user to run the full-control grant from an elevated terminal first' -f $target.Object)
+        Write-Line ('FIX_REFUSED {0} needs WRITE_DAC; stop for permission-policy review' -f $target.Object)
         Write-Decision fix $target.Object refused 'Effective WRITE_DAC is absent; removing a package allow ACE requires that right.'
         $refused++
         break paths
       }
-      $before = $target.AclLines
+    }
+    Write-Report decision fix_sources $full selected 'Remove explicit package allow ACEs from their sources, ancestor first. Inherited entries are verified after source changes; inheritance stays enabled.' @{
+      sources = @($sources | ForEach-Object { $_.Object }); affectedPaths = @($packageTargets | ForEach-Object { $_.Object })
+    }
+    foreach ($target in $sources) {
       Save-AclBackup -FullPath $target.Object -Directory $Out -Root $AllowRoot
-      $sids = @($target.Aces | Where-Object { $_.type -eq 'Allow' -and $_.sid -match $PACKAGE_SID } | ForEach-Object { $_.sid } | Sort-Object -Unique)
+      $sids = @($target.Aces | Where-Object { $_.type -eq 'Allow' -and $_.sid -match $PACKAGE_SID -and -not $_.inherited } | ForEach-Object { $_.sid } | Sort-Object -Unique)
       foreach ($sid in $sids) {
         $repairPath = $target.Object
         Invoke-ReportedOperation remove_package_allow $repairPath "Remove the observed package allow ACE for $sid as requested by -Fix; preserve deny ACEs and all other principals." acl {
@@ -635,6 +649,9 @@ try {
           if ($LASTEXITCODE -ne 0) { throw "icacls removal exit ${LASTEXITCODE}: $($output -join "`n")" }
         }
       }
+    }
+    foreach ($target in $packageTargets) {
+      $before = $target.AclLines
       $after = Get-ObjectFacts -FullPath $target.Object -MeSid $meSid
       # icacls prefixes only the first ACE with the path, so compare entries
       # without that prefix when checking for collateral changes.
@@ -655,10 +672,11 @@ try {
         (($expectedAces | ConvertTo-Json -Compress) -eq ($after.Aces | ConvertTo-Json -Compress))
       $verified = $after.Readable -and $after.Errors.Count -eq 0 -and $after.PackageAces.Count -eq 0 -and $collateral
       Write-Report verification fix $target.Object $(if ($verified) { 'verified' } else { 'failed' }) 'The removal command completed; verify that package allow ACEs disappeared and other ACL listing entries remained unchanged. On failure, restore this invocation and stop.' @{
-        removedSids = $sids; remainingPackageAces = $after.PackageAces; otherEntriesUnchanged = $collateral; recovery = $recoveries[-1].command
+        remainingPackageAces = $after.PackageAces; otherEntriesUnchanged = $collateral
       }
       if ($verified) {
-        foreach ($sid in $sids) { Write-Line ('FIXED {0} SID={1}' -f $target.Object, $sid); $fixed++ }
+        $explicitSids = @($target.Aces | Where-Object { $_.type -eq 'Allow' -and $_.sid -match $PACKAGE_SID -and -not $_.inherited } | ForEach-Object { $_.sid } | Sort-Object -Unique)
+        foreach ($sid in $explicitSids) { Write-Line ('FIXED {0} SID={1}' -f $target.Object, $sid); $fixed++ }
       } else {
         Write-Line ('FIX_FAILED {0} collateral_change={1}' -f $target.Object, (-not $collateral))
         $refused++

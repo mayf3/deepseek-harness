@@ -34,6 +34,8 @@ function pwshAvailable(): boolean {
 const script = fileURLToPath(new URL('../assets/diagnose-windows-sandbox-acl/scripts/diagnose-windows-sandbox-acl.ps1', import.meta.url))
 const PACKAGE_SID = 'S-1-15-2-1-2-3-4'
 const CAPABILITY_SID = 'S-1-15-3-1-2-3-4'
+// Process creation and Add-Type compilation share the Windows coverage budget.
+const timeout = Math.max(90_000, Number(process.env.DSH_COVERAGE_TEST_TIMEOUT_MS ?? 0))
 
 // Vitest's asymmetric factories return any; expected matchers are opaque values.
 const containingObject = (value: Record<string, unknown>): unknown => expect.objectContaining(value)
@@ -66,7 +68,7 @@ function reports(run: ScriptRun): ScriptReport[] {
 }
 
 function pwsh(command: string): string {
-  return execFileSync('pwsh', ['/NoLogo', '/NonInteractive', '/NoProfile', '-Command', command], { encoding: 'utf8' })
+  return execFileSync('pwsh', ['/NoLogo', '/NonInteractive', '/NoProfile', '-Command', command], { encoding: 'utf8', timeout, windowsHide: true })
 }
 
 function runScript(args: readonly string[]): ScriptRun {
@@ -78,16 +80,19 @@ function runPowerShell(args: readonly string[]): ScriptRun {
     const stdout = execFileSync('pwsh', ['/NoLogo', '/NonInteractive', '/NoProfile', ...args], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      timeout,
+      windowsHide: true,
     })
     return { code: 0, output: stdout }
   } catch (error) {
     const failure = error as { status?: number | null; stdout?: string; stderr?: string }
+    if (failure.status === null || failure.status === undefined) throw error
     return { code: failure.status ?? -1, output: `${failure.stdout ?? ''}${failure.stderr ?? ''}` }
   }
 }
 
 function icacls(path: string, ...args: readonly string[]): string {
-  return execFileSync('icacls', [path, ...args], { encoding: 'utf8', windowsHide: true })
+  return execFileSync('icacls', [path, ...args], { encoding: 'utf8', timeout, windowsHide: true })
 }
 
 function sddlOf(path: string): string {
@@ -109,7 +114,7 @@ function normalized(path: string, lines: readonly string[]): string[] {
   })
 }
 
-describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl script', () => {
+describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl script', { timeout }, () => {
   let scratch!: string
   let outDir!: string
   let meSid!: string
@@ -129,7 +134,12 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     scratch = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-acl-diagnose-')))
     outDir = makeDir('out')
     meSid = pwsh('[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value').trim()
-  })
+    // Diagnosis inspects the real ancestor chain, including above our owned root.
+    const baseline = reports(runScript(['-Path', scratch])).find(entry => entry.operation === 'classify')
+    if (JSON.stringify(baseline?.details.packageObjects) !== '[]') {
+      throw new Error('ACL fixtures require TEMP/TMP on a tree whose ancestors have no individual package allow ACEs; choose a clean test temp root. Host ACLs are never repaired by this suite.')
+    }
+  }, timeout)
 
   afterAll(() => {
     // Restore what the grant case withheld before deleting the scratch tree.
@@ -139,7 +149,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
       `icacls '${scratch}' /grant:r "*${meSid}:(F)" | Out-Null`,
     )
     rmSync(scratch, { recursive: true, force: true })
-  })
+  }, timeout)
 
   it('names a foreign package-SID ACE as the blocker and removes only that ACE', () => {
     const target = makeDir('stamped')
@@ -162,7 +172,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
 
     // Exactly the foreign ACE disappears; every other line survives unchanged.
     expect(normalized(target, aclLines(target))).toEqual(before.filter(line => !line.includes(PACKAGE_SID)))
-  }, 60_000)
+  }, timeout)
 
   it('reports a healthy directory as not this class and changes nothing', () => {
     const target = makeDir('healthy')
@@ -177,7 +187,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     expect(repair.output, repair.output).toContain('SUMMARY FIXED=0 GRANTED=0 REFUSED=0')
     expect(reports(repair)).toContainEqual(containingObject({ kind: 'decision', operation: 'fix', path: target, status: 'skipped' }))
     expect(normalized(target, aclLines(target))).toEqual(before)
-  }, 60_000)
+  }, timeout)
 
   it('reports every inspected ancestor and locates a package ACE present only on the parent', async () => {
     const parent = makeDir('parent-package-report')
@@ -227,7 +237,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
       return JSON.stringify({ ...entry, details })
     }).join('\n').replaceAll(JSON.stringify(parent).slice(1, -1), '{{parent}}') + '\n'
     await expect(transcript).toMatchFileSnapshot(fileURLToPath(new URL('./expected/parent-package-report.jsonl', import.meta.url)))
-  }, 60_000)
+  }, timeout)
 
   it('reports an inert capability SID and an inert DENY ACE without touching either', () => {
     const capability = makeDir('capability')
@@ -258,7 +268,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
       expect(repair.output, repair.output).toContain('SUMMARY FIXED=0 GRANTED=0 REFUSED=0')
       expect(normalized(path, aclLines(path))).toEqual(before.get(path))
     }
-  }, 90_000)
+  }, timeout)
 
   it('grants full control for a Modify-only DACL without changing the owner', () => {
     const target = makeDir('missing-write-owner')
@@ -272,7 +282,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     expect(repair.output, repair.output).toContain('SUMMARY FIXED=0 GRANTED=1 REFUSED=0')
     expect(aclLines(target).join('\n')).toMatch(/\(F\)/u)
     expect(ownerOf(target)).toBe(ownerBefore)
-  }, 60_000)
+  }, timeout)
 
   it('refuses a target outside -AllowRoot and refuses contradictory switches', () => {
     const target = makeDir('outside-root')
@@ -289,7 +299,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     expect(contradictory.code).toBe(2)
     expect(contradictory.output, contradictory.output).toContain('run one at a time')
     expect(reports(contradictory)).toContainEqual(containingObject({ kind: 'error', status: 'stopped' }))
-  }, 60_000)
+  }, timeout)
 
   it.each(['-Fix', '-GrantFullControl'])('refuses ancestor junctions for %s without changing their destination', (repairSwitch) => {
     const allowed = makeDir(`junction-${repairSwitch}`)
@@ -331,7 +341,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     expect(reports({ code: 0, output: restored })).toContainEqual(containingObject({ kind: 'verification', operation: 'restore', status: 'verified' }))
     expect(sddlOf(target)).toBe(before)
     expect(normalized(target, aclLines(target)).sort()).toEqual(linesBefore)
-  }, 60_000)
+  }, timeout)
 
   it('repairs a directory whose full-control ACE only applies to children', () => {
     const target = makeDir('inherit-only-full-control')
@@ -372,7 +382,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     } finally {
       unlinkSync(link)
     }
-  }, 60_000)
+  }, timeout)
 
   it('does not report a successful grant when a deny ACE blocks WRITE_OWNER', async () => {
     const target = makeDir('denied-write-owner')
@@ -484,7 +494,7 @@ exit $LASTEXITCODE
       expect(recovery.code, recovery.output).toBe(0)
       expect(reports(recovery)).toContainEqual(containingObject({ kind: 'verification', operation: 'restore', status: 'verified' }))
     }
-  }, 60_000)
+  }, timeout)
 
   it('reports a missing path and an already-satisfied grant without mutating either', () => {
     const missing = join(scratch, 'missing')
@@ -547,7 +557,7 @@ exit $LASTEXITCODE
     } finally {
       icacls(target, '/remove:d', `*${meSid}`)
     }
-  }, 60_000)
+  }, timeout)
 
   it('removes multiple package allow SIDs before verifying the resulting ACL', () => {
     const target = makeDir('multiple-packages')
@@ -559,6 +569,123 @@ exit $LASTEXITCODE
     expect(run.code, run.output).toBe(0)
     expect(normalized(target, aclLines(target))).toEqual(before.filter(line => line.includes('(DENY)') || (!line.includes(PACKAGE_SID) && !line.includes(otherSid))))
     expect(reports(run).filter(entry => entry.kind === 'verification' && entry.operation === 'fix')).toHaveLength(1)
+  })
+
+  it.each([false, true])('repairs inherited package entries at their sources and restores the tree (explicit child: %s)', (explicitChild) => {
+    const parent = makeDir(`inherited-${explicitChild}`)
+    const child = join(parent, 'child')
+    const leaf = join(child, 'leaf')
+    mkdirSync(leaf, { recursive: true })
+    icacls(parent, '/setintegritylevel', '(OI)(CI)L')
+    icacls(parent, '/grant', `*${PACKAGE_SID}:(OI)(CI)(RX)`)
+    if (explicitChild) icacls(child, '/grant', '*S-1-15-2-4-3-2-1:(OI)(CI)(RX)')
+    const paths = [parent, child, leaf]
+    const before = paths.map(sddlOf)
+    const run = runScript(['-Path', leaf, '-AllowRoot', scratch, '-Out', outDir, '-Fix'])
+    expect(run.code, run.output).toBe(0)
+    const entries = reports(run)
+    expect(entries.filter(entry => entry.operation === 'remove_package_allow' && entry.status === 'completed').map(entry => entry.path))
+      .toEqual(explicitChild ? [parent, child] : [parent])
+    expect(entries.filter(entry => entry.kind === 'verification' && entry.operation === 'fix').map(entry => entry.path)).toEqual([leaf, child, parent])
+    for (const path of paths) {
+      expect(aclLines(path).join('\n')).not.toContain('S-1-15-2-')
+      expect(ownerOf(path)).toBe(meSid)
+    }
+    const commands = entries.at(-1)!.details.rollbackCommands as string[]
+    for (const command of commands) expect(runPowerShell(['-Command', command]).code).toBe(0)
+    expect(paths.map(sddlOf)).toEqual(before)
+  })
+
+  it('refuses an inherited source outside AllowRoot before touching an in-root explicit entry', () => {
+    const parent = makeDir('outside-inherited-source')
+    const root = join(parent, 'allowed')
+    const child = join(root, 'child')
+    mkdirSync(child, { recursive: true })
+    icacls(parent, '/grant', `*${PACKAGE_SID}:(OI)(CI)(RX)`)
+    stamp(child, 'S-1-15-2-4-3-2-1')
+    const before = [parent, child].map(sddlOf)
+    const run = runScript(['-Path', child, '-AllowRoot', root, '-Out', outDir, '-Fix'])
+    expect(run.code).toBe(2)
+    expect(reports(run)).toContainEqual(containingObject({ kind: 'decision', status: 'refused', path: parent, reason: containingString('outside -AllowRoot') }))
+    expect(reports(run).filter(entry => entry.kind === 'action' && entry.details.effect === 'acl')).toEqual([])
+    expect([parent, child].map(sddlOf)).toEqual(before)
+  })
+
+  it('restores explicit sources and inherited entries when final verification fails', () => {
+    const parent = makeDir('inherited-rollback')
+    const child = join(parent, 'child')
+    const leaf = join(child, 'leaf')
+    mkdirSync(leaf, { recursive: true })
+    icacls(parent, '/grant', `*${PACKAGE_SID}:(OI)(CI)(RX)`)
+    icacls(child, '/grant', '*S-1-15-2-4-3-2-1:(OI)(CI)(RX)')
+    const paths = [parent, child, leaf]
+    const before = paths.map(sddlOf)
+    const quote = (value: string): string => `'${value.replaceAll("'", "''")}'`
+    const wrapper = join(scratch, 'fail-inherited-verification.ps1')
+    writeFileSync(wrapper, `
+$global:leafReads = 0
+function Get-Acl {
+  param([string]$LiteralPath)
+  if ($LiteralPath -eq ${quote(leaf)}) {
+    $global:leafReads++
+    if ($global:leafReads -eq 2) { throw [System.IO.IOException]::new('final inherited verification unavailable') }
+  }
+  Microsoft.PowerShell.Security\\Get-Acl -LiteralPath $LiteralPath
+}
+& ${quote(script)} -Path ${quote(leaf)} -AllowRoot ${quote(scratch)} -Out ${quote(outDir)} -Fix
+exit $LASTEXITCODE
+`)
+    const run = runPowerShell(['-File', wrapper])
+    expect(run.code, run.output).toBe(2)
+    expect(reports(run).filter(entry => entry.kind === 'verification' && entry.operation === 'restore').map(entry => entry.path)).toEqual([child, parent])
+    expect(reports(run).at(-1)).toMatchObject({ details: { rollback: 'verified', nextAction: 'stop' } })
+    expect(paths.map(sddlOf)).toEqual(before)
+  })
+
+  it.each(['-Fix', '-GrantFullControl', '-Restore'])('rejects equivalent spellings of AllowRoot through %s', (mode) => {
+    const target = makeDir(`root-spellings-${mode}`)
+    const backups = makeDir(`root-backups-${mode}`)
+    icacls(target, '/inheritance:r', '/grant:r', `*${meSid}:(M)`)
+    let record: string | undefined
+    if (mode === '-Restore') {
+      const grant = runScript(['-Path', target, '-AllowRoot', scratch, '-Out', backups, '-GrantFullControl'])
+      expect(grant.code, grant.output).toBe(0)
+      record = (reports(grant).at(-1)!.details.recoveries as { record: string }[])[0]!.record
+    } else if (mode === '-Fix') stamp(target, PACKAGE_SID)
+    const before = sddlOf(target)
+    for (const path of [target, `${target}\\`, `${target}/`, `${target}\\\\`, `${target}\\.`, target.toUpperCase()]) {
+      const args = ['-Path', path, '-AllowRoot', target, '-Out', backups, mode, ...(record ? [record] : [])]
+      const run = runScript(args)
+      expect(run.code, run.output).not.toBe(0)
+      expect(run.output).toContain('outside -AllowRoot')
+      expect(sddlOf(target)).toBe(before)
+    }
+  })
+
+  it.each(['Packages', 'WindowsApps'])('refuses managed application trees even inside AllowRoot (%s)', (directory) => {
+    const root = makeDir(`managed-${directory}`)
+    const managed = join(root, directory)
+    const child = join(managed, 'application')
+    mkdirSync(child, { recursive: true })
+    stamp(child, PACKAGE_SID)
+    const key = directory === 'Packages' ? 'LOCALAPPDATA' : 'ProgramFiles'
+    const quote = (value: string): string => `'${value.replaceAll("'", "''")}'`
+    // PowerShell initializes ProgramFiles at startup; redirect only this child's lookup after startup.
+    const run = (path: string, mode: string): ScriptRun => runPowerShell(['-Command',
+      `$env:${key} = ${quote(root)}; & ${quote(script)} -Path ${quote(path)} -AllowRoot ${quote(root)} -Out ${quote(outDir)} ${mode}; exit $LASTEXITCODE`,
+    ])
+    for (const path of [managed, child]) {
+      icacls(path, '/inheritance:r', '/grant:r', `*${meSid}:(M)`)
+      const before = sddlOf(path)
+      const grant = run(path, '-GrantFullControl')
+      expect(grant.code, grant.output).toBe(2)
+      expect(grant.output).toContain('managed application directory')
+      expect(sddlOf(path)).toBe(before)
+    }
+    const fix = run(child, '-Fix')
+    expect(fix.code, fix.output).toBe(2)
+    expect(fix.output).toContain('managed application directory')
+    expect(aclLines(child).join('\n')).toContain(PACKAGE_SID)
   })
 
   it('rolls back earlier paths too when a later grant fails in the same invocation', () => {
@@ -575,7 +702,7 @@ exit $LASTEXITCODE
     } finally {
       icacls(second, '/remove:d', `*${meSid}`)
     }
-  }, 60_000)
+  }, timeout)
 
   it('keeps all observations in unique reports and all ancestor paths in the compact summary', () => {
     const parent = makeDir('compact-parent')
@@ -605,7 +732,7 @@ exit $LASTEXITCODE
     }
     expect(reportPaths.size).toBe(2)
     expect([sddlOf(parent), sddlOf(target)]).toEqual(before)
-  }, 60_000)
+  }, timeout)
 
   it('reports compact-output setup failures without changing the target or overwriting files', () => {
     const target = makeDir('compact-failure')

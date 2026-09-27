@@ -20,6 +20,7 @@ it.skipIf(process.platform !== 'win32' || process.env.DSH_EXAMPLE_MODE !== 'lib'
   const root = await mkdtemp(join(tmpdir(), 'dsh-acl-asar-'))
   try {
     const source = join(root, 'package')
+    // Electron reads the archived package here; full installer layout and SEA execution have separate coverage needs.
     await mkdir(source)
     for (const path of ['lib', 'assets', 'package.json']) await cp(join(packageDirectory, path), join(source, path), { recursive: true })
     const archive = join(root, 'app.asar')

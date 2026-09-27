@@ -295,11 +295,10 @@ export class LocalSandboxProvider extends SandboxProvider {
     this.configuredRunnerFailureSignatures = runnerFailureSignatures
     this.probeTimeoutMs = config.probeTimeoutMs as number
     assertPositiveFinite('probeTimeoutMs', this.probeTimeoutMs)
-    // The bundled diagnosis skill explains this backend's ACL failures, so it is
-    // registered wherever the backend composes. `ctx.inject` keeps `skills`
-    // optional: the sandbox must not require the skill registry.
+    // An operator-supplied runner does not use the ACL backend. The registry
+    // remains optional and may be mounted after this provider.
     /* v8 ignore next 3 -- Windows-only registration; the Linux coverage lane cannot take this branch */
-    if (process.platform === 'win32') {
+    if (process.platform === 'win32' && this.runnerCommand === undefined) {
       ctx.inject(['skills'], (skillsCtx) => { registerAclDiagnosisSkill(skillsCtx) })
     }
     // The temp grants are revoked with the provider: a clean server
