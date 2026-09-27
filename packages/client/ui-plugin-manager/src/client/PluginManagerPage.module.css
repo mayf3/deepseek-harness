@@ -700,9 +700,9 @@
   margin: 0;
   padding: 8px;
   border: 0;
-  /* Keep an opaque surface behind the registry form controls. */
-  --dsw-menu-surface-fill: var(--dsw-alias-bg-layer-2);
-  --dsw-menu-backdrop-filter: none;
+  /* An opaque layer keeps the registry form controls readable over the dialog. */
+  background: var(--dsw-alias-bg-layer-2);
+  border-radius: var(--dsw-radius-lg);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
   min-width: 0;

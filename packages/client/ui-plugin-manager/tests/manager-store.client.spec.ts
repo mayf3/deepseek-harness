@@ -1232,6 +1232,33 @@ describe('PluginManagerController', () => {
     await loading
     expect(state()).toBe(before)
   })
+
+  it('drops a manual refresh that settles after disposal', async () => {
+    const gate = deferred<ReturnType<typeof ok<BundleInfo[]>>>()
+    const { plugins, face, state, controller } = bench()
+    await controller.load()
+    plugins.listBundles.mockReturnValueOnce(gate.promise)
+    face.refresh()
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('refreshing') })
+    controller.dispose()
+    const before = state()
+    gate.resolve(ok([{ ...BUNDLE, version: '9.9.9' }]))
+    await new Promise<void>((resolve) => { setTimeout(resolve, 10) })
+    expect(state()).toBe(before)
+  })
+
+  it('settles a manual refresh whose read outlasts the spinner minimum without an extra hold', async () => {
+    const { plugins, face, state, controller } = bench()
+    await controller.load()
+    plugins.listBundles.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { setTimeout(resolve, 420) })
+      return ok([{ ...BUNDLE, version: '0.42.0' }])
+    })
+    face.refresh()
+    await vi.waitFor(() => { expect(state().refreshStatus).toBe('idle') }, { timeout: 2_000 })
+    expect(state().packages[0]?.version).toBe('0.42.0')
+    expect(state().status).toBe('ready')
+  })
   it('offers the registries the Host configured, starts from its first, and asks the check and the run to start where the person chose', async () => {
     const gate = deferred<ReturnType<typeof ok<ChangeResult>>>()
     const { plugins, face, state, controller, started } = bench({

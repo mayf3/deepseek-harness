@@ -107,6 +107,9 @@ export type RegistryChoice =
 /** The choice shown until the Host has said which registry it asks first: the one pnpm's own configuration names. */
 const OFFICIAL_REGISTRY: RegistryChoice = { kind: 'offered', registry: null }
 
+/** Hold the manual-refresh spinner at least this long so a fast read does not flash it. */
+const REFRESH_SPINNER_MIN_MS = 400
+
 /**
  * The registry a choice asks, as the Host's install plan compares registries: pnpm's own configuration stands for
  * the URL it names, once the Host has read it.
@@ -727,6 +730,7 @@ export class PluginManagerController {
   /** Keep manual refresh feedback until its coalesced reads settle, without clearing cached cards. */
   private async refresh(): Promise<void> {
     if (this.disposed || this.getSnapshot().refreshStatus === 'refreshing') return
+    const startedAt = Date.now()
     this.patch({
       refreshStatus: 'refreshing',
       ...this.getSnapshot().notice?.kind === 'refresh-failed' ? { notice: null } : {},
@@ -737,10 +741,15 @@ export class PluginManagerController {
       // A rejected transport request leaves the cached cards available for retry.
       this.patch({ status: 'error' })
     } finally {
-      const failed = this.getSnapshot().status === 'error'
-      this.patch(failed && this.hasCachedInventory
-        ? { status: 'ready', refreshStatus: 'idle', notice: { kind: 'refresh-failed', seq: ++this.noticeSeq } }
-        : { refreshStatus: failed ? 'failed' : 'idle' })
+      // Hold the spinner to its minimum so a fast read does not flash it, then settle.
+      const remaining = REFRESH_SPINNER_MIN_MS - (Date.now() - startedAt)
+      if (remaining > 0) await new Promise<void>((resolve) => { setTimeout(resolve, remaining) })
+      if (!this.disposed) {
+        const failed = this.getSnapshot().status === 'error'
+        this.patch(failed && this.hasCachedInventory
+          ? { status: 'ready', refreshStatus: 'idle', notice: { kind: 'refresh-failed', seq: ++this.noticeSeq } }
+          : { refreshStatus: failed ? 'failed' : 'idle' })
+      }
     }
   }
 

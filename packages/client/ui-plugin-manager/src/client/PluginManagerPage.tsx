@@ -16,7 +16,7 @@ import {
   Button, IconCheckCircleFillRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineMedium,
   IconChevronRightOutlineRegular, IconCloseOutlineMedium,
   IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
-  IconWarningOutlineRegular, Input, MenuSurface, Modal,
+  IconWarningOutlineRegular, Input, Modal,
   PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTerminal,
   StateDot, Switch, Tag, TerminalBlock, Toast, Tooltip, useAnchoredPosition, useDismissOnOutsidePointer,
   type IconProps, type StateDotState, type TerminalBlockLabels,
@@ -808,7 +808,7 @@ function InstallDialog({
   // The registry options float over the dialog from their toggle, so unfolding them never adds to its height;
   // the store folds them when a run starts, so they show at the spec only.
   const registryToggleRef = useRef<HTMLButtonElement | null>(null)
-  const registryPanelRef = useRef<HTMLDivElement | null>(null)
+  const registryPanelRef = useRef<HTMLFieldSetElement | null>(null)
   const registryCustomRef = useRef<HTMLInputElement | null>(null)
   const registryShown = install.registryOpen && phase === 'idle'
   const specComposition = useInstallComposition(install.open && phase === 'idle')
@@ -978,9 +978,8 @@ function InstallDialog({
             : null}
           {registryShown
             ? createPortal(
-              <MenuSurface
+              <fieldset
                 ref={registryPanelRef}
-                role="group"
                 id={registryId}
                 className={css.registry}
                 style={registryPosition ?? { visibility: 'hidden', left: 0, top: 0 }}
@@ -1038,7 +1037,7 @@ function InstallDialog({
                     : null}
                   <span className={css.registryHint}>{t('registryCustomHint')}</span>
                 </div>
-              </MenuSurface>,
+              </fieldset>,
               document.body,
             )
             : null}
