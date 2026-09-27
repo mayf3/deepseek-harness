@@ -363,6 +363,7 @@ syncBuiltinESMExports()
 
     const result = await runInstaller(fixture, fixture.main, {}, ['--require', preload])
 
+    expect(existsSync(probe), `lock injection missing: exit ${result.status}\n${result.stderr}`).toBe(true)
     expect(readFileSync(probe, 'utf8')).toBe('injected')
     const recovers = process.platform === 'win32' && code === 'EPERM' && !expires
     expect(result.status, result.stderr).toBe(recovers ? 0 : 1)

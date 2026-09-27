@@ -10,7 +10,8 @@
 - button "Copy"
 - status: Deep diving...
 - button "Deep diving for {{duration}}" [disabled]
-- button "Waiting for your action · Ready to continue?"
+- text: Running
+- button "Ask question waiting"
 - text: "Interjection: include the word BANANA in your final reply."
 - button "Copy"
 - region "Ready to continue?":
