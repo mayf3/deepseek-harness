@@ -28,8 +28,6 @@ export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
 export interface ILayout {
   /** Selected central panel from the same root store used by `usePanelInfo`. */
   readonly panelInfo: HostObservable<PanelInfo>
-  /** The frame's measured width in CSS pixels, from the same root store; the `rightbar` owner receives it as `viewportWidth`. */
-  readonly viewportWidth: HostObservable<number>
   /**
    * Select a global central panel without changing the current Session.
    * @param panelId - registered main key, or null to show the Conversation.
@@ -63,13 +61,11 @@ export class LayoutController implements ILayout {
    * @param panels - actions of the instance shared with the root entry.
    * @param hasMainPanel - checks the live main-slot registry for a panel id.
    * @param panelInfo - root store's shared central-panel selection source.
-   * @param viewportWidth - root store's measured frame width source.
    */
   constructor(
     private readonly panels: PanelActions,
     private readonly hasMainPanel: (id: MainPanelId) => boolean,
     readonly panelInfo: HostObservable<PanelInfo>,
-    readonly viewportWidth: HostObservable<number>,
   ) {}
 
   /** Select a global panel or return to the Conversation. */

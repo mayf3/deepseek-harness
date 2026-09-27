@@ -72,7 +72,7 @@ interface SidebarRightTabParamsMap {}        // key: kind — a page type declar
 
 `openResource` 接受所有已声明资源形状的联合，`openTab<K>` 接受为 `K` 声明的形状；正文按自己所服务的协议或 kind 收窄 `navigation.params`。参数属于资源类型而非查看器，因为行号是关于文件位置的事实，不是关于文本预览的，任何认领 `file` 地址的类型收到同一形状。值必须可 JSON 序列化，一条记录必须只凭地址与参数就能重建，因为撤销、重做、刷新与 HMR 都在开启方已不在时重建 tab。
 
-除两种打开外，该面还有 `close(tabId)`、`active()`、`isExpanded()`、`toggleExpanded()`，以及四个操作型方法——`focus(tabId)`、`split(paneId?)`（返回新格，预算或宽度规则不允许分栏时返回 `undefined` 且不记账）、`float(tabId, rect?)` 与 `dock(paneId)`——每个记一条历史，目标不存在或已在目标态时为 no-op。没有布局快照、没有订阅、没有按地址查找：该面给的是对布局的控制权，不是布局的视图。插件依据会话选择与主面板确定屏上会话——Conversation 占据主栏时的选中会话——并在 React 渲染这两者的变化之前将其发布为 `mounted`；公开面上的命令经该会话被收养的 store 作用于它，没有会话在屏上或其 store 尚未铸出时抛错。座位只上报其停靠套件测得的空间。tab 自己的动作则到达其会话自己的 store：slot 运行时每个会话铸一个 store，插件在铸出时逐个收养，控制器按会话 id 路由，因此用户切换会话之后触发的动作照样落地，而 store 从未铸出的会话什么也不做。
+除两种打开外，该面还有 `close(tabId)`、`active()`、`isExpanded()`、`toggleExpanded()`，以及四个操作型方法——`focus(tabId)`、`split(paneId?)`（返回新格，预算或宽度规则不允许分栏时返回 `undefined` 且不记账）、`float(tabId, rect?)` 与 `dock(paneId)`——每个记一条历史，目标不存在或已在目标态时为 no-op。没有布局快照、没有订阅、没有按地址查找：该面给的是对布局的控制权，不是布局的视图。插件依据会话选择与主面板确定屏上会话——Conversation 占据主栏时的选中会话——并在 React 渲染这两者的变化之前将其发布为 `mounted`；公开面上的命令经该会话被收养的 store 作用于它，没有会话在屏上或其 store 尚未铸出时抛错。座位只上报它渲染时依据的事实：停靠套件测得的空间，以及框架宽度是否让面板自动全屏。tab 自己的动作则到达其会话自己的 store：slot 运行时每个会话铸一个 store，插件在铸出时逐个收养，控制器按会话 id 路由，因此用户切换会话之后触发的动作照样落地，而 store 从未铸出的会话什么也不做。
 
 ### 地址
 

@@ -35,7 +35,7 @@ import type {} from './contract/slots.ts'
 import { GuideBody, type GuideInjected } from './tabs/guide/GuideBody.tsx'
 import { GuideTitle } from './tabs/guide/GuideTitle.tsx'
 import { ExpandButton } from './shell/ExpandButton.tsx'
-import { AUTO_FULLSCREEN_BELOW, RightbarSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
+import { RightbarSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
 import { closeWithPaneFocus, openWithPaneFocus } from './shell/close-focus.ts'
 import { RightbarRoot, type RightbarRootInjected } from './shell/RightbarRoot.tsx'
 import { SidebarSessionViews } from './session-views.ts'
@@ -117,11 +117,14 @@ export function apply(ctx: ClientContext): void {
     return () => { unsubscribe(); views.dispose() }
   }, 'ui-sidebar-right: retained Session views')
   const layout: ILayout = ctx.layout
+  // The automatic fullscreen rule as the seats last rendered it: the frame
+  // hands them its width as owner props, and every seat reports the same rule.
+  let autoFullscreen = false
   const { controller, adopt, forget, show, measure } = createSidebarRightController(
     tabs,
     (address, signal) => { ctx.resources.pin(address, signal) },
     {
-      autoFullscreen: () => layout.viewportWidth.getSnapshot() < AUTO_FULLSCREEN_BELOW,
+      autoFullscreen: () => autoFullscreen,
       openWithFocus: (sessionId, open) => { openWithPaneFocus(document, sessionId, open) },
       closeWithFocus: (sessionId, paneId, close) => { closeWithPaneFocus(document, sessionId, paneId, close) },
     },
@@ -187,6 +190,7 @@ export function apply(ctx: ClientContext): void {
         if (shown) layout.openRightbar(track, fullscreen)
         else layout.closeRightbar()
       },
+      reportAutoFullscreen: (value) => { autoFullscreen = value },
       splitPane: (paneId) => { controller.split(paneId) },
       toggleFullscreen: () => { const target = controller.commandTarget(); if (target !== undefined) controller.toggleFullscreen(target) },
       openTab: (kind, options) => { controller.openTab(kind, options) },

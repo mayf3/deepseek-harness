@@ -14,7 +14,8 @@
  * command with no Session on screen, or with one whose store the runtime has not
  * minted, has nothing to act on and fails loudly rather than writing into a
  * surface nobody is drawing. The seats never publish which Session they draw:
- * a seat reports only the room rule its docking kit measured for its panes.
+ * they report only what they render with, the room their docking kit measured
+ * and the automatic fullscreen rule of their frame width.
  *
  * A tab's own actions (`tabActions`) aim at the session the tab is in, not at
  * the on-screen one: they run through that session's adopted store, so a callback
@@ -30,7 +31,7 @@
  * domain. Placement is the caller's option, never a type's property.
  *
  * The registration adopts Session stores, names the on-screen Session, and
- * forwards each seat's room readings; callers use the service's navigation methods.
+ * forwards the seats' reports; callers use the service's navigation methods.
  */
 import { sidebarTargetFromElement, type SidebarRightTarget } from './focus.ts'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
@@ -82,7 +83,7 @@ interface SidebarRightSessions {
 export interface SidebarRightHost {
   /**
    * Whether the viewport is narrow enough that an expanded panel is presented fullscreen.
-   * @returns the rule's verdict for the current frame width.
+   * @returns the rule's verdict for the frame width the seats last rendered at.
    */
   readonly autoFullscreen: () => boolean
   /**

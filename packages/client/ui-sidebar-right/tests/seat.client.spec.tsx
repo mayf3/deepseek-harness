@@ -71,9 +71,7 @@ function transition(property = 'transform') {
 async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0, opener = false, keepMounted = false) {
   const runtime = await SlotTestRuntime.create()
   runtimes.push(runtime)
-  const frame = {
-    openRightbar: vi.fn(), closeRightbar: vi.fn(), panelInfo: runtime.panelInfo, viewportWidth: createSnapshotStore(viewportWidth),
-  }
+  const frame = { openRightbar: vi.fn(), closeRightbar: vi.fn(), panelInfo: runtime.panelInfo }
   const pin = vi.fn<(address: string, signal: AbortSignal) => void>()
   runtime.ctx.provide('layout', frame as never)
   runtime.ctx.provide('resources', { pin } as never)
@@ -510,6 +508,22 @@ describe('RightbarSeat presentation', () => {
     expect(h.layout().tabs[tab.id]).toBeDefined()
     expect(signal.aborted).toBe(false)
     expect(h.layout().expanded).toBe(false)
+  })
+
+  it('applies the automatic fullscreen rule of the width it renders at to the fullscreen command', async () => {
+    const h = await mountSeat()
+    h.open()
+    // Narrowed below the automatic fullscreen width, the command closes the panel.
+    h.view.update({ width: 420, viewportWidth: 700, canShow: false })
+    fireEvent.click(element(h.view.container, '[data-sidebar-right-mode]'))
+    expect(h.layout().expanded).toBe(false)
+    expect(h.layout().mode).toBe('push')
+    // Widened again, the command switches the recorded mode.
+    h.view.update({ width: 420, viewportWidth: 1440, canShow: true })
+    act(() => { h.controller.toggleExpanded() })
+    fireEvent.click(element(h.view.container, '[data-sidebar-right-mode]'))
+    expect(h.layout().expanded).toBe(true)
+    expect(h.layout().mode).toBe('fullscreen')
   })
 
   it('preserves manual fullscreen through narrow and wide viewport changes', async () => {

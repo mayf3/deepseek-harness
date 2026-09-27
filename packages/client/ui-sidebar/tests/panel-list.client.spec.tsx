@@ -39,7 +39,6 @@ async function bench(collapsed = false) {
   locale.setLocale('en')
   const layout = {
     panelInfo: runtime.panelInfo,
-    viewportWidth: createSnapshotStore(1440),
     beginNavigation: vi.fn(() => new AbortController().signal),
     toggleSidebar: vi.fn(),
     selectPanel: vi.fn((activePanelId: MainPanelId | null) => { runtime.panelInfo.set({ activePanelId }) }),

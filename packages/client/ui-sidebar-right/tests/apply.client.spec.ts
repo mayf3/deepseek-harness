@@ -66,7 +66,6 @@ async function boot(shortcuts: Partial<Shortcuts> = {}) {
   const layout = {
     openRightbar: vi.fn(), closeRightbar: vi.fn(),
     panelInfo: createSnapshotStore<{ activePanelId: string | null }>({ activePanelId: null }),
-    viewportWidth: createSnapshotStore(1440),
   }
   const current = createSnapshotStore<{ key: SessionId | undefined }>({ key: undefined })
   const resources = { pin: vi.fn<(address: string, signal: AbortSignal) => void>() }
@@ -206,7 +205,14 @@ describe('ui-sidebar-right apply', () => {
     injected.measureRoom(() => true)
     injected.splitPane(surface.layout.activePaneId)
     expect(panes()).toHaveLength(2)
+    // The fullscreen command follows the automatic fullscreen rule the seats report.
+    const layoutOf = () => instance.getSnapshot().bySession[SESSION]?.layout
     injected.toggleFullscreen()
+    expect(layoutOf()?.mode).toBe('fullscreen')
+    injected.reportAutoFullscreen(true)
+    injected.toggleFullscreen()
+    expect(layoutOf()?.expanded).toBe(false)
+    expect(layoutOf()?.mode).toBe('push')
     // A global panel takes the Conversation's place: no Session is on screen.
     layout.panelInfo.set({ activePanelId: 'plugins' })
     expect(() => { ctx.sidebarRight.toggleExpanded() }).toThrow('no session surface is mounted')
