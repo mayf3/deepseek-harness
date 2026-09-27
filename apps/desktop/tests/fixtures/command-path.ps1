@@ -31,6 +31,9 @@ try {
     try { $key.SetValue('Path', $npm, [Microsoft.Win32.RegistryValueKind]::ExpandString) }
     finally { $key.Dispose() }
     $before = State $desktop
+    # .NET may expand a CI runner's short temporary-directory name.
+    $desktop = $before.directory
+    $other = (State $other).directory
     Require ($before.activeCommand -eq (Join-Path $npm 'dsh.cmd')) 'existing npm command was not detected'
     [void](Apply 'install' $desktop)
     Require ((UserPath) -eq ($desktop + ';' + $npm)) 'installation changed unrelated PATH entries'
