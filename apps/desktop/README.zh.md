@@ -82,7 +82,7 @@ Welcome 加载共享 Toast 的配色和阴影变量，挂载在 body 下的通�
 
 `resources/runtime/cli` 目录包含公开的 `bin/dsh` 启动器（Windows 为 `bin/dsh.exe`）、私有的 `cli-control` 更新辅助程序、`generation` 标识和 `lease` 文件。它通过已安装 Electron 的 Node 模式运行普通 CLI，并保留 [Electron 运行时限制](../../.agents/notes/implemented/architecture/2026-09-11-desktop-electron-node-runtime.zh.md)。运行中的命令持有共享租约，更新准备需要排他访问。退出状态 75 表示命令无法在更新准备或交接期间进入。发布 `.<应用名称>.dsh-cli-update` 需要应用父目录可写。Desktop 退出后若安装程序意外中断，完成更新或重新安装 Desktop 可恢复 CLI 访问；仅凭陈旧记录不能认定安装程序已经停止。
 
-`prepare:runtime` 编译 C++17 辅助程序，缺少编译器时会失败。macOS 需要 `clang++` 和 `/usr/libexec/PlistBuddy`；Windows 需要包含 x64 工具链的 Visual Studio C++ Build Tools。原生 CLI 测试也会编译辅助程序；Linux 测试需要 `c++`。原生租约探针检查旧句柄不能授权替换后的安装。Office 默认资源仅提供给内置插件，另行安装的副本必须提供自己的物理资源路径。
+`prepare:runtime` 编译 C++17 辅助程序，缺少编译器时会失败。macOS 需要 `clang++` 和 `/usr/libexec/PlistBuddy`；Windows 需要包含 x64 工具链的 Visual Studio C++ Build Tools。原生 CLI 测试也会编译辅助程序；Linux 测试需要 `c++`。Windows 控制台测试使用真实 Electron 可执行文件，验证异步 SIGINT/SIGBREAK 处理。原生租约探针检查旧句柄不能授权替换后的安装。Office 默认资源仅提供给内置插件，另行安装的副本必须提供自己的物理资源路径。
 
 ## 安装归属
 

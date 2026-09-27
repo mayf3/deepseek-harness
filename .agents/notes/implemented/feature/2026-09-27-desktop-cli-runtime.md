@@ -16,7 +16,7 @@ The CLI supplies bundled pnpm through the existing package-operation configurati
 
 ## Runtime use and installation
 
-Each command holds a shared operating-system lock on the installation's lease file. The native update controller requires the exclusive lock, so running commands reject update preparation and new commands cannot enter during it. Windows places the CLI child in a job before it starts, forwards console input, and settles its remaining process tree before releasing the lock.
+Each command holds a shared operating-system lock on the installation's lease file. The native update controller requires the exclusive lock, so running commands reject update preparation and new commands cannot enter during it. Windows places the CLI child in a job before it starts, forwards console input, and settles its remaining process tree before releasing the lock. The CLI registers a Windows console callback through the bundled Koffi library; it dispatches SIGINT and SIGBREAK on the JavaScript thread so asynchronous shutdown can finish. Electron 44 otherwise takes the native console-exit path before those JavaScript listeners run.
 
 Before the GUI hands off to its native updater, the controller atomically records the generation being replaced in a sibling file outside the application. That record survives GUI and controller exit and blocks only the old generation. A complete replacement carries a new generation and lease inode; no second runtime is retained. Cancellation removes only the matching transaction. An installation failure after the GUI exits requires reopening Desktop and completing the update before the old generation's CLI can run again.
 

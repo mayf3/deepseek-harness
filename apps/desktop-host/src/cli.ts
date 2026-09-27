@@ -65,6 +65,10 @@ export async function runDesktopCli(runtimeDir: string, supportDir: string): Pro
 }
 
 if (import.meta.main) {
+  if (process.platform === 'win32') {
+    const { installWindowsCliSignals } = await import('./windows-cli-signals.ts')
+    installWindowsCliSignals()
+  }
   const runtimeDir = resolve(import.meta.dirname, '../../../..')
   await runDesktopCli(runtimeDir, join(dirname(runtimeArchivePath(runtimeDir) ?? runtimeDir), 'runtime'))
 }
