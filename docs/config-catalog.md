@@ -493,6 +493,26 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-hmr -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-product-analytics -->
+<a id="deepseek-aidsh-client-product-analytics"></a>
+
+## `@deepseek-ai/dsh-client-product-analytics`
+
+- `inject`: `deepseekAccount` · `productTelemetry`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/client/product-analytics/src/index.ts:14`](../packages/client/product-analytics/src/index.ts)
+
+```ts config-catalog
+/** Application-owned collection policy; no user settings surface. */
+export interface Config {
+  /** Live application collection policy; ordinary Web does not mount this service. */
+  enabled: Volatile<boolean>
+  /** Running Desktop release, absent when unavailable. */
+  appVersion?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-product-analytics -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-shortcuts -->
 <a id="deepseek-aidsh-client-shortcuts"></a>
 

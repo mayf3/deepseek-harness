@@ -11,9 +11,9 @@
 - tooltip "Copy"
 - status: Deep diving...
 - button "Deep diving for {{duration}}" [disabled] [expanded]
-- button "Analysis completed"
+- button "Think The user wants me to begin with \"Reading the workspace now.\" and call bash with \"echo alpha\" in the same message. Then after the tool result, reply with the single word DONE and stop."
 - paragraph: Reading the workspace now.
-- button "Ran commands"
+- button "Bash Print alpha to stdout"
 - paragraph: partial
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
