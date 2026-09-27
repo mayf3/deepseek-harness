@@ -25,7 +25,7 @@ export const remoteDefaultResponses: RemoteTable = {
       failures: [],
     }),
     // ui-agent-preset hero chip and header label on first mount.
-    'agentPresets/list': ok({ presets: [], modeSelectionEnabled: true }),
+    'agentPresets/list': ok({ presets: [] }),
     // cordis-client-runner `ClientCordisInspectRegistry.sync` at apply and on `connection/reset`.
     'dynamicCordisRunner/syncInspectManifest': ok(null),
     // ui-cordis inventory at apply and on `connection/reset`.

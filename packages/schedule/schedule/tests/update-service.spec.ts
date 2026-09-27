@@ -184,7 +184,7 @@ it('rejects malformed expected and invalid timing at the service without writes 
   const invalidExpected: unknown = { ...record, private: 'private detail' }
   expect(await test.service.update({ ...request(record), expected: invalidExpected as ScheduleRecord }))
     .toEqual({ code: 'invalid_rule', message: 'expected must be a complete valid Schedule record.' })
-  expect(await test.service.update(request(record, { kind: 'every', every_seconds: 299 })))
+  expect(await test.service.update(request(record, { kind: 'every', every_seconds: 59 })))
     .toMatchObject({ code: 'frequency_too_high' })
   expect(put).not.toHaveBeenCalled()
   expect(changed).not.toHaveBeenCalled()

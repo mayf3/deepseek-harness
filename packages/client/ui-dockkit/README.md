@@ -65,7 +65,7 @@ A tab's `kind` is an opaque string. Seeded tabs are factories (`DockControllerOp
 <a id="interaction-rules-worth-keeping"></a>
 ## Interaction rules worth keeping
 
-The split control accepts effective shortcut tooltip and ARIA labels from its embedder. A disabled control has a keyboard-focusable wrapper that explains the pane-budget or width restriction. Docked and floating pane containers can receive programmatic focus without entering the normal tab sequence or drawing a focus outline; their controls retain their own keyboard focus indicators. Tab navigation and selection use unmodified keys and leave composition input to its owner.
+The split control accepts localized tooltip text, separate effective keys through `splitPaneKeys`, and an ARIA combination from its embedder. Close controls receive their keys through `closeTabKeys`. A disabled control has a keyboard-focusable wrapper that explains the pane-budget or width restriction. Docked and floating pane containers can receive programmatic focus without entering the normal tab sequence or drawing a focus outline; their controls retain their own keyboard focus indicators. Tab navigation and selection use unmodified keys and leave composition input to its owner.
 
 These are not stylistic; each one fixes a defect found in a real browser.
 
@@ -102,6 +102,8 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="dev-note"></a>
 ### Dev Note
+
+Menus use the shared `MenuSurface` material, including the macOS backing for background blur; custom content follows the [menu rules](../../../docs/web-styling.md#component-rules).
 
 <details>
 <summary>Working context for maintainers — click to expand</summary>

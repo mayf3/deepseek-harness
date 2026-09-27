@@ -7,126 +7,72 @@
   - region "Application":
     - list:
       - listitem:
-        - text: Open keyboard shortcuts
-        - button "Remove shortcut for Open keyboard shortcuts"
         - button "Edit shortcut for Open keyboard shortcuts"
-        - button "Open keyboard shortcuts ⌘ /": ⌘ /
+        - text: Open keyboard shortcuts ⌘ /
       - listitem:
-        - text: New Session
-        - button "Remove shortcut for New Session"
         - button "Edit shortcut for New Session"
-        - button "New Session ⌥ ⌘ N": ⌥ ⌘ N
+        - text: New Session ⌥ ⌘ N
       - listitem:
-        - text: Toggle left sidebar
-        - button "Remove shortcut for Toggle left sidebar"
         - button "Edit shortcut for Toggle left sidebar"
-        - button "Toggle left sidebar ⌥ ⌘ B": ⌥ ⌘ B
+        - text: Toggle left sidebar ⌥ ⌘ B
       - listitem:
-        - text: Search sessions
-        - button "Remove shortcut for Search sessions"
         - button "Edit shortcut for Search sessions"
-        - button "Search sessions ⌥ ⌘ K": ⌥ ⌘ K
+        - text: Search sessions ⌥ ⌘ K
       - listitem:
-        - text: Add workspace
-        - button "Remove shortcut for Add workspace"
         - button "Edit shortcut for Add workspace"
-        - button "Add workspace ⌥ ⌘ O": ⌥ ⌘ O
+        - text: Add workspace ⌥ ⌘ O
       - listitem:
-        - text: Rename session
-        - button "Remove shortcut for Rename session"
         - button "Edit shortcut for Rename session"
-        - button "Rename session ⇧ ⌘ R": ⇧ ⌘ R
+        - text: Rename session ⇧ ⌘ R
       - listitem:
-        - text: Fork session
-        - button "Remove shortcut for Fork session"
         - button "Edit shortcut for Fork session"
-        - button "Fork session ⇧ ⌘ F": ⇧ ⌘ F
+        - text: Fork session ⇧ ⌘ F
       - listitem:
-        - text: Archive session
-        - button "Remove shortcut for Archive session"
         - button "Edit shortcut for Archive session"
-        - button "Archive session ⌥ ⌘ A": ⌥ ⌘ A
+        - text: Archive session ⌥ ⌘ A
       - listitem:
-        - text: Open settings
-        - button "Remove shortcut for Open settings"
         - button "Edit shortcut for Open settings"
-        - button "Open settings ⌘ ,": ⌘ ,
+        - text: Open settings ⌘ ,
       - listitem:
-        - text: Toggle right sidebar
-        - button "Remove shortcut for Toggle right sidebar"
         - button "Edit shortcut for Toggle right sidebar"
-        - button "Toggle right sidebar ⇧ ⌘ B": ⇧ ⌘ B
+        - text: Toggle right sidebar ⇧ ⌘ B
       - listitem:
-        - text: Workspace files
-        - button "Remove shortcut for Workspace files"
         - button "Edit shortcut for Workspace files"
-        - button "Workspace files ⌥ ⌘ P": ⌥ ⌘ P
+        - text: Workspace files ⌥ ⌘ P
       - listitem:
-        - text: New terminal
-        - button "Remove shortcut for New terminal"
         - button "Edit shortcut for New terminal"
-        - 'button "New terminal ⌃ `"': "⌃ `"
+        - text: "New terminal ⌃ `"
       - listitem:
-        - text: Split
-        - button "Remove shortcut for Split"
         - button "Edit shortcut for Split"
-        - button "Split ⌘ \\": ⌘ \
+        - text: Split ⌘ \
       - listitem:
-        - text: Toggle panel fullscreen
-        - button "Remove shortcut for Toggle panel fullscreen"
         - button "Edit shortcut for Toggle panel fullscreen"
-        - button "Toggle panel fullscreen ⌥ ⌘ Enter": ⌥ ⌘ Enter
+        - text: Toggle panel fullscreen ⌥ ⌘ Enter
       - listitem:
-        - text: Refresh current page
         - button "Edit shortcut for Refresh current page"
-        - button "Refresh current page No shortcut": No shortcut
+        - text: Refresh current page No shortcut
       - listitem:
-        - text: Close current page or window
-        - button "Remove shortcut for Close current page or window"
         - button "Edit shortcut for Close current page or window"
-        - button "Close current page or window ⌥ ⌘ W": ⌥ ⌘ W
-      - listitem:
-        - text: Stop generating
-        - button "Stop generating Esc Esc" [disabled]: Esc Esc
+        - text: Close current page or window ⌥ ⌘ W
   - region "Message input":
     - heading "Message input" [level=3]
     - list:
-      - listitem:
-        - text: Use the complementary Queue / Steer action
-        - button "Use the complementary Queue / Steer action ⌘ Enter" [disabled]: ⌘ Enter
-      - listitem:
-        - text: Open reference menu
-        - button "Open reference menu @" [disabled]: "@"
-      - listitem:
-        - text: New line
-        - button "New line ⇧ Enter" [disabled]: ⇧ Enter
-      - listitem:
-        - text: Send message
-        - button "Send message Enter" [disabled]: Enter
-      - listitem:
-        - text: Open command menu
-        - button "Open command menu /" [disabled]: /
+      - listitem: Use the complementary Queue / Steer action ⌘ Enter
+      - listitem: Open reference menu @
+      - listitem: New line ⇧ Enter
+      - listitem: Send message Enter
+      - listitem: Open command menu /
+      - listitem: Stop generating Esc Esc
   - region "Menus and dialogs":
     - heading "Menus and dialogs" [level=3]
     - list:
-      - listitem:
-        - text: Close menu or top dialog
-        - button "Close menu or top dialog Esc" [disabled]: Esc
-      - listitem:
-        - text: Move menu selection
-        - button "Move menu selection ↑ ↓" [disabled]: ↑ ↓
-      - listitem:
-        - text: Select menu item
-        - button "Select menu item Enter" [disabled]: Enter
+      - listitem: Close menu or top dialog Esc
+      - listitem: Move menu selection ↑ ↓
+      - listitem: Select menu item Enter
   - region "Approval area":
     - heading "Approval area" [level=3]
     - list:
-      - listitem:
-        - text: Allow once
-        - button "Allow once Enter" [disabled]: Enter
-      - listitem:
-        - text: Reject
-        - button "Reject Esc" [disabled]: Esc
+      - listitem: Allow once Enter
+      - listitem: Reject Esc
   - contentinfo:
     - button "Restore all defaults" [disabled]
-    - text: 0 customized

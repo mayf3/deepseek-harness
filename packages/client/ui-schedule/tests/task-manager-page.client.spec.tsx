@@ -1665,12 +1665,12 @@ describe('Task detail rule header and run-time card', () => {
     expect(stylesheet).toMatch(/\.ruleControl\s*\{[^}]*margin-right:\s*0;/)
     expect(stylesheet).toMatch(new RegExp([
       '\\.ruleRows \\.ruleControl:focus-visible\\s*\\{[^}]*',
-      'outline:\\s*2px solid var\\(--dsw-alias-state-business-primary\\);',
+      'outline:\\s*2px solid var\\(--dsw-focus-ring-color, var\\(--dsw-alias-state-business-primary\\)\\);',
       '[^}]*outline-offset:\\s*1px;',
     ].join('')))
     expect(stylesheet).toMatch(new RegExp([
       '\\.ruleValue:focus-visible \\.ruleValueFace\\s*\\{[^}]*',
-      'outline:\\s*2px solid var\\(--dsw-alias-state-business-primary\\);',
+      'outline:\\s*2px solid var\\(--dsw-focus-ring-color, var\\(--dsw-alias-state-business-primary\\)\\);',
       '[^}]*outline-offset:\\s*1px;',
     ].join('')))
     expect(stylesheet).toMatch(/\.ruleRows \.ruleValue:focus-visible\s*\{[^}]*outline:\s*none;/)
@@ -1845,7 +1845,7 @@ describe('Task detail rule header and run-time card', () => {
     // A whole number of minutes below the hour reads in minutes, at minutes' own minimum.
     expect(repeatButton().textContent).toContain(en['rule.everyMinutes'])
     expect(interval.value).toBe('10')
-    expect(interval.getAttribute('min')).toBe('5')
+    expect(interval.getAttribute('min')).toBe('1')
     fireEvent.change(interval, { target: { value: '20' } })
     clickSave()
     expect(h.updateTiming).toHaveBeenCalledExactlyOnceWith({
@@ -1879,7 +1879,7 @@ describe('Task detail rule header and run-time card', () => {
     const field = screen.getByLabelText<HTMLInputElement>(en['timing.interval'])
     expect(repeatButton().textContent).toContain(en['rule.everySeconds'])
     expect(field.value).toBe('301')
-    expect(field.getAttribute('min')).toBe('300')
+    expect(field.getAttribute('min')).toBe('60')
     fireEvent.change(field, { target: { value: '600' } })
     clickSave()
     expect(seconds.updateTiming).toHaveBeenCalledExactlyOnceWith({
@@ -1929,7 +1929,7 @@ describe('Task detail rule header and run-time card', () => {
     })
   })
 
-  it.each(['299', 'abc'])('rejects an interval below the supported minimum: %s', (value) => {
+  it.each(['59', 'abc'])('rejects an interval below the supported minimum: %s', (value) => {
     const h = mount({ records: [every] })
     fireEvent.click(screen.getByRole('button', { name: 'Check metrics' }))
     const interval = screen.getByLabelText<HTMLInputElement>(en['timing.interval'])
@@ -1947,9 +1947,9 @@ describe('Task detail rule header and run-time card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Check metrics' }))
     chooseRepeat(en['rule.everyHours'])
     const interval = screen.getByLabelText<HTMLInputElement>(en['timing.interval'])
-    // 0.05 hours is 180 whole seconds, under the 300-second floor, and the
+    // 0.01 hours is 36 whole seconds, under the 60-second floor, and the
     // message speaks the row's own unit as the hint above the rows does.
-    fireEvent.change(interval, { target: { value: '0.05' } })
+    fireEvent.change(interval, { target: { value: '0.01' } })
     clickSave()
     expect(h.updateTiming).not.toHaveBeenCalled()
     expect(screen.getByRole('alert').textContent).toBe(en['timing.invalidInterval.hour'])
@@ -3552,7 +3552,9 @@ describe('Task detail name and instruction edits', () => {
     const stylesheet = readFileSync(resolve(import.meta.dirname, '../src/client/TaskManagerPage.module.css'), 'utf8')
     expect(stylesheet).toMatch(/\.editName\s*\{[^}]*font-size:\s*20px;[^}]*font-weight:\s*500;/)
     expect(stylesheet).toMatch(/\.editName:hover\s*\{[^}]*box-shadow:\s*0 1px var\(--dsw-alias-border-l3\);/)
-    expect(stylesheet).toMatch(/\.editName:focus\s*\{[^}]*box-shadow:\s*0 1px var\(--dsw-alias-state-business-primary\);/)
+    expect(stylesheet).toMatch(
+      /\.editName:focus\s*\{[^}]*box-shadow:\s*0 1px var\(--dsw-focus-ring-color, var\(--dsw-alias-state-business-primary\)\);/,
+    )
     // The bar keeps the mock's 44px in the Tasks page's own detail column; the
     // right-panel placement states the cross size that lands its rule on the
     // conversation header's rule, and the actions keep the mock's -8px inset.

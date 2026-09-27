@@ -7,6 +7,8 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
+Desktop product events use the optional [product analytics service](../product-analytics/README.md); ordinary Web interactions are excluded.
+
 ## Summary
 
 The Web GUI lets users switch the model and reasoning effort for an existing session through either the `/model` popup or the composer's model control. Both surfaces present the same provider-grouped choices, and the selected model determines the available effort names and default. A complete selection applies to the next request; a running step keeps the model and effort it started with. If the selected model is unavailable, the composer stays disabled until the user selects an available model or that exact model becomes available again.
@@ -31,11 +33,11 @@ The unselected model label uses the same regular weight as an available model na
 
 Mount this plugin alongside `ui-conversation` and the commands package; the composer then shows the model seat next to the pending indicator, and `/model` opens the same directory as a popup. While the seat's menu is open, `↑`/`↓` move focus across the rows of the shown pane, Tab settles the focused row, and Escape and `Shift+Tab` leave a drilled pane first and otherwise close back to the trigger. Drilling lands on the row of the value in use, and going back lands on the cell that opened the pane left. The composer shows the catalog name while the selected model is available, and its saved `provider/model` ID when the model or provider is removed, including account sign-out. The stored provider, model, and reasoning effort remain unchanged.
 
-Mouse selection uses native browser clicks, including their cancellation behavior; a press alone never selects. Opening the menu focuses its trigger, and clicking the trigger again closes the menu and returns focus there. While a selection is pending, focus stays on the trigger; a rejected selection leaves the menu open, and Tab returns to the current row.
+Mouse selection uses native browser clicks, including their cancellation behavior; a press alone never selects. Opening the menu focuses its trigger, and clicking the trigger again closes the menu and returns focus there. While a selection from either entry is pending, focus stays on the trigger, the trigger shows a spinner in place of its chevron, and each row whose value the selection carries shows one in place of its check; a rejected selection leaves the menu open, and Tab returns to the current row.
 
 ### Model and effort
 
-Models stay grouped by provider. The composer menu shows model and effort names only, with DeepSeek Account first and DeepSeek second; third-party providers retain their catalog order. The `/model` popup shows provider names and catalog descriptions; it localizes the two built-in DeepSeek descriptions and leaves external provider descriptions verbatim. The popup applies the selected model's default effort; the composer can then choose any advertised effort. An adapter without reasoning metadata leaves the Effort row absent; there is no arbitrary effort input.
+Models stay grouped by provider. The composer menu shows model and effort names only, with DeepSeek Account first and DeepSeek second; third-party providers retain their catalog order. Navigation chevrons use `--dsw-alias-menu-icon`. The `/model` popup shows provider names and catalog descriptions; it localizes the two built-in DeepSeek descriptions and leaves external provider descriptions verbatim. The popup applies the selected model's default effort; the composer can then choose any advertised effort. An adapter without reasoning metadata leaves the Effort row absent; there is no arbitrary effort input.
 
 The composer replaces the model and effort text with the Models icon when the expanded controls cannot share one line, and restores the text when space permits. The full selection remains available in the trigger's accessible name, tooltip, and menu.
 
@@ -52,10 +54,12 @@ When another writer owns the Session, model-selection failures tell the user to 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+Menus use the shared `MenuSurface` material, including the macOS backing for background blur; custom content follows the [menu rules](../../../docs/web-styling.md#component-rules).
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Two entries over ONE per-session directory owned by `ModelDirectoryResolver` (`ctx.modelDirectories`): the `/model` popupSelect contribution (registered through `ctx.commandUi`) and the composer's named `conversation.input.model` seat both load the session's available directory through `session.models` and submit through `session.selectModel` via the same `ModelDirectory` instance, so a switch made in either entry is what the other shows next. Directory loads and selections share a generation counter so an older response never overwrites a newer one; a connection reset drops every resident projection and repulls the Host-restored selection before display. Directories are per-session, resolved lazily, and disposed with the session scope; addressed subagent sessions expose neither entry. Every resident directory refetches directly on forwarded `llm/adapters-updated`, `settings/document-updated`, and credential update events.
+Two entries over ONE per-session directory owned by `ModelDirectoryResolver` (`ctx.modelDirectories`): the `/model` popupSelect contribution (registered through `ctx.commandUi`) and the composer's named `conversation.input.model` seat both load the session's available directory through `session.models` and submit through `session.selectModel` via the same `ModelDirectory` instance, so a switch made in either entry is what the other shows next. Directory loads and selections share a generation counter so an older response never overwrites a newer one. The directory publishes the latest submitted selection as `pending` until it settles or a connection reset invalidates it; a connection reset drops every resident projection and repulls the Host-restored selection before display. Directories are per-session, resolved lazily, and disposed with the session scope; addressed subagent sessions expose neither entry. Every resident directory refetches directly on forwarded `llm/adapters-updated`, `settings/document-updated`, and credential update events.
 
 </details>
 

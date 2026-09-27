@@ -244,7 +244,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
   }, 60_000)
 
   it.skipIf(MODE === 'record').each([
-    ['compact', 'Compact'], ['detailed', 'Detailed'], ['verbose', 'Verbose'],
+    ['compact', 'Compact'], ['standard', 'Standard'], ['verbose', 'Verbose'],
   ] as const)('applies whole-Turn presentation in %s mode', async (mode, label) => {
     await launch()
     onTestFailed(() => saveFailureShot(page, 'web-e2e-turn-process-setting'))
@@ -259,7 +259,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     await openSettings(page, 'en')
     const dialog = page.getByRole('dialog', { name: 'Settings' })
     await dialog.getByText('Work details', { exact: true }).locator('../..')
-      .getByRole('button', { name: 'Standard', exact: true }).click()
+      .getByRole('button', { name: 'Detailed', exact: true }).click()
     await page.getByRole('menuitem', { name: label, exact: true }).click()
     await page.keyboard.press('Escape')
 

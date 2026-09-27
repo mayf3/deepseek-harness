@@ -1,5 +1,6 @@
 // Real Git reaches a controlled proxy failure or stall; the browser
-// offers a mirror for a replacement spec without retrying the failed address.
+// offers a mirror for a replacement spec, or another way once the install
+// already asks the mirror, without retrying the failed address.
 import { once } from 'node:events'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { createServer, type Socket } from 'node:net'
@@ -11,7 +12,7 @@ import { expect, it, onTestFinished } from 'vitest'
 import { launchWebScaffold, captureStableAria, compareOrRefreshGolden, webSnapshotMode, watchConsole } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE } from './support.ts'
 
-it.each(['network', 'timeout'] as const)('offers a mirror after a GitHub %s and waits for replacement input', async (failure) => {
+it.each(['network', 'timeout'] as const)('offers a mirror after a GitHub %s, then another way on the mirror, and waits for replacement input', async (failure) => {
   const scratch = await mkdtemp(join(tmpdir(), 'dsh-install-github-'))
   onTestFinished(() => rm(scratch, { recursive: true, force: true }))
   const sockets = new Set<Socket>()
@@ -94,6 +95,23 @@ it.each(['network', 'timeout'] as const)('offers a mirror after a GitHub %s and 
   expect(await readFile(join(profile, '.attempts'), 'utf8')).toBe(attempts)
   expect(connections).toBe(checked)
   expect(await readFile(manifestPath, 'utf8')).toBe(manifestBefore)
+  await input.fill(spec)
+  await dialog.getByRole('button', { name: '安装', exact: true }).click()
+  dialog = page.getByRole('dialog', { name: title, exact: true })
+  await dialog.waitFor()
+  await compareOrRefreshGolden(
+    fileURLToPath(new URL(`./expected/plugin-install-github/${failure === 'timeout' ? 'timeout' : 'failed'}-on-mirror.expected.md`, import.meta.url)),
+    await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd), webSnapshotMode(),
+  )
+  await dialog.getByRole('button', { name: '试试其他方式', exact: true }).click()
+  dialog = page.getByRole('dialog', { name: '添加插件', exact: true })
+  await dialog.getByRole('button', { name: '收起引导', exact: true }).waitFor()
+  expect(await input.inputValue()).toBe('')
+  expect(await input.evaluate(element => element === document.activeElement)).toBe(true)
+  await compareOrRefreshGolden(
+    fileURLToPath(new URL('./expected/plugin-install-github/another-way.expected.md', import.meta.url)),
+    await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd), webSnapshotMode(),
+  )
   await input.fill(spec)
   await dialog.getByRole('button', { name: '安装', exact: true }).click()
   dialog = page.getByRole('dialog', { name: title, exact: true })

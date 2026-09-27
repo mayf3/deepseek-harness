@@ -12,7 +12,7 @@ The Desktop shell replaces Electron's default application menu with a custom tem
 
 On macOS the template declares `{ role: 'windowMenu' }` after the Edit menu, and a separator-delimited run of `hide`, `hideOthers`, and `unhide` before Quit in the application submenu. Those roles contribute only the standard items; no Services submenu, window list, or other macOS default is declared. Windows and Linux keep the application and Edit menus. The [page-close decision](../architecture/2026-09-21-desktop-page-close-shortcuts.md) owns the custom File menu and close behavior.
 
-Electron supplies English defaults for the Window and Edit roles. Explicit labels override role defaults while retaining native actions and shortcuts; the localized application commands are documented in the [Desktop README](../../../../apps/desktop/README.md). Minimize and hide execute through Electron's roles without custom handlers.
+Electron supplies English defaults for the Window and Edit roles. Explicit labels override role defaults while retaining native actions and shortcuts; the localized application commands are documented in the [Desktop README](../../../../apps/desktop/README.md). Minimize and hide execute through Electron's roles without custom handlers. Close and activation behavior is partly superseded by [close-to-background](../architecture/2026-09-23-desktop-close-to-background-and-quit-confirmation.md); the menu declarations here remain in effect.
 
 ## Alternatives considered
 

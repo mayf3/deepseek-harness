@@ -4,6 +4,7 @@
  * Session's durable selection projection, then submit through the same
  * selectModel call. A switch made in either entry updates this shared state.
  */
+import type { TrackProductEvent } from '@deepseek-ai/dsh-client-product-analytics/client'
 import type {
   ModelCatalogFailure, ModelProviderGroup, ModelSelection, ModelSelectionProjection,
 } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -27,6 +28,8 @@ export interface ModelDirectoryState {
   failures: readonly ModelCatalogFailure[]
   /** Lifecycle of the in-flight operation. */
   status: 'idle' | 'loading' | 'ready' | 'selecting' | 'error'
+  /** Selection submitted by the latest `select` until it settles; null otherwise. */
+  pending: ModelSelection | null
   /** Whole-request or selection failure text; null when none. */
   error: string | null
 }
@@ -35,7 +38,7 @@ export interface ModelDirectoryState {
 export class ModelDirectory {
   /** The shared snapshot both entries render from (uSES-safe store). */
   readonly store: SnapshotStore<ModelDirectoryState> = createSnapshotStore<ModelDirectoryState>({
-    current: null, routable: null, groups: [], failures: [], status: 'idle', error: null,
+    current: null, routable: null, groups: [], failures: [], status: 'idle', pending: null, error: null,
   })
 
   /** Latest selection operation wins; an older response never overwrites a newer one. */
@@ -50,6 +53,8 @@ export class ModelDirectory {
    * @param available - whether this session may use Agent-bound model RPCs.
    * @param catalog - Host-generation catalog shared by every Session.
    * @param projected - durable model selection projected from Session history.
+   * @param isBlank - whether this Session has no first message yet.
+   * @param track - desktop-only callback after a successful user selection.
    */
   constructor(
     private readonly sessions: Pick<TypertClientRemote['session'], 'selectModel'>,
@@ -57,6 +62,8 @@ export class ModelDirectory {
     private readonly available: () => boolean,
     private readonly catalog: ModelCatalogDirectory,
     private readonly projected: ObservableSnapshot<unknown>,
+    private readonly isBlank: () => boolean,
+    private readonly track?: TrackProductEvent,
   ) {
     this.unsubscribeCatalog = catalog.store.subscribe(() => { this.syncInputs() })
     this.unsubscribeSelection = projected.subscribe(() => { this.syncInputs() })
@@ -83,8 +90,11 @@ export class ModelDirectory {
    */
   async select(selection: ModelSelection): Promise<RemoteResult<void>> {
     this.assertAvailable()
+    const previous = this.store.getSnapshot().current
+    const previousEffort = previous?.reasoningEffort ?? (previous === null ? undefined : this.catalog.reasoningFor(previous)?.defaultEffort)
+    const nextEffort = selection.reasoningEffort ?? this.catalog.reasoningFor(selection)?.defaultEffort
     const generation = ++this.generation
-    this.store.update((s) => { s.status = 'selecting'; s.error = null })
+    this.store.update((s) => { s.status = 'selecting'; s.pending = selection; s.error = null })
     const result = await this.sessions.selectModel({
       sessionId: this.sessionId,
       provider: selection.provider,
@@ -99,11 +109,20 @@ export class ModelDirectory {
     if (!result.ok) {
       this.store.update((s) => {
         s.status = 'error'
+        s.pending = null
         s.error = `${result.error.code}: ${result.error.message}`
       })
       return result
     }
-    this.store.update((s) => { s.status = 'ready'; s.error = null })
+    if (previous !== null) {
+      const from = `${previous.provider}/${previous.model}`
+      const to = `${selection.provider}/${selection.model}`
+      if (from !== to) this.track?.('model_switch', { ...this.isBlank() ? {} : { session_id: this.sessionId }, switch_from: from, switch_to: to })
+      if (from === to && previousEffort !== nextEffort) this.track?.('thinking_level_switch', {
+        ...this.isBlank() ? {} : { session_id: this.sessionId }, model_name: to, switch_from: previousEffort ?? 'default', switch_to: nextEffort ?? 'default',
+      })
+    }
+    this.store.update((s) => { s.status = 'ready'; s.pending = null; s.error = null })
     this.syncInputs()
     return { ok: true, value: undefined }
   }
@@ -116,6 +135,7 @@ export class ModelDirectory {
     ++this.generation
     this.store.update((state) => {
       if (state.status === 'selecting') state.status = 'idle'
+      state.pending = null
       state.error = null
     })
     this.syncInputs()
@@ -151,6 +171,7 @@ export class ModelDirectory {
         groups: catalog.value?.groups ?? [],
         failures: catalog.value?.failures ?? [],
         status: catalog.status === 'error' ? 'error' : 'loading',
+        pending: this.store.getSnapshot().pending,
         error: catalog.error,
       })
       return
@@ -167,6 +188,7 @@ export class ModelDirectory {
       status: this.store.getSnapshot().status === 'selecting'
         ? 'selecting'
         : 'ready',
+      pending: this.store.getSnapshot().pending,
       error: null,
     })
   }

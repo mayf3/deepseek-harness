@@ -811,7 +811,7 @@ describe('DockSurface', () => {
     // Vitest stubs CSS Modules; bind the real stylesheet's menu selector to its generated class.
     const style = document.createElement('style')
     style.textContent = readFileSync(resolve(import.meta.dirname, '../src/components/dockkit.module.css'), 'utf8')
-      .replaceAll(/\.menu(?=[:\s{])/g, `.${menu.className}`)
+      .replaceAll(/\.menu(?=[:\s{])/g, `.${[...menu.classList].join('.')}`)
     document.head.append(style)
     onTestFinished(() => { style.remove() })
     expect(menu.querySelectorAll('[role^="menuitem"]')).toHaveLength(0)
@@ -1367,7 +1367,7 @@ describe('FloatLayer', () => {
 
   it('closes a floating panel through its own control', () => {
     const { intents, tabId } = floating()
-    fireEvent.click(screen.getByRole('button', { name: TEST_LABELS.closeFloat }))
+    fireEvent.click(screen.getByRole('button', { name: TEST_LABELS.closeTab }))
     expect(intents.closeTab).toHaveBeenCalledWith(tabId)
   })
 
@@ -1375,7 +1375,7 @@ describe('FloatLayer', () => {
     const canCloseTab = vi.fn(() => false)
     const { intents, tabId } = floating(canCloseTab)
     expect(canCloseTab).toHaveBeenCalledWith(tabId)
-    expect(screen.queryByRole('button', { name: TEST_LABELS.closeFloat })).toBeNull()
+    expect(screen.queryByRole('button', { name: TEST_LABELS.closeTab })).toBeNull()
     expect(screen.getByTestId('float-body').textContent).toBe('a.txt')
     fireEvent.click(screen.getByRole('button', { name: TEST_LABELS.dockFloat }))
     expect(intents.unfloatPane).toHaveBeenCalledTimes(1)

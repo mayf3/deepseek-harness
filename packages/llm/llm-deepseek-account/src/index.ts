@@ -1,7 +1,7 @@
 /** Account-token authentication and discovery for the DeepSeek account route. */
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { Context } from '@deepseek-ai/cordis'
-import { LlmError } from '@deepseek-ai/dsh-llm'
+import { ACCOUNT_QUOTA_EXCEEDED_CODE, LlmError, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-deepseek-account'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { plainOptions, resolveAdapterOptions, registerDeepSeekProvider, catalogModelInfo } from '@deepseek-ai/dsh-llm-deepseek'
@@ -24,7 +24,11 @@ export function apply(ctx: Context, config: Config): void {
     return {
       headers: { 'x-dsh-auth-token': token },
       onRequestError: async (error) => {
-        if (!(error instanceof LlmError) || error.failure.status !== 401) return error
+        if (!(error instanceof LlmError)) return error
+        if (error.code === QUOTA_EXCEEDED_CODE) {
+          return new LlmError(error.message, ACCOUNT_QUOTA_EXCEEDED_CODE, { ...error.failure, cause: error })
+        }
+        if (error.failure.status !== 401) return error
         const rejected = new LlmError(error.message, 'ACCOUNT_TOKEN_INVALID', { ...error.failure, cause: error })
         try { await account?.rejectToken(token) }
         catch (_credentialRemovalFailed) { /* Storage failure cannot replace the inference failure. */ }

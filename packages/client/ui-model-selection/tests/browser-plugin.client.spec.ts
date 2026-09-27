@@ -138,7 +138,11 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
   const scopes = new Map<SessionId, Context>()
   const bindings = new Map<SessionId, {
     sessionId: SessionId
-    session: { sessionId: SessionId; projections: { faceOf: () => SnapshotStore<ModelSelectionProjection | undefined> } }
+    session: {
+      sessionId: SessionId
+      getSnapshot: () => { blank: boolean }
+      projections: { faceOf: () => SnapshotStore<ModelSelectionProjection | undefined> }
+    }
     ctx: Context
   }>()
   const addressed = new Set<SessionId>()
@@ -149,10 +153,12 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
   })
+  const track = vi.fn()
+  ctx.provide('productAnalytics', { enabled: true, track } as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   await ctx.plugin(function probe() {}).await()
-  const mint = (key: string) => {
+  const mint = (key: string, blank = false) => {
     const id = sid(key)
     const handle = createScope(ctx, id)
     scopes.set(id, handle.ctx)
@@ -163,7 +169,7 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
     projections.set(id, projection)
     const binding = {
       sessionId: id,
-      session: { sessionId: id, projections: { faceOf: () => projection } },
+      session: { sessionId: id, getSnapshot: () => ({ blank }), projections: { faceOf: () => projection } },
       ctx: handle.ctx,
     }
     bindings.set(id, binding)
@@ -173,7 +179,7 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
     return { ...handle, projection }
   }
   return {
-    ctx, fiber, mint, calls, remote,
+    ctx, fiber, mint, calls, remote, track,
     contribution: () => contribution!,
     popup: (): PopupSelectSpec => {
       const ui = contribution!.ui
@@ -206,7 +212,7 @@ describe('ui-model-selection dual entry', () => {
     b.rejectSelection()
     await expect(b.popup().onSelect(options[0]!, input)).rejects.toThrow(zh['error.sessionInUse'])
     expect(b.ctx.modelDirectories.directoryFor(sid('owned')).store.getSnapshot()).toMatchObject({
-      status: 'error', error: 'session/writer-held: writer held',
+      status: 'error', pending: null, error: 'session/writer-held: writer held',
     })
   })
 
@@ -250,12 +256,12 @@ describe('ui-model-selection dual entry', () => {
     const b = await bench()
     b.mint('s1')
     const seatFace = b.seat().inject!(sid('s1'))
-    // Switch through the SEAT entry.
-    expect(await seatFace.select({
-      provider: 'deepseek-official',
-      model: 'deepseek-v4-pro',
-      reasoningEffort: 'max',
-    })).toEqual({ ok: true, value: undefined })
+    // Switch through the SEAT entry; the directory holds the submission until it settles.
+    const selection = { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' }
+    const settled = seatFace.select(selection)
+    expect(seatFace.directory.getSnapshot()).toMatchObject({ status: 'selecting', pending: selection })
+    expect(await settled).toEqual({ ok: true, value: undefined })
+    expect(seatFace.directory.getSnapshot()).toMatchObject({ status: 'ready', pending: null })
     expect(b.hostCurrent()).toEqual({
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
@@ -335,6 +341,19 @@ describe('ui-model-selection dual entry', () => {
       b.popup().options(projection('b'), new AbortController().signal),
     ])
     expect(b.calls.models).toBe(1)
+  })
+
+  it('drops a pending selection on connection reset and ignores its late settlement', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    await b.ctx.modelDirectories.directoryFor(sid('s1')).load()
+    const late = face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    expect(face.directory.getSnapshot().pending).toEqual({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    b.ctx.emit('connection/reset')
+    expect(face.directory.getSnapshot()).toMatchObject({ status: 'loading', pending: null })
+    await late
+    expect(face.directory.getSnapshot().pending).toBeNull()
   })
 
   it('hides the effective selection until the reconnected catalog validates it', async () => {
@@ -510,4 +529,24 @@ describe('ui-model-selection dual entry', () => {
     await Promise.resolve()
     expect(b.calls).toEqual({ models: 2, select: 0 })
   })
+})
+
+
+it.each([false, true])('reports accepted switches with blank=%s and no refused switch', async (blank) => {
+  const b = await bench('en')
+  const scope = b.mint('analytics', blank)
+  try {
+    const face = b.seat().inject!(sid('analytics'))
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' })
+    expect(b.track).toHaveBeenCalledWith('model_switch', { ...blank ? {} : { session_id: 'analytics' }, switch_from: 'deepseek-official/deepseek-v4-flash', switch_to: 'deepseek-official/deepseek-v4-pro' })
+    b.track.mockClear()
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' })
+    expect(b.track).toHaveBeenCalledExactlyOnceWith('thinking_level_switch', {
+      ...blank ? {} : { session_id: 'analytics' }, model_name: 'deepseek-official/deepseek-v4-pro', switch_from: 'max', switch_to: 'high',
+    })
+    b.track.mockClear()
+    b.rejectSelection()
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    expect(b.track).not.toHaveBeenCalled()
+  } finally { await scope.fiber.dispose(); await b.ctx.fiber.dispose() }
 })

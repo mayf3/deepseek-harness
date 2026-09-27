@@ -19,6 +19,9 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
+# The scratch tree has no Git metadata or Windows Git executable.
+DSH_CLIENT_COMMIT_HASH="$(git -C "$repo_root" rev-parse HEAD)"
+export DSH_CLIENT_COMMIT_HASH
 node_major="${DSH_WINE_NODE_MAJOR:-${PRIMARY_NODE_VERSION:-24}}"
 cache_dir="${DSH_WINE_GATE_CACHE_DIR:-$repo_root/.cache/wine-windows}"
 

@@ -219,7 +219,7 @@ export function TextPreview({
       <div className={css.status} data-textpreview-state="loading">
         {meta.status === 'none'
           ? <p className={css.statusLine}>{t('resourceUnavailable')}</p>
-          : <LoadingIndicator className={css.statusLine} label={t('loading')} />}
+          : <LoadingIndicator label={t('loading')} />}
       </div>
     )
   }
@@ -310,7 +310,7 @@ export function TextPreview({
         </span>
         {/* Preview and file-tree refresh controls own different reload lifecycles and locale namespaces. */}
         {/* jscpd:ignore-start */}
-        <Tooltip label={tab.refreshShortcut?.keys.length ? t('shortcut.hint', { label: t('reload'), keys: tab.refreshShortcut.keys.join(' ') }) : t('reload')} side="bottom" delayMs={500}>
+        <Tooltip label={t('reload')} shortcutKeys={tab.refreshShortcut?.keys} side="bottom" delayMs={500}>
           <button
             type="button"
             className={css.tool}
@@ -341,7 +341,7 @@ export function TextPreview({
         }}
       >
         {mode !== 'renderer' && !hasContent && current?.failure === undefined && (
-          <LoadingIndicator className={clsx(css.statusLine, css.bodyLoading)} label={t('loading')} />
+          <LoadingIndicator label={t('loading')} />
         )}
         {content !== undefined && renderSlot('sidebar.right.tab.document', {
           resourceAddress: tab.contentId, content, wrap: state.wrap, scrollportRef: bindScrollport,
@@ -396,7 +396,7 @@ export function TextPreview({
             data-textpreview-more
             onClick={loadNext}
           >
-            {current.loading ? <LoadingIndicator label={t('loading')} /> : t('loadMore')}
+            {current.loading ? <LoadingIndicator inline label={t('loading')} /> : t('loadMore')}
           </button>
         )}
       </div>

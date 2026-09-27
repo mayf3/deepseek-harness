@@ -1,4 +1,5 @@
 /** Registers the target-neutral Conversation assembly, shell, input, and docks. */
+import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ISessions, SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -256,7 +257,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     ), 'ui-conversation: fixed stop input')
     scope.effect(() => {
       const command: ShortcutFixedCommand = {
-        id: 'response.stop' as ShortcutCommandId, label: () => t('input.stop'), keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'application',
+        id: 'response.stop' as ShortcutCommandId, label: () => t('input.stop'), keys: ['Esc', 'Esc'], bindings: [{ code: 'Escape', modifiers: [] }], group: 'input',
       }
       const dispose = scope.shortcuts.registerFixed(command)
       stopShortcut.set(command.keys)

@@ -170,7 +170,7 @@ const invalidChanges: [ScheduleRecord, unknown, string][] = [
   [at, { kind: 'at', at: { date: '2026-09-16', time: '12:00:00', time_zone: 'Invalid/Zone' } }, 'invalid_time_zone'],
   [at, { kind: 'at', at: { date: '2026-09-16', time: '12:00:00', time_zone: 'UTC', extra: true } }, 'invalid_rule'],
   [at, { kind: 'at', at: { date: '2027-03-14', time: '02:30:00', time_zone: 'America/New_York' } }, 'invalid_rule'],
-  [every, { kind: 'every', every_seconds: 299 }, 'frequency_too_high'],
+  [every, { kind: 'every', every_seconds: 59 }, 'frequency_too_high'],
   [every, { kind: 'every', every_seconds: '300' }, 'invalid_rule'],
   [every, { kind: 'every', every_seconds: 300.5 }, 'invalid_rule'],
   [every, { kind: 'every', every_seconds: Number.MAX_SAFE_INTEGER }, 'time_out_of_range'],

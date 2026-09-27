@@ -406,6 +406,21 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Flows are registered by the plugin that knows how to obtain one credential and keyed by the record they write; the seam owns the conversation and the one-attempt-per-key lifecycle, never the protocol.',
   },
   {
+    key: 'productAnalytics',
+    pkg: 'client-product-analytics',
+    title: 'Desktop interaction collection',
+    mode: 'service',
+    note: 'Accepts selected Desktop events, enriches available login identity, and observes live compaction under the live Host collection policy.',
+  },
+  {
+    key: 'otel',
+    pkg: 'otel',
+    title: 'Shared OTel reporting channels',
+    mode: 'service',
+    consumers: ['host-product-telemetry-otel', 'session-telemetry-otel'],
+    note: 'Product analytics and Session feedback adapters create independent reporting channels through one injected service.',
+  },
+  {
     key: 'productTelemetry',
     pkg: 'host-product-telemetry-otel',
     title: 'Product usage event sender',
@@ -552,8 +567,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'session-projection-cache',
     title: 'Persisted projection cache',
     mode: 'core',
-    consumers: ['api-session-controller', 'session-query', 'session-reference', 'subagent'],
-    note: 'Durably checkpoints projection unit states per session (throttled + turn/end/detach mandatory points) and serves the cold-read ladder: cache row + persistence tail replay, so listings never load full logs.',
+    consumers: ['api-session-controller', 'session-query', 'session-reference'],
+    note: 'Durably checkpoints projection unit states per session (throttled + turn/end/detach mandatory points), serves cached projection views, and accelerates prepared-Session projection hydration.',
   },
   {
     key: 'skills',

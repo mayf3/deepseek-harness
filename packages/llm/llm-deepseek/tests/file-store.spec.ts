@@ -68,8 +68,11 @@ function uploadFetch(now: () => number = () => NOW) {
 
 describe('DeepSeekFileStore', () => {
   it('isolates credential values and header kinds while reusing reordered headers', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-file-credentials-'))
+    roots.push(dir)
     const remote = uploadFetch(() => NOW)
-    const store = new DeepSeekFileStore({ fetch: remote.fetchImpl, now: () => NOW })
+    const index = new DeepSeekUploadIndex(join(dir, 'index.json'))
+    const store = new DeepSeekFileStore({ index, fetch: remote.fetchImpl, now: () => NOW })
     const first = await store.ensureUploaded(VERSION, CONNECTION, POLICY)
     const account = await store.ensureUploaded(VERSION, { ...CONNECTION, headers: { 'x-dsh-auth-token': 'key' } }, POLICY)
     const replacement = await store.ensureUploaded(VERSION, { ...CONNECTION, headers: { 'x-api-key': 'new-key' } }, POLICY)
@@ -95,10 +98,10 @@ describe('DeepSeekFileStore', () => {
     expect((await store.ensureUploaded(VERSION, { ...CONNECTION, baseURL: `${CONNECTION.baseURL}/v1/` }, POLICY)).record).toEqual(first.record)
     const reopened = new DeepSeekFileStore({ index, fetch: remote.fetchImpl, now: () => now })
     expect((await reopened.ensureUploaded(VERSION, CONNECTION, POLICY)).record).toEqual(first.record)
-    await reopened.invalidate(VERSION, other.record.fileId, CONNECTION)
+    await reopened.invalidate([{ variantId: VERSION.variantId, fileId: other.record.fileId }], CONNECTION)
     expect((await reopened.ensureUploaded(VERSION, CONNECTION, POLICY)).record).toEqual(first.record)
     expect(remote.uploads()).toBe(2)
-    await reopened.invalidate(VERSION, first.record.fileId, CONNECTION)
+    await reopened.invalidate([{ variantId: VERSION.variantId, fileId: first.record.fileId }], CONNECTION)
     const replacement = await reopened.ensureUploaded(VERSION, CONNECTION, POLICY)
     expect(replacement.record.fileId).not.toBe(first.record.fileId)
     expect((await reopened.ensureUploaded(VERSION, alternate, POLICY)).record).toEqual(other.record)

@@ -462,7 +462,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     scope: ctx => catalogChildScopes.get(ctx) as Agent,
     note:
-      'Registered in live root Agent scopes while the opt-in Schedule service is loaded. '
+      'Registered in live root Agent scopes while the Schedule service is loaded. '
       + 'Accepts after_seconds, explicit absolute at, bounded fixed-rate every_seconds, daily and weekly '
       + 'local times in an explicit IANA zone, and cron as a five-field expression. '
       + 'Management uses the Host storage domain; due messages resume the original Session.',

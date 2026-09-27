@@ -59,7 +59,7 @@ export const Config = Schema.object({
   requestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
   accountRequestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
   requestTimeoutMs: Schema.number().min(1).max(120_000).default(30_000),
-  balanceTimeoutMs: Schema.number().min(1).max(120_000).default(2_000),
+  balanceTimeoutMs: Schema.number().min(1).max(120_000).default(30_000),
   logoutMaxRetries: Schema.number().min(0).max(5).step(1).default(5),
   logoutRetryDelayMs: Schema.number().min(1).max(60_000).default(1_000),
   attemptTimeoutMs: Schema.number().min(1).max(3_600_000).default(600_000),
@@ -343,6 +343,19 @@ export class PlatformAccount extends DeepSeekAccount {
     await this.removing
   }
 
+  override async getDeviceIdentity(): Promise<{ deviceId?: string; userId?: AccountUserId; osVersion: string }> {
+    const [record, session] = await Promise.all([
+      this.ctx.credentials.readRecord(DEVICE),
+      this.getPlatformSession(),
+    ])
+    const parsed = record?.kind === 'grant' ? device.safeParse(record.payload) : undefined
+    return {
+      ...parsed?.success ? { deviceId: parsed.data.id } : {},
+      ...session?.userId == null ? {} : { userId: session.userId },
+      osVersion: deviceOsVersion(),
+    }
+  }
+
   override async getPlatformSession(): Promise<PlatformSession | null> {
     const lifetime = this.detailsLifetime
     const stored = await this.readCurrentGrant(lifetime)
@@ -569,7 +582,7 @@ export class PlatformAccount extends DeepSeekAccount {
       const identity = device.parse(deviceRecord.payload)
       const result = exchange.safeParse(await this.request('auth_exchange', {
         code: receivedCode, code_verifier: verifier, redirect_uri: redirectUri,
-        device_id: identity.id, device_model: `${platform()}-${arch()}`, os_version: `${platform()} ${release()}`,
+        device_id: identity.id, device_model: `${platform()}-${arch()}`, os_version: deviceOsVersion(),
       }, signal, attempt.clientHeaders), { reportInput: true })
       if (!result.success) this.rejectPayload('auth_exchange', result.error)
       const completionUrl = new URL(browserUrl(result.data.authorized_url, this.origin, '/dsh/authorized', this.rewriteBrowserOrigin))
@@ -640,3 +653,8 @@ export class PlatformAccount extends DeepSeekAccount {
   }
 }
 export default PlatformAccount
+
+/** OS identification shared by login and credential-free identity reads. */
+function deviceOsVersion(): string {
+  return `${platform()} ${release()}`
+}
