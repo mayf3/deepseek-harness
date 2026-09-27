@@ -22,6 +22,9 @@ export class DesktopUpdateCoordinator {
   private downloadOperation: Promise<DesktopUpdateState> | undefined
   private installOperation: Promise<DesktopUpdateState> | undefined
   private installationGuard: DesktopInstallationGuard | undefined
+  private guardCancellation: Promise<void> | undefined
+  private disposal: Promise<void> | undefined
+  private installerStarted = false
 
   private readonly onProgress = (progress: ProgressInfo): void => {
     if (this.downloadOperation === undefined || this.downloaded) return
@@ -37,7 +40,8 @@ export class DesktopUpdateCoordinator {
   private readonly onError = (error: Error): void => {
     // Check/download promises own their failures. Installation can fail after quitAndInstall returns.
     if (this.current.phase === 'installing') {
-      void this.installationGuard?.cancel().catch((cleanupError: unknown) => {
+      this.installerStarted = false
+      void this.cancelGuard().catch((cleanupError: unknown) => {
         this.setState(this.failure(new AggregateError([error, cleanupError], 'Desktop update cancellation failed'), 'install'))
       })
       this.setState(this.failure(error, 'install'))
@@ -137,24 +141,29 @@ export class DesktopUpdateCoordinator {
     this.assertLive()
     if (!this.downloaded || this.downloadOperation !== undefined || version !== this.candidate) throw new Error('desktop update: confirmed target is not ready')
     this.installOperation ??= Promise.resolve().then(async () => {
+      this.assertLive()
       this.setState({ phase: 'installing', version })
       try {
-        await this.installationGuard?.cancel()
+        await this.cancelGuard()
         this.installationGuard = await this.prepareInstallation?.(version)
+        this.assertLive()
         if (this.prepareInstallation !== undefined && this.installationGuard === undefined) {
           return this.setState({ phase: 'ready', version })
         }
         if (!await this.beforeRestart()) {
-          await this.installationGuard?.cancel()
+          await this.cancelGuard()
           return this.setState({ phase: 'ready', version })
         }
         this.assertLive()
         await this.installationGuard?.handoff()
+        this.assertLive()
+        this.installerStarted = true
         this.updater.quitAndInstall(true, true)
         return this.current
       } catch (error) {
+        this.installerStarted = false
         try {
-          await this.installationGuard?.cancel()
+          await this.cancelGuard()
         } catch (cleanupError) {
           return this.setState(this.failure(new AggregateError([error, cleanupError], 'Desktop update cancellation failed'), 'install'))
         }
@@ -165,15 +174,28 @@ export class DesktopUpdateCoordinator {
     return this.installOperation
   }
 
-  /** Remove owned listeners and prevent pending library operations from publishing into closed UI. */
-  dispose(): void {
+  /** Remove owned listeners and settle CLI admission without publishing into closed UI. */
+  dispose(): Promise<void> {
+    if (this.disposal !== undefined) return this.disposal
     this.disposed = true
-    void this.installationGuard?.release().catch((error: unknown) => { console.error('desktop CLI: update controller shutdown failed', error) })
     this.updater.off('download-progress', this.onProgress)
     this.updater.off('update-downloaded', this.onDownloaded)
     // Pending updater promises can still emit EventEmitter errors during shutdown.
     void Promise.allSettled([this.checkOperation, this.downloadOperation, this.installOperation])
       .then(() => { this.updater.off('error', this.onError) })
+    return this.disposal = Promise.allSettled([this.installOperation])
+      .then(async () => {
+        if (this.installerStarted) await this.installationGuard?.release()
+        else await this.cancelGuard()
+      })
+  }
+
+  private cancelGuard(): Promise<void> {
+    const guard = this.installationGuard
+    if (guard === undefined) return Promise.resolve()
+    return this.guardCancellation ??= guard.cancel().then(() => {
+      if (this.installationGuard === guard) this.installationGuard = undefined
+    }).finally(() => { this.guardCancellation = undefined })
   }
 
   private assertLive(): void {

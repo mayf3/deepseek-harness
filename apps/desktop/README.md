@@ -76,6 +76,12 @@ The [thin-wrapper decision](../../.agents/notes/implemented/architecture/2026-09
 
 Welcome loads the shared Toast palette and shadow tokens, with system typography for body-mounted notifications.
 
+## Bundled command runtime
+
+The `resources/runtime/cli` directory contains the public `bin/dsh` launcher (`bin/dsh.exe` on Windows), private `cli-control` update helper, `generation` identifier, and `lease` file. It runs the ordinary CLI under the installed Electron's Node mode and retains the [Electron runtime limitations](../../.agents/notes/implemented/architecture/2026-09-11-desktop-electron-node-runtime.md). Active commands hold shared leases; update preparation requires exclusive access. Exit status 75 means a command could not enter during update preparation or handoff. The application-parent directory must be writable to publish `.<application-name>.dsh-cli-update`. If an installer is interrupted after Desktop exits, completing an update or reinstalling Desktop restores CLI access; a stale record alone is not evidence that an installer has stopped.
+
+`prepare:runtime` compiles C++17 helpers and fails if the compiler is unavailable. macOS requires `clang++` and `/usr/libexec/PlistBuddy`; Windows requires Visual Studio C++ Build Tools with the x64 toolchain. Native CLI tests also compile helpers; Linux tests require `c++`. The native lease probe checks that a retained handle cannot authorize a replacement installation. Office defaults apply to the bundled plugin; another installed copy must provide its own physical resource paths.
+
 ## Installation ownership
 
 Electron owns `$DSH_HOME/profiles/desktop`. Its `dependencies` contains packages installed by pnpm; `dsh.profile.bundles` contains the built-in bundles followed by enabled plugins. The signed application supplies dsh, the private Desktop Host, and their production packages from `resources/app.asar/dsh`. Packaged applications select runtime profile resolution without creating package links; development profiles use filesystem links. Both host and plugins execute in the same Electron Node-mode process; Desktop does not enable `--preserve-symlinks`. The CLI cannot boot or mutate this profile.

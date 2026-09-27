@@ -45,7 +45,7 @@ describe('desktop release metadata', () => {
 })
 
 const coordinators: InstanceType<typeof DesktopUpdateCoordinator>[] = []
-afterEach(() => { for (const item of coordinators.splice(0)) item.dispose() })
+afterEach(async () => { await Promise.all(coordinators.splice(0).map(item => item.dispose())) })
 
 function fixture(prepareInstallation?: ConstructorParameters<typeof DesktopUpdateCoordinator>[6]) {
   const events = new EventEmitter()
@@ -73,6 +73,28 @@ function fixture(prepareInstallation?: ConstructorParameters<typeof DesktopUpdat
 }
 
 describe('desktop update coordinator', () => {
+  it.each(['acquire', 'confirmation', 'handoff'] as const)('cancels admission without starting the installer when disposed during %s', async (phase) => {
+    const reached = Promise.withResolvers<undefined>()
+    const proceed = Promise.withResolvers<undefined>()
+    const pause = async () => { reached.resolve(undefined); await proceed.promise }
+    const guard = { handoff: vi.fn(async () => { if (phase === 'handoff') await pause() }),
+      cancel: vi.fn(async () => {}), release: vi.fn(async () => {}) }
+    const f = fixture(async () => { if (phase === 'acquire') await pause(); return guard })
+    if (phase === 'confirmation') f.beforeRestart.mockImplementation(async () => { await pause(); return true })
+    await f.coordinator.check()
+    await f.coordinator.download('1.1.0-rc.2')
+    const installing = f.coordinator.install('1.1.0-rc.2')
+    await reached.promise
+    const disposal = f.coordinator.dispose()
+    const published = f.states.length
+    proceed.resolve(undefined)
+    await Promise.all([installing, disposal])
+    expect(f.quitAndInstall).not.toHaveBeenCalled()
+    expect(guard.cancel).toHaveBeenCalledOnce()
+    expect(guard.release).not.toHaveBeenCalled()
+    expect(f.states).toHaveLength(published)
+  })
+
   it('retains its downloaded package without stopping the Host when CLI admission defers installation', async () => {
     const prepare = vi.fn(async () => undefined)
     const f = fixture(prepare)

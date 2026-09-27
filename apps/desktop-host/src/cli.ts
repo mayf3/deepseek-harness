@@ -18,6 +18,7 @@ export interface CliOfficeResources {
 /**
  * Supply physical Office paths without changing profile rows or explicit configuration.
  * The registration belongs to the root context and applies again during plugin reloads.
+ * Defaults apply to the bundled Office plugin; separately installed copies supply their own physical resource paths.
  * @param ctx - Prepared launcher context, before profile plugins mount.
  * @param resources - Installed standalone Node, LibreOffice CLI, and skill assets.
  */

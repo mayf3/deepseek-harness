@@ -20,7 +20,7 @@ Each command holds a shared operating-system lock on the installation's lease fi
 
 Before the GUI hands off to its native updater, the controller atomically records the generation being replaced in a sibling file outside the application. That record survives GUI and controller exit and blocks only the old generation. A complete replacement carries a new generation and lease inode; no second runtime is retained. Cancellation removes only the matching transaction. An installation failure after the GUI exits requires reopening Desktop and completing the update before the old generation's CLI can run again.
 
-The update coordinator accepts this controller as an optional installation dependency. The controller commits its handoff before the native installer starts and cancels it after declined or failed preparation. Installation identity is independent of DSH_HOME.
+The update coordinator accepts this controller as an optional installation dependency. The controller commits its handoff before the native installer starts and cancels it after declined or failed preparation. Installation identity is independent of DSH_HOME. Admission verifies that the retained lease still belongs to the current installation. Disposal waits for in-flight CLI admission, cancels an unstarted installer handoff, and prevents a late callback from starting the installer.
 
 ## Alternatives considered
 

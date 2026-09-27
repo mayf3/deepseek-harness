@@ -1,7 +1,7 @@
 /** Real native command/installer exclusion with isolated application directories. */
 
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -14,6 +14,10 @@ beforeAll(() => {
   prepared = mkdtempSync(join(tmpdir(), 'dsh-cli-compiled-'))
   prepareDesktopCli(prepared, { platform: process.platform, arch: process.platform === 'win32' ? 'x64' : process.arch,
     ...process.platform === 'darwin' ? { macosMinimumVersion: '13.0' } : {} })
+  if (process.platform !== 'win32') {
+    execFileSync(process.platform === 'darwin' ? 'clang++' : 'c++', ['-std=c++17',
+      join(import.meta.dirname, 'cli-lease-probe.cpp'), '-o', join(prepared, 'lease-probe')])
+  }
 })
 afterAll(() => { if (prepared !== undefined) rmSync(prepared, { recursive: true, force: true }) })
 
@@ -64,8 +68,8 @@ function fixture() {
   })
   const command = join(cli, 'bin', process.platform === 'win32' ? 'dsh.exe' : 'dsh')
   const control = join(cli, process.platform === 'win32' ? 'cli-control.exe' : 'cli-control')
-  function start(args: string[]) {
-    const child = spawn(command, args, {
+  function start(args: string[], executable = command) {
+    const child = spawn(executable, args, {
       cwd: root, env: { ...process.env, DSH_CLI_TEST_VALUE: 'kept' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -125,6 +129,20 @@ it('allows concurrent commands and refuses an update until all commands exit', a
   await second.closed
   const guard = await DesktopCliUpdateGuard.acquire(f.control, '1.2.3')
   await guard.cancel()
+})
+
+it.skipIf(process.platform === 'win32')('rejects a lease acquired from an installation that was replaced before admission', async () => {
+  // The Windows installer qualification compiles this probe with the native MSVC toolchain.
+  const f = fixture()
+  const path = join(f.cli, 'lease')
+  const probe = f.start([path], join(prepared, 'lease-probe'))
+  await ready(probe)
+  renameSync(path, path + '.old')
+  writeFileSync(path, '')
+  probe.child.stdin.end('continue\n')
+  expect((await probe.closed).code, probe.stderr()).toBe(75)
+  const current = await DesktopCliUpdateGuard.acquire(f.control, '1.2.3')
+  await current.cancel()
 })
 
 it('excludes new starts during preparation and admits them after cancellation', async () => {

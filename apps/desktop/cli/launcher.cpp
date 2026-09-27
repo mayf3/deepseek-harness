@@ -187,6 +187,24 @@ public:
   }
   Lease(const Lease&) = delete;
   Lease& operator=(const Lease&) = delete;
+  bool correspondsTo(const fs::path& path) const {
+#ifdef _WIN32
+    HANDLE current = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+      nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (current == INVALID_HANDLE_VALUE) return false;
+    BY_HANDLE_FILE_INFORMATION heldInfo{}, currentInfo{};
+    const bool matches = GetFileInformationByHandle(handle, &heldInfo) && GetFileInformationByHandle(current, &currentInfo)
+      && !(currentInfo.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))
+      && heldInfo.dwVolumeSerialNumber == currentInfo.dwVolumeSerialNumber
+      && heldInfo.nFileIndexHigh == currentInfo.nFileIndexHigh && heldInfo.nFileIndexLow == currentInfo.nFileIndexLow;
+    CloseHandle(current);
+    return matches;
+#else
+    struct stat heldInfo{}, currentInfo{};
+    return fstat(handle, &heldInfo) == 0 && lstat(path.c_str(), &currentInfo) == 0
+      && S_ISREG(currentInfo.st_mode) && heldInfo.st_dev == currentInfo.st_dev && heldInfo.st_ino == currentInfo.st_ino;
+#endif
+  }
   ~Lease() {
 #ifdef _WIN32
     if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle);
@@ -198,7 +216,7 @@ public:
 
 #ifdef DSH_CLI_CONTROL
 void publishHandoff(const Installation& installation, const Handoff& record) {
-  // Reject foreign or malformed entries before replacing the last handoff.
+  // Reject non-file or malformed entries before replacing the last handoff.
   readHandoff(installation);
   std::random_device random;
   const auto temporary = fs::path(installation.marker.native() + fs::path("." + std::to_string(random()) + ".tmp").native());
@@ -237,6 +255,7 @@ int control(const std::vector<std::string>& arguments) {
   if (arguments.size() < 2 || !identifier(arguments[1])) throw std::runtime_error("Invalid CLI control request.");
   const Installation installation;
   const Lease lease(installation.cli / "lease", true);
+  if (!lease.correspondsTo(installation.cli / "lease")) throw Busy();
   if (arguments[0] == "cancel" && arguments.size() == 2) {
     cancelHandoff(installation, arguments[1]);
     return 0;
@@ -319,6 +338,7 @@ int launch(int count, wchar_t** arguments) {
   const Lease lease(installation.cli / "lease", false);
   const auto pending = readHandoff(installation);
   if (pending && pending->generation == generation(installation)) throw Busy();
+  if (!lease.correspondsTo(installation.cli / "lease")) throw Busy();
   std::vector<std::wstring> child{
     installation.electron.native(), L"--expose-internals",
     (installation.resources / "app.asar" / "dsh" / "node_modules" / "@deepseek-ai" / "dsh-desktop-host" / "lib" / "cli.js").native(),
@@ -358,8 +378,8 @@ int launch(int count, wchar_t** arguments) {
   const bool completed = waited == WAIT_OBJECT_0 && GetExitCodeProcess(process.hProcess, &code);
   CloseHandle(process.hProcess);
   if (!completed) throw std::runtime_error("Cannot read the CLI exit status.");
-  // A killed wrapper also closes the job. Normal completion additionally
-  // waits until runtime-using descendants have exited before releasing the lease.
+  // A killed wrapper also closes the job. Normal completion terminates remaining
+  // descendants and waits for their exit before releasing the lease.
   if (!TerminateJobObject(job.value, code)) throw std::runtime_error("Cannot stop the CLI process tree.");
   DWORD message = 0;
   ULONG_PTR key = 0;
@@ -377,6 +397,7 @@ int launch(int count, char** arguments) {
   const Lease lease(installation.cli / "lease", false);
   const auto pending = readHandoff(installation);
   if (pending && pending->generation == generation(installation)) throw Busy();
+  if (!lease.correspondsTo(installation.cli / "lease")) throw Busy();
   std::vector<std::string> child{
     installation.electron.string(), "--expose-internals",
     (installation.resources / "app.asar" / "dsh" / "node_modules" / "@deepseek-ai" / "dsh-desktop-host" / "lib" / "cli.js").string(),
