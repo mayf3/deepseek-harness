@@ -74,6 +74,11 @@ describe('web e2e: blank New Session folding quota', () => {
     expect(await sidebar.getByText('Untitled', { exact: true }).count()).toBe(5)
     const showMore = sidebar.getByRole('button', { name: 'Show 11 more sessions' })
     await showMore.waitFor({ timeout: 15_000 })
+    // The sidebar golden records its workspace row hovered, whose trailing
+    // cell shows the row actions in place of the blank row's own time. The
+    // click that opened this New Session leaves the pointer wherever the
+    // workspace adoption put it, so the state is set instead of inherited.
+    await sidebar.getByRole('treeitem').first().hover()
     await compareOrRefreshGolden(
       SIDEBAR_EXPECTED,
       await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd),
@@ -83,6 +88,12 @@ describe('web e2e: blank New Session folding quota', () => {
     await showMore.click()
     await expect.poll(() => sidebar.getByRole('treeitem').count(), { timeout: 10_000 }).toBe(12)
     expect(await sidebar.getByText('Untitled', { exact: true }).count()).toBe(10)
+    // `first-batch.expected.md` records the last established row of the batch
+    // hovered: under `:hover` its trailing cell swaps the relative time for
+    // the row actions. The click below reflows the list beneath a stationary
+    // pointer, so the row that ends up there follows the layout, not the
+    // scenario; hover the row the golden records instead.
+    await sidebar.getByRole('treeitem').nth(7).hover()
     await compareOrRefreshGolden(
       join(EXPECTED_DIR, 'first-batch.expected.md'),
       await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd),
