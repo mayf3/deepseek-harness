@@ -279,8 +279,10 @@ describe.skipIf(MODE === 'record')('web e2e: pending plan review across Sidebar 
 
   async function showSessions(): Promise<void> {
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    await page.locator('[role="treeitem"]').first().waitFor({ timeout: 15_000 })
-    if (await row(planned).count() === 0) await page.locator('[data-row-key^="workspace:"]').first().click()
+    // Expand the Workspace group by its state, not by whether its rows have rendered yet.
+    const group = page.locator('[data-row-key^="workspace:"]').first()
+    await group.waitFor({ timeout: 15_000 })
+    if (await group.getAttribute('aria-expanded') !== 'true') await group.click()
     await row(planned).waitFor({ timeout: 15_000 })
   }
 
@@ -359,9 +361,9 @@ describe.skipIf(MODE === 'record')('web e2e: pending plan review across Sidebar 
 
   it('opens a review that arrives while another Session is on screen', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plan-review-session-return'))
-    // Returning swaps the Sidebar seats in the commit that mounts the review:
-    // the departing seat releases before the review's effect, the arriving
-    // seat binds after it.
+    // Returning mounts the review in the commit that brings its Session back on
+    // screen and swaps the Sidebar seats; the review's automatic open runs
+    // before either seat's effects.
     await whileReviewing(planned, '# Session review\n\nSubmitted while another Session was on screen.', async () => {
       await row(planned).click()
       await expectOpened('Submitted while another Session was on screen.')

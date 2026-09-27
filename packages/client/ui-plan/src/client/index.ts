@@ -98,14 +98,10 @@ export function apply(ctx: ClientContext): void {
     name: 'conversation.plan-review.actions', id: previewId, locale: NS, store: reviewStore,
     inject: (sessionId: SessionId): PlanReviewOpenInjected => ({
       openReview: (review, requestKey) => {
-        // Read at call time, not from a render: between a departing seat's
-        // release and the arriving seat's bind no seat can take the open.
-        if (ctx.sidebarRight.mounted.getSnapshot() === undefined) return false
-        if (review.callId !== undefined) { open(sessionId).openPlan(review.callId); return true }
+        if (review.callId !== undefined) { open(sessionId).openPlan(review.callId); return }
         ctx.sidebarRight.openResource(reviewPreviewAddress(sessionId, `${reviewWindow}:${requestKey}`), {
           params: { planReview: { markdown: review.plan, title: extractMarkdownPlainText(review.plan, { mode: 'first-line' }) } },
         })
-        return true
       },
       hooks: { sidebarMounted: ctx.sidebarRight.mounted },
     }),

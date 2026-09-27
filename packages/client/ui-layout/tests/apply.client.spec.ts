@@ -95,6 +95,24 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('shell.leading')).toEqual({ kind: 'single', scope: 'root' })
   })
 
+  it('publishes the frame\'s measured viewport width from the root store', async () => {
+    const { ctx, slots } = await bench()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const instance = (slots.entries('root')[0]!.store as ReturnType<typeof createLayoutStore>).create()
+    const layout = ctx.get('layout') as LayoutController
+    const seen: number[] = []
+    const unsubscribe = layout.viewportWidth.subscribe(() => { seen.push(layout.viewportWidth.getSnapshot()) })
+    try {
+      instance.actions.setViewportWidth(700)
+      expect(layout.viewportWidth.getSnapshot()).toBe(700)
+      expect(seen).toContain(700)
+    } finally {
+      unsubscribe()
+      await fiber.dispose()
+    }
+  })
+
   it('shares a pre-created instance between service actions, root rendering, and panelInfo', async () => {
     const { ctx, slots, rendererHost } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })

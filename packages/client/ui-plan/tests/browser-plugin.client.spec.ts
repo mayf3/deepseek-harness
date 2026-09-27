@@ -109,15 +109,14 @@ describe('ui-plan browser apply', () => {
     const tabs = new SidebarRightTabRegistry(b.ctx)
     b.registerType.mockImplementation(definition => tabs.register(definition))
     const store = createSidebarRightStore(() => ({ kind: 'guide', title: 'Guide' })).create()
-    const { controller, adopt } = createSidebarRightController(tabs, vi.fn())
+    const { controller, adopt, show } = createSidebarRightController(tabs, vi.fn(), {
+      autoFullscreen: () => false,
+      openWithFocus: (_sessionId, open) => { open() },
+      closeWithFocus: (_sessionId, _paneId, close) => { close() },
+    })
     const release = adopt(parent, store)
     store.actions.open(parent)
-    const unbind = controller.bind({
-      sessionId: parent, actions: store.actions, surfaces: store.getSnapshot().bySession, canSplitPane: () => true,
-      closeWithFocus: (_paneId, close) => { close() },
-      openWithFocus: (open) => { open() },
-    })
-    b.mounted.set(parent)
+    show(parent)
     b.openResource.mockImplementation(controller.openResource.bind(controller))
     b.openResourceIn.mockImplementation(controller.openResourceIn.bind(controller))
     b.subagentAddress.mockReturnValue({ parentSessionId: parent, childSessionId: child, mode: 'continuable' })
@@ -133,12 +132,12 @@ describe('ui-plan browser apply', () => {
       expect(store.getSnapshot().bySession[child]).toBeUndefined()
       const review = b.slots.entries('conversation.plan-review.actions')[0]!
       const reviewOpener = (review.inject as unknown as (sessionId: SessionId) => PlanReviewOpenInjected)(child)
-      expect(reviewOpener.openReview({ id: 'pending', question: 'Approve?', plan: '# Temporary child plan', approve: { label: 'Approve' } }, 'child-question')).toBe(true)
+      reviewOpener.openReview({ id: 'pending', question: 'Approve?', plan: '# Temporary child plan', approve: { label: 'Approve' } }, 'child-question')
       expect(resources().some(address => address.startsWith('dsh-resource://plan-review/embedded-child/'))).toBe(true)
       expect(store.getSnapshot().bySession[child]).toBeUndefined()
     } finally {
       await fiber.dispose()
-      unbind()
+      show(undefined)
       release()
       controller.tabDomain.dispose()
     }
@@ -221,15 +220,10 @@ describe('ui-plan browser apply', () => {
       const review = b.slots.entries('conversation.plan-review.actions')[0]!
       expect(review.component).toBe(PlanReviewOpen)
       const reviewInjected = (review.inject as unknown as (sessionId: SessionId) => PlanReviewOpenInjected)(SID)
-      // The automatic open reads the service's mounted-seat source, not a copy.
+      // The automatic open reads the service's on-screen Session source, not a copy.
       expect(reviewInjected.hooks.sidebarMounted).toBe(b.mounted)
       const pending = { id: 'review', question: 'Approve?', plan: plan.markdown, callId: plan.callId, approve: { label: 'Approve' } }
-      // A seat that released and has not rebound leaves nothing to open into.
-      expect(reviewInjected.openReview(pending, 'question:1')).toBe(false)
-      expect(b.openResource).toHaveBeenCalledOnce()
-      b.mounted.set(SID)
-      expect(reviewInjected.openReview(pending, 'question:1')).toBe(true)
-      expect(b.openResource).toHaveBeenCalledTimes(2)
+      reviewInjected.openReview(pending, 'question:1')
       expect(b.openResource).toHaveBeenLastCalledWith(address)
       b.subagentAddress.mockReturnValue({ parentSessionId: 'parent' as SessionId, childSessionId: SID, mode: 'continuable' })
       injected.openPlan(plan.callId)

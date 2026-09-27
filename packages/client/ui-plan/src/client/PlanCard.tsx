@@ -27,13 +27,10 @@ export interface PlanCardsInjected extends PlanOpenInjected {
 
 /** Session-bound preview navigation for one pending review. */
 export interface PlanReviewOpenInjected {
-  /**
-   * Open the logged plan, or the request's temporary document when no invocation exists.
-   * @returns whether a mounted Sidebar seat received the open; with none mounted nothing opens.
-   */
-  openReview: (review: PropsRuntime<'conversation.plan-review.actions'>['review'], requestKey: string) => boolean
+  /** Open the logged plan, or the request's temporary document when no invocation exists. */
+  openReview: (review: PropsRuntime<'conversation.plan-review.actions'>['review'], requestKey: string) => void
   readonly hooks: {
-    /** The session whose right Sidebar seat is mounted; `undefined` while none is on screen. */
+    /** The Session on screen, whose right Sidebar the opens land in; `undefined` while none is. */
     readonly sidebarMounted: HostObservable<SessionId | undefined>
   }
 }
@@ -65,22 +62,21 @@ export function PlanCards({ turn, usePlans, openPlan, t }: PropsRuntime<'convers
 /**
  * Open each pending plan automatically and retain a manual opener without answering it.
  *
- * The automatic open waits for a mounted Sidebar seat and tries again whenever
- * the mounted session changes. A review can mount in the same commit as the
- * seat, ahead of it, and a Session switch releases the departing seat before
- * the review's effect runs while the arriving seat binds after it; an open in
- * that gap reaches no seat, so the review counts as opened only once an open
- * does.
+ * The automatic open waits for a Session on screen. `ctx.sidebarRight` names
+ * the Session before the commit that brings its Conversation back renders, so
+ * a review that arrived while the Conversation was off screen opens from the
+ * effect of the commit that mounts it.
  * @param props - Review identity, Session store, localized copy, and navigation.
  * @returns an opener for either logged or temporary plan text.
  */
 export function PlanReviewOpen({ review, requestKey, openReview, useSidebarMounted, t, useStore, actions }: PropsRuntime<'conversation.plan-review.actions'> & InjectFace<PlanReviewOpenInjected> & PropsLocale<'plan'> & PropsStore<ReturnType<typeof createPlanReviewStore>>) {
   const identity = review.callId === undefined ? `review:${requestKey}` : `call:${review.callId}`
   const opened = useStore(state => state.opened[identity] === true)
-  const mounted = useSidebarMounted(session => session)
+  const mounted = useSidebarMounted(session => session !== undefined)
   useEffect(() => {
-    if (opened || mounted === undefined) return
-    if (openReview(review, requestKey)) actions.markOpened(identity)
+    if (opened || !mounted) return
+    openReview(review, requestKey)
+    actions.markOpened(identity)
   }, [identity, opened, mounted, openReview, review, requestKey, actions])
   return <button type="button" className={css.reviewLink} title={t('preview.open')} aria-label={t('preview.open')}
     onClick={() => { openReview(review, requestKey) }}>{t('preview.full')}<IconChevronRightOutlineRegular size={14} /></button>
