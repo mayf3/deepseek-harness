@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-[`scripts/oxlint-contract.spec.ts`](../../../../scripts/oxlint-contract.spec.ts) 的 14 个用例中有 12 个会启动真实子进程：`runOxlint` 启动 oxlint CLI，`runRepositoryOxlint` 在 tsx 下引导 [`scripts/run-oxlint.ts`](../../../../scripts/run-oxlint.ts)，后者运行 oxlint，并在 `--fix` 之后再运行一次。根 `vitest.config.ts` 没有设置 `testTimeout`，因此没有自带预算的用例继承 Vitest 的 5000 ms 默认值；只有 coverage 通道通过 `DSH_COVERAGE_TEST_TIMEOUT_MS=90000` 抬高它，而 `sandbox.yml` 中的 `unit tests (darwin parity, macos-latest)` job 直接运行 `pnpm run test`。自 #3115 把有争抢的 Windows spawn 预算对齐到该值起，9 个用例携带显式的 `90_000`；5 个用例跑在默认值上。两类 runner 暴露了这一点：自托管 Windows 池，其进程创建会出现数秒尖峰（#2581）；以及 Sandbox run 36332053320 的托管 macos-latest runner，它跑整个文件比通过的 run 36320394290 慢 2.2 倍，并让 `prints only the final diagnostics when a fix retry still fails` 在 6309 ms 时超时，而该用例在通过的 run 中耗时 1122 ms。`Test timed out in 5000ms` 既不指出契约违规，也不指出超时的那次 spawn。
+[`scripts/oxlint-contract.spec.ts`](../../../../scripts/oxlint-contract.spec.ts) 的 14 个用例中有 12 个会启动真实子进程：`runOxlint` 启动 oxlint CLI，`runRepositoryOxlint` 在 tsx 下引导 [`scripts/run-oxlint.ts`](../../../../scripts/run-oxlint.ts)，后者运行 oxlint，并在 `--fix` 之后再运行一次。根 `vitest.config.ts` 没有设置 `testTimeout`，因此没有自带预算的用例继承 Vitest 的 5000 ms 默认值；coverage 通道通过 `DSH_COVERAGE_TEST_TIMEOUT_MS=90000` 抬高它，Windows 原生通道传入 `--testTimeout 90000`，而 `sandbox.yml` 中的 `unit tests (darwin parity, macos-latest)` job 与开发者本机的 `pnpm run test` 都直接运行。7 个用例（5 个 `it` 声明，其中一个是三路 `it.each`）携带 #3115 把有争抢的 Windows spawn 预算对齐到的显式 `90_000`；另外 7 个跑在默认值上，其中 5 个会 spawn。两类 runner 暴露了这一点：自托管 Windows 池，其进程创建会出现数秒尖峰（#2581）；以及 Sandbox run 36332053320 的托管 macos-latest runner，它跑整个文件比通过的 run 36320394290 慢 2.2 倍，并让 `prints only the final diagnostics when a fix retry still fails` 在 6309 ms 时超时，而该用例在通过的 run 中耗时 1122 ms。`Test timed out in 5000ms` 既不指出契约违规，也不指出超时的那次 spawn。
 
 ## 决策
 
@@ -14,7 +14,9 @@ Status: implemented
 
 ## 曾考虑的替代方案
 
-**`describe` 级 `{ timeout: 90_000 }`。** 拒绝：`describe` 级取值覆盖通道的 `--testTimeout` 而不是让位于它（#2677），而且文件会同时带两种预算风格，已有边界的 9 个用例是用例级，其余是套件级。用例级取值保持一种风格，每个用例的上限只在一处可读。
+**`describe` 级 `{ timeout: 90_000 }`。** 拒绝：用例级取值已经约束 7 个用例并且优先于 `describe` 级取值，因此套件级数字只会作用于其余 7 个用例，包括两个不 spawn 的纯配置用例，而且文件会同时带两种预算风格。用例级取值保持一种风格，每个用例的上限只在一处可读，不 spawn 的用例保持默认值。两种形式都覆盖通道的 `--testTimeout` 而不是让位于它（#2677）。已归档的 [translation-pairing-merge](../../archived/testing/2026-08-27-translation-pairing-merge-budget.md) 与 [Lefthook 预算](../../archived/testing/2026-08-29-windows-lane-hook-and-lefthook-budget.md)两篇 Note 为用例本身不带常量的文件选择了 `describe` 形式，理由是之后新增而未带余量的用例会继承默认值；本文件已经带有用例级常量，因此这里接受该风险并在「后果」中点名。
+
+**给 darwin parity job 传入 `--testTimeout 90000`，让用例继承通道预算**，这是[子代理清理预算](2026-09-07-subagent-teardown-test-budgets.zh.md)一篇对进程创建受限套件偏好的形式。拒绝：成本来自本文件自身的 tsx 引导加两次 oxlint 运行，不是 darwin 的属性，因此开发者直接运行的 `pnpm run test` 仍会停留在默认值；parity job 的存在意义就是运行与开发者相同的命令；而且 7 个用例已带常量，通道旗标会把本文件的预算拆到两个来源。
 
 **抬高 Vitest 全局 `testTimeout`。** 拒绝：整个单元测试清单都跑在默认值上；为吸收一个文件的进程 spawn 而放宽它，会移除默认值在其他所有地方提供的挂起检测。
 
@@ -22,4 +24,4 @@ Status: implemented
 
 ## 后果
 
-契约违规仍通过其自身断言在上限之内早早失败；空载宿主机上每个用例的断言在 0.5–1.8 s 内结算，因此只有真正的挂起才会等满 90 s。Windows 自托管通道、Linux coverage 通道与 darwin parity job 对本文件读到同一个上限，与 `DSH_COVERAGE_TEST_TIMEOUT_MS` 无关。在 12 核宿主机上以 72 个忙循环进程加载时，原本无边界的 fix-retry 用例在改动前于 7084 ms 复现 `Test timed out in 5000ms`，改动后在上限内通过。
+契约违规仍通过其自身断言在上限之内早早失败；本次加边界的 5 个用例在空载宿主机上 0.5–1.7 s 内结算，文件中任何会 spawn 的用例在那里都不超过 3.8 s，因此只有真正的挂起才会等满 90 s。Windows 自托管通道、Linux coverage 通道、darwin parity job 与本机 `pnpm run test` 对本文件读到同一个上限，与 `DSH_COVERAGE_TEST_TIMEOUT_MS` 无关。之后新增而未自带 `90_000` 的 spawn 用例会跑在默认值上，直到有人核对本文件的清单。在 12 核宿主机上以 72 个忙循环进程加载时，原本无边界的 fix-retry 用例在改动前于 7084 ms 复现 `Test timed out in 5000ms`，改动后在上限内通过。
