@@ -1233,18 +1233,28 @@ describe('PluginManagerController', () => {
     expect(state()).toBe(before)
   })
 
-  it('drops a manual refresh that settles after disposal', async () => {
-    const gate = deferred<ReturnType<typeof ok<BundleInfo[]>>>()
-    const { plugins, face, state, controller } = bench()
-    await controller.load()
-    plugins.listBundles.mockReturnValueOnce(gate.promise)
-    face.refresh()
-    await vi.waitFor(() => { expect(state().refreshStatus).toBe('refreshing') })
-    controller.dispose()
-    const before = state()
-    gate.resolve(ok([{ ...BUNDLE, version: '9.9.9' }]))
-    await new Promise<void>((resolve) => { setTimeout(resolve, 10) })
-    expect(state()).toBe(before)
+  it.each([false, true])('drops refresh feedback when disposed during the spinner hold (failure: %s)', async (failure) => {
+    vi.useFakeTimers()
+    try {
+      const { plugins, face, state, controller } = bench()
+      await controller.load()
+      plugins.listBundles.mockResolvedValueOnce(failure ? refused('gateway/internal', 'offline') : ok([BUNDLE]))
+      face.refresh()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(state().refreshStatus).toBe('refreshing')
+      expect(vi.getTimerCount()).toBe(1)
+      const before = state()
+      const listener = vi.fn()
+      const unsubscribe = face.hooks.pluginManager.subscribe(listener)
+      onTestFinished(unsubscribe)
+      controller.dispose()
+      await vi.advanceTimersByTimeAsync(400)
+      expect(state()).toBe(before)
+      expect(listener).not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('settles a manual refresh whose read outlasts the spinner minimum without an extra hold', async () => {

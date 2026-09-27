@@ -312,6 +312,7 @@ describe('web e2e: plugin manager', () => {
             await recordRefresh(`${outcome}: pending`)
 
             release.resolve(undefined)
+            await probe.clock.runFor(400)
             await expect.poll(() => refresh.isEnabled()).toBe(true)
             expect(await refresh.getAttribute('aria-busy')).toBe('false')
             expect(await panel.getAttribute('aria-busy')).toBe('false')

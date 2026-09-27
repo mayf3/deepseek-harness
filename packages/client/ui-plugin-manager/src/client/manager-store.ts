@@ -744,13 +744,17 @@ export class PluginManagerController {
       // Hold the spinner to its minimum so a fast read does not flash it, then settle.
       const remaining = REFRESH_SPINNER_MIN_MS - (Date.now() - startedAt)
       if (remaining > 0) await new Promise<void>((resolve) => { setTimeout(resolve, remaining) })
-      if (!this.disposed) {
-        const failed = this.getSnapshot().status === 'error'
-        this.patch(failed && this.hasCachedInventory
-          ? { status: 'ready', refreshStatus: 'idle', notice: { kind: 'refresh-failed', seq: ++this.noticeSeq } }
-          : { refreshStatus: failed ? 'failed' : 'idle' })
-      }
+      this.settleRefresh()
     }
+  }
+
+  /** Publish refresh feedback only before disposal. */
+  private settleRefresh(): void {
+    if (this.disposed) return
+    const failed = this.getSnapshot().status === 'error'
+    this.patch(failed && this.hasCachedInventory
+      ? { status: 'ready', refreshStatus: 'idle', notice: { kind: 'refresh-failed', seq: ++this.noticeSeq } }
+      : { refreshStatus: failed ? 'failed' : 'idle' })
   }
 
   private async read(): Promise<void> {
