@@ -39,7 +39,7 @@ const snapshot = snapshotJsonValue(input) as JsonValue
 
 ### 读取流式参数
 
-`PartialArguments` 懒读取 JSON 对象的顶层字段。向新实例追加分片，`append()` 只报告已读取答案的变化。字符串读器提供解码文本、完成状态和 UTF-16 长度，并可为变化判定指定步长和已完成前缀的偏移量。非字符串值在完整后可用。`fromText()` 和 `fromObject()` 创建拒绝追加的封存视图；`closed()` 也包含停止扫描的非法输入。返回值区别见[读器定义](src/partial-json.ts)。
+`PartialArguments` 懒读取 JSON 对象的顶层字段。它只扫描尚未读取的片段，并保留原文供后续字段读取。向新实例追加分片，`append()` 只报告已读取答案的变化。字符串读器提供解码文本、完成状态和 UTF-16 长度，并可为变化判定指定步长和已完成前缀的偏移量。非字符串值在完整后可用。`fromText()` 和 `fromObject()` 创建拒绝追加的封存视图；`closed()` 也包含停止扫描的非法输入。返回值区别见[读器定义](src/partial-json.ts)。
 
 ### 发布、比较或保留键控值
 

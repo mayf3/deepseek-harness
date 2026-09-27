@@ -25,6 +25,8 @@ In these samples, reordering `required` changes argument order where reordering 
 
 `PartialArguments` is a lazily computed class that knows no tool. It holds the raw text (the accumulated deltas while preparing; the event's string after `tool/call`; the event's object for a PTC child) and a level-one index, and any reader (`has`, `complete`, `stringLength`, `text`, `value`, `keys`) resumes scanning from the last consumed position only when called; with no reader, not one character is scanned. Text is decoded on demand from the raw slice, so no specification of "which fields keep text" and no registry is needed.
 
+Scanning indexes only unread fragments. Indexing the cumulative source after every append would repeatedly flatten V8 concatenation strings even with a forward cursor; the cumulative source is retained for field slices, not for the scan loop.
+
 The view judges change itself: it remembers every question it answered, and `append(delta)` recomputes only those, returning true only when an answer differs; with nothing read yet it is always false. The business states its granularity as it reads: `stringLength('content', { step: 1024 })` makes only a kilobyte crossing count, `text('description')` makes every character count. An `offset` includes completed strings when edit progress combines old and new text.
 
 ### Parsing happens in the Tool Definition, not in React
@@ -51,12 +53,23 @@ Third-party tools receive the same view without registration or a separate subsc
 
 **Eagerly parse every field.** Large fields such as `content` usually need only a length; eagerly materializing their text adds decoding and memory costs before a consumer asks for it.
 
+**Slice the normalized field for a truncated detail.** A V8 substring can retain the entire field. Joining the bounded selection of grapheme clusters keeps the displayed prefix independent of that source.
+
 **Reorder `properties` only.** Measured 0/40 effective; the model follows the `required` order.
 
 ## Verification
 
 - Parser tests cover lazy scanning, observed-answer changes, empty and repeated keys, split escapes, non-string values, invalid input, sealed views, and read-independent structural equality.
-- Row and grouping tests cover streamed paths and descriptions, content length, shared row identity, and name fallback only when arguments cannot grow.
+- Row and grouping tests cover streamed paths and descriptions, content length, shared row identity, name fallback only when arguments cannot grow, and a 161-cluster traversal limit without changing whitespace or Unicode handling.
+
+The required [conversation-fold benchmark](../../../../benchmarks/conversation-fold/conversation-fold.bench.client.ts) drives the real Tool Definition, Assembler, and Chat groups with 16-character fragments, flushing every 64 fragments. Three fresh compiled Node workers report all samples and their median; setup and forced GC are outside timing, and retained heap is measured with the Assembler and argument view still reachable. On Linux x64, AMD EPYC 7763, Node 24.18.0:
+
+| Workload | Optimized samples (ms) | Reintroduced cumulative indexing and full segmentation (ms) | Time / retained-heap budget |
+|---|---|---|---|
+| 512 KiB write content | 295.3, 282.9, 277.7 | 4035.5, 4035.5, 3984.9 | 750 ms / 37.5 MiB |
+| 128 KiB command before description | 144.0, 141.9, 145.3 | 1494.9, 1486.0, 1471.2 | 375 ms / 10 MiB |
+
+Reference expectations are 300/150 ms and 30/8 MiB. The shared 2× CI time scale and 1.25× headroom apply to time; only headroom applies to heap. Both negative controls exceed their time budget. These are local Node measurements, not CI-runner, model, network, or browser-paint latency; whitespace normalization still scans the whole field.
 
 ## Consequences
 

@@ -311,4 +311,4 @@ The priority list is shared by every tool, not specialized per category. For exa
 | Any tool with `{"description":" ","command":42,"path":"src/app.ts"}` | `src/app.ts`; whitespace-only strings and numbers are skipped. |
 | No usable field yet | Empty while arguments can grow; otherwise the tool name. |
 
-All live detail collapses whitespace, trims its ends, and is limited to 160 grapheme clusters, including a final `…` when truncated. A closed group's published summary clears its live category and detail while retaining category counts.
+All live detail collapses whitespace, trims its ends, and is limited to 160 grapheme clusters, including a final `…` when truncated. Truncation reads at most 161 clusters; whitespace normalization still covers the full field. A closed group's published summary clears its live category and detail while retaining category counts.

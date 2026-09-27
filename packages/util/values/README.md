@@ -39,7 +39,7 @@ const snapshot = snapshotJsonValue(input) as JsonValue
 
 ### Read streamed arguments
 
-`PartialArguments` reads a JSON object's top-level fields lazily. Append fragments to a new instance; `append()` reports changes only to answers already read. String readers expose decoded text, completion, and UTF-16 length, with an optional step and completed-prefix offset for change detection. Non-string values become available when complete. `fromText()` and `fromObject()` create sealed views that reject appends; `closed()` also covers invalid input, where scanning stops. See [the readers](src/partial-json.ts) for return distinctions.
+`PartialArguments` reads a JSON object's top-level fields lazily. It scans only unread fragments and retains the source for later field reads. Append fragments to a new instance; `append()` reports changes only to answers already read. String readers expose decoded text, completion, and UTF-16 length, with an optional step and completed-prefix offset for change detection. Non-string values become available when complete. `fromText()` and `fromObject()` create sealed views that reject appends; `closed()` also covers invalid input, where scanning stops. See [the readers](src/partial-json.ts) for return distinctions.
 
 ### Publish, compare, or retain keyed values
 
