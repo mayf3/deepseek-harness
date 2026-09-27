@@ -28,4 +28,4 @@ Status: implemented
 
 ## Testing
 
-`packages/terminal/terminal-bash/tests/session.spec.ts` 用假定时器固定两个方向：设置 `promptTailGraceMs` 时，尾部晚于普通上界到达的标记保持挂起，随后按 `stdin_read` 结算；字段为零时，同样的投递按 `inferred_idle` 结算。`packages/terminal/terminal-bash/tests/config.spec.ts` 接受零并拒绝负数或小数。`packages/shell/tool-pwsh-persistent/tests/loader-composition.spec.ts` 承载原生 Windows 上的端到端证据：把每个 session 的提示符尾部扣留四秒时，该用例在默认零值下以 `expected 4 to be greater than or equal to 6` 失败，而在配置了该宽限后通过。
+`packages/terminal/terminal-bash/tests/session.spec.ts` 用假定时器固定两个方向：设置 `promptTailGraceMs` 时，尾部晚于普通上界到达的标记保持挂起，随后按 `stdin_read` 结算；字段为零时，同样的投递按 `inferred_idle` 结算。`packages/terminal/terminal-bash/tests/config.spec.ts` 接受零并拒绝负数或小数。`packages/shell/tool-pwsh-persistent/tests/loader-composition.spec.ts` 承载原生 Windows 上的端到端证据：把每个 session 的提示符尾部扣留四秒时，配置了该宽限后用例通过——九次结算、八次 `stdin_read` 加 `exit` 命令的 `session_exit`，耗时 33.4 秒与 37.5 秒；把该宽限改为零后同一停摆失败，其中两次 send 以 `inferred_idle` 结算，`promptSeen` 为 true、`promptTextSeen` 为 false、尾部为空且 `idleFor` 为 3312–3316 毫秒。
