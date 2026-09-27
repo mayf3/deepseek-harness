@@ -213,8 +213,9 @@ describe.skipIf(process.platform === 'win32')('macOS command entry ownership', (
     expect(await readlink(f.options.destination)).toBe('previous-command')
     expect((await readdir(f.root)).filter(name => name.startsWith('.dsh-command-backup-'))).toEqual([])
     barrier.beforeUnlink = undefined
-    const result = await removeFileCommand(f.options, (await inspectFileCommand(f.options)).fingerprint)
-    expect(result.preservedBackup).toBeUndefined()
+    const retried = await installFileCommand(f.options, (await inspectFileCommand(f.options)).fingerprint)
+    expect(retried.preservedBackup).toBeUndefined()
+    await removeFileCommand(f.options, retried.fingerprint)
     expect(await readlink(f.options.destination)).toBe('previous-command')
   })
 

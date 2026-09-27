@@ -218,8 +218,9 @@ export async function installFileCommand(options: FileCommandInstallation, expec
     }
     if (state.managed && moved !== undefined) await unlink(moved)
     const result = await inspectFileCommand(options)
-    return receipt?.backup !== undefined && !state.managed && moved !== undefined
-      ? { ...result, preservedBackup: join(dirname(options.destination), receipt.backup.name) } : result
+    const previousBackup = receipt?.backup === undefined ? undefined : join(dirname(options.destination), receipt.backup.name)
+    return previousBackup !== undefined && !state.managed && moved !== undefined && (await readEntry(previousBackup)).kind !== 'missing'
+      ? { ...result, preservedBackup: previousBackup } : result
   }, { waitMs: 5000 })
 }
 
