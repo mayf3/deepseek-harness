@@ -186,6 +186,17 @@ it('removes only the cancelled handoff and permits a retry', async () => {
   expect((await run.closed).code, run.stderr()).toBe(23)
 })
 
+it('cancels a committed handoff after its controller has been released', async () => {
+  const f = fixture()
+  const guard = await DesktopCliUpdateGuard.acquire(f.control, '1.2.3')
+  await guard.handoff()
+  await guard.release()
+  await guard.cancel()
+  const run = f.start([])
+  run.child.stdin.end()
+  expect((await run.closed).code, run.stderr()).toBe(23)
+})
+
 it.skipIf(process.platform === 'win32')('lets Node handle SIGINT before releasing its lease', async () => {
   // Windows Ctrl-C requires a real console; its installed-console smoke owns that case.
   const f = fixture()

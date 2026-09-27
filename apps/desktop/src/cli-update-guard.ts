@@ -121,11 +121,12 @@ export class DesktopCliUpdateGuard implements DesktopInstallationGuard {
   }
 
   private async doCancel(): Promise<void> {
-    this.child.stdin.end('CANCEL\n')
+    const sentCancellation = !this.child.stdin.writableEnded && !this.child.stdin.destroyed
+    if (sentCancellation) this.child.stdin.end('CANCEL\n')
     const timer = setTimeout(() => { this.child.kill() }, CONTROL_TIMEOUT_MS)
     let code: number | null
     try { code = await this.exited } finally { clearTimeout(timer) }
-    if (code === 0 || !this.handoffStarted) return
+    if ((code === 0 && sentCancellation) || !this.handoffStarted) return
     // A lost acknowledgement can follow a committed handoff. A new controller
     // removes only this token, after acquiring the same installation lease.
     await promisify(execFile)(this.executable, ['cancel', this.token], {
