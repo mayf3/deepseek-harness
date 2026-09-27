@@ -56,7 +56,7 @@ function fixture() {
     await Promise.all(exits)
     await rm(root, { recursive: true, force: true, maxRetries:10, retryDelay:100 })
   })
-  const command = join(cli, process.platform === 'win32' ? 'dsh.exe' : 'dsh')
+  const command = join(cli, 'bin', process.platform === 'win32' ? 'dsh.exe' : 'dsh')
   const control = join(cli, process.platform === 'win32' ? 'cli-control.exe' : 'cli-control')
   function start(args: string[]) {
     const child = spawn(command, args, {

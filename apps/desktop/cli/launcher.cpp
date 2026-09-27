@@ -57,6 +57,7 @@ struct Installation {
 
   Installation() {
     cli = executablePath().parent_path();
+    if (cli.filename() == "bin") cli = cli.parent_path();
     resources = cli.parent_path().parent_path();
 #ifdef __APPLE__
     application = resources.parent_path().parent_path();

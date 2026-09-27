@@ -18,6 +18,7 @@ export interface DesktopCliTarget {
  */
 export function prepareDesktopCli(destination: string, target: DesktopCliTarget): void {
   mkdirSync(destination, { recursive: true })
+  mkdirSync(join(destination, 'bin'), { recursive: true })
   if (target.platform === 'win32') {
     if (process.platform !== 'win32' || target.arch !== 'x64') throw new Error('desktop CLI: Windows preparation requires an x64 Windows target')
     execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
@@ -29,7 +30,7 @@ export function prepareDesktopCli(destination: string, target: DesktopCliTarget)
     for (const [name, definitions] of [['dsh', []], ['cli-control', ['-DDSH_CLI_CONTROL=1']]] as const) {
       execFileSync(compiler, ['-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
         ...target.platform === 'darwin' ? ['-arch', target.arch === 'arm64' ? 'arm64' : 'x86_64'] : [],
-        ...definitions, source, '-o', join(destination, name)], { stdio: 'inherit' })
+        ...definitions, source, '-o', join(destination, ...name === 'dsh' ? ['bin', name] : [name])], { stdio: 'inherit' })
     }
   }
   // The release replaces this inode and identifier together with the complete
