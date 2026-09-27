@@ -584,7 +584,13 @@ export class LocalPtySession implements TerminalBackendSession {
       // on waiting for shell ownership instead of letting a child marker suppress
       // readiness until the absolute timeout.
       const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
-      if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace) {
+      // A seen marker whose printable tail has not arrived is the prompt function's own
+      // evidence that the shell reached its prompt: the tail is written by the same render,
+      // so its absence within the bound is a delivery delay rather than an absent prompt.
+      // The configured tolerance keeps the send on the exact path instead of charging it the
+      // silence tier; zero restores the plain `idleSilenceMs + handoffGraceMs` bound.
+      const tailGrace = this.promptSeen && !this.promptTextSeen ? this.config.promptTailGraceMs : 0
+      if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace + tailGrace) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {

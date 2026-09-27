@@ -6,7 +6,7 @@ function config(overrides: Partial<Config> = {}): Config {
   return {
     backendType: 'shell', shellDialect: 'bash', shellPath: '/bin/bash', shellArgs: [], rows: 40, cols: 160,
     scrollbackLines: 100, scrollbackMaxBytes: 1024, maxReadBytes: 512,
-    pollIntervalMs: 10, exactProbeAfterMs: 20, idleSilenceMs: 100, handoffGraceMs: 50, timeoutMs: 1000,
+    pollIntervalMs: 10, exactProbeAfterMs: 20, idleSilenceMs: 100, handoffGraceMs: 50, promptTailGraceMs: 0, timeoutMs: 1000,
     disposeGraceMs: 100,
     ...overrides,
   }
@@ -28,6 +28,13 @@ describe('terminal-bash config', () => {
   it('rejects a handoff grace shorter than one readiness poll', () => {
     expect(() => { validateConfig(config({ handoffGraceMs: 9, pollIntervalMs: 10 })) }).toThrow('handoffGraceMs must be at least pollIntervalMs')
     expect(() => { validateConfig(config({ handoffGraceMs: 10, pollIntervalMs: 10 })) }).not.toThrow()
+  })
+
+  it('accepts the prompt tail grace at zero and rejects negative or fractional values', () => {
+    expect(() => { validateConfig(config({ promptTailGraceMs: 0 })) }).not.toThrow()
+    expect(() => { validateConfig(config({ promptTailGraceMs: 2_000 })) }).not.toThrow()
+    expect(() => { validateConfig(config({ promptTailGraceMs: -1 })) }).toThrow('promptTailGraceMs must be a non-negative safe integer')
+    expect(() => { validateConfig(config({ promptTailGraceMs: 1.5 })) }).toThrow('promptTailGraceMs must be a non-negative safe integer')
   })
 
 })
