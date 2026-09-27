@@ -1,5 +1,6 @@
-- heading "插件" [level=1]
-- paragraph: 添加和管理插件
+- heading "插件管理" [level=1]
+- text: 安装、启用和配置插件
+- button "内置插件在哪里"
 - button "刷新" [disabled]
 - button "添加插件" [disabled]
 - status "正在读取插件…"

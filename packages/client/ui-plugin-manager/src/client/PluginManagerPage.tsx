@@ -13,10 +13,10 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { PluginInstallFailureKind, Registry } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  Button, IconCheckCircleFillRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineMedium,
+  Button, HoverCard, IconCheckCircleFillRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineMedium,
   IconChevronRightOutlineRegular, IconCloseOutlineMedium,
-  IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
-  IconWarningOutlineRegular, Input, Modal, pointerModality,
+  IconInfoOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
+  IconWarningOutlineRegular, Input, MenuSurface, Modal, pointerModality,
   PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTerminal,
   StateDot, Switch, Tag, TerminalBlock, Toast, Tooltip, useAnchoredPosition, useDismissOnOutsidePointer,
   type IconProps, type StateDotState, type TerminalBlockLabels,
@@ -49,6 +49,42 @@ export type PluginManagerPageProps =
 /** The page's slot renderer, narrowed to the configuration slots. */
 type RenderConfig = PluginManagerPageProps['renderSlot']
 type ResolveText = PluginManagerFace['resolveText']
+
+/** Explain where the built-in inventory lives without leaving the management page. */
+function PluginInventoryInfo({ t }: { readonly t: Translate }): ReactNode {
+  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  const id = useId()
+  const position = useAnchoredPosition({ open, anchorRef: trigger, panelRef: panel, gap: 8, margin: 12 })
+  const ready = open && position !== null
+  useDismissOnOutsidePointer(trigger, open, setOpen, panel)
+  useEffect(() => {
+    if (ready) panel.current?.focus()
+  }, [ready])
+  const content = <p className={css.infoContent}>{t('infoDescription')}</p>
+  return <>
+    <HoverCard inline disabled={open} openDelayMs={300} content={content} anchor={(
+      <Button ref={trigger} variant="ghost" size="sm" className={css.infoButton}
+        aria-label={t('infoLabel')} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
+        onClick={() => { setOpen(value => !value) }}>
+        <IconInfoOutlineRegular size={10} aria-hidden="true" />
+      </Button>
+    )} />
+    {open && createPortal(
+      <MenuSurface ref={panel} id={id} role="dialog" aria-label={t('infoLabel')} tabIndex={-1}
+        className={css.infoPanel} style={position ?? { visibility: 'hidden', left: 0, top: 0 }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape' && event.key !== 'Tab') return
+          if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation() }
+          setOpen(false)
+          trigger.current?.focus()
+        }}>
+        {content}
+      </MenuSurface>, document.body,
+    )}
+  </>
+}
 
 type RowPhase = NonNullable<PackageRow['phase']>
 
@@ -798,6 +834,7 @@ function InstallDialog({
   readonly onUseGithubMirror: () => void
 }): ReactNode {
   const errorId = useId()
+  const templateHintId = useId()
   const guideId = useId()
   const approvalId = useId()
   const registryId = useId()
@@ -875,6 +912,9 @@ function InstallDialog({
       : inputProblem.problem === 'network' && askedByCheck.length > 1
         ? t('installProblemNetworkAll', { registries: registryList(askedByCheck, t, resolved) })
         : t(INPUT_PROBLEM_KEYS[inputProblem.problem], { reason: inputProblem.reason })
+    const templateHint = install.spec === t('installGuideGitExample')
+      ? t('installGitTemplateHint')
+      : install.spec === t('installGuidePathExample') ? t('installPathTemplateHint') : null
     return (
       <Modal
         open={install.open}
@@ -885,10 +925,16 @@ function InstallDialog({
         className={css.installDialog as string}
         contentClassName={css.installContent as string}
         footer={(
-          <Button variant="primary" className={css.wide} disabled={checking || empty} aria-busy={checking} onClick={onRun}>
-            {checking ? <StateDot state="ongoing" /> : null}
-            {t(checking ? 'installChecking' : 'installRun')}
-          </Button>
+          <div className={css.installFooter}>
+            <p className={css.installSafety} role="note">
+              <IconWarningOutlineRegular size={14} aria-hidden="true" />
+              <span>{t('installGuideSafety')}</span>
+            </p>
+            <Button variant="primary" className={css.wide} disabled={checking || empty} aria-busy={checking} onClick={onRun}>
+              {checking ? <StateDot state="ongoing" /> : null}
+              {t(checking ? 'installChecking' : 'installRun')}
+            </Button>
+          </div>
         )}
       >
         <div className={css.installBody}>
@@ -901,7 +947,7 @@ function InstallDialog({
               disabled={checking}
               aria-label={t(install.mirrorRecovery ? 'installPackageLabel' : 'installSpecLabel')}
               aria-invalid={install.inputError !== null}
-              aria-describedby={install.inputError === null ? undefined : errorId}
+              aria-describedby={inputSentence !== null ? errorId : templateHint !== null ? templateHintId : undefined}
               onChange={(event) => { onEditSpec(event.currentTarget.value) }}
               onCompositionStart={specComposition.onCompositionStart}
               onCompositionEnd={specComposition.onCompositionEnd}
@@ -915,6 +961,9 @@ function InstallDialog({
           {inputSentence === null
             ? null
             : <p id={errorId} className={css.inputError} role="alert">{inputSentence}</p>}
+          {inputSentence === null && templateHint !== null
+            ? <p id={templateHintId} className={css.templateHint} role="status">{templateHint}</p>
+            : null}
           <div className={css.optionsRow}>
             <button
               type="button"
@@ -969,10 +1018,6 @@ function InstallDialog({
                     </li>
                   ))}
                 </ol>
-                <p className={css.guideSafety} role="note">
-                  <IconWarningOutlineRegular size={14} aria-hidden="true" />
-                  <span>{t('installGuideSafety')}</span>
-                </p>
               </div>
             )
             : null}
@@ -1324,7 +1369,10 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           <header className={css.pageHead} data-window-drag>
             <div>
               <h1 className={css.pageTitle}>{t('title')}</h1>
-              <p className={css.pageIntro}>{t('intro')}</p>
+              <div className={css.pageIntro}>
+                <span>{t('intro')}</span>
+                <PluginInventoryInfo t={t} />
+              </div>
             </div>
             <div className={css.toolbar}>
               <Tooltip label={t('refresh')} delayMs={500} focusDelayMs={500} side="bottom" portal disabled={!loaded || refreshing}>

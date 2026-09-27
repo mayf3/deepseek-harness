@@ -3,8 +3,10 @@
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
   panel: '插件',
-  title: '插件',
-  intro: '添加和管理插件',
+  title: '插件管理',
+  intro: '安装、启用和配置插件',
+  infoLabel: '内置插件在哪里',
+  infoDescription: '内置插件列表及运行状态可在「设置 → 内置插件」中查看',
   loading: '正在读取插件…',
   error: '可能由于网络问题，无法读取全部插件',
   unavailable: '本部署没有可管理的 profile，无法安装或启停插件。',
@@ -62,6 +64,8 @@ export const zh = {
   installGuidePathExample: '/Users/name/my-plugin',
   installGuidePathHint: '本机上插件目录的绝对路径，适用于自行开发或已下载的插件。',
   installGuideExampleLabel: '示例：',
+  installGitTemplateHint: '请替换为实际的 Git 仓库地址',
+  installPathTemplateHint: '请替换为本机插件目录的实际路径',
   installGuideFill: '填入示例',
   installGuideFillAria: '填入示例 {example}',
   installGuideSafety: '请确认插件来源可信。插件在本机以你的权限运行，来源不明的插件可能损坏 DeepSeek Harness，或读取和泄露你的数据。',
@@ -196,8 +200,10 @@ export type PluginManagerLocaleKey = keyof typeof zh
 /** English dictionary checked against the Chinese key set. */
 export const en = {
   panel: 'Plugins',
-  title: 'Plugins',
-  intro: 'Add and manage plugins',
+  title: 'Plugin management',
+  intro: 'Install, enable, and configure plugins',
+  infoLabel: 'Where to find built-in plugins',
+  infoDescription: 'View the built-in plugin list and runtime status in Settings → Built-in plugins.',
   loading: 'Reading plugins…',
   error: 'Could not read all plugins, possibly due to a network problem',
   unavailable: 'This deployment runs without a manageable profile, so plugins cannot be installed or switched here.',
@@ -255,6 +261,8 @@ export const en = {
   installGuidePathExample: '/Users/name/my-plugin',
   installGuidePathHint: 'The absolute path of a plugin directory on this machine, developed here or downloaded.',
   installGuideExampleLabel: 'Example: ',
+  installGitTemplateHint: 'Replace this with the actual Git repository address.',
+  installPathTemplateHint: 'Replace this with the actual path to your local plugin directory.',
   installGuideFill: 'Use example',
   installGuideFillAria: 'Use the example {example}',
   installGuideSafety: 'Install only plugins you trust: they run with your permissions and can damage DeepSeek Harness or leak your data.',

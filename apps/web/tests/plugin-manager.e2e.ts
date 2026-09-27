@@ -85,7 +85,7 @@ describe('web e2e: plugin manager', () => {
     while (await panel.getByRole('button', { name: /^返回/ }).count() > 0) {
       await panel.getByRole('button', { name: /^返回/ }).first().click()
     }
-    await panel.getByRole('heading', { name: '插件', exact: true }).waitFor({ timeout: 10_000 })
+    await panel.getByRole('heading', { name: '插件管理', exact: true }).waitFor({ timeout: 10_000 })
     return panel
   }
 
@@ -123,9 +123,10 @@ describe('web e2e: plugin manager', () => {
         expect(await skeleton.getAttribute('role')).toBe('status')
         expect(await skeleton.getAttribute('aria-label')).toBe('正在读取插件…')
         expect(await panel.getAttribute('aria-busy')).toBe('true')
-        const actions = panel.locator(':scope > header button')
+        const actions = panel.locator(':scope > header > div:last-child button')
         expect(await actions.count()).toBe(2)
         for (const action of await actions.all()) expect(await action.isDisabled()).toBe(true)
+        expect(await panel.getByRole('button', { name: '内置插件在哪里' }).isEnabled()).toBe(true)
         const loadingAria = await captureStableAria(probe, '[data-plugin-panel]', scaffold.workspaceCwd)
         if (aria === '') aria = loadingAria
         else expect(loadingAria).toBe(aria)
@@ -370,6 +371,27 @@ describe('web e2e: plugin manager', () => {
   it('lists the installed bundles with their switches and leaves the installation\'s own to Settings', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-list'))
     const panel = await openPluginsPanel()
+
+    const info = panel.getByRole('button', { name: '内置插件在哪里' })
+    await info.hover()
+    const hoverHelp = page.getByText('内置插件列表及运行状态可在「设置 → 内置插件」中查看', { exact: true })
+    await hoverHelp.waitFor()
+    expect(await page.getByRole('tooltip').count()).toBe(0)
+    await hoverHelp.hover()
+    expect(await hoverHelp.isVisible()).toBe(true)
+    await panel.getByRole('heading', { name: '插件管理', exact: true }).hover()
+    await hoverHelp.waitFor({ state: 'hidden' })
+    await info.focus()
+    await page.keyboard.press('Enter')
+    const help = page.getByRole('dialog', { name: '内置插件在哪里' })
+    await help.waitFor()
+    expect(await help.textContent()).toContain('设置 → 内置插件')
+    await page.keyboard.press('Escape')
+    expect(await help.count()).toBe(0)
+    expect(await info.evaluate(element => element === document.activeElement)).toBe(true)
+    await info.click()
+    await panel.getByRole('heading', { name: '插件管理', exact: true }).click()
+    expect(await help.count()).toBe(0)
 
     await panel.getByRole('button', { name: '查看 @fixture/bundle', exact: true }).waitFor({ timeout: 20_000 })
     const toggle = panel.getByRole('switch', { name: '启用 @fixture/bundle' })
@@ -760,6 +782,20 @@ describe('web e2e: plugin manager', () => {
     const field = dialog.getByRole('textbox', { name: '包名或地址' })
     const install = dialog.getByRole('button', { name: '安装', exact: true })
     expect(await install.isDisabled()).toBe(true)
+    expect(await dialog.getByRole('note').textContent()).toContain('请确认插件来源可信')
+    await dialog.getByRole('button', { name: '插件安装引导和示例' }).click()
+    for (const [example, hint] of [
+      ['https://github.com/author/dsh-plugin', '请替换为实际的 Git 仓库地址'],
+      ['/Users/name/my-plugin', '请替换为本机插件目录的实际路径'],
+    ]) {
+      await dialog.getByRole('button', { name: `填入示例 ${example}` }).click()
+      expect(await field.inputValue()).toBe(example)
+      expect(await dialog.getByRole('status').textContent()).toBe(hint)
+    }
+    await field.fill('/actual/plugin-directory')
+    expect(await dialog.getByRole('status').count()).toBe(0)
+    await dialog.getByRole('button', { name: '收起引导' }).click()
+    expect(await dialog.getByRole('note').textContent()).toContain('请确认插件来源可信')
     // A name the list already shows is refused without asking the Host.
     await field.fill('@fixture/bundle')
     await install.click()
