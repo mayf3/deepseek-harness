@@ -47,7 +47,7 @@ describe('desktop release metadata', () => {
 const coordinators: InstanceType<typeof DesktopUpdateCoordinator>[] = []
 afterEach(() => { for (const item of coordinators.splice(0)) item.dispose() })
 
-function fixture() {
+function fixture(prepareInstallation?: ConstructorParameters<typeof DesktopUpdateCoordinator>[6]) {
   const events = new EventEmitter()
   const checkForUpdates = vi.fn(async () => ({
     isUpdateAvailable: true,
@@ -66,13 +66,59 @@ function fixture() {
   const updater = Object.assign(events, { checkForUpdates, downloadUpdate, quitAndInstall }) as unknown as AppUpdater
   const coordinator = new DesktopUpdateCoordinator(
     (state) => { states.push(state); return state },
-    beforeRestart, updater, () => true, () => '1.1.0-alpha.1', downloadResult,
+    beforeRestart, updater, () => true, () => '1.1.0-alpha.1', downloadResult, prepareInstallation,
   )
   coordinators.push(coordinator)
   return { coordinator, updater, events, states, checkForUpdates, downloadUpdate, quitAndInstall, beforeRestart, downloadResult }
 }
 
 describe('desktop update coordinator', () => {
+  it('retains its downloaded package without stopping the Host when CLI admission defers installation', async () => {
+    const prepare = vi.fn(async () => undefined)
+    const f = fixture(prepare)
+    await f.coordinator.check()
+    await f.coordinator.download('1.1.0-rc.2')
+    expect(await f.coordinator.install('1.1.0-rc.2')).toEqual({ phase: 'ready', version: '1.1.0-rc.2' })
+    expect(prepare).toHaveBeenCalledWith('1.1.0-rc.2')
+    expect(f.beforeRestart).not.toHaveBeenCalled()
+    expect(f.quitAndInstall).not.toHaveBeenCalled()
+    expect(f.downloadUpdate).toHaveBeenCalledOnce()
+  })
+
+  it.each(['decline', 'preparation-failure', 'handoff-failure', 'installer-failure'] as const)(
+    'releases CLI admission after %s without discarding the download', async (failure) => {
+      const guard = { handoff: vi.fn(async () => {}), cancel: vi.fn(async () => {}), release: vi.fn(async () => {}) }
+      const f = fixture(async () => guard)
+      await f.coordinator.check()
+      await f.coordinator.download('1.1.0-rc.2')
+      if (failure === 'decline') f.beforeRestart.mockResolvedValueOnce(false)
+      if (failure === 'preparation-failure') f.beforeRestart.mockRejectedValueOnce(new Error('Host preparation failed'))
+      if (failure === 'handoff-failure') guard.handoff.mockRejectedValueOnce(new Error('Cannot publish handoff'))
+      if (failure === 'installer-failure') f.quitAndInstall.mockImplementationOnce(() => { throw new Error('Installer could not start') })
+      const state = await f.coordinator.install('1.1.0-rc.2')
+      expect(state.phase).toBe(failure === 'decline' ? 'ready' : 'error')
+      expect(guard.cancel).toHaveBeenCalledOnce()
+      if (failure !== 'installer-failure') expect(f.quitAndInstall).not.toHaveBeenCalled()
+      await f.coordinator.install('1.1.0-rc.2')
+      expect(f.downloadUpdate).toHaveBeenCalledOnce()
+      expect(f.quitAndInstall).toHaveBeenCalled()
+    },
+  )
+
+  it('commits the CLI handoff before starting the installer and cancels it on asynchronous failure', async () => {
+    const guard = { handoff: vi.fn(async () => {}), cancel: vi.fn(async () => {}), release: vi.fn(async () => {}) }
+    const f = fixture(async () => guard)
+    await f.coordinator.check()
+    await f.coordinator.download('1.1.0-rc.2')
+    await f.coordinator.install('1.1.0-rc.2')
+    expect(f.beforeRestart.mock.invocationCallOrder[0]).toBeLessThan(guard.handoff.mock.invocationCallOrder[0]!)
+    expect(guard.handoff.mock.invocationCallOrder[0]).toBeLessThan(f.quitAndInstall.mock.invocationCallOrder[0]!)
+    expect(guard.cancel).not.toHaveBeenCalled()
+    f.events.emit('error', new Error('Native installer failed'))
+    expect(guard.cancel).toHaveBeenCalledOnce()
+    expect(f.coordinator.state).toMatchObject({ phase: 'error', failedOperation: 'install' })
+  })
+
   it('keeps safe preparation diagnostics separate and clears them on an explicit retry', async () => {
     const f = fixture()
     await f.coordinator.check()

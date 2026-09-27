@@ -102,3 +102,18 @@ it('forwards all other commands unchanged and retains package diagnostics', asyn
   expect(runPluginCommand).toHaveBeenCalledWith(expect.objectContaining({ profile: 'test' }), args, expect.objectContaining({ execution: 'cli' }))
   expect(stderr.mock.calls.map(call => call[0]).join('')).toContain('pnpm was not found')
 })
+
+it('uses the installation package runtime without changing CLI authentication or output policy', async () => {
+  fixture()
+  vi.mocked(runPluginCommand).mockResolvedValue({ exitCode: 0, output: '', truncated: false, logPath: '/profile/log' })
+  const packageManager = {
+    command: '/installation/electron',
+    args: ['--expose-internals', '/installation/pnpm.mjs'],
+    env: { ELECTRON_RUN_AS_NODE: '1', PATH: '/installation/bin' },
+  }
+  expect(await runPlugin('test', ['list'], packageManager)).toBe(0)
+  expect(runPluginCommand).toHaveBeenCalledWith(
+    expect.objectContaining({ profile: 'test' }), ['list'],
+    expect.objectContaining({ ...packageManager, execution: 'cli' }),
+  )
+})

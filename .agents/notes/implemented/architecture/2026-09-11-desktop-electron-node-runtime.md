@@ -10,9 +10,9 @@ Shipping an upstream Node executable alongside Electron duplicates the JavaScrip
 
 ## Decision
 
-Desktop runs the shared Web Host and bundled pnpm through its own Electron executable with `ELECTRON_RUN_AS_NODE=1`. It ships no separate upstream Node executable. The target Electron distribution supplies both the packaging input and the runtime used to prepare and verify production dependencies; release metadata records its actual Node version. Development uses the installed Electron distribution.
+Desktop runs the shared Web Host and bundled pnpm through its own Electron executable with `ELECTRON_RUN_AS_NODE=1`. The [primary runtime](../feature/2026-09-14-desktop-primary-runtime.md) separately supplies Node for Office authoring. The target Electron distribution supplies both the packaging input and the runtime used to prepare and verify production dependencies; release metadata records its actual Node version. Development uses the installed Electron distribution. The [installed CLI](../feature/2026-09-27-desktop-cli-runtime.md) reuses this execution environment.
 
-This supersedes the separate-Node choice in the [packaging decision](2026-08-25-electron-desktop-packaging-and-updates.md) and [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md). Their independent plugin storage and ordinary resource-directory layout remain applicable. The [Web wrapper](2026-09-10-desktop-web-wrapper.md) retains the shared profile runner and HTTP transport.
+This supersedes the separate-Node choice in the [packaging decision](2026-08-25-electron-desktop-packaging-and-updates.md) and [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md). Their independent plugin storage remains applicable. The [Web wrapper](2026-09-10-desktop-web-wrapper.md) retains the shared profile runner and HTTP transport.
 
 ## Consequences
 
@@ -24,4 +24,4 @@ Electron's Node patches and native ABI are release compatibility obligations. Th
 
 ## Alternatives considered
 
-A separate Node executable decouples the Host from Electron's runtime but adds another binary, download, signature, and version selection. Electron RunAsNode removes that duplication. Moving production packages into ASAR is a separate change involving native modules, package resolution, and subprocess paths; the Host continues to load ordinary resource files.
+A separate Node executable decouples the Host from Electron's runtime but adds another binary, download, signature, and version selection for that role. Electron RunAsNode reuses the GUI executable. Production packages reside in ASAR with native resources unpacked; packaging and physical-resource resolution remain separate from the execution-engine choice.

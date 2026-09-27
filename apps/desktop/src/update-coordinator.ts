@@ -8,6 +8,7 @@ import { gt, valid } from 'semver'
 import type { DesktopUpdateState } from './ipc.ts'
 import { DesktopUpdateHttpExecutor } from './update-http-executor.ts'
 import { DesktopUpdatePreparationError } from './update-error.ts'
+import type { DesktopInstallationGuard } from './cli-update-guard.ts'
 
 const { autoUpdater } = electronUpdater
 
@@ -20,6 +21,7 @@ export class DesktopUpdateCoordinator {
   private checkOperation: Promise<DesktopUpdateState> | undefined
   private downloadOperation: Promise<DesktopUpdateState> | undefined
   private installOperation: Promise<DesktopUpdateState> | undefined
+  private installationGuard: DesktopInstallationGuard | undefined
 
   private readonly onProgress = (progress: ProgressInfo): void => {
     if (this.downloadOperation === undefined || this.downloaded) return
@@ -35,6 +37,9 @@ export class DesktopUpdateCoordinator {
   private readonly onError = (error: Error): void => {
     // Check/download promises own their failures. Installation can fail after quitAndInstall returns.
     if (this.current.phase === 'installing') {
+      void this.installationGuard?.cancel().catch((cleanupError: unknown) => {
+        this.setState(this.failure(new AggregateError([error, cleanupError], 'Desktop update cancellation failed'), 'install'))
+      })
       this.setState(this.failure(error, 'install'))
     }
   }
@@ -46,6 +51,7 @@ export class DesktopUpdateCoordinator {
    * @param enabled - Whether this process has a packaged update source.
    * @param currentVersion - Actual installed application version.
    * @param downloadResult - Once per completed download attempt, including platform preparation failures.
+   * @param prepareInstallation - Optional installed-runtime lease; undefined result defers this installation.
    */
   constructor(
     private readonly publish: (state: DesktopUpdateState) => DesktopUpdateState,
@@ -54,6 +60,7 @@ export class DesktopUpdateCoordinator {
     private readonly enabled: () => boolean = () => app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml')),
     private readonly currentVersion: () => string = () => app.getVersion(),
     private readonly downloadResult?: (success: boolean, reason?: string) => void,
+    private readonly prepareInstallation?: (version: string) => Promise<DesktopInstallationGuard | undefined>,
   ) {
     if (updater === autoUpdater) {
       // electron-updater omits this internal transport property from its public declarations.
@@ -132,11 +139,25 @@ export class DesktopUpdateCoordinator {
     this.installOperation ??= Promise.resolve().then(async () => {
       this.setState({ phase: 'installing', version })
       try {
-        if (!await this.beforeRestart()) return this.setState({ phase: 'ready', version })
+        await this.installationGuard?.cancel()
+        this.installationGuard = await this.prepareInstallation?.(version)
+        if (this.prepareInstallation !== undefined && this.installationGuard === undefined) {
+          return this.setState({ phase: 'ready', version })
+        }
+        if (!await this.beforeRestart()) {
+          await this.installationGuard?.cancel()
+          return this.setState({ phase: 'ready', version })
+        }
         this.assertLive()
+        await this.installationGuard?.handoff()
         this.updater.quitAndInstall(true, true)
         return this.current
       } catch (error) {
+        try {
+          await this.installationGuard?.cancel()
+        } catch (cleanupError) {
+          return this.setState(this.failure(new AggregateError([error, cleanupError], 'Desktop update cancellation failed'), 'install'))
+        }
         if (this.current.phase === 'error' && this.current.failedOperation === 'install') return this.current
         return this.setState(this.failure(error, 'install'))
       }
@@ -147,6 +168,7 @@ export class DesktopUpdateCoordinator {
   /** Remove owned listeners and prevent pending library operations from publishing into closed UI. */
   dispose(): void {
     this.disposed = true
+    void this.installationGuard?.release().catch((error: unknown) => { console.error('desktop CLI: update controller shutdown failed', error) })
     this.updater.off('download-progress', this.onProgress)
     this.updater.off('update-downloaded', this.onDownloaded)
     // Pending updater promises can still emit EventEmitter errors during shutdown.

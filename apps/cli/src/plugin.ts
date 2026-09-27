@@ -1,7 +1,7 @@
 /** Profile package management and explicit, exact-version compatibility approvals. */
 import { runPluginCommand, setProfileVersionExemption } from '@deepseek-ai/dsh-plugin-manager/operations'
 import { INSTALL_ANCHOR } from './profile-boot.ts'
-import { DEFAULT_PROFILE_BUNDLES, initProfile, PROFILE_TEMPLATES, readProfileCompatibility, resolveProfileDir } from '@deepseek-ai/dsh-app-boot'
+import { DEFAULT_PROFILE_BUNDLES, initProfile, PROFILE_TEMPLATES, readProfileCompatibility, resolveProfileDir, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
@@ -57,9 +57,10 @@ async function versionCommand(profile: string, args: readonly string[]): Promise
 /** Run package management for a profile.
  * @param profile Profile name.
  * @param args DSH exemption command or pnpm arguments relative to the invoking directory.
+ * @param packageManager Installation-owned executable and environment for pnpm operations.
  * @returns Zero on success; nonzero on invalid approval or package-manager failure.
  */
-export async function runPlugin(profile: string, args: readonly string[]): Promise<number> {
+export async function runPlugin(profile: string, args: readonly string[], packageManager?: ProfileContext['packageManager']): Promise<number> {
   const versionResult = await versionCommand(profile, args)
   if (versionResult !== undefined) return versionResult
   const dir = resolveProfileDir(profile)
@@ -67,6 +68,7 @@ export async function runPlugin(profile: string, args: readonly string[]): Promi
     for (const warning of readProfileCompatibility(dir).warnings) process.stderr.write(`dsh: warning: ${warning}\n`)
   }
   const result = await runPluginCommand({ profile, installAnchor: INSTALL_ANCHOR, cwd: process.cwd() }, args, {
+    ...packageManager,
     execution: 'cli',
     outputBytes: 16384,
     lockWaitMs: 120000,

@@ -10,6 +10,7 @@ import { downloadArtifact } from '@electron/get'
 import extractZip from 'extract-zip'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
+import { prepareDesktopCli } from './prepare-cli.ts'
 
 const BUILD_PATHS = resolveDesktopTargetBuildPaths()
 const RUNTIME_ROOT = BUILD_PATHS.runtime
@@ -51,6 +52,8 @@ async function main(): Promise<void> {
     node: nodeVersion,
     pnpm: pnpmVersion,
   }, undefined, 2)}\n`)
+  await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'prepare:cli',
+    async () => prepareDesktopCli(join(RUNTIME_ROOT, 'cli'), { platform, arch }))
   await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'prepare:primary-runtime',
     () => preparePrimaryRuntime({ deferSmoke: values['defer-primary-runtime-smoke'] }))
 }

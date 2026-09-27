@@ -7,7 +7,7 @@
   "type": "module",
   "main": "lib/index.js",
   "files": [
-    "lib/index.js"
+    "lib/*.js"
   ],
   "dependencies": {
     "@deepseek-ai/libreoffice-kit": "^0.1.1",
@@ -24,5 +24,10 @@
     "@deepseek-ai/dsh-skill-office": "workspace:*",
     "@deepseek-ai/dsh-deepseek-account": "workspace:*",
     "@deepseek-ai/dsh-workspace": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/cordis-plugin-include": "workspace:~",
+    "@deepseek-ai/dsh-skill": "workspace:*"
   }
 }
