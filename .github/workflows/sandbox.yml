@@ -1,7 +1,8 @@
-# Sandbox CI: the keyless real-kernel confinement proofs. This master-only
-# reference stays outside the pull-request verdict; rationale lives in
+# Sandbox CI: the keyless real-kernel confinement proofs, plus the darwin
+# unit-parity job (unit-darwin) that needs the matrix's macOS image. This
+# master-only reference stays outside the pull-request verdict; rationale lives in
 # .agents/notes/implemented/process/2026-07-21-serial-cross-platform-ci-reference.md.
-# A separate workflow from ci.yml because the axis is different — these jobs
+# A separate workflow from ci.yml because the axis is different — the e2e jobs
 # fan out over OS×runner (kernel capabilities), not node versions. The Landlock
 # launcher is built from native/system on each Landlock leg and installed
 # from the same tarballs the main-repository release workflow publishes.
@@ -132,16 +133,18 @@ jobs:
           [ "$status" -eq 0 ]
           echo "$out" | grep -qE 'Test Files[[:space:]]+1 passed \(1\)'
 
-  # The unit suite runs on ubuntu in `checks`; macos-latest is this workflow's
-  # only darwin runner, so the platform-dependent unit expectations (Seatbelt
-  # path canonicalization: /tmp IS /private/tmp) take their darwin branch only
-  # here. A job of its own so the seatbelt e2e leg keeps the matrix budget:
-  # the full suite measures 16 minutes on a fast macos-latest runner and had
-  # completed under half its files at 20 on the slowest observed, hence 45.
+  # The unit suite runs on ubuntu in ci.yml's Linux jobs; macos-latest is this
+  # workflow's only darwin runner, so the platform-dependent unit expectations
+  # (Seatbelt path canonicalization: /tmp IS /private/tmp — sandbox semantics,
+  # hence this workflow rather than ci-master.yml) take their darwin branch only
+  # here. A job of its own so the seatbelt e2e leg keeps the matrix budget. The
+  # budget below is a completion ceiling, not a latency target: the full suite
+  # takes 16 minutes on a fast macos-latest runner and was under half done at
+  # 20 on the slowest observed.
   unit-darwin:
     name: unit tests (darwin parity, macos-latest)
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
