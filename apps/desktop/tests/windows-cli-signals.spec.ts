@@ -2,6 +2,7 @@
 
 import { execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
+import { existsSync } from 'node:fs'
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -71,7 +72,7 @@ describe.skipIf(process.platform !== 'win32')('Windows Electron console signals'
     let failure: unknown
     try { await execute(probe, [electron, entry, marker, ready, report, event], { windowsHide: true }) }
     catch (error) { failure = error }
-    const observed = await readFile(report, 'utf8')
+    const observed = existsSync(report) ? await readFile(report, 'utf8') : 'Console probe exited before reporting.'
     expect(failure, observed).toBeUndefined()
     expect(await readFile(marker, 'utf8')).toBe(signal)
   })

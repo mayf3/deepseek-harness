@@ -6,6 +6,10 @@
 #include <string>
 #pragma comment(lib, "user32.lib")
 
+BOOL WINAPI ignoreInterrupt(DWORD event) {
+  return event == CTRL_C_EVENT || event == CTRL_BREAK_EVENT;
+}
+
 int wmain(int count, wchar_t** args) {
   if (count != 7) return 2;
   FreeConsole();
@@ -31,7 +35,7 @@ int wmain(int count, wchar_t** args) {
     if (WaitForSingleObject(child.hProcess, 10) != WAIT_TIMEOUT) break;
   }
   const DWORD event = static_cast<DWORD>(wcstoul(args[6], nullptr, 10));
-  const bool signalled = ready && SetConsoleCtrlHandler(nullptr, TRUE) && GenerateConsoleCtrlEvent(event, 0);
+  const bool signalled = ready && SetConsoleCtrlHandler(ignoreInterrupt, TRUE) && GenerateConsoleCtrlEvent(event, 0);
   DWORD code = 0;
   const bool completed = signalled && WaitForSingleObject(child.hProcess, 15000) == WAIT_OBJECT_0
     && GetExitCodeProcess(child.hProcess, &code);
