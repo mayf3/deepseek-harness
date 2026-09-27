@@ -267,11 +267,11 @@ it.skipIf(MODE === 'record').each(['en-US', 'zh-CN'])('fills the spreadsheet pan
     const meetingCanvas = await canvas.elementHandle()
     if (meetingCanvas === null) throw new Error('meeting spreadsheet canvas is unavailable')
     await expectExcelLayout(excel)
-    // Arrow keys move the selection from committed state. A pointer click resolves its cell
-    // from the grid's live geometry inside a React state updater that a later render re-runs,
-    // so a click followed by the reflows below can land on whatever column the moved grid puts
-    // under the stale pointer coordinates.
-    await excel.locator('.fortune-sheet-overlay').focus()
+    // Arrow keys pick the cell from committed state, so a later render cannot re-resolve it
+    // against the reflowed grid the way it re-resolves a pointer press.
+    const overlay = excel.locator('.fortune-sheet-overlay')
+    await overlay.focus()
+    await expect.poll(() => overlay.evaluate(node => document.activeElement === node)).toBe(true)
     await page.keyboard.press('ArrowRight')
     await expect.poll(() => selection.innerText()).toBe('B1')
     await expect.poll(() => formula.innerText()).toBe('')
