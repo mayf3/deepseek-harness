@@ -31,11 +31,12 @@ function Invoke-DshCommandPath {
             $kind = if ($null -ne $raw) { $environment.GetValueKind('Path') } else { [Microsoft.Win32.RegistryValueKind]::ExpandString }
             $owned = if ($owner) { $owner.GetValue('Directory', $null) } else { $null }
             $wasAbsent = if ($owner) { $owner.GetValue('PathWasAbsent', 0) -eq 1 } else { $false }
+            $retained = if ($owner) { [int]$owner.GetValue('RetainedEntries', 0) } else { 0 }
         } finally {
             if ($environment) { $environment.Dispose() }
             if ($owner) { $owner.Dispose() }
         }
-        $snapshot = [ordered]@{ path=$raw; kind=[string]$kind; owned=$owned; absent=$wasAbsent; directory=$directory; machine=$MachinePath }
+        $snapshot = [ordered]@{ path=$raw; kind=[string]$kind; owned=$owned; absent=$wasAbsent; retained=$retained; directory=$directory; machine=$MachinePath }
         $sha = [Security.Cryptography.SHA256]::Create()
         try { $fingerprint = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($snapshot | ConvertTo-Json -Compress))))).Replace('-','').ToLowerInvariant() }
         finally { $sha.Dispose() }
@@ -43,7 +44,14 @@ function Invoke-DshCommandPath {
         $parts = if ($null -eq $raw) { @() } else { @($raw.Split(';')) }
         $current = Comparable $directory
         $old = if ($owned) { Comparable ([string]$owned) } else { $null }
-        $kept = @($parts | Where-Object { (Comparable $_) -ne $current -and ($Request.operation -ne 'install' -or -not $old -or (Comparable $_) -ne $old) })
+        $kept = $parts
+        if ($old -and ($Request.operation -eq 'install' -or ($Request.operation -eq 'remove' -and $old -eq $current))) {
+            $matches = @($parts | Where-Object { $_ -ceq $owned }).Count
+            if ($matches -gt $retained) {
+                $index = [Array]::IndexOf($parts, $owned)
+                $kept = @(); for ($i = 0; $i -lt $parts.Count; $i++) { if ($i -ne $index) { $kept += $parts[$i] } }
+            }
+        }
         if ($Request.operation -eq 'install') {
             if (-not (Test-Path -LiteralPath (Join-Path $directory 'dsh.exe') -PathType Leaf)) { Fail 'ENOENT' 'The installed launcher is unavailable.' }
             $next = (@($directory) + $kept) -join ';'
@@ -54,6 +62,7 @@ function Invoke-DshCommandPath {
                 $owner.SetValue('Directory', $directory, [Microsoft.Win32.RegistryValueKind]::String)
                 $absent = ($null -eq $raw) -or ($owned -and $wasAbsent)
                 $owner.SetValue('PathWasAbsent', [int]$absent, [Microsoft.Win32.RegistryValueKind]::DWord)
+                $owner.SetValue('RetainedEntries', @($kept | Where-Object { $_ -ceq $directory }).Count, [Microsoft.Win32.RegistryValueKind]::DWord)
             } finally { $environment.Dispose(); $owner.Dispose() }
             $raw = $next
             $owned = $directory
@@ -67,7 +76,7 @@ function Invoke-DshCommandPath {
             }
             $owner = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($OwnerKey, $true)
             if ($owner -and $old -eq $current) {
-                try { $owner.DeleteValue('Directory', $false); $owner.DeleteValue('PathWasAbsent', $false) }
+                try { $owner.DeleteValue('Directory', $false); $owner.DeleteValue('PathWasAbsent', $false); $owner.DeleteValue('RetainedEntries', $false) }
                 finally { $owner.Dispose() }
                 $owned = $null
             } elseif ($owner) {

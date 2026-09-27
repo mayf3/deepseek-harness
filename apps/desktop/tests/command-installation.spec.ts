@@ -3,8 +3,18 @@
 import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { describe, expect, it, onTestFinished } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { inspectFileCommand, installFileCommand, removeFileCommand } from '../src/command-installation.ts'
+
+const barrier = vi.hoisted(() => ({ afterRead: undefined as ((path: unknown) => Promise<void>) | undefined }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, readFile: async (...args: Parameters<typeof actual.readFile>) => {
+    const result = await actual.readFile(...args)
+    await barrier.afterRead?.(args[0])
+    return result
+  } }
+})
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'dsh-command-link-'))
@@ -71,6 +81,24 @@ describe.skipIf(process.platform === 'win32')('macOS command entry ownership', (
     expect(await readlink(options.destination)).toBe(moved)
     await removeFileCommand(options, repaired.fingerprint)
     expect(await readlink(options.destination)).toBe('npm-cli')
+  })
+
+  it.each(['install', 'remove'] as const)('preserves a replacement arriving during %s after the approved entry was read', async (operation) => {
+    const f = await fixture()
+    const installed = await installFileCommand(f.options, (await inspectFileCommand(f.options)).fingerprint)
+    const receipt = join(f.root, '.dsh-desktop-command.json')
+    const originalReceipt = await readFile(receipt, 'utf8')
+    barrier.afterRead = async (path) => {
+      if (path !== receipt) return
+      barrier.afterRead = undefined
+      await unlink(f.options.destination)
+      await writeFile(f.options.destination, 'replacement\n', { mode: 0o755 })
+    }
+    onTestFinished(() => { barrier.afterRead = undefined })
+    const apply = operation === 'install' ? installFileCommand : removeFileCommand
+    await expect(apply(f.options, installed.fingerprint)).rejects.toMatchObject({ code: 'ESTALE' })
+    expect(await readFile(f.options.destination, 'utf8')).toBe('replacement\n')
+    expect(await readFile(receipt, 'utf8')).toBe(originalReceipt)
   })
 
   it('leaves a command installed by someone else after Desktop registration intact', async () => {

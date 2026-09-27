@@ -22,6 +22,14 @@ Desktop microphone access is restricted to audio requests from the primary `dsh-
 
 Press F12 (Fn+F12 on media-key keyboards), Command+Option+I on macOS, or Ctrl+Shift+I on Windows to toggle DevTools for the focused application page, including in packaged builds. These native shortcuts use hidden application-menu items. Update overlays and packaged embedded browser guests disable DevTools.
 
+## Terminal command
+
+The application menu's **Manage dsh Command…** entry, immediately below **Check for Updates…**, shows the current command and offers Install, Repair, and Remove. The command uses Desktop's installed runtime and the ordinary [dsh CLI](../cli/README.md), including when the Desktop application is closed. Open a new terminal after installation and run `dsh --version`.
+
+On macOS, installation creates `/usr/local/bin/dsh` and requests administrator authentication when the directory requires it. Shell startup files are unchanged. On Windows, the installer offers an optional command checkbox, and the management dialog uses the same current-user PATH registration. A pre-existing command requires confirmation before switching. The macOS link preserves and restores the displaced launcher; Windows preserves other PATH entries, including entries that predate registration. A command with higher PATH precedence is reported with its location. Repair updates the registration after moving the application; Remove leaves unrelated installations intact.
+
+Desktop keeps downloaded updates while a bundled CLI command is running. Finish those commands and retry installation. New commands are blocked during installer handoff; Windows applies the same protection to direct installation and uninstallation. The CLI runtime version follows the installed Desktop release. See the [runtime decision](../../.agents/notes/implemented/feature/2026-09-27-desktop-cli-runtime.md) for runtime compatibility and update ownership.
+
 ## Closing the window and quitting
 
 Closing the main window (macOS close button and ⌘W; Windows ×, Alt+F4, and the taskbar Close window command) hides it; Windows asks for acknowledgement before the first hide. The page and the Host keep running, tasks continue, and the next show presents the same document with its session, drafts, and scroll position; a fullscreen macOS window leaves fullscreen before hiding. The window returns through the Dock icon, a second launch, or `dsh://open` on macOS, and through the tray on Windows. Minimize is unchanged. Closing the welcome window before the workspace opens quits on Windows and, on macOS, keeps the application in the Dock without a window.

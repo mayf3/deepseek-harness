@@ -51,7 +51,6 @@ Function InstallerBeforeInstall
         Quit
     ${EndIf}
     Call InstallerCheckAppRunning
-    Call PrepareCliUpdate
 FunctionEnd
 
 Function InstallerProgressShow
@@ -75,6 +74,7 @@ Function InstallerProgressShow
 FunctionEnd
 
 Function .onInstFailed
+    Call dshCleanupDirectories
     MessageBox MB_OK|MB_ICONEXCLAMATION "$(INSTALLER_FAILED)" /SD IDOK
     SetErrorLevel 2
     Quit

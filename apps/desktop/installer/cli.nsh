@@ -5,9 +5,18 @@ Var InstallerCliApplication
   !define DSH_CLI_PREFIX "un."
 !else
   !define DSH_CLI_PREFIX ""
+  !macro dshPrepareCliUpdate
+    Call PrepareCliUpdate
+  !macroend
+  !macro dshFinishCliUpdate
+    Call FinishCliUpdate
+  !macroend
 !endif
 
 Function ${DSH_CLI_PREFIX}PrepareCliUpdate
+  ${If} $InstallerCliToken != ""
+    Return
+  ${EndIf}
   StrCpy $InstallerCliApplication $INSTDIR
   ${IfNot} ${FileExists} "$INSTDIR\resources\runtime\cli\bin\dsh.exe"
     Return
@@ -25,19 +34,31 @@ Function ${DSH_CLI_PREFIX}PrepareCliUpdate
   Pop $1
   ${If} $0 != 0
     MessageBox MB_OK|MB_ICONEXCLAMATION "$(INSTALLER_CLI_BUSY)" /SD IDOK
+    Call ${DSH_CLI_PREFIX}FinishCliUpdate
     SetErrorLevel 2
     Quit
   ${EndIf}
 FunctionEnd
 
-!ifdef BUILD_UNINSTALLER
-Function un.onGUIEnd
-!else
-Function .onGUIEnd
-!endif
+Function ${DSH_CLI_PREFIX}FinishCliUpdate
   ${If} $InstallerCliToken != ""
     nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\dsh-command-update.ps1" -Operation finish -Application "$InstallerCliApplication" -Token "$InstallerCliToken"'
     Pop $0
     Pop $1
+    StrCpy $InstallerCliToken ""
   ${EndIf}
 FunctionEnd
+
+!ifdef BUILD_UNINSTALLER
+Function un.onGUIEnd
+  Call un.FinishCliUpdate
+FunctionEnd
+
+Function un.onUninstSuccess
+  Call un.FinishCliUpdate
+FunctionEnd
+
+Function un.onUninstFailed
+  Call un.FinishCliUpdate
+FunctionEnd
+!endif

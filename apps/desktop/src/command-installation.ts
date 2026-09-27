@@ -110,15 +110,10 @@ async function available(path: string): Promise<boolean> {
   }
 }
 
-/**
- * Read the command and receipt without changing either.
- * @param options - Fixed command destination and current installed launcher.
- * @returns A fingerprint to bind a later user decision to the observed entries.
- */
-export async function inspectFileCommand(options: FileCommandInstallation): Promise<CommandInspection> {
+async function readSnapshot(options: FileCommandInstallation) {
   const entry = await readEntry(options.destination)
   const receipt = await readReceipt(options)
-  return {
+  const state: CommandInspection = {
     fingerprint: digest({ entry: entry.fingerprint, receipt }),
     destination: options.destination, launcher: options.launcher, kind: entry.kind,
     managed: receipt !== undefined && entry.kind === 'symlink' && entry.target === receipt.launcher && entry.fingerprint === receipt.installedFingerprint,
@@ -126,6 +121,16 @@ export async function inspectFileCommand(options: FileCommandInstallation): Prom
     ...entry.kind === 'symlink' ? { target: entry.target } : {},
     ...receipt?.backup === undefined ? {} : { backup: join(dirname(options.destination), receipt.backup.name) },
   }
+  return { entry, receipt, state }
+}
+
+/**
+ * Read the command and receipt without changing either.
+ * @param options - Fixed command destination and current installed launcher.
+ * @returns A fingerprint to bind a later user decision to the observed entries.
+ */
+export async function inspectFileCommand(options: FileCommandInstallation): Promise<CommandInspection> {
+  return (await readSnapshot(options)).state
 }
 
 async function restoreEntry(source: string, destination: string): Promise<void> {
@@ -159,16 +164,18 @@ async function withdraw(destination: string, expected: Entry): Promise<string | 
 export async function installFileCommand(options: FileCommandInstallation, expected: string): Promise<CommandInspection> {
   await mkdir(dirname(options.destination), { recursive: true })
   return withFileLock(receiptPath(options), async () => {
-    const state = await inspectFileCommand(options)
+    const { state, entry, receipt } = await readSnapshot(options)
     if (state.fingerprint !== expected) throw new CommandInstallationError('ESTALE', 'The command changed after confirmation.')
     if (!await available(options.launcher)) throw new CommandInstallationError('ENOENT', 'The installed launcher is unavailable.')
-    const receipt = await readReceipt(options)
-    const entry = await readEntry(options.destination)
     const moved = await withdraw(options.destination, entry)
     let created: Entry | undefined
     try {
       await symlink(options.launcher, options.destination)
-      created = await readEntry(options.destination)
+      const installed = await readEntry(options.destination)
+      if (installed.kind !== 'symlink' || installed.target !== options.launcher) {
+        throw new CommandInstallationError('ESTALE', 'The command changed during installation.')
+      }
+      created = installed
       const backup = state.managed || moved === undefined ? receipt?.backup
         : { name: basename(moved), fingerprint: entry.fingerprint }
       const next: Receipt = { schemaVersion: 1, launcher: options.launcher, installedFingerprint: created.fingerprint,
@@ -176,7 +183,8 @@ export async function installFileCommand(options: FileCommandInstallation, expec
       await writeFileAtomic(receiptPath(options), JSON.stringify(next) + '\n', { mode: 0o644 })
     } catch (error) {
       if (created !== undefined && (await readEntry(options.destination)).fingerprint === created.fingerprint) {
-        await unlink(options.destination)
+        const rollback = await withdraw(options.destination, created)
+        if (rollback !== undefined) await unlink(rollback)
       }
       if (moved !== undefined) {
         try { await restoreEntry(moved, options.destination) } catch (restoreError) {
@@ -200,9 +208,8 @@ export async function installFileCommand(options: FileCommandInstallation, expec
  */
 export async function removeFileCommand(options: FileCommandInstallation, expected: string): Promise<CommandInspection> {
   return withFileLock(receiptPath(options), async () => {
-    const state = await inspectFileCommand(options)
+    const { state, entry, receipt } = await readSnapshot(options)
     if (state.fingerprint !== expected) throw new CommandInstallationError('ESTALE', 'The command changed after confirmation.')
-    const receipt = await readReceipt(options)
     if (receipt === undefined) return state
     const backup = receipt.backup === undefined ? undefined : join(dirname(options.destination), receipt.backup.name)
     if (state.managed && backup !== undefined && receipt.backup !== undefined
@@ -210,7 +217,7 @@ export async function removeFileCommand(options: FileCommandInstallation, expect
       throw new CommandInstallationError('EOWNERSHIP', 'The previous command backup changed or is missing.')
     }
     if (state.managed) {
-      const removed = await withdraw(options.destination, await readEntry(options.destination))
+      const removed = await withdraw(options.destination, entry)
       try {
         if (backup !== undefined) await restoreEntry(backup, options.destination)
         await unlink(receiptPath(options))

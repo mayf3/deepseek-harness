@@ -57,6 +57,23 @@ try {
     $options.MachinePath = $system
     Require ((State $other).activeCommand -eq (Join-Path $system 'dsh.exe')) 'machine PATH precedence was hidden'
     [void](Apply 'remove' $other)
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($environmentKey, $true)
+    $manualPath = $npm + ';' + $desktop + ';' + $desktop
+    try { $key.SetValue('Path', $manualPath, [Microsoft.Win32.RegistryValueKind]::ExpandString) }
+    finally { $key.Dispose() }
+    [void](Apply 'remove' $desktop)
+    Require ((UserPath) -eq $manualPath) 'unowned manual PATH entries were removed'
+    [void](Apply 'install' $desktop)
+    [void](Apply 'install' $desktop)
+    Require ((UserPath) -eq ($desktop + ';' + $manualPath)) 'repair adopted or duplicated manual PATH entries'
+    [void](Apply 'remove' $desktop)
+    Require ((UserPath) -eq $manualPath) 'removal did not preserve preexisting duplicates'
+    [void](Apply 'install' $desktop)
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($environmentKey, $true)
+    try { $key.SetValue('Path', $manualPath, [Microsoft.Win32.RegistryValueKind]::ExpandString) }
+    finally { $key.Dispose() }
+    [void](Apply 'remove' $desktop)
+    Require ((UserPath) -eq $manualPath) 'removal deleted a retained entry after the owned entry was removed manually'
     'WINDOWS_COMMAND_PATH_OK'
 } finally {
     [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($keyRoot, $false)
