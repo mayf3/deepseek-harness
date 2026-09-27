@@ -85,7 +85,7 @@ describe('web e2e: plugin manager', () => {
     while (await panel.getByRole('button', { name: /^返回/ }).count() > 0) {
       await panel.getByRole('button', { name: /^返回/ }).first().click()
     }
-    await panel.getByRole('heading', { name: '插件管理', exact: true }).waitFor({ timeout: 10_000 })
+    await panel.getByRole('heading', { name: '插件', exact: true }).waitFor({ timeout: 10_000 })
     return panel
   }
 
@@ -126,7 +126,7 @@ describe('web e2e: plugin manager', () => {
         const actions = panel.locator(':scope > header > div:last-child button')
         expect(await actions.count()).toBe(2)
         for (const action of await actions.all()) expect(await action.isDisabled()).toBe(true)
-        expect(await panel.getByRole('button', { name: '内置插件在哪里' }).isEnabled()).toBe(true)
+        expect(await panel.getByRole('button', { name: '插件说明' }).isEnabled()).toBe(true)
         const loadingAria = await captureStableAria(probe, '[data-plugin-panel]', scaffold.workspaceCwd)
         if (aria === '') aria = loadingAria
         else expect(loadingAria).toBe(aria)
@@ -372,25 +372,26 @@ describe('web e2e: plugin manager', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-list'))
     const panel = await openPluginsPanel()
 
-    const info = panel.getByRole('button', { name: '内置插件在哪里' })
+    const info = panel.getByRole('button', { name: '插件说明' })
     await info.hover()
-    const hoverHelp = page.getByText('内置插件列表及运行状态可在「设置 → 内置插件」中查看', { exact: true })
+    const hoverHelp = page.getByRole('tooltip')
     await hoverHelp.waitFor()
-    expect(await page.getByRole('tooltip').count()).toBe(0)
-    await hoverHelp.hover()
-    expect(await hoverHelp.isVisible()).toBe(true)
-    await panel.getByRole('heading', { name: '插件管理', exact: true }).hover()
+    expect(await hoverHelp.textContent()).toBe('在这里配置官方插件，安装和管理其他插件。内置插件列表及运行状态可在「设置 → 内置插件」中查看')
+    await panel.getByRole('heading', { name: '插件', exact: true }).hover()
     await hoverHelp.waitFor({ state: 'hidden' })
     await info.focus()
     await page.keyboard.press('Enter')
-    const help = page.getByRole('dialog', { name: '内置插件在哪里' })
+    const help = page.getByRole('tooltip')
     await help.waitFor()
     expect(await help.textContent()).toContain('设置 → 内置插件')
     await page.keyboard.press('Escape')
     expect(await help.count()).toBe(0)
     expect(await info.evaluate(element => element === document.activeElement)).toBe(true)
     await info.click()
-    await panel.getByRole('heading', { name: '插件管理', exact: true }).click()
+    await panel.getByRole('heading', { name: '插件', exact: true }).hover()
+    await help.hover()
+    expect(await help.isVisible()).toBe(true)
+    await panel.getByRole('heading', { name: '插件', exact: true }).click()
     expect(await help.count()).toBe(0)
 
     await panel.getByRole('button', { name: '查看 @fixture/bundle', exact: true }).waitFor({ timeout: 20_000 })

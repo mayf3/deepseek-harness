@@ -13,10 +13,10 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { PluginInstallFailureKind, Registry } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  Button, HoverCard, IconCheckCircleFillRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineMedium,
+  Button, IconCheckCircleFillRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineMedium,
   IconChevronRightOutlineRegular, IconCloseOutlineMedium,
   IconInfoOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
-  IconWarningOutlineRegular, Input, MenuSurface, Modal, pointerModality,
+  IconWarningOutlineRegular, Input, Modal, pointerModality,
   PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTerminal,
   StateDot, Switch, Tag, TerminalBlock, Toast, Tooltip, useAnchoredPosition, useDismissOnOutsidePointer,
   type IconProps, type StateDotState, type TerminalBlockLabels,
@@ -24,7 +24,7 @@ import {
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createNavigationStore } from './navigation-store.ts'
 import { rowConfigKey, type OfficialItem } from './config-ledger.ts'
-import type { PluginManagerLocaleKey } from './locales.ts'
+import { INSTALL_GIT_EXAMPLE, INSTALL_PATH_EXAMPLE, type PluginManagerLocaleKey } from './locales.ts'
 import {
   asksMirror, githubRecoveryRegistry, isInstallPending, offeredRegistries, rowKey,
   type InstallInputError, type InstallState, type InstallSubject, type PackageRow, type PackageView,
@@ -49,42 +49,6 @@ export type PluginManagerPageProps =
 /** The page's slot renderer, narrowed to the configuration slots. */
 type RenderConfig = PluginManagerPageProps['renderSlot']
 type ResolveText = PluginManagerFace['resolveText']
-
-/** Explain where the built-in inventory lives without leaving the management page. */
-function PluginInventoryInfo({ t }: { readonly t: Translate }): ReactNode {
-  const [open, setOpen] = useState(false)
-  const trigger = useRef<HTMLButtonElement>(null)
-  const panel = useRef<HTMLDivElement>(null)
-  const id = useId()
-  const position = useAnchoredPosition({ open, anchorRef: trigger, panelRef: panel, gap: 8, margin: 12 })
-  const ready = open && position !== null
-  useDismissOnOutsidePointer(trigger, open, setOpen, panel)
-  useEffect(() => {
-    if (ready) panel.current?.focus()
-  }, [ready])
-  const content = <p className={css.infoContent}>{t('infoDescription')}</p>
-  return <>
-    <HoverCard inline disabled={open} openDelayMs={300} content={content} anchor={(
-      <Button ref={trigger} variant="ghost" size="sm" className={css.infoButton}
-        aria-label={t('infoLabel')} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
-        onClick={() => { setOpen(value => !value) }}>
-        <IconInfoOutlineRegular size={10} aria-hidden="true" />
-      </Button>
-    )} />
-    {open && createPortal(
-      <MenuSurface ref={panel} id={id} role="dialog" aria-label={t('infoLabel')} tabIndex={-1}
-        className={css.infoPanel} style={position ?? { visibility: 'hidden', left: 0, top: 0 }}
-        onKeyDown={(event) => {
-          if (event.key !== 'Escape' && event.key !== 'Tab') return
-          if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation() }
-          setOpen(false)
-          trigger.current?.focus()
-        }}>
-        {content}
-      </MenuSurface>, document.body,
-    )}
-  </>
-}
 
 type RowPhase = NonNullable<PackageRow['phase']>
 
@@ -912,9 +876,9 @@ function InstallDialog({
       : inputProblem.problem === 'network' && askedByCheck.length > 1
         ? t('installProblemNetworkAll', { registries: registryList(askedByCheck, t, resolved) })
         : t(INPUT_PROBLEM_KEYS[inputProblem.problem], { reason: inputProblem.reason })
-    const templateHint = install.spec === t('installGuideGitExample')
+    const templateHint = install.spec === INSTALL_GIT_EXAMPLE
       ? t('installGitTemplateHint')
-      : install.spec === t('installGuidePathExample') ? t('installPathTemplateHint') : null
+      : install.spec === INSTALL_PATH_EXAMPLE ? t('installPathTemplateHint') : null
     return (
       <Modal
         open={install.open}
@@ -1371,7 +1335,11 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
               <h1 className={css.pageTitle}>{t('title')}</h1>
               <div className={css.pageIntro}>
                 <span>{t('intro')}</span>
-                <PluginInventoryInfo t={t} />
+                <Tooltip label={t('infoDescription')} side="bottom" delayMs={300} maxWidth={300} portal openOnClick>
+                  <Button variant="ghost" size="sm" className={css.infoButton} aria-label={t('infoLabel')}>
+                    <IconInfoOutlineRegular size={10} aria-hidden="true" />
+                  </Button>
+                </Tooltip>
               </div>
             </div>
             <div className={css.toolbar}>
