@@ -42,6 +42,7 @@ export type ManagerNotice =
   | { readonly kind: 'restart'; readonly packageName: string; readonly seq: number }
   | { readonly kind: 'overridden'; readonly packageName: string; readonly seq: number }
   | { readonly kind: 'cancelled'; readonly seq: number }
+  | { readonly kind: 'refresh-failed'; readonly seq: number }
   | { readonly kind: 'install'; readonly outcome: 'done' | 'failed' | 'unconfirmed' | 'applying' | 'unknown'; readonly seq: number }
   | {
     readonly kind: 'failed'
@@ -105,6 +106,9 @@ export type RegistryChoice =
 
 /** The choice shown until the Host has said which registry it asks first: the one pnpm's own configuration names. */
 const OFFICIAL_REGISTRY: RegistryChoice = { kind: 'offered', registry: null }
+
+/** Hold the manual-refresh spinner at least this long so a fast read does not flash it. */
+const REFRESH_SPINNER_MIN_MS = 400
 
 /**
  * The registry a choice asks, as the Host's install plan compares registries: pnpm's own configuration stands for
@@ -270,6 +274,12 @@ export interface ConfirmState {
 export interface PluginManagerState {
   /** `unavailable` when the Host runs without a managed profile; `error` keeps the last packages. */
   readonly status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  /**
+   * Manual refresh feedback: `refreshing` until reads settle and the 400 ms minimum elapses;
+   * `failed` after a failed refresh without cached inventory; otherwise `idle`, including
+   * cached refresh failures reported by toast. Background reads do not start the spinner.
+   */
+  readonly refreshStatus: 'idle' | 'refreshing' | 'failed'
   readonly packages: readonly PackageView[]
   /** Package names and row keys with an action crossing the wire. */
   readonly busy: readonly string[]
@@ -493,6 +503,8 @@ export class PluginManagerController {
   private rerun = false
   private generation = 0
   private disposed = false
+  /** A successful managed-profile read remains usable even when it returned no bundles. */
+  private hasCachedInventory = false
   private pendingConfirm: (() => Promise<void>) | undefined
   /** Cancels the check the dialog has in flight. */
   private inspectAbort: AbortController | undefined
@@ -512,7 +524,7 @@ export class PluginManagerController {
     private readonly ctx: ClientContext,
   ) {
     this.store = createSnapshotStore<PluginManagerState>({
-      status: 'idle', packages: [], busy: [], notice: null,
+      status: 'idle', refreshStatus: 'idle', packages: [], busy: [], notice: null,
       install: IDLE_INSTALL, confirm: null, highlight: null,
     })
   }
@@ -545,7 +557,7 @@ export class PluginManagerController {
       hooks: { pluginManager: this.store, configLedger, configurations: this.ctx.configForms.describe() },
       configForm: id => this.ctx.configForms.get(id),
       ensure: () => { if (this.getSnapshot().status === 'idle') void this.load() },
-      refresh: () => { void this.load() },
+      refresh: () => { void this.refresh() },
       openInstall: () => {
         this.ctx.get('productAnalytics')?.track('plugin_add_button_click', {})
         const install = this.getSnapshot().install
@@ -719,6 +731,36 @@ export class PluginManagerController {
     return run
   }
 
+  /** Keep manual refresh feedback until its coalesced reads settle, without clearing cached cards. */
+  private async refresh(): Promise<void> {
+    if (this.disposed || this.getSnapshot().refreshStatus === 'refreshing') return
+    const startedAt = Date.now()
+    this.patch({
+      refreshStatus: 'refreshing',
+      ...this.getSnapshot().notice?.kind === 'refresh-failed' ? { notice: null } : {},
+    })
+    try {
+      await this.load()
+    } catch (_error) {
+      // A rejected transport request leaves the cached cards available for retry.
+      this.patch({ status: 'error' })
+    } finally {
+      // Hold the spinner to its minimum so a fast read does not flash it, then settle.
+      const remaining = REFRESH_SPINNER_MIN_MS - (Date.now() - startedAt)
+      if (remaining > 0) await new Promise<void>((resolve) => { setTimeout(resolve, remaining) })
+      this.settleRefresh()
+    }
+  }
+
+  /** Publish refresh feedback only before disposal. */
+  private settleRefresh(): void {
+    if (this.disposed) return
+    const failed = this.getSnapshot().status === 'error'
+    this.patch(failed && this.hasCachedInventory
+      ? { status: 'ready', refreshStatus: 'idle', notice: { kind: 'refresh-failed', seq: ++this.noticeSeq } }
+      : { refreshStatus: failed ? 'failed' : 'idle' })
+  }
+
   private async read(): Promise<void> {
     try {
       do {
@@ -734,6 +776,7 @@ export class PluginManagerController {
           continue
         }
         if (inventory.value.managementAvailable !== true) {
+          this.hasCachedInventory = false
           this.patch({ status: 'unavailable', packages: [] })
           continue
         }
@@ -746,8 +789,10 @@ export class PluginManagerController {
           this.patch({ status: 'error' })
           continue
         }
+        this.hasCachedInventory = true
         this.patch({
           status: 'ready',
+          refreshStatus: this.getSnapshot().refreshStatus === 'refreshing' ? 'refreshing' : 'idle',
           packages: sortPackages(bundles.value.map(bundle => packageView(bundle, plugins.value))),
         })
       } while (this.shouldRerun())
@@ -802,7 +847,7 @@ export class PluginManagerController {
     const typed = choice.kind === 'custom' ? choice.url.trim() : undefined
     if (typed !== undefined && !REGISTRY_URL.test(typed)) {
       this.finishAnalytics('failed', 'invalid-registry')
-      this.patchInstall({ phase: 'idle', registryError: true })
+      this.patchInstall({ phase: 'idle', registryError: true, registryOpen: true })
       return
     }
     this.abortInspect()

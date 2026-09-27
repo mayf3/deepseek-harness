@@ -78,7 +78,7 @@ description: "Chat 过程分组与活动摘要的明细业务规则。"
 | 空闲时从 `next-step` 领取的非人工消息 | 仅在 Step 1、已加载轮次起点、领取发生于起点之后、本轮没有 `next-turn` 领取、同一 `next-step` 批次没有人工消息时，作为轮次触发通知。 |
 | 其他非人工输入 | 普通 Context，保留在 Node Store，但不显示在 Chat 中。未领取、已取消或重新入队的消息不构成唤醒领取。 |
 
-触发通知的标题与图标使用记录中的 `source.kind`：`schedule`、`tool-jobs`、`cordis-host-runner` 分别表示定时任务、后台任务和插件更新。目标、Agent、团队、子任务和 webhook 来源有各自的标题；`provider: github` 的 webhook 使用 GitHub 标题。未知来源显示通用执行请求标题。展开通知显示记录的正文，不代表执行成功。
+触发通知的标题与图标使用记录中的 `source.kind`：`schedule`、`tool-jobs`、`cordis-host-runner` 分别表示定时任务、后台任务和插件更新。定时任务通知显示为「自动化任务」，与「自动化任务」入口使用同一个普通时钟图标。目标、Agent、团队、子任务和 webhook 来源有各自的标题；`provider: github` 的 webhook 使用 GitHub 标题。未知来源显示通用执行请求标题。展开通知显示记录的正文，不代表执行成功。
 
 | 轮次条件 | 当前行为 |
 |---|---|
