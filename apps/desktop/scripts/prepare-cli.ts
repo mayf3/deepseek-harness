@@ -9,6 +9,7 @@ import { join } from 'node:path'
 export interface DesktopCliTarget {
   readonly platform: NodeJS.Platform
   readonly arch: string
+  readonly macosMinimumVersion?: string
 }
 
 /**
@@ -25,11 +26,15 @@ export function prepareDesktopCli(destination: string, target: DesktopCliTarget)
       join(import.meta.dirname, 'prepare-windows-cli.ps1'), '-OutputDirectory', destination], { stdio: 'inherit' })
   } else {
     if (target.platform !== process.platform) throw new Error('desktop CLI: native launcher requires a matching build platform')
+    if (target.platform === 'darwin' && !/^\d+\.\d+(?:\.\d+)?$/u.test(target.macosMinimumVersion ?? '')) {
+      throw new Error('desktop CLI: the Electron macOS minimum version is required')
+    }
     const compiler = target.platform === 'darwin' ? 'clang++' : 'c++'
     const source = join(import.meta.dirname, '..', 'cli', 'launcher.cpp')
     for (const [name, definitions] of [['dsh', []], ['cli-control', ['-DDSH_CLI_CONTROL=1']]] as const) {
       execFileSync(compiler, ['-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
         ...target.platform === 'darwin' ? ['-arch', target.arch === 'arm64' ? 'arm64' : 'x86_64'] : [],
+        ...target.platform === 'darwin' ? ['-mmacosx-version-min=' + target.macosMinimumVersion] : [],
         ...definitions, source, '-o', join(destination, ...name === 'dsh' ? ['bin', name] : [name])], { stdio: 'inherit' })
     }
   }

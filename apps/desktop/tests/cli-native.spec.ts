@@ -1,6 +1,6 @@
 /** Real native command/installer exclusion with isolated application directories. */
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { rm } from 'node:fs/promises'
@@ -12,9 +12,15 @@ import { DesktopCliBusyError, DesktopCliUpdateGuard } from '../src/cli-update-gu
 let prepared: string
 beforeAll(() => {
   prepared = mkdtempSync(join(tmpdir(), 'dsh-cli-compiled-'))
-  prepareDesktopCli(prepared, { platform: process.platform, arch: process.platform === 'win32' ? 'x64' : process.arch })
+  prepareDesktopCli(prepared, { platform: process.platform, arch: process.platform === 'win32' ? 'x64' : process.arch,
+    ...process.platform === 'darwin' ? { macosMinimumVersion: '13.0' } : {} })
 })
 afterAll(() => { if (prepared !== undefined) rmSync(prepared, { recursive: true, force: true }) })
+
+it.skipIf(process.platform !== 'darwin')('targets the supplied macOS minimum rather than the build host version', () => {
+  const headers = execFileSync('/usr/bin/otool', ['-l', join(prepared, 'bin', 'dsh')], { encoding: 'utf8' })
+  expect(/LC_BUILD_VERSION[\s\S]*?minos\s+(\S+)/u.exec(headers)?.[1]).toBe('13.0')
+})
 
 function fixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-cli-installation-')))
