@@ -106,6 +106,11 @@ describe('SidebarRoot shell', () => {
     for (const button of screen.getAllByRole('button', { name: 'New session' })) {
       expect(button.getAttribute('aria-keyshortcuts')).toBe('Control+N')
     }
+    const expanded = screen.getAllByRole('button', { name: 'New session' }).find(button => button.querySelector('kbd') !== null)!
+    fireEvent.mouseEnter(expanded)
+    fireEvent.focus(expanded)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    expect(Array.from(expanded.querySelectorAll('kbd'), key => key.textContent)).toEqual(['Ctrl', 'N'])
     cleanup()
     render(<HeaderLeadingControls toggleSidebar={vi.fn()} startSession={vi.fn()} selectPanel={vi.fn()} t={t}
       usePanelInfo={neverHook} useSessions={neverHook} useSessionStatus={neverHook}
@@ -114,7 +119,7 @@ describe('SidebarRoot shell', () => {
     const button = screen.getByRole('button', { name: 'New session' })
     expect(button.getAttribute('aria-keyshortcuts')).toBe('Control+N')
     fireEvent.focus(button)
-    expect(screen.getByRole('tooltip').textContent).toContain('Ctrl N')
+    expect(Array.from(screen.getByRole('tooltip').querySelectorAll('kbd'), key => key.textContent)).toEqual(['Ctrl', 'N'])
   })
   it('routes New Session (capsule + wordmark) and the column toggle', () => {
     const b = mountShell()
@@ -306,5 +311,5 @@ it('uses the same effective sidebar binding for hover/focus hints and ARIA', () 
   const toggle = screen.getByRole('button', { name: en['toggle.collapse'] })
   expect(toggle.getAttribute('aria-keyshortcuts')).toBe('Meta+B')
   fireEvent.focus(toggle)
-  expect(screen.getByRole('tooltip').textContent).toContain('⌘ B')
+  expect(Array.from(screen.getByRole('tooltip').querySelectorAll('kbd'), key => key.textContent)).toEqual(['⌘', 'B'])
 })

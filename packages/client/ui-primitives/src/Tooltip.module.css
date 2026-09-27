@@ -1,4 +1,7 @@
 .bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   position: fixed;
   z-index: 100;
   /* Fixed-position shrink-to-fit measures only the space from `left` to the
@@ -20,6 +23,11 @@
 }
 
 .bubble[data-portal] { z-index: 1100; }
+.label { min-width: 0; }
+
+/* A 16px keycap centered beside a 20px label has 5px of vertical clearance. */
+.bubble[data-has-shortcut] { padding-inline-end: 5px; }
+.bubble[data-has-shortcut]:not(:has(.label)) { padding: 3px; }
 
 .bubble[data-side='right'] {
   transform: translateY(-50%);

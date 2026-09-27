@@ -108,7 +108,7 @@ Automatic collapse keeps the process open if hiding it would hide keyboard focus
 <a id="display-modes"></a>
 ## Display modes
 
-Settings → General → Work details offers `compact`, `standard` (default), `detailed`, and `verbose`; its description is “Choose how much detail to show for tool calls”. A saved `normal` reads as `standard`, and a saved `expanded` reads as `detailed`, without automatic write-back. Existing `detailed` remains `detailed`. Missing or invalid values, including the period before Host settings arrive, use `standard`; invalid values in other settings still fail validation.
+Settings → General → Work details offers four modes for choosing how much tool-call detail to show: Compact `compact`, Standard `standard`, Detailed `detailed`, and Verbose `verbose`.
 
 | Behavior | Compact | Standard | Detailed | Verbose |
 |---|---|---|---|---|
@@ -118,9 +118,19 @@ Settings → General → Work details offers `compact`, `standard` (default), `d
 | Individual reasoning and tool bodies | Manual expansion | Manual expansion | Manual expansion | Manual expansion |
 | Eligible completed Turn | Initially collapsed | Initially collapsed | Initially collapsed | Always open; duration/status header cannot collapse it |
 
-A closed group's header names the first three categories from its ranked summary, without displaying counts. A group without categories uses the thinking label. A running header names its live tool category, otherwise thinking; Standard appends live detail. Live titles remain visible for at least 150ms, retaining only the newest pending title.
+### Defaults and saving preferences
+
+Work details uses the Host setting `ui-chat.transcriptView`. The client reads it according to these rules:
+
+- Saved values for the four modes are used directly, regardless of changes to defaults.
+- Legacy `normal` and `expanded` values display as `detailed`, without automatically rewriting the saved values on disk.
+- When the setting is missing, `null`, or invalid, Desktop uses `standard` and non-Desktop Web uses `detailed`. Each client also uses its default before Host settings arrive; invalid values in other settings still fail validation.
+
+Reading a default does not automatically save configuration. When the user changes modes, the selected value is saved through Host settings; memory mode does not write to disk. Desktop onboarding writes preferences according to its rules when completed or skipped.
 
 ### Group-title rules
+
+A closed group's header names the first three categories from its ranked summary, without displaying counts. A group without categories uses the thinking label. A running header names its live tool category, otherwise thinking; Standard appends live detail. Live titles remain visible for at least 150ms, retaining only the newest pending title.
 
 All three stages share the tool-name classification below. A preparing Tool node uses its category's preparation label: read files for `read`, read images for `read_image`, write files for `write`, edit files for `edit` and `apply_patch`, and update the plan for `todo_write` and goal tools. Only the generic “Preparing tool calls” category appends the wire tool name in Standard mode; other categories omit it. It contributes one call without parsing arguments and renders one non-expandable row. A named live delta can create this node; historical calls start directly from tool/call without replaying preparation.
 

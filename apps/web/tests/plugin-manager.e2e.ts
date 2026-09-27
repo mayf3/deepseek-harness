@@ -239,6 +239,8 @@ describe('web e2e: plugin manager', () => {
       await panel.getByRole('button', { name: 'Back to plugins' }).click()
       await panel.getByRole('button', { name: 'View Agent Teams', exact: true }).waitFor()
       expect(await panel.getByRole('switch', { name: 'Enable Agent Teams', exact: true }).count()).toBe(1)
+      await panel.getByRole('button', { name: 'View Automation tasks', exact: true }).waitFor()
+      expect(await panel.getByText('Run tasks in your sessions at a set time or on a repeating schedule.', { exact: true }).count()).toBe(1)
       // The official configuration pages follow the language too, from their own dictionary.
       for (const title of ['Shell', 'Agent loop', 'Subagent', 'Web search']) {
         await panel.getByRole('button', { name: `View ${title}`, exact: true }).waitFor()
@@ -308,6 +310,37 @@ describe('web e2e: plugin manager', () => {
       expect(teamTripwire.warnings).toEqual([])
     } finally {
       await teamPage.close()
+    }
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('lists the Automation tasks rows and mounts them with the bundle switch', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-schedule'))
+    const panel = await openPluginsPanel()
+    const scheduleRows = () => [...scaffold.ctx.loader.entries()]
+      .filter(entry => ['time-context', 'schedule', 'ui-schedule'].includes(entry.options.id))
+    const running = () => scheduleRows().filter(entry => entry.fiber?.state === FiberState.ACTIVE).length
+    expect(running()).toBe(0)
+    await panel.getByRole('button', { name: '查看 自动化任务', exact: true }).click()
+    const rows = panel.locator('[data-plugin-rows]')
+    for (const title of ['时间感知', '任务调度', '任务界面']) {
+      await rows.locator('[data-plugin-row]', { hasText: title }).waitFor()
+    }
+    // A bundle that is off offers no row switches.
+    expect(await rows.getByRole('switch').count()).toBe(0)
+    const toggle = panel.getByRole('switch', { name: '启用 自动化任务', exact: true })
+    await toggle.click()
+    try {
+      await expect.poll(running, { timeout: 20_000 }).toBe(3)
+      await expect.poll(() => rows.locator('[data-plugin-row]', { hasText: '运行中' }).count(), { timeout: 20_000 }).toBe(3)
+      for (const title of ['时间感知', '任务调度', '任务界面']) {
+        await rows.getByRole('switch', { name: `启用组件 ${title}`, exact: true }).waitFor()
+      }
+      await page.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '自动化任务', exact: true }).waitFor()
+    } finally {
+      if (await toggle.getAttribute('aria-checked') === 'true') await toggle.click()
+      await expect.poll(running, { timeout: 20_000 }).toBe(0)
+      await panel.getByRole('button', { name: '返回插件列表' }).click()
     }
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)

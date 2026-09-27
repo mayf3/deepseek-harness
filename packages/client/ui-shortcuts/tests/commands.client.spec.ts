@@ -40,7 +40,7 @@ describe('assembled shortcut command owners', () => {
     const fixedIds = () => shortcuts.fixedCatalog.getSnapshot().map(row => row.id)
     expect(fixedIds()).toEqual(expect.arrayContaining(conversationIds))
     expect(shortcuts.fixedCatalog.getSnapshot().find(row => row.id === 'response.stop'))
-      .toMatchObject({ group: 'application', keys: ['Esc', 'Esc'] })
+      .toMatchObject({ group: 'input', keys: ['Esc', 'Esc'] })
     await client.unload('@deepseek-ai/dsh-client-ui-shortcuts')
     expect(fixedIds()).toEqual(expect.arrayContaining(conversationIds))
     expect(fixedIds()).not.toContain('fixed.move')

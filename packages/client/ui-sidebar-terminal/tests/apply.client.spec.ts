@@ -95,7 +95,7 @@ it('registers terminal views without recovery or cleanup slots, then releases co
     const Icon = definition.guide?.[0]?.icon
     if (Icon === undefined) throw new Error('Terminal guide icon was not registered')
     expect(renderToStaticMarkup(createElement(Icon, { size: 22 }))).toContain('width="22"')
-    expect(renderToStaticMarkup(createElement(Icon))).toContain('width="26"')
+    expect(renderToStaticMarkup(createElement(Icon))).toContain('width="36"')
     expect(definition.multiple).toBe(true)
     expect(h.dictionaries.get('sidebarTerminal')).toEqual({ en, zh })
     expect(h.entries.map(entry => [entry.name, entry.component, entry.locale])).toEqual([

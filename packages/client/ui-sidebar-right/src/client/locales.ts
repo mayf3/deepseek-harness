@@ -8,7 +8,6 @@
 
 /** Simplified Chinese dictionary and key-set source of truth. */
 export const zh = {
-  'shortcut.hint': '{label} {keys}',
   'command.close': '关闭当前页面／窗口',
   'command.refresh': '刷新当前页面',
   'command.noRefresh': '当前页面不支持刷新',
@@ -50,7 +49,6 @@ export type SidebarRightKey = keyof typeof zh
 
 /** English dictionary, checked against the Chinese key set. */
 export const en = {
-  'shortcut.hint': '{label} {keys}',
   'command.close': 'Close current page or window',
   'command.refresh': 'Refresh current page',
   'command.noRefresh': 'This page cannot be refreshed',

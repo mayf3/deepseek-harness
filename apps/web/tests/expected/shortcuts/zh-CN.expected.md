@@ -7,126 +7,72 @@
   - region "应用操作":
     - list:
       - listitem:
-        - text: 快捷键速查
-        - button "移除快捷键速查快捷键"
         - button "修改快捷键速查快捷键"
-        - button "快捷键速查 ⌘ /": ⌘ /
+        - text: 快捷键速查 ⌘ /
       - listitem:
-        - text: 新会话
-        - button "移除新会话快捷键"
         - button "修改新会话快捷键"
-        - button "新会话 ⌥ ⌘ N": ⌥ ⌘ N
+        - text: 新会话 ⌥ ⌘ N
       - listitem:
-        - text: 展开／收起左侧栏
-        - button "移除展开／收起左侧栏快捷键"
         - button "修改展开／收起左侧栏快捷键"
-        - button "展开／收起左侧栏 ⌥ ⌘ B": ⌥ ⌘ B
+        - text: 展开／收起左侧栏 ⌥ ⌘ B
       - listitem:
-        - text: 搜索会话
-        - button "移除搜索会话快捷键"
         - button "修改搜索会话快捷键"
-        - button "搜索会话 ⌥ ⌘ K": ⌥ ⌘ K
+        - text: 搜索会话 ⌥ ⌘ K
       - listitem:
-        - text: 添加工作区
-        - button "移除添加工作区快捷键"
         - button "修改添加工作区快捷键"
-        - button "添加工作区 ⌥ ⌘ O": ⌥ ⌘ O
+        - text: 添加工作区 ⌥ ⌘ O
       - listitem:
-        - text: 重命名会话
-        - button "移除重命名会话快捷键"
         - button "修改重命名会话快捷键"
-        - button "重命名会话 ⇧ ⌘ R": ⇧ ⌘ R
+        - text: 重命名会话 ⇧ ⌘ R
       - listitem:
-        - text: 分叉会话
-        - button "移除分叉会话快捷键"
         - button "修改分叉会话快捷键"
-        - button "分叉会话 ⇧ ⌘ F": ⇧ ⌘ F
+        - text: 分叉会话 ⇧ ⌘ F
       - listitem:
-        - text: 归档会话
-        - button "移除归档会话快捷键"
         - button "修改归档会话快捷键"
-        - button "归档会话 ⌥ ⌘ A": ⌥ ⌘ A
+        - text: 归档会话 ⌥ ⌘ A
       - listitem:
-        - text: 打开设置
-        - button "移除打开设置快捷键"
         - button "修改打开设置快捷键"
-        - button "打开设置 ⌘ ,": ⌘ ,
+        - text: 打开设置 ⌘ ,
       - listitem:
-        - text: 展开／收起右侧栏
-        - button "移除展开／收起右侧栏快捷键"
         - button "修改展开／收起右侧栏快捷键"
-        - button "展开／收起右侧栏 ⇧ ⌘ B": ⇧ ⌘ B
+        - text: 展开／收起右侧栏 ⇧ ⌘ B
       - listitem:
-        - text: 工作区文件
-        - button "移除工作区文件快捷键"
         - button "修改工作区文件快捷键"
-        - button "工作区文件 ⌥ ⌘ P": ⌥ ⌘ P
+        - text: 工作区文件 ⌥ ⌘ P
       - listitem:
-        - text: 新建终端
-        - button "移除新建终端快捷键"
         - button "修改新建终端快捷键"
-        - 'button "新建终端 ⌃ `"': "⌃ `"
+        - text: "新建终端 ⌃ `"
       - listitem:
-        - text: 分栏
-        - button "移除分栏快捷键"
         - button "修改分栏快捷键"
-        - button "分栏 ⌘ \\": ⌘ \
+        - text: 分栏 ⌘ \
       - listitem:
-        - text: 面板全屏／退出全屏
-        - button "移除面板全屏／退出全屏快捷键"
         - button "修改面板全屏／退出全屏快捷键"
-        - button "面板全屏／退出全屏 ⌥ ⌘ Enter": ⌥ ⌘ Enter
+        - text: 面板全屏／退出全屏 ⌥ ⌘ Enter
       - listitem:
-        - text: 刷新当前页面
         - button "修改刷新当前页面快捷键"
-        - button "刷新当前页面 暂无快捷键": 暂无快捷键
+        - text: 刷新当前页面 暂无快捷键
       - listitem:
-        - text: 关闭当前页面／窗口
-        - button "移除关闭当前页面／窗口快捷键"
         - button "修改关闭当前页面／窗口快捷键"
-        - button "关闭当前页面／窗口 ⌥ ⌘ W": ⌥ ⌘ W
-      - listitem:
-        - text: 停止生成
-        - button "停止生成 Esc Esc" [disabled]: Esc Esc
+        - text: 关闭当前页面／窗口 ⌥ ⌘ W
   - region "消息输入":
     - heading "消息输入" [level=3]
     - list:
-      - listitem:
-        - text: 使用互补的 Queue／Steer 方式
-        - button "使用互补的 Queue／Steer 方式 ⌘ Enter" [disabled]: ⌘ Enter
-      - listitem:
-        - text: 打开引用菜单
-        - button "打开引用菜单 @" [disabled]: "@"
-      - listitem:
-        - text: 换行
-        - button "换行 ⇧ Enter" [disabled]: ⇧ Enter
-      - listitem:
-        - text: 发送消息
-        - button "发送消息 Enter" [disabled]: Enter
-      - listitem:
-        - text: 打开命令菜单
-        - button "打开命令菜单 /" [disabled]: /
+      - listitem: 使用互补的 Queue／Steer 方式 ⌘ Enter
+      - listitem: 打开引用菜单 @
+      - listitem: 换行 ⇧ Enter
+      - listitem: 发送消息 Enter
+      - listitem: 打开命令菜单 /
+      - listitem: 停止生成 Esc Esc
   - region "菜单与弹层":
     - heading "菜单与弹层" [level=3]
     - list:
-      - listitem:
-        - text: 关闭菜单或顶层弹窗
-        - button "关闭菜单或顶层弹窗 Esc" [disabled]: Esc
-      - listitem:
-        - text: 移动菜单选择
-        - button "移动菜单选择 ↑ ↓" [disabled]: ↑ ↓
-      - listitem:
-        - text: 选择菜单项
-        - button "选择菜单项 Enter" [disabled]: Enter
+      - listitem: 关闭菜单或顶层弹窗 Esc
+      - listitem: 移动菜单选择 ↑ ↓
+      - listitem: 选择菜单项 Enter
   - region "审批区域":
     - heading "审批区域" [level=3]
     - list:
-      - listitem:
-        - text: 允许一次
-        - button "允许一次 Enter" [disabled]: Enter
-      - listitem:
-        - text: 拒绝
-        - button "拒绝 Esc" [disabled]: Esc
+      - listitem: 允许一次 Enter
+      - listitem: 拒绝 Esc
   - contentinfo:
     - button "恢复全部默认" [disabled]
-    - text: 0 项已自定义

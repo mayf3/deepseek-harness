@@ -15,7 +15,9 @@
  * selected effort come from the Host rather than a client-owned vocabulary. A
  * rejected selection announces through the shared transient Toast anchored to
  * the composer card; the in-menu strip with Retry remains the catalog-load
- * surface.
+ * surface. While the directory's pending selection is unsettled, the trigger
+ * shows a spinner in place of its chevron, and each row whose value that
+ * selection carries shows one in place of its check mark.
  */
 import { MenuSurface } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
@@ -27,7 +29,7 @@ import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular,
-  IconDataOutlineRegular, IconWarningOutlineRegular, Toast,
+  IconDataOutlineRegular, IconWarningOutlineRegular, StateDot, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
@@ -114,7 +116,8 @@ export function ModelSelect(
         label: effort.name,
       })),
     ], [reasoning, t])
-  const busy = state.status === 'selecting'
+  const { pending } = state
+  const busy = pending !== null
 
   const reload = (): void => {
     lastActionRef.current = 'load'
@@ -366,6 +369,7 @@ export function ModelSelect(
         aria-expanded={open}
         aria-controls={open ? `${id}-menu` : undefined}
         title={triggerLabel}
+        aria-busy={busy}
         disabled={locked}
         onClick={() => {
           if (open) {
@@ -378,7 +382,9 @@ export function ModelSelect(
         <IconDataOutlineRegular className={css.triggerIcon} size={16} />
         <span className={css.triggerLabel}>{modelLabel}</span>
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
-        <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />
+        {busy
+          ? <StateDot state="ongoing" />
+          : <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />}
       </button>
 
       {/* Portaled to body (Menu primitive's portal mode) so the sidebar and
@@ -452,7 +458,9 @@ export function ModelSelect(
                               <span className={css.modelName}>{model.name}</span>
                             </span>
                             <span className={css.check}>
-                              {selected ? <IconCheckOutlineRegular /> : null}
+                              {pending?.provider === group.id && pending.model === model.id
+                                ? <StateDot state="ongoing" />
+                                : selected ? <IconCheckOutlineRegular /> : null}
                             </span>
                           </button>
                         )
@@ -492,7 +500,10 @@ export function ModelSelect(
                       <span className={css.modelName}>{level.label}</span>
                     </span>
                     <span className={css.check}>
-                      {effectiveEffort === level.effort ? <IconCheckOutlineRegular /> : null}
+                      {pending !== null && pending.provider === state.current?.provider
+                        && pending.model === state.current.model && pending.reasoningEffort === level.effort
+                        ? <StateDot state="ongoing" />
+                        : effectiveEffort === level.effort ? <IconCheckOutlineRegular /> : null}
                     </span>
                   </button>
                 ))}

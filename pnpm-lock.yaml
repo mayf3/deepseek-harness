@@ -247,6 +247,9 @@ importers:
       '@deepseek-ai/dsh-experimental-auto-review':
         specifier: workspace:*
         version: link:../../packages/experimental/auto-review
+      '@deepseek-ai/dsh-experimental-schedule-bundle':
+        specifier: workspace:*
+        version: link:../../packages/experimental/schedule-bundle
       '@deepseek-ai/dsh-experimental-voice-input-bundle':
         specifier: workspace:*
         version: link:../../packages/experimental/voice-input-bundle
@@ -594,6 +597,9 @@ importers:
       '@deepseek-ai/dsh-atomic-write':
         specifier: workspace:*
         version: link:../../packages/util/atomic-write
+      '@deepseek-ai/dsh-client-product-analytics':
+        specifier: workspace:*
+        version: link:../../packages/client/product-analytics
       '@deepseek-ai/dsh-client-shortcuts':
         specifier: workspace:*
         version: link:../../packages/client/shortcuts
@@ -724,8 +730,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/workspace/workspace
       '@deepseek-ai/libreoffice-kit':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.1.1
+        version: 0.1.1
 
   apps/web:
     devDependencies:
@@ -1183,6 +1189,9 @@ importers:
       '@deepseek-ai/dsh-client-file-upload':
         specifier: workspace:*
         version: link:../../client/file-upload
+      '@deepseek-ai/dsh-client-product-analytics':
+        specifier: workspace:*
+        version: link:../../client/product-analytics
       '@deepseek-ai/dsh-client-ui-plugin-manager':
         specifier: workspace:*
         version: link:../../client/ui-plugin-manager
@@ -1983,6 +1992,9 @@ importers:
       '@deepseek-ai/dsh-mcp-resources':
         specifier: workspace:*
         version: link:../../mcp/mcp-resources
+      '@deepseek-ai/dsh-otel':
+        specifier: workspace:*
+        version: link:../../telemetry/otel
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:*
         version: link:../../interaction/permission-presets
@@ -2389,6 +2401,9 @@ importers:
       '@deepseek-ai/dsh-client-modules':
         specifier: workspace:*
         version: link:../../client/modules
+      '@deepseek-ai/dsh-client-product-analytics':
+        specifier: workspace:*
+        version: link:../../client/product-analytics
       '@deepseek-ai/dsh-client-resources':
         specifier: workspace:*
         version: link:../../client/resources
@@ -2464,9 +2479,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-renderer':
         specifier: workspace:*
         version: link:../../client/ui-renderer
-      '@deepseek-ai/dsh-client-ui-schedule':
-        specifier: workspace:*
-        version: link:../../client/ui-schedule
       '@deepseek-ai/dsh-client-ui-session':
         specifier: workspace:*
         version: link:../../client/ui-session
@@ -2590,6 +2602,9 @@ importers:
       '@deepseek-ai/dsh-host-plugin-inventory':
         specifier: workspace:*
         version: link:../../host/plugin-inventory
+      '@deepseek-ai/dsh-host-product-telemetry-otel':
+        specifier: workspace:*
+        version: link:../../host/product-telemetry-otel
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:*
         version: link:../../host/webserver
@@ -2611,9 +2626,6 @@ importers:
       '@deepseek-ai/dsh-plugin-manager':
         specifier: workspace:*
         version: link:../../boot/plugin-manager
-      '@deepseek-ai/dsh-schedule':
-        specifier: workspace:*
-        version: link:../../schedule/schedule
       '@deepseek-ai/dsh-session-log-export':
         specifier: workspace:*
         version: link:../../session-query/session-log-export
@@ -2638,9 +2650,6 @@ importers:
       '@deepseek-ai/dsh-terminal-bash':
         specifier: workspace:*
         version: link:../../terminal/terminal-bash
-      '@deepseek-ai/dsh-time-context':
-        specifier: workspace:*
-        version: link:../../context/time-context
       '@deepseek-ai/dsh-tool-ask-user':
         specifier: workspace:*
         version: link:../../interaction/tool-ask-user
@@ -2717,6 +2726,9 @@ importers:
         specifier: ^11.0.0
         version: 11.0.4
     devDependencies:
+      '@deepseek-ai/dsh-otel':
+        specifier: workspace:*
+        version: link:../../telemetry/otel
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
@@ -2751,8 +2763,8 @@ importers:
         specifier: workspace:*
         version: link:../../typert/registry
       '@deepseek-ai/libreoffice-kit':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.1.1
+        version: 0.1.1
 
   packages/client/connection:
     dependencies:
@@ -2919,6 +2931,52 @@ importers:
       '@deepseek-ai/dsh-package-manifest':
         specifier: workspace:*
         version: link:../../util/package-manifest
+
+  packages/client/product-analytics:
+    dependencies:
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:*
+        version: link:../../typert/protocol
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/dsh-otel':
+        specifier: workspace:*
+        version: link:../../telemetry/otel
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:~
+        version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-settings':
+        specifier: workspace:*
+        version: link:../../settings/settings
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-gateway':
+        specifier: workspace:*
+        version: link:../../api/gateway
+      '@deepseek-ai/dsh-compaction':
+        specifier: workspace:*
+        version: link:../../compaction/compaction
+      '@deepseek-ai/dsh-deepseek-account':
+        specifier: workspace:*
+        version: link:../../credentials/deepseek-account
+      '@deepseek-ai/dsh-host-product-telemetry-otel':
+        specifier: workspace:*
+        version: link:../../host/product-telemetry-otel
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../host/webserver
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:*
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:*
+        version: link:../../core/session
 
   packages/client/resources:
     devDependencies:
@@ -3200,6 +3258,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
+      '@deepseek-ai/dsh-client-product-analytics':
+        specifier: workspace:*
+        version: link:../product-analytics
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:*
         version: link:../store
@@ -3390,6 +3451,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
+      '@deepseek-ai/dsh-client-product-analytics':
+        specifier: workspace:*
+        version: link:../product-analytics
       '@deepseek-ai/dsh-client-shortcuts':
         specifier: workspace:*
         version: link:../shortcuts
@@ -3970,6 +4034,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
+      '@deepseek-ai/dsh-client-product-analytics':
+        specifier: workspace:*
+        version: link:../product-analytics
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:*
         version: link:../store
@@ -4247,6 +4314,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
+      '@deepseek-ai/dsh-client-product-analytics':
+        specifier: workspace:*
+        version: link:../product-analytics
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:*
         version: link:../store
@@ -4633,6 +4703,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
+      '@deepseek-ai/dsh-client-product-analytics':
+        specifier: workspace:*
+        version: link:../product-analytics
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:*
         version: link:../store
@@ -4815,6 +4888,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
+      '@deepseek-ai/dsh-client-product-analytics':
+        specifier: workspace:*
+        version: link:../product-analytics
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:*
         version: link:../store
@@ -5106,6 +5182,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
+      '@deepseek-ai/dsh-client-product-analytics':
+        specifier: workspace:*
+        version: link:../product-analytics
       '@deepseek-ai/dsh-client-shortcuts':
         specifier: workspace:*
         version: link:../shortcuts
@@ -6041,6 +6120,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
+      '@deepseek-ai/dsh-client-product-analytics':
+        specifier: workspace:*
+        version: link:../product-analytics
       '@deepseek-ai/dsh-client-shortcuts':
         specifier: workspace:*
         version: link:../shortcuts
@@ -7042,8 +7124,8 @@ importers:
         specifier: workspace:*
         version: link:../../typert/protocol
       '@deepseek-ai/libreoffice-kit':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.1.1
+        version: 0.1.1
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -7769,6 +7851,28 @@ importers:
         specifier: workspace:*
         version: link:../../util/values
 
+  packages/experimental/schedule-bundle:
+    dependencies:
+      '@deepseek-ai/dsh-client-ui-schedule':
+        specifier: workspace:*
+        version: link:../../client/ui-schedule
+      '@deepseek-ai/dsh-schedule':
+        specifier: workspace:*
+        version: link:../../schedule/schedule
+      '@deepseek-ai/dsh-time-context':
+        specifier: workspace:*
+        version: link:../../context/time-context
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:~
+        version: link:../../../vendor/include
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.3.1
+
   packages/experimental/speech-to-text:
     dependencies:
       '@deepseek-ai/dsh-brand':
@@ -8480,6 +8584,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-output-retention':
+        specifier: workspace:*
+        version: link:../../util/output-retention
       '@deepseek-ai/dsh-sandbox':
         specifier: workspace:*
         version: link:../../sandbox/sandbox
@@ -8974,24 +9081,12 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
-      '@opentelemetry/api':
-        specifier: ^1.9.1
-        version: 1.9.1
       '@opentelemetry/api-logs':
         specifier: ^0.220.0
         version: 0.220.0
-      '@opentelemetry/core':
-        specifier: 2.9.0
-        version: 2.9.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/otlp-exporter-base':
         specifier: ^0.220.0
         version: 0.220.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/otlp-transformer':
-        specifier: ^0.220.0
-        version: 0.220.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources':
-        specifier: ^2.9.0
-        version: 2.10.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-logs':
         specifier: ^0.220.0
         version: 0.220.0(@opentelemetry/api@1.9.1)
@@ -9008,6 +9103,9 @@ importers:
       '@deepseek-ai/dsh-loader-smoke':
         specifier: workspace:*
         version: link:../../test-support/loader-smoke
+      '@deepseek-ai/dsh-otel':
+        specifier: workspace:*
+        version: link:../../telemetry/otel
 
   packages/host/webserver:
     dependencies:
@@ -10893,21 +10991,12 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
-      '@opentelemetry/api':
-        specifier: ^1.9.1
-        version: 1.9.1
       '@opentelemetry/api-logs':
         specifier: ^0.220.0
         version: 0.220.0
-      '@opentelemetry/exporter-logs-otlp-http':
-        specifier: ^0.220.0
-        version: 0.220.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/otlp-exporter-base':
         specifier: ^0.220.0
         version: 0.220.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources':
-        specifier: ^2.9.0
-        version: 2.10.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-logs':
         specifier: ^0.220.0
         version: 0.220.0(@opentelemetry/api@1.9.1)
@@ -10945,6 +11034,9 @@ importers:
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:*
         version: link:../../feedback/message-feedback
+      '@deepseek-ai/dsh-otel':
+        specifier: workspace:*
+        version: link:../../telemetry/otel
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
         version: link:../../core/session
@@ -11397,6 +11489,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-output-retention':
+        specifier: workspace:*
+        version: link:../../util/output-retention
       '@deepseek-ai/dsh-sandbox':
         specifier: workspace:*
         version: link:../../sandbox/sandbox
@@ -11519,6 +11614,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-output-retention':
+        specifier: workspace:*
+        version: link:../../util/output-retention
       '@deepseek-ai/dsh-pwsh-local':
         specifier: workspace:*
         version: link:../pwsh-local
@@ -11609,8 +11707,8 @@ importers:
   packages/skill/skill-office:
     dependencies:
       '@deepseek-ai/libreoffice-kit':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.1.1
+        version: 0.1.1
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -12680,6 +12778,37 @@ importers:
         specifier: workspace:~
         version: link:../../../vendor/cordis
 
+  packages/telemetry/otel:
+    dependencies:
+      '@opentelemetry/api':
+        specifier: ^1.9.1
+        version: 1.9.1
+      '@opentelemetry/api-logs':
+        specifier: ^0.220.0
+        version: 0.220.0
+      '@opentelemetry/core':
+        specifier: 2.9.0
+        version: 2.9.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/otlp-exporter-base':
+        specifier: ^0.220.0
+        version: 0.220.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/otlp-transformer':
+        specifier: ^0.220.0
+        version: 0.220.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources':
+        specifier: ^2.9.0
+        version: 2.10.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-logs':
+        specifier: ^0.220.0
+        version: 0.220.0(@opentelemetry/api@1.9.1)
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:*
+        version: link:../../core/session
+
   packages/terminal/terminal:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -13441,6 +13570,9 @@ importers:
       '@deepseek-ai/dsh-credentials-local':
         specifier: workspace:*
         version: link:../../credentials/credentials-local
+      '@deepseek-ai/dsh-deepseek-account':
+        specifier: workspace:*
+        version: link:../../credentials/deepseek-account
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:*
         version: link:../../util/http-proxy
@@ -13998,6 +14130,9 @@ importers:
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:*
         version: link:../../packages/feedback/message-feedback
+      '@deepseek-ai/dsh-otel':
+        specifier: workspace:*
+        version: link:../../packages/telemetry/otel
       '@deepseek-ai/dsh-output-retention':
         specifier: workspace:*
         version: link:../../packages/util/output-retention
@@ -14853,37 +14988,37 @@ packages:
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
 
-  '@deepseek-ai/libreoffice-kit-darwin-arm64@0.1.0':
-    resolution: {integrity: sha512-VtFKOp6CdNp9yfxkqxSg+tc3/od+E1BDiageJpQ2gBXKEVZAZDJLgn9ogf5tsgPKrADSoClWEUtQGrKpRove2Q==}
+  '@deepseek-ai/libreoffice-kit-darwin-arm64@0.1.1':
+    resolution: {integrity: sha512-D6NBvtoNpm9pOgBXGQTdxpds1tYMeiFKhGJgnXF/SE0124ZM8j0AOXI7cZ8CErHctqIoVYP+gKWCrnQl4we41A==}
     engines: {node: '>=22.19.0'}
     cpu: [arm64]
     os: [darwin]
 
-  '@deepseek-ai/libreoffice-kit-darwin-x64@0.1.0':
-    resolution: {integrity: sha512-TI+7wsPAj7lE4q+Mhl+cAJwmJYr7zJi2L1pIGicOZm3NFXrdLfv5Enp8MqU9tUDX2B2rofCPVkohq0g7db6VXQ==}
+  '@deepseek-ai/libreoffice-kit-darwin-x64@0.1.1':
+    resolution: {integrity: sha512-VcAqzmzDbRySLBnpRNYSEd+fDmAtdgL1hQMjRf4sFnQuz7m1vipQ00DtlqFG/T+9uCc20bMIyiDWh8zfYObW3w==}
     engines: {node: '>=22.19.0'}
     cpu: [x64]
     os: [darwin]
 
-  '@deepseek-ai/libreoffice-kit-wasm@0.1.0':
-    resolution: {integrity: sha512-xIZGPIeFAGnU8g7ChtFfW1JeOZ3T7sNaITvXpnGjZkwUhxiv/YqCO7KoWKD4ImVObNI0jiDtusAQKwbtgJiibQ==}
+  '@deepseek-ai/libreoffice-kit-wasm@0.1.1':
+    resolution: {integrity: sha512-YuKZJdDhR/0GeTZUHJsJvachJR8ZiS4lcrL+lxUF2GLRwXcMikN0zAQOA+6kD/nRI+vlHsCkX0KvHaKvfae79Q==}
     engines: {node: '>=22.19.0'}
     os: [linux]
 
-  '@deepseek-ai/libreoffice-kit-win32-arm64@0.1.0':
-    resolution: {integrity: sha512-zt2T2V86ulIIPckok5aYQAh5HLD+WiQrMwI9gbbLHm2gfj+1Z36x4b6BbQxkkADZZnc0hitYcEaqdxymThvIjQ==}
+  '@deepseek-ai/libreoffice-kit-win32-arm64@0.1.1':
+    resolution: {integrity: sha512-RR05Y9NQzPYRRo9vCydlp6HKv+0eR12A99Pw7bAuUmcagyGN3gtWZKaG6xrT8vccPf3mByP3Bi0Mo31D/lrySA==}
     engines: {node: '>=22.19.0'}
     cpu: [arm64]
     os: [win32]
 
-  '@deepseek-ai/libreoffice-kit-win32-x64@0.1.0':
-    resolution: {integrity: sha512-+lwdDltKEmvsldWHcFxIDsS7jQ7LNNhTOa7+JSN8E1oQKCPChkUGzovbgwvufNJ1R4aceJW60v2vQ0qp35pvvQ==}
+  '@deepseek-ai/libreoffice-kit-win32-x64@0.1.1':
+    resolution: {integrity: sha512-03CUYg9j2qJ7Q6K27xFCvTLa7FgawOZ1DtE6NlEYttF6TxGuyHEv358vBGc3cwlR1yG1Vfj+pa4e5MdPGpy8mA==}
     engines: {node: '>=22.19.0'}
     cpu: [x64]
     os: [win32]
 
-  '@deepseek-ai/libreoffice-kit@0.1.0':
-    resolution: {integrity: sha512-Q54S/ydM4OKirhwoE8g/FEJtVjViKZvDp/01Y//eXq5f2OgJTRPXxuvDEgYwFXq0xwzwSShag6t3sDOEKcc2eg==}
+  '@deepseek-ai/libreoffice-kit@0.1.1':
+    resolution: {integrity: sha512-vML+3Nh/159k/TWuxLfZU1O39BA0m+/jybfySu9dJaTHR2oAi+hHWud6iRhBaCie5N6ADfo4DNHajBk52pmRog==}
     engines: {node: '>=22.19.0'}
     hasBin: true
 
@@ -16136,12 +16271,6 @@ packages:
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
-
-  '@opentelemetry/exporter-logs-otlp-http@0.220.0':
-    resolution: {integrity: sha512-8186thl+pTw64iz/qEEen5oJZoZ/gO73XruChdaGlYdWOdBIQ42r+vHLf6a7vIDqTD4b8ZOoMlyxptanECaI9A==}
-    engines: {node: ^18.19.0 || >=20.6.0}
-    peerDependencies:
-      '@opentelemetry/api': ^1.3.0
 
   '@opentelemetry/otlp-exporter-base@0.220.0':
     resolution: {integrity: sha512-CXYo8UD5Mn9YbgebO2EL4wejtA+gxLmLiu6HCk2KH2BR7XhFN6/6p1UlCb23DYCjeYkndevLHuejCCN1yx4+OQ==}
@@ -22366,32 +22495,32 @@ snapshots:
 
   '@csstools/css-tokenizer@4.0.0': {}
 
-  '@deepseek-ai/libreoffice-kit-darwin-arm64@0.1.0':
+  '@deepseek-ai/libreoffice-kit-darwin-arm64@0.1.1':
     optional: true
 
-  '@deepseek-ai/libreoffice-kit-darwin-x64@0.1.0':
+  '@deepseek-ai/libreoffice-kit-darwin-x64@0.1.1':
     optional: true
 
-  '@deepseek-ai/libreoffice-kit-wasm@0.1.0':
+  '@deepseek-ai/libreoffice-kit-wasm@0.1.1':
     optional: true
 
-  '@deepseek-ai/libreoffice-kit-win32-arm64@0.1.0':
+  '@deepseek-ai/libreoffice-kit-win32-arm64@0.1.1':
     optional: true
 
-  '@deepseek-ai/libreoffice-kit-win32-x64@0.1.0':
+  '@deepseek-ai/libreoffice-kit-win32-x64@0.1.1':
     optional: true
 
-  '@deepseek-ai/libreoffice-kit@0.1.0':
+  '@deepseek-ai/libreoffice-kit@0.1.1':
     dependencies:
       fflate: 0.8.2
       fontkit: 2.0.4
       saxes: 6.0.0
     optionalDependencies:
-      '@deepseek-ai/libreoffice-kit-darwin-arm64': 0.1.0
-      '@deepseek-ai/libreoffice-kit-darwin-x64': 0.1.0
-      '@deepseek-ai/libreoffice-kit-wasm': 0.1.0
-      '@deepseek-ai/libreoffice-kit-win32-arm64': 0.1.0
-      '@deepseek-ai/libreoffice-kit-win32-x64': 0.1.0
+      '@deepseek-ai/libreoffice-kit-darwin-arm64': 0.1.1
+      '@deepseek-ai/libreoffice-kit-darwin-x64': 0.1.1
+      '@deepseek-ai/libreoffice-kit-wasm': 0.1.1
+      '@deepseek-ai/libreoffice-kit-win32-arm64': 0.1.1
+      '@deepseek-ai/libreoffice-kit-win32-x64': 0.1.1
 
   '@docsearch/css@3.8.2': {}
 
@@ -23452,15 +23581,6 @@ snapshots:
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/semantic-conventions': 1.43.0
-
-  '@opentelemetry/exporter-logs-otlp-http@0.220.0(@opentelemetry/api@1.9.1)':
-    dependencies:
-      '@opentelemetry/api': 1.9.1
-      '@opentelemetry/api-logs': 0.220.0
-      '@opentelemetry/core': 2.9.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/otlp-exporter-base': 0.220.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/otlp-transformer': 0.220.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-logs': 0.220.0(@opentelemetry/api@1.9.1)
 
   '@opentelemetry/otlp-exporter-base@0.220.0(@opentelemetry/api@1.9.1)':
     dependencies:

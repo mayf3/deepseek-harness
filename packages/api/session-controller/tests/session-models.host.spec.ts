@@ -5,7 +5,7 @@
  * boundary for a running selection change.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -617,8 +617,40 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('accepts consecutive model switches while default persistence is blocked', async () => {
+    const { ctx, sessionId } = await harness()
+    const release = Promise.withResolvers<undefined>()
+    const saves: Promise<void>[] = []
+    const operations: Promise<unknown>[] = []
+    onTestFinished(async () => {
+      release.resolve(undefined)
+      await Promise.allSettled([...operations, ...saves])
+      await ctx.fiber.dispose()
+    })
+    const remote = createSessionTestRemote(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      saveDefaultModelSelection: () => {
+        saves.push(release.promise)
+        return release.promise
+      },
+      cwd: '/tmp',
+    })
+
+    for (const model of ['deepseek-reasoner', 'deepseek-chat']) {
+      let returned = false
+      const operation = remote.selectModel({ sessionId, provider: 'deepseek-official', model })
+        .then((result) => { expectValue(result); returned = true })
+      operations.push(operation)
+      await expect.poll(() => returned).toBe(true)
+      expect(currentSelection(ctx, sessionId)).toMatchObject({ provider: 'deepseek-official', model })
+    }
+    expect(saves).toHaveLength(2)
+  })
+
   it('saves an accepted selection as the default and survives a storage failure', async () => {
     const { ctx, sessionId } = await harness()
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    onTestFinished(() => { warn.mockRestore() })
     const saved: unknown[] = []
     let reject = false
     const remote = createSessionTestRemote(ctx, {
@@ -650,6 +682,9 @@ describe('Web session model selection', () => {
     expect(stillAccepted.selected).toEqual({ provider: 'deepseek-official', model: 'deepseek-chat', reasoningEffort: 'high' })
     expect(currentSelection(ctx, sessionId))
       .toEqual({ provider: 'deepseek-official', model: 'deepseek-chat', reasoningEffort: 'high' })
+    await expect.poll(() => warn.mock.calls).toContainEqual([
+      'session-controller: model selection changed for the Session but the default was not saved: Error: read-only document',
+    ])
     await ctx.fiber.dispose()
   })
 
