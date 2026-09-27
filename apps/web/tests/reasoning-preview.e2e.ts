@@ -66,10 +66,12 @@ it('shows completed paragraph first lines across blank lines with a right-edge f
       await expandOwningTurnProcess(page, reasoning)
       await reasoning.waitFor()
       const whale = page.locator('[data-chat-running] svg')
-      await whale.locator('animate').waitFor({ state: 'attached' })
-      const positions = await whale.evaluate(async (element) => {
-        const svg = element as SVGSVGElement
-        const path = svg.querySelector('path')!
+      const animatedWhale = whale.locator('path:has(animate)')
+      const restingWhale = whale.locator('path:not(:has(animate))')
+      await animatedWhale.locator('animate').waitFor({ state: 'attached' })
+      const positions = await animatedWhale.evaluate(async (element) => {
+        const path = element as SVGPathElement
+        const svg = path.ownerSVGElement!
         const time = svg.getCurrentTime()
         svg.pauseAnimations()
         try {
@@ -88,12 +90,14 @@ it('shows completed paragraph first lines across blank lines with a right-edge f
       })
       expect(positions[1]).not.toEqual(positions[0])
       expect(positions[2]).toEqual(positions[0])
-      await whale.evaluate((element) => { element.setAttribute('data-whale-before-preference', 'true') })
+      expect(await animatedWhale.evaluate(element => getComputedStyle(element).display)).not.toBe('none')
+      expect(await restingWhale.evaluate(element => getComputedStyle(element).display)).toBe('none')
       await page.emulateMedia({ reducedMotion: 'reduce' })
-      await expect.poll(() => whale.locator('animate').count()).toBe(0)
+      await expect.poll(() => animatedWhale.evaluate(element => getComputedStyle(element).display)).toBe('none')
+      await expect.poll(() => restingWhale.evaluate(element => getComputedStyle(element).display)).not.toBe('none')
       await page.emulateMedia({ reducedMotion: 'no-preference' })
-      await whale.locator('animate').waitFor({ state: 'attached' })
-      expect(await whale.getAttribute('data-whale-before-preference')).toBeNull()
+      await expect.poll(() => animatedWhale.evaluate(element => getComputedStyle(element).display)).not.toBe('none')
+      await expect.poll(() => restingWhale.evaluate(element => getComputedStyle(element).display)).toBe('none')
       expect(await reasoning.getAttribute('data-preview')).toBeNull()
 
       first.proceed.resolve(undefined)

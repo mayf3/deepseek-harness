@@ -13,7 +13,7 @@
   - time: {{clock}}
 - paragraph: partial
 - status: Deep diving...
-- text: Deep diving for {{duration}} ···
+- text: Deep diving for {{duration}}...
 - region "To-dos":
   - button "To-dos 1 completed · 1 in progress"
 - text: Ongoing Goal Keep the composer context panels aligned

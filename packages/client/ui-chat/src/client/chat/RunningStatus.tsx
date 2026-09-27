@@ -34,11 +34,7 @@ export const RunningStatus = memo(function RunningStatus({ startTime, t }: Runni
       <span className={css.runningDivider} aria-hidden="true" />
       <span className={css.runningContent}>
         <RunningWhaleTail />
-        <span className={css.runningText}>
-          {label.split(/(\d+)/).map((part, index) => (
-            <TextShimmer key={index} active className={/^\d+$/.test(part) ? css.runningNumber : undefined}>{part}</TextShimmer>
-          ))}
-        </span>
+        <TextShimmer active className={css.runningText}>{label}</TextShimmer>
       </span>
     </div>
   )

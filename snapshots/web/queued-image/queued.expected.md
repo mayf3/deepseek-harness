@@ -10,7 +10,7 @@
 - button "Copy"
 - paragraph: partial
 - status: Deep diving...
-- text: Deep diving for {{duration}} ···
+- text: Deep diving for {{duration}}...
 - list:
   - listitem:
     - img "Queued message image"

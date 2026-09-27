@@ -14,7 +14,7 @@
 - button "Bash Print alpha to stdout"
 - paragraph: partial
 - status: Deep diving...
-- text: Deep diving for {{duration}} ···
+- text: Deep diving for {{duration}}...
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write
