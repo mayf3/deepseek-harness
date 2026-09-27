@@ -274,7 +274,11 @@ export interface ConfirmState {
 export interface PluginManagerState {
   /** `unavailable` when the Host runs without a managed profile; `error` keeps the last packages. */
   readonly status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
-  /** Manual refresh feedback; background reads do not show the toolbar spinner. */
+  /**
+   * Manual refresh feedback: `refreshing` until reads settle and the 400 ms minimum elapses;
+   * `failed` after a failed refresh without cached inventory; otherwise `idle`, including
+   * cached refresh failures reported by toast. Background reads do not start the spinner.
+   */
   readonly refreshStatus: 'idle' | 'refreshing' | 'failed'
   readonly packages: readonly PackageView[]
   /** Package names and row keys with an action crossing the wire. */

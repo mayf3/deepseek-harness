@@ -374,6 +374,26 @@ describe('web e2e: plugin manager', () => {
     await panel.getByRole('button', { name: '查看 @fixture/bundle', exact: true }).waitFor({ timeout: 20_000 })
     const toggle = panel.getByRole('switch', { name: '启用 @fixture/bundle' })
     expect(await toggle.getAttribute('aria-checked')).toBe('false')
+    const card = panel.locator('[data-plugin-package="@fixture/bundle"]')
+    const open = card.getByRole('button', { name: '查看 @fixture/bundle', exact: true })
+    await open.hover()
+    const hoverRadius = await card.evaluate(element => getComputedStyle(element).borderRadius)
+    await toggle.focus()
+    await page.keyboard.press('Shift+Tab')
+    expect(await open.evaluate(element => element.matches(':focus-visible'))).toBe(true)
+    const focusRing = await open.evaluate((element) => {
+      const style = getComputedStyle(element, '::after')
+      return {
+        radius: style.borderRadius,
+        cardRadius: style.getPropertyValue('--dsw-radius-xl').trim(),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+      }
+    })
+    expect(focusRing.radius).toBe(hoverRadius)
+    expect(focusRing.radius).toBe(focusRing.cardRadius)
+    expect(focusRing.outlineStyle).toBe('solid')
+    expect(focusRing.outlineWidth).toBeGreaterThan(0)
     // The profile's own group holds its fixture bundle and the scaffold's defaults bundle; the installation's
     // optional bundles open the Official group, followed by the official plugins that registered their
     // configuration, and its other bundles stay off the page.
@@ -632,9 +652,43 @@ describe('web e2e: plugin manager', () => {
         let field = specField
         const customRegistry = 'https://registry.example.test/'
         if (target === 'custom registry') {
-          await dialog.getByRole('button', { name: /^安装源/ }).click()
-          field = probe.locator('[data-install-registry]').getByRole('textbox', { name: '自定义地址', exact: true })
+          const registryToggle = dialog.getByRole('button', { name: /^安装源/ })
+          await registryToggle.click()
+          const registry = probe.locator('[data-install-registry]')
+          const offered = registry.getByRole('radio', { name: 'npm 官方源 registry.npmjs.org', exact: true })
+          const custom = registry.getByRole('radio', { name: '自定义地址', exact: true })
+          field = registry.getByRole('textbox', { name: '自定义地址', exact: true })
+          expect(await offered.isChecked()).toBe(true)
+          expect(await custom.isChecked()).toBe(false)
+          await offered.focus()
+          await probe.keyboard.press('Tab')
+          expect(await field.evaluate(element => element === document.activeElement)).toBe(true)
+          expect(await offered.isChecked()).toBe(true)
+          expect(await custom.isChecked()).toBe(false)
+          await probe.keyboard.press('Shift+Tab')
+          expect(await offered.evaluate(element => element === document.activeElement)).toBe(true)
+          await probe.keyboard.press('Shift+Tab')
+          await registry.waitFor({ state: 'detached' })
+          expect(await registryToggle.evaluate(element => element === document.activeElement)).toBe(true)
+          await probe.keyboard.press('Enter')
+          await custom.focus()
+          await probe.keyboard.press('Space')
+          expect(await custom.isChecked()).toBe(true)
+          expect(await offered.isChecked()).toBe(false)
+          expect(await field.evaluate(element => element === document.activeElement)).toBe(true)
           await field.fill(customRegistry)
+          await probe.keyboard.press('Shift+Tab')
+          expect(await custom.evaluate(element => element === document.activeElement)).toBe(true)
+          await probe.keyboard.press('Tab')
+          expect(await field.evaluate(element => element === document.activeElement)).toBe(true)
+          await probe.keyboard.press('Tab')
+          await registry.waitFor({ state: 'detached' })
+          expect(await registryToggle.evaluate(element => element === document.activeElement)).toBe(true)
+          await probe.keyboard.press('Enter')
+          await custom.focus()
+          await probe.keyboard.press('Tab')
+          expect(await field.evaluate(element => element === document.activeElement)).toBe(true)
+          expect(await custom.isChecked()).toBe(true)
         }
         const value = target === 'package' ? spec : customRegistry
         const assertUnsubmitted = async (label: string) => {

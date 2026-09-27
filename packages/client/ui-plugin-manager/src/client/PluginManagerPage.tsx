@@ -16,7 +16,7 @@ import {
   Button, IconCheckCircleFillRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineMedium,
   IconChevronRightOutlineRegular, IconCloseOutlineMedium,
   IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
-  IconWarningOutlineRegular, Input, Modal,
+  IconWarningOutlineRegular, Input, Modal, pointerModality,
   PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTerminal,
   StateDot, Switch, Tag, TerminalBlock, Toast, Tooltip, useAnchoredPosition, useDismissOnOutsidePointer,
   type IconProps, type StateDotState, type TerminalBlockLabels,
@@ -985,6 +985,19 @@ function InstallDialog({
                 style={registryPosition ?? { visibility: 'hidden', left: 0, top: 0 }}
                 data-install-registry
                 aria-label={t('registryLegend')}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Tab' || event.ctrlKey || event.altKey || event.metaKey || event.nativeEvent.isComposing) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const radio = event.currentTarget.querySelector<HTMLInputElement>('input[type="radio"]:checked')
+                  const field = registryCustomRef.current
+                  if (event.shiftKey && event.target === field) radio?.focus()
+                  else if (!event.shiftKey && event.target !== field) field?.focus()
+                  else {
+                    onToggleRegistry()
+                    registryToggleRef.current?.focus()
+                  }
+                }}
               >
                 {offeredRegistries(install.registries).map((registry) => {
                   const checked = choice.kind === 'offered' && choice.registry === registry
@@ -1009,7 +1022,10 @@ function InstallDialog({
                       type="radio"
                       name={registryId}
                       checked={choice.kind === 'custom'}
-                      onChange={() => { registryCustomRef.current?.focus() }}
+                      onChange={() => {
+                        onChooseRegistry({ kind: 'custom', url: customRegistryDraft })
+                        registryCustomRef.current?.focus()
+                      }}
                     />
                     <span className={css.registryTitle}><span>{t('registryCustom')}</span></span>
                   </label>
@@ -1022,7 +1038,9 @@ function InstallDialog({
                     value={choice.kind === 'custom' ? choice.url : customRegistryDraft}
                     aria-invalid={install.registryError}
                     aria-describedby={install.registryError ? registryErrorId : undefined}
-                    onFocus={() => { if (choice.kind !== 'custom') onChooseRegistry({ kind: 'custom', url: customRegistryDraft }) }}
+                    onFocus={() => {
+                      if (pointerModality() && choice.kind !== 'custom') onChooseRegistry({ kind: 'custom', url: customRegistryDraft })
+                    }}
                     onChange={(event) => { onChooseRegistry({ kind: 'custom', url: event.currentTarget.value }) }}
                     onCompositionStart={registryComposition.onCompositionStart}
                     onCompositionEnd={registryComposition.onCompositionEnd}

@@ -4,10 +4,42 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { chromium, type Locator, type Page } from 'playwright'
 import { expect, it } from 'vitest'
 import { launchWebScaffold, captureStableAria, compareOrRefreshGolden, webSnapshotMode, watchConsole, type WebScaffold } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE } from './support.ts'
+
+async function invalidInputStyles(page: Page, input: Locator) {
+  const styles = []
+  try {
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme })
+      await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBe(colorScheme === 'dark' ? '' : null)
+      await input.focus()
+      await expect.poll(() => input.evaluate(element => document.activeElement === element)).toBe(true)
+      expect(await input.getAttribute('aria-invalid')).toBe('true')
+      const focused = await input.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return { outline: style.outlineStyle, boxShadow: style.boxShadow, borderColor: style.borderColor }
+      })
+      expect(focused.outline).toBe('none')
+      expect(focused.boxShadow).toContain('inset')
+      expect(focused.boxShadow).toContain('0px 0px 0px 0.5px')
+      expect(focused.boxShadow).toContain(focused.borderColor)
+      await input.evaluate((element) => { (element as HTMLInputElement).blur() })
+      await expect.poll(() => input.evaluate(element => document.activeElement === element)).toBe(false)
+      const blurred = await input.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return { outline: style.outlineStyle, boxShadow: style.boxShadow, borderColor: style.borderColor }
+      })
+      expect(blurred).toEqual({ outline: 'none', boxShadow: 'none', borderColor: focused.borderColor })
+      styles.push({ colorScheme, focused, blurred })
+    }
+    return styles
+  } finally {
+    await page.emulateMedia({ colorScheme: null })
+  }
+}
 
 it('cancels installation, retries and highlights the enabled plugin at 40% alpha, and recovers unknown results', async () => {
   const scratch = await mkdtemp(join(tmpdir(), 'dsh-install-cancel-'))
@@ -59,16 +91,19 @@ it('cancels installation, retries and highlights the enabled plugin at 40% alpha
       await customAddress.waitFor({ state: 'visible' })
       await expect.poll(() => customAddress.evaluate(element => document.activeElement === element)).toBe(true)
       expect(await customAddress.getAttribute('aria-invalid')).toBe('true')
-      const invalidStyle = await customAddress.evaluate((element) => {
-        const style = getComputedStyle(element)
-        return { outline: style.outlineStyle, boxShadow: style.boxShadow }
-      })
-      expect(invalidStyle).toEqual({ outline: 'none', boxShadow: 'none' })
-      await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-cancel/invalid-registry.expected.md', import.meta.url)),
-        `${await captureStableAria(page, '[data-install-registry] > [data-checked="true"]', scaffold.workspaceCwd)}\n\n${JSON.stringify(invalidStyle, null, 2)}`, webSnapshotMode())
+      const registryStyles = await invalidInputStyles(page, customAddress)
+      const invalidRegistryAria = await captureStableAria(page, '[data-install-registry] > [data-checked="true"]', scaffold.workspaceCwd)
       await registryMenu.getByRole('radio').first().check()
       await page.keyboard.press('Escape')
       await registryMenu.waitFor({ state: 'hidden' })
+      const packageName = dialog.getByRole('textbox', { name: '包名或地址', exact: true })
+      await packageName.fill('./relative')
+      await packageName.press('Enter')
+      await expect.poll(() => packageName.getAttribute('aria-invalid')).toBe('true')
+      const packageStyles = await invalidInputStyles(page, packageName)
+      await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-cancel/invalid-registry.expected.md', import.meta.url)),
+        `${invalidRegistryAria}\n\n${JSON.stringify({ registry: registryStyles, packageName: packageStyles }, null, 2)}`, webSnapshotMode())
+      await packageName.fill('slow-package')
       // Hold request delivery and the real Host's cancellation reply independently.
       // Cancellation reaches the Host before the install it names.
       const cancellationArrived = Promise.withResolvers<undefined>()

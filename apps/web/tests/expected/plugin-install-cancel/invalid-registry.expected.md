@@ -7,6 +7,60 @@
 - text: 填写内网或私有 npm 源地址，以 http:// 或 https:// 开头。若为需要登录的源，请把凭据放在本机的 ~/.npmrc 里。
 
 {
-  "outline": "none",
-  "boxShadow": "none"
+  "registry": [
+    {
+      "colorScheme": "light",
+      "focused": {
+        "outline": "none",
+        "boxShadow": "rgb(236, 19, 19) 0px 0px 0px 0.5px inset",
+        "borderColor": "rgb(236, 19, 19)"
+      },
+      "blurred": {
+        "outline": "none",
+        "boxShadow": "none",
+        "borderColor": "rgb(236, 19, 19)"
+      }
+    },
+    {
+      "colorScheme": "dark",
+      "focused": {
+        "outline": "none",
+        "boxShadow": "rgb(242, 90, 90) 0px 0px 0px 0.5px inset",
+        "borderColor": "rgb(242, 90, 90)"
+      },
+      "blurred": {
+        "outline": "none",
+        "boxShadow": "none",
+        "borderColor": "rgb(242, 90, 90)"
+      }
+    }
+  ],
+  "packageName": [
+    {
+      "colorScheme": "light",
+      "focused": {
+        "outline": "none",
+        "boxShadow": "rgb(236, 19, 19) 0px 0px 0px 0.5px inset",
+        "borderColor": "rgb(236, 19, 19)"
+      },
+      "blurred": {
+        "outline": "none",
+        "boxShadow": "none",
+        "borderColor": "rgb(236, 19, 19)"
+      }
+    },
+    {
+      "colorScheme": "dark",
+      "focused": {
+        "outline": "none",
+        "boxShadow": "rgb(242, 90, 90) 0px 0px 0px 0.5px inset",
+        "borderColor": "rgb(242, 90, 90)"
+      },
+      "blurred": {
+        "outline": "none",
+        "boxShadow": "none",
+        "borderColor": "rgb(242, 90, 90)"
+      }
+    }
+  ]
 }

@@ -1,4 +1,5 @@
 /** Refresh failure feedback hosted outside the Plugins panel's lifetime. */
+import type { ReactNode } from 'react'
 import { IconWarningOutlineRegular, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerFace } from './manager-store.ts'
@@ -17,7 +18,7 @@ export type PluginRefreshToastProps = InjectFace<PluginRefreshToastFace> & Props
  * @param props - shared notice hook, dismissal action, and locale seat.
  * @returns the refresh failure toast, or null for other notices.
  */
-export function PluginRefreshToast({ usePluginManager, dismissNotice, t }: PluginRefreshToastProps) {
+export function PluginRefreshToast({ usePluginManager, dismissNotice, t }: PluginRefreshToastProps): ReactNode {
   const notice = usePluginManager(state => state.notice)
   if (notice?.kind !== 'refresh-failed') return null
   return (
