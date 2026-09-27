@@ -3,28 +3,47 @@
 import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { inspectFileCommand, installFileCommand, removeFileCommand } from '../src/command-installation.ts'
+import { prepareDesktopCli } from '../scripts/prepare-cli.ts'
 
-const barrier = vi.hoisted(() => ({ afterRead: undefined as ((path: unknown) => Promise<void>) | undefined }))
+const barrier = vi.hoisted(() => ({
+  afterRead: undefined as ((path: unknown) => Promise<void>) | undefined,
+  afterRename: undefined as ((path: unknown) => Promise<void>) | undefined,
+  failReceipt: false,
+}))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return { ...actual, readFile: async (...args: Parameters<typeof actual.readFile>) => {
     const result = await actual.readFile(...args)
     await barrier.afterRead?.(args[0])
     return result
+  }, rename: async (...args: Parameters<typeof actual.rename>) => {
+    if (barrier.failReceipt && String(args[1]).endsWith('.dsh-desktop-command.json')) {
+      throw Object.assign(new Error('No space for receipt'), { code: 'ENOSPC' })
+    }
+    await actual.rename(...args)
+    await barrier.afterRename?.(args[0])
   } }
 })
+
+let compiled: string
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'dsh-command-link-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const launcher = join(root, 'desktop-launcher')
   await writeFile(launcher, 'desktop\n', { mode: 0o755 })
-  return { root, options: { destination: join(root, 'dsh'), launcher } }
+  return { root, options: { destination: join(root, 'dsh'), launcher, control: join(compiled, 'cli-control') } }
 }
 
 describe.skipIf(process.platform === 'win32')('macOS command entry ownership', () => {
+  beforeAll(async () => {
+    compiled = await mkdtemp(join(tmpdir(), 'dsh-command-control-'))
+    prepareDesktopCli(compiled, { platform: process.platform, arch: process.arch,
+      ...process.platform === 'darwin' ? { macosMinimumVersion: '13.0' } : {} })
+  })
+  afterAll(async () => { if (compiled !== undefined) await rm(compiled, { recursive: true, force: true }) })
   it('installs and removes only its own link', async () => {
     const f = await fixture()
     const before = await inspectFileCommand(f.options)
@@ -121,6 +140,36 @@ describe.skipIf(process.platform === 'win32')('macOS command entry ownership', (
     await writeFile(installed.backup!, 'changed backup with different bytes\n')
     await expect(removeFileCommand(f.options, installed.fingerprint)).rejects.toMatchObject({ code: 'EOWNERSHIP' })
     expect(await readlink(f.options.destination)).toBe(f.options.launcher)
+  })
+
+  it('retains ownership and the original inode when receipt publication fails during repair', async () => {
+    const f = await fixture()
+    const installed = await installFileCommand(f.options, (await inspectFileCommand(f.options)).fingerprint)
+    const inode = (await lstat(f.options.destination)).ino
+    barrier.failReceipt = true
+    onTestFinished(() => { barrier.failReceipt = false })
+    await expect(installFileCommand(f.options, installed.fingerprint)).rejects.toMatchObject({ code: 'ENOSPC' })
+    expect((await lstat(f.options.destination)).ino).toBe(inode)
+    expect((await inspectFileCommand(f.options)).managed).toBe(true)
+    barrier.failReceipt = false
+    await removeFileCommand(f.options, (await inspectFileCommand(f.options)).fingerprint)
+    await expect(lstat(f.options.destination)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('preserves a backup replaced after the removal decision and restores the Desktop link', async () => {
+    const f = await fixture()
+    await writeFile(f.options.destination, 'original\n', { mode: 0o755 })
+    const installed = await installFileCommand(f.options, (await inspectFileCommand(f.options)).fingerprint)
+    barrier.afterRename = async (source) => {
+      if (source !== f.options.destination) return
+      barrier.afterRename = undefined
+      await unlink(installed.backup!)
+      await writeFile(installed.backup!, 'changed backup\n', { mode: 0o755 })
+    }
+    onTestFinished(() => { barrier.afterRename = undefined })
+    await expect(removeFileCommand(f.options, installed.fingerprint)).rejects.toMatchObject({ code: 'EOWNERSHIP' })
+    expect(await readFile(installed.backup!, 'utf8')).toBe('changed backup\n')
+    expect((await inspectFileCommand(f.options)).managed).toBe(true)
   })
 
   it('rejects directories and non-executable launcher resources', async () => {

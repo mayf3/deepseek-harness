@@ -74,6 +74,10 @@ try {
     finally { $key.Dispose() }
     [void](Apply 'remove' $desktop)
     Require ((UserPath) -eq $manualPath) 'removal deleted a retained entry after the owned entry was removed manually'
+    [IO.File]::Delete((Join-Path $npm 'dsh.cmd'))
+    [IO.File]::WriteAllText((Join-Path $npm 'dsh.ps1'), 'fixture')
+    $options.MachinePath = ''
+    Require ((State $desktop).activeCommand -eq (Join-Path $npm 'dsh.ps1')) 'PowerShell launcher was not detected'
     'WINDOWS_COMMAND_PATH_OK'
 } finally {
     [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($keyRoot, $false)

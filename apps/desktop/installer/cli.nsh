@@ -41,12 +41,16 @@ Function ${DSH_CLI_PREFIX}PrepareCliUpdate
 FunctionEnd
 
 Function ${DSH_CLI_PREFIX}FinishCliUpdate
+  Push $0
+  Push $1
   ${If} $InstallerCliToken != ""
     nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\dsh-command-update.ps1" -Operation finish -Application "$InstallerCliApplication" -Token "$InstallerCliToken"'
     Pop $0
     Pop $1
     StrCpy $InstallerCliToken ""
   ${EndIf}
+  Pop $1
+  Pop $0
 FunctionEnd
 
 !ifdef BUILD_UNINSTALLER

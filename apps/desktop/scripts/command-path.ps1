@@ -87,7 +87,8 @@ function Invoke-DshCommandPath {
         foreach ($part in (($MachinePath + ';' + [string]$raw).Split(';'))) {
             $path = [Environment]::ExpandEnvironmentVariables($part.Trim().Trim('"'))
             if (-not [IO.Path]::IsPathRooted($path)) { continue }
-            foreach ($extension in @('.com','.exe','.bat','.cmd')) {
+            $extensions = if ($env:PATHEXT) { @($env:PATHEXT.Split(';')) } else { @('.com','.exe','.bat','.cmd') }
+            foreach ($extension in (@('.ps1') + $extensions)) {
                 $candidate = Join-Path $path ('dsh' + $extension)
                 if (Test-Path -LiteralPath $candidate -PathType Leaf) { $active = $candidate; break }
             }

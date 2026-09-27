@@ -252,6 +252,17 @@ void cancelHandoff(const Installation& installation, const std::string& token) {
 }
 
 int control(const std::vector<std::string>& arguments) {
+#ifdef __APPLE__
+  if (arguments.size() == 3 && arguments[0] == "link-entry") {
+    if (!fs::path(arguments[1]).is_absolute() || !fs::path(arguments[2]).is_absolute()) {
+      throw std::runtime_error("Command entry paths must be absolute.");
+    }
+    if (linkat(AT_FDCWD, arguments[1].c_str(), AT_FDCWD, arguments[2].c_str(), 0) != 0) {
+      throw std::runtime_error(std::string("Cannot link command entry: ") + strerror(errno));
+    }
+    return 0;
+  }
+#endif
   if (arguments.size() < 2 || !identifier(arguments[1])) throw std::runtime_error("Invalid CLI control request.");
   const Installation installation;
   const Lease lease(installation.cli / "lease", true);

@@ -1,15 +1,18 @@
 /** Reversible command-link ownership; operations never follow or overwrite a changed command entry. */
 
 import { createHash, randomUUID } from 'node:crypto'
+import { execFile } from 'node:child_process'
 import { constants } from 'node:fs'
 import { access, link, lstat, mkdir, readFile, readlink, rename, stat, symlink, unlink } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join } from 'node:path'
+import { promisify } from 'node:util'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
 /** Fixed installation locations supplied by the Desktop shell. */
 export interface FileCommandInstallation {
   readonly destination: string
   readonly launcher: string
+  readonly control: string
 }
 
 type Entry = { readonly kind: 'symlink'; readonly fingerprint: string; readonly target: string }
@@ -133,21 +136,28 @@ export async function inspectFileCommand(options: FileCommandInstallation): Prom
   return (await readSnapshot(options)).state
 }
 
-async function restoreEntry(source: string, destination: string): Promise<void> {
+async function restoreEntry(options: FileCommandInstallation, source: string, destination: string, expected?: string): Promise<void> {
   const entry = await readEntry(source)
-  if (entry.kind === 'symlink') await symlink(entry.target, destination)
-  else if (entry.kind === 'file') await link(source, destination)
-  else throw new CommandInstallationError('EOWNERSHIP', 'Command backup is unavailable.')
+  if (expected !== undefined && entry.fingerprint !== expected) throw new CommandInstallationError('EOWNERSHIP', 'Command backup changed.')
+  if (entry.kind !== 'symlink' && entry.kind !== 'file') throw new CommandInstallationError('EOWNERSHIP', 'Command backup is unavailable.')
+  await linkEntry(options, source, destination)
+  if ((await readEntry(destination)).fingerprint !== entry.fingerprint) throw new CommandInstallationError('EOWNERSHIP', 'Command backup changed during restoration.')
   await unlink(source)
 }
 
-async function withdraw(destination: string, expected: Entry): Promise<string | undefined> {
+async function linkEntry(options: FileCommandInstallation, source: string, destination: string): Promise<void> {
+  // macOS Node link() follows symlinks; linkat preserves their identity and refuses occupied destinations.
+  if (process.platform === 'darwin') await promisify(execFile)(options.control, ['link-entry', source, destination])
+  else await link(source, destination)
+}
+
+async function withdraw(options: FileCommandInstallation, destination: string, expected: Entry): Promise<string | undefined> {
   if (expected.kind === 'missing') return undefined
   if (expected.kind === 'unsupported') throw new CommandInstallationError('EUNSUPPORTED', 'The command path is not a file or symbolic link.')
   const path = join(dirname(destination), '.dsh-command-backup-' + randomUUID())
   await rename(destination, path)
   if ((await readEntry(path)).fingerprint !== expected.fingerprint) {
-    try { await restoreEntry(path, destination) } catch (error) {
+    try { await restoreEntry(options, path, destination) } catch (error) {
       throw new AggregateError([error], 'The command changed; its entry is preserved at ' + path)
     }
     throw new CommandInstallationError('ESTALE', 'The command changed after confirmation.')
@@ -167,15 +177,13 @@ export async function installFileCommand(options: FileCommandInstallation, expec
     const { state, entry, receipt } = await readSnapshot(options)
     if (state.fingerprint !== expected) throw new CommandInstallationError('ESTALE', 'The command changed after confirmation.')
     if (!await available(options.launcher)) throw new CommandInstallationError('ENOENT', 'The installed launcher is unavailable.')
-    const moved = await withdraw(options.destination, entry)
+    const moved = await withdraw(options, options.destination, entry)
+    const pending = join(dirname(options.destination), '.dsh-command-new-' + randomUUID())
     let created: Entry | undefined
     try {
-      await symlink(options.launcher, options.destination)
-      const installed = await readEntry(options.destination)
-      if (installed.kind !== 'symlink' || installed.target !== options.launcher) {
-        throw new CommandInstallationError('ESTALE', 'The command changed during installation.')
-      }
-      created = installed
+      await symlink(options.launcher, pending)
+      created = await readEntry(pending)
+      await linkEntry(options, pending, options.destination)
       const backup = state.managed || moved === undefined ? receipt?.backup
         : { name: basename(moved), fingerprint: entry.fingerprint }
       const next: Receipt = { schemaVersion: 1, launcher: options.launcher, installedFingerprint: created.fingerprint,
@@ -183,15 +191,19 @@ export async function installFileCommand(options: FileCommandInstallation, expec
       await writeFileAtomic(receiptPath(options), JSON.stringify(next) + '\n', { mode: 0o644 })
     } catch (error) {
       if (created !== undefined && (await readEntry(options.destination)).fingerprint === created.fingerprint) {
-        const rollback = await withdraw(options.destination, created)
+        const rollback = await withdraw(options, options.destination, created)
         if (rollback !== undefined) await unlink(rollback)
       }
       if (moved !== undefined) {
-        try { await restoreEntry(moved, options.destination) } catch (restoreError) {
+        try { await restoreEntry(options, moved, options.destination, entry.fingerprint) } catch (restoreError) {
           throw new AggregateError([error, restoreError], 'The previous command is preserved at ' + moved)
         }
       }
       throw error
+    } finally {
+      try { await unlink(pending) } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
     }
     if (state.managed && moved !== undefined) await unlink(moved)
     const result = await inspectFileCommand(options)
@@ -217,12 +229,12 @@ export async function removeFileCommand(options: FileCommandInstallation, expect
       throw new CommandInstallationError('EOWNERSHIP', 'The previous command backup changed or is missing.')
     }
     if (state.managed) {
-      const removed = await withdraw(options.destination, entry)
+      const removed = await withdraw(options, options.destination, entry)
       try {
-        if (backup !== undefined) await restoreEntry(backup, options.destination)
+        if (backup !== undefined) await restoreEntry(options, backup, options.destination, receipt.backup?.fingerprint)
         await unlink(receiptPath(options))
       } catch (error) {
-        if (removed !== undefined && (await readEntry(options.destination)).kind === 'missing') await restoreEntry(removed, options.destination)
+        if (removed !== undefined && (await readEntry(options.destination)).kind === 'missing') await restoreEntry(options, removed, options.destination, entry.fingerprint)
         throw error
       }
       if (removed !== undefined) await unlink(removed)
