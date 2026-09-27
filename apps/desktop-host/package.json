@@ -7,7 +7,8 @@
   "type": "module",
   "main": "lib/index.js",
   "files": [
-    "lib/*.js"
+    "lib/index.js",
+    "lib/cli.js"
   ],
   "dependencies": {
     "@deepseek-ai/libreoffice-kit": "^0.1.1",
