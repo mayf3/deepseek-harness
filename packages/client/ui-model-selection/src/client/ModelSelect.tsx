@@ -5,11 +5,13 @@
  * each drilling into its own list — the provider-grouped model list over
  * the shared directory, and the effort levels. The trigger (313:14108's
  * ToggleButton) shows both: model name + effort in the caption tone.
- * While open, ↑/↓ move focus across the rows of the shown pane (wrapping; a
- * step taken while the trigger still holds focus enters at the near end), Tab
- * settles like Enter, and Escape and Shift+Tab leave a drilled pane first and
- * otherwise close back to the trigger. A drilled pane hands focus to the row
- * of the effort in use or the model search field. Model names match a
+ * In the model pane, search retains focus while ↑/↓ cycle the highlighted
+ * result; Enter and Tab accept it. Root and effort panes move focus between
+ * rows. Escape and Shift+Tab leave a drilled pane first and otherwise close
+ * back to the trigger. A drilled pane focuses the current effort or model
+ * search field. Provider headings paint their background only while pinned
+ * by scrolling. Clearing a query restores the full list and search focus.
+ * Model names match a
  * case-insensitive ordered subsequence within each provider group, ranked by
  * prefix, alignment score, then catalog order. Returning to the root pane
  * hands focus back to the cell that opened it. Data and submission ride the
@@ -31,8 +33,8 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular,
-  IconDataOutlineRegular, IconSearchOutlineRegular, IconWarningOutlineRegular, Input, rankByName, StateDot, Toast,
+  IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCloseFillRegular,
+  IconDataOutlineRegular, IconWarningOutlineRegular, Input, rankByName, StateDot, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
@@ -68,6 +70,7 @@ export function ModelSelect(
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<Pane>('root')
   const [query, setQuery] = useState('')
+  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
   // The in-menu error strip serves catalog loads (its Retry re-runs the
   // load); a rejected SELECTION announces through the transient toast
   // instead, so the strip renders only while the latest failure-capable
@@ -78,6 +81,7 @@ export function ModelSelect(
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const groupsRef = useRef<HTMLDivElement | null>(null)
   const [menuPos, setMenuPos] = useState<CSSProperties | null>(null)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
@@ -100,6 +104,12 @@ export function ModelSelect(
   const filteredGroups = useMemo(() => groups.map(group => ({
     ...group, models: rankByName(group.models, query.trim()),
   })).filter(group => group.models.length > 0), [groups, query])
+  const visibleModels = useMemo(() => filteredGroups.flatMap(group => group.models.map(model => ({
+    provider: group.id, model: model.id,
+  }))), [filteredGroups])
+  const currentVisibleIndex = visibleModels.findIndex(model =>
+    model.provider === state.current?.provider && model.model === state.current.model)
+  const activeModelIndex = Math.min(highlightedIndex ?? Math.max(0, currentVisibleIndex), visibleModels.length - 1)
   const selectedIndex = state.current === null
     ? -1
     : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
@@ -168,6 +178,41 @@ export function ModelSelect(
     ;(cell !== null && cell !== undefined && !cell.disabled ? cell : triggerRef.current)?.focus()
   }, [open, pane])
 
+  useLayoutEffect(() => {
+    const viewport = groupsRef.current
+    if (viewport === null) return
+    const entries = [...viewport.querySelectorAll<HTMLElement>(':scope > section')].map(section => ({
+      section, heading: section.firstElementChild as HTMLElement,
+    }))
+    // Section boxes retain their normal positions while their headings stick.
+    const update = (): void => {
+      const top = viewport.getBoundingClientRect().top
+      const stuck = entries.map(({ section }) => {
+        const bounds = section.getBoundingClientRect()
+        return viewport.scrollTop > 0 && bounds.top < top && bounds.bottom > top
+      })
+      entries.forEach(({ heading }, index) => { heading.toggleAttribute('data-stuck', stuck[index]) })
+    }
+    update()
+    viewport.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update)
+    observer?.observe(viewport)
+    for (const { section } of entries) observer?.observe(section)
+    return () => {
+      viewport.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+      observer?.disconnect()
+      for (const { heading } of entries) heading.removeAttribute('data-stuck')
+    }
+  }, [available, open, pane, filteredGroups])
+
+  useLayoutEffect(() => {
+    if (open && pane === 'model' && activeModelIndex >= 0) {
+      itemRefs.current[activeModelIndex]?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [open, pane, activeModelIndex, visibleModels])
+
   // Portaled placement (the Menu primitive's portal rules: fixed from the
   // anchor rect, measured before paint, clamped inside the viewport): above
   // the trigger, right edges aligned. Depends on pane and directory state
@@ -206,10 +251,17 @@ export function ModelSelect(
 
   const show = (): void => {
     triggerRef.current?.focus()
+    setQuery('')
+    setHighlightedIndex(null)
     if (state.current === null) paneFocus.current = 'drill'
     setPane(state.current === null ? 'model' : 'root')
     setOpen(true)
     reload()
+  }
+
+  const changeQuery = (next: string): void => {
+    setQuery(next)
+    setHighlightedIndex(0)
   }
 
   const close = (restoreFocus = false): void => {
@@ -220,6 +272,7 @@ export function ModelSelect(
 
   const drill = (next: Pane): void => {
     setQuery('')
+    setHighlightedIndex(null)
     paneFocus.current = 'drill'
     setPane(next)
   }
@@ -253,9 +306,21 @@ export function ModelSelect(
       return
     }
     if (!open) return
-    if (event.key === 'Tab' && !event.shiftKey && event.target instanceof HTMLInputElement) {
+    if (pane === 'model' && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
       event.preventDefault()
-      moveFocus(1)
+      if (!busy && visibleModels.length > 0) {
+        const direction = event.key === 'ArrowDown' ? 1 : -1
+        setHighlightedIndex((activeModelIndex + direction + visibleModels.length) % visibleModels.length)
+        menuRef.current?.querySelector('input')?.focus()
+      }
+      return
+    }
+    if (pane === 'model' && event.target instanceof HTMLInputElement
+      && (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey))) {
+      if (event.key === 'Tab' && visibleModels.length === 0) return
+      event.preventDefault()
+      const highlighted = visibleModels[activeModelIndex]
+      if (!busy && highlighted !== undefined) choose(highlighted)
       return
     }
     // Tab settles like Enter and Shift+Tab leaves like Escape, so the menu's
@@ -359,6 +424,7 @@ export function ModelSelect(
         : t('trigger.ariaEffort', { model: modelLabel, effort: effortLabel })
   itemRefs.current = []
   let itemIndex = 0
+  let modelIndex = 0
   const itemRef = () => {
     const at = itemIndex++
     return (node: HTMLButtonElement | null) => { itemRefs.current[at] = node }
@@ -434,15 +500,34 @@ export function ModelSelect(
 
           {pane === 'model' && (
             <>
-              <Input
-                icon={<IconSearchOutlineRegular />}
-                className={clsx(css.search)}
-                type="search"
-                aria-label={t('search.placeholder')}
-                placeholder={t('search.placeholder')}
-                value={query}
-                onChange={(event) => { setQuery(event.target.value) }}
-              />
+              <div className={css.searchRow}>
+                <Input
+                  className={clsx(css.search, query !== '' && css.searchWithQuery)}
+                  type="text"
+                  role="searchbox"
+                  aria-label={t('search.placeholder')}
+                  aria-controls={`${id}-models`}
+                  aria-activedescendant={activeModelIndex < 0 ? undefined : `${id}-model-${activeModelIndex}`}
+                  placeholder={t('search.placeholder')}
+                  value={query}
+                  readOnly={busy}
+                  onChange={(event) => { changeQuery(event.target.value) }}
+                />
+                {query !== '' && (
+                  <button
+                    type="button"
+                    className={css.searchClear}
+                    aria-label={t('search.clear')}
+                    disabled={busy}
+                    onClick={() => {
+                      changeQuery('')
+                      menuRef.current?.querySelector('input')?.focus()
+                    }}
+                  >
+                    <IconCloseFillRegular />
+                  </button>
+                )}
+              </div>
               {state.status === 'loading' && (
                 <div className={css.status}>{t('status.loading')}</div>
               )}
@@ -459,6 +544,8 @@ export function ModelSelect(
                 </div>
               ))}
               <div
+                ref={groupsRef}
+                id={`${id}-models`}
                 className={clsx(css.groups, 'scrollable')}
                 role="menu"
                 aria-label={t('menu.model')}
@@ -470,6 +557,7 @@ export function ModelSelect(
                     <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
                       <div className={css.groupTitle} id={headingId}>{group.id === 'deepseek-account' ? t('provider.account') : group.name}</div>
                       {group.models.map((model) => {
+                        const index = modelIndex++
                         const selected = state.current?.provider === group.id && state.current.model === model.id
                         return (
                           <button
@@ -477,7 +565,13 @@ export function ModelSelect(
                             type="button"
                             role="menuitemradio"
                             aria-checked={selected}
-                            className={clsx(css.option, selected && css.selected)}
+                            id={`${id}-model-${index}`}
+                            tabIndex={-1}
+                            data-highlighted={index === activeModelIndex ? '' : undefined}
+                            className={clsx(
+                              css.option, css.modelOption, selected && css.selected, index === activeModelIndex && css.optionActive,
+                            )}
+                            onMouseMove={busy || index === activeModelIndex ? undefined : () => { setHighlightedIndex(index) }}
                             key={model.id}
                             title={model.name}
                             disabled={busy}

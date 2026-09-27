@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
@@ -52,6 +52,17 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
     ...overrides,
   }
 }
+
+const scrollIntoView = vi.fn()
+beforeEach(() => {
+  scrollIntoView.mockClear()
+  const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: scrollIntoView })
+  onTestFinished(() => {
+    if (descriptor === undefined) Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+    else Object.defineProperty(Element.prototype, 'scrollIntoView', descriptor)
+  })
+})
 
 afterEach(cleanup)
 
@@ -537,6 +548,53 @@ describe('ModelSelect keyboard walk', () => {
 })
 
 describe('ModelSelect search', () => {
+  it.each(['Enter', 'Tab'])('keeps typing focus while arrows wrap across groups and %s accepts the highlight', async (key) => {
+    const select = vi.fn().mockResolvedValue({ ok: true, value: undefined })
+    const directory = createSnapshotStore(state({
+      current: { provider: 'deepseek-official', model: 'beta' },
+      groups: [
+        { id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'alpha', name: 'Alpha' }, { id: 'beta', name: 'Beta' }] },
+        { id: 'other', name: 'Other', models: [{ id: 'gamma', name: 'Gamma' }] },
+      ],
+    }))
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={select} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    const search = screen.getByRole('searchbox')
+    const [alpha, beta, gamma] = screen.getAllByRole('menuitemradio')
+    expect(search.getAttribute('aria-activedescendant')).toBe(beta!.id)
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    expect(search.getAttribute('aria-activedescendant')).toBe(gamma!.id)
+    expect(document.activeElement).toBe(search)
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    expect(search.getAttribute('aria-activedescendant')).toBe(alpha!.id)
+    fireEvent.keyDown(search, { key: 'ArrowUp' })
+    expect(search.getAttribute('aria-activedescendant')).toBe(gamma!.id)
+    expect(gamma!.hasAttribute('data-highlighted')).toBe(true)
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+    expect(scrollIntoView.mock.instances.at(-1)).toBe(gamma)
+    expect(fireEvent.keyDown(search, { key: 'ArrowLeft' })).toBe(true)
+    expect(fireEvent.keyDown(search, { key: 'ArrowRight' })).toBe(true)
+    fireEvent.keyDown(search, { key: 'ArrowDown', isComposing: true })
+    expect(search.getAttribute('aria-activedescendant')).toBe(gamma!.id)
+    fireEvent.change(search, { target: { value: 'alp' } })
+    expect(search.getAttribute('aria-activedescendant')).toBe(screen.getByRole('menuitemradio', { name: 'Alpha' }).id)
+    fireEvent.change(search, { target: { value: 'zzzz' } })
+    expect(search.hasAttribute('aria-activedescendant')).toBe(false)
+    fireEvent.keyDown(search, { key: 'Enter' })
+    expect(select).not.toHaveBeenCalled()
+    expect(fireEvent.keyDown(search, { key: 'Tab' })).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '清除搜索' }))
+    const restored = screen.getAllByRole('menuitemradio')
+    expect(search.getAttribute('aria-activedescendant')).toBe(restored[0]!.id)
+    fireEvent.mouseMove(restored[2]!)
+    expect(search.getAttribute('aria-activedescendant')).toBe(restored[2]!.id)
+    expect(document.activeElement).toBe(search)
+    fireEvent.keyDown(search, { key })
+    expect(select).toHaveBeenCalledWith({ provider: 'other', model: 'gamma' })
+    await waitFor(() => { expect(screen.queryByRole('group', { name: '模型与推理等级' })).toBeNull() })
+  })
+
   it('filters model names fuzzily, hides empty groups, clears on reopening, and selects a result', async () => {
     const directory = createSnapshotStore(state({ groups: [
       ...state().groups,
@@ -563,7 +621,10 @@ describe('ModelSelect search', () => {
     expect(screen.queryByRole('menu')).toBeNull()
     expect(fireEvent.keyDown(search, { key: 'ArrowDown' })).toBe(false)
     expect(document.activeElement).toBe(search)
-    fireEvent.change(search, { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: '清除搜索' }))
+    expect(search.getAttribute('value')).toBe('')
+    expect(document.activeElement).toBe(search)
+    expect(screen.queryByRole('button', { name: '清除搜索' })).toBeNull()
     expect(screen.getAllByRole('menuitemradio')).toHaveLength(2)
     fireEvent.change(search, { target: { value: 'gmfl' } })
     fireEvent.keyDown(search, { key: 'Escape' })
@@ -571,14 +632,55 @@ describe('ModelSelect search', () => {
     expect(screen.getByRole('searchbox').getAttribute('value')).toBe('')
     const reopened = screen.getByRole('searchbox')
     fireEvent.change(reopened, { target: { value: 'gmfl' } })
-    fireEvent.keyDown(reopened, { key: 'Tab' })
     const row = screen.getByRole('menuitemradio', { name: 'Gemini Flash' })
     expect(screen.getByRole('menu', { name: '模型' }).contains(row)).toBe(true)
-    expect(document.activeElement).toBe(row)
-    fireEvent.keyDown(row, { key: 'Tab' })
+    fireEvent.keyDown(reopened, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(reopened)
+    expect(reopened.getAttribute('aria-activedescendant')).toBe(row.id)
+    fireEvent.keyDown(reopened, { key: 'Tab' })
     await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull() })
     expect(select).toHaveBeenCalledWith({ provider: 'other', model: 'gemini' })
   })
+})
+
+it('paints only a pinned provider heading and clears its state when the pane closes', () => {
+  const directory = createSnapshotStore(state({ groups: [
+    ...state().groups,
+    { id: 'other', name: 'Other', models: [{ id: 'gemini', name: 'Gemini Flash' }] },
+  ] }))
+  render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
+  const trigger = screen.getByRole('button', { name: /选择模型/ })
+  fireEvent.click(trigger)
+  fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+  const viewport = screen.getByRole('menu', { name: '模型' })
+  const sections = [...viewport.querySelectorAll<HTMLElement>('section')]
+  const headings = sections.map(section => section.querySelector<HTMLElement>(':scope > div')!)
+  let firstHeight = 90
+  vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 240, 80))
+  vi.spyOn(sections[0]!, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 100 - viewport.scrollTop, 240, firstHeight))
+  vi.spyOn(sections[1]!, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 103 + firstHeight - viewport.scrollTop, 240, 56))
+  const pinned = (): boolean[] => headings.map(heading => heading.hasAttribute('data-stuck'))
+  fireEvent.scroll(viewport, { target: { scrollTop: 0 } })
+  expect(pinned()).toEqual([false, false])
+  fireEvent.scroll(viewport, { target: { scrollTop: 24 } })
+  expect(pinned()).toEqual([true, false])
+  fireEvent.scroll(viewport, { target: { scrollTop: 93 } })
+  expect(pinned()).toEqual([false, false])
+  fireEvent.scroll(viewport, { target: { scrollTop: 94 } })
+  expect(pinned()).toEqual([false, true])
+  firstHeight = 130
+  fireEvent.resize(window)
+  expect(pinned()).toEqual([true, false])
+  fireEvent.scroll(viewport, { target: { scrollTop: 0 } })
+  expect(pinned()).toEqual([false, false])
+  fireEvent.scroll(viewport, { target: { scrollTop: 24 } })
+  const removeScroll = vi.spyOn(viewport, 'removeEventListener')
+  fireEvent.click(trigger)
+  expect(removeScroll).toHaveBeenCalledWith('scroll', expect.any(Function))
+  expect(pinned()).toEqual([false, false])
+  fireEvent.click(trigger)
+  fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+  expect(screen.getByRole('menu', { name: '模型' }).querySelector('[data-stuck]')).toBeNull()
 })
 
 it('shows the unselected model control with the inherited effort', async () => {

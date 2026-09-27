@@ -44,7 +44,7 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-公共菜单通过 `MenuSurface` 共享 `--dsw-menu-surface-fill` 和模糊，平台代码须保留这些 token 值。其他浮层使用 `--dsw-specific-menu`，在没有菜单底层时保留 macOS 上接近不透明的填充。源码约束见[样式参考](../../../docs/web-styling.zh.md#component-rules)。 模态遮罩保留黑色半透明填充，不模糊背景。
+公共菜单通过 `MenuSurface` 共享 `--dsw-menu-surface-fill` 和模糊，平台代码须保留这些 token 值。菜单吸顶分组标题可使用 `--dsw-alias-menu-group-header-fill`，其浅／深色填充均为 94% 不透明度，独立于菜单材质。其他浮层使用 `--dsw-specific-menu`，在没有菜单底层时保留 macOS 上接近不透明的填充。源码约束见[样式参考](../../../docs/web-styling.zh.md#component-rules)。 模态遮罩保留黑色半透明填充，不模糊背景。
 
 <details>
 <summary>实现细节——点击展开</summary>

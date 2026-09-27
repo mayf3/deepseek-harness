@@ -92,6 +92,110 @@ describe('web e2e: the composer model switch is the default for later sessions',
     await scaffold?.close()
   })
 
+  it('keeps command popup search borders transparent in both palettes', async () => {
+    const composer = page.locator('[data-composer-input]').first()
+    await page.getByRole('button', { name: '添加文件或调用指令', exact: true }).click()
+    await page.getByRole('option', { name: /^模型/ }).click()
+    const search = page.getByRole('textbox', { name: '筛选选项', exact: true })
+    await search.waitFor()
+    try {
+      const borders = await search.evaluate((input) => {
+        const body = input.ownerDocument.body
+        const previousTheme = body.getAttribute('data-ds-dark-theme')
+        try {
+          return [false, true].map((dark) => {
+            body.toggleAttribute('data-ds-dark-theme', dark)
+            return getComputedStyle(input).borderColor
+          })
+        } finally {
+          if (previousTheme === null) body.removeAttribute('data-ds-dark-theme')
+          else body.setAttribute('data-ds-dark-theme', previousTheme)
+        }
+      })
+      expect(borders).toEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)'])
+    } finally {
+      await search.press('Escape')
+      await composer.fill('')
+    }
+  })
+
+  it('paints only pinned provider headings across themes, filtering, and reopening', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-model-sticky-headings'))
+    const originalViewport = page.viewportSize()!
+    const attributes = await page.evaluate(() => ({
+      platform: document.documentElement.getAttribute('data-platform'),
+      theme: document.body.getAttribute('data-ds-dark-theme'),
+    }))
+    const surface = page.getByRole('group', { name: '模型与推理等级', exact: true })
+    const trigger = page.getByRole('button', { name: /^选择模型/ })
+    const search = page.getByRole('searchbox', { name: '搜索模型…' })
+    try {
+      await page.setViewportSize({ width: 1680, height: 220 })
+      await trigger.click()
+      await page.getByRole('menuitem', { name: /模型/ }).click()
+      const scroller = page.getByRole('menu', { name: '模型', exact: true })
+      const headings = surface.locator('section[role="group"] > div')
+      const readPinned = () => headings.evaluateAll(nodes => nodes.map(node => node.hasAttribute('data-stuck')))
+      const resetScroll = async (): Promise<void> => {
+        await scroller.evaluate((node) => { node.scrollTop = 0 })
+        await expect.poll(readPinned).toEqual([false, false, false])
+      }
+      for (const platform of ['web', 'win32', 'darwin']) {
+        for (const dark of [false, true]) {
+          await page.evaluate(({ platform, dark }) => {
+            if (platform === 'web') document.documentElement.removeAttribute('data-platform')
+            else document.documentElement.setAttribute('data-platform', platform)
+            document.body.toggleAttribute('data-ds-dark-theme', dark)
+          }, { platform, dark })
+          await resetScroll()
+          expect(await headings.evaluateAll(nodes => [...new Set(nodes.map(node => getComputedStyle(node).backgroundColor))]))
+            .toEqual(['rgba(0, 0, 0, 0)'])
+          const secondTop = await scroller.evaluate((node) => {
+            const second = node.querySelectorAll('section')[1]!
+            return Math.ceil(second.getBoundingClientRect().top - node.getBoundingClientRect().top) + 1
+          })
+          expect(await scroller.evaluate(node => node.scrollHeight - node.clientHeight)).toBeGreaterThanOrEqual(secondTop)
+          await scroller.evaluate((node) => { node.scrollTop = 10 })
+          await expect.poll(readPinned).toEqual([true, false, false])
+          expect(await headings.first().evaluate(node => getComputedStyle(node).backgroundColor))
+            .toBe(dark ? 'rgba(48, 49, 54, 0.94)' : 'rgba(248, 249, 250, 0.94)')
+          await scroller.evaluate((node, top) => { node.scrollTop = top }, secondTop)
+          await expect.poll(readPinned).toEqual([false, true, false])
+          await scroller.evaluate((node) => { node.scrollTop = 10 })
+          await expect.poll(readPinned).toEqual([true, false, false])
+          await resetScroll()
+        }
+      }
+      await scroller.evaluate((node) => { node.scrollTop = 10 })
+      await expect.poll(readPinned).toEqual([true, false, false])
+      await search.fill('Origin Large')
+      await expect.poll(() => headings.count()).toBe(1)
+      await expect.poll(readPinned).toEqual([false])
+      await page.getByRole('button', { name: '清除搜索', exact: true }).click()
+      await expect.poll(readPinned).toEqual([false, false, false])
+      await search.fill('zzzz')
+      await expect.poll(() => surface.locator('[data-stuck]').count()).toBe(0)
+      await page.getByRole('button', { name: '清除搜索', exact: true }).click()
+      await expect.poll(readPinned).toEqual([false, false, false])
+      await search.press('Escape')
+      await page.keyboard.press('Escape')
+      await trigger.click()
+      await page.getByRole('menuitem', { name: /模型/ }).click()
+      expect(await search.inputValue()).toBe('')
+      await resetScroll()
+    } finally {
+      if (await surface.count()) await search.press('Escape')
+      if (await trigger.getAttribute('aria-expanded') === 'true') await page.keyboard.press('Escape')
+      await page.setViewportSize(originalViewport)
+      await page.evaluate(({ platform, theme }) => {
+        if (platform === null) document.documentElement.removeAttribute('data-platform')
+        else document.documentElement.setAttribute('data-platform', platform)
+        if (theme === null) document.body.removeAttribute('data-ds-dark-theme')
+        else document.body.setAttribute('data-ds-dark-theme', theme)
+      }, attributes)
+    }
+  })
+
   it('writes the switched model as the default and leaves a logged session alone', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-default-model'))
     // A session that has already run a turn, spelled as the fact a turn
@@ -108,8 +212,88 @@ describe('web e2e: the composer model switch is the default for later sessions',
     await trigger.click()
     await page.getByRole('menuitem', { name: /模型/ }).click()
     const search = page.getByRole('searchbox', { name: '搜索模型…' })
+    const rowIds = await page.getByRole('menuitemradio').evaluateAll(rows => rows.map(row => row.id))
+    const initialHighlight = rowIds.indexOf(await search.getAttribute('aria-activedescendant') ?? '')
+    expect(initialHighlight).toBeGreaterThanOrEqual(0)
+    for (let step = 1; step <= rowIds.length + 1; step++) {
+      await search.press('ArrowDown')
+      expect(await search.getAttribute('aria-activedescendant')).toBe(rowIds[(initialHighlight + step) % rowIds.length])
+      expect(await search.evaluate(input => input === input.ownerDocument.activeElement)).toBe(true)
+    }
+    await search.press('ArrowUp')
+    expect(await search.getAttribute('aria-activedescendant')).toBe(rowIds[initialHighlight])
+    const searchStyle = await search.evaluate((input) => {
+      const wrapper = input.parentElement!
+      const caption = input.ownerDocument.createElement('span')
+      caption.style.color = 'var(--dsw-alias-label-caption)'
+      wrapper.append(caption)
+      try {
+        return {
+          placeholderColor: getComputedStyle(input, '::placeholder').color,
+          captionColor: getComputedStyle(caption).color,
+          iconCount: wrapper.querySelectorAll('svg').length,
+          background: getComputedStyle(wrapper).backgroundColor,
+          radius: getComputedStyle(wrapper).borderRadius,
+          padding: getComputedStyle(wrapper).padding,
+          fontSize: getComputedStyle(input).fontSize,
+        }
+      } finally {
+        caption.remove()
+      }
+    })
+    expect(searchStyle.placeholderColor).toBe(searchStyle.captionColor)
+    expect(searchStyle.iconCount).toBe(0)
+    expect(searchStyle.background).toBe('rgba(0, 0, 0, 0)')
+    expect(searchStyle.radius).toBe('12px')
+    expect(searchStyle.padding).toBe('5px 7px')
+    expect(searchStyle.fontSize).toBe('12px')
+    const modelWeights = await page.getByRole('menuitemradio').evaluateAll(rows => rows.map(row =>
+      getComputedStyle(row.querySelector('span span')!).fontWeight,
+    ))
+    expect(new Set(modelWeights)).toEqual(new Set(['400']))
+    const headingPalettes = await page.getByRole('group', { name: '模型与推理等级', exact: true }).evaluate((menu) => {
+      const html = menu.ownerDocument.documentElement
+      const body = menu.ownerDocument.body
+      const previousPlatform = html.getAttribute('data-platform')
+      const previousTheme = body.getAttribute('data-ds-dark-theme')
+      try {
+        return ['web', 'win32', 'darwin'].flatMap(platform => [false, true].map((dark) => {
+          if (platform === 'web') html.removeAttribute('data-platform')
+          else html.setAttribute('data-platform', platform)
+          body.toggleAttribute('data-ds-dark-theme', dark)
+          const headings = [...menu.querySelectorAll('section[role="group"] > div')]
+          return {
+            platform, dark,
+            headingFills: [...new Set(headings.map(heading => getComputedStyle(heading).backgroundColor))],
+            positions: [...new Set(headings.map(heading => getComputedStyle(heading).position))],
+            headingRadii: [...new Set(headings.map(heading => getComputedStyle(heading).borderRadius))],
+            optionRadius: getComputedStyle(menu.querySelector('[role="menuitemradio"]')!).borderRadius,
+            menuFill: getComputedStyle(menu.querySelector(':scope > [aria-hidden="true"]')!).backgroundColor,
+            searchBorder: getComputedStyle(menu.querySelector('input')!.parentElement!).borderColor,
+          }
+        }))
+      } finally {
+        if (previousPlatform === null) html.removeAttribute('data-platform')
+        else html.setAttribute('data-platform', previousPlatform)
+        if (previousTheme === null) body.removeAttribute('data-ds-dark-theme')
+        else body.setAttribute('data-ds-dark-theme', previousTheme)
+      }
+    })
+    for (const palette of headingPalettes) {
+      expect(palette.headingFills, `${palette.platform}, dark=${String(palette.dark)}`)
+        .toEqual(['rgba(0, 0, 0, 0)'])
+      expect(palette.menuFill).toBe(palette.dark ? 'rgba(67, 69, 74, 0.45)' : 'rgba(248, 249, 250, 0.58)')
+      expect(palette.searchBorder).toBe('rgba(0, 0, 0, 0)')
+      expect(palette.positions).toEqual(['sticky'])
+      expect(palette.headingRadii).toEqual([palette.platform === 'darwin' ? '0px' : palette.optionRadius])
+    }
     await search.fill('zzzz')
     await page.getByText('没有匹配的模型。', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '清除搜索', exact: true }).click()
+    expect(await search.inputValue()).toBe('')
+    expect(await search.evaluate(input => input === input.ownerDocument.activeElement)).toBe(true)
+    expect(await page.getByRole('menuitemradio').count()).toBe(modelWeights.length)
+    expect(await page.getByRole('button', { name: '清除搜索', exact: true }).count()).toBe(0)
     await search.fill('  ACMLG  ')
     expect(await page.getByRole('menuitemradio').allTextContents()).toEqual(['Acme Large'])
     expect(await page.getByRole('group', { name: 'Origin Gateway', exact: true }).count()).toBe(0)
@@ -118,9 +302,6 @@ describe('web e2e: the composer model switch is the default for later sessions',
       await captureStableAria(page, '[role="group"][aria-label="模型与推理等级"]', scaffold.workspaceCwd),
       webSnapshotMode(),
     )
-    await search.press('ArrowDown')
-    await expect.poll(() => page.getByRole('menuitemradio', { name: 'Acme Large' })
-      .evaluate(row => row === row.ownerDocument.activeElement)).toBe(true)
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
     const blocked = scaffold.ctx.hmr.runExclusive(async () => {
@@ -129,6 +310,10 @@ describe('web e2e: the composer model switch is the default for later sessions',
     })
     try {
       await entered.promise
+      await search.press('ArrowDown')
+      await expect.poll(() => search.evaluate(input => input === input.ownerDocument.activeElement)).toBe(true)
+      expect(await search.getAttribute('aria-activedescendant'))
+        .toBe(await page.getByRole('menuitemradio', { name: 'Acme Large' }).getAttribute('id'))
       await page.keyboard.press('Enter')
       await expect.poll(() => trigger.getAttribute('aria-busy')).toBe('false')
       await expect.poll(() => trigger.textContent()).toContain('Acme Large')
