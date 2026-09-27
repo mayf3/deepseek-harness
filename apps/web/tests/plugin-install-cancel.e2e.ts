@@ -18,14 +18,30 @@ async function invalidInputStyles(page: Page, input: Locator) {
       await input.focus()
       await expect.poll(() => input.evaluate(element => document.activeElement === element)).toBe(true)
       expect(await input.getAttribute('aria-invalid')).toBe('true')
-      const focused = await input.evaluate((element) => {
+      const { focused, focusRingColor, errorBorderColor } = await input.evaluate((element) => {
         const style = getComputedStyle(element)
-        return { outline: style.outlineStyle, boxShadow: style.boxShadow, borderColor: style.borderColor }
+        const probe = document.createElement('span')
+        probe.style.display = 'none'
+        probe.style.color = style.getPropertyValue('--dsw-focus-ring-color').trim() || style.getPropertyValue('--dsw-alias-state-business-primary')
+        element.after(probe)
+        try {
+          const focusRingColor = getComputedStyle(probe).color
+          probe.style.color = style.getPropertyValue('--dsw-alias-state-error-primary')
+          return {
+            focused: { outline: style.outlineStyle, boxShadow: style.boxShadow, borderColor: style.borderColor },
+            focusRingColor,
+            errorBorderColor: getComputedStyle(probe).color,
+          }
+        } finally {
+          probe.remove()
+        }
       })
       expect(focused.outline).toBe('none')
       expect(focused.boxShadow).toContain('inset')
       expect(focused.boxShadow).toContain('0px 0px 0px 0.5px')
-      expect(focused.boxShadow).toContain(focused.borderColor)
+      expect(focused.boxShadow).toContain(focusRingColor)
+      expect(focused.borderColor).toBe(errorBorderColor)
+      expect(focusRingColor).not.toBe(errorBorderColor)
       await input.evaluate((element) => { (element as HTMLInputElement).blur() })
       await expect.poll(() => input.evaluate(element => document.activeElement === element)).toBe(false)
       const blurred = await input.evaluate((element) => {
