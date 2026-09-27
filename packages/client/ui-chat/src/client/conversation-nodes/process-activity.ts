@@ -35,10 +35,14 @@ function normalizeLiveToolDetail(value: unknown): string {
       ? value.join(', ')
       : ''
   const normalized = text.replace(/\s+/g, ' ').trim()
-  const chars = Array.from(LIVE_TOOL_DETAIL_SEGMENTER.segment(normalized), part => part.segment)
-  return chars.length <= LIVE_TOOL_DETAIL_MAX_CHARS
-    ? normalized
-    : `${chars.slice(0, LIVE_TOOL_DETAIL_MAX_CHARS - 1).join('').trimEnd()}…`
+  const chars: string[] = []
+  for (const { segment } of LIVE_TOOL_DETAIL_SEGMENTER.segment(normalized)) {
+    if (chars.length === LIVE_TOOL_DETAIL_MAX_CHARS) {
+      return `${chars.slice(0, LIVE_TOOL_DETAIL_MAX_CHARS - 1).join('').trimEnd()}…`
+    }
+    chars.push(segment)
+  }
+  return normalized
 }
 
 function questionDetail(value: unknown): string {

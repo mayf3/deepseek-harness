@@ -883,6 +883,9 @@ importers:
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:*
         version: link:../packages/api/session-controller
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../packages/util/brand
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:*
         version: link:../packages/client/store

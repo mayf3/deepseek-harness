@@ -90,7 +90,7 @@ export class PartialArguments {
    */
   static fromText(text: string): PartialArguments {
     const view = new PartialArguments()
-    view.raw = text
+    view.append(text)
     view.sealed = true
     return view
   }
@@ -118,6 +118,7 @@ export class PartialArguments {
   private object: Readonly<Record<string, JsonValue>> | undefined
   private sealed = false
   // Scan progress, located fields, and remembered reads are caches over the source.
+  #pending = ''
   #consumed = 0
   #mode: Mode = 'root'
   #escape = false
@@ -145,6 +146,7 @@ export class PartialArguments {
   append(fragment: string): boolean {
     if (this.sealed) throw new Error('PartialArguments: cannot append to a sealed view')
     this.raw += fragment
+    this.#pending += fragment
     if (this.#reads.size === 0) return false
     this.scan()
     let changed = false
@@ -297,11 +299,13 @@ export class PartialArguments {
     return entry?.kind === 'value' && entry.end >= 0 ? entry.parsed : undefined
   }
 
-  /** Scan the text not yet consumed; each character is handled once. */
+  /** Index only unread text; indexing accumulated raw text repeatedly flattens its prefix. */
   private scan(): void {
     if (this.object !== undefined) return
-    while (this.#consumed < this.raw.length && this.#mode !== 'invalid') {
-      this.step(this.raw[this.#consumed] as string, this.#consumed)
+    const pending = this.#pending
+    this.#pending = ''
+    for (let index = 0; index < pending.length && this.#mode !== 'invalid'; index++) {
+      this.step(pending[index] as string, this.#consumed)
       this.#consumed++
     }
   }

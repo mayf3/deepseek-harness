@@ -6,6 +6,7 @@ import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import type { ChatConversationViewNode, ChatNode } from '../src/client/contract/chat-nodes.ts'
 import { ChatSnapshotBuilder } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
 import { ProcessState } from '../src/client/conversation-nodes/process-groups.ts'
+import { processActivity } from '../src/client/conversation-nodes/process-activity.ts'
 import { ConversationGroupStore } from '../../ui-conversation/src/client/conversation/group-store.ts'
 import type { ProcessGroupData } from '../src/client/contract/process-groups.ts'
 
@@ -80,6 +81,54 @@ function harness(nodes: readonly ChatConversationViewNode[], currentTimeline = t
 }
 
 describe('Definition-owned Chat process groups', () => {
+  it.each([
+    ['whitespace', '  one\t\n two  ', 'one two'],
+    ['empty text', ' \t\n ', 'bash'],
+    ['exact limit', 'x'.repeat(160), 'x'.repeat(160)],
+    ['overflow', 'x'.repeat(161), `${'x'.repeat(159)}…`],
+    ['space at cutoff', `${'x'.repeat(158)} \n yz`, `${'x'.repeat(158)}…`],
+    ['combining marks', 'e\u0301'.repeat(161), `${'e\u0301'.repeat(159)}…`],
+    ['emoji at limit', '👩‍💻'.repeat(160), '👩‍💻'.repeat(160)],
+    ['emoji overflow', '👩‍💻'.repeat(161), `${'👩‍💻'.repeat(159)}…`],
+  ])('preserves normalized live detail for %s', (_label, command, expected) => {
+    const node = tool('call', 2)
+    const argsRaw = JSON.stringify({ command })
+    const root = { ...node.data.root, argsRaw, args: PartialArguments.fromText(argsRaw) }
+    expect(processActivity([{ ...node, data: { root } }]).runningDetail).toBe(expected)
+  })
+
+  it('bounds grapheme traversal while allowing a later description to replace a long command', () => {
+    const args = new PartialArguments()
+    args.append(`{"command":"${'x'.repeat(1024)}`)
+    const node: ChatNode<'tool-call'> = {
+      ...tool('call', 2),
+      data: { root: { phase: 'preparing', args, callId: 'call', name: 'bash', turn: 1, step: 1, time: 2, subCalls: [] } },
+    }
+    const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+    const segment = segmenter.segment.bind(segmenter)
+    let visited = 0
+    const spy = vi.spyOn(Intl.Segmenter.prototype, 'segment').mockImplementation((input) => {
+      const segments = segment(input)
+      const iterator = segments[Symbol.iterator]()
+      segments[Symbol.iterator] = function* () {
+        for (const part of iterator) {
+          visited++
+          yield part
+        }
+        return undefined
+      }
+      return segments
+    })
+    try {
+      expect(processActivity([node]).runningDetail).toBe(`${'x'.repeat(159)}…`)
+      expect(visited).toBeLessThanOrEqual(161)
+      expect(args.append('","description":"Run focused tests"}')).toBe(true)
+      expect(processActivity([node]).runningDetail).toBe('Run focused tests')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('clears preparation from a closed group while retaining its recorded activity', () => {
     const preparing: ChatNode<'tool-call'> = {
       ...tool('call', 2, 'write'),
