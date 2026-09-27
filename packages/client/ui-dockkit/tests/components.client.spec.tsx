@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { DockIntents } from '../src/contract/adapter.ts'
 import type { PaneId, TabId } from '../src/contract/types.ts'
 import { DockController } from '../src/engine/controller.ts'
@@ -1304,6 +1304,19 @@ describe('divider drags', () => {
 })
 
 describe('FloatLayer', () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(box(100, 80, 300, 200))
+  })
+
+  it.each(['move', 'resize'] as const)('starts %s from the displayed position when window chrome displaces a saved float', (mode) => {
+    const { intents, paneId, panel } = floating()
+    vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue(box(100, 48, 300, 200))
+    const handle = panel.querySelector(`[data-dockkit-float-${mode === 'move' ? 'grip' : 'resize'}]`)!
+    drag(handle, [150, 58], [170, 78])
+    if (mode === 'move') expect(intents.moveFloat).toHaveBeenCalledWith(paneId, 120, 68)
+    else expect(intents.resizeFloat).toHaveBeenCalledWith(paneId, { x: 100, y: 48, width: 320, height: 220 })
+  })
+
   /** Two floating panels, `lower` under `upper`, with `upper` active. */
   function twoFloats(): {
     intents: ReturnType<typeof spyIntents>
@@ -1438,7 +1451,7 @@ describe('FloatLayer', () => {
 
     drag(grip, [150, 90], [180, 110], false)
     expect(panel.style.left).toBe('130px')
-    expect(panel.style.top).toBe('100px')
+    expect(panel.style.top).toBe('max(var(--dsh-dockkit-float-top, 0px), 100px)')
     // Mid-gesture the panel draws on top, as the move it records will leave it.
     expect(panel.style.zIndex).toBe('3')
     fireEvent.pointerUp(window, { pointerId: 7, clientX: 180, clientY: 110 })
