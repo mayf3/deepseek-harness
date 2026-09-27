@@ -96,14 +96,6 @@ jobs:
           pnpm --dir native/system run build:ts
           pnpm --dir native/system run build:native
 
-      # The unit suite runs on ubuntu in `checks`; this is the one darwin leg
-      # in the workflow, so run it here too — the platform-dependent unit
-      # expectations (Seatbelt path canonicalization: /tmp IS /private/tmp)
-      # take their darwin branch only on this runner.
-      - name: Unit tests (darwin parity)
-        if: matrix.runner == 'seatbelt'
-        run: pnpm run test
-
       - name: Sandbox e2e (real kernel confinement, world-verified)
         # NO_COLOR: vitest force-enables ANSI color under GITHUB_ACTIONS even
         # without a TTY, which would thread escape codes through the summary
@@ -139,3 +131,28 @@ jobs:
           echo "$out"
           [ "$status" -eq 0 ]
           echo "$out" | grep -qE 'Test Files[[:space:]]+1 passed \(1\)'
+
+  # The unit suite runs on ubuntu in `checks`; macos-latest is this workflow's
+  # only darwin runner, so the platform-dependent unit expectations (Seatbelt
+  # path canonicalization: /tmp IS /private/tmp) take their darwin branch only
+  # here. A job of its own so the seatbelt e2e leg keeps the matrix budget:
+  # the full suite measures 16 minutes on a fast macos-latest runner and had
+  # completed under half its files at 20 on the slowest observed, hence 45.
+  unit-darwin:
+    name: unit tests (darwin parity, macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Unit tests (darwin parity)
+        run: pnpm run test
