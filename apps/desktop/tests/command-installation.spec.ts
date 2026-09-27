@@ -1,6 +1,6 @@
 /** Real command entries and receipts; every test owns its destination directory. */
 
-import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -11,6 +11,7 @@ const barrier = vi.hoisted(() => ({
   afterRead: undefined as ((path: unknown) => Promise<void>) | undefined,
   afterRename: undefined as ((path: unknown) => Promise<void>) | undefined,
   afterStat: undefined as ((path: unknown, file: boolean) => Promise<void>) | undefined,
+  beforeUnlink: undefined as ((path: unknown) => void) | undefined,
   failReceipt: false,
 }))
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -29,6 +30,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     }
     await actual.rename(...args)
     await barrier.afterRename?.(args[0])
+  }, unlink: async (...args: Parameters<typeof actual.unlink>) => {
+    barrier.beforeUnlink?.(args[0])
+    await actual.unlink(...args)
   } }
 })
 
@@ -175,6 +179,43 @@ describe.skipIf(process.platform === 'win32')('macOS command entry ownership', (
     await expect(removeFileCommand(f.options, installed.fingerprint)).rejects.toMatchObject({ code: 'EOWNERSHIP' })
     expect(await readFile(installed.backup!, 'utf8')).toBe('changed backup\n')
     expect((await inspectFileCommand(f.options)).managed).toBe(true)
+  })
+
+  it('retains both removal and restoration failures with the preserved link location', async () => {
+    const f = await fixture()
+    const installed = await installFileCommand(f.options, (await inspectFileCommand(f.options)).fingerprint)
+    barrier.beforeUnlink = (path) => {
+      if (path !== join(f.root, '.dsh-desktop-command.json')) return
+      barrier.afterStat = async () => { throw Object.assign(new Error('Restoration denied'), { code: 'EPERM' }) }
+      throw Object.assign(new Error('Receipt removal denied'), { code: 'EACCES' })
+    }
+    onTestFinished(() => { barrier.beforeUnlink = undefined; barrier.afterStat = undefined })
+    const failure: unknown = await removeFileCommand(f.options, installed.fingerprint).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(AggregateError)
+    if (!(failure instanceof AggregateError)) throw new Error('Removal did not report both failures')
+    expect(failure.errors).toMatchObject([{ code: 'EACCES' }, { code: 'EPERM' }])
+    expect(failure.message).toContain('The Desktop command link is preserved at ')
+    barrier.beforeUnlink = undefined; barrier.afterStat = undefined
+    const preserved = (await readdir(f.root)).filter(name => name.startsWith('.dsh-command-backup-'))
+    expect(preserved).toHaveLength(1)
+    expect(await readlink(join(f.root, preserved[0]!))).toBe(f.options.launcher)
+  })
+
+  it('cleans the obsolete Desktop link after backup restoration even when receipt removal fails', async () => {
+    const f = await fixture()
+    await symlink('previous-command', f.options.destination)
+    const installed = await installFileCommand(f.options, (await inspectFileCommand(f.options)).fingerprint)
+    barrier.beforeUnlink = (path) => {
+      if (path === join(f.root, '.dsh-desktop-command.json')) throw Object.assign(new Error('Receipt removal denied'), { code: 'EACCES' })
+    }
+    onTestFinished(() => { barrier.beforeUnlink = undefined })
+    await expect(removeFileCommand(f.options, installed.fingerprint)).rejects.toMatchObject({ code: 'EACCES' })
+    expect(await readlink(f.options.destination)).toBe('previous-command')
+    expect((await readdir(f.root)).filter(name => name.startsWith('.dsh-command-backup-'))).toEqual([])
+    barrier.beforeUnlink = undefined
+    const result = await removeFileCommand(f.options, (await inspectFileCommand(f.options)).fingerprint)
+    expect(result.preservedBackup).toBeUndefined()
+    expect(await readlink(f.options.destination)).toBe('previous-command')
   })
 
   it('leaves a replacement at the original backup path after restoration has claimed its source', async () => {

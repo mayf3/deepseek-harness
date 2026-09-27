@@ -245,7 +245,14 @@ export async function removeFileCommand(options: FileCommandInstallation, expect
         if (backup !== undefined) await restoreEntry(options, backup, options.destination, receipt.backup?.fingerprint)
         await unlink(receiptPath(options))
       } catch (error) {
-        if (removed !== undefined && (await readEntry(options.destination)).kind === 'missing') await restoreEntry(options, removed, options.destination, entry.fingerprint)
+        if (removed !== undefined) {
+          try {
+            if ((await readEntry(options.destination)).kind === 'missing') await restoreEntry(options, removed, options.destination, entry.fingerprint)
+            else await unlink(removed)
+          } catch (restoreError) {
+            throw new AggregateError([error, restoreError], 'The Desktop command link is preserved at ' + removed)
+          }
+        }
         throw error
       }
       if (removed !== undefined) await unlink(removed)
@@ -254,6 +261,7 @@ export async function removeFileCommand(options: FileCommandInstallation, expect
       await unlink(receiptPath(options))
     }
     const result = await inspectFileCommand(options)
-    return !state.managed && backup !== undefined ? { ...result, preservedBackup: backup } : result
+    return !state.managed && backup !== undefined && (await readEntry(backup)).kind !== 'missing'
+      ? { ...result, preservedBackup: backup } : result
   }, { waitMs: 5000 })
 }

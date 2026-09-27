@@ -9,8 +9,13 @@ function Invoke-DshCommandPath {
     }
     function Comparable([string]$Path) {
         $expanded = [Environment]::ExpandEnvironmentVariables($Path.Trim().Trim('"'))
-        if (-not [IO.Path]::IsPathRooted($expanded)) { return $expanded }
-        return [IO.Path]::GetFullPath($expanded).TrimEnd('\','/').ToUpperInvariant()
+        try {
+            if (-not [IO.Path]::IsPathRooted($expanded)) { return $expanded }
+            return [IO.Path]::GetFullPath($expanded).TrimEnd('\','/').ToUpperInvariant()
+        } catch {
+            # Invalid user PATH entries cannot identify the managed directory.
+            return $expanded
+        }
     }
     $directory = [string]$Request.directory
     if (-not [IO.Path]::IsPathRooted($directory) -or $directory.Contains(';') -or $directory.Contains([char]0)) {
@@ -46,8 +51,8 @@ function Invoke-DshCommandPath {
         $old = if ($owned) { Comparable ([string]$owned) } else { $null }
         $kept = $parts
         if ($old -and ($Request.operation -eq 'install' -or ($Request.operation -eq 'remove' -and $old -eq $current))) {
-            $matches = @($parts | Where-Object { $_ -ceq $owned }).Count
-            if ($matches -gt $retained) {
+            $ownedMatches = @($parts | Where-Object { $_ -ceq $owned }).Count
+            if ($ownedMatches -gt $retained) {
                 $index = [Array]::IndexOf($parts, $owned)
                 $kept = @(); for ($i = 0; $i -lt $parts.Count; $i++) { if ($i -ne $index) { $kept += $parts[$i] } }
             }
@@ -86,11 +91,17 @@ function Invoke-DshCommandPath {
         $active = $null
         foreach ($part in (($MachinePath + ';' + [string]$raw).Split(';'))) {
             $path = [Environment]::ExpandEnvironmentVariables($part.Trim().Trim('"'))
-            if (-not [IO.Path]::IsPathRooted($path)) { continue }
+            try { $rooted = [IO.Path]::IsPathRooted($path) } catch { continue }
+            if (-not $rooted) { continue }
             $extensions = if ($env:PATHEXT) { @($env:PATHEXT.Split(';')) } else { @('.com','.exe','.bat','.cmd') }
             foreach ($extension in (@('.ps1') + $extensions)) {
-                $candidate = Join-Path $path ('dsh' + $extension)
-                if (Test-Path -LiteralPath $candidate -PathType Leaf) { $active = $candidate; break }
+                try {
+                    $candidate = Join-Path $path ('dsh' + $extension)
+                    if (Test-Path -LiteralPath $candidate -PathType Leaf) { $active = $candidate; break }
+                } catch {
+                    # Invalid or unavailable PATH candidates do not prevent checking later entries.
+                    continue
+                }
             }
             if ($active) { break }
         }
@@ -103,11 +114,16 @@ function Invoke-DshCommandPath {
 }
 
 function Send-DshCommandEnvironmentChange {
-    if (-not ('DshCommandEnvironment' -as [type])) {
-        Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class DshCommandEnvironment { [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr h, uint m, IntPtr w, string l, uint f, uint t, out IntPtr r); }'
+    try {
+        if (-not ('DshCommandEnvironment' -as [type])) {
+            Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class DshCommandEnvironment { [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr h, uint m, IntPtr w, string l, uint f, uint t, out IntPtr r); }'
+        }
+        $ignored = [IntPtr]::Zero
+        [void][DshCommandEnvironment]::SendMessageTimeout([IntPtr]0xffff, 0x1a, [IntPtr]::Zero, 'Environment', 2, 2000, [ref]$ignored)
+    } catch {
+        # The PATH write is committed. A failed notification only delays other processes observing it.
+        return
     }
-    $ignored = [IntPtr]::Zero
-    [void][DshCommandEnvironment]::SendMessageTimeout([IntPtr]0xffff, 0x1a, [IntPtr]::Zero, 'Environment', 2, 2000, [ref]$ignored)
 }
 
 if ($MyInvocation.InvocationName -ne '.') {

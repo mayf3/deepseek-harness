@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 $installPath = Join-Path $OutputDirectory 'Installed App'
 $appPath = Join-Path $installPath ($ProductName + '.exe')
 $uninstaller = Join-Path $installPath ('Uninstall ' + $ProductName + '.exe')
+$commandActions = Join-Path $installPath 'resources\runtime\cli\command-actions.jsonl'
 $processes = [Collections.Generic.List[Diagnostics.Process]]::new()
 $results = [Collections.Generic.List[string]]::new()
 $expected = Get-Content (Join-Path $PSScriptRoot 'expected/windows-installer.json') -Raw | ConvertFrom-Json
@@ -37,7 +38,7 @@ function Start-Setup([string]$Theme, [string]$Path = $installPath) {
     $timer = [Diagnostics.Stopwatch]::StartNew()
     do {
         if ($process.HasExited) { throw "Setup exited: $($process.ExitCode)" }
-        if ([InstallerCapture]::HasIncompleteWindow($process.Id)) { throw 'Installer appeared before its page was ready' }
+        if ([InstallerCapture]::HasIncompleteWindow($process.Id)) { throw "Installer appeared before its page was ready: $([InstallerCapture]::VisibleText($process.Id))" }
         $window = [InstallerCapture]::Find($process.Id)
         if ($window -ne [IntPtr]::Zero) { break }
         Start-Sleep -Milliseconds 5
@@ -54,11 +55,23 @@ function Start-Setup([string]$Theme, [string]$Path = $installPath) {
     })
     if ($languages.Count -ne 1) { throw "Cannot identify installer language: $([InstallerCapture]::VisibleText($process.Id))" }
     $script:copy = $localizedCopy[$languages[0]]
+    $script:installerLanguage = if ($languages[0] -eq 'SIMPCHINESE') { '2052' } else { '1033' }
     [void](Wait-Control $process $copy.INSTALLER_INSTALL)
     return $process
 }
 function Click-Control([Diagnostics.Process]$Process, [string]$Text) {
     [InstallerCapture]::Click((Wait-Control $Process $Text))
+}
+function Set-CommandCheckbox([Diagnostics.Process]$Process, [bool]$Selected) {
+    $checkbox = Wait-Control $Process $copy.INSTALLER_DSH_COMMAND
+    if ([InstallerCapture]::SendMessage($checkbox, 0xF0, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32() -ne [int]$Selected) {
+        [InstallerCapture]::Click($checkbox)
+    }
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    while ([InstallerCapture]::SendMessage($checkbox, 0xF0, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32() -ne [int]$Selected) {
+        if ($timer.Elapsed.TotalSeconds -gt 5) { throw 'Command checkbox did not toggle' }
+        Start-Sleep -Milliseconds 25
+    }
 }
 function Dismiss([Diagnostics.Process]$Process, [string]$Text) {
     $control = Wait-Control $Process $Text -Dialog
@@ -87,6 +100,7 @@ function Finish-Setup([Diagnostics.Process]$Process, [bool]$Launch, [string]$The
         Start-Sleep -Milliseconds 25
     }
     if ([InstallerCapture]::GetProp($window, 'HarnessInstaller.CompletedPercent').ToInt32() -ne 100) { throw 'Finish page replaced an incomplete progress bar' }
+    if ([InstallerCapture]::FindButton($Process.Id, $copy.INSTALLER_DSH_COMMAND) -ne [IntPtr]::Zero) { throw 'Command checkbox remained visible after installation' }
     $checkbox = Wait-Control $Process $copy.INSTALLER_LAUNCH
     $state = [InstallerCapture]::SendMessage($checkbox, 0xF0, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
     if ($state -ne $expected.launchCheckboxState) { throw 'Unexpected launch checkbox default' }
@@ -133,6 +147,7 @@ function Run-Silent([string]$Arguments, [int]$Code) {
 }
 try {
     $process = Start-Setup light
+    Set-CommandCheckbox $process $false
     $results.Add('welcome-presented-on-first-show')
     $window = [InstallerCapture]::Find($process.Id)
     [void][InstallerCapture]::Save($window, (Join-Path $OutputDirectory 'light-welcome.png'))
@@ -153,12 +168,16 @@ try {
     Click-Control $process $copy.INSTALLER_INSTALL
     Finish-Setup $process $false light $bounds
     if (-not (Test-Path -LiteralPath $appPath) -or (Test-Path -LiteralPath (Join-Path $installPath 'launched.txt'))) { throw 'Unchecked launch behavior failed' }
+    if (Test-Path -LiteralPath $commandActions) { throw 'Unchecked command option still registered the command' }
+    $results.Add('command-checkbox-unchecked-skips-registration')
+    $results.Add('command-checkbox-hidden-on-finish')
     $results.Add('enter-validates-current-path-and-unchecked-launch')
     $results.Add('completion-preserves-window-position')
     $results.Add('welcome-ready-before-first-show')
     $results.Add('successful-install-paints-100-before-finish')
 
     $process = Start-Setup dark ''
+    Set-CommandCheckbox $process $true
     Click-Control $process $copy.INSTALLER_CHOOSE_PATH
     $edit = Wait-Control $process $installPath
     [void][InstallerCapture]::SendMessage($edit, 0xC, [IntPtr]::Zero, ($installPath + '\\'))
@@ -166,6 +185,13 @@ try {
     $bounds = [InstallerCapture]::Bounds([InstallerCapture]::Find($process.Id))
     Click-Control $process $copy.INSTALLER_INSTALL
     Finish-Setup $process $true dark $bounds
+    $commandCalls = @(Get-Content -LiteralPath $commandActions -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json })
+    if ($commandCalls.Count -ne 1 -or $commandCalls[0].operation -ne 'install' -or $commandCalls[0].silent -or
+        $commandCalls[0].language -ne $installerLanguage -or
+        $commandCalls[0].directory -ne (Join-Path $installPath 'resources\runtime\cli\bin')) {
+        throw 'Checked command option did not register the selected installation'
+    }
+    $results.Add('command-checkbox-checked-registers-selected-directory')
     $registration = Get-ItemProperty ('HKCU:\Software\' + $RegistryKey)
     if ($registration.InstallLocation.TrimEnd('\') -ne $installPath -or -not (Test-Path -LiteralPath $appPath)) {
         throw 'Trailing separators changed the registered installation directory'

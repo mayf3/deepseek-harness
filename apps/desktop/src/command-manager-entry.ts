@@ -37,10 +37,10 @@ try {
     throw new CommandInstallationError('EUNSUPPORTED', 'Command installation is supported on macOS and Windows.')
   }
 } catch (error) {
+  // osascript preserves stdout only when the command exits successfully; the response owns operation failures.
   process.stdout.write(JSON.stringify({
     ok: false,
     code: error instanceof CommandInstallationError ? error.code : (error as NodeJS.ErrnoException).code ?? 'EIO',
     message: error instanceof Error ? error.message : 'Command management failed.',
   }) + '\n')
-  process.exitCode = 1
 }

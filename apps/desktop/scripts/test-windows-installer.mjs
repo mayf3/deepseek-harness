@@ -1,7 +1,7 @@
 /** Builds an isolated native payload through the production NSIS configuration and exercises its UI. */
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,7 +28,9 @@ const outputRoot = join(appRoot, '.desktop-build', 'installer-tests')
 await mkdir(outputRoot, { recursive: true })
 const output = await mkdtemp(join(outputRoot, 'run-'))
 const payload = join(output, 'payload')
-await mkdir(join(payload, 'resources'), { recursive: true })
+const commandRuntime = join(payload, 'resources', 'runtime', 'cli')
+await mkdir(join(commandRuntime, 'bin'), { recursive: true })
+await copyFile(join(appRoot, 'tests', 'fixtures', 'installer-command.ps1'), join(commandRuntime, 'command-installer.ps1'))
 const previousEnvironment = { ...process.env }
 const signingEnvironment = process.argv.includes('--signed') ? loadDesktopPackageEnvironment('win32') : {}
 const signingRun = process.argv.includes('--signed')

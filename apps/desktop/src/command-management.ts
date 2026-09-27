@@ -151,6 +151,9 @@ export class DesktopCommandManager {
           { timeout: 30000, maxBuffer: 65536, windowsHide: true, env })).stdout
       }
     } catch (error) {
+      if (elevated && object(error) && typeof error.stderr === 'string' && /\(-128\)\s*$/u.test(error.stderr)) {
+        throw new CommandWorkerError('ECANCELED', 'Command authorization was cancelled.')
+      }
       if (object(error) && typeof error.stdout === 'string' && error.stdout.trim().startsWith('{')) stdout = error.stdout
       else throw new CommandWorkerError('EIO', 'Command-manager process failed.')
     }
@@ -194,7 +197,9 @@ export class DesktopCommandManager {
       const operation = state.managed ? (choice.response === 1 ? 'install' : choice.response === 2 ? 'remove' : undefined)
         : choice.response === 0 ? 'install' : undefined
       if (operation === undefined) return
-      if (operation === 'install' && (state.occupied || state.activeCommand !== undefined || state.selectionUnknown)) {
+      const ownsSelection = state.managed
+        && (state.activeCommand === undefined || sameCommand(state.activeCommand, state.destination, process.platform))
+      if (operation === 'install' && (state.selectionUnknown || (!ownsSelection && (state.occupied || state.activeCommand !== undefined)))) {
         const confirmation = await this.options.show({
           type: 'warning', title: messages.cliCommandTitle, message: messages.cliCommandSwitch,
           detail: (state.selectionUnknown ? messages.cliCommandSelectionUnknown
@@ -222,6 +227,7 @@ export class DesktopCommandManager {
     } catch (error) {
       if (this.options.isQuitting()) return
       const code = error instanceof CommandWorkerError ? error.code : 'EIO'
+      if (code === 'ECANCELED') return
       await this.options.show({
         type: 'error', title: messages.cliCommandTitle,
         message: code === 'ESTALE' ? messages.cliCommandChanged : code === 'EOWNERSHIP' ? messages.cliCommandOwnershipError : messages.cliCommandFailed,

@@ -10,7 +10,12 @@ using System.Text;
 public static class InstallerCapture {
     public static string ProductName;
     [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
-    public static void Initialize() { SetProcessDPIAware(); }
+    public static void Initialize() {
+        SetProcessDPIAware();
+        bool enabled;
+        if (DwmIsCompositionEnabled(out enabled) < 0 || !enabled)
+            throw new InvalidOperationException("Installer UI checks require an interactive desktop with DWM composition enabled.");
+    }
     public delegate bool WindowCallback(IntPtr window, IntPtr data);
     [DllImport("user32.dll")] static extern bool EnumWindows(WindowCallback callback, IntPtr data);
     [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, WindowCallback callback, IntPtr data);
@@ -30,6 +35,7 @@ public static class InstallerCapture {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("dwmapi.dll")] static extern int DwmFlush();
+    [DllImport("dwmapi.dll")] static extern int DwmIsCompositionEnabled(out bool enabled);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr window, int id);
     [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr window);

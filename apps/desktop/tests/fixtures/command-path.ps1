@@ -81,6 +81,17 @@ try {
     [IO.File]::WriteAllText((Join-Path $npm 'dsh.ps1'), 'fixture')
     $options.MachinePath = ''
     Require ((State $desktop).activeCommand -eq (Join-Path $npm 'dsh.ps1')) 'PowerShell launcher was not detected'
+    $invalidPath = 'C:\invalid|entry;C:\<missing>;' + $npm
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($environmentKey, $true)
+    try { $key.SetValue('Path', $invalidPath, [Microsoft.Win32.RegistryValueKind]::ExpandString) }
+    finally { $key.Dispose() }
+    Require ((State $desktop).activeCommand -eq (Join-Path $npm 'dsh.ps1')) 'invalid PATH entries prevented command discovery'
+    [void](Apply 'install' $desktop)
+    function Add-Type { throw 'Environment notification is unavailable' }
+    try { Send-DshCommandEnvironmentChange } finally { Remove-Item Function:\Add-Type }
+    Require ((UserPath) -eq ($desktop + ';' + $invalidPath)) 'a notification failure changed the committed PATH'
+    [void](Apply 'remove' $desktop)
+    Require ((UserPath) -eq $invalidPath) 'removal changed invalid user PATH entries'
     'WINDOWS_COMMAND_PATH_OK'
 } finally {
     [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($keyRoot, $false)

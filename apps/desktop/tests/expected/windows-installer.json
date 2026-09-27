@@ -2,6 +2,9 @@
   "launchCheckboxState": 1,
   "nativeProgressVisible": false,
   "cases": [
+    "command-checkbox-unchecked-skips-registration",
+    "command-checkbox-checked-registers-selected-directory",
+    "command-checkbox-hidden-on-finish",
     "enter-validates-current-path-and-unchecked-launch",
     "completion-preserves-window-position",
     "welcome-ready-before-first-show",
