@@ -52,7 +52,7 @@ export function RunningWhaleTail() {
     return () => { preference.removeEventListener('change', update) }
   }, [])
   return (
-    <span className={css.runningWhale} aria-hidden="true" data-chat-running>
+    <span className={css.runningIcon} aria-hidden="true">
       <svg key={reducedMotion ? 'still' : 'animated'} width="100%" height="100%" viewBox="0 0 16 16" fill="none">
         <path d={REST_PATH} stroke="currentColor" strokeWidth={1}>
           {!reducedMotion && <animate attributeName="d" values={MOTION_PATHS} keyTimes={MOTION_TIMES}
