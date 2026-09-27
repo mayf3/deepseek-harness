@@ -26,8 +26,10 @@ The [input-state decision](2026-09-27-web-lane-assertions-name-their-input-state
 
 The unchanged scenario passes alone and fails at the same highlighted-card locator in one of four concurrent independent processes. Instrumented failures place the unanswered directory request inside the second `unrouteAll` interval; advancing the page clock leaves it unanswered, while direct Host reads complete. The protocol trace identifies the interception transition independently of the DOM assertion.
 
-The focused replay runs the cancellation-before-delivery barrier, cancellation of the running child, manifest and lockfile restoration, retry, enabled-card status, both themes and motion preferences, highlight expiry, and lost-result recovery against the existing goldens.
+`DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/plugin-install-cancel.e2e.ts` passes in four concurrent independent processes (1/1 each). One protocol capture observes one `Fetch.enable`, no `Fetch.disable`, and responses for all 33 directory requests. The existing goldens cover cancellation before delivery, cancellation of the running child, manifest and lockfile restoration, retry, enabled-card status, both themes and motion preferences, highlight expiry, and lost-result recovery.
 
 ## Consequences
 
 The browser retains two narrowly matched interceptors for its lifetime. The scenario controls their behavior without interrupting concurrent directory reads, and browser closure owns their cleanup. Product code, goldens, test deadlines, and CI worker counts are unchanged.
+
+Live-page `unrouteAll` calls also remain in [sidebar-terminal](../../../../apps/web/tests/sidebar-terminal.e2e.ts), [queue-image](../../../../apps/web/tests/queue-image.e2e.ts), [subagent-conversation](../../../../apps/web/tests/subagent-conversation.e2e.ts), and [subagent-interrupt-ui](../../../../apps/web/tests/subagent-interrupt-ui.e2e.ts). These are candidates for separate overlap investigations; this scenario's reproduction does not establish the cause of failures in those tests.

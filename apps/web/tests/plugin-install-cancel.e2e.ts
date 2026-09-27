@@ -101,7 +101,8 @@ it('cancels installation, retries and highlights the enabled plugin at 40% alpha
         await route.fulfill({ response })
       }
       // Host invalidations keep reading the directory between install phases.
-      // Keep interception enabled from navigation to page closure so phase changes cannot strand those requests.
+      // Interception stays enabled from before navigation until page closure,
+      // so phase changes cannot strand those requests.
       await page.route('**/api/pluginManager/installBundle', route => installBundleRoute(route))
       await page.route('**/api/pluginManager/cancelInstall', route => cancelInstallRoute(route))
       await page.clock.install()
