@@ -140,6 +140,17 @@ async function restoreEntry(options: FileCommandInstallation, source: string, de
   const entry = await readEntry(source)
   if (expected !== undefined && entry.fingerprint !== expected) throw new CommandInstallationError('EOWNERSHIP', 'Command backup changed.')
   if (entry.kind !== 'symlink' && entry.kind !== 'file') throw new CommandInstallationError('EOWNERSHIP', 'Command backup is unavailable.')
+  if (expected !== undefined) {
+    const claimed = await withdraw(options, source, entry)
+    if (claimed === undefined) throw new CommandInstallationError('EOWNERSHIP', 'Command backup is unavailable.')
+    try { await restoreEntry(options, claimed, destination) } catch (error) {
+      try { await restoreEntry(options, claimed, source) } catch (restoreError) {
+        throw new AggregateError([error, restoreError], 'The command backup is preserved at ' + claimed)
+      }
+      throw error
+    }
+    return
+  }
   await linkEntry(options, source, destination)
   if ((await readEntry(destination)).fingerprint !== entry.fingerprint) throw new CommandInstallationError('EOWNERSHIP', 'Command backup changed during restoration.')
   await unlink(source)

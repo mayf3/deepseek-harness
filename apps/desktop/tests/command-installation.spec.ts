@@ -10,6 +10,7 @@ import { prepareDesktopCli } from '../scripts/prepare-cli.ts'
 const barrier = vi.hoisted(() => ({
   afterRead: undefined as ((path: unknown) => Promise<void>) | undefined,
   afterRename: undefined as ((path: unknown) => Promise<void>) | undefined,
+  afterStat: undefined as ((path: unknown, file: boolean) => Promise<void>) | undefined,
   failReceipt: false,
 }))
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -17,6 +18,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...actual, readFile: async (...args: Parameters<typeof actual.readFile>) => {
     const result = await actual.readFile(...args)
     await barrier.afterRead?.(args[0])
+    return result
+  }, lstat: async (...args: Parameters<typeof actual.lstat>) => {
+    const result = await actual.lstat(...args)
+    await barrier.afterStat?.(args[0], result.isFile())
     return result
   }, rename: async (...args: Parameters<typeof actual.rename>) => {
     if (barrier.failReceipt && String(args[1]).endsWith('.dsh-desktop-command.json')) {
@@ -170,6 +175,21 @@ describe.skipIf(process.platform === 'win32')('macOS command entry ownership', (
     await expect(removeFileCommand(f.options, installed.fingerprint)).rejects.toMatchObject({ code: 'EOWNERSHIP' })
     expect(await readFile(installed.backup!, 'utf8')).toBe('changed backup\n')
     expect((await inspectFileCommand(f.options)).managed).toBe(true)
+  })
+
+  it('leaves a replacement at the original backup path after restoration has claimed its source', async () => {
+    const f = await fixture()
+    await writeFile(f.options.destination, 'original\n', { mode: 0o755 })
+    const installed = await installFileCommand(f.options, (await inspectFileCommand(f.options)).fingerprint)
+    barrier.afterStat = async (path, file) => {
+      if (path !== f.options.destination || !file) return
+      barrier.afterStat = undefined
+      await writeFile(installed.backup!, 'later replacement\n', { mode: 0o755 })
+    }
+    onTestFinished(() => { barrier.afterStat = undefined })
+    await removeFileCommand(f.options, installed.fingerprint)
+    expect(await readFile(f.options.destination, 'utf8')).toBe('original\n')
+    expect(await readFile(installed.backup!, 'utf8')).toBe('later replacement\n')
   })
 
   it('rejects directories and non-executable launcher resources', async () => {
