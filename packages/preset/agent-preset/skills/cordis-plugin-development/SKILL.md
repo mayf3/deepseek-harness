@@ -43,4 +43,4 @@ The files below live in this skill's base directory, which the `skill` tool repo
 | MCP bundle starting point, two files | `templates/mcp/package.json`, `templates/mcp/cordis.patch.yml` |
 | Loader patch dialect and the list of installable plugin packages | the `cordis-composition-reference` skill |
 | Choosing extension points, contexts, and state mechanisms for upgrade stability and performance | `references/practices.md` |
-| Pairing each UI action with an agent tool and reporting its result to the agent | `references/user-actions.md` |
+| Sharing operations between UI actions and agent tools without automatic context injection | `references/user-actions.md` |
