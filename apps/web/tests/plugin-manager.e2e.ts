@@ -124,7 +124,7 @@ describe('web e2e: plugin manager', () => {
         expect(await skeleton.getAttribute('aria-label')).toBe('正在读取插件…')
         expect(await panel.getAttribute('aria-busy')).toBe('true')
         const actions = panel.locator(':scope > header > div:last-child button')
-        expect(await actions.count()).toBe(2)
+        expect(await actions.count()).toBe(3)
         for (const action of await actions.all()) expect(await action.isDisabled()).toBe(true)
         expect(await panel.getByRole('button', { name: '插件说明' }).isEnabled()).toBe(true)
         const loadingAria = await captureStableAria(probe, '[data-plugin-panel]', scaffold.workspaceCwd)
